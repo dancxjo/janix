@@ -62,6 +62,10 @@ pub mod keys {
     pub const BAR5: &str = "bar5";
     pub const PORT_START: &str = "port_start";
     pub const PORT_END: &str = "port_end";
+    pub const IRQ_MODE: &str = "irq_mode";
+    pub const VECTOR: &str = "vector";
+    pub const MSI_CAPABLE: &str = "msi_capable";
+    pub const MSIX_CAPABLE: &str = "msix_capable";
 }
 
 pub mod kinds {

@@ -57,8 +57,7 @@ unsafe extern "C" {
     fn gp_handler_shim();
     fn pf_handler_shim();
     fn generic_handler_shim();
-    fn irq_kbd_handler_shim();
-    fn irq_mouse_handler_shim();
+    fn irq_common_handler_shim();
 }
 
 core::arch::global_asm!(
@@ -124,10 +123,8 @@ core::arch::global_asm!(
     2:  hlt
         jmp 2b
 
-    // Hardware IRQ handler for keyboard (vector 0x21)
-    .global irq_kbd_handler_shim
-    irq_kbd_handler_shim:
-        // Save all registers
+    .global irq_common_handler_shim
+    irq_common_handler_shim:
         push %rax
         push %rcx
         push %rdx
@@ -137,40 +134,10 @@ core::arch::global_asm!(
         push %r9
         push %r10
         push %r11
-        
-        // Call Rust handler with vector number
-        mov $0x21, %rdi
-        call rust_irq_handler
-        
-        // Restore registers
-        pop %r11
-        pop %r10
-        pop %r9
-        pop %r8
-        pop %rdi
-        pop %rsi
-        pop %rdx
-        pop %rcx
-        pop %rax
-        
-        iretq
 
-    // Hardware IRQ handler for mouse (vector 0x2C)
-    .global irq_mouse_handler_shim
-    irq_mouse_handler_shim:
-        push %rax
-        push %rcx
-        push %rdx
-        push %rsi
-        push %rdi
-        push %r8
-        push %r9
-        push %r10
-        push %r11
-        
-        mov $0x2C, %rdi
+        mov $0, %rdi
         call rust_irq_handler
-        
+
         pop %r11
         pop %r10
         pop %r9
@@ -180,7 +147,7 @@ core::arch::global_asm!(
         pop %rdx
         pop %rcx
         pop %rax
-        
+
         iretq
 "#
 );
@@ -224,19 +191,15 @@ pub unsafe fn init() {
             0x8E,
         );
 
-        // Hardware IRQs via IOAPIC
-        IDT.entries[0x21].set_handler(
-            irq_kbd_handler_shim as u64,
-            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
-            0,
-            0x8E,
-        );
-        IDT.entries[0x2C].set_handler(
-            irq_mouse_handler_shim as u64,
-            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
-            0,
-            0x8E,
-        );
+        // Hardware IRQs/MSI vectors
+        for vector in 0x20..=0xEF {
+            IDT.entries[vector as usize].set_handler(
+                irq_common_handler_shim as u64,
+                crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+                0,
+                0x8E,
+            );
+        }
 
         let idtr = IdtDescriptor {
             size: (size_of::<Idt>() - 1) as u16,
@@ -260,8 +223,8 @@ pub struct InterruptStackFrame {
 /// Hardware IRQ handler - dispatches to kernel and sends EOI
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_irq_handler(vector: u64) {
-    // Dispatch to kernel IRQ subsystem
-    kernel::irq::dispatch_irq(vector as u8);
+    let resolved = crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
+    kernel::irq::dispatch_irq(resolved);
     
     // Send EOI to Local APIC
     crate::arch::x86_64::ioapic::send_eoi();

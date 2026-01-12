@@ -7,12 +7,18 @@ use core::ptr::{read_volatile, write_volatile};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::thing::sys as thingsys;
 use stem::{error, info, warn};
-use stem::syscall::{device_claim, device_map_mmio, device_alloc_dma, device_dma_phys};
+use stem::device::device_enable_msi;
+use stem::syscall::{device_claim, device_irq_subscribe, device_irq_wait, device_map_mmio, device_alloc_dma, device_dma_phys};
+use stem::thread;
 use abi::errors::Errno;
+use abi::device::PCI_IRQ_MODE_MSIX;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 mod virtio;
 mod virtqueue;
 mod commands;
+
+static IRQ_HANDLE: AtomicUsize = AtomicUsize::new(0);
 
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]
@@ -239,6 +245,12 @@ impl VirtioGpu {
         // Would send TRANSFER_TO_HOST_2D + RESOURCE_FLUSH
         // For now, just log periodically
     }
+
+    fn configure_msix(&mut self) {
+        self.write_common(virtio::VIRTIO_COMMON_MSIX_CONFIG, 0);
+        self.write_common(virtio::VIRTIO_COMMON_QUEUE_SELECT, 0);
+        self.write_common(virtio::VIRTIO_COMMON_QUEUE_MSIX_VECTOR, 0);
+    }
 }
 
 #[stem::main]
@@ -275,6 +287,22 @@ fn main(arg: usize) -> ! {
     if let Err(e) = gpu.init_virtio() {
         error!("VIRTIO_GPU: Virtio init failed: {}", e);
         stem::syscall::exit(1);
+    }
+
+    match device_enable_msi(gpu.claim_handle, true) {
+        Ok(resp) => {
+            info!("VIRTIO_GPU: IRQ mode {} vector=0x{:02x}", resp.irq_mode, resp.vector);
+            if resp.irq_mode == PCI_IRQ_MODE_MSIX {
+                gpu.configure_msix();
+            }
+            if let Err(e) = device_irq_subscribe(gpu.claim_handle, 0) {
+                warn!("VIRTIO_GPU: device IRQ subscribe failed: {:?}", e);
+            } else {
+                IRQ_HANDLE.store(gpu.claim_handle, Ordering::Release);
+                let _ = thread::spawn(irq_thread);
+            }
+        }
+        Err(e) => warn!("VIRTIO_GPU: MSI enable failed: {:?}", e),
     }
     
     // Get display info
@@ -324,6 +352,19 @@ fn main(arg: usize) -> ! {
         
         frame = frame.wrapping_add(1);
         stem::syscall::sleep_ms(16); // ~60fps
+    }
+}
+
+extern "C" fn irq_thread() -> ! {
+    let claim_handle = IRQ_HANDLE.load(Ordering::Acquire);
+    loop {
+        match device_irq_wait(claim_handle, 0) {
+            Ok(count) => info!("VIRTIO_GPU: IRQ fired ({})", count),
+            Err(e) => {
+                warn!("VIRTIO_GPU: IRQ wait error {:?}", e);
+                stem::yield_now();
+            }
+        }
     }
 }
 

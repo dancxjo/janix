@@ -5,6 +5,11 @@
 use alloc::vec::Vec;
 use spin::Mutex;
 
+pub mod msi;
+
+pub const EXTERNAL_VECTOR_START: u8 = 0x40;
+pub const EXTERNAL_VECTOR_END: u8 = 0xEF;
+
 /// Maximum supported vectors for IRQ dispatch
 pub const MAX_VECTORS: usize = 256;
 
@@ -84,9 +89,69 @@ impl IrqRegistry {
 /// Global IRQ registry instance
 pub static IRQ_REGISTRY: Mutex<IrqRegistry> = Mutex::new(IrqRegistry::new());
 
+pub struct VectorAllocator {
+    used: [bool; MAX_VECTORS],
+    owner_graph: [u64; MAX_VECTORS],
+    owner_irq: [u8; MAX_VECTORS],
+}
+
+impl VectorAllocator {
+    pub const fn new() -> Self {
+        Self {
+            used: [false; MAX_VECTORS],
+            owner_graph: [0; MAX_VECTORS],
+            owner_irq: [0; MAX_VECTORS],
+        }
+    }
+
+    pub fn alloc(&mut self, graph_id: u64, irq_index: u8) -> Option<u8> {
+        for v in EXTERNAL_VECTOR_START..=EXTERNAL_VECTOR_END {
+            let idx = v as usize;
+            if !self.used[idx] {
+                self.used[idx] = true;
+                self.owner_graph[idx] = graph_id;
+                self.owner_irq[idx] = irq_index;
+                return Some(v);
+            }
+        }
+        None
+    }
+
+    pub fn free(&mut self, vector: u8) {
+        let idx = vector as usize;
+        if idx < MAX_VECTORS {
+            self.used[idx] = false;
+            self.owner_graph[idx] = 0;
+            self.owner_irq[idx] = 0;
+        }
+    }
+
+    pub fn owner(&self, vector: u8) -> Option<(u64, u8)> {
+        let idx = vector as usize;
+        if idx < MAX_VECTORS && self.used[idx] && self.owner_graph[idx] != 0 {
+            return Some((self.owner_graph[idx], self.owner_irq[idx]));
+        }
+        None
+    }
+}
+
+pub static VECTOR_ALLOC: Mutex<VectorAllocator> = Mutex::new(VectorAllocator::new());
+
 /// Called from interrupt handlers to dispatch IRQ
 pub fn dispatch_irq(vector: u8) {
     IRQ_REGISTRY.lock().dispatch(vector);
+}
+
+pub fn alloc_vector(graph_id: u64, irq_index: u8) -> Option<u8> {
+    VECTOR_ALLOC.lock().alloc(graph_id, irq_index)
+}
+
+pub fn free_vector(vector: u8) {
+    VECTOR_ALLOC.lock().free(vector);
+}
+
+pub fn vector_owner(vector: u8) -> Option<(u64, u8)> {
+    VECTOR_ALLOC.lock().owner(vector)
 }
 
 /// Subscribe current task to a vector

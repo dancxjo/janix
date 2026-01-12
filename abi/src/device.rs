@@ -5,6 +5,7 @@ pub enum DeviceKind {
     Keyboard = 2,
     Mouse = 3,
     Framebuffer = 4,
+    Pci = 5,
 }
 
 #[repr(C)]
@@ -28,6 +29,32 @@ pub struct DeviceCall {
 
 // RTC OPs
 pub const RTC_OP_READ_TIME: u32 = 1;
+
+// PCI DeviceCall OPs
+pub const PCI_OP_ENABLE_MSI: u32 = 1;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct PciEnableMsiRequest {
+    pub claim_handle: u32,
+    pub requested_vectors: u16,
+    pub prefer_msix: u8,
+    pub _reserved: u8,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct PciEnableMsiResponse {
+    pub vector: u8,
+    pub irq_mode: u8, // See PCI_IRQ_MODE_* constants
+    pub _reserved: [u8; 2],
+}
+
+pub const PCI_IRQ_MODE_MSI: u8 = 1;
+pub const PCI_IRQ_MODE_MSIX: u8 = 2;
+
+pub const DEVICE_IRQ_SUBSCRIBE_VECTOR: u8 = 0;
+pub const DEVICE_IRQ_SUBSCRIBE_DEVICE: u8 = 1;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]

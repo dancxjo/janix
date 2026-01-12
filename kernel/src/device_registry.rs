@@ -15,6 +15,34 @@ const MAX_CLAIMS: usize = 32;
 /// Maximum BARs per device
 const MAX_BARS: usize = 6;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum IrqMode {
+    Legacy = 0,
+    Msi = 1,
+    Msix = 2,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct PciLocation {
+    pub bus: u8,
+    pub dev: u8,
+    pub func: u8,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct MsiCapability {
+    pub offset: u8,
+    pub is_64bit: bool,
+    pub has_mask: bool,
+}
+
+#[derive(Clone, Copy, Default)]
+pub struct MsixCapability {
+    pub offset: u8,
+    pub table_bar: u8,
+    pub table_offset: u32,
+}
+
 /// A device entry in the registry
 #[derive(Clone, Copy)]
 pub struct DeviceEntry {
@@ -23,6 +51,11 @@ pub struct DeviceEntry {
     pub graph_id: u64, // ThingId in the graph
     pub mmio_bars: [u64; MAX_BARS],   // BAR physical addresses
     pub mmio_sizes: [u64; MAX_BARS],  // BAR sizes
+    pub pci_location: Option<PciLocation>,
+    pub msi_cap: Option<MsiCapability>,
+    pub msix_cap: Option<MsixCapability>,
+    pub irq_mode: IrqMode,
+    pub irq_vector: u8,
 }
 
 impl DeviceEntry {
@@ -33,6 +66,11 @@ impl DeviceEntry {
             graph_id,
             mmio_bars: [0; MAX_BARS],
             mmio_sizes: [0; MAX_BARS],
+            pci_location: None,
+            msi_cap: None,
+            msix_cap: None,
+            irq_mode: IrqMode::Legacy,
+            irq_vector: 0,
         }
     }
 
@@ -43,6 +81,11 @@ impl DeviceEntry {
             graph_id,
             mmio_bars: bars,
             mmio_sizes: sizes,
+            pci_location: None,
+            msi_cap: None,
+            msix_cap: None,
+            irq_mode: IrqMode::Legacy,
+            irq_vector: 0,
         }
     }
 }
@@ -99,6 +142,19 @@ impl DeviceRegistry {
         self.devices[idx] = Some(entry);
         self.device_count += 1;
         Some(idx)
+    }
+
+    pub fn set_pci_info(&mut self, device_index: usize, location: PciLocation, msi_cap: Option<MsiCapability>, msix_cap: Option<MsixCapability>) -> bool {
+        if device_index >= self.device_count {
+            return false;
+        }
+        if let Some(device) = self.devices[device_index].as_mut() {
+            device.pci_location = Some(location);
+            device.msi_cap = msi_cap;
+            device.msix_cap = msix_cap;
+            return true;
+        }
+        false
     }
 
     /// Get device by index
@@ -177,6 +233,74 @@ impl DeviceRegistry {
         if claim_handle < MAX_CLAIMS && bar_index < MAX_BARS {
             self.claims[claim_handle].mapped_bar_virt[bar_index] = virt_addr;
         }
+    }
+
+    pub fn get_pci_info(&self, claim_handle: usize) -> Option<(PciLocation, Option<MsiCapability>, Option<MsixCapability>)> {
+        if claim_handle >= MAX_CLAIMS {
+            return None;
+        }
+        let claim = &self.claims[claim_handle];
+        if !claim.valid {
+            return None;
+        }
+        let device = self.get(claim.device_index)?;
+        let location = device.pci_location?;
+        Some((location, device.msi_cap, device.msix_cap))
+    }
+
+    pub fn get_bars(&self, claim_handle: usize) -> Option<([u64; MAX_BARS], [u64; MAX_BARS])> {
+        if claim_handle >= MAX_CLAIMS {
+            return None;
+        }
+        let claim = &self.claims[claim_handle];
+        if !claim.valid {
+            return None;
+        }
+        let device = self.get(claim.device_index)?;
+        Some((device.mmio_bars, device.mmio_sizes))
+    }
+
+    pub fn set_irq_mode(&mut self, claim_handle: usize, mode: IrqMode, vector: u8) -> bool {
+        if claim_handle >= MAX_CLAIMS {
+            return false;
+        }
+        let claim = &self.claims[claim_handle];
+        if !claim.valid {
+            return false;
+        }
+        if let Some(device) = self.devices[claim.device_index].as_mut() {
+            device.irq_mode = mode;
+            device.irq_vector = vector;
+            return true;
+        }
+        false
+    }
+
+    pub fn get_irq_vector(&self, claim_handle: usize, irq_index: usize) -> Option<(IrqMode, u8)> {
+        if claim_handle >= MAX_CLAIMS || irq_index != 0 {
+            return None;
+        }
+        let claim = &self.claims[claim_handle];
+        if !claim.valid {
+            return None;
+        }
+        let device = self.get(claim.device_index)?;
+        if device.irq_vector == 0 {
+            return None;
+        }
+        Some((device.irq_mode, device.irq_vector))
+    }
+
+    pub fn get_graph_id_for_claim(&self, claim_handle: usize) -> Option<u64> {
+        if claim_handle >= MAX_CLAIMS {
+            return None;
+        }
+        let claim = &self.claims[claim_handle];
+        if !claim.valid {
+            return None;
+        }
+        let device = self.get(claim.device_index)?;
+        Some(device.graph_id)
     }
 
     /// Allocate DMA buffer tracking slot

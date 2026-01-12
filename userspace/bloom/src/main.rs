@@ -29,6 +29,20 @@ fn recv_msg(handle: PortHandle, buf: &mut [u8]) -> (dispproto::DisplayHeader, us
     }
 }
 
+fn recv_msg_type(
+    handle: PortHandle,
+    buf: &mut [u8],
+    expected: u16,
+) -> (dispproto::DisplayHeader, usize) {
+    loop {
+        let (hdr, len) = recv_msg(handle, buf);
+        if hdr.msg_type == expected || hdr.msg_type == dispproto::MSG_ERR {
+            return (hdr, len);
+        }
+        info!("bloom: unexpected response {}", hdr.msg_type);
+    }
+}
+
 fn draw_frame(ptr: *mut u32, width: u32, height: u32, stride: u32, frame: u32) {
     let stride_pixels = (stride / 4) as usize;
     let w = width as usize;
@@ -53,13 +67,16 @@ fn main(arg: usize) -> ! {
 
     info!("bloom: starting (disp_req_w={}, disp_resp_r={})", disp_req_write, disp_resp_read);
 
+    let mut resp_buf = [0u8; 512];
+
     send_msg(disp_req_write, dispproto::MSG_HELLO, &[]);
+    let _ = recv_msg_type(disp_resp_read, &mut resp_buf, dispproto::MSG_ACK);
 
     send_msg(disp_req_write, dispproto::MSG_INFO_REQ, &[]);
-    let mut resp_buf = [0u8; 512];
-    let (info_hdr, info_len) = recv_msg(disp_resp_read, &mut resp_buf);
+    let (info_hdr, info_len) = recv_msg_type(disp_resp_read, &mut resp_buf, dispproto::MSG_INFO_RESP);
     if info_hdr.msg_type != dispproto::MSG_INFO_RESP {
-        info!("bloom: unexpected INFO response {}", info_hdr.msg_type);
+        info!("bloom: INFO request failed (msg_type={})", info_hdr.msg_type);
+        loop { stem::yield_now(); }
     }
     let info_payload = &resp_buf[dispproto::HEADER_SIZE..info_len];
     let info: dispproto::InfoResp = unsafe {
@@ -67,9 +84,10 @@ fn main(arg: usize) -> ! {
     };
 
     send_msg(disp_req_write, dispproto::MSG_BUFFER_REQ, &[]);
-    let (buf_hdr, buf_len) = recv_msg(disp_resp_read, &mut resp_buf);
+    let (buf_hdr, buf_len) = recv_msg_type(disp_resp_read, &mut resp_buf, dispproto::MSG_BUFFER_RESP);
     if buf_hdr.msg_type != dispproto::MSG_BUFFER_RESP {
-        info!("bloom: unexpected BUFFER response");
+        info!("bloom: BUFFER request failed (msg_type={})", buf_hdr.msg_type);
+        loop { stem::yield_now(); }
     }
     let buf_payload = &resp_buf[dispproto::HEADER_SIZE..buf_len];
     let buffer: dispproto::BufferResp = unsafe {

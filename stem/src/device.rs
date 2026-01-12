@@ -1,5 +1,8 @@
 use crate::syscall::syscall6;
-use abi::device::{DeviceCall, DeviceKind, RtcTime, RTC_OP_READ_TIME};
+use abi::device::{
+    DeviceCall, DeviceKind, PciEnableMsiRequest, PciEnableMsiResponse, RtcTime, PCI_OP_ENABLE_MSI,
+    RTC_OP_READ_TIME,
+};
 use abi::errors::Errno;
 use abi::syscall::SYS_DEVICE_CALL;
 
@@ -21,4 +24,29 @@ pub fn rtc_read_time() -> Result<RtcTime, Errno> {
 
     device_call(&mut call)?;
     Ok(time)
+}
+
+pub fn device_enable_msi(claim_handle: usize, prefer_msix: bool) -> Result<PciEnableMsiResponse, Errno> {
+    let mut response = PciEnableMsiResponse {
+        vector: 0,
+        irq_mode: 0,
+        _reserved: [0; 2],
+    };
+    let req = PciEnableMsiRequest {
+        claim_handle: claim_handle as u32,
+        requested_vectors: 1,
+        prefer_msix: prefer_msix as u8,
+        _reserved: 0,
+    };
+    let mut call = DeviceCall {
+        kind: DeviceKind::Pci,
+        op: PCI_OP_ENABLE_MSI,
+        in_ptr: &req as *const _ as u64,
+        in_len: core::mem::size_of::<PciEnableMsiRequest>() as u32,
+        out_ptr: &mut response as *mut _ as u64,
+        out_len: core::mem::size_of::<PciEnableMsiResponse>() as u32,
+    };
+
+    device_call(&mut call)?;
+    Ok(response)
 }

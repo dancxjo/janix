@@ -186,6 +186,23 @@ pub fn send_eoi() {
     }
 }
 
+pub fn lapic_in_service_vector() -> Option<u8> {
+    let lapic_base = LOCAL_APIC_BASE.load(Ordering::SeqCst);
+    let hhdm = HHDM_OFFSET.load(Ordering::SeqCst);
+    let base = lapic_base + hhdm;
+
+    for i in (0..8).rev() {
+        let reg = base + 0x100 + (i * 0x10) as u64;
+        let val = unsafe { ptr::read_volatile(reg as *const u32) };
+        if val != 0 {
+            let bit = 31 - val.leading_zeros();
+            let vec = (i * 32 + bit) as u8;
+            return Some(vec);
+        }
+    }
+    None
+}
+
 /// Mask all IOAPIC pins (for initialization)
 pub fn mask_all() {
     let (_, max_entries) = get_version();

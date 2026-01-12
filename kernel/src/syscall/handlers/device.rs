@@ -1,8 +1,11 @@
 //! Device capability syscalls
 
 use crate::syscall::validate::validate_user_range;
-use super::copyin;
-use abi::device::{DeviceCall, DeviceKind};
+use super::{copyin, copyout};
+use abi::device::{
+    DeviceCall, DeviceKind, PciEnableMsiRequest, PciEnableMsiResponse, PCI_IRQ_MODE_MSI,
+    PCI_IRQ_MODE_MSIX, PCI_OP_ENABLE_MSI, DEVICE_IRQ_SUBSCRIBE_DEVICE, DEVICE_IRQ_SUBSCRIBE_VECTOR,
+};
 use abi::errors::{Errno, SysResult};
 
 pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
@@ -15,6 +18,7 @@ pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
     }
     match call.kind {
         DeviceKind::RtcCmos => Err(Errno::NotSupported),
+        DeviceKind::Pci => sys_pci_call(&call),
         _ => Err(Errno::NotSupported),
     }
 }
@@ -78,34 +82,129 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
 }
 
 /// Subscribe to device interrupts
-/// 
-/// Args:
-///   vector: CPU interrupt vector to subscribe to (0x20-0x2F for legacy IRQs)
-/// 
+///
+/// Args (mode=DEVICE_IRQ_SUBSCRIBE_VECTOR):
+///   arg0: CPU interrupt vector to subscribe to
+///
+/// Args (mode=DEVICE_IRQ_SUBSCRIBE_DEVICE):
+///   arg0: claim handle
+///   arg1: device interrupt index
+///
 /// Returns: 0 on success
-pub fn sys_device_irq_subscribe(vector: usize) -> SysResult<usize> {
-    if vector > 255 {
-        return Err(Errno::EINVAL);
+pub fn sys_device_irq_subscribe(arg0: usize, arg1: usize, mode: usize) -> SysResult<usize> {
+    match mode as u8 {
+        DEVICE_IRQ_SUBSCRIBE_DEVICE => {
+            let claim_handle = arg0;
+            let irq_index = arg1;
+            let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+            let (irq_mode, vector) = {
+                let reg = crate::device_registry::REGISTRY.lock();
+                if !reg.verify_claim(claim_handle, task_id) {
+                    return Err(Errno::EPERM);
+                }
+                reg.get_irq_vector(claim_handle, irq_index).ok_or(Errno::ENODEV)?
+            };
+            crate::irq::subscribe(vector).map_err(|_| Errno::EBUSY)?;
+            crate::kinfo!(
+                "DEVICE: task subscribed to device irq {} (mode={:?}, vector=0x{:x})",
+                irq_index,
+                irq_mode,
+                vector
+            );
+            Ok(0)
+        }
+        DEVICE_IRQ_SUBSCRIBE_VECTOR | _ => {
+            let vector = arg0;
+            if vector > 255 {
+                return Err(Errno::EINVAL);
+            }
+            crate::irq::subscribe(vector as u8).map_err(|_| Errno::EBUSY)?;
+            crate::kinfo!("DEVICE: task subscribed to vector 0x{:x}", vector);
+            Ok(0)
+        }
     }
-    
-    crate::irq::subscribe(vector as u8).map_err(|_| Errno::EBUSY)?;
-    crate::kinfo!("DEVICE: task subscribed to vector 0x{:x}", vector);
-    Ok(0)
 }
 
 /// Wait for a device interrupt
-/// 
-/// Args:
-///   vector: CPU interrupt vector to wait on
-/// 
+///
+/// Args follow sys_device_irq_subscribe
+///
 /// Returns: number of pending interrupts since last wait
-pub fn sys_device_irq_wait(vector: usize) -> SysResult<usize> {
-    if vector > 255 {
-        return Err(Errno::EINVAL);
-    }
-    
-    let count = crate::irq::wait(vector as u8);
+pub fn sys_device_irq_wait(arg0: usize, arg1: usize, mode: usize) -> SysResult<usize> {
+    let vector = match mode as u8 {
+        DEVICE_IRQ_SUBSCRIBE_DEVICE => {
+            let claim_handle = arg0;
+            let irq_index = arg1;
+            let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+            let (_mode, vector) = {
+                let reg = crate::device_registry::REGISTRY.lock();
+                if !reg.verify_claim(claim_handle, task_id) {
+                    return Err(Errno::EPERM);
+                }
+                reg.get_irq_vector(claim_handle, irq_index).ok_or(Errno::ENODEV)?
+            };
+            vector
+        }
+        DEVICE_IRQ_SUBSCRIBE_VECTOR | _ => {
+            if arg0 > 255 {
+                return Err(Errno::EINVAL);
+            }
+            arg0 as u8
+        }
+    };
+
+    let count = crate::irq::wait(vector);
     Ok(count as usize)
+}
+
+fn sys_pci_call(call: &DeviceCall) -> SysResult<usize> {
+    match call.op {
+        PCI_OP_ENABLE_MSI => {
+            if call.in_len as usize != core::mem::size_of::<PciEnableMsiRequest>() {
+                return Err(Errno::EINVAL);
+            }
+            if call.out_len as usize != core::mem::size_of::<PciEnableMsiResponse>() {
+                return Err(Errno::EINVAL);
+            }
+            validate_user_range(call.in_ptr as usize, call.in_len as usize, true)?;
+            validate_user_range(call.out_ptr as usize, call.out_len as usize, true)?;
+
+            let mut req: PciEnableMsiRequest = unsafe { core::mem::zeroed() };
+            let in_slice = unsafe {
+                core::slice::from_raw_parts_mut(
+                    &mut req as *mut _ as *mut u8,
+                    core::mem::size_of::<PciEnableMsiRequest>(),
+                )
+            };
+            unsafe { copyin(in_slice, call.in_ptr as usize)?; }
+
+            let res = crate::irq::msi::enable_for_claim(
+                req.claim_handle as usize,
+                req.requested_vectors,
+                req.prefer_msix != 0,
+            )?;
+
+            let irq_mode = match res.mode {
+                crate::device_registry::IrqMode::Msi => PCI_IRQ_MODE_MSI,
+                crate::device_registry::IrqMode::Msix => PCI_IRQ_MODE_MSIX,
+                crate::device_registry::IrqMode::Legacy => 0,
+            };
+            let out = PciEnableMsiResponse {
+                vector: res.vector,
+                irq_mode,
+                _reserved: [0; 2],
+            };
+            let out_slice = unsafe {
+                core::slice::from_raw_parts(
+                    &out as *const _ as *const u8,
+                    core::mem::size_of::<PciEnableMsiResponse>(),
+                )
+            };
+            unsafe { copyout(call.out_ptr as usize, out_slice)?; }
+            Ok(0)
+        }
+        _ => Err(Errno::NotSupported),
+    }
 }
 
 /// Allocate DMA-safe memory for a device

@@ -581,7 +581,7 @@ pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
 
 pub fn yield_now<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
-    let irq = rt.irq_disable();
+    let _irq = rt.irq_disable();
 
     let switch_params = {
         let lock = SCHEDULER.lock();
@@ -608,7 +608,7 @@ pub fn yield_now<R: BootRuntime>() {
         }
     }
 
-    rt.irq_restore(irq);
+    rt.irq_restore(_irq);
 }
 
 pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
@@ -628,7 +628,7 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
 
         if let Some(switch) = switch_params {
             unsafe {
-                let irq = rt.irq_disable();
+                let _irq = rt.irq_disable();
                 #[cfg(any(feature = "sched_debug", debug_assertions))]
                 let cr3_before = read_cr3();
                 rt.tasking().activate_address_space(switch.to_aspace);
@@ -637,7 +637,7 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
                 #[cfg(any(feature = "sched_debug", debug_assertions))]
                 log_context_switch::<R>(&switch, cr3_before, cr3_after);
                 rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
-                rt.irq_restore(irq);
+                rt.irq_restore(_irq);
             }
         } else {
             // No switch occurred, spin briefly
@@ -688,7 +688,7 @@ pub fn current_tid<R: BootRuntime>() -> u64 {
 
 pub fn exit<R: BootRuntime>(code: i32) {
     let rt = crate::runtime::<R>();
-    let irq = rt.irq_disable();
+    let _irq = rt.irq_disable();
 
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
@@ -884,7 +884,7 @@ static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> =
 /// Block the current task - removes it from run queue and yields
 pub fn block_current<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
-    let irq = rt.irq_disable();
+    let _irq = rt.irq_disable();
 
     let switch_params = {
         let lock = SCHEDULER.lock();
@@ -909,7 +909,7 @@ pub fn block_current<R: BootRuntime>() {
         }
     }
 
-    rt.irq_restore(irq);
+    rt.irq_restore(_irq);
 }
 
 /// Wake a blocked task by ID - adds it back to run queue

@@ -1,4 +1,3 @@
-use crate::devtree;
 use crate::registry::Registry;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -6,7 +5,7 @@ use alloc::vec::Vec;
 use abi::schema::{kinds, keys};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use stem::{error, info, warn};
+use stem::{info, warn};
 use stem::syscall::port_create;
 
 #[derive(Debug, PartialEq)]

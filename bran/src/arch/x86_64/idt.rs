@@ -153,7 +153,7 @@ core::arch::global_asm!(
 );
 
 pub unsafe fn init() {
-    let handler = generic_handler_shim as u64;
+    let handler = generic_handler_shim as *const () as u64;
     unsafe {
         let base = core::ptr::addr_of_mut!(IDT.entries) as *mut IdtEntry;
         for i in 0..256 {
@@ -167,25 +167,25 @@ pub unsafe fn init() {
 
         // Exceptions
         IDT.entries[3].set_handler(
-            breakpoint_handler_shim as u64,
+            breakpoint_handler_shim as *const () as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             0,
             0x8E,
         );
         IDT.entries[8].set_handler(
-            double_fault_handler_shim as u64,
+            double_fault_handler_shim as *const () as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             1,
             0x8E,
         );
         IDT.entries[13].set_handler(
-            gp_handler_shim as u64,
+            gp_handler_shim as *const () as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             0,
             0x8E,
         );
         IDT.entries[14].set_handler(
-            pf_handler_shim as u64,
+            pf_handler_shim as *const () as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             0,
             0x8E,
@@ -194,7 +194,7 @@ pub unsafe fn init() {
         // Hardware IRQs/MSI vectors
         for vector in 0x20..=0xEF {
             IDT.entries[vector as usize].set_handler(
-                irq_common_handler_shim as u64,
+                irq_common_handler_shim as *const () as u64,
                 crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
                 0,
                 0x8E,

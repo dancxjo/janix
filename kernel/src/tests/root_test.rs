@@ -1,6 +1,3 @@
-use crate::root::SymbolShell;
-use abi::kinds::*;
-use alloc::string::String;
 
 pub fn run_selftest() {
     crate::kinfo!("ROOT SELFTEST: Starting...");
@@ -47,7 +44,7 @@ pub fn run_selftest() {
     };
 
     // 4. Set Prop to trigger event
-    let key = 100; // Will be treated as interned "100" by syscall shim? No, syscall takes u64.
+    let _key = 100; // Will be treated as interned "100" by syscall shim? No, syscall takes u64.
     // Wait, sys_root_prop_set currently takes (id, key: u64, val: u64).
     // RootOp requires SymbolShell.
     // Syscall handler needs to handle this.

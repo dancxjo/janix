@@ -1,5 +1,5 @@
 use crate::root::graph::Graph;
-use abi::query::{QueryDir, QueryRow};
+use abi::query::QueryRow;
 use abi::symbols::SymbolId;
 use alloc::vec::Vec;
 

@@ -2,10 +2,9 @@ use abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC, SECTION_N
 use abi::schema::kinds;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
-use alloc::vec::Vec;
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use stem::{error, info};
+use stem::info;
 
 pub struct Registry {
     drivers: BTreeMap<String, String>,

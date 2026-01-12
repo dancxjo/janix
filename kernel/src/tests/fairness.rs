@@ -1,7 +1,7 @@
 use crate::BootRuntime;
 use crate::task;
 
-extern "C" fn fair_thread_a(arg: usize) -> ! {
+extern "C" fn fair_thread_a(_arg: usize) -> ! {
     for i in 0..5 {
         crate::kprintln!("Fairness A: {}", i);
         unsafe {
@@ -15,7 +15,7 @@ extern "C" fn fair_thread_a(arg: usize) -> ! {
     }
 }
 
-extern "C" fn fair_thread_b(arg: usize) -> ! {
+extern "C" fn fair_thread_b(_arg: usize) -> ! {
     for i in 0..5 {
         crate::kprintln!("Fairness B: {}", i);
         unsafe {

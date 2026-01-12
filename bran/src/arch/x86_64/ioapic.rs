@@ -29,7 +29,7 @@ fn map_mmio_range(phys: u64, len: u64, hhdm: u64) {
     let mut p = start;
     while p < end {
         let virt = p + hhdm;
-        if paging::translate(aspace, virt).is_none() {
+        if paging::try_translate(aspace, virt).is_none() {
             let _ = paging::map_page(aspace, virt, p, perms, MapKind::Device, &IoapicMapAllocator);
             paging::tlb_flush_page(virt);
         }
@@ -38,18 +38,22 @@ fn map_mmio_range(phys: u64, len: u64, hhdm: u64) {
 }
 
 /// IOAPIC register offsets
+#[allow(dead_code)]
 const IOREGSEL: u64 = 0x00;
 const IOWIN: u64 = 0x10;
 
 /// IOAPIC registers (via indirect access)
+#[allow(dead_code)]
 const IOAPIC_ID: u32 = 0x00;
 const IOAPIC_VER: u32 = 0x01;
+#[allow(dead_code)]
 const IOAPIC_ARB: u32 = 0x02;
 const IOAPIC_REDTBL_BASE: u32 = 0x10;
 
 /// Delivery modes for redirection entries
 #[derive(Debug, Clone, Copy)]
 #[repr(u8)]
+#[allow(dead_code)]
 pub enum DeliveryMode {
     Fixed = 0,
     LowestPriority = 1,

@@ -7,13 +7,14 @@ use stem::thing::{sys as thingsys, ThingId};
 // use alloc::vec::Vec;
 use abi::schema::{confidence, keys, kinds, rels, source};
 use alloc::vec;
-use stem::{error, info, warn};
+use stem::info;
 
 pub fn set_str_prop(id: ThingId, key: &str, val: &str) -> Result<(), ()> {
     let sym = thingsys::intern(val).map_err(|_| ())?;
     thingsys::prop_set(id, key, sym as u64).map_err(|_| ())
 }
 
+#[allow(dead_code)]
 pub struct DevTreeCtx {
     pub host: ThingId,
     pub platform_bus: ThingId,

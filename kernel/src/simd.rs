@@ -50,6 +50,7 @@ fn internal_alloc(layout: Layout) -> *mut u8 {
 
 pub struct SimdState {
     buffer: *mut u8,
+    #[allow(dead_code)]
     layout: Layout,
     valid: bool,
 }

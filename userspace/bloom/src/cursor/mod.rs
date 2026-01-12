@@ -61,7 +61,7 @@ fn generate_shadow(pixels: &[u32], width: u32, height: u32) -> Vec<u32> {
     // Extract alpha channel and apply blur
     let radius = SHADOW_BLUR_RADIUS as i32;
     let kernel_size = (radius * 2 + 1) as usize;
-    let divisor = (kernel_size * kernel_size) as u32;
+    let _divisor = (kernel_size * kernel_size) as u32;
 
     for y in 0..h {
         for x in 0..w {

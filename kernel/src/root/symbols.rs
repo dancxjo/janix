@@ -1,4 +1,4 @@
-use abi::symbols::{SymbolError, SymbolId};
+use abi::symbols::SymbolId;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;

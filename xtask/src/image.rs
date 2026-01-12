@@ -34,7 +34,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "sprout", target, "release")?;
     build_userspace_app(sh, "threads_demo", target, "release")?;
     build_userspace_app(sh, "rtc_cmos", target, "release")?;
-    build_userspace_app(sh, "clock", target, "dev")?;  // clock uses dev profile
+    build_userspace_app(sh, "clock", target, "release")?;
     build_userspace_app(sh, "ps2_kbd", target, "release")?;
     build_userspace_app(sh, "bristle", target, "release")?;
     build_userspace_app(sh, "echo", target, "release")?;
@@ -51,7 +51,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     copy_userspace_binary(sh, "sprout", target, "release", "iso_root/boot/sprout")?;
     copy_userspace_binary(sh, "threads_demo", target, "release", "iso_root/boot/threads")?;
     copy_userspace_binary(sh, "rtc_cmos", target, "release", "iso_root/boot/rtc_cmos")?;
-    copy_userspace_binary(sh, "clock", target, "debug", "iso_root/boot/clock")?;
+    copy_userspace_binary(sh, "clock", target, "release", "iso_root/boot/clock")?;
     copy_userspace_binary(sh, "ps2_kbd", target, "release", "iso_root/boot/ps2_kbd")?;
     copy_userspace_binary(sh, "bristle", target, "release", "iso_root/boot/bristle")?;
     copy_userspace_binary(sh, "echo", target, "release", "iso_root/boot/echo")?;

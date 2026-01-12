@@ -6,8 +6,7 @@ extern "C" {
 #[cfg(feature = "rt")]
 #[no_mangle]
 pub unsafe extern "C" fn entry_impl(arg: usize) -> ! {
-    stem_user_main(arg);
-    crate::syscall::exit(-1);
+    stem_user_main(arg)
 }
 
 #[cfg(all(target_arch = "x86_64", feature = "rt"))]

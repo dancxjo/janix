@@ -2,7 +2,6 @@
 //!
 //! Parses PS/2 mouse packets and emits pointer events.
 
-use abi::hid::{EventType, Mods};
 
 /// Mouse button state
 #[derive(Clone, Copy, Default)]

@@ -18,7 +18,7 @@ use abi::hid::{
 use mouse::{MouseState, PointerEvent};
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
-use stem::thing::{sys as thingsys, ThingId};
+use stem::thing::sys as thingsys;
 use thigmonasty::{KeyEdge, KeyboardState};
 
 /// Register Bristle in the Root graph

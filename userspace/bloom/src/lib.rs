@@ -7,6 +7,7 @@ extern crate alloc;
 compile_error!("bloom requires the `alloc` feature (or `std`) to build");
 
 mod drawlist;
+pub mod cursor;
 
 pub use drawlist::{DrawCmd, DrawList};
 

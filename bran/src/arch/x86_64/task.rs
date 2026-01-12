@@ -93,7 +93,7 @@ pub fn init_kernel_context(
         unsafe { (sp as *mut u64).write(val) };
     };
 
-    push(kernel_trampoline as usize as u64);
+    push(kernel_trampoline as *const () as usize as u64);
     push(0); // rbx
     push(0); // rbp
     push(entry as usize as u64); // r12
@@ -114,7 +114,7 @@ pub fn init_user_context(spec: UserTaskSpec<X86_64AddressSpace>, kstack_top: u64
         unsafe { (sp as *mut u64).write(val) };
     };
 
-    push(user_trampoline as usize as u64);
+    push(user_trampoline as *const () as usize as u64);
     push(0); // rbx
     push(0); // rbp
     push(spec.entry); // r12

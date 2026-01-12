@@ -1,6 +1,6 @@
 //! Root/Graph syscalls
 
-use crate::root::{self as root_svc, RootOp, SymbolShell};
+use crate::root::{self as root_svc, RootOp};
 use crate::syscall::validate::validate_user_range;
 use super::{copyin, copyout, read_symbol, root_call};
 use abi::errors::{Errno, SysResult};

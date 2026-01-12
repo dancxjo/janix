@@ -1,5 +1,6 @@
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
+#[allow(dead_code)]
 pub struct UserTrapFrame {
     // General purpose registers pushed by `pushall` or similar
     // ABI order usually depends on push implementation.

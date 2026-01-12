@@ -4,9 +4,7 @@
 //! Each port has a single writer and single reader handle.
 
 use alloc::boxed::Box;
-use alloc::sync::Arc;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use spin::Mutex;
 
 /// Unique identifier for a port in the global registry
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

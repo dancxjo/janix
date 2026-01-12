@@ -47,6 +47,7 @@ pub fn clear_span() {
 
 /// RAII guard for log transactions (multi-line atomic output)
 pub struct LogTransaction {
+    #[allow(dead_code)]
     span_id: u64,
     name: &'static str,
 }

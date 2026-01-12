@@ -6,7 +6,3 @@ edition = "2021"
 [dependencies]
 stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }
-
-[profile.release]
-panic = "abort"
-lto = true

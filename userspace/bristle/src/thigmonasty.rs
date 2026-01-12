@@ -101,6 +101,7 @@ impl KeyboardState {
         }
     }
 
+    #[allow(dead_code)]
     pub fn mods(&self) -> Mods {
         Mods(self.mods)
     }

@@ -31,7 +31,7 @@ fn map_phys_range(phys: u64, len: u64, hhdm: u64) {
     let mut p = start;
     while p < end {
         let virt = p + hhdm;
-        if paging::translate(aspace, virt).is_none() {
+        if paging::try_translate(aspace, virt).is_none() {
             let _ = paging::map_page(aspace, virt, p, perms, MapKind::Normal, &AcpiMapAllocator);
             paging::tlb_flush_page(virt);
         }
@@ -51,9 +51,11 @@ fn rsdp_phys_from_virt(rsdp_addr: u64, hhdm_offset: u64) -> u64 {
 const MADT_SIGNATURE: [u8; 4] = *b"APIC";
 
 /// MADT entry types
+#[allow(dead_code)]
 const ENTRY_LOCAL_APIC: u8 = 0;
 const ENTRY_IOAPIC: u8 = 1;
 const ENTRY_INTERRUPT_OVERRIDE: u8 = 2;
+#[allow(dead_code)]
 const ENTRY_LOCAL_APIC_NMI: u8 = 4;
 
 /// Maximum supported IOAPICs
@@ -64,6 +66,7 @@ pub const MAX_ISO: usize = 24;
 
 /// IOAPIC discovery info
 #[derive(Debug, Clone, Copy, Default)]
+#[allow(dead_code)]
 pub struct IoapicInfo {
     pub id: u8,
     pub mmio_base: u64,
@@ -72,6 +75,7 @@ pub struct IoapicInfo {
 
 /// Interrupt Source Override
 #[derive(Debug, Clone, Copy, Default)]
+#[allow(dead_code)]
 pub struct InterruptOverride {
     pub bus: u8,
     pub source_irq: u8,
@@ -118,6 +122,7 @@ impl MadtInfo {
     }
     
     /// Find which IOAPIC handles a given GSI
+    #[allow(dead_code)]
     pub fn gsi_to_ioapic(&self, gsi: u32) -> Option<(usize, u8)> {
         for i in 0..self.ioapic_count {
             let ioapic = &self.ioapics[i];

@@ -6,7 +6,8 @@ const MSR_STAR: u32 = 0xC0000081;
 const MSR_LSTAR: u32 = 0xC0000082;
 const MSR_SFMASK: u32 = 0xC0000084;
 const MSR_GS_BASE: u32 = 0xC0000101;
-const MSR_KERNEL_GS_BASE: u32 = 0xC0000102;
+#[allow(dead_code)]
+const _MSR_KERNEL_GS_BASE: u32 = 0xC0000102;
 
 const EFER_SCE: u64 = 1; // Syscall Enable
 
@@ -25,8 +26,10 @@ const EFER_SCE: u64 = 1; // Syscall Enable
 //  User Code   = 0x20 | 3  (RPL3)
 // Limine GDT might differ.
 // Just for v0.5, let's hardcode what we use.
-const KERNEL_CS: u16 = 0x08;
-const KERNEL_DS: u16 = 0x10;
+#[allow(dead_code)]
+const _KERNEL_CS: u16 = 0x08;
+#[allow(dead_code)]
+const _KERNEL_DS: u16 = 0x10;
 // When SYSRET loads CS/SS:
 //  CS = (STAR[63:48] + 16) | 3
 //  SS = (STAR[63:48] + 8) | 3
@@ -100,7 +103,7 @@ pub unsafe fn init() {
     wrmsr(MSR_STAR, star);
 
     // 4. Setup LSTAR (Entry point)
-    wrmsr(MSR_LSTAR, syscall_entry as usize as u64);
+    wrmsr(MSR_LSTAR, syscall_entry as *const () as usize as u64);
 
     // 5. Setup SFMASK (Mask Interrupts 0x200)
     wrmsr(MSR_SFMASK, 0x200);

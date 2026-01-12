@@ -42,14 +42,14 @@ unsafe impl GlobalAlloc for GlobalHeap {
     }
 }
 
-pub fn init<R: BootRuntime>(rt: &R) {
+pub fn init<R: BootRuntime>(_rt: &R) {
     // Pre-expand heap so we don't need R during alloc
     let mut heap = kernel_heap().lock();
     // Expand by 2MB for safe early boot
     heap.expand::<R>(512)
         .expect("Failed to pre-expand kernel heap");
 
-    unsafe {
-        crate::kinfo!("Global allocator initialized");
-    }
+
+    crate::kinfo!("Global allocator initialized");
+
 }

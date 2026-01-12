@@ -43,6 +43,10 @@ impl ArchRuntime for RISCV64Runtime {
         hcf()
     }
 
+    fn wait_for_interrupt(&self) {
+        unsafe { core::arch::asm!("wfi"); }
+    }
+
     fn mono_ticks(&self) -> u64 {
         let raw = read_time();
         self.clamp.clamp(raw)

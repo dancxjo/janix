@@ -43,6 +43,10 @@ impl ArchRuntime for AArch64Runtime {
         hcf()
     }
 
+    fn wait_for_interrupt(&self) {
+        unsafe { core::arch::asm!("wfe", options(nomem, nostack)); }
+    }
+
     fn mono_ticks(&self) -> u64 {
         self.serial.clamp.clamp(read_cntvct_el0())
     }

@@ -769,3 +769,32 @@ pub fn sys_time_anchor(unix_secs: u64) -> SysResult<usize> {
     crate::time::anchor_system_clock(unix_secs, mono_ns as u64);
     Ok(0)
 }
+
+// ---- Blocking Wait Syscalls ----
+
+pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
+    use abi::types::TaskStatus;
+    
+    // Blocking wait for task to exit
+    // Returns: exit code on success (low 32 bits), ECHILD if not found
+    loop {
+        let status_opt = unsafe { crate::task::scheduler::task_status_current(tid as u64) };
+        
+        match status_opt {
+            Some((state, exit_code)) => {
+                if state == crate::task::TaskState::Dead {
+                    // Task has exited, return its exit code
+                    return Ok(exit_code.unwrap_or(0) as usize);
+                }
+                // Task still running, yield and try again
+                unsafe {
+                    crate::task::scheduler::yield_now_current();
+                }
+            }
+            None => {
+                // Task not found
+                return Err(abi::errors::Errno::ECHILD);
+            }
+        }
+    }
+}

@@ -148,3 +148,9 @@ pub fn ioport_write(port: usize, value: usize, width: usize) {
         raw_syscall6(SYS_DEVICE_IOPORT_WRITE, port, value, width, 0, 0, 0);
     }
 }
+
+
+pub fn task_wait(tid: u64) -> Result<i32, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_TASK_WAIT, tid as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as i32)
+}

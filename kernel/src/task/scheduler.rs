@@ -113,7 +113,7 @@ impl<R: BootRuntime> Scheduler<R> {
         crate::kinfo!("  Pushing boot task to list...");
         self.tasks.push(task);
         self.current = Some(0);
-        // self.idle_task = Some(0); // Task 0 is Boot/Idle task
+        // self.idle_task = Some(0); // Task 0 does boot work, can't be idle
         crate::kinfo!("  Boot task created successfully (ID=0, Idle)");
     }
 

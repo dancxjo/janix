@@ -15,6 +15,7 @@ pub const SYS_TASK_POLL: u32 = 18;
 pub const SYS_TIME_NOW: u32 = 19;
 pub const SYS_TIME_ANCHOR: u32 = 20; // NEW: anchor system clock from userspace
 pub const SYS_ALLOC_STACK: u32 = 21;
+pub const SYS_TASK_WAIT: u32 = 22;  // Block until task exits
 
 // Device Capability Syscalls
 pub const SYS_DEVICE_CLAIM: u32 = 13;

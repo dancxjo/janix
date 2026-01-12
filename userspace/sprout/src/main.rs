@@ -29,6 +29,8 @@ fn main(_arg0: usize) -> ! {
         }
     }
 
+    stem::info!("SPROUT: About to create Supervisor...");
     let mut sup = supervisor::Supervisor::new();
+    stem::info!("SPROUT: Supervisor created, calling run_forever...");
     sup.run_forever()
 }

@@ -206,6 +206,9 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn fence_full(&self) {}
     fn icache_invalidate(&self) {}
 
+    /// Wait for interrupt - low-power idle until next IRQ
+    fn wait_for_interrupt(&self) {}
+
     fn phys_memory_map(&self) -> &'static [PhysRange];
     fn phys_to_virt_offset(&self) -> u64;
     fn modules(&self) -> &'static [BootModuleDesc];
@@ -435,7 +438,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     kinfo!("System initialized. Entering scheduler loop.");
     loop {
         crate::task::yield_now::<R>();
-        core::hint::spin_loop();
+        // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty
     }
 }
 

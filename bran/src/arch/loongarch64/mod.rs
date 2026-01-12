@@ -44,6 +44,10 @@ impl ArchRuntime for LoongArch64Runtime {
         hcf()
     }
 
+    fn wait_for_interrupt(&self) {
+        unsafe { core::arch::asm!("idle 0"); }
+    }
+
     fn mono_ticks(&self) -> u64 {
         let val: u64;
         unsafe {

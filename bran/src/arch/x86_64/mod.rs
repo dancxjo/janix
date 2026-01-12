@@ -114,6 +114,11 @@ impl ArchRuntime for X86_64Runtime {
         hcf()
     }
 
+    fn wait_for_interrupt(&self) {
+        // Enable interrupts and halt until next IRQ
+        unsafe { core::arch::asm!("sti", "hlt", options(nomem, nostack)); }
+    }
+
     fn mono_ticks(&self) -> u64 {
         let low: u32;
         let high: u32;

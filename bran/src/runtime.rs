@@ -33,6 +33,9 @@ pub trait ArchRuntime {
     fn fence_full(&self) {}
     fn icache_invalidate(&self) {}
 
+    // Wait for interrupt - low-power idle until next IRQ
+    fn wait_for_interrupt(&self) {}
+
     // Tasking - defaults
     fn init_kernel_context(
         &self,
@@ -163,6 +166,10 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
         self.arch.halt()
     }
 
+    fn wait_for_interrupt(&self) {
+        self.arch.wait_for_interrupt()
+    }
+
     fn simd_init_cpu(&self) {
         self.arch.simd_init_cpu()
     }
@@ -185,9 +192,6 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     }
     fn fence_full(&self) {
         self.arch.fence_full()
-    }
-    fn icache_invalidate(&self) {
-        self.arch.icache_invalidate()
     }
 
     fn phys_memory_map(&self) -> &'static [PhysRange] {

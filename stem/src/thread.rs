@@ -19,3 +19,8 @@ pub fn spawn_with_stack(stack: Stack, entry: extern "C" fn() -> !) -> Result<Thr
 pub fn yield_now() {
     crate::syscall::yield_now();
 }
+
+/// Block until the specified task exits, returning its exit code.
+pub fn wait(tid: ThreadId) -> Result<i32, Errno> {
+    crate::syscall::task_wait(tid)
+}

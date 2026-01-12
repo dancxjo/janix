@@ -1,0 +1,9 @@
+[package]
+name = "virtio_gpu"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+stem = { path = "../../stem", features = ["rt"] }
+abi = { path = "../../abi" }
+stem-macros = { path = "../../stem-macros" }

@@ -89,6 +89,9 @@ pub mod kinds {
     pub const DEV_BUS_LEGACY_IO: &str = "dev.bus.LegacyIo";
     pub const DEV_INPUT_PS2_CONTROLLER: &str = "dev.input.Ps2Controller";
     pub const CAP_IOPORT_RANGE: &str = "cap.ioport.Range";
+    // Virtio GPU
+    pub const DEV_DISPLAY_GPU: &str = "dev.display.Gpu";
+    pub const DEV_DISPLAY_SCANOUT: &str = "dev.display.Scanout";
 }
 
 pub mod rels {
@@ -109,4 +112,11 @@ pub mod rels {
     // LPC / Legacy IO
     pub const IMPLEMENTS: &str = "IMPLEMENTS";
     pub const USES_IOPORTS: &str = "USES_IOPORTS";
+    pub const HAS_SCANOUT: &str = "HAS_SCANOUT";
+}
+
+// Virtio GPU additions
+pub mod virtio {
+    pub const VENDOR_ID: u16 = 0x1af4;
+    pub const GPU_DEVICE_ID: u16 = 0x1050;
 }

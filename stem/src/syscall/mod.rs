@@ -146,3 +146,31 @@ pub fn task_wait(tid: u64) -> Result<i32, Errno> {
     let ret = unsafe { raw_syscall6(SYS_TASK_WAIT, tid as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| v as i32)
 }
+
+// Device MMIO and DMA syscalls
+
+/// Claim a device from the device registry
+pub fn device_claim(graph_id: u64) -> Result<usize, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_DEVICE_CLAIM, graph_id as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret)
+}
+
+/// Map a device MMIO BAR into memory
+/// Returns the virtual address where the BAR is mapped
+pub fn device_map_mmio(claim_handle: usize, bar_index: usize) -> Result<u64, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_DEVICE_MAP_MMIO, claim_handle, bar_index, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u64)
+}
+
+/// Allocate DMA-safe memory for a device
+/// Returns the virtual address of the allocated buffer
+pub fn device_alloc_dma(claim_handle: usize, page_count: usize) -> Result<u64, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_DEVICE_ALLOC_DMA, claim_handle, page_count, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u64)
+}
+
+/// Get the physical address for a DMA virtual address
+pub fn device_dma_phys(virt_addr: u64) -> Result<u64, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_DEVICE_DMA_PHYS, virt_addr as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u64)
+}

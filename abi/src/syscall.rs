@@ -64,6 +64,8 @@ pub const SYS_DEVICE_MAP_MMIO: u32 = 0xD0;
 pub const SYS_DEVICE_IRQ_SUBSCRIBE: u32 = 0xD1;
 pub const SYS_DEVICE_IOPORT_READ: u32 = 0xD2;
 pub const SYS_DEVICE_IOPORT_WRITE: u32 = 0xD3;
+pub const SYS_DEVICE_ALLOC_DMA: u32 = 0xD4;
+pub const SYS_DEVICE_DMA_PHYS: u32 = 0xD5;
 
 // ============================================================================
 // Block 0x100–0x10F: Watches/events

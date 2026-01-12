@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "userspace/virtio_gpu",
     "bran",
     "xtask",
     "tools/bdd",

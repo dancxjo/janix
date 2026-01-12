@@ -230,11 +230,15 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         revision_id
     );
 
-    // BARs
-    for i in 0..6 {
-        let offset = 0x10 + (i * 4);
+    // BARs - collect MMIO BARs for device registry
+    let mut bar_addrs: [u64; 6] = [0; 6];
+    let mut bar_sizes: [u64; 6] = [0; 6];
+    let mut i = 0usize;
+    while i < 6 {
+        let offset = (0x10 + (i * 4)) as u8;
         let bar_val = unsafe { pci_read_config(bus, dev, func, offset) };
         if bar_val == 0 || bar_val == 0xFFFFFFFF {
+            i += 1;
             continue;
         }
 
@@ -248,11 +252,43 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
         // Mask information bits
         let mask = if is_io { 0xFFFFFFFC } else { 0xFFFFFFF0 };
-        let _size = (!(size_mask & mask)).wrapping_add(1);
+        let size = (!(size_mask & mask)).wrapping_add(1);
+
+        let base_addr = if is_64 && i < 5 {
+            let hi_offset = (0x10 + ((i + 1) * 4)) as u8;
+            let hi = unsafe { pci_read_config(bus, dev, func, hi_offset) };
+            ((hi as u64) << 32) | ((bar_val & mask) as u64)
+        } else {
+            (bar_val & mask) as u64
+        };
+
+        if !is_io && base_addr != 0 {
+            bar_addrs[i] = base_addr;
+            bar_sizes[i] = size as u64;
+            // Store in graph
+            let bar_key = match i {
+                0 => keys::BAR0,
+                1 => keys::BAR1,
+                2 => keys::BAR2,
+                3 => keys::BAR3,
+                4 => keys::BAR4,
+                5 => keys::BAR5,
+                _ => keys::BAR0,
+            };
+            set(node, bar_key, base_addr);
+        }
 
         if is_64 {
-            // Skip next BAR for 64-bit
+            i += 2; // Skip next BAR for 64-bit
+        } else {
+            i += 1;
         }
+    }
+
+    // Virtio GPU detection (vendor 0x1af4, class 0x03 display controller)
+    if vendor_id == 0x1af4 && class_code == 0x03 {
+        crate::kinfo!("PCI: Found virtio display controller at {:02x}:{:02x}.{}", bus, dev, func);
+        register_virtio_gpu(node, &bar_addrs, &bar_sizes);
     }
 
     // Recursion for PCI-to-PCI Bridge
@@ -267,6 +303,25 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
     if class_code == 0x06 && subclass == 0x01 {
         crate::kinfo!("PCI: Found LPC/ISA bridge at {:02x}:{:02x}.{}", bus, dev, func);
         publish_lpc_bridge(node, create, set, link, intern);
+    }
+}
+
+/// Register virtio GPU in device registry for userspace claiming
+fn register_virtio_gpu(graph_id: u64, bar_addrs: &[u64; 6], bar_sizes: &[u64; 6]) {
+    use crate::device_registry::{DeviceEntry, REGISTRY};
+    
+    let entry = DeviceEntry::new_mmio(
+        "dev.display.Gpu",
+        graph_id,
+        *bar_addrs,
+        *bar_sizes,
+    );
+    
+    let mut reg = REGISTRY.lock();
+    if let Some(idx) = reg.register(entry) {
+        crate::kinfo!("PCI: Registered virtio GPU (graph_id={}, idx={}) BAR0=0x{:x}", graph_id, idx, bar_addrs[0]);
+    } else {
+        crate::kinfo!("PCI: Failed to register virtio GPU - registry full");
     }
 }
 
@@ -314,11 +369,7 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
     {
         use crate::device_registry::{DeviceEntry, REGISTRY, CMOS_IOPORT_RANGES};
         let mut reg = REGISTRY.lock();
-        reg.register(DeviceEntry {
-            kind: kinds::DEV_RTC_CMOS,
-            ioport_ranges: CMOS_IOPORT_RANGES,
-            graph_id: cmos_id,
-        });
+        reg.register(DeviceEntry::new_legacy(kinds::DEV_RTC_CMOS, CMOS_IOPORT_RANGES, cmos_id));
     }
 
     // Create PS/2 Controller device
@@ -338,11 +389,7 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
     {
         use crate::device_registry::{DeviceEntry, REGISTRY, PS2_IOPORT_RANGES};
         let mut reg = REGISTRY.lock();
-        reg.register(DeviceEntry {
-            kind: kinds::DEV_INPUT_PS2_CONTROLLER,
-            ioport_ranges: PS2_IOPORT_RANGES,
-            graph_id: ps2_id,
-        });
+        reg.register(DeviceEntry::new_legacy(kinds::DEV_INPUT_PS2_CONTROLLER, PS2_IOPORT_RANGES, ps2_id));
     }
 
     crate::kinfo!("LPC: Created Legacy IO bus with CMOS and PS/2 controller");

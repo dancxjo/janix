@@ -38,6 +38,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "ps2_kbd", target, "release")?;
     build_userspace_app(sh, "thigmonasty", target, "release")?;
     build_userspace_app(sh, "echo", target, "release")?;
+    build_userspace_app(sh, "virtio_gpu", target, "release")?;
 
     // Copy binaries to iso_root
     copy_userspace_binary(sh, "sprout", target, "release", "iso_root/boot/sprout")?;
@@ -47,6 +48,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     copy_userspace_binary(sh, "ps2_kbd", target, "release", "iso_root/boot/ps2_kbd")?;
     copy_userspace_binary(sh, "thigmonasty", target, "release", "iso_root/boot/thigmonasty")?;
     copy_userspace_binary(sh, "echo", target, "release", "iso_root/boot/echo")?;
+    copy_userspace_binary(sh, "virtio_gpu", target, "release", "iso_root/boot/virtio_gpu")?;
 
     // Copy limine config
     sh.copy_file("limine.conf", "iso_root/boot/limine/limine.conf")?;

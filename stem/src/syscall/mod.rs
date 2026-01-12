@@ -2,7 +2,7 @@ mod arch;
 pub mod graph;
 
 pub use abi::syscall::*;
-use abi::errors::{Errno, SysResult};
+use abi::errors::Errno;
 use abi::device::RtcTime;
 
 use arch::raw_syscall6;
@@ -103,4 +103,26 @@ pub fn spawn_thread(entry: extern "C" fn() -> !, stack_top: usize) -> Result<u64
         raw_syscall6(SYS_SPAWN_THREAD, entry_addr, stack_top, 0, 0, 0, 0)
     };
     abi::errors::errno(ret).map(|v| v as u64)
+}
+
+pub fn task_poll(pid: u64) -> Result<(abi::types::TaskStatus, i32), Errno> {
+    let ret = unsafe {
+        raw_syscall6(abi::syscall::SYS_TASK_POLL, pid as usize, 0, 0, 0, 0, 0)
+    };
+    if ret < 0 {
+        abi::errors::errno(ret).map(|_| (abi::types::TaskStatus::Unknown, 0))
+    } else {
+        let val = ret as u64;
+        let status_val = val & 0xFFFFFFFF;
+        let code_val = (val >> 32) as i32;
+        let status = match status_val {
+            0 => abi::types::TaskStatus::Unknown,
+            1 => abi::types::TaskStatus::Runnable,
+            2 => abi::types::TaskStatus::Running,
+            3 => abi::types::TaskStatus::Blocked,
+            4 => abi::types::TaskStatus::Dead,
+            _ => abi::types::TaskStatus::Unknown,
+        };
+        Ok((status, code_val))
+    }
 }

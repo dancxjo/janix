@@ -7,26 +7,22 @@ extern "Rust" {
 }
 
 #[cfg(feature = "rt")]
-#[no_mangle]
-#[link_section = ".text.entry"]
-pub unsafe extern "C" fn _start(arg: usize) -> ! {
-    // For x86_64 and likely others, we might just call a rust function if we don't need significant setup.
-    // However, sticking to the standard "entry point calls main then exit" pattern.
-    // Making this a naked function to avoid preamble issues, but calling inner implementation immediately.
-    
-    // NOTE: Naked functions in Rust require specific asm syntax for each arch.
-    // To keep v0 simple and multi-arch without repeating naked asm 4 times here,
-    // we can assume the kernel/linker jumps to a symbol `_start` which is a valid function.
-    // If we don't mark it naked, the compiler might touch the stack.
-    // But since we are at the very process entry, `sp` should be valid (set by kernel).
-    // Let's try a standard function first, marked `extern "C"`.
-    // If this causes issues (e.g. using dirty stack slots), we'll upgrade to naked asm.
-    
-    entry_impl(arg)
-}
-
 #[cfg(feature = "rt")]
-unsafe fn entry_impl(arg: usize) -> ! {
+#[no_mangle]
+unsafe extern "C" fn entry_impl(arg: usize) -> ! {
     let code = main(arg);
     exit(code);
 }
+
+#[cfg(all(target_arch = "x86_64", feature = "rt"))]
+core::arch::global_asm!(r#"
+    .section .text.entry
+    .global _start
+    _start:
+        // Kernel jumps here. RSP is 16-byte aligned (e.g. 0x400000).
+        // RDI holds the argument.
+        // CALL instruction pushes 8 bytes, so RSP becomes aligned-8.
+        // This satisfies the System V ABI for the callee.
+        call entry_impl
+        ud2
+"#);

@@ -1,4 +1,3 @@
-#![no_std]
 
 use crate::types::ThingId;
 

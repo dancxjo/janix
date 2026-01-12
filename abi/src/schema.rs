@@ -37,21 +37,21 @@ pub mod keys {
 }
 
 pub mod kinds {
-    pub const DEV_HOST: &str = "dev.host";
-    pub const DEV_BUS_PLATFORM: &str = "dev.bus.platform";
-    pub const FW_TABLE_ACPI: &str = "fw.table.acpi";
-    pub const FW_TABLE_DTB: &str = "fw.table.dtb";
-    pub const MEM_RANGE: &str = "mem.range";
-    pub const DEV_RTC_CMOS: &str = "dev.rtc.cmos";
-    pub const BYTESPACE: &str = "bytespace";
-    pub const RES_IO_PORT_RANGE: &str = "res.io.port_range";
-    pub const DEV_DISPLAY_FRAMEBUFFER: &str = "dev.display.framebuffer";
-    pub const PROC_KERNEL: &str = "proc.kernel";
-    pub const SVC_ROOT: &str = "svc.root";
-    pub const BOOT_MODULE: &str = "boot.module";
-    pub const DEV_CPU: &str = "dev.cpu";
-    pub const SVC_SCHEDULER: &str = "svc.scheduler";
-    pub const FW_BOOT: &str = "fw.boot";
+    pub const DEV_HOST: &str = "dev.Host";
+    pub const DEV_BUS_PLATFORM: &str = "dev.bus.Platform";
+    pub const FW_TABLE_ACPI: &str = "fw.table.Acpi";
+    pub const FW_TABLE_DTB: &str = "fw.table.Dtb";
+    pub const MEM_RANGE: &str = "mem.Range";
+    pub const DEV_RTC_CMOS: &str = "dev.rtc.Cmos";
+    pub const BYTESPACE: &str = "Bytespace";
+    pub const RES_IO_PORT_RANGE: &str = "res.io.PortRange";
+    pub const DEV_DISPLAY_FRAMEBUFFER: &str = "dev.display.Framebuffer";
+    pub const PROC_KERNEL: &str = "proc.Kernel";
+    pub const SVC_ROOT: &str = "svc.Root";
+    pub const BOOT_MODULE: &str = "boot.Module";
+    pub const DEV_CPU: &str = "dev.Cpu";
+    pub const SVC_SCHEDULER: &str = "svc.Scheduler";
+    pub const FW_BOOT: &str = "fw.Boot";
 }
 
 pub mod rels {

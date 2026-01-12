@@ -132,7 +132,7 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
         },
         RootOp::BytespaceCreate { len, flags: _, format: _ } => {
             // Need a symbol for Bytespace. Intern it.
-            let kid = interner.intern("bytespace");
+            let kid = interner.intern("Bytespace");
             let id = graph.alloc(kid);
             let handle = bytespace::create(len as usize);
             if let Some(node) = graph.get_node_mut(id) {
@@ -142,7 +142,7 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
             (0, id)
         }, 
         RootOp::BytespaceCreateFromPtr { ptr, len } => {
-            let kid = interner.intern("bytespace");
+            let kid = interner.intern("Bytespace");
             let id = graph.alloc(kid);
             let handle = bytespace::create_from_ptr(ptr as usize, len as usize);
             if let Some(node) = graph.get_node_mut(id) {
@@ -268,8 +268,10 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
             }
         },
         RootOp::DescribeThing { id, buffer, len } => {
+             crate::kinfo!("ROOT: Handling DescribeThing id={}", id);
              let mut fmt = FmtBuffer { ptr: buffer as *mut u8, len: len as usize, pos: 0 };
              let res = super::debug_fmt::fmt_thing(graph, interner, id, &mut fmt);
+             crate::kinfo!("ROOT: fmt_thing res={:?}", res);
              if res.is_ok() {
                   (0, fmt.pos as u64)
              } else {
@@ -355,4 +357,5 @@ fn handle_msg(graph: &mut Graph, journal: &mut Journal, interner: &mut Interner,
     msg.reply.status.store(status, Ordering::Relaxed);
     msg.reply.value.store(value, Ordering::Relaxed);
     msg.reply.done.store(1, Ordering::Release);
+    crate::kinfo!("ROOT: Finish msg handling, done=1, yielding...");
 }

@@ -1,4 +1,4 @@
-use super::{ThingId, ThingRef, Thing};
+use super::ThingId;
 use core::fmt;
 
 pub struct DebugEdge {

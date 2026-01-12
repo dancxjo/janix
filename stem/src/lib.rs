@@ -14,14 +14,14 @@ pub mod panic;
 pub mod rt;
 
 #[macro_export]
-macro_rules! kprint {
+macro_rules! print {
     ($($arg:tt)*) => ($crate::console::print(format_args!($($arg)*)));
 }
 
 #[macro_export]
-macro_rules! kprintln {
-    () => ($crate::kprint!("\n"));
-    ($($arg:tt)*) => ($crate::kprint!("{}\n", format_args!($($arg)*)));
+macro_rules! println {
+    () => ($crate::print!("\n"));
+    ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
 pub fn log(s: &str) {
@@ -34,6 +34,10 @@ pub fn yield_now() {
 
 pub fn sleep(duration: core::time::Duration) {
     syscall::sleep_ns(duration.as_nanos() as u64);
+}
+
+pub fn sleep_ms(ms: u64) {
+    syscall::sleep_ms(ms);
 }
 
 pub fn monotonic_ns() -> u64 {

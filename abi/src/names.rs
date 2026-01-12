@@ -1,18 +1,19 @@
 use super::kinds::*;
+use crate::schema::kinds::*;
 
 pub fn kind_name(k: ThingKind) -> &'static str {
     match k {
-        KIND_BYTESPACE_BUFFER => "bytespace",
-        KIND_STREAM_WATCH => "stream.watch",
-        KIND_TEST_NODE => "test.node",
-        KIND_HOST => "dev.host",
-        KIND_KERNEL => "proc.kernel",
-        KIND_CPU => "dev.cpu",
-        KIND_MEMORY_RANGE => "mem.range",
-        KIND_FRAMEBUFFER => "dev.display.framebuffer",
-        KIND_CONSOLE => "dev.console",
-        KIND_BOOT_MODULE => "boot.module",
-        KIND_SERVICE => "svc",
+        KIND_BYTESPACE_BUFFER => BYTESPACE,
+        KIND_STREAM_WATCH => "stream.Watch",
+        KIND_TEST_NODE => "test.Node",
+        KIND_HOST => DEV_HOST,
+        KIND_KERNEL => PROC_KERNEL,
+        KIND_CPU => DEV_CPU,
+        KIND_MEMORY_RANGE => MEM_RANGE,
+        KIND_FRAMEBUFFER => DEV_DISPLAY_FRAMEBUFFER,
+        KIND_CONSOLE => "dev.Console",
+        KIND_BOOT_MODULE => BOOT_MODULE,
+        KIND_SERVICE => "svc.Service",
         _ => "unknown",
     }
 }

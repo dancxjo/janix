@@ -214,13 +214,14 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     unsafe { init_runtime(runtime) };
     unsafe { crate::logging::init(runtime) };
     
-    kinfo!("thing-os kernel v0.1.0 starting...");
-    kinfo!("Intent-Mechanism paging split active");
-    kinfo!("System booted");
+    kinfo!("thing-os kernel starting...");
 
     memory::init(runtime);
     kinfo!("Initializing global allocator...");
     memory::global_alloc::init(runtime);
+
+    kinfo!("Initializing SIMD...");
+    runtime.simd_init_cpu();
 
     kinfo!("Initializing tasking...");
     crate::task::init::<R>();
@@ -238,8 +239,6 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     crate::root::init_root_service::<R>();
     // Root Boot Registration
 
-    // Check for sprout module
-    // Root Boot Registration
     let boot_info = crate::root::boot_register::BootInfo {
         cpu_count: runtime.cpu_count(),
         memory_map: runtime.phys_memory_map(),
@@ -322,6 +321,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
              
         kinfo!("Spawning sprout with registry at 0x600000...");
         unsafe {
+             kinfo!("Spawning sprout...");
              crate::task::scheduler::spawn_user_thread::<R>(
                  user_entry.entry_pc, 
                  user_entry.user_sp, 

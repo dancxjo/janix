@@ -21,7 +21,7 @@ static mut EXIT_HOOK: Option<unsafe fn(i32)> = None;
 static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize) -> TaskId> = None;
 static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, usize) -> Option<TaskId>> = None;
 static mut CURRENT_TID_HOOK: Option<unsafe fn() -> u64> = None;
-
+static mut TASK_STATUS_HOOK: Option<unsafe fn(TaskId) -> Option<(TaskState, Option<i32>)>> = None;
 
 
 pub struct Scheduler<R: BootRuntime> {
@@ -32,6 +32,7 @@ pub struct Scheduler<R: BootRuntime> {
     // Per-CPU state (conceptually, attached to this scheduler instance for v0 single-core)
     preempt_disable_depth: u32,
     need_resched: bool,
+    idle_task: Option<TaskId>,
 }
 
 impl<R: BootRuntime> Scheduler<R> {
@@ -43,6 +44,7 @@ impl<R: BootRuntime> Scheduler<R> {
             next_id: 0,
             preempt_disable_depth: 0,
             need_resched: false,
+            idle_task: None,
         }
     }
 
@@ -66,11 +68,13 @@ impl<R: BootRuntime> Scheduler<R> {
             ctx: Default::default(),
             aspace: rt.tasking().active_address_space(),
             simd: crate::simd::SimdState::new(rt),
+            exit_code: None,
         };
         crate::kinfo!("  Pushing boot task to list...");
         self.tasks.push(task);
         self.current = Some(0);
-        crate::kinfo!("  Boot task created successfully");
+        // self.idle_task = Some(0); // Task 0 is Boot/Idle task
+        crate::kinfo!("  Boot task created successfully (ID=0, Idle)");
     }
 
     pub fn spawn(&mut self, entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
@@ -98,6 +102,7 @@ impl<R: BootRuntime> Scheduler<R> {
             ctx,
             aspace,
             simd: crate::simd::SimdState::new(rt),
+            exit_code: None,
         };
 
         self.tasks.push(task);
@@ -140,6 +145,7 @@ impl<R: BootRuntime> Scheduler<R> {
              ctx,
              aspace,
              simd: crate::simd::SimdState::new(rt),
+             exit_code: None,
          };
 
          self.tasks.push(task);
@@ -174,6 +180,7 @@ impl<R: BootRuntime> Scheduler<R> {
              ctx,
              aspace,
              simd: crate::simd::SimdState::new(rt),
+             exit_code: None,
          };
 
          self.tasks.push(task);
@@ -216,17 +223,34 @@ impl<R: BootRuntime> Scheduler<R> {
     pub fn prepare_yield(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace)> {
         let current_id = self.current?;
         
-        // Re-add current task to run queue
-        self.runq.push_back(current_id);
+        // Re-add current task to run queue, unless it is the idle task
+        if Some(current_id) != self.idle_task {
+             self.runq.push_back(current_id);
+             crate::kinfo!("Sched: Yield T{}. Pushed back. Runq len={}", current_id, self.runq.len());
+        } else {
+             crate::kinfo!("Sched: Yield T{}. Idle task (not pushed).", current_id);
+        }
         
         self.prepare_schedule()
     }
 
     fn prepare_schedule(&mut self) -> Option<(*mut <R::Tasking as BootTasking>::Context, *const <R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace)> {
         let next_id = match self.runq.pop_front() {
-            Some(id) => id,
+            Some(id) => {
+                crate::kinfo!("Sched: Pop T{}. Runq remaining={}", id, self.runq.len());
+                id
+            },
             None => {
-                return None;
+                // If runq is empty, run idle task if available
+                if let Some(idle) = self.idle_task {
+                    // Only if we aren't already running it? 
+                    // prepare_schedule handles next_id == current_id optimization below.
+                    crate::kinfo!("Sched: Runq empty. Picking Idle T{}", idle);
+                    idle
+                } else {
+                    crate::kinfo!("Sched: Runq empty. No idle task. Returning None.");
+                    return None;
+                }
             }
         };
 
@@ -260,13 +284,14 @@ impl<R: BootRuntime> Scheduler<R> {
             Some((&mut old_task.ctx as *mut _, &new_task.ctx as *const _, new_task.aspace))
         }
     }
-
-    pub fn terminate_current(&mut self) -> ! {
+ 
+    pub fn terminate_current(&mut self, code: i32) -> ! {
         let current_id = self.current.expect("terminate_current called with no current task");
         
         // Mark as Dead (we use Dead instead of Terminated)
         if let Some(idx) = self.tasks.iter().position(|t| t.id == current_id) {
             self.tasks[idx].state = TaskState::Dead;
+            self.tasks[idx].exit_code = Some(code);
         }
         
         // Do NOT clear current.
@@ -307,6 +332,7 @@ pub fn init<R: BootRuntime>() {
             SPAWN_USER_HOOK = Some(spawn_user_thread::<R>);
             SPAWN_PROCESS_HOOK = Some(spawn_process::<R>);
             CURRENT_TID_HOOK = Some(current_tid::<R>);
+            TASK_STATUS_HOOK = Some(task_status::<R>);
         }
         crate::kinfo!("  Scheduler initialized");
     }
@@ -324,6 +350,26 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(entry: usize, stack: usize, arg:
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
     sched.spawn_user_thread(entry, stack, arg)
+}
+
+pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>)> {
+    let lock = SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &*(ptr as *const Scheduler<R>) };
+        sched.tasks.iter().find(|t| t.id == id).map(|t| (t.state, t.exit_code))
+    } else {
+        None
+    }
+}
+
+pub unsafe fn task_status_current(id: TaskId) -> Option<(TaskState, Option<i32>)> {
+    unsafe {
+        if let Some(hook) = TASK_STATUS_HOOK {
+            hook(id)
+        } else {
+            None
+        }
+    }
 }
 
 pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<TaskId> {
@@ -469,7 +515,7 @@ pub fn exit<R: BootRuntime>(code: i32) {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.terminate_current()
+    sched.terminate_current(code)
 }
 
 pub unsafe fn exit_current(code: i32) {

@@ -1,7 +1,7 @@
 extern crate proc_macro;
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Attribute, Lit, Meta, NestedMeta};
+use syn::{parse_macro_input, DeriveInput, Lit, Meta, NestedMeta};
 
 #[proc_macro_derive(Thing, attributes(thing))]
 pub fn derive_thing(input: TokenStream) -> TokenStream {

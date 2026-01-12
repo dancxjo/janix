@@ -11,6 +11,7 @@ pub const SYS_RTC_READ: u32 = 9;
 pub const SYS_SLEEP_NS: u32 = 10;
 pub const SYS_LOG_WRITE: u32 = 11;
 pub const SYS_GET_TID: u32 = 12;
+pub const SYS_TASK_POLL: u32 = 18;
 
 // Device Capability Syscalls
 pub const SYS_DEVICE_CLAIM: u32 = 13;

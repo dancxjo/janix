@@ -1,4 +1,3 @@
-#![no_std]
 
 #[repr(u64)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

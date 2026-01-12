@@ -1,5 +1,4 @@
 use abi::query::*;
-use abi::symbols::SymbolRefWire;
 use super::symbol::IntoSymbolRef;
 use crate::thing::ThingId;
 use crate::syscall::syscall6;
@@ -26,7 +25,7 @@ pub fn query_nodes_by_kind(kind: &str, limit: usize, out: &mut [ThingId]) -> Res
     // We must buffer generic rows and project.
     
     let mut rows = alloc::vec![QueryRow::default(); limit];
-    let mut plan = [step];
+    let plan = [step];
     
     let ret = unsafe {
         syscall6(

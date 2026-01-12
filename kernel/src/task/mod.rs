@@ -20,6 +20,7 @@ pub enum TaskState {
 pub struct Task<R: BootRuntime> {
     pub id: TaskId,
     pub state: TaskState,
+    pub exit_code: Option<i32>,
 
     pub kstack_base: *mut u8,
     pub kstack_size: usize,

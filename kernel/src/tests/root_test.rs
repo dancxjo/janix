@@ -75,9 +75,21 @@ pub fn run_selftest() {
     */
     
     // 5. Debug Print Test
-    crate::kinfo!("ROOT SELFTEST: Testing debug print...");
-    let dbg = crate::root::debug::ThingDebug(bytespace_id as u64);
-    crate::kinfo!("Debug bytespace: {}", dbg);
+    crate::kinfo!("ROOT SELFTEST: Testing GetKind Loop...");
+    
+    // Explicitly test signal propagation
+    for i in 0..5 {
+        crate::kinfo!("ROOT SELFTEST: Loop {}, sending GetKind...", i);
+        match crate::syscall::handlers::sys_root_get_kind(bytespace_id) {
+             Ok(k) => {
+                 crate::kinfo!("ROOT SELFTEST: Loop {} Success, kind={:x}", i, k);
+             },
+             Err(e) => {
+                 crate::kinfo!("ROOT SELFTEST: Loop {} FAIL: {:?}", i, e);
+                 break;
+             }
+        }
+    }
     
     crate::kinfo!("ROOT SELFTEST: PASS");
 }

@@ -38,6 +38,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_TIME_MONOTONIC => handlers::sys_time_monotonic_ns(),
         SYS_RTC_READ => handlers::sys_rtc_read(args[0]),
         SYS_GET_TID => handlers::sys_get_tid(),
+        abi::syscall::SYS_TASK_POLL => handlers::sys_task_poll(args[0]),
         
         // Capabilities
         SYS_DEVICE_CLAIM => handlers::sys_device_claim(args[0]),

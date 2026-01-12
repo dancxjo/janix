@@ -5,30 +5,30 @@
 
 pub mod kinds {
     // Core
-    pub const HOST: &str = "dev.host";
-    pub const CPU: &str = "dev.cpu";
-    pub const BUS_PLATFORM: &str = "dev.bus.platform";
-    pub const MEM_RANGE: &str = "mem.range";
-    pub const BOOT_MODULE: &str = "boot.module";
+    pub const HOST: &str = "dev.Host";
+    pub const CPU: &str = "dev.Cpu";
+    pub const BUS_PLATFORM: &str = "dev.bus.Platform";
+    pub const MEM_RANGE: &str = "mem.Range";
+    pub const BOOT_MODULE: &str = "boot.Module";
 
     // Devices
-    pub const DISPLAY_FRAMEBUFFER: &str = "dev.display.framebuffer";
-    pub const SERIAL_UART: &str = "dev.serial.uart";
-    pub const RTC_CMOS: &str = "dev.rtc.cmos";
-    pub const TIMER: &str = "dev.timer";
-    pub const INTERRUPT_CONTROLLER: &str = "dev.interrupt_controller";
-    pub const PCI_ROOT: &str = "dev.pci.root";
+    pub const DISPLAY_FRAMEBUFFER: &str = "dev.display.Framebuffer";
+    pub const SERIAL_UART: &str = "dev.serial.Uart";
+    pub const RTC_CMOS: &str = "dev.rtc.Cmos";
+    pub const TIMER: &str = "dev.Timer";
+    pub const INTERRUPT_CONTROLLER: &str = "dev.InterruptController";
+    pub const PCI_ROOT: &str = "dev.pci.Root";
 
     // Firmware
-    pub const FW_BOOT: &str = "fw.boot";
-    pub const FW_TABLE_ACPI: &str = "fw.table.acpi";
-    pub const FW_TABLE_DTB: &str = "fw.table.dtb";
+    pub const FW_BOOT: &str = "fw.Boot";
+    pub const FW_TABLE_ACPI: &str = "fw.table.Acpi";
+    pub const FW_TABLE_DTB: &str = "fw.table.Dtb";
     
     // Resources
     // Note: 'res' prefixes are for enriched resources
-    pub const RES_MMIO_RANGE: &str = "res.mmio.range";
-    pub const RES_IO_PORT_RANGE: &str = "res.io.port_range";
-    pub const RES_IRQ: &str = "res.irq";
+    pub const RES_MMIO_RANGE: &str = "res.mmio.Range";
+    pub const RES_IO_PORT_RANGE: &str = "res.io.PortRange";
+    pub const RES_IRQ: &str = "res.Irq";
     // pub const RES_DMA: &str = "res.dma"; // Reserved for future
 }
 

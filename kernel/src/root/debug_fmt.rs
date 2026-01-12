@@ -27,8 +27,12 @@ impl Write for FmtBuffer {
 pub fn fmt_thing(graph: &Graph, interner: &Interner, id: ThingId, w: &mut dyn Write) -> fmt::Result {
     if let Some(node) = graph.nodes.get(&id) {
         let kind_str = interner.resolve(node.kind).unwrap_or("?");
+        let basename = kind_str.rsplit('.').next().unwrap_or(kind_str);
         
-        write!(w, "(t{:x}:{} {{ ", id, kind_str)?;
+        // Lowercase the variable name part (e.g. Host -> host)
+        let var_name = basename.to_lowercase();
+        
+        write!(w, "({}{:x}:{} {{ ", var_name, id, kind_str)?;
         
         let mut count = 0;
         for (k, v) in node.props.iter() {
@@ -79,14 +83,16 @@ pub fn fmt_edge(graph: &Graph, interner: &Interner, src: ThingId, rel: SymbolId,
     } else {
         "?"
     };
+    let src_basename = src_kind.rsplit('.').next().unwrap_or(src_kind).to_lowercase();
 
     let dst_kind = if let Some(n) = graph.nodes.get(&dst) {
         interner.resolve(n.kind).unwrap_or("?")
     } else {
         "?"
     };
+    let dst_basename = dst_kind.rsplit('.').next().unwrap_or(dst_kind).to_lowercase();
 
     let rname = interner.resolve(rel).unwrap_or("REL?");
     
-    write!(w, "(t{:x}:{})--[:{}]->(t{:x}:{})", src, src_kind, rname, dst, dst_kind)
+    write!(w, "({}{:x}:{})--[:{}]->({}{:x}:{})", src_basename, src, src_kind, rname, dst_basename, dst, dst_kind)
 }

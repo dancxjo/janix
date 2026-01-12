@@ -116,6 +116,28 @@ pub fn sys_get_tid() -> SysResult<usize> {
     unsafe { Ok(crate::task::scheduler::current_tid_current() as usize) }
 }
 
+pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
+    use abi::types::TaskStatus;
+    
+    let status_opt = unsafe { crate::task::scheduler::task_status_current(pid as u64) };
+    
+    if let Some((state, exit_code)) = status_opt {
+        let (st, code) = match state {
+            crate::task::TaskState::Runnable => (TaskStatus::Runnable, 0),
+            crate::task::TaskState::Running => (TaskStatus::Running, 0),
+            crate::task::TaskState::Blocked => (TaskStatus::Blocked, 0),
+            crate::task::TaskState::Dead => (TaskStatus::Dead, exit_code.unwrap_or(0)),
+        };
+        
+        // Pack: [Status: 32][Code: 32] -> actually Code usually i32. 
+        // Let's put Status in low 32 bits, Code in high 32 bits.
+        let val = (st as u64) | ((code as u32 as u64) << 32);
+        Ok(val as usize)
+    } else {
+        Err(Errno::ESRCH)
+    }
+}
+
 // ------ Device Capabilities ------
 
 pub fn sys_device_claim(_id: usize) -> SysResult<usize> {
@@ -442,7 +464,10 @@ pub fn sys_root_prop_get(id: usize, ptr: usize, _reserved: usize) -> SysResult<u
 }
 
 pub fn sys_root_find(ptr_kind: usize, ptr_buf: usize, len: usize) -> SysResult<usize> {
+    // crate::kinfo!("SYSCALL: sys_root_find ptr_kind={:x}", ptr_kind);
     let sym = read_symbol(ptr_kind)?;
+    // crate::kinfo!("SYSCALL: sys_root_find sym={:?}", sym);
+    
     validate_user_range(ptr_buf, len, true)?;
     
     if len > 4096 { return Err(Errno::EINVAL); }

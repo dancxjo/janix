@@ -3,7 +3,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use stem::thing::sys as thingsys;
 use stem::thing::{ThingId};
-use stem::kprintln;
+use stem::println;
 use abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC, SECTION_NAME};
 use abi::schema::{kinds};
 
@@ -17,13 +17,13 @@ impl Registry {
     }
 
     pub fn scan(&mut self) {
-        kprintln!("SPROUT: Scanning boot modules...");
+        println!("SPROUT: Scanning boot modules...");
         let mut modules = [ThingId(0); 32];
         let count = thingsys::find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
         for i in 0..count {
             self.scan_module(modules[i]);
         }
-        kprintln!("SPROUT: Registry scan complete. Found {} drivers.", self.drivers.len());
+        println!("SPROUT: Registry scan complete. Found {} drivers.", self.drivers.len());
     }
     
     fn scan_module(&mut self, mod_id: ThingId) {
@@ -67,7 +67,7 @@ impl Registry {
                      let raw = &header.device_kind;
                      let end = raw.iter().position(|&c| c == 0).unwrap_or(raw.len());
                      if let Ok(dk_str) = core::str::from_utf8(&raw[..end]) {
-                         kprintln!("SPROUT: Registering driver '{}' -> '{}'", dk_str, mod_name);
+                         println!("SPROUT: Registering driver '{}' -> '{}'", dk_str, mod_name);
                          self.drivers.insert(dk_str.to_string(), mod_name.clone());
                          registered = true;
                      }
@@ -78,8 +78,8 @@ impl Registry {
         // Fallback for v0 if parsing fails
         if !registered {
             if mod_name.contains("rtc_cmos") {
-                kprintln!("SPROUT: Registering driver 'dev.rtc.cmos' -> '{}' (fallback)", mod_name);
-                self.drivers.insert("dev.rtc.cmos".to_string(), mod_name);
+                println!("SPROUT: Registering driver 'dev.rtc.Cmos' -> '{}' (fallback)", mod_name);
+                self.drivers.insert("dev.rtc.Cmos".to_string(), mod_name);
             }
         }
     }

@@ -1,10 +1,10 @@
 use super::DevTreeCtx;
 use stem::thing::sys as thingsys;
-use stem::kprintln;
+use stem::println;
 use abi::schema::{keys, kinds, rels, source, confidence};
 
 pub fn enumerate(ctx: &DevTreeCtx) -> Result<(), ()> {
-    kprintln!("SPROUT: x86_64 platform enrichment... (v0.2)");
+    println!("SPROUT: x86_64 platform enrichment... (v0.2)");
 
     // 1. CMOS RTC (Platform Contract)
     // Always present at 0x70 on PC-compatible hardware
@@ -13,7 +13,7 @@ pub fn enumerate(ctx: &DevTreeCtx) -> Result<(), ()> {
     let mut buf = [stem::thing::ThingId(0); 1];
     if let Ok(0) = thingsys::find(kinds::DEV_RTC_CMOS, &mut buf) {
         if let Ok(rtc) = thingsys::create_node(kinds::DEV_RTC_CMOS) {
-            kprintln!("SPROUT: Created dev.rtc.cmos (platform contract)");
+            println!("SPROUT: Created dev.rtc.cmos (platform contract)");
             
             // Link to platform bus
             let _ = thingsys::link(ctx.platform_bus, rels::HAS_DEVICE, rtc);

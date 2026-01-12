@@ -44,3 +44,13 @@ pub struct RootWatchEvent {
     pub key: u64,
     pub value: u64,
 }
+
+#[repr(u64)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TaskStatus {
+    Unknown = 0,
+    Runnable = 1,
+    Running = 2,
+    Blocked = 3,
+    Dead = 4,
+}

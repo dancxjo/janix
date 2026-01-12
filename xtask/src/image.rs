@@ -21,15 +21,27 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
 
     // Build and copy sprout
     println!("Building sprout for {}...", arch);
-    let target = crate::common::rust_target(arch);
+    
+    // Use target-specific userspace triple if available, otherwise fallback
+    let user_target = if arch == "x86_64" {
+        "x86_64-unknown-thingos".to_string()
+    } else {
+        crate::common::rust_target(arch).to_string()
+    };
+    
+    let target = &user_target;
+
+    let cwd = std::env::current_dir().unwrap();
+    let target_dir = cwd.join("targets");
+    let target_path = target_dir.to_str().unwrap();
+    println!("DBG: using RUST_TARGET_PATH={}", target_path);
+
     cmd!(
         sh,
-        "cargo build --target {target} --profile release -p sprout"
+        "cargo build --target {target} --profile release -p sprout -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
     )
-    .env(
-        "RUSTFLAGS",
-        "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort",
-    )
+
+    .env("RUST_TARGET_PATH", target_path)
     .run()?;
 
     let sprout_elf = format!("target/{}/release/sprout", target);
@@ -41,16 +53,12 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     // Build and copy threads_demo
     println!("Building threads_demo for {}...", arch);
     // target is already defined above
-    // let target = crate::common::rust_target(arch);
-    // Reuse target variable
     cmd!(
         sh,
-        "cargo build --target {target} --profile release -p threads_demo"
+        "cargo build --target {target} --profile release -p threads_demo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
     )
-    .env(
-        "RUSTFLAGS",
-        "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort",
-    )
+
+    .env("RUST_TARGET_PATH", target_path)
     .run()?;
 
     // Objcopy to binary
@@ -64,12 +72,10 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     println!("Building rtc_cmos for {}...", arch);
     cmd!(
         sh,
-        "cargo build --target {target} --profile release -p rtc_cmos"
+        "cargo build --target {target} --profile release -p rtc_cmos -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
     )
-    .env(
-        "RUSTFLAGS",
-        "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort",
-    )
+
+    .env("RUST_TARGET_PATH", target_path)
     .run()?;
 
     let rtc_elf = format!("target/{}/release/rtc_cmos", target);
@@ -82,16 +88,14 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     println!("Building clock for {}...", arch);
     cmd!(
         sh,
-        "cargo build --target {target} --profile release -p clock"
+        "cargo build --target {target} --profile dev -p clock -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
     )
-    .env(
-        "RUSTFLAGS",
-        "-C link-arg=-Tuserspace/user.ld -C relocation-model=static -C panic=abort",
-    )
+
+    .env("RUST_TARGET_PATH", target_path)
     .run()?;
 
-    let clock_elf = format!("target/{}/release/clock", target);
-    let clock_bin = format!("target/{}/release/clock.bin", target);
+    let clock_elf = format!("target/{}/debug/clock", target);
+    let clock_bin = format!("target/{}/debug/clock.bin", target);
     cmd!(sh, "llvm-objcopy -O binary {clock_elf} {clock_bin}").run()?;
 
     sh.copy_file(&clock_bin, "iso_root/boot/clock")?;

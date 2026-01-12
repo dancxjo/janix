@@ -108,10 +108,13 @@ pub mod debug {
                 len: buf.len() as u64 
             });
             
+            crate::kinfo!("ThingDebug: Waiting for reply...");
+            let mut timeout = 0;
             loop {
                 // simple wait loop
                 let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
                 if done != 0 {
+                    crate::kinfo!("ThingDebug: Got reply!");
                     let status = reply.status.load(core::sync::atomic::Ordering::Relaxed);
                     let written = reply.value.load(core::sync::atomic::Ordering::Relaxed) as usize;
                     if status == 0 {
@@ -124,6 +127,11 @@ pub mod debug {
                     } else {
                          return f.write_str("<error>");
                     }
+                }
+                timeout += 1;
+                if timeout > 10_000_000 {
+                     crate::kinfo!("ThingDebug: TIMEOUT waiting for reply (done={})", done);
+                     return f.write_str("<timeout>");
                 }
                 unsafe { crate::task::scheduler::yield_now_current(); }
             }

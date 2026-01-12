@@ -51,7 +51,7 @@ pub fn map_page(
     // Page descriptor bits:
     // [1:0] = 0b11 (valid page)
     // [4:2] = AttrIndx
-    // [6]   = AP[1] (0=EL0 accessible if AP[2]=0, 1=EL1 only)
+    // [6]   = AP[1] (0=EL1 only, 1=EL0 accessible)
     // [7]   = AP[2] (0=RW, 1=RO)
     // [10]  = AF (Access Flag)
     // [53]  = PXN (Privileged Execute Never)
@@ -61,9 +61,9 @@ pub fn map_page(
     if !perms.write {
         desc |= 1 << 7;
     }
-    if !perms.user {
+    if perms.user {
         desc |= 1 << 6;
-    } // EL0 not accessible for kernel pages
+    } // EL0 accessible
     if !perms.exec {
         desc |= (1 << 54) | (1 << 53);
     }

@@ -33,6 +33,8 @@ const MAX_USER_STACK_PAGES: usize = 64;
 static NEXT_USER_STACK: AtomicU64 = AtomicU64::new(USER_STACK_BASE);
 #[cfg(any(feature = "sched_debug", debug_assertions))]
 static SWITCH_LOG_COUNT: AtomicU64 = AtomicU64::new(0);
+#[cfg(any(feature = "sched_debug", debug_assertions))]
+static LAST_SWITCH: AtomicU64 = AtomicU64::new(u64::MAX);
 
 pub struct SwitchParams<Ctx, AS> {
     pub from_ctx: *mut Ctx,
@@ -746,9 +748,16 @@ pub(crate) fn log_context_switch<R: BootRuntime>(
     }
 
     let idx = SWITCH_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
-    if idx >= 32 {
+    if idx >= 64 {
         return;
     }
+
+    let pair = ((switch.from_tid as u64) << 32) | (switch.to_tid as u64);
+    let last = LAST_SWITCH.load(Ordering::Relaxed);
+    if last == pair {
+        return;
+    }
+    LAST_SWITCH.store(pair, Ordering::Relaxed);
 
     if idx < 8 || idx % 64 == 0 {
         crate::log_event!(

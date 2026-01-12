@@ -78,6 +78,7 @@ impl Supervisor {
             let name = self.get_module_name(mod_id);
             if name.is_empty() {
                 info!("SPROUT: Module {} has empty name", mod_id.0);
+                self.debug_module(mod_id);
                 continue;
             }
 
@@ -123,14 +124,42 @@ impl Supervisor {
         let mut buf = [0u8; 1024];
         if let Ok(len) = thingsys::describe_thing(mod_id, &mut buf) {
             let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
-            if let Some(pos) = s.find("name=\"") {
-                let rest = &s[pos + 6..];
+            // handle both historical `name="..."` and newer `name: "..."` renderings
+            if let Some(rest) = s
+                .split_once("name: \"")
+                .map(|(_, r)| r)
+                .or_else(|| s.split_once("name=\"").map(|(_, r)| r))
+            {
                 if let Some(end) = rest.find('"') {
                     return rest[..end].to_string();
                 }
             }
         }
         String::new()
+    }
+
+    fn debug_module(&self, mod_id: ThingId) {
+        let mut buf = [0u8; 1024];
+
+        if let Ok(len) = thingsys::describe_thing(mod_id, &mut buf) {
+            let desc = core::str::from_utf8(&buf[..len]).unwrap_or("<invalid utf8>");
+            info!("SPROUT:   describe: {}", desc);
+        } else {
+            info!("SPROUT:   describe: <failed>");
+        }
+
+        if let Ok(len) = thingsys::dump_edges(mod_id, &mut buf) {
+            let edges = core::str::from_utf8(&buf[..len]).unwrap_or("<invalid utf8>");
+            if edges.trim().is_empty() {
+                info!("SPROUT:   edges: (none)");
+            } else {
+                for line in edges.lines() {
+                    info!("SPROUT:   edge: {}", line);
+                }
+            }
+        } else {
+            info!("SPROUT:   edges: <failed>");
+        }
     }
 
     fn spawn_apps(&mut self) {

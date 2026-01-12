@@ -219,28 +219,28 @@ impl Supervisor {
         let mut driver_name: Option<&'static str> = None;
         let mut display_device: Option<ThingId> = None;
 
-        if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
+        let mut gpu_buf = [ThingId(0); 1];
+        if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
             if count > 0 {
-                let fb = fb_buf[0];
-                display_device = Some(fb);
-                display_width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(0) as u32;
-                display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(0) as u32;
-                display_stride = thingsys::prop_get(fb, keys::STRIDE).unwrap_or(0) as u32;
-                display_format = thingsys::prop_get(fb, keys::FORMAT).unwrap_or(0) as u32;
-                driver_name = Some("/display_bootfb");
+                display_device = Some(gpu_buf[0]);
+                display_width = 800;
+                display_height = 600;
+                display_stride = display_width * 4;
+                display_format = 1;
+                driver_name = Some("/display_virtio_gpu");
             }
         }
 
         if driver_name.is_none() {
-            let mut gpu_buf = [ThingId(0); 1];
-            if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
+            if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
                 if count > 0 {
-                    display_device = Some(gpu_buf[0]);
-                    display_width = 800;
-                    display_height = 600;
-                    display_stride = display_width * 4;
-                    display_format = 1;
-                    driver_name = Some("/display_virtio_gpu");
+                    let fb = fb_buf[0];
+                    display_device = Some(fb);
+                    display_width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(0) as u32;
+                    display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(0) as u32;
+                    display_stride = thingsys::prop_get(fb, keys::STRIDE).unwrap_or(0) as u32;
+                    display_format = thingsys::prop_get(fb, keys::FORMAT).unwrap_or(0) as u32;
+                    driver_name = Some("/display_bootfb");
                 }
             }
         }

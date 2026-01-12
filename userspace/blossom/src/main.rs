@@ -71,6 +71,42 @@ fn send_driver_msg(handle: PortHandle, msg_type: u16, payload: &[u8]) {
     }
 }
 
+fn parse_disp_header(buf: &[u8]) -> Option<dispproto::DisplayHeader> {
+    if buf.len() < dispproto::HEADER_SIZE {
+        return None;
+    }
+
+    let magic = u32::from_le_bytes(buf[0..4].try_into().ok()?);
+    let version = u16::from_le_bytes(buf[4..6].try_into().ok()?);
+    let msg_type = u16::from_le_bytes(buf[6..8].try_into().ok()?);
+    let payload_len = u32::from_le_bytes(buf[8..12].try_into().ok()?);
+
+    Some(dispproto::DisplayHeader {
+        magic,
+        version,
+        msg_type,
+        payload_len,
+    })
+}
+
+fn parse_drv_header(buf: &[u8]) -> Option<drvproto::DriverHeader> {
+    if buf.len() < drvproto::HEADER_SIZE {
+        return None;
+    }
+
+    let magic = u32::from_le_bytes(buf[0..4].try_into().ok()?);
+    let version = u16::from_le_bytes(buf[4..6].try_into().ok()?);
+    let msg_type = u16::from_le_bytes(buf[6..8].try_into().ok()?);
+    let payload_len = u32::from_le_bytes(buf[8..12].try_into().ok()?);
+
+    Some(drvproto::DriverHeader {
+        magic,
+        version,
+        msg_type,
+        payload_len,
+    })
+}
+
 #[stem::main]
 fn main(arg: usize) -> ! {
     let disp_req_read = unpack_handle(arg, 0);
@@ -97,121 +133,191 @@ fn main(arg: usize) -> ! {
 
     let mut disp_buf = [0u8; 512];
     let mut drv_buf = [0u8; 512];
+    let mut disp_rx_buf = [0u8; 1024];
+    let mut drv_rx_buf = [0u8; 1024];
+    let mut disp_rx_len = 0usize;
+    let mut drv_rx_len = 0usize;
 
     loop {
         if let Ok(n) = port_recv(drv_resp_read, &mut drv_buf) {
-            if let Some((header, payload)) = drvproto::parse_message(&drv_buf[..n]) {
-                match header.msg_type {
-                    drvproto::MSG_REGISTER => {
-                        if payload.len() >= core::mem::size_of::<drvproto::RegisterPayload>() {
-                            driver_ready = true;
-                            send_driver_msg(drv_req_write, drvproto::MSG_ACK, &[]);
-
-                            let bind = drvproto::BindPayload {
-                                bytespace_id: surface.bytespace_id.0,
-                                width: surface.width,
-                                height: surface.height,
-                                stride: surface.stride,
-                                format: surface.format,
-                            };
-                            let bind_bytes = unsafe {
-                                core::slice::from_raw_parts(
-                                    &bind as *const _ as *const u8,
-                                    core::mem::size_of::<drvproto::BindPayload>(),
-                                )
-                            };
-                            send_driver_msg(drv_req_write, drvproto::MSG_BIND, bind_bytes);
-                            info!("blossom: driver registered, bind sent");
-                        }
-                    }
-                    drvproto::MSG_ACK => {
-                        if !driver_bound {
-                            driver_bound = true;
-                            info!("blossom: driver bound");
-                        }
-                        if pending_present {
-                            send_display_msg(disp_resp_write, dispproto::MSG_ACK, &[]);
-                            pending_present = false;
-                        }
-                    }
-                    drvproto::MSG_ERR => {
-                        if !driver_bound {
-                            info!("blossom: driver bind error");
-                        }
-                        if pending_present {
-                            send_display_msg(disp_resp_write, dispproto::MSG_ERR, payload);
-                            pending_present = false;
-                        }
-                    }
-                    _ => {}
+            if n > 0 {
+                if drv_rx_len + n > drv_rx_buf.len() {
+                    drv_rx_len = 0;
                 }
+                drv_rx_buf[drv_rx_len..drv_rx_len + n].copy_from_slice(&drv_buf[..n]);
+                drv_rx_len += n;
             }
         }
 
-        if let Ok(n) = port_recv(disp_req_read, &mut disp_buf) {
-            if let Some((header, payload)) = dispproto::parse_message(&disp_buf[..n]) {
-                match header.msg_type {
-                    dispproto::MSG_HELLO => {
-                        send_display_msg(disp_resp_write, dispproto::MSG_ACK, &[]);
-                    }
-                    dispproto::MSG_INFO_REQ => {
-                        let info = dispproto::InfoResp {
+        while drv_rx_len >= drvproto::HEADER_SIZE {
+            let header = match parse_drv_header(&drv_rx_buf[..drv_rx_len]) {
+                Some(header) => header,
+                None => {
+                    drv_rx_len = 0;
+                    break;
+                }
+            };
+
+            if header.magic != drvproto::DRIVER_MAGIC || header.version != drvproto::DRIVER_VERSION {
+                drv_rx_buf.copy_within(1..drv_rx_len, 0);
+                drv_rx_len -= 1;
+                continue;
+            }
+
+            let total = drvproto::HEADER_SIZE + (header.payload_len as usize);
+            if drv_rx_len < total {
+                break;
+            }
+
+            let payload = &drv_rx_buf[drvproto::HEADER_SIZE..total];
+            match header.msg_type {
+                drvproto::MSG_REGISTER => {
+                    if payload.len() >= core::mem::size_of::<drvproto::RegisterPayload>() {
+                        driver_ready = true;
+                        send_driver_msg(drv_req_write, drvproto::MSG_ACK, &[]);
+
+                        let bind = drvproto::BindPayload {
+                            bytespace_id: surface.bytespace_id.0,
                             width: surface.width,
                             height: surface.height,
                             stride: surface.stride,
                             format: surface.format,
                         };
-                        let info_bytes = unsafe {
+                        let bind_bytes = unsafe {
                             core::slice::from_raw_parts(
-                                &info as *const _ as *const u8,
-                                core::mem::size_of::<dispproto::InfoResp>(),
+                                &bind as *const _ as *const u8,
+                                core::mem::size_of::<drvproto::BindPayload>(),
                             )
                         };
-                        send_display_msg(disp_resp_write, dispproto::MSG_INFO_RESP, info_bytes);
+                        send_driver_msg(drv_req_write, drvproto::MSG_BIND, bind_bytes);
+                        info!("blossom: driver registered, bind sent");
                     }
-                    dispproto::MSG_BUFFER_REQ => {
-                        let size = (surface.height as u64) * (surface.stride as u64);
-                        let resp = dispproto::BufferResp {
-                            bytespace_id: surface.bytespace_id.0,
-                            size,
-                            stride: surface.stride,
-                            format: surface.format,
-                        };
-                        let resp_bytes = unsafe {
-                            core::slice::from_raw_parts(
-                                &resp as *const _ as *const u8,
-                                core::mem::size_of::<dispproto::BufferResp>(),
-                            )
-                        };
-                        send_display_msg(disp_resp_write, dispproto::MSG_BUFFER_RESP, resp_bytes);
-                    }
-                    dispproto::MSG_PRESENT => {
-                        if !driver_ready {
-                            let err = dispproto::ErrResp { code: 1 };
-                            let err_bytes = unsafe {
-                                core::slice::from_raw_parts(
-                                    &err as *const _ as *const u8,
-                                    core::mem::size_of::<dispproto::ErrResp>(),
-                                )
-                            };
-                            send_display_msg(disp_resp_write, dispproto::MSG_ERR, err_bytes);
-                        } else if !driver_bound {
-                            let err = dispproto::ErrResp { code: 2 };
-                            let err_bytes = unsafe {
-                                core::slice::from_raw_parts(
-                                    &err as *const _ as *const u8,
-                                    core::mem::size_of::<dispproto::ErrResp>(),
-                                )
-                            };
-                            send_display_msg(disp_resp_write, dispproto::MSG_ERR, err_bytes);
-                        } else {
-                            pending_present = true;
-                            send_driver_msg(drv_req_write, drvproto::MSG_PRESENT, payload);
-                        }
-                    }
-                    _ => {}
                 }
+                drvproto::MSG_ACK => {
+                    if !driver_bound {
+                        driver_bound = true;
+                        info!("blossom: driver bound");
+                    }
+                    if pending_present {
+                        send_display_msg(disp_resp_write, dispproto::MSG_ACK, &[]);
+                        pending_present = false;
+                    }
+                }
+                drvproto::MSG_ERR => {
+                    if !driver_bound {
+                        info!("blossom: driver bind error");
+                    }
+                    if pending_present {
+                        send_display_msg(disp_resp_write, dispproto::MSG_ERR, payload);
+                        pending_present = false;
+                    }
+                }
+                _ => {}
             }
+
+            if total < drv_rx_len {
+                drv_rx_buf.copy_within(total..drv_rx_len, 0);
+            }
+            drv_rx_len -= total;
+        }
+
+        if let Ok(n) = port_recv(disp_req_read, &mut disp_buf) {
+            if n > 0 {
+                if disp_rx_len + n > disp_rx_buf.len() {
+                    disp_rx_len = 0;
+                }
+                disp_rx_buf[disp_rx_len..disp_rx_len + n].copy_from_slice(&disp_buf[..n]);
+                disp_rx_len += n;
+            }
+        }
+
+        while disp_rx_len >= dispproto::HEADER_SIZE {
+            let header = match parse_disp_header(&disp_rx_buf[..disp_rx_len]) {
+                Some(header) => header,
+                None => {
+                    disp_rx_len = 0;
+                    break;
+                }
+            };
+
+            if header.magic != dispproto::DISPLAY_MAGIC || header.version != dispproto::DISPLAY_VERSION {
+                disp_rx_buf.copy_within(1..disp_rx_len, 0);
+                disp_rx_len -= 1;
+                continue;
+            }
+
+            let total = dispproto::HEADER_SIZE + (header.payload_len as usize);
+            if disp_rx_len < total {
+                break;
+            }
+
+            let payload = &disp_rx_buf[dispproto::HEADER_SIZE..total];
+            match header.msg_type {
+                dispproto::MSG_HELLO => {
+                    send_display_msg(disp_resp_write, dispproto::MSG_ACK, &[]);
+                }
+                dispproto::MSG_INFO_REQ => {
+                    let info = dispproto::InfoResp {
+                        width: surface.width,
+                        height: surface.height,
+                        stride: surface.stride,
+                        format: surface.format,
+                    };
+                    let info_bytes = unsafe {
+                        core::slice::from_raw_parts(
+                            &info as *const _ as *const u8,
+                            core::mem::size_of::<dispproto::InfoResp>(),
+                        )
+                    };
+                    send_display_msg(disp_resp_write, dispproto::MSG_INFO_RESP, info_bytes);
+                }
+                dispproto::MSG_BUFFER_REQ => {
+                    let size = (surface.height as u64) * (surface.stride as u64);
+                    let resp = dispproto::BufferResp {
+                        bytespace_id: surface.bytespace_id.0,
+                        size,
+                        stride: surface.stride,
+                        format: surface.format,
+                    };
+                    let resp_bytes = unsafe {
+                        core::slice::from_raw_parts(
+                            &resp as *const _ as *const u8,
+                            core::mem::size_of::<dispproto::BufferResp>(),
+                        )
+                    };
+                    send_display_msg(disp_resp_write, dispproto::MSG_BUFFER_RESP, resp_bytes);
+                }
+                dispproto::MSG_PRESENT => {
+                    if !driver_ready {
+                        let err = dispproto::ErrResp { code: 1 };
+                        let err_bytes = unsafe {
+                            core::slice::from_raw_parts(
+                                &err as *const _ as *const u8,
+                                core::mem::size_of::<dispproto::ErrResp>(),
+                            )
+                        };
+                        send_display_msg(disp_resp_write, dispproto::MSG_ERR, err_bytes);
+                    } else if !driver_bound {
+                        let err = dispproto::ErrResp { code: 2 };
+                        let err_bytes = unsafe {
+                            core::slice::from_raw_parts(
+                                &err as *const _ as *const u8,
+                                core::mem::size_of::<dispproto::ErrResp>(),
+                            )
+                        };
+                        send_display_msg(disp_resp_write, dispproto::MSG_ERR, err_bytes);
+                    } else {
+                        pending_present = true;
+                        send_driver_msg(drv_req_write, drvproto::MSG_PRESENT, payload);
+                    }
+                }
+                _ => {}
+            }
+
+            if total < disp_rx_len {
+                disp_rx_buf.copy_within(total..disp_rx_len, 0);
+            }
+            disp_rx_len -= total;
         }
 
         stem::yield_now();

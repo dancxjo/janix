@@ -335,7 +335,19 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
     // Virtio GPU detection (vendor 0x1af4, class 0x03 display controller)
     if vendor_id == 0x1af4 && class_code == 0x03 {
         crate::kinfo!("PCI: Found virtio display controller at {:02x}:{:02x}.{}", bus, dev, func);
-        register_virtio_gpu(node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap);
+        register_virtio_gpu(
+            node,
+            bus,
+            dev,
+            func,
+            &bar_addrs,
+            &bar_sizes,
+            msi_cap,
+            msix_cap,
+            create,
+            set,
+            link,
+        );
     }
 
     // Recursion for PCI-to-PCI Bridge
@@ -363,12 +375,20 @@ fn register_virtio_gpu(
     bar_sizes: &[u64; 6],
     msi_cap: Option<u8>,
     msix_cap: Option<u8>,
+    create: &mut impl FnMut(&str) -> u64,
+    set: &mut impl FnMut(u64, &str, u64),
+    link: &mut impl FnMut(u64, &str, u64),
 ) {
     use crate::device_registry::{DeviceEntry, MsiCapability, MsixCapability, PciLocation, REGISTRY};
-    
+
+    let gpu_node = create(kinds::DEV_DISPLAY_GPU);
+    set(gpu_node, keys::SOURCE, source::PCI as u64);
+    set(gpu_node, keys::CONFIDENCE, confidence::HIGH as u64);
+    link(graph_id, rels::IMPLEMENTS, gpu_node);
+
     let entry = DeviceEntry::new_mmio(
-        "dev.display.Gpu",
-        graph_id,
+        kinds::DEV_DISPLAY_GPU,
+        gpu_node,
         *bar_addrs,
         *bar_sizes,
     );

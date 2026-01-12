@@ -282,7 +282,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     if let Some(mod_desc) = sprout {
         kinfo!("Found sprout module, loading...");
         
-        let aspace = runtime.tasking().active_address_space();
+        let aspace = runtime.tasking().make_user_address_space();
         let hook = GlobalAllocHook;
         
         // Load Sprout
@@ -341,19 +341,17 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         kinfo!("Spawning sprout with registry at 0x600000...");
         unsafe {
              kinfo!("Spawning sprout...");
-             crate::task::scheduler::spawn_user_thread::<R>(
-                 user_entry.entry_pc, 
-                 user_entry.user_sp, 
-                 0x600000 // arg0 = registry ptr
-             );
-        }
+             let mut entry = user_entry;
+             entry.arg0 = 0x600000; // arg0 = registry ptr
+             crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace);
+         }
     } else {
         kinfo!("Sprout not found. Checking fallback...");
         
         let threads_demo = modules.iter().find(|m| m.name.contains("threads_demo"));
         if let Some(mod_desc) = threads_demo {
              kinfo!("Found threads_demo fallback...");
-             let aspace = runtime.tasking().active_address_space();
+             let aspace = runtime.tasking().make_user_address_space();
              let hook = GlobalAllocHook;
              let user_entry = crate::task::loader::load_module(runtime, aspace, mod_desc)
                 .expect("Failed to load threads_demo");

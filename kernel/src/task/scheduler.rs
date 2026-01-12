@@ -398,6 +398,14 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(entry: usize, stack: usize, arg:
     sched.spawn_user_thread(entry, stack, arg)
 }
 
+
+pub unsafe fn spawn_user_task_full<R: BootRuntime>(entry: UserEntry, aspace: <R::Tasking as BootTasking>::AddressSpace) -> Option<TaskId> {
+    let lock = SCHEDULER.lock();
+    let ptr = lock.expect("Scheduler not initialized");
+    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+    sched.spawn_user_task(entry, aspace)
+}
+
 pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>)> {
     let lock = SCHEDULER.lock();
     if let Some(ptr) = *lock {

@@ -24,7 +24,7 @@ pub fn make_user_address_space(_active: AArch64AddressSpace, allocator: &dyn Fra
     let ptr = virt as *mut u64;
     
     unsafe {
-        core::ptr::write_bytes(ptr, 0, 4096);
+        core::ptr::write_bytes(ptr as *mut u8, 0, 4096);
     }
     
     AArch64AddressSpace(phys)

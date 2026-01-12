@@ -285,13 +285,9 @@ syscall_entry:
     
     mov 16(%rsp), %rcx  // Load RIP into RCX
     mov 32(%rsp), %r11  // Load RFLAGS into R11
+    mov 40(%rsp), %rsp  // Restore User RSP from the saved frame instead of GS scratch
     
-    // Restore User Stack
     cli
-    mov %gs:0, %rsp
-    
-    // Restore User GS
     swapgs
-    
     sysretq
 "#);

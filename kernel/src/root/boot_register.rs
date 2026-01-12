@@ -271,6 +271,10 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
     let scheduler = create(kinds::SVC_SCHEDULER); 
     link(kernel, rels::PROVIDES, scheduler);
     
+    // 11. PCI
+    crate::kinfo!("ROOT: Census Phase 2: PCI");
+    crate::root::pci::enumerate_and_publish(host, &create, &set, &link, &intern);
+
     crate::kinfo!("ROOT: registered items. host={:x} kernel={:x}", host, kernel);
     
     BootInventory { host, kernel, root: root_svc }

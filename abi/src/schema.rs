@@ -39,6 +39,24 @@ pub mod keys {
     
     // Legacy mapping (to be deprecated or mapped)
     pub const KIND: &str = "kind";
+
+    pub const VENDOR_ID: &str = "vendor_id";
+    pub const DEVICE_ID: &str = "device_id";
+    pub const CLASS_CODE: &str = "class_code";
+    pub const SUBCLASS_CODE: &str = "subclass_code";
+    pub const PROG_IF: &str = "prog_if";
+    pub const REVISION_ID: &str = "revision_id";
+    pub const BIND_KIND: &str = "bind_kind";
+    pub const BIND_HASH: &str = "bind_hash";
+    pub const BUS: &str = "bus";
+    pub const DEVICE: &str = "device";
+    pub const FUNCTION: &str = "function";
+    pub const BAR0: &str = "bar0";
+    pub const BAR1: &str = "bar1";
+    pub const BAR2: &str = "bar2";
+    pub const BAR3: &str = "bar3";
+    pub const BAR4: &str = "bar4";
+    pub const BAR5: &str = "bar5";
 }
 
 pub mod kinds {
@@ -59,7 +77,10 @@ pub mod kinds {
     pub const FW_BOOT: &str = "fw.Boot";
     pub const TIME_WALL_CLOCK_SAMPLE: &str = "time.WallClockSample";
     pub const SVC_TIME_SYSTEM_CLOCK: &str = "svc.time.SystemClock";
+    pub const DEV_BUS_PCI: &str = "dev.bus.Pci";
+    pub const DEV_PCI_FUNCTION: &str = "dev.pci.Function";
 }
+
 
 pub mod rels {
     pub const HAS_BUS: &str = "HAS_BUS";

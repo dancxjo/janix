@@ -10,6 +10,7 @@ pub mod watch;
 pub mod resources;
 pub mod abi;
 pub mod schema;
+pub mod pci;
 
 pub use service::root_main;
 

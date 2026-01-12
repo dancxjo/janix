@@ -76,6 +76,11 @@ core::arch::global_asm!(r#"
         mov $0x46, %al
         out %al, %dx
         
+        // Check for CPL=3 (User Mode)
+        testb $3, 16(%rsp)
+        jz 1f
+        swapgs
+    1:
         cli
         mov %rsp, %rdi
         call rust_double_fault_handler
@@ -89,6 +94,11 @@ core::arch::global_asm!(r#"
         mov $0x47, %al
         out %al, %dx
         
+        // Check for CPL=3 (User Mode)
+        testb $3, 16(%rsp)
+        jz 1f
+        swapgs
+    1:
         cli
         mov %rsp, %rdi
         call rust_gp_handler
@@ -102,6 +112,11 @@ core::arch::global_asm!(r#"
         mov $0x50, %al
         out %al, %dx
     
+        // Check for CPL=3 (User Mode)
+        testb $3, 16(%rsp)
+        jz 1f
+        swapgs
+    1:
         cli
         mov %rsp, %rdi
         call rust_pf_handler

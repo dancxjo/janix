@@ -46,6 +46,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "display_bootfb", target, "release")?;
     build_userspace_app(sh, "display_virtio_gpu", target, "release")?;
     build_userspace_app(sh, "display_ramfb", target, "release")?;
+    build_userspace_app(sh, "stack_heap_torture", target, "release")?;
 
     // Copy binaries to iso_root
     copy_userspace_binary(sh, "sprout", target, "release", "iso_root/boot/sprout")?;
@@ -64,6 +65,8 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     copy_userspace_binary(sh, "display_bootfb", target, "release", "iso_root/boot/display_bootfb")?;
     copy_userspace_binary(sh, "display_virtio_gpu", target, "release", "iso_root/boot/display_virtio_gpu")?;
     copy_userspace_binary(sh, "display_ramfb", target, "release", "iso_root/boot/display_ramfb")?;
+    copy_userspace_binary(sh, "stack_heap_torture", target, "release", "iso_root/boot/stack_heap_torture")?;
+    
     // Copy limine config
     sh.copy_file("limine.conf", "iso_root/boot/limine/limine.conf")?;
 
@@ -206,5 +209,3 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
     println!("HDD image created: {}", hdd);
     Ok(())
 }
-
-// Note: ps2_mouse will be added in a future version when mouse routing is implemented

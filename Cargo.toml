@@ -25,6 +25,7 @@ members = [
     "userspace/inkwell",
     "userspace/stack_grow_demo",
     "userspace/stack_overflow_demo",
+    "userspace/stack_heap_torture",
     "tools/pciids",
 ]
 resolver = "2"

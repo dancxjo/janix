@@ -6,6 +6,7 @@ pub use abi;
 pub use stem_macros::main;
 
 pub mod arch;
+pub mod bitset;
 pub mod console;
 pub mod device;
 pub mod errors;
@@ -17,6 +18,7 @@ pub mod stack;
 pub mod syscall;
 pub mod thread;
 pub mod time;
+pub mod utils;
 pub mod vm;
 
 #[macro_export]

@@ -5,6 +5,7 @@ pub mod frame_alloc;
 pub mod global_alloc;
 pub mod kheap;
 pub mod layout;
+pub mod map;
 pub mod paging;
 
 use crate::kinfo;

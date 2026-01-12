@@ -2,6 +2,7 @@ use crate::BootRuntime;
 use crate::memory::kheap::kernel_heap;
 use core::alloc::{GlobalAlloc, Layout};
 
+#[cfg(not(test))]
 #[global_allocator]
 static ALLOCATOR: GlobalHeap = GlobalHeap;
 

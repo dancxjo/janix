@@ -1941,6 +1941,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "stack_heap_torture"
+version = "0.1.0"
+dependencies = [
+ "stem",
+]
+
+[[package]]
 name = "stack_overflow_demo"
 version = "0.1.0"
 dependencies = [

@@ -173,6 +173,7 @@ impl Supervisor {
         self.ensure_app("/clock");
         self.ensure_app("/threads");
         self.ensure_app("/inkwell");
+        self.ensure_app("/stack_heap_torture");
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {

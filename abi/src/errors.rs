@@ -65,6 +65,7 @@ pub fn errno(ret: isize) -> Result<usize, Errno> {
             1 => Err(Errno::EPERM),
             2 => Err(Errno::ENOENT),
             5 => Err(Errno::EIO),
+            11 => Err(Errno::EAGAIN),
             12 => Err(Errno::ENOMEM),
             14 => Err(Errno::EFAULT),
             22 => Err(Errno::EINVAL),
@@ -106,6 +107,11 @@ mod tests {
     #[test]
     fn errno_recognizes_eio() {
         assert_eq!(errno(-5), Err(Errno::EIO));
+    }
+
+    #[test]
+    fn errno_recognizes_eagain() {
+        assert_eq!(errno(-11), Err(Errno::EAGAIN));
     }
 
     #[test]

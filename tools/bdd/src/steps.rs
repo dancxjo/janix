@@ -398,3 +398,28 @@ async fn check_liveness(world: &mut ThingOsWorld) {
         eprintln!("  ✅ Liveness detected");
     }
 }
+
+// ===== Torture Garden Steps =====
+
+#[then(regex = r#"^the log does not contain "(.+)"$"#)]
+async fn log_does_not_contain(world: &mut ThingOsWorld, pattern: String) {
+    // Give a brief window for any late output
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    
+    let log = world.get_serial_log().await;
+    if log.contains(&pattern) {
+        eprintln!("\n=== Unexpected pattern found in log ===");
+        eprintln!("Pattern: {}", pattern);
+        eprintln!("\n=== Serial Log (context) ===");
+        for line in log.lines().filter(|l| l.contains(&pattern)) {
+            eprintln!(">>> {}", line);
+        }
+        eprintln!("=== End Context ===\n");
+        panic!("Log unexpectedly contains '{}'", pattern);
+    }
+}
+
+#[then(regex = r#"^the log should not contain "(.+)"$"#)]
+async fn log_should_not_contain(world: &mut ThingOsWorld, pattern: String) {
+    log_does_not_contain(world, pattern).await;
+}

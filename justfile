@@ -122,4 +122,4 @@ test *args:
 
 # Run smoke tests (quick boot validation)
 smoke:
-    cargo xtask bdd --tags @smoke
+    cargo xtask bdd --arch x86_64 --tags @smoke

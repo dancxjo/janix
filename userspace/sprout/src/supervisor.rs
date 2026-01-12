@@ -311,7 +311,7 @@ impl Supervisor {
     fn setup_keyboard_pipeline(&mut self) {
         info!("SPROUT: Setting up keyboard pipeline...");
         
-        // Create kbd_raw port (ps2_kbd -> thigmonasty)
+        // Create kbd_raw port (ps2_kbd -> bristle)
         let kbd_raw = match stem::syscall::port_create(4096) {
             Ok((write_h, read_h)) => {
                 info!("SPROUT: Created kbd_raw port (w={}, r={})", write_h, read_h);
@@ -323,7 +323,7 @@ impl Supervisor {
             }
         };
         
-        // Create kbd_evt port (thigmonasty -> echo)
+        // Create kbd_evt port (bristle -> echo)
         let kbd_evt = match stem::syscall::port_create(4096) {
             Ok((write_h, read_h)) => {
                 info!("SPROUT: Created kbd_evt port (w={}, r={})", write_h, read_h);
@@ -352,21 +352,21 @@ impl Supervisor {
             }
         }
         
-        // Spawn thigmonasty with packed handles: (raw_read << 16) | evt_write
+        // Spawn bristle with packed handles: (raw_read << 16) | evt_write
         let thig_arg = ((kbd_raw.1 as usize) << 16) | (kbd_evt.0 as usize);
-        match stem::syscall::spawn_process("/thigmonasty", thig_arg) {
+        match stem::syscall::spawn_process("/bristle", thig_arg) {
             Ok(pid) => {
-                info!("SPROUT: Spawned thigmonasty (PID={})", pid);
+                info!("SPROUT: Spawned bristle (PID={})", pid);
                 self.tasks.push(ManagedTask {
-                    name: "/thigmonasty".to_string(),
+                    name: "/bristle".to_string(),
                     kind: TaskKind::App,
-                    module_path: "/thigmonasty".to_string(),
+                    module_path: "/bristle".to_string(),
                     pid: Some(pid),
                     restarts: 0,
                 });
             }
             Err(e) => {
-                stem::error!("SPROUT: Failed to spawn thigmonasty: {:?}", e);
+                stem::error!("SPROUT: Failed to spawn bristle: {:?}", e);
             }
         }
         

@@ -262,6 +262,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bristle"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "bstr"
 version = "1.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1469,6 +1477,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "ps2_mouse"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "pxfm"
 version = "0.1.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1975,14 +1991,6 @@ dependencies = [
  "smawk",
  "unicode-linebreak",
  "unicode-width",
-]
-
-[[package]]
-name = "thigmonasty"
-version = "0.1.0"
-dependencies = [
- "abi",
- "stem",
 ]
 
 [[package]]

@@ -36,7 +36,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "rtc_cmos", target, "release")?;
     build_userspace_app(sh, "clock", target, "dev")?;  // clock uses dev profile
     build_userspace_app(sh, "ps2_kbd", target, "release")?;
-    build_userspace_app(sh, "thigmonasty", target, "release")?;
+    build_userspace_app(sh, "bristle", target, "release")?;
     build_userspace_app(sh, "echo", target, "release")?;
     build_userspace_app(sh, "virtio_gpu", target, "release")?;
     build_userspace_app(sh, "inkwell", target, "release")?;
@@ -47,7 +47,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     copy_userspace_binary(sh, "rtc_cmos", target, "release", "iso_root/boot/rtc_cmos")?;
     copy_userspace_binary(sh, "clock", target, "debug", "iso_root/boot/clock")?;
     copy_userspace_binary(sh, "ps2_kbd", target, "release", "iso_root/boot/ps2_kbd")?;
-    copy_userspace_binary(sh, "thigmonasty", target, "release", "iso_root/boot/thigmonasty")?;
+    copy_userspace_binary(sh, "bristle", target, "release", "iso_root/boot/bristle")?;
     copy_userspace_binary(sh, "echo", target, "release", "iso_root/boot/echo")?;
     copy_userspace_binary(sh, "virtio_gpu", target, "release", "iso_root/boot/virtio_gpu")?;
 
@@ -194,3 +194,5 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
     println!("HDD image created: {}", hdd);
     Ok(())
 }
+
+// Note: ps2_mouse will be added in a future version when mouse routing is implemented

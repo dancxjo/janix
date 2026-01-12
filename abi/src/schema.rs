@@ -120,3 +120,24 @@ pub mod virtio {
     pub const VENDOR_ID: u16 = 0x1af4;
     pub const GPU_DEVICE_ID: u16 = 0x1050;
 }
+
+// HID / Input additions (Bristle v0)
+pub mod hid {
+    // Service kinds
+    pub const SVC_INPUT: &str = "svc.Input";           // Bristle broker
+    
+    // Device kinds
+    pub const DEV_HID_KEYBOARD: &str = "dev.hid.Keyboard";
+    pub const DEV_HID_MOUSE: &str = "dev.hid.Mouse";
+    pub const DEV_HID_TOUCHPAD: &str = "dev.hid.Touchpad";
+    pub const DEV_HID_GAMEPAD: &str = "dev.hid.Gamepad";
+    
+    // Driver kinds
+    pub const DRV_PS2_KEYBOARD: &str = "drv.Ps2Keyboard";
+    pub const DRV_PS2_MOUSE: &str = "drv.Ps2Mouse";
+    
+    // Relations
+    pub const REL_CONSUMES: &str = "CONSUMES";         // (svc.Input)-[:CONSUMES]->(dev.hid.Keyboard)
+    pub const REL_ROUTES_TO: &str = "ROUTES_TO";       // (svc.Input)-[:ROUTES_TO]->(app.Echo)
+    pub const REL_PRODUCES: &str = "PRODUCES";         // (drv.Ps2Keyboard)-[:PRODUCES]->(dev.hid.Keyboard)
+}

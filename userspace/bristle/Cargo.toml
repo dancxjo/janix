@@ -1,12 +1,12 @@
 [package]
-name = "thigmonasty"
+name = "bristle"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+
+[[bin]]
+name = "bristle"
+path = "src/main.rs"
 
 [dependencies]
 stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }
-
-[profile.release]
-panic = "abort"
-lto = true

@@ -1,0 +1,195 @@
+//! IOAPIC Programming
+//!
+//! Memory-mapped access to I/O APIC for interrupt routing.
+
+use core::ptr;
+use core::sync::atomic::{AtomicU64, Ordering};
+use kernel::{FrameAllocatorHook, MapKind, MapPerms};
+
+use super::paging;
+
+struct IoapicMapAllocator;
+impl FrameAllocatorHook for IoapicMapAllocator {
+    fn alloc_frame(&self) -> Option<u64> {
+        kernel::memory::alloc_frame()
+    }
+}
+
+fn map_mmio_range(phys: u64, len: u64, hhdm: u64) {
+    let start = phys & !0xfff;
+    let end = (phys + len + 0xfff) & !0xfff;
+    let aspace = paging::active_address_space();
+    let perms = MapPerms {
+        user: false,
+        read: true,
+        write: true,
+        exec: false,
+    };
+
+    let mut p = start;
+    while p < end {
+        let virt = p + hhdm;
+        if paging::translate(aspace, virt).is_none() {
+            let _ = paging::map_page(aspace, virt, p, perms, MapKind::Device, &IoapicMapAllocator);
+            paging::tlb_flush_page(virt);
+        }
+        p += 4096;
+    }
+}
+
+/// IOAPIC register offsets
+const IOREGSEL: u64 = 0x00;
+const IOWIN: u64 = 0x10;
+
+/// IOAPIC registers (via indirect access)
+const IOAPIC_ID: u32 = 0x00;
+const IOAPIC_VER: u32 = 0x01;
+const IOAPIC_ARB: u32 = 0x02;
+const IOAPIC_REDTBL_BASE: u32 = 0x10;
+
+/// Delivery modes for redirection entries
+#[derive(Debug, Clone, Copy)]
+#[repr(u8)]
+pub enum DeliveryMode {
+    Fixed = 0,
+    LowestPriority = 1,
+    Smi = 2,
+    Nmi = 4,
+    Init = 5,
+    ExtInt = 7,
+}
+
+/// Global IOAPIC state - only one IOAPIC supported for now
+static IOAPIC_BASE: AtomicU64 = AtomicU64::new(0);
+static HHDM_OFFSET: AtomicU64 = AtomicU64::new(0);
+
+/// Local APIC base for EOI
+static LOCAL_APIC_BASE: AtomicU64 = AtomicU64::new(0xFEE00000);
+
+/// Initialize IOAPIC with discovered MMIO base
+pub fn init(mmio_base: u64, local_apic: u64, hhdm: u64) {
+    IOAPIC_BASE.store(mmio_base, Ordering::SeqCst);
+    HHDM_OFFSET.store(hhdm, Ordering::SeqCst);
+    LOCAL_APIC_BASE.store(local_apic, Ordering::SeqCst);
+
+    // Ensure MMIO ranges are mapped in the HHDM.
+    map_mmio_range(mmio_base, 0x20, hhdm);
+    map_mmio_range(local_apic, 0x1000, hhdm);
+}
+
+fn base() -> u64 {
+    let phys = IOAPIC_BASE.load(Ordering::SeqCst);
+    let hhdm = HHDM_OFFSET.load(Ordering::SeqCst);
+    phys + hhdm
+}
+
+/// Read IOAPIC register via indirect access
+fn read_reg(reg: u32) -> u32 {
+    unsafe {
+        let base = base();
+        ptr::write_volatile(base as *mut u32, reg);
+        ptr::read_volatile((base + IOWIN) as *const u32)
+    }
+}
+
+/// Write IOAPIC register via indirect access  
+fn write_reg(reg: u32, val: u32) {
+    unsafe {
+        let base = base();
+        ptr::write_volatile(base as *mut u32, reg);
+        ptr::write_volatile((base + IOWIN) as *mut u32, val);
+    }
+}
+
+/// Get IOAPIC version and max redirection entries
+pub fn get_version() -> (u8, u8) {
+    let ver = read_reg(IOAPIC_VER);
+    let version = (ver & 0xFF) as u8;
+    let max_redir = ((ver >> 16) & 0xFF) as u8;
+    (version, max_redir + 1)
+}
+
+/// Redirection table entry (64-bit)
+#[derive(Debug, Clone, Copy)]
+pub struct RedirEntry {
+    pub vector: u8,
+    pub delivery_mode: DeliveryMode,
+    pub dest_logical: bool,
+    pub active_low: bool,
+    pub level_triggered: bool,
+    pub mask: bool,
+    pub destination: u8,
+}
+
+impl RedirEntry {
+    /// Create a new redirection entry for a fixed interrupt
+    pub fn new_fixed(vector: u8, dest_cpu: u8) -> Self {
+        Self {
+            vector,
+            delivery_mode: DeliveryMode::Fixed,
+            dest_logical: false,
+            active_low: false,
+            level_triggered: false,
+            mask: false,
+            destination: dest_cpu,
+        }
+    }
+    
+    /// Convert to 64-bit register value
+    fn to_u64(&self) -> u64 {
+        let mut val: u64 = 0;
+        val |= self.vector as u64;
+        val |= (self.delivery_mode as u64) << 8;
+        if self.dest_logical { val |= 1 << 11; }
+        if self.active_low { val |= 1 << 13; }
+        if self.level_triggered { val |= 1 << 15; }
+        if self.mask { val |= 1 << 16; }
+        val |= (self.destination as u64) << 56;
+        val
+    }
+}
+
+/// Write a redirection table entry
+pub fn write_redir(pin: u8, entry: RedirEntry) {
+    let reg_low = IOAPIC_REDTBL_BASE + (pin as u32 * 2);
+    let reg_high = reg_low + 1;
+    let val = entry.to_u64();
+    
+    write_reg(reg_high, (val >> 32) as u32);
+    write_reg(reg_low, val as u32);
+}
+
+/// Mask an IOAPIC pin
+pub fn mask_pin(pin: u8) {
+    let reg_low = IOAPIC_REDTBL_BASE + (pin as u32 * 2);
+    let mut val = read_reg(reg_low);
+    val |= 1 << 16; // Set mask bit
+    write_reg(reg_low, val);
+}
+
+/// Unmask an IOAPIC pin
+pub fn unmask_pin(pin: u8) {
+    let reg_low = IOAPIC_REDTBL_BASE + (pin as u32 * 2);
+    let mut val = read_reg(reg_low);
+    val &= !(1 << 16); // Clear mask bit
+    write_reg(reg_low, val);
+}
+
+/// Send End-of-Interrupt to Local APIC
+/// Must be called at the end of every interrupt handler
+pub fn send_eoi() {
+    let lapic_base = LOCAL_APIC_BASE.load(Ordering::SeqCst);
+    let hhdm = HHDM_OFFSET.load(Ordering::SeqCst);
+    let eoi_reg = lapic_base + hhdm + 0xB0; // EOI register at offset 0xB0
+    unsafe {
+        ptr::write_volatile(eoi_reg as *mut u32, 0);
+    }
+}
+
+/// Mask all IOAPIC pins (for initialization)
+pub fn mask_all() {
+    let (_, max_entries) = get_version();
+    for pin in 0..max_entries {
+        mask_pin(pin);
+    }
+}

@@ -57,6 +57,8 @@ unsafe extern "C" {
     fn gp_handler_shim();
     fn pf_handler_shim();
     fn generic_handler_shim();
+    fn irq_kbd_handler_shim();
+    fn irq_mouse_handler_shim();
 }
 
 core::arch::global_asm!(
@@ -69,15 +71,11 @@ core::arch::global_asm!(
 
     .global double_fault_handler_shim
     double_fault_handler_shim:
-        // Debug 'D'
         mov $0x3f8, %dx
         mov $0x44, %al
         out %al, %dx
-        // Debug 'F'
         mov $0x46, %al
         out %al, %dx
-        
-        // Check for CPL=3 (User Mode)
         testb $3, 16(%rsp)
         jz 1f
         swapgs
@@ -90,12 +88,9 @@ core::arch::global_asm!(
 
     .global gp_handler_shim
     gp_handler_shim:
-        // Debug 'G'
         mov $0x3f8, %dx
         mov $0x47, %al
         out %al, %dx
-        
-        // Check for CPL=3 (User Mode)
         testb $3, 16(%rsp)
         jz 1f
         swapgs
@@ -108,12 +103,9 @@ core::arch::global_asm!(
 
     .global pf_handler_shim
     pf_handler_shim:
-        // Debug 'P'
         mov $0x3f8, %dx
         mov $0x50, %al
         out %al, %dx
-    
-        // Check for CPL=3 (User Mode)
         testb $3, 16(%rsp)
         jz 1f
         swapgs
@@ -131,11 +123,69 @@ core::arch::global_asm!(
         out %al, %dx
     2:  hlt
         jmp 2b
+
+    // Hardware IRQ handler for keyboard (vector 0x21)
+    .global irq_kbd_handler_shim
+    irq_kbd_handler_shim:
+        // Save all registers
+        push %rax
+        push %rcx
+        push %rdx
+        push %rsi
+        push %rdi
+        push %r8
+        push %r9
+        push %r10
+        push %r11
+        
+        // Call Rust handler with vector number
+        mov $0x21, %rdi
+        call rust_irq_handler
+        
+        // Restore registers
+        pop %r11
+        pop %r10
+        pop %r9
+        pop %r8
+        pop %rdi
+        pop %rsi
+        pop %rdx
+        pop %rcx
+        pop %rax
+        
+        iretq
+
+    // Hardware IRQ handler for mouse (vector 0x2C)
+    .global irq_mouse_handler_shim
+    irq_mouse_handler_shim:
+        push %rax
+        push %rcx
+        push %rdx
+        push %rsi
+        push %rdi
+        push %r8
+        push %r9
+        push %r10
+        push %r11
+        
+        mov $0x2C, %rdi
+        call rust_irq_handler
+        
+        pop %r11
+        pop %r10
+        pop %r9
+        pop %r8
+        pop %rdi
+        pop %rsi
+        pop %rdx
+        pop %rcx
+        pop %rax
+        
+        iretq
 "#
 );
 
 pub unsafe fn init() {
-    // Fill all vectors with a safe generic handler so hardware IRQs don't triple fault
     let handler = generic_handler_shim as u64;
     unsafe {
         let base = core::ptr::addr_of_mut!(IDT.entries) as *mut IdtEntry;
@@ -144,11 +194,11 @@ pub unsafe fn init() {
                 handler,
                 crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
                 0,
-                0x8E, // present, ring0, interrupt gate
+                0x8E,
             );
         }
 
-        // Specifically register the few exceptions we want richer handling for now
+        // Exceptions
         IDT.entries[3].set_handler(
             breakpoint_handler_shim as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
@@ -160,7 +210,7 @@ pub unsafe fn init() {
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             1,
             0x8E,
-        ); // IST=1
+        );
         IDT.entries[13].set_handler(
             gp_handler_shim as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
@@ -169,6 +219,20 @@ pub unsafe fn init() {
         );
         IDT.entries[14].set_handler(
             pf_handler_shim as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+
+        // Hardware IRQs via IOAPIC
+        IDT.entries[0x21].set_handler(
+            irq_kbd_handler_shim as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+        IDT.entries[0x2C].set_handler(
+            irq_mouse_handler_shim as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             0,
             0x8E,
@@ -193,6 +257,16 @@ pub struct InterruptStackFrame {
     pub ss: u64,
 }
 
+/// Hardware IRQ handler - dispatches to kernel and sends EOI
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_irq_handler(vector: u64) {
+    // Dispatch to kernel IRQ subsystem
+    kernel::irq::dispatch_irq(vector as u8);
+    
+    // Send EOI to Local APIC
+    crate::arch::x86_64::ioapic::send_eoi();
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) -> ! {
     let cr2: u64;
@@ -200,7 +274,6 @@ pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) -> ! {
         core::arch::asm!("mov {}, cr2", out(reg) cr2);
     }
 
-    // Check if Fault occurred in User Mode (CPL=3)
     if frame.cs & 3 == 3 {
         unsafe {
             unsafe extern "C" {

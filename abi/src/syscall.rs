@@ -66,6 +66,7 @@ pub const SYS_DEVICE_IOPORT_READ: u32 = 0xD2;
 pub const SYS_DEVICE_IOPORT_WRITE: u32 = 0xD3;
 pub const SYS_DEVICE_ALLOC_DMA: u32 = 0xD4;
 pub const SYS_DEVICE_DMA_PHYS: u32 = 0xD5;
+pub const SYS_DEVICE_IRQ_WAIT: u32 = 0xD6;
 
 // ============================================================================
 // Block 0x100–0x10F: Watches/events

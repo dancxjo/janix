@@ -35,6 +35,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_DEVICE_IOPORT_WRITE => handlers::sys_device_ioport(args[0], args[1], true, args[2]),
         SYS_DEVICE_ALLOC_DMA => handlers::sys_device_alloc_dma(args[0], args[1]),
         SYS_DEVICE_DMA_PHYS => handlers::sys_device_dma_phys(args[0]),
+        SYS_DEVICE_IRQ_WAIT => handlers::sys_device_irq_wait(args[0]),
 
         SYS_ROOT_GET_KIND => handlers::sys_root_get_kind(args[0]),
         SYS_ROOT_BYTESPACE_CREATE => handlers::sys_root_bytespace_create(args[0], args[1], args[2]),

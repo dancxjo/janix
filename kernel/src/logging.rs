@@ -125,7 +125,8 @@ pub unsafe fn init(runtime: &'static dyn BootRuntimeBase) {
 }
 
 pub unsafe fn force_unlock() {
-    GLOBAL_LOGGER.force_unlock();
+    // SAFETY: Only called from panic handler when logger lock may be poisoned
+    unsafe { GLOBAL_LOGGER.force_unlock(); }
 }
 
 /// Helper to check if graph logging is safe/ready

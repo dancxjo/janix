@@ -473,6 +473,7 @@ pub fn init<R: BootRuntime>() {
             ALLOC_USER_STACK_HOOK = Some(alloc_user_stack::<R>);
             crate::memory::set_map_user_page_hook(map_user_page::<R>);
         }
+        init_blocking_hooks::<R>();
         crate::kinfo!("  Scheduler initialized");
     }
 }
@@ -869,4 +870,89 @@ unsafe fn map_user_page<R: BootRuntime>(virt: u64, phys: u64) -> Result<(), ()> 
     rt.tasking().tlb_flush_page(virt);
     
     Ok(())
+}
+
+// ============================================================================
+// IRQ blocking support
+// ============================================================================
+
+static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> = 
+    core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> = 
+    core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
+
+/// Block the current task - removes it from run queue and yields
+pub fn block_current<R: BootRuntime>() {
+    let rt = crate::runtime::<R>();
+    let irq = rt.irq_disable();
+
+    let switch_params = {
+        let lock = SCHEDULER.lock();
+        let ptr = lock.expect("Scheduler not initialized");
+        let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+        
+        // Mark current as blocked (don't add to runqueue)
+        if let Some(current_id) = sched.current {
+            if let Some(idx) = sched.tasks.iter().position(|t| t.id == current_id) {
+                sched.tasks[idx].state = TaskState::Blocked;
+            }
+        }
+        
+        // Schedule next without requeueing current
+        sched.prepare_schedule()
+    };
+
+    if let Some(switch) = switch_params {
+        unsafe {
+            rt.tasking().activate_address_space(switch.to_aspace);
+            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
+        }
+    }
+
+    rt.irq_restore(irq);
+}
+
+/// Wake a blocked task by ID - adds it back to run queue
+pub fn wake_task<R: BootRuntime>(task_id: usize) {
+    let lock = SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+        
+        if let Some(idx) = sched.tasks.iter().position(|t| t.id ==  task_id as u64) {
+            if sched.tasks[idx].state == TaskState::Blocked {
+                sched.tasks[idx].state = TaskState::Runnable;
+                sched.runq.push_back(task_id as u64);
+            }
+        }
+    }
+}
+
+/// Type-erased block for use from IRQ module
+pub unsafe fn block_current_erased() {
+    let ptr = BLOCK_CURRENT_HOOK.load(core::sync::atomic::Ordering::SeqCst);
+    if !ptr.is_null() {
+        let hook: fn() = core::mem::transmute(ptr);
+        hook();
+    }
+}
+
+/// Type-erased wake for use from IRQ module  
+pub unsafe fn wake_task_erased(id: usize) {
+    let ptr = WAKE_TASK_HOOK.load(core::sync::atomic::Ordering::SeqCst);
+    if !ptr.is_null() {
+        let hook: fn(usize) = core::mem::transmute(ptr);
+        hook(id);
+    }
+}
+
+/// Initialize blocking hooks during scheduler init
+pub fn init_blocking_hooks<R: BootRuntime>() {
+    BLOCK_CURRENT_HOOK.store(
+        block_current::<R> as *mut (),
+        core::sync::atomic::Ordering::SeqCst,
+    );
+    WAKE_TASK_HOOK.store(
+        wake_task::<R> as *mut (),
+        core::sync::atomic::Ordering::SeqCst,
+    );
 }

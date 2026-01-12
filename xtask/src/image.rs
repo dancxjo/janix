@@ -41,6 +41,11 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "ps2_mouse", target, "release")?;
     build_userspace_app(sh, "virtio_gpu", target, "release")?;
     build_userspace_app(sh, "inkwell", target, "release")?;
+    build_userspace_app(sh, "blossom", target, "release")?;
+    build_userspace_app(sh, "bloom", target, "release")?;
+    build_userspace_app(sh, "display_bootfb", target, "release")?;
+    build_userspace_app(sh, "display_virtio_gpu", target, "release")?;
+    build_userspace_app(sh, "display_ramfb", target, "release")?;
 
     // Copy binaries to iso_root
     copy_userspace_binary(sh, "sprout", target, "release", "iso_root/boot/sprout")?;
@@ -54,6 +59,11 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     copy_userspace_binary(sh, "virtio_gpu", target, "release", "iso_root/boot/virtio_gpu")?;
 
     copy_userspace_binary(sh, "inkwell", target, "release", "iso_root/boot/inkwell")?;
+    copy_userspace_binary(sh, "blossom", target, "release", "iso_root/boot/blossom")?;
+    copy_userspace_binary(sh, "bloom", target, "release", "iso_root/boot/bloom")?;
+    copy_userspace_binary(sh, "display_bootfb", target, "release", "iso_root/boot/display_bootfb")?;
+    copy_userspace_binary(sh, "display_virtio_gpu", target, "release", "iso_root/boot/display_virtio_gpu")?;
+    copy_userspace_binary(sh, "display_ramfb", target, "release", "iso_root/boot/display_ramfb")?;
     // Copy limine config
     sh.copy_file("limine.conf", "iso_root/boot/limine/limine.conf")?;
 

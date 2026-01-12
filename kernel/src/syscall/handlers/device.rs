@@ -41,12 +41,6 @@ pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
 }
 
 /// Map a device MMIO BAR into the task's address space
-/// 
-/// Args:
-///   claim_handle: Handle from sys_device_claim
-///   bar_index: BAR number (0-5)
-/// 
-/// Returns: virtual address where the BAR is mapped (via HHDM)
 pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<usize> {
     use crate::device_registry::REGISTRY;
     
@@ -57,13 +51,11 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
     let task_id = unsafe { crate::task::scheduler::current_tid_current() };
     let mut reg = REGISTRY.lock();
     
-    // Verify claim ownership
     if !reg.verify_claim(claim_handle, task_id) {
         crate::kinfo!("DEVICE: map_mmio failed - claim {} not owned by task {}", claim_handle, task_id);
         return Err(Errno::EPERM);
     }
     
-    // Get BAR info
     let (phys_addr, size) = reg.get_bar_info(claim_handle, bar_index)
         .ok_or(Errno::ENODEV)?;
     
@@ -72,16 +64,11 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
         return Err(Errno::ENODEV);
     }
     
-    // Use HHDM mapping - physical address + HHDM offset = virtual address
-    // This is identity-mapped in kernel space, accessible from userspace via syscalls
-    // For now, we use the kernel's HHDM offset. In the future, we might map
-    // the pages into userspace directly with appropriate flags.
     let hhdm_offset = crate::boot_info::get()
         .map(|i| i.hhdm_offset)
         .unwrap_or(0);
     let virt_addr = phys_addr + hhdm_offset;
     
-    // Record the mapping
     reg.set_bar_mapping(claim_handle, bar_index, virt_addr);
     
     crate::kinfo!("DEVICE: Mapped BAR{} phys=0x{:x} size=0x{:x} -> virt=0x{:x}", 
@@ -91,21 +78,37 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
 }
 
 /// Subscribe to device interrupts
-pub fn sys_device_irq_subscribe(_claim_handle: usize) -> SysResult<usize> {
-    // TODO: Implement IRQ subscription
-    // For now, virtio-gpu can use polling mode
-    crate::kinfo!("DEVICE: IRQ subscribe not yet implemented, use polling");
-    Err(Errno::NotSupported)
+/// 
+/// Args:
+///   vector: CPU interrupt vector to subscribe to (0x20-0x2F for legacy IRQs)
+/// 
+/// Returns: 0 on success
+pub fn sys_device_irq_subscribe(vector: usize) -> SysResult<usize> {
+    if vector > 255 {
+        return Err(Errno::EINVAL);
+    }
+    
+    crate::irq::subscribe(vector as u8).map_err(|_| Errno::EBUSY)?;
+    crate::kinfo!("DEVICE: task subscribed to vector 0x{:x}", vector);
+    Ok(0)
+}
+
+/// Wait for a device interrupt
+/// 
+/// Args:
+///   vector: CPU interrupt vector to wait on
+/// 
+/// Returns: number of pending interrupts since last wait
+pub fn sys_device_irq_wait(vector: usize) -> SysResult<usize> {
+    if vector > 255 {
+        return Err(Errno::EINVAL);
+    }
+    
+    let count = crate::irq::wait(vector as u8);
+    Ok(count as usize)
 }
 
 /// Allocate DMA-safe memory for a device
-/// 
-/// Args:
-///   claim_handle: Handle from sys_device_claim
-///   page_count: Number of 4K pages to allocate
-/// 
-/// Returns: (virtual_addr, physical_addr) packed as (virt << 32 | phys_low)
-///          Use separate syscall to get full 64-bit phys if needed
 pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult<usize> {
     use crate::device_registry::REGISTRY;
     use crate::memory::FRAME_ALLOCATOR;
@@ -116,7 +119,6 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
     
     let task_id = unsafe { crate::task::scheduler::current_tid_current() };
     
-    // Verify claim
     {
         let reg = REGISTRY.lock();
         if !reg.verify_claim(claim_handle, task_id) {
@@ -124,18 +126,13 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
         }
     }
     
-    // Allocate contiguous physical pages
-    // Note: Current allocator doesn't guarantee contiguity for multiple pages.
-    // For virtio, we can send a scatter-gather list, so this is acceptable.
-    // We allocate pages individually and return the first one.
     let mut phys_base = 0u64;
     
     FRAME_ALLOCATOR.with_lock(|alloc| {
         if let Some((phys,)) = alloc.alloc() {
             phys_base = phys;
-            // Mark additional pages (best effort for contiguity tracking)
             for _ in 1..page_count {
-                alloc.alloc(); // Just allocate, virtio uses scatter-gather
+                alloc.alloc();
             }
         }
     });
@@ -145,13 +142,11 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
         return Err(Errno::ENOMEM);
     }
     
-    // Convert to virtual via HHDM
     let hhdm_offset = crate::boot_info::get()
         .map(|i| i.hhdm_offset)
         .unwrap_or(0);
     let virt_addr = phys_base + hhdm_offset;
     
-    // Record in registry
     {
         let mut reg = REGISTRY.lock();
         reg.alloc_dma_slot(claim_handle, phys_base, virt_addr, page_count);
@@ -160,15 +155,10 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
     crate::kinfo!("DEVICE: DMA alloc {} pages phys=0x{:x} virt=0x{:x}", 
         page_count, phys_base, virt_addr);
     
-    // Return both addresses - pack into result
-    // Caller can use phys for device descriptors and virt for CPU access
-    // Pack: virt in high bits (for immediate use), phys in return
-    // Actually, let's use two calls or a struct. For simplicity, return phys.
-    // The virt can be derived from HHDM syscall or passed back separately.
     Ok(virt_addr as usize)
 }
 
-/// Get physical address of a DMA allocation (for device descriptors)
+/// Get physical address of a DMA allocation
 pub fn sys_device_dma_phys(virt_addr: usize) -> SysResult<usize> {
     let hhdm_offset = crate::boot_info::get()
         .map(|i| i.hhdm_offset)

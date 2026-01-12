@@ -12,6 +12,7 @@ pub mod tests;
 pub mod time;
 pub mod device_registry;
 pub mod ipc;
+pub mod irq;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {

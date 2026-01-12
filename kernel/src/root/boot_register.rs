@@ -2,6 +2,7 @@ use super::SymbolShell;
 use super::graph::ThingId;
 use super::{RootOp, enqueue};
 use crate::{BootModuleDesc, FramebufferInfo, PhysRange};
+use crate::device_registry::{DeviceEntry, REGISTRY};
 use abi::schema::{confidence, keys, kinds, rels, source};
 
 #[derive(Debug)]
@@ -260,6 +261,14 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         set(fb_node, keys::CONFIDENCE, conf_high);
 
         link(host, rels::HAS_DEVICE, fb_node);
+
+        let mut bars = [0u64; 6];
+        let mut sizes = [0u64; 6];
+        bars[0] = phys_base;
+        sizes[0] = fb.byte_len as u64;
+        let entry = DeviceEntry::new_mmio(kinds::DEV_DISPLAY_FRAMEBUFFER, fb_node, bars, sizes);
+        let mut reg = REGISTRY.lock();
+        let _ = reg.register(entry);
     }
 
     // 9. Firmware Tables

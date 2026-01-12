@@ -174,3 +174,21 @@ pub fn device_dma_phys(virt_addr: u64) -> Result<u64, Errno> {
     let ret = unsafe { raw_syscall6(SYS_DEVICE_DMA_PHYS, virt_addr as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| v as u64)
 }
+
+// ============================================================================
+// IRQ Subscription and Waiting
+// ============================================================================
+
+/// Subscribe the current task to receive interrupts for a given vector.
+/// For PS/2 keyboard: vector 0x21 (IRQ1), PS/2 mouse: vector 0x2C (IRQ12)
+pub fn irq_subscribe(vector: u8) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_DEVICE_IRQ_SUBSCRIBE, vector as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Wait for an interrupt on the given vector. Blocks until interrupt fires.
+/// Returns the number of pending interrupts since last wait.
+pub fn irq_wait(vector: u8) -> Result<u32, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_DEVICE_IRQ_WAIT, vector as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u32)
+}

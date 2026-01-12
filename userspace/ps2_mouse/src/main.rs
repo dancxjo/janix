@@ -1,13 +1,12 @@
-//! PS/2 Mouse Driver
+//! PS/2 Mouse Driver (Interrupt-driven)
 //! 
-//! Reads mouse packets from i8042 controller aux port.
-//! QEMU's Q35 machine has PS/2 mouse enabled by default.
+//! Subscribes to IRQ12 via IOAPIC, reads mouse packets on interrupt, sends to Bristle.
 
 #![no_std]
 #![no_main]
 
 use stem::info;
-use stem::syscall::{ioport_read, ioport_write, port_send, PortHandle};
+use stem::syscall::{ioport_read, ioport_write, irq_subscribe, irq_wait, port_send, PortHandle};
 
 const PS2_DATA: usize = 0x60;
 const PS2_STATUS: usize = 0x64;
@@ -19,6 +18,9 @@ const STATUS_AUX_DATA: usize = 0x20;
 const CMD_ENABLE_AUX: u8 = 0xA8;
 const CMD_WRITE_AUX: u8 = 0xD4;
 const MOUSE_ENABLE: u8 = 0xF4;
+
+/// IRQ12 vector (mouse) - legacy IRQ12 maps to vector 0x2C after IOAPIC remap
+const MOUSE_VECTOR: u8 = 0x2C;
 
 fn wait_input_empty() {
     for _ in 0..10000 {
@@ -66,29 +68,85 @@ fn main(raw_write_handle: usize) -> ! {
     
     init_mouse();
     
+    // Subscribe to mouse interrupt
+    match irq_subscribe(MOUSE_VECTOR) {
+        Ok(()) => info!("ps2_mouse: subscribed to IRQ12 (vector 0x{:02x})", MOUSE_VECTOR),
+        Err(e) => {
+            info!("ps2_mouse: IRQ subscribe failed ({:?}), falling back to polling", e);
+            polling_loop(handle);
+        }
+    }
+    
+    info!("ps2_mouse: entering interrupt-driven loop");
+    
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
-    let mut total_bytes = 0u64;
     let mut packets_sent = 0u64;
     
-    info!("ps2_mouse: polling for data...");
+    loop {
+        // Wait for mouse interrupt
+        match irq_wait(MOUSE_VECTOR) {
+            Ok(_count) => {
+                // Drain all available mouse data
+                drain_mouse_data(handle, &mut packet, &mut idx, &mut packets_sent);
+            }
+            Err(_) => {
+                stem::yield_now();
+            }
+        }
+    }
+}
+
+/// Drain all pending mouse data and assemble packets
+fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize, packets_sent: &mut u64) {
+    for _ in 0..16 {
+        let status = ioport_read(PS2_STATUS, 1);
+        
+        if status & STATUS_OUTPUT_FULL == 0 {
+            break;
+        }
+        
+        // Only process aux data (mouse)
+        if status & STATUS_AUX_DATA != 0 {
+            let byte = ioport_read(PS2_DATA, 1) as u8;
+            
+            // First byte must have bit 3 set (sync)
+            if *idx == 0 && (byte & 0x08) == 0 {
+                continue;
+            }
+            
+            packet[*idx] = byte;
+            *idx += 1;
+            
+            if *idx == 3 {
+                *packets_sent += 1;
+                let _ = port_send(handle, packet);
+                
+                if *packets_sent <= 10 || *packets_sent % 100 == 0 {
+                    info!("ps2_mouse: packet {} = [{:02x} {:02x} {:02x}]",
+                          packets_sent, packet[0], packet[1], packet[2]);
+                }
+                *idx = 0;
+            }
+        }
+    }
+}
+
+/// Fallback polling loop
+fn polling_loop(handle: PortHandle) -> ! {
+    info!("ps2_mouse: using polling mode");
+    
+    let mut packet = [0u8; 3];
+    let mut idx = 0usize;
+    let mut packets_sent = 0u64;
     
     loop {
         let status = ioport_read(PS2_STATUS, 1);
         
         if status & STATUS_OUTPUT_FULL != 0 {
-            let byte = ioport_read(PS2_DATA, 1) as u8;
-            total_bytes += 1;
-            
-            // Log first few bytes to debug
-            if total_bytes <= 20 {
-                info!("ps2_mouse: byte {} = 0x{:02x} (aux={})", 
-                      total_bytes, byte, (status & STATUS_AUX_DATA) != 0);
-            }
-            
-            // Only process if aux bit says it's mouse data
             if status & STATUS_AUX_DATA != 0 {
-                // First byte must have bit 3 set
+                let byte = ioport_read(PS2_DATA, 1) as u8;
+                
                 if idx == 0 && (byte & 0x08) == 0 {
                     continue;
                 }
@@ -99,11 +157,6 @@ fn main(raw_write_handle: usize) -> ! {
                 if idx == 3 {
                     packets_sent += 1;
                     let _ = port_send(handle, &packet);
-                    
-                    if packets_sent <= 10 || packets_sent % 100 == 0 {
-                        info!("ps2_mouse: packet {} = [{:02x} {:02x} {:02x}]",
-                              packets_sent, packet[0], packet[1], packet[2]);
-                    }
                     idx = 0;
                 }
             }

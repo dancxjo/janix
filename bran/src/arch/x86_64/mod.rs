@@ -12,6 +12,9 @@ pub mod simd;
 pub mod syscall;
 pub mod task;
 pub mod trap;
+pub mod pic;
+pub mod acpi;
+pub mod ioapic;
 
 pub struct X86_64Runtime {
     clamp: MonotonicClamp,
@@ -101,6 +104,9 @@ impl ArchRuntime for X86_64Runtime {
         unsafe {
             syscall::init();
         }
+        
+        // Initialize IOAPIC for interrupt routing (after IDT is set up)
+        crate::arch::init_ioapic();
     }
 
     fn putchar(&self, c: u8) {

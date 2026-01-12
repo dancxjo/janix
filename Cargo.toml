@@ -16,6 +16,7 @@ members = [
     "userspace/ps2_kbd",
     "userspace/thigmonasty",
     "userspace/echo",
+    "userspace/inkwell",
     "tools/pciids",
 ]
 resolver = "2"

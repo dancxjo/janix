@@ -397,3 +397,156 @@ pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysRes
         }
     }
 }
+
+pub fn sys_root_bytespace_write(
+    id: usize,
+    offset: usize,
+    ptr: usize,
+    len: usize,
+) -> SysResult<usize> {
+    validate_user_range(ptr, len, false)?;
+
+    let mut kbuf = [0u8; 4096];
+    let mut total_written = 0;
+    let mut curr_offset = offset;
+    let mut curr_ptr = ptr;
+    let mut remaining = len;
+
+    while remaining > 0 {
+        let chunk_len = core::cmp::min(remaining, kbuf.len());
+
+        unsafe {
+            copyin(&mut kbuf[..chunk_len], curr_ptr)?;
+        }
+
+        let op = RootOp::BytespaceWrite {
+            id: id as u64,
+            offset: curr_offset as u64,
+            ptr: kbuf.as_ptr() as u64,
+            len: chunk_len as u64,
+        };
+
+        let res = root_call(op)?;
+        if res == 0 {
+            break;
+        }
+
+        curr_offset += res;
+        curr_ptr += res;
+        total_written += res;
+        remaining -= res;
+
+        if res < chunk_len {
+            break;
+        }
+    }
+
+    Ok(total_written)
+}
+
+pub fn sys_root_bytespace_info(id: usize) -> SysResult<usize> {
+    let reply = root_svc::enqueue(RootOp::BytespaceInfo { id: id as u64 });
+    
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            if status == 0 {
+                // Size is in value, page_count in p0, flags in p1
+                let size = reply.value.load(Ordering::Relaxed);
+                return Ok(size as usize);
+            } else {
+                return Err(Errno::ENOENT);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}
+
+pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
+    // Get caller's TID
+    let tid = unsafe { crate::task::scheduler::current_tid_current() };
+    
+    let reply = root_svc::enqueue(RootOp::BytespaceMap {
+        id: id as u64,
+        tid,
+    });
+    
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            if status == 0 {
+                let user_va = reply.value.load(Ordering::Relaxed);
+                let phys_base = reply.p0.load(Ordering::Relaxed);
+                let page_count = reply.p1.load(Ordering::Relaxed) as usize;
+                
+                // Map pages using global mapping hook
+                for i in 0..page_count {
+                    let virt = user_va + (i as u64 * 4096);
+                    let phys = phys_base + (i as u64 * 4096);
+                    
+                    unsafe {
+                        crate::memory::map_user_page(virt, phys)?;
+                    }
+                }
+                
+                return Ok(user_va as usize);
+            } else {
+                return Err(Errno::ENOENT);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}
+
+pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
+    let tid = unsafe { crate::task::scheduler::current_tid_current() };
+    
+    let reply = root_svc::enqueue(RootOp::BytespaceUnmap {
+        id: id as u64,
+        user_va: user_va as u64,
+        tid,
+    });
+    
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            if status == 0 {
+                // TODO: Actually unmap pages from page tables
+                // For v0, we just remove the mapping record
+                return Ok(0);
+            } else {
+                return Err(Errno::ENOENT);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}
+
+pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
+    let reply = root_svc::enqueue(RootOp::BytespacePhys { id: id as u64 });
+    
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            if status == 0 {
+                let phys_base = reply.value.load(Ordering::Relaxed);
+                return Ok(phys_base as usize);
+            } else {
+                return Err(Errno::ENOENT);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}

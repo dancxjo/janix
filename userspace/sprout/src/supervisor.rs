@@ -168,6 +168,7 @@ impl Supervisor {
     fn spawn_apps(&mut self) {
         self.ensure_app("/clock");
         self.ensure_app("/threads");
+        self.ensure_app("/inkwell");
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {

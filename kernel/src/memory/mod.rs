@@ -44,3 +44,27 @@ pub fn init<R: crate::BootRuntime>(rt: &R) {
 pub fn alloc_frame() -> Option<u64> {
     FRAME_ALLOCATOR.with_lock(|a| a.alloc().map(|f| f.0))
 }
+
+/// Allocate `count` physically contiguous 4K frames.
+/// Returns the physical base address if successful.
+pub fn alloc_contiguous_frames(count: usize) -> Option<u64> {
+    FRAME_ALLOCATOR.with_lock(|a| a.alloc_contiguous(count))
+}
+
+/// Global hook for mapping user pages. Set by scheduler init.
+static mut MAP_USER_PAGE_HOOK: Option<unsafe fn(u64, u64) -> Result<(), ()>> = None;
+
+/// Initialize the user page mapping hook
+pub unsafe fn set_map_user_page_hook(hook: unsafe fn(u64, u64) -> Result<(), ()>) {
+    MAP_USER_PAGE_HOOK = Some(hook);
+}
+
+/// Map a physical page into the current process's userspace at the given virtual address.
+/// This uses the global hook set during scheduler initialization.
+pub unsafe fn map_user_page(virt: u64, phys: u64) -> Result<(), abi::errors::Errno> {
+    if let Some(hook) = MAP_USER_PAGE_HOOK {
+        hook(virt, phys).map_err(|_| abi::errors::Errno::ENOMEM)
+    } else {
+        Err(abi::errors::Errno::EIO)
+    }
+}

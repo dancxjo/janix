@@ -45,7 +45,21 @@ pub enum RootOp {
         flags: u64,
         format: u64,
     },
-
+    BytespaceInfo {
+        id: u64,
+    },
+    BytespaceMap {
+        id: u64,
+        tid: u64,
+    },
+    BytespaceUnmap {
+        id: u64,
+        user_va: u64,
+        tid: u64,
+    },
+    BytespacePhys {
+        id: u64,
+    },
     WatchSubscribe {
         target_id: u64,
         mask: u64,

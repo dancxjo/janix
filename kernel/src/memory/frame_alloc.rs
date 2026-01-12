@@ -80,6 +80,52 @@ impl FrameAllocator {
         None
     }
 
+    /// Allocate `count` physically contiguous frames.
+    /// Returns the physical base address of the first frame.
+    pub fn alloc_contiguous(&mut self, count: usize) -> Option<u64> {
+        if count == 0 {
+            return None;
+        }
+        if count == 1 {
+            return self.alloc().map(|f| f.0);
+        }
+
+        let total_bits = self.bitmap.len() * 64;
+        if count > total_bits {
+            return None;
+        }
+
+        // Scan for a contiguous run of `count` free bits
+        let mut run_start = 0;
+        let mut run_len = 0;
+
+        for frame in 0..total_bits {
+            let word_idx = frame / 64;
+            let bit_idx = frame % 64;
+            let is_free = (self.bitmap[word_idx] & (1 << bit_idx)) == 0;
+
+            if is_free {
+                if run_len == 0 {
+                    run_start = frame;
+                }
+                run_len += 1;
+                if run_len == count {
+                    // Found! Mark all as used
+                    for f in run_start..(run_start + count) {
+                        let wi = f / 64;
+                        let bi = f % 64;
+                        self.bitmap[wi] |= 1 << bi;
+                    }
+                    self.free_frames -= count;
+                    return Some(run_start as u64 * 4096);
+                }
+            } else {
+                run_len = 0;
+            }
+        }
+        None
+    }
+
     pub fn mark_free_range(&mut self, start: u64, end: u64) {
         let start_page = (start + 4095) / 4096;
         let end_page = end / 4096;

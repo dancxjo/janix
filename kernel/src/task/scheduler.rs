@@ -471,6 +471,7 @@ pub fn init<R: BootRuntime>() {
             CURRENT_TID_HOOK = Some(current_tid::<R>);
             TASK_STATUS_HOOK = Some(task_status::<R>);
             ALLOC_USER_STACK_HOOK = Some(alloc_user_stack::<R>);
+            crate::memory::set_map_user_page_hook(map_user_page::<R>);
         }
         crate::kinfo!("  Scheduler initialized");
     }
@@ -841,4 +842,31 @@ pub fn dump_stats<R: BootRuntime>() {
         sched.task_count(),
         sched.current_id()
     );
+}
+
+/// Map a user page in the current address space
+unsafe fn map_user_page<R: BootRuntime>(virt: u64, phys: u64) -> Result<(), ()> {
+    use crate::{FrameAllocatorHook, MapKind, MapPerms};
+    
+    struct MapHook;
+    impl FrameAllocatorHook for MapHook {
+        fn alloc_frame(&self) -> Option<u64> {
+            crate::memory::alloc_frame()
+        }
+    }
+    
+    let rt = crate::runtime::<R>();
+    let aspace = rt.tasking().active_address_space();
+    let perms = MapPerms {
+        user: true,
+        read: true,
+        write: true,
+        exec: false,
+    };
+    let hook = MapHook;
+    
+    rt.tasking().map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)?;
+    rt.tasking().tlb_flush_page(virt);
+    
+    Ok(())
 }

@@ -99,6 +99,10 @@ pub const SYS_ROOT_DUMP_GRAPH: u32 = 0x15B;
 pub const SYS_ROOT_BYTESPACE_CREATE: u32 = 0x160;
 pub const SYS_ROOT_BYTESPACE_READ: u32 = 0x161;
 pub const SYS_ROOT_BYTESPACE_WRITE: u32 = 0x162;
+pub const SYS_ROOT_BYTESPACE_INFO: u32 = 0x163;
+pub const SYS_ROOT_BYTESPACE_MAP: u32 = 0x164;
+pub const SYS_ROOT_BYTESPACE_UNMAP: u32 = 0x165;
+pub const SYS_ROOT_BYTESPACE_PHYS: u32 = 0x166;
 
 // 0x168-0x16F: Watch/Stream (Root-specific)
 pub const SYS_ROOT_WATCH_SUBSCRIBE: u32 = 0x168;

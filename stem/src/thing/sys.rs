@@ -220,3 +220,78 @@ pub fn dump_graph(limit: u64) -> Result<(u64, u64), Errno> {
     let ret = unsafe { syscall6(SYS_ROOT_DUMP_GRAPH, limit as usize, 0, 0, 0, 0, 0) };
     errno(ret).map(|_| (0, 0))
 }
+
+pub fn bytespace_write(id: ThingId, offset: usize, data: &[u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_BYTESPACE_WRITE,
+            id.0 as usize,
+            offset,
+            data.as_ptr() as usize,
+            data.len(),
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as usize)
+}
+
+pub fn bytespace_info(id: ThingId) -> Result<usize, Errno> {
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_BYTESPACE_INFO,
+            id.0 as usize,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as usize)
+}
+
+pub fn bytespace_map(id: ThingId) -> Result<*mut u8, Errno> {
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_BYTESPACE_MAP,
+            id.0 as usize,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as *mut u8)
+}
+
+pub fn bytespace_unmap(id: ThingId, ptr: *mut u8) -> Result<(), Errno> {
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_BYTESPACE_UNMAP,
+            id.0 as usize,
+            ptr as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|_| ())
+}
+
+pub fn bytespace_phys(id: ThingId) -> Result<u64, Errno> {
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_BYTESPACE_PHYS,
+            id.0 as usize,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as u64)
+}

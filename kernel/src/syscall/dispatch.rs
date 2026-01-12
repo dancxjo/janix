@@ -41,6 +41,13 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ROOT_BYTESPACE_READ => {
             handlers::sys_root_bytespace_read(args[0], args[1], args[2], args[3])
         }
+        SYS_ROOT_BYTESPACE_WRITE => {
+            handlers::sys_root_bytespace_write(args[0], args[1], args[2], args[3])
+        }
+        SYS_ROOT_BYTESPACE_INFO => handlers::sys_root_bytespace_info(args[0]),
+        SYS_ROOT_BYTESPACE_MAP => handlers::sys_root_bytespace_map(args[0]),
+        SYS_ROOT_BYTESPACE_UNMAP => handlers::sys_root_bytespace_unmap(args[0], args[1]),
+        SYS_ROOT_BYTESPACE_PHYS => handlers::sys_root_bytespace_phys(args[0]),
         SYS_ROOT_WATCH_SUBSCRIBE => handlers::sys_root_watch_subscribe(args[0], args[1]),
         SYS_ROOT_STREAM_POLL => handlers::sys_root_stream_poll(args[0], args[1], args[2]),
         SYS_ROOT_PROP_SET => handlers::sys_root_prop_set(args[0], args[1], args[2]),

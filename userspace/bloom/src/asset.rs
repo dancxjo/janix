@@ -2,11 +2,12 @@ extern crate alloc;
 
 use stem::thing::ThingId;
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use core::cell::UnsafeCell;
 use stem::info;
 
 use crate::frame::AssetGeneration;
+use crate::reclaimer;
 
 #[derive(Debug, Clone)]
 pub struct Image {
@@ -15,6 +16,13 @@ pub struct Image {
     pub pixels: Arc<[u32]>,
     /// Generation when this asset became ready
     pub gen: AssetGeneration,
+}
+
+impl Image {
+    /// Compute decoded bytes for this image
+    pub fn decoded_bytes(&self) -> usize {
+        (self.width as usize) * (self.height as usize) * 4
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -40,6 +48,16 @@ impl CursorAsset {
             }
         }
     }
+
+    /// Compute decoded bytes for cursor asset
+    pub fn decoded_bytes(&self) -> usize {
+        match self {
+            CursorAsset::Static(f) => f.image.decoded_bytes(),
+            CursorAsset::Animated { frames } => {
+                frames.iter().map(|f| f.image.decoded_bytes()).sum()
+            }
+        }
+    }
 }
 
 /// Wrapper around fontdue::Font for Arc sharing
@@ -59,10 +77,22 @@ impl core::fmt::Debug for FontAsset {
     }
 }
 
-/// Storage for ready assets
+impl FontAsset {
+    /// Estimate decoded bytes for font (rough estimate based on typical glyph cache)
+    pub fn decoded_bytes(&self) -> usize {
+        // Fonts are relatively small compared to images
+        // Estimate ~100KB for a typical font's glyph cache
+        100 * 1024
+    }
+}
+
+/// Storage for ready assets with metadata for eviction
 struct AssetSlot<T> {
     value: UnsafeCell<Option<T>>,
     ready: AtomicBool,
+    last_used_frame: AtomicU64,
+    decoded_bytes: AtomicUsize,
+    reachable: AtomicBool,
 }
 
 unsafe impl<T> Sync for AssetSlot<T> {}
@@ -72,7 +102,30 @@ impl<T> AssetSlot<T> {
         Self {
             value: UnsafeCell::new(None),
             ready: AtomicBool::new(false),
+            last_used_frame: AtomicU64::new(0),
+            decoded_bytes: AtomicUsize::new(0),
+            reachable: AtomicBool::new(false),
         }
+    }
+
+    fn mark_used(&self, frame_id: u64) {
+        self.last_used_frame.store(frame_id, Ordering::Release);
+    }
+
+    fn mark_reachable(&self, reachable: bool) {
+        self.reachable.store(reachable, Ordering::Release);
+    }
+
+    fn get_metadata(&self) -> Option<reclaimer::AssetMetadata> {
+        if !self.ready.load(Ordering::Acquire) {
+            return None;
+        }
+        Some(reclaimer::AssetMetadata {
+            last_used_frame: self.last_used_frame.load(Ordering::Acquire),
+            gen: AssetGeneration(0), // Will be set by caller
+            decoded_bytes: self.decoded_bytes.load(Ordering::Acquire),
+            reachable: self.reachable.load(Ordering::Acquire),
+        })
     }
 }
 
@@ -106,6 +159,14 @@ static FONT_PENDING: PendingSlot<FontAsset> = PendingSlot::new();
 // Global generation counter
 static ASSET_GENERATION: AtomicU64 = AtomicU64::new(0);
 
+/// Asset types for eviction candidate selection
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AssetType {
+    Wallpaper,
+    Cursor,
+    Font,
+}
+
 pub struct AssetBank;
 
 impl AssetBank {
@@ -129,7 +190,13 @@ impl AssetBank {
                 // Increment generation first
                 let new_gen = ASSET_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
                 img.gen = AssetGeneration(new_gen);
-                info!("[asset_bank] promoting wallpaper to gen={}", new_gen);
+                
+                // Track memory
+                let bytes = img.decoded_bytes();
+                reclaimer::add_decoded_bytes(bytes);
+                WALLPAPER_READY.decoded_bytes.store(bytes, Ordering::Release);
+                
+                info!("[asset_bank] promoting wallpaper to gen={} ({}b)", new_gen, bytes);
                 
                 unsafe { *WALLPAPER_READY.value.get() = Some(img); }
                 WALLPAPER_READY.ready.store(true, Ordering::Release);
@@ -163,7 +230,12 @@ impl AssetBank {
                     }
                 };
                 
-                info!("[asset_bank] promoting cursor to gen={}", new_gen);
+                // Track memory
+                let bytes = cursor_with_gen.decoded_bytes();
+                reclaimer::add_decoded_bytes(bytes);
+                CURSOR_READY.decoded_bytes.store(bytes, Ordering::Release);
+                
+                info!("[asset_bank] promoting cursor to gen={} ({}b)", new_gen, bytes);
                 unsafe { *CURSOR_READY.value.get() = Some(cursor_with_gen); }
                 CURSOR_READY.ready.store(true, Ordering::Release);
                 promoted = true;
@@ -181,7 +253,13 @@ impl AssetBank {
                     ASSET_GENERATION.load(Ordering::Acquire)
                 };
                 font.gen = AssetGeneration(new_gen);
-                info!("[asset_bank] promoting font '{}' to gen={}", font.name, new_gen);
+                
+                // Track memory
+                let bytes = font.decoded_bytes();
+                reclaimer::add_decoded_bytes(bytes);
+                FONT_READY.decoded_bytes.store(bytes, Ordering::Release);
+                
+                info!("[asset_bank] promoting font '{}' to gen={} ({}b)", font.name, new_gen, bytes);
                 unsafe { *FONT_READY.value.get() = Some(font); }
                 FONT_READY.ready.store(true, Ordering::Release);
             }
@@ -286,6 +364,114 @@ impl AssetBank {
         } else {
             None
         }
+    }
+
+    /// Mark an asset as used this frame
+    pub fn mark_used(&self, asset_type: AssetType, frame_id: u64) {
+        match asset_type {
+            AssetType::Wallpaper => WALLPAPER_READY.mark_used(frame_id),
+            AssetType::Cursor => CURSOR_READY.mark_used(frame_id),
+            AssetType::Font => FONT_READY.mark_used(frame_id),
+        }
+    }
+
+    /// Mark an asset as reachable (in scene graph) or not
+    pub fn mark_reachable(&self, asset_type: AssetType, reachable: bool) {
+        match asset_type {
+            AssetType::Wallpaper => WALLPAPER_READY.mark_reachable(reachable),
+            AssetType::Cursor => CURSOR_READY.mark_reachable(reachable),
+            AssetType::Font => FONT_READY.mark_reachable(reachable),
+        }
+    }
+
+    /// Try to evict one asset that is safe to evict (gen < min_live_gen).
+    /// Returns the number of bytes freed, or None if nothing can be evicted.
+    pub fn try_evict_one(&self, min_live_gen: AssetGeneration) -> Option<usize> {
+        // Get metadata for all ready assets
+        let mut candidates: [(AssetType, Option<reclaimer::AssetMetadata>, AssetGeneration); 3] = [
+            (AssetType::Wallpaper, None, AssetGeneration::ZERO),
+            (AssetType::Cursor, None, AssetGeneration::ZERO),
+            (AssetType::Font, None, AssetGeneration::ZERO),
+        ];
+
+        // Collect metadata
+        if WALLPAPER_READY.ready.load(Ordering::Acquire) {
+            if let Some(img) = unsafe { (*WALLPAPER_READY.value.get()).as_ref() } {
+                let mut meta = WALLPAPER_READY.get_metadata();
+                if let Some(ref mut m) = meta {
+                    m.gen = img.gen;
+                }
+                candidates[0] = (AssetType::Wallpaper, meta, img.gen);
+            }
+        }
+
+        if CURSOR_READY.ready.load(Ordering::Acquire) {
+            if let Some(cursor) = unsafe { (*CURSOR_READY.value.get()).as_ref() } {
+                let gen = cursor.generation();
+                let mut meta = CURSOR_READY.get_metadata();
+                if let Some(ref mut m) = meta {
+                    m.gen = gen;
+                }
+                candidates[1] = (AssetType::Cursor, meta, gen);
+            }
+        }
+
+        if FONT_READY.ready.load(Ordering::Acquire) {
+            if let Some(font) = unsafe { (*FONT_READY.value.get()).as_ref() } {
+                let mut meta = FONT_READY.get_metadata();
+                if let Some(ref mut m) = meta {
+                    m.gen = font.gen;
+                }
+                candidates[2] = (AssetType::Font, meta, font.gen);
+            }
+        }
+
+        // Filter to only safe-to-evict assets (gen < min_live_gen)
+        let mut evictable: alloc::vec::Vec<(AssetType, reclaimer::AssetMetadata)> = candidates
+            .iter()
+            .filter_map(|(asset_type, meta, gen)| {
+                if *gen < min_live_gen {
+                    meta.clone().map(|m| (*asset_type, m))
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        if evictable.is_empty() {
+            return None;
+        }
+
+        // Sort by eviction priority (lowest first = evict first)
+        evictable.sort_by_key(|(_, m)| m.eviction_priority());
+
+        // Evict the lowest priority asset
+        let (asset_type, meta) = &evictable[0];
+        let freed = meta.decoded_bytes;
+
+        match asset_type {
+            AssetType::Wallpaper => {
+                info!("[asset_bank] evicting wallpaper (gen={}, {}b)", meta.gen.0, freed);
+                unsafe { *WALLPAPER_READY.value.get() = None; }
+                WALLPAPER_READY.ready.store(false, Ordering::Release);
+                WALLPAPER_READY.decoded_bytes.store(0, Ordering::Release);
+            }
+            AssetType::Cursor => {
+                info!("[asset_bank] evicting cursor (gen={}, {}b)", meta.gen.0, freed);
+                unsafe { *CURSOR_READY.value.get() = None; }
+                CURSOR_READY.ready.store(false, Ordering::Release);
+                CURSOR_READY.decoded_bytes.store(0, Ordering::Release);
+            }
+            AssetType::Font => {
+                info!("[asset_bank] evicting font (gen={}, {}b)", meta.gen.0, freed);
+                unsafe { *FONT_READY.value.get() = None; }
+                FONT_READY.ready.store(false, Ordering::Release);
+                FONT_READY.decoded_bytes.store(0, Ordering::Release);
+            }
+        }
+
+        reclaimer::sub_decoded_bytes(freed);
+        Some(freed)
     }
     
     fn probe_asset(name: &str) -> Option<(ThingId, usize)> {

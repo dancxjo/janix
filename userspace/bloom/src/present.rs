@@ -14,6 +14,7 @@ use stem::syscall::{port_recv, port_send, PortHandle};
 
 use crate::damage::Damage;
 use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentStats};
+use crate::reclaimer;
 
 /// Presenter trait with transactional frame API
 pub trait Presenter {
@@ -38,15 +39,25 @@ impl Presenter for NullPresenter {
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         static FRAME_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
         let frame_id = FRAME_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+        
+        // Register in-flight frame for safe eviction
+        reclaimer::register_in_flight(frame_id, asset_gen);
+        
         FrameToken::new(frame_id, asset_gen, spec)
     }
     
     fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         let ops_count = token.ops.iter().count();
         let damage_rect_count = token.damage.rect_count();
+        let frame_id = token.frame_id;
+        let asset_gen = token.asset_gen;
+        
+        // Complete in-flight frame
+        reclaimer::complete_in_flight(frame_id);
+        
         PresentStats {
-            frame_id: token.frame_id,
-            asset_gen: token.asset_gen,
+            frame_id,
+            asset_gen,
             ops_count,
             damage_rect_count,
             fast_path_taken: token.damage.is_empty(),
@@ -231,6 +242,10 @@ impl DriverPresenter {
 impl Presenter for DriverPresenter {
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         self.frame_count += 1;
+        
+        // Register in-flight frame for safe eviction
+        reclaimer::register_in_flight(self.frame_count, asset_gen);
+        
         FrameToken::new(self.frame_count, asset_gen, spec)
     }
     
@@ -238,17 +253,31 @@ impl Presenter for DriverPresenter {
         let ops_count = token.ops.iter().count();
         let damage_rect_count = token.damage.rect_count();
         let fast_path = token.damage.is_empty();
+        let frame_id = token.frame_id;
+        let asset_gen = token.asset_gen;
 
         // Log damage stats periodically (every 120 frames = ~2 seconds at 60fps)
-        if token.frame_id % 120 == 0 {
+        if frame_id % 120 == 0 {
+            let mem_used = reclaimer::decoded_bytes();
+            let mem_budget = reclaimer::memory_budget();
+            let evictions = reclaimer::eviction_count();
+            let in_flight = reclaimer::in_flight_count();
+            let min_gen = reclaimer::min_live_gen();
+            
             if token.damage.is_full {
-                info!("bloom: frame {} gen={} (full redraw)", token.frame_id, token.asset_gen.0);
+                info!("bloom: frame {} gen={} (full redraw) mem={}/{}b evictions={} in_flight={} min_gen={}", 
+                    frame_id, asset_gen.0, mem_used, mem_budget, evictions, in_flight, min_gen.0);
             } else if damage_rect_count == 0 {
-                info!("bloom: frame {} gen={} (no damage - idle)", token.frame_id, token.asset_gen.0);
+                info!("bloom: frame {} gen={} (no damage - idle) mem={}/{}b", 
+                    frame_id, asset_gen.0, mem_used, mem_budget);
             } else {
-                info!("bloom: frame {} gen={} ({} damage rects)", token.frame_id, token.asset_gen.0, damage_rect_count);
+                info!("bloom: frame {} gen={} ({} damage rects) mem={}/{}b", 
+                    frame_id, asset_gen.0, damage_rect_count, mem_used, mem_budget);
             }
         }
+
+        // Complete in-flight frame before present
+        reclaimer::complete_in_flight(frame_id);
 
         // Fast-path: skip present if no damage
         if !fast_path {
@@ -256,8 +285,8 @@ impl Presenter for DriverPresenter {
         }
 
         PresentStats {
-            frame_id: token.frame_id,
-            asset_gen: token.asset_gen,
+            frame_id,
+            asset_gen,
             ops_count,
             damage_rect_count,
             fast_path_taken: fast_path,

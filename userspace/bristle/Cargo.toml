@@ -7,6 +7,9 @@ edition = "2024"
 name = "bristle"
 path = "src/main.rs"
 
+[features]
+diagnostic-apps = []
+
 [dependencies]
 stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }

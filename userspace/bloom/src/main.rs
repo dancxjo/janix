@@ -16,6 +16,7 @@ mod logging;
 mod lowered;
 mod present;
 mod raster;
+mod reclaimer;
 mod surface;
 mod target;
 mod target_cpu;
@@ -23,6 +24,7 @@ mod target_cpu;
 use abi::display_driver_protocol::BindPayload;
 use stem::syscall::PortHandle;
 
+use crate::asset::AssetType;
 use crate::compositor::{CompositorTarget, DisplayBackend};
 use crate::cursor::CursorState;
 use crate::damage::Rect;
@@ -231,6 +233,7 @@ fn main(arg: usize) -> ! {
     let mut first_frame = true;
 
     log!("[bloom] entering transactional frame loop (acquire -> build -> present)");
+    log!("[bloom] reclaimer: budget={} bytes", reclaimer::memory_budget());
 
     // 4. Main Loop - Transactional Pattern
     loop {
@@ -285,6 +288,22 @@ fn main(arg: usize) -> ! {
                 log!("[bloom] frame {}: font now visible (gen={})", frame_id, gen_snapshot.0);
                 builder.mark_full_damage();
             }
+        }
+
+        // Mark assets as reachable (in scene graph)
+        ASSETS.mark_reachable(AssetType::Wallpaper, wallpaper_loaded);
+        ASSETS.mark_reachable(AssetType::Cursor, cursor_loaded);
+        ASSETS.mark_reachable(AssetType::Font, font_loaded);
+
+        // Mark assets as used this frame
+        if wallpaper_loaded {
+            ASSETS.mark_used(AssetType::Wallpaper, frame_id);
+        }
+        if cursor_loaded {
+            ASSETS.mark_used(AssetType::Cursor, frame_id);
+        }
+        if font_loaded {
+            ASSETS.mark_used(AssetType::Font, frame_id);
         }
 
         // Input - capture cursor position before input
@@ -357,6 +376,11 @@ fn main(arg: usize) -> ! {
         // Present (consumes token)
         let _stats = presenter.present_frame(token);
         presenter.pump();
+
+        // ═══════════════════════════════════════════════════════════════════
+        // POST-PRESENT: Memory pressure check
+        // ═══════════════════════════════════════════════════════════════════
+        reclaimer::check_memory_pressure(&ASSETS);
 
         // Timing
         loop_ctrl.heartbeat(cursor.x, cursor.y);

@@ -326,6 +326,12 @@ fn main(arg: usize) -> ! {
         }
         prev_cursor_bbox = Some(new_cursor_bbox);
 
+        // Damage text regions (frame counter changes every frame)
+        if font_loaded {
+            builder.add_damage(Rect::new(20, 20, 200, 25)); // "thing-os"
+            builder.add_damage(Rect::new(20, 45, 150, 25)); // "frame: N"
+        }
+
         // Build Scene - record ops into the builder's DrawList
         {
             let list = builder.ops();

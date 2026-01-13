@@ -369,8 +369,8 @@ pub fn diag_enabled() -> bool {
 pub const REQUIRED_BOOT_SIGNALS: &[&[&str]] = &[
     // Kernel start
     &["thing-os kernel", "starting..."],
-    // Paging boundary
-    &["Intent-Mechanism paging split active"],
+    // SIMD init (replaces legacy paging boundary signal)
+    &["Initializing SIMD..."],
     // Memory map / allocator
     &[
         "Frame allocator initialized",
@@ -385,9 +385,9 @@ pub const REQUIRED_BOOT_SIGNALS: &[&[&str]] = &[
 
 /// Liveness signals - at least one of these must appear.
 pub const LIVENESS_SIGNALS: &[&str] = &[
-    "Thread A",
-    "Thread B",
-    "Thread ",
+    "A: tick",
+    "B: tick",
+    "threads_demo",
     "BOOT: heartbeat",
     "BOOT: ready",
 ];

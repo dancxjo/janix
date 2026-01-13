@@ -1,11 +1,8 @@
 [workspace]
 members = [
     "userspace/virtio_gpu",
-    "userspace/blossom",
-    "userspace/bloom",
     "userspace/display_bootfb",
     "userspace/display_virtio_gpu",
-    "userspace/display_ramfb",
     "bran",
     "xtask",
     "tools/bdd",

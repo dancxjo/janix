@@ -76,20 +76,6 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) {
     let _ = thingsys::prop_set(bs_id, keys::STRIDE, display_stride as u64);
     let _ = thingsys::prop_set(bs_id, keys::FORMAT, display_format as u64);
 
-    let display_req = match port_create(4096) {
-        Ok(handles) => handles,
-        Err(e) => {
-            warn!("SPROUT: display_req port_create failed: {:?}", e);
-            return;
-        }
-    };
-    let display_resp = match port_create(4096) {
-        Ok(handles) => handles,
-        Err(e) => {
-            warn!("SPROUT: display_resp port_create failed: {:?}", e);
-            return;
-        }
-    };
     let drv_req = match port_create(4096) {
         Ok(handles) => handles,
         Err(e) => {
@@ -105,23 +91,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) {
         }
     };
 
-    let blossom_arg = (display_req.1 as u64)
-        | ((display_resp.0 as u64) << 16)
-        | ((drv_req.0 as u64) << 32)
-        | ((drv_resp.1 as u64) << 48);
-    let bloom_arg = (display_req.0 as u64) | ((display_resp.1 as u64) << 16);
     let driver_arg = (drv_req.1 as u64) | ((drv_resp.0 as u64) << 16);
-
-    if let Ok(pid) = stem::syscall::spawn_process("/blossom", blossom_arg as usize) {
-        info!("SPROUT: Spawned blossom (PID={})", pid);
-        tasks.push(ManagedTask {
-            name: "/blossom".to_string(),
-            kind: TaskKind::App,
-            module_path: "/blossom".to_string(),
-            pid: Some(pid),
-            restarts: 0,
-        });
-    }
 
     if let Ok(pid) = stem::syscall::spawn_process(driver_name, driver_arg as usize) {
         info!(
@@ -137,26 +107,10 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) {
         });
     }
 
-    if let Ok(pid) = stem::syscall::spawn_process("/bloom", bloom_arg as usize) {
-        info!("SPROUT: Spawned bloom (PID={})", pid);
-        tasks.push(ManagedTask {
-            name: "/bloom".to_string(),
-            kind: TaskKind::App,
-            module_path: "/bloom".to_string(),
-            pid: Some(pid),
-            restarts: 0,
-        });
-    }
-
     if let Ok(svc_display) = thingsys::create_node("svc.Display") {
-        if let Ok(app_bloom) = thingsys::create_node("app.Bloom") {
-            let _ = thingsys::link(app_bloom, "PRESENTS_TO", svc_display);
-        }
-
         let drv_kind = match driver_name {
             "/display_bootfb" => "drv.DisplayBootFB",
             "/display_virtio_gpu" => "drv.DisplayVirtioGPU",
-            "/display_ramfb" => "drv.DisplayRamFB",
             _ => "drv.Display",
         };
 

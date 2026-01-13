@@ -55,9 +55,9 @@ async fn machine_is_started(world: &mut ThingOsWorld) {
 
 #[when("I wait for the system to boot")]
 async fn wait_for_boot(world: &mut ThingOsWorld) {
-    let found = world.wait_for_serial("System booted", 30.0).await;
+    let found = world.wait_for_serial("Entering scheduler loop", 30.0).await;
     if !found {
-        capture_failure_diagnostics(world, "System booted").await;
+        capture_failure_diagnostics(world, "Entering scheduler loop").await;
         let log = world.get_serial_log().await;
         eprintln!("\n=== Serial Log (waiting for boot) ===");
         for line in log

@@ -252,23 +252,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bloom"
-version = "0.1.0"
-dependencies = [
- "abi",
- "stem",
-]
-
-[[package]]
-name = "blossom"
-version = "0.1.0"
-dependencies = [
- "abi",
- "bloom",
- "stem",
-]
-
-[[package]]
 name = "bran"
 version = "0.1.0"
 dependencies = [
@@ -574,14 +557,6 @@ dependencies = [
 
 [[package]]
 name = "display_bootfb"
-version = "0.1.0"
-dependencies = [
- "abi",
- "stem",
-]
-
-[[package]]
-name = "display_ramfb"
 version = "0.1.0"
 dependencies = [
  "abi",

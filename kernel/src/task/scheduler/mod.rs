@@ -145,6 +145,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
         }
 
         if now - self.metrics.last_flush > limit {
+            #[cfg(feature = "diagnostic-apps")]
             crate::log_event!(
                crate::logging::LogLevel::Info,
                "sched.activity",

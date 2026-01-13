@@ -19,6 +19,7 @@ members = [
     "userspace/bristle",
     "userspace/ps2_mouse",
     "userspace/echo",
+    "userspace/echo_mouse",
     "userspace/bloom",
     "userspace/stack_grow_demo",
     "userspace/stack_overflow_demo",

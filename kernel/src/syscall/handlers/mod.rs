@@ -36,6 +36,7 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
             let status = reply.status.load(Ordering::Relaxed);
             let value = reply.value.load(Ordering::Relaxed);
 
+            #[cfg(feature = "diagnostic-apps")]
             crate::ktrace!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
 
             return if status == 0 {

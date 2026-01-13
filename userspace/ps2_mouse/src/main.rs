@@ -16,6 +16,8 @@ const STATUS_OUTPUT_FULL: usize = 0x01;
 const STATUS_AUX_DATA: usize = 0x20;
 
 const CMD_ENABLE_AUX: u8 = 0xA8;
+const CMD_READ_CFG: u8 = 0x20;
+const CMD_WRITE_CFG: u8 = 0x60;
 const CMD_WRITE_AUX: u8 = 0xD4;
 const MOUSE_ENABLE: u8 = 0xF4;
 
@@ -25,7 +27,57 @@ const MOUSE_VECTOR: u8 = 0x2C;
 fn wait_input_empty() {
     for _ in 0..10000 {
         if ioport_read(PS2_STATUS, 1) & 0x02 == 0 { return; }
+        stem::yield_now();
     }
+}
+
+fn wait_output_full() {
+    for _ in 0..10000 {
+        if ioport_read(PS2_STATUS, 1) & STATUS_OUTPUT_FULL != 0 { return; }
+        stem::yield_now();
+    }
+}
+
+fn flush_output_buffer() {
+    // Drain up to 16 bytes of garbage
+    for i in 0..16 {
+        if ioport_read(PS2_STATUS, 1) & STATUS_OUTPUT_FULL != 0 {
+            let b = ioport_read(PS2_DATA, 1);
+            info!("ps2_mouse: flushed garbage byte: 0x{:02x}", b);
+        } else {
+            break;
+        }
+        stem::yield_now();
+    }
+}
+
+fn read_controller_config() -> u8 {
+    for _ in 0..5 {
+        wait_input_empty();
+        // Flush any pending data (e.g. key scancodes) before asking for config
+        flush_output_buffer();
+        ioport_write(PS2_CMD, 1, CMD_READ_CFG as usize);
+        wait_output_full();
+        let val = ioport_read(PS2_DATA, 1) as u8;
+        
+        // If we got an ACK (0xFA) or Resend (0xFE), it's likely a stale response
+        // to a previous command, not the config byte. Retry.
+        if val == 0xFA || val == 0xFE {
+            info!("ps2_mouse: read_cfg got {:02x}, retrying...", val);
+            continue;
+        }
+        return val;
+    }
+    // Fallback if we keep getting garbage
+    info!("ps2_mouse: read_cfg failed, assuming default safe config (0x47)");
+    0x47 // IRQ1, IRQ12, SysFlag, Translation
+}
+
+fn write_controller_config(cfg: u8) {
+    wait_input_empty();
+    ioport_write(PS2_CMD, 1, CMD_WRITE_CFG as usize);
+    wait_input_empty();
+    ioport_write(PS2_DATA, 1, cfg as usize);
 }
 
 fn send_aux_byte(byte: u8) {
@@ -38,14 +90,41 @@ fn send_aux_byte(byte: u8) {
 fn init_mouse() {
     info!("ps2_mouse: enabling aux port");
     
+    // Clear any initial garbage
+    flush_output_buffer();
+    
     // Enable aux port
     wait_input_empty();
     ioport_write(PS2_CMD, 1, CMD_ENABLE_AUX as usize);
     stem::sleep_ms(50);
+
+    // Ensure IRQ12 is enabled (Bit 1) and Mouse Disabled (Bit 5) is CLEARED.
+    // Bit 5: 1 = Mouse Disabled, 0 = Mouse Enabled.
+    let cfg = read_controller_config();
     
-    // Enable mouse data reporting
-    info!("ps2_mouse: sending enable command");
+    // Force: Set Bit 1 (IRQ12), Clear Bit 5 (Mouse Disable)
+    let new_cfg = (cfg | 0x02) & !0x20;
+    
+    if new_cfg != cfg {
+        write_controller_config(new_cfg);
+        info!("ps2_mouse: updated controller cfg 0x{:02x} -> 0x{:02x}", cfg, new_cfg);
+    } else {
+        info!("ps2_mouse: controller cfg already correct (0x{:02x})", cfg);
+    }
+    
+    // Enable mouse data reporting (0xF4)
+    info!("ps2_mouse: sending enable command (0xF4)");
     send_aux_byte(MOUSE_ENABLE);
+    
+    // Wait for ACK (0xFA)
+    wait_output_full();
+    let ack = ioport_read(PS2_DATA, 1) as u8;
+    if ack == 0xFA {
+        info!("ps2_mouse: enable ACK received (0xFA)");
+    } else {
+        info!("ps2_mouse: enable failed? received 0x{:02x} instead of ACK", ack);
+    }
+    
     stem::sleep_ms(100);
     
     // Drain any response bytes

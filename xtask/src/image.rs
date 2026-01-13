@@ -69,6 +69,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "ps2_kbd", target, "release")?;
     build_userspace_app(sh, "bristle", target, "release")?;
     build_userspace_app(sh, "echo", target, "release")?;
+    build_userspace_app(sh, "echo_mouse", target, "release")?;
     build_userspace_app(sh, "bloom", target, "release")?;
     build_userspace_app(sh, "ps2_mouse", target, "release")?;
     build_userspace_app(sh, "virtio_gpu", target, "release")?;
@@ -87,6 +88,13 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     copy_userspace_binary(sh, "ps2_kbd", target, "release", "iso_root/boot/ps2_kbd")?;
     copy_userspace_binary(sh, "bristle", target, "release", "iso_root/boot/bristle")?;
     copy_userspace_binary(sh, "echo", target, "release", "iso_root/boot/echo")?;
+    copy_userspace_binary(
+        sh,
+        "echo_mouse",
+        target,
+        "release",
+        "iso_root/boot/echo_mouse",
+    )?;
     copy_userspace_binary(sh, "bloom", target, "release", "iso_root/boot/bloom")?;
     copy_userspace_binary(
         sh,

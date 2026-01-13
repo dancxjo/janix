@@ -17,7 +17,7 @@ use abi::hid::{
 };
 use mouse::{MouseState, PointerEvent};
 use stem::info;
-use stem::syscall::{port_recv, port_send, PortHandle};
+use stem::syscall::{port_create, port_recv, port_send, spawn_process, PortHandle};
 use stem::thing::sys as thingsys;
 use thigmonasty::{KeyEdge, KeyboardState};
 
@@ -153,6 +153,24 @@ fn main(packed_handles: usize) -> ! {
 
     let mut kbd_state = KeyboardState::new();
     let mut mouse_state = MouseState::new();
+    let mut evt_mouse_write: PortHandle = 0;
+
+    match port_create(8192) {
+        Ok((write_h, read_h)) => {
+            evt_mouse_write = write_h;
+            match spawn_process("/echo_mouse", read_h as usize) {
+                Ok(pid) => {
+                    info!("bristle: spawned echo_mouse (PID={})", pid);
+                }
+                Err(e) => {
+                    info!("bristle: failed to spawn echo_mouse: {:?}", e);
+                }
+            }
+        }
+        Err(e) => {
+            info!("bristle: failed to create echo_mouse port: {:?}", e);
+        }
+    }
     let mut kbd_buf = [0u8; 64];
     let mut mouse_buf = [0u8; 64];
     let mut send_buf = [0u8; 64];
@@ -236,6 +254,13 @@ fn main(packed_handles: usize) -> ! {
                                 }
                                 if evt_echo_write != 0 {
                                     if port_send(evt_echo_write, &send_buf[..len]).is_ok() {
+                                        sent = true;
+                                    } else {
+                                        drop_counter += 1;
+                                    }
+                                }
+                                if evt_mouse_write != 0 {
+                                    if port_send(evt_mouse_write, &send_buf[..len]).is_ok() {
                                         sent = true;
                                     } else {
                                         drop_counter += 1;

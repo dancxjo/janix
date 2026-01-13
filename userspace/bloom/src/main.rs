@@ -13,6 +13,7 @@ mod surface;
 use abi::display_driver_protocol::BindPayload;
 use abi::display_protocol::FORMAT_XRGB8888;
 use abi::schema::{keys, kinds};
+use abi::types::RootWatchEvent;
 use stem::info;
 use stem::syscall::PortHandle;
 use stem::thing::sys as thingsys;
@@ -48,6 +49,56 @@ fn find_compositor_bytespace() -> Option<(ThingId, u32, u32, u32, u32)> {
     None
 }
 
+fn get_driver_ports_from_bytespace(bs_id: ThingId) -> (PortHandle, PortHandle) {
+    let req = thingsys::prop_get(bs_id, "display_drv_req").unwrap_or(0) as PortHandle;
+    let resp = thingsys::prop_get(bs_id, "display_drv_resp").unwrap_or(0) as PortHandle;
+    (req, resp)
+}
+
+fn wait_for_driver_ports(bs_id: ThingId) -> (PortHandle, PortHandle) {
+    let (mut req, mut resp) = get_driver_ports_from_bytespace(bs_id);
+    if req != 0 && resp != 0 {
+        return (req, resp);
+    }
+
+    let watch = match thingsys::watch_subscribe(bs_id, 0) {
+        Ok(id) => id,
+        Err(_) => {
+            info!("bloom: watch_subscribe failed; driver ports may remain unavailable");
+            return (req, resp);
+        }
+    };
+
+    let req_sym = thingsys::intern("display_drv_req").unwrap_or(0) as u64;
+    let resp_sym = thingsys::intern("display_drv_resp").unwrap_or(0) as u64;
+    info!(
+        "bloom: waiting for driver ports via watch on bytespace {}",
+        bs_id.0
+    );
+
+    let mut evt = RootWatchEvent::default();
+    loop {
+        match thingsys::stream_poll(watch, &mut evt) {
+            Ok(n) if n > 0 => {
+                if evt.key == req_sym {
+                    req = evt.value as PortHandle;
+                } else if evt.key == resp_sym {
+                    resp = evt.value as PortHandle;
+                }
+                if req != 0 && resp != 0 {
+                    break;
+                }
+            }
+            _ => {
+                stem::yield_now();
+                stem::sleep_ms(10);
+            }
+        }
+    }
+
+    (req, resp)
+}
+
 fn build_scene(list: &mut DrawList, width: i32, height: i32, cursor: &CursorState) {
     list.clear(BACKGROUND_COLOR);
 
@@ -62,8 +113,8 @@ fn build_scene(list: &mut DrawList, width: i32, height: i32, cursor: &CursorStat
 
 #[stem::main]
 fn main(arg: usize) -> ! {
-    let drv_req_write = unpack_handle(arg, 0);
-    let drv_resp_read = unpack_handle(arg, 1);
+    let mut drv_req_write = unpack_handle(arg, 0);
+    let mut drv_resp_read = unpack_handle(arg, 1);
     let bristle_evt_read = unpack_handle(arg, 2);
 
     info!(
@@ -122,6 +173,16 @@ fn main(arg: usize) -> ! {
         "bloom: bristle port handle {} (listening)",
         bristle_evt_read
     );
+
+    if drv_req_write == 0 || drv_resp_read == 0 {
+        let (req, resp) = wait_for_driver_ports(bs_id);
+        drv_req_write = req;
+        drv_resp_read = resp;
+        info!(
+            "bloom: resolved driver ports req_w={} resp_r={}",
+            drv_req_write, drv_resp_read
+        );
+    }
 
     let mut presenter = if !(drv_req_write == 0 && drv_resp_read == 0) {
         info!(

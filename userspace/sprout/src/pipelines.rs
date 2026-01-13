@@ -96,6 +96,9 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         }
     };
 
+    let _ = thingsys::prop_set(bs_id, "display_drv_req", drv_req.0 as u64);
+    let _ = thingsys::prop_set(bs_id, "display_drv_resp", drv_resp.1 as u64);
+
     let driver_arg = (drv_req.1 as u64) | ((drv_resp.0 as u64) << 16);
 
     if let Ok(pid) = stem::syscall::spawn_process(driver_name, driver_arg as usize) {

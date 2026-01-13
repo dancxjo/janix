@@ -8,29 +8,32 @@
 //! - `stack`: User stack allocation and fault handling
 //! - `sleep`: Timing and yield functions
 
-mod types;
 mod blocking;
 mod hooks;
+mod sleep;
 mod spawn;
 mod stack;
-mod sleep;
+mod types;
 
 // Re-export all public items
-pub use types::{ScheduleReason, Scheduler, StackFaultResult, SwitchParams};
-pub use blocking::{block_current, block_current_erased, init_blocking_hooks, wake_task, wake_task_erased};
-pub use hooks::{
-    alloc_user_stack_current, current_tid_current, exit_current,
-    handle_user_stack_fault_current, spawn_process_current, spawn_user_thread_current,
-    task_status_current, yield_now_current,
+pub use blocking::{
+    block_current, block_current_erased, init_blocking_hooks, wake_task, wake_task_erased,
 };
-pub use spawn::{spawn, spawn_process, spawn_user_task_full, spawn_user_thread, user_thread_trampoline};
-pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
+pub use hooks::{
+    alloc_user_stack_current, current_tid_current, exit_current, handle_user_stack_fault_current,
+    spawn_process_current, spawn_user_thread_current, task_status_current, yield_now_current,
+};
 pub use sleep::{sleep_ms, sleep_until, yield_now};
+pub use spawn::{
+    spawn, spawn_process, spawn_user_task_full, spawn_user_thread, user_thread_trampoline,
+};
+pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
+pub use types::{ScheduleReason, Scheduler, StackFaultResult, SwitchParams};
 
-use crate::{BootRuntime, BootTasking};
 use crate::task::{Task, TaskId, TaskState};
-use spin::Mutex;
+use crate::{BootRuntime, BootTasking};
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use spin::Mutex;
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]
 static SWITCH_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);

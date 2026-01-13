@@ -3,15 +3,23 @@ use abi::display_driver_protocol::{BindPayload, ErrResp, RegisterPayload};
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 
+use crate::damage::Damage;
+
 pub trait Presenter {
-    fn present(&mut self);
+    /// Present the current frame to the display.
+    /// 
+    /// `damage` describes which regions of the frame have changed.
+    /// Presenters may use this to optimize uploads/flushes.
+    fn present(&mut self, damage: &Damage);
+    
+    /// Pump the message queue for driver communication.
     fn pump(&mut self);
 }
 
 pub struct NullPresenter;
 
 impl Presenter for NullPresenter {
-    fn present(&mut self) {}
+    fn present(&mut self, _damage: &Damage) {}
     fn pump(&mut self) {}
 }
 
@@ -186,7 +194,8 @@ impl DriverPresenter {
 }
 
 impl Presenter for DriverPresenter {
-    fn present(&mut self) {
+    fn present(&mut self, _damage: &Damage) {
+        // TODO: In the future, encode damage rects for VirtIO flush regions
         self.send_present();
     }
 
@@ -202,10 +211,10 @@ pub enum PresenterImpl {
 }
 
 impl PresenterImpl {
-    pub fn present(&mut self) {
+    pub fn present(&mut self, damage: &Damage) {
         match self {
-            PresenterImpl::Null(inner) => inner.present(),
-            PresenterImpl::Driver(inner) => inner.present(),
+            PresenterImpl::Null(inner) => inner.present(damage),
+            PresenterImpl::Driver(inner) => inner.present(damage),
         }
     }
 

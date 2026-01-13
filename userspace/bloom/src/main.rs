@@ -8,19 +8,23 @@ mod bmp;
 mod bristle;
 mod compositor;
 mod cursor;
+mod damage;
 mod drawlist;
 mod frame_loop;
 mod logging;
+mod lowered;
 mod present;
 mod raster;
-
 mod surface;
+mod target;
+mod target_cpu;
 
 use abi::display_driver_protocol::BindPayload;
 use stem::syscall::PortHandle;
 
 use crate::compositor::CompositorTarget;
 use crate::cursor::CursorState;
+use crate::damage::{DamageTracker, Rect};
 use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
 
@@ -170,37 +174,73 @@ fn main(arg: usize) -> ! {
     let mut wallpaper_loaded = false;
     let mut frame_count: u64 = 0;
 
-    log!("[bloom] entering frame loop");
+    // Damage tracking state
+    let mut tracker = DamageTracker::new();
+    let mut prev_cursor_bbox: Option<Rect> = None;
+    let screen_w = target.width as i32;
+    let screen_h = target.height as i32;
+
+    // First frame requires full redraw
+    let mut first_frame = true;
+
+    log!("[bloom] entering frame loop (damage-aware rendering enabled)");
 
     // 4. Main Loop
     loop {
         let _frame = loop_ctrl.next();
         frame_count += 1;
 
+        // Begin damage tracking for this frame
+        tracker.begin_frame(screen_w, screen_h);
+
+        // First frame or major state change requires full redraw
+        if first_frame {
+            tracker.mark_full();
+            first_frame = false;
+        }
+
         // Check if wallpaper asset is ready (log once)
         if !wallpaper_loaded {
             if ASSETS.get_wallpaper().is_some() {
                 wallpaper_loaded = true;
                 log!("[bloom] frame {}: wallpaper now available", frame_count);
+                // Wallpaper loaded = full redraw needed
+                tracker.mark_full();
             }
         }
 
-        // Check if cursor asset is ready (only check every 30 frames to reduce noise)
+        // Check if cursor asset is ready
         if !cursor_loaded {
             if let Some(asset) = ASSETS.get_cursor() {
                 log!("[bloom] frame {}: GOT cursor asset, applying to CursorState", frame_count);
                 cursor.set_asset(asset);
                 cursor_loaded = true;
                 log!("[bloom] frame {}: cursor asset applied successfully", frame_count);
+                // Cursor appearance changed = damage cursor area
+                tracker.note_bbox(cursor.bbox());
             } else if frame_count % 60 == 0 {
                 log!("[bloom] frame {}: cursor not ready yet", frame_count);
             }
         }
 
-        // Input
+        // Input - capture cursor position before input
+        let old_cursor_bbox = cursor.bbox();
         if bristle_evt != 0 {
-            bristle::poll_bristle(bristle_evt, &mut cursor, target.width as i32, target.height as i32);
+            bristle::poll_bristle(bristle_evt, &mut cursor, screen_w, screen_h);
         }
+        
+        // Track cursor movement damage
+        let new_cursor_bbox = cursor.bbox();
+        if let Some(prev) = prev_cursor_bbox {
+            if prev != new_cursor_bbox {
+                // Cursor moved: damage both old and new positions
+                tracker.note_cursor_move(old_cursor_bbox, new_cursor_bbox);
+            }
+        } else {
+            // First frame - damage cursor area
+            tracker.note_bbox(new_cursor_bbox);
+        }
+        prev_cursor_bbox = Some(new_cursor_bbox);
 
         // Build Scene
         let mut list = drawlist::DrawList::new();
@@ -209,8 +249,8 @@ fn main(arg: usize) -> ! {
         if let Some(clouds) = ASSETS.get_wallpaper() {
              let cw = clouds.width as i32;
              let ch = clouds.height as i32;
-             for y in (0..target.height as i32).step_by(ch as usize) {
-                 for x in (0..target.width as i32).step_by(cw as usize) {
+             for y in (0..screen_h).step_by(ch as usize) {
+                 for x in (0..screen_w).step_by(cw as usize) {
                      list.blit_image(&clouds, x, y);
                  }
              }
@@ -222,11 +262,15 @@ fn main(arg: usize) -> ! {
         // Cursor
         cursor.emit_drawlist(&mut list);
 
-        // Rasterize
-        raster::execute(&mut surface, &list);
+        // End damage tracking - get the final damage for this frame
+        let damage = tracker.end_frame();
 
-        // Present
-        presenter.present();
+        // Rasterize using damage-aware rendering
+        // This only updates pixels within damaged rectangles!
+        raster::execute_with_damage(&mut surface, &list, &damage);
+
+        // Present with damage info (for future VirtIO flush optimization)
+        presenter.present(&damage);
         presenter.pump();
 
         // Timing

@@ -5,8 +5,10 @@ extern crate alloc;
 use stem::{error, info};
 
 mod devtree;
+mod pipelines;
 mod registry;
 mod supervisor;
+mod task;
 
 #[stem::main]
 fn main(_arg0: usize) -> ! {

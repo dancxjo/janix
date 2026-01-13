@@ -84,6 +84,9 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "virtio_gpu", target, "release")?;
     build_userspace_app(sh, "display_bootfb", target, "release")?;
     build_userspace_app(sh, "display_virtio_gpu", target, "release")?;
+    build_userspace_app(sh, "ata_disk", target, "release")?;
+    build_userspace_app(sh, "disk_probe", target, "release")?;
+    build_userspace_app(sh, "ahci_disk", target, "release")?;
     if diagnostic_apps_enabled() {
         for &(app, _) in DIAGNOSTIC_APPS {
             build_userspace_app(sh, app, target, "release")?;
@@ -125,6 +128,27 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
         target,
         "release",
         "iso_root/boot/display_virtio_gpu",
+    )?;
+    copy_userspace_binary(
+        sh,
+        "ata_disk",
+        target,
+        "release",
+        "iso_root/boot/ata_disk",
+    )?;
+    copy_userspace_binary(
+        sh,
+        "disk_probe",
+        target,
+        "release",
+        "iso_root/boot/disk_probe",
+    )?;
+    copy_userspace_binary(
+        sh,
+        "ahci_disk",
+        target,
+        "release",
+        "iso_root/boot/ahci_disk",
     )?;
     if diagnostic_apps_enabled() {
         for &(app, module_name) in DIAGNOSTIC_APPS {

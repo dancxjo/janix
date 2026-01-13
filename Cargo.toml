@@ -24,6 +24,9 @@ members = [
     "userspace/stack_grow_demo",
     "userspace/stack_overflow_demo",
     "userspace/stack_heap_torture",
+    "userspace/ata_disk",
+    "userspace/disk_probe",
+    "userspace/ahci_disk",
     "tools/pciids",
 ]
 resolver = "2"

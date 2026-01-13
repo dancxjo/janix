@@ -66,6 +66,13 @@ pub mod keys {
     pub const VECTOR: &str = "vector";
     pub const MSI_CAPABLE: &str = "msi_capable";
     pub const MSIX_CAPABLE: &str = "msix_capable";
+    // Storage
+    pub const SECTOR_SIZE: &str = "sector_size";
+    pub const SECTOR_COUNT: &str = "sector_count";
+    pub const LBA48: &str = "lba48";
+    pub const ATA_CHANNEL: &str = "ata_channel";
+    pub const ATA_DRIVE: &str = "ata_drive";
+
 }
 
 pub mod kinds {
@@ -96,6 +103,11 @@ pub mod kinds {
     // Virtio GPU
     pub const DEV_DISPLAY_GPU: &str = "dev.display.Gpu";
     pub const DEV_DISPLAY_SCANOUT: &str = "dev.display.Scanout";
+    // Storage
+    pub const DEV_STORAGE_DISK: &str = "dev.storage.Disk";
+    pub const DEV_STORAGE_PARTITION: &str = "dev.storage.Partition";
+    pub const SVC_STORAGE: &str = "svc.Storage";
+
 }
 
 pub mod rels {

@@ -369,6 +369,22 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         crate::kinfo!("PCI: Found LPC/ISA bridge at {:02x}:{:02x}.{}", bus, dev, func);
         publish_lpc_bridge(node, create, set, link, intern);
     }
+
+    // AHCI SATA controller detection - class 0x01, subclass 0x06, prog_if 0x01
+    if class_code == 0x01 && subclass == 0x06 && prog_if == 0x01 {
+        crate::kinfo!("PCI: Found AHCI SATA controller at {:02x}:{:02x}.{}", bus, dev, func);
+        register_ahci_controller(
+            node,
+            bus,
+            dev,
+            func,
+            &bar_addrs,
+            &bar_sizes,
+            msi_cap,
+            msix_cap,
+        );
+    }
+
 }
 
 /// Register virtio GPU in device registry for userspace claiming
@@ -426,6 +442,59 @@ fn register_virtio_gpu(
         crate::kinfo!("PCI: Registered virtio GPU (graph_id={}, idx={}) BAR0=0x{:x}", graph_id, idx, bar_addrs[0]);
     } else {
         crate::kinfo!("PCI: Failed to register virtio GPU - registry full");
+    }
+}
+
+
+/// Register AHCI controller in device registry for userspace claiming
+fn register_ahci_controller(
+    graph_id: u64,
+    bus: u8,
+    dev: u8,
+    func: u8,
+    bar_addrs: &[u64; 6],
+    bar_sizes: &[u64; 6],
+    msi_cap: Option<u8>,
+    msix_cap: Option<u8>,
+) {
+    use crate::device_registry::{DeviceEntry, MsiCapability, MsixCapability, PciLocation, REGISTRY};
+
+    // AHCI uses BAR5 for ABAR (AHCI Base Address Register)
+    // But our DeviceEntry stores all BARs anyway
+    let entry = DeviceEntry::new_mmio(
+        "dev.storage.Ahci",
+        graph_id,
+        *bar_addrs,
+        *bar_sizes,
+    );
+    
+    let mut reg = REGISTRY.lock();
+    if let Some(idx) = reg.register(entry) {
+        let msi_info = msi_cap.map(|offset| {
+            let msg_ctrl = pci_read_config_u16(bus, dev, func, offset + 0x2);
+            MsiCapability {
+                offset,
+                is_64bit: (msg_ctrl & (1 << 7)) != 0,
+                has_mask: (msg_ctrl & (1 << 8)) != 0,
+            }
+        });
+
+        let msix_info = msix_cap.map(|offset| {
+            let table = unsafe { pci_read_config(bus, dev, func, offset + 0x4) };
+            let table_bar = (table & 0x7) as u8;
+            let table_offset = table & 0xFFFF_FFF8;
+            MsixCapability {
+                offset,
+                table_bar,
+                table_offset,
+            }
+        });
+
+        let location = PciLocation { bus, dev, func };
+        reg.set_pci_info(idx, location, msi_info, msix_info);
+        crate::kinfo!("PCI: Registered AHCI controller (graph_id={}, idx={}) BAR5=0x{:x}", graph_id, idx, bar_addrs[5]);
+    } else {
+        crate::kinfo!("PCI: Failed to register AHCI controller - registry full");
     }
 }
 

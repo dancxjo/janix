@@ -158,6 +158,9 @@ impl Supervisor {
 
     fn spawn_apps(&mut self) {
         self.ensure_app("/clock");
+        self.ensure_app("/ata_disk");
+        self.ensure_app("/disk_probe");
+        self.ensure_app("/ahci_disk");
         #[cfg(feature = "diagnostic-apps")]
         {
             self.ensure_app("/threads");

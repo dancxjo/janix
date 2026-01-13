@@ -53,7 +53,7 @@ fn parse_and_print_event(buf: &[u8]) {
                 let key = Key::from_raw(payload.key);
                 let mods = Mods(payload.mods);
                 let repeat = if payload.flags & 1 != 0 { " (repeat)" } else { "" };
-                info!("[echo] KeyDown {}{}{}", key.name(), format_mods(mods), repeat);
+                info!("KeyDown {}{}{}", key.name(), format_mods(mods), repeat);
             }
         }
         2 => { // KeyUp
@@ -63,7 +63,7 @@ fn parse_and_print_event(buf: &[u8]) {
                 };
                 let key = Key::from_raw(payload.key);
                 let mods = Mods(payload.mods);
-                info!("[echo] KeyUp {}{}", key.name(), format_mods(mods));
+                info!("KeyUp {}{}", key.name(), format_mods(mods));
             }
         }
         3 => { // PointerMove
@@ -74,7 +74,7 @@ fn parse_and_print_event(buf: &[u8]) {
                 // Copy to locals to avoid packed struct field reference
                 let dx = payload.dx;
                 let dy = payload.dy;
-                info!("[echo] PointerMove dx={} dy={}", dx, dy);
+                info!("PointerMove dx={} dy={}", dx, dy);
             }
         }
         4 => { // PointerButtonDown
@@ -83,7 +83,7 @@ fn parse_and_print_event(buf: &[u8]) {
                     core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerButtonPayload)
                 };
                 let btn = payload.button;
-                info!("[echo] PointerButtonDown {}", button_name(btn));
+                info!("PointerButtonDown {}", button_name(btn));
             }
         }
         5 => { // PointerButtonUp
@@ -92,7 +92,7 @@ fn parse_and_print_event(buf: &[u8]) {
                     core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerButtonPayload)
                 };
                 let btn = payload.button;
-                info!("[echo] PointerButtonUp {}", button_name(btn));
+                info!("PointerButtonUp {}", button_name(btn));
             }
         }
         _ => {}

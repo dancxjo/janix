@@ -45,7 +45,7 @@ fn parse_and_print_event(buf: &[u8]) {
                 };
                 let dx = payload.dx;
                 let dy = payload.dy;
-                info!("[echo_mouse] PointerMove dx={} dy={}", dx, dy);
+                info!("PointerMove dx={} dy={}", dx, dy);
             }
         }
         4 => { // PointerButtonDown
@@ -54,7 +54,7 @@ fn parse_and_print_event(buf: &[u8]) {
                     core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerButtonPayload)
                 };
                 let btn = payload.button;
-                info!("[echo_mouse] PointerButtonDown {}", button_name(btn));
+                info!("PointerButtonDown {}", button_name(btn));
             }
         }
         5 => { // PointerButtonUp
@@ -63,7 +63,7 @@ fn parse_and_print_event(buf: &[u8]) {
                     core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerButtonPayload)
                 };
                 let btn = payload.button;
-                info!("[echo_mouse] PointerButtonUp {}", button_name(btn));
+                info!("PointerButtonUp {}", button_name(btn));
             }
         }
         _ => {}

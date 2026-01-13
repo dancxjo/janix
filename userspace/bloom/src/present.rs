@@ -37,12 +37,19 @@ impl DriverPresenter {
     }
 
     pub fn wait_for_register(&mut self) {
+        let mut loops = 0u32;
         loop {
             self.pump();
             if self.registered {
                 break;
             }
+            if loops >= 200 {
+                info!("bloom: driver REGISTER timeout; continuing");
+                break;
+            }
+            loops += 1;
             stem::yield_now();
+            stem::sleep_ms(10);
         }
     }
 

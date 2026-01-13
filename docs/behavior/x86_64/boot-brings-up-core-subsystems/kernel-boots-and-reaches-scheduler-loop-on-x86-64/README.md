@@ -628,8 +628,8 @@ T[10866397047] [INFO] [threads_demo] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x10200f7
 [11673974334] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb00abaf0
 [11674685055] [INFO] [kernel::task::scheduler::spawn] Entering user mode: PC=0x200000 SP=0x800000
 [11675294664] [INFO] [task.user_enter] Entering user mode tid=16 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562068589 RSP_BEFORE=18446744072368076096 RFLAGS_BEFORE=130 CR3_BEFORE=28573696 fs_base=0 gs_base=18446744071563563000
-[11678792631] [INFO] [echo] echo: online (handle=13)
-[11679427254] [INFO] [echo] echo: ready for Bristle events (keyboard + mouse)
+[11678792631] [INFO] echo: online (handle=13)
+[11679427254] [INFO] echo: ready for Bristle events (keyboard + mouse)
 [11691593364] [TRACE] [kernel::syscall::handlers] ROOT_CALL_DEBUG: status=-1 value=0
 [11692802517] [TRACE] [kernel::syscall::handlers] ROOT_CALL_DEBUG: status=0 value=135
 [11705566158] [TRACE] [kernel::syscall::handlers] ROOT_CALL_DEBUG: status=0 value=146

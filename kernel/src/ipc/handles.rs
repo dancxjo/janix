@@ -40,9 +40,10 @@ impl HandleTable {
         }
     }
 
-    /// Allocate a new handle for the given port and mode
+    /// Allocate a new handle for the given port and mode.
+    /// Handle 0 is reserved as "invalid" for userspace conventions.
     pub fn alloc(&mut self, port_id: PortId, mode: HandleMode) -> Option<Handle> {
-        for (i, slot) in self.entries.iter_mut().enumerate() {
+        for (i, slot) in self.entries.iter_mut().enumerate().skip(1) {
             if slot.is_none() {
                 *slot = Some(HandleEntry { port_id, mode });
                 return Some(Handle(i as u32));

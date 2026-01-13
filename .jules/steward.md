@@ -1,0 +1,2 @@
+2024-05-22 – [Task Storage Structure]
+Learning: [The kernel scheduler used `Vec<Task>` for task storage despite documentation claiming `BTreeMap`. This caused O(N) lookups in hot paths (scheduler tick, syscalls).] Guardrail: [When designing registries for core entities (Tasks, Things), always prefer O(log N) or O(1) structures over `Vec` unless the set is strictly bounded and small. Verify implementation against design intent.]

@@ -26,7 +26,7 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
     let result = sched::with_sched(|sched| {
         // Get current task's address space and group
         let curr_id = sched.cpu.current_task;
-        let task = match sched.tasks.iter().find(|t| t.id == curr_id) {
+        let task = match sched.tasks.get(&curr_id) {
             Some(t) => t,
             None => return Err(err::EINVAL),
         };
@@ -48,7 +48,7 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
             sched.thread_groups.insert(new_group_id, group);
             
             // Update the current task's group_id
-            if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == curr_id) {
+            if let Some(t) = sched.tasks.get_mut(&curr_id) {
                 t.group_id = new_group_id;
             }
             new_group_id
@@ -211,7 +211,7 @@ pub fn sys_thread_spawn(entry: u64, arg0: u64, stack_ptr_opt: u64) -> SyscallRes
         graph::store::with_store(|s| new_task.set_state(s, sched::task::TaskState::Ready));
 
         let thing = new_task.thing;
-        sched.tasks.push(new_task);
+        sched.tasks.insert(new_id, new_task);
         sched.run_queue.push_back(new_id, thing);
 
         Ok(new_id.0)
@@ -229,9 +229,9 @@ pub fn sys_thread_exit(code: i32) -> ! {
     // Mark thread as dead and set exit code, reclaim stack slot
     if let Some(task_id) = sched::current_task_handle() {
         sched::with_sched(|sched| {
-            if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == task_id) {
+            if let Some(task) = sched.tasks.get_mut(&task_id) {
                 task.exit_code = Some(code);
-                
+
                 // Reclaim stack slot if kernel-allocated
                 let user_stack_top = task.user_stack_top;
                 let group_id = task.group_id;
@@ -255,7 +255,7 @@ pub fn sys_thread_exit(code: i32) -> ! {
                 // Wake all joiners
                 let joiners: alloc::vec::Vec<TaskId> = task.joiners.drain(..).collect();
                 for joiner in joiners {
-                    if let Some(joining_task) = sched.tasks.iter_mut().find(|t| t.id == joiner) {
+                    if let Some(joining_task) = sched.tasks.get_mut(&joiner) {
                         if matches!(joining_task.state, sched::task::TaskState::Blocked(BlockReason::Join(target)) if target == task_id) {
                             joining_task.state = sched::task::TaskState::Ready;
                             joining_task.wake_reason = Some(WakeReason::join_completed(code as u64));
@@ -284,7 +284,7 @@ pub fn sys_thread_join(tid: u64, timeout_ticks: u64) -> SyscallResult {
     
     let result = sched::with_sched(|sched| {
         // Check if target exists
-        let target = match sched.tasks.iter().find(|t| t.id == target_id) {
+        let target = match sched.tasks.get(&target_id) {
             Some(t) => t,
             None => return Err(err::ENOENT),
         };
@@ -296,12 +296,12 @@ pub fn sys_thread_join(tid: u64, timeout_ticks: u64) -> SyscallResult {
 
         // Register current task as a joiner
         let curr_id = sched.cpu.current_task;
-        if let Some(target) = sched.tasks.iter_mut().find(|t| t.id == target_id) {
+        if let Some(target) = sched.tasks.get_mut(&target_id) {
             target.joiners.push(curr_id);
         }
 
         // Block current task
-        if let Some(curr) = sched.tasks.iter_mut().find(|t| t.id == curr_id) {
+        if let Some(curr) = sched.tasks.get_mut(&curr_id) {
             curr.state = sched::task::TaskState::Blocked(BlockReason::Join(target_id));
             curr.wake_reason = None;
         }

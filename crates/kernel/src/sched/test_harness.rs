@@ -73,7 +73,7 @@ where
         let address_space = Arc::new(AddressSpace::new().unwrap());
         let mut task = Task::new(tid, thing, 0x10000, address_space);
         task.state = TaskState::Running;
-        sched.tasks.push(task);
+        sched.tasks.insert(tid, task);
 
         sched.cpu.current_task = tid;
     }
@@ -88,7 +88,7 @@ where
                 sched.cpu.current_task = TaskId(0);
             }
             // Optional: remove task to keep list small
-            // sched.tasks.retain(|t| t.id != tid);
+            // sched.tasks.remove(&tid);
         }
     }
 
@@ -98,14 +98,14 @@ where
 pub fn map_user_memory(tid: TaskId, ptr: u64, len: usize, perms: MapPerms) {
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut().unwrap();
-    let task = sched.tasks.iter_mut().find(|t| t.id == tid).expect("test task missing");
+    let task = sched.tasks.get_mut(&tid).expect("test task missing");
     task.address_space.map(ptr, ptr, len, perms).unwrap();
 }
 
 pub fn set_current_caps(tid: TaskId, caps: Vec<abi::cap::Cap>) {
     let mut guard = SCHEDULER.lock();
     let sched = guard.as_mut().unwrap();
-    let task = sched.tasks.iter_mut().find(|t| t.id == tid).expect("test task missing");
+    let task = sched.tasks.get_mut(&tid).expect("test task missing");
     task.caps = caps;
 }
 
@@ -119,8 +119,7 @@ pub fn spawn_sibling_task(parent_tid: TaskId) -> TaskId {
         let sched = guard.as_ref().unwrap();
         let parent = sched
             .tasks
-            .iter()
-            .find(|t| t.id == parent_tid)
+            .get(&parent_tid)
             .expect("parent task missing");
         (parent.address_space.clone(), parent.caps.clone(), parent.group_id)
     };
@@ -132,7 +131,7 @@ pub fn spawn_sibling_task(parent_tid: TaskId) -> TaskId {
     task.state = TaskState::Ready;
     task.caps = caps;
     task.group_id = group_id;
-    sched.tasks.push(task);
+    sched.tasks.insert(new_tid, task);
 
     new_tid
 }
@@ -141,7 +140,7 @@ pub fn set_current_task(tid: TaskId) {
     let mut guard = SCHEDULER.lock();
     if let Some(sched) = guard.as_mut() {
         sched.cpu.current_task = tid;
-        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == tid) {
+        if let Some(task) = sched.tasks.get_mut(&tid) {
             task.state = TaskState::Running;
         }
     }
@@ -150,7 +149,7 @@ pub fn set_current_task(tid: TaskId) {
 pub fn translate_user_virt(tid: TaskId, virt: u64) -> Option<*mut u8> {
     let guard = SCHEDULER.lock();
     let sched = guard.as_ref()?;
-    let task = sched.tasks.iter().find(|t| t.id == tid)?;
+    let task = sched.tasks.get(&tid)?;
     let arch = task.address_space.arch.lock();
     arch.translate(virt).map(|p| p as *mut u8)
 }

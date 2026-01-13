@@ -15,6 +15,10 @@ pub fn poll_bristle(handle: PortHandle, cursor: &mut CursorState, w: i32, h: i32
             Err(_) => break,
         };
 
+        if n == 0 {
+            break;
+        }
+
         if n < BristleEventHeader::SIZE {
             continue;
         }

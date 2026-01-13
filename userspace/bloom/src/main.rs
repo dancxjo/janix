@@ -250,6 +250,9 @@ fn main(arg: usize) -> ! {
             }
         }
 
+        // Poll Input
+        bristle::poll_bristle(bristle_evt_read, &mut cursor, w as i32, h as i32);
+
         // Moving square
         let sx = (frame as usize * 4) % (w.saturating_sub(64).max(1));
         let sy = (frame as usize * 4) % (h.saturating_sub(64).max(1));
@@ -257,6 +260,18 @@ fn main(arg: usize) -> ! {
             for x in sx..(sx + 64).min(w) {
                 if y * stride_px + x < fb_slice.len() {
                     fb_slice[y * stride_px + x] = 0xFFFFFFFF;
+                }
+            }
+        }
+
+        // Draw Cursor (Red Square)
+        let cx = cursor.x as usize;
+        let cy = cursor.y as usize;
+        let csize = 10;
+        for y in cy..(cy + csize).min(h) {
+            for x in cx..(cx + csize).min(w) {
+                if y * stride_px + x < fb_slice.len() {
+                    fb_slice[y * stride_px + x] = 0xFFFF0000; // Red
                 }
             }
         }

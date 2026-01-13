@@ -4,285 +4,106 @@
 extern crate alloc;
 
 mod bristle;
+mod compositor;
 mod cursor;
 mod drawlist;
+mod frame_loop;
+mod logging;
 mod present;
 mod raster;
+mod scene;
 mod surface;
 
 use abi::display_driver_protocol::BindPayload;
-use abi::display_protocol::FORMAT_XRGB8888;
-use abi::schema::{keys, kinds};
-use abi::types::RootWatchEvent;
-use stem::info;
 use stem::syscall::PortHandle;
-use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
 
+use crate::compositor::CompositorTarget;
 use crate::cursor::CursorState;
-use crate::drawlist::DrawList;
+use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
-use crate::surface::Surface;
-
-const BACKGROUND_COLOR: u32 = 0x00101010;
-const RECT_COLOR: u32 = 0x00306090;
+use crate::scene::{Fb32, draw};
 
 fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
 }
 
-fn find_compositor_bytespace() -> Option<(ThingId, u32, u32, u32, u32)> {
-    let role_sym = thingsys::intern("display.compositor").ok()? as u64;
-    let mut buf = [ThingId(0); 16];
-    let count = thingsys::find(kinds::BYTESPACE, &mut buf).ok()?;
-    for id in buf.iter().take(count) {
-        let role = thingsys::prop_get(*id, "display_role").unwrap_or(0);
-        if role != role_sym {
-            continue;
-        }
-        let width = thingsys::prop_get(*id, keys::WIDTH).unwrap_or(0) as u32;
-        let height = thingsys::prop_get(*id, keys::HEIGHT).unwrap_or(0) as u32;
-        let stride = thingsys::prop_get(*id, keys::STRIDE).unwrap_or(0) as u32;
-        let format = thingsys::prop_get(*id, keys::FORMAT).unwrap_or(0) as u32;
-        return Some((*id, width, height, stride, format));
-    }
-    None
-}
-
-fn get_driver_ports_from_bytespace(bs_id: ThingId) -> (PortHandle, PortHandle) {
-    let req = thingsys::prop_get(bs_id, "display_drv_req").unwrap_or(0) as PortHandle;
-    let resp = thingsys::prop_get(bs_id, "display_drv_resp").unwrap_or(0) as PortHandle;
-    (req, resp)
-}
-
-fn wait_for_driver_ports(bs_id: ThingId) -> (PortHandle, PortHandle) {
-    let (mut req, mut resp) = get_driver_ports_from_bytespace(bs_id);
-    if req != 0 && resp != 0 {
-        return (req, resp);
-    }
-
-    let watch = match thingsys::watch_subscribe(bs_id, 0) {
-        Ok(id) => id,
-        Err(_) => {
-            info!("bloom: watch_subscribe failed; driver ports may remain unavailable");
-            return (req, resp);
-        }
-    };
-
-    let req_sym = thingsys::intern("display_drv_req").unwrap_or(0) as u64;
-    let resp_sym = thingsys::intern("display_drv_resp").unwrap_or(0) as u64;
-    info!(
-        "bloom: waiting for driver ports via watch on bytespace {}",
-        bs_id.0
-    );
-
-    let mut evt = RootWatchEvent::default();
-    loop {
-        match thingsys::stream_poll(watch, &mut evt) {
-            Ok(n) if n > 0 => {
-                if evt.key == req_sym {
-                    req = evt.value as PortHandle;
-                } else if evt.key == resp_sym {
-                    resp = evt.value as PortHandle;
-                }
-                if req != 0 && resp != 0 {
-                    break;
-                }
-            }
-            _ => {
-                stem::yield_now();
-                stem::sleep_ms(10);
-            }
-        }
-    }
-
-    (req, resp)
-}
-
-fn build_scene(list: &mut DrawList, width: i32, height: i32, cursor: &CursorState) {
-    list.clear(BACKGROUND_COLOR);
-
-    let rect_w = (width / 3).max(1);
-    let rect_h = (height / 3).max(1);
-    let rect_x = (width - rect_w) / 2;
-    let rect_y = (height - rect_h) / 2;
-    list.rect(rect_x, rect_y, rect_w, rect_h, RECT_COLOR);
-
-    cursor.emit_drawlist(list);
-}
-
 #[stem::main]
 fn main(arg: usize) -> ! {
-    let mut drv_req_write = unpack_handle(arg, 0);
-    let mut drv_resp_read = unpack_handle(arg, 1);
-    let bristle_evt_read = unpack_handle(arg, 2);
+    logging::init();
 
-    info!(
-        "bloom: arg=0x{:x} handles req_w={} resp_r={} bristle_r={}",
-        arg, drv_req_write, drv_resp_read, bristle_evt_read
-    );
-    if bristle_evt_read == 0 {
-        info!("bloom: bristle event handle is 0; input may be unavailable");
-    }
+    let arg_req = unpack_handle(arg, 0);
+    let arg_resp = unpack_handle(arg, 1);
+    let bristle_evt = unpack_handle(arg, 2);
 
-    let (bs_id, width, height, stride, format) = loop {
-        if let Some(found) = find_compositor_bytespace() {
-            break found;
-        }
-        stem::yield_now();
-        stem::sleep_ms(50);
-    };
+    log!("starting (arg_req={} arg_resp={} bristle={})", arg_req, arg_resp, bristle_evt);
 
-    info!(
-        "bloom: compositor bytespace {} ({}x{} stride={} format={})",
-        bs_id.0, width, height, stride, format
-    );
-
-    if format != FORMAT_XRGB8888 {
-        info!("bloom: unexpected format {}, continuing anyway", format);
-    }
-
-    let fallback_size = height as usize * stride as usize;
-    let info_size = thingsys::bytespace_info(bs_id).unwrap_or(0);
-    info!("bloom: dimensions {}x{} stride={} -> fallback_size={}", width, height, stride, fallback_size);
-    info!("bloom: bytespace_info returned {}", info_size);
-    let size = if info_size == 0 { fallback_size } else { info_size };
-    info!("bloom: resolved size={}", size);
-
-    if info_size == 0 {
-        info!("bloom: bytespace_info returned 0; using fallback size {}", fallback_size);
-    }
-    info!("DEBUG: STEP 1 bs_id={}", bs_id.0);
-    let ptr = match thingsys::bytespace_map(bs_id) {
-        Ok(ptr) => ptr,
+    // 1. Discovery & Mapping
+    // Wait up to 2 seconds for a valid compositor bytespace
+    let target = match CompositorTarget::discover_and_map((arg_req, arg_resp), 2000) {
+        Ok(t) => t,
         Err(e) => {
-            info!("bloom: bytespace_map failed: {:?}", e);
-            loop {
-                stem::yield_now();
-            }
+            log!("error: compositor discovery failed: {:?}", e);
+            loop { stem::sleep_ms(1000); }
         }
     };
-    info!("DEBUG: STEP 2 bs_id={}", bs_id.0);
 
-    if ptr.is_null() {
-        info!("bloom: bytespace_map returned null pointer");
-        loop {
-            stem::yield_now();
-        }
-    }
-
-    info!(
-        "bloom: mapped bytespace at {:p} (size={})",
-        ptr, size
-    );
-    info!(
-        "bloom: bristle port handle {} (listening)",
-        bristle_evt_read
-    );
-
-    if drv_req_write == 0 || drv_resp_read == 0 {
-        info!("DEBUG: STEP 3 bs_id={}", bs_id.0);
-        info!("DEBUG: calling wait_for_driver_ports with {}", bs_id.0);
-        let (req, resp) = wait_for_driver_ports(bs_id);
-        drv_req_write = req;
-        drv_resp_read = resp;
-        info!(
-            "bloom: resolved driver ports req_w={} resp_r={}",
-            drv_req_write, drv_resp_read
-        );
-    }
-
-    let mut presenter = if !(drv_req_write == 0 && drv_resp_read == 0) {
-        info!(
-            "bloom: driver ports req_w={} resp_r={}",
-            drv_req_write, drv_resp_read
-        );
-        let mut driver = DriverPresenter::new(drv_req_write, drv_resp_read);
+    // 2. Presenter Setup
+    let mut presenter = if target.driver_req != 0 && target.driver_resp != 0 {
+        log!("presenter: driver (req={} resp={})", target.driver_req, target.driver_resp);
+        let mut driver = DriverPresenter::new(target.driver_req, target.driver_resp);
         driver.wait_for_register();
+        
         let bind = BindPayload {
-            bytespace_id: bs_id.0,
-            width,
-            height,
-            stride,
-            format,
+            bytespace_id: target.bs_id.0,
+            width: target.width,
+            height: target.height,
+            stride: target.stride_bytes,
+            format: target.format,
         };
         driver.send_bind(&bind);
+        // Note: We ignore the ACK for proof-of-life simplicity, as DriverPresenter handles state inside
         PresenterImpl::Driver(driver)
     } else {
-        info!("bloom: no driver ports; rendering only");
+        log!("presenter: null (headless/fallback)");
         PresenterImpl::Null(present::NullPresenter)
     };
 
-    let mut surface = unsafe { Surface::new(ptr, size, width, height, stride) };
-    let mut cursor = CursorState::new((width as i32) / 2, (height as i32) / 2);
+    // 3. State Initialization
+    let mut cursor = CursorState::new((target.width as i32) / 2, (target.height as i32) / 2);
+    let mut loop_ctrl = FrameLoop::new(60);
 
-    info!("bloom: frame loop started");
-    
+    log!("entering frame loop");
+
+    // 4. Main Loop
     loop {
-        // Test Pattern Drawing
-        let fb_slice = unsafe {
-            core::slice::from_raw_parts_mut(surface.ptr as *mut u32, surface.len / 4)
+        let frame = loop_ctrl.next();
+
+        // Input
+        if bristle_evt != 0 {
+            bristle::poll_bristle(bristle_evt, &mut cursor, target.width as i32, target.height as i32);
+        }
+
+        // Draw
+        // Create a safe slice from the raw pointer
+        // SAFETY: Mapped pointer is valid for `size_bytes`.
+        let pixels_len = target.size_bytes / 4;
+        let pixels = unsafe { 
+            core::slice::from_raw_parts_mut(target.ptr as *mut u32, pixels_len) 
         };
-        let w = surface.width() as usize;
-        let h = surface.height() as usize;
-        let stride_px = surface.stride_bytes as usize / 4;
-        static mut FRAME: u64 = 0;
-        let frame = unsafe { FRAME };
-        unsafe { FRAME += 1 };
 
-        // 8 vertical bars
-        for y in 0..h {
-            for x in 0..w {
-                let bar = (x * 8) / w;
-                let color = match bar {
-                    0 => 0xFF000000, // black
-                    1 => 0xFFFF0000, // red
-                    2 => 0xFF00FF00, // green
-                    3 => 0xFF0000FF, // blue
-                    4 => 0xFFFFFF00, // yellow
-                    5 => 0xFFFF00FF, // magenta
-                    6 => 0xFF00FFFF, // cyan
-                    _ => 0xFFFFFFFF, // white
-                };
-                if y * stride_px + x < fb_slice.len() {
-                    fb_slice[y * stride_px + x] = color;
-                }
-            }
+        if let Ok(mut fb) = Fb32::new(pixels, target.width as usize, target.height as usize, target.stride_bytes as usize / 4) {
+             draw(&mut fb, frame, &cursor);
+        } else {
+             // This should ideally never happen after successful discovery
+             log!("error: fb32 creation failed");
         }
 
-        // Poll Input
-        bristle::poll_bristle(bristle_evt_read, &mut cursor, w as i32, h as i32);
-
-        // Moving square
-        let sx = (frame as usize * 4) % (w.saturating_sub(64).max(1));
-        let sy = (frame as usize * 4) % (h.saturating_sub(64).max(1));
-        for y in sy..(sy + 64).min(h) {
-            for x in sx..(sx + 64).min(w) {
-                if y * stride_px + x < fb_slice.len() {
-                    fb_slice[y * stride_px + x] = 0xFFFFFFFF;
-                }
-            }
-        }
-
-        // Draw Cursor (Red Square)
-        let cx = cursor.x as usize;
-        let cy = cursor.y as usize;
-        let csize = 10;
-        for y in cy..(cy + csize).min(h) {
-            for x in cx..(cx + csize).min(w) {
-                if y * stride_px + x < fb_slice.len() {
-                    fb_slice[y * stride_px + x] = 0xFFFF0000; // Red
-                }
-            }
-        }
-
+        // Present
         presenter.present();
         presenter.pump();
 
-        if frame % 60 == 0 {
-            info!("bloom: frame {} presented", frame);
-        }
-
-        stem::sleep_ms(16);
+        // Timing & Diagnostics
+        loop_ctrl.heartbeat(cursor.x, cursor.y);
+        loop_ctrl.sleep();
     }
 }

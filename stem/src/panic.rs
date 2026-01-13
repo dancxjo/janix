@@ -6,8 +6,6 @@ use core::panic::PanicInfo;
 #[cfg(not(test))]
 #[panic_handler]
 fn panic(_info: &PanicInfo) -> ! {
-    let _ = debug_write("PANIC encountered via stem::panic!\n", 1);
-    // TODO: formatting support in v0 is minimal.
-    // If we had a way to format, we'd print file/line here.
+    let _ = debug_write("STEM PANIC\n", 11);
     exit(101)
 }

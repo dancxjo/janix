@@ -41,7 +41,7 @@ fn indicate_progress() {
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             let mut display = Framebuffer::new(&framebuffer);
-            display.clear(0x00_C8_A2_C8);
+            display.clear(0x00_2E_7F_D1);
         }
     }
 }

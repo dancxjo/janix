@@ -32,10 +32,12 @@ use crate::asset::AssetBank;
 
 static ASSETS: AssetBank = AssetBank::new();
 
-extern "C" fn loader_entry() -> ! {
-    log!("loader: started");
+/// Background thread for loading wallpaper
+extern "C" fn wallpaper_loader_entry() -> ! {
+    log!("[wallpaper_loader] thread started");
     
-    stem::sleep_ms(500); 
+    stem::sleep_ms(200); 
+    log!("[wallpaper_loader] searching for wallpaper...");
 
     let candidates = [
         "/assets/wallpapers/clouds.bmp",
@@ -44,14 +46,49 @@ extern "C" fn loader_entry() -> ! {
     ];
     
     for path in candidates.iter() {
+        log!("[wallpaper_loader] trying: {}", path);
         if let Some(img) = ASSETS.load_wallpaper_from_graph(path) {
-            log!("loader: loaded clouds ({}x{})", img.width, img.height);
-            ASSETS.publish_image(img);
+            log!("[wallpaper_loader] SUCCESS: loaded ({}x{})", img.width, img.height);
+            ASSETS.publish_wallpaper(img);
+            log!("[wallpaper_loader] published to asset bank");
             break;
+        } else {
+            log!("[wallpaper_loader] not found: {}", path);
         }
     }
     
-    log!("loader: done");
+    log!("[wallpaper_loader] thread done, sleeping forever");
+    loop {
+        stem::syscall::sleep_ms(10000);
+    }
+}
+
+/// Background thread for loading cursor
+extern "C" fn cursor_loader_entry() -> ! {
+    log!("[cursor_loader] thread started");
+    
+    stem::sleep_ms(300); 
+    log!("[cursor_loader] searching for cursor...");
+
+    let candidates = [
+        "/assets/cursors/normal.cur",
+        "cursors/normal.cur",
+        "normal.cur",
+    ];
+
+    for path in candidates.iter() {
+        log!("[cursor_loader] trying: {}", path);
+        if let Some(cursor) = AssetBank::load_cursor_from_graph(path) {
+            log!("[cursor_loader] SUCCESS: loaded cursor asset");
+            ASSETS.publish_cursor(cursor);
+            log!("[cursor_loader] published to asset bank");
+            break;
+        } else {
+            log!("[cursor_loader] not found: {}", path);
+        }
+    }
+    
+    log!("[cursor_loader] thread done, sleeping forever");
     loop {
         stem::syscall::sleep_ms(10000);
     }
@@ -66,26 +103,38 @@ fn main(arg: usize) -> ! {
     let arg_resp = unpack_handle(arg, 1);
     let bristle_evt = unpack_handle(arg, 2);
 
-    log!("starting (arg_req={} arg_resp={} bristle={})", arg_req, arg_resp, bristle_evt);
+    log!("[bloom] starting (arg_req={} arg_resp={} bristle={})", arg_req, arg_resp, bristle_evt);
 
-    if let Err(e) = stem::thread::spawn(loader_entry) {
-        log!("error: failed to spawn loader: {:?}", e);
+    // Spawn wallpaper loader thread
+    if let Err(e) = stem::thread::spawn(wallpaper_loader_entry) {
+        log!("[bloom] ERROR: failed to spawn wallpaper loader: {:?}", e);
     } else {
-        log!("loader: thread spawned");
+        log!("[bloom] spawned wallpaper_loader thread");
+    }
+
+    // Spawn cursor loader thread
+    if let Err(e) = stem::thread::spawn(cursor_loader_entry) {
+        log!("[bloom] ERROR: failed to spawn cursor loader: {:?}", e);
+    } else {
+        log!("[bloom] spawned cursor_loader thread");
     }
 
     // 1. Discovery & Mapping
+    log!("[bloom] discovering compositor target...");
     let target = match CompositorTarget::discover_and_map((arg_req, arg_resp), 2000) {
-        Ok(t) => t,
+        Ok(t) => {
+            log!("[bloom] compositor target: {}x{} @ {:p}", t.width, t.height, t.ptr);
+            t
+        },
         Err(e) => {
-            log!("error: compositor discovery failed: {:?}", e);
+            log!("[bloom] ERROR: compositor discovery failed: {:?}", e);
             loop { stem::sleep_ms(1000); }
         }
     };
 
     // 2. Presenter Setup
     let mut presenter = if target.driver_req != 0 && target.driver_resp != 0 {
-        log!("presenter: driver (req={} resp={})", target.driver_req, target.driver_resp);
+        log!("[bloom] presenter: driver (req={} resp={})", target.driver_req, target.driver_resp);
         let mut driver = DriverPresenter::new(target.driver_req, target.driver_resp);
         driver.wait_for_register();
         
@@ -99,7 +148,7 @@ fn main(arg: usize) -> ! {
         driver.send_bind(&bind);
         PresenterImpl::Driver(driver)
     } else {
-        log!("presenter: null (headless/fallback)");
+        log!("[bloom] presenter: null (headless/fallback)");
         PresenterImpl::Null(present::NullPresenter)
     };
 
@@ -116,13 +165,39 @@ fn main(arg: usize) -> ! {
     
     let mut cursor = CursorState::new((target.width as i32) / 2, (target.height as i32) / 2);
     let mut loop_ctrl = FrameLoop::new(60);
+    let mut cursor_loaded = false;
+    let mut wallpaper_loaded = false;
+    let mut frame_count: u64 = 0;
 
-
-    log!("entering frame loop");
+    log!("[bloom] entering frame loop");
 
     // 4. Main Loop
     loop {
         let _frame = loop_ctrl.next();
+        frame_count += 1;
+
+        // Check if wallpaper asset is ready (log once)
+        if !wallpaper_loaded {
+            if ASSETS.get_wallpaper().is_some() {
+                wallpaper_loaded = true;
+                log!("[bloom] frame {}: wallpaper now available", frame_count);
+            }
+        }
+
+        // Check if cursor asset is ready
+        if !cursor_loaded {
+            log!("[bloom] frame {}: checking for cursor asset...", frame_count);
+            if let Some(asset) = ASSETS.get_cursor() {
+                log!("[bloom] frame {}: GOT cursor asset, applying to CursorState", frame_count);
+                cursor.set_asset(asset);
+                cursor_loaded = true;
+                log!("[bloom] frame {}: cursor asset applied successfully", frame_count);
+            } else {
+                if frame_count % 60 == 0 {
+                    log!("[bloom] frame {}: cursor not ready yet", frame_count);
+                }
+            }
+        }
 
         // Input
         if bristle_evt != 0 {
@@ -133,7 +208,7 @@ fn main(arg: usize) -> ! {
         let mut list = drawlist::DrawList::new();
         
         // Background / Wallpaper
-        if let Some(clouds) = ASSETS.get_clouds() {
+        if let Some(clouds) = ASSETS.get_wallpaper() {
              let cw = clouds.width as i32;
              let ch = clouds.height as i32;
              for y in (0..target.height as i32).step_by(ch as usize) {

@@ -2,15 +2,19 @@ extern crate alloc;
 
 use stem::thing::ThingId;
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use core::cell::UnsafeCell;
 use stem::info;
+
+use crate::frame::AssetGeneration;
 
 #[derive(Debug, Clone)]
 pub struct Image {
     pub width: u32,
     pub height: u32,
     pub pixels: Arc<[u32]>,
+    /// Generation when this asset became ready
+    pub gen: AssetGeneration,
 }
 
 #[derive(Debug, Clone)]
@@ -27,52 +31,161 @@ pub enum CursorAsset {
     Animated { frames: Arc<[CursorFrame]> },
 }
 
-struct WallpaperStorage {
-    image: UnsafeCell<Option<Image>>,
+impl CursorAsset {
+    pub fn generation(&self) -> AssetGeneration {
+        match self {
+            CursorAsset::Static(f) => f.image.gen,
+            CursorAsset::Animated { frames } => {
+                frames.first().map(|f| f.image.gen).unwrap_or(AssetGeneration::ZERO)
+            }
+        }
+    }
+}
+
+/// Storage for ready assets
+struct AssetSlot<T> {
+    value: UnsafeCell<Option<T>>,
     ready: AtomicBool,
 }
 
-unsafe impl Sync for WallpaperStorage {}
+unsafe impl<T> Sync for AssetSlot<T> {}
 
-static WALLPAPER_STORAGE: WallpaperStorage = WallpaperStorage {
-    image: UnsafeCell::new(None),
-    ready: AtomicBool::new(false),
-};
-
-struct CursorStorage {
-    cursor: UnsafeCell<Option<CursorAsset>>,
-    ready: AtomicBool,
+impl<T> AssetSlot<T> {
+    const fn new() -> Self {
+        Self {
+            value: UnsafeCell::new(None),
+            ready: AtomicBool::new(false),
+        }
+    }
 }
 
-unsafe impl Sync for CursorStorage {}
+/// Storage for pending assets (published by loaders, promoted on frame boundary)
+struct PendingSlot<T> {
+    value: UnsafeCell<Option<T>>,
+    has_pending: AtomicBool,
+}
 
-static CURSOR_STORAGE: CursorStorage = CursorStorage {
-    cursor: UnsafeCell::new(None),
-    ready: AtomicBool::new(false),
-};
+unsafe impl<T> Sync for PendingSlot<T> {}
+
+impl<T> PendingSlot<T> {
+    const fn new() -> Self {
+        Self {
+            value: UnsafeCell::new(None),
+            has_pending: AtomicBool::new(false),
+        }
+    }
+}
+
+// Ready assets (visible to rendering)
+static WALLPAPER_READY: AssetSlot<Image> = AssetSlot::new();
+static CURSOR_READY: AssetSlot<CursorAsset> = AssetSlot::new();
+
+// Pending assets (published by loaders, not yet visible)
+static WALLPAPER_PENDING: PendingSlot<Image> = PendingSlot::new();
+static CURSOR_PENDING: PendingSlot<CursorAsset> = PendingSlot::new();
+
+// Global generation counter
+static ASSET_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 pub struct AssetBank;
 
 impl AssetBank {
     pub const fn new() -> Self { Self }
 
-    pub fn publish_wallpaper(&self, img: Image) {
-        info!("[asset_bank] publish_wallpaper: {}x{}", img.width, img.height);
-        unsafe { *WALLPAPER_STORAGE.image.get() = Some(img); }
-        WALLPAPER_STORAGE.ready.store(true, Ordering::Release);
-        info!("[asset_bank] wallpaper ready flag set to true");
+    /// Get current generation (read-only, no side effects)
+    pub fn current_generation(&self) -> AssetGeneration {
+        AssetGeneration(ASSET_GENERATION.load(Ordering::Acquire))
     }
 
+    /// Promote all pending assets to ready, increment generation if any promoted.
+    /// Must be called exactly once per acquire_frame().
+    /// Returns the new current generation.
+    pub fn publish_pending(&self) -> AssetGeneration {
+        let mut promoted = false;
+
+        // Check and promote pending wallpaper
+        if WALLPAPER_PENDING.has_pending.load(Ordering::Acquire) {
+            let pending = unsafe { (*WALLPAPER_PENDING.value.get()).take() };
+            if let Some(mut img) = pending {
+                // Increment generation first
+                let new_gen = ASSET_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
+                img.gen = AssetGeneration(new_gen);
+                info!("[asset_bank] promoting wallpaper to gen={}", new_gen);
+                
+                unsafe { *WALLPAPER_READY.value.get() = Some(img); }
+                WALLPAPER_READY.ready.store(true, Ordering::Release);
+                promoted = true;
+            }
+            WALLPAPER_PENDING.has_pending.store(false, Ordering::Release);
+        }
+
+        // Check and promote pending cursor
+        if CURSOR_PENDING.has_pending.load(Ordering::Acquire) {
+            let pending = unsafe { (*CURSOR_PENDING.value.get()).take() };
+            if let Some(cursor) = pending {
+                let new_gen = if !promoted {
+                    ASSET_GENERATION.fetch_add(1, Ordering::AcqRel) + 1
+                } else {
+                    ASSET_GENERATION.load(Ordering::Acquire)
+                };
+                
+                // Update generation in cursor
+                let cursor_with_gen = match cursor {
+                    CursorAsset::Static(mut frame) => {
+                        frame.image.gen = AssetGeneration(new_gen);
+                        CursorAsset::Static(frame)
+                    }
+                    CursorAsset::Animated { frames } => {
+                        let updated: alloc::vec::Vec<_> = frames.iter().cloned().map(|mut f| {
+                            f.image.gen = AssetGeneration(new_gen);
+                            f
+                        }).collect();
+                        CursorAsset::Animated { frames: Arc::from(updated.as_slice()) }
+                    }
+                };
+                
+                info!("[asset_bank] promoting cursor to gen={}", new_gen);
+                unsafe { *CURSOR_READY.value.get() = Some(cursor_with_gen); }
+                CURSOR_READY.ready.store(true, Ordering::Release);
+            }
+            CURSOR_PENDING.has_pending.store(false, Ordering::Release);
+        }
+
+        self.current_generation()
+    }
+
+    /// Publish wallpaper to pending (called by loader thread)
+    pub fn publish_wallpaper(&self, img: Image) {
+        info!("[asset_bank] publish_wallpaper (pending): {}x{}", img.width, img.height);
+        unsafe { *WALLPAPER_PENDING.value.get() = Some(img); }
+        WALLPAPER_PENDING.has_pending.store(true, Ordering::Release);
+    }
+
+    /// Get wallpaper if ready and visible at the given generation
+    pub fn get_wallpaper_for_gen(&self, snapshot: AssetGeneration) -> Option<Image> {
+        if !WALLPAPER_READY.ready.load(Ordering::Acquire) {
+            return None;
+        }
+        let img = unsafe { (*WALLPAPER_READY.value.get()).clone() }?;
+        if img.gen <= snapshot {
+            Some(img)
+        } else {
+            None // Asset is newer than snapshot, invisible this frame
+        }
+    }
+
+    /// Legacy: get wallpaper without generation check
     pub fn get_wallpaper(&self) -> Option<Image> {
-        if WALLPAPER_STORAGE.ready.load(Ordering::Acquire) {
-            unsafe { (*WALLPAPER_STORAGE.image.get()).clone() }
+        if WALLPAPER_READY.ready.load(Ordering::Acquire) {
+            unsafe { (*WALLPAPER_READY.value.get()).clone() }
         } else {
             None
         }
     }
 
+    /// Publish cursor to pending (called by loader thread)
     pub fn publish_cursor(&self, cursor: CursorAsset) {
-        info!("[asset_bank] publish_cursor called");
+        info!("[asset_bank] publish_cursor (pending)");
         match &cursor {
             CursorAsset::Static(frame) => {
                 info!("[asset_bank] cursor: Static frame {}x{} hotspot ({}, {})", 
@@ -83,15 +196,27 @@ impl AssetBank {
                 info!("[asset_bank] cursor: Animated with {} frames", frames.len());
             }
         }
-        unsafe { *CURSOR_STORAGE.cursor.get() = Some(cursor); }
-        CURSOR_STORAGE.ready.store(true, Ordering::Release);
-        info!("[asset_bank] cursor ready flag set to true");
+        unsafe { *CURSOR_PENDING.value.get() = Some(cursor); }
+        CURSOR_PENDING.has_pending.store(true, Ordering::Release);
     }
 
+    /// Get cursor if ready and visible at the given generation
+    pub fn get_cursor_for_gen(&self, snapshot: AssetGeneration) -> Option<CursorAsset> {
+        if !CURSOR_READY.ready.load(Ordering::Acquire) {
+            return None;
+        }
+        let cursor = unsafe { (*CURSOR_READY.value.get()).clone() }?;
+        if cursor.generation() <= snapshot {
+            Some(cursor)
+        } else {
+            None
+        }
+    }
+
+    /// Legacy: get cursor without generation check
     pub fn get_cursor(&self) -> Option<CursorAsset> {
-        let ready = CURSOR_STORAGE.ready.load(Ordering::Acquire);
-        if ready {
-            unsafe { (*CURSOR_STORAGE.cursor.get()).clone() }
+        if CURSOR_READY.ready.load(Ordering::Acquire) {
+            unsafe { (*CURSOR_READY.value.get()).clone() }
         } else {
             None
         }
@@ -160,6 +285,7 @@ impl AssetBank {
                 width: bmp.width,
                 height: bmp.height,
                 pixels: Arc::from(bmp.pixels.as_slice()),
+                gen: AssetGeneration::ZERO, // Will be set on promotion
             }
         });
         
@@ -200,7 +326,8 @@ impl AssetBank {
                             image: Image {
                                 width: dib.width,
                                 height: dib.height,
-                                pixels: Arc::from(dib.pixels.as_slice())
+                                pixels: Arc::from(dib.pixels.as_slice()),
+                                gen: AssetGeneration::ZERO,
                             },
                             delay_ms: 0,
                             hotspot_x: hx as u32,

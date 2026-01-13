@@ -10,6 +10,7 @@ mod compositor;
 mod cursor;
 mod damage;
 mod drawlist;
+mod frame;
 mod frame_loop;
 mod logging;
 mod lowered;
@@ -22,9 +23,10 @@ mod target_cpu;
 use abi::display_driver_protocol::BindPayload;
 use stem::syscall::PortHandle;
 
-use crate::compositor::CompositorTarget;
+use crate::compositor::{CompositorTarget, DisplayBackend};
 use crate::cursor::CursorState;
-use crate::damage::{DamageTracker, Rect};
+use crate::damage::Rect;
+use crate::frame::{FrameBuilder, FrameSpec};
 use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
 
@@ -54,7 +56,7 @@ extern "C" fn wallpaper_loader_entry() -> ! {
         if let Some(img) = ASSETS.load_wallpaper_from_graph(path) {
             log!("[wallpaper_loader] SUCCESS: loaded ({}x{})", img.width, img.height);
             ASSETS.publish_wallpaper(img);
-            log!("[wallpaper_loader] published to asset bank");
+            log!("[wallpaper_loader] published to pending");
             break;
         } else {
             log!("[wallpaper_loader] not found: {}", path);
@@ -74,7 +76,6 @@ extern "C" fn cursor_loader_entry() -> ! {
     stem::sleep_ms(300); 
     log!("[cursor_loader] searching for cursor...");
 
-    // Note: limine.conf uses /assets/cursors/plain/Normal.cur
     let candidates = [
         "/assets/cursors/plain/Normal.cur",
         "cursors/plain/Normal.cur",
@@ -86,7 +87,7 @@ extern "C" fn cursor_loader_entry() -> ! {
         if let Some(cursor) = AssetBank::load_cursor_from_graph(path) {
             log!("[cursor_loader] SUCCESS: loaded cursor asset");
             ASSETS.publish_cursor(cursor);
-            log!("[cursor_loader] published to asset bank");
+            log!("[cursor_loader] published to pending");
             break;
         } else {
             log!("[cursor_loader] not found: {}", path);
@@ -128,13 +129,21 @@ fn main(arg: usize) -> ! {
     log!("[bloom] discovering compositor target...");
     let target = match CompositorTarget::discover_and_map((arg_req, arg_resp), 2000) {
         Ok(t) => {
-            log!("[bloom] compositor target: {}x{} @ {:p}", t.width, t.height, t.ptr);
+            log!("[bloom] compositor target: {}x{} @ {:p} backend={}", 
+                t.width, t.height, t.ptr, t.backend.name());
             t
         },
         Err(e) => {
             log!("[bloom] ERROR: compositor discovery failed: {:?}", e);
             loop { stem::sleep_ms(1000); }
         }
+    };
+
+    // Backend indicator color: green for VirtIO-GPU, red for BootFB
+    let backend_indicator_color = match target.backend {
+        DisplayBackend::VirtioGpu => 0xFF00FF00, // Bright green
+        DisplayBackend::BootFB => 0xFFFF0000,    // Bright red
+        DisplayBackend::Unknown => 0xFFFFFF00,   // Yellow for unknown
     };
 
     // 2. Presenter Setup
@@ -172,54 +181,60 @@ fn main(arg: usize) -> ! {
     let mut loop_ctrl = FrameLoop::new(60);
     let mut cursor_loaded = false;
     let mut wallpaper_loaded = false;
-    let mut frame_count: u64 = 0;
 
-    // Damage tracking state
-    let mut tracker = DamageTracker::new();
-    let mut prev_cursor_bbox: Option<Rect> = None;
     let screen_w = target.width as i32;
     let screen_h = target.height as i32;
+    let frame_spec = FrameSpec::new(target.width, target.height, target.format);
 
-    // First frame requires full redraw
+    // Track previous cursor position for damage
+    let mut prev_cursor_bbox: Option<Rect> = None;
     let mut first_frame = true;
 
-    log!("[bloom] entering frame loop (damage-aware rendering enabled)");
+    log!("[bloom] entering transactional frame loop (acquire -> build -> present)");
 
-    // 4. Main Loop
+    // 4. Main Loop - Transactional Pattern
     loop {
         let _frame = loop_ctrl.next();
-        frame_count += 1;
 
-        // Begin damage tracking for this frame
-        tracker.begin_frame(screen_w, screen_h);
+        // ═══════════════════════════════════════════════════════════════════
+        // ACQUIRE: Promote pending assets, snapshot generation, get token
+        // ═══════════════════════════════════════════════════════════════════
+        let asset_gen = ASSETS.publish_pending();
+        let token = presenter.acquire_frame(frame_spec.clone(), asset_gen);
+        let frame_id = token.frame_id();
 
-        // First frame or major state change requires full redraw
+        // ═══════════════════════════════════════════════════════════════════
+        // BUILD: Record ops and damage into the builder
+        // ═══════════════════════════════════════════════════════════════════
+        let mut builder = FrameBuilder::new(token);
+        
+        // Snapshot the asset generation early (before any mutable borrows)
+        let gen_snapshot = builder.asset_generation();
+        
+        // First frame requires full redraw
         if first_frame {
-            tracker.mark_full();
+            builder.mark_full_damage();
             first_frame = false;
         }
 
         // Check if wallpaper asset is ready (log once)
         if !wallpaper_loaded {
-            if ASSETS.get_wallpaper().is_some() {
+            if ASSETS.get_wallpaper_for_gen(gen_snapshot).is_some() {
                 wallpaper_loaded = true;
-                log!("[bloom] frame {}: wallpaper now available", frame_count);
-                // Wallpaper loaded = full redraw needed
-                tracker.mark_full();
+                log!("[bloom] frame {}: wallpaper now visible (gen={})", frame_id, gen_snapshot.0);
+                builder.mark_full_damage();
             }
         }
 
-        // Check if cursor asset is ready
+        // Check if cursor asset is ready (using generation-aware getter)
         if !cursor_loaded {
-            if let Some(asset) = ASSETS.get_cursor() {
-                log!("[bloom] frame {}: GOT cursor asset, applying to CursorState", frame_count);
+            if let Some(asset) = ASSETS.get_cursor_for_gen(gen_snapshot) {
+                log!("[bloom] frame {}: cursor now visible (gen={})", frame_id, gen_snapshot.0);
                 cursor.set_asset(asset);
                 cursor_loaded = true;
-                log!("[bloom] frame {}: cursor asset applied successfully", frame_count);
-                // Cursor appearance changed = damage cursor area
-                tracker.note_bbox(cursor.bbox());
-            } else if frame_count % 60 == 0 {
-                log!("[bloom] frame {}: cursor not ready yet", frame_count);
+                builder.add_damage(cursor.bbox());
+            } else if frame_id % 60 == 0 {
+                log!("[bloom] frame {}: cursor not ready yet", frame_id);
             }
         }
 
@@ -234,43 +249,58 @@ fn main(arg: usize) -> ! {
         if let Some(prev) = prev_cursor_bbox {
             if prev != new_cursor_bbox {
                 // Cursor moved: damage both old and new positions
-                tracker.note_cursor_move(old_cursor_bbox, new_cursor_bbox);
+                builder.add_damage(old_cursor_bbox);
+                builder.add_damage(new_cursor_bbox);
             }
         } else {
             // First frame - damage cursor area
-            tracker.note_bbox(new_cursor_bbox);
+            builder.add_damage(new_cursor_bbox);
         }
         prev_cursor_bbox = Some(new_cursor_bbox);
 
-        // Build Scene
-        let mut list = drawlist::DrawList::new();
-        
-        // Background / Wallpaper
-        if let Some(clouds) = ASSETS.get_wallpaper() {
-             let cw = clouds.width as i32;
-             let ch = clouds.height as i32;
-             for y in (0..screen_h).step_by(ch as usize) {
-                 for x in (0..screen_w).step_by(cw as usize) {
-                     list.blit_image(&clouds, x, y);
+        // Build Scene - record ops into the builder's DrawList
+        {
+            let list = builder.ops();
+            
+            // Background / Wallpaper (use generation-aware getter)
+            if let Some(clouds) = ASSETS.get_wallpaper_for_gen(gen_snapshot) {
+                 let cw = clouds.width as i32;
+                 let ch = clouds.height as i32;
+                 for y in (0..screen_h).step_by(ch as usize) {
+                     for x in (0..screen_w).step_by(cw as usize) {
+                         list.blit_image(&clouds, x, y);
+                     }
                  }
-             }
-        } else {
-             list.clear(0x00101010);
-             list.rect(10, 10, 20, 20, 0xFF00FF00);
+            } else {
+                 list.clear(0x00101010);
+                 list.rect(10, 10, 20, 20, 0xFF00FF00);
+            }
+
+            // Backend indicator: small box in top-right corner
+            let indicator_size = 24;
+            let indicator_x = screen_w - indicator_size - 8;
+            let indicator_y = 8;
+            list.rect(indicator_x, indicator_y, indicator_size, indicator_size, backend_indicator_color);
+
+            // Cursor
+            cursor.emit_drawlist(list);
         }
 
-        // Cursor
-        cursor.emit_drawlist(&mut list);
+        // Finish building - seal the token
+        let token = builder.finish();
+        
+        // Get damage reference before consuming token
+        let damage_for_raster = token.damage.clone();
 
-        // End damage tracking - get the final damage for this frame
-        let damage = tracker.end_frame();
-
+        // ═══════════════════════════════════════════════════════════════════
+        // PRESENT: Rasterize with damage, present to display
+        // ═══════════════════════════════════════════════════════════════════
+        
         // Rasterize using damage-aware rendering
-        // This only updates pixels within damaged rectangles!
-        raster::execute_with_damage(&mut surface, &list, &damage);
+        raster::execute_with_damage(&mut surface, &token.ops, &damage_for_raster);
 
-        // Present with damage info (for future VirtIO flush optimization)
-        presenter.present(&damage);
+        // Present (consumes token)
+        let _stats = presenter.present_frame(token);
         presenter.pump();
 
         // Timing

@@ -10,19 +10,26 @@ use stem::{info, warn};
 pub struct DisplayHandles {
     pub drv_req_write: PortHandle,
     pub drv_resp_read: PortHandle,
+    /// Which display backend was selected
+    pub backend_name: &'static str,
 }
 
 pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHandles> {
     info!("SPROUT: Setting up display pipeline...");
 
-    let mut fb_buf = [ThingId(0); 1];
     let mut display_width = 0u32;
     let mut display_height = 0u32;
     let mut display_stride = 0u32;
     let mut display_format = 0u32;
     let mut driver_name: Option<&'static str> = None;
     let mut display_device: Option<ThingId> = None;
+    let mut backend_name: &'static str = "unknown";
 
+    // NOTE: VirtIO GPU is not fully implemented (needs PCI capability parsing).
+    // For now, prefer BootFB which works reliably.
+    
+    // Check for boot framebuffer first (reliable)
+    let mut fb_buf = [ThingId(0); 1];
     if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
         if count > 0 {
             let fb = fb_buf[0];
@@ -32,19 +39,24 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
             display_stride = thingsys::prop_get(fb, keys::STRIDE).unwrap_or(0) as u32;
             display_format = thingsys::prop_get(fb, keys::FORMAT).unwrap_or(0) as u32;
             driver_name = Some("/display_bootfb");
+            backend_name = "BootFB";
+            info!("SPROUT: Using boot framebuffer");
         }
     }
 
+    // If no BootFB, try VirtIO GPU (stub implementation)
     if driver_name.is_none() {
         let mut gpu_buf = [ThingId(0); 1];
         if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
             if count > 0 {
                 display_device = Some(gpu_buf[0]);
-                display_width = 800;
-                display_height = 600;
+                display_width = 1024;
+                display_height = 768;
                 display_stride = display_width * 4;
                 display_format = 1;
                 driver_name = Some("/display_virtio_gpu");
+                backend_name = "VirtIO-GPU";
+                info!("SPROUT: Using VirtIO GPU (stub - not fully implemented)");
             }
         }
     }
@@ -61,6 +73,9 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         warn!("SPROUT: Invalid display geometry, skipping display pipeline");
         return None;
     }
+
+    info!("SPROUT: Display backend: {} ({}x{} stride={})", 
+        backend_name, display_width, display_height, display_stride);
 
     let size = (display_height as usize) * (display_stride as usize);
     let bs_id = match thingsys::bytespace_create(size, 0, display_format as u64) {
@@ -80,6 +95,11 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     let _ = thingsys::prop_set(bs_id, keys::HEIGHT, display_height as u64);
     let _ = thingsys::prop_set(bs_id, keys::STRIDE, display_stride as u64);
     let _ = thingsys::prop_set(bs_id, keys::FORMAT, display_format as u64);
+    
+    // Store backend name as a property so Bloom can query it
+    if let Ok(backend_sym) = thingsys::intern(backend_name) {
+        let _ = thingsys::prop_set(bs_id, "display_backend", backend_sym as u64);
+    }
 
     let drv_req = match port_create(4096) {
         Ok(handles) => handles,
@@ -134,6 +154,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     Some(DisplayHandles {
         drv_req_write: drv_req.0,
         drv_resp_read: drv_resp.1,
+        backend_name,
     })
 }
 
@@ -229,8 +250,6 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     };
 
     // Spawn bristle with packed handles:
-    // arg0 = (kbd_read << 48) | (mouse_read << 32) | (evt_write << 16) | evt_echo_write
-    // Using 16-bit handle slots
     let bristle_arg = ((kbd_raw.1 as u64) << 48)
         | ((mouse_raw.1 as u64) << 32)
         | ((evt.0 as u64) << 16)
@@ -252,13 +271,16 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     }
 
     let (drv_req_write, drv_resp_read) = display
+        .as_ref()
         .map(|d| (d.drv_req_write, d.drv_resp_read))
         .unwrap_or((0, 0));
     let bloom_arg =
         (drv_req_write as u64) | ((drv_resp_read as u64) << 16) | ((evt.1 as u64) << 32);
+    
+    let backend_info = display.as_ref().map(|d| d.backend_name).unwrap_or("none");
     info!(
-        "SPROUT: Bloom handles req_w={} resp_r={} bristle_r={} arg=0x{:x}",
-        drv_req_write, drv_resp_read, evt.1, bloom_arg
+        "SPROUT: Bloom handles req_w={} resp_r={} bristle_r={} backend={} arg=0x{:x}",
+        drv_req_write, drv_resp_read, evt.1, backend_info, bloom_arg
     );
 
     // Spawn bloom with packed handles

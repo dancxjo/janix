@@ -2,6 +2,10 @@
 //!
 //! Presenters handle the final step of getting rendered frames to the display.
 //! They receive damage information to potentially optimize transfers.
+//!
+//! Frame Transaction API:
+//! - `acquire_frame()`: Acquire a frame slot with asset generation snapshot
+//! - `present_frame()`: Present a completed frame (consumes token)
 
 use abi::display_driver_protocol as drvproto;
 use abi::display_driver_protocol::{BindPayload, ErrResp, RegisterPayload};
@@ -9,12 +13,19 @@ use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 
 use crate::damage::Damage;
+use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentStats};
 
+/// Presenter trait with transactional frame API
 pub trait Presenter {
-    /// Present the current frame to the display.
-    /// 
-    /// `damage` describes which regions of the frame have changed.
-    /// Presenters may use this to optimize uploads/flushes.
+    /// Acquire a frame slot, snapshotting current asset generation.
+    /// Returns a token that must be consumed by present_frame().
+    fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken;
+    
+    /// Present a completed frame (consumes token).
+    /// Returns statistics about the presentation.
+    fn present_frame(&mut self, token: FrameToken) -> PresentStats;
+    
+    /// Legacy present method (deprecated, use present_frame)
     fn present(&mut self, damage: &Damage);
     
     /// Pump the message queue for driver communication.
@@ -24,6 +35,24 @@ pub trait Presenter {
 pub struct NullPresenter;
 
 impl Presenter for NullPresenter {
+    fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
+        static FRAME_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+        let frame_id = FRAME_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
+        FrameToken::new(frame_id, asset_gen, spec)
+    }
+    
+    fn present_frame(&mut self, token: FrameToken) -> PresentStats {
+        let ops_count = token.ops.iter().count();
+        let damage_rect_count = token.damage.rect_count();
+        PresentStats {
+            frame_id: token.frame_id,
+            asset_gen: token.asset_gen,
+            ops_count,
+            damage_rect_count,
+            fast_path_taken: token.damage.is_empty(),
+        }
+    }
+    
     fn present(&mut self, _damage: &Damage) {}
     fn pump(&mut self) {}
 }
@@ -200,10 +229,45 @@ impl DriverPresenter {
 }
 
 impl Presenter for DriverPresenter {
-    fn present(&mut self, damage: &Damage) {
+    fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         self.frame_count += 1;
+        FrameToken::new(self.frame_count, asset_gen, spec)
+    }
+    
+    fn present_frame(&mut self, token: FrameToken) -> PresentStats {
+        let ops_count = token.ops.iter().count();
+        let damage_rect_count = token.damage.rect_count();
+        let fast_path = token.damage.is_empty();
 
         // Log damage stats periodically (every 120 frames = ~2 seconds at 60fps)
+        if token.frame_id % 120 == 0 {
+            if token.damage.is_full {
+                info!("bloom: frame {} gen={} (full redraw)", token.frame_id, token.asset_gen.0);
+            } else if damage_rect_count == 0 {
+                info!("bloom: frame {} gen={} (no damage - idle)", token.frame_id, token.asset_gen.0);
+            } else {
+                info!("bloom: frame {} gen={} ({} damage rects)", token.frame_id, token.asset_gen.0, damage_rect_count);
+            }
+        }
+
+        // Fast-path: skip present if no damage
+        if !fast_path {
+            self.send_present();
+        }
+
+        PresentStats {
+            frame_id: token.frame_id,
+            asset_gen: token.asset_gen,
+            ops_count,
+            damage_rect_count,
+            fast_path_taken: fast_path,
+        }
+    }
+
+    fn present(&mut self, damage: &Damage) {
+        // Legacy path - kept for compatibility during transition
+        self.frame_count += 1;
+
         if self.frame_count % 120 == 0 {
             let rect_count = damage.rect_count();
             if damage.is_full {
@@ -215,10 +279,6 @@ impl Presenter for DriverPresenter {
             }
         }
 
-        // TODO: In future, encode damage rects for VirtIO RESOURCE_FLUSH regions
-        // For now, always present the full frame
-        // Future optimization: only flush damaged regions to reduce bandwidth
-        
         self.send_present();
     }
 
@@ -234,6 +294,20 @@ pub enum PresenterImpl {
 }
 
 impl PresenterImpl {
+    pub fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
+        match self {
+            PresenterImpl::Null(inner) => inner.acquire_frame(spec, asset_gen),
+            PresenterImpl::Driver(inner) => inner.acquire_frame(spec, asset_gen),
+        }
+    }
+    
+    pub fn present_frame(&mut self, token: FrameToken) -> PresentStats {
+        match self {
+            PresenterImpl::Null(inner) => inner.present_frame(token),
+            PresenterImpl::Driver(inner) => inner.present_frame(token),
+        }
+    }
+
     pub fn present(&mut self, damage: &Damage) {
         match self {
             PresenterImpl::Null(inner) => inner.present(damage),

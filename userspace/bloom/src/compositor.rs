@@ -21,6 +21,24 @@ impl Symbols {
     }
 }
 
+/// Display backend type
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DisplayBackend {
+    Unknown,
+    BootFB,
+    VirtioGpu,
+}
+
+impl DisplayBackend {
+    pub fn name(&self) -> &'static str {
+        match self {
+            DisplayBackend::Unknown => "Unknown",
+            DisplayBackend::BootFB => "BootFB",
+            DisplayBackend::VirtioGpu => "VirtIO-GPU",
+        }
+    }
+}
+
 pub struct CompositorTarget {
     pub bs_id: ThingId,
     pub width: u32,
@@ -31,6 +49,7 @@ pub struct CompositorTarget {
     pub size_bytes: usize,
     pub driver_req: PortHandle,
     pub driver_resp: PortHandle,
+    pub backend: DisplayBackend,
 }
 
 #[derive(Debug)]
@@ -80,6 +99,10 @@ impl CompositorTarget {
         let (bs_id, width, height, stride, format) = found_config.ok_or(CompositorError::DiscoveryTimeout)?;
 
         crate::log!("compositor bytespace {} ({}x{} stride={} format={})", bs_id.0, width, height, stride, format);
+
+        // Detect backend from property set by Sprout
+        let backend = detect_backend(bs_id);
+        crate::log!("display backend: {}", backend.name());
 
         // Size resolution
         let fallback_size = (height as usize).saturating_mul(stride as usize);
@@ -142,6 +165,27 @@ impl CompositorTarget {
             size_bytes: size,
             driver_req: req,
             driver_resp: resp,
+            backend,
         })
+    }
+}
+
+fn detect_backend(bs_id: ThingId) -> DisplayBackend {
+    // Check the display_backend property set by Sprout
+    let backend_sym = thingsys::prop_get(bs_id, "display_backend").unwrap_or(0);
+    if backend_sym == 0 {
+        return DisplayBackend::Unknown;
+    }
+
+    // Compare with known backend symbols
+    let bootfb_sym = thingsys::intern("BootFB").unwrap_or(0) as u64;
+    let virtio_sym = thingsys::intern("VirtIO-GPU").unwrap_or(0) as u64;
+
+    if backend_sym == bootfb_sym {
+        DisplayBackend::BootFB
+    } else if backend_sym == virtio_sym {
+        DisplayBackend::VirtioGpu
+    } else {
+        DisplayBackend::Unknown
     }
 }

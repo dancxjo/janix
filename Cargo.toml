@@ -19,7 +19,7 @@ members = [
     "userspace/bristle",
     "userspace/ps2_mouse",
     "userspace/echo",
-    "userspace/inkwell",
+    "userspace/bloom",
     "userspace/stack_grow_demo",
     "userspace/stack_overflow_demo",
     "userspace/stack_heap_torture",

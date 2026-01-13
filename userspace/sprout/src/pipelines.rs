@@ -2,12 +2,17 @@ use crate::task::{ManagedTask, TaskKind};
 use abi::schema::{keys, kinds};
 use alloc::string::ToString;
 use alloc::vec::Vec;
-use stem::syscall::port_create;
+use stem::syscall::{port_create, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::{info, warn};
 
-pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) {
+pub struct DisplayHandles {
+    pub drv_req_write: PortHandle,
+    pub drv_resp_read: PortHandle,
+}
+
+pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHandles> {
     info!("SPROUT: Setting up display pipeline...");
 
     let mut fb_buf = [ThingId(0); 1];
@@ -48,13 +53,13 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) {
         Some(name) => name,
         None => {
             warn!("SPROUT: No display device found, skipping display pipeline");
-            return;
+            return None;
         }
     };
 
     if display_width == 0 || display_height == 0 || display_stride == 0 {
         warn!("SPROUT: Invalid display geometry, skipping display pipeline");
-        return;
+        return None;
     }
 
     let size = (display_height as usize) * (display_stride as usize);
@@ -62,7 +67,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) {
         Ok(id) => id,
         Err(e) => {
             warn!("SPROUT: bytespace_create failed: {:?}", e);
-            return;
+            return None;
         }
     };
 
@@ -80,14 +85,14 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) {
         Ok(handles) => handles,
         Err(e) => {
             warn!("SPROUT: drv_req port_create failed: {:?}", e);
-            return;
+            return None;
         }
     };
     let drv_resp = match port_create(4096) {
         Ok(handles) => handles,
         Err(e) => {
             warn!("SPROUT: drv_resp port_create failed: {:?}", e);
-            return;
+            return None;
         }
     };
 
@@ -122,9 +127,14 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) {
             }
         }
     }
+
+    Some(DisplayHandles {
+        drv_req_write: drv_req.0,
+        drv_resp_read: drv_resp.1,
+    })
 }
 
-pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>) {
+pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<DisplayHandles>) {
     info!("SPROUT: Setting up input pipeline (keyboard + mouse)...");
 
     // Create kbd_raw port (ps2_kbd -> bristle)
@@ -154,7 +164,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>) {
         }
     };
 
-    // Create evt port (bristle -> echo)
+    // Create evt port (bristle -> bloom)
     let evt = match stem::syscall::port_create(8192) {
         Ok((write_h, read_h)) => {
             info!("SPROUT: Created evt port (w={}, r={})", write_h, read_h);
@@ -200,11 +210,28 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>) {
         }
     }
 
+    // Create evt_echo port (bristle -> echo)
+    let evt_echo = match stem::syscall::port_create(8192) {
+        Ok((write_h, read_h)) => {
+            info!(
+                "SPROUT: Created evt_echo port (w={}, r={})",
+                write_h, read_h
+            );
+            (write_h, read_h)
+        }
+        Err(e) => {
+            stem::error!("SPROUT: Failed to create evt_echo port: {:?}", e);
+            return;
+        }
+    };
+
     // Spawn bristle with packed handles:
-    // arg0 = (kbd_read << 48) | (mouse_read << 32) | (evt_write << 16) | 0
+    // arg0 = (kbd_read << 48) | (mouse_read << 32) | (evt_write << 16) | evt_echo_write
     // Using 16-bit handle slots
-    let bristle_arg =
-        ((kbd_raw.1 as u64) << 48) | ((mouse_raw.1 as u64) << 32) | ((evt.0 as u64) << 16);
+    let bristle_arg = ((kbd_raw.1 as u64) << 48)
+        | ((mouse_raw.1 as u64) << 32)
+        | ((evt.0 as u64) << 16)
+        | (evt_echo.0 as u64);
     match stem::syscall::spawn_process("/bristle", bristle_arg as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned bristle (PID={})", pid);
@@ -221,8 +248,35 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>) {
         }
     }
 
-    // Spawn echo with evt read handle
-    match stem::syscall::spawn_process("/echo", evt.1 as usize) {
+    let (drv_req_write, drv_resp_read) = display
+        .map(|d| (d.drv_req_write, d.drv_resp_read))
+        .unwrap_or((0, 0));
+    let bloom_arg =
+        (drv_req_write as u64) | ((drv_resp_read as u64) << 16) | ((evt.1 as u64) << 32);
+    info!(
+        "SPROUT: Bloom handles req_w={} resp_r={} bristle_r={} arg=0x{:x}",
+        drv_req_write, drv_resp_read, evt.1, bloom_arg
+    );
+
+    // Spawn bloom with packed handles
+    match stem::syscall::spawn_process("/bloom", bloom_arg as usize) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned bloom (PID={})", pid);
+            tasks.push(ManagedTask {
+                name: "/bloom".to_string(),
+                kind: TaskKind::App,
+                module_path: "/bloom".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            stem::error!("SPROUT: Failed to spawn bloom: {:?}", e);
+        }
+    }
+
+    // Spawn echo with evt_echo read handle
+    match stem::syscall::spawn_process("/echo", evt_echo.1 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned echo (PID={})", pid);
             tasks.push(ManagedTask {

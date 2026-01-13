@@ -3,6 +3,9 @@ name = "bran"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+diagnostic-apps = ["kernel/diagnostic-apps"]
+
 [dependencies]
 limine = "0.5"
 kernel = { path = "../kernel" }

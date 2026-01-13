@@ -10,12 +10,15 @@ pub fn build(sh: &Shell, arch: &str, profile: &str) -> Result<()> {
 
     println!("Building bran kernel for {} ({} profile)...", arch, profile);
 
-    cmd!(
+    let mut cmd = cmd!(
         sh,
         "cargo build --target {target} --profile {profile} -p bran"
-    )
-    .env("RUSTFLAGS", "-C relocation-model=static -C panic=abort")
-    .run()?;
+    );
+    if cfg!(feature = "diagnostic-apps") {
+        cmd = cmd.arg("--features").arg("diagnostic-apps");
+    }
+    cmd.env("RUSTFLAGS", "-C relocation-model=static -C panic=abort")
+        .run()?;
 
     // Copy kernel binary to bran/bin-{arch}/
     let bin_dir = format!("bran/bin-{}", arch);

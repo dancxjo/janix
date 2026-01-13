@@ -135,14 +135,19 @@ fn serialize_pointer_button_up(button: u8, timestamp_ns: u64, buf: &mut [u8]) ->
 fn main(packed_handles: usize) -> ! {
     // Unpack handles from 64-bit value:
     // bits 48-63: kbd_read
-    // bits 32-47: mouse_read  
-    // bits 16-31: evt_write
+    // bits 32-47: mouse_read
+    // bits 16-31: evt_write (bloom)
+    // bits  0-15: evt_echo_write
     let packed = packed_handles as u64;
     let kbd_read = ((packed >> 48) & 0xFFFF) as PortHandle;
     let mouse_read = ((packed >> 32) & 0xFFFF) as PortHandle;
     let evt_write = ((packed >> 16) & 0xFFFF) as PortHandle;
+    let evt_echo_write = (packed & 0xFFFF) as PortHandle;
 
-    info!("bristle: online (kbd={}, mouse={}, evt={})", kbd_read, mouse_read, evt_write);
+    info!(
+        "bristle: online (kbd={}, mouse={}, evt={}, evt_echo={})",
+        kbd_read, mouse_read, evt_write, evt_echo_write
+    );
     
     register_in_graph();
 
@@ -173,10 +178,21 @@ fn main(packed_handles: usize) -> ! {
                             }
                         };
                         if len > 0 {
+                            let mut sent = false;
                             if port_send(evt_write, &send_buf[..len]).is_ok() {
-                                event_count += 1;
+                                sent = true;
                             } else {
                                 drop_counter += 1;
+                            }
+                            if evt_echo_write != 0 {
+                                if port_send(evt_echo_write, &send_buf[..len]).is_ok() {
+                                    sent = true;
+                                } else {
+                                    drop_counter += 1;
+                                }
+                            }
+                            if sent {
+                                event_count += 1;
                             }
                         }
                     }
@@ -212,10 +228,21 @@ fn main(packed_handles: usize) -> ! {
                                 }
                             };
                             if len > 0 {
+                                let mut sent = false;
                                 if port_send(evt_write, &send_buf[..len]).is_ok() {
-                                    event_count += 1;
+                                    sent = true;
                                 } else {
                                     drop_counter += 1;
+                                }
+                                if evt_echo_write != 0 {
+                                    if port_send(evt_echo_write, &send_buf[..len]).is_ok() {
+                                        sent = true;
+                                    } else {
+                                        drop_counter += 1;
+                                    }
+                                }
+                                if sent {
+                                    event_count += 1;
                                 }
                             }
                         }

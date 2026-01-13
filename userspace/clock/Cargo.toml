@@ -5,3 +5,4 @@ edition = "2021"
 
 [dependencies]
 stem = { path = "../../stem", features = ["rt"] }
+time = { version = "0.3.44", default-features = false }

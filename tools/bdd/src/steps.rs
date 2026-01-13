@@ -225,6 +225,99 @@ async fn check_serial_monotonic(world: &mut ThingOsWorld) {
     }
 }
 
+#[then("the bloom center rectangle should be visible")]
+async fn bloom_center_rectangle(world: &mut ThingOsWorld) {
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("bloom_center_rect");
+
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .expect("Failed to take screenshot");
+
+    let img = image::open(&png_path).expect("Failed to open screenshot");
+    let rgb = img.to_rgb8();
+    let (width, height) = rgb.dimensions();
+    if width == 0 || height == 0 {
+        panic!("Screenshot has invalid dimensions");
+    }
+
+    let rect_w = width / 3;
+    let rect_h = height / 3;
+    if rect_w == 0 || rect_h == 0 {
+        panic!("Computed rectangle size is zero");
+    }
+    let rect_x = (width - rect_w) / 2;
+    let rect_y = (height - rect_h) / 2;
+
+    let sample_x = rect_x + rect_w / 4;
+    let sample_y = rect_y + rect_h / 4;
+
+    let pixel = rgb.get_pixel(sample_x, sample_y).0;
+    let expected = [0x30, 0x60, 0x90];
+
+    if pixel != expected {
+        panic!(
+            "Center rectangle pixel mismatch at ({}, {}): got {:?}, expected {:?}",
+            sample_x, sample_y, pixel, expected
+        );
+    }
+}
+
+#[then("the bloom cursor should be visible")]
+async fn bloom_cursor_visible(world: &mut ThingOsWorld) {
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("bloom_cursor");
+
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .expect("Failed to take screenshot");
+
+    let img = image::open(&png_path).expect("Failed to open screenshot");
+    let rgb = img.to_rgb8();
+    let (width, height) = rgb.dimensions();
+    if width == 0 || height == 0 {
+        panic!("Screenshot has invalid dimensions");
+    }
+
+    let cx = (width / 2) as i32;
+    let cy = (height / 2) as i32;
+    let cursor_color = [0xFF, 0xFF, 0xFF];
+    let mut match_count = 0;
+
+    let radius = 6;
+    for dy in -radius..=radius {
+        for dx in -radius..=radius {
+            let x = cx + dx;
+            let y = cy + dy;
+            if x < 0 || y < 0 {
+                continue;
+            }
+            let ux = x as u32;
+            let uy = y as u32;
+            if ux >= width || uy >= height {
+                continue;
+            }
+            let pixel = rgb.get_pixel(ux, uy).0;
+            if pixel == cursor_color {
+                match_count += 1;
+            }
+        }
+    }
+
+    if match_count < 5 {
+        panic!(
+            "Cursor not detected near center. Found {} cursor pixels, expected at least 5.",
+            match_count
+        );
+    }
+}
+
 #[given("the machine is booted")]
 async fn machine_is_booted(world: &mut ThingOsWorld) {
     turn_on_machine(world).await;

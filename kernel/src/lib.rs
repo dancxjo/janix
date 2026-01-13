@@ -492,16 +492,25 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     } else {
         kinfo!("Sprout not found. Checking fallback...");
 
-        let threads_demo = modules.iter().find(|m| m.name.contains("threads_demo"));
-        if let Some(mod_desc) = threads_demo {
-            kinfo!("Found threads_demo fallback...");
-            let aspace = runtime.tasking().make_user_address_space();
-            let (user_entry, stack_info) = crate::task::loader::load_module(runtime, aspace, mod_desc)
-                .expect("Failed to load threads_demo");
-            unsafe {
-                crate::task::scheduler::spawn_user_task_full::<R>(user_entry, aspace, stack_info);
+        let mut spawned_fallback = false;
+        #[cfg(feature = "diagnostic-apps")]
+        {
+            if let Some(mod_desc) = modules.iter().find(|m| m.name.contains("threads_demo")) {
+                kinfo!("Found threads_demo fallback...");
+                let aspace = runtime.tasking().make_user_address_space();
+                let (user_entry, stack_info) =
+                    crate::task::loader::load_module(runtime, aspace, mod_desc)
+                        .expect("Failed to load threads_demo");
+                unsafe {
+                    crate::task::scheduler::spawn_user_task_full::<R>(
+                        user_entry, aspace, stack_info,
+                    );
+                }
+                spawned_fallback = true;
             }
-        } else {
+        }
+
+        if !spawned_fallback {
             kinfo!("No modules found. Checking threads_supported...");
             if runtime.threads_supported() {
                 kinfo!("Spawning Thread A...");

@@ -1,5 +1,5 @@
 //! Syscall handler implementations
-//! 
+//!
 //! Organized into focused modules by function category.
 
 mod device;
@@ -53,7 +53,7 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
 /// Read a symbol reference from userspace
 pub(crate) fn read_symbol(ptr: usize) -> SysResult<SymbolShell> {
     use crate::syscall::validate::validate_user_range;
-    
+
     let size = core::mem::size_of::<SymbolRefWire>();
     validate_user_range(ptr, size, false)?;
 

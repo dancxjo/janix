@@ -30,13 +30,13 @@ impl Supervisor {
         self.spawn_apps();
 
         // 2.5. Setup display pipeline
-        crate::pipelines::setup_display_pipeline(&mut self.tasks);
+        let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
 
         // 3. Match and Spawn Drivers
         self.match_and_spawn_drivers();
 
         // 3.5. Setup keyboard pipeline
-        crate::pipelines::setup_input_pipeline(&mut self.tasks);
+        crate::pipelines::setup_input_pipeline(&mut self.tasks, display_handles);
 
         // 4. Loop
         info!("SPROUT: Entering supervisor loop.");
@@ -89,8 +89,8 @@ impl Supervisor {
                 // Let's defer to Registry scan logic for drivers.
             } else if name.contains("/apps/")
                 || name.ends_with("/clock")
-                || name.ends_with("/threads_demo")
                 || name.ends_with("/idle")
+                || (cfg!(feature = "diagnostic-apps") && name.ends_with("/threads_demo"))
             {
                 // Treat as App
                 info!("SPROUT: Discovered app: {}", name);
@@ -155,9 +155,11 @@ impl Supervisor {
 
     fn spawn_apps(&mut self) {
         self.ensure_app("/clock");
-        self.ensure_app("/threads");
-        self.ensure_app("/inkwell");
-        self.ensure_app("/stack_heap_torture");
+        #[cfg(feature = "diagnostic-apps")]
+        {
+            self.ensure_app("/threads");
+            self.ensure_app("/stack_heap_torture");
+        }
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {

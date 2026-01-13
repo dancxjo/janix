@@ -48,8 +48,7 @@ impl CursorState {
 
     pub fn emit_drawlist(&self, list: &mut DrawList) {
         let color = self.color();
-        let len = 6;
-        list.line(self.x - len, self.y, self.x + len, self.y, color);
-        list.line(self.x, self.y - len, self.x, self.y + len, color);
+        let size = 10;
+        list.rect(self.x, self.y, size, size, color);
     }
 }

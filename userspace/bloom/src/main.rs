@@ -11,7 +11,7 @@ mod frame_loop;
 mod logging;
 mod present;
 mod raster;
-mod scene;
+
 mod surface;
 
 use abi::display_driver_protocol::BindPayload;
@@ -21,7 +21,6 @@ use crate::compositor::CompositorTarget;
 use crate::cursor::CursorState;
 use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
-use crate::scene::{Fb32, draw};
 
 fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
@@ -38,7 +37,6 @@ fn main(arg: usize) -> ! {
     log!("starting (arg_req={} arg_resp={} bristle={})", arg_req, arg_resp, bristle_evt);
 
     // 1. Discovery & Mapping
-    // Wait up to 2 seconds for a valid compositor bytespace
     let target = match CompositorTarget::discover_and_map((arg_req, arg_resp), 2000) {
         Ok(t) => t,
         Err(e) => {
@@ -61,7 +59,6 @@ fn main(arg: usize) -> ! {
             format: target.format,
         };
         driver.send_bind(&bind);
-        // Note: We ignore the ACK for proof-of-life simplicity, as DriverPresenter handles state inside
         PresenterImpl::Driver(driver)
     } else {
         log!("presenter: null (headless/fallback)");
@@ -69,40 +66,56 @@ fn main(arg: usize) -> ! {
     };
 
     // 3. State Initialization
+    let mut surface = unsafe { 
+        surface::Surface::new(
+            target.ptr, 
+            target.size_bytes, 
+            target.width, 
+            target.height, 
+            target.stride_bytes
+        ) 
+    };
+    
     let mut cursor = CursorState::new((target.width as i32) / 2, (target.height as i32) / 2);
     let mut loop_ctrl = FrameLoop::new(60);
+
 
     log!("entering frame loop");
 
     // 4. Main Loop
     loop {
-        let frame = loop_ctrl.next();
+        let _frame = loop_ctrl.next();
 
         // Input
         if bristle_evt != 0 {
             bristle::poll_bristle(bristle_evt, &mut cursor, target.width as i32, target.height as i32);
         }
 
-        // Draw
-        // Create a safe slice from the raw pointer
-        // SAFETY: Mapped pointer is valid for `size_bytes`.
-        let pixels_len = target.size_bytes / 4;
-        let pixels = unsafe { 
-            core::slice::from_raw_parts_mut(target.ptr as *mut u32, pixels_len) 
-        };
+        // Build Scene
 
-        if let Ok(mut fb) = Fb32::new(pixels, target.width as usize, target.height as usize, target.stride_bytes as usize / 4) {
-             draw(&mut fb, frame, &cursor);
-        } else {
-             // This should ideally never happen after successful discovery
-             log!("error: fb32 creation failed");
-        }
+        let mut list = drawlist::DrawList::new();
+        
+        // Background
+        list.clear(0x00101010); // Dark Gray
+
+        // Centered Rect
+        let rw = 200;
+        let rh = 150;
+        let rx = (target.width as i32 - rw) / 2;
+        let ry = (target.height as i32 - rh) / 2;
+        list.rect(rx, ry, rw, rh, 0x00306090); // Nice Blue
+
+        // Cursor
+        cursor.emit_drawlist(&mut list);
+
+        // Rasterize
+        raster::execute(&mut surface, &list);
 
         // Present
         presenter.present();
         presenter.pump();
 
-        // Timing & Diagnostics
+        // Timing
         loop_ctrl.heartbeat(cursor.x, cursor.y);
         loop_ctrl.sleep();
     }

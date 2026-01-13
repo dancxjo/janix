@@ -41,6 +41,9 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     sh.create_dir("iso_root/boot/limine")?;
     sh.create_dir("iso_root/EFI/BOOT")?;
 
+    // Copy assets
+    cmd!(sh, "cp -r assets iso_root/").run()?;
+
     // Copy kernel
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, "iso_root/boot/kernel")?;
@@ -300,6 +303,9 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
         "mmd -i {hdd}@@1M ::/EFI ::/EFI/BOOT ::/boot ::/boot/limine"
     )
     .run()?;
+
+    // Copy assets
+    cmd!(sh, "mcopy -i {hdd}@@1M -s assets ::").run()?;
 
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     cmd!(sh, "mcopy -i {hdd}@@1M {kernel_src} ::/boot").run()?;

@@ -52,7 +52,7 @@ impl CompositorTarget {
         let mut found_config: Option<(ThingId, u32, u32, u32, u32)> = None;
 
         loop {
-            let mut buf = [ThingId(0); 16];
+            let mut buf = [ThingId(0); 128];
             match thingsys::find(kinds::BYTESPACE, &mut buf) {
                 Ok(count) => {
                     for id in buf.iter().take(count) {

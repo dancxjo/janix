@@ -40,25 +40,44 @@ extern "C" fn loader_entry() -> ! {
 
     // Get write access to the pre-allocated buffer
     // Safety: ASSETS initialized in main.
-    if let Some(buffer) = unsafe { ASSETS.get_wallpaper_write_access() } {
-         let w = 640;
-         let h = 480;
-         // Ensure buffer is large enough (should be, we init with 640x480)
-         // Generate pattern (No allocation!)
-         for y in 0..h {
-            let r = (y as f32 / h as f32 * 255.0) as u32;
-            for x in 0..w {
-                let idx = y as usize * w as usize + x as usize;
-                if idx < buffer.len() {
-                    let b = (x as f32 / w as f32 * 255.0) as u32;
-                    buffer[idx] = 0xFF000000 | (r << 16) | b;
-                }
-            }
-        }
-        ASSETS.publish_clouds();
-        log!("loader: published clouds (generated {}x{})", w, h);
+    // Load Clouds
+    if let Some(img) = ASSETS.load_wallpaper_from_graph("wallpapers/clouds.bmp") {
+         let w = img.width;
+         let h = img.height;
+         log!("loader: loaded clouds ({}x{})", w, h);
+         
+         // Publish (AssetBank publishes the Image directly if we change it? No, AssetBank::publish_clouds expects us to write to the buffer)
+         // Wait, AssetBank is designed for "Init-Write-Publish".
+         // load_wallpaper_from_graph returns an Image struct (Arc<[u32]>).
+         // But ASSETS.pixels is the shared buffer.
+         // We should probably just Update ASSETS to accept an Image?
+         // Or copy the loaded image into the buffer?
+         
+         if let Some(buffer) = unsafe { ASSETS.get_wallpaper_write_access() } {
+             // Copy logic
+             // CAUTION: Buffer size (640x480) vs Image size?
+             // If cloud is bigger or smaller?
+             // For now, let's assume we copy what fits or resize?
+             // Simplest: just copy row by row.
+             
+             // Check sizes
+             let buf_len = buffer.len();
+             let copy_w = w.min(640);
+             let copy_h = h.min(480);
+             
+             for y in 0..copy_h {
+                 let src_row = y as usize * w as usize;
+                 let dst_row = y as usize * 640;
+                 let len = copy_w as usize;
+                 
+                 if src_row + len <= img.pixels.len() && dst_row + len <= buf_len {
+                      buffer[dst_row..dst_row+len].copy_from_slice(&img.pixels[src_row..src_row+len]);
+                 }
+             }
+             ASSETS.publish_clouds();
+         }
     } else {
-        log!("loader: error - no buffer access");
+        log!("loader: error - failed to load wallpaper");
     }
     
     log!("loader: done, sleeping");
@@ -186,3 +205,4 @@ fn main(arg: usize) -> ! {
         loop_ctrl.sleep();
     }
 }
+

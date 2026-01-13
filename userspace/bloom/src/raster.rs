@@ -3,12 +3,18 @@ use crate::surface::Surface;
 
 pub fn execute(surface: &mut Surface, list: &DrawList) {
     for cmd in list.iter() {
-        match *cmd {
-            DrawCmd::Clear { xrgb } => clear(surface, xrgb),
-            DrawCmd::Rect { x, y, w, h, xrgb } => fill_rect(surface, x, y, w, h, xrgb),
-            DrawCmd::Line { x0, y0, x1, y1, xrgb } => line(surface, x0, y0, x1, y1, xrgb),
+        match cmd {
+            DrawCmd::Clear { xrgb } => clear(surface, *xrgb),
+            DrawCmd::Rect { x, y, w, h, xrgb } => fill_rect(surface, *x, *y, *w, *h, *xrgb),
+            DrawCmd::Line { x0, y0, x1, y1, xrgb } => line(surface, *x0, *y0, *x1, *y1, *xrgb),
             DrawCmd::BlitImage { image, x, y } => {
-                 blit_image(surface, &image, x, y);
+                 blit_image(surface, image, *x, *y);
+            },
+            DrawCmd::Cursor { frame, x, y } => {
+                // Apply hotspot
+                let dx = *x - frame.hotspot_x as i32;
+                let dy = *y - frame.hotspot_y as i32;
+                blit_alpha(surface, &frame.image, dx, dy);
             }
         }
     }
@@ -117,6 +123,83 @@ fn blit_image(surface: &mut Surface, image: &crate::asset::Image, dst_x: i32, ds
         let dst_ptr = unsafe { (surface.ptr as *mut u32).add(dst_row_start) };
         unsafe {
             core::ptr::copy_nonoverlapping(src_slice.as_ptr(), dst_ptr, draw_w);
+        }
+    }
+}
+
+fn blit_alpha(surface: &mut Surface, image: &crate::asset::Image, dst_x: i32, dst_y: i32) {
+    let img_w = image.width as i32;
+    let img_h = image.height as i32;
+
+    let mut start_x = dst_x;
+    let mut start_y = dst_y;
+    let mut end_x = dst_x + img_w;
+    let mut end_y = dst_y + img_h;
+
+    let mut src_off_x = 0;
+    let mut src_off_y = 0;
+
+    if start_x < 0 {
+        src_off_x = -start_x;
+        start_x = 0;
+    }
+    if start_y < 0 {
+        src_off_y = -start_y;
+        start_y = 0;
+    }
+    
+    if end_x > surface.width() { end_x = surface.width(); }
+    if end_y > surface.height() { end_y = surface.height(); }
+
+    if start_x >= end_x || start_y >= end_y {
+        return;
+    }
+
+    let draw_w = (end_x - start_x) as usize;
+    let draw_h = (end_y - start_y) as usize;
+
+    for y in 0..draw_h {
+        let sy = src_off_y as usize + y;
+        let dy = start_y as usize + y;
+        
+        let src_row_start = sy * image.width as usize;
+        let dst_row_start = dy * (surface.stride_bytes / 4) + start_x as usize;
+
+        let sx = src_off_x as usize;
+        
+        let dst_ptr_base = unsafe { (surface.ptr as *mut u32).add(dst_row_start) };
+        let src_slice = &image.pixels[src_row_start + sx .. src_row_start + sx + draw_w];
+
+        for (i, &src_px) in src_slice.iter().enumerate() {
+            let alpha = (src_px >> 24) & 0xFF;
+            if alpha == 0 {
+                continue;
+            }
+            if alpha == 255 {
+                unsafe { *dst_ptr_base.add(i) = src_px; }
+            } else {
+                unsafe {
+                    let dst_ptr = dst_ptr_base.add(i);
+                    let dst_px = *dst_ptr;
+                    
+                    let sa = alpha;
+                    let da = 255 - sa;
+
+                    let src_r = (src_px >> 16) & 0xFF;
+                    let src_g = (src_px >> 8) & 0xFF;
+                    let src_b = src_px & 0xFF;
+
+                    let dst_r = (dst_px >> 16) & 0xFF;
+                    let dst_g = (dst_px >> 8) & 0xFF;
+                    let dst_b = dst_px & 0xFF;
+
+                    let out_r = (src_r * sa + dst_r * da) >> 8;
+                    let out_g = (src_g * sa + dst_g * da) >> 8;
+                    let out_b = (src_b * sa + dst_b * da) >> 8;
+
+                    *dst_ptr = (out_r << 16) | (out_g << 8) | out_b;
+                }
+            }
         }
     }
 }

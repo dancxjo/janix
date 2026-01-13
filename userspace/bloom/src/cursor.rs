@@ -1,14 +1,20 @@
 use crate::drawlist::DrawList;
+use crate::asset::{CursorAsset, CursorFrame};
 
 pub struct CursorState {
     pub x: i32,
     pub y: i32,
     buttons: u32,
+    asset: Option<CursorAsset>,
 }
 
 impl CursorState {
     pub fn new(x: i32, y: i32) -> Self {
-        Self { x, y, buttons: 0 }
+        Self { x, y, buttons: 0, asset: None }
+    }
+    
+    pub fn set_asset(&mut self, asset: CursorAsset) {
+        self.asset = Some(asset);
     }
 
     pub fn apply_move(&mut self, dx: i16, dy: i16, w: i32, h: i32) {
@@ -45,10 +51,27 @@ impl CursorState {
             0x00FFFFFF
         }
     }
+    
+    fn current_frame(&self) -> Option<&CursorFrame> {
+        match &self.asset {
+            Some(CursorAsset::Static(frame)) => Some(frame),
+            Some(CursorAsset::Animated { frames, .. }) => {
+                // TODO: Animation logic using time
+                // For now, return first frame
+                frames.first()
+            }
+            None => None,
+        }
+    }
 
     pub fn emit_drawlist(&self, list: &mut DrawList) {
-        let color = self.color();
-        let size = 10;
-        list.rect(self.x, self.y, size, size, color);
+        if let Some(frame) = self.current_frame() {
+             list.cursor(frame, self.x, self.y);
+        } else {
+            // Fallback
+            let color = self.color();
+            let size = 10;
+            list.rect(self.x, self.y, size, size, color);
+        }
     }
 }

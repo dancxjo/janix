@@ -3,6 +3,8 @@
 
 extern crate alloc;
 
+mod asset;
+mod bmp;
 mod bristle;
 mod compositor;
 mod cursor;
@@ -26,6 +28,46 @@ fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
 }
 
+use crate::asset::AssetBank;
+
+static ASSETS: AssetBank = AssetBank::new();
+
+extern "C" fn loader_entry() -> ! {
+    log!("loader: started");
+    
+    // Simulate decode delay
+    stem::sleep_ms(1000); 
+
+    // Get write access to the pre-allocated buffer
+    // Safety: ASSETS initialized in main.
+    if let Some(buffer) = unsafe { ASSETS.get_wallpaper_write_access() } {
+         let w = 640;
+         let h = 480;
+         // Ensure buffer is large enough (should be, we init with 640x480)
+         // Generate pattern (No allocation!)
+         for y in 0..h {
+            let r = (y as f32 / h as f32 * 255.0) as u32;
+            for x in 0..w {
+                let idx = y as usize * w as usize + x as usize;
+                if idx < buffer.len() {
+                    let b = (x as f32 / w as f32 * 255.0) as u32;
+                    buffer[idx] = 0xFF000000 | (r << 16) | b;
+                }
+            }
+        }
+        ASSETS.publish_clouds();
+        log!("loader: published clouds (generated {}x{})", w, h);
+    } else {
+        log!("loader: error - no buffer access");
+    }
+    
+    log!("loader: done, sleeping");
+    loop {
+        stem::syscall::sleep_ms(10000);
+    }
+}
+
+
 #[stem::main]
 fn main(arg: usize) -> ! {
     logging::init();
@@ -35,6 +77,15 @@ fn main(arg: usize) -> ! {
     let bristle_evt = unpack_handle(arg, 2);
 
     log!("starting (arg_req={} arg_resp={} bristle={})", arg_req, arg_resp, bristle_evt);
+
+    // 0. Init Assets & Spawn Loader
+    ASSETS.init_wallpaper_buffer(640, 480);
+
+    if let Err(e) = stem::thread::spawn(loader_entry) {
+        log!("error: failed to spawn loader: {:?}", e);
+    } else {
+        log!("loader: thread spawned");
+    }
 
     // 1. Discovery & Mapping
     let target = match CompositorTarget::discover_and_map((arg_req, arg_resp), 2000) {
@@ -95,10 +146,25 @@ fn main(arg: usize) -> ! {
 
         let mut list = drawlist::DrawList::new();
         
-        // Background
-        list.clear(0x00101010); // Dark Gray
+        // Background / Wallpaper
+        if let Some(clouds) = ASSETS.get_clouds() {
+             // Tile the clouds
+             let cw = clouds.width as i32;
+             let ch = clouds.height as i32;
+             // Simple tile logic
+             for y in (0..target.height as i32).step_by(ch as usize) {
+                 for x in (0..target.width as i32).step_by(cw as usize) {
+                     list.blit_image(&clouds, x, y);
+                 }
+             }
+        } else {
+             // Fallback
+             list.clear(0x00101010); // Dark Gray
+             // Loading indicator?
+             list.rect(10, 10, 20, 20, 0xFF00FF00); // Tiny loading green dot
+        }
 
-        // Centered Rect
+        // Centered Rect (App Window)
         let rw = 200;
         let rh = 150;
         let rx = (target.width as i32 - rw) / 2;

@@ -61,6 +61,9 @@ impl Supervisor {
         info!("SPROUT: Found {} modules", count);
 
         for i in 0..count {
+             // Log name
+             let s = self.get_module_name(modules[i]);
+             info!("SPROUT: Module[{}] = '{}'", i, s);
             if i >= modules.len() {
                 info!("SPROUT: Module index {} out of bounds!", i);
                 break;

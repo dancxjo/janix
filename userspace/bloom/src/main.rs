@@ -35,52 +35,23 @@ static ASSETS: AssetBank = AssetBank::new();
 extern "C" fn loader_entry() -> ! {
     log!("loader: started");
     
-    // Simulate decode delay
-    stem::sleep_ms(1000); 
+    stem::sleep_ms(500); 
 
-    // Get write access to the pre-allocated buffer
-    // Safety: ASSETS initialized in main.
-    // Load Clouds
-    if let Some(img) = ASSETS.load_wallpaper_from_graph("wallpapers/clouds.bmp") {
-         let w = img.width;
-         let h = img.height;
-         log!("loader: loaded clouds ({}x{})", w, h);
-         
-         // Publish (AssetBank publishes the Image directly if we change it? No, AssetBank::publish_clouds expects us to write to the buffer)
-         // Wait, AssetBank is designed for "Init-Write-Publish".
-         // load_wallpaper_from_graph returns an Image struct (Arc<[u32]>).
-         // But ASSETS.pixels is the shared buffer.
-         // We should probably just Update ASSETS to accept an Image?
-         // Or copy the loaded image into the buffer?
-         
-         if let Some(buffer) = unsafe { ASSETS.get_wallpaper_write_access() } {
-             // Copy logic
-             // CAUTION: Buffer size (640x480) vs Image size?
-             // If cloud is bigger or smaller?
-             // For now, let's assume we copy what fits or resize?
-             // Simplest: just copy row by row.
-             
-             // Check sizes
-             let buf_len = buffer.len();
-             let copy_w = w.min(640);
-             let copy_h = h.min(480);
-             
-             for y in 0..copy_h {
-                 let src_row = y as usize * w as usize;
-                 let dst_row = y as usize * 640;
-                 let len = copy_w as usize;
-                 
-                 if src_row + len <= img.pixels.len() && dst_row + len <= buf_len {
-                      buffer[dst_row..dst_row+len].copy_from_slice(&img.pixels[src_row..src_row+len]);
-                 }
-             }
-             ASSETS.publish_clouds();
-         }
-    } else {
-        log!("loader: error - failed to load wallpaper");
+    let candidates = [
+        "/assets/wallpapers/clouds.bmp",
+        "wallpapers/clouds.bmp",
+        "clouds.bmp",
+    ];
+    
+    for path in candidates.iter() {
+        if let Some(img) = ASSETS.load_wallpaper_from_graph(path) {
+            log!("loader: loaded clouds ({}x{})", img.width, img.height);
+            ASSETS.publish_image(img);
+            break;
+        }
     }
     
-    log!("loader: done, sleeping");
+    log!("loader: done");
     loop {
         stem::syscall::sleep_ms(10000);
     }
@@ -96,9 +67,6 @@ fn main(arg: usize) -> ! {
     let bristle_evt = unpack_handle(arg, 2);
 
     log!("starting (arg_req={} arg_resp={} bristle={})", arg_req, arg_resp, bristle_evt);
-
-    // 0. Init Assets & Spawn Loader
-    ASSETS.init_wallpaper_buffer(640, 480);
 
     if let Err(e) = stem::thread::spawn(loader_entry) {
         log!("error: failed to spawn loader: {:?}", e);
@@ -162,33 +130,21 @@ fn main(arg: usize) -> ! {
         }
 
         // Build Scene
-
         let mut list = drawlist::DrawList::new();
         
         // Background / Wallpaper
         if let Some(clouds) = ASSETS.get_clouds() {
-             // Tile the clouds
              let cw = clouds.width as i32;
              let ch = clouds.height as i32;
-             // Simple tile logic
              for y in (0..target.height as i32).step_by(ch as usize) {
                  for x in (0..target.width as i32).step_by(cw as usize) {
                      list.blit_image(&clouds, x, y);
                  }
              }
         } else {
-             // Fallback
-             list.clear(0x00101010); // Dark Gray
-             // Loading indicator?
-             list.rect(10, 10, 20, 20, 0xFF00FF00); // Tiny loading green dot
+             list.clear(0x00101010);
+             list.rect(10, 10, 20, 20, 0xFF00FF00);
         }
-
-        // Centered Rect (App Window)
-        let rw = 200;
-        let rh = 150;
-        let rx = (target.width as i32 - rw) / 2;
-        let ry = (target.height as i32 - rh) / 2;
-        list.rect(rx, ry, rw, rh, 0x00306090); // Nice Blue
 
         // Cursor
         cursor.emit_drawlist(&mut list);
@@ -205,4 +161,3 @@ fn main(arg: usize) -> ! {
         loop_ctrl.sleep();
     }
 }
-

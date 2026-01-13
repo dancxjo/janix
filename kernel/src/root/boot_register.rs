@@ -222,6 +222,7 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
         let bs = bytespace_create_ptr(virt_ptr, len);
 
         link(mod_node, rels::BACKED_BY, bs);
+        set(mod_node, "bytespace", bs);
 
         set(mod_node, keys::SOURCE, src_boot);
         set(mod_node, keys::CONFIDENCE, conf_high);

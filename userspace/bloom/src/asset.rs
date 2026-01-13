@@ -42,6 +42,23 @@ impl CursorAsset {
     }
 }
 
+/// Wrapper around fontdue::Font for Arc sharing
+#[derive(Clone)]
+pub struct FontAsset {
+    pub font: Arc<fontdue::Font>,
+    pub name: Arc<str>,
+    pub gen: AssetGeneration,
+}
+
+impl core::fmt::Debug for FontAsset {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("FontAsset")
+            .field("name", &self.name)
+            .field("gen", &self.gen)
+            .finish()
+    }
+}
+
 /// Storage for ready assets
 struct AssetSlot<T> {
     value: UnsafeCell<Option<T>>,
@@ -79,10 +96,12 @@ impl<T> PendingSlot<T> {
 // Ready assets (visible to rendering)
 static WALLPAPER_READY: AssetSlot<Image> = AssetSlot::new();
 static CURSOR_READY: AssetSlot<CursorAsset> = AssetSlot::new();
+static FONT_READY: AssetSlot<FontAsset> = AssetSlot::new();
 
 // Pending assets (published by loaders, not yet visible)
 static WALLPAPER_PENDING: PendingSlot<Image> = PendingSlot::new();
 static CURSOR_PENDING: PendingSlot<CursorAsset> = PendingSlot::new();
+static FONT_PENDING: PendingSlot<FontAsset> = PendingSlot::new();
 
 // Global generation counter
 static ASSET_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -147,8 +166,26 @@ impl AssetBank {
                 info!("[asset_bank] promoting cursor to gen={}", new_gen);
                 unsafe { *CURSOR_READY.value.get() = Some(cursor_with_gen); }
                 CURSOR_READY.ready.store(true, Ordering::Release);
+                promoted = true;
             }
             CURSOR_PENDING.has_pending.store(false, Ordering::Release);
+        }
+
+        // Check and promote pending font
+        if FONT_PENDING.has_pending.load(Ordering::Acquire) {
+            let pending = unsafe { (*FONT_PENDING.value.get()).take() };
+            if let Some(mut font) = pending {
+                let new_gen = if !promoted {
+                    ASSET_GENERATION.fetch_add(1, Ordering::AcqRel) + 1
+                } else {
+                    ASSET_GENERATION.load(Ordering::Acquire)
+                };
+                font.gen = AssetGeneration(new_gen);
+                info!("[asset_bank] promoting font '{}' to gen={}", font.name, new_gen);
+                unsafe { *FONT_READY.value.get() = Some(font); }
+                FONT_READY.ready.store(true, Ordering::Release);
+            }
+            FONT_PENDING.has_pending.store(false, Ordering::Release);
         }
 
         self.current_generation()
@@ -217,6 +254,35 @@ impl AssetBank {
     pub fn get_cursor(&self) -> Option<CursorAsset> {
         if CURSOR_READY.ready.load(Ordering::Acquire) {
             unsafe { (*CURSOR_READY.value.get()).clone() }
+        } else {
+            None
+        }
+    }
+
+    /// Publish font to pending (called by loader thread)
+    pub fn publish_font(&self, font: FontAsset) {
+        info!("[asset_bank] publish_font (pending): '{}'", font.name);
+        unsafe { *FONT_PENDING.value.get() = Some(font); }
+        FONT_PENDING.has_pending.store(true, Ordering::Release);
+    }
+
+    /// Get font if ready and visible at the given generation
+    pub fn get_font_for_gen(&self, snapshot: AssetGeneration) -> Option<FontAsset> {
+        if !FONT_READY.ready.load(Ordering::Acquire) {
+            return None;
+        }
+        let font = unsafe { (*FONT_READY.value.get()).clone() }?;
+        if font.gen <= snapshot {
+            Some(font)
+        } else {
+            None
+        }
+    }
+
+    /// Get font without generation check (for rasterizer access)
+    pub fn get_font(&self) -> Option<FontAsset> {
+        if FONT_READY.ready.load(Ordering::Acquire) {
+            unsafe { (*FONT_READY.value.get()).clone() }
         } else {
             None
         }
@@ -351,5 +417,40 @@ impl AssetBank {
         let _ = stem::thing::sys::bytespace_unmap(id, ptr);
         info!("[asset_bank] bytespace unmapped, returning None");
         None
+    }
+
+    /// Load a TTF font from the system graph
+    pub fn load_font_from_graph(path: &str) -> Option<FontAsset> {
+        info!("[asset_bank] load_font_from_graph: {}", path);
+        let (id, size) = Self::probe_asset(path)?;
+        
+        info!("[asset_bank] mapping bytespace {} ({} bytes)", id.0, size);
+        let ptr = stem::thing::sys::bytespace_map(id).ok()?;
+        info!("[asset_bank] mapped to {:p}", ptr);
+        let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
+        
+        info!("[asset_bank] parsing TTF font...");
+        
+        let settings = fontdue::FontSettings::default();
+        match fontdue::Font::from_bytes(slice, settings) {
+            Ok(font) => {
+                info!("[asset_bank] SUCCESS: font parsed");
+                let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+                
+                // Extract name from path
+                let name: Arc<str> = path.rsplit('/').next().unwrap_or(path).into();
+                
+                Some(FontAsset {
+                    font: Arc::new(font),
+                    name,
+                    gen: AssetGeneration::ZERO,
+                })
+            }
+            Err(e) => {
+                info!("[asset_bank] font parse FAILED: {}", e);
+                let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+                None
+            }
+        }
     }
 }

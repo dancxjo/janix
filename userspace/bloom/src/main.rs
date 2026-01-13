@@ -100,6 +100,38 @@ extern "C" fn cursor_loader_entry() -> ! {
     }
 }
 
+/// Background thread for loading fonts
+extern "C" fn font_loader_entry() -> ! {
+    log!("[font_loader] thread started");
+    
+    stem::sleep_ms(400); 
+    log!("[font_loader] searching for font...");
+
+    let candidates = [
+        "/assets/fonts/Hack-Regular.ttf",
+        "/assets/fonts/NotoSans-Regular.ttf",
+        "fonts/Hack-Regular.ttf",
+        "Hack-Regular.ttf",
+    ];
+
+    for path in candidates.iter() {
+        log!("[font_loader] trying: {}", path);
+        if let Some(font) = AssetBank::load_font_from_graph(path) {
+            log!("[font_loader] SUCCESS: loaded font '{}'", font.name);
+            ASSETS.publish_font(font);
+            log!("[font_loader] published to pending");
+            break;
+        } else {
+            log!("[font_loader] not found: {}", path);
+        }
+    }
+    
+    log!("[font_loader] thread done, sleeping forever");
+    loop {
+        stem::syscall::sleep_ms(10000);
+    }
+}
+
 
 #[stem::main]
 fn main(arg: usize) -> ! {
@@ -123,6 +155,13 @@ fn main(arg: usize) -> ! {
         log!("[bloom] ERROR: failed to spawn cursor loader: {:?}", e);
     } else {
         log!("[bloom] spawned cursor_loader thread");
+    }
+
+    // Spawn font loader thread
+    if let Err(e) = stem::thread::spawn(font_loader_entry) {
+        log!("[bloom] ERROR: failed to spawn font loader: {:?}", e);
+    } else {
+        log!("[bloom] spawned font_loader thread");
     }
 
     // 1. Discovery & Mapping
@@ -181,6 +220,7 @@ fn main(arg: usize) -> ! {
     let mut loop_ctrl = FrameLoop::new(60);
     let mut cursor_loaded = false;
     let mut wallpaper_loaded = false;
+    let mut font_loaded = false;
 
     let screen_w = target.width as i32;
     let screen_h = target.height as i32;
@@ -238,6 +278,15 @@ fn main(arg: usize) -> ! {
             }
         }
 
+        // Check if font asset is ready (log once)
+        if !font_loaded {
+            if ASSETS.get_font_for_gen(gen_snapshot).is_some() {
+                font_loaded = true;
+                log!("[bloom] frame {}: font now visible (gen={})", frame_id, gen_snapshot.0);
+                builder.mark_full_damage();
+            }
+        }
+
         // Input - capture cursor position before input
         let old_cursor_bbox = cursor.bbox();
         if bristle_evt != 0 {
@@ -281,6 +330,12 @@ fn main(arg: usize) -> ! {
             let indicator_x = screen_w - indicator_size - 8;
             let indicator_y = 8;
             list.rect(indicator_x, indicator_y, indicator_size, indicator_size, backend_indicator_color);
+
+            // Demo text rendering if font is loaded
+            if font_loaded {
+                list.text("thing-os", 20, 20, 24.0, 0xFFFFFF);
+                list.text(&alloc::format!("frame: {}", frame_id), 20, 50, 16.0, 0xCCCCCC);
+            }
 
             // Cursor
             cursor.emit_drawlist(list);

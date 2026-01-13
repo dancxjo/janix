@@ -6,7 +6,10 @@ use crate::damage::{Damage, Rect};
 use crate::drawlist::DrawList;
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
-use crate::asset::Image;
+use crate::asset::{Image, FontAsset, AssetBank};
+
+// Global asset bank access for font retrieval
+static ASSETS: AssetBank = AssetBank::new();
 
 /// Execute a DrawList on a CPU surface (convenience wrapper)
 pub fn execute(surface: &mut Surface, list: &DrawList) {
@@ -31,6 +34,9 @@ pub fn execute_with_damage(surface: &mut Surface, list: &DrawList, damage: &Dama
 
 /// Execute lowered ops directly (allows future targets to share this interface)
 pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
+    // Get font once per frame if available
+    let font = ASSETS.get_font();
+    
     for op in lowered.ops.iter() {
         match op {
             LowLevelOp::Clear { xrgb } => clear(surface, *xrgb),
@@ -39,6 +45,11 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
             LowLevelOp::Blit { image, src, dst } => blit_scaled(surface, image, src, dst),
             LowLevelOp::BlitAlpha { image, src, dst, shadow_factor } => {
                 blit_alpha_scaled(surface, image, src, dst, *shadow_factor);
+            }
+            LowLevelOp::TextSpan { text, x, y, size, color } => {
+                if let Some(ref f) = font {
+                    rasterize_text(surface, f, text, *x, *y, *size, *color);
+                }
             }
         }
     }
@@ -55,6 +66,9 @@ pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw,
             damage_count += 1;
         }
     }
+
+    // Get font once if available
+    let font = ASSETS.get_font();
 
     // For each operation, render only the portions that intersect with damage
     for op in lowered.ops.iter() {
@@ -95,6 +109,18 @@ pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw,
                     blit_alpha_scaled_clipped(surface, image, src, dst, *shadow_factor, damage_rects[i]);
                 }
             }
+            LowLevelOp::TextSpan { text, x, y, size, color } => {
+                // Text rendering - check if any damage intersects the text bbox
+                if let Some(ref f) = font {
+                    let text_rect = text_bbox(text, *x, *y, *size);
+                    for i in 0..damage_count {
+                        if !text_rect.intersect(damage_rects[i]).is_empty() {
+                            rasterize_text(surface, f, text, *x, *y, *size, *color);
+                            break; // Only draw once
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -105,6 +131,12 @@ fn line_bbox(x0: i32, y0: i32, x1: i32, y1: i32) -> Rect {
     let max_x = x0.max(x1);
     let max_y = y0.max(y1);
     Rect::new(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+}
+
+fn text_bbox(text: &str, x: i32, y: i32, size: f32) -> Rect {
+    let est_width = (text.len() as f32 * size * 0.6) as i32;
+    let est_height = (size * 1.2) as i32;
+    Rect::new(x, y, est_width.max(1), est_height.max(1))
 }
 
 pub fn clear(surface: &mut Surface, xrgb: u32) {
@@ -154,6 +186,67 @@ pub fn line(surface: &mut Surface, mut x0: i32, mut y0: i32, x1: i32, y1: i32, x
             err += dx;
             y0 += sy;
         }
+    }
+}
+
+/// Rasterize text using fontdue
+fn rasterize_text(surface: &mut Surface, font: &FontAsset, text: &str, x: i32, y: i32, size: f32, color: u32) {
+    let mut cursor_x = x as f32;
+    let baseline_y = y as f32 + size; // Baseline is below the origin
+
+    // Extract RGB from color
+    let r = ((color >> 16) & 0xFF) as u8;
+    let g = ((color >> 8) & 0xFF) as u8;
+    let b = (color & 0xFF) as u8;
+
+    for ch in text.chars() {
+        // Rasterize glyph
+        let (metrics, bitmap) = font.font.rasterize(ch, size);
+        
+        // Calculate position (fontdue metrics use top-left of the glyph bbox)
+        let gx = cursor_x as i32 + metrics.xmin;
+        let gy = baseline_y as i32 - metrics.height as i32 - metrics.ymin;
+
+        // Blend each pixel of the glyph onto the surface
+        for py in 0..metrics.height {
+            for px in 0..metrics.width {
+                let coverage = bitmap[py * metrics.width + px];
+                if coverage == 0 {
+                    continue;
+                }
+
+                let sx = gx + px as i32;
+                let sy = gy + py as i32;
+
+                if sx >= 0 && sx < surface.width() && sy >= 0 && sy < surface.height() {
+                    if coverage == 255 {
+                        // Fully opaque - just write the color
+                        surface.put_px(sx, sy, color);
+                    } else {
+                        // Alpha blend using coverage as alpha
+                        let alpha = coverage as u32;
+                        let inv_alpha = 255 - alpha;
+
+                        let offset = (surface.stride_bytes / 4) * (sy as usize) + (sx as usize);
+                        let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
+                        let dst_px = unsafe { *dst_ptr };
+
+                        let dst_r = (dst_px >> 16) & 0xFF;
+                        let dst_g = (dst_px >> 8) & 0xFF;
+                        let dst_b = dst_px & 0xFF;
+
+                        let out_r = ((r as u32 * alpha) + (dst_r * inv_alpha)) / 255;
+                        let out_g = ((g as u32 * alpha) + (dst_g * inv_alpha)) / 255;
+                        let out_b = ((b as u32 * alpha) + (dst_b * inv_alpha)) / 255;
+
+                        unsafe { *dst_ptr = (out_r << 16) | (out_g << 8) | out_b; }
+                    }
+                }
+            }
+        }
+
+        // Advance cursor
+        cursor_x += metrics.advance_width;
     }
 }
 

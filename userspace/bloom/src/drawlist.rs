@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 // Re-export damage::Rect for use by other modules (lowered, raster)
@@ -28,6 +29,8 @@ pub enum DrawCmd {
     BlitImage { image: crate::asset::Image, x: i32, y: i32 },
     Cursor { frame: crate::asset::CursorFrame, x: i32, y: i32 },
     NineSlice { image: crate::asset::Image, dst: Rect, insets: Insets },
+    /// Draw text string at position with specified size and color
+    Text { text: Arc<str>, x: i32, y: i32, size: f32, color: u32 },
 }
 
 impl DrawCmd {
@@ -54,6 +57,12 @@ impl DrawCmd {
                 Rect::new(dx, dy, frame.image.width as i32, frame.image.height as i32)
             }
             DrawCmd::NineSlice { dst, .. } => *dst,
+            DrawCmd::Text { text, x, y, size, .. } => {
+                // Estimate bounding box: average char width ~0.6 of size
+                let est_width = (text.len() as f32 * size * 0.6) as i32;
+                let est_height = (*size * 1.2) as i32;
+                Rect::new(*x, *y, est_width.max(1), est_height.max(1))
+            }
         }
     }
 }
@@ -102,6 +111,17 @@ impl DrawList {
             image: image.clone(),
             dst,
             insets,
+        });
+    }
+
+    /// Draw text at position with font size (in pixels) and color
+    pub fn text(&mut self, text: &str, x: i32, y: i32, size: f32, color: u32) {
+        self.cmds.push(DrawCmd::Text {
+            text: text.into(),
+            x,
+            y,
+            size,
+            color,
         });
     }
 

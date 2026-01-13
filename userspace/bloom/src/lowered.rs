@@ -5,6 +5,7 @@
 //! that any target (CPU, GPU, VirtIO) can execute.
 
 extern crate alloc;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 use crate::asset::{CursorFrame, Image};
 use crate::damage::Rect;
@@ -23,6 +24,8 @@ pub enum LowLevelOp {
     BlitAlpha { image: Image, src: Rect, dst: Rect, shadow_factor: Option<u8> },
     /// Draw line (Bresenham's)
     Line { x0: i32, y0: i32, x1: i32, y1: i32, xrgb: u32 },
+    /// Draw text span (rasterized by the target using fontdue)
+    TextSpan { text: Arc<str>, x: i32, y: i32, size: f32, color: u32 },
 }
 
 /// Container for lowered operations
@@ -64,6 +67,9 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
             DrawCmd::NineSlice { image, dst, insets } => {
                 lower_nine_slice(image, dst, insets, &mut out.ops);
             }
+            DrawCmd::Text { text, x, y, size, color } => {
+                lower_text(text, *x, *y, *size, *color, &mut out.ops);
+            }
         }
     }
 
@@ -97,6 +103,17 @@ fn lower_cursor(frame: &CursorFrame, x: i32, y: i32, ops: &mut Vec<LowLevelOp>) 
         src: Rect::new(0, 0, frame.image.width as i32, frame.image.height as i32),
         dst: Rect::new(dx, dy, frame.image.width as i32, frame.image.height as i32),
         shadow_factor: None,
+    });
+}
+
+fn lower_text(text: &Arc<str>, x: i32, y: i32, size: f32, color: u32, ops: &mut Vec<LowLevelOp>) {
+    // Text is not decomposed further - the rasterizer handles it directly
+    ops.push(LowLevelOp::TextSpan {
+        text: text.clone(),
+        x,
+        y,
+        size,
+        color,
     });
 }
 

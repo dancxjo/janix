@@ -70,10 +70,11 @@ extern "C" fn cursor_loader_entry() -> ! {
     stem::sleep_ms(300); 
     log!("[cursor_loader] searching for cursor...");
 
+    // Note: limine.conf uses /assets/cursors/plain/Normal.cur
     let candidates = [
-        "/assets/cursors/normal.cur",
-        "cursors/normal.cur",
-        "normal.cur",
+        "/assets/cursors/plain/Normal.cur",
+        "cursors/plain/Normal.cur",
+        "Normal.cur",
     ];
 
     for path in candidates.iter() {
@@ -184,18 +185,15 @@ fn main(arg: usize) -> ! {
             }
         }
 
-        // Check if cursor asset is ready
+        // Check if cursor asset is ready (only check every 30 frames to reduce noise)
         if !cursor_loaded {
-            log!("[bloom] frame {}: checking for cursor asset...", frame_count);
             if let Some(asset) = ASSETS.get_cursor() {
                 log!("[bloom] frame {}: GOT cursor asset, applying to CursorState", frame_count);
                 cursor.set_asset(asset);
                 cursor_loaded = true;
                 log!("[bloom] frame {}: cursor asset applied successfully", frame_count);
-            } else {
-                if frame_count % 60 == 0 {
-                    log!("[bloom] frame {}: cursor not ready yet", frame_count);
-                }
+            } else if frame_count % 60 == 0 {
+                log!("[bloom] frame {}: cursor not ready yet", frame_count);
             }
         }
 

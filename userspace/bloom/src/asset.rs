@@ -91,11 +91,7 @@ impl AssetBank {
     pub fn get_cursor(&self) -> Option<CursorAsset> {
         let ready = CURSOR_STORAGE.ready.load(Ordering::Acquire);
         if ready {
-            let result = unsafe { (*CURSOR_STORAGE.cursor.get()).clone() };
-            if result.is_some() {
-                info!("[asset_bank] get_cursor: returning Some(cursor)");
-            }
-            result
+            unsafe { (*CURSOR_STORAGE.cursor.get()).clone() }
         } else {
             None
         }
@@ -183,7 +179,7 @@ impl AssetBank {
         
         info!("[asset_bank] checking CUR header: len={}", slice.len());
         
-        // ICO/CUR check
+        // ICO/CUR check: type=2 for CUR
         if slice.len() > 22 && slice[0]==0 && slice[1]==0 && slice[2]==2 && slice[3]==0 {
             info!("[asset_bank] valid CUR header detected");
             let hx = u16::from_le_bytes([slice[10], slice[11]]);
@@ -194,22 +190,26 @@ impl AssetBank {
             info!("[asset_bank] CUR: hotspot=({}, {}), img_size={}, offset={}", hx, hy, img_size, offset);
             
             if slice.len() >= offset + img_size {
-                info!("[asset_bank] decoding embedded BMP at offset {}...", offset);
-                if let Ok(bmp) = crate::bmp::decode(&slice[offset..offset+img_size]) {
-                    info!("[asset_bank] SUCCESS: cursor BMP decoded {}x{}", bmp.width, bmp.height);
-                    let _ = stem::thing::sys::bytespace_unmap(id, ptr);
-                    return Some(CursorAsset::Static(CursorFrame {
-                        image: Image {
-                            width: bmp.width,
-                            height: bmp.height,
-                            pixels: Arc::from(bmp.pixels.as_slice())
-                        },
-                        delay_ms: 0,
-                        hotspot_x: hx as u32,
-                        hotspot_y: hy as u32,
-                    }));
-                } else {
-                    info!("[asset_bank] BMP decode FAILED");
+                info!("[asset_bank] decoding embedded DIB at offset {}...", offset);
+                // CUR files embed DIB (no BM header), use decode_dib
+                match crate::bmp::decode_dib(&slice[offset..offset+img_size]) {
+                    Ok(dib) => {
+                        info!("[asset_bank] SUCCESS: cursor DIB decoded {}x{}", dib.width, dib.height);
+                        let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+                        return Some(CursorAsset::Static(CursorFrame {
+                            image: Image {
+                                width: dib.width,
+                                height: dib.height,
+                                pixels: Arc::from(dib.pixels.as_slice())
+                            },
+                            delay_ms: 0,
+                            hotspot_x: hx as u32,
+                            hotspot_y: hy as u32,
+                        }));
+                    },
+                    Err(e) => {
+                        info!("[asset_bank] DIB decode FAILED: {:?}", e);
+                    }
                 }
             } else {
                 info!("[asset_bank] CUR data truncated: need {} have {}", offset + img_size, slice.len());

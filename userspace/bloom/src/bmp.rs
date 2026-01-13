@@ -108,3 +108,95 @@ pub fn decode(bytes: &[u8]) -> Result<BmpImage, BmpError> {
         pixels,
     })
 }
+
+/// Decode a DIB (Device Independent Bitmap) - used inside ICO/CUR files.
+/// DIB format: starts directly with BITMAPINFOHEADER (no "BM" prefix, no file header)
+/// Layout:
+///   0x00: Header Size (usually 40)
+///   0x04: Width (i32)
+///   0x08: Height (i32) - for ICO/CUR, this is 2x actual height (image + mask)
+///   0x0C: Planes (u16)
+///   0x0E: BitCount (u16)
+///   0x10: Compression (u32)
+///   ...
+pub fn decode_dib(bytes: &[u8]) -> Result<BmpImage, BmpError> {
+    if bytes.len() < 40 {
+        return Err(BmpError::InvalidHeader);
+    }
+
+    let header_size = u32::from_le_bytes(bytes[0..4].try_into().unwrap());
+    if header_size < 40 {
+        return Err(BmpError::InvalidHeader);
+    }
+
+    let width = i32::from_le_bytes(bytes[4..8].try_into().unwrap());
+    // Height in ICO/CUR DIB is 2x the actual image height (includes AND mask)
+    let raw_height = i32::from_le_bytes(bytes[8..12].try_into().unwrap());
+    let planes = u16::from_le_bytes(bytes[12..14].try_into().unwrap());
+    let bit_count = u16::from_le_bytes(bytes[14..16].try_into().unwrap());
+    let compression = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
+
+    if planes != 1 { return Err(BmpError::InvalidHeader); }
+    if compression != 0 { return Err(BmpError::UnsupportedCompression(compression)); }
+
+    let w = width.abs() as usize;
+    // ICO/CUR DIB height is 2x actual (XOR image + AND mask), so divide by 2
+    let h = (raw_height.abs() / 2) as usize;
+    let top_down = raw_height < 0;
+
+    let bytes_per_pixel = match bit_count {
+        24 => 3,
+        32 => 4,
+        d => return Err(BmpError::UnsupportedDepth(d)),
+    };
+
+    let row_stride = (w * bytes_per_pixel + 3) & !3;
+    let pixel_data_len = row_stride * h;
+    let data_offset = header_size as usize;
+
+    if bytes.len() < data_offset + pixel_data_len {
+        return Err(BmpError::InvalidSize);
+    }
+
+    let mut pixels = Vec::with_capacity(w * h);
+
+    for y in 0..h {
+        let src_y = if top_down { y } else { h - 1 - y };
+        let offset = data_offset + src_y * row_stride;
+        
+        if offset + w * bytes_per_pixel > bytes.len() {
+            return Err(BmpError::InvalidSize);
+        }
+        
+        let row_data = &bytes[offset..offset + w * bytes_per_pixel];
+
+        match bit_count {
+            32 => {
+                // BGRA -> ARGB (preserve alpha for cursor transparency)
+                for chunk in row_data.chunks_exact(4) {
+                    let b = chunk[0] as u32;
+                    let g = chunk[1] as u32;
+                    let r = chunk[2] as u32;
+                    let a = chunk[3] as u32;
+                    pixels.push((a << 24) | (r << 16) | (g << 8) | b);
+                }
+            },
+            24 => {
+                // BGR -> XRGB (no alpha channel)
+                for chunk in row_data.chunks_exact(3) {
+                    let b = chunk[0] as u32;
+                    let g = chunk[1] as u32;
+                    let r = chunk[2] as u32;
+                    pixels.push(0xFF000000 | (r << 16) | (g << 8) | b);
+                }
+            },
+            _ => unreachable!(),
+        }
+    }
+
+    Ok(BmpImage {
+        width: w as u32,
+        height: h as u32,
+        pixels,
+    })
+}

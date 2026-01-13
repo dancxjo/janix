@@ -15,19 +15,5 @@ pub unsafe fn raw_syscall6(
     a4: usize,
     a5: usize,
 ) -> isize {
-    let ret: isize;
-    asm!(
-        "syscall",
-        inlateout("rax") n as usize => ret,
-        in("rdi") a0,
-        in("rsi") a1,
-        in("rdx") a2,
-        in("r10") a3, // RCX is destroyed by syscall, so Linux/SystemV uses R10 for 4th arg
-        in("r8") a4,
-        in("r9") a5,
-        out("rcx") _, // Destroyed by syscall instruction
-        out("r11") _, // Destroyed by syscall instruction
-        options(nostack, preserves_flags)
-    );
-    ret
+    abi::syscall_asm!(n, a0, a1, a2, a3, a4, a5)
 }

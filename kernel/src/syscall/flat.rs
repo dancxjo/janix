@@ -12,8 +12,5 @@ pub extern "C" fn kernel_dispatch_flat(
     a5: usize,
 ) -> isize {
     let ret = dispatch(n, [a0, a1, a2, a3, a4, a5]);
-    if n == 268 {
-        crate::kinfo!("FLAT: sys_root_find ret={:x}", ret);
-    }
     ret
 }

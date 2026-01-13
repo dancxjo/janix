@@ -40,10 +40,7 @@ pub struct BytespaceMapping {
 /// Global mapping registry for v0. Later can be per-process.
 static MAPPINGS: Mutex<Vec<BytespaceMapping>> = Mutex::new(Vec::new());
 
-/// Next user VA for bytespace mappings (starts at 0x700000, grows up)
-static NEXT_MAP_VA: Mutex<u64> = Mutex::new(0x700000);
 
-/// Create a new bytespace backed by contiguous physical pages.
 pub fn create(len: usize, hhdm_offset: u64) -> Option<BytespaceHandle> {
     // Round up to page boundary
     let page_count = (len + 4095) / 4096;
@@ -88,14 +85,7 @@ pub fn create_from_ptr(kernel_va: usize, len: usize, hhdm_offset: u64) -> Bytesp
     }))
 }
 
-/// Allocate a user VA for mapping. Simple bump allocator for v0.
-pub fn alloc_user_va(size: usize) -> u64 {
-    let mut next = NEXT_MAP_VA.lock();
-    let va = *next;
-    // Align to page boundary and bump
-    *next = (*next + size as u64 + 4095) & !4095;
-    va
-}
+
 
 /// Record a mapping
 pub fn record_mapping(bytespace_id: u64, tid: u64, user_va: u64, len: usize) {

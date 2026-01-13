@@ -1,9 +1,9 @@
 pub struct Surface {
-    ptr: *mut u8,
-    len: usize,
-    width: i32,
-    height: i32,
-    stride_bytes: usize,
+    pub ptr: *mut u8,
+    pub len: usize,
+    pub width: i32,
+    pub height: i32,
+    pub stride_bytes: usize,
 }
 
 impl Surface {

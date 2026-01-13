@@ -196,7 +196,7 @@ pub fn handle_bytespace_map(
             let lock = handle.lock();
             
             // Allocate user VA
-            let user_va = bytespace::alloc_user_va(lock.len);
+            let user_va = crate::memory::alloc_user_va(lock.len);
             
             bytespace::record_mapping(id, tid, user_va, lock.len);
             

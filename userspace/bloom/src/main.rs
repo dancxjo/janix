@@ -144,10 +144,15 @@ fn main(arg: usize) -> ! {
 
     let fallback_size = height as usize * stride as usize;
     let info_size = thingsys::bytespace_info(bs_id).unwrap_or(0);
+    info!("bloom: dimensions {}x{} stride={} -> fallback_size={}", width, height, stride, fallback_size);
+    info!("bloom: bytespace_info returned {}", info_size);
     let size = if info_size == 0 { fallback_size } else { info_size };
+    info!("bloom: resolved size={}", size);
+
     if info_size == 0 {
         info!("bloom: bytespace_info returned 0; using fallback size {}", fallback_size);
     }
+    info!("DEBUG: STEP 1 bs_id={}", bs_id.0);
     let ptr = match thingsys::bytespace_map(bs_id) {
         Ok(ptr) => ptr,
         Err(e) => {
@@ -157,6 +162,7 @@ fn main(arg: usize) -> ! {
             }
         }
     };
+    info!("DEBUG: STEP 2 bs_id={}", bs_id.0);
 
     if ptr.is_null() {
         info!("bloom: bytespace_map returned null pointer");
@@ -175,6 +181,8 @@ fn main(arg: usize) -> ! {
     );
 
     if drv_req_write == 0 || drv_resp_read == 0 {
+        info!("DEBUG: STEP 3 bs_id={}", bs_id.0);
+        info!("DEBUG: calling wait_for_driver_ports with {}", bs_id.0);
         let (req, resp) = wait_for_driver_ports(bs_id);
         drv_req_write = req;
         drv_resp_read = resp;
@@ -209,16 +217,56 @@ fn main(arg: usize) -> ! {
     let mut cursor = CursorState::new((width as i32) / 2, (height as i32) / 2);
 
     info!("bloom: frame loop started");
-
+    
     loop {
-        bristle::poll_bristle(bristle_evt_read, &mut cursor, surface.width(), surface.height());
+        // Test Pattern Drawing
+        let fb_slice = unsafe {
+            core::slice::from_raw_parts_mut(surface.ptr as *mut u32, surface.len / 4)
+        };
+        let w = surface.width() as usize;
+        let h = surface.height() as usize;
+        let stride_px = surface.stride_bytes as usize / 4;
+        static mut FRAME: u64 = 0;
+        let frame = unsafe { FRAME };
+        unsafe { FRAME += 1 };
 
-        let mut list = DrawList::new();
-        build_scene(&mut list, surface.width(), surface.height(), &cursor);
-        raster::execute(&mut surface, &list);
+        // 8 vertical bars
+        for y in 0..h {
+            for x in 0..w {
+                let bar = (x * 8) / w;
+                let color = match bar {
+                    0 => 0xFF000000, // black
+                    1 => 0xFFFF0000, // red
+                    2 => 0xFF00FF00, // green
+                    3 => 0xFF0000FF, // blue
+                    4 => 0xFFFFFF00, // yellow
+                    5 => 0xFFFF00FF, // magenta
+                    6 => 0xFF00FFFF, // cyan
+                    _ => 0xFFFFFFFF, // white
+                };
+                if y * stride_px + x < fb_slice.len() {
+                    fb_slice[y * stride_px + x] = color;
+                }
+            }
+        }
+
+        // Moving square
+        let sx = (frame as usize * 4) % (w.saturating_sub(64).max(1));
+        let sy = (frame as usize * 4) % (h.saturating_sub(64).max(1));
+        for y in sy..(sy + 64).min(h) {
+            for x in sx..(sx + 64).min(w) {
+                if y * stride_px + x < fb_slice.len() {
+                    fb_slice[y * stride_px + x] = 0xFFFFFFFF;
+                }
+            }
+        }
 
         presenter.present();
         presenter.pump();
+
+        if frame % 60 == 0 {
+            info!("bloom: frame {} presented", frame);
+        }
 
         stem::sleep_ms(16);
     }

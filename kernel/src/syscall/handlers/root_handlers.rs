@@ -344,10 +344,14 @@ pub fn sys_root_bytespace_read(
 }
 
 pub fn sys_root_watch_subscribe(target: usize, mask: usize) -> SysResult<usize> {
-    root_call(RootOp::WatchSubscribe {
+    let res = root_call(RootOp::WatchSubscribe {
         target_id: target as u64,
         mask: mask as u64,
-    })
+    });
+    if let Err(e) = res {
+        crate::kinfo!("FLAT: sys_root_watch_subscribe target={} mask={} failed: {:?}", target, mask, e);
+    }
+    res
 }
 
 pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysResult<usize> {

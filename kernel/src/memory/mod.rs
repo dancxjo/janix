@@ -9,7 +9,21 @@ pub mod map;
 pub mod paging;
 
 use crate::kinfo;
+use spin::Mutex;
 pub use frame_alloc::FRAME_ALLOCATOR;
+
+/// Next user VA for mappings (starts at 0x1000_0000, grows up)
+static NEXT_MAP_VA: Mutex<u64> = Mutex::new(0x1000_0000);
+
+/// Allocate a user VA range. Simple bump allocator for v0.
+pub fn alloc_user_va(size: usize) -> u64 {
+    let mut next = NEXT_MAP_VA.lock();
+    let va = *next;
+    // Align to page boundary and bump
+    *next = (*next + size as u64 + 4095) & !4095;
+    va
+}
+
 
 pub fn init<R: crate::BootRuntime>(rt: &R) {
     let map = rt.phys_memory_map();

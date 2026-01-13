@@ -68,17 +68,33 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
         return Err(Errno::ENODEV);
     }
     
-    let hhdm_offset = crate::boot_info::get()
-        .map(|i| i.hhdm_offset)
-        .unwrap_or(0);
-    let virt_addr = phys_addr + hhdm_offset;
+    let page_count = (size + 4095) / 4096;
+    let user_va = crate::memory::alloc_user_va((page_count * 4096) as usize);
     
-    reg.set_bar_mapping(claim_handle, bar_index, virt_addr);
+    // Map pages
+    for i in 0..page_count {
+        let phys = phys_addr as u64 + (i * 4096) as u64;
+        let virt = user_va + (i * 4096) as u64;
+        unsafe {
+            crate::memory::map_user_page_with_perms(
+                virt, 
+                phys, 
+                crate::MapPerms {
+                    user: true,
+                    read: true,
+                    write: true,
+                    exec: false,
+                }
+            ).map_err(|_| Errno::ENOMEM)?;
+        }
+    }
+    
+    reg.set_bar_mapping(claim_handle, bar_index, user_va);
     
     crate::kinfo!("DEVICE: Mapped BAR{} phys=0x{:x} size=0x{:x} -> virt=0x{:x}", 
-        bar_index, phys_addr, size, virt_addr);
+        bar_index, phys_addr, size, user_va);
     
-    Ok(virt_addr as usize)
+    Ok(user_va as usize)
 }
 
 /// Subscribe to device interrupts

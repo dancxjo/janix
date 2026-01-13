@@ -1,3 +1,15 @@
+//! Syscall error conventions and errno helpers.
+//!
+//! # Examples
+//! ```
+//! use abi::errors::{Errno, errno};
+//!
+//! let rc: isize = Errno::ENOENT.as_isize();
+//! assert_eq!(rc, -2);
+//! assert_eq!(errno(rc), Err(Errno::ENOENT));
+//! assert_eq!(errno(0), Ok(0));
+//! ```
+
 #[repr(i32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Errno {

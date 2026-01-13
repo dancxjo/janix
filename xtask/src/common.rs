@@ -31,3 +31,33 @@ pub fn image_name(arch: &str) -> String {
 
 /// Result type alias for xtask operations.
 pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error>>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn profile_subdir_maps_dev_to_debug() {
+        assert_eq!(profile_subdir("dev"), "debug");
+        assert_eq!(profile_subdir("release"), "release");
+    }
+
+    #[test]
+    fn rust_target_maps_arches() {
+        assert_eq!(rust_target("riscv64"), "riscv64gc-unknown-none-elf");
+        assert_eq!(rust_target("x86_64"), "x86_64-unknown-none");
+        assert_eq!(rust_target("aarch64"), "aarch64-unknown-none");
+        assert_eq!(rust_target("loongarch64"), "loongarch64-unknown-none");
+    }
+
+    #[test]
+    fn image_name_is_stable() {
+        assert_eq!(image_name("x86_64"), "thing-os-x86_64");
+    }
+
+    #[test]
+    fn project_root_ends_with_repo_name() {
+        let root = project_root();
+        assert!(root.ends_with("thing-os"));
+    }
+}

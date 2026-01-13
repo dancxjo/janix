@@ -1,3 +1,16 @@
+//! PCI ID parser and code generator utilities.
+//!
+//! # Examples
+//! ```
+//! use pciids::{build_tables, lookup_device, lookup_vendor, parse_pci_ids};
+//!
+//! let input = "1af4 Virtio\n\t1000 Virtio Device\n";
+//! let parsed = parse_pci_ids(input);
+//! let tables = build_tables(&parsed.vendors);
+//! assert_eq!(lookup_vendor(&tables, 0x1af4), Some("Virtio"));
+//! assert_eq!(lookup_device(&tables, 0x1af4, 0x1000), Some("Virtio Device"));
+//! ```
+
 use std::fmt::Write;
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -69,6 +82,12 @@ pub struct GeneratedTables {
     pub devices: Vec<DeviceEntry>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ParseIdError {
+    InvalidHex,
+    Overflow,
+}
+
 pub const MINIMAL_VENDOR_ALLOWLIST: &[u16] = &[
     0x8086, // Intel
     0x1af4, // Red Hat / Virtio
@@ -103,6 +122,10 @@ pub fn parse_pci_ids(input: &str) -> ParsedPciIds {
             parse_metadata(line, &mut snapshot);
             continue;
         }
+        let line = strip_inline_comment(line);
+        if line.is_empty() {
+            continue;
+        }
         if let Some(rest) = line.strip_prefix('\t') {
             if rest.starts_with('\t') {
                 // Subsystems and other nested records are ignored.
@@ -110,7 +133,7 @@ pub fn parse_pci_ids(input: &str) -> ParsedPciIds {
             }
             if let Some(vendor) = vendors.last_mut() {
                 if let Some((id_hex, name)) = split_id_and_name(rest.trim_start()) {
-                    if let Ok(device_id) = u16::from_str_radix(id_hex, 16) {
+                    if let Ok(device_id) = parse_hex_id(id_hex) {
                         vendor.devices.push(Device {
                             id: device_id,
                             name: name.to_string(),
@@ -122,7 +145,7 @@ pub fn parse_pci_ids(input: &str) -> ParsedPciIds {
         }
 
         if let Some((id_hex, name)) = split_id_and_name(line.trim_start()) {
-            if let Ok(vendor_id) = u16::from_str_radix(id_hex, 16) {
+            if let Ok(vendor_id) = parse_hex_id(id_hex) {
                 vendors.push(Vendor {
                     id: vendor_id,
                     name: name.to_string(),
@@ -203,6 +226,41 @@ pub fn build_tables(vendors: &[Vendor]) -> GeneratedTables {
         vendors: vendor_entries,
         devices: device_entries,
     }
+}
+
+pub fn lookup_vendor<'a>(tables: &'a GeneratedTables, vendor: u16) -> Option<&'a str> {
+    tables
+        .vendors
+        .binary_search_by_key(&vendor, |v| v.vendor)
+        .ok()
+        .and_then(|idx| {
+            let entry = &tables.vendors[idx];
+            table_str_at(tables, entry.name_off, entry.name_len)
+        })
+}
+
+pub fn lookup_device<'a>(
+    tables: &'a GeneratedTables,
+    vendor: u16,
+    device: u16,
+) -> Option<&'a str> {
+    tables
+        .devices
+        .binary_search_by(|entry| {
+            let key = (entry.vendor, entry.device);
+            if key < (vendor, device) {
+                core::cmp::Ordering::Less
+            } else if key > (vendor, device) {
+                core::cmp::Ordering::Greater
+            } else {
+                core::cmp::Ordering::Equal
+            }
+        })
+        .ok()
+        .and_then(|idx| {
+            let entry = &tables.devices[idx];
+            table_str_at(tables, entry.name_off, entry.name_len)
+        })
 }
 
 pub fn render_rust(tables: &GeneratedTables, snapshot: &SnapshotInfo, mode: Mode) -> String {
@@ -340,6 +398,24 @@ fn name_source(snapshot: &SnapshotInfo) -> String {
     }
 }
 
+fn parse_hex_id(id_hex: &str) -> Result<u16, ParseIdError> {
+    let value = u32::from_str_radix(id_hex, 16).map_err(|_| ParseIdError::InvalidHex)?;
+    if value > u16::MAX as u32 {
+        return Err(ParseIdError::Overflow);
+    }
+    Ok(value as u16)
+}
+
+fn strip_inline_comment(line: &str) -> &str {
+    if let Some(idx) = line.find('#') {
+        let (before, _) = line.split_at(idx);
+        if before.chars().last().map(|c| c.is_whitespace()).unwrap_or(true) {
+            return before.trim_end();
+        }
+    }
+    line
+}
+
 fn merge_duplicate_vendors(vendors: Vec<Vendor>) -> Vec<Vendor> {
     let mut merged: Vec<Vendor> = Vec::new();
     for vendor in vendors.into_iter() {
@@ -397,6 +473,13 @@ fn split_id_and_name(line: &str) -> Option<(&str, &str)> {
     }
 }
 
+fn table_str_at<'a>(tables: &'a GeneratedTables, off: u32, len: u16) -> Option<&'a str> {
+    let start = off as usize;
+    let end = start + len as usize;
+    let slice = tables.strings.get(start..end)?;
+    std::str::from_utf8(slice).ok()
+}
+
 fn escape_bytes(bytes: &[u8], out: &mut String) {
     for &b in bytes {
         match b {
@@ -430,6 +513,19 @@ mod tests {
 		0001 ignored subsystem
 "#;
 
+    const SMALL_FIXTURE: &str = r#"
+# Version: v1
+# Date: 2024-01-01 00:00:00
+1234 Alpha
+	0001 A1
+	0002 A2
+	0003 A3
+1af4 Virtio
+	1000 V1
+8086 Intel
+	100e I1
+"#;
+
     #[test]
     fn parses_metadata_and_records() {
         let parsed = parse_pci_ids(SAMPLE);
@@ -442,6 +538,23 @@ mod tests {
     }
 
     #[test]
+    fn parses_whitespace_and_comments() {
+        let input = "# Version: v2\r\n\
+1234  Alpha   # vendor comment\r\n\
+\t0001  A1 \t# device comment\r\n\
+\t\t0000 ignored subsystem\r\n\
+\r\n\
+1af4\tVirtio\r\n\
+\t1000\tV1\r\n";
+        let parsed = parse_pci_ids(input);
+        assert_eq!(parsed.snapshot.version.as_deref(), Some("v2"));
+        assert_eq!(parsed.vendors.len(), 2);
+        assert_eq!(parsed.vendors[0].name, "Alpha");
+        assert_eq!(parsed.vendors[0].devices[0].name, "A1");
+        assert_eq!(parsed.vendors[1].name, "Virtio");
+    }
+
+    #[test]
     fn filters_minimal_allowlist() {
         let parsed = parse_pci_ids(SAMPLE);
         let filtered = filter_vendors(&parsed.vendors, Mode::Minimal);
@@ -450,6 +563,17 @@ mod tests {
         let sample = filtered.iter().find(|v| v.id == 0x1234).unwrap();
         assert_eq!(sample.devices.len(), 1);
         assert_eq!(sample.devices[0].id, 0x1111);
+    }
+
+    #[test]
+    fn filters_allowlist_edge_cases() {
+        let vendors = vec![Vendor {
+            id: 0x9999,
+            name: "Unknown".to_string(),
+            devices: Vec::new(),
+        }];
+        let filtered = filter_vendors(&vendors, Mode::Minimal);
+        assert!(filtered.is_empty());
     }
 
     #[test]
@@ -470,5 +594,111 @@ mod tests {
         let rendered = render_rust(&tables, &parsed.snapshot, Mode::Full);
         assert!(rendered.contains("pub static STRINGS"));
         assert!(rendered.contains("pub fn device_name"));
+    }
+
+    #[test]
+    fn render_is_deterministic() {
+        let parsed = parse_pci_ids(SMALL_FIXTURE);
+        let tables = build_tables(&parsed.vendors);
+        let rendered = render_rust(&tables, &parsed.snapshot, Mode::Full);
+        let expected = r#"// @generated by tools/pciids. Do not edit by hand.
+pub const PCI_IDS_VERSION: &str = "v1";
+pub const PCI_IDS_DATE: &str = "2024-01-01 00:00:00";
+pub const PCI_IDS_MODE: &str = "full";
+pub const PCI_IDS_NAME_SOURCE: &str = "pci.ids@v1";
+pub const PCI_VENDOR_COUNT: usize = 3;
+pub const PCI_DEVICE_COUNT: usize = 5;
+#[derive(Copy, Clone)]
+pub struct VendorEntry { pub vendor: u16, pub name_off: u32, pub name_len: u16 }
+#[derive(Copy, Clone)]
+pub struct DeviceEntry { pub vendor: u16, pub device: u16, pub name_off: u32, pub name_len: u16 }
+pub static STRINGS: &[u8] = b"AlphaA1A2A3VirtioV1IntelI1";
+pub static VENDORS: &[VendorEntry] = &[
+    VendorEntry { vendor: 0x1234, name_off: 0, name_len: 5 },
+    VendorEntry { vendor: 0x1af4, name_off: 11, name_len: 6 },
+    VendorEntry { vendor: 0x8086, name_off: 19, name_len: 5 },
+];
+pub static DEVICES: &[DeviceEntry] = &[
+    DeviceEntry { vendor: 0x1234, device: 0x0001, name_off: 5, name_len: 2 },
+    DeviceEntry { vendor: 0x1234, device: 0x0002, name_off: 7, name_len: 2 },
+    DeviceEntry { vendor: 0x1234, device: 0x0003, name_off: 9, name_len: 2 },
+    DeviceEntry { vendor: 0x1af4, device: 0x1000, name_off: 17, name_len: 2 },
+    DeviceEntry { vendor: 0x8086, device: 0x100e, name_off: 24, name_len: 2 },
+];
+
+#[inline]
+fn str_at(off: u32, len: u16) -> &'static str {
+    unsafe {
+        core::str::from_utf8_unchecked(&STRINGS[off as usize .. off as usize + len as usize])
+    }
+}
+
+pub fn vendor_name(vendor: u16) -> Option<&'static str> {
+    VENDORS
+        .binary_search_by_key(&vendor, |v| v.vendor)
+        .ok()
+        .map(|idx| {
+            let entry = &VENDORS[idx];
+            str_at(entry.name_off, entry.name_len)
+        })
+}
+
+pub fn device_name(vendor: u16, device: u16) -> Option<&'static str> {
+    DEVICES
+        .binary_search_by(|entry| {
+            let key = (entry.vendor, entry.device);
+            if key < (vendor, device) {
+                core::cmp::Ordering::Less
+            } else if key > (vendor, device) {
+                core::cmp::Ordering::Greater
+            } else {
+                core::cmp::Ordering::Equal
+            }
+        })
+        .ok()
+        .map(|idx| {
+            let entry = &DEVICES[idx];
+            str_at(entry.name_off, entry.name_len)
+        })
+}
+"#;
+        assert_eq!(rendered, expected);
+    }
+
+    #[test]
+    fn lookup_helpers_handle_unknowns() {
+        let parsed = parse_pci_ids(SMALL_FIXTURE);
+        let tables = build_tables(&parsed.vendors);
+        assert_eq!(lookup_vendor(&tables, 0x1234), Some("Alpha"));
+        assert_eq!(lookup_device(&tables, 0x1234, 0x0001), Some("A1"));
+        assert_eq!(lookup_vendor(&tables, 0x9999), None);
+        assert_eq!(lookup_device(&tables, 0x1234, 0x9999), None);
+    }
+
+    #[test]
+    fn build_tables_dedups_duplicates() {
+        let vendors = vec![
+            Vendor {
+                id: 0x1234,
+                name: "Alpha".to_string(),
+                devices: vec![Device { id: 0x0001, name: "A1".to_string() }],
+            },
+            Vendor {
+                id: 0x1234,
+                name: "".to_string(),
+                devices: vec![Device { id: 0x0001, name: "A1".to_string() }],
+            },
+        ];
+        let tables = build_tables(&vendors);
+        assert_eq!(tables.vendors.len(), 1);
+        assert_eq!(tables.devices.len(), 1);
+    }
+
+    #[test]
+    fn parse_hex_id_bounds() {
+        assert_eq!(parse_hex_id("0000"), Ok(0x0000));
+        assert_eq!(parse_hex_id("ffff"), Ok(0xffff));
+        assert_eq!(parse_hex_id("10000"), Err(ParseIdError::Overflow));
+        assert_eq!(parse_hex_id("zzzz"), Err(ParseIdError::InvalidHex));
     }
 }

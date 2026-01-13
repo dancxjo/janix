@@ -10,17 +10,18 @@ pub mod pci;
 pub mod resources;
 pub mod schema;
 pub mod service;
+pub mod handlers;
 pub mod watch;
 
 pub use service::root_main;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum SymbolShell {
     Id(u32),
     Str(alloc::string::String),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LogProvenance {
     pub tid: u64,
     pub cpu: u32,
@@ -29,7 +30,7 @@ pub struct LogProvenance {
     pub line: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum RootOp {
     Intern {
         name: alloc::string::String,

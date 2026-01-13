@@ -1,3 +1,8 @@
+//! Presenter implementations for Bloom compositor
+//!
+//! Presenters handle the final step of getting rendered frames to the display.
+//! They receive damage information to potentially optimize transfers.
+
 use abi::display_driver_protocol as drvproto;
 use abi::display_driver_protocol::{BindPayload, ErrResp, RegisterPayload};
 use stem::info;
@@ -30,6 +35,7 @@ pub struct DriverPresenter {
     rx_len: usize,
     registered: bool,
     awaiting_bind_ack: bool,
+    frame_count: u64,
 }
 
 impl DriverPresenter {
@@ -41,6 +47,7 @@ impl DriverPresenter {
             rx_len: 0,
             registered: false,
             awaiting_bind_ack: false,
+            frame_count: 0,
         }
     }
 
@@ -127,9 +134,8 @@ impl DriverPresenter {
                 if self.awaiting_bind_ack {
                     info!("bloom: driver BIND ACK");
                     self.awaiting_bind_ack = false;
-                } else {
-                    info!("bloom: driver PRESENT ACK");
                 }
+                // Silently accept PRESENT ACKs (high frequency)
             }
             drvproto::MSG_ERR => {
                 let code = if payload_len >= core::mem::size_of::<ErrResp>() {
@@ -194,8 +200,25 @@ impl DriverPresenter {
 }
 
 impl Presenter for DriverPresenter {
-    fn present(&mut self, _damage: &Damage) {
-        // TODO: In the future, encode damage rects for VirtIO flush regions
+    fn present(&mut self, damage: &Damage) {
+        self.frame_count += 1;
+
+        // Log damage stats periodically (every 120 frames = ~2 seconds at 60fps)
+        if self.frame_count % 120 == 0 {
+            let rect_count = damage.rect_count();
+            if damage.is_full {
+                info!("bloom: presenter frame {} (full redraw)", self.frame_count);
+            } else if rect_count == 0 {
+                info!("bloom: presenter frame {} (no damage - idle)", self.frame_count);
+            } else {
+                info!("bloom: presenter frame {} ({} damage rects)", self.frame_count, rect_count);
+            }
+        }
+
+        // TODO: In future, encode damage rects for VirtIO RESOURCE_FLUSH regions
+        // For now, always present the full frame
+        // Future optimization: only flush damaged regions to reduce bandwidth
+        
         self.send_present();
     }
 

@@ -206,6 +206,12 @@ fn main(packed_handles: usize) -> ! {
                             }
                         };
                         if len > 0 {
+                            // Check for F10 (Trigger Graph Dump)
+                            if let KeyEdge::Down { key: Key::F10, .. } = edge {
+                                info!("bristle: F10 pressed - dumping graph...");
+                                let _ = thingsys::dump_graph(0);
+                            }
+
                             let mut sent = false;
                             if port_send(evt_write, &send_buf[..len]).is_ok() {
                                 sent = true;

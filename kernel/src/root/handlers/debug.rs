@@ -110,7 +110,7 @@ pub fn handle_dump_graph(graph: &Graph, interner: &Interner, limit: u64) -> Hand
     crate::kinfo!("ROOT DUMP NODES count={}", graph.nodes.len());
     let mut count = 0;
     for (id, _) in &graph.nodes {
-        if count >= limit {
+        if limit > 0 && count >= limit {
             crate::kinfo!("... truncated ...");
             break;
         }
@@ -131,7 +131,7 @@ pub fn handle_dump_graph(graph: &Graph, interner: &Interner, limit: u64) -> Hand
     count = 0;
     'outer: for (src, node) in &graph.nodes {
         for (rel, dst) in &node.edges {
-            if count >= limit {
+            if limit > 0 && count >= limit {
                 crate::kinfo!("... truncated ...");
                 break 'outer;
             }

@@ -4,7 +4,7 @@
 extern crate alloc;
 use stem::syscall;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start() -> ! {
     let _ = main();
     syscall::exit(0)

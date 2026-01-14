@@ -8,7 +8,7 @@ use abi::query::{QueryStep};
 use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
 use magic_sniff::sniff;
 
-#[no_mangle]
+#[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start() -> ! {
     let _ = main();
     syscall::exit(0)

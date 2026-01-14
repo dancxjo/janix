@@ -82,7 +82,7 @@ pub enum WatchMode {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct WatchSpec {
     pub query_ptr: u64,
     pub query_len: u64,
@@ -90,7 +90,7 @@ pub struct WatchSpec {
 }
 
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 pub struct WatchEvent {
     pub kind: u32, // 1=Found, 2=Lost
     pub node_id: u64,

@@ -11,7 +11,6 @@ pub mod resources;
 pub mod schema;
 pub mod service;
 pub mod handlers;
-pub mod watch;
 
 pub use service::root_main;
 
@@ -139,6 +138,16 @@ pub enum RootOp {
         provenance: LogProvenance,
         fields: alloc::vec::Vec<(SymbolShell, u64)>, // Scalar fields
         about: alloc::vec::Vec<u64>,                 // Linked Thing IDs
+    },
+    WatchOpen {
+        mode: u32,
+        query: alloc::vec::Vec<crate::root::query::PreparedStep>,
+    },
+    WatchNext {
+        id: u64,
+    },
+    WatchClose {
+        id: u64,
     },
 }
 

@@ -11,3 +11,5 @@ pub use debug::*;
 pub use graph::*;
 pub use logging::*;
 pub use stream::*;
+pub mod watch;
+pub use watch::*;

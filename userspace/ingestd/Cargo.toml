@@ -1,0 +1,10 @@
+[package]
+name = "ingestd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+stem = { path = "../../stem" }
+abi = { path = "../../abi" }
+magic-sniff = { path = "../../libs/magic-sniff" }
+log = "0.4.17"

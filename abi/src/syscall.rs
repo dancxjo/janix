@@ -116,3 +116,7 @@ pub const SYS_ROOT_BYTESPACE_PHYS: u32 = 0x166;
 // 0x168-0x16F: Watch/Stream (Root-specific)
 pub const SYS_ROOT_WATCH_SUBSCRIBE: u32 = 0x168;
 pub const SYS_ROOT_STREAM_POLL: u32 = 0x169;
+
+pub const SYS_ROOT_WATCH_OPEN: u32 = 0x16A;
+pub const SYS_ROOT_WATCH_NEXT: u32 = 0x16B;
+pub const SYS_ROOT_WATCH_CLOSE: u32 = 0x16C;

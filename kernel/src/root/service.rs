@@ -78,6 +78,15 @@ fn handle_msg<R: BootRuntime>(
         RootOp::StreamPoll { stream_id, max: _, out_ptr: _ } => {
             handlers::handle_stream_poll(graph, &msg, stream_id)
         }
+        RootOp::WatchOpen { mode, query } => {
+            handlers::handle_watch_open(graph, interner, mode, query)
+        }
+        RootOp::WatchNext { id } => {
+            handlers::handle_watch_next(graph, &msg, id)
+        }
+        RootOp::WatchClose { id } => {
+            handlers::handle_watch_close(graph, id)
+        }
 
         // Debug/Describe operations
         RootOp::DescribeThing { id, buffer, len } => {

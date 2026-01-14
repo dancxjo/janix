@@ -73,3 +73,27 @@ pub struct SpawnThreadReq {
     pub sp: usize,
     pub stack: StackInfo,
 }
+
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WatchMode {
+    QueryThenStream = 0,
+    StreamOnly = 1,
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WatchSpec {
+    pub query_ptr: u64,
+    pub query_len: u64,
+    pub mode: u32, 
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct WatchEvent {
+    pub kind: u32, // 1=Found, 2=Lost
+    pub node_id: u64,
+    pub handle: u64,
+    pub size: u64,
+}

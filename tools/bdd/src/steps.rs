@@ -552,3 +552,8 @@ async fn machine_is_running(world: &mut ThingOsWorld) {
     turn_on_machine(world).await;
     wait_for_ready_state(world).await;
 }
+
+#[when(regex = r#"^I wait for (\d+(?:\.\d+)?) seconds$"#)]
+async fn wait_seconds(_world: &mut ThingOsWorld, seconds: f64) {
+    tokio::time::sleep(std::time::Duration::from_secs_f64(seconds)).await;
+}

@@ -1089,10 +1089,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e7c5cedc30da3a610cac6b4ba17597bdf7152cf974e8aab3afb3d54455e371c8"
 
 [[package]]
+name = "infer"
+version = "0.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cb33622da908807a06f9513c19b3c1ad50fab3e4137d82a78107d502075aa199"
+
+[[package]]
 name = "inflections"
 version = "1.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
+
+[[package]]
+name = "ingestd"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "log",
+ "magic-sniff",
+ "stem",
+]
 
 [[package]]
 name = "interpolate_name"
@@ -1272,6 +1288,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fae87c125b03c1d2c0150c90365d7d6bcc53fb73a9acaef207d2d065860f062"
 dependencies = [
  "imgref",
+]
+
+[[package]]
+name = "magic-sniff"
+version = "0.1.0"
+dependencies = [
+ "infer",
 ]
 
 [[package]]
@@ -1535,6 +1558,14 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide",
+]
+
+[[package]]
+name = "png_creator"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
 ]
 
 [[package]]

@@ -537,7 +537,7 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
 
 pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
     let reply = root_svc::enqueue(RootOp::BytespacePhys { id: id as u64 });
-    
+
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
@@ -551,6 +551,128 @@ pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
         }
         unsafe {
             crate::task::scheduler::yield_now_current();
+    }
+}
+
+}
+
+pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
+    use abi::types::WatchSpec;
+    use abi::query::QueryStep;
+    use crate::root::query::PreparedStep;
+
+    let mut spec = WatchSpec { query_ptr: 0, query_len: 0, mode: 0 };
+    let spec_slice = unsafe { 
+        core::slice::from_raw_parts_mut(&mut spec as *mut _ as *mut u8, core::mem::size_of::<WatchSpec>()) 
+    };
+    validate_user_range(spec_ptr, spec_slice.len(), false)?;
+    unsafe { copyin(spec_slice, spec_ptr)? };
+
+    let plan_ptr = spec.query_ptr as usize;
+    let plan_len = spec.query_len as usize;
+    let step_size = core::mem::size_of::<QueryStep>();
+    let total_plan_bytes = plan_len * step_size;
+
+    if plan_len > 8 {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(plan_ptr, total_plan_bytes, false)?;
+
+    let mut steps = alloc::vec::Vec::with_capacity(plan_len);
+    for i in 0..plan_len {
+        let ptr = plan_ptr + i * step_size;
+        let mut step: QueryStep = unsafe { core::mem::zeroed() };
+        let slice = unsafe { 
+            core::slice::from_raw_parts_mut(&mut step as *mut _ as *mut u8, step_size) 
+        };
+        unsafe { copyin(slice, ptr)? };
+
+        let sym_id = match step.symbol.tag {
+            abi::symbols::SYMBOL_REF_TAG_ID => step.symbol.ptr_or_id as u32,
+            abi::symbols::SYMBOL_REF_TAG_STR => {
+                let s_ptr = step.symbol.ptr_or_id as usize;
+                let s_len = step.symbol.len as usize;
+                if s_len > 256 {
+                    return Err(Errno::EINVAL);
+                }
+                validate_user_range(s_ptr, s_len, false)?;
+                let mut buf = [0u8; 256];
+                unsafe { copyin(&mut buf[..s_len], s_ptr)? };
+                let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
+                let intern_msg = RootOp::Intern {
+                    name: String::from(s),
+                };
+                let id = root_call(intern_msg)?;
+                id as u32
+            }
+            _ => return Err(Errno::EINVAL),
+        };
+
+        steps.push(PreparedStep {
+            op: step.op,
+            arg1: step.arg1,
+            symbol: sym_id,
+        });
+    }
+
+    let msg = RootOp::WatchOpen {
+        mode: spec.mode,
+        query: steps,
+    };
+    root_call(msg)
+}
+
+pub fn sys_root_watch_next(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    use abi::types::WatchEvent;
+    
+    let evt_size = core::mem::size_of::<WatchEvent>();
+    if len < evt_size {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(out_ptr, evt_size, true)?;
+
+    let reply = root_svc::enqueue(RootOp::WatchNext { id: id as u64 });
+
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let count = reply.value.load(Ordering::Relaxed);
+            
+            if status == 0 && count > 0 {
+                let p0 = reply.p0.load(Ordering::Relaxed); // Target
+                let p1 = reply.p1.load(Ordering::Relaxed); // Kind/Key
+                let p2 = reply.p2.load(Ordering::Relaxed); // Value
+
+                // Construct WatchEvent
+                // We map p1 to kind? p0 to node_id? 
+                // In handle_watch_open implementation:
+                // target: node_id
+                // key: 1 (MatchFound)
+                // value: 0 (handle)
+                
+                let evt = WatchEvent {
+                    kind: p1 as u32,
+                    node_id: p0,
+                    handle: p2,
+                    size: 0, // Not populated yet
+                };
+                
+                let src = unsafe { 
+                    core::slice::from_raw_parts(&evt as *const _ as *const u8, evt_size) 
+                };
+                unsafe { copyout(out_ptr, src)? };
+                return Ok(1);
+            } else {
+                return Ok(0);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
         }
     }
+}
+
+pub fn sys_root_watch_close(id: usize) -> SysResult<usize> {
+    root_call(RootOp::WatchClose { id: id as u64 })
 }

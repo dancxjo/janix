@@ -13,10 +13,20 @@ pub struct Node {
     pub edges: alloc::vec::Vec<(SymbolId, ThingId)>,
 }
 
+pub struct GlobalWatch {
+    pub id: u64,
+    pub spec_ptr: u64, // We store the pointer to user query for now? Or parse it? 
+                       // For v0, let's store the raw constraints if possible, or just the stream handle.
+    pub stream_handle: ResourceHandle, 
+    pub kind_filter: SymbolId, // "kind == Bytespace"
+    pub missing_fact: SymbolId, // "missing fact(detector=...)"
+}
+
 pub struct Graph {
     pub nodes: BTreeMap<ThingId, Node>,
     pub next_id: ThingId,
     pub kind_index: BTreeMap<SymbolId, alloc::vec::Vec<ThingId>>,
+    pub global_watches: BTreeMap<u64, GlobalWatch>,
 }
 
 impl Graph {
@@ -25,6 +35,7 @@ impl Graph {
             nodes: BTreeMap::new(),
             next_id: 1,
             kind_index: BTreeMap::new(),
+            global_watches: BTreeMap::new(),
         }
     }
 

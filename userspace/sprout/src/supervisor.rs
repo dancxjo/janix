@@ -166,6 +166,8 @@ impl Supervisor {
             self.ensure_app("/threads");
             self.ensure_app("/stack_heap_torture");
         }
+        self.ensure_app("/ingestd");
+        self.ensure_app("/png_creator");
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {

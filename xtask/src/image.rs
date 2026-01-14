@@ -87,6 +87,8 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "ata_disk", target, "release")?;
     build_userspace_app(sh, "disk_probe", target, "release")?;
     build_userspace_app(sh, "ahci_disk", target, "release")?;
+    build_userspace_app(sh, "ingestd", target, "release")?;
+    build_userspace_app(sh, "png_creator", target, "release")?;
     if diagnostic_apps_enabled() {
         for &(app, _) in DIAGNOSTIC_APPS {
             build_userspace_app(sh, app, target, "release")?;
@@ -149,6 +151,20 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
         target,
         "release",
         "iso_root/boot/ahci_disk",
+    )?;
+    copy_userspace_binary(
+        sh,
+        "ingestd",
+        target,
+        "release",
+        "iso_root/boot/ingestd",
+    )?;
+    copy_userspace_binary(
+        sh,
+        "png_creator",
+        target,
+        "release",
+        "iso_root/boot/png_creator",
     )?;
     if diagnostic_apps_enabled() {
         for &(app, module_name) in DIAGNOSTIC_APPS {

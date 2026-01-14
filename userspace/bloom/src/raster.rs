@@ -107,14 +107,14 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
             LowLevelOp::FillRect { rect, color } => {
                 let t_rect = ctx.current_transform.transform_rect(*rect);
                 if let Some(clipped) = ctx.current_clip.intersection(&t_rect) {
-                     fill_rect(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
+                     fill_rect_blend(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
                 }
             },
             
             LowLevelOp::StrokeRect { rect, color, width } => {
                  let t_rect = ctx.current_transform.transform_rect(*rect);
                  // Simple stroke clipping: clip each side (fill_rect handles bounds check, but we need clip rect)
-                 stroke_rect_clipped(ctx.surface, &t_rect, *width, color.to_u32(), &ctx.current_clip);
+                 stroke_rect_clipped_blend(ctx.surface, &t_rect, *width, color.to_u32(), &ctx.current_clip);
             },
             
             LowLevelOp::Line { from, to, color, width: _ } => {
@@ -130,7 +130,7 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
             LowLevelOp::FillCircle { center, radius, color } => {
                 let c = ctx.current_transform.transform_point(*center);
                 // TODO: Circle clipping
-                fill_circle(ctx.surface, c.x, c.y, *radius, color.to_u32());
+                fill_circle_blend(ctx.surface, c.x, c.y, *radius, color.to_u32());
             },
 
             LowLevelOp::BlitOpaque { image, src, dst, filter } => {
@@ -192,7 +192,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
         match op {
             LowLevelOp::Clear { color } => {
                 // Clear respects clip (which is damage rect)
-                fill_rect(ctx.surface, ctx.current_clip.x(), ctx.current_clip.y(), ctx.current_clip.width(), ctx.current_clip.height(), color.to_u32());
+                fill_rect_copy(ctx.surface, ctx.current_clip.x(), ctx.current_clip.y(), ctx.current_clip.width(), ctx.current_clip.height(), color.to_u32());
             },
             
             LowLevelOp::PushClip { rect } => ctx.push_clip(*rect),
@@ -204,13 +204,13 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             LowLevelOp::FillRect { rect, color } => {
                 let t_rect = ctx.current_transform.transform_rect(*rect);
                 if let Some(clipped) = ctx.current_clip.intersection(&t_rect) {
-                     fill_rect(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
+                     fill_rect_blend(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
                 }
             },
             
             LowLevelOp::StrokeRect { rect, color, width } => {
                  let t_rect = ctx.current_transform.transform_rect(*rect);
-                 stroke_rect_clipped(ctx.surface, &t_rect, *width, color.to_u32(), &ctx.current_clip);
+                 stroke_rect_clipped_blend(ctx.surface, &t_rect, *width, color.to_u32(), &ctx.current_clip);
             },
             
             LowLevelOp::Line { from, to, color, width: _ } => {
@@ -228,7 +228,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 let r = *radius;
                 let circle_bounds = Rect::new(c.x - r, c.y - r, r*2, r*2);
                  if ctx.current_clip.intersection(&circle_bounds).is_some() {
-                    fill_circle(ctx.surface, c.x, c.y, r, color.to_u32());
+                    fill_circle_blend(ctx.surface, c.x, c.y, r, color.to_u32());
                  }
             },
 
@@ -259,10 +259,10 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
 // --- Primitives ---
 
 pub fn clear(surface: &mut Surface, xrgb: u32) {
-    fill_rect(surface, 0, 0, surface.width(), surface.height(), xrgb);
+    fill_rect_copy(surface, 0, 0, surface.width(), surface.height(), xrgb);
 }
 
-pub fn fill_rect(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, xrgb: u32) {
+pub fn fill_rect_copy(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
     if w <= 0 || h <= 0 { return; }
     let mut x0 = x; let mut y0 = y;
     let mut x1 = x + w; let mut y1 = y + h;
@@ -272,14 +272,61 @@ pub fn fill_rect(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, xrgb: u3
     if x1 > surface.width() { x1 = surface.width(); }
     if y1 > surface.height() { y1 = surface.height(); }
 
+    // Optimization: if stride matched width/color, could use memset?
+    // For now simple loop
     for yy in y0..y1 {
         for xx in x0..x1 {
-            surface.put_px(xx, yy, xrgb);
+            surface.put_px(xx, yy, color);
         }
     }
 }
 
-fn stroke_rect_clipped(surface: &mut Surface, rect: &Rect, width: i32, color: u32, clip: &Rect) {
+pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
+    let a = ((color >> 24) & 0xFF) as u8;
+    if a == 255 {
+        fill_rect_copy(surface, x, y, w, h, color);
+        return;
+    }
+    if a == 0 { return; }
+
+    if w <= 0 || h <= 0 { return; }
+    let mut x0 = x; let mut y0 = y;
+    let mut x1 = x + w; let mut y1 = y + h;
+
+    if x0 < 0 { x0 = 0; }
+    if y0 < 0 { y0 = 0; }
+    if x1 > surface.width() { x1 = surface.width(); }
+    if y1 > surface.height() { y1 = surface.height(); }
+    
+    let sr = ((color >> 16) & 0xFF) as u8;
+    let sg = ((color >> 8) & 0xFF) as u8;
+    let sb = (color & 0xFF) as u8;
+    let inv_a = 255 - a;
+
+    let stride = surface.stride_bytes;
+    let base_ptr = surface.ptr as *mut u32;
+
+    for yy in y0..y1 {
+        for xx in x0..x1 {
+            let offset = (stride / 4) * (yy as usize) + (xx as usize);
+            unsafe {
+                let dst_ptr = base_ptr.add(offset);
+                let dst = *dst_ptr;
+                let dr = ((dst >> 16) & 0xFF) as u8;
+                let dg = ((dst >> 8) & 0xFF) as u8;
+                let db = (dst & 0xFF) as u8;
+                
+                let out_r = ((sr as u32 * a as u32) + (dr as u32 * inv_a as u32)) / 255;
+                let out_g = ((sg as u32 * a as u32) + (dg as u32 * inv_a as u32)) / 255;
+                let out_b = ((sb as u32 * a as u32) + (db as u32 * inv_a as u32)) / 255;
+                
+                *dst_ptr = (out_r << 16) | (out_g << 8) | out_b;
+            }
+        }
+    }
+}
+
+fn stroke_rect_clipped_blend(surface: &mut Surface, rect: &Rect, width: i32, color: u32, clip: &Rect) {
     // 4 fill_rects, each clipped
     let t = Rect::new(rect.x(), rect.y(), rect.width(), width);
     let b = Rect::new(rect.x(), rect.y() + rect.height() - width, rect.width(), width);
@@ -288,23 +335,52 @@ fn stroke_rect_clipped(surface: &mut Surface, rect: &Rect, width: i32, color: u3
 
     for r_part in [t, b, l, r] {
         if let Some(c) = r_part.intersection(clip) {
-            fill_rect(surface, c.x(), c.y(), c.width(), c.height(), color);
+            fill_rect_blend(surface, c.x(), c.y(), c.width(), c.height(), color);
         }
     }
 }
 
-pub fn fill_circle(surface: &mut Surface, cx: i32, cy: i32, r: i32, xrgb: u32) {
+pub fn fill_circle_blend(surface: &mut Surface, cx: i32, cy: i32, r: i32, color: u32) {
+    let a = ((color >> 24) & 0xFF) as u8;
+    if a == 0 { return; }
+    
+    // Bounds
     let x0 = (cx - r).max(0);
     let y0 = (cy - r).max(0);
     let x1 = (cx + r).min(surface.width());
     let y1 = (cy + r).min(surface.height());
     let r2 = r * r;
 
+    let sr = ((color >> 16) & 0xFF) as u8;
+    let sg = ((color >> 8) & 0xFF) as u8;
+    let sb = (color & 0xFF) as u8;
+    let inv_a = 255 - a;
+
+    let stride = surface.stride_bytes;
+    let base_ptr = surface.ptr as *mut u32;
+
     for y in y0..y1 {
         for x in x0..x1 {
             let dx = x - cx; let dy = y - cy;
             if dx*dx + dy*dy <= r2 {
-                surface.put_px(x, y, xrgb);
+                if a == 255 {
+                    surface.put_px(x, y, color);
+                } else {
+                    let offset = (stride / 4) * (y as usize) + (x as usize);
+                    unsafe {
+                        let dst_ptr = base_ptr.add(offset);
+                        let dst = *dst_ptr;
+                        let dr = ((dst >> 16) & 0xFF) as u8;
+                        let dg = ((dst >> 8) & 0xFF) as u8;
+                        let db = (dst & 0xFF) as u8;
+                        
+                        let out_r = ((sr as u32 * a as u32) + (dr as u32 * inv_a as u32)) / 255;
+                        let out_g = ((sg as u32 * a as u32) + (dg as u32 * inv_a as u32)) / 255;
+                        let out_b = ((sb as u32 * a as u32) + (db as u32 * inv_a as u32)) / 255;
+                        
+                        *dst_ptr = (out_r << 16) | (out_g << 8) | out_b;
+                    }
+                }
             }
         }
     }

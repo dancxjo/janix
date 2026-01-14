@@ -75,7 +75,7 @@ impl Color {
     }
 
     pub const fn to_u32(&self) -> u32 {
-        ((self.r as u32) << 16) | ((self.g as u32) << 8) | (self.b as u32)
+        ((self.a as u32) << 24) | ((self.r as u32) << 16) | ((self.g as u32) << 8) | (self.b as u32)
     }
 
     pub const fn from_u32(val: u32) -> Self {

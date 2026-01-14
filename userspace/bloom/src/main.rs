@@ -12,8 +12,9 @@ mod damage;
 mod drawlist;
 mod frame;
 mod frame_loop;
-mod font_client;
-mod geometry; // Canonical geometry types
+pub mod key_overlay;
+pub mod font_client;
+pub mod geometry; // Canonical geometry types
 mod isa;      // Portable Render ISA types
 mod logging;
 mod lowered;
@@ -41,7 +42,8 @@ fn unpack_handle(arg: usize, index: u32) -> PortHandle {
 
 use crate::asset::AssetBank;
 use alloc::collections::BTreeSet;
-use abi::hid::Key;
+// use abi::hid::Key; // Removed
+
 use stem::stack::{Stack, StackSpec};
 
 static ASSETS: AssetBank = AssetBank::new();
@@ -292,11 +294,7 @@ fn main(arg: usize) -> ! {
 
     // Track held keys
     let mut keys = BTreeSet::new();
-    let mut prev_keys_len = 0;
-
-
-    
-
+    let mut key_overlay = key_overlay::KeyOverlay::new();
 
     log!("[bloom] entering transactional frame loop (acquire -> build -> present)");
     log!("[bloom] reclaimer: budget={} bytes", reclaimer::memory_budget());
@@ -392,14 +390,12 @@ fn main(arg: usize) -> ! {
         }
         prev_cursor_bbox = Some(new_cursor_bbox);
 
-        // Damage for key indicators
-        // If keys changed, we need to damage the area where they are drawn.
-        // For simplicity, we'll damage the bottom-right area if any keys are pressed or were pressed.
-        if !keys.is_empty() || prev_keys_len > 0 {
-             // Safe over-estimate for damage: bottom 100px, rightmost 600px
-             builder.add_damage(Rect::new(screen_w - 600, screen_h - 100, 600, 100));
+        // Key Overlay Update
+        if key_overlay.update(&keys, frame_id) {
+             if let Some(rect) = key_overlay.damage_rect(screen_w, screen_h) {
+                 builder.add_damage(rect);
+             }
         }
-        prev_keys_len = keys.len();
 
         // Damage text regions (frame counter changes every frame)
         if font_loaded {
@@ -436,78 +432,8 @@ fn main(arg: usize) -> ! {
                 list.text("thing-os", 20, 20, 24.0, geometry::Color::from_u32(0xFFFFFF));
                 list.text(&alloc::format!("frame: {}", frame_id), 20, 50, 16.0, geometry::Color::from_u32(0xCCCCCC));
                 
-                // Render Key Indicators
-                if !keys.is_empty() {
-                    let padding = 8;
-                    let spacing = 8;
-                    let key_height = 32;
-                    let font_size = 24.0; // Larger font for symbols
-                    
-                    // Calculate total width to right-align
-                    let mut total_width = 0;
-                    let mut key_strings = alloc::vec::Vec::new();
-                    
-                    // Separate modifiers and others
-                    let mut modifiers = alloc::vec::Vec::new();
-                    let mut others = alloc::vec::Vec::new();
-                    
-                    for key in &keys {
-                        let k = *key as u16;
-                        if k >= 0xE0 && k <= 0xE7 {
-                            modifiers.push(key);
-                        } else {
-                            others.push(key);
-                        }
-                    }
-
-                    // Render list: Modifiers first, then others
-                    let sorted_keys = modifiers.into_iter().chain(others.into_iter());
-
-                    for key in sorted_keys {
-                        // Map key to unicode symbol or name
-                        let name = match key {
-                            Key::LeftShift => "⇧", // U+21E7
-                            Key::RightShift => "⇧",
-                            Key::LeftCtrl => "⌃", // U+2303
-                            Key::RightCtrl => "⌃",
-                            Key::LeftAlt | Key::RightAlt => "⌥", // U+2325
-                            Key::LeftMeta | Key::RightMeta => "⌘", // U+2318
-                            Key::Enter => "⏎", // U+23CE
-                            Key::Backspace => "⌫", // U+232B
-                            Key::Left => "←",
-                            Key::Right => "→",
-                            Key::Up => "↑",
-                            Key::Down => "↓",
-                            Key::Home => "↖",
-                            Key::End => "↘",
-                            Key::PageUp => "⇞",
-                            Key::PageDown => "⇟",
-                            Key::Tab => "⇥",
-                            Key::Delete => "⌦",
-                            Key::Escape => "⎋",
-                            Key::CapsLock => "⇪",
-                            Key::Space => "␣", // U+2423
-                            _ => key.name(),
-                        };
-                        
-                        // rough estimate: 14px per char + spacing
-                        let text_w = (name.len() as f32 * font_size * 0.6) as i32;
-                        key_strings.push((name, text_w));
-                        total_width += text_w + spacing;
-                    }
-                    if total_width > 0 {
-                        total_width -= spacing; // remove last spacing
-                    }
-                    
-                    let mut x = screen_w - total_width - 20; // 20px margin from right
-                    let y = screen_h - key_height - 20;      // 20px margin from bottom
-                    
-                    for (name, w) in key_strings {
-                        // Draw text directly (white)
-                        list.text(name, x, y, font_size, geometry::Color::from_u32(0xFFFFFFFF));
-                        x += w + spacing;
-                    }
-                }
+                // Render Key Overlay
+                key_overlay.render(list, screen_w, screen_h);
             }
 
             // Cursor
@@ -530,6 +456,9 @@ fn main(arg: usize) -> ! {
         // Present (consumes token)
         let _stats = presenter.present_frame(token);
         presenter.pump();
+        
+        // Post-present overlay update
+        key_overlay.post_present();
 
         // ═══════════════════════════════════════════════════════════════════
         // POST-PRESENT: Memory pressure check

@@ -5,7 +5,7 @@
 /// Normalized key codes based on HID Usage Table (Keyboard/Keypad Page 0x07)
 /// Apps receive this, never raw scancodes.
 #[repr(u16)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Key {
     // Letters (0x04-0x1D)
     A = 0x04, B = 0x05, C = 0x06, D = 0x07, E = 0x08, F = 0x09,

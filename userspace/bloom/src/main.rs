@@ -37,6 +37,9 @@ fn unpack_handle(arg: usize, index: u32) -> PortHandle {
 }
 
 use crate::asset::AssetBank;
+use alloc::collections::BTreeSet;
+use abi::hid::Key;
+use stem::stack::{Stack, StackSpec};
 
 static ASSETS: AssetBank = AssetBank::new();
 
@@ -110,12 +113,11 @@ extern "C" fn font_loader_entry() -> ! {
     log!("[font_loader] searching for font...");
 
     let candidates = [
-        "/assets/fonts/Hack-Regular.ttf",
+        "/assets/fonts/NotoSansSymbol-Regular.ttf",
         "/assets/fonts/NotoSans-Regular.ttf",
+        "/assets/fonts/Hack-Regular.ttf",
         "fonts/Hack-Regular.ttf",
-        "Hack-Regular.ttf",
     ];
-
     for path in candidates.iter() {
         log!("[font_loader] trying: {}", path);
         if let Some(font) = AssetBank::load_font_from_graph(path) {
@@ -159,11 +161,23 @@ fn main(arg: usize) -> ! {
         log!("[bloom] spawned cursor_loader thread");
     }
 
-    // Spawn font loader thread
-    if let Err(e) = stem::thread::spawn(font_loader_entry) {
-        log!("[bloom] ERROR: failed to spawn font loader: {:?}", e);
-    } else {
-        log!("[bloom] spawned font_loader thread");
+    // Spawn font loader thread with larger stack (parsing/loading fonts can be heavy)
+    let font_stack_res = Stack::alloc_growing_stack(StackSpec {
+        initial_commit_bytes: 256 * 1024, // 256KB
+        ..StackSpec::default()
+    });
+
+    match font_stack_res {
+        Ok(stack) => {
+             if let Err(e) = stem::thread::spawn_with_stack(stack, font_loader_entry) {
+                log!("[bloom] ERROR: failed to spawn font loader: {:?}", e);
+            } else {
+                log!("[bloom] spawned font_loader thread (256KB stack)");
+            }
+        },
+        Err(e) => {
+            log!("[bloom] ERROR: failed to allocate font loader stack: {:?}", e);
+        }
     }
 
     // 1. Discovery & Mapping
@@ -232,6 +246,14 @@ fn main(arg: usize) -> ! {
     // Track previous cursor position for damage
     let mut prev_cursor_bbox: Option<Rect> = None;
     let mut first_frame = true;
+
+    // Track held keys
+    let mut keys = BTreeSet::new();
+    let mut prev_keys_len = 0;
+
+
+    
+
 
     log!("[bloom] entering transactional frame loop (acquire -> build -> present)");
     log!("[bloom] reclaimer: budget={} bytes", reclaimer::memory_budget());
@@ -310,7 +332,7 @@ fn main(arg: usize) -> ! {
         // Input - capture cursor position before input
         let old_cursor_bbox = cursor.bbox();
         if bristle_evt != 0 {
-            bristle::poll_bristle(bristle_evt, &mut cursor, screen_w, screen_h);
+            bristle::poll_bristle(bristle_evt, &mut cursor, &mut keys, screen_w, screen_h);
         }
         
         // Track cursor movement damage
@@ -326,6 +348,15 @@ fn main(arg: usize) -> ! {
             builder.add_damage(new_cursor_bbox);
         }
         prev_cursor_bbox = Some(new_cursor_bbox);
+
+        // Damage for key indicators
+        // If keys changed, we need to damage the area where they are drawn.
+        // For simplicity, we'll damage the bottom-right area if any keys are pressed or were pressed.
+        if !keys.is_empty() || prev_keys_len > 0 {
+             // Safe over-estimate for damage: bottom 100px, rightmost 600px
+             builder.add_damage(Rect::new(screen_w - 600, screen_h - 100, 600, 100));
+        }
+        prev_keys_len = keys.len();
 
         // Damage text regions (frame counter changes every frame)
         if font_loaded {
@@ -361,6 +392,79 @@ fn main(arg: usize) -> ! {
             if font_loaded {
                 list.text("thing-os", 20, 20, 24.0, 0xFFFFFF);
                 list.text(&alloc::format!("frame: {}", frame_id), 20, 50, 16.0, 0xCCCCCC);
+                
+                // Render Key Indicators
+                if !keys.is_empty() {
+                    let padding = 8;
+                    let spacing = 8;
+                    let key_height = 32;
+                    let font_size = 24.0; // Larger font for symbols
+                    
+                    // Calculate total width to right-align
+                    let mut total_width = 0;
+                    let mut key_strings = alloc::vec::Vec::new();
+                    
+                    // Separate modifiers and others
+                    let mut modifiers = alloc::vec::Vec::new();
+                    let mut others = alloc::vec::Vec::new();
+                    
+                    for key in &keys {
+                        let k = *key as u16;
+                        if k >= 0xE0 && k <= 0xE7 {
+                            modifiers.push(key);
+                        } else {
+                            others.push(key);
+                        }
+                    }
+
+                    // Render list: Modifiers first, then others
+                    let sorted_keys = modifiers.into_iter().chain(others.into_iter());
+
+                    for key in sorted_keys {
+                        // Map key to unicode symbol or name
+                        let name = match key {
+                            Key::LeftShift => "⇧", // U+21E7
+                            Key::RightShift => "⇧",
+                            Key::LeftCtrl => "⌃", // U+2303
+                            Key::RightCtrl => "⌃",
+                            Key::LeftAlt | Key::RightAlt => "⌥", // U+2325
+                            Key::LeftMeta | Key::RightMeta => "⌘", // U+2318
+                            Key::Enter => "⏎", // U+23CE
+                            Key::Backspace => "⌫", // U+232B
+                            Key::Left => "←",
+                            Key::Right => "→",
+                            Key::Up => "↑",
+                            Key::Down => "↓",
+                            Key::Home => "↖",
+                            Key::End => "↘",
+                            Key::PageUp => "⇞",
+                            Key::PageDown => "⇟",
+                            Key::Tab => "⇥",
+                            Key::Delete => "⌦",
+                            Key::Escape => "⎋",
+                            Key::CapsLock => "⇪",
+                            Key::Space => "␣", // U+2423
+                            _ => key.name(),
+                        };
+                        
+                        // rough estimate: 14px per char + spacing
+                        let text_w = (name.len() as f32 * font_size * 0.6) as i32;
+                        key_strings.push((name, text_w));
+                        total_width += text_w + spacing;
+                    }
+                    if total_width > 0 {
+                        total_width -= spacing; // remove last spacing
+                    }
+                    
+                    let mut x = screen_w - total_width - 20; // 20px margin from right
+                    let y = screen_h - key_height - 20;      // 20px margin from bottom
+                    
+                    for (name, w) in key_strings {
+                        // Draw text directly (white)
+                        list.text(name, x, y, font_size, 0xFFFFFFFF);
+                        x += w + spacing;
+                    }
+                }
             }
 
             // Cursor

@@ -1,8 +1,10 @@
 use crate::{BootTasking, MapPerms};
+pub mod arena;
 pub mod boot_frame_alloc;
 pub mod boot_heap;
 pub mod frame_alloc;
 pub mod global_alloc;
+pub mod handle;
 pub mod kheap;
 pub mod layout;
 pub mod map;

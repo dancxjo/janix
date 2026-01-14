@@ -201,6 +201,7 @@ fn main(arg: usize) -> ! {
             format: target.format,
         };
         driver.send_bind(&bind);
+        driver.wait_for_bind();
         PresenterImpl::Driver(driver)
     } else {
         log!("[bloom] presenter: null (headless/fallback)");

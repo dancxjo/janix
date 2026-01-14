@@ -17,9 +17,9 @@ pub fn load_module<R: BootRuntime>(
     aspace: <R::Tasking as BootTasking>::AddressSpace,
     module: &BootModuleDesc,
 ) -> Option<(UserEntry, StackInfo)> {
-    // crate::kinfo!("Loading module: {}", module.name);
+    crate::kinfo!("Loading module: {}", module.name);
     if module.bytes.len() >= 16 {
-        // crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
+        crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
     }
 
     let load_addr: u64 = 0x200000;
@@ -41,9 +41,22 @@ pub fn load_module<R: BootRuntime>(
     let mut entry_pc = load_addr;
 
     // 1. Map ELF segments when available; otherwise fall back to a simple RWX layout.
-    if let Some(elf) = parse_elf64(module.bytes) {
+    if let Some(mut elf) = parse_elf64(module.bytes) {
+        // Sort segments by vaddr to ensure we process overlapping pages sequentially
+        elf.load_segments.sort_by(|a, b| a.vaddr.cmp(&b.vaddr));
+
         let load_bias = load_addr.saturating_sub(elf.min_vaddr);
         entry_pc = elf.entry.saturating_add(load_bias);
+
+        let mut last_virt_page = u64::MAX;
+        let mut last_phys_page = 0;
+        let mut last_perms = MapPerms {
+            user: false,
+            read: false,
+            write: false,
+            exec: false,
+        };
+
         for ph in elf.load_segments.iter() {
             let seg_vaddr = ph.vaddr.saturating_add(load_bias);
             let seg_mem_end = seg_vaddr.saturating_add(ph.memsz);
@@ -53,19 +66,44 @@ pub fn load_module<R: BootRuntime>(
 
             let seg_start = align_down_u64(seg_vaddr, page_size);
             let seg_end = align_up_u64(seg_mem_end, page_size);
-            let perms = MapPerms {
+            let mut perms = MapPerms {
                 user: true,
                 read: ph.read || ph.write || ph.exec,
                 write: ph.write,
                 exec: ph.exec,
             };
+            crate::kinfo!("Segment: vaddr={:x} exec={}", seg_vaddr, perms.exec);
 
             let mut virt = seg_start;
             while virt < seg_end {
-                let phys = memory::alloc_frame().expect("OOM loading module segment");
+                let phys;
+                let mut reuse_page = false;
+
+                if virt == last_virt_page {
+                    // Overlap detected! Reuse the previous page and merge permissions.
+                    phys = last_phys_page;
+                    reuse_page = true;
+                    perms.exec |= last_perms.exec;
+                    perms.write |= last_perms.write;
+                    perms.read |= last_perms.read;
+                    crate::kinfo!(
+                        "  Overlap at {:x}: merging perms to r={} w={} x={}",
+                        virt,
+                        perms.read,
+                        perms.write,
+                        perms.exec
+                    );
+                } else {
+                    // New page
+                    phys = memory::alloc_frame().expect("OOM loading module segment");
+                }
+
                 let hhdm_virt = phys + rt.phys_to_virt_offset();
-                unsafe {
-                    core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size as usize);
+                
+                if !reuse_page {
+                    unsafe {
+                        core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size as usize);
+                    }
                 }
 
                 let page_end = virt.saturating_add(page_size);
@@ -73,6 +111,7 @@ pub fn load_module<R: BootRuntime>(
                 let file_end = seg_vaddr.saturating_add(ph.filesz);
                 let copy_start = max(virt, file_start);
                 let copy_end = min(page_end, file_end);
+                
                 if copy_start < copy_end {
                     let src_off = ph.offset.saturating_add(copy_start - seg_vaddr);
                     let len = (copy_end - copy_start) as usize;
@@ -93,6 +132,11 @@ pub fn load_module<R: BootRuntime>(
                 rt.tasking()
                     .map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)
                     .unwrap();
+
+                last_virt_page = virt;
+                last_phys_page = phys;
+                last_perms = perms;
+                
                 virt += page_size;
             }
         }

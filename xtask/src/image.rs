@@ -300,8 +300,7 @@ fn copy_userspace_binary(
     let elf = format!("target/{}/{}/{}", target_name, profile_dir, name);
     let bin = format!("target/{}/{}/{}.bin", target_name, profile_dir, name);
 
-    cmd!(sh, "llvm-objcopy -O binary {elf} {bin}").run()?;
-    sh.copy_file(&bin, dst)?;
+    cmd!(sh, "cp {elf} {dst}").run()?;
     Ok(())
 }
 

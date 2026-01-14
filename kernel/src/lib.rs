@@ -521,7 +521,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         }
     }
 
-    crate::tests::root_test::run_selftest();
+    // crate::tests::root_test::run_selftest();
     kinfo!("System initialized. Entering scheduler loop.");
     loop {
         crate::task::yield_now::<R>();

@@ -108,6 +108,23 @@ impl DriverPresenter {
         }
     }
 
+    pub fn wait_for_bind(&mut self) {
+        let mut loops = 0u32;
+        loop {
+            self.pump();
+            if !self.awaiting_bind_ack {
+                break;
+            }
+            if loops >= 200 {
+                info!("bloom: driver BIND timeout; continuing");
+                break;
+            }
+            loops += 1;
+            stem::yield_now();
+            stem::sleep_ms(10);
+        }
+    }
+
     pub fn send_bind(&mut self, payload: &BindPayload) {
         let mut bytes = [0u8; core::mem::size_of::<BindPayload>()];
         bytes[0..8].copy_from_slice(&payload.bytespace_id.to_le_bytes());
@@ -134,25 +151,20 @@ impl DriverPresenter {
         let mut rect_count = 0;
         let mut offset = 8; // Skip header for now
 
-        if damage.is_full {
-            // Full damage: send empty payload (driver fallback to full update)
-            // This fixes "missing first draw" issues with some drivers
-            rect_count = 0;
-            // No rects to serialize
-        } else {
-            // Partial damage
-            rect_count = damage.rect_count() as u32;
-            for r in damage.iter() {
-                let abi_rect = abi::display_driver_protocol::Rect {
-                    x: r.x.max(0) as u32,
-                    y: r.y.max(0) as u32,
-                    w: r.w.max(0) as u32,
-                    h: r.h.max(0) as u32,
-                };
-                let r_bytes: [u8; 16] = unsafe { core::mem::transmute(abi_rect) };
-                payload[offset..offset+16].copy_from_slice(&r_bytes);
-                offset += 16;
-            }
+        // Always send explicit damage rectangles
+        // (Even for Damage::full, which contains a single rect covering the bounds)
+        rect_count = damage.rect_count() as u32;
+
+        for r in damage.iter() {
+            let abi_rect = abi::display_driver_protocol::Rect {
+                x: r.x.max(0) as u32,
+                y: r.y.max(0) as u32,
+                w: r.w.max(0) as u32,
+                h: r.h.max(0) as u32,
+            };
+            let r_bytes: [u8; 16] = unsafe { core::mem::transmute(abi_rect) };
+            payload[offset..offset+16].copy_from_slice(&r_bytes);
+            offset += 16;
         }
 
         // Write header

@@ -1168,6 +1168,7 @@ name = "kernel"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "bitflags",
  "linked_list_allocator",
  "spin",
  "stem",

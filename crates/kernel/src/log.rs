@@ -102,6 +102,8 @@ fn serial_write(bytes: &[u8]) {
     serial::write(bytes);
 }
 
+static mut CACHED_GRAPH_LOGS: Option<ThingId> = None;
+
 /// Emit a log entry
 pub(crate) fn log_emit_with_arrival(
     level: Level,
@@ -112,40 +114,44 @@ pub(crate) fn log_emit_with_arrival(
     // Always output to serial for debugging
     serial_log(level, subsystem, Some(arrival_mono_ns), message);
 
-    // Create graph entry if graph is initialized AND lock is available.
-    // We use is_ready_for_logging() (try_lock) to avoid deadlocks where
-    // a graph operation (holding lock) triggers a log (trying to acquire lock).
-    if !store::is_ready_for_logging() {
-        return None;
-    }
-
     // Optimization: Only graph Warn/Error to save memory
     if level < Level::Warn {
         return None;
     }
 
     let kind = symbols::intern(b"kind.LogEntry");
-    let _schema = symbols::intern(b"models.core.log.LogEntry");
-    // TODO: Update graph::store to accept schema/version if needed, or update this call
-    // Current store::thing_create only takes kind.
-    let id = store::thing_create(kind);
-    // Ignoring schema/version for now as per Task 01 Simplification
-
     let entry = LogEntry {
         level,
         subsystem,
         arrival_mono_ns: Some(arrival_mono_ns),
         message: message.to_vec(),
     };
+    let payload = entry.to_payload();
 
-    store::thing_set_inline_payload(id, &entry.to_payload());
+    // Use try_with_store to safely attempt graph operations without spinning/deadlocking.
+    // We batch creation, payload setting, and linking into a single lock acquisition.
+    store::try_with_store(|s| {
+        let id = s.create_thing(kind).ok()?;
+        s.set_payload(id, &payload).ok()?;
 
-    // Link to graph.logs
-    if let Some(graph_logs) = store::find_thing_by_name(sym::GRAPH_LOGS) {
-        store::relationship_create(sym::PRED_CONTAINS, graph_logs, id);
-    }
+        // Use cached graph.logs ID if available, otherwise find and cache it.
+        // Safe to access static mut here because try_with_store holds the global store lock.
+        let graph_logs = unsafe { CACHED_GRAPH_LOGS };
+        let graph_logs = if let Some(gl) = graph_logs {
+            Some(gl)
+        } else if let Some(gl) = s.find_by_name(sym::GRAPH_LOGS) {
+            unsafe { CACHED_GRAPH_LOGS = Some(gl) };
+            Some(gl)
+        } else {
+            None
+        };
 
-    Some(id)
+        if let Some(gl) = graph_logs {
+            s.create_relationship(sym::PRED_CONTAINS, gl, id).ok();
+        }
+
+        Some(id)
+    }).flatten()
 }
 
 /// Emit a log entry with the current monotonic time as arrival timestamp.

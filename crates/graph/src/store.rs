@@ -352,6 +352,24 @@ where F: FnOnce(&mut GraphStore) -> R
     res
 }
 
+pub fn try_with_store<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&mut GraphStore) -> R,
+{
+    if let Some((mut guard, flags)) = try_lock_store_irq() {
+        let res = if let Some(store) = guard.as_mut() {
+            Some(f(store))
+        } else {
+            None
+        };
+        drop(guard);
+        restore_irq(flags);
+        res
+    } else {
+        None
+    }
+}
+
 pub fn thing_create(kind: SymbolId) -> ThingId {
     with_store(|s| s.create_thing(kind).expect("failed to create thing"))
 }

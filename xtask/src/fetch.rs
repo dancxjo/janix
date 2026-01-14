@@ -22,6 +22,7 @@ pub fn fetch() -> Result<()> {
     fetch_fonts(&assets)?;
     fetch_icons(&assets)?;
     fetch_cursors(&assets)?;
+    fetch_pciids(&assets)?;
 
     Ok(())
 }
@@ -354,6 +355,23 @@ fn fetch_cursors(assets: &Path) -> Result<()> {
         }
     } else {
         println!("    Plain Cursors already exist.");
+    }
+
+    Ok(())
+}
+
+fn fetch_pciids(assets: &Path) -> Result<()> {
+    println!("==> Fetching pci.ids...");
+    let pci_dir = assets.join("pci");
+    fs::create_dir_all(&pci_dir)?;
+
+    let pci_ids = pci_dir.join("pci.ids");
+    if !pci_ids.exists() {
+        println!("    Downloading pci.ids...");
+        download_file("https://pci-ids.ucw.cz/v2.2/pci.ids", &pci_ids)
+            .context("Failed to download pci.ids")?;
+    } else {
+        println!("    pci.ids already exists.");
     }
 
     Ok(())

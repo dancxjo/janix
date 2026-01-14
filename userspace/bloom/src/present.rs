@@ -123,9 +123,53 @@ impl DriverPresenter {
         }
     }
 
-    fn send_present(&mut self) {
-        let mut buf = [0u8; 64];
-        if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_PRESENT, &[]) {
+    fn send_present(&mut self, damage: &Damage) {
+        // Calculate payload size
+        // Header: 8 bytes
+        // Rects: 16 bytes each
+        // Max 8 rects => 128 bytes
+        // Total payload max: 136 bytes
+        let mut payload = [0u8; 136];
+        
+        let mut rect_count = 0;
+        let mut offset = 8; // Skip header for now
+
+        if damage.is_full {
+            // Full damage: send empty payload (driver fallback to full update)
+            // This fixes "missing first draw" issues with some drivers
+            rect_count = 0;
+            // No rects to serialize
+        } else {
+            // Partial damage
+            rect_count = damage.rect_count() as u32;
+            for r in damage.iter() {
+                let abi_rect = abi::display_driver_protocol::Rect {
+                    x: r.x.max(0) as u32,
+                    y: r.y.max(0) as u32,
+                    w: r.w.max(0) as u32,
+                    h: r.h.max(0) as u32,
+                };
+                let r_bytes: [u8; 16] = unsafe { core::mem::transmute(abi_rect) };
+                payload[offset..offset+16].copy_from_slice(&r_bytes);
+                offset += 16;
+            }
+        }
+
+        // Write header
+        let header = abi::display_driver_protocol::PresentHeader {
+            rect_count,
+            _pad: 0,
+        };
+        let h_bytes: [u8; 8] = unsafe { core::mem::transmute(header) };
+        payload[0..8].copy_from_slice(&h_bytes);
+
+        // Send message
+        // Encode message buffer needs to be large enough for header + payload
+        // DriverHeader (12) + Payload (136) = 148
+        let mut buf = [0u8; 256];
+        let payload_len = 8 + (rect_count as usize * 16);
+        
+        if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_PRESENT, &payload[..payload_len]) {
             let _ = port_send(self.req_write, &buf[..len]);
         }
     }
@@ -281,7 +325,7 @@ impl Presenter for DriverPresenter {
 
         // Fast-path: skip present if no damage
         if !fast_path {
-            self.send_present();
+            self.send_present(&token.damage);
         }
 
         PresentStats {
@@ -308,7 +352,7 @@ impl Presenter for DriverPresenter {
             }
         }
 
-        self.send_present();
+        self.send_present(damage);
     }
 
     fn pump(&mut self) {

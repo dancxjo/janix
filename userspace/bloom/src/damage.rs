@@ -254,6 +254,11 @@ impl Damage {
         }
         result
     }
+
+    /// Get the bounds rect (clipping area).
+    pub fn bounds(&self) -> Rect {
+        self.bounds
+    }
 }
 
 /// Tracks damage accumulation for a single frame.

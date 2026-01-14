@@ -32,7 +32,10 @@ fn main(_arg: usize) -> ! {
     if count == 0 {
         info!("DISK_PROBE: No disks found in system graph");
         info!("DISK_PROBE: (This is expected if no disks are attached to QEMU)");
-        stem::syscall::exit(0);
+        // stem::syscall::exit(0);
+        loop {
+            stem::sleep(core::time::Duration::from_secs(3600));
+        }
     }
 
     info!("DISK_PROBE: Found {} disk(s) in system graph", count);
@@ -43,7 +46,9 @@ fn main(_arg: usize) -> ! {
     }
 
     info!("DISK_PROBE: Probe complete");
-    stem::syscall::exit(0);
+    loop {
+        stem::sleep(core::time::Duration::from_secs(3600));
+    }
 }
 
 fn probe_disk(disk_id: ThingId, index: usize) {

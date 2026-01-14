@@ -1,5 +1,5 @@
 #![no_std]
-#![no_main]
+#![cfg_attr(not(test), no_main)]
 
 extern crate alloc;
 
@@ -142,7 +142,7 @@ extern "C" fn font_loader_entry() -> ! {
 }
 
 
-#[stem::main]
+#[cfg_attr(not(test), stem::main)]
 fn main(arg: usize) -> ! {
     logging::init();
 

@@ -9,7 +9,7 @@ pub unsafe extern "C" fn entry_impl(arg: usize) -> ! {
     stem_user_main(arg)
 }
 
-#[cfg(all(target_arch = "x86_64", feature = "rt"))]
+#[cfg(all(target_arch = "x86_64", feature = "rt", any(target_os = "none", target_os = "thingos")))]
 core::arch::global_asm!(
     r#"
     .section .text.entry

@@ -9,7 +9,7 @@ use crate::drawlist::DrawList;
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use crate::asset::{Image, FontAsset, AssetBank};
-use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point};
+use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA};
 
 // Global asset bank access for font retrieval
 static ASSETS: AssetBank = AssetBank::new();
@@ -104,10 +104,21 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
             LowLevelOp::PushTransform { t } => ctx.push_transform(*t),
             LowLevelOp::PopTransform => ctx.pop_transform(),
 
-            LowLevelOp::FillRect { rect, color } => {
+            LowLevelOp::FillRect { rect, color, aa } => {
                 let t_rect = ctx.current_transform.transform_rect(*rect);
                 if let Some(clipped) = ctx.current_clip.intersection(&t_rect) {
+                     // Integer AA is 100% coverage, so just blend the color
                      fill_rect_blend(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
+                     // If we wanted 1px blur, we'd do it here, but likely overkill for v0 on Integer coords.
+                     let _ = aa; 
+                }
+            },
+
+            LowLevelOp::FillRoundRect { rect, radius, color, aa } => {
+                let t_rect = ctx.current_transform.transform_rect(*rect);
+                // Simple bounds check first
+                if let Some(clipped_bounds) = ctx.current_clip.intersection(&t_rect) {
+                    fill_round_rect(ctx.surface, &t_rect, *radius, color.to_u32(), *aa, &ctx.current_clip, &clipped_bounds);
                 }
             },
             
@@ -201,10 +212,17 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             LowLevelOp::PushTransform { t } => ctx.push_transform(*t),
             LowLevelOp::PopTransform => ctx.pop_transform(),
             
-            LowLevelOp::FillRect { rect, color } => {
+            LowLevelOp::FillRect { rect, color, aa: _ } => {
                 let t_rect = ctx.current_transform.transform_rect(*rect);
                 if let Some(clipped) = ctx.current_clip.intersection(&t_rect) {
                      fill_rect_blend(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
+                }
+            },
+
+            LowLevelOp::FillRoundRect { rect, radius, color, aa } => {
+                let t_rect = ctx.current_transform.transform_rect(*rect);
+                if let Some(clipped_bounds) = ctx.current_clip.intersection(&t_rect) {
+                    fill_round_rect(ctx.surface, &t_rect, *radius, color.to_u32(), *aa, &ctx.current_clip, &clipped_bounds);
                 }
             },
             
@@ -574,3 +592,149 @@ fn rasterize_text_clipped(surface: &mut Surface, font: &FontAsset, text: &str, x
     }
 }
 
+
+pub fn fill_round_rect(
+    surface: &mut Surface, 
+    rect: &Rect, 
+    radius: i32, 
+    color: u32, 
+    aa: EdgeAA, 
+    clip: &Rect,
+    _clipped_bounds: &Rect // Optimization hint?
+) {
+    if radius <= 0 {
+        if let Some(c) = rect.intersection(clip) {
+            fill_rect_blend(surface, c.x(), c.y(), c.width(), c.height(), color);
+        }
+        return;
+    }
+
+    // Colors
+    let ca = ((color >> 24) & 0xFF) as u8;
+    if ca == 0 { return; }
+    let cr = ((color >> 16) & 0xFF) as u8;
+    let cg = ((color >> 8) & 0xFF) as u8;
+    let cb = (color & 0xFF) as u8;
+
+    // Dimensions
+    let rx = rect.x();
+    let ry = rect.y();
+    let rw = rect.width();
+    let rh = rect.height();
+    let r_eff = radius.min(rw / 2).min(rh / 2); // Clamp radius
+
+    // Inner rects (solid fill)
+    // Central block
+    let inner_h = rh - 2 * r_eff;
+    if inner_h > 0 {
+        let solid_rect = Rect::new(rx, ry + r_eff, rw, inner_h);
+        if let Some(c) = solid_rect.intersection(clip) {
+            fill_rect_blend(surface, c.x(), c.y(), c.width(), c.height(), color);
+        }
+    }
+    
+    // Top and Bottom blocks (between corners)
+    let inner_w = rw - 2 * r_eff;
+    if inner_w > 0 {
+        // Top
+        let top_rect = Rect::new(rx + r_eff, ry, inner_w, r_eff);
+        if let Some(c) = top_rect.intersection(clip) {
+             fill_rect_blend(surface, c.x(), c.y(), c.width(), c.height(), color);
+        }
+        // Bottom
+        let bot_rect = Rect::new(rx + r_eff, ry + rh - r_eff, inner_w, r_eff);
+        if let Some(c) = bot_rect.intersection(clip) {
+             fill_rect_blend(surface, c.x(), c.y(), c.width(), c.height(), color);
+        }
+    }
+
+    // 4 Corners
+    // Centers
+    let corners = [
+        (rx + r_eff, ry + r_eff),                   // Top Left
+        (rx + rw - r_eff, ry + r_eff),             // Top Right
+        (rx + r_eff, ry + rh - r_eff),             // Bot Left
+        (rx + rw - r_eff, ry + rh - r_eff),        // Bot Right
+    ];
+
+    // Corner bounding boxes (to iterate)
+    let corner_rects = [
+        Rect::new(rx, ry, r_eff, r_eff), 
+        Rect::new(rx + rw - r_eff, ry, r_eff, r_eff),
+        Rect::new(rx, ry + rh - r_eff, r_eff, r_eff),
+        Rect::new(rx + rw - r_eff, ry + rh - r_eff, r_eff, r_eff),
+    ];
+
+    let do_aa = aa != EdgeAA::None;
+
+    for i in 0..4 {
+        let (cx, cy) = corners[i];
+        let bounds = corner_rects[i];
+        
+        let ib = match bounds.intersection(clip) {
+             Some(b) => b,
+             None => continue,
+        };
+
+        // Iterate pixels in clipped corner bounds
+        for y in ib.y()..(ib.y() + ib.height()) {
+            for x in ib.x()..(ib.x() + ib.width()) {
+                // Distance from center
+                // Pixel center is x+0.5, y+0.5
+                let dx = (x as f32 + 0.5) - cx as f32;
+                let dy = (y as f32 + 0.5) - cy as f32;
+                
+                // Which quadrant?
+                // TL: x<cx, y<cy. TR: x>=cx, y<cy. BL: x<cx, y>=cy. BR: x>=cx, y>=cy.
+                // Actually we just care about distance. 
+                // Wait, if we are in the corner rect, we are by definition in the correct quadrant relative to center
+                // to form the corner.
+                // The distance check is sufficient because we only iterate the corner box.
+                
+                let dist_sq = dx*dx + dy*dy;
+                let dist = libm::sqrtf(dist_sq);
+                
+                let coverage = if do_aa {
+                    // radius - distance + 0.5
+                    (r_eff as f32 - dist + 0.5).clamp(0.0, 1.0)
+                } else {
+                    if dist <= r_eff as f32 { 1.0 } else { 0.0 }
+                };
+
+                if coverage > 0.0 {
+                     let a_out = (coverage * ca as f32) as u8;
+                     if a_out > 0 {
+                         blend_pixel(surface, x, y, cr, cg, cb, a_out);
+                     }
+                }
+            }
+        }
+    }
+}
+
+// Helper for single pixel blending
+fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa: u8) {
+    if sa == 255 {
+        surface.put_px(x, y, ((sa as u32) << 24) | ((sr as u32) << 16) | ((sg as u32) << 8) | (sb as u32));
+        return;
+    }
+    
+    let offset = (surface.stride_bytes / 4) * (y as usize) + (x as usize);
+    let ptr = surface.ptr as *mut u32;
+    unsafe {
+        let dst_ptr = ptr.add(offset);
+        let dst = *dst_ptr;
+        
+        let dr = ((dst >> 16) & 0xFF) as u8;
+        let dg = ((dst >> 8) & 0xFF) as u8;
+        let db = (dst & 0xFF) as u8;
+        
+        let inv_a = 255 - sa;
+        
+        let out_r = ((sr as u32 * sa as u32) + (dr as u32 * inv_a as u32)) / 255;
+        let out_g = ((sg as u32 * sa as u32) + (dg as u32 * inv_a as u32)) / 255;
+        let out_b = ((sb as u32 * sa as u32) + (db as u32 * inv_a as u32)) / 255;
+        
+        *dst_ptr = (out_r << 16) | (out_g << 8) | out_b;
+    }
+}

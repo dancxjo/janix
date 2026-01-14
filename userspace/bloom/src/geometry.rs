@@ -121,3 +121,10 @@ impl Transform {
         }
     }
 }
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EdgeAA {
+    #[default]
+    None,
+    Coverage8,
+}

@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use crate::drawlist::{DrawList, DrawCmd, Insets};
 use crate::asset::Image;
-use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point}; // Use ISA types
+use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA}; // Use ISA types
 
 // Low Level Operations - Portable Render ISA
 // This is the strict contract that the presenter must execute.
@@ -15,7 +15,8 @@ pub enum LowLevelOp {
     PopTransform,
     
     // Geometry primitives
-    FillRect { rect: Rect, color: Color },
+    FillRect { rect: Rect, color: Color, aa: EdgeAA },
+    FillRoundRect { rect: Rect, radius: i32, color: Color, aa: EdgeAA },
     StrokeRect { rect: Rect, color: Color, width: i32 },
     Line { from: Point, to: Point, color: Color, width: i32 },
     FillCircle { center: Point, radius: i32, color: Color },
@@ -82,7 +83,8 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
             
             // Primitives
             DrawCmd::Clear { color } => out.ops.push(LowLevelOp::Clear { color: *color }),
-            DrawCmd::FillRect { rect, color } => out.ops.push(LowLevelOp::FillRect { rect: *rect, color: *color }),
+            DrawCmd::FillRect { rect, color, aa } => out.ops.push(LowLevelOp::FillRect { rect: *rect, color: *color, aa: *aa }),
+            DrawCmd::FillRoundRect { rect, radius, color, aa } => out.ops.push(LowLevelOp::FillRoundRect { rect: *rect, radius: *radius, color: *color, aa: *aa }),
             DrawCmd::StrokeRect { rect, color, width } => out.ops.push(LowLevelOp::StrokeRect { rect: *rect, color: *color, width: *width }),
             DrawCmd::FillCircle { center, radius, color } => out.ops.push(LowLevelOp::FillCircle { center: *center, radius: *radius, color: *color }),
             DrawCmd::Line { from, to, color, width } => out.ops.push(LowLevelOp::Line { from: *from, to: *to, color: *color, width: *width }),
@@ -264,10 +266,11 @@ mod tests {
         let lowered = lower(&list);
         
         assert_eq!(lowered.ops.len(), 1);
-        if let LowLevelOp::FillRect { rect, color } = &lowered.ops[0] {
+        if let LowLevelOp::FillRect { rect, color, aa } = &lowered.ops[0] {
             assert_eq!(rect.x(), 10);
             assert_eq!(rect.width(), 50);
             assert_eq!(*color, Color::new(255, 0, 0, 255));
+            assert_eq!(*aa, EdgeAA::None);
         } else {
             panic!("Expected FillRect");
         }
@@ -331,4 +334,23 @@ mod tests {
              panic!("Expected Blit for center patch");
         }
     }
+    #[test]
+    fn test_lower_round_rect() {
+        let mut list = DrawList::new();
+        list.rounded_rect(50, 50, 100, 100, 10, Color::new(0, 255, 0, 255), EdgeAA::Coverage8);
+        
+        let lowered = lower(&list);
+        
+        assert_eq!(lowered.ops.len(), 1);
+        if let LowLevelOp::FillRoundRect { rect, radius, color, aa } = &lowered.ops[0] {
+            assert_eq!(rect.x(), 50);
+            assert_eq!(rect.width(), 100);
+            assert_eq!(*radius, 10);
+            assert_eq!(*color, Color::new(0, 255, 0, 255));
+            assert_eq!(*aa, EdgeAA::Coverage8);
+        } else {
+            panic!("Expected FillRoundRect");
+        }
+    }
 }
+

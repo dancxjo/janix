@@ -5,7 +5,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
-use crate::geometry::{Point, Rect, Size, Color, Transform};
+use crate::geometry::{Point, Rect, Size, Color, Transform, EdgeAA};
 
 // Re-export damage::Rect for legacy compatibility where needed, 
 // but we prefer geometry::Rect for new commands.
@@ -39,7 +39,8 @@ pub enum DrawCmd {
     Clear { color: Color },
 
     // --- Primitive Geometry ---
-    FillRect { rect: Rect, color: Color },
+    FillRect { rect: Rect, color: Color, aa: EdgeAA },
+    FillRoundRect { rect: Rect, radius: i32, color: Color, aa: EdgeAA },
     StrokeRect { rect: Rect, color: Color, width: i32 },
     FillCircle { center: Point, radius: i32, color: Color },
     StrokeCircle { center: Point, radius: i32, color: Color, width: i32 },
@@ -91,6 +92,7 @@ impl DrawCmd {
         match self {
             DrawCmd::Clear { .. } => Rect::new(0, 0, 10000, 10000), // Ideally shouldn't ask bbox of clear w/o context
             DrawCmd::FillRect { rect, .. } => *rect,
+            DrawCmd::FillRoundRect { rect, .. } => *rect,
             DrawCmd::StrokeRect { rect, width, .. } => {
                 let w = *width;
                 Rect::new(rect.x() - w, rect.y() - w, rect.width() + w*2, rect.height() + w*2)
@@ -141,7 +143,25 @@ impl DrawList {
     pub fn rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
         self.cmds.push(DrawCmd::FillRect { 
             rect: Rect::new(x, y, w, h), 
-            color 
+            color,
+            aa: EdgeAA::None,
+        });
+    }
+
+    pub fn rect_aa(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
+        self.cmds.push(DrawCmd::FillRect {
+            rect: Rect::new(x, y, w, h),
+            color,
+            aa: EdgeAA::Coverage8,
+        });
+    }
+
+    pub fn rounded_rect(&mut self, x: i32, y: i32, w: i32, h: i32, radius: i32, color: Color, aa: EdgeAA) {
+        self.cmds.push(DrawCmd::FillRoundRect {
+            rect: Rect::new(x, y, w, h),
+            radius,
+            color,
+            aa,
         });
     }
 

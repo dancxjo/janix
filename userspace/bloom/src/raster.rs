@@ -301,10 +301,11 @@ pub fn fill_rect_copy(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, col
 
 pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let a = ((color >> 24) & 0xFF) as u8;
-    if a == 255 {
-        fill_rect_copy(surface, x, y, w, h, color);
-        return;
-    }
+    // Force blend path to avoid alpha format mismatches
+    // if a == 255 {
+    //     fill_rect_copy(surface, x, y, w, h, color);
+    //     return;
+    // }
     if a == 0 { return; }
 
     if w <= 0 || h <= 0 { return; }
@@ -600,7 +601,7 @@ pub fn fill_round_rect(
     color: u32, 
     aa: EdgeAA, 
     clip: &Rect,
-    _clipped_bounds: &Rect // Optimization hint?
+    _clipped_bounds: &Rect
 ) {
     if radius <= 0 {
         if let Some(c) = rect.intersection(clip) {
@@ -621,103 +622,140 @@ pub fn fill_round_rect(
     let ry = rect.y();
     let rw = rect.width();
     let rh = rect.height();
-    let r_eff = radius.min(rw / 2).min(rh / 2); // Clamp radius
-
-    // Inner rects (solid fill)
-    // Central block
-    let inner_h = rh - 2 * r_eff;
-    if inner_h > 0 {
-        let solid_rect = Rect::new(rx, ry + r_eff, rw, inner_h);
-        if let Some(c) = solid_rect.intersection(clip) {
+    
+    // Clamp radius
+    let r_eff = radius.min(rw / 2).min(rh / 2);
+    if r_eff <= 0 {
+        if let Some(c) = rect.intersection(clip) {
             fill_rect_blend(surface, c.x(), c.y(), c.width(), c.height(), color);
         }
+        return;
     }
-    
-    // Top and Bottom blocks (between corners)
-    let inner_w = rw - 2 * r_eff;
-    if inner_w > 0 {
-        // Top
-        let top_rect = Rect::new(rx + r_eff, ry, inner_w, r_eff);
-        if let Some(c) = top_rect.intersection(clip) {
-             fill_rect_blend(surface, c.x(), c.y(), c.width(), c.height(), color);
-        }
-        // Bottom
-        let bot_rect = Rect::new(rx + r_eff, ry + rh - r_eff, inner_w, r_eff);
-        if let Some(c) = bot_rect.intersection(clip) {
-             fill_rect_blend(surface, c.x(), c.y(), c.width(), c.height(), color);
-        }
-    }
-
-    // 4 Corners
-    // Centers
-    let corners = [
-        (rx + r_eff, ry + r_eff),                   // Top Left
-        (rx + rw - r_eff, ry + r_eff),             // Top Right
-        (rx + r_eff, ry + rh - r_eff),             // Bot Left
-        (rx + rw - r_eff, ry + rh - r_eff),        // Bot Right
-    ];
-
-    // Corner bounding boxes (to iterate)
-    let corner_rects = [
-        Rect::new(rx, ry, r_eff, r_eff), 
-        Rect::new(rx + rw - r_eff, ry, r_eff, r_eff),
-        Rect::new(rx, ry + rh - r_eff, r_eff, r_eff),
-        Rect::new(rx + rw - r_eff, ry + rh - r_eff, r_eff, r_eff),
-    ];
 
     let do_aa = aa != EdgeAA::None;
 
-    for i in 0..4 {
-        let (cx, cy) = corners[i];
-        let bounds = corner_rects[i];
-        
-        let ib = match bounds.intersection(clip) {
-             Some(b) => b,
-             None => continue,
-        };
+    // 1. Central Solid Block (Middle Rows)
+    // Rows from (ry + r) to (ry + rh - r)
+    // Covers full width rw
+    let mid_y_start = ry + r_eff;
+    let mid_y_end = ry + rh - r_eff;
+    let mid_h = mid_y_end - mid_y_start;
 
-        // Iterate pixels in clipped corner bounds
-        for y in ib.y()..(ib.y() + ib.height()) {
-            for x in ib.x()..(ib.x() + ib.width()) {
-                // Distance from center
-                // Pixel center is x+0.5, y+0.5
-                let dx = (x as f32 + 0.5) - cx as f32;
-                let dy = (y as f32 + 0.5) - cy as f32;
-                
-                // Which quadrant?
-                // TL: x<cx, y<cy. TR: x>=cx, y<cy. BL: x<cx, y>=cy. BR: x>=cx, y>=cy.
-                // Actually we just care about distance. 
-                // Wait, if we are in the corner rect, we are by definition in the correct quadrant relative to center
-                // to form the corner.
-                // The distance check is sufficient because we only iterate the corner box.
-                
-                let dist_sq = dx*dx + dy*dy;
-                let dist = libm::sqrtf(dist_sq);
-                
-                let coverage = if do_aa {
-                    // radius - distance + 0.5
-                    (r_eff as f32 - dist + 0.5).clamp(0.0, 1.0)
-                } else {
-                    if dist <= r_eff as f32 { 1.0 } else { 0.0 }
-                };
+    if mid_h > 0 {
+        let mid_rect = Rect::new(rx, mid_y_start, rw, mid_h);
+        if let Some(c) = mid_rect.intersection(clip) {
+            fill_rect_blend(surface, c.x(), c.y(), c.width(), c.height(), color);
+        }
+    }
 
-                if coverage > 0.0 {
+    // 2. Top Cap (Rows ry .. ry + r)
+    // Contains TL corner, Top-Middle bridge, TR corner
+    let top_rect = Rect::new(rx, ry, rw, r_eff); // Potentially full width
+    if let Some(clipped_top) = top_rect.intersection(clip) {
+         for y in clipped_top.y()..(clipped_top.y() + clipped_top.height()) {
+             // For each row, we scan X
+             // Determine x-range for this row from clip
+             let y_rel = (y as f32 + 0.5) - (ry + r_eff) as f32; // Distance from center Y line (negative)
+             // Check left corner (TL)
+             // TL center: (rx+r, ry+r)
+             // TR center: (rx+w-r, ry+r)
+             
+             let x_start = clipped_top.x();
+             let x_end = clipped_top.x() + clipped_top.width();
+
+             for x in x_start..x_end {
+                 let mut coverage = 1.0;
+                 
+                 // Left Corner Zone
+                 if x < rx + r_eff {
+                     let x_rel = (x as f32 + 0.5) - (rx + r_eff) as f32; // Negative
+                     let dist_sq = x_rel*x_rel + y_rel*y_rel;
+                     let dist = libm::sqrtf(dist_sq);
+                     if do_aa {
+                         coverage = (r_eff as f32 - dist + 0.5).clamp(0.0, 1.0);
+                     } else {
+                         coverage = if dist <= r_eff as f32 { 1.0 } else { 0.0 };
+                     }
+                 } 
+                 // Right Corner Zone
+                 else if x >= rx + rw - r_eff {
+                     let x_rel = (x as f32 + 0.5) - (rx + rw - r_eff) as f32; // Positive
+                     let dist_sq = x_rel*x_rel + y_rel*y_rel;
+                     let dist = libm::sqrtf(dist_sq);
+                     if do_aa {
+                         coverage = (r_eff as f32 - dist + 0.5).clamp(0.0, 1.0);
+                     } else {
+                         coverage = if dist <= r_eff as f32 { 1.0 } else { 0.0 };
+                     }
+                 }
+                 // Else: Middle bridge (coverage 1.0)
+                 
+                 if coverage > 0.0 {
                      let a_out = (coverage * ca as f32) as u8;
                      if a_out > 0 {
-                         blend_pixel(surface, x, y, cr, cg, cb, a_out);
+                        blend_pixel(surface, x, y, cr, cg, cb, a_out);
                      }
-                }
-            }
+                 }
+             }
+         }
+    }
+
+    // 3. Bottom Cap (Rows ry + rh - r .. ry + rh)
+    // Contains BL, Bot-Middle, BR
+    let bot_y_start = ry + rh - r_eff;
+    let bot_rect = Rect::new(rx, bot_y_start, rw, r_eff);
+    if let Some(clipped_bot) = bot_rect.intersection(clip) {
+        for y in clipped_bot.y()..(clipped_bot.y() + clipped_bot.height()) {
+             let y_rel = (y as f32 + 0.5) - (bot_y_start) as f32; // Positive (wait, center is at start)
+             // BL Center: (rx+r, ry+h-r) = (rx+r, bot_y_start)
+             // So y_rel is positive distance from center line
+             
+             let x_start = clipped_bot.x();
+             let x_end = clipped_bot.x() + clipped_bot.width();
+
+             for x in x_start..x_end {
+                 let mut coverage = 1.0;
+                 
+                 if x < rx + r_eff {
+                     // BL Corner
+                     let x_rel = (x as f32 + 0.5) - (rx + r_eff) as f32;
+                     let dist_sq = x_rel*x_rel + y_rel*y_rel;
+                     let dist = libm::sqrtf(dist_sq);
+                     if do_aa {
+                         coverage = (r_eff as f32 - dist + 0.5).clamp(0.0, 1.0);
+                     } else {
+                         coverage = if dist <= r_eff as f32 { 1.0 } else { 0.0 };
+                     }
+                 } else if x >= rx + rw - r_eff {
+                     // BR Corner
+                     let x_rel = (x as f32 + 0.5) - (rx + rw - r_eff) as f32;
+                     let dist_sq = x_rel*x_rel + y_rel*y_rel;
+                     let dist = libm::sqrtf(dist_sq);
+                     if do_aa {
+                         coverage = (r_eff as f32 - dist + 0.5).clamp(0.0, 1.0);
+                     } else {
+                         coverage = if dist <= r_eff as f32 { 1.0 } else { 0.0 };
+                     }
+                 }
+                 
+                 if coverage > 0.0 {
+                     let a_out = (coverage * ca as f32) as u8;
+                     if a_out > 0 {
+                        blend_pixel(surface, x, y, cr, cg, cb, a_out);
+                     }
+                 }
+             }
         }
     }
 }
 
 // Helper for single pixel blending
 fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa: u8) {
-    if sa == 255 {
-        surface.put_px(x, y, ((sa as u32) << 24) | ((sr as u32) << 16) | ((sg as u32) << 8) | (sb as u32));
-        return;
-    }
+    // Force blend path
+    // if sa == 255 {
+    //     surface.put_px(x, y, ((sa as u32) << 24) | ((sr as u32) << 16) | ((sg as u32) << 8) | (sb as u32));
+    //     return;
+    // }
     
     let offset = (surface.stride_bytes / 4) * (y as usize) + (x as usize);
     let ptr = surface.ptr as *mut u32;

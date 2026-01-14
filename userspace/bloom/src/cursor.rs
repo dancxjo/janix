@@ -1,6 +1,7 @@
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
 use crate::asset::{CursorAsset, CursorFrame};
+use crate::geometry::Color;
 
 pub struct CursorState {
     pub x: i32,
@@ -41,15 +42,15 @@ impl CursorState {
         }
     }
 
-    fn color(&self) -> u32 {
+    fn color(&self) -> Color {
         if self.buttons & 0x1 != 0 {
-            0x00FF0000
+            Color::from_u32(0x00FF0000)
         } else if self.buttons & 0x2 != 0 {
-            0x0000FFFF
+            Color::from_u32(0x0000FFFF)
         } else if self.buttons & 0x4 != 0 {
-            0x00FFFF00
+            Color::from_u32(0x00FFFF00)
         } else {
-            0x00FFFFFF
+            Color::from_u32(0x00FFFFFF)
         }
     }
     

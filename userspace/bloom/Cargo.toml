@@ -7,3 +7,4 @@ edition = "2021"
 stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }
 fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
+serde = { version = "1.0", default-features = false, features = ["derive", "alloc", "rc"] }

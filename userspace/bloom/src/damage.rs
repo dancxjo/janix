@@ -441,7 +441,7 @@ mod tests {
         let mut d = Damage::empty(bounds);
         
         d.add_rect(Rect::new(-10, -10, 20, 20));
-        let r: Vec<_> = d.iter().collect();
+        let r: alloc::vec::Vec<_> = d.iter().collect();
         assert_eq!(r.len(), 1);
         assert_eq!(r[0], Rect::new(0, 0, 10, 10));
     }

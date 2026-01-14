@@ -1,13 +1,19 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
+use alloc::string::String;
 use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 
-// Re-export damage::Rect for use by other modules (lowered, raster)
-pub use crate::damage::Rect;
+use crate::geometry::{Point, Rect, Size, Color, Transform};
+
+// Re-export damage::Rect for legacy compatibility where needed, 
+// but we prefer geometry::Rect for new commands.
+// Usage: crate::drawlist::DamageRect
+pub use crate::damage::Rect as DamageRect;
 
 /// Insets for nine-slice rendering
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Insets {
     pub left: i32,
     pub top: i32,
@@ -21,48 +27,96 @@ impl Insets {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DrawCmd {
-    Clear { xrgb: u32 },
-    Rect { x: i32, y: i32, w: i32, h: i32, xrgb: u32 },
-    Line { x0: i32, y0: i32, x1: i32, y1: i32, xrgb: u32 },
-    BlitImage { image: crate::asset::Image, x: i32, y: i32 },
-    Cursor { frame: crate::asset::CursorFrame, x: i32, y: i32 },
-    NineSlice { image: crate::asset::Image, dst: Rect, insets: Insets },
-    /// Draw text string at position with specified size and color
-    Text { text: Arc<str>, x: i32, y: i32, size: f32, color: u32 },
+    // --- Frame & Control ---
+    BeginFrame { id: u64 },
+    EndFrame,
+    PushClip { rect: Rect },
+    PopClip,
+    PushTransform { transform: Transform },
+    PopTransform,
+    Clear { color: Color },
+
+    // --- Primitive Geometry ---
+    FillRect { rect: Rect, color: Color },
+    StrokeRect { rect: Rect, color: Color, width: i32 },
+    FillCircle { center: Point, radius: i32, color: Color },
+    StrokeCircle { center: Point, radius: i32, color: Color, width: i32 },
+    Line { from: Point, to: Point, color: Color, width: i32 },
+    Polyline { points: Vec<Point>, color: Color, width: i32 },
+    Polygon { points: Vec<Point>, fill: Color, stroke: Color },
+
+    // --- Image & Bitmap Operations ---
+    DrawImage { image: crate::asset::Image, dest: Rect },
+    DrawImageRegion { image: crate::asset::Image, src: Rect, dest: Rect },
+    DrawImageTiled { image: crate::asset::Image, dest: Rect },
+    DrawImageScaled { image: crate::asset::Image, dest: Rect, filter: i32 }, // filter: simple enum placeholder
+
+    // --- 9-Slice & UI-Specific ---
+    DrawNineSlice { image: crate::asset::Image, dest: Rect, margins: Insets },
+    
+    // Legacy Cursor (Specific to Bloom's optimization need, kept as first-class for now)
+    Cursor { frame: crate::asset::CursorFrame, position: Point },
+
+    // --- Text Rendering ---
+    // Using simple text string for v0, will evolve to GlyphRun
+    DrawText { text: Arc<str>, position: Point, size: f32, color: Color },
+    // Placeholder for future GlyphRun
+    DrawGlyphRun { font_id: u64, glyphs: Vec<u32>, positions: Vec<Point>, color: Color },
+
+    // --- Paths (Vector-Like) ---
+    BeginPath,
+    MoveTo { point: Point },
+    LineTo { point: Point },
+    CurveTo { c1: Point, c2: Point, to: Point },
+    ClosePath,
+    FillPath { color: Color },
+    StrokePath { color: Color, width: i32 },
+
+    // --- Compositing & Effects ---
+    SetOpacity { alpha: u8 },
+    SetBlendMode { mode: u8 }, // 0: Over, 1: Add, etc.
+    Shadow { offset: Point, blur: i32, color: Color },
+
+    // --- Debug ---
+    DebugRect { rect: Rect, color: Color },
+    DebugText { text: String, position: Point, color: Color },
+    DebugMarker { id: u64, position: Point },
 }
 
 impl DrawCmd {
     /// Compute the bounding box of this draw command.
-    pub fn bbox(&self, screen_w: i32, screen_h: i32) -> Rect {
+    pub fn bbox(&self) -> Rect {
         match self {
-            DrawCmd::Clear { .. } => Rect::new(0, 0, screen_w, screen_h),
-            DrawCmd::Rect { x, y, w, h, .. } => Rect::new(*x, *y, *w, *h),
-            DrawCmd::Line { x0, y0, x1, y1, .. } => {
-                let min_x = (*x0).min(*x1);
-                let min_y = (*y0).min(*y1);
-                let max_x = (*x0).max(*x1);
-                let max_y = (*y0).max(*y1);
-                // Add 1 pixel for line thickness
-                Rect::new(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
+            DrawCmd::Clear { .. } => Rect::new(0, 0, 10000, 10000), // Ideally shouldn't ask bbox of clear w/o context
+            DrawCmd::FillRect { rect, .. } => *rect,
+            DrawCmd::StrokeRect { rect, width, .. } => {
+                let w = *width;
+                Rect::new(rect.x() - w, rect.y() - w, rect.width() + w*2, rect.height() + w*2)
             }
-            DrawCmd::BlitImage { image, x, y } => {
-                Rect::new(*x, *y, image.width as i32, image.height as i32)
+            DrawCmd::Line { from, to, width, .. } => {
+                let min_x = from.x.min(to.x);
+                let min_y = from.y.min(to.y);
+                let max_x = from.x.max(to.x);
+                let max_y = from.y.max(to.y);
+                Rect::new(min_x - width, min_y - width, (max_x - min_x) + width*2, (max_y - min_y) + width*2)
             }
-            DrawCmd::Cursor { frame, x, y } => {
-                // Account for hotspot offset
-                let dx = *x - frame.hotspot_x as i32;
-                let dy = *y - frame.hotspot_y as i32;
-                Rect::new(dx, dy, frame.image.width as i32, frame.image.height as i32)
+            DrawCmd::DrawImage { dest, .. } => *dest,
+            DrawCmd::DrawImageRegion { dest, .. } => *dest,
+            DrawCmd::DrawNineSlice { dest, .. } => *dest,
+            DrawCmd::Cursor { frame, position } => {
+                 let dx = position.x - frame.hotspot_x as i32;
+                 let dy = position.y - frame.hotspot_y as i32;
+                 Rect::new(dx, dy, frame.image.width as i32, frame.image.height as i32)
             }
-            DrawCmd::NineSlice { dst, .. } => *dst,
-            DrawCmd::Text { text, x, y, size, .. } => {
-                // Estimate bounding box: average char width ~0.6 of size
-                let est_width = (text.len() as f32 * size * 0.6) as i32;
-                let est_height = (*size * 1.2) as i32;
-                Rect::new(*x, *y, est_width.max(1), est_height.max(1))
+            DrawCmd::DrawText { text, position, size, .. } => {
+                 let est_width = (text.len() as f32 * size * 0.6) as i32;
+                 let est_height = (*size * 1.2) as i32;
+                 Rect::new(position.x, position.y, est_width.max(1), est_height.max(1))
             }
+            // Fallback for others (return empty or minimal rect)
+            _ => Rect::default(),
         }
     }
 }
@@ -80,46 +134,53 @@ impl DrawList {
         &mut self.cmds
     }
 
-    pub fn clear(&mut self, xrgb: u32) {
-        self.cmds.push(DrawCmd::Clear { xrgb });
+    pub fn clear(&mut self, color: Color) {
+        self.cmds.push(DrawCmd::Clear { color });
     }
 
-    pub fn rect(&mut self, x: i32, y: i32, w: i32, h: i32, xrgb: u32) {
-        self.cmds.push(DrawCmd::Rect { x, y, w, h, xrgb });
+    pub fn rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
+        self.cmds.push(DrawCmd::FillRect { 
+            rect: Rect::new(x, y, w, h), 
+            color 
+        });
     }
 
-    pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, xrgb: u32) {
-        self.cmds.push(DrawCmd::Line { x0, y0, x1, y1, xrgb });
+    pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
+        self.cmds.push(DrawCmd::Line { 
+            from: Point::new(x0, y0), 
+            to: Point::new(x1, y1), 
+            color,
+            width: 1 
+        });
     }
 
     pub fn blit_image(&mut self, image: &crate::asset::Image, x: i32, y: i32) {
-        self.cmds.push(DrawCmd::BlitImage { 
+        let dest = Rect::new(x, y, image.width as i32, image.height as i32);
+        self.cmds.push(DrawCmd::DrawImage { 
             image: image.clone(),
-            x, y 
+            dest 
         });
     }
 
     pub fn cursor(&mut self, frame: &crate::asset::CursorFrame, x: i32, y: i32) {
         self.cmds.push(DrawCmd::Cursor {
             frame: frame.clone(),
-            x, y
+            position: Point::new(x, y),
         });
     }
 
     pub fn nine_slice(&mut self, image: &crate::asset::Image, dst: Rect, insets: Insets) {
-        self.cmds.push(DrawCmd::NineSlice {
+        self.cmds.push(DrawCmd::DrawNineSlice {
             image: image.clone(),
-            dst,
-            insets,
+            dest: dst,
+            margins: insets,
         });
     }
 
-    /// Draw text at position with font size (in pixels) and color
-    pub fn text(&mut self, text: &str, x: i32, y: i32, size: f32, color: u32) {
-        self.cmds.push(DrawCmd::Text {
+    pub fn text(&mut self, text: &str, x: i32, y: i32, size: f32, color: Color) {
+        self.cmds.push(DrawCmd::DrawText {
             text: text.into(),
-            x,
-            y,
+            position: Point::new(x, y),
             size,
             color,
         });
@@ -129,3 +190,4 @@ impl DrawList {
         self.cmds.iter()
     }
 }
+

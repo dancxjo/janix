@@ -1,15 +1,77 @@
 //! CPU Rasterizer - executes LowLevelOps on a framebuffer Surface
 //!
 //! Supports both full-frame and damage-aware rendering.
+//! strict adherence to Portable Render ISA.
 
-use crate::damage::{Damage, Rect};
+use alloc::vec::Vec;
+use crate::damage::{Damage, Rect as DamageRect};
 use crate::drawlist::DrawList;
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use crate::asset::{Image, FontAsset, AssetBank};
+use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point};
 
 // Global asset bank access for font retrieval
 static ASSETS: AssetBank = AssetBank::new();
+
+/// Execution Context maintaining state stacks
+struct RasterContext<'a> {
+    surface: &'a mut Surface,
+    clip_stack: Vec<Rect>,
+    transform_stack: Vec<Transform2D>,
+    current_clip: Rect,
+    current_transform: Transform2D,
+}
+
+impl<'a> RasterContext<'a> {
+    fn new(surface: &'a mut Surface) -> Self {
+        let full_rect = Rect::new(0, 0, surface.width(), surface.height());
+        Self {
+            surface,
+            clip_stack: Vec::with_capacity(4),
+            transform_stack: Vec::with_capacity(4),
+            current_clip: full_rect,
+            current_transform: Transform2D::identity(),
+        }
+    }
+
+    fn push_clip(&mut self, rect: Rect) {
+        self.clip_stack.push(self.current_clip);
+        // Intersect new clip with current clip
+        // Note: transform applies to the clip rect too?
+        // Usually, set_clip(rect) means "set clip to intersection of current clip and transformed rect"
+        let transformed_rect = self.current_transform.transform_rect(rect);
+        
+        if let Some(intersection) = self.current_clip.intersection(&transformed_rect) {
+            self.current_clip = intersection;
+        } else {
+            // Empty intersection - clip to nothing
+            self.current_clip = Rect::new(0, 0, 0, 0);
+        }
+    }
+
+    fn pop_clip(&mut self) {
+        if let Some(prev) = self.clip_stack.pop() {
+            self.current_clip = prev;
+        }
+    }
+
+    fn push_transform(&mut self, t: Transform2D) {
+        self.transform_stack.push(self.current_transform);
+        self.current_transform = self.current_transform.combine(&t);
+    }
+
+    fn pop_transform(&mut self) {
+        if let Some(prev) = self.transform_stack.pop() {
+            self.current_transform = prev;
+        }
+    }
+
+    // Helper to check if a rect is visible within current clip
+    fn is_visible(&self, r: Rect) -> bool {
+        self.current_clip.intersection(&r).is_some()
+    }
+}
 
 /// Execute a DrawList on a CPU surface (convenience wrapper)
 pub fn execute(surface: &mut Surface, list: &DrawList) {
@@ -18,47 +80,92 @@ pub fn execute(surface: &mut Surface, list: &DrawList) {
 }
 
 /// Execute a DrawList respecting damage regions
-/// 
-/// Only pixels within damaged rectangles are updated.
-/// This can significantly reduce CPU work when only cursor moves.
 pub fn execute_with_damage(surface: &mut Surface, list: &DrawList, damage: &Damage) {
-    // If full-frame damage or no damage tracking, fall back to full render
     if damage.is_full {
         execute(surface, list);
         return;
     }
-
     let lowered = lower(list);
     execute_lowered_with_damage(surface, &lowered, damage);
 }
 
-/// Execute lowered ops directly (allows future targets to share this interface)
+/// Execute lowered ops directly
 pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
-    // Get font once per frame if available
-    let font = ASSETS.get_font();
-    
+    let mut ctx = RasterContext::new(surface);
+    let font = ASSETS.get_font(); // Get font once
+
     for op in lowered.ops.iter() {
         match op {
-            LowLevelOp::Clear { xrgb } => clear(surface, *xrgb),
-            LowLevelOp::FillRect { x, y, w, h, xrgb } => fill_rect(surface, *x, *y, *w, *h, *xrgb),
-            LowLevelOp::Line { x0, y0, x1, y1, xrgb } => line(surface, *x0, *y0, *x1, *y1, *xrgb),
-            LowLevelOp::Blit { image, src, dst } => blit_scaled(surface, image, src, dst),
-            LowLevelOp::BlitAlpha { image, src, dst, shadow_factor } => {
-                blit_alpha_scaled(surface, image, src, dst, *shadow_factor);
-            }
-            LowLevelOp::TextSpan { text, x, y, size, color } => {
+            LowLevelOp::Clear { color } => clear(ctx.surface, color.to_u32()),
+            
+            LowLevelOp::PushClip { rect } => ctx.push_clip(*rect),
+            LowLevelOp::PopClip => ctx.pop_clip(),
+            
+            LowLevelOp::PushTransform { t } => ctx.push_transform(*t),
+            LowLevelOp::PopTransform => ctx.pop_transform(),
+
+            LowLevelOp::FillRect { rect, color } => {
+                let t_rect = ctx.current_transform.transform_rect(*rect);
+                if let Some(clipped) = ctx.current_clip.intersection(&t_rect) {
+                     fill_rect(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
+                }
+            },
+            
+            LowLevelOp::StrokeRect { rect, color, width } => {
+                 let t_rect = ctx.current_transform.transform_rect(*rect);
+                 // Simple stroke clipping: clip each side (fill_rect handles bounds check, but we need clip rect)
+                 stroke_rect_clipped(ctx.surface, &t_rect, *width, color.to_u32(), &ctx.current_clip);
+            },
+            
+            LowLevelOp::Line { from, to, color, width: _ } => {
+                let p0 = ctx.current_transform.transform_point(*from);
+                let p1 = ctx.current_transform.transform_point(*to);
+                // Cohen-Sutherland or simple bounds check?
+                // For now, just draw. Primitive line() has bounds checks.
+                // Proper clipping for lines requires calculating intersection points.
+                // TODO: Line clipping against current_clip
+                line(ctx.surface, p0.x, p0.y, p1.x, p1.y, color.to_u32());
+            },
+
+            LowLevelOp::FillCircle { center, radius, color } => {
+                let c = ctx.current_transform.transform_point(*center);
+                // TODO: Circle clipping
+                fill_circle(ctx.surface, c.x, c.y, *radius, color.to_u32());
+            },
+
+            LowLevelOp::BlitOpaque { image, src, dst, filter } => {
+                let t_dst = ctx.current_transform.transform_rect(*dst);
+                // Intersect with clip
+                if let Some(clipped_dst) = ctx.current_clip.intersection(&t_dst) {
+                    blit_opaque(ctx.surface, image, src, &t_dst, &clipped_dst, *filter);
+                }
+            },
+
+            LowLevelOp::BlitAlpha { image, src, dst, filter, blend, const_alpha } => {
+                let t_dst = ctx.current_transform.transform_rect(*dst);
+                if let Some(clipped_dst) = ctx.current_clip.intersection(&t_dst) {
+                    blit_alpha(ctx.surface, image, src, &t_dst, &clipped_dst, *filter, *blend, *const_alpha);
+                }
+            },
+
+            LowLevelOp::TextSpan { text, pos, size, color } => {
                 if let Some(ref f) = font {
-                    rasterize_text(surface, f, text, *x, *y, *size, *color);
+                     let p = ctx.current_transform.transform_point(*pos);
+                     // Text clipping is complex (glyph by glyph)
+                     // For now pass clip rect to rasterizer
+                     rasterize_text_clipped(ctx.surface, f, text, p.x, p.y, *size, color.to_u32(), &ctx.current_clip);
                 }
             }
         }
     }
 }
 
-/// Execute lowered ops clipped to damage regions
+/// Execute lowered ops with damage tracking optimization
+/// This basically applies an *additional* clip (the damage rect) on top of the op stream.
+/// However, since damage is a set of rects, we might run the ops multiple times or union the clip.
+/// For simplicity in v0: We iterate damage rects and set the initial clip to the damage rect.
 pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw, damage: &Damage) {
-    // Collect damage rects into a local array for iteration
-    let mut damage_rects = [Rect::default(); 8];
+    let mut damage_rects = [DamageRect::default(); 8];
     let mut damage_count = 0;
     for rect in damage.iter() {
         if damage_count < 8 {
@@ -67,91 +174,98 @@ pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw,
         }
     }
 
-    // Get font once if available
-    let font = ASSETS.get_font();
+    for i in 0..damage_count {
+        let d = damage_rects[i];
+        // Create a context where the initial clip is the damage rect
+        let mut ctx = RasterContext::new(surface);
+        // Override initial clip
+        ctx.current_clip = Rect::new(d.x, d.y, d.w, d.h);
 
-    // For each operation, render only the portions that intersect with damage
+        execute_lowered_on_context(&mut ctx, lowered);
+    }
+}
+
+// Helper to run ops on an existing context (used by damage loop)
+fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
+    let font = ASSETS.get_font();
     for op in lowered.ops.iter() {
         match op {
-            LowLevelOp::Clear { xrgb } => {
-                // Clear only damaged regions
-                for i in 0..damage_count {
-                    let r = damage_rects[i];
-                    fill_rect(surface, r.x, r.y, r.w, r.h, *xrgb);
+            LowLevelOp::Clear { color } => {
+                // Clear respects clip (which is damage rect)
+                fill_rect(ctx.surface, ctx.current_clip.x(), ctx.current_clip.y(), ctx.current_clip.width(), ctx.current_clip.height(), color.to_u32());
+            },
+            
+            LowLevelOp::PushClip { rect } => ctx.push_clip(*rect),
+            LowLevelOp::PopClip => ctx.pop_clip(),
+            
+            LowLevelOp::PushTransform { t } => ctx.push_transform(*t),
+            LowLevelOp::PopTransform => ctx.pop_transform(),
+            
+            LowLevelOp::FillRect { rect, color } => {
+                let t_rect = ctx.current_transform.transform_rect(*rect);
+                if let Some(clipped) = ctx.current_clip.intersection(&t_rect) {
+                     fill_rect(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
                 }
-            }
-            LowLevelOp::FillRect { x, y, w, h, xrgb } => {
-                let op_rect = Rect::new(*x, *y, *w, *h);
-                for i in 0..damage_count {
-                    let intersect = op_rect.intersect(damage_rects[i]);
-                    if !intersect.is_empty() {
-                        fill_rect(surface, intersect.x, intersect.y, intersect.w, intersect.h, *xrgb);
-                    }
+            },
+            
+            LowLevelOp::StrokeRect { rect, color, width } => {
+                 let t_rect = ctx.current_transform.transform_rect(*rect);
+                 stroke_rect_clipped(ctx.surface, &t_rect, *width, color.to_u32(), &ctx.current_clip);
+            },
+            
+            LowLevelOp::Line { from, to, color, width: _ } => {
+                let p0 = ctx.current_transform.transform_point(*from);
+                let p1 = ctx.current_transform.transform_point(*to);
+                // TODO: Line clipping
+                 let line_bounds = Rect::new(p0.x.min(p1.x), p0.y.min(p1.y), (p0.x - p1.x).abs() + 1, (p0.y - p1.y).abs() + 1);
+                 if ctx.current_clip.intersection(&line_bounds).is_some() {
+                    line(ctx.surface, p0.x, p0.y, p1.x, p1.y, color.to_u32());
+                 }
+            },
+
+            LowLevelOp::FillCircle { center, radius, color } => {
+                let c = ctx.current_transform.transform_point(*center);
+                let r = *radius;
+                let circle_bounds = Rect::new(c.x - r, c.y - r, r*2, r*2);
+                 if ctx.current_clip.intersection(&circle_bounds).is_some() {
+                    fill_circle(ctx.surface, c.x, c.y, r, color.to_u32());
+                 }
+            },
+
+            LowLevelOp::BlitOpaque { image, src, dst, filter } => {
+                let t_dst = ctx.current_transform.transform_rect(*dst);
+                if let Some(clipped_dst) = ctx.current_clip.intersection(&t_dst) {
+                    blit_opaque(ctx.surface, image, src, &t_dst, &clipped_dst, *filter);
                 }
-            }
-            LowLevelOp::Line { x0, y0, x1, y1, xrgb } => {
-                // Lines are typically small; just draw them entirely if they intersect any damage
-                let line_rect = line_bbox(*x0, *y0, *x1, *y1);
-                for i in 0..damage_count {
-                    if !line_rect.intersect(damage_rects[i]).is_empty() {
-                        line(surface, *x0, *y0, *x1, *y1, *xrgb);
-                        break; // Only draw once
-                    }
+            },
+
+            LowLevelOp::BlitAlpha { image, src, dst, filter, blend, const_alpha } => {
+                let t_dst = ctx.current_transform.transform_rect(*dst);
+                if let Some(clipped_dst) = ctx.current_clip.intersection(&t_dst) {
+                    blit_alpha(ctx.surface, image, src, &t_dst, &clipped_dst, *filter, *blend, *const_alpha);
                 }
-            }
-            LowLevelOp::Blit { image, src, dst } => {
-                for i in 0..damage_count {
-                    blit_scaled_clipped(surface, image, src, dst, damage_rects[i]);
-                }
-            }
-            LowLevelOp::BlitAlpha { image, src, dst, shadow_factor } => {
-                for i in 0..damage_count {
-                    blit_alpha_scaled_clipped(surface, image, src, dst, *shadow_factor, damage_rects[i]);
-                }
-            }
-            LowLevelOp::TextSpan { text, x, y, size, color } => {
-                // Text rendering - check if any damage intersects the text bbox
-                if let Some(ref f) = font {
-                    let text_rect = text_bbox(text, *x, *y, *size);
-                    for i in 0..damage_count {
-                        if !text_rect.intersect(damage_rects[i]).is_empty() {
-                            rasterize_text(surface, f, text, *x, *y, *size, *color);
-                            break; // Only draw once
-                        }
-                    }
+            },
+            
+            LowLevelOp::TextSpan { text, pos, size, color } => {
+                 if let Some(ref f) = font {
+                     let p = ctx.current_transform.transform_point(*pos);
+                     rasterize_text_clipped(ctx.surface, f, text, p.x, p.y, *size, color.to_u32(), &ctx.current_clip);
                 }
             }
         }
     }
 }
 
-fn line_bbox(x0: i32, y0: i32, x1: i32, y1: i32) -> Rect {
-    let min_x = x0.min(x1);
-    let min_y = y0.min(y1);
-    let max_x = x0.max(x1);
-    let max_y = y0.max(y1);
-    Rect::new(min_x, min_y, max_x - min_x + 1, max_y - min_y + 1)
-}
-
-fn text_bbox(text: &str, x: i32, y: i32, size: f32) -> Rect {
-    let est_width = (text.len() as f32 * size * 0.6) as i32;
-    let est_height = (size * 1.2) as i32;
-    Rect::new(x, y, est_width.max(1), est_height.max(1))
-}
+// --- Primitives ---
 
 pub fn clear(surface: &mut Surface, xrgb: u32) {
     fill_rect(surface, 0, 0, surface.width(), surface.height(), xrgb);
 }
 
 pub fn fill_rect(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, xrgb: u32) {
-    if w <= 0 || h <= 0 {
-        return;
-    }
-
-    let mut x0 = x;
-    let mut y0 = y;
-    let mut x1 = x + w;
-    let mut y1 = y + h;
+    if w <= 0 || h <= 0 { return; }
+    let mut x0 = x; let mut y0 = y;
+    let mut x1 = x + w; let mut y1 = y + h;
 
     if x0 < 0 { x0 = 0; }
     if y0 < 0 { y0 = 0; }
@@ -165,6 +279,37 @@ pub fn fill_rect(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, xrgb: u3
     }
 }
 
+fn stroke_rect_clipped(surface: &mut Surface, rect: &Rect, width: i32, color: u32, clip: &Rect) {
+    // 4 fill_rects, each clipped
+    let t = Rect::new(rect.x(), rect.y(), rect.width(), width);
+    let b = Rect::new(rect.x(), rect.y() + rect.height() - width, rect.width(), width);
+    let l = Rect::new(rect.x(), rect.y() + width, width, rect.height() - 2*width);
+    let r = Rect::new(rect.x() + rect.width() - width, rect.y() + width, width, rect.height() - 2*width);
+
+    for r_part in [t, b, l, r] {
+        if let Some(c) = r_part.intersection(clip) {
+            fill_rect(surface, c.x(), c.y(), c.width(), c.height(), color);
+        }
+    }
+}
+
+pub fn fill_circle(surface: &mut Surface, cx: i32, cy: i32, r: i32, xrgb: u32) {
+    let x0 = (cx - r).max(0);
+    let y0 = (cy - r).max(0);
+    let x1 = (cx + r).min(surface.width());
+    let y1 = (cy + r).min(surface.height());
+    let r2 = r * r;
+
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let dx = x - cx; let dy = y - cy;
+            if dx*dx + dy*dy <= r2 {
+                surface.put_px(x, y, xrgb);
+            }
+        }
+    }
+}
+
 pub fn line(surface: &mut Surface, mut x0: i32, mut y0: i32, x1: i32, y1: i32, xrgb: u32) {
     let dx = (x1 - x0).abs();
     let sx = if x0 < x1 { 1 } else { -1 };
@@ -173,326 +318,183 @@ pub fn line(surface: &mut Surface, mut x0: i32, mut y0: i32, x1: i32, y1: i32, x
     let mut err = dx + dy;
 
     loop {
-        surface.put_px(x0, y0, xrgb);
-        if x0 == x1 && y0 == y1 {
-            break;
+        // Bounds check (primitive clipping)
+        if x0 >= 0 && y0 >= 0 && x0 < surface.width() && y0 < surface.height() {
+            surface.put_px(x0, y0, xrgb);
         }
+        if x0 == x1 && y0 == y1 { break; }
         let e2 = err * 2;
-        if e2 >= dy {
-            err += dy;
-            x0 += sx;
-        }
-        if e2 <= dx {
-            err += dx;
-            y0 += sy;
+        if e2 >= dy { err += dy; x0 += sx; }
+        if e2 <= dx { err += dx; y0 += sy; }
+    }
+}
+
+// --- Images ---
+
+fn blit_opaque(surface: &mut Surface, image: &Image, src: &Rect, full_dst: &Rect, clipped_dst: &Rect, _filter: FilterMode) {
+    // Calculate mapping: for a pixel (dx, dy) in clipped_dst, what is (sx, sy) in src?
+    // Scale factors based on FULL dst
+    let scale_x = src.width() as f32 / full_dst.width() as f32;
+    let scale_y = src.height() as f32 / full_dst.height() as f32;
+
+    let cx0 = clipped_dst.x();
+    let cy0 = clipped_dst.y();
+    let cx1 = cx0 + clipped_dst.width();
+    let cy1 = cy0 + clipped_dst.height();
+
+    for dy in cy0..cy1 {
+        for dx in cx0..cx1 {
+            // Nearest neighbor sample
+            let sx_f = (dx - full_dst.x()) as f32 * scale_x;
+            let sy_f = (dy - full_dst.y()) as f32 * scale_y;
+            let sx = (src.x() as f32 + sx_f) as i32;
+            let sy = (src.y() as f32 + sy_f) as i32;
+
+            if sx >= 0 && sy >= 0 && sx < image.width as i32 && sy < image.height as i32 {
+                let idx = (sy as usize) * (image.width as usize) + (sx as usize);
+                // Safety check
+                if idx < image.pixels.len() {
+                    let px = image.pixels[idx];
+                    surface.put_px(dx, dy, px);
+                }
+            }
         }
     }
 }
 
-/// Rasterize text using fontdue
-fn rasterize_text(surface: &mut Surface, font: &FontAsset, text: &str, x: i32, y: i32, size: f32, color: u32) {
-    let mut cursor_x = x as f32;
-    let baseline_y = y as f32 + size; // Baseline is below the origin
+fn blit_alpha(
+    surface: &mut Surface, 
+    image: &Image, 
+    src: &Rect, 
+    full_dst: &Rect, 
+    clipped_dst: &Rect, 
+    _filter: FilterMode, 
+    blend: BlendMode, 
+    const_alpha: Option<u8>
+) {
+    let scale_x = src.width() as f32 / full_dst.width() as f32;
+    let scale_y = src.height() as f32 / full_dst.height() as f32;
 
-    // Extract RGB from color
+    let cx0 = clipped_dst.x();
+    let cy0 = clipped_dst.y();
+    let cx1 = cx0 + clipped_dst.width();
+    let cy1 = cy0 + clipped_dst.height();
+
+    let ca = const_alpha.unwrap_or(255) as u32;
+
+    for dy in cy0..cy1 {
+        for dx in cx0..cx1 {
+            let sx_f = (dx - full_dst.x()) as f32 * scale_x;
+            let sy_f = (dy - full_dst.y()) as f32 * scale_y;
+            let sx = (src.x() as f32 + sx_f) as i32;
+            let sy = (src.y() as f32 + sy_f) as i32;
+
+            if sx >= 0 && sy >= 0 && sx < image.width as i32 && sy < image.height as i32 {
+                let idx = (sy as usize) * (image.width as usize) + (sx as usize);
+                if idx < image.pixels.len() {
+                    let src_px = image.pixels[idx];
+                    let mut a = (src_px >> 24) & 0xFF; // Source alpha
+                    
+                    // Modulate alpha
+                    if ca != 255 {
+                        a = (a * ca) / 255;
+                    }
+                    
+                    if a == 0 { continue; } // Fully transparent
+
+                    if blend == BlendMode::Src || a == 255 {
+                        // Replace (ifSrc) or Opaque (ifSrcOver and a=255)
+                        // If Src mode, we write even if alpha is low? Usually yes.
+                        // But if const_alpha is used for darkening (shadow), we probably mean alpha blending.
+                        // Assuming SrcOver for standard drawing.
+                         if blend == BlendMode::Src {
+                             surface.put_px(dx, dy, src_px); // Note: doesn't apply const_alpha color modulation
+                             continue;
+                         }
+                    }
+
+                    // Standard SrcOver composition
+                    let offset = (surface.stride_bytes / 4) * (dy as usize) + (dx as usize);
+                    let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
+                    let dst_px = unsafe { *dst_ptr };
+
+                    let da = 255 - a;
+                    
+                    let src_r = (src_px >> 16) & 0xFF;
+                    let src_g = (src_px >> 8) & 0xFF;
+                    let src_b = src_px & 0xFF;
+                    
+                    // Note: If const_alpha is for 'shadow', we typically want black source with alpha.
+                    // If source image is white-transparent, modulating alpha works.
+                    // If we want to modulate COLOR too (fade out), we should multiply RGB by ca too.
+                    // Implementation choice: const_alpha modulates Alpha channel. 
+                    // To do a shadow from a colored cursor, we need to treat source color as black?
+                    // The prompt said: "const_alpha multiplies the per-pixel source alpha (and optionally the color) uniformly."
+                    // For shadow cursor (which is black+alpha or colored), we want 30% opacity.
+                    // Simple alpha modulation is enough if image is correct.
+
+                    let dst_r = (dst_px >> 16) & 0xFF;
+                    let dst_g = (dst_px >> 8) & 0xFF;
+                    let dst_b = dst_px & 0xFF;
+
+                    let out_r = (src_r * a + dst_r * da) / 255;
+                    let out_g = (src_g * a + dst_g * da) / 255;
+                    let out_b = (src_b * a + dst_b * da) / 255;
+
+                    unsafe { *dst_ptr = (out_r << 16) | (out_g << 8) | out_b; }
+                }
+            }
+        }
+    }
+}
+
+// --- Text ---
+
+fn rasterize_text_clipped(surface: &mut Surface, font: &FontAsset, text: &str, x: i32, y: i32, size: f32, color: u32, clip: &Rect) {
+    let mut cursor_x = x as f32;
+    let baseline_y = y as f32 + size;
+
     let r = ((color >> 16) & 0xFF) as u8;
     let g = ((color >> 8) & 0xFF) as u8;
     let b = (color & 0xFF) as u8;
 
     for ch in text.chars() {
-        // Rasterize glyph
         let (metrics, bitmap) = font.font.rasterize(ch, size);
-        
-        // Calculate position (fontdue metrics use top-left of the glyph bbox)
         let gx = cursor_x as i32 + metrics.xmin;
         let gy = baseline_y as i32 - metrics.height as i32 - metrics.ymin;
 
-        // Blend each pixel of the glyph onto the surface
         for py in 0..metrics.height {
             for px in 0..metrics.width {
-                let coverage = bitmap[py * metrics.width + px];
-                if coverage == 0 {
+                let sx = gx + px as i32;
+                let sy = gy + py as i32;
+                
+                // Clip check
+                if sx < clip.x() || sx >= clip.x() + clip.width() || sy < clip.y() || sy >= clip.y() + clip.height() {
                     continue;
                 }
 
-                let sx = gx + px as i32;
-                let sy = gy + py as i32;
+                let coverage = bitmap[py * metrics.width + px];
+                if coverage == 0 { continue; }
 
-                if sx >= 0 && sx < surface.width() && sy >= 0 && sy < surface.height() {
-                    if coverage == 255 {
-                        // Fully opaque - just write the color
-                        surface.put_px(sx, sy, color);
-                    } else {
-                        // Alpha blend using coverage as alpha
-                        let alpha = coverage as u32;
-                        let inv_alpha = 255 - alpha;
+                let alpha = coverage as u32;
+                let inv_alpha = 255 - alpha;
 
-                        let offset = (surface.stride_bytes / 4) * (sy as usize) + (sx as usize);
-                        let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
-                        let dst_px = unsafe { *dst_ptr };
+                let offset = (surface.stride_bytes / 4) * (sy as usize) + (sx as usize);
+                let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
+                let dst_px = unsafe { *dst_ptr };
 
-                        let dst_r = (dst_px >> 16) & 0xFF;
-                        let dst_g = (dst_px >> 8) & 0xFF;
-                        let dst_b = dst_px & 0xFF;
+                let dst_r = (dst_px >> 16) & 0xFF;
+                let dst_g = (dst_px >> 8) & 0xFF;
+                let dst_b = dst_px & 0xFF;
 
-                        let out_r = ((r as u32 * alpha) + (dst_r * inv_alpha)) / 255;
-                        let out_g = ((g as u32 * alpha) + (dst_g * inv_alpha)) / 255;
-                        let out_b = ((b as u32 * alpha) + (dst_b * inv_alpha)) / 255;
+                let out_r = ((r as u32 * alpha) + (dst_r * inv_alpha)) / 255;
+                let out_g = ((g as u32 * alpha) + (dst_g * inv_alpha)) / 255;
+                let out_b = ((b as u32 * alpha) + (dst_b * inv_alpha)) / 255;
 
-                        unsafe { *dst_ptr = (out_r << 16) | (out_g << 8) | out_b; }
-                    }
-                }
+                unsafe { *dst_ptr = (out_r << 16) | (out_g << 8) | out_b; }
             }
         }
-
-        // Advance cursor
         cursor_x += metrics.advance_width;
     }
 }
 
-/// Blit with scaling support (for nine-slice stretching)
-fn blit_scaled(surface: &mut Surface, image: &Image, src: &Rect, dst: &Rect) {
-    // For 1:1 blits (most common case), use fast path
-    if src.w == dst.w && src.h == dst.h {
-        blit_image_region(surface, image, src, dst.x, dst.y);
-        return;
-    }
-
-    // Scaled blit using nearest-neighbor sampling
-    let dst_x0 = dst.x.max(0);
-    let dst_y0 = dst.y.max(0);
-    let dst_x1 = (dst.x + dst.w).min(surface.width());
-    let dst_y1 = (dst.y + dst.h).min(surface.height());
-
-    if dst_x0 >= dst_x1 || dst_y0 >= dst_y1 || dst.w <= 0 || dst.h <= 0 || src.w <= 0 || src.h <= 0 {
-        return;
-    }
-
-    for dy in dst_y0..dst_y1 {
-        for dx in dst_x0..dst_x1 {
-            // Map destination coordinate to source
-            let sx = src.x + ((dx - dst.x) * src.w / dst.w);
-            let sy = src.y + ((dy - dst.y) * src.h / dst.h);
-
-            if sx >= 0 && sy >= 0 && sx < image.width as i32 && sy < image.height as i32 {
-                let idx = (sy as usize) * (image.width as usize) + (sx as usize);
-                if idx < image.pixels.len() {
-                    let px = image.pixels[idx];
-                    // Skip fully transparent pixels
-                    if (px >> 24) != 0 {
-                        surface.put_px(dx, dy, px);
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// Blit clipped to a specific damage rectangle
-fn blit_scaled_clipped(surface: &mut Surface, image: &Image, src: &Rect, dst: &Rect, clip: Rect) {
-    // Compute the intersection of dst and clip
-    let clipped_dst = dst.intersect(clip);
-    if clipped_dst.is_empty() {
-        return;
-    }
-
-    // Adjust src rect proportionally
-    let scale_x = if dst.w > 0 { src.w as f32 / dst.w as f32 } else { 1.0 };
-    let scale_y = if dst.h > 0 { src.h as f32 / dst.h as f32 } else { 1.0 };
-
-    let src_x_offset = ((clipped_dst.x - dst.x) as f32 * scale_x) as i32;
-    let src_y_offset = ((clipped_dst.y - dst.y) as f32 * scale_y) as i32;
-    let src_w = (clipped_dst.w as f32 * scale_x) as i32;
-    let src_h = (clipped_dst.h as f32 * scale_y) as i32;
-
-    let adjusted_src = Rect::new(src.x + src_x_offset, src.y + src_y_offset, src_w, src_h);
-
-    blit_scaled(surface, image, &adjusted_src, &clipped_dst);
-}
-
-/// Fast path for 1:1 region blit (no scaling)
-fn blit_image_region(surface: &mut Surface, image: &Image, src: &Rect, dst_x: i32, dst_y: i32) {
-    let img_w = image.width as i32;
-    let img_h = image.height as i32;
-
-    // Clamp source rect to image bounds
-    let src_x0 = src.x.max(0);
-    let src_y0 = src.y.max(0);
-    let src_x1 = (src.x + src.w).min(img_w);
-    let src_y1 = (src.y + src.h).min(img_h);
-
-    if src_x0 >= src_x1 || src_y0 >= src_y1 {
-        return;
-    }
-
-    let actual_w = src_x1 - src_x0;
-    let actual_h = src_y1 - src_y0;
-
-    // Destination clipping
-    let mut draw_x = dst_x + (src_x0 - src.x);
-    let mut draw_y = dst_y + (src_y0 - src.y);
-    let mut draw_w = actual_w;
-    let mut draw_h = actual_h;
-    let mut src_off_x = 0;
-    let mut src_off_y = 0;
-
-    if draw_x < 0 {
-        src_off_x = -draw_x;
-        draw_w += draw_x;
-        draw_x = 0;
-    }
-    if draw_y < 0 {
-        src_off_y = -draw_y;
-        draw_h += draw_y;
-        draw_y = 0;
-    }
-    if draw_x + draw_w > surface.width() {
-        draw_w = surface.width() - draw_x;
-    }
-    if draw_y + draw_h > surface.height() {
-        draw_h = surface.height() - draw_y;
-    }
-
-    if draw_w <= 0 || draw_h <= 0 {
-        return;
-    }
-
-    // Copy rows
-    for y in 0..draw_h {
-        let sy = (src_y0 + src_off_y + y) as usize;
-        let dy = (draw_y + y) as usize;
-
-        let src_row_start = sy * (image.width as usize) + (src_x0 + src_off_x) as usize;
-        let dst_row_start = dy * (surface.stride_bytes / 4) + draw_x as usize;
-
-        let src_slice = &image.pixels[src_row_start..src_row_start + draw_w as usize];
-        let dst_ptr = unsafe { (surface.ptr as *mut u32).add(dst_row_start) };
-
-        unsafe {
-            core::ptr::copy_nonoverlapping(src_slice.as_ptr(), dst_ptr, draw_w as usize);
-        }
-    }
-}
-
-/// Alpha blit with optional shadow factor for darkening/fading
-fn blit_alpha_scaled(surface: &mut Surface, image: &Image, src: &Rect, dst: &Rect, shadow_factor: Option<u8>) {
-    let dst_x0 = dst.x.max(0);
-    let dst_y0 = dst.y.max(0);
-    let dst_x1 = (dst.x + dst.w).min(surface.width());
-    let dst_y1 = (dst.y + dst.h).min(surface.height());
-
-    if dst_x0 >= dst_x1 || dst_y0 >= dst_y1 || dst.w <= 0 || dst.h <= 0 || src.w <= 0 || src.h <= 0 {
-        return;
-    }
-
-    for dy in dst_y0..dst_y1 {
-        for dx in dst_x0..dst_x1 {
-            blit_alpha_pixel(surface, image, src, dst, dx, dy, shadow_factor);
-        }
-    }
-}
-
-/// Alpha blit clipped to a specific damage rectangle  
-fn blit_alpha_scaled_clipped(surface: &mut Surface, image: &Image, src: &Rect, dst: &Rect, shadow_factor: Option<u8>, clip: Rect) {
-    let clipped_dst = dst.intersect(clip);
-    if clipped_dst.is_empty() {
-        return;
-    }
-
-    let dst_x0 = clipped_dst.x.max(0);
-    let dst_y0 = clipped_dst.y.max(0);
-    let dst_x1 = (clipped_dst.x + clipped_dst.w).min(surface.width());
-    let dst_y1 = (clipped_dst.y + clipped_dst.h).min(surface.height());
-
-    if dst_x0 >= dst_x1 || dst_y0 >= dst_y1 {
-        return;
-    }
-
-    for dy in dst_y0..dst_y1 {
-        for dx in dst_x0..dst_x1 {
-            blit_alpha_pixel(surface, image, src, dst, dx, dy, shadow_factor);
-        }
-    }
-}
-
-/// Blit a single alpha-blended pixel
-fn blit_alpha_pixel(surface: &mut Surface, image: &Image, src: &Rect, dst: &Rect, dx: i32, dy: i32, shadow_factor: Option<u8>) {
-    // Map destination coordinate to source (handle scaling)
-    let sx = if dst.w == src.w {
-        src.x + (dx - dst.x)
-    } else {
-        src.x + ((dx - dst.x) * src.w / dst.w)
-    };
-    let sy = if dst.h == src.h {
-        src.y + (dy - dst.y)
-    } else {
-        src.y + ((dy - dst.y) * src.h / dst.h)
-    };
-
-    if sx < 0 || sy < 0 || sx >= image.width as i32 || sy >= image.height as i32 {
-        return;
-    }
-
-    let idx = (sy as usize) * (image.width as usize) + (sx as usize);
-    if idx >= image.pixels.len() {
-        return;
-    }
-
-    let src_px = image.pixels[idx];
-    let mut alpha = (src_px >> 24) & 0xFF;
-
-    if alpha == 0 {
-        return;
-    }
-
-    // Apply shadow factor if present (darkens and reduces opacity)
-    if let Some(factor) = shadow_factor {
-        alpha = (alpha * factor as u32) >> 8;
-        if alpha == 0 {
-            return;
-        }
-        // For shadows, we darken the color by blending toward black
-        let offset = (surface.stride_bytes / 4) * (dy as usize) + (dx as usize);
-        let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
-        let dst_px = unsafe { *dst_ptr };
-
-        // Shadow: blend black with shadow alpha
-        let da = 255 - alpha;
-        let dst_r = (dst_px >> 16) & 0xFF;
-        let dst_g = (dst_px >> 8) & 0xFF;
-        let dst_b = dst_px & 0xFF;
-
-        let out_r = (dst_r * da) >> 8;
-        let out_g = (dst_g * da) >> 8;
-        let out_b = (dst_b * da) >> 8;
-
-        unsafe { *dst_ptr = (out_r << 16) | (out_g << 8) | out_b; }
-    } else {
-        // Normal alpha blending
-        if alpha == 255 {
-            let offset = (surface.stride_bytes / 4) * (dy as usize) + (dx as usize);
-            unsafe { *(surface.ptr as *mut u32).add(offset) = src_px; }
-        } else {
-            let offset = (surface.stride_bytes / 4) * (dy as usize) + (dx as usize);
-            let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
-            let dst_px = unsafe { *dst_ptr };
-
-            let sa = alpha;
-            let da = 255 - sa;
-
-            let src_r = (src_px >> 16) & 0xFF;
-            let src_g = (src_px >> 8) & 0xFF;
-            let src_b = src_px & 0xFF;
-
-            let dst_r = (dst_px >> 16) & 0xFF;
-            let dst_g = (dst_px >> 8) & 0xFF;
-            let dst_b = dst_px & 0xFF;
-
-            let out_r = (src_r * sa + dst_r * da) >> 8;
-            let out_g = (src_g * sa + dst_g * da) >> 8;
-            let out_b = (src_b * sa + dst_b * da) >> 8;
-
-            unsafe { *dst_ptr = (out_r << 16) | (out_g << 8) | out_b; }
-        }
-    }
-}

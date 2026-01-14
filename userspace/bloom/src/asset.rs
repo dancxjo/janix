@@ -9,7 +9,9 @@ use stem::info;
 use crate::frame::AssetGeneration;
 use crate::reclaimer;
 
-#[derive(Debug, Clone)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Image {
     pub width: u32,
     pub height: u32,
@@ -25,7 +27,7 @@ impl Image {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CursorFrame {
     pub image: Image,
     pub delay_ms: u32,
@@ -33,7 +35,7 @@ pub struct CursorFrame {
     pub hotspot_y: u32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum CursorAsset {
     Static(CursorFrame),
     Animated { frames: Arc<[CursorFrame]> },

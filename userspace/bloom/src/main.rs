@@ -12,6 +12,8 @@ mod damage;
 mod drawlist;
 mod frame;
 mod frame_loop;
+mod geometry; // Canonical geometry types
+mod isa;      // Portable Render ISA types
 mod logging;
 mod lowered;
 mod present;
@@ -196,9 +198,9 @@ fn main(arg: usize) -> ! {
 
     // Backend indicator color: green for VirtIO-GPU, red for BootFB
     let backend_indicator_color = match target.backend {
-        DisplayBackend::VirtioGpu => 0xFF00FF00, // Bright green
-        DisplayBackend::BootFB => 0xFFFF0000,    // Bright red
-        DisplayBackend::Unknown => 0xFFFFFF00,   // Yellow for unknown
+        DisplayBackend::VirtioGpu => geometry::Color::from_u32(0xFF00FF00), // Bright green
+        DisplayBackend::BootFB => geometry::Color::from_u32(0xFFFF0000),    // Bright red
+        DisplayBackend::Unknown => geometry::Color::from_u32(0xFFFFFF00),   // Yellow for unknown
     };
 
     // 2. Presenter Setup
@@ -378,8 +380,8 @@ fn main(arg: usize) -> ! {
                      }
                  }
             } else {
-                 list.clear(0x00101010);
-                 list.rect(10, 10, 20, 20, 0xFF00FF00);
+                 list.clear(geometry::Color::from_u32(0x00101010));
+                 list.rect(10, 10, 20, 20, geometry::Color::from_u32(0xFF00FF00));
             }
 
             // Backend indicator: small box in top-right corner
@@ -390,8 +392,8 @@ fn main(arg: usize) -> ! {
 
             // Demo text rendering if font is loaded
             if font_loaded {
-                list.text("thing-os", 20, 20, 24.0, 0xFFFFFF);
-                list.text(&alloc::format!("frame: {}", frame_id), 20, 50, 16.0, 0xCCCCCC);
+                list.text("thing-os", 20, 20, 24.0, geometry::Color::from_u32(0xFFFFFF));
+                list.text(&alloc::format!("frame: {}", frame_id), 20, 50, 16.0, geometry::Color::from_u32(0xCCCCCC));
                 
                 // Render Key Indicators
                 if !keys.is_empty() {
@@ -461,7 +463,7 @@ fn main(arg: usize) -> ! {
                     
                     for (name, w) in key_strings {
                         // Draw text directly (white)
-                        list.text(name, x, y, font_size, 0xFFFFFFFF);
+                        list.text(name, x, y, font_size, geometry::Color::from_u32(0xFFFFFFFF));
                         x += w + spacing;
                     }
                 }

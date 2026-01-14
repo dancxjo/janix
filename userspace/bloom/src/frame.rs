@@ -10,9 +10,11 @@
 use crate::damage::{Damage, Rect};
 use crate::drawlist::{DrawCmd, DrawList};
 
+use serde::{Deserialize, Serialize};
+
 /// Asset generation snapshot - monotonically increasing.
 /// Assets with generation > snapshot are invisible in that frame.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub struct AssetGeneration(pub u64);
 
 impl AssetGeneration {

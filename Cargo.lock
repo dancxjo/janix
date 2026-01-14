@@ -11,6 +11,9 @@ checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
 [[package]]
 name = "abi"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "adler2"
@@ -796,6 +799,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d9c4f5dac5e15c24eb999c26181a6ca40b39fe946cbe4c263c7209467bc83af2"
 
 [[package]]
+name = "fontd"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "fontdue",
+ "serde",
+ "spin 0.10.0",
+ "stem",
+]
+
+[[package]]
 name = "fontdue"
 version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1187,7 +1201,7 @@ dependencies = [
  "abi",
  "bitflags",
  "linked_list_allocator",
- "spin",
+ "spin 0.9.8",
  "stem",
 ]
 
@@ -2012,6 +2026,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spin"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d5fe4ccb98d9c292d56fec89a5e07da7fc4cf0dc11e156b41793132775d3e591"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
 name = "spinning_top"
 version = "0.2.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2063,7 +2086,7 @@ dependencies = [
  "abi",
  "linked_list_allocator",
  "pciids",
- "spin",
+ "spin 0.9.8",
  "stem-macros",
  "thing_macros",
 ]

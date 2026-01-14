@@ -1,6 +1,7 @@
 mod arch;
 pub mod graph;
 pub mod port;
+pub mod stream;
 
 use abi::device::{DEVICE_IRQ_SUBSCRIBE_DEVICE, DEVICE_IRQ_SUBSCRIBE_VECTOR};
 use abi::errors::Errno;

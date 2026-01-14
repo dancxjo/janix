@@ -12,6 +12,7 @@ mod damage;
 mod drawlist;
 mod frame;
 mod frame_loop;
+mod font_client;
 mod geometry; // Canonical geometry types
 mod isa;      // Portable Render ISA types
 mod logging;
@@ -143,11 +144,51 @@ extern "C" fn font_loader_entry() -> ! {
 fn main(arg: usize) -> ! {
     logging::init();
 
-    let arg_req = unpack_handle(arg, 0);
-    let arg_resp = unpack_handle(arg, 1);
-    let bristle_evt = unpack_handle(arg, 2);
+    let arg_val = arg;
+    let mut arg_req = 0;
+    let mut arg_resp = 0;
+    let mut bristle_evt = 0;
+    let mut svc_font_id = 0u64;
 
-    log!("[bloom] starting (arg_req={} arg_resp={} bristle={})", arg_req, arg_resp, bristle_evt);
+    // Try to map arg as Bytespace
+    use stem::thing::sys::{bytespace_map, bytespace_unmap};
+    use stem::thing::ThingId;
+    let bs_id = ThingId(arg_val as u64);
+    let mapped = bytespace_map(bs_id);
+    
+    let mut valid_bs = false;
+    if let Ok(ptr) = mapped {
+         let slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, 16) };
+         if slice[0] == 0xB100AA01 {
+             arg_req = slice[1];
+             arg_resp = slice[2];
+             bristle_evt = slice[3];
+             svc_font_id = (slice[4] as u64) | ((slice[5] as u64) << 32);
+             valid_bs = true;
+             log!("[bloom] Bootstrapped via Bytespace ID={}", arg_val);
+         }
+         let _ = bytespace_unmap(bs_id, ptr);
+    }
+    
+    if !valid_bs {
+        // Fallback or Error?
+        // Sprout was creating map. If failed, it might pass packed handles?
+        // Sprout only passes packed handles if `boot_bs` fail.
+        // Assuming Bytespace works.
+        // If not, we might be running in old environment.
+        // Try unpack legacy:
+        log!("[bloom] WARN: Bootstrap BS failed/invalid, trying packed args...");
+        arg_req = unpack_handle(arg_val, 0) as u32;
+        arg_resp = unpack_handle(arg_val, 1) as u32;
+        bristle_evt = unpack_handle(arg_val, 2) as u32;
+    }
+
+    log!("[bloom] starting (arg_req={} arg_resp={} bristle={} font_svc={})", arg_req, arg_resp, bristle_evt, svc_font_id);
+
+    // Init Font Client
+    if svc_font_id != 0 {
+        font_client::init(svc_font_id);
+    }
 
     // Spawn wallpaper loader thread
     if let Err(e) = stem::thread::spawn(wallpaper_loader_entry) {

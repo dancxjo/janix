@@ -24,7 +24,7 @@ pub struct HandleEntry {
 }
 
 /// Maximum handles per process (v0 limit)
-pub const MAX_HANDLES: usize = 32;
+pub const MAX_HANDLES: usize = 1024;
 
 /// Per-process handle table
 #[derive(Debug)]

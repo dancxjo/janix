@@ -15,6 +15,9 @@ use spin::Mutex;
 /// Global port registry
 static PORTS: Mutex<Vec<Option<Arc<Port>>>> = Mutex::new(Vec::new());
 
+/// Global Handle Table (Single Process Model for v0)
+pub static GLOBAL_HANDLE_TABLE: Mutex<HandleTable> = Mutex::new(HandleTable::new());
+
 /// Create a new port and return its ID
 pub fn create_port(capacity: usize) -> PortId {
     let port = Arc::new(Port::new(capacity));

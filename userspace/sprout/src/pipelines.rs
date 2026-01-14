@@ -270,21 +270,77 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
     }
 
+    // Create svc.Font node
+    let svc_font = thingsys::create_node("svc.Font").unwrap_or(ThingId(0));
+    
+    // Spawn fontd with svc_font ID
+    if svc_font.0 != 0 {
+        match stem::syscall::spawn_process("/fontd", svc_font.0 as usize) {
+            Ok(pid) => {
+                info!("SPROUT: Spawned fontd (PID={}) handling svc.Font={}", pid, svc_font.0);
+                tasks.push(ManagedTask {
+                    name: "/fontd".to_string(),
+                    kind: TaskKind::App,
+                    module_path: "/fontd".to_string(),
+                    pid: Some(pid),
+                    restarts: 0,
+                });
+            }
+            Err(e) => {
+                 stem::error!("SPROUT: Failed to spawn fontd: {:?}", e);
+            }
+        }
+    } else {
+        stem::error!("SPROUT: Failed to create svc.Font node");
+    }
+
     let (drv_req_write, drv_resp_read) = display
         .as_ref()
         .map(|d| (d.drv_req_write, d.drv_resp_read))
         .unwrap_or((0, 0));
-    let bloom_arg =
-        (drv_req_write as u64) | ((drv_resp_read as u64) << 16) | ((evt.1 as u64) << 32);
+        
+    // Bloom Bootstrap
+    // Create bytespace to hold args
+    // Layout: 
+    // 0: magic (0xBl00mArg)
+    // 8: drv_req
+    // 12: drv_resp
+    // 16: evt
+    // 20: font_req (write) -> font_req.0
+    // 24: font_resp (read) -> font_resp.1
+    
+    let boot_size = 4096;
+    let boot_bs = thingsys::bytespace_create(boot_size, 0, 0).unwrap_or(ThingId(0));
+    
+    if boot_bs.0 != 0 {
+         use stem::thing::sys::{bytespace_map, bytespace_unmap};
+         if let Ok(ptr) = bytespace_map(boot_bs) {
+              let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
+              slice[0] = 0xB100AA01; // Magic
+              slice[1] = drv_req_write as u32;
+              slice[2] = drv_resp_read as u32;
+              slice[3] = evt.1 as u32; // bristle read
+              
+              // New layout for Streams:
+              // 4: svc_font (u64 -> 2 u32s)
+              let font_id = svc_font.0;
+              slice[4] = font_id as u32;
+              slice[5] = (font_id >> 32) as u32;
+              
+              let _ = bytespace_unmap(boot_bs, ptr);
+         }
+    }
+    
+    let bloom_arg = boot_bs.0 as usize;
     
     let backend_info = display.as_ref().map(|d| d.backend_name).unwrap_or("none");
     info!(
-        "SPROUT: Bloom handles req_w={} resp_r={} bristle_r={} backend={} arg=0x{:x}",
-        drv_req_write, drv_resp_read, evt.1, backend_info, bloom_arg
+        "SPROUT: Bloom handles via BS={} backend={}",
+        boot_bs.0, backend_info
     );
 
-    // Spawn bloom with packed handles
-    match stem::syscall::spawn_process("/bloom", bloom_arg as usize) {
+    // Spawn bloom
+    match stem::syscall::spawn_process("/bloom", bloom_arg) {
         Ok(pid) => {
             info!("SPROUT: Spawned bloom (PID={})", pid);
             tasks.push(ManagedTask {

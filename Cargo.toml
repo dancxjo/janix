@@ -27,7 +27,7 @@ members = [
     "userspace/ata_disk",
     "userspace/disk_probe",
     "userspace/ahci_disk",
-    "tools/pciids", "libs/magic-sniff", "userspace/ingestd",
+    "tools/pciids", "libs/magic-sniff", "userspace/ingestd", "userspace/fontd",
     "userspace/png_creator",
 ]
 resolver = "2"

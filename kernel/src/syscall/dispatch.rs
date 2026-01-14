@@ -33,6 +33,11 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_PORT_RECV => handlers::sys_port_recv(args[0], args[1], args[2]),
         SYS_PORT_CLOSE => handlers::sys_port_close(args[0]),
 
+        SYS_STREAM_LISTEN => handlers::stream::sys_stream_listen(args[0], args[1]),
+        SYS_STREAM_OPEN => handlers::stream::sys_stream_open(args[0]),
+        SYS_STREAM_READ => handlers::stream::sys_stream_read(args[0], args[1], args[2]),
+        SYS_STREAM_POLL => handlers::stream::sys_stream_poll(args[0], args[1], args[2]),
+
         SYS_DEVICE_CLAIM => handlers::sys_device_claim(args[0]),
         SYS_DEVICE_MAP_MMIO => handlers::sys_device_map_mmio(args[0], args[1]),
         SYS_DEVICE_IRQ_SUBSCRIBE => handlers::sys_device_irq_subscribe(args[0], args[1], args[2]),

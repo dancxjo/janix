@@ -1,4 +1,5 @@
 #![no_std]
+extern crate alloc;
 
 pub mod debug;
 pub mod device;
@@ -19,3 +20,4 @@ pub mod vm;
 
 pub mod logging;
 pub mod hid;
+pub mod font;

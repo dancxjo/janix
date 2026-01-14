@@ -22,10 +22,16 @@ unsafe impl GlobalAlloc for ArenaAllocator {
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         // Default realloc is alloc + memcpy + dealloc.
         // Since dealloc is no-op, we just implement alloc + memcpy.
-        let new_layout = Layout::from_size_align_unchecked(new_size, layout.align());
-        let new_ptr = self.alloc(new_layout);
+        // SAFETY: Layout::from_size_align_unchecked is unsafe.
+        let new_layout = unsafe { Layout::from_size_align_unchecked(new_size, layout.align()) };
+        // SAFETY: self.alloc is unsafe, but we are in an unsafe fn. 
+        // Rust 2024 requires explicit unsafe block even inside unsafe fn.
+        let new_ptr = unsafe { self.alloc(new_layout) };
         if !new_ptr.is_null() {
-            core::ptr::copy_nonoverlapping(ptr, new_ptr, core::cmp::min(layout.size(), new_size));
+            // SAFETY: copy_nonoverlapping is unsafe. 
+            unsafe {
+                core::ptr::copy_nonoverlapping(ptr, new_ptr, core::cmp::min(layout.size(), new_size));
+            }
         }
         new_ptr
     }

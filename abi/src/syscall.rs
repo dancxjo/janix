@@ -56,6 +56,7 @@ pub const SYS_PORT_CLOSE: u32 = 0x83;
 // Block 0x90–0x9F: Streams
 // ============================================================================
 pub const SYS_STREAM_OPEN: u32 = 0x90;
+pub const SYS_STREAM_LISTEN: u32 = 0x93; // Added
 pub const SYS_STREAM_READ: u32 = 0x91;
 pub const SYS_STREAM_POLL: u32 = 0x92;
 

@@ -1,11 +1,18 @@
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use stem::syscall;
 use stem::{info, warn, error};
-use abi::font::{FontRequest, FontResponse, FaceId, TextBitmap};
+use abi::font::{FontRequest, FontResponse, FaceId, TextBitmap, FontId};
 
 static REQ_PORT: AtomicU32 = AtomicU32::new(0);
 static RESP_PORT: AtomicU32 = AtomicU32::new(0);
+// Cached default face: 0 = not set, non-zero = font_id is valid
+static DEFAULT_FACE_FONT_ID: AtomicU64 = AtomicU64::new(0);
+static DEFAULT_FACE_INDEX: AtomicU32 = AtomicU32::new(0);
+static DEFAULT_FACE_VALID: AtomicU32 = AtomicU32::new(0);
+static LAST_FACE_CHECK: AtomicU64 = AtomicU64::new(0);
+
+
 
 pub fn init(node_id: u64) {
     match stem::syscall::stream::stream_open(node_id as usize) {
@@ -112,5 +119,41 @@ pub fn list_fonts() -> Option<alloc::vec::Vec<abi::font::FontInfo>> {
             _ => {}
         }
     }
+    None
+}
+
+/// Check if font client is connected to fontd
+pub fn is_ready() -> bool {
+    REQ_PORT.load(Ordering::Relaxed) != 0 && RESP_PORT.load(Ordering::Relaxed) != 0
+}
+
+/// Get a cached default face, refreshing periodically
+/// Returns None if no fonts are available yet
+pub fn get_default_face(frame_id: u64) -> Option<FaceId> {
+    // Check cache first
+    if DEFAULT_FACE_VALID.load(Ordering::Acquire) != 0 {
+        return Some(FaceId {
+            font_id: FontId(DEFAULT_FACE_FONT_ID.load(Ordering::Relaxed)),
+            index: DEFAULT_FACE_INDEX.load(Ordering::Relaxed),
+        });
+    }
+    
+    // Only check every ~60 frames to avoid spamming fontd
+    let last_check = LAST_FACE_CHECK.load(Ordering::Relaxed);
+    if frame_id < last_check + 60 {
+        return None;
+    }
+    LAST_FACE_CHECK.store(frame_id, Ordering::Relaxed);
+    
+    // Query fontd for available fonts
+    if let Some(list) = list_fonts() {
+        if let Some(first) = list.first() {
+            DEFAULT_FACE_FONT_ID.store(first.face_id.font_id.0, Ordering::Relaxed);
+            DEFAULT_FACE_INDEX.store(first.face_id.index, Ordering::Relaxed);
+            DEFAULT_FACE_VALID.store(1, Ordering::Release);
+            return Some(first.face_id);
+        }
+    }
+    
     None
 }

@@ -110,37 +110,6 @@ extern "C" fn cursor_loader_entry() -> ! {
     }
 }
 
-/// Background thread for loading fonts
-extern "C" fn font_loader_entry() -> ! {
-    log!("[font_loader] thread started");
-    
-    stem::sleep_ms(400); 
-    log!("[font_loader] searching for font...");
-
-    let candidates = [
-        "/assets/fonts/NotoSansSymbol-Regular.ttf",
-        "/assets/fonts/NotoSans-Regular.ttf",
-        "/assets/fonts/Hack-Regular.ttf",
-        "fonts/Hack-Regular.ttf",
-    ];
-    for path in candidates.iter() {
-        log!("[font_loader] trying: {}", path);
-        if let Some(font) = AssetBank::load_font_from_graph(path) {
-            log!("[font_loader] SUCCESS: loaded font '{}'", font.name);
-            ASSETS.publish_font(font);
-            log!("[font_loader] published to pending");
-            break;
-        } else {
-            log!("[font_loader] not found: {}", path);
-        }
-    }
-    
-    log!("[font_loader] thread done, sleeping forever");
-    loop {
-        stem::syscall::sleep_ms(10000);
-    }
-}
-
 
 #[cfg_attr(not(test), stem::main)]
 fn main(arg: usize) -> ! {
@@ -204,25 +173,6 @@ fn main(arg: usize) -> ! {
         log!("[bloom] ERROR: failed to spawn cursor loader: {:?}", e);
     } else {
         log!("[bloom] spawned cursor_loader thread");
-    }
-
-    // Spawn font loader thread with larger stack (parsing/loading fonts can be heavy)
-    let font_stack_res = Stack::alloc_growing_stack(StackSpec {
-        initial_commit_bytes: 256 * 1024, // 256KB
-        ..StackSpec::default()
-    });
-
-    match font_stack_res {
-        Ok(stack) => {
-             if let Err(e) = stem::thread::spawn_with_stack(stack, font_loader_entry) {
-                log!("[bloom] ERROR: failed to spawn font loader: {:?}", e);
-            } else {
-                log!("[bloom] spawned font_loader thread (256KB stack)");
-            }
-        },
-        Err(e) => {
-            log!("[bloom] ERROR: failed to allocate font loader stack: {:?}", e);
-        }
     }
 
     // 1. Discovery & Mapping
@@ -344,12 +294,11 @@ fn main(arg: usize) -> ! {
                 log!("[bloom] frame {}: cursor not ready yet", frame_id);
             }
         }
-
-        // Check if font asset is ready (log once)
+        // Check if fontd is ready (log once)
         if !font_loaded {
-            if ASSETS.get_font_for_gen(gen_snapshot).is_some() {
+            if font_client::is_ready() && font_client::get_default_face(frame_id).is_some() {
                 font_loaded = true;
-                log!("[bloom] frame {}: font now visible (gen={})", frame_id, gen_snapshot.0);
+                log!("[bloom] frame {}: fontd available", frame_id);
                 builder.mark_full_damage();
             }
         }
@@ -357,7 +306,6 @@ fn main(arg: usize) -> ! {
         // Mark assets as reachable (in scene graph)
         ASSETS.mark_reachable(AssetType::Wallpaper, wallpaper_loaded);
         ASSETS.mark_reachable(AssetType::Cursor, cursor_loaded);
-        ASSETS.mark_reachable(AssetType::Font, font_loaded);
 
         // Mark assets as used this frame
         if wallpaper_loaded {
@@ -365,9 +313,6 @@ fn main(arg: usize) -> ! {
         }
         if cursor_loaded {
             ASSETS.mark_used(AssetType::Cursor, frame_id);
-        }
-        if font_loaded {
-            ASSETS.mark_used(AssetType::Font, frame_id);
         }
 
         // Input - capture cursor position before input

@@ -2,17 +2,17 @@
 //!
 //! Supports both full-frame and damage-aware rendering.
 //! strict adherence to Portable Render ISA.
+//! Text rendering delegates to fontd via font_client.
 
 use alloc::vec::Vec;
+use alloc::sync::Arc;
 use crate::damage::{Damage, Rect as DamageRect};
 use crate::drawlist::DrawList;
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
-use crate::asset::{Image, FontAsset, AssetBank};
+use crate::asset::Image;
 use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA};
-
-// Global asset bank access for font retrieval
-static ASSETS: AssetBank = AssetBank::new();
+use crate::font_client;
 
 /// Execution Context maintaining state stacks
 struct RasterContext<'a> {
@@ -92,7 +92,6 @@ pub fn execute_with_damage(surface: &mut Surface, list: &DrawList, damage: &Dama
 /// Execute lowered ops directly
 pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
     let mut ctx = RasterContext::new(surface);
-    let font = ASSETS.get_font(); // Get font once
 
     for op in lowered.ops.iter() {
         match op {
@@ -107,16 +106,13 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
             LowLevelOp::FillRect { rect, color, aa } => {
                 let t_rect = ctx.current_transform.transform_rect(*rect);
                 if let Some(clipped) = ctx.current_clip.intersection(&t_rect) {
-                     // Integer AA is 100% coverage, so just blend the color
                      fill_rect_blend(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
-                     // If we wanted 1px blur, we'd do it here, but likely overkill for v0 on Integer coords.
                      let _ = aa; 
                 }
             },
 
             LowLevelOp::FillRoundRect { rect, radius, color, aa } => {
                 let t_rect = ctx.current_transform.transform_rect(*rect);
-                // Simple bounds check first
                 if let Some(clipped_bounds) = ctx.current_clip.intersection(&t_rect) {
                     fill_round_rect(ctx.surface, &t_rect, *radius, color.to_u32(), *aa, &ctx.current_clip, &clipped_bounds);
                 }
@@ -124,29 +120,22 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
             
             LowLevelOp::StrokeRect { rect, color, width } => {
                  let t_rect = ctx.current_transform.transform_rect(*rect);
-                 // Simple stroke clipping: clip each side (fill_rect handles bounds check, but we need clip rect)
                  stroke_rect_clipped_blend(ctx.surface, &t_rect, *width, color.to_u32(), &ctx.current_clip);
             },
             
             LowLevelOp::Line { from, to, color, width: _ } => {
                 let p0 = ctx.current_transform.transform_point(*from);
                 let p1 = ctx.current_transform.transform_point(*to);
-                // Cohen-Sutherland or simple bounds check?
-                // For now, just draw. Primitive line() has bounds checks.
-                // Proper clipping for lines requires calculating intersection points.
-                // TODO: Line clipping against current_clip
                 line(ctx.surface, p0.x, p0.y, p1.x, p1.y, color.to_u32());
             },
 
             LowLevelOp::FillCircle { center, radius, color } => {
                 let c = ctx.current_transform.transform_point(*center);
-                // TODO: Circle clipping
                 fill_circle_blend(ctx.surface, c.x, c.y, *radius, color.to_u32());
             },
 
             LowLevelOp::BlitOpaque { image, src, dst, filter } => {
                 let t_dst = ctx.current_transform.transform_rect(*dst);
-                // Intersect with clip
                 if let Some(clipped_dst) = ctx.current_clip.intersection(&t_dst) {
                     blit_opaque(ctx.surface, image, src, &t_dst, &clipped_dst, *filter);
                 }
@@ -160,12 +149,8 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
             },
 
             LowLevelOp::TextSpan { text, pos, size, color } => {
-                if let Some(ref f) = font {
-                     let p = ctx.current_transform.transform_point(*pos);
-                     // Text clipping is complex (glyph by glyph)
-                     // For now pass clip rect to rasterizer
-                     rasterize_text_clipped(ctx.surface, f, text, p.x, p.y, *size, color.to_u32(), &ctx.current_clip);
-                }
+                let p = ctx.current_transform.transform_point(*pos);
+                rasterize_text_via_fontd(ctx.surface, text, p.x, p.y, *size, color.to_u32(), &ctx.current_clip);
             }
         }
     }
@@ -198,11 +183,9 @@ pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw,
 
 // Helper to run ops on an existing context (used by damage loop)
 fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
-    let font = ASSETS.get_font();
     for op in lowered.ops.iter() {
         match op {
             LowLevelOp::Clear { color } => {
-                // Clear respects clip (which is damage rect)
                 fill_rect_copy(ctx.surface, ctx.current_clip.x(), ctx.current_clip.y(), ctx.current_clip.width(), ctx.current_clip.height(), color.to_u32());
             },
             
@@ -234,7 +217,6 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             LowLevelOp::Line { from, to, color, width: _ } => {
                 let p0 = ctx.current_transform.transform_point(*from);
                 let p1 = ctx.current_transform.transform_point(*to);
-                // TODO: Line clipping
                  let line_bounds = Rect::new(p0.x.min(p1.x), p0.y.min(p1.y), (p0.x - p1.x).abs() + 1, (p0.y - p1.y).abs() + 1);
                  if ctx.current_clip.intersection(&line_bounds).is_some() {
                     line(ctx.surface, p0.x, p0.y, p1.x, p1.y, color.to_u32());
@@ -265,10 +247,8 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             },
             
             LowLevelOp::TextSpan { text, pos, size, color } => {
-                 if let Some(ref f) = font {
-                     let p = ctx.current_transform.transform_point(*pos);
-                     rasterize_text_clipped(ctx.surface, f, text, p.x, p.y, *size, color.to_u32(), &ctx.current_clip);
-                }
+                let p = ctx.current_transform.transform_point(*pos);
+                rasterize_text_via_fontd(ctx.surface, text, p.x, p.y, *size, color.to_u32(), &ctx.current_clip);
             }
         }
     }
@@ -543,54 +523,85 @@ fn blit_alpha(
     }
 }
 
-// --- Text ---
+// --- Text (via fontd) ---
 
-fn rasterize_text_clipped(surface: &mut Surface, font: &FontAsset, text: &str, x: i32, y: i32, size: f32, color: u32, clip: &Rect) {
-    let mut cursor_x = x as f32;
-    let baseline_y = y as f32 + size;
-
-    let r = ((color >> 16) & 0xFF) as u8;
-    let g = ((color >> 8) & 0xFF) as u8;
-    let b = (color & 0xFF) as u8;
-
-    for ch in text.chars() {
-        let (metrics, bitmap) = font.font.rasterize(ch, size);
-        let gx = cursor_x as i32 + metrics.xmin;
-        let gy = baseline_y as i32 - metrics.height as i32 - metrics.ymin;
-
-        for py in 0..metrics.height {
-            for px in 0..metrics.width {
-                let sx = gx + px as i32;
-                let sy = gy + py as i32;
-                
-                // Clip check
-                if sx < clip.x() || sx >= clip.x() + clip.width() || sy < clip.y() || sy >= clip.y() + clip.height() {
-                    continue;
-                }
-
-                let coverage = bitmap[py * metrics.width + px];
-                if coverage == 0 { continue; }
-
-                let alpha = coverage as u32;
-                let inv_alpha = 255 - alpha;
-
-                let offset = (surface.stride_bytes / 4) * (sy as usize) + (sx as usize);
-                let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
-                let dst_px = unsafe { *dst_ptr };
-
-                let dst_r = (dst_px >> 16) & 0xFF;
-                let dst_g = (dst_px >> 8) & 0xFF;
-                let dst_b = dst_px & 0xFF;
-
-                let out_r = ((r as u32 * alpha) + (dst_r * inv_alpha)) / 255;
-                let out_g = ((g as u32 * alpha) + (dst_g * inv_alpha)) / 255;
-                let out_b = ((b as u32 * alpha) + (dst_b * inv_alpha)) / 255;
-
-                unsafe { *dst_ptr = (out_r << 16) | (out_g << 8) | out_b; }
+/// Request text rendering from fontd and blit the resulting bitmap.
+/// This replaces the old glyph-by-glyph local rendering.
+fn rasterize_text_via_fontd(surface: &mut Surface, text: &str, x: i32, y: i32, size: f32, color: u32, clip: &Rect) {
+    use stem::thing::sys::{bytespace_map, bytespace_unmap};
+    use stem::thing::ThingId;
+    use abi::font::FaceId;
+    
+    // Get default font face (cached after first successful lookup)
+    let face = match font_client::get_default_face(0) {
+        Some(f) => f,
+        None => return, // No font available yet
+    };
+    
+    // Request rendered text from fontd
+    let bmp = match font_client::render_text(face, size as u32, text, color) {
+        Some(b) => b,
+        None => return, // Render failed
+    };
+    
+    // Map the bytespace containing the rendered text
+    let ptr = match bytespace_map(ThingId(bmp.buffer_id)) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    
+    let pixels = unsafe { core::slice::from_raw_parts(ptr as *const u32, (bmp.width * bmp.height) as usize) };
+    
+    // Blit the text bitmap with alpha blending
+    let dst_x = x;
+    let dst_y = y;
+    let bmp_w = bmp.width as i32;
+    let bmp_h = bmp.height as i32;
+    
+    for py in 0..bmp_h {
+        for px in 0..bmp_w {
+            let sx = dst_x + px;
+            let sy = dst_y + py;
+            
+            // Clip check
+            if sx < clip.x() || sx >= clip.x() + clip.width() || sy < clip.y() || sy >= clip.y() + clip.height() {
+                continue;
             }
+            
+            // Bounds check against surface
+            if sx < 0 || sy < 0 || sx >= surface.width() || sy >= surface.height() {
+                continue;
+            }
+            
+            let src_idx = (py as usize) * (bmp_w as usize) + (px as usize);
+            let src_px = pixels[src_idx];
+            
+            let alpha = (src_px >> 24) & 0xFF;
+            if alpha == 0 { continue; }
+            
+            let inv_alpha = 255 - alpha;
+            let src_r = (src_px >> 16) & 0xFF;
+            let src_g = (src_px >> 8) & 0xFF;
+            let src_b = src_px & 0xFF;
+            
+            let offset = (surface.stride_bytes / 4) * (sy as usize) + (sx as usize);
+            let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
+            let dst_px = unsafe { *dst_ptr };
+            
+            let dst_r = (dst_px >> 16) & 0xFF;
+            let dst_g = (dst_px >> 8) & 0xFF;
+            let dst_b = dst_px & 0xFF;
+            
+            let out_r = (src_r * alpha + dst_r * inv_alpha) / 255;
+            let out_g = (src_g * alpha + dst_g * inv_alpha) / 255;
+            let out_b = (src_b * alpha + dst_b * inv_alpha) / 255;
+            
+            unsafe { *dst_ptr = (out_r << 16) | (out_g << 8) | out_b; }
         }
-        cursor_x += metrics.advance_width;
     }
+    
+    // Unmap bytespace
+    let _ = bytespace_unmap(ThingId(bmp.buffer_id), ptr);
 }
 
 

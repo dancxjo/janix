@@ -82,6 +82,12 @@ impl LogEntry {
 /// Global context reference for logging
 static CONTEXT: Mutex<Option<&'static BootContext>> = Mutex::new(None);
 
+use core::sync::atomic::{AtomicU64, Ordering};
+
+/// Cached ThingId (low 64 bits) for graph.logs to avoid repeated lookups.
+/// Valid IDs start at 100, so 0 means None.
+static GRAPH_LOGS_ID: AtomicU64 = AtomicU64::new(0);
+
 /// Initialize logging with boot context
 pub fn init(ctx: &'static BootContext) {
     *CONTEXT.lock() = Some(ctx);
@@ -141,7 +147,21 @@ pub(crate) fn log_emit_with_arrival(
     store::thing_set_inline_payload(id, &entry.to_payload());
 
     // Link to graph.logs
-    if let Some(graph_logs) = store::find_thing_by_name(sym::GRAPH_LOGS) {
+    let cached_id = GRAPH_LOGS_ID.load(Ordering::Relaxed);
+    let graph_logs = if cached_id != 0 {
+        Some(ThingId(cached_id as u128))
+    } else {
+        // Try to find it and cache it
+        if let Some(id) = store::find_thing_by_name(sym::GRAPH_LOGS) {
+            // We assume IDs fit in u64 as per graph::store implementation
+            GRAPH_LOGS_ID.store(id.0 as u64, Ordering::Relaxed);
+            Some(id)
+        } else {
+            None
+        }
+    };
+
+    if let Some(graph_logs) = graph_logs {
         store::relationship_create(sym::PRED_CONTAINS, graph_logs, id);
     }
 

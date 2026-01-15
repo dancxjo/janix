@@ -48,12 +48,65 @@ kernel_trampoline:
 
 .global user_trampoline
 user_trampoline:
-    // Debug 'T'
+    // Debug 'T:XXXX' where XXXX is low 16 bits of r12 (target RIP) in hex
     push rdx
     push rax
+    push rcx
+    push rbx
+    
     mov dx, 0x3f8
-    mov al, 0x54
+    mov al, 0x54      // 'T'
     out dx, al
+    mov al, 0x3a      // ':'
+    out dx, al
+    
+    // Print r12 lower 16 bits as 4 hex digits
+    mov rcx, r12
+    
+    // Digit 1 (bits 15-12)
+    mov rbx, rcx
+    shr rbx, 12
+    and rbx, 0xF
+    lea rax, [rbx + 0x30]       // '0' to '9'
+    cmp rbx, 10
+    jb 1f
+    lea rax, [rbx + 0x37]       // 'A' to 'F'
+1:  out dx, al
+    
+    // Digit 2 (bits 11-8)
+    mov rbx, rcx
+    shr rbx, 8
+    and rbx, 0xF
+    lea rax, [rbx + 0x30]
+    cmp rbx, 10
+    jb 2f
+    lea rax, [rbx + 0x37]
+2:  out dx, al
+    
+    // Digit 3 (bits 7-4)
+    mov rbx, rcx
+    shr rbx, 4
+    and rbx, 0xF
+    lea rax, [rbx + 0x30]
+    cmp rbx, 10
+    jb 3f
+    lea rax, [rbx + 0x37]
+3:  out dx, al
+    
+    // Digit 4 (bits 3-0)
+    mov rbx, rcx
+    and rbx, 0xF
+    lea rax, [rbx + 0x30]
+    cmp rbx, 10
+    jb 4f
+    lea rax, [rbx + 0x37]
+4:  out dx, al
+    
+    mov al, 0x20      // space
+    out dx, al
+    
+    pop rbx
+    pop rcx
     pop rax
     pop rdx
 

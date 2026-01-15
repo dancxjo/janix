@@ -480,11 +480,13 @@ impl AssetBank {
         use stem::thing::sys::{find, describe_thing, prop_get, bytespace_info};
         use stem::abi::schema::kinds;
         
-        info!("[asset_bank] probe_asset: searching for '{}'", name);
+        // Guard: reject empty search names  
+        if name.is_empty() {
+            return None;
+        }
         
         let mut modules = [ThingId(0); 64];
         let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
-        info!("[asset_bank] probe_asset: found {} boot modules", count);
         
         for i in 0..count {
             let mod_id = modules[i];
@@ -500,26 +502,26 @@ impl AssetBank {
                 if let Some(end) = rest.find('"') { &rest[..end] } else { continue; }
             } else { continue; };
             
-            if !(mod_name == name || mod_name.ends_with(name) || name.ends_with(mod_name)) {
+            // Skip empty module names
+            if mod_name.is_empty() {
                 continue;
             }
             
-            info!("[asset_bank] probe_asset: MATCH '{}' -> '{}'", name, mod_name);
+            // Match exact name or proper path suffix
+            let is_match = mod_name == name || mod_name.ends_with(name);
+            if !is_match {
+                continue;
+            }
             
             let bs_id = match prop_get(mod_id, "bytespace") {
                 Ok(id) => ThingId(id),
-                Err(e) => {
-                    info!("[asset_bank] probe_asset: prop_get failed: {:?}", e);
-                    continue;
-                },
+                Err(_) => continue,
             };
             
             if let Ok(size) = bytespace_info(bs_id) {
-                info!("[asset_bank] probe_asset: bytespace {} size={}b", bs_id.0, size);
                 return Some((bs_id, size));
             }
         }
-        info!("[asset_bank] probe_asset: '{}' NOT FOUND", name);
         None
     }
 

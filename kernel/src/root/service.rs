@@ -15,8 +15,11 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
     let mut journal = Journal::new();
     let mut interner = Interner::new();
 
+    let mut iteration = 0u64;
     loop {
+        iteration = iteration.wrapping_add(1);
         let mut processed = 0;
+        
         while processed < 16 {
             if let Some(msg) = super::pop_msg() {
                 handle_msg::<R>(&mut graph, &mut journal, &mut interner, msg);
@@ -31,6 +34,39 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         }
     }
 }
+
+/// Returns a short name for the RootOp type for logging
+fn msg_type_name(op: &RootOp) -> &'static str {
+    match op {
+        RootOp::Intern { .. } => "Intern",
+        RootOp::GetKind { .. } => "GetKind",
+        RootOp::CreateNode { .. } => "CreateNode",
+        RootOp::Link { .. } => "Link",
+        RootOp::Find { .. } => "Find",
+        RootOp::Query { .. } => "Query",
+        RootOp::PropGet { .. } => "PropGet",
+        RootOp::PropSet { .. } => "PropSet",
+        RootOp::BytespaceCreate { .. } => "BytespaceCreate",
+        RootOp::BytespaceInfo { .. } => "BytespaceInfo",
+        RootOp::BytespaceMap { .. } => "BytespaceMap",
+        RootOp::BytespaceUnmap { .. } => "BytespaceUnmap",
+        RootOp::BytespacePhys { .. } => "BytespacePhys",
+        RootOp::BytespaceRead { .. } => "BytespaceRead",
+        RootOp::BytespaceWrite { .. } => "BytespaceWrite",
+        RootOp::BytespaceCreateFromPtr { .. } => "BytespaceCreateFromPtr",
+        RootOp::WatchSubscribe { .. } => "WatchSubscribe",
+        RootOp::StreamPoll { .. } => "StreamPoll",
+        RootOp::WatchOpen { .. } => "WatchOpen",
+        RootOp::WatchNext { .. } => "WatchNext",
+        RootOp::WatchClose { .. } => "WatchClose",
+        RootOp::DescribeThing { .. } => "DescribeThing",
+        RootOp::DescribeEdge { .. } => "DescribeEdge",
+        RootOp::DumpEdges { .. } => "DumpEdges",
+        RootOp::DumpGraph { .. } => "DumpGraph",
+        RootOp::LogEvent { .. } => "LogEvent",
+    }
+}
+
 
 fn handle_msg<R: BootRuntime>(
     graph: &mut Graph,

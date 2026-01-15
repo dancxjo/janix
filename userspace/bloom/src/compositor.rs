@@ -12,14 +12,20 @@ pub struct Symbols {
 
 impl Symbols {
     pub fn new() -> Self {
+        let display_compositor = thingsys::intern("display.compositor").unwrap_or(0) as u64;
+        let display_role = thingsys::intern("display_role").unwrap_or(0) as u64;
+        let display_drv_req = thingsys::intern("display_drv_req").unwrap_or(0) as u64;
+        let display_drv_resp = thingsys::intern("display_drv_resp").unwrap_or(0) as u64;
+        
         Self {
-            display_compositor: thingsys::intern("display.compositor").unwrap_or(0) as u64,
-            display_role: thingsys::intern("display_role").unwrap_or(0) as u64,
-            display_drv_req: thingsys::intern("display_drv_req").unwrap_or(0) as u64,
-            display_drv_resp: thingsys::intern("display_drv_resp").unwrap_or(0) as u64,
+            display_compositor,
+            display_role,
+            display_drv_req,
+            display_drv_resp,
         }
     }
 }
+
 
 /// Display backend type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

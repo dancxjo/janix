@@ -209,6 +209,11 @@ pub fn is_inbox_ready() -> bool {
     ROOT_INBOX.lock().is_some()
 }
 
+pub fn queue_len() -> usize {
+    ROOT_INBOX.lock().as_ref().map(|q| q.len()).unwrap_or(0)
+}
+
+
 pub mod debug {
     use crate::root::SymbolShell;
     use core::fmt;

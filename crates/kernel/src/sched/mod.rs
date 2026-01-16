@@ -42,7 +42,9 @@ where
 }
 
 pub struct Scheduler {
-    pub(crate) tasks: Vec<Task>,
+    // Optimization: Use BTreeMap for O(log N) task lookup instead of O(N) Vec iteration.
+    // This improves scalability as the number of tasks grows.
+    pub(crate) tasks: BTreeMap<TaskId, Task>,
     pub(crate) run_queue: RunQueue,
     pub(crate) cpu: PerCpu,
     pub(crate) next_id: u64,
@@ -53,7 +55,7 @@ pub struct Scheduler {
 impl Scheduler {
     fn new(run_queue_thing: abi::ids::ThingId, cpu_thing: abi::ids::ThingId) -> Self {
         Self {
-            tasks: Vec::new(),
+            tasks: BTreeMap::new(),
             run_queue: RunQueue::new(run_queue_thing),
             cpu: PerCpu::new(0, cpu_thing, run_queue_thing),
             next_id: 1,
@@ -97,7 +99,7 @@ impl Scheduler {
         let tid = task.id;
         let thing = task.thing;
         
-        self.tasks.push(task);
+        self.tasks.insert(tid, task);
         self.run_queue.push_back(tid, thing);
         
         tid
@@ -186,7 +188,7 @@ pub fn configure_task_memory(
     heap: (u64, u64, u64),
 ) {
     with_sched(|sched| {
-        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == id) {
+        if let Some(t) = sched.tasks.get_mut(&id) {
             t.address_space.set_heap_state(heap.0, heap.1, heap.2);
         }
     });
@@ -196,7 +198,7 @@ pub fn configure_task_context(id: TaskId, entry: u64, user_stack: u64) {
     use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
 
     with_sched(|sched| {
-        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
+        if let Some(task) = sched.tasks.get_mut(&id) {
             // Use Kernel Stack Top implicitly allocated by spawn
             // TrapFrame is built on kernel stack, user_stack is stored in RSP field for user mode
             let kernel_stack_top = task.stack_ptr & !0xf;
@@ -242,13 +244,13 @@ pub fn exit_current_task(_code: i32) -> ! {
         let sched = guard.as_mut().expect("sched not init");
 
         let prev = sched.cpu.current_task;
-        if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == prev) {
+        if let Some(task) = sched.tasks.get_mut(&prev) {
             task.state = TaskState::Dead;
         }
 
         if let Some(next) = sched.run_queue.pop_front() {
             sched.cpu.current_task = next;
-            let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
+            let t = sched.tasks.get_mut(&next).unwrap();
 
             if t.simd_used {
                 if let Some(state) = &t.simd_state {
@@ -294,7 +296,7 @@ where
             if curr.0 == 0 {
                 None
             } else {
-                let t = sched.tasks.iter_mut().find(|t| t.id == curr).expect("current task not found");
+                let t = sched.tasks.get_mut(&curr).expect("current task not found");
                 Some(f(t))
             }
         } else {
@@ -313,7 +315,7 @@ where
     let res = {
         let mut guard = SCHEDULER.lock();
         if let Some(sched) = guard.as_mut() {
-            let t = sched.tasks.iter_mut().find(|t| t.id == id)?;
+            let t = sched.tasks.get_mut(&id)?;
             Some(f(t))
         } else {
             None
@@ -331,7 +333,7 @@ pub fn current_task_id() -> Option<abi::ids::ThingId> {
         if let Some(sched) = guard.as_ref() {
             let tid = sched.cpu.current_task;
             if tid.0 != 0 {
-                sched.tasks.iter().find(|t| t.id == tid).map(|t| t.thing)
+                sched.tasks.get(&tid).map(|t| t.thing)
             } else {
                 None
             }
@@ -511,7 +513,7 @@ pub fn tick(current_sp: u64) -> u64 {
     // Default: Round Robin
     // 1. Save current SP to current task (if we have one)
     if prev_task.0 != 0 {
-        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == prev_task) {
+        if let Some(t) = sched.tasks.get_mut(&prev_task) {
             // Only save SP if this task has executed at least once.
             // first_run tasks have prepared contexts that must not be overwritten.
             if !t.first_run {
@@ -543,7 +545,7 @@ pub fn tick(current_sp: u64) -> u64 {
     // 2. Pick next
     if let Some(next) = sched.run_queue.pop_front() {
         sched.cpu.current_task = next;
-        let t = sched.tasks.iter_mut().find(|t| t.id == next).unwrap();
+        let t = sched.tasks.get_mut(&next).unwrap();
 
         // Only log the first few context switches to avoid flooding logs
         let log_count = TICK_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
@@ -607,7 +609,7 @@ fn apply_wake_list(sched: &mut Scheduler, wakes: &watch::WakeList) {
 }
 
 fn wake_task_locked(sched: &mut Scheduler, task_id: TaskId, reason: WakeReason) {
-    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == task_id) {
+    if let Some(task) = sched.tasks.get_mut(&task_id) {
         task.wake_reason = Some(reason);
         if matches!(task.state, TaskState::Blocked(_)) {
             task.state = TaskState::Ready;
@@ -651,7 +653,7 @@ pub fn block_current(reason: BlockReason) -> Option<TaskId> {
         if curr.0 == 0 {
             None
         } else {
-            if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == curr) {
+            if let Some(task) = sched.tasks.get_mut(&curr) {
                 task.state = TaskState::Blocked(reason);
                 task.wake_reason = None;
             }
@@ -677,7 +679,7 @@ pub fn configure_task_context_locked(
 ) {
     use crate::machine::{ArchTask, CpuMode, CurrentArch, TaskContext};
 
-    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
+    if let Some(task) = sched.tasks.get_mut(&id) {
         // Use Kernel Stack Top implicitly allocated by spawn
         // TrapFrame is built on kernel stack, user_stack is stored in RSP field for user mode
         let kernel_stack_top = task.stack_ptr & !0xf;

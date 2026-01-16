@@ -207,21 +207,41 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
                 lower_nine_slice(&mut out, image, dest, margins);
             }
             DrawCmd::Cursor { frame, position } => {
-                // Shadow
-                let shadow_x = position.x - frame.hotspot_x as i32 + 2; 
-                let shadow_y = position.y - frame.hotspot_y as i32 + 2;
+                // Windows 2000 style 3-layer shadow
+                let cx = position.x - frame.hotspot_x as i32;
+                let cy = position.y - frame.hotspot_y as i32;
                 let w = frame.image.width as i32;
                 let h = frame.image.height as i32;
                 let src = Rect::new(0, 0, w, h);
-                let dst_shadow = Rect::new(shadow_x, shadow_y, w, h);
-                
+
+                // Layer 1: Tight
                 out.ops.push(LowLevelOp::BlitAlpha {
                     image: frame.image.clone(),
                     src,
-                    dst: dst_shadow,
+                    dst: Rect::new(cx + 1, cy + 1, w, h),
                     filter: FilterMode::Nearest,
                     blend: BlendMode::SrcOver,
-                    const_alpha: Some(77), // ~30% opacity shadow (heuristic)
+                    const_alpha: Some(48), // ~19%
+                });
+
+                // Layer 2: Medium
+                out.ops.push(LowLevelOp::BlitAlpha {
+                    image: frame.image.clone(),
+                    src,
+                    dst: Rect::new(cx + 2, cy + 2, w, h),
+                    filter: FilterMode::Nearest,
+                    blend: BlendMode::SrcOver,
+                    const_alpha: Some(48), // ~19%
+                });
+
+                // Layer 3: Fuzzy falloff
+                out.ops.push(LowLevelOp::BlitAlpha {
+                    image: frame.image.clone(),
+                    src,
+                    dst: Rect::new(cx + 3, cy + 3, w, h),
+                    filter: FilterMode::Nearest,
+                    blend: BlendMode::SrcOver,
+                    const_alpha: Some(24), // ~9%
                 });
 
                 // Main cursor
@@ -370,23 +390,25 @@ mod tests {
 
         let lowered = lower(&list);
         
-        // Should have 2 ops: Shadow + Main
-        assert_eq!(lowered.ops.len(), 2);
+        // Should have 4 ops: 3 Shadows + 1 Main
+        assert_eq!(lowered.ops.len(), 4);
         
-        // Verify Shadow (first op)
-        if let LowLevelOp::BlitAlpha { dst, const_alpha, .. } = &lowered.ops[0] {
-            assert!(const_alpha.is_some()); // Shadow has alpha mod
-            assert_eq!(dst.x(), 102); // 100 + 2 offset
-        } else {
-            panic!("Expected Shadow BlitAlpha first");
+        // Verify Shadows (first 3 ops)
+        for i in 0..3 {
+            if let LowLevelOp::BlitAlpha { dst, const_alpha, .. } = &lowered.ops[i] {
+                assert!(const_alpha.is_some());
+                assert_eq!(dst.x(), 100 + (i as i32 + 1)); 
+            } else {
+                panic!("Expected Shadow BlitAlpha at index {}", i);
+            }
         }
 
-        // Verify Main (second op)
-        if let LowLevelOp::BlitAlpha { dst, const_alpha, .. } = &lowered.ops[1] {
-            assert!(const_alpha.is_none()); // Main cursor no extra alpha mod
+        // Verify Main (fourth op)
+        if let LowLevelOp::BlitAlpha { dst, const_alpha, .. } = &lowered.ops[3] {
+            assert!(const_alpha.is_none());
             assert_eq!(dst.x(), 100);
         } else {
-            panic!("Expected Main BlitAlpha second");
+            panic!("Expected Main BlitAlpha fourth");
         }
     }
 

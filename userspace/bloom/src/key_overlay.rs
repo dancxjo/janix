@@ -1,13 +1,9 @@
 use alloc::collections::BTreeSet;
 use alloc::string::String;
-use alloc::sync::Arc;
 use alloc::vec::Vec;
-use crate::asset::Image;
-use crate::frame::AssetGeneration;
-use crate::drawlist::{DrawList, DrawCmd};
+use crate::drawlist::DrawList;
 use crate::damage::Rect;
-use crate::geometry::{Color, Point};
-use crate::ASSETS;
+use crate::geometry::Color;
 use abi::hid::Key;
 
 
@@ -127,16 +123,16 @@ fn build_key_string(keys: &BTreeSet<Key>) -> String {
 
     // 1. Modifiers
     if keys.contains(&Key::LeftCtrl) || keys.contains(&Key::RightCtrl) {
-        parts.push("⌃");
+        parts.push("⌃"); // U+2303
     }
     if keys.contains(&Key::LeftAlt) || keys.contains(&Key::RightAlt) {
-        parts.push("⌥");
+        parts.push("⌥"); // U+2325
     }
     if keys.contains(&Key::LeftShift) || keys.contains(&Key::RightShift) {
-        parts.push("⇧");
+        parts.push("⇧"); // U+21E7
     }
     if keys.contains(&Key::LeftMeta) || keys.contains(&Key::RightMeta) {
-        parts.push("⌘");
+        parts.push("⌘"); // U+2318
     }
 
     // 2. Non-mod keys

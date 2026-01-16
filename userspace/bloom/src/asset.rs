@@ -4,12 +4,14 @@ use stem::thing::ThingId;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use core::cell::UnsafeCell;
-use stem::info;
+use stem::{info, warn};
 
-use crate::frame::AssetGeneration;
 use crate::reclaimer;
+use crate::frame::AssetGeneration;
 
 use serde::{Deserialize, Serialize};
+use alloc::collections::VecDeque;
+use spin::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Image {
@@ -151,15 +153,63 @@ impl<T> PendingSlot<T> {
 // Ready assets (visible to rendering)
 static WALLPAPER_READY: AssetSlot<Image> = AssetSlot::new();
 static CURSOR_READY: AssetSlot<CursorAsset> = AssetSlot::new();
-static FONT_READY: AssetSlot<FontAsset> = AssetSlot::new();
+static FONTS_READY: [AssetSlot<FontAsset>; 8] = [
+    AssetSlot::new(), AssetSlot::new(), AssetSlot::new(), AssetSlot::new(),
+    AssetSlot::new(), AssetSlot::new(), AssetSlot::new(), AssetSlot::new(),
+];
 
 // Pending assets (published by loaders, not yet visible)
 static WALLPAPER_PENDING: PendingSlot<Image> = PendingSlot::new();
 static CURSOR_PENDING: PendingSlot<CursorAsset> = PendingSlot::new();
-static FONT_PENDING: PendingSlot<FontAsset> = PendingSlot::new();
+static FONTS_PENDING: [PendingSlot<FontAsset>; 8] = [
+    PendingSlot::new(), PendingSlot::new(), PendingSlot::new(), PendingSlot::new(),
+    PendingSlot::new(), PendingSlot::new(), PendingSlot::new(), PendingSlot::new(),
+];
 
 // Global generation counter
 static ASSET_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+/// Asset load job for worker threads
+enum AssetLoadJob {
+    Font { id: ThingId, size: usize, display_name: Arc<str> },
+    Wallpaper { path: Arc<str> },
+    Cursor { path: Arc<str> },
+}
+
+static JOB_QUEUE: Mutex<VecDeque<AssetLoadJob>> = Mutex::new(VecDeque::new());
+static WORKER_SPAWNED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn asset_worker_entry() -> ! {
+    loop {
+        let job = {
+            let mut queue = JOB_QUEUE.lock();
+            queue.pop_front()
+        };
+
+        if let Some(job) = job {
+            match job {
+                AssetLoadJob::Font { id, size, display_name } => {
+                    if let Some(font) = AssetBank::load_font_immediate(id, size, &display_name) {
+                        AssetBank::new().publish_font(font);
+                    }
+                }
+                AssetLoadJob::Wallpaper { path } => {
+                    if let Some(img) = AssetBank::new().load_wallpaper_immediate(&path) {
+                        AssetBank::new().publish_wallpaper(img);
+                    }
+                }
+                AssetLoadJob::Cursor { path } => {
+                    if let Some(cursor) = AssetBank::load_cursor_immediate(&path) {
+                        AssetBank::new().publish_cursor(cursor);
+                    }
+                }
+            }
+        } else {
+            // No jobs, sleep or yield
+            stem::sleep_ms(50);
+        }
+    }
+}
 
 /// Asset types for eviction candidate selection
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,6 +223,58 @@ pub struct AssetBank;
 
 impl AssetBank {
     pub const fn new() -> Self { Self }
+
+    fn spawn_worker() {
+        if WORKER_SPAWNED.swap(true, Ordering::SeqCst) {
+            return;
+        }
+        
+        use stem::stack::{Stack, StackSpec};
+        let stack = Stack::alloc_growing_stack(StackSpec {
+            reserve_bytes: 256 * 1024,
+            initial_commit_bytes: 64 * 1024,
+            ..StackSpec::default()
+        }).expect("asset worker stack");
+        if let Err(e) = stem::thread::spawn_on(stack, asset_worker_entry) {
+            crate::log!("[asset_bank] ERROR: failed to spawn worker: {:?}", e);
+        }
+    }
+
+    pub fn enqueue_font_load(&self, id: ThingId, size: usize, display_name: &str) {
+        let mut queue = JOB_QUEUE.lock();
+        let was_empty = queue.is_empty();
+        queue.push_back(AssetLoadJob::Font { 
+            id, 
+            size, 
+            display_name: Arc::from(display_name) 
+        });
+        if was_empty {
+            Self::spawn_worker();
+        }
+    }
+
+    pub fn enqueue_wallpaper_load(&self, path: &str) {
+        let mut queue = JOB_QUEUE.lock();
+        let was_empty = queue.is_empty();
+        queue.push_back(AssetLoadJob::Wallpaper { 
+            path: Arc::from(path) 
+        });
+        if was_empty {
+            Self::spawn_worker();
+        }
+    }
+
+    pub fn enqueue_cursor_load(&self, path: &str) {
+        let mut queue = JOB_QUEUE.lock();
+        queue.push_back(AssetLoadJob::Cursor { 
+            path: Arc::from(path) 
+        });
+        Self::spawn_worker();
+    }
+    
+    pub fn probe_asset_exists(&self, path: &str) -> bool {
+        Self::probe_asset(path).is_some()
+    }
 
     /// Get current generation (read-only, no side effects)
     pub fn current_generation(&self) -> AssetGeneration {
@@ -245,27 +347,30 @@ impl AssetBank {
             CURSOR_PENDING.has_pending.store(false, Ordering::Release);
         }
 
-        // Check and promote pending font
-        if FONT_PENDING.has_pending.load(Ordering::Acquire) {
-            let pending = unsafe { (*FONT_PENDING.value.get()).take() };
-            if let Some(mut font) = pending {
-                let new_gen = if !promoted {
-                    ASSET_GENERATION.fetch_add(1, Ordering::AcqRel) + 1
-                } else {
-                    ASSET_GENERATION.load(Ordering::Acquire)
-                };
-                font.gen = AssetGeneration(new_gen);
-                
-                // Track memory
-                let bytes = font.decoded_bytes();
-                reclaimer::add_decoded_bytes(bytes);
-                FONT_READY.decoded_bytes.store(bytes, Ordering::Release);
-                
-                info!("[asset_bank] promoting font '{}' to gen={} ({}b)", font.name, new_gen, bytes);
-                unsafe { *FONT_READY.value.get() = Some(font); }
-                FONT_READY.ready.store(true, Ordering::Release);
+        // Check and promote pending fonts
+        for i in 0..8 {
+            if FONTS_PENDING[i].has_pending.load(Ordering::Acquire) {
+                let pending = unsafe { (*FONTS_PENDING[i].value.get()).take() };
+                if let Some(mut font) = pending {
+                    let new_gen = if !promoted {
+                        ASSET_GENERATION.fetch_add(1, Ordering::AcqRel) + 1
+                    } else {
+                        ASSET_GENERATION.load(Ordering::Acquire)
+                    };
+                    font.gen = AssetGeneration(new_gen);
+                    
+                    // Track memory
+                    let bytes = font.decoded_bytes();
+                    reclaimer::add_decoded_bytes(bytes);
+                    FONTS_READY[i].decoded_bytes.store(bytes, Ordering::Release);
+                    
+                    info!("[asset_bank] promoting font '{}' to gen={} ({}b) in slot {}", font.name, new_gen, bytes, i);
+                    unsafe { *FONTS_READY[i].value.get() = Some(font); }
+                    FONTS_READY[i].ready.store(true, Ordering::Release);
+                    promoted = true;
+                }
+                FONTS_PENDING[i].has_pending.store(false, Ordering::Release);
             }
-            FONT_PENDING.has_pending.store(false, Ordering::Release);
         }
 
         self.current_generation()
@@ -341,31 +446,68 @@ impl AssetBank {
 
     /// Publish font to pending (called by loader thread)
     pub fn publish_font(&self, font: FontAsset) {
-        info!("[asset_bank] publish_font (pending): '{}'", font.name);
-        unsafe { *FONT_PENDING.value.get() = Some(font); }
-        FONT_PENDING.has_pending.store(true, Ordering::Release);
+        // Find an empty or replaceable pending slot
+        for i in 0..8 {
+            if !FONTS_PENDING[i].has_pending.load(Ordering::Acquire) {
+                info!("[asset_bank] publish_font (pending): '{}' in slot {}", font.name, i);
+                unsafe { *FONTS_PENDING[i].value.get() = Some(font); }
+                FONTS_PENDING[i].has_pending.store(true, Ordering::Release);
+                return;
+            }
+        }
+        warn!("[asset_bank] FONT_PENDING slots exhausted! skipping '{}'", font.name);
     }
 
     /// Get font if ready and visible at the given generation
     pub fn get_font_for_gen(&self, snapshot: AssetGeneration) -> Option<FontAsset> {
-        if !FONT_READY.ready.load(Ordering::Acquire) {
-            return None;
+        // Return first available font (legacy behavior)
+        for i in 0..8 {
+            if FONTS_READY[i].ready.load(Ordering::Acquire) {
+                let font = unsafe { (*FONTS_READY[i].value.get()).clone() }?;
+                if font.gen <= snapshot {
+                    return Some(font);
+                }
+            }
         }
-        let font = unsafe { (*FONT_READY.value.get()).clone() }?;
-        if font.gen <= snapshot {
-            Some(font)
-        } else {
-            None
+        None
+    }
+
+    /// Get all fonts ready and visible at the given generation (ordered by slot)
+    pub fn get_fonts_for_gen(&self, snapshot: AssetGeneration) -> alloc::vec::Vec<FontAsset> {
+        let mut fonts = alloc::vec::Vec::new();
+        for i in 0..8 {
+            if FONTS_READY[i].ready.load(Ordering::Acquire) {
+                if let Some(font) = unsafe { (*FONTS_READY[i].value.get()).as_ref() } {
+                    if font.gen <= snapshot {
+                        fonts.push(font.clone());
+                    }
+                }
+            }
         }
+        fonts
+    }
+
+    /// Get all ready fonts without generation check (for rasterizer access)
+    pub fn get_fonts(&self) -> alloc::vec::Vec<FontAsset> {
+        let mut fonts = alloc::vec::Vec::new();
+        for i in 0..8 {
+            if FONTS_READY[i].ready.load(Ordering::Acquire) {
+                if let Some(font) = unsafe { (*FONTS_READY[i].value.get()).clone() } {
+                    fonts.push(font);
+                }
+            }
+        }
+        fonts
     }
 
     /// Get font without generation check (for rasterizer access)
     pub fn get_font(&self) -> Option<FontAsset> {
-        if FONT_READY.ready.load(Ordering::Acquire) {
-            unsafe { (*FONT_READY.value.get()).clone() }
-        } else {
-            None
+        for i in 0..8 {
+            if FONTS_READY[i].ready.load(Ordering::Acquire) {
+                return unsafe { (*FONTS_READY[i].value.get()).clone() };
+            }
         }
+        None
     }
 
     /// Mark an asset as used this frame
@@ -373,7 +515,11 @@ impl AssetBank {
         match asset_type {
             AssetType::Wallpaper => WALLPAPER_READY.mark_used(frame_id),
             AssetType::Cursor => CURSOR_READY.mark_used(frame_id),
-            AssetType::Font => FONT_READY.mark_used(frame_id),
+            AssetType::Font => {
+                for i in 0..8 {
+                    FONTS_READY[i].mark_used(frame_id);
+                }
+            }
         }
     }
 
@@ -382,7 +528,11 @@ impl AssetBank {
         match asset_type {
             AssetType::Wallpaper => WALLPAPER_READY.mark_reachable(reachable),
             AssetType::Cursor => CURSOR_READY.mark_reachable(reachable),
-            AssetType::Font => FONT_READY.mark_reachable(reachable),
+            AssetType::Font => {
+                for i in 0..8 {
+                    FONTS_READY[i].mark_reachable(reachable);
+                }
+            }
         }
     }
 
@@ -418,13 +568,19 @@ impl AssetBank {
             }
         }
 
-        if FONT_READY.ready.load(Ordering::Acquire) {
-            if let Some(font) = unsafe { (*FONT_READY.value.get()).as_ref() } {
-                let mut meta = FONT_READY.get_metadata();
-                if let Some(ref mut m) = meta {
-                    m.gen = font.gen;
+        for i in 0..8 {
+            if FONTS_READY[i].ready.load(Ordering::Acquire) {
+                if let Some(font) = unsafe { (*FONTS_READY[i].value.get()).as_ref() } {
+                    let mut meta = FONTS_READY[i].get_metadata();
+                    if let Some(ref mut m) = meta {
+                        m.gen = font.gen;
+                    }
+                    // For now, simplify eviction candidacy for multi-fonts
+                    // We'll only track the first font slot in this simplified loop structure
+                    if i == 0 {
+                        candidates[2] = (AssetType::Font, meta, font.gen);
+                    }
                 }
-                candidates[2] = (AssetType::Font, meta, font.gen);
             }
         }
 
@@ -465,10 +621,12 @@ impl AssetBank {
                 CURSOR_READY.decoded_bytes.store(0, Ordering::Release);
             }
             AssetType::Font => {
-                info!("[asset_bank] evicting font (gen={}, {}b)", meta.gen.0, freed);
-                unsafe { *FONT_READY.value.get() = None; }
-                FONT_READY.ready.store(false, Ordering::Release);
-                FONT_READY.decoded_bytes.store(0, Ordering::Release);
+                info!("[asset_bank] evicting fonts (gen={}, {}b)", meta.gen.0, freed);
+                for i in 0..8 {
+                    unsafe { *FONTS_READY[i].value.get() = None; }
+                    FONTS_READY[i].ready.store(false, Ordering::Release);
+                    FONTS_READY[i].decoded_bytes.store(0, Ordering::Release);
+                }
             }
         }
 
@@ -526,7 +684,11 @@ impl AssetBank {
     }
 
     pub fn load_wallpaper_from_graph(&self, path: &str) -> Option<Image> {
-        info!("[asset_bank] load_wallpaper_from_graph: {}", path);
+        self.load_wallpaper_immediate(path)
+    }
+
+    pub fn load_wallpaper_immediate(&self, path: &str) -> Option<Image> {
+        info!("[asset_bank] load_wallpaper_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
         
         info!("[asset_bank] mapping bytespace {} ({} bytes)", id.0, size);
@@ -551,7 +713,11 @@ impl AssetBank {
     }
     
     pub fn load_cursor_from_graph(path: &str) -> Option<CursorAsset> {
-        info!("[asset_bank] load_cursor_from_graph: {}", path);
+        Self::load_cursor_immediate(path)
+    }
+
+    pub fn load_cursor_immediate(path: &str) -> Option<CursorAsset> {
+        info!("[asset_bank] load_cursor_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
         
         info!("[asset_bank] mapping bytespace {} ({} bytes)", id.0, size);
@@ -617,6 +783,10 @@ impl AssetBank {
     }
 
     pub fn load_font_from_node_id(id: ThingId, size: usize, display_name: &str) -> Option<FontAsset> {
+        Self::load_font_immediate(id, size, display_name)
+    }
+
+    pub fn load_font_immediate(id: ThingId, size: usize, display_name: &str) -> Option<FontAsset> {
         info!("[asset_bank] mapping font bytespace {} ({} bytes)", id.0, size);
         let ptr = match stem::thing::sys::bytespace_map(id) {
             Ok(p) => p,

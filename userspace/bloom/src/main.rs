@@ -61,10 +61,9 @@ extern "C" fn wallpaper_loader_entry() -> ! {
     
     for path in candidates.iter() {
         log!("[wallpaper_loader] trying: {}", path);
-        if let Some(img) = ASSETS.load_wallpaper_from_graph(path) {
-            log!("[wallpaper_loader] SUCCESS: loaded ({}x{})", img.width, img.height);
-            ASSETS.publish_wallpaper(img);
-            log!("[wallpaper_loader] published to pending");
+        if ASSETS.probe_asset_exists(path) {
+            log!("[wallpaper_loader] SUCCESS: found candidate '{}', enqueuing load", path);
+            ASSETS.enqueue_wallpaper_load(path);
             break;
         } else {
             log!("[wallpaper_loader] not found: {}", path);
@@ -129,14 +128,15 @@ extern "C" fn font_loader_entry() -> ! {
                 if let Ok(len) = describe_thing(node_id, &mut buf) {
                     let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
                     if desc.contains("name: \"") && (desc.contains(".ttf\"") || desc.contains(".otf\"") || desc.contains(".ttc\"")) {
+                        log!("[font_loader] found font candidate: '{}'", desc);
                         let bs_id = prop_get(node_id, "bytespace").map(ThingId).ok();
                         let size = bs_id.and_then(|id| bytespace_info(id).ok());
                         
                         if let (Some(bs), Some(sz)) = (bs_id, size) {
-                            if let Some(font) = AssetBank::load_font_from_node_id(bs, sz, desc) {
-                                log!("[font_loader] SUCCESS: loaded '{}'", font.name);
-                                ASSETS.publish_font(font);
-                            }
+                            log!("[font_loader] enqueuing font load: bs={} size={} name='{}'", bs.0, sz, desc);
+                            ASSETS.enqueue_font_load(bs, sz, desc);
+                        } else {
+                            log!("[font_loader] WARN: could not get bytespace/size for font '{}'", desc);
                         }
                     }
                 }
@@ -169,10 +169,9 @@ extern "C" fn cursor_loader_entry() -> ! {
 
     for path in candidates.iter() {
         log!("[cursor_loader] trying: {}", path);
-        if let Some(cursor) = AssetBank::load_cursor_from_graph(path) {
-            log!("[cursor_loader] SUCCESS: loaded cursor asset");
-            ASSETS.publish_cursor(cursor);
-            log!("[cursor_loader] published to pending");
+        if ASSETS.probe_asset_exists(path) {
+            log!("[cursor_loader] SUCCESS: found candidate '{}', enqueuing load", path);
+            ASSETS.enqueue_cursor_load(path);
             break;
         } else {
             log!("[cursor_loader] not found: {}", path);
@@ -441,9 +440,9 @@ fn main(arg: usize) -> ! {
         }
 
         // Damage text regions (frame counter changes every frame)
+        // Damage text regions (frame counter changes every frame)
         if font_loaded {
-            builder.add_damage(Rect::new(20, 20, 200, 25)); // "thing-os"
-            builder.add_damage(Rect::new(20, 45, 150, 25)); // "frame: N"
+            builder.add_damage(Rect::new(20, 20, 300, 100)); // Covers "thing-os" and "frame: N"
         }
 
         // Build Scene - record ops into the builder's DrawList
@@ -472,10 +471,10 @@ fn main(arg: usize) -> ! {
 
             // Demo text rendering if font is loaded
             if font_loaded {
-                list.text("thing-os", 20, 20, 24.0, geometry::Color::from_u32(0xFFFFFF));
-                list.text(&alloc::format!("frame: {}", frame_id), 20, 50, 16.0, geometry::Color::from_u32(0xCCCCCC));
+                list.text("thing-os", 20, 40, 24.0, geometry::Color::from_u32(0xFFFFFFFF));
+                list.text(&alloc::format!("frame: {}", frame_id), 20, 70, 16.0, geometry::Color::from_u32(0xFFCCCCCC));
                 
-                // Render Key Overlay
+				// Render Key Overlay
                 key_overlay.render(list, screen_w, screen_h);
             }
 
@@ -494,7 +493,9 @@ fn main(arg: usize) -> ! {
         // ═══════════════════════════════════════════════════════════════════
         
         // Rasterize using damage-aware rendering
-        raster::execute_with_damage(&mut surface, &token.ops, &damage_for_raster);
+        if !damage_for_raster.is_empty() {
+            raster::execute_with_damage(&mut surface, &token.ops, &damage_for_raster);
+        }
 
         // Present (consumes token)
         let _stats = presenter.present_frame(token);

@@ -14,6 +14,8 @@ use crate::asset::Image;
 use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA};
 // use crate::font_client; // No longer needed
 use crate::ASSETS;
+use crate::log;
+use fontdue::layout::{Layout, CoordinateSystem, TextStyle};
 
 /// Execution Context maintaining state stacks
 struct RasterContext<'a> {
@@ -585,34 +587,33 @@ fn blit_alpha(
 
 /// Render text using local fontdue rasterization and a simple glyph cache.
 fn rasterize_text_locally(surface: &mut Surface, text: &str, x: i32, y: i32, size: f32, color: u32, clip: &Rect) {
-    use fontdue::layout::{Layout, CoordinateSystem, TextStyle};
-    
-    // 1. Get current font
-    let font_asset = match ASSETS.get_font() {
-        Some(f) => f,
-        None => return,
-    };
+    let ca = ((color >> 24) & 0xFF) as u8;
+    if ca == 0 { return; }
+
+    // 1. Get current fonts
+    let font_assets = ASSETS.get_fonts();
+    if font_assets.is_empty() { return; }
     
     // 2. Layout text
     let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
-    let fonts = [font_asset.font.as_ref()];
-    layout.append(&fonts, &TextStyle::new(text, size, 0));
+    let font_refs: alloc::vec::Vec<&fontdue::Font> = font_assets.iter().map(|f| f.font.as_ref()).collect();
+    layout.append(&font_refs, &TextStyle::new(text, size, 0));
     
     let cr = ((color >> 16) & 0xFF) as u8;
     let cg = ((color >> 8) & 0xFF) as u8;
     let cb = (color & 0xFF) as u8;
-    let ca = ((color >> 24) & 0xFF) as u8;
-    if ca == 0 { return; }
 
     // 3. Rasterize and blend each glyph
-    for glyph in layout.glyphs() {
-        // Simple caching: for now, we just rasterize. 
-        // Real caching would use a texture atlas or a Map<(FontId, size, char), Bitmap>.
-        // Since the prompt asks for "cache whatever needs caching to make it fast", 
-        // let's at least avoid redundant rasterization of the same glyph *in this call*.
-        // A global glyph cache would be better but let's start with local correctness.
+    let mut logged_fonts = false;
+    for (idx, glyph) in layout.glyphs().iter().enumerate() {
+        if !logged_fonts && idx < 5 {
+             let font_name = &font_assets[glyph.font_index].name;
+             log!("[raster] glyph {} uses font '{}'", idx, font_name);
+             if idx == 4 { logged_fonts = true; }
+        }
         
-        let (metrics, bitmap) = font_asset.font.rasterize_config(glyph.key);
+        let font = &font_assets[glyph.font_index].font;
+        let (metrics, bitmap) = font.rasterize_config(glyph.key);
         
         for (i, v) in bitmap.into_iter().enumerate() {
             let density = v as u32;

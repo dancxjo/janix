@@ -1,0 +1,150 @@
+warning: value assigned to `offset` is never read
+   --> abi/src/font.rs:234:51
+    |
+234 | ...0; offset += 1;
+    |       ^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: value assigned to `offset` is never read
+   --> abi/src/font.rs:245:93
+    |
+245 | ...); offset += 4;
+    |       ^^^^^^^^^^^
+    |
+    = help: maybe it is overwritten before being read?
+
+warning: `abi` (lib) generated 2 warnings
+warning: unexpected `cfg` condition value: `thingos`
+ --> stem/src/panic.rs:1:46
+  |
+1 | #[cfg(all(not(test), any(target_os = "none", target_os = "thingos")))]
+  |                                              ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `helenos`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `managarm`, `motor`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `qurt`, `redox`, `rtems`, `solaris`, and `solid_asp3` and 14 more
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+  = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition value: `thingos`
+ --> stem/src/panic.rs:3:46
+  |
+3 | #[cfg(all(not(test), any(target_os = "none", target_os = "thingos")))]
+  |                                              ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `helenos`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `managarm`, `motor`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `qurt`, `redox`, `rtems`, `solaris`, and `solid_asp3` and 14 more
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `thingos`
+ --> stem/src/panic.rs:6:46
+  |
+6 | #[cfg(all(not(test), any(target_os = "none", target_os = "thingos")))]
+  |                                              ^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `helenos`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `managarm`, `motor`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `qurt`, `redox`, `rtems`, `solaris`, and `solid_asp3` and 14 more
+  = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `thingos`
+  --> stem/src/rt.rs:12:75
+   |
+12 | ...re = "rt", any(target_os = "none", target_os = "thingos")))]
+   |                                       ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `helenos`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `managarm`, `motor`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `qurt`, `redox`, `rtems`, `solaris`, and `solid_asp3` and 14 more
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unused import: `core::arch::asm`
+ --> stem/src/syscall/arch/x86_64.rs:1:5
+  |
+1 | use core::arch::asm;
+  |     ^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unexpected `cfg` condition value: `thingos`
+  --> stem/src/allocator.rs:28:46
+   |
+28 | #[cfg(all(not(test), any(target_os = "none", target_os = "thingos")))]
+   |                                              ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `helenos`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `managarm`, `motor`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `qurt`, `redox`, `rtems`, `solaris`, and `solid_asp3` and 14 more
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unexpected `cfg` condition value: `thingos`
+  --> stem/src/allocator.rs:32:50
+   |
+32 | #[cfg(not(all(not(test), any(target_os = "none", target_os = "thingos"))))]
+   |                                                  ^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: expected values for `target_os` are: `aix`, `amdhsa`, `android`, `cuda`, `cygwin`, `dragonfly`, `emscripten`, `espidf`, `freebsd`, `fuchsia`, `haiku`, `helenos`, `hermit`, `horizon`, `hurd`, `illumos`, `ios`, `l4re`, `linux`, `lynxos178`, `macos`, `managarm`, `motor`, `netbsd`, `none`, `nto`, `nuttx`, `openbsd`, `psp`, `psx`, `qurt`, `redox`, `rtems`, `solaris`, and `solid_asp3` and 14 more
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/cargo-specifics.html> for more information about checking conditional configuration
+
+warning: unused variable: `ret`
+   --> stem/src/syscall/mod.rs:271:9
+    |
+271 |     let ret = unsafe { match raw_syscall6(SYS_ROOT_WATCH_CLOSE, id, 0, 0, 0, 0, 0) {
+    |         ^^^ help: if this is intentional, prefix it with an underscore: `_ret`
+    |
+    = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: `stem` (lib) generated 8 warnings (run `cargo fix --lib -p stem` to apply 2 suggestions)
+    Checking bloom v0.1.0 (/home/dancxjo/Documents/Projects/thing-os/userspace/bloom)
+error: no global memory allocator found but one is required; link to std or add `#[global_allocator]` to a static item that implements the GlobalAlloc trait
+
+warning: unused import: `alloc::sync::Arc`
+ --> userspace/bloom/src/bmp.rs:3:5
+  |
+3 | use alloc::sync::Arc;
+  |     ^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused import: `Key`
+ --> userspace/bloom/src/bristle.rs:3:49
+  |
+3 |     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, Key, KeyEventPayload,
+  |                                                 ^^^
+
+warning: unused import: `Size`
+ --> userspace/bloom/src/drawlist.rs:8:36
+  |
+8 | use crate::geometry::{Point, Rect, Size, Color, Transform, EdgeAA};
+  |                                    ^^^^
+
+warning: unused import: `crate::damage::Rect as DamageRect`
+  --> userspace/bloom/src/drawlist.rs:13:9
+   |
+13 | pub use crate::damage::Rect as DamageRect;
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `crate::logging`
+ --> userspace/bloom/src/frame_loop.rs:1:5
+  |
+1 | use crate::logging;
+  |     ^^^^^^^^^^^^^^
+
+warning: unused import: `alloc::sync::Arc`
+ --> userspace/bloom/src/raster.rs:8:5
+  |
+8 | use alloc::sync::Arc;
+  |     ^^^^^^^^^^^^^^^^
+
+warning: unused imports: `Color` and `Point`
+  --> userspace/bloom/src/raster.rs:14:54
+   |
+14 | use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA};
+   |                                                      ^^^^^        ^^^^^
+
+error: `#[panic_handler]` function required, but not found
+
+warning: value assigned to `rect_count` is never read
+   --> userspace/bloom/src/present.rs:154:30
+    |
+154 |         let mut rect_count = 0;
+    |                              ^
+    |
+    = help: maybe it is overwritten before being read?
+    = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: `bloom` (bin "bloom") generated 8 warnings
+error: could not compile `bloom` (bin "bloom") due to 2 previous errors; 8 warnings emitted

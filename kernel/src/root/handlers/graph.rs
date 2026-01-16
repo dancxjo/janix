@@ -57,9 +57,11 @@ pub fn handle_prop_get(
         if let Some(val) = node.props.get(&kid) {
             (0, *val)
         } else {
+            crate::kprintln!("ROOT: PropGet failed: node {} has no property {}", id, kid);
             (-1, 0)
         }
     } else {
+        crate::kprintln!("ROOT: PropGet failed: node {} not found", id);
         (-1, 0)
     }
 }

@@ -115,7 +115,7 @@ impl DrawCmd {
             DrawCmd::Cursor { frame, position } => {
                  let dx = position.x - frame.hotspot_x as i32;
                  let dy = position.y - frame.hotspot_y as i32;
-                 Rect::new(dx, dy, frame.image.width as i32, frame.image.height as i32)
+                 Rect::new(dx, dy, frame.image.width as i32 + 3, frame.image.height as i32 + 3)
             }
             DrawCmd::DrawText { text, position, size, .. } => {
                  let est_width = (text.len() as f32 * size * 0.6) as i32;

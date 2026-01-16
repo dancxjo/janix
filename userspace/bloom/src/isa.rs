@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 // Re-export geometry types for use in the ISA
-pub use crate::geometry::{Color, Point, Rect, Size, EdgeAA};
+pub use crate::geometry::{Color, Point, Rect, EdgeAA};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BlendMode {

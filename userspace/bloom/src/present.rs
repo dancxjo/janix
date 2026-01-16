@@ -257,7 +257,6 @@ impl DriverPresenter {
     }
 
     fn process_rx(&mut self) {
-        log!("[present] process_rx: rx_len={}", self.rx_len);
         loop {
             if self.rx_len < drvproto::HEADER_SIZE {
                 break;

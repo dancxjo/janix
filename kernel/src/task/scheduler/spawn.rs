@@ -186,10 +186,11 @@ pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
     let entry_ptr = arg as *mut UserEntry;
     let entry = unsafe { *alloc::boxed::Box::from_raw(entry_ptr) };
 
-    crate::kinfo!(
-        "Entering user mode: PC=0x{:x} SP=0x{:x}",
+    crate::kprintln!(
+        "USER_TRAMPOLINE: PC=0x{:x} SP=0x{:x} ARG0=0x{:x}",
         entry.entry_pc,
-        entry.user_sp
+        entry.user_sp,
+        entry.arg0
     );
 
     // Safety: we are entering user mode with the provided entry point

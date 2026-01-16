@@ -13,7 +13,6 @@ mod drawlist;
 mod frame;
 mod frame_loop;
 pub mod key_overlay;
-pub mod font_client;
 pub mod geometry; // Canonical geometry types
 mod isa;      // Portable Render ISA types
 mod logging;
@@ -42,11 +41,10 @@ fn unpack_handle(arg: usize, index: u32) -> PortHandle {
 
 use crate::asset::AssetBank;
 use alloc::collections::BTreeSet;
-// use abi::hid::Key; // Removed
 
-use stem::stack::{Stack, StackSpec};
+// use stem::stack::{Stack, StackSpec};
 
-static ASSETS: AssetBank = AssetBank::new();
+pub static ASSETS: AssetBank = AssetBank::new();
 
 /// Background thread for loading wallpaper
 extern "C" fn wallpaper_loader_entry() -> ! {
@@ -76,6 +74,83 @@ extern "C" fn wallpaper_loader_entry() -> ! {
     log!("[wallpaper_loader] thread done, sleeping forever");
     loop {
         stem::syscall::sleep_ms(10000);
+    }
+}
+
+/// Background thread for loading fonts
+extern "C" fn font_loader_entry() -> ! {
+    log!("[font_loader] thread started");
+    
+    use abi::types::{WatchSpec, WatchEvent, WatchMode};
+    use abi::query::{QueryStep, QueryOpKind};
+    use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
+    use stem::syscall;
+    use stem::thing::sys::{describe_thing, bytespace_info, prop_get};
+    use stem::thing::ThingId;
+
+    // Phase 1: Scan for boot.Modules that look like fonts
+    let kind_str = "boot.Module";
+    let symbol = SymbolRefWire {
+        tag: SYMBOL_REF_TAG_STR,
+        ptr_or_id: kind_str.as_ptr() as u64,
+        len: kind_str.len() as u64,
+    };
+
+    let steps = [QueryStep {
+        op: QueryOpKind::Scan as u64,
+        arg1: 256, // limit
+        arg2: 0,
+        symbol,
+    }];
+
+    let spec = WatchSpec {
+        mode: WatchMode::QueryThenStream as u32,
+        query_ptr: steps.as_ptr() as u64,
+        query_len: steps.len() as u64,
+    };
+    
+    let watch_id = match syscall::root_watch_open(&spec) {
+        Ok(id) => {
+            log!("[font_loader] watch opened (id={})", id);
+            id
+        }
+        Err(e) => {
+            log!("[font_loader] ERROR: watch open failed: {:?}", e);
+            loop { stem::sleep_ms(10000); }
+        }
+    };
+
+    let mut evt = WatchEvent::default();
+    loop {
+        match syscall::root_watch_next(watch_id, &mut evt) {
+            Ok(1) => {
+                let node_id = ThingId(evt.node_id);
+                let mut buf = [0u8; 512];
+                if let Ok(len) = describe_thing(node_id, &mut buf) {
+                    let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
+                    if desc.contains("name: \"") && (desc.contains(".ttf\"") || desc.contains(".otf\"") || desc.contains(".ttc\"")) {
+                        let bs_id = prop_get(node_id, "bytespace").map(ThingId).ok();
+                        let size = bs_id.and_then(|id| bytespace_info(id).ok());
+                        
+                        if let (Some(bs), Some(sz)) = (bs_id, size) {
+                            if let Some(font) = AssetBank::load_font_from_node_id(bs, sz, desc) {
+                                log!("[font_loader] SUCCESS: loaded '{}'", font.name);
+                                ASSETS.publish_font(font);
+                            }
+                        }
+                    }
+                }
+            }
+            Ok(0) => {
+                // Yield and wait
+                stem::sleep_ms(100);
+            }
+            Err(e) => {
+                log!("[font_loader] watch next error: {:?}", e);
+                stem::sleep_ms(500);
+            }
+            _ => { stem::sleep_ms(100); }
+        }
     }
 }
 
@@ -125,6 +200,7 @@ fn main(arg: usize) -> ! {
     use stem::thing::sys::{bytespace_map, bytespace_unmap};
     use stem::thing::ThingId;
     let bs_id = ThingId(arg_val as u64);
+
     let mapped = bytespace_map(bs_id);
     
     let mut valid_bs = false;
@@ -156,23 +232,44 @@ fn main(arg: usize) -> ! {
 
     log!("[bloom] starting (arg_req={} arg_resp={} bristle={} font_svc={})", arg_req, arg_resp, bristle_evt, svc_font_id);
 
-    // Init Font Client
-    if svc_font_id != 0 {
-        font_client::init(svc_font_id);
-    }
+    // Font Client is no longer used, as we load fonts locally now.
+
+    use stem::stack::{Stack, StackSpec};
 
     // Spawn wallpaper loader thread
-    if let Err(e) = stem::thread::spawn(wallpaper_loader_entry) {
+    let wallpaper_stack = Stack::alloc_growing_stack(StackSpec {
+        reserve_bytes: 256 * 1024,
+        initial_commit_bytes: 64 * 1024,
+        ..StackSpec::default()
+    }).expect("wallpaper stack");
+    if let Err(e) = stem::thread::spawn_on(wallpaper_stack, wallpaper_loader_entry) {
         log!("[bloom] ERROR: failed to spawn wallpaper loader: {:?}", e);
     } else {
         log!("[bloom] spawned wallpaper_loader thread");
     }
 
     // Spawn cursor loader thread
-    if let Err(e) = stem::thread::spawn(cursor_loader_entry) {
+    let cursor_stack = Stack::alloc_growing_stack(StackSpec {
+        reserve_bytes: 256 * 1024,
+        initial_commit_bytes: 64 * 1024,
+        ..StackSpec::default()
+    }).expect("cursor stack");
+    if let Err(e) = stem::thread::spawn_on(cursor_stack, cursor_loader_entry) {
         log!("[bloom] ERROR: failed to spawn cursor loader: {:?}", e);
     } else {
         log!("[bloom] spawned cursor_loader thread");
+    }
+
+    // Spawn font loader thread
+    let font_stack = Stack::alloc_growing_stack(StackSpec {
+        reserve_bytes: 256 * 1024,
+        initial_commit_bytes: 64 * 1024,
+        ..StackSpec::default()
+    }).expect("font stack");
+    if let Err(e) = stem::thread::spawn_on(font_stack, font_loader_entry) {
+        log!("[bloom] ERROR: failed to spawn font loader: {:?}", e);
+    } else {
+        log!("[bloom] spawned font_loader thread");
     }
 
     // 1. Discovery & Mapping
@@ -181,6 +278,7 @@ fn main(arg: usize) -> ! {
         Ok(t) => {
             log!("[bloom] compositor target: {}x{} @ {:p} backend={}", 
                 t.width, t.height, t.ptr, t.backend.name());
+
             t
         },
         Err(e) => {
@@ -294,11 +392,11 @@ fn main(arg: usize) -> ! {
                 log!("[bloom] frame {}: cursor not ready yet", frame_id);
             }
         }
-        // Check if fontd is ready (log once)
+        // Check if fonts are ready
         if !font_loaded {
-            if font_client::is_ready() && font_client::get_default_face(frame_id).is_some() {
+            if ASSETS.get_font_for_gen(gen_snapshot).is_some() {
                 font_loaded = true;
-                log!("[bloom] frame {}: fontd available", frame_id);
+                log!("[bloom] frame {}: fonts available", frame_id);
                 builder.mark_full_damage();
             }
         }

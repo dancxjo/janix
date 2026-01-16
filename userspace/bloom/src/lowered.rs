@@ -16,10 +16,10 @@ pub enum LowLevelOp {
     
     // Geometry primitives
     FillRect { rect: Rect, color: Color, aa: EdgeAA },
-    FillRoundRect { rect: Rect, radius: i32, color: Color, aa: EdgeAA },
     StrokeRect { rect: Rect, color: Color, width: i32 },
     Line { from: Point, to: Point, color: Color, width: i32 },
     FillCircle { center: Point, radius: i32, color: Color },
+    FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
     
     // Image Operations
     /// Blit opaque image with explicit scaling. 
@@ -84,9 +84,90 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
             // Primitives
             DrawCmd::Clear { color } => out.ops.push(LowLevelOp::Clear { color: *color }),
             DrawCmd::FillRect { rect, color, aa } => out.ops.push(LowLevelOp::FillRect { rect: *rect, color: *color, aa: *aa }),
-            DrawCmd::FillRoundRect { rect, radius, color, aa } => out.ops.push(LowLevelOp::FillRoundRect { rect: *rect, radius: *radius, color: *color, aa: *aa }),
+            DrawCmd::FillRoundRect { rect, radius, color, aa } => {
+                let r = *radius;
+                if r <= 0 {
+                    out.ops.push(LowLevelOp::FillRect { rect: *rect, color: *color, aa: *aa });
+                } else {
+                    // Decompose into 3 rectangles and 4 arcs to avoid overlaps
+                    let x = rect.x();
+                    let y = rect.y();
+                    let w = rect.width();
+                    let h = rect.height();
+                    let r = r.min(w / 2).min(h / 2);
+                    
+                    // 1. Central full-height strip
+                    out.ops.push(LowLevelOp::FillRect { 
+                        rect: Rect::new(x + r, y, w - 2*r, h), 
+                        color: *color, 
+                        aa: *aa 
+                    });
+                    
+                    // 2. Left strip
+                    out.ops.push(LowLevelOp::FillRect { 
+                        rect: Rect::new(x, y + r, r, h - 2*r), 
+                        color: *color, 
+                        aa: *aa 
+                    });
+                    
+                    // 3. Right strip
+                    out.ops.push(LowLevelOp::FillRect { 
+                        rect: Rect::new(x + w - r, y + r, r, h - 2*r), 
+                        color: *color, 
+                        aa: *aa 
+                    });
+                    
+                    // 4. Corners (Arcs)
+                    // TL
+                    out.ops.push(LowLevelOp::FillArc { 
+                        center: Point::new(x + r, y + r), 
+                        radius: r, 
+                        start_angle: 180.0, 
+                        end_angle: 270.0, 
+                        color: *color,
+                        aa: *aa
+                    });
+                    // TR
+                    out.ops.push(LowLevelOp::FillArc { 
+                        center: Point::new(x + w - r, y + r), 
+                        radius: r, 
+                        start_angle: 270.0, 
+                        end_angle: 360.0, 
+                        color: *color,
+                        aa: *aa
+                    });
+                    // BL
+                    out.ops.push(LowLevelOp::FillArc { 
+                        center: Point::new(x + r, y + h - r), 
+                        radius: r, 
+                        start_angle: 90.0, 
+                        end_angle: 180.0, 
+                        color: *color,
+                        aa: *aa
+                    });
+                    // BR
+                    out.ops.push(LowLevelOp::FillArc { 
+                        center: Point::new(x + w - r, y + h - r), 
+                        radius: r, 
+                        start_angle: 0.0, 
+                        end_angle: 90.0, 
+                        color: *color,
+                        aa: *aa
+                    });
+                }
+            },
             DrawCmd::StrokeRect { rect, color, width } => out.ops.push(LowLevelOp::StrokeRect { rect: *rect, color: *color, width: *width }),
             DrawCmd::FillCircle { center, radius, color } => out.ops.push(LowLevelOp::FillCircle { center: *center, radius: *radius, color: *color }),
+            DrawCmd::FillArc { center, radius, start_angle, end_angle, color, aa } => {
+                out.ops.push(LowLevelOp::FillArc { 
+                    center: *center, 
+                    radius: *radius, 
+                    start_angle: *start_angle, 
+                    end_angle: *end_angle, 
+                    color: *color,
+                    aa: *aa
+                });
+            },
             DrawCmd::Line { from, to, color, width } => out.ops.push(LowLevelOp::Line { from: *from, to: *to, color: *color, width: *width }),
 
             // Images
@@ -341,15 +422,43 @@ mod tests {
         
         let lowered = lower(&list);
         
-        assert_eq!(lowered.ops.len(), 1);
-        if let LowLevelOp::FillRoundRect { rect, radius, color, aa } = &lowered.ops[0] {
-            assert_eq!(rect.x(), 50);
-            assert_eq!(rect.width(), 100);
+        // Should be decomposed into 3 rects and 4 arcs
+        assert_eq!(lowered.ops.len(), 7);
+        
+        // Check first op is central strip
+        if let LowLevelOp::FillRect { rect, .. } = &lowered.ops[0] {
+            assert_eq!(rect.x(), 60); // 50 + 10
+            assert_eq!(rect.width(), 80); // 100 - 20
+        } else {
+            panic!("Expected FillRect for central strip");
+        }
+        
+        // Check corner
+        if let LowLevelOp::FillArc { center, radius, aa, .. } = &lowered.ops[3] {
+            assert_eq!(center.x, 60);
+            assert_eq!(center.y, 60);
             assert_eq!(*radius, 10);
-            assert_eq!(*color, Color::new(0, 255, 0, 255));
             assert_eq!(*aa, EdgeAA::Coverage8);
         } else {
-            panic!("Expected FillRoundRect");
+            panic!("Expected FillArc for TL corner");
+        }
+    }
+
+    #[test]
+    fn test_lower_arc() {
+        let mut list = DrawList::new();
+        list.arc(100, 100, 50, 0.0, 90.0, Color::new(255, 255, 0, 255), EdgeAA::None);
+        
+        let lowered = lower(&list);
+        assert_eq!(lowered.ops.len(), 1);
+        if let LowLevelOp::FillArc { center, radius, start_angle, end_angle, aa, .. } = &lowered.ops[0] {
+            assert_eq!(center.x, 100);
+            assert_eq!(*radius, 50);
+            assert_eq!(*start_angle, 0.0);
+            assert_eq!(*end_angle, 90.0);
+            assert_eq!(*aa, EdgeAA::None);
+        } else {
+            panic!("Expected FillArc");
         }
     }
 }

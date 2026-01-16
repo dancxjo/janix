@@ -45,6 +45,7 @@ pub enum DrawCmd {
     FillCircle { center: Point, radius: i32, color: Color },
     StrokeCircle { center: Point, radius: i32, color: Color, width: i32 },
     Line { from: Point, to: Point, color: Color, width: i32 },
+    FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
     Polyline { points: Vec<Point>, color: Color, width: i32 },
     Polygon { points: Vec<Point>, fill: Color, stroke: Color },
 
@@ -103,6 +104,10 @@ impl DrawCmd {
                 let max_x = from.x.max(to.x);
                 let max_y = from.y.max(to.y);
                 Rect::new(min_x - width, min_y - width, (max_x - min_x) + width*2, (max_y - min_y) + width*2)
+            }
+            DrawCmd::FillArc { center, radius, .. } => {
+                let r = *radius;
+                Rect::new(center.x - r, center.y - r, r*2, r*2)
             }
             DrawCmd::DrawImage { dest, .. } => *dest,
             DrawCmd::DrawImageRegion { dest, .. } => *dest,
@@ -171,6 +176,17 @@ impl DrawList {
             to: Point::new(x1, y1), 
             color,
             width: 1 
+        });
+    }
+
+    pub fn arc(&mut self, cx: i32, cy: i32, r: i32, start: f32, end: f32, color: Color, aa: EdgeAA) {
+        self.cmds.push(DrawCmd::FillArc {
+            center: Point::new(cx, cy),
+            radius: r,
+            start_angle: start,
+            end_angle: end,
+            color,
+            aa,
         });
     }
 

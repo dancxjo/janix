@@ -7,11 +7,8 @@ use crate::frame::AssetGeneration;
 use crate::drawlist::{DrawList, DrawCmd};
 use crate::damage::Rect;
 use crate::geometry::{Color, Point};
-use crate::font_client;
+use crate::ASSETS;
 use abi::hid::Key;
-use abi::font::FaceId;
-use stem::thing::sys::{bytespace_map, bytespace_unmap};
-use stem::thing::ThingId;
 
 
 pub struct KeyOverlay {
@@ -19,12 +16,6 @@ pub struct KeyOverlay {
     active_keys: BTreeSet<Key>,
     cached_text: String,
     
-    // Resources
-    font_face: Option<FaceId>,
-    last_font_check: u64,
-    
-    // Render Cache
-    cached_bitmap: Option<Image>,
     cached_geometry: Rect, // The rect of the *overlay box*, including padding
     
     // Damage
@@ -36,15 +27,12 @@ impl KeyOverlay {
         Self {
             active_keys: BTreeSet::new(),
             cached_text: String::new(),
-            font_face: None,
-            last_font_check: 0,
-            cached_bitmap: None,
             cached_geometry: Rect::default(),
             prev_rect: None,
         }
     }
 
-    pub fn update(&mut self, keys: &BTreeSet<Key>, frame_id: u64) -> bool {
+    pub fn update(&mut self, keys: &BTreeSet<Key>, _frame_id: u64) -> bool {
         let mut damaged = false;
         
         // 1. Check if keys changed
@@ -55,87 +43,8 @@ impl KeyOverlay {
             let new_text = build_key_string(keys);
             if new_text != self.cached_text {
                 self.cached_text = new_text;
-                self.cached_bitmap = None; // Invalidate cache
                 damaged = true;
             }
-        }
-        
-        // 2. Ensure we have a font
-        if self.font_face.is_none() {
-            if frame_id > self.last_font_check + 60 {
-                self.last_font_check = frame_id;
-                if let Some(list) = super::font_client::list_fonts() {
-                    let list: &alloc::vec::Vec<abi::font::FontInfo> = &list;
-                    let mut found = false;
-                    
-                    // 1. Try Hack
-                    for info in list.iter() {
-                        if info.family.contains("Hack") {
-                            self.font_face = Some(info.face_id);
-                            found = true;
-                            break;
-                        }
-                    }
-                    
-                    // 2. Try Noto
-                    if !found {
-                        for info in list.iter() {
-                            if info.family.contains("Noto") {
-                                self.font_face = Some(info.face_id);
-                                found = true;
-                                break;
-                            }
-                        }
-                    }
-                    
-                    // 3. Fallback to first
-                    if !found {
-                        if let Some(first) = list.first() {
-                            self.font_face = Some(first.face_id);
-                        }
-                    }
-                }
-            }
-        }
-        
-        // 3. Re-render if needed and possible (using RenderText directly)
-        if self.cached_bitmap.is_none() && !self.cached_text.is_empty() && self.font_face.is_some() {
-             let face = self.font_face.unwrap();
-             // Render!
-             // Color: White text (0xFFFFFFFF)
-             // Use 24px font size as per requirements/design
-             if let Some(bmp) = font_client::render_text(face, 24, &self.cached_text, 0xFFFFFFFF) {
-                 // Convert TextBitmap to Image
-                 // Map bytespace
-                 if let Ok(ptr) = bytespace_map(ThingId(bmp.buffer_id)) {
-                     // Create new Arc<[u32]> with copy of data
-                     let len = (bmp.width * bmp.height) as usize;
-                     let src_slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, len) };
-                     
-                     // We must copy because we unmap immediately
-                     let pixels: Arc<[u32]> = Arc::from(src_slice);
-
-                     let _ = bytespace_unmap(ThingId(bmp.buffer_id), ptr);
-                     
-                     self.cached_bitmap = Some(Image {
-                         width: bmp.width,
-                         height: bmp.height,
-                         pixels,
-                         gen: AssetGeneration::ZERO
-                     });
-                     
-                     // Check if geometry changed (size changed)
-                     let old_geom = self.cached_geometry;
-                     // We don't update geometry here, we update it in render or we compute it now.
-                     // Let's compute it now to be correct for damage tracking.
-                     // screen_w/h is unknown here, but size is known.
-                     // The requirement says "bottom-right overlay". Position depends on screen size.
-                     // We can't fully know rect without screen size.
-                     // But we can know size.
-                     
-                     damaged = true;
-                 }
-             }
         }
         
         damaged
@@ -176,13 +85,10 @@ impl KeyOverlay {
         let padding_x = 12;
         let padding_y = 10;
         
-        let (content_w, content_h) = if let Some(ref img) = self.cached_bitmap {
-            (img.width as i32, img.height as i32)
-        } else {
-            // Fallback
-             let text_w = (self.cached_text.chars().count() as f32 * 24.0 * 0.6) as i32;
-            (text_w, 24)
-        };
+        // Rough estimation of text width if we don't have font metrics yet
+        let text_w = (self.cached_text.chars().count() as f32 * 24.0 * 0.6) as i32;
+        let content_w = text_w;
+        let content_h = 24;
         
         let box_w = content_w + padding_x * 2;
         let box_h = content_h + padding_y * 2;
@@ -207,26 +113,11 @@ impl KeyOverlay {
         let bg_color = Color::from_u32(0x99000000); 
         let radius = 10;
         
-        let x = rect.x;
-        let y = rect.y;
-        let box_w = rect.w;
-        let box_h = rect.h;
-        
-        // Center rect
-        list.rect(x + radius, y, box_w - radius*2, box_h, bg_color);
-        list.rect(x, y + radius, radius, box_h - radius*2, bg_color);
-        list.rect(x + box_w - radius, y + radius, radius, box_h - radius*2, bg_color);
-        
-        // Corners
-        list.commands().push(DrawCmd::FillCircle { center: Point::new(x + radius, y + radius), radius, color: bg_color });
-        list.commands().push(DrawCmd::FillCircle { center: Point::new(x + box_w - radius, y + radius), radius, color: bg_color });
-        list.commands().push(DrawCmd::FillCircle { center: Point::new(x + radius, y + box_h - radius), radius, color: bg_color });
-        list.commands().push(DrawCmd::FillCircle { center: Point::new(x + box_w - radius, y + box_h - radius), radius, color: bg_color });
+        list.rounded_rect(rect.x, rect.y, rect.w, rect.h, radius, bg_color, crate::geometry::EdgeAA::None);
 
-        // Draw Text Image
-        if let Some(ref img) = self.cached_bitmap {
-            // Center text in box
-            list.blit_image(img, x + 12, y + 10);
+        // Draw Text
+        if !self.cached_text.is_empty() {
+             list.text(&self.cached_text, rect.x + 12, rect.y + 10, 24.0, Color::from_u32(0xFFFFFFFF));
         }
     }
 }
@@ -381,12 +272,7 @@ mod tests {
         overlay.active_keys.insert(Key::A); // Make it not empty
         
         // Mock a cached geometry for "current"
-        overlay.cached_bitmap = Some(Image {
-            width: 100,
-            height: 30,
-            pixels: Arc::new([]),
-            gen: AssetGeneration::ZERO,
-        });
+        overlay.cached_geometry = Rect::new(860, 934, 124, 50);
         
         let dmg = overlay.damage_rect(1000, 1000).unwrap();
         

@@ -610,25 +610,34 @@ impl AssetBank {
     }
 
     /// Load a TTF font from the system graph
-    pub fn load_font_from_graph(path: &str) -> Option<FontAsset> {
-        info!("[asset_bank] load_font_from_graph: {}", path);
+    pub fn load_font_from_graph_by_path(path: &str) -> Option<FontAsset> {
+        info!("[asset_bank] load_font_from_graph_by_path: {}", path);
         let (id, size) = Self::probe_asset(path)?;
-        
-        info!("[asset_bank] mapping bytespace {} ({} bytes)", id.0, size);
-        let ptr = stem::thing::sys::bytespace_map(id).ok()?;
-        info!("[asset_bank] mapped to {:p}", ptr);
+        Self::load_font_from_node_id(id, size, path)
+    }
+
+    pub fn load_font_from_node_id(id: ThingId, size: usize, display_name: &str) -> Option<FontAsset> {
+        info!("[asset_bank] mapping font bytespace {} ({} bytes)", id.0, size);
+        let ptr = match stem::thing::sys::bytespace_map(id) {
+            Ok(p) => p,
+            Err(e) => {
+                info!("[asset_bank] bytespace_map FAILED: {:?}", e);
+                return None;
+            }
+        };
+        info!("[asset_bank] mapped at {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
         
-        info!("[asset_bank] parsing TTF font...");
+        info!("[asset_bank] parsing font '{}'...", display_name);
         
         let settings = fontdue::FontSettings::default();
         match fontdue::Font::from_bytes(slice, settings) {
             Ok(font) => {
                 info!("[asset_bank] SUCCESS: font parsed");
-                let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+                // NOTE: We do NOT unmap on success because fontdue keeps a reference to the slice.
                 
-                // Extract name from path
-                let name: Arc<str> = path.rsplit('/').next().unwrap_or(path).into();
+                // Extract name from path/display name
+                let name: Arc<str> = display_name.rsplit('/').next().unwrap_or(display_name).into();
                 
                 Some(FontAsset {
                     font: Arc::new(font),

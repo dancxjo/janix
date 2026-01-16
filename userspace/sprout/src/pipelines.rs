@@ -270,29 +270,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
     }
 
-    // Create svc.Font node
-    let svc_font = thingsys::create_node("svc.Font").unwrap_or(ThingId(0));
-    
-    // Spawn fontd with svc_font ID
-    if svc_font.0 != 0 {
-        match stem::syscall::spawn_process("/fontd", svc_font.0 as usize) {
-            Ok(pid) => {
-                info!("SPROUT: Spawned fontd (PID={}) handling svc.Font={}", pid, svc_font.0);
-                tasks.push(ManagedTask {
-                    name: "/fontd".to_string(),
-                    kind: TaskKind::App,
-                    module_path: "/fontd".to_string(),
-                    pid: Some(pid),
-                    restarts: 0,
-                });
-            }
-            Err(e) => {
-                 stem::error!("SPROUT: Failed to spawn fontd: {:?}", e);
-            }
-        }
-    } else {
-        stem::error!("SPROUT: Failed to create svc.Font node");
-    }
+    // Font handling is now integrated into Bloom. No standalone fontd service.
 
     let (drv_req_write, drv_resp_read) = display
         .as_ref()
@@ -322,10 +300,9 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
               slice[3] = evt.1 as u32; // bristle read
               
               // New layout for Streams:
-              // 4: svc_font (u64 -> 2 u32s)
-              let font_id = svc_font.0;
-              slice[4] = font_id as u32;
-              slice[5] = (font_id >> 32) as u32;
+              // 4: svc_font (u64 -> 2 u32s) - NO LONGER USED
+              slice[4] = 0;
+              slice[5] = 0;
               
               let _ = bytespace_unmap(boot_bs, ptr);
          }

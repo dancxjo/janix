@@ -29,11 +29,13 @@ pub fn handle_watch_open(
         node.resource = Some(ResourceHandle::Stream(stream_handle.clone()));
     }
 
-    // 2. Parse Query to determine filter (v0 hack: assume Bytespace + Missing Fact)
-    let bs_kind = interner.intern("thing.bytespace");
-    let fact_rel = interner.intern("has_fact"); // "fact"
-    // TODO: Ideally we inspect `query` to find these values.
-    // For now, let's just register it.
+    // 2. Parse Query to determine filter
+    // Extract kind from query's first Scan step, fallback to bytespace
+    let bs_kind = query.iter()
+        .find(|s| s.op == abi::query::QueryOpKind::Scan as u64)
+        .map(|s| s.symbol)
+        .unwrap_or_else(|| interner.intern("thing.bytespace"));
+    let fact_rel = interner.intern("has_fact");
     
     // 3. Create Global Watch
     // We use stream_id as the watch_id conceptually for the user, 

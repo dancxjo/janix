@@ -14,6 +14,7 @@ use stem::syscall::{port_recv, port_send, PortHandle};
 
 use crate::damage::Damage;
 use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentStats};
+use crate::log;
 use crate::reclaimer;
 
 /// Presenter trait with transactional frame API
@@ -94,8 +95,10 @@ impl DriverPresenter {
     pub fn wait_for_register(&mut self) {
         let mut loops = 0u32;
         loop {
+            log!("[present] wait_for_register: loop={} registered={}", loops, self.registered);
             self.pump();
             if self.registered {
+                log!("[present] registered SUCCESS");
                 break;
             }
             if loops >= 200 {
@@ -254,6 +257,7 @@ impl DriverPresenter {
     }
 
     fn process_rx(&mut self) {
+        log!("[present] process_rx: rx_len={}", self.rx_len);
         loop {
             if self.rx_len < drvproto::HEADER_SIZE {
                 break;

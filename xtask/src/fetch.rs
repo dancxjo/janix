@@ -33,18 +33,20 @@ fn fetch_limine(vendor: &Path) -> Result<()> {
 
     let limine_dir = vendor.join("limine");
     if limine_dir.join(".git").exists() {
-        println!("    Removing existing limine repo...");
-        fs::remove_dir_all(&limine_dir)?;
+        println!("    Limine repo already exists, skipping clone.");
+    } else {
+        if limine_dir.exists() {
+            fs::remove_dir_all(&limine_dir)?;
+        }
+        run_cmd(
+            Command::new("git")
+                .arg("clone")
+                .arg("--branch=v10.x-binary")
+                .arg("--depth=1")
+                .arg("https://github.com/limine-bootloader/limine.git")
+                .arg(&limine_dir),
+        )?;
     }
-
-    run_cmd(
-        Command::new("git")
-            .arg("clone")
-            .arg("--branch=v10.x-binary")
-            .arg("--depth=1")
-            .arg("https://github.com/limine-bootloader/limine.git")
-            .arg(&limine_dir),
-    )?;
 
     let required = [
         "limine-bios.sys",
@@ -55,19 +57,25 @@ fn fetch_limine(vendor: &Path) -> Result<()> {
         "BOOTRISCV64.EFI",
         "BOOTLOONGARCH64.EFI",
     ];
+
+    let mut all_present = true;
     for f in required {
         let p = limine_dir.join(f);
         if !p.exists() {
-            ensure!(p.exists(), "Missing Limine artifact: {}", f);
+            all_present = false;
+            break;
         }
     }
-    println!("    Building limine CLI tool...");
-    run_cmd(
-        Command::new("make")
-            .arg("-C")
-            .arg(&limine_dir),
-    )?;
-    println!("    Limine fetched.");
+
+    let limine_exe = limine_dir.join("limine");
+    if all_present && limine_exe.exists() {
+        println!("    Limine artifacts and tool already present, skipping build.");
+    } else {
+        println!("    Building limine CLI tool...");
+        run_cmd(Command::new("make").arg("-C").arg(&limine_dir))?;
+    }
+
+    println!("    Limine ready.");
     Ok(())
 }
 
@@ -81,6 +89,31 @@ fn fetch_ovmf(vendor: &Path) -> Result<()> {
 
     let release = std::env::var("THINGOS_OVMF_RELEASE")
         .unwrap_or_else(|_| "edk2-stable202508-r1".to_string());
+    
+    let mappings = [
+        ("x64/code.fd", "ovmf-code-x86_64.fd"),
+        ("x64/vars.fd", "ovmf-vars-x86_64.fd"),
+        ("aarch64/code.fd", "ovmf-code-aarch64.fd"),
+        ("aarch64/vars.fd", "ovmf-vars-aarch64.fd"),
+        ("riscv64/code.fd", "ovmf-code-riscv64.fd"),
+        ("riscv64/vars.fd", "ovmf-vars-riscv64.fd"),
+        ("loongarch64/code.fd", "ovmf-code-loongarch64.fd"),
+        ("loongarch64/vars.fd", "ovmf-vars-loongarch64.fd"),
+    ];
+
+    let mut missing = false;
+    for (_, dest_name) in mappings {
+        if !ovmf_dir.join(dest_name).exists() {
+            missing = true;
+            break;
+        }
+    }
+
+    if !missing {
+        println!("    OVMF artifacts already present, skipping.");
+        return Ok(());
+    }
+
     let archive_name = format!("{}-bin.tar.xz", release);
     let archive_url = format!(
         "https://github.com/rust-osdev/ovmf-prebuilt/releases/download/{}/{}",
@@ -103,6 +136,7 @@ fn fetch_ovmf(vendor: &Path) -> Result<()> {
     }
     fs::create_dir_all(&extract_dir)?;
 
+    println!("    Extracting OVMF...");
     run_cmd(
         Command::new("tar")
             .arg("-xJf")
@@ -113,17 +147,6 @@ fn fetch_ovmf(vendor: &Path) -> Result<()> {
     .context("Failed to unpack OVMF archive")?;
 
     let base = extract_dir.join(format!("{}-bin", release));
-    let mappings = [
-        ("x64/code.fd", "ovmf-code-x86_64.fd"),
-        ("x64/vars.fd", "ovmf-vars-x86_64.fd"),
-        ("aarch64/code.fd", "ovmf-code-aarch64.fd"),
-        ("aarch64/vars.fd", "ovmf-vars-aarch64.fd"),
-        ("riscv64/code.fd", "ovmf-code-riscv64.fd"),
-        ("riscv64/vars.fd", "ovmf-vars-riscv64.fd"),
-        ("loongarch64/code.fd", "ovmf-code-loongarch64.fd"),
-        ("loongarch64/vars.fd", "ovmf-vars-loongarch64.fd"),
-    ];
-
     for (src_rel, dest_name) in mappings {
         let src = base.join(src_rel);
         if src.exists() {

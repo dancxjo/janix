@@ -30,6 +30,14 @@ pub mod kinds {
     pub const RES_IO_PORT_RANGE: &str = "res.io.PortRange";
     pub const RES_IRQ: &str = "res.Irq";
     // pub const RES_DMA: &str = "res.dma"; // Reserved for future
+
+    // UI
+    pub const UI_ROOT: &str = "ui.Root";
+    pub const UI_WINDOW: &str = "ui.Window";
+    pub const UI_PANEL: &str = "ui.Panel";
+    pub const UI_TEXT: &str = "ui.Text";
+    pub const UI_IMAGE: &str = "ui.Image";
+    pub const UI_OVERLAY: &str = "ui.Overlay";
 }
 
 pub mod rels {
@@ -45,6 +53,11 @@ pub mod rels {
     pub const ALIAS_OF: &str = "ALIAS_OF";
     pub const RUNS_ON: &str = "RUNS_ON";
     pub const PROVIDES: &str = "PROVIDES";
+
+    // UI
+    pub const CHILD_OF: &str = "CHILD_OF";
+    pub const CLIP_TO: &str = "CLIP_TO";
+    pub const ROOT_UI: &str = "ROOT_UI";
 }
 
 pub mod props {
@@ -81,6 +94,20 @@ pub mod props {
     // Provenance (v0.1)
     pub const SOURCE: &str = "source";
     pub const CONFIDENCE: &str = "confidence";
+
+    // UI Properties
+    pub const UI_X: &str = "ui.x";
+    pub const UI_Y: &str = "ui.y";
+    pub const UI_WIDTH: &str = "ui.width";
+    pub const UI_HEIGHT: &str = "ui.height";
+    pub const UI_COLOR: &str = "ui.color";
+    pub const UI_TEXT: &str = "ui.text";
+    pub const UI_FONT: &str = "ui.font";
+    pub const UI_FONT_SIZE: &str = "ui.font_size";
+    pub const UI_RADIUS: &str = "ui.radius";
+    pub const UI_TITLE: &str = "ui.title";
+    pub const UI_HIDDEN: &str = "ui.hidden";
+    pub const UI_Z_INDEX: &str = "ui.z_index";
 }
 
 // Common categorical values derived from provenance

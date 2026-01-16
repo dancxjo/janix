@@ -1,6 +1,8 @@
 #![no_std]
 #![no_main]
 
+extern crate alloc;
+
 use core::time::Duration;
 use stem::info;
 use time::OffsetDateTime;
@@ -51,11 +53,53 @@ fn main() -> ! {
 
     info!("starting");
 
+    // UI Setup
+    use stem::thing::ThingId;
+    use stem::ui::UiBuilder;
+    
+    // Find UI Root
+    let mut ui_roots = [ThingId(0); 1];
+    let ui_root = if stem::thing::sys::find(abi::schema::kinds::UI_ROOT, &mut ui_roots).unwrap_or(0) > 0 {
+        ui_roots[0]
+    } else {
+        info!("WARN: UI Root not found, retrying in 1s...");
+        stem::sleep(Duration::from_secs(1));
+        // Simple retry once
+        if stem::thing::sys::find(abi::schema::kinds::UI_ROOT, &mut ui_roots).unwrap_or(0) > 0 {
+            ui_roots[0]
+        } else {
+            info!("ERROR: UI Root still not found, giving up on UI");
+            ThingId(0)
+        }
+    };
+
+    let mut text_node = None;
+    if ui_root.0 != 0 {
+        let win = UiBuilder::create_window(ui_root, "Clock");
+        UiBuilder::set_pos(win, 100, 100);
+        UiBuilder::set_size(win, 300, 100);
+        UiBuilder::set_color(win, 0xCC333333); // Dark gray
+
+        let text = UiBuilder::create_text(win, "Initializing...");
+        UiBuilder::set_pos(text, 110, 140);
+        UiBuilder::set_color(text, 0xFFFFFFFF);
+        text_node = Some(text);
+    }
+
     loop {
         let unix = stem::time::now_unix_seconds();
         let mono_ns = stem::monotonic_ns();
         print_tick(unix, mono_ns);
 
-        stem::sleep(Duration::from_secs(7));
+        if let Some(txt) = text_node {
+            let unix_i64 = unix as i64;
+            let dt = OffsetDateTime::from_unix_timestamp(unix_i64).ok();
+            if let Some(dt) = dt {
+                let time_str = alloc::format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second());
+                UiBuilder::set_text(txt, &time_str);
+            }
+        }
+
+        stem::sleep(Duration::from_secs(1));
     }
 }

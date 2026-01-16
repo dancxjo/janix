@@ -220,28 +220,17 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             LowLevelOp::Line { from, to, color, width: _ } => {
                 let p0 = ctx.current_transform.transform_point(*from);
                 let p1 = ctx.current_transform.transform_point(*to);
-                 let line_bounds = Rect::new(p0.x.min(p1.x), p0.y.min(p1.y), (p0.x - p1.x).abs() + 1, (p0.y - p1.y).abs() + 1);
-                 if ctx.current_clip.intersection(&line_bounds).is_some() {
-                    line(ctx.surface, p0.x, p0.y, p1.x, p1.y, color.to_u32());
-                 }
+                line(ctx.surface, p0.x, p0.y, p1.x, p1.y, color.to_u32());
             },
 
             LowLevelOp::FillCircle { center, radius, color } => {
                 let c = ctx.current_transform.transform_point(*center);
-                let r = *radius;
-                let circle_bounds = Rect::new(c.x - r, c.y - r, r*2, r*2);
-                 if ctx.current_clip.intersection(&circle_bounds).is_some() {
-                    fill_circle_blend(ctx.surface, c.x, c.y, r, color.to_u32());
-                 }
+                fill_circle_blend(ctx.surface, c.x, c.y, *radius, color.to_u32());
             },
 
             LowLevelOp::FillArc { center, radius, start_angle, end_angle, color, aa } => {
                 let c = ctx.current_transform.transform_point(*center);
-                let r = *radius;
-                let arc_bounds = Rect::new(c.x - r, c.y - r, r*2, r*2);
-                if ctx.current_clip.intersection(&arc_bounds).is_some() {
-                    fill_arc_clipped_blend(ctx.surface, c.x, c.y, r, *start_angle, *end_angle, color.to_u32(), *aa, &ctx.current_clip);
-                }
+                fill_arc_clipped_blend(ctx.surface, c.x, c.y, *radius, *start_angle, *end_angle, color.to_u32(), *aa, &ctx.current_clip);
             },
 
             LowLevelOp::BlitOpaque { image, src, dst, filter } => {
@@ -548,27 +537,21 @@ fn blit_alpha(
                 let idx = (sy as usize) * (image.width as usize) + (sx as usize);
                 if idx < image.pixels.len() {
                     let src_px = image.pixels[idx];
-                    let mut a = (src_px >> 24) & 0xFF; // Source alpha
+                    let mut a = (src_px >> 24) & 0xFF;
                     
-                    // Modulate alpha
                     if ca != 255 {
                         a = (a * ca) / 255;
                     }
                     
-                    if a == 0 { continue; } // Fully transparent
+                    if a == 0 { continue; }
 
                     if blend == BlendMode::Src || a == 255 {
-                        // Replace (ifSrc) or Opaque (ifSrcOver and a=255)
-                        // If Src mode, we write even if alpha is low? Usually yes.
-                        // But if const_alpha is used for darkening (shadow), we probably mean alpha blending.
-                        // Assuming SrcOver for standard drawing.
                          if blend == BlendMode::Src {
-                             surface.put_px(dx, dy, src_px); // Note: doesn't apply const_alpha color modulation
+                             surface.put_px(dx, dy, src_px);
                              continue;
                          }
                     }
 
-                    // Standard SrcOver composition
                     let offset = (surface.stride_bytes / 4) * (dy as usize) + (dx as usize);
                     let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
                     let dst_px = unsafe { *dst_ptr };
@@ -579,15 +562,6 @@ fn blit_alpha(
                     let src_g = (src_px >> 8) & 0xFF;
                     let src_b = src_px & 0xFF;
                     
-                    // Note: If const_alpha is for 'shadow', we typically want black source with alpha.
-                    // If source image is white-transparent, modulating alpha works.
-                    // If we want to modulate COLOR too (fade out), we should multiply RGB by ca too.
-                    // Implementation choice: const_alpha modulates Alpha channel. 
-                    // To do a shadow from a colored cursor, we need to treat source color as black?
-                    // The prompt said: "const_alpha multiplies the per-pixel source alpha (and optionally the color) uniformly."
-                    // For shadow cursor (which is black+alpha or colored), we want 30% opacity.
-                    // Simple alpha modulation is enough if image is correct.
-
                     let dst_r = (dst_px >> 16) & 0xFF;
                     let dst_g = (dst_px >> 8) & 0xFF;
                     let dst_b = dst_px & 0xFF;
@@ -631,7 +605,6 @@ fn rasterize_text_locally(
             prioritized_fonts.insert(0, font);
         }
     } else {
-        // Default to NotoSans if nothing requested
         if let Some(pos) = prioritized_fonts.iter().position(|f| f.name.contains("NotoSans-Regular")) {
             let font = prioritized_fonts.remove(pos);
             prioritized_fonts.insert(0, font);
@@ -652,7 +625,6 @@ fn rasterize_text_locally(
         let target_font = &prioritized_fonts[glyph.font_index];
         let (metrics, bitmap) = target_font.font.rasterize_config(glyph.key);
 
-        // Local blending logic (simplified glyph cache omitted for brevity, using immediate rasterization)
         let gx = x + glyph.x as i32;
         let gy = y + glyph.y as i32;
         

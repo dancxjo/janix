@@ -73,6 +73,19 @@ pub mod keys {
     pub const ATA_CHANNEL: &str = "ata_channel";
     pub const ATA_DRIVE: &str = "ata_drive";
 
+    // UI Properties
+    pub const UI_X: &str = "ui.x";
+    pub const UI_Y: &str = "ui.y";
+    pub const UI_WIDTH: &str = "ui.width";
+    pub const UI_HEIGHT: &str = "ui.height";
+    pub const UI_COLOR: &str = "ui.color";
+    pub const UI_TEXT: &str = "ui.text";
+    pub const UI_FONT: &str = "ui.font";
+    pub const UI_FONT_SIZE: &str = "ui.font_size";
+    pub const UI_RADIUS: &str = "ui.radius";
+    pub const UI_TITLE: &str = "ui.title";
+    pub const UI_HIDDEN: &str = "ui.hidden";
+    pub const UI_Z_INDEX: &str = "ui.z_index";
 }
 
 pub mod kinds {
@@ -108,6 +121,13 @@ pub mod kinds {
     pub const DEV_STORAGE_PARTITION: &str = "dev.storage.Partition";
     pub const SVC_STORAGE: &str = "svc.Storage";
 
+    // UI Kinds
+    pub const UI_ROOT: &str = "ui.Root";
+    pub const UI_WINDOW: &str = "ui.Window";
+    pub const UI_PANEL: &str = "ui.Panel";
+    pub const UI_TEXT: &str = "ui.Text";
+    pub const UI_IMAGE: &str = "ui.Image";
+    pub const UI_OVERLAY: &str = "ui.Overlay";
 }
 
 pub mod rels {
@@ -129,6 +149,11 @@ pub mod rels {
     pub const IMPLEMENTS: &str = "IMPLEMENTS";
     pub const USES_IOPORTS: &str = "USES_IOPORTS";
     pub const HAS_SCANOUT: &str = "HAS_SCANOUT";
+
+    // UI Relations
+    pub const CHILD_OF: &str = "CHILD_OF";
+    pub const CLIP_TO: &str = "CLIP_TO";
+    pub const ROOT_UI: &str = "ROOT_UI";
 }
 
 // Virtio GPU additions

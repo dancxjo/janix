@@ -27,7 +27,10 @@ pub fn handle_bytespace_create<R: BootRuntime>(
     let kid = interner.intern("Bytespace");
     let id = graph.alloc(kid);
     
-    if let Some(handle) = bytespace::create(len as usize, hhdm_offset) {
+    // Ensure at least 1 page for v0 robustiness with empty strings
+    let alloc_len = if len == 0 { 1 } else { len };
+    
+    if let Some(handle) = bytespace::create(alloc_len as usize, hhdm_offset) {
         // Create backing mem.Range node
         let range_kid = interner.intern("mem.Range");
         let range_id = graph.alloc(range_kid);

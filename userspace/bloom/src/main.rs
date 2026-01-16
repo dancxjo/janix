@@ -23,6 +23,7 @@ mod reclaimer;
 mod surface;
 mod target;
 mod target_cpu;
+pub mod ui;
 
 use abi::display_driver_protocol::BindPayload;
 use stem::syscall::PortHandle;
@@ -337,9 +338,15 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_bbox: Option<Rect> = None;
     let mut first_frame = true;
 
+    // 4. UI Pipeline Setup
+    let mut ui_pipeline = ui::UiPipeline::new();
+    let ui_root = stem::ui::UiBuilder::create_root();
+    ui_pipeline.set_root(ui_root);
+
     // Track held keys
     let mut keys = BTreeSet::new();
     let mut key_overlay = key_overlay::KeyOverlay::new();
+    key_overlay.setup(ui_root);
 
     log!("[bloom] entering transactional frame loop (acquire -> build -> present)");
     log!("[bloom] reclaimer: budget={} bytes", reclaimer::memory_budget());
@@ -431,11 +438,7 @@ fn main(arg: usize) -> ! {
         prev_cursor_bbox = Some(new_cursor_bbox);
 
         // Key Overlay Update
-        if key_overlay.update(&keys, frame_id) {
-             if let Some(rect) = key_overlay.damage_rect(screen_w, screen_h) {
-                 builder.add_damage(rect);
-             }
-        }
+        key_overlay.update(&keys, screen_w, screen_h);
 
         // Damage text regions (frame counter changes every frame)
         // Damage text regions (frame counter changes every frame)
@@ -472,8 +475,8 @@ fn main(arg: usize) -> ! {
                 list.text_font("thing-os", "NotoSerif-Regular.ttf", 20, 40, 24.0, geometry::Color::from_u32(0xFFFFFFFF));
                 list.text_font(&alloc::format!("frame: {}", frame_id), "NotoSerif-Regular.ttf", 20, 70, 16.0, geometry::Color::from_u32(0xFFCCCCCC));
                 
-				// Render Key Overlay
-                key_overlay.render(list, screen_w, screen_h);
+                // Run UI Pipeline
+                ui_pipeline.run(screen_w, screen_h, list);
             }
 
             // Cursor

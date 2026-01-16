@@ -5,8 +5,17 @@ pub mod paint;
 use stem::thing::ThingId;
 use crate::drawlist::DrawList;
 use self::snapshot::UiSnapshot;
-use self::layout::LayoutSolver;
+use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintScene, PaintObject};
+use crate::asset::AssetBank;
+
+struct SystemSymbolResolver;
+
+impl SymbolResolver for SystemSymbolResolver {
+    fn resolve(&self, key: &str) -> Option<u32> {
+        stem::thing::sys::intern(key).ok()
+    }
+}
 
 pub struct UiPipeline {
     pub root_id: Option<ThingId>,
@@ -25,7 +34,7 @@ impl UiPipeline {
         self.root_id = Some(id);
     }
 
-    pub fn run(&mut self, screen_w: i32, screen_h: i32, list: &mut DrawList) {
+    pub fn run(&mut self, screen_w: i32, screen_h: i32, list: &mut DrawList, assets: &AssetBank) {
         let root_id = match self.root_id {
             Some(id) => id,
             None => return,
@@ -43,10 +52,11 @@ impl UiPipeline {
         self.prev_snapshot = Some(snapshot.clone());
 
         // 2. Layout
-        let layout = LayoutSolver::solve(&snapshot, screen_w, screen_h);
+        let resolver = SystemSymbolResolver;
+        let layout = LayoutSolver::solve(&snapshot, screen_w, screen_h, assets, &resolver);
 
         // 3. Paint
-        let paint_scene = PaintBuilder::build(&snapshot, &layout);
+        let paint_scene = PaintBuilder::build(&snapshot, &layout, &resolver);
 
         // 4. Lowering
         Self::lower(&paint_scene, list);

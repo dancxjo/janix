@@ -476,7 +476,7 @@ fn main(arg: usize) -> ! {
                 list.text_font(&alloc::format!("frame: {}", frame_id), "NotoSerif-Regular.ttf", 20, 70, 16.0, geometry::Color::from_u32(0xFFCCCCCC));
                 
                 // Run UI Pipeline
-                ui_pipeline.run(screen_w, screen_h, list);
+                ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
             }
 
             // Cursor

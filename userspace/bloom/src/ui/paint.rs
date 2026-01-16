@@ -3,11 +3,11 @@ use alloc::string::String;
 use stem::thing::ThingId;
 use crate::geometry::Color;
 use crate::damage::Rect;
-use crate::ui::layout::{LayoutTree, LayoutNode};
+use crate::ui::layout::{LayoutTree, LayoutNode, SymbolResolver};
 use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
 use abi::schema::keys;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum PaintObject {
     Rect {
         rect: Rect,
@@ -27,6 +27,7 @@ pub enum PaintObject {
     },
 }
 
+#[derive(Debug, Clone, PartialEq)]
 pub struct PaintScene {
     pub objects: Vec<PaintObject>,
 }
@@ -34,37 +35,48 @@ pub struct PaintScene {
 pub struct PaintBuilder;
 
 impl PaintBuilder {
-    pub fn build(snapshot: &UiSnapshot, layout: &LayoutTree) -> PaintScene {
+    pub fn build(snapshot: &UiSnapshot, layout: &LayoutTree, symbols: &impl SymbolResolver) -> PaintScene {
         let mut objects = Vec::new();
         if let Some(root) = &layout.root {
-            Self::build_recursive(snapshot, root, &mut objects);
+            Self::build_recursive(snapshot, root, &mut objects, symbols);
         }
         PaintScene { objects }
     }
 
-    fn build_recursive(snapshot: &UiSnapshot, layout_node: &LayoutNode, objects: &mut Vec<PaintObject>) {
+    fn build_recursive(snapshot: &UiSnapshot, layout_node: &LayoutNode, objects: &mut Vec<PaintObject>, symbols: &impl SymbolResolver) {
         if let Some(node_snapshot) = snapshot.nodes.get(&layout_node.id) {
             // Create paint object based on kind and properties
-            if let Some(obj) = Self::create_paint_object(node_snapshot, layout_node) {
+            if let Some(obj) = Self::create_paint_object(node_snapshot, layout_node, symbols) {
                 objects.push(obj);
             }
         }
 
         for child in &layout_node.children {
-            Self::build_recursive(snapshot, child, objects);
+            Self::build_recursive(snapshot, child, objects, symbols);
         }
     }
 
-    fn create_paint_object(node: &UiNodeSnapshot, layout: &LayoutNode) -> Option<PaintObject> {
+    fn create_paint_object(node: &UiNodeSnapshot, layout: &LayoutNode, symbols: &impl SymbolResolver) -> Option<PaintObject> {
         // v0: Check kind and pluck styles
-        // We temporarily use kind sym comparison or string mapping if we had it.
-        // For now, let's just use the props to infer what to draw.
         
-        if node.props.contains_key(&Self::intern(keys::UI_TEXT)) {
-            let text = Self::get_str_prop(node, keys::UI_TEXT).unwrap_or_default();
-            let font = Self::get_str_prop(node, keys::UI_FONT).unwrap_or_else(|| "NotoSans-Regular.ttf".into());
-            let size = Self::get_prop(node, keys::UI_FONT_SIZE) as f32;
-            let color = Color::from_u32(Self::get_prop(node, keys::UI_COLOR) as u32);
+        // Check for UI_TEXT using symbol resolver
+        let text_key_id = symbols.resolve(keys::UI_TEXT);
+        let has_text = if let Some(id) = text_key_id {
+            node.props.contains_key(&id)
+        } else {
+            false
+        };
+
+        if has_text {
+            let text = Self::get_str_prop(node, keys::UI_TEXT, symbols).unwrap_or_default();
+            let font = Self::get_str_prop(node, keys::UI_FONT, symbols).unwrap_or_else(|| "NotoSans-Regular.ttf".into());
+            let size = Self::get_prop(node, keys::UI_FONT_SIZE, symbols) as f32;
+
+            let mut color_val = Self::get_prop(node, keys::UI_FG_COLOR, symbols);
+            if color_val == 0 {
+                color_val = Self::get_prop(node, keys::UI_COLOR, symbols);
+            }
+            let color = Color::from_u32(color_val as u32);
             
             return Some(PaintObject::Text {
                 rect: layout.rect.clone(),
@@ -76,38 +88,119 @@ impl PaintBuilder {
         }
 
         // Default to a colored rect if it has dimensions or a color
-        let color_val = Self::get_prop(node, keys::UI_COLOR);
+        let mut color_val = Self::get_prop(node, keys::UI_BG_COLOR, symbols);
+        if color_val == 0 {
+            color_val = Self::get_prop(node, keys::UI_COLOR, symbols);
+        }
+
         if color_val != 0 || layout.rect.w > 0 {
             return Some(PaintObject::Rect {
                 rect: layout.rect.clone(),
                 color: Color::from_u32(color_val as u32),
-                radius: Self::get_prop(node, keys::UI_RADIUS) as u32,
+                radius: Self::get_prop(node, keys::UI_RADIUS, symbols) as u32,
             });
         }
 
         None
     }
 
-    fn intern(key: &str) -> u32 {
-        stem::thing::sys::intern(key).unwrap_or(0)
+    fn get_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> u64 {
+        if let Some(id) = symbols.resolve(key) {
+            return *node.props.get(&id).unwrap_or(&0);
+        }
+        0
     }
 
-    fn get_prop(node: &UiNodeSnapshot, key: &str) -> u64 {
-        let id = Self::intern(key);
-        *node.props.get(&id).unwrap_or(&0)
-    }
-
-    fn get_str_prop(node: &UiNodeSnapshot, key: &str) -> Option<String> {
+    fn get_str_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> Option<String> {
         // In thing-os, string props might be stored as Bytespace IDs or interned symbols.
-        // For v0, let's assume UI_TEXT is a Bytespace ID we can read.
-        let val = Self::get_prop(node, key);
+        let val = Self::get_prop(node, key, symbols);
         if val == 0 { return None; }
         
         let bs_id = ThingId(val);
         let mut buf = [0u8; 1024];
+        // Note: this still uses syscall! So testing string props on host will fail unless we mock bytespace_read.
+        // For determinism test, we can avoid string props or catch the failure/mock it if we could.
+        // But the previous layout test didn't fail because it didn't use string props?
+        // Layout test checked dimensions, which are u64.
         if let Ok(len) = stem::thing::sys::bytespace_read(bs_id, 0, &mut buf) {
             return Some(String::from(core::str::from_utf8(&buf[..len]).unwrap_or_default()));
         }
         None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloc::collections::BTreeMap;
+    use alloc::string::ToString;
+    use alloc::vec;
+
+    struct MockSymbolResolver {
+        map: BTreeMap<String, u32>,
+    }
+
+    impl MockSymbolResolver {
+        fn new() -> Self {
+            let mut map = BTreeMap::new();
+            // Pre-seed common keys
+            map.insert(keys::UI_X.to_string(), 1);
+            map.insert(keys::UI_Y.to_string(), 2);
+            map.insert(keys::UI_WIDTH.to_string(), 3);
+            map.insert(keys::UI_HEIGHT.to_string(), 4);
+            map.insert(keys::UI_COLOR.to_string(), 7);
+            map.insert(keys::UI_BG_COLOR.to_string(), 8);
+            Self { map }
+        }
+    }
+
+    impl SymbolResolver for MockSymbolResolver {
+        fn resolve(&self, key: &str) -> Option<u32> {
+            self.map.get(key).cloned()
+        }
+    }
+
+    #[test]
+    fn test_paint_determinism() {
+        // 1. Setup Snapshot
+        let mut snapshot = UiSnapshot::new();
+        let root_id = ThingId(1);
+        snapshot.root_id = Some(root_id);
+
+        let mut props = BTreeMap::new();
+        props.insert(8, 0xFF0000); // UI_BG_COLOR = Red
+
+        snapshot.nodes.insert(root_id, UiNodeSnapshot {
+            id: root_id,
+            kind: UiNodeKind::Window,
+            props,
+            children: vec![],
+        });
+
+        // 2. Setup Layout
+        let layout = LayoutTree {
+            root: Some(LayoutNode {
+                id: root_id,
+                rect: Rect::new(0, 0, 100, 100),
+                z_index: 0,
+                children: vec![],
+            })
+        };
+
+        let resolver = MockSymbolResolver::new();
+
+        // 3. Build twice
+        let scene1 = PaintBuilder::build(&snapshot, &layout, &resolver);
+        let scene2 = PaintBuilder::build(&snapshot, &layout, &resolver);
+
+        // 4. Assert equality
+        assert_eq!(scene1, scene2);
+        assert_eq!(scene1.objects.len(), 1);
+        match &scene1.objects[0] {
+            PaintObject::Rect { color, .. } => {
+                assert_eq!(color.to_u32(), 0xFF0000);
+            },
+            _ => panic!("Expected Rect"),
+        }
     }
 }

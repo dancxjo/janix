@@ -194,37 +194,6 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
         let _ = fs::remove_dir_all(fonts_dir.join("ttf"));
     }
 
-    let unifont_dest = fonts_dir.join("unifont.hex");
-    if !unifont_dest.exists() {
-        println!("    Fetching unifont.hex...");
-        let gz_path = fonts_dir.join("unifont.hex.gz");
-
-        let mut downloaded = false;
-        let urls = [
-            "https://ftp.gnu.org/gnu/unifont/unifont-17.0.03/unifont_all-17.0.03.hex.gz",
-            "https://ftp.gnu.org/gnu/unifont/unifont-16.0.01/unifont-16.0.01.hex.gz",
-            "https://ftp.gnu.org/gnu/unifont/unifont-15.1.05/unifont-15.1.05.hex.gz",
-        ];
-
-        for url in urls {
-            if download_file(url, &gz_path).is_ok() {
-                downloaded = true;
-                break;
-            }
-        }
-
-        if downloaded {
-            if run_cmd(Command::new("gunzip").arg("-k").arg("-f").arg(&gz_path)).is_ok() {
-                let _ = fs::remove_file(&gz_path);
-            } else {
-                eprintln!("    [WARNING] Gunzip failed.");
-            }
-        } else {
-            eprintln!("    [WARNING] Failed to download Unifont. Creating placeholder.");
-            fs::write(&unifont_dest, "PLACEHOLDER: Replace with real unifont.hex")?;
-        }
-    }
-
     let noto_fonts = [
         ("NotoSans-Regular.ttf", "https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf"),
         ("NotoSerif-Regular.ttf", "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSerif/NotoSerif-Regular.ttf"),

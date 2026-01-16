@@ -29,7 +29,6 @@ members = [
     "userspace/ahci_disk",
     "tools/pciids", "libs/magic-sniff", "userspace/ingestd",
     "userspace/png_creator",
-    "tools/unifont-gen",
 ]
 resolver = "2"
 

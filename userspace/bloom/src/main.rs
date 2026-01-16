@@ -6,7 +6,6 @@ extern crate alloc;
 mod asset;
 mod bmp;
 mod bristle;
-mod builtin_font;
 mod compositor;
 mod cursor;
 mod damage;

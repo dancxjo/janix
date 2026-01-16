@@ -620,7 +620,6 @@ fn rasterize_text_locally(
     // 1. Get current fonts
     let font_assets = ASSETS.get_fonts();
     if font_assets.is_empty() { 
-        render_builtin_text(surface, text, x, y, size, color, clip);
         return; 
     }
     
@@ -678,15 +677,8 @@ fn rasterize_text_locally(
 }
 
 
-
 // Helper for single pixel blending
 fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa: u8) {
-    // Force blend path
-    // if sa == 255 {
-    //     surface.put_px(x, y, ((sa as u32) << 24) | ((sr as u32) << 16) | ((sg as u32) << 8) | (sb as u32));
-    //     return;
-    // }
-    
     let offset = (surface.stride_bytes / 4) * (y as usize) + (x as usize);
     let ptr = surface.ptr as *mut u32;
     unsafe {
@@ -705,55 +697,4 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa
         
         *dst_ptr = (out_r << 16) | (out_g << 8) | out_b;
     }
-}
-
-fn render_builtin_text(surface: &mut Surface, text: &str, x: i32, y: i32, _size: f32, color: u32, clip: &Rect) {
-    let mut cur_x = x;
-    let cr = ((color >> 16) & 0xFF) as u8;
-    let cg = ((color >> 8) & 0xFF) as u8;
-    let cb = (color & 0xFF) as u8;
-    let ca = ((color >> 24) & 0xFF) as u8;
-
-    for c in text.chars() {
-        let width = render_builtin_glyph(surface, c, cur_x, y, cr, cg, cb, ca, clip);
-        cur_x += width as i32;
-    }
-}
-
-fn render_builtin_glyph(surface: &mut Surface, c: char, x: i32, y: i32, cr: u8, cg: u8, cb: u8, ca: u8, clip: &Rect) -> u8 {
-    let cp = c as u32;
-    let glyph = match crate::builtin_font::BUILTIN_GLYPHS.iter().find(|g| g.codepoint == cp) {
-        Some(g) => g,
-        None => return 8, // Non-existent glyph, skip but skip space
-    };
-    
-    // Unifont is 16 rows high.
-    for row in 0..16 {
-        let py = y + row as i32;
-        if py < clip.y() || py >= clip.y() + clip.height() || py < 0 || py >= surface.height() {
-            continue;
-        }
-
-        // Unifont uses 1 or 2 bytes per row based on width
-        let row_bytes = if glyph.width == 8 { 1 } else { 2 };
-        for b_idx in 0..row_bytes {
-            let byte = glyph.bitmap[row * 2 + b_idx];
-            for bit in 0..8 {
-                if (byte & (0x80 >> bit)) != 0 {
-                    let px = x + (b_idx * 8 + bit) as i32;
-                    if px < clip.x() || px >= clip.x() + clip.width() || px < 0 || px >= surface.width() {
-                        continue;
-                    }
-
-                    if ca == 255 {
-                        surface.put_px(px, py, (255 << 24) | ((cr as u32) << 16) | ((cg as u32) << 8) | (cb as u32));
-                    } else {
-                        blend_pixel(surface, px, py, cr, cg, cb, ca);
-                    }
-                }
-            }
-        }
-    }
-
-    glyph.width
 }

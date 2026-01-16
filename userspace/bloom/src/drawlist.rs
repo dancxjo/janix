@@ -63,7 +63,7 @@ pub enum DrawCmd {
 
     // --- Text Rendering ---
     // Using simple text string for v0, will evolve to GlyphRun
-    DrawText { text: Arc<str>, position: Point, size: f32, color: Color },
+    DrawText { text: Arc<str>, position: Point, size: f32, color: Color, font_name: Option<Arc<str>> },
     // Placeholder for future GlyphRun
     DrawGlyphRun { font_id: u64, glyphs: Vec<u32>, positions: Vec<Point>, color: Color },
 
@@ -219,6 +219,17 @@ impl DrawList {
             position: Point::new(x, y),
             size,
             color,
+            font_name: None,
+        });
+    }
+
+    pub fn text_font(&mut self, text: &str, font: &str, x: i32, y: i32, size: f32, color: Color) {
+        self.cmds.push(DrawCmd::DrawText {
+            text: text.into(),
+            position: Point::new(x, y),
+            size,
+            color,
+            font_name: Some(font.into()),
         });
     }
 

@@ -113,7 +113,7 @@ impl KeyOverlay {
 
         // Draw Text
         if !self.cached_text.is_empty() {
-             list.text(&self.cached_text, rect.x + 12, rect.y + 10, 24.0, Color::from_u32(0xFFFFFFFF));
+             list.text_font(&self.cached_text, "NotoSans-Regular.ttf", rect.x + 12, rect.y + 6, 24.0, Color::from_u32(0xFFFFFFFF));
         }
     }
 }

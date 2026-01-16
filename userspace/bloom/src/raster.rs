@@ -149,9 +149,18 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
                 }
             },
 
-            LowLevelOp::TextSpan { text, pos, size, color } => {
+            LowLevelOp::TextSpan { text, pos, size, color, font_name } => {
                 let p = ctx.current_transform.transform_point(*pos);
-                rasterize_text_locally(ctx.surface, text, p.x, p.y, *size, color.to_u32(), &ctx.current_clip);
+                rasterize_text_locally(
+                    ctx.surface, 
+                    text, 
+                    p.x, 
+                    p.y, 
+                    *size, 
+                    color.to_u32(), 
+                    &ctx.current_clip,
+                    font_name.as_deref()
+                );
             }
         }
     }
@@ -249,9 +258,18 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 }
             },
             
-            LowLevelOp::TextSpan { text, pos, size, color } => {
+            LowLevelOp::TextSpan { text, pos, size, color, font_name } => {
                 let p = ctx.current_transform.transform_point(*pos);
-                rasterize_text_locally(ctx.surface, text, p.x, p.y, *size, color.to_u32(), &ctx.current_clip);
+                rasterize_text_locally(
+                    ctx.surface, 
+                    text, 
+                    p.x, 
+                    p.y, 
+                    *size, 
+                    color.to_u32(), 
+                    &ctx.current_clip,
+                    font_name.as_deref()
+                );
             }
         }
     }
@@ -586,58 +604,74 @@ fn blit_alpha(
 }
 
 /// Render text using local fontdue rasterization and a simple glyph cache.
-fn rasterize_text_locally(surface: &mut Surface, text: &str, x: i32, y: i32, size: f32, color: u32, clip: &Rect) {
+fn rasterize_text_locally(
+    surface: &mut Surface, 
+    text: &str, 
+    x: i32, 
+    y: i32, 
+    size: f32, 
+    color: u32, 
+    clip: &Rect,
+    requested_font: Option<&str>
+) {
     let ca = ((color >> 24) & 0xFF) as u8;
     if ca == 0 { return; }
 
     // 1. Get current fonts
     let font_assets = ASSETS.get_fonts();
-    if font_assets.is_empty() { return; }
+    if font_assets.is_empty() { 
+        render_builtin_text(surface, text, x, y, size, color, clip);
+        return; 
+    }
     
-    // 2. Layout text
+    // 2. Select and prioritize fonts
+    let mut prioritized_fonts = font_assets;
+    if let Some(req) = requested_font {
+        if let Some(pos) = prioritized_fonts.iter().position(|f| f.name.contains(req)) {
+            let font = prioritized_fonts.remove(pos);
+            prioritized_fonts.insert(0, font);
+        }
+    } else {
+        // Default to NotoSans if nothing requested
+        if let Some(pos) = prioritized_fonts.iter().position(|f| f.name.contains("NotoSans-Regular")) {
+            let font = prioritized_fonts.remove(pos);
+            prioritized_fonts.insert(0, font);
+        }
+    }
+    
+    // 3. Layout text with multi-font fallback
     let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
-    let font_refs: alloc::vec::Vec<&fontdue::Font> = font_assets.iter().map(|f| f.font.as_ref()).collect();
+    let font_refs: Vec<_> = prioritized_fonts.iter().map(|f| f.font.as_ref()).collect();
     layout.append(&font_refs, &TextStyle::new(text, size, 0));
     
     let cr = ((color >> 16) & 0xFF) as u8;
     let cg = ((color >> 8) & 0xFF) as u8;
     let cb = (color & 0xFF) as u8;
 
-    // 3. Rasterize and blend each glyph
-    let mut logged_fonts = false;
-    for (idx, glyph) in layout.glyphs().iter().enumerate() {
-        if !logged_fonts && idx < 5 {
-             let font_name = &font_assets[glyph.font_index].name;
-             log!("[raster] glyph {} uses font '{}'", idx, font_name);
-             if idx == 4 { logged_fonts = true; }
-        }
+    // 4. Rasterize and blend each glyph
+    for glyph in layout.glyphs() {
+        let target_font = &prioritized_fonts[glyph.font_index];
+        let (metrics, bitmap) = target_font.font.rasterize_config(glyph.key);
+
+        // Local blending logic (simplified glyph cache omitted for brevity, using immediate rasterization)
+        let gx = x + glyph.x as i32;
+        let gy = y + glyph.y as i32;
         
-        let font = &font_assets[glyph.font_index].font;
-        let (metrics, bitmap) = font.rasterize_config(glyph.key);
-        
-        for (i, v) in bitmap.into_iter().enumerate() {
-            let density = v as u32;
-            if density == 0 { continue; }
-            
-            let gx = (i % metrics.width) as i32;
-            let gy = (i / metrics.width) as i32;
-            
-            let sx = x + glyph.x as i32 + gx;
-            let sy = y + glyph.y as i32 + gy;
-            
-            // Clip check
-            if sx < clip.x() || sx >= clip.x() + clip.width() || sy < clip.y() || sy >= clip.y() + clip.height() {
-                continue;
-            }
-            
-            // Bounds check against surface
-            if sx < 0 || sy < 0 || sx >= surface.width() || sy >= surface.height() {
-                continue;
-            }
-            
-            let final_a = (ca as u32 * density) / 255;
-            if final_a > 0 {
-                blend_pixel(surface, sx, sy, cr, cg, cb, final_a as u8);
+        for row in 0..metrics.height {
+            for col in 0..metrics.width {
+                let px = gx + col as i32;
+                let py = gy + row as i32;
+                
+                if px < clip.x() || px >= clip.x() + clip.width() || py < clip.y() || py >= clip.y() + clip.height() {
+                    continue;
+                }
+                
+                let alpha = bitmap[row * metrics.width + col];
+                if alpha == 0 { continue; }
+                
+                // Blend
+                let final_alpha = ((alpha as u32 * ca as u32) / 255) as u8;
+                blend_pixel(surface, px, py, cr, cg, cb, final_alpha);
             }
         }
     }
@@ -671,4 +705,55 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa
         
         *dst_ptr = (out_r << 16) | (out_g << 8) | out_b;
     }
+}
+
+fn render_builtin_text(surface: &mut Surface, text: &str, x: i32, y: i32, _size: f32, color: u32, clip: &Rect) {
+    let mut cur_x = x;
+    let cr = ((color >> 16) & 0xFF) as u8;
+    let cg = ((color >> 8) & 0xFF) as u8;
+    let cb = (color & 0xFF) as u8;
+    let ca = ((color >> 24) & 0xFF) as u8;
+
+    for c in text.chars() {
+        let width = render_builtin_glyph(surface, c, cur_x, y, cr, cg, cb, ca, clip);
+        cur_x += width as i32;
+    }
+}
+
+fn render_builtin_glyph(surface: &mut Surface, c: char, x: i32, y: i32, cr: u8, cg: u8, cb: u8, ca: u8, clip: &Rect) -> u8 {
+    let cp = c as u32;
+    let glyph = match crate::builtin_font::BUILTIN_GLYPHS.iter().find(|g| g.codepoint == cp) {
+        Some(g) => g,
+        None => return 8, // Non-existent glyph, skip but skip space
+    };
+    
+    // Unifont is 16 rows high.
+    for row in 0..16 {
+        let py = y + row as i32;
+        if py < clip.y() || py >= clip.y() + clip.height() || py < 0 || py >= surface.height() {
+            continue;
+        }
+
+        // Unifont uses 1 or 2 bytes per row based on width
+        let row_bytes = if glyph.width == 8 { 1 } else { 2 };
+        for b_idx in 0..row_bytes {
+            let byte = glyph.bitmap[row * 2 + b_idx];
+            for bit in 0..8 {
+                if (byte & (0x80 >> bit)) != 0 {
+                    let px = x + (b_idx * 8 + bit) as i32;
+                    if px < clip.x() || px >= clip.x() + clip.width() || px < 0 || px >= surface.width() {
+                        continue;
+                    }
+
+                    if ca == 255 {
+                        surface.put_px(px, py, (255 << 24) | ((cr as u32) << 16) | ((cg as u32) << 8) | (cb as u32));
+                    } else {
+                        blend_pixel(surface, px, py, cr, cg, cb, ca);
+                    }
+                }
+            }
+        }
+    }
+
+    glyph.width
 }

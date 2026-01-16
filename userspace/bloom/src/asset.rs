@@ -448,7 +448,7 @@ impl AssetBank {
     pub fn publish_font(&self, font: FontAsset) {
         // Find an empty or replaceable pending slot
         for i in 0..8 {
-            if !FONTS_PENDING[i].has_pending.load(Ordering::Acquire) {
+            if !FONTS_PENDING[i].has_pending.load(Ordering::Acquire) && !FONTS_READY[i].ready.load(Ordering::Acquire) {
                 info!("[asset_bank] publish_font (pending): '{}' in slot {}", font.name, i);
                 unsafe { *FONTS_PENDING[i].value.get() = Some(font); }
                 FONTS_PENDING[i].has_pending.store(true, Ordering::Release);
@@ -497,6 +497,17 @@ impl AssetBank {
                 }
             }
         }
+        
+        // Priority sorting: NotoSans first, then NotoSerif, then Symbols, then others
+        fonts.sort_by_key(|f| {
+            if f.name.contains("NotoSans-Regular") { 0 }
+            else if f.name.contains("NotoSerif") { 1 }
+            else if f.name.contains("NotoSansSymbol") { 2 }
+            else if f.name.contains("Hack") { 5 } // Move Hack to the end
+            else if f.name.contains("DSEG") { 6 } // Move DSEG even further
+            else { 3 }
+        });
+        
         fonts
     }
 
@@ -805,9 +816,14 @@ impl AssetBank {
             Ok(font) => {
                 info!("[asset_bank] SUCCESS: font parsed");
                 // NOTE: We do NOT unmap on success because fontdue keeps a reference to the slice.
-                
                 // Extract name from path/display name
-                let name: Arc<str> = display_name.rsplit('/').next().unwrap_or(display_name).into();
+                // Handles both raw paths and the debug-printed "module{ name: \"...\" }" format
+                let name_part = if display_name.contains("name: \"") {
+                    display_name.split("name: \"").nth(1).unwrap_or(display_name).split('"').next().unwrap_or(display_name)
+                } else {
+                    display_name.rsplit('/').next().unwrap_or(display_name)
+                };
+                let name: Arc<str> = name_part.into();
                 
                 Some(FontAsset {
                     font: Arc::new(font),

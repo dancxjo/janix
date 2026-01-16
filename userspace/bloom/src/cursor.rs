@@ -73,8 +73,8 @@ impl CursorState {
             let dy = self.y - frame.hotspot_y as i32;
             Rect::new(dx, dy, frame.image.width as i32 + 3, frame.image.height as i32 + 3)
         } else {
-            // Fallback cursor size
-            Rect::new(self.x, self.y, 10, 10)
+            // Fallback cursor size (crosshair)
+            Rect::new(self.x - 5, self.y - 5, 11, 11)
         }
     }
 
@@ -82,10 +82,17 @@ impl CursorState {
         if let Some(frame) = self.current_frame() {
              list.cursor(frame, self.x, self.y);
         } else {
-            // Fallback
+            // Procedural Fallback: Crosshair
             let color = self.color();
-            let size = 10;
-            list.rect(self.x, self.y, size, size, color);
+            let x = self.x;
+            let y = self.y;
+            
+            // Horizontal line
+            list.line(x - 5, y, x + 5, y, color);
+            // Vertical line
+            list.line(x, y - 5, x, y + 5, color);
+            // Center dot
+            list.rect(x, y, 1, 1, color);
         }
     }
 }

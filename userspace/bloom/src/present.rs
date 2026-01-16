@@ -92,41 +92,6 @@ impl DriverPresenter {
         }
     }
 
-    pub fn wait_for_register(&mut self) {
-        let mut loops = 0u32;
-        loop {
-            log!("[present] wait_for_register: loop={} registered={}", loops, self.registered);
-            self.pump();
-            if self.registered {
-                log!("[present] registered SUCCESS");
-                break;
-            }
-            if loops >= 200 {
-                info!("bloom: driver REGISTER timeout; continuing");
-                break;
-            }
-            loops += 1;
-            stem::yield_now();
-            stem::sleep_ms(10);
-        }
-    }
-
-    pub fn wait_for_bind(&mut self) {
-        let mut loops = 0u32;
-        loop {
-            self.pump();
-            if !self.awaiting_bind_ack {
-                break;
-            }
-            if loops >= 200 {
-                info!("bloom: driver BIND timeout; continuing");
-                break;
-            }
-            loops += 1;
-            stem::yield_now();
-            stem::sleep_ms(10);
-        }
-    }
 
     pub fn send_bind(&mut self, payload: &BindPayload) {
         let mut bytes = [0u8; core::mem::size_of::<BindPayload>()];

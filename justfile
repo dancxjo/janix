@@ -116,6 +116,10 @@ clock arch=karch:
 fetch:
     cargo xtask fetch
 
+# Generate built-in font for Bloom
+gen-font:
+    cargo xtask gen-font
+
 # Run all unit tests (host-testable crates only)
 test *args:
     cargo test -p abi -p pciids -p xtask {{args}}

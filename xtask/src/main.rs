@@ -123,6 +123,8 @@ enum Commands {
     Kill,
     /// Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
     Fetch,
+    /// Generate built-in font for Bloom
+    GenFont,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -185,6 +187,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => bdd(&sh, feature, tags, arch)?,
         Commands::Kill => kill::run()?,
         Commands::Fetch => fetch()?,
+        Commands::GenFont => {
+            sh.cmd("cargo").arg("run").arg("-p").arg("unifont-gen").run()?;
+        }
     }
 
     Ok(())

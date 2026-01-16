@@ -6,6 +6,7 @@ extern crate alloc;
 mod asset;
 mod bmp;
 mod bristle;
+mod builtin_font;
 mod compositor;
 mod cursor;
 mod damage;
@@ -297,7 +298,6 @@ fn main(arg: usize) -> ! {
     let mut presenter = if target.driver_req != 0 && target.driver_resp != 0 {
         log!("[bloom] presenter: driver (req={} resp={})", target.driver_req, target.driver_resp);
         let mut driver = DriverPresenter::new(target.driver_req, target.driver_resp);
-        driver.wait_for_register();
         
         let bind = BindPayload {
             bytespace_id: target.bs_id.0,
@@ -307,7 +307,6 @@ fn main(arg: usize) -> ! {
             format: target.format,
         };
         driver.send_bind(&bind);
-        driver.wait_for_bind();
         PresenterImpl::Driver(driver)
     } else {
         log!("[bloom] presenter: null (headless/fallback)");
@@ -459,8 +458,8 @@ fn main(arg: usize) -> ! {
                      }
                  }
             } else {
-                 list.clear(geometry::Color::from_u32(0x00101010));
-                 list.rect(10, 10, 20, 20, geometry::Color::from_u32(0xFF00FF00));
+                 // Aesthetic fallback: deep "Thing-OS" blue
+                 list.clear(geometry::Color::from_u32(0xFF002d44));
             }
 
             // Backend indicator: small box in top-right corner
@@ -471,8 +470,8 @@ fn main(arg: usize) -> ! {
 
             // Demo text rendering if font is loaded
             if font_loaded {
-                list.text("thing-os", 20, 40, 24.0, geometry::Color::from_u32(0xFFFFFFFF));
-                list.text(&alloc::format!("frame: {}", frame_id), 20, 70, 16.0, geometry::Color::from_u32(0xFFCCCCCC));
+                list.text_font("thing-os", "NotoSerif-Regular.ttf", 20, 40, 24.0, geometry::Color::from_u32(0xFFFFFFFF));
+                list.text_font(&alloc::format!("frame: {}", frame_id), "NotoSerif-Regular.ttf", 20, 70, 16.0, geometry::Color::from_u32(0xFFCCCCCC));
                 
 				// Render Key Overlay
                 key_overlay.render(list, screen_w, screen_h);

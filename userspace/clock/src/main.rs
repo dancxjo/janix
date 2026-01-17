@@ -103,6 +103,7 @@ fn main() -> ! {
         // Create Window
         let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
         link(win, rels::CHILD_OF, ui_root).expect("link window");
+        link(ui_root, rels::HAS_CHILD, win).expect("link window has_child");
 
         // Window Style: Black Background
         prop_set(win, keys::UI_BG_COLOR, 0xFF000000).ok(); // Black
@@ -117,6 +118,7 @@ fn main() -> ! {
         // Create Text
         let text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
         link(text, rels::CHILD_OF, win).expect("link text");
+        link(win, rels::HAS_CHILD, text).expect("link text has_child");
 
         // Text Style: Red Foreground, DSEG Font
         prop_set(text, keys::UI_FG_COLOR, 0xFFFF0000).ok(); // Red

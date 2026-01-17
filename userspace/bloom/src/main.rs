@@ -352,8 +352,11 @@ fn main(arg: usize) -> ! {
     log!("[bloom] reclaimer: budget={} bytes", reclaimer::memory_budget());
 
     // 4. Main Loop - Transactional Pattern
+    let mut perf = PerfStats::default();
+
     loop {
-        let _frame = loop_ctrl.next();
+        let frame_start = stem::monotonic_ns();
+        let frame_id_val = loop_ctrl.next();
 
         // ═══════════════════════════════════════════════════════════════════
         // ACQUIRE: Promote pending assets, snapshot generation, get token
@@ -365,6 +368,7 @@ fn main(arg: usize) -> ! {
         // ═══════════════════════════════════════════════════════════════════
         // BUILD: Record ops and damage into the builder
         // ═══════════════════════════════════════════════════════════════════
+        let build_start = stem::monotonic_ns();
         let mut builder = FrameBuilder::new(token);
         
         // Snapshot the asset generation early (before any mutable borrows)
@@ -392,8 +396,6 @@ fn main(arg: usize) -> ! {
                 cursor.set_asset(asset);
                 cursor_loaded = true;
                 builder.add_damage(cursor.bbox());
-            } else if frame_id % 60 == 0 {
-                // log!("[bloom] frame {}: cursor not ready yet", frame_id);
             }
         }
         // Check if fonts are ready
@@ -418,10 +420,12 @@ fn main(arg: usize) -> ! {
         }
 
         // Input - capture cursor position before input
+        let input_start = stem::monotonic_ns();
         let old_cursor_bbox = cursor.bbox();
         if bristle_evt != 0 {
             bristle::poll_bristle(bristle_evt, &mut cursor, &mut keys, screen_w, screen_h);
         }
+        perf.input_ns += stem::monotonic_ns().saturating_sub(input_start);
         
         // Track cursor movement damage
         let new_cursor_bbox = cursor.bbox();
@@ -440,7 +444,6 @@ fn main(arg: usize) -> ! {
         // Key Overlay Update
         key_overlay.update(&keys, screen_w, screen_h);
 
-        // Damage text regions (frame counter changes every frame)
         // Damage text regions (frame counter changes every frame)
         if font_loaded {
             builder.add_damage(Rect::new(20, 20, 300, 100)); // Covers "thing-os" and "frame: N"
@@ -477,7 +480,9 @@ fn main(arg: usize) -> ! {
                 list.text_font(&alloc::format!("frame: {}", frame_id), "NotoSerif-Regular.ttf", 20, 70, 16.0, geometry::Color::from_u32(0xFFCCCCCC));
                 
                 // Run UI Pipeline
+                let ui_start = stem::monotonic_ns();
                 ui_changed = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
+                perf.ui_ns += stem::monotonic_ns().saturating_sub(ui_start);
             }
 
             // Cursor
@@ -490,6 +495,7 @@ fn main(arg: usize) -> ! {
 
         // Finish building - seal the token
         let token = builder.finish();
+        perf.build_ns += stem::monotonic_ns().saturating_sub(build_start);
         
         // Get damage reference before consuming token
         let damage_for_raster = token.damage.clone();
@@ -500,12 +506,16 @@ fn main(arg: usize) -> ! {
         
         // Rasterize using damage-aware rendering
         if !damage_for_raster.is_empty() {
+            let raster_start = stem::monotonic_ns();
             raster::execute_with_damage(&mut surface, &token.ops, &damage_for_raster);
+            perf.raster_ns += stem::monotonic_ns().saturating_sub(raster_start);
         }
 
         // Present (consumes token)
+        let present_start = stem::monotonic_ns();
         let _stats = presenter.present_frame(token);
         presenter.pump();
+        perf.present_ns += stem::monotonic_ns().saturating_sub(present_start);
         
         // Post-present overlay update
         key_overlay.post_present();
@@ -517,6 +527,33 @@ fn main(arg: usize) -> ! {
 
         // Timing
         loop_ctrl.heartbeat(cursor.x, cursor.y);
+        
+        perf.count += 1;
+        perf.frame_ns += stem::monotonic_ns().saturating_sub(frame_start);
+
+        if perf.count >= 120 {
+            log!("[bloom] PERF: 120 frames avg: total={:.2}ms build={:.2}ms (ui={:.2}ms) raster={:.2}ms present={:.2}ms input={:.2}ms",
+                (perf.frame_ns as f64 / 120.0) / 1_000_000.0,
+                (perf.build_ns as f64 / 120.0) / 1_000_000.0,
+                (perf.ui_ns as f64 / 120.0) / 1_000_000.0,
+                (perf.raster_ns as f64 / 120.0) / 1_000_000.0,
+                (perf.present_ns as f64 / 120.0) / 1_000_000.0,
+                (perf.input_ns as f64 / 120.0) / 1_000_000.0,
+            );
+            perf = PerfStats::default();
+        }
+
         loop_ctrl.sleep();
     }
+}
+
+#[derive(Default)]
+struct PerfStats {
+    count: u64,
+    frame_ns: u64,
+    input_ns: u64,
+    ui_ns: u64,
+    build_ns: u64,
+    raster_ns: u64,
+    present_ns: u64,
 }

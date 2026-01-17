@@ -15,6 +15,7 @@ pub type LogLevel = Level;
 
 static GLOBAL_LOGGER: Mutex<Option<Logger>> = Mutex::new(None);
 static IN_GRAPH_LOG: AtomicBool = AtomicBool::new(false);
+static MUTE_SERIAL: AtomicBool = AtomicBool::new(false);
 
 /// Global sequence counter for log ordering
 static GLOBAL_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -62,8 +63,10 @@ impl LogTransaction {
         let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
-            let ts = writer.runtime.mono_ticks();
-            let _ = writeln!(writer, "[{}] [INFO] [logging] BEGIN {}", ts, name);
+            if !MUTE_SERIAL.load(Ordering::Relaxed) {
+                let ts = writer.runtime.mono_ticks();
+                let _ = writeln!(writer, "[{}] [INFO] [logging] BEGIN {}", ts, name);
+            }
         }
         drop(lock);
 
@@ -77,8 +80,10 @@ impl Drop for LogTransaction {
         let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
-            let ts = writer.runtime.mono_ticks();
-            let _ = writeln!(writer, "[{}] [INFO] [logging] END {}", ts, self.name);
+            if !MUTE_SERIAL.load(Ordering::Relaxed) {
+                let ts = writer.runtime.mono_ticks();
+                let _ = writeln!(writer, "[{}] [INFO] [logging] END {}", ts, self.name);
+            }
         }
         drop(lock);
         clear_span();
@@ -146,7 +151,7 @@ pub fn _log_event(
     let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
 
     // 1. Serial Output - human-readable format: [TIME] [LEVEL] [SOURCE] Message
-    {
+    if !MUTE_SERIAL.load(Ordering::Relaxed) {
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
             let ts = writer.runtime.mono_ticks();
@@ -217,9 +222,11 @@ pub fn _log(meta: LogMetadata, args: fmt::Arguments) {
 
 /// Log a raw string without any formatting (for kprint! compatibility)
 pub fn _log_raw(args: fmt::Arguments) {
-    let mut lock = GLOBAL_LOGGER.lock();
-    if let Some(writer) = lock.as_mut() {
-        let _ = writer.write_fmt(args);
+    if !MUTE_SERIAL.load(Ordering::Relaxed) {
+        let mut lock = GLOBAL_LOGGER.lock();
+        if let Some(writer) = lock.as_mut() {
+            let _ = writer.write_fmt(args);
+        }
     }
 }
 

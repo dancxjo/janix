@@ -180,6 +180,8 @@ pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw,
         }
     }
 
+    let start = stem::monotonic_ns();
+
     for i in 0..damage_count {
         let d = damage_rects[i];
         // Create a context where the initial clip is the damage rect
@@ -188,6 +190,11 @@ pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw,
         ctx.current_clip = Rect::new(d.x, d.y, d.w, d.h);
 
         execute_lowered_on_context(&mut ctx, lowered);
+    }
+
+    let elapsed = stem::monotonic_ns().saturating_sub(start);
+    if elapsed > 10_000_000 { // 10ms threshold
+        log!("[bloom::raster] WARN: slow rasterize ({} rects) = {:.1}ms", damage_count, elapsed as f64 / 1_000_000.0);
     }
 }
 

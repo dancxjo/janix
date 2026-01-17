@@ -171,6 +171,7 @@ pub mod rels {
 
     // UI Relations
     pub const CHILD_OF: &str = "CHILD_OF";
+    pub const HAS_CHILD: &str = "HAS_CHILD";
     pub const CLIP_TO: &str = "CLIP_TO";
     pub const ROOT_UI: &str = "ROOT_UI";
 }

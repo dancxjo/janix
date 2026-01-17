@@ -13,7 +13,8 @@ impl UiBuilder {
 
     pub fn create_window(parent: ThingId, title: &str) -> ThingId {
         let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
-        link(win, rels::CHILD_OF, parent).expect("link window");
+        link(win, rels::CHILD_OF, parent).expect("link window child_of");
+        link(parent, rels::HAS_CHILD, win).expect("link window has_child");
         
         Self::set_string_prop(win, keys::UI_TITLE, title);
         win
@@ -21,13 +22,15 @@ impl UiBuilder {
 
     pub fn create_panel(parent: ThingId) -> ThingId {
         let panel = create_node(kinds::UI_PANEL).expect("create UI_PANEL");
-        link(panel, rels::CHILD_OF, parent).expect("link panel");
+        link(panel, rels::CHILD_OF, parent).expect("link panel child_of");
+        link(parent, rels::HAS_CHILD, panel).expect("link panel has_child");
         panel
     }
 
     pub fn create_text(parent: ThingId, text: &str) -> ThingId {
         let node = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
-        link(node, rels::CHILD_OF, parent).expect("link text");
+        link(node, rels::CHILD_OF, parent).expect("link text child_of");
+        link(parent, rels::HAS_CHILD, node).expect("link text has_child");
         Self::set_string_prop(node, keys::UI_TEXT, text);
         node
     }

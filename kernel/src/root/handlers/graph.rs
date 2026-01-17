@@ -132,7 +132,7 @@ pub fn handle_find(
 
     for (id, node) in &graph.nodes {
         if node.kind == kid {
-            crate::kinfo!("ROOT: find SUCCESS kind={:?} id={:x} node_kind={:?}", kid, id, node.kind);
+            // crate::kinfo!("ROOT: find SUCCESS kind={:?} id={:x} node_kind={:?}", kid, id, node.kind);
             if found_count < max_entries {
                 unsafe {
                     *out_ptr.add(found_count) = *id;

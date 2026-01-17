@@ -125,18 +125,8 @@ impl PaintBuilder {
     }
 
     fn get_str_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> Option<String> {
-        // In thing-os, string props might be stored as Bytespace IDs or interned symbols.
-        let val = Self::get_prop(node, key, symbols);
-        if val == 0 { return None; }
-        
-        let bs_id = ThingId(val);
-        let mut buf = [0u8; 1024];
-        // Note: this still uses syscall! So testing string props on host will fail unless we mock bytespace_read.
-        // For determinism test, we can avoid string props or catch the failure/mock it if we could.
-        // But the previous layout test didn't fail because it didn't use string props?
-        // Layout test checked dimensions, which are u64.
-        if let Ok(len) = stem::thing::sys::bytespace_read(bs_id, 0, &mut buf) {
-            return Some(String::from(core::str::from_utf8(&buf[..len]).unwrap_or_default()));
+        if let Some(id) = symbols.resolve(key) {
+            return node.strings.get(&id).cloned();
         }
         None
     }
@@ -187,6 +177,7 @@ mod tests {
             id: root_id,
             kind: UiNodeKind::Window,
             props,
+            strings: BTreeMap::new(),
             children: vec![],
         });
 

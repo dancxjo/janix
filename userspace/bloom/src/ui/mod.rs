@@ -20,6 +20,7 @@ impl SymbolResolver for SystemSymbolResolver {
 pub struct UiPipeline {
     pub root_id: Option<ThingId>,
     pub prev_snapshot: Option<UiSnapshot>,
+    pub solver: LayoutSolver,
 }
 
 impl UiPipeline {
@@ -27,6 +28,7 @@ impl UiPipeline {
         Self { 
             root_id: None,
             prev_snapshot: None,
+            solver: LayoutSolver::new(),
         }
     }
 
@@ -40,8 +42,12 @@ impl UiPipeline {
             None => return false,
         };
 
+        let start = stem::monotonic_ns();
+
         // 1. Snapshot
+        let t0 = stem::monotonic_ns();
         let snapshot = UiSnapshot::capture(root_id);
+        let t1 = stem::monotonic_ns();
         
         // 2. Change Detection
         let changed = if let Some(prev) = &self.prev_snapshot {
@@ -49,24 +55,38 @@ impl UiPipeline {
         } else {
             true // First snapshot is always a change
         };
+        let t2 = stem::monotonic_ns();
         
         // Store for next frame
         self.prev_snapshot = Some(snapshot.clone());
+        let t3 = stem::monotonic_ns();
 
         // 3. Layout
         let resolver = SystemSymbolResolver;
-        let layout = LayoutSolver::solve(&snapshot, screen_w, screen_h, assets, &resolver);
+        let layout = self.solver.solve(&snapshot, screen_w, screen_h, assets, &resolver);
+        let t4 = stem::monotonic_ns();
 
         // 4. Paint
         let paint_scene = PaintBuilder::build(&snapshot, &layout, &resolver);
-
-        if paint_scene.objects.len() > 1 {
-            stem::info!("UiPipeline: nodes={} objects={} changed={}", snapshot.nodes.len(), paint_scene.objects.len(), changed);
-        }
+        let t5 = stem::monotonic_ns();
 
         // 5. Lowering
         Self::lower(&paint_scene, list);
+        let t6 = stem::monotonic_ns();
         
+        let total = t6.saturating_sub(start);
+        if total > 50_000_000 { // > 50ms
+            crate::log!("[bloom::ui] WARN: slow UI run: total={:.1}ms (snap={:.1}ms diff={:.1}ms clone={:.1}ms layout={:.1}ms paint={:.1}ms lower={:.1}ms)",
+                total as f64 / 1_000_000.0,
+                (t1 - t0) as f64 / 1_000_000.0,
+                (t2 - t1) as f64 / 1_000_000.0,
+                (t3 - t2) as f64 / 1_000_000.0,
+                (t4 - t3) as f64 / 1_000_000.0,
+                (t5 - t4) as f64 / 1_000_000.0,
+                (t6 - t5) as f64 / 1_000_000.0,
+            );
+        }
+
         changed
     }
 

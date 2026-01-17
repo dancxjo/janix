@@ -216,10 +216,10 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize, p
                 *packets_sent += 1;
                 let _ = port_send(handle, packet);
                 
-                if *packets_sent <= 10 || *packets_sent % 100 == 0 {
+                /*
                     info!("ps2_mouse: packet {} = [{:02x} {:02x} {:02x}]",
                           packets_sent, packet[0], packet[1], packet[2]);
-                }
+                */
                 *idx = 0;
             }
         } else {

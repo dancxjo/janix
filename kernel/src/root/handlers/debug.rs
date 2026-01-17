@@ -101,6 +101,9 @@ pub fn handle_dump_edges(
         }
 
         // 2. Incoming edges (scan all nodes)
+        // OPTIMIZATION: This scan is O(N) and causes massive slowdowns for UI traversal.
+        // We now rely on explicit double-linking (HAS_CHILD) for performance.
+        /*
         if count < 8 {
             for (src_id, src_node) in &graph.nodes {
                 if *src_id == id { continue; } // Already did outgoing
@@ -119,6 +122,7 @@ pub fn handle_dump_edges(
                 if count >= 8 { break; }
             }
         }
+        */
         (0, fmt.pos as u64)
     } else {
         (-1, 0)

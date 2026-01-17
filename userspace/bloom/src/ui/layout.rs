@@ -23,10 +23,18 @@ pub trait SymbolResolver {
     fn resolve(&self, key: &str) -> Option<u32>;
 }
 
-pub struct LayoutSolver;
+pub struct LayoutSolver {
+    pub measure_cache: BTreeMap<(String, String, u32), (f32, f32)>,
+}
 
 impl LayoutSolver {
-    pub fn solve(snapshot: &UiSnapshot, screen_w: i32, screen_h: i32, assets: &AssetBank, symbols: &impl SymbolResolver) -> LayoutTree {
+    pub fn new() -> Self {
+        Self {
+            measure_cache: BTreeMap::new(),
+        }
+    }
+
+    pub fn solve(&mut self, snapshot: &UiSnapshot, screen_w: i32, screen_h: i32, assets: &AssetBank, symbols: &impl SymbolResolver) -> LayoutTree {
         let root_id = match snapshot.root_id {
             Some(id) => id,
             None => return LayoutTree { root: None },
@@ -45,12 +53,19 @@ impl LayoutSolver {
             children: Vec::new(),
         };
 
-        Self::layout_children(snapshot, root_node, &mut root_layout, assets, symbols);
+        Self::layout_children(snapshot, root_node, &mut root_layout, assets, symbols, &mut self.measure_cache);
 
         LayoutTree { root: Some(root_layout) }
     }
 
-    fn layout_children(snapshot: &UiSnapshot, node: &UiNodeSnapshot, layout: &mut LayoutNode, assets: &AssetBank, symbols: &impl SymbolResolver) {
+    fn layout_children(
+        snapshot: &UiSnapshot, 
+        node: &UiNodeSnapshot, 
+        layout: &mut LayoutNode, 
+        assets: &AssetBank, 
+        symbols: &impl SymbolResolver,
+        cache: &mut BTreeMap<(String, String, u32), (f32, f32)>,
+    ) {
         for child_id in &node.children {
             if let Some(child_node) = snapshot.nodes.get(child_id) {
                 // Determine layout strategy for this node.
@@ -63,17 +78,28 @@ impl LayoutSolver {
                 let center_y = Self::get_prop(child_node, keys::UI_CENTER_Y, symbols) != 0;
 
                 if center_x || center_y {
-                     // Try to measure if it's text
-                     if let Some(text) = Self::get_str_prop(child_node, keys::UI_TEXT, symbols) {
-                         let font_name = Self::get_str_prop(child_node, keys::UI_FONT, symbols).unwrap_or_else(|| "NotoSans-Regular.ttf".into());
-                         let size = Self::get_prop(child_node, keys::UI_FONT_SIZE, symbols) as f32;
-                         let font_size = if size == 0.0 { 16.0 } else { size };
+                    // Try to measure if it's text
+                    if let Some(text) = Self::get_str_prop(child_node, keys::UI_TEXT, symbols) {
+                        let font_name = Self::get_str_prop(child_node, keys::UI_FONT, symbols).unwrap_or_else(|| "NotoSans-Regular.ttf".into());
+                        let size = Self::get_prop(child_node, keys::UI_FONT_SIZE, symbols) as f32;
+                        let font_size = if size == 0.0 { 16.0 } else { size };
 
-                         if let Some(dims) = Self::measure_text(&text, &font_name, font_size, assets) {
-                             w = dims.0 as i32;
-                             h = dims.1 as i32;
-                         }
-                     }
+                        let cache_key = (text.clone(), font_name.clone(), font_size as u32);
+                        let dims = if let Some(d) = cache.get(&cache_key) {
+                            Some(*d)
+                        } else {
+                            let d = Self::measure_text(&text, &font_name, font_size, assets);
+                            if let Some(res) = d {
+                                cache.insert(cache_key, res);
+                            }
+                            d
+                        };
+
+                        if let Some(dims) = dims {
+                            w = dims.0 as i32;
+                            h = dims.1 as i32;
+                        }
+                    }
                 }
 
                 let mut x = Self::get_prop(child_node, keys::UI_X, symbols) as i32;
@@ -95,7 +121,7 @@ impl LayoutSolver {
                     children: Vec::new(),
                 };
 
-                Self::layout_children(snapshot, child_node, &mut child_layout, assets, symbols);
+                Self::layout_children(snapshot, child_node, &mut child_layout, assets, symbols, cache);
                 layout.children.push(child_layout);
             }
         }
@@ -134,13 +160,8 @@ impl LayoutSolver {
     }
 
     fn get_str_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> Option<String> {
-        let val = Self::get_prop(node, key, symbols);
-        if val == 0 { return None; }
-
-        let bs_id = ThingId(val);
-        let mut buf = [0u8; 1024];
-        if let Ok(len) = stem::thing::sys::bytespace_read(bs_id, 0, &mut buf) {
-            return Some(String::from(core::str::from_utf8(&buf[..len]).unwrap_or_default()));
+        if let Some(id) = symbols.resolve(key) {
+            return node.strings.get(&id).cloned();
         }
         None
     }
@@ -192,6 +213,7 @@ mod tests {
             id: root_id,
             kind: UiNodeKind::Root,
             props: root_props,
+            strings: BTreeMap::new(),
             children: vec![child_id],
         });
 
@@ -206,6 +228,7 @@ mod tests {
             id: child_id,
             kind: UiNodeKind::Window, // or whatever
             props: child_props,
+            strings: BTreeMap::new(),
             children: vec![],
         });
 

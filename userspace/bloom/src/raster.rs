@@ -208,7 +208,12 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             LowLevelOp::FillRect { rect, color, aa: _ } => {
                 let t_rect = ctx.current_transform.transform_rect(*rect);
                 if let Some(clipped) = ctx.current_clip.intersection(&t_rect) {
-                     fill_rect_blend(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), color.to_u32());
+                     let c = color.to_u32();
+                     if (c >> 24) == 255 {
+                         fill_rect_copy(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), c);
+                     } else {
+                         fill_rect_blend(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), c);
+                     }
                 }
             },
 
@@ -291,11 +296,10 @@ pub fn fill_rect_copy(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, col
 
 pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let a = ((color >> 24) & 0xFF) as u8;
-    // Force blend path to avoid alpha format mismatches
-    // if a == 255 {
-    //     fill_rect_copy(surface, x, y, w, h, color);
-    //     return;
-    // }
+    if a == 255 {
+        fill_rect_copy(surface, x, y, w, h, color);
+        return;
+    }
     if a == 0 { return; }
 
     if w <= 0 || h <= 0 { return; }
@@ -516,6 +520,49 @@ fn blit_alpha(
     blend: BlendMode, 
     const_alpha: Option<u8>
 ) {
+    let ca = const_alpha.unwrap_or(255) as u32;
+    
+    // Fast path: 1:1 scale
+    let is_1to1 = src.width() == full_dst.width() && src.height() == full_dst.height();
+    
+    if is_1to1 {
+        let dx_offset = clipped_dst.x() - full_dst.x();
+        let dy_offset = clipped_dst.y() - full_dst.y();
+        let sx_start = src.x() + dx_offset;
+        let sy_start = src.y() + dy_offset;
+
+        for dy in 0..clipped_dst.height() {
+            let sy = sy_start + dy;
+            let dst_y = clipped_dst.y() + dy;
+            
+            for dx in 0..clipped_dst.width() {
+                let sx = sx_start + dx;
+                let dst_x = clipped_dst.x() + dx;
+                
+                if sx >= 0 && sy >= 0 && sx < image.width as i32 && sy < image.height as i32 {
+                    let idx = (sy as usize) * (image.width as usize) + (sx as usize);
+                    let src_px = image.pixels[idx];
+                    let mut a = (src_px >> 24) & 0xFF;
+                    
+                    if ca != 255 { a = (a * ca) / 255; }
+                    if a == 0 { continue; }
+
+                    if blend == BlendMode::Src || a == 255 {
+                        surface.put_px(dst_x, dst_y, src_px);
+                        continue;
+                    }
+
+                    blend_pixel(surface, dst_x, dst_y, 
+                        ((src_px >> 16) & 0xFF) as u8, 
+                        ((src_px >> 8) & 0xFF) as u8, 
+                        (src_px & 0xFF) as u8, a as u8);
+                }
+            }
+        }
+        return;
+    }
+
+    // Slow path: Scaled blit (existing logic)
     let scale_x = src.width() as f32 / full_dst.width() as f32;
     let scale_y = src.height() as f32 / full_dst.height() as f32;
 
@@ -523,8 +570,6 @@ fn blit_alpha(
     let cy0 = clipped_dst.y();
     let cx1 = cx0 + clipped_dst.width();
     let cy1 = cy0 + clipped_dst.height();
-
-    let ca = const_alpha.unwrap_or(255) as u32;
 
     for dy in cy0..cy1 {
         for dx in cx0..cx1 {
@@ -538,39 +583,18 @@ fn blit_alpha(
                 if idx < image.pixels.len() {
                     let src_px = image.pixels[idx];
                     let mut a = (src_px >> 24) & 0xFF;
-                    
-                    if ca != 255 {
-                        a = (a * ca) / 255;
-                    }
-                    
+                    if ca != 255 { a = (a * ca) / 255; }
                     if a == 0 { continue; }
 
                     if blend == BlendMode::Src || a == 255 {
-                         if blend == BlendMode::Src {
-                             surface.put_px(dx, dy, src_px);
-                             continue;
-                         }
+                         surface.put_px(dx, dy, src_px);
+                         continue;
                     }
 
-                    let offset = (surface.stride_bytes / 4) * (dy as usize) + (dx as usize);
-                    let dst_ptr = unsafe { (surface.ptr as *mut u32).add(offset) };
-                    let dst_px = unsafe { *dst_ptr };
-
-                    let da = 255 - a;
-                    
-                    let src_r = (src_px >> 16) & 0xFF;
-                    let src_g = (src_px >> 8) & 0xFF;
-                    let src_b = src_px & 0xFF;
-                    
-                    let dst_r = (dst_px >> 16) & 0xFF;
-                    let dst_g = (dst_px >> 8) & 0xFF;
-                    let dst_b = dst_px & 0xFF;
-
-                    let out_r = (src_r * a + dst_r * da) / 255;
-                    let out_g = (src_g * a + dst_g * da) / 255;
-                    let out_b = (src_b * a + dst_b * da) / 255;
-
-                    unsafe { *dst_ptr = (out_r << 16) | (out_g << 8) | out_b; }
+                    blend_pixel(surface, dx, dy, 
+                        ((src_px >> 16) & 0xFF) as u8, 
+                        ((src_px >> 8) & 0xFF) as u8, 
+                        (src_px & 0xFF) as u8, a as u8);
                 }
             }
         }
@@ -623,7 +647,7 @@ fn rasterize_text_locally(
     // 4. Rasterize and blend each glyph
     for glyph in layout.glyphs() {
         let target_font = &prioritized_fonts[glyph.font_index];
-        let (metrics, bitmap) = target_font.font.rasterize_config(glyph.key);
+        let (metrics, bitmap) = target_font.get_glyph(glyph.key);
 
         let gx = x + glyph.x as i32;
         let gy = y + glyph.y as i32;

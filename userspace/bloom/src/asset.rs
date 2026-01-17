@@ -10,7 +10,7 @@ use crate::reclaimer;
 use crate::frame::AssetGeneration;
 
 use serde::{Deserialize, Serialize};
-use alloc::collections::VecDeque;
+use alloc::collections::{VecDeque, BTreeMap};
 use spin::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -70,6 +70,7 @@ pub struct FontAsset {
     pub font: Arc<fontdue::Font>,
     pub name: Arc<str>,
     pub gen: AssetGeneration,
+    pub glyph_cache: Arc<Mutex<BTreeMap<(u32, u16, usize), (fontdue::Metrics, Arc<[u8]>)>>>,
 }
 
 impl core::fmt::Debug for FontAsset {
@@ -86,7 +87,31 @@ impl FontAsset {
     pub fn decoded_bytes(&self) -> usize {
         // Fonts are relatively small compared to images
         // Estimate ~100KB for a typical font's glyph cache
-        100 * 1024
+        let cache_size = self.glyph_cache.lock().values().map(|(_, b)| b.len()).sum::<usize>();
+        100 * 1024 + cache_size
+    }
+
+    pub fn get_glyph(&self, config: fontdue::layout::GlyphRasterConfig) -> (fontdue::Metrics, Arc<[u8]>) {
+        let key = (
+            config.px.to_bits(),
+            config.glyph_index,
+            config.font_hash,
+        );
+
+        {
+            let cache = self.glyph_cache.lock();
+            if let Some(cached) = cache.get(&key) {
+                return cached.clone();
+            }
+        }
+        
+        // Rasterize if not cached
+        let (metrics, bitmap) = self.font.rasterize_config(config);
+        let bitmap_arc: Arc<[u8]> = Arc::from(bitmap.into_boxed_slice());
+        
+        let mut cache = self.glyph_cache.lock();
+        cache.insert(key, (metrics, bitmap_arc.clone()));
+        (metrics, bitmap_arc)
     }
 }
 
@@ -829,6 +854,7 @@ impl AssetBank {
                     font: Arc::new(font),
                     name,
                     gen: AssetGeneration::ZERO,
+                    glyph_cache: Arc::new(Mutex::new(BTreeMap::new())),
                 })
             }
             Err(e) => {

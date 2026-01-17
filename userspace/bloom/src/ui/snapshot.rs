@@ -95,6 +95,8 @@ impl UiSnapshot {
             keys::UI_X, keys::UI_Y, keys::UI_WIDTH, keys::UI_HEIGHT,
             keys::UI_COLOR, keys::UI_TEXT, keys::UI_FONT, keys::UI_FONT_SIZE,
             keys::UI_RADIUS, keys::UI_TITLE, keys::UI_HIDDEN, keys::UI_Z_INDEX,
+            keys::UI_CENTER_X, keys::UI_CENTER_Y, keys::UI_FILL_PARENT,
+            keys::UI_BG_COLOR, keys::UI_FG_COLOR,
         ];
 
         for key in known_keys {

@@ -86,6 +86,22 @@ pub mod keys {
     pub const UI_TITLE: &str = "ui.title";
     pub const UI_HIDDEN: &str = "ui.hidden";
     pub const UI_Z_INDEX: &str = "ui.z_index";
+
+    // Clock & Binding Properties
+    pub const CLOCK_NOW_TEXT: &str = "clock.now_text";
+    pub const CLOCK_TICK: &str = "clock.tick";
+    pub const BINDING_SOURCE: &str = "binding.source";
+    pub const BINDING_TARGET: &str = "binding.target";
+    pub const BINDING_MAP: &str = "binding.map";
+
+    // UI Layout & Style
+    pub const UI_LAYOUT_MODE: &str = "ui.layout.mode";
+    pub const UI_CENTER_X: &str = "ui.layout.center_x";
+    pub const UI_CENTER_Y: &str = "ui.layout.center_y";
+    pub const UI_FILL_PARENT: &str = "ui.layout.fill_parent";
+    pub const UI_BG_COLOR: &str = "ui.style.bg_color";
+    pub const UI_FG_COLOR: &str = "ui.style.fg_color";
+    pub const UI_FONT_SIZE_PX: &str = "ui.style.font_size_px";
 }
 
 pub mod kinds {
@@ -128,6 +144,9 @@ pub mod kinds {
     pub const UI_TEXT: &str = "ui.Text";
     pub const UI_IMAGE: &str = "ui.Image";
     pub const UI_OVERLAY: &str = "ui.Overlay";
+
+    pub const CLOCK: &str = "Clock";
+    pub const BINDING: &str = "Binding";
 }
 
 pub mod rels {

@@ -17,7 +17,7 @@ pub fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult
     }
 
     // 1. Level
-    let _level = match level_raw {
+    let level = match level_raw {
         0 => Level::Trace,
         1 => Level::Debug,
         2 => Level::Info,
@@ -35,45 +35,53 @@ pub fn sys_log_emit(level_raw: u64, msg_ptr: u64, msg_len: u64) -> SyscallResult
         Ok(len) => len,
         Err(_) => return SyscallResult::new(err::EINVAL, 0, 0),
     };
-    let mut msg_buf = alloc::vec![0u8; msg_len];
-    if let Err(code) = user_mem::copy_from_user(&mut msg_buf, msg_ptr, msg_len) {
-        return SyscallResult::new(code, 0, 0);
-    }
-    let msg = msg_buf.as_slice();
+
+    // Optimization: Use stack buffer for small messages to avoid initial Vec allocation.
+    // We still allocate a Vec for the LogEntry, but we avoid the double allocation
+    // (temporary buffer + LogEntry buffer) and duplicated graph ops.
+    const STACK_BUF_SIZE: usize = 256;
+    let mut stack_buf = [0u8; STACK_BUF_SIZE];
+
+    let msg_vec = if msg_len <= STACK_BUF_SIZE {
+        if let Err(code) = user_mem::copy_from_user(&mut stack_buf[..msg_len], msg_ptr, msg_len) {
+            return SyscallResult::new(code, 0, 0);
+        }
+        Vec::from(&stack_buf[..msg_len])
+    } else {
+        let mut buf = alloc::vec![0u8; msg_len];
+        if let Err(code) = user_mem::copy_from_user(&mut buf, msg_ptr, msg_len) {
+            return SyscallResult::new(code, 0, 0);
+        }
+        buf
+    };
 
     let arrival_mono_ns = time::monotonic_now();
     let subsystem = symbols::intern(b"USER");
 
     // Log to serial for BDD/Debug visibility (with UTF-8 fallback)
-    let display_msg = core::str::from_utf8(msg).unwrap_or("INVALID_UTF8");
-    let logged = log::log_emit_with_arrival(_level, subsystem, arrival_mono_ns, display_msg.as_bytes());
+    // We use the same formatting as kernel logs, but we do it manually here
+    // to avoid the double-graph-write that log::log_emit_with_arrival would do.
+    let display_msg = core::str::from_utf8(&msg_vec).unwrap_or("INVALID_UTF8");
+    log::serial_log(level, subsystem, Some(arrival_mono_ns), display_msg.as_bytes());
+
+    // 3. Create Log Thing
+    // We use "kind.LogEntry" to match the kernel logger (crates/kernel/src/log.rs).
+    let kind_log = symbols::intern(b"kind.LogEntry");
+    let entry_id = store::thing_create(kind_log);
 
     let entry = LogEntry {
-        level: _level,
+        level,
         subsystem,
         arrival_mono_ns: Some(arrival_mono_ns),
-        message: Vec::from(msg),
+        message: msg_vec, // Move the vector, avoiding copy/allocation
     };
-
-    if let Some(id) = logged {
-        // Reuse the kernel-created entry but preserve the original message bytes.
-        store::thing_set_inline_payload(id, &entry.to_payload());
-        return SyscallResult::new(0, id.high(), id.low());
-    }
-
-    // 3. Create Log Thing (fallback for lower levels)
-    let kind_log = symbols::intern(b"kind.log_entry");
-    let entry_id = store::thing_create(kind_log);
 
     // 4. Set Payload (Inline String)
     store::thing_set_inline_payload(entry_id, &entry.to_payload());
 
     // 5. Link to graph.logs
-    let graph_logs = store::find_thing_by_name(sym::GRAPH_LOGS).unwrap_or(ThingId(2)); // fallback root?
+    let graph_logs = store::find_thing_by_name(sym::GRAPH_LOGS).unwrap_or(ThingId(2));
     store::relationship_create(sym::PRED_CONTAINS, graph_logs, entry_id);
-
-    // 6. Link Level?
-    // Optional.
 
     SyscallResult::new(0, entry_id.high(), entry_id.low())
 }

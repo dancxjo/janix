@@ -161,7 +161,7 @@ pub fn klog(level: Level, subsystem: &str, message: &str) {
 }
 
 /// Serial output for structured logging
-fn serial_log(_level: Level, subsystem: SymbolId, arrival_mono_ns: Option<u64>, message: &[u8]) {
+pub(crate) fn serial_log(_level: Level, subsystem: SymbolId, arrival_mono_ns: Option<u64>, message: &[u8]) {
     if let Some(ns) = arrival_mono_ns {
         serial::write(b"[");
         let millis = ns / 1_000_000;

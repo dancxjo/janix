@@ -105,6 +105,11 @@ pub enum RootOp {
         buffer: u64,
         len: u64,
     },
+    GetEdges {
+        id: u64,
+        buffer: u64,
+        len: u64,
+    },
     DumpGraph {
         limit: u64,
     },

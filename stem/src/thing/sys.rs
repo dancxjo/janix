@@ -148,6 +148,21 @@ pub fn dump_edges(id: ThingId, out: &mut [u8]) -> Result<usize, Errno> {
     errno(ret).map(|v| v as usize)
 }
 
+pub fn get_edges(id: ThingId, out: &mut [abi::types::GraphEdge]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_GET_EDGES,
+            id.0 as usize,
+            out.as_mut_ptr() as usize,
+            out.len() * core::mem::size_of::<abi::types::GraphEdge>(),
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as usize)
+}
+
 pub fn link<S: IntoSymbolRef>(src: ThingId, rel: S, dst: ThingId) -> Result<(), Errno> {
     let wire = rel.to_wire();
     let ret = unsafe {

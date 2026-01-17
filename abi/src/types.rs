@@ -97,3 +97,10 @@ pub struct WatchEvent {
     pub handle: u64,
     pub size: u64,
 }
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GraphEdge {
+    pub rel: u64,
+    pub target: u64,
+}

@@ -62,6 +62,7 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::DescribeThing { .. } => "DescribeThing",
         RootOp::DescribeEdge { .. } => "DescribeEdge",
         RootOp::DumpEdges { .. } => "DumpEdges",
+        RootOp::GetEdges { .. } => "GetEdges",
         RootOp::DumpGraph { .. } => "DumpGraph",
         RootOp::LogEvent { .. } => "LogEvent",
     }
@@ -133,6 +134,9 @@ fn handle_msg<R: BootRuntime>(
         }
         RootOp::DumpEdges { id, buffer, len } => {
             root_handlers::handle_dump_edges(graph, interner, id, buffer, len)
+        }
+        RootOp::GetEdges { id, buffer, len } => {
+            root_handlers::handle_get_edges(graph, id, buffer, len)
         }
         RootOp::DumpGraph { limit } => root_handlers::handle_dump_graph(graph, interner, limit),
 

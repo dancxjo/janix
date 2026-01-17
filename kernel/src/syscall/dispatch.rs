@@ -70,6 +70,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         }
         SYS_ROOT_LINK => handlers::sys_root_link(args[0], args[1], args[2]),
         SYS_ROOT_DUMP_EDGES => handlers::sys_root_dump_edges(args[0], args[1], args[2]),
+        SYS_ROOT_GET_EDGES => handlers::sys_root_get_edges(args[0], args[1], args[2]),
         SYS_ROOT_INTERN => handlers::sys_root_intern(args[0], args[1]),
         SYS_ROOT_PROP_GET => handlers::sys_root_prop_get(args[0], args[1], args[2]),
         SYS_ROOT_FIND => handlers::sys_root_find(args[0], args[1], args[2]),

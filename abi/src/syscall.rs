@@ -106,6 +106,7 @@ pub const SYS_ROOT_DESCRIBE_THING: u32 = 0x158;
 pub const SYS_ROOT_DESCRIBE_EDGE: u32 = 0x159;
 pub const SYS_ROOT_DUMP_EDGES: u32 = 0x15A;
 pub const SYS_ROOT_DUMP_GRAPH: u32 = 0x15B;
+pub const SYS_ROOT_GET_EDGES: u32 = 0x15C;
 
 // 0x160-0x167: Bytespace
 pub const SYS_ROOT_BYTESPACE_CREATE: u32 = 0x160;

@@ -2,8 +2,8 @@ use alloc::vec::Vec;
 use alloc::vec;
 use alloc::collections::BTreeMap;
 use stem::thing::ThingId;
-use stem::thing::sys::{prop_get, dump_edges, get_kind};
-use abi::schema::keys;
+use stem::thing::sys::{prop_get, get_edges, get_kind};
+use abi::schema::{keys, rels};
 use abi::symbols::SymbolId;
 use alloc::string::String;
 
@@ -47,6 +47,7 @@ pub struct UiKeys {
     pub fill_parent: SymbolId,
     pub bg_color: SymbolId,
     pub fg_color: SymbolId,
+    pub has_child: SymbolId,
 }
 
 impl UiKeys {
@@ -69,6 +70,7 @@ impl UiKeys {
             fill_parent: stem::thing::sys::intern(keys::UI_FILL_PARENT).unwrap_or(0),
             bg_color: stem::thing::sys::intern(keys::UI_BG_COLOR).unwrap_or(0),
             fg_color: stem::thing::sys::intern(keys::UI_FG_COLOR).unwrap_or(0),
+            has_child: stem::thing::sys::intern(rels::HAS_CHILD).unwrap_or(0),
         }
     }
 }
@@ -140,40 +142,15 @@ impl UiSnapshot {
 
         // Query children via edges
         let mut children = Vec::new();
-        let mut buf = [0u8; 1024];
-        if let Ok(len) = dump_edges(id, &mut buf) {
-             let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
-             for line in s.lines() {
-                 if line.is_empty() { continue; }
-
-                 
-                 // Robust Cypher Parsing
-                 if line.contains("-[:HAS_CHILD]->") {
-                     let (src_part, dst_part) = match (line.find('('), line.rfind('(')) {
-                         (Some(start), Some(end)) if start != end => {
-                             let src_end = line.find(')').unwrap_or(0);
-                             let src = &line[start + 1 .. src_end];
-                             let dst_end = line.rfind(')').unwrap_or(line.len());
-                             let dst = &line[end + 1 .. dst_end];
-                             (src, dst)
-                         }
-                         _ => continue,
-                     };
-
-                     let extract_id = |part: &str| -> Option<u64> {
-                         let mut pieces = part.split(':');
-                         pieces.next(); // skip basename
-                         pieces.next().and_then(|id_str| u64::from_str_radix(id_str, 16).ok())
-                     };
-
-                     if let (Some(src_id), Some(dst_id)) = (extract_id(src_part), extract_id(dst_part)) {
-                         // link(parent, HAS_CHILD, child) => (parent)-[:HAS_CHILD]->(child)
-                         if src_id == id.0 && dst_id != id.0 {
-                             children.push(ThingId(dst_id));
-                        }
-                     }
-                 }
-             }
+        let mut edges_buf = [abi::types::GraphEdge::default(); 64];
+        if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
+            for edge in &edges_buf[..count] {
+                // Check if (id)-[:HAS_CHILD]->(child)
+                // edge.rel corresponds to the relationship ID
+                if edge.rel == keys.has_child as u64 && edge.target != id.0 {
+                    children.push(ThingId(edge.target));
+                }
+            }
         }
 
         let mut props = BTreeMap::new();

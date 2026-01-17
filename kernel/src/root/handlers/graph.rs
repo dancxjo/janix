@@ -167,3 +167,31 @@ pub fn handle_query(
         (-1, 0)
     }
 }
+
+pub fn handle_get_edges(
+    graph: &Graph,
+    id: u64,
+    buffer: u64,
+    len: u64,
+) -> HandlerResult {
+    if let Some(node) = graph.nodes.get(&id) {
+        let max_entries = (len as usize) / core::mem::size_of::<abi::types::GraphEdge>();
+        let mut count = 0;
+        let out_ptr = buffer as *mut abi::types::GraphEdge;
+
+        for (rel, dst) in &node.edges {
+            if count < max_entries {
+                unsafe {
+                    *out_ptr.add(count) = abi::types::GraphEdge {
+                        rel: *rel as u64,
+                        target: *dst,
+                    };
+                }
+            }
+            count += 1;
+        }
+        (0, count as u64)
+    } else {
+        (-1, 0)
+    }
+}

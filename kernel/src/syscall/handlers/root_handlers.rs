@@ -283,6 +283,42 @@ pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<u
     }
 }
 
+pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, len, true)?;
+    
+    // Allocate a temporary kernel buffer to receive the edges
+    // Must be large enough to hold some edges, but not too large for stack
+    // GraphEdge is 16 bytes.
+    let mut kbuf = [0u8; 4096]; // 256 edges max per batch
+    let kbuf_len = core::cmp::min(len, kbuf.len());
+    
+    let reply = root_svc::enqueue(RootOp::GetEdges {
+        id: id as u64,
+        buffer: kbuf.as_mut_ptr() as u64,
+        len: kbuf_len as u64,
+    });
+
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let written = reply.value.load(Ordering::Relaxed) as usize;
+            if status == 0 {
+                let bytes_to_copy = core::cmp::min(written * 16, len);
+                unsafe {
+                    copyout(out_ptr, &kbuf[..bytes_to_copy])?;
+                }
+                return Ok(written);
+            } else {
+                return Err(Errno::EIO);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}
+
 pub fn sys_root_dump_graph(limit: usize) -> SysResult<usize> {
     root_call(RootOp::DumpGraph {
         limit: limit as u64,

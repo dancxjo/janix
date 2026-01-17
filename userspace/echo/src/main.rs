@@ -17,11 +17,15 @@ use stem::syscall::{port_recv, PortHandle};
 fn format_mods(mods: Mods) -> &'static str {
     match mods.0 {
         0 => "",
-        m if m == Mods::SHIFT => " +Shift",
-        m if m == Mods::CTRL => " +Ctrl",
-        m if m == Mods::ALT => " +Alt",
-        m if m == Mods::META => " +Meta",
-        _ => " +?",
+        Mods::SHIFT => " +Shift",
+        Mods::CTRL => " +Ctrl",
+        Mods::ALT => " +Alt",
+        Mods::META => " +Meta",
+        m if m == (Mods::CTRL | Mods::ALT) => " +Ctrl+Alt",
+        m if m == (Mods::SHIFT | Mods::CTRL) => " +Shift+Ctrl",
+        m if m == (Mods::SHIFT | Mods::ALT) => " +Shift+Alt",
+        m if m == (Mods::CTRL | Mods::ALT | Mods::SHIFT) => " +Ctrl+Alt+Shift",
+        _ => " +Mods", // Changed from +? to +Mods for clarity
     }
 }
 

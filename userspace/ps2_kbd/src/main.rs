@@ -68,8 +68,10 @@ fn drain_keyboard_data(handle: PortHandle) {
             // Keyboard data - read and send
             let scancode = ioport_read(PS2_DATA, 1) as u8;
             let _ = port_send(handle, &[scancode]);
+        } else {
+            // If aux data (mouse), stop draining - let ps2_mouse handle it
+            break;
         }
-        // If aux data (mouse), don't read - let ps2_mouse handle it
     }
 }
 

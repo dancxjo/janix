@@ -60,16 +60,15 @@ fn read_data_filtered(expect_aux: bool, label: &str) -> Option<u8> {
             stem::yield_now();
             continue;
         }
-        let byte = ioport_read(PS2_DATA, 1) as u8;
         let is_aux = (status & STATUS_AUX_DATA) != 0;
-        if is_aux == expect_aux {
-            return Some(byte);
+        if is_aux != expect_aux {
+            // It's not the type of data we're waiting for.
+            // DO NOT read it, or we'll steal it from the other driver!
+            stem::yield_now();
+            continue;
         }
-        if is_aux {
-            discarded_aux = discarded_aux.saturating_add(1);
-        } else {
-            discarded_non_aux = discarded_non_aux.saturating_add(1);
-        }
+        let byte = ioport_read(PS2_DATA, 1) as u8;
+        return Some(byte);
     }
     info!(
         "ps2_mouse: timed out waiting for {} (discarded_aux={}, discarded_non_aux={})",
@@ -202,7 +201,6 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize, p
             break;
         }
         
-        // Only process aux data (mouse)
         if status & STATUS_AUX_DATA != 0 {
             let byte = ioport_read(PS2_DATA, 1) as u8;
             
@@ -224,6 +222,9 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize, p
                 }
                 *idx = 0;
             }
+        } else {
+            // Not mouse data, stop draining - let ps2_kbd handle it
+            break;
         }
     }
 }

@@ -85,19 +85,59 @@ impl KeyboardState {
     }
 
     fn update_mods(&mut self, key: Key, pressed: bool) {
-        let bit = match key {
-            Key::LeftShift | Key::RightShift => Mods::SHIFT,
-            Key::LeftCtrl | Key::RightCtrl => Mods::CTRL,
-            Key::LeftAlt => Mods::ALT,
-            Key::RightAlt => Mods::ALTGR,
-            Key::LeftMeta | Key::RightMeta => Mods::META,
-            _ => return,
-        };
+        match key {
+            Key::LeftShift | Key::RightShift => {
+                if pressed {
+                    self.mods |= Mods::SHIFT;
+                } else {
+                    // Only clear if BOTH Shift keys are now released
+                    if !self.is_key_pressed(Key::LeftShift) && !self.is_key_pressed(Key::RightShift) {
+                        self.mods &= !Mods::SHIFT;
+                    }
+                }
+            }
+            Key::LeftCtrl | Key::RightCtrl => {
+                if pressed {
+                    self.mods |= Mods::CTRL;
+                } else {
+                    if !self.is_key_pressed(Key::LeftCtrl) && !self.is_key_pressed(Key::RightCtrl) {
+                        self.mods &= !Mods::CTRL;
+                    }
+                }
+            }
+            Key::LeftAlt | Key::RightAlt => {
+                // Note: RightAlt is handled as ALTGR in some layouts, but for OS-level
+                // modifiers we often want both to act as ALT.
+                // Bristle currently maps RightAlt to ALTGR bit.
+                if key == Key::LeftAlt {
+                    if pressed { self.mods |= Mods::ALT; }
+                    else { self.mods &= !Mods::ALT; }
+                } else {
+                    if pressed { self.mods |= Mods::ALTGR; }
+                    else { self.mods &= !Mods::ALTGR; }
+                }
+            }
+            Key::LeftMeta | Key::RightMeta => {
+                if pressed {
+                    self.mods |= Mods::META;
+                } else {
+                    if !self.is_key_pressed(Key::LeftMeta) && !self.is_key_pressed(Key::RightMeta) {
+                        self.mods &= !Mods::META;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 
-        if pressed {
-            self.mods |= bit;
+    fn is_key_pressed(&self, key: Key) -> bool {
+        let key_idx = key as u16 as usize;
+        let word_idx = key_idx / 64;
+        let bit_idx = key_idx % 64;
+        if word_idx < 4 {
+            (self.pressed[word_idx] & (1 << bit_idx)) != 0
         } else {
-            self.mods &= !bit;
+            false
         }
     }
 

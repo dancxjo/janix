@@ -1,6 +1,6 @@
 use abi::hid::{
     BristleEventHeader, PointerMovePayload, PointerButtonPayload,
-    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, Key, KeyEventPayload,
+    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, KeyEventPayload,
 };
 use stem::syscall::{port_recv, PortHandle};
 

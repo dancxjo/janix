@@ -5,13 +5,13 @@
 //! Text rendering delegates to fontd via font_client.
 
 use alloc::vec::Vec;
-use alloc::sync::Arc;
+
 use crate::damage::{Damage, Rect as DamageRect};
 use crate::drawlist::DrawList;
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use crate::asset::Image;
-use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA};
+use crate::isa::{BlendMode, FilterMode, Transform2D, Rect, EdgeAA};
 // use crate::font_client; // No longer needed
 use crate::ASSETS;
 use crate::log;
@@ -71,6 +71,7 @@ impl<'a> RasterContext<'a> {
     }
 
     // Helper to check if a rect is visible within current clip
+    #[allow(dead_code)]
     fn is_visible(&self, r: Rect) -> bool {
         self.current_clip.intersection(&r).is_some()
     }

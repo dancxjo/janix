@@ -12,17 +12,17 @@ mod damage;
 mod drawlist;
 mod frame;
 mod frame_loop;
-pub mod key_overlay;
 pub mod geometry; // Canonical geometry types
-mod isa;      // Portable Render ISA types
+mod isa; // Portable Render ISA types
+pub mod key_overlay;
 mod logging;
 mod lowered;
 mod present;
 mod raster;
 mod reclaimer;
 mod surface;
-mod target;
-mod target_cpu;
+// mod target;
+// mod target_cpu;
 pub mod ui;
 
 use abi::display_driver_protocol::BindPayload;
@@ -41,17 +41,13 @@ fn unpack_handle(arg: usize, index: u32) -> PortHandle {
 }
 
 use crate::asset::AssetBank;
-use alloc::collections::BTreeSet;
-
-// use stem::stack::{Stack, StackSpec};
-
 pub static ASSETS: AssetBank = AssetBank::new();
 
 /// Background thread for loading wallpaper
 extern "C" fn wallpaper_loader_entry() -> ! {
     log!("[wallpaper_loader] thread started");
-    
-    stem::sleep_ms(200); 
+
+    stem::sleep_ms(200);
     log!("[wallpaper_loader] searching for wallpaper...");
 
     let candidates = [
@@ -59,18 +55,21 @@ extern "C" fn wallpaper_loader_entry() -> ! {
         "wallpapers/clouds.bmp",
         "clouds.bmp",
     ];
-    
+
     for path in candidates.iter() {
         log!("[wallpaper_loader] trying: {}", path);
         if ASSETS.probe_asset_exists(path) {
-            log!("[wallpaper_loader] SUCCESS: found candidate '{}', enqueuing load", path);
+            log!(
+                "[wallpaper_loader] SUCCESS: found candidate '{}', enqueuing load",
+                path
+            );
             ASSETS.enqueue_wallpaper_load(path);
             break;
         } else {
             log!("[wallpaper_loader] not found: {}", path);
         }
     }
-    
+
     log!("[wallpaper_loader] thread done, sleeping forever");
     loop {
         stem::syscall::sleep_ms(10000);
@@ -80,12 +79,12 @@ extern "C" fn wallpaper_loader_entry() -> ! {
 /// Background thread for loading fonts
 extern "C" fn font_loader_entry() -> ! {
     log!("[font_loader] thread started");
-    
-    use abi::types::{WatchSpec, WatchEvent, WatchMode};
-    use abi::query::{QueryStep, QueryOpKind};
+
+    use abi::query::{QueryOpKind, QueryStep};
     use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
+    use abi::types::{WatchEvent, WatchMode, WatchSpec};
     use stem::syscall;
-    use stem::thing::sys::{describe_thing, bytespace_info, prop_get};
+    use stem::thing::sys::{bytespace_info, describe_thing, prop_get};
     use stem::thing::ThingId;
 
     // Phase 1: Scan for boot.Modules that look like fonts
@@ -108,7 +107,7 @@ extern "C" fn font_loader_entry() -> ! {
         query_ptr: steps.as_ptr() as u64,
         query_len: steps.len() as u64,
     };
-    
+
     let watch_id = match syscall::root_watch_open(&spec) {
         Ok(id) => {
             log!("[font_loader] watch opened (id={})", id);
@@ -116,7 +115,9 @@ extern "C" fn font_loader_entry() -> ! {
         }
         Err(e) => {
             log!("[font_loader] ERROR: watch open failed: {:?}", e);
-            loop { stem::sleep_ms(10000); }
+            loop {
+                stem::sleep_ms(10000);
+            }
         }
     };
 
@@ -128,16 +129,28 @@ extern "C" fn font_loader_entry() -> ! {
                 let mut buf = [0u8; 512];
                 if let Ok(len) = describe_thing(node_id, &mut buf) {
                     let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
-                    if desc.contains("name: \"") && (desc.contains(".ttf\"") || desc.contains(".otf\"") || desc.contains(".ttc\"")) {
+                    if desc.contains("name: \"")
+                        && (desc.contains(".ttf\"")
+                            || desc.contains(".otf\"")
+                            || desc.contains(".ttc\""))
+                    {
                         log!("[font_loader] found font candidate: '{}'", desc);
                         let bs_id = prop_get(node_id, "bytespace").map(ThingId).ok();
                         let size = bs_id.and_then(|id| bytespace_info(id).ok());
-                        
+
                         if let (Some(bs), Some(sz)) = (bs_id, size) {
-                            log!("[font_loader] enqueuing font load: bs={} size={} name='{}'", bs.0, sz, desc);
+                            log!(
+                                "[font_loader] enqueuing font load: bs={} size={} name='{}'",
+                                bs.0,
+                                sz,
+                                desc
+                            );
                             ASSETS.enqueue_font_load(bs, sz, desc);
                         } else {
-                            log!("[font_loader] WARN: could not get bytespace/size for font '{}'", desc);
+                            log!(
+                                "[font_loader] WARN: could not get bytespace/size for font '{}'",
+                                desc
+                            );
                         }
                     }
                 }
@@ -150,7 +163,9 @@ extern "C" fn font_loader_entry() -> ! {
                 log!("[font_loader] watch next error: {:?}", e);
                 stem::sleep_ms(500);
             }
-            _ => { stem::sleep_ms(100); }
+            _ => {
+                stem::sleep_ms(100);
+            }
         }
     }
 }
@@ -158,8 +173,8 @@ extern "C" fn font_loader_entry() -> ! {
 /// Background thread for loading cursor
 extern "C" fn cursor_loader_entry() -> ! {
     log!("[cursor_loader] thread started");
-    
-    stem::sleep_ms(300); 
+
+    stem::sleep_ms(300);
     log!("[cursor_loader] searching for cursor...");
 
     let candidates = [
@@ -171,20 +186,22 @@ extern "C" fn cursor_loader_entry() -> ! {
     for path in candidates.iter() {
         log!("[cursor_loader] trying: {}", path);
         if ASSETS.probe_asset_exists(path) {
-            log!("[cursor_loader] SUCCESS: found candidate '{}', enqueuing load", path);
+            log!(
+                "[cursor_loader] SUCCESS: found candidate '{}', enqueuing load",
+                path
+            );
             ASSETS.enqueue_cursor_load(path);
             break;
         } else {
             log!("[cursor_loader] not found: {}", path);
         }
     }
-    
+
     log!("[cursor_loader] thread done, sleeping forever");
     loop {
         stem::syscall::sleep_ms(10000);
     }
 }
-
 
 #[cfg_attr(not(test), stem::main)]
 fn main(arg: usize) -> ! {
@@ -202,21 +219,21 @@ fn main(arg: usize) -> ! {
     let bs_id = ThingId(arg_val as u64);
 
     let mapped = bytespace_map(bs_id);
-    
+
     let mut valid_bs = false;
     if let Ok(ptr) = mapped {
-         let slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, 16) };
-         if slice[0] == 0xB100AA01 {
-             arg_req = slice[1];
-             arg_resp = slice[2];
-             bristle_evt = slice[3];
-             svc_font_id = (slice[4] as u64) | ((slice[5] as u64) << 32);
-             valid_bs = true;
-             log!("[bloom] Bootstrapped via Bytespace ID={}", arg_val);
-         }
-         let _ = bytespace_unmap(bs_id, ptr);
+        let slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, 16) };
+        if slice[0] == 0xB100AA01 {
+            arg_req = slice[1];
+            arg_resp = slice[2];
+            bristle_evt = slice[3];
+            svc_font_id = (slice[4] as u64) | ((slice[5] as u64) << 32);
+            valid_bs = true;
+            log!("[bloom] Bootstrapped via Bytespace ID={}", arg_val);
+        }
+        let _ = bytespace_unmap(bs_id, ptr);
     }
-    
+
     if !valid_bs {
         // Fallback or Error?
         // Sprout was creating map. If failed, it might pass packed handles?
@@ -230,10 +247,18 @@ fn main(arg: usize) -> ! {
         bristle_evt = unpack_handle(arg_val, 2) as u32;
     }
 
-    log!("[bloom] starting (arg_req={} arg_resp={} bristle={} font_svc={})", arg_req, arg_resp, bristle_evt, svc_font_id);
+    log!(
+        "[bloom] starting (arg_req={} arg_resp={} bristle={} font_svc={})",
+        arg_req,
+        arg_resp,
+        bristle_evt,
+        svc_font_id
+    );
 
     // Font Client is no longer used, as we load fonts locally now.
 
+    // Logic below to handle key input if needed (currently poll_bristle does it)
+    use alloc::collections::BTreeSet;
     use stem::stack::{Stack, StackSpec};
 
     // Spawn wallpaper loader thread
@@ -241,11 +266,17 @@ fn main(arg: usize) -> ! {
         reserve_bytes: 256 * 1024,
         initial_commit_bytes: 64 * 1024,
         ..StackSpec::default()
-    }).expect("wallpaper stack");
-    if let Err(e) = stem::thread::spawn_on(wallpaper_stack, wallpaper_loader_entry) {
-        log!("[bloom] ERROR: failed to spawn wallpaper loader: {:?}", e);
-    } else {
-        log!("[bloom] spawned wallpaper_loader thread");
+    })
+    .expect("wallpaper stack");
+    match stem::thread::spawn_on(wallpaper_stack, wallpaper_loader_entry) {
+        Ok(tid) => {
+            // Loader threads enqueue quickly but should not outrank device drivers: Normal (2).
+            let _ = stem::thread::set_priority(tid, 2);
+            log!("[bloom] spawned wallpaper_loader thread (tid={})", tid);
+        }
+        Err(e) => {
+            log!("[bloom] ERROR: failed to spawn wallpaper loader: {:?}", e);
+        }
     }
 
     // Spawn cursor loader thread
@@ -253,11 +284,16 @@ fn main(arg: usize) -> ! {
         reserve_bytes: 256 * 1024,
         initial_commit_bytes: 64 * 1024,
         ..StackSpec::default()
-    }).expect("cursor stack");
-    if let Err(e) = stem::thread::spawn_on(cursor_stack, cursor_loader_entry) {
-        log!("[bloom] ERROR: failed to spawn cursor loader: {:?}", e);
-    } else {
-        log!("[bloom] spawned cursor_loader thread");
+    })
+    .expect("cursor stack");
+    match stem::thread::spawn_on(cursor_stack, cursor_loader_entry) {
+        Ok(tid) => {
+            let _ = stem::thread::set_priority(tid, 2);
+            log!("[bloom] spawned cursor_loader thread (tid={})", tid);
+        }
+        Err(e) => {
+            log!("[bloom] ERROR: failed to spawn cursor loader: {:?}", e);
+        }
     }
 
     // Spawn font loader thread
@@ -265,25 +301,37 @@ fn main(arg: usize) -> ! {
         reserve_bytes: 256 * 1024,
         initial_commit_bytes: 64 * 1024,
         ..StackSpec::default()
-    }).expect("font stack");
-    if let Err(e) = stem::thread::spawn_on(font_stack, font_loader_entry) {
-        log!("[bloom] ERROR: failed to spawn font loader: {:?}", e);
-    } else {
-        log!("[bloom] spawned font_loader thread");
+    })
+    .expect("font stack");
+    match stem::thread::spawn_on(font_stack, font_loader_entry) {
+        Ok(tid) => {
+            let _ = stem::thread::set_priority(tid, 2);
+            log!("[bloom] spawned font_loader thread (tid={})", tid);
+        }
+        Err(e) => {
+            log!("[bloom] ERROR: failed to spawn font loader: {:?}", e);
+        }
     }
 
     // 1. Discovery & Mapping
     log!("[bloom] discovering compositor target...");
     let target = match CompositorTarget::discover_and_map((arg_req, arg_resp), 2000) {
         Ok(t) => {
-            log!("[bloom] compositor target: {}x{} @ {:p} backend={}", 
-                t.width, t.height, t.ptr, t.backend.name());
+            log!(
+                "[bloom] compositor target: {}x{} @ {:p} backend={}",
+                t.width,
+                t.height,
+                t.ptr,
+                t.backend.name()
+            );
 
             t
-        },
+        }
         Err(e) => {
             log!("[bloom] ERROR: compositor discovery failed: {:?}", e);
-            loop { stem::sleep_ms(1000); }
+            loop {
+                stem::sleep_ms(1000);
+            }
         }
     };
 
@@ -296,9 +344,13 @@ fn main(arg: usize) -> ! {
 
     // 2. Presenter Setup
     let mut presenter = if target.driver_req != 0 && target.driver_resp != 0 {
-        log!("[bloom] presenter: driver (req={} resp={})", target.driver_req, target.driver_resp);
+        log!(
+            "[bloom] presenter: driver (req={} resp={})",
+            target.driver_req,
+            target.driver_resp
+        );
         let mut driver = DriverPresenter::new(target.driver_req, target.driver_resp);
-        
+
         let bind = BindPayload {
             bytespace_id: target.bs_id.0,
             width: target.width,
@@ -314,16 +366,16 @@ fn main(arg: usize) -> ! {
     };
 
     // 3. State Initialization
-    let mut surface = unsafe { 
+    let mut surface = unsafe {
         surface::Surface::new(
-            target.ptr, 
-            target.size_bytes, 
-            target.width, 
-            target.height, 
-            target.stride_bytes
-        ) 
+            target.ptr,
+            target.size_bytes,
+            target.width,
+            target.height,
+            target.stride_bytes,
+        )
     };
-    
+
     let mut cursor = CursorState::new((target.width as i32) / 2, (target.height as i32) / 2);
     let mut loop_ctrl = FrameLoop::new(60);
     let mut cursor_loaded = false;
@@ -349,14 +401,17 @@ fn main(arg: usize) -> ! {
     key_overlay.setup(ui_root);
 
     log!("[bloom] entering transactional frame loop (acquire -> build -> present)");
-    log!("[bloom] reclaimer: budget={} bytes", reclaimer::memory_budget());
+    log!(
+        "[bloom] reclaimer: budget={} bytes",
+        reclaimer::memory_budget()
+    );
 
     // 4. Main Loop - Transactional Pattern
     let mut perf = PerfStats::default();
 
     loop {
         let frame_start = stem::monotonic_ns();
-        let frame_id_val = loop_ctrl.next();
+        let _frame_id_val = loop_ctrl.next();
 
         // ═══════════════════════════════════════════════════════════════════
         // ACQUIRE: Promote pending assets, snapshot generation, get token
@@ -370,10 +425,10 @@ fn main(arg: usize) -> ! {
         // ═══════════════════════════════════════════════════════════════════
         let build_start = stem::monotonic_ns();
         let mut builder = FrameBuilder::new(token);
-        
+
         // Snapshot the asset generation early (before any mutable borrows)
         let gen_snapshot = builder.asset_generation();
-        
+
         // First frame requires full redraw
         if first_frame {
             builder.mark_full_damage();
@@ -384,7 +439,11 @@ fn main(arg: usize) -> ! {
         if !wallpaper_loaded {
             if ASSETS.get_wallpaper_for_gen(gen_snapshot).is_some() {
                 wallpaper_loaded = true;
-                log!("[bloom] frame {}: wallpaper now visible (gen={})", frame_id, gen_snapshot.0);
+                log!(
+                    "[bloom] frame {}: wallpaper now visible (gen={})",
+                    frame_id,
+                    gen_snapshot.0
+                );
                 builder.mark_full_damage();
             }
         }
@@ -392,7 +451,11 @@ fn main(arg: usize) -> ! {
         // Check if cursor asset is ready (using generation-aware getter)
         if !cursor_loaded {
             if let Some(asset) = ASSETS.get_cursor_for_gen(gen_snapshot) {
-                log!("[bloom] frame {}: cursor now visible (gen={})", frame_id, gen_snapshot.0);
+                log!(
+                    "[bloom] frame {}: cursor now visible (gen={})",
+                    frame_id,
+                    gen_snapshot.0
+                );
                 cursor.set_asset(asset);
                 cursor_loaded = true;
                 builder.add_damage(cursor.bbox());
@@ -404,6 +467,7 @@ fn main(arg: usize) -> ! {
                 font_loaded = true;
                 log!("[bloom] frame {}: fonts available", frame_id);
                 builder.mark_full_damage();
+                ui_pipeline.mark_dirty();
             }
         }
 
@@ -426,7 +490,7 @@ fn main(arg: usize) -> ! {
             bristle::poll_bristle(bristle_evt, &mut cursor, &mut keys, screen_w, screen_h);
         }
         perf.input_ns += stem::monotonic_ns().saturating_sub(input_start);
-        
+
         // Track cursor movement damage
         let new_cursor_bbox = cursor.bbox();
         if let Some(prev) = prev_cursor_bbox {
@@ -442,7 +506,9 @@ fn main(arg: usize) -> ! {
         prev_cursor_bbox = Some(new_cursor_bbox);
 
         // Key Overlay Update
-        key_overlay.update(&keys, screen_w, screen_h);
+        if key_overlay.update(&keys, screen_w, screen_h) {
+            ui_pipeline.mark_dirty();
+        }
 
         // Damage text regions (frame counter changes every frame)
         if font_loaded {
@@ -453,32 +519,52 @@ fn main(arg: usize) -> ! {
         let mut ui_changed = false;
         {
             let list = builder.ops();
-            
+
             // Background / Wallpaper (use generation-aware getter)
             if let Some(clouds) = ASSETS.get_wallpaper_for_gen(gen_snapshot) {
-                 let cw = clouds.width as i32;
-                 let ch = clouds.height as i32;
-                 for y in (0..screen_h).step_by(ch as usize) {
-                     for x in (0..screen_w).step_by(cw as usize) {
-                         list.blit_image(&clouds, x, y);
-                     }
-                 }
+                let cw = clouds.width as i32;
+                let ch = clouds.height as i32;
+                for y in (0..screen_h).step_by(ch as usize) {
+                    for x in (0..screen_w).step_by(cw as usize) {
+                        list.blit_image(&clouds, x, y);
+                    }
+                }
             } else {
-                 // Aesthetic fallback: deep "Thing-OS" blue
-                 list.clear(geometry::Color::from_u32(0xFF002d44));
+                // Aesthetic fallback: deep "Thing-OS" blue
+                list.clear(geometry::Color::from_u32(0xFF002d44));
             }
 
             // Backend indicator: small box in top-right corner
             let indicator_size = 24;
             let indicator_x = screen_w - indicator_size - 8;
             let indicator_y = 8;
-            list.rect(indicator_x, indicator_y, indicator_size, indicator_size, backend_indicator_color);
+            list.rect(
+                indicator_x,
+                indicator_y,
+                indicator_size,
+                indicator_size,
+                backend_indicator_color,
+            );
 
             // Demo text rendering if font is loaded
             if font_loaded {
-                list.text_font("thing-os", "NotoSerif-Regular.ttf", 20, 40, 24.0, geometry::Color::from_u32(0xFFFFFFFF));
-                list.text_font(&alloc::format!("frame: {}", frame_id), "NotoSerif-Regular.ttf", 20, 70, 16.0, geometry::Color::from_u32(0xFFCCCCCC));
-                
+                list.text_font(
+                    "thing-os",
+                    "NotoSerif-Regular.ttf",
+                    20,
+                    40,
+                    24.0,
+                    geometry::Color::from_u32(0xFFFFFFFF),
+                );
+                list.text_font(
+                    &alloc::format!("frame: {}", frame_id),
+                    "NotoSerif-Regular.ttf",
+                    20,
+                    70,
+                    16.0,
+                    geometry::Color::from_u32(0xFFCCCCCC),
+                );
+
                 // Run UI Pipeline
                 let ui_start = stem::monotonic_ns();
                 ui_changed = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
@@ -496,14 +582,14 @@ fn main(arg: usize) -> ! {
         // Finish building - seal the token
         let token = builder.finish();
         perf.build_ns += stem::monotonic_ns().saturating_sub(build_start);
-        
+
         // Get damage reference before consuming token
         let damage_for_raster = token.damage.clone();
 
         // ═══════════════════════════════════════════════════════════════════
         // PRESENT: Rasterize with damage, present to display
         // ═══════════════════════════════════════════════════════════════════
-        
+
         // Rasterize using damage-aware rendering
         if !damage_for_raster.is_empty() {
             let raster_start = stem::monotonic_ns();
@@ -516,7 +602,7 @@ fn main(arg: usize) -> ! {
         let _stats = presenter.present_frame(token);
         presenter.pump();
         perf.present_ns += stem::monotonic_ns().saturating_sub(present_start);
-        
+
         // Post-present overlay update
         key_overlay.post_present();
 
@@ -527,7 +613,7 @@ fn main(arg: usize) -> ! {
 
         // Timing
         loop_ctrl.heartbeat(cursor.x, cursor.y);
-        
+
         perf.count += 1;
         perf.frame_ns += stem::monotonic_ns().saturating_sub(frame_start);
 

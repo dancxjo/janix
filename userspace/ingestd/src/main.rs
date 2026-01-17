@@ -6,7 +6,8 @@ use stem::syscall;
 use abi::types::{WatchSpec, WatchEvent, WatchMode};
 use abi::query::{QueryStep};
 use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
-use magic_sniff::sniff;
+mod behavior;
+use behavior::sniff::sniff;
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start() -> ! {

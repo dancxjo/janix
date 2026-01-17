@@ -31,16 +31,12 @@ fn wait_input_empty() {
     }
 }
 
-fn wait_output_full() {
-    for _ in 0..10000 {
-        if ioport_read(PS2_STATUS, 1) & STATUS_OUTPUT_FULL != 0 { return; }
-        stem::yield_now();
-    }
-}
+
+
 
 fn flush_output_buffer() {
     // Drain up to 16 bytes of garbage
-    for i in 0..16 {
+    for _ in 0..16 {
         if ioport_read(PS2_STATUS, 1) & STATUS_OUTPUT_FULL != 0 {
             let b = ioport_read(PS2_DATA, 1);
             info!("ps2_mouse: flushed garbage byte: 0x{:02x}", b);
@@ -52,8 +48,8 @@ fn flush_output_buffer() {
 }
 
 fn read_data_filtered(expect_aux: bool, label: &str) -> Option<u8> {
-    let mut discarded_aux: u32 = 0;
-    let mut discarded_non_aux: u32 = 0;
+    let discarded_aux: u32 = 0;
+    let discarded_non_aux: u32 = 0;
     for _ in 0..20000 {
         let status = ioport_read(PS2_STATUS, 1);
         if status & STATUS_OUTPUT_FULL == 0 {
@@ -176,14 +172,14 @@ fn main(raw_write_handle: usize) -> ! {
     
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
-    let mut packets_sent = 0u64;
+
     
     loop {
         // Wait for mouse interrupt
         match irq_wait(MOUSE_VECTOR) {
             Ok(_count) => {
                 // Drain all available mouse data
-                drain_mouse_data(handle, &mut packet, &mut idx, &mut packets_sent);
+                drain_mouse_data(handle, &mut packet, &mut idx);
             }
             Err(_) => {
                 stem::yield_now();
@@ -193,7 +189,7 @@ fn main(raw_write_handle: usize) -> ! {
 }
 
 /// Drain all pending mouse data and assemble packets
-fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize, packets_sent: &mut u64) {
+fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
     for _ in 0..16 {
         let status = ioport_read(PS2_STATUS, 1);
         
@@ -213,7 +209,6 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize, p
             *idx += 1;
             
             if *idx == 3 {
-                *packets_sent += 1;
                 let _ = port_send(handle, packet);
                 
                 /*
@@ -235,7 +230,7 @@ fn polling_loop(handle: PortHandle) -> ! {
     
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
-    let mut packets_sent = 0u64;
+
     
     loop {
         let status = ioport_read(PS2_STATUS, 1);
@@ -252,7 +247,7 @@ fn polling_loop(handle: PortHandle) -> ! {
                 idx += 1;
                 
                 if idx == 3 {
-                    packets_sent += 1;
+
                     let _ = port_send(handle, &packet);
                     idx = 0;
                 }

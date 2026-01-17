@@ -31,6 +31,7 @@ impl Default for Transform2D {
     }
 }
 
+#[allow(dead_code)]
 impl Transform2D {
     pub const fn identity() -> Self {
         Self { tx: 0.0, ty: 0.0 }

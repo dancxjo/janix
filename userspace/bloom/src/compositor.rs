@@ -5,6 +5,7 @@ use stem::thing::{sys as thingsys, ThingId};
 
 pub struct Symbols {
     pub display_compositor: u64,
+    #[allow(dead_code)]
     pub display_role: u64,
     pub display_drv_req: u64,
     pub display_drv_resp: u64,
@@ -74,6 +75,7 @@ impl CompositorTarget {
         let deadline = stem::time::monotonic_ns() + (timeout_ms as u64 * 1_000_000); 
         
         // Wait loop for discovery
+        #[allow(unused_assignments)]
         let mut found_config: Option<(ThingId, u32, u32, u32, u32)> = None;
 
         loop {

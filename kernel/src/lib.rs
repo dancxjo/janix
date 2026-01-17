@@ -13,6 +13,7 @@ pub mod time;
 pub mod device_registry;
 pub mod ipc;
 pub mod irq;
+pub mod trace;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
@@ -290,11 +291,11 @@ pub fn runtime_base() -> &'static dyn BootRuntimeBase {
 // Global IO port accessor functions
 // On x86, these use inline asm. On other archs, they are no-ops.
 #[inline]
-pub fn ioport_read_u8(port: u16) -> u8 {
+pub fn ioport_read_u8(_port: u16) -> u8 {
     #[cfg(target_arch = "x86_64")]
     {
         let val: u8;
-        unsafe { core::arch::asm!("in al, dx", out("al") val, in("dx") port, options(nostack, preserves_flags)) };
+        unsafe { core::arch::asm!("in al, dx", out("al") val, in("dx") _port, options(nostack, preserves_flags)) };
         val
     }
     #[cfg(not(target_arch = "x86_64"))]
@@ -302,11 +303,11 @@ pub fn ioport_read_u8(port: u16) -> u8 {
 }
 
 #[inline]
-pub fn ioport_read_u16(port: u16) -> u16 {
+pub fn ioport_read_u16(_port: u16) -> u16 {
     #[cfg(target_arch = "x86_64")]
     {
         let val: u16;
-        unsafe { core::arch::asm!("in ax, dx", out("ax") val, in("dx") port, options(nostack, preserves_flags)) };
+        unsafe { core::arch::asm!("in ax, dx", out("ax") val, in("dx") _port, options(nostack, preserves_flags)) };
         val
     }
     #[cfg(not(target_arch = "x86_64"))]
@@ -314,11 +315,11 @@ pub fn ioport_read_u16(port: u16) -> u16 {
 }
 
 #[inline]
-pub fn ioport_read_u32(port: u16) -> u32 {
+pub fn ioport_read_u32(_port: u16) -> u32 {
     #[cfg(target_arch = "x86_64")]
     {
         let val: u32;
-        unsafe { core::arch::asm!("in eax, dx", out("eax") val, in("dx") port, options(nostack, preserves_flags)) };
+        unsafe { core::arch::asm!("in eax, dx", out("eax") val, in("dx") _port, options(nostack, preserves_flags)) };
         val
     }
     #[cfg(not(target_arch = "x86_64"))]
@@ -326,21 +327,21 @@ pub fn ioport_read_u32(port: u16) -> u32 {
 }
 
 #[inline]
-pub fn ioport_write_u8(port: u16, val: u8) {
+pub fn ioport_write_u8(_port: u16, _val: u8) {
     #[cfg(target_arch = "x86_64")]
-    unsafe { core::arch::asm!("out dx, al", in("dx") port, in("al") val, options(nostack, preserves_flags)) };
+    unsafe { core::arch::asm!("out dx, al", in("dx") _port, in("al") _val, options(nostack, preserves_flags)) };
 }
 
 #[inline]
-pub fn ioport_write_u16(port: u16, val: u16) {
+pub fn ioport_write_u16(_port: u16, _val: u16) {
     #[cfg(target_arch = "x86_64")]
-    unsafe { core::arch::asm!("out dx, ax", in("dx") port, in("ax") val, options(nostack, preserves_flags)) };
+    unsafe { core::arch::asm!("out dx, ax", in("dx") _port, in("ax") _val, options(nostack, preserves_flags)) };
 }
 
 #[inline]
-pub fn ioport_write_u32(port: u16, val: u32) {
+pub fn ioport_write_u32(_port: u16, _val: u32) {
     #[cfg(target_arch = "x86_64")]
-    unsafe { core::arch::asm!("out dx, eax", in("dx") port, in("eax") val, options(nostack, preserves_flags)) };
+    unsafe { core::arch::asm!("out dx, eax", in("dx") _port, in("eax") _val, options(nostack, preserves_flags)) };
 }
 
 
@@ -495,7 +496,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     } else {
         kinfo!("Sprout not found. Checking fallback...");
 
-        let mut spawned_fallback = false;
+        let spawned_fallback = false;
         #[cfg(feature = "diagnostic-apps")]
         {
             if let Some(mod_desc) = modules.iter().find(|m| m.name.contains("threads_demo")) {

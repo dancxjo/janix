@@ -11,12 +11,13 @@ pub fn limine(sh: &Shell) -> Result<()> {
     }
 
     println!("Cloning Limine v10.x...");
+    sh.create_dir("vendor")?;
     cmd!(
         sh,
-        "git clone https://github.com/limine-bootloader/limine.git --branch=v10.x-binary --depth=1"
+        "git clone https://github.com/limine-bootloader/limine.git --branch=v10.x-binary --depth=1 vendor/limine"
     )
     .run()?;
-    cmd!(sh, "make -C limine").run()?;
+    cmd!(sh, "make -C vendor/limine").run()?;
 
     Ok(())
 }

@@ -42,6 +42,15 @@ static SWITCH_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
 #[cfg(any(feature = "sched_debug", debug_assertions))]
 static LAST_SWITCH: AtomicU64 = AtomicU64::new(0);
 
+// Helper for trace time source
+fn get_time_helper<R: BootRuntime>() -> u64 {
+    let rt = crate::runtime::<R>();
+    let ticks = rt.mono_ticks();
+    let freq = rt.mono_freq_hz();
+    if freq == 0 { return ticks; } // avoid div by zero
+    ticks.wrapping_mul(1_000_000_000 / freq)
+}
+
 pub static SCHEDULER: Mutex<Option<usize>> = Mutex::new(None);
 
 pub fn init<R: BootRuntime>() {
@@ -72,6 +81,7 @@ pub fn init<R: BootRuntime>() {
             hooks::STACK_FAULT_HOOK = Some(stack::handle_stack_fault::<R>);
         }
         blocking::init_blocking_hooks::<R>();
+        crate::trace::register_time_source(get_time_helper::<R>);
         crate::kinfo!("  Scheduler initialized");
     }
 }
@@ -144,6 +154,16 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
     pub fn preempt_disable(&mut self) {
         self.preempt_disable_depth += 1;
+        if self.preempt_disable_depth == 1 {
+             // Only trace on transition to disabled? Or depth change?
+             // User task says "Record (..., preempt_disable_depth)".
+             // Let's trace all for now, or just 0->1.
+             // 0->1 is most important for start of disable region.
+             crate::trace::irq_ring::push(abi::trace::TraceEvent::PreemptDisable {
+                 depth: self.preempt_disable_depth as u32, 
+                 timestamp: crate::trace::now() 
+             });
+        }
     }
 
     fn flush_metrics_if_needed(&mut self) {
@@ -283,6 +303,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
             new_task.state = TaskState::Running;
             old_task.simd.save(crate::runtime::<R>());
             new_task.simd.restore(crate::runtime::<R>());
+
+            crate::trace::irq_ring::push(abi::trace::TraceEvent::ContextSwitch {
+                from: old_task.id,
+                to: new_task.id,
+                timestamp: crate::trace::now(),
+            });
 
             Some(SwitchParams {
                 from_ctx: &mut old_task.ctx as *mut _,

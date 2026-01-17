@@ -1,4 +1,5 @@
 #![no_std]
+#![allow(unexpected_cfgs)]
 extern crate alloc;
 
 
@@ -112,6 +113,6 @@ pub fn monotonic_ns() -> u64 {
 }
 
 pub mod thing;
-pub use thing_macros::*;
+
 #[cfg(feature = "global-alloc")]
 pub mod allocator;

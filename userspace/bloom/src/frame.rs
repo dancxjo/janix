@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 pub struct AssetGeneration(pub u64);
 
+#[allow(dead_code)]
 impl AssetGeneration {
     pub const ZERO: Self = Self(0);
     
@@ -30,9 +31,11 @@ impl AssetGeneration {
 pub struct FrameSpec {
     pub width: u32,
     pub height: u32,
+    #[allow(dead_code)]
     pub format: u32,
 }
 
+#[allow(dead_code)]
 impl FrameSpec {
     pub fn new(width: u32, height: u32, format: u32) -> Self {
         Self { width, height, format }
@@ -41,6 +44,7 @@ impl FrameSpec {
 
 /// Statistics from a present operation.
 #[derive(Clone, Debug, Default)]
+#[allow(dead_code)]
 pub struct PresentStats {
     pub frame_id: u64,
     pub asset_gen: AssetGeneration,
@@ -63,6 +67,7 @@ pub struct FrameToken {
     pub(crate) ops: DrawList,
 }
 
+#[allow(dead_code)]
 impl FrameToken {
     /// Create a new frame token (called by presenter)
     pub(crate) fn new(frame_id: u64, asset_gen: AssetGeneration, spec: FrameSpec) -> Self {
@@ -111,6 +116,7 @@ pub struct FrameBuilder {
     finished: bool,
 }
 
+#[allow(dead_code)]
 impl FrameBuilder {
     /// Create a new builder from a token.
     pub fn new(token: FrameToken) -> Self {

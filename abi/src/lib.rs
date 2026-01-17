@@ -12,6 +12,7 @@ pub mod module;
 pub mod module_manifest;
 pub mod names;
 pub mod query;
+pub mod trace;
 pub mod schema;
 pub mod symbols;
 pub mod syscall;

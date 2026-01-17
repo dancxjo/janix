@@ -178,6 +178,20 @@ pub fn task_wait(tid: u64) -> Result<i32, Errno> {
     abi::errors::errno(ret).map(|v| v as i32)
 }
 
+// ...
+pub fn trace_read(buf: &mut [abi::trace::TraceEvent]) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        abi::syscall::SYS_TRACE_READ,
+        buf.as_mut_ptr() as usize,
+        buf.len(),
+        0, 0, 0, 0
+    ) {
+         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+         r => r as usize
+    }};
+    Ok(ret)
+}
+
 // Device MMIO and DMA syscalls
 
 /// Claim a device from the device registry
@@ -283,9 +297,9 @@ pub fn root_watch_next(id: usize, out: &mut abi::types::WatchEvent) -> Result<us
 }
 
 pub fn root_watch_close(id: usize) -> Result<(), Errno> {
-    let ret = unsafe { match raw_syscall6(SYS_ROOT_WATCH_CLOSE, id, 0, 0, 0, 0, 0) {
+    unsafe { match raw_syscall6(SYS_ROOT_WATCH_CLOSE, id, 0, 0, 0, 0, 0) {
         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-        _ => 0
+        _ => {}
     }};
     Ok(())
 }

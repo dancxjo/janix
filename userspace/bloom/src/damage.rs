@@ -20,6 +20,7 @@ pub struct Rect {
 impl Rect {
     /// Create a new rectangle.
     #[inline]
+    #[allow(dead_code)]
     pub const fn new(x: i32, y: i32, w: i32, h: i32) -> Self {
         Self { x, y, w, h }
     }
@@ -86,6 +87,7 @@ impl Rect {
     /// Compute the intersection of two rectangles.
     /// Returns an empty rect if they don't overlap.
     #[inline]
+    #[allow(dead_code)]
     pub fn intersect(self, other: Rect) -> Self {
         let x0 = self.x.max(other.x);
         let y0 = self.y.max(other.y);
@@ -143,6 +145,7 @@ pub struct Damage {
     pub is_full: bool,
 }
 
+#[allow(dead_code)]
 impl Damage {
     /// Create empty damage (nothing needs redrawing).
     pub fn empty(bounds: Rect) -> Self {
@@ -247,6 +250,7 @@ impl Damage {
     }
 
     /// Get the bounding box of all damage.
+    #[allow(dead_code)]
     pub fn bounding_box(&self) -> Rect {
         let mut result = Rect::default();
         for r in self.iter() {
@@ -256,17 +260,20 @@ impl Damage {
     }
 
     /// Get the bounds rect (clipping area).
+    #[allow(dead_code)]
     pub fn bounds(&self) -> Rect {
         self.bounds
     }
 }
 
 /// Tracks damage accumulation for a single frame.
+#[allow(dead_code)]
 pub struct DamageTracker {
     bounds: Rect,
     damage: Damage,
 }
 
+#[allow(dead_code)]
 impl DamageTracker {
     /// Create a new tracker (call begin_frame to initialize).
     pub fn new() -> Self {

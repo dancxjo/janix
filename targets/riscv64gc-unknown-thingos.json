@@ -1,5 +1,6 @@
 {
-    "llvm-target": "riscv64gc-unknown-none-elf",
+    "llvm-target": "riscv64",
+    "llvm-abiname": "lp64d",
     "arch": "riscv64",
     "os": "thingos",
     "target-pointer-width": 64,

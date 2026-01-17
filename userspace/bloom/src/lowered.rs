@@ -6,6 +6,7 @@ use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA}
 // Low Level Operations - Portable Render ISA
 // This is the strict contract that the presenter must execute.
 #[derive(Clone, Debug)]
+#[allow(dead_code)]
 pub enum LowLevelOp {
     // Control & State
     Clear { color: Color },
@@ -17,6 +18,7 @@ pub enum LowLevelOp {
     // Geometry primitives
     FillRect { rect: Rect, color: Color, aa: EdgeAA },
     StrokeRect { rect: Rect, color: Color, width: i32 },
+    #[allow(dead_code)]
     Line { from: Point, to: Point, color: Color, width: i32 },
     FillCircle { center: Point, radius: i32, color: Color },
     FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },

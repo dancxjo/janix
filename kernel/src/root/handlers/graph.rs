@@ -2,10 +2,11 @@
 
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
-use crate::root::resources::{ResourceHandle, stream};
+use crate::root::resources::{ResourceHandle};
 use crate::root::symbols::Interner;
-use crate::root::{RootMsg, SymbolShell};
+use crate::root::{SymbolShell};
 use abi::symbols::SymbolId;
+#[allow(unused_imports)]
 use core::sync::atomic::Ordering;
 
 use super::HandlerResult;

@@ -36,6 +36,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
 }
 
 /// Returns a short name for the RootOp type for logging
+#[allow(dead_code)]
 fn msg_type_name(op: &RootOp) -> &'static str {
     match op {
         RootOp::Intern { .. } => "Intern",

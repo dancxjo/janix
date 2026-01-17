@@ -9,6 +9,7 @@ pub unsafe extern "C" fn entry_impl(arg: usize) -> ! {
     stem_user_main(arg)
 }
 
+
 #[cfg(all(target_arch = "x86_64", feature = "rt", any(target_os = "none", target_os = "thingos")))]
 core::arch::global_asm!(
     r#"
@@ -22,3 +23,42 @@ core::arch::global_asm!(
         ud2
 "#
 );
+
+
+#[cfg(all(target_arch = "aarch64", feature = "rt", any(target_os = "none", target_os = "thingos")))]
+core::arch::global_asm!(
+    r#"
+    .section .text.entry
+    .global _start
+    _start:
+        // x0 holds arg0
+        bl entry_impl
+        brk #1
+    "#
+);
+
+#[cfg(all(target_arch = "riscv64", feature = "rt", any(target_os = "none", target_os = "thingos")))]
+core::arch::global_asm!(
+    r#"
+    .section .text.entry
+    .global _start
+    _start:
+        // a0 holds arg0
+        call entry_impl
+        unimp
+    "#
+);
+
+#[cfg(all(target_arch = "loongarch64", feature = "rt", any(target_os = "none", target_os = "thingos")))]
+core::arch::global_asm!(
+    r#"
+    .section .text.entry
+    .global _start
+    _start:
+        // a0 holds arg0
+        bl entry_impl
+        break 0
+    "#
+);
+
+

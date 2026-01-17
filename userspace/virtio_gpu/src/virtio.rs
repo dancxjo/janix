@@ -1,4 +1,5 @@
 //! Virtio constants and register offsets
+#![allow(dead_code)]
 
 // Virtio PCI common configuration offsets
 pub const VIRTIO_COMMON_DEVICE_FEATURE: u32 = 0x00;

@@ -1,8 +1,0 @@
-[package]
-name = "png_creator"
-version = "0.1.0"
-edition = "2024"
-
-[dependencies]
-stem = { path = "../../stem" }
-abi = { path = "../../abi" }

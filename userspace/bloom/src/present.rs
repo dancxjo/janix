@@ -14,7 +14,7 @@ use stem::syscall::{port_recv, port_send, PortHandle};
 
 use crate::damage::Damage;
 use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentStats};
-use crate::log;
+
 use crate::reclaimer;
 
 /// Presenter trait with transactional frame API
@@ -28,6 +28,7 @@ pub trait Presenter {
     fn present_frame(&mut self, token: FrameToken) -> PresentStats;
     
     /// Legacy present method (deprecated, use present_frame)
+    #[allow(dead_code)]
     fn present(&mut self, damage: &Damage);
     
     /// Pump the message queue for driver communication.
@@ -116,12 +117,12 @@ impl DriverPresenter {
         // Total payload max: 136 bytes
         let mut payload = [0u8; 136];
         
-        let mut rect_count = 0;
+
         let mut offset = 8; // Skip header for now
 
         // Always send explicit damage rectangles
         // (Even for Damage::full, which contains a single rect covering the bounds)
-        rect_count = damage.rect_count() as u32;
+        let rect_count = damage.rect_count() as u32;
 
         for r in damage.iter() {
             let abi_rect = abi::display_driver_protocol::Rect {
@@ -282,11 +283,11 @@ impl Presenter for DriverPresenter {
 
         // Log damage stats periodically (every 120 frames = ~2 seconds at 60fps)
         if frame_id % 120 == 0 {
-            let mem_used = reclaimer::decoded_bytes();
-            let mem_budget = reclaimer::memory_budget();
-            let evictions = reclaimer::eviction_count();
-            let in_flight = reclaimer::in_flight_count();
-            let min_gen = reclaimer::min_live_gen();
+            let _mem_used = reclaimer::decoded_bytes();
+            let _mem_budget = reclaimer::memory_budget();
+            let _evictions = reclaimer::eviction_count();
+            let _in_flight = reclaimer::in_flight_count();
+            let _min_gen = reclaimer::min_live_gen();
             
             /*
             if token.damage.is_full {
@@ -365,6 +366,7 @@ impl PresenterImpl {
         }
     }
 
+    #[allow(dead_code)]
     pub fn present(&mut self, damage: &Damage) {
         match self {
             PresenterImpl::Null(inner) => inner.present(damage),

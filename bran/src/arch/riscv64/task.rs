@@ -6,7 +6,7 @@ use kernel::UserTaskSpec;
 pub struct RISCV64Context(pub [u64; 14]); // ra, sp, s0-s11
 
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn context_switch(old: *mut u64, new: *const u64) {
+pub unsafe extern "C" fn context_switch(_old: *mut u64, _new: *const u64) {
     unsafe {
         asm!(
             "sd ra, 0(a0)",

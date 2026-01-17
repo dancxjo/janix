@@ -1,5 +1,6 @@
-#![no_std]
 
+#[derive(Debug, Clone)]
+#[allow(dead_code)]
 pub struct Guess {
     pub mime: &'static str,
     pub extension: &'static str,

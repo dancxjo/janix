@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use alloc::vec;
 use alloc::collections::BTreeMap;
 use stem::thing::ThingId;
-use stem::thing::sys::{prop_get, get_edges, get_kind};
+use stem::thing::sys::{prop_get, get_kind};
 use abi::schema::{keys, rels};
 use abi::symbols::SymbolId;
 use alloc::string::String;

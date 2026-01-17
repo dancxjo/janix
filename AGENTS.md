@@ -19,14 +19,12 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 - `drivers/`: hardware driver crates.
 - `userspace/`: user programs and demos (each subdir is a crate).
 - `bloom/`, `blossom/`, `display/`: graphics/compositor-related crates.
-- `stem/`, `stem-macros/`, `thing_macros/`: internal libs and proc-macros.
+- `stem/`, `stem-macros/`: internal libs and proc-macros.
 - `targets/`: custom JSON target specs for bare metal builds.
 - `tools/`: auxiliary tooling (BDD, pciids, etc).
 - `xtask/`: build orchestration used by `just`.
 - `docs/`: documentation and test reports (`docs/behavior/` is generated).
-- `limine/`: bootloader source/artifacts (managed by `xtask`).
-- `ovmf/`: UEFI firmware blobs (managed by `xtask`).
-- `third_party/`: vendored or external deps.
+- `vendor/`: vendored dependencies (Limine, OVMF).
 
 ## Where to start when changing behavior
 - Kernel interfaces: `abi/` and `kernel/`

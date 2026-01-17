@@ -10,19 +10,19 @@ const PCI_CONFIG_DATA: u16 = 0xCFC;
 const PCI_ENABLE_BIT: u32 = 0x80000000;
 
 #[inline]
-unsafe fn outl(port: u16, val: u32) {
+unsafe fn outl(_port: u16, _val: u32) {
     #[cfg(target_arch = "x86_64")]
     unsafe {
-        core::arch::asm!("out dx, eax", in("dx") port, in("eax") val);
+        core::arch::asm!("out dx, eax", in("dx") _port, in("eax") _val);
     }
 }
 
 #[inline]
-unsafe fn inl(port: u16) -> u32 {
+unsafe fn inl(_port: u16) -> u32 {
     #[cfg(target_arch = "x86_64")]
     unsafe {
         let ret: u32;
-        core::arch::asm!("in eax, dx", out("eax") ret, in("dx") port);
+        core::arch::asm!("in eax, dx", out("eax") ret, in("dx") _port);
         return ret;
     }
     #[cfg(not(target_arch = "x86_64"))]

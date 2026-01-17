@@ -1,4 +1,5 @@
 use super::paging::AArch64AddressSpace;
+#[allow(unused_imports)]
 use core::arch::{asm, naked_asm};
 use kernel::UserTaskSpec;
 

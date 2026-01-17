@@ -9,7 +9,7 @@ use time::OffsetDateTime;
 use stem::thing::ThingId;
 use stem::thing::sys::{create_node, prop_set, link, bytespace_create, bytespace_write};
 use abi::schema::{kinds, keys, rels};
-use stem::ui::UiBuilder;
+
 
 /// Print a single tick with both wall clock (if anchored) and monotonic time.
 fn print_tick(unix: u64, mono_ns: u64) {
@@ -98,7 +98,7 @@ fn main() -> ! {
         info!("ERROR: UI Root still not found after 30s, giving up on UI");
     }
 
-    let mut text_node = None;
+
     if ui_root.0 != 0 {
         // Create Window
         let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
@@ -131,7 +131,7 @@ fn main() -> ! {
         // Initial text
         set_string_prop(text, keys::UI_TEXT, "--:--:--");
 
-        text_node = Some(text);
+
 
         // 3. Create Binding
         let binding = create_node(kinds::BINDING).expect("create binding");

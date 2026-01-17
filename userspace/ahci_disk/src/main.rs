@@ -13,7 +13,7 @@ use core::time::Duration;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use stem::{error, info, warn};
+use stem::{error, info};
 
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]
@@ -45,6 +45,7 @@ const PORT_CMD: usize = 0x18;
 const PORT_SIG: usize = 0x24;
 const PORT_SSTS: usize = 0x28;
 const PORT_SERR: usize = 0x30;
+#[allow(dead_code)]
 const PORT_CI: usize = 0x38;
 
 const SATA_SIG_ATA: u32 = 0x00000101;
@@ -62,7 +63,9 @@ const SSTS_DET_PRESENT: u32 = 0x03;
 const SSTS_IPM_MASK: u32 = 0x0F00;
 const SSTS_IPM_ACTIVE: u32 = 0x0100;
 
+#[allow(dead_code)]
 const FIS_TYPE_REG_H2D: u8 = 0x27;
+#[allow(dead_code)]
 const ATA_CMD_IDENTIFY: u8 = 0xEC;
 
 struct AhciPort {
@@ -203,8 +206,8 @@ fn main(_arg: usize) -> ! {
     // Layout in physical DMA buffer
     let clb = dma_phys;
     let fb = dma_phys + 1024;
-    let ctb = dma_phys + 1280;
-    let data_buf = dma_phys + 1536;
+    let _ctb = dma_phys + 1280;
+    let _data_buf = dma_phys + 1536;
     
     let mut ports: Vec<AhciPort> = Vec::new();
     

@@ -5,7 +5,7 @@ use core::arch::asm;
 pub unsafe extern "C" fn handle_sync_el0_rust(tf: &mut UserTrapFrame, esr: u64) {
     let ec = (esr >> 26) & 0x3f;
     if ec == 0x15 {
-        handle_syscall(tf);
+        unsafe { handle_syscall(tf); }
     } else {
         let far: u64;
         unsafe {

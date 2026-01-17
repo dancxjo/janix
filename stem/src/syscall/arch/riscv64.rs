@@ -1,4 +1,3 @@
-use abi::errors::Errno;
 use core::arch::asm;
 
 /// Raw syscall entry point.

@@ -5,11 +5,12 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
-use crate::geometry::{Point, Rect, Size, Color, Transform, EdgeAA};
+use crate::geometry::{Point, Rect, Color, Transform, EdgeAA};
 
 // Re-export damage::Rect for legacy compatibility where needed, 
 // but we prefer geometry::Rect for new commands.
 // Usage: crate::drawlist::DamageRect
+#[allow(unused_imports)]
 pub use crate::damage::Rect as DamageRect;
 
 /// Insets for nine-slice rendering

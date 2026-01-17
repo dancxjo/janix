@@ -159,7 +159,7 @@ fn main(arg: usize) -> ! {
         Err(e) => {
             error!("Failed to create time.source: {:?}", e);
             stem::syscall::exit(1);
-            unreachable!();
+
         }
     };
 
@@ -173,7 +173,7 @@ fn main(arg: usize) -> ! {
         Err(e) => {
             error!("Failed to create time.WallClockSample: {:?}", e);
             stem::syscall::exit(1);
-            unreachable!();
+
         }
     };
 

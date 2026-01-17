@@ -1,4 +1,5 @@
 //! Virtio-GPU command structures
+#![allow(dead_code)]
 
 // Command types
 pub const VIRTIO_GPU_CMD_GET_DISPLAY_INFO: u32 = 0x0100;

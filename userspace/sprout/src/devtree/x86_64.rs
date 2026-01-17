@@ -3,6 +3,7 @@ use abi::schema::{confidence, keys, kinds, rels, source};
 use stem::info;
 use stem::thing::sys as thingsys;
 
+#[allow(dead_code)]
 pub fn enumerate(ctx: &DevTreeCtx) -> Result<(), ()> {
     info!("SPROUT: x86_64 platform enrichment... (v0.2)");
 

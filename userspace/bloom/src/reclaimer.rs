@@ -25,6 +25,7 @@ static DECODED_BYTES: AtomicUsize = AtomicUsize::new(0);
 static EVICTION_COUNT: AtomicU64 = AtomicU64::new(0);
 
 /// Set the memory budget for decoded surfaces
+#[allow(dead_code)]
 pub fn set_memory_budget(bytes: usize) {
     MEMORY_BUDGET.store(bytes, Ordering::Release);
     info!("[reclaimer] memory budget set to {} bytes", bytes);
@@ -41,18 +42,18 @@ pub fn decoded_bytes() -> usize {
 }
 
 /// Add to decoded bytes counter (called on asset promotion)
+#[allow(dead_code)]
 pub fn add_decoded_bytes(bytes: usize) {
     let prev = DECODED_BYTES.fetch_add(bytes, Ordering::AcqRel);
     info!("[reclaimer] +{} bytes (total: {})", bytes, prev + bytes);
 }
 
 /// Subtract from decoded bytes counter (called on asset eviction)
+#[allow(dead_code)]
 pub fn sub_decoded_bytes(bytes: usize) {
     let prev = DECODED_BYTES.fetch_sub(bytes, Ordering::AcqRel);
     info!("[reclaimer] -{} bytes (total: {})", bytes, prev.saturating_sub(bytes));
 }
-
-/// Get total eviction count
 pub fn eviction_count() -> u64 {
     EVICTION_COUNT.load(Ordering::Acquire)
 }
@@ -214,6 +215,7 @@ pub fn complete_in_flight(frame_id: u64) {
 }
 
 /// Get min_live_gen from in-flight tracker
+#[allow(dead_code)]
 pub fn min_live_gen() -> AssetGeneration {
     IN_FLIGHT.min_live_gen()
 }
@@ -222,6 +224,7 @@ pub fn min_live_gen() -> AssetGeneration {
 pub fn in_flight_count() -> usize {
     IN_FLIGHT.count()
 }
+
 
 /// Check memory pressure and evict if needed.
 /// Called once per frame after present.

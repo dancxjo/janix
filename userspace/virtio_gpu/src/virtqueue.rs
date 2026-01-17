@@ -37,6 +37,7 @@ pub struct VirtqUsed {
 /// A virtqueue for device communication
 pub struct Virtqueue {
     virt_base: u64,
+    #[allow(dead_code)]
     phys_base: u64,
     size: u16,
     free_head: u16,

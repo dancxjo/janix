@@ -6,6 +6,7 @@ use core::ptr::NonNull;
 
 pub struct KernelHeap {
     /// Start of the kernel dynamic heap virtual address range
+    #[allow(dead_code)]
     heap_base: u64,
     /// Next available virtual address for a new arena
     next_va: u64,

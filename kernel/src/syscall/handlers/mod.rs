@@ -10,6 +10,7 @@ pub mod stream;
 mod process;
 mod root_handlers;
 mod time;
+mod trace;
 
 // Re-export all syscall handlers
 pub use device::*;
@@ -19,6 +20,7 @@ pub use port::*;
 pub use process::*;
 pub use root_handlers::*;
 pub use time::*;
+pub use trace::*;
 
 // Shared utilities used by multiple handlers
 use crate::root::{self as root_svc, RootOp, SymbolShell};

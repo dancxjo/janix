@@ -3,7 +3,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use stem::thing::ThingId;
 use crate::damage::Rect;
-use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
+use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot};
 use abi::schema::keys;
 use crate::asset::AssetBank;
 

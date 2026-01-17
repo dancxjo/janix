@@ -4,10 +4,6 @@ use crate::common::{Result, image_name};
 use xshell::{Shell, cmd};
 
 const DIAGNOSTIC_APPS: &[(&str, &str)] = &[
-    ("threads_demo", "threads"),
-    ("stack_heap_torture", "stack_heap_torture"),
-    ("echo_mouse", "echo_mouse"),
-    ("scheduler_verify", "scheduler_verify"),
 ];
 
 fn diagnostic_apps_enabled() -> bool {
@@ -57,6 +53,8 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     let cwd = std::env::current_dir().unwrap();
     let target_json = if arch == "x86_64" {
         cwd.join("targets/x86_64-unknown-thingos.json")
+    } else if arch == "riscv64" {
+        cwd.join("targets/riscv64gc-unknown-thingos.json")
     } else {
         cwd.join(format!("targets/{}-unknown-thingos.json", arch))
     };
@@ -89,9 +87,9 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "disk_probe", target, "release")?;
     build_userspace_app(sh, "ahci_disk", target, "release")?;
     build_userspace_app(sh, "ingestd", target, "release")?;
-    build_userspace_app(sh, "png_creator", target, "release")?;
+
     build_userspace_app(sh, "bindd", target, "release")?;
-    build_userspace_app(sh, "scheduler_verify", target, "release")?;
+
     if diagnostic_apps_enabled() {
         for &(app, _) in DIAGNOSTIC_APPS {
             build_userspace_app(sh, app, target, "release")?;
@@ -162,15 +160,9 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
         "release",
         "iso_root/boot/ingestd",
     )?;
-    copy_userspace_binary(
-        sh,
-        "png_creator",
-        target,
-        "release",
-        "iso_root/boot/png_creator",
-    )?;
+
     copy_userspace_binary(sh, "bindd", target, "release", "iso_root/boot/bindd")?;
-    copy_userspace_binary(sh, "scheduler_verify", target, "release", "iso_root/boot/scheduler_verify")?;
+
     if diagnostic_apps_enabled() {
         for &(app, module_name) in DIAGNOSTIC_APPS {
             let dst = format!("iso_root/boot/{}", module_name);
@@ -229,7 +221,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
             cmd!(
                 sh,
-                "mcopy -i {efi_img} limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI"
+                "mcopy -i {efi_img} vendor/limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI"
             )
             .run()?;
             sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTRISCV64.EFI\n")?;
@@ -253,7 +245,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
             cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
             cmd!(
                 sh,
-                "mcopy -i {efi_img} limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI"
+                "mcopy -i {efi_img} vendor/limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI"
             )
             .run()?;
             sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTLOONGARCH64.EFI\n")?;
@@ -319,7 +311,7 @@ fn copy_userspace_binary(
         .unwrap_or(target);
 
     let elf = format!("target/{}/{}/{}", target_name, profile_dir, name);
-    let bin = format!("target/{}/{}/{}.bin", target_name, profile_dir, name);
+    let _bin = format!("target/{}/{}/{}.bin", target_name, profile_dir, name);
 
     cmd!(sh, "cp {elf} {dst}").run()?;
     Ok(())
@@ -361,22 +353,22 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
         "x86_64" => {
             cmd!(
                 sh,
-                "mcopy -i {hdd}@@1M limine/limine-bios.sys ::/boot/limine"
+                "mcopy -i {hdd}@@1M vendor/limine/limine-bios.sys ::/boot/limine"
             )
             .run()?;
-            cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTX64.EFI ::/EFI/BOOT").run()?;
-            cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTIA32.EFI ::/EFI/BOOT").run()?;
+            cmd!(sh, "mcopy -i {hdd}@@1M vendor/limine/BOOTX64.EFI ::/EFI/BOOT").run()?;
+            cmd!(sh, "mcopy -i {hdd}@@1M vendor/limine/BOOTIA32.EFI ::/EFI/BOOT").run()?;
         }
         "aarch64" => {
-            cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTAA64.EFI ::/EFI/BOOT").run()?;
+            cmd!(sh, "mcopy -i {hdd}@@1M vendor/limine/BOOTAA64.EFI ::/EFI/BOOT").run()?;
         }
         "riscv64" => {
-            cmd!(sh, "mcopy -i {hdd}@@1M limine/BOOTRISCV64.EFI ::/EFI/BOOT").run()?;
+            cmd!(sh, "mcopy -i {hdd}@@1M vendor/limine/BOOTRISCV64.EFI ::/EFI/BOOT").run()?;
         }
         "loongarch64" => {
             cmd!(
                 sh,
-                "mcopy -i {hdd}@@1M limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT"
+                "mcopy -i {hdd}@@1M vendor/limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT"
             )
             .run()?;
         }

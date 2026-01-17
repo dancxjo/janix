@@ -7,7 +7,7 @@ pub unsafe fn init() {
         fn trap_entry();
     }
     // Set stvec to trap_entry (Direct mode, bit 0 = 0)
-    let addr = trap_entry as usize;
+    let addr = trap_entry as *const () as usize;
     // ensure alignment (4 bytes)
     assert!(addr & 3 == 0);
     unsafe {

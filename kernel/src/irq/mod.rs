@@ -139,6 +139,10 @@ pub static VECTOR_ALLOC: Mutex<VectorAllocator> = Mutex::new(VectorAllocator::ne
 
 /// Called from interrupt handlers to dispatch IRQ
 pub fn dispatch_irq(vector: u8) {
+    crate::trace::irq_ring::push(abi::trace::TraceEvent::Irq {
+        vector,
+        timestamp: crate::trace::now()
+    });
     IRQ_REGISTRY.lock().dispatch(vector);
 }
 

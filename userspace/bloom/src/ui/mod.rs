@@ -1,13 +1,13 @@
-pub mod snapshot;
 pub mod layout;
 pub mod paint;
+pub mod snapshot;
 
-use stem::thing::ThingId;
-use crate::drawlist::DrawList;
-use self::snapshot::UiSnapshot;
 use self::layout::{LayoutSolver, SymbolResolver};
-use self::paint::{PaintBuilder, PaintScene, PaintObject};
+use self::paint::{PaintBuilder, PaintObject, PaintScene};
+use self::snapshot::UiSnapshot;
 use crate::asset::AssetBank;
+use crate::drawlist::DrawList;
+use stem::thing::ThingId;
 
 struct SystemSymbolResolver;
 
@@ -21,14 +21,18 @@ pub struct UiPipeline {
     pub root_id: Option<ThingId>,
     pub prev_snapshot: Option<UiSnapshot>,
     pub solver: LayoutSolver,
+    dirty: bool,
+    cached_scene: Option<PaintScene>,
 }
 
 impl UiPipeline {
     pub fn new() -> Self {
-        Self { 
+        Self {
             root_id: None,
             prev_snapshot: None,
             solver: LayoutSolver::new(),
+            dirty: true,
+            cached_scene: None,
         }
     }
 
@@ -36,11 +40,29 @@ impl UiPipeline {
         self.root_id = Some(id);
     }
 
-    pub fn run(&mut self, screen_w: i32, screen_h: i32, list: &mut DrawList, assets: &AssetBank) -> bool {
+    pub fn mark_dirty(&mut self) {
+        self.dirty = true;
+    }
+
+    pub fn run(
+        &mut self,
+        screen_w: i32,
+        screen_h: i32,
+        list: &mut DrawList,
+        assets: &AssetBank,
+    ) -> bool {
         let root_id = match self.root_id {
             Some(id) => id,
             None => return false,
         };
+
+        // Fast path: if nothing changed, reuse the last paint scene and only lower.
+        if !self.dirty {
+            if let Some(scene) = &self.cached_scene {
+                Self::lower(scene, list);
+                return false;
+            }
+        }
 
         let start = stem::monotonic_ns();
 
@@ -48,7 +70,7 @@ impl UiPipeline {
         let t0 = stem::monotonic_ns();
         let snapshot = UiSnapshot::capture(root_id);
         let t1 = stem::monotonic_ns();
-        
+
         // 2. Change Detection
         let changed = if let Some(prev) = &self.prev_snapshot {
             !snapshot.diff(prev).is_empty()
@@ -56,14 +78,16 @@ impl UiPipeline {
             true // First snapshot is always a change
         };
         let t2 = stem::monotonic_ns();
-        
+
         // Store for next frame
         self.prev_snapshot = Some(snapshot.clone());
         let t3 = stem::monotonic_ns();
 
         // 3. Layout
         let resolver = SystemSymbolResolver;
-        let layout = self.solver.solve(&snapshot, screen_w, screen_h, assets, &resolver);
+        let layout = self
+            .solver
+            .solve(&snapshot, screen_w, screen_h, assets, &resolver);
         let t4 = stem::monotonic_ns();
 
         // 4. Paint
@@ -73,9 +97,10 @@ impl UiPipeline {
         // 5. Lowering
         Self::lower(&paint_scene, list);
         let t6 = stem::monotonic_ns();
-        
+
         let total = t6.saturating_sub(start);
-        if total > 50_000_000 { // > 50ms
+        if total > 50_000_000 {
+            // > 50ms
             crate::log!("[bloom::ui] WARN: slow UI run: total={:.1}ms (snap={:.1}ms diff={:.1}ms clone={:.1}ms layout={:.1}ms paint={:.1}ms lower={:.1}ms)",
                 total as f64 / 1_000_000.0,
                 (t1 - t0) as f64 / 1_000_000.0,
@@ -87,20 +112,42 @@ impl UiPipeline {
             );
         }
 
+        // Cache the scene so unchanged frames can skip snapshot/layout/paint.
+        self.cached_scene = Some(paint_scene);
+        self.dirty = false;
+
         changed
     }
 
     fn lower(scene: &PaintScene, list: &mut DrawList) {
         for obj in &scene.objects {
             match obj {
-                PaintObject::Rect { rect, color, radius } => {
+                PaintObject::Rect {
+                    rect,
+                    color,
+                    radius,
+                } => {
                     if *radius > 0 {
-                        list.rounded_rect(rect.x, rect.y, rect.w, rect.h, *radius as i32, *color, crate::geometry::EdgeAA::None);
+                        list.rounded_rect(
+                            rect.x,
+                            rect.y,
+                            rect.w,
+                            rect.h,
+                            *radius as i32,
+                            *color,
+                            crate::geometry::EdgeAA::None,
+                        );
                     } else {
                         list.rect(rect.x, rect.y, rect.w, rect.h, *color);
                     }
                 }
-                PaintObject::Text { rect, text, font, size, color } => {
+                PaintObject::Text {
+                    rect,
+                    text,
+                    font,
+                    size,
+                    color,
+                } => {
                     list.text_font(text, font, rect.x, rect.y, *size, *color);
                 }
                 PaintObject::Image { rect: _ } => {

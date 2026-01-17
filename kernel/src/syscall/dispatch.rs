@@ -35,6 +35,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_PORT_CLOSE => handlers::sys_port_close(args[0]),
         SYS_PORT_WAIT => handlers::sys_port_wait(args[0], args[1]),
 
+        SYS_TRACE_READ => handlers::sys_trace_read(args[0], args[1]),
+
         SYS_STREAM_LISTEN => handlers::stream::sys_stream_listen(args[0], args[1]),
         SYS_STREAM_OPEN => handlers::stream::sys_stream_open(args[0]),
         SYS_STREAM_READ => handlers::stream::sys_stream_read(args[0], args[1], args[2]),

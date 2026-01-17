@@ -1,10 +1,10 @@
 use alloc::vec::Vec;
 use alloc::string::String;
-use stem::thing::ThingId;
+
 use crate::geometry::Color;
 use crate::damage::Rect;
 use crate::ui::layout::{LayoutTree, LayoutNode, SymbolResolver};
-use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
+use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot};
 use abi::schema::keys;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,13 +42,13 @@ impl PaintBuilder {
         }
         for obj in objects.iter() {
             match obj {
-                PaintObject::Rect { rect, color, .. } => {
+                PaintObject::Rect { rect: _, color: _, .. } => {
                     // stem::info!("PAINT: obj=Rect rect={:?} color={:x}", rect, color.to_u32());
                 }
-                PaintObject::Text { rect, text, font, .. } => {
+                PaintObject::Text { rect: _, text: _, font: _, .. } => {
                     // stem::info!("PAINT: obj=Text rect={:?} text='{}' font={}", rect, text, font);
                 }
-                PaintObject::Image { rect } => {
+                PaintObject::Image { rect: _ } => {
                     // stem::info!("PAINT: obj=Image rect={:?}", rect);
                 }
             }

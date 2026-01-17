@@ -6,6 +6,7 @@ use crate::root::journal::{Journal, JournalOp};
 use crate::root::resources::{ResourceHandle, bytespace};
 use crate::root::symbols::Interner;
 use crate::root::RootMsg;
+#[allow(unused_imports)]
 use abi::symbols::SymbolId;
 use core::sync::atomic::Ordering;
 

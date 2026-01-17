@@ -68,6 +68,7 @@ pub fn init_ioapic() {
 }
 
 #[cfg(not(target_arch = "x86_64"))]
+#[allow(dead_code)]
 pub fn init_ioapic() {}
 
 #[cfg(target_arch = "x86_64")]

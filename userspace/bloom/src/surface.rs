@@ -31,6 +31,7 @@ impl Surface {
         self.height
     }
 
+    #[allow(dead_code)]
     pub fn stride_bytes(&self) -> usize {
         self.stride_bytes
     }

@@ -1,16 +1,16 @@
 extern crate alloc;
 
-use stem::thing::ThingId;
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use core::cell::UnsafeCell;
-use stem::{info, warn};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use stem::thing::ThingId;
+use stem::{info, thread, warn};
 
-use crate::reclaimer;
 use crate::frame::AssetGeneration;
+use crate::reclaimer;
 
+use alloc::collections::{BTreeMap, VecDeque};
 use serde::{Deserialize, Serialize};
-use alloc::collections::{VecDeque, BTreeMap};
 use spin::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -47,9 +47,10 @@ impl CursorAsset {
     pub fn generation(&self) -> AssetGeneration {
         match self {
             CursorAsset::Static(f) => f.image.gen,
-            CursorAsset::Animated { frames } => {
-                frames.first().map(|f| f.image.gen).unwrap_or(AssetGeneration::ZERO)
-            }
+            CursorAsset::Animated { frames } => frames
+                .first()
+                .map(|f| f.image.gen)
+                .unwrap_or(AssetGeneration::ZERO),
         }
     }
 
@@ -87,16 +88,20 @@ impl FontAsset {
     pub fn decoded_bytes(&self) -> usize {
         // Fonts are relatively small compared to images
         // Estimate ~100KB for a typical font's glyph cache
-        let cache_size = self.glyph_cache.lock().values().map(|(_, b)| b.len()).sum::<usize>();
+        let cache_size = self
+            .glyph_cache
+            .lock()
+            .values()
+            .map(|(_, b)| b.len())
+            .sum::<usize>();
         100 * 1024 + cache_size
     }
 
-    pub fn get_glyph(&self, config: fontdue::layout::GlyphRasterConfig) -> (fontdue::Metrics, Arc<[u8]>) {
-        let key = (
-            config.px.to_bits(),
-            config.glyph_index,
-            config.font_hash,
-        );
+    pub fn get_glyph(
+        &self,
+        config: fontdue::layout::GlyphRasterConfig,
+    ) -> (fontdue::Metrics, Arc<[u8]>) {
+        let key = (config.px.to_bits(), config.glyph_index, config.font_hash);
 
         {
             let cache = self.glyph_cache.lock();
@@ -104,11 +109,11 @@ impl FontAsset {
                 return cached.clone();
             }
         }
-        
+
         // Rasterize if not cached
         let (metrics, bitmap) = self.font.rasterize_config(config);
         let bitmap_arc: Arc<[u8]> = Arc::from(bitmap.into_boxed_slice());
-        
+
         let mut cache = self.glyph_cache.lock();
         cache.insert(key, (metrics, bitmap_arc.clone()));
         (metrics, bitmap_arc)
@@ -179,16 +184,28 @@ impl<T> PendingSlot<T> {
 static WALLPAPER_READY: AssetSlot<Image> = AssetSlot::new();
 static CURSOR_READY: AssetSlot<CursorAsset> = AssetSlot::new();
 static FONTS_READY: [AssetSlot<FontAsset>; 8] = [
-    AssetSlot::new(), AssetSlot::new(), AssetSlot::new(), AssetSlot::new(),
-    AssetSlot::new(), AssetSlot::new(), AssetSlot::new(), AssetSlot::new(),
+    AssetSlot::new(),
+    AssetSlot::new(),
+    AssetSlot::new(),
+    AssetSlot::new(),
+    AssetSlot::new(),
+    AssetSlot::new(),
+    AssetSlot::new(),
+    AssetSlot::new(),
 ];
 
 // Pending assets (published by loaders, not yet visible)
 static WALLPAPER_PENDING: PendingSlot<Image> = PendingSlot::new();
 static CURSOR_PENDING: PendingSlot<CursorAsset> = PendingSlot::new();
 static FONTS_PENDING: [PendingSlot<FontAsset>; 8] = [
-    PendingSlot::new(), PendingSlot::new(), PendingSlot::new(), PendingSlot::new(),
-    PendingSlot::new(), PendingSlot::new(), PendingSlot::new(), PendingSlot::new(),
+    PendingSlot::new(),
+    PendingSlot::new(),
+    PendingSlot::new(),
+    PendingSlot::new(),
+    PendingSlot::new(),
+    PendingSlot::new(),
+    PendingSlot::new(),
+    PendingSlot::new(),
 ];
 
 // Global generation counter
@@ -196,15 +213,25 @@ static ASSET_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 /// Asset load job for worker threads
 enum AssetLoadJob {
-    Font { id: ThingId, size: usize, display_name: Arc<str> },
-    Wallpaper { path: Arc<str> },
-    Cursor { path: Arc<str> },
+    Font {
+        id: ThingId,
+        size: usize,
+        display_name: Arc<str>,
+    },
+    Wallpaper {
+        path: Arc<str>,
+    },
+    Cursor {
+        path: Arc<str>,
+    },
 }
 
 static JOB_QUEUE: Mutex<VecDeque<AssetLoadJob>> = Mutex::new(VecDeque::new());
 static WORKER_SPAWNED: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn asset_worker_entry() -> ! {
+    info!("[asset_bank] worker started (priority bump)");
+    let mut idle_spins = 0;
     loop {
         let job = {
             let mut queue = JOB_QUEUE.lock();
@@ -212,8 +239,13 @@ extern "C" fn asset_worker_entry() -> ! {
         };
 
         if let Some(job) = job {
+            idle_spins = 0;
             match job {
-                AssetLoadJob::Font { id, size, display_name } => {
+                AssetLoadJob::Font {
+                    id,
+                    size,
+                    display_name,
+                } => {
                     if let Some(font) = AssetBank::load_font_immediate(id, size, &display_name) {
                         AssetBank::new().publish_font(font);
                     }
@@ -230,8 +262,14 @@ extern "C" fn asset_worker_entry() -> ! {
                 }
             }
         } else {
-            // No jobs, sleep or yield
-            stem::sleep_ms(50);
+            // No jobs: yield aggressively a few times, then short sleep.
+            if idle_spins < 5 {
+                thread::yield_now();
+                idle_spins += 1;
+            } else {
+                stem::sleep_ms(5);
+                idle_spins = 0;
+            }
         }
     }
 }
@@ -247,31 +285,41 @@ pub enum AssetType {
 pub struct AssetBank;
 
 impl AssetBank {
-    pub const fn new() -> Self { Self }
+    pub const fn new() -> Self {
+        Self
+    }
 
     fn spawn_worker() {
         if WORKER_SPAWNED.swap(true, Ordering::SeqCst) {
             return;
         }
-        
+
         use stem::stack::{Stack, StackSpec};
         let stack = Stack::alloc_growing_stack(StackSpec {
             reserve_bytes: 256 * 1024,
             initial_commit_bytes: 64 * 1024,
             ..StackSpec::default()
-        }).expect("asset worker stack");
-        if let Err(e) = stem::thread::spawn_on(stack, asset_worker_entry) {
-            crate::log!("[asset_bank] ERROR: failed to spawn worker: {:?}", e);
+        })
+        .expect("asset worker stack");
+        match stem::thread::spawn_on(stack, asset_worker_entry) {
+            Ok(tid) => {
+                // Keep worker responsive but avoid starving device drivers: use Normal (2).
+                let _ = stem::thread::set_priority(tid, 2);
+                info!("[asset_bank] worker spawned tid={} (priority=2)", tid);
+            }
+            Err(e) => {
+                crate::log!("[asset_bank] ERROR: failed to spawn worker: {:?}", e);
+            }
         }
     }
 
     pub fn enqueue_font_load(&self, id: ThingId, size: usize, display_name: &str) {
         let mut queue = JOB_QUEUE.lock();
         let was_empty = queue.is_empty();
-        queue.push_back(AssetLoadJob::Font { 
-            id, 
-            size, 
-            display_name: Arc::from(display_name) 
+        queue.push_back(AssetLoadJob::Font {
+            id,
+            size,
+            display_name: Arc::from(display_name),
         });
         if was_empty {
             Self::spawn_worker();
@@ -281,8 +329,8 @@ impl AssetBank {
     pub fn enqueue_wallpaper_load(&self, path: &str) {
         let mut queue = JOB_QUEUE.lock();
         let was_empty = queue.is_empty();
-        queue.push_back(AssetLoadJob::Wallpaper { 
-            path: Arc::from(path) 
+        queue.push_back(AssetLoadJob::Wallpaper {
+            path: Arc::from(path),
         });
         if was_empty {
             Self::spawn_worker();
@@ -291,12 +339,12 @@ impl AssetBank {
 
     pub fn enqueue_cursor_load(&self, path: &str) {
         let mut queue = JOB_QUEUE.lock();
-        queue.push_back(AssetLoadJob::Cursor { 
-            path: Arc::from(path) 
+        queue.push_back(AssetLoadJob::Cursor {
+            path: Arc::from(path),
         });
         Self::spawn_worker();
     }
-    
+
     pub fn probe_asset_exists(&self, path: &str) -> bool {
         Self::probe_asset(path).is_some()
     }
@@ -319,19 +367,28 @@ impl AssetBank {
                 // Increment generation first
                 let new_gen = ASSET_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
                 img.gen = AssetGeneration(new_gen);
-                
+
                 // Track memory
                 let bytes = img.decoded_bytes();
                 reclaimer::add_decoded_bytes(bytes);
-                WALLPAPER_READY.decoded_bytes.store(bytes, Ordering::Release);
-                
-                info!("[asset_bank] promoting wallpaper to gen={} ({}b)", new_gen, bytes);
-                
-                unsafe { *WALLPAPER_READY.value.get() = Some(img); }
+                WALLPAPER_READY
+                    .decoded_bytes
+                    .store(bytes, Ordering::Release);
+
+                info!(
+                    "[asset_bank] promoting wallpaper to gen={} ({}b)",
+                    new_gen, bytes
+                );
+
+                unsafe {
+                    *WALLPAPER_READY.value.get() = Some(img);
+                }
                 WALLPAPER_READY.ready.store(true, Ordering::Release);
                 promoted = true;
             }
-            WALLPAPER_PENDING.has_pending.store(false, Ordering::Release);
+            WALLPAPER_PENDING
+                .has_pending
+                .store(false, Ordering::Release);
         }
 
         // Check and promote pending cursor
@@ -343,7 +400,7 @@ impl AssetBank {
                 } else {
                     ASSET_GENERATION.load(Ordering::Acquire)
                 };
-                
+
                 // Update generation in cursor
                 let cursor_with_gen = match cursor {
                     CursorAsset::Static(mut frame) => {
@@ -351,21 +408,32 @@ impl AssetBank {
                         CursorAsset::Static(frame)
                     }
                     CursorAsset::Animated { frames } => {
-                        let updated: alloc::vec::Vec<_> = frames.iter().cloned().map(|mut f| {
-                            f.image.gen = AssetGeneration(new_gen);
-                            f
-                        }).collect();
-                        CursorAsset::Animated { frames: Arc::from(updated.as_slice()) }
+                        let updated: alloc::vec::Vec<_> = frames
+                            .iter()
+                            .cloned()
+                            .map(|mut f| {
+                                f.image.gen = AssetGeneration(new_gen);
+                                f
+                            })
+                            .collect();
+                        CursorAsset::Animated {
+                            frames: Arc::from(updated.as_slice()),
+                        }
                     }
                 };
-                
+
                 // Track memory
                 let bytes = cursor_with_gen.decoded_bytes();
                 reclaimer::add_decoded_bytes(bytes);
                 CURSOR_READY.decoded_bytes.store(bytes, Ordering::Release);
-                
-                info!("[asset_bank] promoting cursor to gen={} ({}b)", new_gen, bytes);
-                unsafe { *CURSOR_READY.value.get() = Some(cursor_with_gen); }
+
+                info!(
+                    "[asset_bank] promoting cursor to gen={} ({}b)",
+                    new_gen, bytes
+                );
+                unsafe {
+                    *CURSOR_READY.value.get() = Some(cursor_with_gen);
+                }
                 CURSOR_READY.ready.store(true, Ordering::Release);
                 promoted = true;
             }
@@ -383,14 +451,19 @@ impl AssetBank {
                         ASSET_GENERATION.load(Ordering::Acquire)
                     };
                     font.gen = AssetGeneration(new_gen);
-                    
+
                     // Track memory
                     let bytes = font.decoded_bytes();
                     reclaimer::add_decoded_bytes(bytes);
                     FONTS_READY[i].decoded_bytes.store(bytes, Ordering::Release);
-                    
-                    info!("[asset_bank] promoting font '{}' to gen={} ({}b) in slot {}", font.name, new_gen, bytes, i);
-                    unsafe { *FONTS_READY[i].value.get() = Some(font); }
+
+                    info!(
+                        "[asset_bank] promoting font '{}' to gen={} ({}b) in slot {}",
+                        font.name, new_gen, bytes, i
+                    );
+                    unsafe {
+                        *FONTS_READY[i].value.get() = Some(font);
+                    }
                     FONTS_READY[i].ready.store(true, Ordering::Release);
                     promoted = true;
                 }
@@ -403,8 +476,13 @@ impl AssetBank {
 
     /// Publish wallpaper to pending (called by loader thread)
     pub fn publish_wallpaper(&self, img: Image) {
-        info!("[asset_bank] publish_wallpaper (pending): {}x{}", img.width, img.height);
-        unsafe { *WALLPAPER_PENDING.value.get() = Some(img); }
+        info!(
+            "[asset_bank] publish_wallpaper (pending): {}x{}",
+            img.width, img.height
+        );
+        unsafe {
+            *WALLPAPER_PENDING.value.get() = Some(img);
+        }
         WALLPAPER_PENDING.has_pending.store(true, Ordering::Release);
     }
 
@@ -435,15 +513,18 @@ impl AssetBank {
         info!("[asset_bank] publish_cursor (pending)");
         match &cursor {
             CursorAsset::Static(frame) => {
-                info!("[asset_bank] cursor: Static frame {}x{} hotspot ({}, {})", 
-                    frame.image.width, frame.image.height, 
-                    frame.hotspot_x, frame.hotspot_y);
-            },
+                info!(
+                    "[asset_bank] cursor: Static frame {}x{} hotspot ({}, {})",
+                    frame.image.width, frame.image.height, frame.hotspot_x, frame.hotspot_y
+                );
+            }
             CursorAsset::Animated { frames } => {
                 info!("[asset_bank] cursor: Animated with {} frames", frames.len());
             }
         }
-        unsafe { *CURSOR_PENDING.value.get() = Some(cursor); }
+        unsafe {
+            *CURSOR_PENDING.value.get() = Some(cursor);
+        }
         CURSOR_PENDING.has_pending.store(true, Ordering::Release);
     }
 
@@ -473,14 +554,24 @@ impl AssetBank {
     pub fn publish_font(&self, font: FontAsset) {
         // Find an empty or replaceable pending slot
         for i in 0..8 {
-            if !FONTS_PENDING[i].has_pending.load(Ordering::Acquire) && !FONTS_READY[i].ready.load(Ordering::Acquire) {
-                info!("[asset_bank] publish_font (pending): '{}' in slot {}", font.name, i);
-                unsafe { *FONTS_PENDING[i].value.get() = Some(font); }
+            if !FONTS_PENDING[i].has_pending.load(Ordering::Acquire)
+                && !FONTS_READY[i].ready.load(Ordering::Acquire)
+            {
+                info!(
+                    "[asset_bank] publish_font (pending): '{}' in slot {}",
+                    font.name, i
+                );
+                unsafe {
+                    *FONTS_PENDING[i].value.get() = Some(font);
+                }
                 FONTS_PENDING[i].has_pending.store(true, Ordering::Release);
                 return;
             }
         }
-        warn!("[asset_bank] FONT_PENDING slots exhausted! skipping '{}'", font.name);
+        warn!(
+            "[asset_bank] FONT_PENDING slots exhausted! skipping '{}'",
+            font.name
+        );
     }
 
     /// Get font if ready and visible at the given generation
@@ -522,17 +613,28 @@ impl AssetBank {
                 }
             }
         }
-        
+
         // Priority sorting: NotoSans first, then NotoSerif, then Symbols, then others
         fonts.sort_by_key(|f| {
-            if f.name.contains("NotoSans-Regular") { 0 }
-            else if f.name.contains("NotoSerif") { 1 }
-            else if f.name.contains("NotoSansSymbol") { 2 }
-            else if f.name.contains("Hack") { 5 } // Move Hack to the end
-            else if f.name.contains("DSEG") { 6 } // Move DSEG even further
-            else { 3 }
+            if f.name.contains("NotoSans-Regular") {
+                0
+            } else if f.name.contains("NotoSerif") {
+                1
+            } else if f.name.contains("NotoSansSymbol") {
+                2
+            } else if f.name.contains("Hack") {
+                5
+            }
+            // Move Hack to the end
+            else if f.name.contains("DSEG") {
+                6
+            }
+            // Move DSEG even further
+            else {
+                3
+            }
         });
-        
+
         fonts
     }
 
@@ -645,21 +747,36 @@ impl AssetBank {
 
         match asset_type {
             AssetType::Wallpaper => {
-                info!("[asset_bank] evicting wallpaper (gen={}, {}b)", meta.gen.0, freed);
-                unsafe { *WALLPAPER_READY.value.get() = None; }
+                info!(
+                    "[asset_bank] evicting wallpaper (gen={}, {}b)",
+                    meta.gen.0, freed
+                );
+                unsafe {
+                    *WALLPAPER_READY.value.get() = None;
+                }
                 WALLPAPER_READY.ready.store(false, Ordering::Release);
                 WALLPAPER_READY.decoded_bytes.store(0, Ordering::Release);
             }
             AssetType::Cursor => {
-                info!("[asset_bank] evicting cursor (gen={}, {}b)", meta.gen.0, freed);
-                unsafe { *CURSOR_READY.value.get() = None; }
+                info!(
+                    "[asset_bank] evicting cursor (gen={}, {}b)",
+                    meta.gen.0, freed
+                );
+                unsafe {
+                    *CURSOR_READY.value.get() = None;
+                }
                 CURSOR_READY.ready.store(false, Ordering::Release);
                 CURSOR_READY.decoded_bytes.store(0, Ordering::Release);
             }
             AssetType::Font => {
-                info!("[asset_bank] evicting fonts (gen={}, {}b)", meta.gen.0, freed);
+                info!(
+                    "[asset_bank] evicting fonts (gen={}, {}b)",
+                    meta.gen.0, freed
+                );
                 for i in 0..8 {
-                    unsafe { *FONTS_READY[i].value.get() = None; }
+                    unsafe {
+                        *FONTS_READY[i].value.get() = None;
+                    }
                     FONTS_READY[i].ready.store(false, Ordering::Release);
                     FONTS_READY[i].decoded_bytes.store(0, Ordering::Release);
                 }
@@ -669,19 +786,19 @@ impl AssetBank {
         reclaimer::sub_decoded_bytes(freed);
         Some(freed)
     }
-    
+
     fn probe_asset(name: &str) -> Option<(ThingId, usize)> {
-        use stem::thing::sys::{find, describe_thing, prop_get, bytespace_info};
         use stem::abi::schema::kinds;
-        
-        // Guard: reject empty search names  
+        use stem::thing::sys::{bytespace_info, describe_thing, find, prop_get};
+
+        // Guard: reject empty search names
         if name.is_empty() {
             return None;
         }
-        
+
         let mut modules = [ThingId(0); 64];
         let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
-        
+
         for i in 0..count {
             let mod_id = modules[i];
             let mut buf = [0u8; 512];
@@ -689,29 +806,35 @@ impl AssetBank {
                 Ok(l) => l,
                 Err(_) => continue,
             };
-            
+
             let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
             let mod_name = if let Some(pos) = desc.find("name: \"") {
                 let rest = &desc[pos + 7..];
-                if let Some(end) = rest.find('"') { &rest[..end] } else { continue; }
-            } else { continue; };
-            
+                if let Some(end) = rest.find('"') {
+                    &rest[..end]
+                } else {
+                    continue;
+                }
+            } else {
+                continue;
+            };
+
             // Skip empty module names
             if mod_name.is_empty() {
                 continue;
             }
-            
+
             // Match exact name or proper path suffix
             let is_match = mod_name == name || mod_name.ends_with(name);
             if !is_match {
                 continue;
             }
-            
+
             let bs_id = match prop_get(mod_id, "bytespace") {
                 Ok(id) => ThingId(id),
                 Err(_) => continue,
             };
-            
+
             if let Ok(size) = bytespace_info(bs_id) {
                 return Some((bs_id, size));
             }
@@ -726,12 +849,12 @@ impl AssetBank {
     pub fn load_wallpaper_immediate(&self, path: &str) -> Option<Image> {
         info!("[asset_bank] load_wallpaper_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
-        
+
         info!("[asset_bank] mapping bytespace {} ({} bytes)", id.0, size);
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
         info!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
-        
+
         info!("[asset_bank] decoding BMP...");
         let res = crate::bmp::decode(slice).ok().map(|bmp| {
             info!("[asset_bank] BMP decoded: {}x{}", bmp.width, bmp.height);
@@ -742,12 +865,12 @@ impl AssetBank {
                 gen: AssetGeneration::ZERO, // Will be set on promotion
             }
         });
-        
+
         let _ = stem::thing::sys::bytespace_unmap(id, ptr);
         info!("[asset_bank] bytespace unmapped");
         res
     }
-    
+
     pub fn load_cursor_from_graph(path: &str) -> Option<CursorAsset> {
         Self::load_cursor_immediate(path)
     }
@@ -755,30 +878,37 @@ impl AssetBank {
     pub fn load_cursor_immediate(path: &str) -> Option<CursorAsset> {
         info!("[asset_bank] load_cursor_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
-        
+
         info!("[asset_bank] mapping bytespace {} ({} bytes)", id.0, size);
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
         info!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
-        
+
         info!("[asset_bank] checking CUR header: len={}", slice.len());
-        
+
         // ICO/CUR check: type=2 for CUR
-        if slice.len() > 22 && slice[0]==0 && slice[1]==0 && slice[2]==2 && slice[3]==0 {
+        if slice.len() > 22 && slice[0] == 0 && slice[1] == 0 && slice[2] == 2 && slice[3] == 0 {
             info!("[asset_bank] valid CUR header detected");
             let hx = u16::from_le_bytes([slice[10], slice[11]]);
             let hy = u16::from_le_bytes([slice[12], slice[13]]);
-            let img_size = u32::from_le_bytes([slice[14], slice[15], slice[16], slice[17]]) as usize;
+            let img_size =
+                u32::from_le_bytes([slice[14], slice[15], slice[16], slice[17]]) as usize;
             let offset = u32::from_le_bytes([slice[18], slice[19], slice[20], slice[21]]) as usize;
-            
-            info!("[asset_bank] CUR: hotspot=({}, {}), img_size={}, offset={}", hx, hy, img_size, offset);
-            
+
+            info!(
+                "[asset_bank] CUR: hotspot=({}, {}), img_size={}, offset={}",
+                hx, hy, img_size, offset
+            );
+
             if slice.len() >= offset + img_size {
                 info!("[asset_bank] decoding embedded DIB at offset {}...", offset);
                 // CUR files embed DIB (no BM header), use decode_dib
-                match crate::bmp::decode_dib(&slice[offset..offset+img_size]) {
+                match crate::bmp::decode_dib(&slice[offset..offset + img_size]) {
                     Ok(dib) => {
-                        info!("[asset_bank] SUCCESS: cursor DIB decoded {}x{}", dib.width, dib.height);
+                        info!(
+                            "[asset_bank] SUCCESS: cursor DIB decoded {}x{}",
+                            dib.width, dib.height
+                        );
                         let _ = stem::thing::sys::bytespace_unmap(id, ptr);
                         return Some(CursorAsset::Static(CursorFrame {
                             image: Image {
@@ -791,21 +921,28 @@ impl AssetBank {
                             hotspot_x: hx as u32,
                             hotspot_y: hy as u32,
                         }));
-                    },
+                    }
                     Err(e) => {
                         info!("[asset_bank] DIB decode FAILED: {:?}", e);
                     }
                 }
             } else {
-                info!("[asset_bank] CUR data truncated: need {} have {}", offset + img_size, slice.len());
+                info!(
+                    "[asset_bank] CUR data truncated: need {} have {}",
+                    offset + img_size,
+                    slice.len()
+                );
             }
         } else {
             info!("[asset_bank] NOT a valid CUR file (magic bytes don't match)");
             if slice.len() >= 4 {
-                info!("[asset_bank] header bytes: {:02x} {:02x} {:02x} {:02x}", slice[0], slice[1], slice[2], slice[3]);
+                info!(
+                    "[asset_bank] header bytes: {:02x} {:02x} {:02x} {:02x}",
+                    slice[0], slice[1], slice[2], slice[3]
+                );
             }
         }
-        
+
         let _ = stem::thing::sys::bytespace_unmap(id, ptr);
         info!("[asset_bank] bytespace unmapped, returning None");
         None
@@ -818,12 +955,19 @@ impl AssetBank {
         Self::load_font_from_node_id(id, size, path)
     }
 
-    pub fn load_font_from_node_id(id: ThingId, size: usize, display_name: &str) -> Option<FontAsset> {
+    pub fn load_font_from_node_id(
+        id: ThingId,
+        size: usize,
+        display_name: &str,
+    ) -> Option<FontAsset> {
         Self::load_font_immediate(id, size, display_name)
     }
 
     pub fn load_font_immediate(id: ThingId, size: usize, display_name: &str) -> Option<FontAsset> {
-        info!("[asset_bank] mapping font bytespace {} ({} bytes)", id.0, size);
+        info!(
+            "[asset_bank] mapping font bytespace {} ({} bytes)",
+            id.0, size
+        );
         let ptr = match stem::thing::sys::bytespace_map(id) {
             Ok(p) => p,
             Err(e) => {
@@ -833,9 +977,9 @@ impl AssetBank {
         };
         info!("[asset_bank] mapped at {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
-        
+
         info!("[asset_bank] parsing font '{}'...", display_name);
-        
+
         let settings = fontdue::FontSettings::default();
         match fontdue::Font::from_bytes(slice, settings) {
             Ok(font) => {
@@ -844,12 +988,18 @@ impl AssetBank {
                 // Extract name from path/display name
                 // Handles both raw paths and the debug-printed "module{ name: \"...\" }" format
                 let name_part = if display_name.contains("name: \"") {
-                    display_name.split("name: \"").nth(1).unwrap_or(display_name).split('"').next().unwrap_or(display_name)
+                    display_name
+                        .split("name: \"")
+                        .nth(1)
+                        .unwrap_or(display_name)
+                        .split('"')
+                        .next()
+                        .unwrap_or(display_name)
                 } else {
                     display_name.rsplit('/').next().unwrap_or(display_name)
                 };
                 let name: Arc<str> = name_part.into();
-                
+
                 Some(FontAsset {
                     font: Arc::new(font),
                     name,

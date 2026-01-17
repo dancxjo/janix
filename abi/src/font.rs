@@ -231,7 +231,7 @@ impl FontResponse {
                 let baseline_y = i32::from_le_bytes(buf[offset..offset+4].try_into().ok()?); offset += 4;
                 let buffer_id = u64::from_le_bytes(buf[offset..offset+8].try_into().ok()?); offset += 8;
                 let buffer_size = u64::from_le_bytes(buf[offset..offset+8].try_into().ok()?) as usize; offset += 8;
-                let format_a8 = buf[offset] != 0; offset += 1;
+                let format_a8 = buf[offset] != 0;
                 Some(FontResponse::Rendered(TextBitmap {
                     width, height, baseline_y, buffer_id, buffer_size, format_a8
                 }))
@@ -242,7 +242,7 @@ impl FontResponse {
                 let width = u32::from_le_bytes(buf[offset..offset+4].try_into().ok()?); offset += 4;
                 let height = u32::from_le_bytes(buf[offset..offset+4].try_into().ok()?); offset += 4;
                 let baseline_y = i32::from_le_bytes(buf[offset..offset+4].try_into().ok()?); offset += 4;
-                let advance_x = i32::from_le_bytes(buf[offset..offset+4].try_into().ok()?); offset += 4;
+                let advance_x = i32::from_le_bytes(buf[offset..offset+4].try_into().ok()?);
                 Some(FontResponse::Measured(TextMetrics {
                     width, height, baseline_y, advance_x
                 }))

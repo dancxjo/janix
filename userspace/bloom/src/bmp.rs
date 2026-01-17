@@ -1,6 +1,6 @@
 extern crate alloc;
 use alloc::vec::Vec;
-use alloc::sync::Arc;
+
 // use crate::asset::Image;
 
 pub struct BmpImage {
@@ -12,8 +12,8 @@ pub struct BmpImage {
 #[derive(Debug)]
 pub enum BmpError {
     InvalidHeader,
-    UnsupportedDepth(u16),
-    UnsupportedCompression(u32),
+    UnsupportedDepth(()),
+    UnsupportedCompression(()),
     InvalidSize,
 }
 
@@ -51,7 +51,7 @@ pub fn decode(bytes: &[u8]) -> Result<BmpImage, BmpError> {
     let compression = u32::from_le_bytes(bytes[30..34].try_into().unwrap());
 
     if planes != 1 { return Err(BmpError::InvalidHeader); }
-    if compression != 0 { return Err(BmpError::UnsupportedCompression(compression)); } // BI_RGB only
+    if compression != 0 { return Err(BmpError::UnsupportedCompression(())); } // BI_RGB only
 
     let w = width.abs() as usize;
     let h = height.abs() as usize;
@@ -60,7 +60,7 @@ pub fn decode(bytes: &[u8]) -> Result<BmpImage, BmpError> {
     let bytes_per_pixel = match bit_count {
         24 => 3,
         32 => 4,
-        d => return Err(BmpError::UnsupportedDepth(d)),
+        _ => return Err(BmpError::UnsupportedDepth(())),
     };
 
     let row_stride = (w * bytes_per_pixel + 3) & !3; // Align to 4 bytes
@@ -137,7 +137,7 @@ pub fn decode_dib(bytes: &[u8]) -> Result<BmpImage, BmpError> {
     let compression = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
 
     if planes != 1 { return Err(BmpError::InvalidHeader); }
-    if compression != 0 { return Err(BmpError::UnsupportedCompression(compression)); }
+    if compression != 0 { return Err(BmpError::UnsupportedCompression(())); }
 
     let w = width.abs() as usize;
     // ICO/CUR DIB height is 2x actual (XOR image + AND mask), so divide by 2
@@ -147,7 +147,7 @@ pub fn decode_dib(bytes: &[u8]) -> Result<BmpImage, BmpError> {
     let bytes_per_pixel = match bit_count {
         24 => 3,
         32 => 4,
-        d => return Err(BmpError::UnsupportedDepth(d)),
+        _ => return Err(BmpError::UnsupportedDepth(())),
     };
 
     let row_stride = (w * bytes_per_pixel + 3) & !3;

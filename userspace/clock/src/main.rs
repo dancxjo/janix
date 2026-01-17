@@ -72,25 +72,29 @@ fn main() -> ! {
     info!("Clock thing created: {}", clock_thing.0);
 
     // 2. Setup UI
-    let mut ui_roots = [ThingId(0); 1];
-    let ui_root = if stem::thing::sys::find(kinds::UI_ROOT, &mut ui_roots).unwrap_or(0) > 0 {
-        ui_roots[0]
-    } else {
-        info!("WARN: UI Root not found, retrying in 1s...");
-        stem::sleep(Duration::from_secs(1));
+    let mut ui_root = ThingId(0);
+    for i in 0..10 {
+        let mut ui_roots = [ThingId(0); 1];
         if stem::thing::sys::find(kinds::UI_ROOT, &mut ui_roots).unwrap_or(0) > 0 {
-            ui_roots[0]
-        } else {
-            info!("ERROR: UI Root still not found, giving up on UI");
-            ThingId(0)
+            ui_root = ui_roots[0];
+            info!("Found UI Root: {} (attempt {})", ui_root.0, i + 1);
+            break;
         }
-    };
+        if i < 9 {
+            info!("WARN: UI Root not found, retrying in 1s...");
+            stem::sleep(Duration::from_secs(1));
+        }
+    }
+
+    if ui_root.0 == 0 {
+        info!("ERROR: UI Root still not found after 10s, giving up on UI");
+    }
 
     let mut text_node = None;
     if ui_root.0 != 0 {
         // Create Window
         let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
-        link(ui_root, rels::CHILD_OF, win).expect("link window");
+        link(win, rels::CHILD_OF, ui_root).expect("link window");
 
         // Window Style: Black Background
         prop_set(win, keys::UI_BG_COLOR, 0xFF000000).ok(); // Black
@@ -104,11 +108,11 @@ fn main() -> ! {
 
         // Create Text
         let text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
-        link(win, rels::CHILD_OF, text).expect("link text");
+        link(text, rels::CHILD_OF, win).expect("link text");
 
         // Text Style: Red Foreground, DSEG Font
         prop_set(text, keys::UI_FG_COLOR, 0xFFFF0000).ok(); // Red
-        set_string_prop(text, keys::UI_FONT, "DSEG14-Classic-Regular.ttf");
+        set_string_prop(text, keys::UI_FONT, "DSEG7Classic-Regular.ttf");
         prop_set(text, keys::UI_FONT_SIZE, 64).ok(); // Large font
         // Text Layout: Centered
         prop_set(text, keys::UI_CENTER_X, 1).ok();

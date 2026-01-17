@@ -447,6 +447,7 @@ fn main(arg: usize) -> ! {
         }
 
         // Build Scene - record ops into the builder's DrawList
+        let mut ui_changed = false;
         {
             let list = builder.ops();
             
@@ -476,11 +477,15 @@ fn main(arg: usize) -> ! {
                 list.text_font(&alloc::format!("frame: {}", frame_id), "NotoSerif-Regular.ttf", 20, 70, 16.0, geometry::Color::from_u32(0xFFCCCCCC));
                 
                 // Run UI Pipeline
-                ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
+                ui_changed = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
             }
 
             // Cursor
             cursor.emit_drawlist(list);
+        }
+
+        if ui_changed {
+            builder.mark_full_damage();
         }
 
         // Finish building - seal the token

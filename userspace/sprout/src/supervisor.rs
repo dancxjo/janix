@@ -168,6 +168,7 @@ impl Supervisor {
         }
         self.ensure_app("/ingestd");
         self.ensure_app("/png_creator");
+        self.ensure_app("/bindd");
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {

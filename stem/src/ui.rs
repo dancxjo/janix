@@ -6,12 +6,14 @@ pub struct UiBuilder;
 
 impl UiBuilder {
     pub fn create_root() -> ThingId {
-        create_node(kinds::UI_ROOT).expect("create UI_ROOT")
+        let id = create_node(kinds::UI_ROOT).expect("create UI_ROOT");
+        crate::info!("UiBuilder: created root {}", id.0);
+        id
     }
 
     pub fn create_window(parent: ThingId, title: &str) -> ThingId {
         let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
-        link(parent, rels::CHILD_OF, win).expect("link window");
+        link(win, rels::CHILD_OF, parent).expect("link window");
         
         Self::set_string_prop(win, keys::UI_TITLE, title);
         win
@@ -19,13 +21,13 @@ impl UiBuilder {
 
     pub fn create_panel(parent: ThingId) -> ThingId {
         let panel = create_node(kinds::UI_PANEL).expect("create UI_PANEL");
-        link(parent, rels::CHILD_OF, panel).expect("link panel");
+        link(panel, rels::CHILD_OF, parent).expect("link panel");
         panel
     }
 
     pub fn create_text(parent: ThingId, text: &str) -> ThingId {
         let node = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
-        link(parent, rels::CHILD_OF, node).expect("link text");
+        link(node, rels::CHILD_OF, parent).expect("link text");
         Self::set_string_prop(node, keys::UI_TEXT, text);
         node
     }

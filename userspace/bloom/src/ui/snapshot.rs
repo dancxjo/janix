@@ -16,10 +16,25 @@ pub enum UiNodeKind {
     Unknown(u32),
 }
 
+#[derive(Clone, Copy)]
+pub struct KindIds {
+    pub root: u32,
+    pub window: u32,
+    pub panel: u32,
+    pub text: u32,
+    pub image: u32,
+    pub overlay: u32,
+}
+
 impl UiNodeKind {
-    pub fn from_symbol(id: SymbolId) -> Self {
-        // Simple mapping based on known kinds if possible, or just store it.
-        Self::Unknown(id)
+    pub fn from_symbol(id: u32, kinds: &KindIds) -> Self {
+        if id == kinds.root { Self::Root }
+        else if id == kinds.window { Self::Window }
+        else if id == kinds.panel { Self::Panel }
+        else if id == kinds.text { Self::Text }
+        else if id == kinds.image { Self::Image }
+        else if id == kinds.overlay { Self::Overlay }
+        else { Self::Unknown(id) }
     }
 }
 
@@ -46,20 +61,30 @@ impl UiSnapshot {
     }
 
     pub fn capture(root_id: ThingId) -> Self {
+        use abi::schema::kinds;
+        let kind_ids = KindIds {
+            root: stem::thing::sys::intern(kinds::UI_ROOT).unwrap_or(0),
+            window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0),
+            panel: stem::thing::sys::intern(kinds::UI_PANEL).unwrap_or(0),
+            text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or(0),
+            image: stem::thing::sys::intern(kinds::UI_IMAGE).unwrap_or(0),
+            overlay: stem::thing::sys::intern(kinds::UI_OVERLAY).unwrap_or(0),
+        };
+
         let mut snapshot = Self::new();
         snapshot.root_id = Some(root_id);
-        snapshot.traverse(root_id);
+        snapshot.traverse(root_id, &kind_ids);
         snapshot
     }
 
-    fn traverse(&mut self, id: ThingId) {
+    fn traverse(&mut self, id: ThingId, kind_ids: &KindIds) {
         if self.nodes.contains_key(&id) {
             return;
         }
 
         let kind_sym = get_kind(id).ok();
         let kind = match kind_sym {
-            Some(sym) => UiNodeKind::from_symbol(sym.0 as u32),
+            Some(sym) => UiNodeKind::from_symbol(sym.0 as u32, kind_ids),
             None => return,
         };
 
@@ -69,21 +94,35 @@ impl UiSnapshot {
         if let Ok(len) = dump_edges(id, &mut buf) {
              let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
              for line in s.lines() {
-                 // Format: (src)-[:REL]->(dst_kindID:dst_kind)
-                 // Example: (root1:ui.Root)-[:CHILD_OF]->(panel2:ui.Panel)
-                 if line.contains("]-[:CHILD_OF]->(") {
-                     if let Some(pos) = line.find("]->(") {
-                         let target_part = &line[pos + 4 ..];
-                         // target_part starts with "basenameID:kind)"
-                         if let Some(colon_pos) = target_part.find(':') {
-                             let id_part = &target_part[..colon_pos];
-                             // ID is at the end of id_part in Hex.
-                             // We need to strip the basename. 
-                             // Basenames are lowercase. 
-                             let hex_str = id_part.trim_start_matches(|c: char| c.is_lowercase());
-                             if let Ok(target_id) = u64::from_str_radix(hex_str, 16) {
-                                  children.push(ThingId(target_id));
-                             }
+                 if line.is_empty() { continue; }
+
+                 
+                 // Robust Cypher Parsing
+                 // Expected: (src_base:srcID:src_kind)-[:REL]->(dst_base:dstID:dst_kind)
+                 if line.contains("-[:CHILD_OF]->") {
+                     let (src_part, dst_part) = match (line.find('('), line.rfind('(')) {
+                         (Some(start), Some(end)) if start != end => {
+                             let src_end = line.find(')').unwrap_or(0);
+                             let src = &line[start + 1 .. src_end];
+                             let dst_end = line.rfind(')').unwrap_or(line.len());
+                             let dst = &line[end + 1 .. dst_end];
+                             (src, dst)
+                         }
+                         _ => continue,
+                     };
+
+                     let extract_id = |part: &str| -> Option<u64> {
+                         let mut pieces = part.split(':');
+                         pieces.next(); // skip basename
+                         pieces.next().and_then(|id_str| u64::from_str_radix(id_str, 16).ok())
+                     };
+
+                     if let (Some(src_id), Some(dst_id)) = (extract_id(src_part), extract_id(dst_part)) {
+                         // Convention: link(child, CHILD_OF, parent) => (child)-[:CHILD_OF]->(parent)
+                         // If the current node (id) is the parent (dst), then src is the child.
+                         if dst_id == id.0 && src_id != id.0 {
+                             children.push(ThingId(src_id));
+                             stem::info!("SNAPSHOT: Node[{:x}] child -> {:x}", id.0, src_id);
                          }
                      }
                  }
@@ -107,6 +146,8 @@ impl UiSnapshot {
             }
         }
 
+        stem::info!("SNAPSHOT: Node[{:x}] kind={:?} children={} props={}", id.0, kind, children.len(), props.len());
+
         self.nodes.insert(id, UiNodeSnapshot {
             id,
             kind,
@@ -115,7 +156,7 @@ impl UiSnapshot {
         });
 
         for child_id in children {
-            self.traverse(child_id);
+            self.traverse(child_id, kind_ids);
         }
     }
 

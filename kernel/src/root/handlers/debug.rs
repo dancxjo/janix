@@ -87,15 +87,36 @@ pub fn handle_dump_edges(
             pos: 0,
         };
         let mut count = 0;
-        let edges = node.edges.clone();
-        for (rel, dst) in edges {
+        
+        // 1. Outgoing edges
+        for (rel, dst) in &node.edges {
             if count > 0 {
                 let _ = writeln!(fmt);
             }
-            let _ = crate::root::debug_fmt::fmt_edge(graph, interner, id, rel, dst, &mut fmt);
+            let _ = crate::root::debug_fmt::fmt_edge(graph, interner, id, *rel, *dst, &mut fmt);
             count += 1;
             if count >= 8 {
                 break;
+            }
+        }
+
+        // 2. Incoming edges (scan all nodes)
+        if count < 8 {
+            for (src_id, src_node) in &graph.nodes {
+                if *src_id == id { continue; } // Already did outgoing
+                for (rel, dst_id) in &src_node.edges {
+                    if *dst_id == id {
+                        if count > 0 {
+                            let _ = writeln!(fmt);
+                        }
+                        let _ = crate::root::debug_fmt::fmt_edge(graph, interner, *src_id, *rel, id, &mut fmt);
+                        count += 1;
+                        if count >= 8 {
+                            break;
+                        }
+                    }
+                }
+                if count >= 8 { break; }
             }
         }
         (0, fmt.pos as u64)

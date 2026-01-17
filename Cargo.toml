@@ -30,6 +30,7 @@ members = [
     "tools/pciids", "libs/magic-sniff", "userspace/ingestd",
     "userspace/png_creator",
     "userspace/bindd",
+    "userspace/scheduler_verify",
 ]
 resolver = "2"
 

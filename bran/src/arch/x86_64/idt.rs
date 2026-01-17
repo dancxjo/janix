@@ -1,5 +1,7 @@
 use core::mem::size_of;
 
+pub const IRQ_TIMER_VECTOR: u8 = 0xFE;
+
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
 struct IdtEntry {
@@ -58,6 +60,7 @@ unsafe extern "C" {
     fn pf_handler_shim();
     fn generic_handler_shim();
     fn irq_common_handler_shim();
+    fn irq_timer_handler_shim();
 }
 
 core::arch::global_asm!(
@@ -148,6 +151,33 @@ core::arch::global_asm!(
         pop %rax
 
         iretq
+
+    .global irq_timer_handler_shim
+    irq_timer_handler_shim:
+        push %rax
+        push %rcx
+        push %rdx
+        push %rsi
+        push %rdi
+        push %r8
+        push %r9
+        push %r10
+        push %r11
+
+        mov $0xFE, %rdi
+        call rust_irq_handler
+
+        pop %r11
+        pop %r10
+        pop %r9
+        pop %r8
+        pop %rdi
+        pop %rsi
+        pop %rdx
+        pop %rcx
+        pop %rax
+
+        iretq
 "#,
     options(att_syntax)
 );
@@ -201,6 +231,14 @@ pub unsafe fn init() {
             );
         }
 
+        // Dedicated Timer Vector
+        IDT.entries[IRQ_TIMER_VECTOR as usize].set_handler(
+            irq_timer_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+
         let idtr = IdtDescriptor {
             size: (size_of::<Idt>() - 1) as u16,
             offset: core::ptr::addr_of!(IDT) as u64,
@@ -224,10 +262,16 @@ pub struct InterruptStackFrame {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_irq_handler(vector: u64) {
     let resolved = crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
-    kernel::irq::dispatch_irq(resolved);
     
-    // Send EOI to Local APIC
+    // Send EOI to Local APIC early to avoid wedging during context switch
     crate::arch::x86_64::ioapic::send_eoi();
+
+    // IRQ_TIMER_VECTOR is our preemption heartbeat
+    if resolved == IRQ_TIMER_VECTOR {
+        kernel::task::resched_if_needed::<crate::arch::CurrentRuntime>();
+    } else {
+        kernel::irq::dispatch_irq(resolved);
+    }
 }
 
 #[unsafe(no_mangle)]

@@ -93,7 +93,7 @@ impl Supervisor {
             } else if name.contains("/apps/")
                 || name.ends_with("/clock")
                 || name.ends_with("/idle")
-                || (cfg!(feature = "diagnostic-apps") && name.ends_with("/threads_demo"))
+                || (cfg!(feature = "diagnostic-apps") && (name.ends_with("/threads_demo") || name.ends_with("/scheduler_verify")))
             {
                 // Treat as App
                 info!("SPROUT: Discovered app: {}", name);
@@ -166,9 +166,10 @@ impl Supervisor {
             self.ensure_app("/threads");
             self.ensure_app("/stack_heap_torture");
         }
-        self.ensure_app("/ingestd");
-        self.ensure_app("/png_creator");
+        // self.ensure_app("/ingestd");
+        // self.ensure_app("/png_creator");
         self.ensure_app("/bindd");
+        self.ensure_app("/scheduler_verify");
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {
@@ -180,6 +181,19 @@ impl Supervisor {
                     Ok(pid) => {
                         info!("SPROUT: App launched (PID={})", pid);
                         task.pid = Some(pid);
+                        
+                        // Set priority based on app name
+                        let priority = if task.name.contains("scheduler_verify") || task.name.contains("threads") || task.name.contains("clock") {
+                            1 // Low
+                        } else if task.name.contains("bloom") || task.name.contains("bristle") || task.name.contains("bindd") {
+                            3 // High
+                        } else {
+                            2 // Normal
+                        };
+                        
+                        if let Err(e) = stem::thread::set_priority(pid, priority) {
+                            info!("SPROUT: Failed to set priority for '{}': {:?}", task.name, e);
+                        }
                     }
                     Err(e) => info!("SPROUT: Failed to launch app '{}': {:?}", task.name, e),
                 }
@@ -232,6 +246,11 @@ impl Supervisor {
                             pid: Some(pid),
                             restarts: 0,
                         });
+
+                        // Set driver priority to High (3)
+                        if let Err(e) = stem::thread::set_priority(pid, 3) {
+                            info!("SPROUT: Failed to set priority for driver '{}': {:?}", driver_name, e);
+                        }
                     }
                     Err(e) => info!("SPROUT: Failed to launch driver: {:?}", e),
                 }

@@ -292,6 +292,10 @@ impl ArchRuntime for X86_64Runtime {
     fn tlb_flush_page(&self, virt: u64) {
         paging::tlb_flush_page(virt)
     }
+
+    fn setup_preemption_timer(&self, hz: u32) {
+        ioapic::setup_lapic_timer(idt::IRQ_TIMER_VECTOR, hz);
+    }
 }
 
 struct ProxyAllocator;

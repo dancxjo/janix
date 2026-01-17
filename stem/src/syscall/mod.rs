@@ -48,7 +48,7 @@ pub fn log_write(msg: &str, level: usize) -> Result<usize, Errno> {
 }
 
 pub use log_write as debug_write;
-pub use port::{PortHandle, port_create, port_send, port_recv, port_close};
+pub use port::{PortHandle, port_create, port_send, port_recv, port_close, port_wait};
 
 pub fn yield_now() {
     unsafe {
@@ -89,6 +89,21 @@ pub fn spawn_process(name: &str, arg: usize) -> Result<u64, abi::errors::Errno> 
         )
     };
     abi::errors::errno(ret).map(|v| v as u64)
+}
+
+pub fn set_priority(tid: u64, priority: usize) -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_SET_PRIORITY,
+            tid as usize,
+            priority,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
 }
 
 pub fn alloc_stack(pages: usize) -> Result<usize, Errno> {

@@ -56,3 +56,17 @@ pub fn port_close(handle: PortHandle) -> Result<(), Errno> {
     };
     abi::errors::errno(ret).map(|_| ())
 }
+
+/// Wait for any of the given port handles to become readable.
+/// Returns the handle that became readable.
+pub fn port_wait(handles: &[PortHandle]) -> Result<PortHandle, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_PORT_WAIT,
+            handles.as_ptr() as usize,
+            handles.len(),
+            0, 0, 0, 0
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as PortHandle)
+}

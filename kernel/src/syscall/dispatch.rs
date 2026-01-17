@@ -20,6 +20,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_SPAWN_PROCESS => handlers::sys_spawn_process(args[0], args[1], args[2]),
         SYS_GET_TID => handlers::sys_get_tid(),
         SYS_TASK_POLL => handlers::sys_task_poll(args[0]),
+        SYS_SET_PRIORITY => handlers::sys_set_priority(args[0], args[1]),
         SYS_ALLOC_STACK => handlers::sys_alloc_stack(args[0]),
         SYS_VM_MAP => handlers::sys_vm_map(args[0], args[1]),
         SYS_VM_UNMAP => handlers::sys_vm_unmap(args[0], args[1]),
@@ -32,6 +33,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_PORT_SEND => handlers::sys_port_send(args[0], args[1], args[2]),
         SYS_PORT_RECV => handlers::sys_port_recv(args[0], args[1], args[2]),
         SYS_PORT_CLOSE => handlers::sys_port_close(args[0]),
+        SYS_PORT_WAIT => handlers::sys_port_wait(args[0], args[1]),
 
         SYS_STREAM_LISTEN => handlers::stream::sys_stream_listen(args[0], args[1]),
         SYS_STREAM_OPEN => handlers::stream::sys_stream_open(args[0]),

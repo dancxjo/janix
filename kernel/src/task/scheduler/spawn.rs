@@ -8,7 +8,7 @@ use super::SCHEDULER;
 
 
 impl<R: BootRuntime> Scheduler<R> {
-    pub fn spawn(&mut self, entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
+    pub fn spawn(&mut self, entry: extern "C" fn(usize) -> !, arg: usize, priority: crate::task::TaskPriority) -> TaskId {
         let rt = crate::runtime::<R>();
         let id = self.next_id;
         self.next_id += 1;
@@ -25,6 +25,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let task: Task<R> = Task {
             id,
             state: TaskState::Runnable,
+            priority,
             kstack_base: stack_base,
             kstack_size: 16384,
             kstack_top: stack_top,
@@ -33,11 +34,12 @@ impl<R: BootRuntime> Scheduler<R> {
             simd: crate::simd::SimdState::new(rt),
             exit_code: None,
             is_user: false,
+            wake_pending: false,
             stack_info: None,
         };
 
         self.tasks.push(task);
-        self.runq.push_back(id);
+        self.runq[priority as usize].push_back(id);
         id
     }
 
@@ -47,6 +49,7 @@ impl<R: BootRuntime> Scheduler<R> {
         stack: usize,
         arg: usize,
         stack_info: abi::types::StackInfo,
+        priority: crate::task::TaskPriority,
     ) -> TaskId {
         let rt = crate::runtime::<R>();
         let id = self.next_id;
@@ -73,6 +76,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let task: Task<R> = Task {
             id,
             state: TaskState::Runnable,
+            priority,
             kstack_base: stack_base,
             kstack_size: 16384,
             kstack_top,
@@ -81,11 +85,12 @@ impl<R: BootRuntime> Scheduler<R> {
             simd: crate::simd::SimdState::new(rt),
             exit_code: None,
             is_user: true,
+            wake_pending: false,
             stack_info: Some(stack_info),
         };
 
         self.tasks.push(task);
-        self.runq.push_back(id);
+        self.runq[priority as usize].push_back(id);
         id
     }
 
@@ -94,6 +99,7 @@ impl<R: BootRuntime> Scheduler<R> {
         entry: UserEntry,
         aspace: <R::Tasking as BootTasking>::AddressSpace,
         stack_info: abi::types::StackInfo,
+        priority: crate::task::TaskPriority,
     ) -> Option<TaskId> {
         let rt = crate::runtime::<R>();
         let id = self.next_id;
@@ -116,6 +122,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let task: Task<R> = Task {
             id,
             state: TaskState::Runnable,
+            priority,
             kstack_base: stack_base,
             kstack_size: 16384,
             kstack_top: stack_top,
@@ -124,11 +131,12 @@ impl<R: BootRuntime> Scheduler<R> {
             simd: crate::simd::SimdState::new(rt),
             exit_code: None,
             is_user: true,
+            wake_pending: false,
             stack_info: Some(stack_info),
         };
 
         self.tasks.push(task);
-        self.runq.push_back(id);
+        self.runq[priority as usize].push_back(id);
         Some(id)
     }
 }
@@ -137,7 +145,14 @@ pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> Ta
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn(entry, arg)
+    sched.spawn(entry, arg, crate::task::TaskPriority::Normal)
+}
+
+pub fn spawn_with_priority<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize, priority: crate::task::TaskPriority) -> TaskId {
+    let lock = SCHEDULER.lock();
+    let ptr = lock.expect("Scheduler not initialized");
+    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+    sched.spawn(entry, arg, priority)
 }
 
 pub unsafe fn spawn_user_thread<R: BootRuntime>(
@@ -145,25 +160,33 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(
     stack: usize,
     arg: usize,
     stack_info: abi::types::StackInfo,
+    priority: crate::task::TaskPriority,
 ) -> TaskId {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn_user_thread(entry, stack, arg, stack_info)
+    sched.spawn_user_thread(entry, stack, arg, stack_info, priority)
 }
 
 pub unsafe fn spawn_user_task_full<R: BootRuntime>(
     entry: UserEntry,
     aspace: <R::Tasking as BootTasking>::AddressSpace,
     stack_info: abi::types::StackInfo,
+    priority: crate::task::TaskPriority,
 ) -> Option<TaskId> {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn_user_task(entry, aspace, stack_info)
+    sched.spawn_user_task(entry, aspace, stack_info, priority)
 }
 
 pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<TaskId> {
+    unsafe {
+        spawn_process_with_priority::<R>(name, arg, crate::task::TaskPriority::Normal)
+    }
+}
+
+pub unsafe fn spawn_process_with_priority<R: BootRuntime>(name: &str, arg: usize, priority: crate::task::TaskPriority) -> Option<TaskId> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
     let module = modules.iter().find(|m| m.name.contains(name))?;
@@ -177,7 +200,7 @@ pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<Ta
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
-    sched.spawn_user_task(entry, aspace, stack_info)
+    sched.spawn_user_task(entry, aspace, stack_info, priority)
 }
 
 pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {

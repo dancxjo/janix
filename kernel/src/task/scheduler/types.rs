@@ -41,7 +41,7 @@ pub(crate) struct SchedulerMetrics {
 
 pub struct Scheduler<R: BootRuntime> {
     pub(crate) tasks: Vec<Task<R>>,
-    pub(crate) runq: VecDeque<TaskId>,
+    pub(crate) runq: [VecDeque<TaskId>; 5],
     pub(crate) wait_queue: VecDeque<TaskId>,
     pub(crate) current: Option<TaskId>,
     pub(crate) next_id: TaskId,
@@ -67,7 +67,13 @@ impl<R: BootRuntime> Scheduler<R> {
     pub fn new() -> Self {
         Scheduler {
             tasks: Vec::new(),
-            runq: VecDeque::new(),
+            runq: [
+                VecDeque::new(),
+                VecDeque::new(),
+                VecDeque::new(),
+                VecDeque::new(),
+                VecDeque::new(),
+            ],
             wait_queue: VecDeque::new(),
             current: None,
             next_id: 1,
@@ -84,5 +90,10 @@ impl<R: BootRuntime> Scheduler<R> {
 
     pub fn current_id(&self) -> Option<TaskId> {
         self.current
+    }
+
+    pub fn current_priority(&self) -> Option<crate::task::TaskPriority> {
+        let tid = self.current?;
+        self.tasks.iter().find(|t| t.id == tid).map(|t| t.priority)
     }
 }

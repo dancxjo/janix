@@ -5,10 +5,12 @@ use super::types::StackFaultResult;
 
 pub(crate) static mut YIELD_HOOK: Option<fn()> = None;
 pub(crate) static mut EXIT_HOOK: Option<fn(i32)> = None;
-pub(crate) static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize, abi::types::StackInfo) -> TaskId> = None;
+pub(crate) static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize, abi::types::StackInfo, crate::task::TaskPriority) -> TaskId> = None;
 pub(crate) static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, usize) -> Option<TaskId>> = None;
 pub(crate) static mut CURRENT_TID_HOOK: Option<fn() -> u64> = None;
 pub(crate) static mut TASK_STATUS_HOOK: Option<fn(TaskId) -> Option<(TaskState, Option<i32>)>> = None;
+pub(crate) static mut SET_PRIORITY_HOOK: Option<fn(TaskId, crate::task::TaskPriority)> = None;
+pub(crate) static mut CURRENT_PRIORITY_HOOK: Option<fn() -> crate::task::TaskPriority> = None;
 pub(crate) static mut ALLOC_USER_STACK_HOOK: Option<fn(usize) -> Option<usize>> = None;
 pub(crate) static mut STACK_FAULT_HOOK: Option<unsafe fn(u64) -> StackFaultResult> = None;
 
@@ -56,11 +58,26 @@ pub unsafe fn spawn_user_thread_current(
     stack: usize,
     arg: usize,
     stack_info: abi::types::StackInfo,
+    priority: crate::task::TaskPriority,
 ) -> Option<TaskId> {
     if let Some(hook) = unsafe { SPAWN_USER_HOOK } {
-        Some(unsafe { hook(entry, stack, arg, stack_info) })
+        Some(unsafe { hook(entry, stack, arg, stack_info, priority) })
     } else {
         None
+    }
+}
+
+pub unsafe fn set_priority_current(id: TaskId, priority: crate::task::TaskPriority) {
+    if let Some(hook) = unsafe { SET_PRIORITY_HOOK } {
+        hook(id, priority);
+    }
+}
+
+pub unsafe fn current_priority_current() -> crate::task::TaskPriority {
+    if let Some(hook) = unsafe { CURRENT_PRIORITY_HOOK } {
+        hook()
+    } else {
+        crate::task::TaskPriority::Normal
     }
 }
 

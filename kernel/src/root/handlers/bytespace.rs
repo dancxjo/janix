@@ -16,7 +16,7 @@ pub fn handle_bytespace_create<R: BootRuntime>(
     graph: &mut Graph,
     journal: &mut Journal,
     interner: &mut Interner,
-    msg: &RootMsg,
+    _msg: &RootMsg,
     len: u64,
     _flags: u64,
     _format: u64,

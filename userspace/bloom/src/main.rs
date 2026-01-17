@@ -393,7 +393,7 @@ fn main(arg: usize) -> ! {
                 cursor_loaded = true;
                 builder.add_damage(cursor.bbox());
             } else if frame_id % 60 == 0 {
-                log!("[bloom] frame {}: cursor not ready yet", frame_id);
+                // log!("[bloom] frame {}: cursor not ready yet", frame_id);
             }
         }
         // Check if fonts are ready

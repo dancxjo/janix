@@ -17,7 +17,7 @@ use abi::hid::{
 };
 use mouse::{MouseState, PointerEvent};
 use stem::info;
-use stem::syscall::{port_recv, port_send, PortHandle};
+use stem::syscall::{port_recv, port_send, port_wait, PortHandle};
 #[cfg(feature = "diagnostic-apps")]
 use stem::syscall::{port_create, spawn_process};
 use stem::thing::sys as thingsys;
@@ -187,14 +187,16 @@ fn main(packed_handles: usize) -> ! {
     let mut drop_counter: u32 = 0;
     let mut event_count: u64 = 0;
 
+    let wait_handles = [kbd_read, mouse_read];
     loop {
         let timestamp_ns = event_count * 1_000_000;
-        let mut did_work = false;
         
+        // Block until keyboard or mouse data arrives
+        let _ = port_wait(&wait_handles);
+
         // Process keyboard input
         if let Ok(n) = port_recv(kbd_read, &mut kbd_buf) {
             if n > 0 {
-                did_work = true;
                 for &byte in &kbd_buf[..n] {
                     if let Some(edge) = kbd_state.process_ps2(byte) {
                         let len = match edge {
@@ -237,7 +239,6 @@ fn main(packed_handles: usize) -> ! {
         // Process mouse input  
         if let Ok(n) = port_recv(mouse_read, &mut mouse_buf) {
             if n >= 3 {
-                did_work = true;
                 // Process 3-byte packets
                 let mut offset = 0;
                 while offset + 3 <= n {
@@ -291,10 +292,6 @@ fn main(packed_handles: usize) -> ! {
                     offset += 3;
                 }
             }
-        }
-        
-        if !did_work {
-            stem::yield_now();
         }
         
         // Rate-limited drop logging

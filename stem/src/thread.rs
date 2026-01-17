@@ -24,3 +24,7 @@ pub fn yield_now() {
 pub fn wait(tid: ThreadId) -> Result<i32, Errno> {
     crate::syscall::task_wait(tid)
 }
+
+pub fn set_priority(tid: ThreadId, priority: usize) -> Result<(), Errno> {
+    crate::syscall::set_priority(tid, priority)
+}

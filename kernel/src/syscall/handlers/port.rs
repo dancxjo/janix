@@ -89,3 +89,53 @@ pub fn sys_port_close(handle: usize) -> SysResult<usize> {
         Err(Errno::EBADF)
     }
 }
+
+pub fn sys_port_wait(handles_ptr: usize, count: usize) -> SysResult<usize> {
+    if count == 0 || count > 64 {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(handles_ptr, count * 4, false)?;
+
+    let mut handles = [0u32; 64];
+    unsafe {
+        let dest = core::slice::from_raw_parts_mut(handles.as_mut_ptr() as *mut u8, count * 4);
+        copyin(dest, handles_ptr)?;
+    }
+
+    let tid = unsafe { crate::task::scheduler::current_tid_current() };
+
+    loop {
+        // 1. Check if any port is already readable
+        {
+            let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+            for i in 0..count {
+                let h = crate::ipc::Handle(handles[i]);
+                if let Some(entry) = table.get(h, crate::ipc::HandleMode::Read) {
+                    if let Some(port) = crate::ipc::get_port(entry.port_id) {
+                        if !port.is_empty() {
+                            return Ok(handles[i] as usize);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Not readable, register as waiter on all ports
+        {
+            let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+            for i in 0..count {
+                let h = crate::ipc::Handle(handles[i]);
+                if let Some(entry) = table.get(h, crate::ipc::HandleMode::Read) {
+                    if let Some(port) = crate::ipc::get_port(entry.port_id) {
+                        port.add_waiter(tid);
+                    }
+                }
+            }
+        }
+
+        // 3. Block current task
+        unsafe {
+            crate::task::scheduler::block_current_erased();
+        }
+    }
+}

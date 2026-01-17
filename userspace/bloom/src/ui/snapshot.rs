@@ -122,8 +122,8 @@ impl UiSnapshot {
                          // If the current node (id) is the parent (dst), then src is the child.
                          if dst_id == id.0 && src_id != id.0 {
                              children.push(ThingId(src_id));
-                             stem::info!("SNAPSHOT: Node[{:x}] child -> {:x}", id.0, src_id);
-                         }
+                            // stem::info!("SNAPSHOT: Node[{:x}] child -> {:x}", id.0, src_id);
+                        }
                      }
                  }
              }
@@ -146,7 +146,7 @@ impl UiSnapshot {
             }
         }
 
-        stem::info!("SNAPSHOT: Node[{:x}] kind={:?} children={} props={}", id.0, kind, children.len(), props.len());
+        // stem::info!("SNAPSHOT: Node[{:x}] kind={:?} children={} props={}", id.0, kind, children.len(), props.len());
 
         self.nodes.insert(id, UiNodeSnapshot {
             id,

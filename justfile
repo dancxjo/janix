@@ -112,6 +112,18 @@ clock arch=karch:
     echo "Building clock for $TARGET_ARCH using $TARGET_JSON..."
     cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p clock
 
+# Build bristle user app
+bristle arch=karch:
+    #!/usr/bin/env bash
+    TARGET_ARCH="{{arch}}"
+    if [ "$TARGET_ARCH" == "riscv64" ]; then
+        TARGET_JSON="targets/riscv64gc-unknown-thingos.json"
+    else
+        TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
+    fi
+    echo "Building bristle for $TARGET_ARCH using $TARGET_JSON..."
+    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p bristle
+
 # Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
 fetch:
     cargo xtask fetch

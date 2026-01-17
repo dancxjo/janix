@@ -34,6 +34,11 @@ pub fn block_current<R: BootRuntime>() {
 
         // Move current from Running to Blocked
         if let Some(idx) = sched.tasks.iter().position(|t| t.id == current_id) {
+            if sched.tasks[idx].wake_pending {
+                sched.tasks[idx].wake_pending = false;
+                rt.irq_restore(_irq);
+                return;
+            }
             sched.tasks[idx].state = TaskState::Blocked;
         }
 
@@ -84,7 +89,11 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
     if let Some(idx) = sched.tasks.iter().position(|t| t.id == tid) {
         if sched.tasks[idx].state == TaskState::Blocked {
             sched.tasks[idx].state = TaskState::Runnable;
-            sched.runq.push_back(tid);
+            let priority = sched.tasks[idx].priority;
+            sched.runq[priority as usize].push_back(tid);
+            sched.tasks[idx].wake_pending = false;
+        } else {
+            sched.tasks[idx].wake_pending = true;
         }
     }
 }

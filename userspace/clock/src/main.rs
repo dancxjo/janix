@@ -73,21 +73,29 @@ fn main() -> ! {
 
     // 2. Setup UI
     let mut ui_root = ThingId(0);
-    for i in 0..10 {
+    info!("Waiting for UI Root (Compositor)...");
+    for i in 0..60 { // Wait up to 30 seconds
         let mut ui_roots = [ThingId(0); 1];
-        if stem::thing::sys::find(kinds::UI_ROOT, &mut ui_roots).unwrap_or(0) > 0 {
-            ui_root = ui_roots[0];
-            info!("Found UI Root: {} (attempt {})", ui_root.0, i + 1);
-            break;
+        match stem::thing::sys::find(kinds::UI_ROOT, &mut ui_roots) {
+            Ok(count) if count > 0 => {
+                ui_root = ui_roots[0];
+                info!("Found UI Root: {} (attempt {})", ui_root.0, i + 1);
+                break;
+            }
+            Ok(_) => {
+                if i % 10 == 0 {
+                    info!("UI Root not found yet (attempt {}), still waiting...", i + 1);
+                }
+            }
+            Err(e) => {
+                info!("Error finding UI Root: {:?}", e);
+            }
         }
-        if i < 9 {
-            info!("WARN: UI Root not found, retrying in 1s...");
-            stem::sleep(Duration::from_secs(1));
-        }
+        stem::sleep(Duration::from_millis(500));
     }
 
     if ui_root.0 == 0 {
-        info!("ERROR: UI Root still not found after 10s, giving up on UI");
+        info!("ERROR: UI Root still not found after 30s, giving up on UI");
     }
 
     let mut text_node = None;

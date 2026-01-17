@@ -29,7 +29,7 @@ fn main() -> ! {
     let mut binding_ids = [ThingId(0); 16];
 
     // Simple retry loop for finding bindings
-    for _ in 0..10 {
+    for _ in 0..120 {
         if let Ok(count) = find(kinds::BINDING, &mut binding_ids) {
             if count > 0 {
                 info!("Found {} bindings", count);

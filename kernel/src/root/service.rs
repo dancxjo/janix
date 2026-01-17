@@ -1,7 +1,7 @@
 //! Root service main loop and message dispatch.
 
 use super::graph::Graph;
-use super::handlers;
+use crate::root::handlers as root_handlers;
 use super::journal::Journal;
 use super::symbols::Interner;
 use super::{RootMsg, RootOp};
@@ -30,7 +30,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         }
 
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::task::block_current_erased();
         }
     }
 }
@@ -76,69 +76,69 @@ fn handle_msg<R: BootRuntime>(
 ) {
     let (status, value) = match msg.op {
         // Symbol operations
-        RootOp::Intern { name } => handlers::handle_intern(interner, &name),
+        RootOp::Intern { name } => root_handlers::handle_intern(interner, &name),
 
         // Graph core operations
-        RootOp::GetKind { id } => handlers::handle_get_kind(graph, id),
-        RootOp::CreateNode { kind } => handlers::handle_create_node(graph, journal, interner, kind),
-        RootOp::Link { src, rel, dst } => handlers::handle_link(graph, interner, src, rel, dst),
-        RootOp::Find { kind, buffer, len } => handlers::handle_find(graph, interner, kind, buffer, len),
-        RootOp::Query { plan, out_buffer, out_len } => handlers::handle_query(graph, &plan, out_buffer, out_len),
+        RootOp::GetKind { id } => root_handlers::handle_get_kind(graph, id),
+        RootOp::CreateNode { kind } => root_handlers::handle_create_node(graph, journal, interner, kind),
+        RootOp::Link { src, rel, dst } => root_handlers::handle_link(graph, interner, src, rel, dst),
+        RootOp::Find { kind, buffer, len } => root_handlers::handle_find(graph, interner, kind, buffer, len),
+        RootOp::Query { plan, out_buffer, out_len } => root_handlers::handle_query(graph, &plan, out_buffer, out_len),
 
         // Property operations
-        RootOp::PropGet { id, key } => handlers::handle_prop_get(graph, interner, id, key),
-        RootOp::PropSet { id, key, value } => handlers::handle_prop_set(graph, journal, interner, id, key, value),
+        RootOp::PropGet { id, key } => root_handlers::handle_prop_get(graph, interner, id, key),
+        RootOp::PropSet { id, key, value } => root_handlers::handle_prop_set(graph, journal, interner, id, key, value),
 
         // Bytespace operations
         RootOp::BytespaceCreate { len, flags, format } => {
-            handlers::handle_bytespace_create::<R>(graph, journal, interner, &msg, len, flags, format)
+            root_handlers::handle_bytespace_create::<R>(graph, journal, interner, &msg, len, flags, format)
         }
         RootOp::BytespaceCreateFromPtr { ptr, len } => {
-            handlers::handle_bytespace_create_from_ptr::<R>(graph, journal, interner, ptr, len)
+            root_handlers::handle_bytespace_create_from_ptr::<R>(graph, journal, interner, ptr, len)
         }
         RootOp::BytespaceWrite { id, offset, ptr, len } => {
-            handlers::handle_bytespace_write(graph, id, offset, ptr, len)
+            root_handlers::handle_bytespace_write(graph, id, offset, ptr, len)
         }
         RootOp::BytespaceRead { id, offset, ptr, len } => {
-            handlers::handle_bytespace_read(graph, id, offset, ptr, len)
+            root_handlers::handle_bytespace_read(graph, id, offset, ptr, len)
         }
-        RootOp::BytespaceInfo { id } => handlers::handle_bytespace_info(graph, &msg, id),
-        RootOp::BytespaceMap { id, tid } => handlers::handle_bytespace_map(graph, &msg, id, tid),
-        RootOp::BytespaceUnmap { id, user_va, tid } => handlers::handle_bytespace_unmap(id, user_va, tid),
-        RootOp::BytespacePhys { id } => handlers::handle_bytespace_phys(graph, &msg, id),
+        RootOp::BytespaceInfo { id } => root_handlers::handle_bytespace_info(graph, &msg, id),
+        RootOp::BytespaceMap { id, tid } => root_handlers::handle_bytespace_map(graph, &msg, id, tid),
+        RootOp::BytespaceUnmap { id, user_va, tid } => root_handlers::handle_bytespace_unmap(id, user_va, tid),
+        RootOp::BytespacePhys { id } => root_handlers::handle_bytespace_phys(graph, &msg, id),
 
         // Stream/Watch operations
         RootOp::WatchSubscribe { target_id, mask } => {
-            handlers::handle_watch_subscribe(graph, interner, target_id, mask)
+            root_handlers::handle_watch_subscribe(graph, interner, target_id, mask)
         }
         RootOp::StreamPoll { stream_id, max: _, out_ptr: _ } => {
-            handlers::handle_stream_poll(graph, &msg, stream_id)
+            root_handlers::handle_stream_poll(graph, &msg, stream_id)
         }
         RootOp::WatchOpen { mode, query } => {
-            handlers::handle_watch_open(graph, interner, mode, query)
+            root_handlers::handle_watch_open(graph, interner, mode, query)
         }
         RootOp::WatchNext { id } => {
-            handlers::handle_watch_next(graph, &msg, id)
+            root_handlers::handle_watch_next(graph, &msg, id)
         }
         RootOp::WatchClose { id } => {
-            handlers::handle_watch_close(graph, id)
+            root_handlers::handle_watch_close(graph, id)
         }
 
         // Debug/Describe operations
         RootOp::DescribeThing { id, buffer, len } => {
-            handlers::handle_describe_thing(graph, interner, id, buffer, len)
+            root_handlers::handle_describe_thing(graph, interner, id, buffer, len)
         }
         RootOp::DescribeEdge { src, rel, dst, buffer, len } => {
-            handlers::handle_describe_edge(graph, interner, src, rel, dst, buffer, len)
+            root_handlers::handle_describe_edge(graph, interner, src, rel, dst, buffer, len)
         }
         RootOp::DumpEdges { id, buffer, len } => {
-            handlers::handle_dump_edges(graph, interner, id, buffer, len)
+            root_handlers::handle_dump_edges(graph, interner, id, buffer, len)
         }
-        RootOp::DumpGraph { limit } => handlers::handle_dump_graph(graph, interner, limit),
+        RootOp::DumpGraph { limit } => root_handlers::handle_dump_graph(graph, interner, limit),
 
         // Logging
         RootOp::LogEvent { level, event, message, timestamp, provenance, fields, about } => {
-            handlers::handle_log_event(
+            root_handlers::handle_log_event(
                 graph,
                 interner,
                 level,

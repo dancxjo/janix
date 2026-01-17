@@ -4,6 +4,8 @@
 //! Each port has a single writer and single reader handle.
 
 use alloc::boxed::Box;
+use alloc::collections::VecDeque;
+use spin::Mutex;
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Unique identifier for a port in the global registry
@@ -16,6 +18,7 @@ pub struct Port {
     capacity: usize,
     head: AtomicUsize, // Write position (producer advances)
     tail: AtomicUsize, // Read position (consumer advances)
+    waiters: Mutex<VecDeque<u64>>,
 }
 
 impl Port {
@@ -28,6 +31,7 @@ impl Port {
             capacity,
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
+            waiters: Mutex::new(VecDeque::new()),
         }
     }
 
@@ -76,7 +80,32 @@ impl Port {
         }
 
         self.head.store(head.wrapping_add(to_write), Ordering::Release);
+        
+        // Wake up waiters
+        let mut handlers = self.waiters.lock();
+        while let Some(tid) = handlers.pop_front() {
+            unsafe {
+                crate::task::scheduler::wake_task_erased(tid as usize);
+            }
+        }
+        
         to_write
+    }
+
+    /// Add a waiter to the port
+    pub fn add_waiter(&self, tid: u64) {
+        let mut waiters = self.waiters.lock();
+        if !waiters.contains(&tid) {
+            waiters.push_back(tid);
+        }
+    }
+
+    /// Remove a waiter from the port
+    pub fn remove_waiter(&self, tid: u64) {
+        let mut waiters = self.waiters.lock();
+        if let Some(pos) = waiters.iter().position(|&id| id == tid) {
+            waiters.remove(pos);
+        }
     }
 
     /// Receive bytes from the port. Returns number of bytes read.

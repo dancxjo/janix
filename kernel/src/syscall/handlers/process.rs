@@ -48,8 +48,16 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
         return Err(Errno::EINVAL);
     }
 
+    let current_p = unsafe { crate::task::scheduler::current_priority_current() };
+
     let tid = unsafe {
-        crate::task::scheduler::spawn_user_thread_current(req.entry, req.sp, 0, req.stack)
+        crate::task::scheduler::spawn_user_thread_current(
+            req.entry,
+            req.sp,
+            0,
+            req.stack,
+            current_p,
+        )
     };
     if let Some(tid) = tid {
         Ok(tid as usize)
@@ -114,4 +122,22 @@ pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
             }
         }
     }
+}
+
+pub fn sys_set_priority(tid: usize, priority: usize) -> SysResult<usize> {
+    if priority > 4 {
+        return Err(Errno::EINVAL);
+    }
+    let p = match priority {
+        0 => crate::task::TaskPriority::Idle,
+        1 => crate::task::TaskPriority::Low,
+        2 => crate::task::TaskPriority::Normal,
+        3 => crate::task::TaskPriority::High,
+        4 => crate::task::TaskPriority::Realtime,
+        _ => unreachable!(),
+    };
+    unsafe {
+        crate::task::scheduler::set_priority_current(tid as u64, p);
+    }
+    Ok(0)
 }

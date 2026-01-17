@@ -7,6 +7,7 @@ const DIAGNOSTIC_APPS: &[(&str, &str)] = &[
     ("threads_demo", "threads"),
     ("stack_heap_torture", "stack_heap_torture"),
     ("echo_mouse", "echo_mouse"),
+    ("scheduler_verify", "scheduler_verify"),
 ];
 
 fn diagnostic_apps_enabled() -> bool {
@@ -90,6 +91,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     build_userspace_app(sh, "ingestd", target, "release")?;
     build_userspace_app(sh, "png_creator", target, "release")?;
     build_userspace_app(sh, "bindd", target, "release")?;
+    build_userspace_app(sh, "scheduler_verify", target, "release")?;
     if diagnostic_apps_enabled() {
         for &(app, _) in DIAGNOSTIC_APPS {
             build_userspace_app(sh, app, target, "release")?;
@@ -168,6 +170,7 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
         "iso_root/boot/png_creator",
     )?;
     copy_userspace_binary(sh, "bindd", target, "release", "iso_root/boot/bindd")?;
+    copy_userspace_binary(sh, "scheduler_verify", target, "release", "iso_root/boot/scheduler_verify")?;
     if diagnostic_apps_enabled() {
         for &(app, module_name) in DIAGNOSTIC_APPS {
             let dst = format!("iso_root/boot/{}", module_name);

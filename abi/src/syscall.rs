@@ -20,6 +20,7 @@ pub const SYS_YIELD: u32 = 0x10;
 pub const SYS_SLEEP_NS: u32 = 0x11;
 pub const SYS_SLEEP_MS: u32 = 0x12;
 pub const SYS_TASK_POLL: u32 = 0x13;
+pub const SYS_SET_PRIORITY: u32 = 0x14;
 
 // ============================================================================
 // Block 0x20–0x2F: Time
@@ -51,6 +52,7 @@ pub const SYS_PORT_CREATE: u32 = 0x80;
 pub const SYS_PORT_SEND: u32 = 0x81;
 pub const SYS_PORT_RECV: u32 = 0x82;
 pub const SYS_PORT_CLOSE: u32 = 0x83;
+pub const SYS_PORT_WAIT: u32 = 0x84;
 
 // ============================================================================
 // Block 0x90–0x9F: Streams

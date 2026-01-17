@@ -16,7 +16,7 @@ use core::sync::atomic::Ordering;
 pub fn handle_watch_open(
     graph: &mut Graph,
     interner: &mut Interner,
-    mode: u32,
+    _mode: u32,
     query: alloc::vec::Vec<PreparedStep>,
 ) -> HandlerResult {
     // 1. Create Stream

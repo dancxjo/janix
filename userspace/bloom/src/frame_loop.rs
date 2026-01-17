@@ -31,7 +31,7 @@ impl FrameLoop {
         // Log once per second (approx 60 frames)
         // Using a simple modulo check on the frame counter
         if self.frame > 0 && self.frame % 60 == 0 {
-             crate::log!("heartbeat frame={} cursor=({},{})", self.frame, cursor_x, cursor_y);
+             // crate::log!("heartbeat frame={} cursor=({},{})", self.frame, cursor_x, cursor_y);
         }
     }
 }

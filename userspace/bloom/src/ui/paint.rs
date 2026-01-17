@@ -43,13 +43,13 @@ impl PaintBuilder {
         for obj in objects.iter() {
             match obj {
                 PaintObject::Rect { rect, color, .. } => {
-                    stem::info!("PAINT: obj=Rect rect={:?} color={:x}", rect, color.to_u32());
+                    // stem::info!("PAINT: obj=Rect rect={:?} color={:x}", rect, color.to_u32());
                 }
                 PaintObject::Text { rect, text, font, .. } => {
-                    stem::info!("PAINT: obj=Text rect={:?} text='{}' font={}", rect, text, font);
+                    // stem::info!("PAINT: obj=Text rect={:?} text='{}' font={}", rect, text, font);
                 }
                 PaintObject::Image { rect } => {
-                    stem::info!("PAINT: obj=Image rect={:?}", rect);
+                    // stem::info!("PAINT: obj=Image rect={:?}", rect);
                 }
             }
         }

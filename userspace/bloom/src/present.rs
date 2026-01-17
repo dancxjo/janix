@@ -288,6 +288,7 @@ impl Presenter for DriverPresenter {
             let in_flight = reclaimer::in_flight_count();
             let min_gen = reclaimer::min_live_gen();
             
+            /*
             if token.damage.is_full {
                 info!("bloom: frame {} gen={} (full redraw) mem={}/{}b evictions={} in_flight={} min_gen={}", 
                     frame_id, asset_gen.0, mem_used, mem_budget, evictions, in_flight, min_gen.0);
@@ -298,6 +299,7 @@ impl Presenter for DriverPresenter {
                 info!("bloom: frame {} gen={} ({} damage rects) mem={}/{}b", 
                     frame_id, asset_gen.0, damage_rect_count, mem_used, mem_budget);
             }
+            */
         }
 
         // Complete in-flight frame before present
@@ -321,6 +323,7 @@ impl Presenter for DriverPresenter {
         // Legacy path - kept for compatibility during transition
         self.frame_count += 1;
 
+        /*
         if self.frame_count % 120 == 0 {
             let rect_count = damage.rect_count();
             if damage.is_full {
@@ -331,6 +334,7 @@ impl Presenter for DriverPresenter {
                 info!("bloom: presenter frame {} ({} damage rects)", self.frame_count, rect_count);
             }
         }
+        */
 
         self.send_present(damage);
     }

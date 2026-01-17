@@ -245,6 +245,9 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
 
     fn irq_disable(&self) -> IrqState;
     fn irq_restore(&self, state: IrqState);
+    
+    /// Setup periodic preemption timer (e.g. 100Hz heartbeat)
+    fn setup_preemption_timer(&self, _hz: u32) {}
 
     fn acpi_rsdp(&self) -> Option<u64> {
         None
@@ -487,7 +490,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             kinfo!("Spawning sprout...");
             let mut entry = user_entry;
             entry.arg0 = 0x600000; // arg0 = registry ptr
-            crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info);
+            crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info, crate::task::TaskPriority::High);
         }
     } else {
         kinfo!("Sprout not found. Checking fallback...");
@@ -503,7 +506,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
                         .expect("Failed to load threads_demo");
                 unsafe {
                     crate::task::scheduler::spawn_user_task_full::<R>(
-                        user_entry, aspace, stack_info,
+                        user_entry, aspace, stack_info, crate::task::TaskPriority::Normal,
                     );
                 }
                 spawned_fallback = true;
@@ -521,8 +524,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         }
     }
 
-    // crate::tests::root_test::run_selftest();
-    kinfo!("System initialized. Entering scheduler loop.");
+    kinfo!("System initialized. Setting up preemption timer (100Hz)...");
+    runtime.setup_preemption_timer(100);
+
+    kinfo!("Entering scheduler loop.");
     loop {
         crate::task::yield_now::<R>();
         // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty

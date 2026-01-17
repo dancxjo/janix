@@ -10,6 +10,15 @@ use abi::types::StackInfo;
 
 pub type TaskId = u64;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum TaskPriority {
+    Idle = 0,
+    Low = 1,
+    Normal = 2,
+    High = 3,
+    Realtime = 4,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskState {
     Runnable,
@@ -21,8 +30,10 @@ pub enum TaskState {
 pub struct Task<R: BootRuntime> {
     pub id: TaskId,
     pub state: TaskState,
+    pub priority: TaskPriority,
     pub exit_code: Option<i32>,
     pub is_user: bool,
+    pub wake_pending: bool,
 
     pub kstack_base: *mut u8,
     pub kstack_size: usize,
@@ -42,6 +53,26 @@ pub fn init<R: BootRuntime>() {
 
 pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
     scheduler::spawn::<R>(entry, arg)
+}
+
+pub fn spawn_with_priority<R: BootRuntime>(
+    entry: extern "C" fn(usize) -> !,
+    arg: usize,
+    priority: TaskPriority,
+) -> TaskId {
+    scheduler::spawn_with_priority::<R>(entry, arg, priority)
+}
+
+pub unsafe fn block_current_erased() {
+    unsafe {
+        scheduler::block_current_erased();
+    }
+}
+
+pub unsafe fn wake_task_erased(tid: usize) {
+    unsafe {
+        scheduler::wake_task_erased(tid);
+    }
 }
 
 pub fn yield_now<R: BootRuntime>() {

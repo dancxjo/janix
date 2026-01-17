@@ -22,15 +22,17 @@ pub use blocking::{
 pub use hooks::{
     alloc_user_stack_current, current_tid_current, exit_current, handle_user_stack_fault_current,
     spawn_process_current, spawn_user_thread_current, task_status_current, yield_now_current,
+    set_priority_current, current_priority_current,
 };
 pub use sleep::{sleep_ms, sleep_until, yield_now};
 pub use spawn::{
     spawn, spawn_process, spawn_user_task_full, spawn_user_thread, user_thread_trampoline,
+    spawn_with_priority,
 };
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
 pub use types::{ScheduleReason, Scheduler, StackFaultResult, SwitchParams};
 
-use crate::task::{Task, TaskId, TaskState};
+use crate::task::{Task, TaskId, TaskPriority, TaskState};
 use crate::{BootRuntime, BootTasking};
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
@@ -62,6 +64,8 @@ pub fn init<R: BootRuntime>() {
             hooks::SPAWN_PROCESS_HOOK = Some(spawn::spawn_process::<R>);
             hooks::CURRENT_TID_HOOK = Some(current_tid::<R>);
             hooks::TASK_STATUS_HOOK = Some(task_status::<R>);
+            hooks::SET_PRIORITY_HOOK = Some(set_priority::<R>);
+            hooks::CURRENT_PRIORITY_HOOK = Some(current_priority::<R>);
             hooks::ALLOC_USER_STACK_HOOK = Some(stack::alloc_user_stack::<R>);
             crate::memory::set_map_user_page_hook(stack::map_user_page::<R>);
             crate::memory::set_map_user_page_perms_hook(stack::map_user_page_perms::<R>);
@@ -87,6 +91,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
     let task: Task<R> = Task {
         id: 0,
         state: TaskState::Running,
+        priority: TaskPriority::Normal,
         kstack_base: stack_base,
         kstack_size: 16384,
         kstack_top: stack_top,
@@ -95,17 +100,21 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         simd: crate::simd::SimdState::new(rt),
         exit_code: None,
         is_user: false,
+        wake_pending: false,
         stack_info: None,
     };
     sched.tasks.push(task);
     sched.current = Some(0);
     crate::kinfo!("  Creating idle task...");
 
-    let idle_id = sched.spawn(idle_task::<R>, 0);
+    let idle_id = sched.spawn(idle_task::<R>, 0, TaskPriority::Idle);
     sched.idle_task = Some(idle_id);
 
-    if let Some(pos) = sched.runq.iter().position(|&id| id == idle_id) {
-        sched.runq.remove(pos);
+    // Idle task should not be in any runq (it's handled as fallback)
+    for q in sched.runq.iter_mut() {
+        if let Some(pos) = q.iter().position(|&id| id == idle_id) {
+            q.remove(pos);
+        }
     }
     crate::kinfo!("  Boot task initialized");
 }
@@ -158,7 +167,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                    pops: self.metrics.pops,
                    pushes: self.metrics.pushes,
                    idle_picks: self.metrics.idle_picks,
-                   runq_len: self.runq.len() as u64
+                   runq_len: self.runq.iter().map(|q| q.len()).sum::<usize>() as u64
                },
                about=[]
             );
@@ -203,7 +212,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
         self.metrics.yields += 1;
 
         if Some(current_id) != self.idle_task {
-            self.runq.push_back(current_id);
+            let priority = self.tasks.iter().find(|t| t.id == current_id).map(|t| t.priority).unwrap_or(TaskPriority::Normal);
+            self.runq[priority as usize].push_back(current_id);
             self.metrics.pushes += 1;
         }
 
@@ -220,13 +230,25 @@ impl<R: BootRuntime> types::Scheduler<R> {
     > {
         self.flush_metrics_if_needed();
 
-        let next_id = match self.runq.pop_front() {
-            Some(id) => {
+        let mut next_id = None;
+        // Priority scan: Realtime (4) down to Normal (2) then Low (1).
+        // Skip Idle (0) in general scan.
+        for p in (1..5).rev() {
+            if let Some(id) = self.runq[p].pop_front() {
                 self.metrics.pops += 1;
-                id
+                next_id = Some(id);
+                break;
             }
+        }
+
+        let next_id = match next_id {
+            Some(id) => id,
             None => {
-                if let Some(idle) = self.idle_task {
+                // Check Idle queue as last resort before special idle_task
+                if let Some(id) = self.runq[0].pop_front() {
+                    self.metrics.pops += 1;
+                    id
+                } else if let Some(idle) = self.idle_task {
                     self.metrics.idle_picks += 1;
                     idle
                 } else {
@@ -301,6 +323,32 @@ impl<R: BootRuntime> types::Scheduler<R> {
             }
         }
     }
+
+    pub fn set_priority(&mut self, id: TaskId, priority: TaskPriority) {
+        if let Some(idx) = self.tasks.iter().position(|t| t.id == id) {
+            let old_priority = self.tasks[idx].priority;
+            self.tasks[idx].priority = priority;
+
+            // If it's runnable and in a runq, move it to the new runq
+            if self.tasks[idx].state == TaskState::Runnable {
+                if let Some(pos) = self.runq[old_priority as usize].iter().position(|&rid| rid == id) {
+                    self.runq[old_priority as usize].remove(pos);
+                    self.runq[priority as usize].push_back(id);
+                }
+            }
+        }
+    }
+}
+
+pub fn set_priority<R: BootRuntime>(id: TaskId, priority: TaskPriority) {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let lock = SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+        sched.set_priority(id, priority);
+    }
+    rt.irq_restore(_irq);
 }
 
 pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>)> {
@@ -314,6 +362,19 @@ pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>
             .map(|t| (t.state, t.exit_code))
     } else {
         None
+    }
+}
+
+pub fn current_priority<R: BootRuntime>() -> TaskPriority {
+    if let Some(lock) = SCHEDULER.try_lock() {
+        if let Some(ptr) = *lock {
+            let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+            sched.current_priority().unwrap_or(TaskPriority::Normal)
+        } else {
+            TaskPriority::Normal
+        }
+    } else {
+        TaskPriority::Normal
     }
 }
 

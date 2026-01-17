@@ -1,6 +1,6 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
-use core::sync::atomic::{AtomicI32, AtomicU64};
+use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use spin::Mutex;
 
 pub mod abi;
@@ -179,11 +179,13 @@ pub struct RootMsg {
 }
 
 static ROOT_INBOX: Mutex<Option<VecDeque<RootMsg>>> = Mutex::new(None);
+static ROOT_TID: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_root_service<R: crate::BootRuntime>() {
     *ROOT_INBOX.lock() = Some(VecDeque::new());
     crate::kinfo!("Spawning Root service...");
-    crate::task::spawn::<R>(service::root_main::<R>, 0);
+    let tid = crate::task::spawn_with_priority::<R>(service::root_main::<R>, 0, crate::task::TaskPriority::High);
+    ROOT_TID.store(tid, Ordering::SeqCst);
 }
 
 pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
@@ -195,6 +197,12 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
 
     if let Some(q) = ROOT_INBOX.lock().as_mut() {
         q.push_back(msg);
+        let tid = ROOT_TID.load(Ordering::Relaxed);
+        if tid != 0 {
+            unsafe {
+                crate::task::scheduler::wake_task_erased(tid as usize);
+            }
+        }
     } else {
         panic!("Root inbox not initialized");
     }

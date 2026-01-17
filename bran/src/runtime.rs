@@ -14,6 +14,7 @@ pub trait ArchRuntime {
     fn mono_freq_hz(&self) -> u64;
     fn irq_disable(&self) -> IrqState;
     fn irq_restore(&self, state: IrqState);
+    fn setup_preemption_timer(&self, _hz: u32) {}
 
     // SIMD - defaults
     fn simd_init_cpu(&self) {}
@@ -247,6 +248,10 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     }
     fn ioport_write_u32(&self, port: u16, value: u32) {
         self.arch.ioport_write_u32(port, value)
+    }
+
+    fn setup_preemption_timer(&self, hz: u32) {
+        self.arch.setup_preemption_timer(hz)
     }
 }
 

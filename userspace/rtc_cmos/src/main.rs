@@ -51,7 +51,9 @@ fn bcd_to_binary(bcd: u8) -> u8 {
 
 fn read_rtc() -> (u16, u8, u8, u8, u8, u8) {
     // Wait for update to complete
-    while is_updating() {}
+    while is_updating() {
+        stem::yield_now();
+    }
 
     let seconds = cmos_read(RTC_SECONDS);
     let minutes = cmos_read(RTC_MINUTES);

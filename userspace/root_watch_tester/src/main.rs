@@ -487,6 +487,87 @@ fn test_main() -> i32 {
         }
     }
     
+    // ========================================
+    // Test 7: ENOSPC (buffer too small, non-destructive)
+    // ========================================
+    println!("\n--- Test 7: ENOSPC (buffer too small) ---");
+    {
+        // Open a fresh watch
+        let enospc_watch = match open_watch() {
+            Ok(h) => h,
+            Err(e) => {
+                println!("FAIL: Could not open watch for ENOSPC test: {}", e);
+                failures += 1;
+                0
+            }
+        };
+        
+        if enospc_watch != 0 {
+            // Create a node to generate an event
+            let _node = create_node("test.enospc");
+            
+            // Try to read with a tiny buffer (1 byte)
+            let mut tiny_buf = [0u8; 1];
+            match watch_next(enospc_watch, &mut tiny_buf) {
+                Err(-28) => {
+                    println!("PASS: Got ENOSPC as expected");
+                    
+                    // Now try with a proper buffer - event should still be there
+                    let mut proper_buf = [0u8; 256];
+                    match watch_next(enospc_watch, &mut proper_buf) {
+                        Ok((len, _seq)) if len > 0 => {
+                            println!("PASS: Event was NOT consumed on ENOSPC (got {} bytes)", len);
+                        }
+                        Ok((0, _)) => {
+                            println!("FAIL: Event was consumed despite ENOSPC");
+                            failures += 1;
+                        }
+                        Err(-11) => {
+                            println!("FAIL: Event was consumed (got EAGAIN)");
+                            failures += 1;
+                        }
+                        Err(e) => {
+                            println!("FAIL: Unexpected error after ENOSPC: {}", e);
+                            failures += 1;
+                        }
+                        _ => {}
+                    }
+                }
+                Ok((len, _)) => {
+                    println!("FAIL: Expected ENOSPC, got {} bytes", len);
+                    failures += 1;
+                }
+                Err(e) => {
+                    println!("FAIL: Expected ENOSPC (-28), got error: {}", e);
+                    failures += 1;
+                }
+            }
+        }
+    }
+    
+    // ========================================
+    // Test 8: EBADF (invalid watch handle)
+    // ========================================
+    println!("\n--- Test 8: EBADF (invalid watch handle) ---");
+    {
+        let invalid_handle = 0xDEAD_BEEF_usize;
+        let mut buf = [0u8; 256];
+        
+        match watch_next(invalid_handle, &mut buf) {
+            Err(-9) => {
+                println!("PASS: Got EBADF for invalid handle");
+            }
+            Err(e) => {
+                println!("FAIL: Expected EBADF (-9), got error: {}", e);
+                failures += 1;
+            }
+            Ok(_) => {
+                println!("FAIL: Expected error, got success");
+                failures += 1;
+            }
+        }
+    }
+    
     if failures > 0 {
         -failures
     } else {

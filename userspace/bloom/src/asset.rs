@@ -219,6 +219,9 @@ enum AssetLoadJob {
         size: usize,
         display_name: Arc<str>,
     },
+    FontByPath {
+        path: Arc<str>,
+    },
     Wallpaper {
         path: Arc<str>,
     },
@@ -248,6 +251,11 @@ extern "C" fn asset_worker_entry() -> ! {
                     display_name,
                 } => {
                     if let Some(font) = AssetBank::load_font_immediate(id, size, &display_name) {
+                        AssetBank::new().publish_font(font);
+                    }
+                }
+                AssetLoadJob::FontByPath { path } => {
+                    if let Some(font) = AssetBank::load_font_from_graph_by_path(&path) {
                         AssetBank::new().publish_font(font);
                     }
                 }
@@ -341,6 +349,14 @@ impl AssetBank {
     pub fn enqueue_cursor_load(&self, path: &str) {
         let mut queue = JOB_QUEUE.lock();
         queue.push_back(AssetLoadJob::Cursor {
+            path: Arc::from(path),
+        });
+        Self::spawn_worker();
+    }
+
+    pub fn enqueue_font_load_by_path(&self, path: &str) {
+        let mut queue = JOB_QUEUE.lock();
+        queue.push_back(AssetLoadJob::FontByPath {
             path: Arc::from(path),
         });
         Self::spawn_worker();

@@ -104,7 +104,7 @@ pub fn handle_watch_next(
     let (mut cursor, filter, _was_overflowed) = {
         let watch = match graph.global_watches.get_mut(&id) {
             Some(w) => w,
-            None => return (-22, 0), // -EINVAL
+            None => return (-9, 0), // -EBADF: bad/stale watch descriptor
         };
         
         // Check overflow flag (sticky until reported)

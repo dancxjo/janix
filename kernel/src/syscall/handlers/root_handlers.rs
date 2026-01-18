@@ -692,16 +692,15 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     root_call(msg)
 }
 
-pub fn sys_root_watch_next(id: usize, out_seq_ptr: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+pub fn sys_root_watch_next(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
     validate_user_range(out_ptr, len, true)?;
-    validate_user_range(out_seq_ptr, 8, true)?;
 
     let mut kbuf = [0u8; 2048]; // Max batch size to read at once?
     let kbuf_len = core::cmp::min(len, kbuf.len());
 
     let reply = root_svc::enqueue(RootOp::WatchNext { 
         id: id as u64,
-        out_seq_ptr: 0, // Unused
+        out_seq_ptr: 0, // Unused in current design
         out_ptr: kbuf.as_mut_ptr() as u64,
         out_len: kbuf_len as u64,
     });
@@ -713,25 +712,29 @@ pub fn sys_root_watch_next(id: usize, out_seq_ptr: usize, out_ptr: usize, len: u
             
             if status >= 0 {
                 let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
-                let seq = reply.p0.load(Ordering::Relaxed);
+                // seq is in reply.p0 but we don't expose it in this ABI version
 
                 if status == 0 {
                     // Copy data
                     unsafe {
                         copyout(out_ptr, &kbuf[..bytes_read])?;
-                        // Copy seq
-                        let seq_slice = core::slice::from_raw_parts(&seq as *const u64 as *const u8, 8);
-                        copyout(out_seq_ptr, seq_slice)?;
                     }
                     return Ok(bytes_read);
                 }
                 return Ok(bytes_read);
             } else {
-                 match status {
+                match status {
                     -75 => return Err(Errno::EOVERFLOW),
                     -28 => return Err(Errno::ENOSPC),
                     -11 => return Err(Errno::EAGAIN),
-                    _ => return Err(Errno::EIO),
+                    -22 => return Err(Errno::EINVAL),  // Invalid handle
+                    -9  => return Err(Errno::EBADF),   // Bad/stale watch descriptor
+                    _ => {
+                        // Log unexpected status for debugging
+                        let tid = unsafe { crate::task::scheduler::current_tid_current() };
+                        crate::kinfo!("watch_next: UNEXPECTED status={} wid={} tid={}", status, id, tid);
+                        return Err(Errno::EIO);
+                    }
                 }
             }
         }

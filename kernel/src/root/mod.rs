@@ -146,13 +146,20 @@ pub enum RootOp {
     },
     WatchOpen {
         mode: u32,
+        start_seq: u64,
         query: alloc::vec::Vec<crate::root::query::PreparedStep>,
     },
     WatchNext {
         id: u64,
+        out_seq_ptr: u64,
+        out_ptr: u64,
+        out_len: u64,
     },
     WatchClose {
         id: u64,
+    },
+    ApplyBatch {
+        batch: alloc::vec::Vec<u8>,
     },
 }
 

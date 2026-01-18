@@ -21,7 +21,7 @@ use crate::build::build;
 use crate::clean::{clean, distclean};
 use crate::common::project_root;
 use crate::fetch::fetch;
-use crate::image::{build_hdd, build_iso};
+use crate::image::{build_hdd, build_iso, default_programs, ProgramConfig};
 use crate::limine::limine;
 use crate::run::{run, run_bios, run_hdd};
 
@@ -53,6 +53,9 @@ enum Commands {
         /// Rust profile
         #[arg(long, default_value = "dev")]
         profile: String,
+        /// Initial program to launch
+        #[arg(long)]
+        init: Option<String>,
     },
     /// Create an HDD image
     Hdd {
@@ -62,6 +65,9 @@ enum Commands {
         /// Rust profile
         #[arg(long, default_value = "dev")]
         profile: String,
+        /// Initial program to launch
+        #[arg(long)]
+        init: Option<String>,
     },
     /// Run in QEMU (UEFI mode)
     Run {
@@ -71,6 +77,9 @@ enum Commands {
         /// Rust profile
         #[arg(long, default_value = "dev")]
         profile: String,
+        /// Initial program to launch
+        #[arg(long)]
+        init: Option<String>,
         /// Additional QEMU flags
         #[arg(long, default_value = "-m 2G", allow_hyphen_values = true)]
         qemu_flags: String,
@@ -89,6 +98,9 @@ enum Commands {
         /// Rust profile
         #[arg(long, default_value = "dev")]
         profile: String,
+        /// Initial program to launch
+        #[arg(long)]
+        init: Option<String>,
         /// Additional QEMU flags
         #[arg(long, default_value = "-m 2G", allow_hyphen_values = true)]
         qemu_flags: String,
@@ -135,43 +147,56 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Build { env, profile } => build(&sh, &env, &profile)?,
-        Commands::Iso { env, profile } => {
+        Commands::Iso { env, profile, init } => {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
-            build_iso(&sh, &env)?;
+            let mut programs = default_programs();
+            apply_init(&mut programs, init);
+            let path = build_iso(&sh, &env, &programs)?;
+            println!("ISO generated at: {}", path.display());
         }
-        Commands::Hdd { env, profile } => {
+        Commands::Hdd { env, profile, init } => {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
-            build_hdd(&sh, &env)?;
+            let mut programs = default_programs();
+            apply_init(&mut programs, init);
+            let path = build_hdd(&sh, &env, &programs)?;
+            println!("HDD generated at: {}", path.display());
         }
         Commands::Run {
             env,
             profile,
+            init,
             qemu_flags,
         } => {
             fetch()?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
-            build_iso(&sh, &env)?;
-            run(&sh, &env, &qemu_flags)?;
+            let mut programs = default_programs();
+            apply_init(&mut programs, init);
+            let iso_path = build_iso(&sh, &env, &programs)?;
+            run(&sh, &env, &qemu_flags, &iso_path)?;
         }
         Commands::RunBios { qemu_flags } => {
             limine(&sh)?;
             build(&sh, "x86_64", "dev")?;
-            build_iso(&sh, "x86_64")?;
-            run_bios(&sh, &qemu_flags)?;
+            let programs = default_programs();
+            let iso = build_iso(&sh, "x86_64", &programs)?;
+            run_bios(&sh, &qemu_flags, &iso)?;
         }
         Commands::RunHdd {
             env,
             profile,
+            init,
             qemu_flags,
         } => {
             fetch()?;
             limine(&sh)?;
             build(&sh, &env, &profile)?;
-            build_hdd(&sh, &env)?;
-            run_hdd(&sh, &env, &qemu_flags)?;
+            let mut programs = default_programs();
+            apply_init(&mut programs, init);
+            let hdd_path = build_hdd(&sh, &env, &programs)?;
+            run_hdd(&sh, &env, &qemu_flags, &hdd_path)?;
         }
         Commands::Limine => limine(&sh)?,
         Commands::Ovmf { env: _ } => fetch()?,  // OVMF handled by unified fetch
@@ -188,4 +213,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
+}
+
+fn apply_init(programs: &mut [ProgramConfig], init: Option<String>) {
+    if let Some(init_name) = init {
+        for prog in programs {
+            if prog.name == init_name {
+                prog.is_init = true;
+            }
+        }
+    }
 }

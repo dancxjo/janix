@@ -3,51 +3,110 @@
 use crate::common::{Result, image_name};
 use xshell::{Shell, cmd};
 
-const DIAGNOSTIC_APPS: &[(&str, &str)] = &[
-];
+use std::path::{Path, PathBuf};
+use walkdir::WalkDir;
 
-fn diagnostic_apps_enabled() -> bool {
-    cfg!(feature = "diagnostic-apps")
+pub struct ProgramConfig {
+    pub name: &'static str,
+    pub is_init: bool,
+    pub features: Vec<&'static str>,
 }
 
-fn write_limine_config(sh: &Shell, dst: &str) -> Result<()> {
-    let mut contents = sh.read_file("limine.conf")?;
-    if diagnostic_apps_enabled() {
-        if !contents.ends_with('\n') {
-            contents.push('\n');
-        }
-        for &(_, module_name) in DIAGNOSTIC_APPS {
-            contents.push_str(&format!(
-                "    module_path: boot():/boot/{}\n",
-                module_name
-            ));
+pub fn default_programs() -> Vec<ProgramConfig> {
+    vec![
+        ProgramConfig { name: "sprout", is_init: false, features: vec!["diagnostic-apps"] },
+        ProgramConfig { name: "bristle", is_init: false, features: vec![] },
+        ProgramConfig { name: "rtc_cmos", is_init: false, features: vec![] },
+        ProgramConfig { name: "clock", is_init: false, features: vec![] },
+        ProgramConfig { name: "ps2_kbd", is_init: false, features: vec![] },
+        ProgramConfig { name: "echo", is_init: false, features: vec![] },
+        ProgramConfig { name: "bloom", is_init: false, features: vec![] },
+        ProgramConfig { name: "ps2_mouse", is_init: false, features: vec![] },
+        ProgramConfig { name: "root_batch_bench", is_init: false, features: vec![] },
+        ProgramConfig { name: "root_watch_tester", is_init: false, features: vec![] },
+    ]
+}
+
+fn generate_limine_config(
+    _sh: &Shell,
+    programs: &[ProgramConfig],
+    assets: &[PathBuf],
+) -> String {
+    let mut conf = String::new();
+    conf.push_str("timeout: 0\nquiet: yes\nverbose: no\nserial: yes\n\n");
+    conf.push_str("/ThingOS\n");
+    conf.push_str("    protocol: limine\n");
+    conf.push_str("    resolution: 1280x720\n");
+    conf.push_str("    kernel_path: boot():/boot/kernel\n");
+
+    for prog in programs {
+        conf.push_str(&format!("    module_path: boot():/boot/{}\n", prog.name));
+        if prog.is_init {
+            conf.push_str("    module_cmdline: init\n");
         }
     }
-    sh.write_file(dst, contents)?;
-    Ok(())
+
+    for asset in assets {
+        // assets/foo/bar.bmp -> /assets/foo/bar.bmp
+        // We need to strip the "assets/" prefix for the boot path if we copy "assets" content into "iso_root/assets"
+        // But scanning WalkDir returns "assets/foo/bar.bmp".
+        // Limine path: boot():/assets/foo/bar.bmp
+        let path_str = asset.to_string_lossy();
+        if !path_str.starts_with("assets/") {
+             continue;
+        }
+        // Ensure path uses forward slashes
+        let clean_path = path_str.replace("\\", "/");
+        conf.push_str(&format!("    module_path: boot():/{}\n", clean_path));
+    }
+    
+    conf
 }
 
 /// Build an ISO image for the target architecture.
-pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
-    let name = image_name(arch);
+pub fn build_iso(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<PathBuf> {
+    let timestamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let name = format!("thing-os-{}-{}", arch, timestamp);
+    
+    // Use a temp dir for iso root? for now "iso_root" is fine but we should clean it well.
+    let iso_root = Path::new("iso_root");
 
-    println!("Building ISO for {}...", arch);
+    println!("Building ISO {}...", name);
 
     // Clean and create iso_root
-    sh.remove_path("iso_root")?;
-    sh.create_dir("iso_root/boot")?;
-    sh.create_dir("iso_root/boot/limine")?;
-    sh.create_dir("iso_root/EFI/BOOT")?;
+    if sh.path_exists(iso_root) {
+        sh.remove_path(iso_root)?;
+    }
+    sh.create_dir(iso_root.join("boot"))?;
+    sh.create_dir(iso_root.join("boot/limine"))?;
+    sh.create_dir(iso_root.join("EFI/BOOT"))?;
 
     // Copy assets
     cmd!(sh, "cp -r assets iso_root/").run()?;
+    
+    // Scan assets for limine config
+    let mut asset_files = Vec::new();
+    for entry in WalkDir::new("assets") {
+        let entry: walkdir::DirEntry = entry?;
+        if entry.file_type().is_file() {
+            let path = entry.path();
+            // Skip icons to avoid Limine memory map exhaustion (too many modules)
+            if path.to_string_lossy().contains("assets/icons") {
+                 continue;
+            }
+            asset_files.push(path.to_path_buf());
+        }
+    }
 
     // Copy kernel
     let kernel_src = format!("bran/bin-{}/kernel", arch);
-    sh.copy_file(&kernel_src, "iso_root/boot/kernel")?;
+    sh.copy_file(&kernel_src, iso_root.join("boot/kernel"))?;
 
-    // Build and copy sprout
-    println!("Building sprout for {}...", arch);
+    // Build and copy userspace programs
+    println!("Building userspace programs...");
 
     // Use absolute path to target JSON file to work around RUST_TARGET_PATH propagation issues
     let cwd = std::env::current_dir().unwrap();
@@ -60,210 +119,124 @@ pub fn build_iso(sh: &Shell, arch: &str) -> Result<()> {
     };
     let target = target_json.to_str().unwrap();
 
-    build_userspace_app_with_features(
-        sh,
-        "sprout",
-        target,
-        "release",
-        diagnostic_apps_enabled(),
-    )?;
-    build_userspace_app_with_features(
-        sh,
-        "bristle",
-        target,
-        "release",
-        diagnostic_apps_enabled(),
-    )?;
-    build_userspace_app(sh, "rtc_cmos", target, "release")?;
-    build_userspace_app(sh, "clock", target, "release")?;
-    build_userspace_app(sh, "ps2_kbd", target, "release")?;
-    build_userspace_app(sh, "echo", target, "release")?;
-    build_userspace_app(sh, "bloom", target, "release")?;
-    build_userspace_app(sh, "ps2_mouse", target, "release")?;
-    build_userspace_app(sh, "virtio_gpu", target, "release")?;
-    build_userspace_app(sh, "display_bootfb", target, "release")?;
-    build_userspace_app(sh, "display_virtio_gpu", target, "release")?;
-    build_userspace_app(sh, "ata_disk", target, "release")?;
-    build_userspace_app(sh, "disk_probe", target, "release")?;
-    build_userspace_app(sh, "ahci_disk", target, "release")?;
-    build_userspace_app(sh, "ingestd", target, "release")?;
-
-    build_userspace_app(sh, "bindd", target, "release")?;
-
-    if diagnostic_apps_enabled() {
-        for &(app, _) in DIAGNOSTIC_APPS {
-            build_userspace_app(sh, app, target, "release")?;
-        }
+    for prog in programs {
+        build_userspace_app_with_features(sh, prog.name, target, "release", &prog.features)?;
+        copy_userspace_binary(sh, prog.name, target, "release", iso_root.join(format!("boot/{}", prog.name)).to_str().unwrap())?;
     }
 
-    // Copy binaries to iso_root
-    copy_userspace_binary(sh, "sprout", target, "release", "iso_root/boot/sprout")?;
-    copy_userspace_binary(sh, "rtc_cmos", target, "release", "iso_root/boot/rtc_cmos")?;
-    copy_userspace_binary(sh, "clock", target, "release", "iso_root/boot/clock")?;
-    copy_userspace_binary(sh, "ps2_kbd", target, "release", "iso_root/boot/ps2_kbd")?;
-    copy_userspace_binary(sh, "bristle", target, "release", "iso_root/boot/bristle")?;
-    copy_userspace_binary(sh, "echo", target, "release", "iso_root/boot/echo")?;
-    copy_userspace_binary(sh, "bloom", target, "release", "iso_root/boot/bloom")?;
-    copy_userspace_binary(
-        sh,
-        "ps2_mouse",
-        target,
-        "release",
-        "iso_root/boot/ps2_mouse",
-    )?;
-    copy_userspace_binary(
-        sh,
-        "virtio_gpu",
-        target,
-        "release",
-        "iso_root/boot/virtio_gpu",
-    )?;
-    copy_userspace_binary(
-        sh,
-        "display_bootfb",
-        target,
-        "release",
-        "iso_root/boot/display_bootfb",
-    )?;
-    copy_userspace_binary(
-        sh,
-        "display_virtio_gpu",
-        target,
-        "release",
-        "iso_root/boot/display_virtio_gpu",
-    )?;
-    copy_userspace_binary(
-        sh,
-        "ata_disk",
-        target,
-        "release",
-        "iso_root/boot/ata_disk",
-    )?;
-    copy_userspace_binary(
-        sh,
-        "disk_probe",
-        target,
-        "release",
-        "iso_root/boot/disk_probe",
-    )?;
-    copy_userspace_binary(
-        sh,
-        "ahci_disk",
-        target,
-        "release",
-        "iso_root/boot/ahci_disk",
-    )?;
-    copy_userspace_binary(
-        sh,
-        "ingestd",
-        target,
-        "release",
-        "iso_root/boot/ingestd",
-    )?;
-
-    copy_userspace_binary(sh, "bindd", target, "release", "iso_root/boot/bindd")?;
-
-    if diagnostic_apps_enabled() {
-        for &(app, module_name) in DIAGNOSTIC_APPS {
-            let dst = format!("iso_root/boot/{}", module_name);
-            copy_userspace_binary(sh, app, target, "release", &dst)?;
-        }
-    }
-
-    // Copy limine config
-    write_limine_config(sh, "iso_root/boot/limine/limine.conf")?;
+    // Generate and write limine.conf
+    let limine_conf_content = generate_limine_config(sh, programs, &asset_files);
+    sh.write_file(iso_root.join("boot/limine/limine.conf"), limine_conf_content)?;
 
     match arch {
         "x86_64" => {
             sh.copy_file(
                 "vendor/limine/limine-bios.sys",
-                "iso_root/boot/limine/limine-bios.sys",
+                iso_root.join("boot/limine/limine-bios.sys"),
             )?;
             sh.copy_file(
                 "vendor/limine/limine-bios-cd.bin",
-                "iso_root/boot/limine/limine-bios-cd.bin",
+                iso_root.join("boot/limine/limine-bios-cd.bin"),
             )?;
             sh.copy_file(
                 "vendor/limine/limine-uefi-cd.bin",
-                "iso_root/boot/limine/limine-uefi-cd.bin",
+                iso_root.join("boot/limine/limine-uefi-cd.bin"),
             )?;
-            sh.copy_file("vendor/limine/BOOTX64.EFI", "iso_root/EFI/BOOT/BOOTX64.EFI")?;
+            sh.copy_file("vendor/limine/BOOTX64.EFI", iso_root.join("EFI/BOOT/BOOTX64.EFI"))?;
             sh.copy_file(
                 "vendor/limine/BOOTIA32.EFI",
-                "iso_root/EFI/BOOT/BOOTIA32.EFI",
+                iso_root.join("EFI/BOOT/BOOTIA32.EFI"),
             )?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
             cmd!(sh, "./vendor/limine/limine bios-install {iso}").run()?;
+            
+            sh.remove_path("iso_root")?;
+            println!("ISO created: {}", iso);
+            Ok(PathBuf::from(iso))
         }
         "aarch64" => {
             sh.copy_file(
                 "vendor/limine/limine-uefi-cd.bin",
-                "iso_root/boot/limine/limine-uefi-cd.bin",
+                iso_root.join("boot/limine/limine-uefi-cd.bin"),
             )?;
             sh.copy_file(
                 "vendor/limine/BOOTAA64.EFI",
-                "iso_root/EFI/BOOT/BOOTAA64.EFI",
+                iso_root.join("EFI/BOOT/BOOTAA64.EFI"),
             )?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
+            
+            sh.remove_path("iso_root")?;
+            println!("ISO created: {}", iso);
+            Ok(PathBuf::from(iso))
         }
         "riscv64" => {
-            let efi_img = "iso_root/boot/limine/limine-uefi-riscv64.bin";
+            let efi_img = iso_root.join("boot/limine/limine-uefi-riscv64.bin");
+            let efi_img_str = efi_img.to_str().unwrap();
             cmd!(
                 sh,
-                "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none"
+                "dd if=/dev/zero of={efi_img_str} bs=1K count=2880 status=none"
             )
             .run()?;
-            cmd!(sh, "mformat -i {efi_img} -f 2880 ::").run()?;
-            cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
+            cmd!(sh, "mformat -i {efi_img_str} -f 2880 ::").run()?;
+            cmd!(sh, "mmd -i {efi_img_str} ::/EFI ::/EFI/BOOT").run()?;
             cmd!(
                 sh,
-                "mcopy -i {efi_img} vendor/limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI"
+                "mcopy -i {efi_img_str} vendor/limine/BOOTRISCV64.EFI ::/EFI/BOOT/BOOTRISCV64.EFI"
             )
             .run()?;
-            sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTRISCV64.EFI\n")?;
-            cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
+            sh.write_file(iso_root.join("startup.nsh"), "\\EFI\\BOOT\\BOOTRISCV64.EFI\n")?;
+            let startup_nsh = iso_root.join("startup.nsh");
+            let startup_nsh_str = startup_nsh.to_str().unwrap();
+            cmd!(sh, "mcopy -i {efi_img_str} {startup_nsh_str} ::").run()?;
             sh.copy_file(
                 "vendor/limine/BOOTRISCV64.EFI",
-                "iso_root/EFI/BOOT/BOOTRISCV64.EFI",
+                iso_root.join("EFI/BOOT/BOOTRISCV64.EFI"),
             )?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-riscv64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
+            
+            sh.remove_path("iso_root")?;
+            println!("ISO created: {}", iso);
+            Ok(PathBuf::from(iso))
         }
         "loongarch64" => {
-            let efi_img = "iso_root/boot/limine/limine-uefi-loongarch64.bin";
+            let efi_img = iso_root.join("boot/limine/limine-uefi-loongarch64.bin");
+            let efi_img_str = efi_img.to_str().unwrap();
             cmd!(
                 sh,
-                "dd if=/dev/zero of={efi_img} bs=1K count=2880 status=none"
+                "dd if=/dev/zero of={efi_img_str} bs=1K count=2880 status=none"
             )
             .run()?;
-            cmd!(sh, "mformat -i {efi_img} -f 2880 ::").run()?;
-            cmd!(sh, "mmd -i {efi_img} ::/EFI ::/EFI/BOOT").run()?;
+            cmd!(sh, "mformat -i {efi_img_str} -f 2880 ::").run()?;
+            cmd!(sh, "mmd -i {efi_img_str} ::/EFI ::/EFI/BOOT").run()?;
             cmd!(
                 sh,
-                "mcopy -i {efi_img} vendor/limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI"
+                "mcopy -i {efi_img_str} vendor/limine/BOOTLOONGARCH64.EFI ::/EFI/BOOT/BOOTLOONGARCH64.EFI"
             )
             .run()?;
-            sh.write_file("iso_root/startup.nsh", "\\EFI\\BOOT\\BOOTLOONGARCH64.EFI\n")?;
-            cmd!(sh, "mcopy -i {efi_img} iso_root/startup.nsh ::").run()?;
+            sh.write_file(iso_root.join("startup.nsh"), "\\EFI\\BOOT\\BOOTLOONGARCH64.EFI\n")?;
+            let startup_nsh = iso_root.join("startup.nsh");
+            let startup_nsh_str = startup_nsh.to_str().unwrap();
+            cmd!(sh, "mcopy -i {efi_img_str} {startup_nsh_str} ::").run()?;
             sh.copy_file(
                 "vendor/limine/BOOTLOONGARCH64.EFI",
-                "iso_root/EFI/BOOT/BOOTLOONGARCH64.EFI",
+                iso_root.join("EFI/BOOT/BOOTLOONGARCH64.EFI"),
             )?;
 
             let iso = format!("{}.iso", name);
             cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-loongarch64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso}").run()?;
+            
+            sh.remove_path("iso_root")?;
+            println!("ISO created: {}", iso);
+            Ok(PathBuf::from(iso))
         }
         _ => return Err(format!("Unsupported architecture: {}", arch).into()),
     }
-
-    sh.remove_path("iso_root")?;
-    println!("ISO created: {}.iso", name);
-    Ok(())
 }
 
 /// Build a userspace application
@@ -282,16 +255,19 @@ fn build_userspace_app_with_features(
     name: &str,
     target: &str,
     profile: &str,
-    enable_diagnostics: bool,
+    features: &[&str],
 ) -> Result<()> {
     println!("Building {} ...", name);
+    
     let mut cmd = cmd!(
         sh,
         "cargo build --target {target} --profile {profile} -p {name} -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
     );
-    if enable_diagnostics {
-        cmd = cmd.arg("--features").arg("diagnostic-apps");
+    
+    for f in features {
+         cmd = cmd.arg("--features").arg(f);
     }
+
     cmd.run()?;
     Ok(())
 }
@@ -318,7 +294,7 @@ fn copy_userspace_binary(
 }
 
 /// Build an HDD image for the target architecture.
-pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
+pub fn build_hdd(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<PathBuf> {
     let name = image_name(arch);
     let hdd = format!("{}.hdd", name);
 
@@ -341,11 +317,29 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
 
     // Copy assets
     cmd!(sh, "mcopy -i {hdd}@@1M -s assets ::").run()?;
+    
+    // Scan assets for limine config
+    let mut asset_files = Vec::new();
+    for entry in WalkDir::new("assets") {
+        let entry: walkdir::DirEntry = entry?;
+        if entry.file_type().is_file() {
+            let path = entry.path();
+             // Skip icons to avoid Limine memory map exhaustion (too many modules)
+            if path.to_string_lossy().contains("assets/icons") {
+                 continue;
+            }
+            asset_files.push(path.to_path_buf());
+        }
+    }
 
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     cmd!(sh, "mcopy -i {hdd}@@1M {kernel_src} ::/boot").run()?;
+    
+    // Generate Limine config
+    let limine_conf_content = generate_limine_config(sh, programs, &asset_files);
     let limine_cfg = "limine.generated.conf";
-    write_limine_config(sh, limine_cfg)?;
+    sh.write_file(limine_cfg, limine_conf_content)?;
+    
     cmd!(sh, "mcopy -i {hdd}@@1M {limine_cfg} ::/boot/limine/limine.conf").run()?;
     sh.remove_path(limine_cfg)?;
 
@@ -376,5 +370,5 @@ pub fn build_hdd(sh: &Shell, arch: &str) -> Result<()> {
     }
 
     println!("HDD image created: {}", hdd);
-    Ok(())
+    Ok(PathBuf::from(hdd))
 }

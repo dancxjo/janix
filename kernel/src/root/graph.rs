@@ -2,6 +2,9 @@ use super::resources::ResourceHandle;
 use abi::symbols::SymbolId;
 use alloc::collections::BTreeMap;
 
+use core::sync::atomic::AtomicU64;
+use alloc::collections::VecDeque;
+
 pub type ThingId = u64;
 
 pub struct Node {
@@ -13,18 +16,33 @@ pub struct Node {
     pub edges: alloc::vec::Vec<(SymbolId, ThingId)>,
 }
 
+pub struct Commit {
+    pub seq: u64,
+    pub data: alloc::vec::Vec<u8>,
+}
+
 pub struct GlobalWatch {
     pub id: u64,
-    pub spec_ptr: u64, // We store the pointer to user query for now? Or parse it? 
-                       // For v0, let's store the raw constraints if possible, or just the stream handle.
+    pub spec_ptr: u64, // We store the pointer to user query for now
     pub stream_handle: ResourceHandle, 
     pub kind_filter: SymbolId, // "kind == Bytespace"
     pub missing_fact: SymbolId, // "missing fact(detector=...)"
+    
+    // Batching support
+    pub next_seq: u64,
+    pub pending: VecDeque<Commit>,
+    pub pending_bytes: usize,
+    pub overflowed: bool,
 }
+
+// Limits
+pub const MAX_PENDING_COMMITS: usize = 256;
+pub const MAX_PENDING_BYTES: usize = 8 * 1024 * 1024; // 8 MiB
 
 pub struct Graph {
     pub nodes: BTreeMap<ThingId, Node>,
     pub next_id: ThingId,
+    pub root_seq: AtomicU64,
     pub kind_index: BTreeMap<SymbolId, alloc::vec::Vec<ThingId>>,
     pub global_watches: BTreeMap<u64, GlobalWatch>,
 }
@@ -34,6 +52,7 @@ impl Graph {
         Self {
             nodes: BTreeMap::new(),
             next_id: 1,
+            root_seq: AtomicU64::new(0),
             kind_index: BTreeMap::new(),
             global_watches: BTreeMap::new(),
         }

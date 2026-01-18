@@ -5,6 +5,7 @@ use stem::thing::ThingId;
 use stem::thing::sys::{prop_get, get_kind};
 use abi::schema::{keys, rels};
 use abi::symbols::SymbolId;
+use abi::ids::HandleId;
 use alloc::string::String;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -142,13 +143,15 @@ impl UiSnapshot {
 
         // Query children via edges
         let mut children = Vec::new();
-        let mut edges_buf = [abi::types::GraphEdge::default(); 64];
+        let mut edges_buf = [abi::types::Edge::default(); 64];
         if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
             for edge in &edges_buf[..count] {
                 // Check if (id)-[:HAS_CHILD]->(child)
-                // edge.rel corresponds to the relationship ID
-                if edge.rel == keys.has_child as u64 && edge.target != id.0 {
-                    children.push(ThingId(edge.target));
+                let rel_u64 = edge.predicate.to_u64_lossy();
+                let target_u64 = edge.to.to_u64_lossy();
+                
+                if rel_u64 == keys.has_child as u64 && target_u64 != id.to_u64_lossy() {
+                    children.push(edge.to);
                 }
             }
         }
@@ -190,7 +193,7 @@ impl UiSnapshot {
                 if key_id == keys.text || key_id == keys.font || key_id == keys.title {
                     if val != 0 {
                         let mut s_buf = [0u8; 1024];
-                        if let Ok(len) = stem::thing::sys::bytespace_read(ThingId(val), 0, &mut s_buf) {
+                        if let Ok(len) = stem::thing::sys::bytespace_read(ThingId::from_u64(val), 0, &mut s_buf) {
                             let s = String::from(core::str::from_utf8(&s_buf[..len]).unwrap_or_default());
                             strings.insert(key_id, s);
                         }

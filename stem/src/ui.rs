@@ -1,5 +1,6 @@
 use crate::thing::ThingId;
 use crate::thing::sys::{create_node, prop_set, link, bytespace_create, bytespace_write};
+use abi::ids::HandleId;
 use abi::schema::{kinds, keys, rels};
 
 pub struct UiBuilder;
@@ -7,7 +8,7 @@ pub struct UiBuilder;
 impl UiBuilder {
     pub fn create_root() -> ThingId {
         let id = create_node(kinds::UI_ROOT).expect("create UI_ROOT");
-        crate::info!("UiBuilder: created root {}", id.0);
+        crate::info!("UiBuilder: created root {}", id.to_u64_lossy());
         id
     }
 
@@ -60,6 +61,6 @@ impl UiBuilder {
         }
         let bs_id = bytespace_create(value.len(), 0, 0).expect("create bytespace");
         bytespace_write(bs_id, 0, value.as_bytes()).ok();
-        prop_set(id, key_name, bs_id.0).ok();
+        prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
     }
 }

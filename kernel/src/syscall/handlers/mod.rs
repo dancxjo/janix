@@ -42,11 +42,11 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
             #[cfg(feature = "diagnostic-apps")]
             crate::ktrace!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
 
-            return if status == 0 {
-                Ok(value as usize)
+            if status == 0 {
+                return Ok(value as usize);
             } else {
-                Err(Errno::EIO)
-            };
+                return abi::errors::errno(status as isize);
+            }
         }
         unsafe {
             crate::task::scheduler::yield_now_current();

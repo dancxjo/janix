@@ -26,6 +26,7 @@ mod surface;
 pub mod ui;
 
 use abi::display_driver_protocol::BindPayload;
+use abi::ids::HandleId;
 use stem::syscall::PortHandle;
 
 use crate::asset::AssetType;
@@ -106,6 +107,7 @@ extern "C" fn font_loader_entry() -> ! {
         mode: WatchMode::QueryThenStream as u32,
         query_ptr: steps.as_ptr() as u64,
         query_len: steps.len() as u64,
+        start_seq: 0,
     };
 
     let watch_id = match syscall::root_watch_open(&spec) {
@@ -125,7 +127,7 @@ extern "C" fn font_loader_entry() -> ! {
     loop {
         match syscall::root_watch_next(watch_id, &mut evt) {
             Ok(1) => {
-                let node_id = ThingId(evt.node_id);
+                let node_id = ThingId::from_u64(evt.node_id);
                 let mut buf = [0u8; 512];
                 if let Ok(len) = describe_thing(node_id, &mut buf) {
                     let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
@@ -135,13 +137,13 @@ extern "C" fn font_loader_entry() -> ! {
                             || desc.contains(".ttc\""))
                     {
                         log!("[font_loader] found font candidate: '{}'", desc);
-                        let bs_id = prop_get(node_id, "bytespace").map(ThingId).ok();
+                        let bs_id = prop_get(node_id, "bytespace").map(ThingId::from_u64).ok();
                         let size = bs_id.and_then(|id| bytespace_info(id).ok());
 
                         if let (Some(bs), Some(sz)) = (bs_id, size) {
                             log!(
                                 "[font_loader] enqueuing font load: bs={} size={} name='{}'",
-                                bs.0,
+                                bs.to_u64_lossy(),
                                 sz,
                                 desc
                             );
@@ -216,7 +218,7 @@ fn main(arg: usize) -> ! {
     // Try to map arg as Bytespace
     use stem::thing::sys::{bytespace_map, bytespace_unmap};
     use stem::thing::ThingId;
-    let bs_id = ThingId(arg_val as u64);
+    let bs_id = ThingId::from_u64(arg_val as u64);
 
     let mapped = bytespace_map(bs_id);
 
@@ -352,7 +354,7 @@ fn main(arg: usize) -> ! {
         let mut driver = DriverPresenter::new(target.driver_req, target.driver_resp);
 
         let bind = BindPayload {
-            bytespace_id: target.bs_id.0,
+            bytespace_id: target.bs_id.to_u64_lossy(),
             width: target.width,
             height: target.height,
             stride: target.stride_bytes,

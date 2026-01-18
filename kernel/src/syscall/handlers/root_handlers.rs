@@ -7,6 +7,7 @@ use abi::errors::{Errno, SysResult};
 use alloc::string::String;
 use core::sync::atomic::Ordering;
 
+
 pub fn sys_root_get_kind(id: usize) -> SysResult<usize> {
     root_call(RootOp::GetKind { id: id as u64 })
 }
@@ -94,7 +95,7 @@ pub fn sys_root_find(ptr_kind: usize, ptr_buf: usize, len: usize) -> SysResult<u
 
     let count = root_call(msg)?;
 
-    let bytes_to_copy = core::cmp::min(count * 8, len);
+    let bytes_to_copy = core::cmp::min(count * 16, len);
     unsafe {
         copyout(ptr_buf, &kbuf[..bytes_to_copy])?;
     }
@@ -288,8 +289,8 @@ pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<us
     
     // Allocate a temporary kernel buffer to receive the edges
     // Must be large enough to hold some edges, but not too large for stack
-    // GraphEdge is 16 bytes.
-    let mut kbuf = [0u8; 4096]; // 256 edges max per batch
+    // GraphEdge is now abi::types::Edge (52 bytes).
+    let mut kbuf = [0u8; 4096]; // ~78 edges max per batch
     let kbuf_len = core::cmp::min(len, kbuf.len());
     
     let reply = root_svc::enqueue(RootOp::GetEdges {
@@ -304,7 +305,8 @@ pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<us
             let status = reply.status.load(Ordering::Relaxed);
             let written = reply.value.load(Ordering::Relaxed) as usize;
             if status == 0 {
-                let bytes_to_copy = core::cmp::min(written * 16, len);
+                let edge_size = core::mem::size_of::<abi::types::Edge>();
+                let bytes_to_copy = core::cmp::min(written * edge_size, len);
                 unsafe {
                     copyout(out_ptr, &kbuf[..bytes_to_copy])?;
                 }
@@ -591,18 +593,22 @@ pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
 }
 
 }
+   use crate::kinfo;
 
 pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     use abi::types::WatchSpec;
     use abi::query::QueryStep;
     use crate::root::query::PreparedStep;
 
-    let mut spec = WatchSpec { query_ptr: 0, query_len: 0, mode: 0 };
+    kinfo!("sys_root_watch_open: ptr={:#x}", spec_ptr);
+    let mut spec = WatchSpec { query_ptr: 0, query_len: 0, mode: 0, start_seq: 0 };
     let spec_slice = unsafe { 
         core::slice::from_raw_parts_mut(&mut spec as *mut _ as *mut u8, core::mem::size_of::<WatchSpec>()) 
     };
+    kinfo!("sys_root_watch_open: validating range len={}", spec_slice.len());
     validate_user_range(spec_ptr, spec_slice.len(), false)?;
     unsafe { copyin(spec_slice, spec_ptr)? };
+    kinfo!("sys_root_watch_open: copyin success. mode={} start_seq={}", spec.mode, spec.start_seq);
 
     let plan_ptr = spec.query_ptr as usize;
     let plan_len = spec.query_len as usize;
@@ -612,7 +618,9 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     if plan_len > 8 {
         return Err(Errno::EINVAL);
     }
-    validate_user_range(plan_ptr, total_plan_bytes, false)?;
+    if plan_len > 0 {
+        validate_user_range(plan_ptr, total_plan_bytes, false)?;
+    }
 
     let mut steps = alloc::vec::Vec::with_capacity(plan_len);
     for i in 0..plan_len {
@@ -653,54 +661,84 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
 
     let msg = RootOp::WatchOpen {
         mode: spec.mode,
+        start_seq: spec.start_seq,
         query: steps,
     };
     root_call(msg)
 }
 
-pub fn sys_root_watch_next(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
-    use abi::types::WatchEvent;
-    
-    let evt_size = core::mem::size_of::<WatchEvent>();
-    if len < evt_size {
-        return Err(Errno::EINVAL);
-    }
-    validate_user_range(out_ptr, evt_size, true)?;
+pub fn sys_root_watch_next(id: usize, out_seq_ptr: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, len, true)?;
+    validate_user_range(out_seq_ptr, 8, true)?;
 
-    let reply = root_svc::enqueue(RootOp::WatchNext { id: id as u64 });
+    let mut kbuf = [0u8; 2048]; // Max batch size to read at once?
+    let kbuf_len = core::cmp::min(len, kbuf.len());
+
+    let reply = root_svc::enqueue(RootOp::WatchNext { 
+        id: id as u64,
+        out_seq_ptr: 0, // Unused
+        out_ptr: kbuf.as_mut_ptr() as u64,
+        out_len: kbuf_len as u64,
+    });
 
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
             let status = reply.status.load(Ordering::Relaxed);
-            let count = reply.value.load(Ordering::Relaxed);
             
-            if status == 0 && count > 0 {
-                let p0 = reply.p0.load(Ordering::Relaxed); // Target
-                let p1 = reply.p1.load(Ordering::Relaxed); // Kind/Key
-                let p2 = reply.p2.load(Ordering::Relaxed); // Value
+            if status >= 0 {
+                let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
+                let seq = reply.p0.load(Ordering::Relaxed);
 
-                // Construct WatchEvent
-                // We map p1 to kind? p0 to node_id? 
-                // In handle_watch_open implementation:
-                // target: node_id
-                // key: 1 (MatchFound)
-                // value: 0 (handle)
-                
-                let evt = WatchEvent {
-                    kind: p1 as u32,
-                    node_id: p0,
-                    handle: p2,
-                    size: 0, // Not populated yet
-                };
-                
-                let src = unsafe { 
-                    core::slice::from_raw_parts(&evt as *const _ as *const u8, evt_size) 
-                };
-                unsafe { copyout(out_ptr, src)? };
-                return Ok(1);
+                if status == 0 {
+                    // Copy data
+                    unsafe {
+                        copyout(out_ptr, &kbuf[..bytes_read])?;
+                        // Copy seq
+                        let seq_slice = core::slice::from_raw_parts(&seq as *const u64 as *const u8, 8);
+                        copyout(out_seq_ptr, seq_slice)?;
+                    }
+                    return Ok(bytes_read);
+                }
+                return Ok(bytes_read);
             } else {
-                return Ok(0);
+                 match status {
+                    -75 => return Err(Errno::EOVERFLOW),
+                    -28 => return Err(Errno::ENOSPC),
+                    -11 => return Err(Errno::EAGAIN),
+                    _ => return Err(Errno::EIO),
+                }
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}
+
+pub fn sys_root_apply_batch(ptr: usize, len: usize) -> SysResult<usize> {
+    validate_user_range(ptr, len, false)?;
+    
+    // Validated above
+    let mut batch = alloc::vec::Vec::with_capacity(len);
+    unsafe {
+        batch.set_len(len);
+        copyin(&mut batch, ptr)?;
+    }
+
+    let reply = root_svc::enqueue(RootOp::ApplyBatch {
+        batch,
+    });
+
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let val = reply.value.load(Ordering::Relaxed);
+            if status == 0 {
+                return Ok(val as usize); // Returns seq
+            } else {
+                return Err(Errno::EINVAL);
             }
         }
         unsafe {

@@ -49,12 +49,29 @@ pub enum Errno {
     EDOM = 33,
     ERANGE = 34,
     ENOSYS = 38,
+    EOVERFLOW = 75,
+    ENOBUFS = 105,
     // Add more as needed, following Linux numbers usually helps debugging
 
     // Custom/Extension
 }
 
-pub type SysResult<T> = Result<T, Errno>;
+pub type SysResult<T> = core::result::Result<T, Errno>;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Error {
+    Errno(Errno),
+    BufferTooSmall { required: usize, available: usize },
+    InvalidDataLength { expected: usize, actual: usize },
+}
+
+impl From<Errno> for Error {
+    fn from(e: Errno) -> Self {
+        Error::Errno(e)
+    }
+}
+
+pub type Result<T> = core::result::Result<T, Error>;
 
 impl Errno {
     #[allow(non_upper_case_globals)]
@@ -64,7 +81,7 @@ impl Errno {
     }
 }
 
-pub fn errno(ret: isize) -> Result<usize, Errno> {
+pub fn errno(ret: isize) -> core::result::Result<usize, Errno> {
     if ret < 0 && ret >= -4096 {
         // This is a rough mapping back, optimizing for common case
         // In a real impl we'd match every value.

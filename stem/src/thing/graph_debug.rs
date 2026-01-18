@@ -22,10 +22,11 @@ impl fmt::Display for DebugEdge {
                 f.write_str(s)
             }
             Err(_) => {
+                use abi::ids::HandleId;
                 write!(
                     f,
                     "(t{:x})-[:{:x}]->(t{:x})",
-                    self.src.0, self.rel, self.dst.0
+                    self.src.to_u64_lossy(), self.rel, self.dst.to_u64_lossy()
                 )
             }
         }

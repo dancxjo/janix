@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 use stem::syscall::{port_create, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
+use abi::ids::HandleId;
 use stem::{info, warn};
 
 pub struct DisplayHandles {
@@ -29,7 +30,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     // For now, prefer BootFB which works reliably.
     
     // Check for boot framebuffer first (reliable)
-    let mut fb_buf = [ThingId(0); 1];
+    let mut fb_buf = [ThingId::default(); 1];
     if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
         if count > 0 {
             let fb = fb_buf[0];
@@ -46,7 +47,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
 
     // If no BootFB, try VirtIO GPU (stub implementation)
     if driver_name.is_none() {
-        let mut gpu_buf = [ThingId(0); 1];
+        let mut gpu_buf = [ThingId::default(); 1];
         if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
             if count > 0 {
                 display_device = Some(gpu_buf[0]);
@@ -292,9 +293,9 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     // 24: font_resp (read) -> font_resp.1
     
     let boot_size = 4096;
-    let boot_bs = thingsys::bytespace_create(boot_size, 0, 0).unwrap_or(ThingId(0));
+    let boot_bs = thingsys::bytespace_create(boot_size, 0, 0).unwrap_or(ThingId::default());
     
-    if boot_bs.0 != 0 {
+    if boot_bs.to_u64_lossy() != 0 {
          use stem::thing::sys::{bytespace_map, bytespace_unmap};
          if let Ok(ptr) = bytespace_map(boot_bs) {
               let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
@@ -312,12 +313,12 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
          }
     }
     
-    let bloom_arg = boot_bs.0 as usize;
+    let bloom_arg = boot_bs.to_u64_lossy() as usize;
     
     let backend_info = display.as_ref().map(|d| d.backend_name).unwrap_or("none");
     info!(
         "SPROUT: Bloom handles via BS={} backend={}",
-        boot_bs.0, backend_info
+        boot_bs.to_u64_lossy(), backend_info
     );
 
     // Spawn bloom

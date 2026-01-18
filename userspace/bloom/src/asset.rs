@@ -3,6 +3,7 @@ extern crate alloc;
 use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use abi::ids::HandleId;
 use stem::thing::ThingId;
 use stem::{info, thread, warn};
 
@@ -796,7 +797,7 @@ impl AssetBank {
             return None;
         }
 
-        let mut modules = [ThingId(0); 64];
+        let mut modules = [ThingId::default(); 64];
         let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
 
         for i in 0..count {
@@ -831,7 +832,7 @@ impl AssetBank {
             }
 
             let bs_id = match prop_get(mod_id, "bytespace") {
-                Ok(id) => ThingId(id),
+                Ok(id) => ThingId::from_u64(id),
                 Err(_) => continue,
             };
 
@@ -850,7 +851,7 @@ impl AssetBank {
         info!("[asset_bank] load_wallpaper_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
 
-        info!("[asset_bank] mapping bytespace {} ({} bytes)", id.0, size);
+        info!("[asset_bank] mapping bytespace {} ({} bytes)", id.to_u64_lossy(), size);
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
         info!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
@@ -879,7 +880,7 @@ impl AssetBank {
         info!("[asset_bank] load_cursor_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
 
-        info!("[asset_bank] mapping bytespace {} ({} bytes)", id.0, size);
+        info!("[asset_bank] mapping bytespace {} ({} bytes)", id.to_u64_lossy(), size);
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
         info!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
@@ -963,10 +964,11 @@ impl AssetBank {
         Self::load_font_immediate(id, size, display_name)
     }
 
+
     pub fn load_font_immediate(id: ThingId, size: usize, display_name: &str) -> Option<FontAsset> {
         info!(
             "[asset_bank] mapping font bytespace {} ({} bytes)",
-            id.0, size
+            id.to_u64_lossy(), size
         );
         let ptr = match stem::thing::sys::bytespace_map(id) {
             Ok(p) => p,

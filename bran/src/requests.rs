@@ -21,6 +21,7 @@ pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
 static mut MODULES_CACHE: [BootModuleDesc; 32] = [BootModuleDesc {
     name: "",
+    cmdline: "",
     bytes: &[],
     phys_start: 0,
     phys_end: 0,
@@ -38,8 +39,10 @@ pub fn get_modules() -> &'static [BootModuleDesc] {
                 for i in 0..count {
                     let file = files[i];
 
+
                     // Name
                     let name = file.path().to_str().unwrap_or("unknown");
+                    let cmdline = core::str::from_utf8(file.cmdline()).unwrap_or("");
 
                     // Data
                     let ptr = file.addr();
@@ -57,6 +60,7 @@ pub fn get_modules() -> &'static [BootModuleDesc] {
 
                     MODULES_CACHE[i] = BootModuleDesc {
                         name,
+                        cmdline,
                         bytes,
                         phys_start,
                         phys_end: phys_start + len as u64,

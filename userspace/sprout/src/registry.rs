@@ -4,6 +4,7 @@ use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
+use abi::ids::HandleId;
 use stem::info;
 
 pub struct Registry {
@@ -19,7 +20,7 @@ impl Registry {
 
     pub fn scan(&mut self) {
         info!("SPROUT: Scanning boot modules...");
-        let mut modules = [ThingId(0); 32];
+        let mut modules = [ThingId::default(); 32];
         let count = thingsys::find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
         for i in 0..count {
             self.scan_module(modules[i]);
@@ -46,7 +47,7 @@ impl Registry {
             return;
         }
 
-        let mut bs_id = ThingId(0);
+        let mut bs_id = ThingId::default();
         if let Ok(len) = thingsys::dump_edges(mod_id, &mut buf) {
             let s = core::str::from_utf8(&buf[..len]).unwrap_or("");
             for line in s.lines() {
@@ -57,7 +58,7 @@ impl Registry {
                             if let Some(colon) = rest.find(':') {
                                 let hex_id = &rest[1..colon];
                                 if let Ok(id_val) = u64::from_str_radix(hex_id, 16) {
-                                    bs_id = ThingId(id_val);
+                                    bs_id = ThingId::from_u64(id_val);
                                 }
                             }
                         }
@@ -67,7 +68,7 @@ impl Registry {
         }
 
         let mut registered = false;
-        if bs_id.0 != 0 {
+        if bs_id.to_u64_lossy() != 0 {
             if let Some(header) = self.read_manifest(bs_id) {
                 if let ModuleKind::Driver = header.kind {
                     let raw = &header.device_kind;

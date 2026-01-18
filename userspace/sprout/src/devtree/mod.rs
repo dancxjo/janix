@@ -3,7 +3,9 @@ pub mod loongarch64;
 pub mod riscv64;
 pub mod x86_64;
 
-use stem::thing::{sys as thingsys, ThingId};
+use stem::thing::sys as thingsys;
+use stem::thing::ThingId;
+use abi::ids::HandleId;
 // use alloc::vec::Vec;
 use abi::schema::{confidence, keys, kinds, rels, source};
 use alloc::vec;
@@ -30,7 +32,7 @@ pub fn init() -> Result<DevTreeCtx, ()> {
 
     // 1. Find Host
     info!("SPROUT: Step 1: Find Host");
-    let mut hosts = [ThingId(0); 1];
+    let mut hosts = [ThingId::default(); 1];
     // Cast u64 -> usize is implicit in find logic or needed?
     // root::find syscall takes SymbolShell. kinds::DEV_HOST is &str. fits.
     let count = thingsys::find(kinds::DEV_HOST, &mut hosts).map_err(|e| {
@@ -52,7 +54,7 @@ pub fn init() -> Result<DevTreeCtx, ()> {
 
     // 3. Find/Create Platform Bus
     info!("SPROUT: Step 3: Platform Bus");
-    let mut buses = [ThingId(0); 1];
+    let mut buses = [ThingId::default(); 1];
     let bcount = thingsys::find(kinds::DEV_BUS_PLATFORM, &mut buses).unwrap_or(0);
     let platform_bus = if bcount > 0 {
         buses[0]
@@ -74,7 +76,7 @@ pub fn init() -> Result<DevTreeCtx, ()> {
     let mut dtb_bytespace = None;
     let mut dtb_node_id = None;
 
-    let mut fw_buf = [ThingId(0); 4];
+    let mut fw_buf = [ThingId::default(); 4];
 
     info!("SPROUT: Finding ACPI...");
     if let Ok(count) = thingsys::find(kinds::FW_TABLE_ACPI, &mut fw_buf) {
@@ -99,7 +101,7 @@ pub fn init() -> Result<DevTreeCtx, ()> {
                 info!("SPROUT: DTB PHYS = 0x{:x}", val);
             }
             if let Ok(val) = thingsys::prop_get(fw_buf[0], "bytespace") {
-                dtb_bytespace = Some(ThingId(val));
+                dtb_bytespace = Some(ThingId::from_u64(val));
                 info!("SPROUT: DTB Bytespace ID = {}", val);
             }
         }
@@ -123,7 +125,7 @@ pub fn build(ctx: &DevTreeCtx) -> Result<(), ()> {
     info!("SPROUT: build() called");
     // Attempt DTB parsing if available
     if let Some(bs_id) = ctx.dtb_bytespace {
-        info!("SPROUT: Found DTB bytespace {}, parsing...", bs_id.0);
+        info!("SPROUT: Found DTB bytespace {}, parsing...", bs_id.to_u64_lossy());
         let mut header = [0u8; 8];
         if let Ok(_) = thingsys::bytespace_read(bs_id, 0, &mut header) {
             let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);

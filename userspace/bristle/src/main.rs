@@ -22,12 +22,13 @@ use stem::syscall::{port_recv, port_send, port_wait, PortHandle};
 use stem::syscall::{port_create, spawn_process};
 use stem::thing::sys as thingsys;
 use thigmonasty::{KeyEdge, KeyboardState};
+use abi::ids::HandleId;
 
 /// Register Bristle in the Root graph
 fn register_in_graph() {
     match thingsys::create_node(abi::schema::hid::SVC_INPUT) {
         Ok(node_id) => {
-            info!("bristle: registered in graph as svc.Input (id={})", node_id.0);
+            info!("bristle: registered in graph as svc.Input (id={})", node_id.to_u64_lossy());
         }
         Err(e) => {
             info!("bristle: failed to register in graph: {:?}", e);

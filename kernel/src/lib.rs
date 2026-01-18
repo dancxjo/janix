@@ -79,6 +79,7 @@ pub enum PhysRangeKind {
 #[derive(Clone, Copy, Debug)]
 pub struct BootModuleDesc {
     pub name: &'static str,
+    pub cmdline: &'static str,
     pub bytes: &'static [u8],
     pub phys_start: u64,
     pub phys_end: u64,
@@ -412,10 +413,13 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         inventory.root
     );
     let modules = runtime.modules();
-    let sprout = modules.iter().find(|m| m.name.contains("sprout"));
 
-    if let Some(mod_desc) = sprout {
-        kinfo!("Found sprout module, loading...");
+    // Look for module with "init" in cmdline, otherwise fallback to "sprout" by name
+    let init_module = modules.iter().find(|m| m.cmdline.contains("init"))
+        .or_else(|| modules.iter().find(|m| m.name.contains("sprout")));
+
+    if let Some(mod_desc) = init_module {
+        kinfo!("Found init module: {} (cmdline: '{}'), loading...", mod_desc.name, mod_desc.cmdline);
 
         let aspace = runtime.tasking().make_user_address_space();
         let _hook = GlobalAllocHook;
@@ -488,7 +492,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
         kinfo!("Spawning sprout with registry at 0x600000...");
         unsafe {
-            kinfo!("Spawning sprout...");
+            kinfo!("Spawning init process...");
             let mut entry = user_entry;
             entry.arg0 = 0x600000; // arg0 = registry ptr
             crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info, crate::task::TaskPriority::High);

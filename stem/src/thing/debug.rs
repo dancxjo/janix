@@ -24,10 +24,11 @@ impl<'a> fmt::Display for DebugThing<'a> {
                 f.write_str(s)
             }
             Err(_) => {
+                use abi::ids::HandleId;
                 // Return error? or print fallback?
                 // Requirements say: "Must compile... Must not dump infinite data".
                 // If describe fails, fallback to simple ID
-                write!(f, "(t{:x}:<error>)", self.id.0)
+                write!(f, "(t{:x}:<error>)", self.id.to_u64_lossy())
             }
         }
     }

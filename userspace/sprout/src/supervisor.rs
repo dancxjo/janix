@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use stem::info;
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
+use abi::ids::HandleId;
 
 pub struct Supervisor {
     tasks: Vec<ManagedTask>,
@@ -55,7 +56,7 @@ impl Supervisor {
 
     fn discover(&mut self) {
         info!("SPROUT: Discovering modules...");
-        let mut modules = [ThingId(0); 32];
+        let mut modules = [ThingId::new(); 32];
         let count =
             thingsys::find(stem::abi::schema::kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
         info!("SPROUT: Found {} modules", count);
@@ -71,7 +72,7 @@ impl Supervisor {
             let mod_id = modules[i];
             let name = self.get_module_name(mod_id);
             if name.is_empty() {
-                info!("SPROUT: Module {} has empty name", mod_id.0);
+                info!("SPROUT: Module {} has empty name", mod_id.to_u64_lossy());
                 self.debug_module(mod_id);
                 continue;
             }
@@ -157,15 +158,22 @@ impl Supervisor {
     }
 
     fn spawn_apps(&mut self) {
+        info!("SPROUT: spawn_apps start. tasks len={}", self.tasks.len());
         self.ensure_app("/clock");
         self.ensure_app("/ata_disk");
         self.ensure_app("/disk_probe");
         self.ensure_app("/ahci_disk");
+
+    // ... (re-inserting the rest) ...
+    // Actually I should just modify specific lines.
+
         #[cfg(feature = "diagnostic-apps")]
         {
             self.ensure_app("/threads");
             self.ensure_app("/stack_heap_torture");
+            self.ensure_app("/root_batch_bench");
         }
+        self.ensure_app("/root_watch_tester");
         // self.ensure_app("/ingestd");
         // self.ensure_app("/png_creator");
         self.ensure_app("/bindd");
@@ -222,7 +230,7 @@ impl Supervisor {
         // Ideally we traverse the graph for "REQUIRES_DRIVER" or similar.
         // But for v0, we just look for RTC.
 
-        let mut buf = [ThingId(0); 1];
+        let mut buf = [ThingId::new(); 1];
         if let Ok(1) = thingsys::find(stem::abi::schema::kinds::DEV_RTC_CMOS, &mut buf) {
             let rtc_id = buf[0];
             if let Some(driver_name) = self.registry.find_driver("dev.rtc.Cmos") {
@@ -232,7 +240,7 @@ impl Supervisor {
                 // Add to managed tasks
 
                 let ctx = stem::abi::driver_ctx::DriverCtx {
-                    device_id: stem::abi::types::ThingId(rtc_id.0),
+                    device_id: rtc_id,
                 };
                 let arg = ctx.to_raw();
 
@@ -281,14 +289,14 @@ impl Supervisor {
                                 // Ideally ManagedTask stores the argument too.
                                 // Quick hack: Re-find RTC
                                 if dk == "dev.rtc.Cmos" {
-                                    let mut buf = [ThingId(0); 1];
+                                    let mut buf = [ThingId::new(); 1];
                                     if let Ok(1) = thingsys::find(
                                         stem::abi::schema::kinds::DEV_RTC_CMOS,
                                         &mut buf,
                                     ) {
                                         let rtc_id = buf[0];
                                         let ctx = stem::abi::driver_ctx::DriverCtx {
-                                            device_id: stem::abi::types::ThingId(rtc_id.0),
+                                            device_id: rtc_id,
                                         };
                                         ctx.to_raw()
                                     } else {

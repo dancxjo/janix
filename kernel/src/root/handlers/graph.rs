@@ -126,17 +126,19 @@ pub fn handle_find(
     buffer: u64,
     len: u64,
 ) -> HandlerResult {
+    use abi::ids::HandleId;
+
     let kid = resolve_shell(kind, interner);
     let mut found_count = 0;
-    let out_ptr = buffer as *mut u64;
-    let max_entries = (len as usize) / 8;
+    let out_ptr = buffer as *mut abi::types::ThingId;
+    let max_entries = (len as usize) / core::mem::size_of::<abi::types::ThingId>();
 
     for (id, node) in &graph.nodes {
         if node.kind == kid {
             // crate::kinfo!("ROOT: find SUCCESS kind={:?} id={:x} node_kind={:?}", kid, id, node.kind);
             if found_count < max_entries {
                 unsafe {
-                    *out_ptr.add(found_count) = *id;
+                    *out_ptr.add(found_count) = abi::types::ThingId::from_u64(*id);
                 }
             }
             found_count += 1;
@@ -175,17 +177,21 @@ pub fn handle_get_edges(
     buffer: u64,
     len: u64,
 ) -> HandlerResult {
+    use abi::ids::HandleId; // Import the adapter
+
     if let Some(node) = graph.nodes.get(&id) {
-        let max_entries = (len as usize) / core::mem::size_of::<abi::types::GraphEdge>();
+        let max_entries = (len as usize) / core::mem::size_of::<abi::types::Edge>();
         let mut count = 0;
-        let out_ptr = buffer as *mut abi::types::GraphEdge;
+        let out_ptr = buffer as *mut abi::types::Edge;
 
         for (rel, dst) in &node.edges {
             if count < max_entries {
                 unsafe {
-                    *out_ptr.add(count) = abi::types::GraphEdge {
-                        rel: *rel as u64,
-                        target: *dst,
+                    *out_ptr.add(count) = abi::types::Edge {
+                        from: abi::types::ThingId::from_u64(id),
+                        predicate: abi::types::ThingId::from_u64(*rel as u64),
+                        to: abi::types::ThingId::from_u64(*dst),
+                        flags: 0,
                     };
                 }
             }

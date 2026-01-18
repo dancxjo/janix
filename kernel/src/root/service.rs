@@ -42,6 +42,7 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::Intern { .. } => "Intern",
         RootOp::GetKind { .. } => "GetKind",
         RootOp::CreateNode { .. } => "CreateNode",
+        RootOp::ApplyBatch { .. } => "ApplyBatch",
         RootOp::Link { .. } => "Link",
         RootOp::Find { .. } => "Find",
         RootOp::Query { .. } => "Query",
@@ -116,14 +117,18 @@ fn handle_msg<R: BootRuntime>(
         RootOp::StreamPoll { stream_id, max: _, out_ptr: _ } => {
             root_handlers::handle_stream_poll(graph, &msg, stream_id)
         }
-        RootOp::WatchOpen { mode, query } => {
-            root_handlers::handle_watch_open(graph, interner, mode, query)
+        RootOp::WatchOpen { mode, start_seq, query } => {
+            root_handlers::handle_watch_open(graph, interner, mode, start_seq, query)
         }
-        RootOp::WatchNext { id } => {
+        RootOp::WatchNext { id, .. } => {
             root_handlers::handle_watch_next(graph, &msg, id)
         }
         RootOp::WatchClose { id } => {
             root_handlers::handle_watch_close(graph, id)
+        }
+
+        RootOp::ApplyBatch { batch } => {
+            root_handlers::batch::handle_apply_batch(graph, interner, &batch)
         }
 
         // Debug/Describe operations

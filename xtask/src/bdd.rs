@@ -54,7 +54,9 @@ fn run_single_arch(sh: &Shell, feature: Option<&str>, arch: &str) -> Result<()> 
     fetch()?;
     limine(sh)?;
     build(sh, arch, "dev")?;
-    build_iso(sh, arch)?;
+    build(sh, arch, "dev")?;
+    let programs = crate::image::default_programs();
+    build_iso(sh, arch, &programs)?;
 
     // Run tests
     println!("\n=== Running BDD tests for {} ===\n", arch);

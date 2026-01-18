@@ -3,10 +3,12 @@
 use crate::common::{Result, image_name};
 use xshell::{Shell, cmd};
 
+use std::path::{Path, PathBuf};
+
 /// Run ISO image in QEMU (UEFI mode).
-pub fn run(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
+pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path) -> Result<()> {
     let name = image_name(arch);
-    let iso = format!("{}.iso", name);
+    let iso = iso_path.to_str().unwrap();
     let ovmf_code = format!("vendor/ovmf/ovmf-code-{}.fd", arch);
     let ovmf_vars = format!("vendor/ovmf/ovmf-vars-{}.fd", arch);
 
@@ -55,8 +57,8 @@ fn ensure_test_disk(sh: &Shell) -> Result<()> {
 }
 
 /// Run in QEMU BIOS mode (x86_64 only).
-pub fn run_bios(sh: &Shell, qemu_flags: &str) -> Result<()> {
-    let iso = "thing-os-x86_64.iso";
+pub fn run_bios(sh: &Shell, qemu_flags: &str, iso_path: &Path) -> Result<()> {
+    let iso = iso_path.to_str().unwrap();
     let qemu_args: Vec<&str> = qemu_flags.split_whitespace().collect();
     ensure_test_disk(sh)?;
     println!("Running in QEMU BIOS mode...");
@@ -70,9 +72,9 @@ pub fn run_bios(sh: &Shell, qemu_flags: &str) -> Result<()> {
 }
 
 /// Run HDD image in QEMU (UEFI mode).
-pub fn run_hdd(sh: &Shell, arch: &str, qemu_flags: &str) -> Result<()> {
+pub fn run_hdd(sh: &Shell, arch: &str, qemu_flags: &str, hdd_path: &Path) -> Result<()> {
     let name = image_name(arch);
-    let hdd = format!("{}.hdd", name);
+    let hdd = hdd_path.to_str().unwrap();
     let ovmf_code = format!("vendor/ovmf/ovmf-code-{}.fd", arch);
     let ovmf_vars = format!("vendor/ovmf/ovmf-vars-{}.fd", arch);
 

@@ -93,6 +93,7 @@ pub const SYS_ROOT_GET_KIND: u32 = 0x140;
 pub const SYS_ROOT_INTERN: u32 = 0x141;
 pub const SYS_ROOT_CREATE_NODE: u32 = 0x142;
 pub const SYS_ROOT_LINK: u32 = 0x143;
+pub const SYS_ROOT_APPLY_BATCH: u32 = 0x144;
 
 // 0x148-0x14F: Properties
 pub const SYS_ROOT_PROP_GET: u32 = 0x148;

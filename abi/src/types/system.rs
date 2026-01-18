@@ -86,7 +86,8 @@ pub enum WatchMode {
 pub struct WatchSpec {
     pub query_ptr: u64,
     pub query_len: u64,
-    pub mode: u32, 
+    pub mode: u32,
+    pub start_seq: u64,
 }
 
 #[repr(C)]

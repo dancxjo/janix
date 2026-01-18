@@ -11,7 +11,7 @@ pub fn enumerate(ctx: &DevTreeCtx) -> Result<(), ()> {
     // Always present at 0x70 on PC-compatible hardware
 
     // Check if it already exists
-    let mut buf = [stem::thing::ThingId(0); 1];
+    let mut buf = [stem::thing::ThingId::default(); 1];
     if let Ok(0) = thingsys::find(kinds::DEV_RTC_CMOS, &mut buf) {
         if let Ok(rtc) = thingsys::create_node(kinds::DEV_RTC_CMOS) {
             info!("SPROUT: Created dev.rtc.cmos (platform contract)");

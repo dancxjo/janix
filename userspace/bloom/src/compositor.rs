@@ -1,6 +1,7 @@
 use abi::schema::{keys, kinds};
 use abi::types::RootWatchEvent;
 use stem::syscall::PortHandle;
+use abi::ids::HandleId;
 use stem::thing::{sys as thingsys, ThingId};
 
 pub struct Symbols {
@@ -79,7 +80,7 @@ impl CompositorTarget {
         let mut found_config: Option<(ThingId, u32, u32, u32, u32)> = None;
 
         loop {
-            let mut buf = [ThingId(0); 128];
+            let mut buf = [ThingId::default(); 128];
             match thingsys::find(kinds::BYTESPACE, &mut buf) {
                 Ok(count) => {
                     for id in buf.iter().take(count) {
@@ -106,7 +107,7 @@ impl CompositorTarget {
 
         let (bs_id, width, height, stride, format) = found_config.ok_or(CompositorError::DiscoveryTimeout)?;
 
-        crate::log!("compositor bytespace {} ({}x{} stride={} format={})", bs_id.0, width, height, stride, format);
+        crate::log!("compositor bytespace {} ({}x{} stride={} format={})", bs_id.to_u64_lossy(), width, height, stride, format);
 
         // Detect backend from property set by Sprout
         let backend = detect_backend(bs_id);

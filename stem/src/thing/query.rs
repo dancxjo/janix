@@ -4,6 +4,7 @@ use crate::syscall::syscall6;
 use crate::thing::ThingId;
 use abi::query::*;
 use abi::syscall::SYS_ROOT_QUERY;
+use abi::ids::HandleId;
 use alloc::vec::Vec;
 
 pub fn query_nodes_by_kind(kind: &str, limit: usize, out: &mut [ThingId]) -> Result<usize, Errno> {
@@ -42,7 +43,7 @@ pub fn query_nodes_by_kind(kind: &str, limit: usize, out: &mut [ThingId]) -> Res
     let count = errno(ret).map(|v| v as usize)?;
 
     for i in 0..core::cmp::min(count, out.len()) {
-        out[i] = ThingId(rows[i].id);
+        out[i] = ThingId::from_u64(rows[i].id);
     }
 
     Ok(count)
@@ -56,7 +57,7 @@ pub fn query_edges(
     // Step 1: Start
     let step1 = QueryStep {
         op: QueryOpKind::Start as u64,
-        arg1: src.0,
+        arg1: src.to_u64_lossy(),
         arg2: 0,
         symbol: "".to_wire(), // Ignored for Start
     };
@@ -104,7 +105,7 @@ pub fn query_edges(
 
     let mut res = Vec::with_capacity(count);
     for i in 0..count {
-        res.push((rows[i].kind_rel, ThingId(rows[i].val_dst)));
+        res.push((rows[i].kind_rel, ThingId::from_u64(rows[i].val_dst)));
     }
 
     Ok(res)

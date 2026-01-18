@@ -17,8 +17,10 @@ pub fn handle_watch_open(
     graph: &mut Graph,
     interner: &mut Interner,
     _mode: u32,
+    start_seq: u64,
     query: alloc::vec::Vec<PreparedStep>,
 ) -> HandlerResult {
+
     // 1. Create Stream
     let stream_handle = stream::create(128); // Buffer size
     let kid = interner.intern("stream.watch");
@@ -38,60 +40,29 @@ pub fn handle_watch_open(
     let fact_rel = interner.intern("has_fact");
     
     // 3. Create Global Watch
-    // We use stream_id as the watch_id conceptually for the user, 
-    // or we allocate a separate ID?
-    // Using stream_id is convenient.
+    // We use stream_id as the watch_id conceptually for the user.
     
+    let next_seq = if start_seq == 0 {
+        graph.root_seq.load(Ordering::Relaxed) + 1
+    } else {
+        start_seq
+    };
+
     let watch = GlobalWatch {
         id: stream_id,
         spec_ptr: 0, // Unused
         stream_handle: ResourceHandle::Stream(stream_handle),
         kind_filter: bs_kind, 
         missing_fact: fact_rel,
+        next_seq,
+        pending: alloc::collections::VecDeque::new(),
+        pending_bytes: 0,
+        overflowed: false,
     };
     
     graph.global_watches.insert(stream_id, watch);
-
-    // 4. Initial Query (Pre-fill)
-    // We scan existing nodes.
-    // This is expensive O(N).
-    // Constraints: kind == Bytespace
-    if let Some(ids) = graph.kind_index.get(&bs_kind) {
-         // Copy to avoid borrow issues if possible, or just iterate
-         // We can't iterate `ids` while modifying `requests` in stream (locking).
-         // Stream is distinct from Graph lock (Graph is &mut here).
-         // But we are in handle_msg, holding Graph &mut.
-         
-         // We need to write to the stream.
-         // Retrieve handle from watch logic?
-         if let Some(w) = graph.global_watches.get(&stream_id) {
-            if let ResourceHandle::Stream(sh) = &w.stream_handle {
-                let mut lock = sh.lock();
-                
-                for &node_id in ids {
-                    // Check if missing fact
-                    // Logic: does node_id have edge with rel == fact_rel?
-                    let has_fact = if let Some(n) = graph.nodes.get(&node_id) {
-                        n.edges.iter().any(|(r, _)| *r == fact_rel)
-                    } else {
-                        false
-                    };
-                    
-                    if !has_fact {
-                         // Emit "Match Found"
-                        lock.events.push_back(crate::root::resources::stream::WatchEvent {
-                            target: node_id, // "node_id"
-                            key: 1, // 1 = MatchFound
-                            value: 0, // Handle? (TODO: Create handle?)
-                        });
-                        // For v0, we assume handle is created by client using node_id? Not efficient but ok.
-                        // Or we pass node_id as handle?
-                    }
-                }
-            }
-         }
-    }
-
+    
+    // Return the stream handle as the watch ID
     (0, stream_id)
 }
 
@@ -100,22 +71,50 @@ pub fn handle_watch_next(
     msg: &crate::root::RootMsg,
     id: u64,
 ) -> HandlerResult {
-    if let Some(watch) = graph.global_watches.get(&id) {
-        if let ResourceHandle::Stream(handle) = &watch.stream_handle {
-            let mut lock = handle.lock();
-             if let Some(evt) = lock.events.pop_front() {
-                 msg.reply.p0.store(evt.target, Ordering::Relaxed);
-                 msg.reply.p1.store(evt.key, Ordering::Relaxed);
-                 msg.reply.p2.store(evt.value, Ordering::Relaxed);
-                 // Return (Status=0, Value=1 (count))
-                 return (0, 1);
-             }
+    let out_seq_ptr = if let crate::root::RootOp::WatchNext { out_seq_ptr, .. } = msg.op { out_seq_ptr } else { 0 };
+    let out_ptr = if let crate::root::RootOp::WatchNext { out_ptr, .. } = msg.op { out_ptr } else { 0 };
+    let out_len = if let crate::root::RootOp::WatchNext { out_len, .. } = msg.op { out_len } else { 0 };
+
+    
+    if let Some(watch) = graph.global_watches.get_mut(&id) {
+        // 1. Check Overflow
+        if watch.overflowed {
+            watch.overflowed = false;
+            // Return -EOVERFLOW (mapped to -75)
+            return (-75, 0); 
+        }
+
+        // 2. Check Queue
+        if let Some(commit) = watch.pending.front() {
+            if commit.data.len() as u64 > out_len {
+                return (-28, 0); // -ENOSPC (28 in Linux)
+            }
+            
+            // 3. Copy Out
+            // Unsafe copy to kernel ptr provided by syscall handler
+            unsafe {
+                let src = commit.data.as_ptr();
+                let dst = out_ptr as *mut u8;
+                core::ptr::copy_nonoverlapping(src, dst, commit.data.len());
+            }
+
+            // Return seq in p0
+            msg.reply.p0.store(commit.seq, Ordering::Relaxed);
+            
+            let len = commit.data.len() as u64;
+            
+            // 4. Pop
+            if let Some(popped) = watch.pending.pop_front() {
+                watch.pending_bytes -= popped.data.len();
+            }
+            
+            return (0, len); // Success, return length
+        } else {
+             return (-11, 0); // -EAGAIN
         }
     }
     
-    // Check if watch node exists but not global?
-    // User might have passed garbage ID.
-    (0, 0) // No events
+    (-22, 0) // -EINVAL (Invalid handle)
 }
 
 pub fn handle_watch_close(

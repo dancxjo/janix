@@ -26,7 +26,9 @@ members = [
     "userspace/bindd",
     "userspace/tick_printer",
     "userspace/hogger",
-    "userspace/irqdump",
+    "userspace/irqdump", "abi-macros",
+    "userspace/root_batch_bench",
+    "userspace/root_watch_tester",
 ]
 resolver = "2"
 

@@ -71,7 +71,7 @@ pub fn handle_watch_next(
     msg: &crate::root::RootMsg,
     id: u64,
 ) -> HandlerResult {
-    let out_seq_ptr = if let crate::root::RootOp::WatchNext { out_seq_ptr, .. } = msg.op { out_seq_ptr } else { 0 };
+    let _out_seq_ptr = if let crate::root::RootOp::WatchNext { out_seq_ptr, .. } = msg.op { out_seq_ptr } else { 0 };
     let out_ptr = if let crate::root::RootOp::WatchNext { out_ptr, .. } = msg.op { out_ptr } else { 0 };
     let out_len = if let crate::root::RootOp::WatchNext { out_len, .. } = msg.op { out_len } else { 0 };
 

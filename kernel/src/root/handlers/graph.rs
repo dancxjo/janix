@@ -1,14 +1,19 @@
 //! Graph core and property handlers.
+//!
+//! Mutation handlers (create_node, link, prop_set) now route through
+//! the canonical batch pipeline for consistent watch delivery.
 
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
-use crate::root::resources::{ResourceHandle};
+use crate::root::resources::ResourceHandle;
 use crate::root::symbols::Interner;
-use crate::root::{SymbolShell};
+use crate::root::SymbolShell;
 use abi::symbols::SymbolId;
 #[allow(unused_imports)]
 use core::sync::atomic::Ordering;
 
+use super::batch::{ValidatedOp, apply_ops_and_commit};
+use super::encode;
 use super::HandlerResult;
 
 /// Helper to resolve Shell to SymbolId
@@ -32,6 +37,9 @@ pub fn handle_get_kind(graph: &Graph, id: u64) -> HandlerResult {
     }
 }
 
+/// Create a new node in the graph.
+///
+/// Routes through the canonical batch pipeline for consistent watch delivery.
 pub fn handle_create_node(
     graph: &mut Graph,
     journal: &mut Journal,
@@ -39,12 +47,28 @@ pub fn handle_create_node(
     kind: SymbolShell,
 ) -> HandlerResult {
     let kid = resolve_shell(kind, interner);
-    let id = graph.alloc(kid);
-    journal.append(JournalOp::CreateResult {
-        id,
-        kind: kid as u64,
-    });
-    (0, id)
+    
+    // Build validated op
+    let ops = [ValidatedOp::CreateNode { kind: kid, out_idx: 0 }];
+    
+    // Encode as batch for watch consumers
+    let kind_bytes = encode::symbol_to_bytes(kid);
+    let commit_bytes = encode::encode_create_node(&kind_bytes, 0);
+    
+    // Apply through canonical commit path
+    let result = apply_ops_and_commit(graph, &ops, &commit_bytes);
+    
+    // Journal entry (kept separate for recovery purposes)
+    if result.status == 0 && !result.created_ids.is_empty() {
+        let id = result.created_ids[0];
+        journal.append(JournalOp::CreateResult {
+            id,
+            kind: kid as u64,
+        });
+        (0, id)
+    } else {
+        (result.status, 0)
+    }
 }
 
 pub fn handle_prop_get(
@@ -65,6 +89,10 @@ pub fn handle_prop_get(
     }
 }
 
+/// Set a property on a node.
+///
+/// Routes through the canonical batch pipeline for consistent watch delivery,
+/// then also notifies node-level stream watches.
 pub fn handle_prop_set(
     graph: &mut Graph,
     journal: &mut Journal,
@@ -74,39 +102,60 @@ pub fn handle_prop_set(
     value: u64,
 ) -> HandlerResult {
     let kid = resolve_shell(key, interner);
-    let watches = if let Some(node) = graph.get_node_mut(id) {
-        node.props.insert(kid, value);
-        journal.append(JournalOp::UpdateProp {
-            id,
-            key: kid as u64,
-            val: value,
-        });
-        Some(node.watches.clone())
-    } else {
-        None
-    };
-
-    if let Some(watches_vec) = watches {
-        for (_mask, stream_id) in watches_vec {
-            if let Some(stream_node) = graph.get_node_mut(stream_id) {
-                if let Some(ResourceHandle::Stream(handle)) = &stream_node.resource {
-                    let mut lock = handle.lock();
-                    if lock.events.len() < lock.capacity {
-                        lock.events.push_back(crate::root::resources::stream::WatchEvent {
-                            target: id,
-                            key: kid as u64,
-                            value,
-                        });
-                    }
+    
+    // Check if node exists
+    if graph.get_node_mut(id).is_none() {
+        return (-1, 0);
+    }
+    
+    // Build validated op
+    let ops = [ValidatedOp::SetProp { id, key: kid, value }];
+    
+    // Encode as batch for watch consumers
+    let key_bytes = encode::symbol_to_bytes(kid);
+    let commit_bytes = encode::encode_set_prop(id, &key_bytes, value);
+    
+    // Apply through canonical commit path
+    let result = apply_ops_and_commit(graph, &ops, &commit_bytes);
+    
+    if result.status != 0 {
+        return (result.status, 0);
+    }
+    
+    // Journal entry
+    journal.append(JournalOp::UpdateProp {
+        id,
+        key: kid as u64,
+        val: value,
+    });
+    
+    // Also notify node-level stream watches (legacy mechanism)
+    let watches = graph
+        .get_node_mut(id)
+        .map(|n| n.watches.clone())
+        .unwrap_or_default();
+    
+    for (_mask, stream_id) in watches {
+        if let Some(stream_node) = graph.get_node_mut(stream_id) {
+            if let Some(ResourceHandle::Stream(handle)) = &stream_node.resource {
+                let mut lock = handle.lock();
+                if lock.events.len() < lock.capacity {
+                    lock.events.push_back(crate::root::resources::stream::WatchEvent {
+                        target: id,
+                        key: kid as u64,
+                        value,
+                    });
                 }
             }
         }
-        (0, 0)
-    } else {
-        (-1, 0)
     }
+    
+    (0, 0)
 }
 
+/// Create an edge between two nodes.
+///
+/// Routes through the canonical batch pipeline for consistent watch delivery.
 pub fn handle_link(
     graph: &mut Graph,
     interner: &mut Interner,
@@ -115,8 +164,18 @@ pub fn handle_link(
     dst: u64,
 ) -> HandlerResult {
     let rid = resolve_shell(rel, interner);
-    graph.link(src, rid, dst);
-    (0, 0)
+    
+    // Build validated op
+    let ops = [ValidatedOp::PutEdge { src, rel: rid, dst }];
+    
+    // Encode as batch for watch consumers
+    let rel_bytes = encode::symbol_to_bytes(rid);
+    let commit_bytes = encode::encode_put_edge(src, &rel_bytes, dst);
+    
+    // Apply through canonical commit path
+    let result = apply_ops_and_commit(graph, &ops, &commit_bytes);
+    
+    (result.status, 0)
 }
 
 pub fn handle_find(
@@ -135,7 +194,6 @@ pub fn handle_find(
 
     for (id, node) in &graph.nodes {
         if node.kind == kid {
-            // crate::kinfo!("ROOT: find SUCCESS kind={:?} id={:x} node_kind={:?}", kid, id, node.kind);
             if found_count < max_entries {
                 unsafe {
                     *out_ptr.add(found_count) = abi::types::ThingId::from_u64(*id);
@@ -171,13 +229,8 @@ pub fn handle_query(
     }
 }
 
-pub fn handle_get_edges(
-    graph: &Graph,
-    id: u64,
-    buffer: u64,
-    len: u64,
-) -> HandlerResult {
-    use abi::ids::HandleId; // Import the adapter
+pub fn handle_get_edges(graph: &Graph, id: u64, buffer: u64, len: u64) -> HandlerResult {
+    use abi::ids::HandleId;
 
     if let Some(node) = graph.nodes.get(&id) {
         let max_entries = (len as usize) / core::mem::size_of::<abi::types::Edge>();

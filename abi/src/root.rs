@@ -3,8 +3,6 @@
 //! Defines the binary format for `SYS_ROOT_APPLY_BATCH`.
 //! Use safe byte-level parsing; do not cast unaligned bytes to these structs.
 
-use crate::wire::ThingId;
-
 /// Batch Header (8 bytes)
 /// [Magic: 4] [Version: 2] [OpCount: 2]
 pub const BATCH_MAGIC: u32 = 0x54485254; // "THRT"
@@ -13,7 +11,8 @@ pub const BATCH_VERSION: u16 = 1;
 /// Op Tags
 pub const OP_CREATE_NODE: u8 = 0x01;
 pub const OP_PUT_EDGE: u8 = 0x02;
-// Reserved for future: OP_SET_PROP = 0x03, OP_CREATE_BYTESPACE = 0x04
+pub const OP_SET_PROP: u8 = 0x03;
+// Reserved for future: OP_CREATE_BYTESPACE = 0x04
 
 /// Reference types for `ThingRef`
 pub const REF_ABSOLUTE: u8 = 0x00;

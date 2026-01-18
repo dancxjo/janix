@@ -15,6 +15,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
     let mut graph = Graph::new();
     let mut journal = Journal::new();
     let mut interner = Interner::new();
+    let log_symbols = root_handlers::logging::LogSymbols::new(&mut interner);
     let mut batch_scratch = RootBatchScratch::new();
 
     let mut iteration = 0u64;
@@ -24,7 +25,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         
         while processed < 16 {
             if let Some(msg) = super::pop_msg() {
-                handle_msg::<R>(&mut graph, &mut journal, &mut interner, &mut batch_scratch, msg);
+                handle_msg::<R>(&mut graph, &mut journal, &mut interner, &log_symbols, &mut batch_scratch, msg);
                 processed += 1;
             } else {
                 break;
@@ -77,6 +78,7 @@ fn handle_msg<R: BootRuntime>(
     graph: &mut Graph,
     journal: &mut Journal,
     interner: &mut Interner,
+    log_symbols: &root_handlers::logging::LogSymbols,
     batch_scratch: &mut RootBatchScratch,
     msg: RootMsg,
 ) {
@@ -154,6 +156,7 @@ fn handle_msg<R: BootRuntime>(
             root_handlers::handle_log_event(
                 graph,
                 interner,
+                &log_symbols,
                 level,
                 event,
                 &message,

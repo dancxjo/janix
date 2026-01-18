@@ -18,14 +18,15 @@ pub use service::root_main;
 pub enum SymbolShell {
     Id(u32),
     Str(alloc::string::String),
+    Static(&'static str),
 }
 
 #[derive(Debug, Clone)]
 pub struct LogProvenance {
     pub tid: u64,
     pub cpu: u32,
-    pub module: alloc::string::String,
-    pub file: alloc::string::String,
+    pub module: &'static str,
+    pub file: &'static str,
     pub line: u32,
 }
 

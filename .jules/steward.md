@@ -1,0 +1,1 @@
+2026-01-18 – [Logging Allocations] Learning: Logging in the kernel was allocating multiple Strings per event, putting pressure on the allocator in hot paths. Guardrail: Use `SymbolShell::Static` and `&'static str` for metadata that is known to be static.

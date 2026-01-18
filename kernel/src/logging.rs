@@ -91,11 +91,11 @@ impl Drop for LogTransaction {
 }
 
 #[derive(Clone, Copy)]
-pub struct LogMetadata<'a> {
+pub struct LogMetadata {
     pub level: Level,
-    pub file: &'a str,
+    pub file: &'static str,
     pub line: u32,
-    pub module: &'a str,
+    pub module: &'static str,
 }
 
 pub struct Logger {
@@ -142,9 +142,9 @@ fn can_log_to_graph(level: Level) -> bool {
 
 pub fn _log_event(
     meta: LogMetadata,
-    event_sym: &str,
+    event_sym: crate::root::SymbolShell,
     msg_fmt: fmt::Arguments,
-    fields: &[(&str, u64)],
+    fields: &[(&'static str, u64)],
     about: &[u64],
 ) {
     // Get sequence number first (guarantees ordering)
@@ -155,6 +155,11 @@ pub fn _log_event(
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
             let ts = writer.runtime.mono_ticks();
+            let event_str = match &event_sym {
+                crate::root::SymbolShell::Str(s) => s.as_str(),
+                crate::root::SymbolShell::Static(s) => s,
+                crate::root::SymbolShell::Id(_) => "?",
+            };
 
             // Human-readable format: [TIME] [LEVEL] [SOURCE] Message
             let _ = write!(
@@ -162,7 +167,7 @@ pub fn _log_event(
                 "[{}] [{}] [{}] ",
                 ts,
                 meta.level.as_str(),
-                event_sym
+                event_str
             );
             let _ = writer.write_fmt(msg_fmt);
 
@@ -189,19 +194,19 @@ pub fn _log_event(
             let prov = LogProvenance {
                 tid,
                 cpu: 0,
-                module: alloc::string::String::from(meta.module),
-                file: alloc::string::String::from(meta.file),
+                module: meta.module,
+                file: meta.file,
                 line: meta.line,
             };
 
             let mut field_vec = alloc::vec::Vec::with_capacity(fields.len());
             for (k, v) in fields {
-                field_vec.push((SymbolShell::Str(alloc::string::String::from(*k)), *v));
+                field_vec.push((SymbolShell::Static(k), *v));
             }
 
             let op = RootOp::LogEvent {
                 level: meta.level as u8,
-                event: SymbolShell::Str(alloc::string::String::from(event_sym)),
+                event: event_sym,
                 message,
                 timestamp,
                 provenance: prov,
@@ -217,7 +222,7 @@ pub fn _log_event(
 
 // Backward compatibility shim for kinfo! etc
 pub fn _log(meta: LogMetadata, args: fmt::Arguments) {
-    _log_event(meta.clone(), meta.module, args, &[], &[]);
+    _log_event(meta.clone(), crate::root::SymbolShell::Static(meta.module), args, &[], &[]);
 }
 
 /// Log a raw string without any formatting (for kprint! compatibility)
@@ -241,7 +246,7 @@ macro_rules! log_event {
                 line: line!(),
                 module: module_path!(),
             },
-            $event,
+            $crate::root::SymbolShell::Static($event),
             format_args!($msg),
             &[ $( (stringify!($k), $v) ),* ],
             &[ $($about),* ]
@@ -256,7 +261,7 @@ macro_rules! log_event {
                 line: line!(),
                 module: module_path!(),
             },
-            $event,
+            $crate::root::SymbolShell::Static($event),
             format_args!($($arg)*),
             &[],
             &[]

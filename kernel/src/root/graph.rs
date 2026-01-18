@@ -295,26 +295,26 @@ pub fn commit_matches(filter: &WatchFilter, summary: &CommitSummary) -> bool {
     
     // Check PREDICATE filter
     if (filter.flags & WATCH_F_PREDICATE) != 0 {
-        if summary.predicates.overflowed || summary.predicates.contains(filter.predicate_id) {
-            return true; // Match (or can't disprove due to overflow)
+        if !summary.predicates.overflowed && !summary.predicates.contains(filter.predicate_id) {
+            return false;
         }
     }
     
     // Check SUBJECT filter  
     if (filter.flags & WATCH_F_SUBJECT) != 0 {
-        if summary.subjects.overflowed || summary.subjects.contains(filter.subject_lo) {
-            return true;
+        if !summary.subjects.overflowed && !summary.subjects.contains(filter.subject_lo) {
+            return false;
         }
     }
     
     // Check KIND filter
     if (filter.flags & WATCH_F_KIND) != 0 {
-        if summary.kinds.overflowed || summary.kinds.contains(filter.kind_id) {
-            return true;
+        if !summary.kinds.overflowed && !summary.kinds.contains(filter.kind_id) {
+            return false;
         }
     }
     
-    false
+    true
 }
 
 // ============================================================================

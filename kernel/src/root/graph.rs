@@ -25,6 +25,134 @@ pub struct Node {
 pub struct CommitRecord {
     pub seq: u64,
     pub data: Vec<u8>,
+    /// Compact summary for O(1) filter matching
+    pub summary: CommitSummary,
+}
+
+// ============================================================================
+// Commit Summary (O(1) Watch Filtering)
+// ============================================================================
+
+/// Maximum IDs to track in a summary (predicates/kinds)
+pub const MAX_SUMMARY_IDS: usize = 16;
+/// Maximum ThingIds to track in a summary (subjects)
+pub const MAX_SUMMARY_THINGS: usize = 8;
+
+/// Small fixed-capacity set for SymbolIds
+/// 
+/// Tracks unique IDs without allocation. If capacity is exceeded,
+/// `overflowed` is set and the set cannot disprove membership.
+#[derive(Debug, Clone)]
+pub struct SmallIdSet {
+    pub overflowed: bool,
+    len: u8,
+    ids: [u32; MAX_SUMMARY_IDS],
+}
+
+impl Default for SmallIdSet {
+    fn default() -> Self {
+        Self {
+            overflowed: false,
+            len: 0,
+            ids: [0; MAX_SUMMARY_IDS],
+        }
+    }
+}
+
+impl SmallIdSet {
+    /// Insert a unique ID. If at capacity, marks as overflowed.
+    pub fn insert(&mut self, id: u32) {
+        if self.overflowed {
+            return;
+        }
+        // Check if already present
+        for i in 0..self.len as usize {
+            if self.ids[i] == id {
+                return;
+            }
+        }
+        // Add if room
+        if (self.len as usize) < MAX_SUMMARY_IDS {
+            self.ids[self.len as usize] = id;
+            self.len += 1;
+        } else {
+            self.overflowed = true;
+        }
+    }
+    
+    /// Check if ID is in the set
+    pub fn contains(&self, id: u32) -> bool {
+        for i in 0..self.len as usize {
+            if self.ids[i] == id {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Small fixed-capacity set for ThingIds (subjects)
+#[derive(Debug, Clone)]
+pub struct SmallThingSet {
+    pub overflowed: bool,
+    len: u8,
+    things: [u64; MAX_SUMMARY_THINGS],
+}
+
+impl Default for SmallThingSet {
+    fn default() -> Self {
+        Self {
+            overflowed: false,
+            len: 0,
+            things: [0; MAX_SUMMARY_THINGS],
+        }
+    }
+}
+
+impl SmallThingSet {
+    /// Insert a unique ThingId. If at capacity, marks as overflowed.
+    pub fn insert(&mut self, id: u64) {
+        if self.overflowed {
+            return;
+        }
+        // Check if already present
+        for i in 0..self.len as usize {
+            if self.things[i] == id {
+                return;
+            }
+        }
+        // Add if room
+        if (self.len as usize) < MAX_SUMMARY_THINGS {
+            self.things[self.len as usize] = id;
+            self.len += 1;
+        } else {
+            self.overflowed = true;
+        }
+    }
+    
+    /// Check if ThingId is in the set
+    pub fn contains(&self, id: u64) -> bool {
+        for i in 0..self.len as usize {
+            if self.things[i] == id {
+                return true;
+            }
+        }
+        false
+    }
+}
+
+/// Compact summary of what's in a commit (for O(1) filter matching)
+/// 
+/// Computed once at commit time from validated ops.
+/// Filter matching checks these sets rather than re-parsing batch bytes.
+#[derive(Debug, Clone, Default)]
+pub struct CommitSummary {
+    /// Predicate IDs used in PUT_EDGE ops (interned SymbolIds)
+    pub predicates: SmallIdSet,
+    /// Subject ThingIds used in PUT_EDGE and SET_PROP ops
+    pub subjects: SmallThingSet,
+    /// Kind IDs from CREATE_NODE ops (interned SymbolIds)
+    pub kinds: SmallIdSet,
 }
 
 /// Hard limits for commit history
@@ -73,7 +201,7 @@ impl CommitHistory {
     /// Push a new commit, evicting oldest until within limits
     /// 
     /// The `seq` must equal `self.next_seq` - this is enforced for contiguity.
-    pub fn push(&mut self, seq: u64, data: Vec<u8>) {
+    pub fn push(&mut self, seq: u64, data: Vec<u8>, summary: CommitSummary) {
         debug_assert_eq!(seq, self.next_seq, "CommitHistory: seq must be contiguous");
         
         let data_len = data.len();
@@ -88,7 +216,7 @@ impl CommitHistory {
         }
         
         // Push the new commit
-        self.ring.push_back(CommitRecord { seq, data });
+        self.ring.push_back(CommitRecord { seq, data, summary });
         self.bytes += data_len;
         self.next_seq = seq + 1;
     }
@@ -135,6 +263,58 @@ impl CommitHistory {
     pub fn is_empty(&self) -> bool {
         self.ring.is_empty()
     }
+    
+    /// Get full commit record by sequence number (for summary access)
+    pub fn get_record(&self, seq: u64) -> Option<&CommitRecord> {
+        let oldest = self.oldest_seq()?;
+        if seq < oldest {
+            return None;
+        }
+        let idx = (seq - oldest) as usize;
+        self.ring.get(idx)
+    }
+}
+
+// ============================================================================
+// Watch Filter Matching (O(1) via Summary)
+// ============================================================================
+
+use abi::root::{WATCH_F_KIND, WATCH_F_PREDICATE, WATCH_F_SUBJECT};
+
+/// Check if a commit matches a filter using its summary (O(1))
+/// 
+/// Matching rules:
+/// - If filter flags == 0: match all
+/// - If a flag bit is set, the corresponding field must match
+/// - Overflowed sets conservatively match (no false negatives)
+pub fn commit_matches(filter: &WatchFilter, summary: &CommitSummary) -> bool {
+    // flags=0 means match all commits
+    if filter.matches_all() {
+        return true;
+    }
+    
+    // Check PREDICATE filter
+    if (filter.flags & WATCH_F_PREDICATE) != 0 {
+        if summary.predicates.overflowed || summary.predicates.contains(filter.predicate_id) {
+            return true; // Match (or can't disprove due to overflow)
+        }
+    }
+    
+    // Check SUBJECT filter  
+    if (filter.flags & WATCH_F_SUBJECT) != 0 {
+        if summary.subjects.overflowed || summary.subjects.contains(filter.subject_lo) {
+            return true;
+        }
+    }
+    
+    // Check KIND filter
+    if (filter.flags & WATCH_F_KIND) != 0 {
+        if summary.kinds.overflowed || summary.kinds.contains(filter.kind_id) {
+            return true;
+        }
+    }
+    
+    false
 }
 
 // ============================================================================

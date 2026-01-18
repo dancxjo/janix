@@ -4,7 +4,7 @@
 //! Both multi-op batches (SYS_ROOT_APPLY_BATCH) and single-op syscalls
 //! (CREATE_NODE, LINK, PROP_SET) route through `apply_ops_and_commit()`.
 
-use crate::root::graph::{Graph, ThingId};
+use crate::root::graph::{Graph, ThingId, CommitSummary};
 use crate::root::handlers::HandlerResult;
 use abi::root::{BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP, REF_ABSOLUTE, REF_LOCAL};
 use abi::symbols::SymbolId;
@@ -53,6 +53,9 @@ pub fn apply_ops_and_commit(
 ) -> ApplyResult {
     let mut local_refs: Vec<ThingId> = Vec::with_capacity(16);
     let mut created_ids: Vec<ThingId> = Vec::new();
+    
+    // Compute summary from validated ops (O(1) filtering at read time)
+    let mut summary = CommitSummary::default();
 
     // Apply each operation
     for op in ops {
@@ -64,14 +67,21 @@ pub fn apply_ops_and_commit(
                     local_refs.resize(*out_idx + 1, 0);
                 }
                 local_refs[*out_idx] = new_id;
+                // Track kind for summary
+                summary.kinds.insert(*kind);
             }
             ValidatedOp::PutEdge { src, rel, dst } => {
                 graph.link(*src, *rel, *dst);
+                // Track predicate and subject for summary
+                summary.predicates.insert(*rel);
+                summary.subjects.insert(*src);
             }
             ValidatedOp::SetProp { id, key, value } => {
                 if let Some(node) = graph.get_node_mut(*id) {
                     node.props.insert(*key, *value);
                 }
+                // Track subject for summary
+                summary.subjects.insert(*id);
             }
         }
     }
@@ -79,9 +89,8 @@ pub fn apply_ops_and_commit(
     // Commit: increment sequence number
     let new_seq = graph.root_seq.fetch_add(1, Ordering::SeqCst) + 1;
 
-    // Push to shared commit history (single allocation, not per-watch)
-    // Watchers read from this shared buffer via their cursor_seq
-    graph.commit_history.push(new_seq, commit_bytes.to_vec());
+    // Push to shared commit history with summary for O(1) filter matching
+    graph.commit_history.push(new_seq, commit_bytes.to_vec(), summary);
 
     ApplyResult {
         status: 0,

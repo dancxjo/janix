@@ -2,13 +2,12 @@
 //!
 //! Watches observe graph mutations via the shared CommitHistory ring buffer.
 //! Each watch maintains only a cursor_seq, not a copy of commit data.
-//! Watches may filter commits by subject/predicate/kind.
+//! Watches may filter commits by subject/predicate/kind using O(1) summary matching.
 
-use crate::root::graph::{Graph, GlobalWatch, WatchFilter, WATCH_SCAN_LIMIT};
+use crate::root::graph::{Graph, GlobalWatch, WatchFilter, WATCH_SCAN_LIMIT, commit_matches};
 use crate::root::resources::{stream, ResourceHandle};
 use crate::root::symbols::Interner;
 use crate::root::query::PreparedStep;
-use super::batch::batch_matches_filter;
 use super::HandlerResult;
 use core::sync::atomic::Ordering;
 
@@ -151,9 +150,9 @@ pub fn handle_watch_next(
             return (-11, 0); // -EAGAIN
         }
         
-        // Get commit data
-        let data = match graph.commit_history.get(cursor) {
-            Some(d) => d,
+        // Get commit record (includes summary for O(1) matching)
+        let record = match graph.commit_history.get_record(cursor) {
+            Some(r) => r,
             None => {
                 // Gap in history (shouldn't happen), skip
                 cursor += 1;
@@ -162,25 +161,16 @@ pub fn handle_watch_next(
             }
         };
         
-        // Check if batch matches filter
-        match batch_matches_filter(data, &filter) {
-            Ok(true) => {
-                // Match found!
-                found_cursor = Some(cursor);
-                break;
-            }
-            Ok(false) => {
-                // No match, skip to next
-                cursor += 1;
-                scanned += 1;
-                continue;
-            }
-            Err(_) => {
-                // Malformed batch, skip
-                cursor += 1;
-                scanned += 1;
-                continue;
-            }
+        // Check if commit matches filter using summary (O(1))
+        if commit_matches(&filter, &record.summary) {
+            // Match found!
+            found_cursor = Some(cursor);
+            break;
+        } else {
+            // No match, skip to next
+            cursor += 1;
+            scanned += 1;
+            continue;
         }
     }
     

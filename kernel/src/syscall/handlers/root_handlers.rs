@@ -692,32 +692,43 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     root_call(msg)
 }
 
-pub fn sys_root_watch_next(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
-    validate_user_range(out_ptr, len, true)?;
+pub fn sys_root_watch_next(
+    id: usize,
+    out_seq_ptr: usize,
+    out_ptr: usize,
+    out_len: usize,
+) -> SysResult<usize> {
+    validate_user_range(out_seq_ptr, core::mem::size_of::<u64>(), true)?;
+    validate_user_range(out_ptr, out_len, true)?;
 
-    let mut kbuf = [0u8; 2048]; // Max batch size to read at once?
-    let kbuf_len = core::cmp::min(len, kbuf.len());
+    const MAX_WATCH_PAYLOAD: usize = 256 * 1024;
+    let cap = core::cmp::min(out_len, MAX_WATCH_PAYLOAD);
+    let mut kbuf = alloc::vec![0u8; cap];
 
-    let reply = root_svc::enqueue(RootOp::WatchNext { 
+    let reply = root_svc::enqueue(RootOp::WatchNext {
         id: id as u64,
-        out_seq_ptr: 0, // Unused in current design
+        out_seq_ptr: 0,
         out_ptr: kbuf.as_mut_ptr() as u64,
-        out_len: kbuf_len as u64,
+        out_len: out_len as u64,
     });
 
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
             let status = reply.status.load(Ordering::Relaxed);
-            
+
             if status >= 0 {
                 let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
-                // seq is in reply.p0 but we don't expose it in this ABI version
 
                 if status == 0 {
                     // Copy data
                     unsafe {
                         copyout(out_ptr, &kbuf[..bytes_read])?;
+                    }
+                    // Copy seq
+                    let seq = reply.p0.load(Ordering::Relaxed);
+                    unsafe {
+                        copyout(out_seq_ptr, &seq.to_le_bytes())?;
                     }
                     return Ok(bytes_read);
                 }
@@ -727,12 +738,17 @@ pub fn sys_root_watch_next(id: usize, out_ptr: usize, len: usize) -> SysResult<u
                     -75 => return Err(Errno::EOVERFLOW),
                     -28 => return Err(Errno::ENOSPC),
                     -11 => return Err(Errno::EAGAIN),
-                    -22 => return Err(Errno::EINVAL),  // Invalid handle
-                    -9  => return Err(Errno::EBADF),   // Bad/stale watch descriptor
+                    -22 => return Err(Errno::EINVAL), // Invalid handle
+                    -9 => return Err(Errno::EBADF),   // Bad/stale watch descriptor
                     _ => {
                         // Log unexpected status for debugging
                         let tid = unsafe { crate::task::scheduler::current_tid_current() };
-                        crate::kinfo!("watch_next: UNEXPECTED status={} wid={} tid={}", status, id, tid);
+                        crate::kinfo!(
+                            "watch_next: UNEXPECTED status={} wid={} tid={}",
+                            status,
+                            id,
+                            tid
+                        );
                         return Err(Errno::EIO);
                     }
                 }

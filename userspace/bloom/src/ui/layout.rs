@@ -203,8 +203,15 @@ mod tests {
     #[test]
     fn test_layout_centering() {
         let mut snapshot = UiSnapshot::new();
-        let root_id = ThingId(1);
-        let child_id = ThingId(2);
+
+        fn make_id(n: u8) -> ThingId {
+            let mut b = [0u8; 16];
+            b[0] = n;
+            ThingId(b)
+        }
+
+        let root_id = make_id(1);
+        let child_id = make_id(2);
         snapshot.root_id = Some(root_id);
         
         // Root node
@@ -237,7 +244,8 @@ mod tests {
 
         // Screen 800x600.
         // Child 100x50 centered should be at x=350, y=275
-        let tree = LayoutSolver::solve(&snapshot, 800, 600, &assets, &resolver);
+        let mut solver = LayoutSolver::new();
+        let tree = solver.solve(&snapshot, 800, 600, &assets, &resolver);
 
         assert!(tree.root.is_some());
         let root = tree.root.unwrap();

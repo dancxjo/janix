@@ -4,8 +4,9 @@ use alloc::string::String;
 use crate::geometry::Color;
 use crate::damage::Rect;
 use crate::ui::layout::{LayoutTree, LayoutNode, SymbolResolver};
-use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot};
+use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
 use abi::schema::keys;
+use abi::WireType::ThingId;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PaintObject {
@@ -167,7 +168,12 @@ mod tests {
     fn test_paint_determinism() {
         // 1. Setup Snapshot
         let mut snapshot = UiSnapshot::new();
-        let root_id = ThingId(1);
+        fn make_id(n: u8) -> abi::ThingId {
+            let mut b = [0u8; 16];
+            b[0] = n;
+            abi::ThingId(b)
+        }
+        let root_id = make_id(1);
         snapshot.root_id = Some(root_id);
 
         let mut props = BTreeMap::new();

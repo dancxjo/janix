@@ -2,6 +2,7 @@
 
 use super::graph::Graph;
 use crate::root::handlers as root_handlers;
+use crate::root::handlers::batch::RootBatchScratch;
 use super::journal::Journal;
 use super::symbols::Interner;
 use super::{RootMsg, RootOp};
@@ -14,6 +15,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
     let mut graph = Graph::new();
     let mut journal = Journal::new();
     let mut interner = Interner::new();
+    let mut batch_scratch = RootBatchScratch::new();
 
     let mut iteration = 0u64;
     loop {
@@ -22,7 +24,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         
         while processed < 16 {
             if let Some(msg) = super::pop_msg() {
-                handle_msg::<R>(&mut graph, &mut journal, &mut interner, msg);
+                handle_msg::<R>(&mut graph, &mut journal, &mut interner, &mut batch_scratch, msg);
                 processed += 1;
             } else {
                 break;
@@ -75,6 +77,7 @@ fn handle_msg<R: BootRuntime>(
     graph: &mut Graph,
     journal: &mut Journal,
     interner: &mut Interner,
+    batch_scratch: &mut RootBatchScratch,
     msg: RootMsg,
 ) {
     let (status, value) = match msg.op {
@@ -128,7 +131,7 @@ fn handle_msg<R: BootRuntime>(
         }
 
         RootOp::ApplyBatch { batch } => {
-            root_handlers::batch::handle_apply_batch(graph, interner, &batch)
+            root_handlers::batch::handle_apply_batch_with_scratch(graph, interner, &batch, batch_scratch)
         }
 
         // Debug/Describe operations

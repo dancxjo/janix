@@ -6,12 +6,66 @@
 
 use crate::root::graph::{Graph, ThingId, CommitSummary};
 use crate::root::handlers::HandlerResult;
-use abi::root::{BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP, REF_ABSOLUTE, REF_LOCAL};
+use abi::root::{
+    BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP,
+    REF_ABSOLUTE, REF_LOCAL, MAX_BATCH_BYTES, MAX_BATCH_OPS, MAX_LOCAL_REFS,
+};
 use abi::symbols::SymbolId;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU64, Ordering};
 use alloc::vec::Vec;
 use crate::root::symbols::Interner;
 use alloc::string::String;
+
+// ============================================================================
+// Instrumentation Counters
+// ============================================================================
+
+/// Total ApplyBatch calls
+pub static BATCH_CALLS: AtomicU64 = AtomicU64::new(0);
+/// Total ops processed across all batches
+pub static BATCH_OPS_TOTAL: AtomicU64 = AtomicU64::new(0);
+/// Times scratch.ops Vec had to reallocate (should stabilize to 0)
+pub static BATCH_REALLOCATIONS: AtomicU64 = AtomicU64::new(0);
+
+// ============================================================================
+// Per-CPU Scratch Buffer
+// ============================================================================
+
+/// Reusable scratch buffer for batch parsing and validation.
+/// 
+/// Avoids repeated allocations by reusing capacity across ApplyBatch calls.
+/// Each root service instance owns one of these.
+/// 
+/// Note: locals arrays are boxed to avoid stack overflow (9KB total).
+pub struct RootBatchScratch {
+    /// Validated ops staging area (capacity preserved across calls)
+    pub ops: Vec<ValidatedOp>,
+    /// Local reference table (fixed size for zero-alloc, heap-allocated)
+    pub locals: alloc::boxed::Box<[ThingId; MAX_LOCAL_REFS]>,
+    /// Tracks which local refs have been initialized (heap-allocated)
+    pub locals_init: alloc::boxed::Box<[bool; MAX_LOCAL_REFS]>,
+}
+
+impl RootBatchScratch {
+    /// Create a new scratch buffer with pre-reserved capacity.
+    pub fn new() -> Self {
+        let mut ops = Vec::new();
+        ops.reserve_exact(512); // Reasonable default capacity
+        Self {
+            ops,
+            // Use Box to avoid 9KB stack allocation
+            locals: alloc::boxed::Box::new([0; MAX_LOCAL_REFS]),
+            locals_init: alloc::boxed::Box::new([false; MAX_LOCAL_REFS]),
+        }
+    }
+    
+    /// Reset scratch for next batch (preserves allocation capacity).
+    pub fn reset(&mut self) {
+        self.ops.clear();  // Keeps capacity
+        self.locals_init.fill(false);
+        // locals array can be left as-is since locals_init guards access
+    }
+}
 
 /// Validated operation ready for application to the graph.
 /// This is the internal representation after parsing/validation.
@@ -256,135 +310,190 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
     s
 }
 
-/// Parse a ThingRef from the batch buffer.
-fn parse_ref(cursor: &mut usize, data: &[u8], local_refs: &[ThingId]) -> Option<ThingId> {
-    if *cursor >= data.len() { return None; }
+/// Parse a ThingRef from the batch buffer using scratch locals.
+/// 
+/// Returns the resolved ThingId or an error code:
+/// - `-22` (EINVAL) for invalid format or uninitialized local ref
+fn parse_ref_scratch(
+    cursor: &mut usize, 
+    data: &[u8], 
+    scratch: &RootBatchScratch
+) -> Result<ThingId, i32> {
+    if *cursor >= data.len() { return Err(-22); }
     let kind = data[*cursor];
     *cursor += 1;
     match kind {
         REF_ABSOLUTE => {
-            if *cursor + 16 > data.len() { return None; }
+            if *cursor + 16 > data.len() { return Err(-22); }
             let val = u64::from_le_bytes(data[*cursor..*cursor+8].try_into().unwrap());
             *cursor += 16;
-            Some(val)
+            Ok(val)
         }
         REF_LOCAL => {
-            if *cursor + 2 > data.len() { return None; }
+            if *cursor + 2 > data.len() { return Err(-22); }
             let idx = u16::from_le_bytes(data[*cursor..*cursor+2].try_into().unwrap()) as usize;
             *cursor += 2;
-            if idx < local_refs.len() { Some(local_refs[idx]) } else { None }
+            // Validate local ref is within bounds and initialized
+            if idx >= MAX_LOCAL_REFS {
+                return Err(-22); // EINVAL: out of bounds
+            }
+            if !scratch.locals_init[idx] {
+                return Err(-22); // EINVAL: not yet initialized
+            }
+            Ok(scratch.locals[idx])
         }
-        _ => None
+        _ => Err(-22)
     }
 }
 
-/// Parse batch bytes into validated operations.
-fn parse_batch(
+/// Parse batch bytes into validated operations using scratch buffer.
+/// 
+/// # Errors
+/// - `-7` (E2BIG): batch too large or too many ops
+/// - `-22` (EINVAL): malformed format, invalid refs
+fn parse_batch_scratch(
     batch: &[u8],
     interner: &mut Interner,
-) -> Result<Vec<ValidatedOp>, i32> {
+    scratch: &mut RootBatchScratch,
+) -> Result<(), i32> {
+    // Cap validation: batch size
+    if batch.len() > MAX_BATCH_BYTES {
+        return Err(-7); // E2BIG
+    }
+    
     if batch.len() < 8 {
-        return Err(-1);
+        return Err(-22); // EINVAL: too short for header
     }
 
     let magic = u32::from_le_bytes(batch[0..4].try_into().unwrap());
     let version = u16::from_le_bytes(batch[4..6].try_into().unwrap());
-    let op_count = u16::from_le_bytes(batch[6..8].try_into().unwrap());
+    let op_count = u16::from_le_bytes(batch[6..8].try_into().unwrap()) as usize;
 
     if magic != BATCH_MAGIC || version != BATCH_VERSION {
-        return Err(-1);
+        return Err(-22); // EINVAL
+    }
+    
+    // Cap validation: op count
+    if op_count > MAX_BATCH_OPS {
+        return Err(-7); // E2BIG
+    }
+
+    // Reserve additional capacity if needed (best-effort allocation tracking)
+    if scratch.ops.capacity() < op_count {
+        scratch.ops.reserve(op_count - scratch.ops.capacity());
     }
 
     let mut cursor = 8usize;
-    let mut local_refs: Vec<ThingId> = Vec::with_capacity(16);
-    let mut ops = Vec::with_capacity(op_count as usize);
 
     for _ in 0..op_count {
-        if cursor >= batch.len() { return Err(-1); }
+        if cursor >= batch.len() { return Err(-22); }
         let tag = batch[cursor];
         cursor += 1;
 
         match tag {
             OP_CREATE_NODE => {
-                if cursor + 16 > batch.len() { return Err(-1); }
+                if cursor + 16 > batch.len() { return Err(-22); }
                 let kind_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
                 cursor += 16;
                 let kind_str = bytes_to_hex(&kind_bytes);
                 let kind = interner.intern(&kind_str);
 
-                if cursor + 2 > batch.len() { return Err(-1); }
+                if cursor + 2 > batch.len() { return Err(-22); }
                 let out_idx = u16::from_le_bytes(batch[cursor..cursor+2].try_into().unwrap()) as usize;
                 cursor += 2;
-
-                ops.push(ValidatedOp::CreateNode { kind, out_idx });
                 
-                // Track local refs for subsequent ops
-                if out_idx >= local_refs.len() {
-                    local_refs.resize(out_idx + 1, 0);
+                // Validate out_ref within bounds
+                if out_idx >= MAX_LOCAL_REFS {
+                    return Err(-22); // EINVAL: out_ref too large
                 }
-                // Placeholder - will be filled during apply
-                local_refs[out_idx] = 0;
+
+                scratch.ops.push(ValidatedOp::CreateNode { kind, out_idx });
+                
+                // Mark local ref as initialized (placeholder value, filled at apply time)
+                scratch.locals[out_idx] = 0;
+                scratch.locals_init[out_idx] = true;
             }
             OP_PUT_EDGE => {
-                let src = match parse_ref(&mut cursor, batch, &local_refs) {
-                    Some(id) => id,
-                    None => return Err(-2),
-                };
+                let src = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
-                if cursor + 16 > batch.len() { return Err(-3); }
+                if cursor + 16 > batch.len() { return Err(-22); }
                 let rel_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
                 cursor += 16;
                 let rel_str = bytes_to_hex(&rel_bytes);
                 let rel = interner.intern(&rel_str);
 
-                let dst = match parse_ref(&mut cursor, batch, &local_refs) {
-                    Some(id) => id,
-                    None => return Err(-4),
-                };
+                let dst = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
-                ops.push(ValidatedOp::PutEdge { src, rel, dst });
+                scratch.ops.push(ValidatedOp::PutEdge { src, rel, dst });
             }
             OP_SET_PROP => {
-                let id = match parse_ref(&mut cursor, batch, &local_refs) {
-                    Some(id) => id,
-                    None => return Err(-2),
-                };
+                let id = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
-                if cursor + 16 > batch.len() { return Err(-3); }
+                if cursor + 16 > batch.len() { return Err(-22); }
                 let key_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
                 cursor += 16;
                 let key_str = bytes_to_hex(&key_bytes);
                 let key = interner.intern(&key_str);
 
-                if cursor + 8 > batch.len() { return Err(-4); }
+                if cursor + 8 > batch.len() { return Err(-22); }
                 let value = u64::from_le_bytes(batch[cursor..cursor + 8].try_into().unwrap());
                 cursor += 8;
 
-                ops.push(ValidatedOp::SetProp { id, key, value });
+                scratch.ops.push(ValidatedOp::SetProp { id, key, value });
             }
-            _ => { return Err(-5); }
+            _ => { return Err(-22); } // Unknown op tag
         }
     }
 
-    Ok(ops)
+    Ok(())
 }
 
-/// Handle SYS_ROOT_APPLY_BATCH
+/// Handle SYS_ROOT_APPLY_BATCH with scratch buffer for zero-alloc hot path.
 ///
 /// Parses the batch, validates operations, and commits through the canonical path.
+pub fn handle_apply_batch_with_scratch(
+    graph: &mut Graph,
+    interner: &mut Interner,
+    batch: &[u8],
+    scratch: &mut RootBatchScratch,
+) -> HandlerResult {
+    // Increment call counter
+    BATCH_CALLS.fetch_add(1, Ordering::Relaxed);
+    
+    // Track capacity before parsing for reallocation detection
+    let old_cap = scratch.ops.capacity();
+    
+    // Reset scratch for this batch
+    scratch.reset();
+    
+    // Parse batch into scratch.ops (validation happens here)
+    if let Err(code) = parse_batch_scratch(batch, interner, scratch) {
+        return (code, 0);
+    }
+    
+    // Track ops and detect reallocations
+    BATCH_OPS_TOTAL.fetch_add(scratch.ops.len() as u64, Ordering::Relaxed);
+    if scratch.ops.capacity() != old_cap {
+        BATCH_REALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    // Apply through canonical commit path
+    let result = apply_ops_and_commit(graph, &scratch.ops, batch);
+    
+    (result.status, result.seq)
+}
+
+/// Handle SYS_ROOT_APPLY_BATCH (legacy interface without scratch - allocates each call)
+///
+/// Parses the batch, validates operations, and commits through the canonical path.
+/// 
+/// NOTE: This allocates a new scratch each call. For zero-alloc hot path, 
+/// use `handle_apply_batch_with_scratch` instead.
 pub fn handle_apply_batch(
     graph: &mut Graph,
     interner: &mut Interner,
     batch: &[u8],
 ) -> HandlerResult {
-    // Parse batch into validated ops
-    let ops = match parse_batch(batch, interner) {
-        Ok(ops) => ops,
-        Err(code) => return (code, 0),
-    };
-
-    // Apply through canonical commit path
-    let result = apply_ops_and_commit(graph, &ops, batch);
-    
-    (result.status, result.seq)
+    let mut scratch = RootBatchScratch::new();
+    handle_apply_batch_with_scratch(graph, interner, batch, &mut scratch)
 }

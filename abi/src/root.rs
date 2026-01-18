@@ -8,6 +8,17 @@
 pub const BATCH_MAGIC: u32 = 0x54485254; // "THRT"
 pub const BATCH_VERSION: u16 = 1;
 
+// ============================================================================
+// Batch Caps (DoS protection + zero-alloc hot path)
+// ============================================================================
+
+/// Maximum batch payload size in bytes
+pub const MAX_BATCH_BYTES: usize = 256 * 1024;   // 256 KiB
+/// Maximum number of operations per batch
+pub const MAX_BATCH_OPS: usize = 4096;
+/// Maximum number of local references (CREATE_NODE outputs)
+pub const MAX_LOCAL_REFS: usize = 1024;
+
 /// Op Tags
 pub const OP_CREATE_NODE: u8 = 0x01;
 pub const OP_PUT_EDGE: u8 = 0x02;

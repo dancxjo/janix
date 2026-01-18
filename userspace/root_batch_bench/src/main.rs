@@ -2,102 +2,134 @@
 #![no_main]
 
 extern crate alloc;
-// use stem::prelude::*;
 use abi::root::*;
 use abi::syscall::*;
+use alloc::vec::Vec;
 use stem::println;
+
+// Configurable benchmark parameters (compile-time)
+const OPS_PER_BATCH: usize = 200;   // CreateNodes + PutEdges
+const ITERATIONS: usize = 100;      // Number of batch submissions
+const NODES_PER_BATCH: usize = 100; // CreateNode ops per batch
 
 #[stem::main]
 fn main() -> ! {
     stem::info!("Root Batch Bench Starting...");
-    let mut graph = [0u8; 128]; // dummy buffer
-    // ... logic ...
+    stem::info!("Config: {} ops/batch, {} iterations", OPS_PER_BATCH, ITERATIONS);
     
-    // Instead of return 0, we must exit.
-    // stem::process::exit(0); // If exists
-    // For now, loop forever to satisfy ! if we don't have exit.
-    // But benchmarks should print results then exit.
-    // Check stem source? I'll assume stem::process::exit exists or I loop.
-    test_main();
+    run_benchmark();
+    
+    stem::info!("Benchmark complete. Halting.");
     loop { stem::yield_now(); }
 }
 
-fn test_main() -> i32 {    
-    // 1. Intern some symbols to use
-    // For benchmarks we can use fixed bytes since we manipulate raw batch
-    let kind_id = [0xAA; 16]; // Fake SymbolId
-    let rel_id = [0xBB; 16]; 
+fn run_benchmark() {
+    // Build a reusable batch payload
+    let batch = build_batch(NODES_PER_BATCH);
+    let batch_ops = NODES_PER_BATCH * 2; // CREATE_NODE + PUT_EDGE for each
+    
+    println!("Batch size: {} bytes, {} ops", batch.len(), batch_ops);
+    
+    // Warm-up: run once to trigger any lazy initialization/allocation
+    let _ = submit_batch(&batch);
+    
+    // Timed benchmark run
+    let start = stem::time::monotonic_ns();
+    let mut success_count = 0u64;
+    let mut error_count = 0u64;
+    
+    for _ in 0..ITERATIONS {
+        match submit_batch(&batch) {
+            Ok(_seq) => success_count += 1,
+            Err(errno) => {
+                error_count += 1;
+                if error_count <= 5 {
+                    println!("ApplyBatch error: {}", errno);
+                }
+            }
+        }
+    }
+    
+    let end = stem::time::monotonic_ns();
+    let elapsed_ns = end.saturating_sub(start);
+    
+    // Compute metrics
+    let total_ops = (batch_ops as u64) * (success_count as u64);
+    let total_commits = success_count;
+    
+    println!("=== Benchmark Results ===");
+    println!("Iterations: {} success, {} errors", success_count, error_count);
+    println!("Elapsed: {} ns ({} ms)", elapsed_ns, elapsed_ns / 1_000_000);
+    
+    if elapsed_ns > 0 {
+        let ops_per_sec = total_ops.saturating_mul(1_000_000_000) / elapsed_ns;
+        let commits_per_sec = total_commits.saturating_mul(1_000_000_000) / elapsed_ns;
+        let ns_per_batch = elapsed_ns / (success_count.max(1));
+        
+        println!("Throughput: {} ops/sec", ops_per_sec);
+        println!("Commits: {} commits/sec", commits_per_sec);
+        println!("Latency: {} ns/batch ({} us)", ns_per_batch, ns_per_batch / 1000);
+    }
+}
 
-    // 2. Build a batch
-    // Header + (CreateNode x 100) + (PutEdge x 99)
-    // CreateNode: 1(Tag) + 16(Kind) + 2(OutRef) = 19 bytes
-    // PutEdge: 1(Tag) + Ref(3) + Rel(16) + Ref(3) = 23 bytes (Using Local Refs)
-    // Ref Local: 1(Tag=1) + 2(Idx) = 3 bytes
+fn build_batch(node_count: usize) -> Vec<u8> {
+    let kind_id = [0xAA; 16]; // Fixed kind hash
+    let rel_id = [0xBB; 16];  // Fixed predicate hash
     
-    let mut batch = alloc::vec::Vec::with_capacity(1024 * 64);
+    // Total ops = node_count (CREATE_NODE) + node_count (PUT_EDGE)
+    let op_count = (node_count * 2) as u16;
     
-    // Header
-    let magic = BATCH_MAGIC;
-    let version = BATCH_VERSION;
-    let ops = 200u16; 
+    let mut batch = Vec::with_capacity(8 + node_count * 50);
     
-    batch.extend_from_slice(&magic.to_le_bytes());
-    batch.extend_from_slice(&version.to_le_bytes());
-    batch.extend_from_slice(&ops.to_le_bytes());
+    // Header: magic (4) + version (2) + op_count (2)
+    batch.extend_from_slice(&BATCH_MAGIC.to_le_bytes());
+    batch.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+    batch.extend_from_slice(&op_count.to_le_bytes());
     
-    // Add 100 CreateNode ops
-    for i in 0..100 {
+    // CREATE_NODE ops: tag (1) + kind (16) + out_idx (2) = 19 bytes each
+    for i in 0..node_count {
         batch.push(OP_CREATE_NODE);
         batch.extend_from_slice(&kind_id);
         let out_idx = i as u16;
         batch.extend_from_slice(&out_idx.to_le_bytes());
     }
     
-    // Add 100 PutEdge ops (Chain them: 0->1, 1->2 ...)
-    for i in 0..100 {
+    // PUT_EDGE ops: tag + src_ref + predicate + dst_ref
+    // Local ref: tag (1) + idx (2) = 3 bytes
+    // Total: 1 + 3 + 16 + 3 = 23 bytes each
+    for i in 0..node_count {
         batch.push(OP_PUT_EDGE);
         
-        // Subject: Local Ref i
+        // Subject: local ref to node i
         batch.push(REF_LOCAL);
         batch.extend_from_slice(&(i as u16).to_le_bytes());
         
-        // Pred
+        // Predicate
         batch.extend_from_slice(&rel_id);
         
-        // Object: Local Ref (i+1) % 100
+        // Object: local ref to node (i+1) % node_count
         batch.push(REF_LOCAL);
-        let next = ((i + 1) % 100) as u16;
-        batch.extend_from_slice(&next.to_le_bytes()); 
+        let next = ((i + 1) % node_count) as u16;
+        batch.extend_from_slice(&next.to_le_bytes());
     }
     
-    println!("Batch size: {} bytes", batch.len());
-    
-    // 3. Run Benchmark
-    let start = stem::time::monotonic_ns();
-    let loops = 100;
-    
-    for _ in 0..loops {
-        unsafe {
-             let res = stem::syscall::syscall6(
-                 SYS_ROOT_APPLY_BATCH,
-                 batch.as_ptr() as usize,
-                 batch.len() as usize,
-                 0, 0, 0, 0
-             );
-             if (res as isize) < 0 {
-                 println!("Syscall failed: {}", res);
-                 return -1;
-             }
-        }
-    }
-    
-    let end = stem::time::monotonic_ns();
-    let elapsed_ns = end - start;
-    let total_ops = ops as u64 * loops as u64;
-    
-    println!("Applied {} ops in {} ns", total_ops, elapsed_ns);
-    let ops_per_sec = total_ops * 1_000_000_000 / elapsed_ns;
-    println!("Throughput: {} ops/sec", ops_per_sec);
+    batch
+}
 
-    0
+fn submit_batch(batch: &[u8]) -> Result<u64, i32> {
+    let result = unsafe {
+        stem::syscall::syscall6(
+            SYS_ROOT_APPLY_BATCH,
+            batch.as_ptr() as usize,
+            batch.len(),
+            0, 0, 0, 0
+        )
+    };
+    
+    let signed = result as i64;
+    if signed < 0 {
+        Err(signed as i32)
+    } else {
+        Ok(result as u64) // Returns seq number
+    }
 }

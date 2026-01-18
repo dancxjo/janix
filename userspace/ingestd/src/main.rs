@@ -44,14 +44,21 @@ fn main() -> Result<(), abi::errors::Errno> {
     
     syscall::log_write("INGESTD: Watch active. Loop start.", 1)?;
     
-    let mut evt = WatchEvent::default();
+    let mut seq_out = 0u64;
+    let mut watch_buf = [0u8; 4096];
     loop {
-         let res = syscall::root_watch_next(watch_id, &mut evt);
+         let res = syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf);
          match res {
-             Ok(1) => {
-                 // MatchFound
-                 if evt.kind == 1 { 
-                     process_asset(evt.node_id);
+             Ok(len) if len > 0 => {
+                 // Parse WatchEvent from the returned batch payload
+                 if len >= core::mem::size_of::<WatchEvent>() {
+                     let evt: WatchEvent = unsafe {
+                         core::ptr::read_unaligned(watch_buf.as_ptr() as *const _)
+                     };
+                     // MatchFound
+                     if evt.kind == 1 { 
+                         process_asset(evt.node_id);
+                     }
                  }
              }
              Ok(0) => {

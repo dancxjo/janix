@@ -282,13 +282,14 @@ pub fn root_watch_open(spec: &abi::types::WatchSpec) -> Result<usize, Errno> {
     Ok(ret)
 }
 
-pub fn root_watch_next(id: usize, out: &mut abi::types::WatchEvent) -> Result<usize, Errno> {
+pub fn root_watch_next(id: usize, seq_out: &mut u64, out: &mut [u8]) -> Result<usize, Errno> {
     let ret = unsafe { match raw_syscall6(
         SYS_ROOT_WATCH_NEXT,
         id,
-        out as *mut _ as usize,
-        core::mem::size_of::<abi::types::WatchEvent>(),
-        0, 0, 0
+        seq_out as *mut _ as usize,
+        out.as_mut_ptr() as usize,
+        out.len(),
+        0, 0
     ) {
         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
         r => r as usize

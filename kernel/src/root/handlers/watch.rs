@@ -1,4 +1,7 @@
 //! Watch API handlers.
+//!
+//! Watches observe graph mutations via the shared CommitHistory ring buffer.
+//! Each watch maintains only a cursor_seq, not a copy of commit data.
 
 use crate::root::graph::{Graph, GlobalWatch};
 use crate::root::resources::{stream, ResourceHandle};
@@ -8,11 +11,12 @@ use super::HandlerResult;
 use core::sync::atomic::Ordering;
 
 /// Opens a new watch.
-/// 1. Allocates a stream resource.
-/// 2. Registers the global watch in the graph.
-/// 3. (Todo: Runs the query to populate initial state?)
-/// For v0, we might skip the initial population if not strictly required, 
-/// but the plan says "immediately emit current matches".
+/// 
+/// # Arguments
+/// * `start_seq` - If 0, subscribe from "now" (next commit). Otherwise resume from that seq.
+/// 
+/// # Returns
+/// (0, watch_id) on success
 pub fn handle_watch_open(
     graph: &mut Graph,
     interner: &mut Interner,
@@ -39,11 +43,11 @@ pub fn handle_watch_open(
         .unwrap_or_else(|| interner.intern("thing.bytespace"));
     let fact_rel = interner.intern("has_fact");
     
-    // 3. Create Global Watch
-    // We use stream_id as the watch_id conceptually for the user.
-    
-    let next_seq = if start_seq == 0 {
-        graph.root_seq.load(Ordering::Relaxed) + 1
+    // 3. Determine cursor position
+    // If start_seq == 0: cursor = history.next_seq ("from now", next commit will have this seq)
+    // Else: cursor = start_seq (resume/replay from that point)
+    let cursor_seq = if start_seq == 0 {
+        graph.commit_history.next_seq
     } else {
         start_seq
     };
@@ -54,9 +58,7 @@ pub fn handle_watch_open(
         stream_handle: ResourceHandle::Stream(stream_handle),
         kind_filter: bs_kind, 
         missing_fact: fact_rel,
-        next_seq,
-        pending: alloc::collections::VecDeque::new(),
-        pending_bytes: 0,
+        cursor_seq,
         overflowed: false,
     };
     
@@ -66,55 +68,104 @@ pub fn handle_watch_open(
     (0, stream_id)
 }
 
+/// Retrieves the next committed batch payload.
+///
+/// # Algorithm (exact per spec)
+/// 1. Validate handle else -EINVAL
+/// 2. If watch.overflowed: clear flag, return -EOVERFLOW
+/// 3. Determine if cursor_seq is in history range:
+///    - If history empty: return -EAGAIN
+///    - If cursor_seq < oldest: set overflowed=false, cursor=oldest, return -EOVERFLOW
+///    - If cursor_seq > newest: return -EAGAIN
+/// 4. Fetch commit, check capacity
+/// 5. Copy data, write seq, advance cursor
+///
+/// # Returns
+/// - `>= 0`: Success, bytes written
+/// - `-11`: -EAGAIN, no pending events
+/// - `-22`: -EINVAL, invalid handle
+/// - `-28`: -ENOSPC, buffer too small (no consume)
+/// - `-75`: -EOVERFLOW, missed commits (cleared, resync)
 pub fn handle_watch_next(
     graph: &mut Graph,
     msg: &crate::root::RootMsg,
     id: u64,
 ) -> HandlerResult {
-    let _out_seq_ptr = if let crate::root::RootOp::WatchNext { out_seq_ptr, .. } = msg.op { out_seq_ptr } else { 0 };
+    // Extract syscall parameters
     let out_ptr = if let crate::root::RootOp::WatchNext { out_ptr, .. } = msg.op { out_ptr } else { 0 };
     let out_len = if let crate::root::RootOp::WatchNext { out_len, .. } = msg.op { out_len } else { 0 };
 
+    // 1. Validate handle
+    let watch = match graph.global_watches.get_mut(&id) {
+        Some(w) => w,
+        None => return (-22, 0), // -EINVAL
+    };
     
-    if let Some(watch) = graph.global_watches.get_mut(&id) {
-        // 1. Check Overflow
-        if watch.overflowed {
-            watch.overflowed = false;
-            // Return -EOVERFLOW (mapped to -75)
-            return (-75, 0); 
-        }
-
-        // 2. Check Queue
-        if let Some(commit) = watch.pending.front() {
-            if commit.data.len() as u64 > out_len {
-                return (-28, 0); // -ENOSPC (28 in Linux)
-            }
-            
-            // 3. Copy Out
-            // Unsafe copy to kernel ptr provided by syscall handler
-            unsafe {
-                let src = commit.data.as_ptr();
-                let dst = out_ptr as *mut u8;
-                core::ptr::copy_nonoverlapping(src, dst, commit.data.len());
-            }
-
-            // Return seq in p0
-            msg.reply.p0.store(commit.seq, Ordering::Relaxed);
-            
-            let len = commit.data.len() as u64;
-            
-            // 4. Pop
-            if let Some(popped) = watch.pending.pop_front() {
-                watch.pending_bytes -= popped.data.len();
-            }
-            
-            return (0, len); // Success, return length
-        } else {
-             return (-11, 0); // -EAGAIN
-        }
+    // 2. Check overflow flag (sticky until reported)
+    if watch.overflowed {
+        watch.overflowed = false;
+        return (-75, 0); // -EOVERFLOW
     }
     
-    (-22, 0) // -EINVAL (Invalid handle)
+    // 3. Check history bounds
+    let oldest = graph.commit_history.oldest_seq();
+    let newest = graph.commit_history.newest_seq();
+    
+    // Empty history: nothing to read
+    if oldest.is_none() {
+        return (-11, 0); // -EAGAIN
+    }
+    
+    let oldest = oldest.unwrap();
+    let newest = newest.unwrap();
+    
+    // Cursor behind oldest: watch missed commits (overflow)
+    if watch.cursor_seq < oldest {
+        watch.overflowed = false; // Do not immediately loop
+        watch.cursor_seq = oldest; // Resync to earliest available
+        return (-75, 0); // -EOVERFLOW (do not consume data this call)
+    }
+    
+    // Cursor ahead of newest: no new commits yet
+    if watch.cursor_seq > newest {
+        return (-11, 0); // -EAGAIN
+    }
+    
+    // 4. Fetch commit record
+    let cursor = watch.cursor_seq;
+    let data = match graph.commit_history.get(cursor) {
+        Some(d) => d,
+        None => {
+            // Shouldn't happen if contiguous, treat as overflow
+            watch.overflowed = false;
+            return (-75, 0); // -EOVERFLOW
+        }
+    };
+    
+    // 5. Check capacity
+    if (out_len as usize) < data.len() {
+        return (-28, 0); // -ENOSPC (do not advance cursor)
+    }
+    
+    // 6. Copy data to user buffer
+    unsafe {
+        let src = data.as_ptr();
+        let dst = out_ptr as *mut u8;
+        core::ptr::copy_nonoverlapping(src, dst, data.len());
+    }
+    
+    // 7. Write seq into reply (out_seq_ptr handled by syscall layer via p0)
+    msg.reply.p0.store(cursor, Ordering::Relaxed);
+    
+    let len = data.len();
+    
+    // 8. Advance cursor
+    // Re-fetch mutable reference since we borrowed immutably for data
+    if let Some(watch) = graph.global_watches.get_mut(&id) {
+        watch.cursor_seq = cursor + 1;
+    }
+    
+    (0, len as u64) // Success, return length
 }
 
 pub fn handle_watch_close(

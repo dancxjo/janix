@@ -1,6 +1,7 @@
 use super::resources::ResourceHandle;
 use abi::symbols::SymbolId;
 use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use core::sync::atomic::AtomicU64;
 use alloc::collections::VecDeque;
@@ -11,15 +12,134 @@ pub struct Node {
     pub kind: SymbolId,
     pub props: BTreeMap<SymbolId, u64>,
     pub resource: Option<ResourceHandle>,
-    pub watches: alloc::vec::Vec<(u64, ThingId)>,
+    pub watches: Vec<(u64, ThingId)>,
     // Edges: list of (RelKind, Target)
-    pub edges: alloc::vec::Vec<(SymbolId, ThingId)>,
+    pub edges: Vec<(SymbolId, ThingId)>,
 }
 
-pub struct Commit {
+// ============================================================================
+// Shared Commit History (Ring Buffer)
+// ============================================================================
+
+/// A single committed batch stored in history
+pub struct CommitRecord {
     pub seq: u64,
-    pub data: alloc::vec::Vec<u8>,
+    pub data: Vec<u8>,
 }
+
+/// Hard limits for commit history
+pub const COMMIT_HISTORY_MAX_COMMITS: usize = 1024;
+pub const COMMIT_HISTORY_MAX_BYTES: usize = 32 * 1024 * 1024; // 32 MiB
+
+/// Shared ring buffer of recent commits
+/// 
+/// Accessed by all watches via cursor. Protected by the same lock
+/// used for graph writes (v0 simplicity).
+pub struct CommitHistory {
+    /// Monotonically increasing next sequence number
+    /// (The next commit pushed will have this seq)
+    pub next_seq: u64,
+    
+    /// Ring content in seq order
+    ring: VecDeque<CommitRecord>,
+    
+    /// Total bytes currently in ring
+    bytes: usize,
+    
+    /// Maximum number of commits to retain
+    max_commits: usize,
+    
+    /// Maximum bytes of commit data to retain
+    max_bytes: usize,
+}
+
+impl CommitHistory {
+    /// Create a new commit history with the given limits
+    pub fn new(max_commits: usize, max_bytes: usize) -> Self {
+        Self {
+            next_seq: 1, // First commit will be seq 1
+            ring: VecDeque::new(),
+            bytes: 0,
+            max_commits,
+            max_bytes,
+        }
+    }
+    
+    /// Create with default limits
+    pub fn with_defaults() -> Self {
+        Self::new(COMMIT_HISTORY_MAX_COMMITS, COMMIT_HISTORY_MAX_BYTES)
+    }
+    
+    /// Push a new commit, evicting oldest until within limits
+    /// 
+    /// The `seq` must equal `self.next_seq` - this is enforced for contiguity.
+    pub fn push(&mut self, seq: u64, data: Vec<u8>) {
+        debug_assert_eq!(seq, self.next_seq, "CommitHistory: seq must be contiguous");
+        
+        let data_len = data.len();
+        
+        // Evict from front until we have room for this commit
+        while !self.ring.is_empty() && 
+              (self.ring.len() >= self.max_commits || 
+               self.bytes + data_len > self.max_bytes) {
+            if let Some(evicted) = self.ring.pop_front() {
+                self.bytes -= evicted.data.len();
+            }
+        }
+        
+        // Push the new commit
+        self.ring.push_back(CommitRecord { seq, data });
+        self.bytes += data_len;
+        self.next_seq = seq + 1;
+    }
+    
+    /// Get commit data by sequence number
+    /// 
+    /// Returns None if seq is not in the ring (evicted or not yet committed).
+    pub fn get(&self, seq: u64) -> Option<&[u8]> {
+        // The ring is contiguous: if we have oldest..newest, 
+        // the index is (seq - oldest)
+        let oldest = self.oldest_seq()?;
+        if seq < oldest {
+            return None;
+        }
+        let idx = (seq - oldest) as usize;
+        self.ring.get(idx).map(|r| r.data.as_slice())
+    }
+    
+    /// Oldest available sequence, if any
+    pub fn oldest_seq(&self) -> Option<u64> {
+        self.ring.front().map(|r| r.seq)
+    }
+    
+    /// Newest available sequence, if any  
+    pub fn newest_seq(&self) -> Option<u64> {
+        self.ring.back().map(|r| r.seq)
+    }
+    
+    /// Check if a sequence is available in the history
+    pub fn contains(&self, seq: u64) -> bool {
+        if let (Some(oldest), Some(newest)) = (self.oldest_seq(), self.newest_seq()) {
+            seq >= oldest && seq <= newest
+        } else {
+            false
+        }
+    }
+    
+    /// Number of commits currently in history
+    pub fn len(&self) -> usize {
+        self.ring.len()
+    }
+    
+    /// Check if history is empty
+    pub fn is_empty(&self) -> bool {
+        self.ring.is_empty()
+    }
+}
+
+// ============================================================================
+// Global Watch (Cursor-Only)
+// ============================================================================
 
 pub struct GlobalWatch {
     pub id: u64,
@@ -28,23 +148,25 @@ pub struct GlobalWatch {
     pub kind_filter: SymbolId, // "kind == Bytespace"
     pub missing_fact: SymbolId, // "missing fact(detector=...)"
     
-    // Batching support
-    pub next_seq: u64,
-    pub pending: VecDeque<Commit>,
-    pub pending_bytes: usize,
+    // Cursor-based tracking (references shared CommitHistory)
+    /// Next sequence number this watch expects to read
+    pub cursor_seq: u64,
+    /// Sticky overflow flag - set when watch misses commits, cleared on -EOVERFLOW return
     pub overflowed: bool,
 }
 
-// Limits
-pub const MAX_PENDING_COMMITS: usize = 256;
-pub const MAX_PENDING_BYTES: usize = 8 * 1024 * 1024; // 8 MiB
+// ============================================================================
+// Graph
+// ============================================================================
 
 pub struct Graph {
     pub nodes: BTreeMap<ThingId, Node>,
     pub next_id: ThingId,
     pub root_seq: AtomicU64,
-    pub kind_index: BTreeMap<SymbolId, alloc::vec::Vec<ThingId>>,
+    pub kind_index: BTreeMap<SymbolId, Vec<ThingId>>,
     pub global_watches: BTreeMap<u64, GlobalWatch>,
+    /// Shared commit history ring buffer
+    pub commit_history: CommitHistory,
 }
 
 impl Graph {
@@ -55,6 +177,7 @@ impl Graph {
             root_seq: AtomicU64::new(0),
             kind_index: BTreeMap::new(),
             global_watches: BTreeMap::new(),
+            commit_history: CommitHistory::with_defaults(),
         }
     }
 
@@ -67,8 +190,8 @@ impl Graph {
                 kind,
                 props: BTreeMap::new(),
                 resource: None,
-                watches: alloc::vec::Vec::new(),
-                edges: alloc::vec::Vec::new(),
+                watches: Vec::new(),
+                edges: Vec::new(),
             },
         );
 

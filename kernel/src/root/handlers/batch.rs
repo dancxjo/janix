@@ -4,7 +4,7 @@
 //! Both multi-op batches (SYS_ROOT_APPLY_BATCH) and single-op syscalls
 //! (CREATE_NODE, LINK, PROP_SET) route through `apply_ops_and_commit()`.
 
-use crate::root::graph::{Graph, ThingId, Commit, MAX_PENDING_COMMITS, MAX_PENDING_BYTES};
+use crate::root::graph::{Graph, ThingId};
 use crate::root::handlers::HandlerResult;
 use abi::root::{BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP, REF_ABSOLUTE, REF_LOCAL};
 use abi::symbols::SymbolId;
@@ -79,28 +79,9 @@ pub fn apply_ops_and_commit(
     // Commit: increment sequence number
     let new_seq = graph.root_seq.fetch_add(1, Ordering::SeqCst) + 1;
 
-    // Notify all global watches
-    let commit = Commit {
-        seq: new_seq,
-        data: commit_bytes.to_vec(),
-    };
-
-    for watch in graph.global_watches.values_mut() {
-        // Enforce limits - drop oldest commits if over capacity
-        while watch.pending.len() >= MAX_PENDING_COMMITS || watch.pending_bytes >= MAX_PENDING_BYTES {
-            if let Some(dropped) = watch.pending.pop_front() {
-                watch.pending_bytes -= dropped.data.len();
-                watch.overflowed = true;
-            } else {
-                break;
-            }
-        }
-
-        // Push commit to watch queue
-        let data_clone = commit.data.clone();
-        watch.pending_bytes += data_clone.len();
-        watch.pending.push_back(Commit { seq: new_seq, data: data_clone });
-    }
+    // Push to shared commit history (single allocation, not per-watch)
+    // Watchers read from this shared buffer via their cursor_seq
+    graph.commit_history.push(new_seq, commit_bytes.to_vec());
 
     ApplyResult {
         status: 0,

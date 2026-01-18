@@ -22,15 +22,15 @@ pub use blocking::{
 pub use hooks::{
     alloc_user_stack_current, current_tid_current, exit_current, handle_user_stack_fault_current,
     spawn_process_current, spawn_user_thread_current, task_status_current, yield_now_current,
-    set_priority_current, current_priority_current,
+    set_priority_current, current_priority_current, sleep_ticks_current,
 };
-pub use sleep::{sleep_ms, sleep_until, yield_now};
+pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
     spawn, spawn_process, spawn_user_task_full, spawn_user_thread, user_thread_trampoline,
     spawn_with_priority,
 };
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
-pub use types::{ScheduleReason, Scheduler, StackFaultResult, SwitchParams};
+pub use types::{ScheduleReason, Scheduler, SleepEntry, StackFaultResult, SwitchParams, DEFAULT_TIMESLICE};
 
 use crate::task::{Task, TaskId, TaskPriority, TaskState};
 use crate::{BootRuntime, BootTasking};
@@ -52,6 +52,15 @@ fn get_time_helper<R: BootRuntime>() -> u64 {
 }
 
 pub static SCHEDULER: Mutex<Option<usize>> = Mutex::new(None);
+
+/// Global tick counter for debugging scheduler health
+pub static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
+
+/// Called from timer ISR - records tick and triggers reschedule if needed
+pub fn on_tick<R: BootRuntime>() {
+    TICK_COUNT.fetch_add(1, Ordering::Relaxed);
+    crate::task::resched_if_needed::<R>();
+}
 
 pub fn init<R: BootRuntime>() {
     crate::kinfo!("  Acquiring scheduler lock...");
@@ -79,6 +88,7 @@ pub fn init<R: BootRuntime>() {
             crate::memory::set_map_user_page_hook(stack::map_user_page::<R>);
             crate::memory::set_map_user_page_perms_hook(stack::map_user_page_perms::<R>);
             hooks::STACK_FAULT_HOOK = Some(stack::handle_stack_fault::<R>);
+            hooks::SLEEP_TICKS_HOOK = Some(sleep::sleep_ticks::<R>);
         }
         blocking::init_blocking_hooks::<R>();
         crate::trace::register_time_source(get_time_helper::<R>);
@@ -112,6 +122,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         is_user: false,
         wake_pending: false,
         stack_info: None,
+        timeslice_remaining: types::DEFAULT_TIMESLICE,
     };
     sched.tasks.push(task);
     sched.current = Some(0);
@@ -141,18 +152,80 @@ impl<R: BootRuntime> types::Scheduler<R> {
     > {
         match reason {
             ScheduleReason::PreemptTick => {
+                // Wake any sleeping tasks whose time has expired
+                self.wake_sleepers();
+                
+                // Check preemption watchdog
+                self.check_preempt_watchdog();
+                
                 if self.preempt_disable_depth > 0 {
                     self.need_resched = true;
                     return None;
                 }
+                
+                // Decrement current task's time slice
+                if let Some(current_id) = self.current {
+                    if let Some(task) = self.tasks.iter_mut().find(|t| t.id == current_id) {
+                        if task.timeslice_remaining > 0 {
+                            task.timeslice_remaining -= 1;
+                        }
+                        if task.timeslice_remaining == 0 {
+                            // Reset for next run
+                            task.timeslice_remaining = types::DEFAULT_TIMESLICE;
+                            // Force reschedule
+                            return self.prepare_yield();
+                        }
+                    }
+                }
+                return None; // Not expired yet
             }
             _ => {}
         }
 
         self.prepare_yield()
     }
+    
+    /// Check if preemption has been disabled too long
+    fn check_preempt_watchdog(&mut self) {
+        if self.preempt_disable_depth > 0 && !self.watchdog_warned {
+            let now = TICK_COUNT.load(Ordering::Relaxed);
+            if now.saturating_sub(self.preempt_disable_since) > 500 {
+                crate::kinfo!("WATCHDOG: preemption disabled for >500 ticks! depth={}", 
+                       self.preempt_disable_depth);
+                self.watchdog_warned = true;
+            }
+        }
+    }
+
+    /// Wake any sleeping tasks whose sleep time has expired
+    fn wake_sleepers(&mut self) {
+        let now = TICK_COUNT.load(Ordering::Relaxed);
+        
+        // Process sleep queue - we need to drain and rebuild since entries may not be sorted
+        let mut remaining = alloc::collections::VecDeque::new();
+        
+        while let Some(entry) = self.sleep_queue.pop_front() {
+            if entry.wake_tick <= now {
+                // Task should wake up - add back to run queue
+                if let Some(task) = self.tasks.iter().find(|t| t.id == entry.task_id) {
+                    let priority = task.priority;
+                    self.runq[priority as usize].push_back(entry.task_id);
+                }
+            } else {
+                // Still sleeping
+                remaining.push_back(entry);
+            }
+        }
+        
+        self.sleep_queue = remaining;
+    }
 
     pub fn preempt_disable(&mut self) {
+        if self.preempt_disable_depth == 0 {
+            // Track when we started disabling preemption
+            self.preempt_disable_since = TICK_COUNT.load(Ordering::Relaxed);
+            self.watchdog_warned = false;
+        }
         self.preempt_disable_depth += 1;
         if self.preempt_disable_depth == 1 {
              // Only trace on transition to disabled? Or depth change?

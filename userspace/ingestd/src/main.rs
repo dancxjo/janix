@@ -23,6 +23,8 @@ fn main() -> Result<(), abi::errors::Errno> {
         mode: WatchMode::QueryThenStream as u32,
         query_ptr: steps.as_ptr() as u64,
         query_len: steps.len() as u64,
+        start_seq: 0,
+        ..Default::default()
     };
     
     // We expect this to fail if kernel is not updated yet or similar, but

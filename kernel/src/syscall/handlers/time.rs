@@ -10,37 +10,33 @@ pub fn sys_yield() -> SysResult<usize> {
 }
 
 pub fn sys_sleep_ns(ns: u64) -> SysResult<usize> {
-    let rt = crate::runtime_base();
-    let freq = rt.mono_freq_hz();
-    let ticks = (ns as u128 * freq as u128) / 1_000_000_000;
-    let start = rt.mono_ticks();
-    let deadline = start + ticks as u64;
-    loop {
-        let now = rt.mono_ticks();
-        if now >= deadline {
-            break;
-        }
+    // Timer runs at 100Hz = 1 tick per 10ms = 10,000,000ns per tick
+    // Convert ns to ticks, rounding up to avoid sleeping less than requested
+    let ticks = (ns + 9_999_999) / 10_000_000;
+    if ticks == 0 {
+        // Very short sleep, just yield once
         unsafe {
             crate::task::scheduler::yield_now_current();
         }
+    } else {
+        // Use true blocking sleep
+        crate::task::scheduler::sleep_ticks_current(ticks);
     }
     Ok(0)
 }
 
 pub fn sys_sleep_ms(ms: u64) -> SysResult<usize> {
-    let rt = crate::runtime_base();
-    let freq = rt.mono_freq_hz();
-    let ticks = (ms * freq) / 1000;
-    let start = rt.mono_ticks();
-    let deadline = start + ticks;
-    loop {
-        let now = rt.mono_ticks();
-        if now >= deadline {
-            break;
-        }
+    // Timer runs at 100Hz = 1 tick per 10ms
+    // Convert ms to ticks, rounding up
+    let ticks = (ms + 9) / 10;
+    if ticks == 0 {
+        // Very short sleep, just yield once
         unsafe {
             crate::task::scheduler::yield_now_current();
         }
+    } else {
+        // Use true blocking sleep
+        crate::task::scheduler::sleep_ticks_current(ticks);
     }
     Ok(0)
 }

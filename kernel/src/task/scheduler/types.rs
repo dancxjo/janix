@@ -5,6 +5,9 @@ use crate::task::{Task, TaskId};
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
+/// Default time slice in ticks (~100ms at 100Hz timer)
+pub const DEFAULT_TIMESLICE: u32 = 10;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StackFaultResult {
     NotStack,
@@ -18,6 +21,13 @@ pub enum ScheduleReason {
     CooperativeYield,
     SleepWait,
     BlockedOnIo,
+}
+
+/// Entry in the sleep queue tracking when a task should wake
+#[derive(Debug, Clone, Copy)]
+pub struct SleepEntry {
+    pub task_id: TaskId,
+    pub wake_tick: u64,  // absolute tick count when task should wake
 }
 
 pub struct SwitchParams<Ctx, AS> {
@@ -43,10 +53,13 @@ pub struct Scheduler<R: BootRuntime> {
     pub(crate) tasks: Vec<Task<R>>,
     pub(crate) runq: [VecDeque<TaskId>; 5],
     pub(crate) wait_queue: VecDeque<TaskId>,
+    pub(crate) sleep_queue: VecDeque<SleepEntry>,  // tasks sleeping with wake times
     pub(crate) current: Option<TaskId>,
     pub(crate) next_id: TaskId,
     pub(crate) idle_task: Option<TaskId>,
     pub(crate) preempt_disable_depth: usize,
+    pub(crate) preempt_disable_since: u64,
+    pub(crate) watchdog_warned: bool,
     pub(crate) need_resched: bool,
     pub(crate) metrics: SchedulerMetrics,
 }
@@ -75,10 +88,13 @@ impl<R: BootRuntime> Scheduler<R> {
                 VecDeque::new(),
             ],
             wait_queue: VecDeque::new(),
+            sleep_queue: VecDeque::new(),
             current: None,
             next_id: 1,
             idle_task: None,
             preempt_disable_depth: 0,
+            preempt_disable_since: 0,
+            watchdog_warned: false,
             need_resched: false,
             metrics: SchedulerMetrics::new(),
         }

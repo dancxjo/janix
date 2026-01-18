@@ -13,6 +13,7 @@ pub(crate) static mut SET_PRIORITY_HOOK: Option<fn(TaskId, crate::task::TaskPrio
 pub(crate) static mut CURRENT_PRIORITY_HOOK: Option<fn() -> crate::task::TaskPriority> = None;
 pub(crate) static mut ALLOC_USER_STACK_HOOK: Option<fn(usize) -> Option<usize>> = None;
 pub(crate) static mut STACK_FAULT_HOOK: Option<unsafe fn(u64) -> StackFaultResult> = None;
+pub(crate) static mut SLEEP_TICKS_HOOK: Option<fn(u64)> = None;
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
@@ -91,4 +92,11 @@ pub unsafe fn handle_user_stack_fault_current(addr: u64) -> StackFaultResult {
 
 pub unsafe fn alloc_user_stack_current(pages: usize) -> Option<usize> {
     unsafe { ALLOC_USER_STACK_HOOK }.and_then(|hook| hook(pages))
+}
+
+/// True blocking sleep for the specified number of ticks
+pub fn sleep_ticks_current(ticks: u64) {
+    if let Some(hook) = unsafe { SLEEP_TICKS_HOOK } {
+        hook(ticks);
+    }
 }

@@ -127,7 +127,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
             "SPROUT: Spawned display driver '{}' (PID={})",
             driver_name, pid
         );
-        let _ = stem::thread::set_priority(pid, 3);
+            let _ = stem::thread::set_priority(pid, 2);
         tasks.push(ManagedTask {
             name: driver_name.to_string(),
             kind: TaskKind::Driver("dev.display".to_string()),
@@ -206,7 +206,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     match stem::syscall::spawn_process("/ps2_kbd", kbd_raw.0 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned ps2_kbd (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 3);
+                let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/ps2_kbd".to_string(),
                 kind: TaskKind::Driver("dev.input.ps2.kbd".to_string()),
@@ -224,7 +224,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     match stem::syscall::spawn_process("/ps2_mouse", mouse_raw.0 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned ps2_mouse (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 3);
+                let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/ps2_mouse".to_string(),
                 kind: TaskKind::Driver("dev.input.ps2.mouse".to_string()),
@@ -261,7 +261,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     match stem::syscall::spawn_process("/bristle", bristle_arg as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned bristle (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 3);
+                let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/bristle".to_string(),
                 kind: TaskKind::App,
@@ -325,7 +325,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     match stem::syscall::spawn_process("/bloom", bloom_arg) {
         Ok(pid) => {
             info!("SPROUT: Spawned bloom (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 3);
+                let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/bloom".to_string(),
                 kind: TaskKind::App,

@@ -3,7 +3,7 @@
 use crate::{BootRuntime, BootTasking, UserEntry};
 use crate::task::{Task, TaskId, TaskState};
 
-use super::types::Scheduler;
+use super::types::{Scheduler, DEFAULT_TIMESLICE};
 use super::SCHEDULER;
 
 
@@ -36,6 +36,7 @@ impl<R: BootRuntime> Scheduler<R> {
             is_user: false,
             wake_pending: false,
             stack_info: None,
+            timeslice_remaining: DEFAULT_TIMESLICE,
         };
 
         self.tasks.push(task);
@@ -87,6 +88,7 @@ impl<R: BootRuntime> Scheduler<R> {
             is_user: true,
             wake_pending: false,
             stack_info: Some(stack_info),
+            timeslice_remaining: DEFAULT_TIMESLICE,
         };
 
         self.tasks.push(task);
@@ -133,6 +135,7 @@ impl<R: BootRuntime> Scheduler<R> {
             is_user: true,
             wake_pending: false,
             stack_info: Some(stack_info),
+            timeslice_remaining: DEFAULT_TIMESLICE,
         };
 
         self.tasks.push(task);

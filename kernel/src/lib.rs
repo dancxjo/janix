@@ -495,7 +495,8 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             kinfo!("Spawning init process...");
             let mut entry = user_entry;
             entry.arg0 = 0x600000; // arg0 = registry ptr
-            crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info, crate::task::TaskPriority::High);
+            // Spawn at Normal priority - all tasks share the same priority for fair scheduling
+            crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info, crate::task::TaskPriority::Normal);
         }
     } else {
         kinfo!("Sprout not found. Checking fallback...");

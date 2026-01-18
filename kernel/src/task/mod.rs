@@ -45,6 +45,9 @@ pub struct Task<R: BootRuntime> {
     pub simd: SimdState,
 
     pub stack_info: Option<StackInfo>,
+    
+    /// Remaining time slice in ticks before preemption
+    pub timeslice_remaining: u32,
 }
 
 pub fn init<R: BootRuntime>() {

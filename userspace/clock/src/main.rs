@@ -76,7 +76,7 @@ fn main() -> ! {
     info!("Waiting for UI Root (Compositor)...");
     let mut ui_root = ThingId::default();
     let mut i = 0;
-    while i < 20 { // Wait up to 10 seconds
+    while i < 120 { // Wait up to 60 seconds for Bloom to start
         let mut ui_roots = [ThingId::default(); 1];
         match stem::thing::sys::find(kinds::UI_ROOT, &mut ui_roots) {
             Ok(count) if count > 0 => {
@@ -97,7 +97,7 @@ fn main() -> ! {
     }
 
     if ui_root.to_u64_lossy() == 0 {
-        info!("ERROR: UI Root still not found after 30s, giving up on UI");
+        info!("ERROR: UI Root still not found after 60s, giving up on UI");
     }
 
 

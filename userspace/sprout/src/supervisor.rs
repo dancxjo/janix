@@ -41,6 +41,8 @@ impl Supervisor {
 
         // 4. Loop
         info!("SPROUT: Entering supervisor loop.");
+        
+        
         loop {
             self.monitor();
             stem::yield_now();
@@ -159,25 +161,29 @@ impl Supervisor {
 
     fn spawn_apps(&mut self) {
         info!("SPROUT: spawn_apps start. tasks len={}", self.tasks.len());
+        
         self.ensure_app("/clock");
-        self.ensure_app("/ata_disk");
-        self.ensure_app("/disk_probe");
-        self.ensure_app("/ahci_disk");
+        self.ensure_app("/echo");  // Show keyboard input
+        // self.ensure_app("/ata_disk");
+        // self.ensure_app("/disk_probe");
+        // self.ensure_app("/ahci_disk");
 
-    // ... (re-inserting the rest) ...
-    // Actually I should just modify specific lines.
-
-        #[cfg(feature = "diagnostic-apps")]
-        {
-            self.ensure_app("/threads");
-            self.ensure_app("/stack_heap_torture");
-            self.ensure_app("/root_batch_bench");
-        }
-        self.ensure_app("/root_watch_tester");
-        // self.ensure_app("/ingestd");
+        // #[cfg(feature = "diagnostic-apps")]
+        // {
+        //     self.ensure_app("/threads");
+        //     self.ensure_app("/stack_heap_torture");
+        //     self.ensure_app("/root_batch_bench");
+        // }
+        // self.ensure_app("/root_watch_tester");
+        self.ensure_app("/ingestd");
         // self.ensure_app("/png_creator");
         self.ensure_app("/bindd");
-        self.ensure_app("/scheduler_verify");
+        // self.ensure_app("/scheduler_verify");
+        
+        // Scheduler fairness verification apps (disabled after testing)
+        // self.ensure_app("/scheduler_fairness");
+        // self.ensure_app("/hogger");
+        // self.ensure_app("/tick_printer");
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {
@@ -191,12 +197,12 @@ impl Supervisor {
                         task.pid = Some(pid);
                         
                         // Set priority based on app name
-                        let priority = if task.name.contains("scheduler_verify") || task.name.contains("threads") || task.name.contains("clock") {
-                            1 // Low
-                        } else if task.name.contains("bloom") || task.name.contains("bristle") || task.name.contains("bindd") {
-                            3 // High
+                        let priority = if task.name.contains("scheduler_verify") || task.name.contains("threads") {
+                            1 // Low - background tasks
+                        } else if task.name.contains("bloom") || task.name.contains("bristle") {
+                            3 // High - interactive UI only
                         } else {
-                            2 // Normal
+                            2 // Normal - clock, ingestd, bindd, other apps
                         };
                         
                         if let Err(e) = stem::thread::set_priority(pid, priority) {

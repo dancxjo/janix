@@ -268,7 +268,7 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
 
     // IRQ_TIMER_VECTOR is our preemption heartbeat
     if resolved == IRQ_TIMER_VECTOR {
-        kernel::task::resched_if_needed::<crate::arch::CurrentRuntime>();
+        kernel::task::scheduler::on_tick::<crate::arch::CurrentRuntime>();
     } else {
         kernel::irq::dispatch_irq(resolved);
     }

@@ -117,8 +117,8 @@ fn handle_msg<R: BootRuntime>(
         RootOp::StreamPoll { stream_id, max: _, out_ptr: _ } => {
             root_handlers::handle_stream_poll(graph, &msg, stream_id)
         }
-        RootOp::WatchOpen { mode, start_seq, query } => {
-            root_handlers::handle_watch_open(graph, interner, mode, start_seq, query)
+        RootOp::WatchOpen { mode, start_seq, query, filter } => {
+            root_handlers::handle_watch_open(graph, interner, mode, start_seq, query, filter)
         }
         RootOp::WatchNext { id, .. } => {
             root_handlers::handle_watch_next(graph, &msg, id)

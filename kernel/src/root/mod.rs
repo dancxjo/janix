@@ -148,6 +148,7 @@ pub enum RootOp {
         mode: u32,
         start_seq: u64,
         query: alloc::vec::Vec<crate::root::query::PreparedStep>,
+        filter: crate::root::graph::WatchFilter,
     },
     WatchNext {
         id: u64,

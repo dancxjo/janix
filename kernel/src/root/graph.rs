@@ -141,6 +141,25 @@ impl CommitHistory {
 // Global Watch (Cursor-Only)
 // ============================================================================
 
+/// Maximum commits to scan per WATCH_NEXT call (prevents unbounded work)
+pub const WATCH_SCAN_LIMIT: usize = 64;
+
+/// Watch filter for graph mutations (copied from ABI)
+#[derive(Debug, Clone, Copy, Default)]
+pub struct WatchFilter {
+    pub flags: u32,
+    pub kind_id: u32,
+    pub predicate_id: u32,
+    pub subject_lo: u64,
+}
+
+impl WatchFilter {
+    /// Check if filter matches all commits (no filtering)
+    pub fn matches_all(&self) -> bool {
+        self.flags == 0
+    }
+}
+
 pub struct GlobalWatch {
     pub id: u64,
     pub spec_ptr: u64, // We store the pointer to user query for now
@@ -153,6 +172,8 @@ pub struct GlobalWatch {
     pub cursor_seq: u64,
     /// Sticky overflow flag - set when watch misses commits, cleared on -EOVERFLOW return
     pub overflowed: bool,
+    /// Watch filter (flags=0 means match all)
+    pub filter: WatchFilter,
 }
 
 // ============================================================================

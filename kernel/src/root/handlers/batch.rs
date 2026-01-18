@@ -91,6 +91,149 @@ pub fn apply_ops_and_commit(
 }
 
 // ============================================================================
+// Batch Filter Matching
+// ============================================================================
+
+use crate::root::graph::WatchFilter;
+use abi::root::{WATCH_F_KIND, WATCH_F_PREDICATE, WATCH_F_SUBJECT};
+
+/// Check if a batch contains at least one op matching the filter.
+/// 
+/// This function scans the batch without allocating, checking each operation
+/// against the filter criteria. It returns early on first match.
+///
+/// # Returns
+/// - `Ok(true)` if at least one op matches the filter
+/// - `Ok(false)` if no ops match
+/// - `Err(-22)` if batch is malformed (EINVAL)
+pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, i32> {
+    // flags=0 means match all commits
+    if filter.matches_all() {
+        return Ok(true);
+    }
+    
+    // Validate header
+    if batch.len() < 8 {
+        return Err(-22); // EINVAL
+    }
+    let magic = u32::from_le_bytes(batch[0..4].try_into().unwrap());
+    let version = u16::from_le_bytes(batch[4..6].try_into().unwrap());
+    let op_count = u16::from_le_bytes(batch[6..8].try_into().unwrap());
+    
+    if magic != BATCH_MAGIC || version != BATCH_VERSION {
+        return Err(-22);
+    }
+    
+    let mut cursor = 8usize;
+    
+    for _ in 0..op_count {
+        if cursor >= batch.len() {
+            return Err(-22);
+        }
+        let tag = batch[cursor];
+        cursor += 1;
+        
+        match tag {
+            OP_CREATE_NODE => {
+                // kind_id: 16 bytes, out_ref: 2 bytes = 18 bytes total
+                if cursor + 18 > batch.len() { return Err(-22); }
+                
+                // KIND filter matching:
+                // The 16-byte kind in the batch is a hash. To properly match, we'd 
+                // need to intern it and compare with filter.kind_id. For v0, we 
+                // match any CREATE_NODE when kind filter is set (conservative).
+                if (filter.flags & WATCH_F_KIND) != 0 {
+                    // TODO: Full kind matching requires comparing interned symbols
+                    // For now, any CREATE_NODE matches if kind filter is set
+                    return Ok(true);
+                }
+                cursor += 18;
+            }
+            OP_PUT_EDGE => {
+                // subject: ThingRef, predicate: 16 bytes, object: ThingRef, flags: 4 bytes
+                
+                // Parse subject ThingRef
+                if cursor >= batch.len() { return Err(-22); }
+                let ref_kind = batch[cursor];
+                cursor += 1;
+                let subject_size = if ref_kind == REF_ABSOLUTE { 16 } else if ref_kind == REF_LOCAL { 2 } else { return Err(-22); };
+                if cursor + subject_size > batch.len() { return Err(-22); }
+                
+                // Extract subject ID if absolute
+                let subject_id = if ref_kind == REF_ABSOLUTE {
+                    u64::from_le_bytes(batch[cursor..cursor+8].try_into().unwrap())
+                } else {
+                    0 // Local refs can't match absolute filters
+                };
+                cursor += subject_size;
+                
+                // Predicate: 16 bytes (hash)
+                if cursor + 16 > batch.len() { return Err(-22); }
+                // Note: We store predicate position for future use
+                let _pred_start = cursor;
+                cursor += 16;
+                
+                // Object ThingRef
+                if cursor >= batch.len() { return Err(-22); }
+                let obj_kind = batch[cursor];
+                cursor += 1;
+                let obj_size = if obj_kind == REF_ABSOLUTE { 16 } else if obj_kind == REF_LOCAL { 2 } else { return Err(-22); };
+                if cursor + obj_size > batch.len() { return Err(-22); }
+                cursor += obj_size;
+                
+                // Flags: 4 bytes
+                if cursor + 4 > batch.len() { return Err(-22); }
+                cursor += 4;
+                
+                // Check SUBJECT filter
+                if (filter.flags & WATCH_F_SUBJECT) != 0 {
+                    if ref_kind == REF_ABSOLUTE && subject_id == filter.subject_lo {
+                        return Ok(true);
+                    }
+                }
+                
+                // Check PREDICATE filter
+                // TODO: Full predicate matching requires comparing interned symbols
+                // For v0, any PUT_EDGE matches if predicate filter is set
+                if (filter.flags & WATCH_F_PREDICATE) != 0 {
+                    return Ok(true);
+                }
+            }
+            OP_SET_PROP => {
+                // subject: ThingRef, key: 16 bytes, value: 8 bytes
+                if cursor >= batch.len() { return Err(-22); }
+                let ref_kind = batch[cursor];
+                cursor += 1;
+                let subject_size = if ref_kind == REF_ABSOLUTE { 16 } else if ref_kind == REF_LOCAL { 2 } else { return Err(-22); };
+                if cursor + subject_size > batch.len() { return Err(-22); }
+                
+                let subject_id = if ref_kind == REF_ABSOLUTE {
+                    u64::from_le_bytes(batch[cursor..cursor+8].try_into().unwrap())
+                } else {
+                    0
+                };
+                cursor += subject_size;
+                
+                // Key (16 bytes) + value (8 bytes) = 24 bytes
+                if cursor + 24 > batch.len() { return Err(-22); }
+                cursor += 24;
+                
+                // Check SUBJECT filter
+                if (filter.flags & WATCH_F_SUBJECT) != 0 {
+                    if ref_kind == REF_ABSOLUTE && subject_id == filter.subject_lo {
+                        return Ok(true);
+                    }
+                }
+            }
+            _ => return Err(-22), // Unknown op tag
+        }
+    }
+    
+    // No ops matched the filter
+    Ok(false)
+}
+
+// ============================================================================
 // Batch Parsing (for SYS_ROOT_APPLY_BATCH)
 // ============================================================================
 

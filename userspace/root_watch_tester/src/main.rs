@@ -72,14 +72,16 @@ fn make_symbol_ref(name: &str) -> abi::symbols::SymbolRefWire {
     }
 }
 
-/// Open a watch subscription
+/// Open a watch subscription (match all)
 fn open_watch() -> Result<usize, i64> {
-    let spec = abi::types::WatchSpec {
-        query_ptr: 0,
-        query_len: 0,
-        mode: 0,
-        start_seq: 0,
-    };
+    open_watch_filtered(RootWatchFilter::default())
+}
+
+/// Open a watch with a specific filter
+fn open_watch_filtered(filter: RootWatchFilter) -> Result<usize, i64> {
+    let mut spec = abi::types::WatchSpec::default();
+    spec.filter_ptr = &filter as *const _ as u64;
+    spec.filter_len = core::mem::size_of::<RootWatchFilter>() as u64;
     
     let res = unsafe {
         stem::syscall::syscall6(
@@ -345,6 +347,143 @@ fn test_main() -> i32 {
                     failures += 1;
                 }
             }
+        }
+    }
+    
+    // ========================================
+    // Test 5: Subject Filter
+    // ========================================
+    println!("\n--- Test 5: Subject filter ---");
+    {
+        // Create target node FIRST before opening filtered watch
+        let target_node = create_node("test.subject.target");
+        println!("Created target node: id={}", target_node);
+        
+        // Open a watch filtered to only this subject
+        let filter = RootWatchFilter::subject(target_node);
+        let filtered_watch = match open_watch_filtered(filter) {
+            Ok(h) => h,
+            Err(e) => {
+                println!("FAIL: Could not open filtered watch: {}", e);
+                failures += 1;
+                0
+            }
+        };
+        
+        if filtered_watch != 0 {
+            println!("Filtered watch opened: handle={}", filtered_watch);
+            
+            // Create unrelated nodes (should be filtered out)
+            let _unrelated1 = create_node("test.unrelated.1");
+            let _unrelated2 = create_node("test.unrelated.2");
+            println!("Created unrelated nodes");
+            
+            // Set a property on the target node (should match filter)
+            let res = prop_set(target_node, "watched_prop", 123);
+            if res != 0 {
+                println!("WARN: prop_set returned: {}", res);
+            }
+            println!("Set property on target node");
+            
+            // The filtered watch should skip the unrelated CREATE_NODEs and find the PROP_SET
+            let mut buf = [0u8; 256];
+            let mut found_match = false;
+            let mut attempts = 0;
+            
+            while attempts < 10 && !found_match {
+                match watch_next(filtered_watch, &mut buf) {
+                    Ok((len, seq)) => {
+                        println!("Filtered watch received: len={}, seq={}", len, seq);
+                        if len > 8 && buf[8] == OP_SET_PROP {
+                            println!("PASS: Subject filter correctly received SET_PROP");
+                            found_match = true;
+                        } else {
+                            println!("  Op tag: {:#x}", buf.get(8).unwrap_or(&0));
+                        }
+                    }
+                    Err(-11) => {
+                        // EAGAIN - no more events or scan limit
+                        attempts += 1;
+                        stem::yield_now();
+                    }
+                    Err(e) => {
+                        println!("FAIL: watch_next error: {}", e);
+                        failures += 1;
+                        break;
+                    }
+                }
+            }
+            
+            if !found_match {
+                println!("FAIL: Subject filter did not find SET_PROP within attempts");
+                failures += 1;
+            }
+        }
+    }
+    
+    // ========================================
+    // Test 6: Two Watchers Different Filters
+    // ========================================
+    println!("\n--- Test 6: Two watchers with different filters ---");
+    {
+        // Create two target nodes for two different filters
+        let node_a = create_node("test.filter.a");
+        let node_b = create_node("test.filter.b");
+        println!("Created nodes: A={}, B={}", node_a, node_b);
+        
+        // Open two filtered watches
+        let filter_a = RootWatchFilter::subject(node_a);
+        let filter_b = RootWatchFilter::subject(node_b);
+        
+        let watch_a = open_watch_filtered(filter_a).unwrap_or(0);
+        let watch_b = open_watch_filtered(filter_b).unwrap_or(0);
+        
+        if watch_a != 0 && watch_b != 0 {
+            println!("Watch A (subject={}): handle={}", node_a, watch_a);
+            println!("Watch B (subject={}): handle={}", node_b, watch_b);
+            
+            // Mutate node_a (should only be seen by watch_a)
+            prop_set(node_a, "only_a", 111);
+            
+            // Mutate node_b (should only be seen by watch_b)
+            prop_set(node_b, "only_b", 222);
+            
+            // Check watch_a sees its event
+            let mut buf = [0u8; 256];
+            let mut a_saw_event = false;
+            for _ in 0..5 {
+                match watch_next(watch_a, &mut buf) {
+                    Ok((len, _seq)) if len > 8 && buf[8] == OP_SET_PROP => {
+                        a_saw_event = true;
+                        break;
+                    }
+                    Err(-11) => { stem::yield_now(); }
+                    _ => break,
+                }
+            }
+            
+            // Check watch_b sees its event
+            let mut b_saw_event = false;
+            for _ in 0..5 {
+                match watch_next(watch_b, &mut buf) {
+                    Ok((len, _seq)) if len > 8 && buf[8] == OP_SET_PROP => {
+                        b_saw_event = true;
+                        break;
+                    }
+                    Err(-11) => { stem::yield_now(); }
+                    _ => break,
+                }
+            }
+            
+            if a_saw_event && b_saw_event {
+                println!("PASS: Both filtered watchers received their respective events");
+            } else {
+                println!("FAIL: Watch A saw={}, Watch B saw={}", a_saw_event, b_saw_event);
+                failures += 1;
+            }
+        } else {
+            println!("FAIL: Could not open dual filtered watches");
+            failures += 1;
         }
     }
     

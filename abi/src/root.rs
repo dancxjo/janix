@@ -38,6 +38,76 @@ impl BatchHeader {
     }
 }
 
+// ============================================================================
+// Watch Filters
+// ============================================================================
+
+/// Filter flags for RootWatchFilter
+pub const WATCH_F_ALL: u32 = 0;           // Match all commits (no filtering)
+pub const WATCH_F_KIND: u32 = 1 << 0;     // Filter by kind_id
+pub const WATCH_F_PREDICATE: u32 = 1 << 1; // Filter by predicate_id
+pub const WATCH_F_SUBJECT: u32 = 1 << 2;   // Filter by subject ThingId
+
+/// Compact watch filter (32 bytes, C-compatible)
+/// 
+/// Used with `SYS_ROOT_WATCH_OPEN` to filter which commits are delivered.
+/// If `flags == 0`, all commits match. Otherwise, only commits containing
+/// at least one operation matching the specified criteria are delivered.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct RootWatchFilter {
+    /// Filter flags (combination of WATCH_F_* constants)
+    pub flags: u32,
+    /// Kind ID to filter by (requires WATCH_F_KIND flag)
+    /// Must be an interned SymbolId from SYS_ROOT_INTERN
+    pub kind_id: u32,
+    /// Predicate ID to filter by (requires WATCH_F_PREDICATE flag)
+    /// Must be an interned SymbolId from SYS_ROOT_INTERN
+    pub predicate_id: u32,
+    /// Reserved for alignment
+    pub _reserved: u32,
+    /// Subject ThingId high bits (reserved for 128-bit ThingId expansion)
+    pub subject_hi: u64,
+    /// Subject ThingId to filter by (requires WATCH_F_SUBJECT flag)
+    pub subject_lo: u64,
+}
+
+impl RootWatchFilter {
+    pub const SIZE: usize = 32;
+    
+    /// Create a filter that matches all commits
+    pub fn all() -> Self {
+        Self::default()
+    }
+    
+    /// Create a filter for a specific subject
+    pub fn subject(id: u64) -> Self {
+        Self {
+            flags: WATCH_F_SUBJECT,
+            subject_lo: id,
+            ..Default::default()
+        }
+    }
+    
+    /// Create a filter for a specific predicate
+    pub fn predicate(predicate_id: u32) -> Self {
+        Self {
+            flags: WATCH_F_PREDICATE,
+            predicate_id,
+            ..Default::default()
+        }
+    }
+    
+    /// Create a filter for a specific kind
+    pub fn kind(kind_id: u32) -> Self {
+        Self {
+            flags: WATCH_F_KIND,
+            kind_id,
+            ..Default::default()
+        }
+    }
+}
+
 /// Helper for reasoning about ThingRef size
 pub fn thing_ref_size(kind: u8) -> usize {
     match kind {

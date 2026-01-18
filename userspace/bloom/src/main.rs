@@ -108,6 +108,7 @@ extern "C" fn font_loader_entry() -> ! {
         query_ptr: steps.as_ptr() as u64,
         query_len: steps.len() as u64,
         start_seq: 0,
+        ..Default::default()
     };
 
     let watch_id = match syscall::root_watch_open(&spec) {

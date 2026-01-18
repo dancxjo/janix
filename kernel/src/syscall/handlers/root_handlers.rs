@@ -598,10 +598,12 @@ pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
 pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     use abi::types::WatchSpec;
     use abi::query::QueryStep;
+    use abi::root::RootWatchFilter;
     use crate::root::query::PreparedStep;
+    use crate::root::graph::WatchFilter;
 
     kinfo!("sys_root_watch_open: ptr={:#x}", spec_ptr);
-    let mut spec = WatchSpec { query_ptr: 0, query_len: 0, mode: 0, start_seq: 0 };
+    let mut spec = WatchSpec::default();
     let spec_slice = unsafe { 
         core::slice::from_raw_parts_mut(&mut spec as *mut _ as *mut u8, core::mem::size_of::<WatchSpec>()) 
     };
@@ -659,10 +661,33 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
         });
     }
 
+    // Read filter if provided
+    let filter = if spec.filter_ptr != 0 && spec.filter_len >= core::mem::size_of::<RootWatchFilter>() as u64 {
+        let filter_ptr = spec.filter_ptr as usize;
+        validate_user_range(filter_ptr, core::mem::size_of::<RootWatchFilter>(), false)?;
+        let mut abi_filter = RootWatchFilter::default();
+        let filter_slice = unsafe {
+            core::slice::from_raw_parts_mut(&mut abi_filter as *mut _ as *mut u8, 
+                core::mem::size_of::<RootWatchFilter>())
+        };
+        unsafe { copyin(filter_slice, filter_ptr)? };
+        
+        // Convert ABI filter to kernel filter
+        WatchFilter {
+            flags: abi_filter.flags,
+            kind_id: abi_filter.kind_id,
+            predicate_id: abi_filter.predicate_id,
+            subject_lo: abi_filter.subject_lo,
+        }
+    } else {
+        WatchFilter::default() // flags=0 means match all
+    };
+
     let msg = RootOp::WatchOpen {
         mode: spec.mode,
         start_seq: spec.start_seq,
         query: steps,
+        filter,
     };
     root_call(msg)
 }

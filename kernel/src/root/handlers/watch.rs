@@ -2,18 +2,21 @@
 //!
 //! Watches observe graph mutations via the shared CommitHistory ring buffer.
 //! Each watch maintains only a cursor_seq, not a copy of commit data.
+//! Watches may filter commits by subject/predicate/kind.
 
-use crate::root::graph::{Graph, GlobalWatch};
+use crate::root::graph::{Graph, GlobalWatch, WatchFilter, WATCH_SCAN_LIMIT};
 use crate::root::resources::{stream, ResourceHandle};
 use crate::root::symbols::Interner;
 use crate::root::query::PreparedStep;
+use super::batch::batch_matches_filter;
 use super::HandlerResult;
 use core::sync::atomic::Ordering;
 
-/// Opens a new watch.
+/// Opens a new watch with optional filtering.
 /// 
 /// # Arguments
 /// * `start_seq` - If 0, subscribe from "now" (next commit). Otherwise resume from that seq.
+/// * `filter` - Watch filter (flags=0 means match all commits)
 /// 
 /// # Returns
 /// (0, watch_id) on success
@@ -23,6 +26,7 @@ pub fn handle_watch_open(
     _mode: u32,
     start_seq: u64,
     query: alloc::vec::Vec<PreparedStep>,
+    filter: WatchFilter,
 ) -> HandlerResult {
 
     // 1. Create Stream
@@ -60,6 +64,7 @@ pub fn handle_watch_open(
         missing_fact: fact_rel,
         cursor_seq,
         overflowed: false,
+        filter,
     };
     
     graph.global_watches.insert(stream_id, watch);
@@ -68,21 +73,22 @@ pub fn handle_watch_open(
     (0, stream_id)
 }
 
-/// Retrieves the next committed batch payload.
+/// Retrieves the next committed batch payload that matches the watch's filter.
 ///
-/// # Algorithm (exact per spec)
+/// # Algorithm (with filtering)
 /// 1. Validate handle else -EINVAL
 /// 2. If watch.overflowed: clear flag, return -EOVERFLOW
-/// 3. Determine if cursor_seq is in history range:
-///    - If history empty: return -EAGAIN
-///    - If cursor_seq < oldest: set overflowed=false, cursor=oldest, return -EOVERFLOW
-///    - If cursor_seq > newest: return -EAGAIN
-/// 4. Fetch commit, check capacity
-/// 5. Copy data, write seq, advance cursor
+/// 3. Bounded scan loop (max WATCH_SCAN_LIMIT commits per call):
+///    - Check history bounds (overflow/empty)
+///    - Check if commit matches filter
+///    - Skip non-matching commits
+///    - Stop on match or scan limit
+/// 4. If match found: check capacity, copy data, write seq, advance cursor
+/// 5. If scan limit reached: return -EAGAIN (caller retries)
 ///
 /// # Returns
 /// - `>= 0`: Success, bytes written
-/// - `-11`: -EAGAIN, no pending events
+/// - `-11`: -EAGAIN, no pending events (or scan limit reached)
 /// - `-22`: -EINVAL, invalid handle
 /// - `-28`: -ENOSPC, buffer too small (no consume)
 /// - `-75`: -EOVERFLOW, missed commits (cleared, resync)
@@ -95,19 +101,23 @@ pub fn handle_watch_next(
     let out_ptr = if let crate::root::RootOp::WatchNext { out_ptr, .. } = msg.op { out_ptr } else { 0 };
     let out_len = if let crate::root::RootOp::WatchNext { out_len, .. } = msg.op { out_len } else { 0 };
 
-    // 1. Validate handle
-    let watch = match graph.global_watches.get_mut(&id) {
-        Some(w) => w,
-        None => return (-22, 0), // -EINVAL
+    // 1. Validate handle and extract initial state
+    let (mut cursor, filter, _was_overflowed) = {
+        let watch = match graph.global_watches.get_mut(&id) {
+            Some(w) => w,
+            None => return (-22, 0), // -EINVAL
+        };
+        
+        // Check overflow flag (sticky until reported)
+        if watch.overflowed {
+            watch.overflowed = false;
+            return (-75, 0); // -EOVERFLOW
+        }
+        
+        (watch.cursor_seq, watch.filter.clone(), false)
     };
     
-    // 2. Check overflow flag (sticky until reported)
-    if watch.overflowed {
-        watch.overflowed = false;
-        return (-75, 0); // -EOVERFLOW
-    }
-    
-    // 3. Check history bounds
+    // 2. Check history bounds
     let oldest = graph.commit_history.oldest_seq();
     let newest = graph.commit_history.newest_seq();
     
@@ -120,25 +130,77 @@ pub fn handle_watch_next(
     let newest = newest.unwrap();
     
     // Cursor behind oldest: watch missed commits (overflow)
-    if watch.cursor_seq < oldest {
-        watch.overflowed = false; // Do not immediately loop
-        watch.cursor_seq = oldest; // Resync to earliest available
+    if cursor < oldest {
+        if let Some(watch) = graph.global_watches.get_mut(&id) {
+            watch.cursor_seq = oldest; // Resync to earliest available
+        }
         return (-75, 0); // -EOVERFLOW (do not consume data this call)
     }
     
-    // Cursor ahead of newest: no new commits yet
-    if watch.cursor_seq > newest {
-        return (-11, 0); // -EAGAIN
+    // 3. Bounded scan for matching commit
+    let mut scanned = 0usize;
+    let mut found_cursor: Option<u64> = None;
+    
+    while scanned < WATCH_SCAN_LIMIT {
+        // Cursor ahead of newest: no new commits yet
+        if cursor > newest {
+            // Save progress before returning
+            if let Some(watch) = graph.global_watches.get_mut(&id) {
+                watch.cursor_seq = cursor;
+            }
+            return (-11, 0); // -EAGAIN
+        }
+        
+        // Get commit data
+        let data = match graph.commit_history.get(cursor) {
+            Some(d) => d,
+            None => {
+                // Gap in history (shouldn't happen), skip
+                cursor += 1;
+                scanned += 1;
+                continue;
+            }
+        };
+        
+        // Check if batch matches filter
+        match batch_matches_filter(data, &filter) {
+            Ok(true) => {
+                // Match found!
+                found_cursor = Some(cursor);
+                break;
+            }
+            Ok(false) => {
+                // No match, skip to next
+                cursor += 1;
+                scanned += 1;
+                continue;
+            }
+            Err(_) => {
+                // Malformed batch, skip
+                cursor += 1;
+                scanned += 1;
+                continue;
+            }
+        }
     }
     
-    // 4. Fetch commit record
-    let cursor = watch.cursor_seq;
-    let data = match graph.commit_history.get(cursor) {
+    // If scan limit reached without finding a match
+    if found_cursor.is_none() {
+        // Save progress so next call continues from where we left off
+        if let Some(watch) = graph.global_watches.get_mut(&id) {
+            watch.cursor_seq = cursor;
+        }
+        return (-11, 0); // -EAGAIN (caller will retry)
+    }
+    
+    let match_cursor = found_cursor.unwrap();
+    
+    // 4. Fetch matching commit and deliver
+    let data = match graph.commit_history.get(match_cursor) {
         Some(d) => d,
         None => {
-            // Shouldn't happen if contiguous, treat as overflow
-            watch.overflowed = false;
-            return (-75, 0); // -EOVERFLOW
+            // Shouldn't happen, treat as overflow
+            return (-75, 0);
         }
     };
     
@@ -155,14 +217,13 @@ pub fn handle_watch_next(
     }
     
     // 7. Write seq into reply (out_seq_ptr handled by syscall layer via p0)
-    msg.reply.p0.store(cursor, Ordering::Relaxed);
+    msg.reply.p0.store(match_cursor, Ordering::Relaxed);
     
     let len = data.len();
     
-    // 8. Advance cursor
-    // Re-fetch mutable reference since we borrowed immutably for data
+    // 8. Advance cursor past the delivered commit
     if let Some(watch) = graph.global_watches.get_mut(&id) {
-        watch.cursor_seq = cursor + 1;
+        watch.cursor_seq = match_cursor + 1;
     }
     
     (0, len as u64) // Success, return length

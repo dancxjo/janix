@@ -13,3 +13,4 @@ spin = "0.9"
 abi = { path = "../abi" }
 stem = { path = "../stem", default-features = false }
 bitflags = "2.10.0"
+blake3 = { version = "1.8.3", default-features = false }

@@ -12,11 +12,13 @@ pub mod schema;
 pub mod service;
 pub mod handlers;
 
+use ::abi::wire::{ThingId, SymbolId};
+
 pub use service::root_main;
 
 #[derive(Debug, Clone)]
 pub enum SymbolShell {
-    Id(u32),
+    Id(SymbolId),
     Str(alloc::string::String),
     Static(&'static str),
 }
@@ -34,50 +36,56 @@ pub struct LogProvenance {
 pub enum RootOp {
     Intern {
         name: alloc::string::String,
+        out_ptr: u64,
     },
     GetKind {
-        id: u64,
+        id: ThingId,
+        out_ptr: u64,
     },
     CreateNode {
         kind: SymbolShell,
+        out_ptr: u64,
     },
     BytespaceCreate {
         len: u64,
         flags: u64,
         format: u64,
+        out_ptr: u64,
     },
     BytespaceInfo {
-        id: u64,
+        id: ThingId,
     },
     BytespaceMap {
-        id: u64,
+        id: ThingId,
         tid: u64,
     },
     BytespaceUnmap {
-        id: u64,
+        id: ThingId,
         user_va: u64,
         tid: u64,
     },
     BytespacePhys {
-        id: u64,
+        id: ThingId,
     },
     WatchSubscribe {
-        target_id: u64,
+        target_id: ThingId,
         mask: u64,
+        out_ptr: u64,
     },
     StreamPoll {
-        stream_id: u64,
+        stream_id: ThingId,
         max: usize,
         out_ptr: u64,
     },
     PropSet {
-        id: u64,
+        id: ThingId,
         key: SymbolShell,
-        value: u64,
+        value: [u8; 16],
     },
     PropGet {
-        id: u64,
+        id: ThingId,
         key: SymbolShell,
+        out_ptr: u64,
     },
     Query {
         plan: alloc::vec::Vec<crate::root::query::PreparedStep>,
@@ -90,24 +98,24 @@ pub enum RootOp {
         len: u64,
     },
     DescribeThing {
-        id: u64,
+        id: ThingId,
         buffer: u64,
         len: u64,
     },
     DescribeEdge {
-        src: u64,
+        src: ThingId,
         rel: SymbolShell,
-        dst: u64,
+        dst: ThingId,
         buffer: u64,
         len: u64,
     },
     DumpEdges {
-        id: u64,
+        id: ThingId,
         buffer: u64,
         len: u64,
     },
     GetEdges {
-        id: u64,
+        id: ThingId,
         buffer: u64,
         len: u64,
     },
@@ -115,13 +123,13 @@ pub enum RootOp {
         limit: u64,
     },
     BytespaceWrite {
-        id: u64,
+        id: ThingId,
         offset: u64,
         ptr: u64,
         len: u64,
     },
     BytespaceRead {
-        id: u64,
+        id: ThingId,
         offset: u64,
         ptr: u64,
         len: u64,
@@ -129,11 +137,12 @@ pub enum RootOp {
     BytespaceCreateFromPtr {
         ptr: u64,
         len: u64,
+        out_ptr: u64,
     },
     Link {
-        src: u64,
+        src: ThingId,
         rel: SymbolShell,
-        dst: u64,
+        dst: ThingId,
     },
     // Structured Logging
     LogEvent {
@@ -142,23 +151,24 @@ pub enum RootOp {
         message: alloc::string::String,
         timestamp: u64,
         provenance: LogProvenance,
-        fields: alloc::vec::Vec<(SymbolShell, u64)>, // Scalar fields
-        about: alloc::vec::Vec<u64>,                 // Linked Thing IDs
+        fields: alloc::vec::Vec<(SymbolShell, [u8; 16])>, // Scalar fields
+        about: alloc::vec::Vec<ThingId>,             // Linked Thing IDs
     },
     WatchOpen {
         mode: u32,
         start_seq: u64,
         query: alloc::vec::Vec<crate::root::query::PreparedStep>,
         filter: crate::root::graph::WatchFilter,
+        out_ptr: u64,
     },
     WatchNext {
-        id: u64,
+        id: ThingId,
         out_seq_ptr: u64,
         out_ptr: u64,
         out_len: u64,
     },
     WatchClose {
-        id: u64,
+        id: ThingId,
     },
     ApplyBatch {
         batch: alloc::vec::Vec<u8>,
@@ -238,9 +248,10 @@ pub fn queue_len() -> usize {
 
 pub mod debug {
     use crate::root::SymbolShell;
+    use ::abi::wire::{ThingId, SymbolId};
     use core::fmt;
 
-    pub struct ThingDebug(pub u64);
+    pub struct ThingDebug(pub ThingId);
 
     impl fmt::Display for ThingDebug {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -282,14 +293,14 @@ pub mod debug {
         }
     }
 
-    pub struct EdgeDebug(pub u64, pub u64, pub u64);
+    pub struct EdgeDebug(pub ThingId, pub SymbolId, pub ThingId);
 
     impl fmt::Display for EdgeDebug {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             let mut buf = [0u8; 512];
             let reply = super::enqueue(super::RootOp::DescribeEdge {
                 src: self.0,
-                rel: SymbolShell::Id(self.1 as u32),
+                rel: SymbolShell::Id(self.1),
                 dst: self.2,
                 buffer: buf.as_mut_ptr() as u64,
                 len: buf.len() as u64,

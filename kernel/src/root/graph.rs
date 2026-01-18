@@ -1,16 +1,17 @@
 use super::resources::ResourceHandle;
 use abi::symbols::SymbolId;
+use abi::wire::ThingId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
 use core::sync::atomic::AtomicU64;
 use alloc::collections::VecDeque;
 
-pub type ThingId = u64;
+pub type PropValue = [u8; 16];
 
 pub struct Node {
     pub kind: SymbolId,
-    pub props: BTreeMap<SymbolId, u64>,
+    pub props: BTreeMap<SymbolId, PropValue>,
     pub resource: Option<ResourceHandle>,
     pub watches: Vec<(u64, ThingId)>,
     // Edges: list of (RelKind, Target)
@@ -46,7 +47,7 @@ pub const MAX_SUMMARY_THINGS: usize = 8;
 pub struct SmallIdSet {
     pub overflowed: bool,
     len: u8,
-    ids: [u32; MAX_SUMMARY_IDS],
+    ids: [SymbolId; MAX_SUMMARY_IDS],
 }
 
 impl Default for SmallIdSet {
@@ -54,14 +55,14 @@ impl Default for SmallIdSet {
         Self {
             overflowed: false,
             len: 0,
-            ids: [0; MAX_SUMMARY_IDS],
+            ids: [SymbolId::default(); MAX_SUMMARY_IDS],
         }
     }
 }
 
 impl SmallIdSet {
     /// Insert a unique ID. If at capacity, marks as overflowed.
-    pub fn insert(&mut self, id: u32) {
+    pub fn insert(&mut self, id: SymbolId) {
         if self.overflowed {
             return;
         }
@@ -81,7 +82,7 @@ impl SmallIdSet {
     }
     
     /// Check if ID is in the set
-    pub fn contains(&self, id: u32) -> bool {
+    pub fn contains(&self, id: SymbolId) -> bool {
         for i in 0..self.len as usize {
             if self.ids[i] == id {
                 return true;
@@ -96,7 +97,7 @@ impl SmallIdSet {
 pub struct SmallThingSet {
     pub overflowed: bool,
     len: u8,
-    things: [u64; MAX_SUMMARY_THINGS],
+    things: [ThingId; MAX_SUMMARY_THINGS],
 }
 
 impl Default for SmallThingSet {
@@ -104,14 +105,14 @@ impl Default for SmallThingSet {
         Self {
             overflowed: false,
             len: 0,
-            things: [0; MAX_SUMMARY_THINGS],
+            things: [ThingId::default(); MAX_SUMMARY_THINGS],
         }
     }
 }
 
 impl SmallThingSet {
     /// Insert a unique ThingId. If at capacity, marks as overflowed.
-    pub fn insert(&mut self, id: u64) {
+    pub fn insert(&mut self, id: ThingId) {
         if self.overflowed {
             return;
         }
@@ -131,7 +132,7 @@ impl SmallThingSet {
     }
     
     /// Check if ThingId is in the set
-    pub fn contains(&self, id: u64) -> bool {
+    pub fn contains(&self, id: ThingId) -> bool {
         for i in 0..self.len as usize {
             if self.things[i] == id {
                 return true;
@@ -302,7 +303,7 @@ pub fn commit_matches(filter: &WatchFilter, summary: &CommitSummary) -> bool {
     
     // Check SUBJECT filter  
     if (filter.flags & WATCH_F_SUBJECT) != 0 {
-        if !summary.subjects.overflowed && !summary.subjects.contains(filter.subject_lo) {
+        if !summary.subjects.overflowed && !summary.subjects.contains(filter.subject) {
             return false;
         }
     }
@@ -328,9 +329,9 @@ pub const WATCH_SCAN_LIMIT: usize = 64;
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WatchFilter {
     pub flags: u32,
-    pub kind_id: u32,
-    pub predicate_id: u32,
-    pub subject_lo: u64,
+    pub kind_id: SymbolId,
+    pub predicate_id: SymbolId,
+    pub subject: ThingId,
 }
 
 impl WatchFilter {
@@ -341,7 +342,7 @@ impl WatchFilter {
 }
 
 pub struct GlobalWatch {
-    pub id: u64,
+    pub id: ThingId,
     pub spec_ptr: u64, // We store the pointer to user query for now
     pub stream_handle: ResourceHandle, 
     pub kind_filter: SymbolId, // "kind == Bytespace"
@@ -362,10 +363,10 @@ pub struct GlobalWatch {
 
 pub struct Graph {
     pub nodes: BTreeMap<ThingId, Node>,
-    pub next_id: ThingId,
+    pub next_id_counter: u128,
     pub root_seq: AtomicU64,
     pub kind_index: BTreeMap<SymbolId, Vec<ThingId>>,
-    pub global_watches: BTreeMap<u64, GlobalWatch>,
+    pub global_watches: BTreeMap<ThingId, GlobalWatch>,
     /// Shared commit history ring buffer
     pub commit_history: CommitHistory,
 }
@@ -374,7 +375,7 @@ impl Graph {
     pub fn new() -> Self {
         Self {
             nodes: BTreeMap::new(),
-            next_id: 1,
+            next_id_counter: 1,
             root_seq: AtomicU64::new(0),
             kind_index: BTreeMap::new(),
             global_watches: BTreeMap::new(),
@@ -383,8 +384,16 @@ impl Graph {
     }
 
     pub fn alloc(&mut self, kind: SymbolId) -> ThingId {
-        let id = self.next_id;
-        self.next_id += 1;
+        let counter = self.next_id_counter;
+        self.next_id_counter = self.next_id_counter.wrapping_add(1);
+
+        // Generate a deterministic UUID-like ID for v0.
+        // Format: [counter(8) | 0...0]
+        // This ensures uniqueness and stability during run.
+        let mut bytes = [0u8; 16];
+        bytes[0..16].copy_from_slice(&counter.to_le_bytes());
+        let id = ThingId(bytes);
+
         self.nodes.insert(
             id,
             Node {

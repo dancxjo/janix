@@ -378,6 +378,9 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         hhdm_offset: runtime.phys_to_virt_offset(),
         acpi_rsdp: runtime.acpi_rsdp(),
         dtb_ptr: runtime.dtb_ptr(),
+        cpu_count: runtime.cpu_count(),
+        arch: if cfg!(target_arch = "x86_64") { "x86_64" } else { "aarch64" },
+        platform_profile: "unknown",
     });
 
     crate::root::init_root_service::<R>();

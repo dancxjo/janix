@@ -1253,6 +1253,7 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "bitflags",
+ "blake3",
  "linked_list_allocator",
  "spin",
  "stem",

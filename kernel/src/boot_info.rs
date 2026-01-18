@@ -11,6 +11,9 @@ pub struct BootSyscallInfo {
     pub hhdm_offset: u64,
     pub acpi_rsdp: Option<u64>,
     pub dtb_ptr: Option<u64>,
+    pub cpu_count: usize,
+    pub arch: &'static str,
+    pub platform_profile: &'static str,
 }
 
 pub fn set(info: BootSyscallInfo) {

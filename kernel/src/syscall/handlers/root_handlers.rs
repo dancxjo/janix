@@ -4,19 +4,42 @@ use crate::root::{self as root_svc, RootOp};
 use crate::syscall::validate::validate_user_range;
 use super::{copyin, copyout, read_symbol, root_call};
 use abi::errors::{Errno, SysResult};
+use abi::wire::{ThingId, SymbolId};
 use alloc::string::String;
 use core::sync::atomic::Ordering;
 
-
-pub fn sys_root_get_kind(id: usize) -> SysResult<usize> {
-    root_call(RootOp::GetKind { id: id as u64 })
+fn read_thing(ptr: usize) -> SysResult<ThingId> {
+    validate_user_range(ptr, 16, false)?;
+    let mut bytes = [0u8; 16];
+    unsafe {
+        copyin(&mut bytes, ptr)?;
+    }
+    Ok(ThingId(bytes))
 }
 
-pub fn sys_root_intern(ptr: usize, len: usize) -> SysResult<usize> {
+fn read_value(ptr: usize) -> SysResult<[u8; 16]> {
+    validate_user_range(ptr, 16, false)?;
+    let mut bytes = [0u8; 16];
+    unsafe {
+        copyin(&mut bytes, ptr)?;
+    }
+    Ok(bytes)
+}
+
+pub fn sys_root_get_kind(id_ptr: usize, out_ptr: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
+    validate_user_range(out_ptr, 16, true)?;
+    root_call(RootOp::GetKind { id, out_ptr: out_ptr as u64 })
+}
+
+pub fn sys_root_intern(ptr: usize, len: usize, out_ptr: usize) -> SysResult<usize> {
     if len > 256 {
         return Err(Errno::EINVAL);
     }
     validate_user_range(ptr, len, false)?;
+    if out_ptr != 0 {
+        validate_user_range(out_ptr, 16, true)?;
+    }
 
     let mut buf = [0u8; 256];
     unsafe {
@@ -26,22 +49,29 @@ pub fn sys_root_intern(ptr: usize, len: usize) -> SysResult<usize> {
     let s = core::str::from_utf8(&buf[..len]).map_err(|_| Errno::EINVAL)?;
     let msg = RootOp::Intern {
         name: String::from(s),
+        out_ptr: out_ptr as u64,
     };
 
     root_call(msg)
 }
 
-pub fn sys_root_create_node(kind_ptr: usize) -> SysResult<usize> {
+pub fn sys_root_create_node(kind_ptr: usize, out_ptr: usize) -> SysResult<usize> {
     let sym = read_symbol(kind_ptr)?;
-    root_call(RootOp::CreateNode { kind: sym })
+    if out_ptr != 0 {
+        validate_user_range(out_ptr, 16, true)?;
+    }
+    root_call(RootOp::CreateNode { kind: sym, out_ptr: out_ptr as u64 })
 }
 
-pub fn sys_root_link(src: usize, rel_ptr: usize, dst: usize) -> SysResult<usize> {
+pub fn sys_root_link(src_ptr: usize, rel_ptr: usize, dst_ptr: usize) -> SysResult<usize> {
+    let src = read_thing(src_ptr)?;
     let rel = read_symbol(rel_ptr)?;
+    let dst = read_thing(dst_ptr)?;
+
     let reply = root_svc::enqueue(RootOp::Link {
-        src: src as u64,
+        src,
         rel,
-        dst: dst as u64,
+        dst,
     });
     loop {
         let done = reply.done.load(Ordering::Acquire);
@@ -59,21 +89,26 @@ pub fn sys_root_link(src: usize, rel_ptr: usize, dst: usize) -> SysResult<usize>
     }
 }
 
-pub fn sys_root_prop_get(id: usize, ptr: usize, _reserved: usize) -> SysResult<usize> {
-    let sym = read_symbol(ptr)?;
+pub fn sys_root_prop_get(id_ptr: usize, key_ptr: usize, out_ptr: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
+    let sym = read_symbol(key_ptr)?;
+    validate_user_range(out_ptr, 16, true)?;
     let msg = RootOp::PropGet {
-        id: id as u64,
+        id,
         key: sym,
+        out_ptr: out_ptr as u64,
     };
     root_call(msg)
 }
 
-pub fn sys_root_prop_set(id: usize, key_ptr: usize, value: usize) -> SysResult<usize> {
+pub fn sys_root_prop_set(id_ptr: usize, key_ptr: usize, value_ptr: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
     let key = read_symbol(key_ptr)?;
+    let value = read_value(value_ptr)?;
     root_call(RootOp::PropSet {
-        id: id as u64,
+        id,
         key,
-        value: value as u64,
+        value,
     })
 }
 
@@ -95,6 +130,7 @@ pub fn sys_root_find(ptr_kind: usize, ptr_buf: usize, len: usize) -> SysResult<u
 
     let count = root_call(msg)?;
 
+    // 16 bytes per ID now
     let bytes_to_copy = core::cmp::min(count * 16, len);
     unsafe {
         copyout(ptr_buf, &kbuf[..bytes_to_copy])?;
@@ -131,7 +167,11 @@ pub fn sys_root_query(
         }
 
         let sym_id = match step.symbol.tag {
-            abi::symbols::SYMBOL_REF_TAG_ID => step.symbol.ptr_or_id as u32,
+            abi::symbols::SYMBOL_REF_TAG_ID => {
+                let id_ptr = step.symbol.ptr_or_id as usize;
+                let id = read_thing(id_ptr)?;
+                SymbolId(id.0)
+            },
             abi::symbols::SYMBOL_REF_TAG_STR => {
                 let s_ptr = step.symbol.ptr_or_id as usize;
                 let s_len = step.symbol.len as usize;
@@ -144,11 +184,15 @@ pub fn sys_root_query(
                     copyin(&mut buf[..s_len], s_ptr)?;
                 }
                 let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
+
+                // We use stack buffer for ID output
+                let mut id_buf = SymbolId::default();
                 let intern_msg = RootOp::Intern {
                     name: String::from(s),
+                    out_ptr: &mut id_buf as *mut _ as u64,
                 };
-                let id = root_call(intern_msg)?;
-                id as u32
+                root_call(intern_msg)?;
+                id_buf
             }
             _ => return Err(Errno::EINVAL),
         };
@@ -184,12 +228,13 @@ pub fn sys_root_query(
     Ok(count)
 }
 
-pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+pub fn sys_root_describe_thing(id_ptr: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
     validate_user_range(out_ptr, len, true)?;
     let mut kbuf = [0u8; 256];
     let kbuf_len = core::cmp::min(len, kbuf.len());
     let reply = root_svc::enqueue(RootOp::DescribeThing {
-        id: id as u64,
+        id,
         buffer: kbuf.as_mut_ptr() as u64,
         len: kbuf_len as u64,
     });
@@ -215,21 +260,23 @@ pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResu
 }
 
 pub fn sys_root_describe_edge(
-    src: usize,
+    src_ptr: usize,
     rel_ptr: usize,
-    dst: usize,
+    dst_ptr: usize,
     out_ptr: usize,
     len: usize,
 ) -> SysResult<usize> {
     validate_user_range(out_ptr, len, true)?;
+    let src = read_thing(src_ptr)?;
     let rel = read_symbol(rel_ptr)?;
+    let dst = read_thing(dst_ptr)?;
 
     let mut kbuf = [0u8; 512];
     let kbuf_len = core::cmp::min(len, kbuf.len());
     let reply = root_svc::enqueue(RootOp::DescribeEdge {
-        src: src as u64,
+        src,
         rel,
-        dst: dst as u64,
+        dst,
         buffer: kbuf.as_mut_ptr() as u64,
         len: kbuf_len as u64,
     });
@@ -254,12 +301,13 @@ pub fn sys_root_describe_edge(
     }
 }
 
-pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+pub fn sys_root_dump_edges(id_ptr: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
     validate_user_range(out_ptr, len, true)?;
     let mut kbuf = [0u8; 1024];
     let kbuf_len = core::cmp::min(len, kbuf.len());
     let reply = root_svc::enqueue(RootOp::DumpEdges {
-        id: id as u64,
+        id,
         buffer: kbuf.as_mut_ptr() as u64,
         len: kbuf_len as u64,
     });
@@ -284,17 +332,16 @@ pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<u
     }
 }
 
-pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+pub fn sys_root_get_edges(id_ptr: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
     validate_user_range(out_ptr, len, true)?;
     
     // Allocate a temporary kernel buffer to receive the edges
-    // Must be large enough to hold some edges, but not too large for stack
-    // GraphEdge is now abi::types::Edge (52 bytes).
     let mut kbuf = [0u8; 4096]; // ~78 edges max per batch
     let kbuf_len = core::cmp::min(len, kbuf.len());
     
     let reply = root_svc::enqueue(RootOp::GetEdges {
-        id: id as u64,
+        id,
         buffer: kbuf.as_mut_ptr() as u64,
         len: kbuf_len as u64,
     });
@@ -327,20 +374,25 @@ pub fn sys_root_dump_graph(limit: usize) -> SysResult<usize> {
     })
 }
 
-pub fn sys_root_bytespace_create(len: usize, flags: usize, format: usize) -> SysResult<usize> {
+pub fn sys_root_bytespace_create(len: usize, flags: usize, format: usize, out_ptr: usize) -> SysResult<usize> {
+    if out_ptr != 0 {
+        validate_user_range(out_ptr, 16, true)?;
+    }
     root_call(RootOp::BytespaceCreate {
         len: len as u64,
         flags: flags as u64,
         format: format as u64,
+        out_ptr: out_ptr as u64,
     })
 }
 
 pub fn sys_root_bytespace_read(
-    id: usize,
+    id_ptr: usize,
     offset: usize,
     ptr: usize,
     len: usize,
 ) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
     validate_user_range(ptr, len, true)?;
 
     let mut kbuf = [0u8; 4096];
@@ -353,7 +405,7 @@ pub fn sys_root_bytespace_read(
         let chunk_len = core::cmp::min(remaining, kbuf.len());
 
         let op = RootOp::BytespaceRead {
-            id: id as u64,
+            id,
             offset: curr_offset as u64,
             ptr: kbuf.as_mut_ptr() as u64,
             len: chunk_len as u64,
@@ -381,18 +433,24 @@ pub fn sys_root_bytespace_read(
     Ok(total_read)
 }
 
-pub fn sys_root_watch_subscribe(target: usize, mask: usize) -> SysResult<usize> {
+pub fn sys_root_watch_subscribe(target_ptr: usize, mask: usize, out_ptr: usize) -> SysResult<usize> {
+    let target_id = read_thing(target_ptr)?;
+    if out_ptr != 0 {
+        validate_user_range(out_ptr, 16, true)?;
+    }
     let res = root_call(RootOp::WatchSubscribe {
-        target_id: target as u64,
+        target_id,
         mask: mask as u64,
+        out_ptr: out_ptr as u64,
     });
     if let Err(e) = res {
-        crate::kinfo!("FLAT: sys_root_watch_subscribe target={} mask={} failed: {:?}", target, mask, e);
+        crate::kinfo!("sys_root_watch_subscribe target=? mask={} failed: {:?}", mask, e);
     }
     res
 }
 
-pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysResult<usize> {
+pub fn sys_root_stream_poll(stream_ptr: usize, max: usize, out_ptr: usize) -> SysResult<usize> {
+    let stream_id = read_thing(stream_ptr)?;
     validate_user_range(out_ptr, max, true)?;
 
     let evt_size = core::mem::size_of::<abi::types::RootWatchEvent>();
@@ -401,7 +459,7 @@ pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysRes
     }
 
     let reply = root_svc::enqueue(RootOp::StreamPoll {
-        stream_id: stream as u64,
+        stream_id,
         max,
         out_ptr: out_ptr as u64,
     });
@@ -413,22 +471,6 @@ pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysRes
             let count = reply.value.load(Ordering::Relaxed);
 
             if status == 0 && count > 0 {
-                let p0 = reply.p0.load(Ordering::Relaxed);
-                let p1 = reply.p1.load(Ordering::Relaxed);
-                let p2 = reply.p2.load(Ordering::Relaxed);
-
-                let evt = abi::types::RootWatchEvent {
-                    target: p0,
-                    key: p1,
-                    value: p2,
-                };
-
-                let src =
-                    unsafe { core::slice::from_raw_parts(&evt as *const _ as *const u8, evt_size) };
-                unsafe {
-                    copyout(out_ptr, src)?;
-                }
-
                 return Ok(1);
             } else {
                 return Ok(0);
@@ -441,11 +483,12 @@ pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysRes
 }
 
 pub fn sys_root_bytespace_write(
-    id: usize,
+    id_ptr: usize,
     offset: usize,
     ptr: usize,
     len: usize,
 ) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
     validate_user_range(ptr, len, false)?;
 
     let mut kbuf = [0u8; 4096];
@@ -462,7 +505,7 @@ pub fn sys_root_bytespace_write(
         }
 
         let op = RootOp::BytespaceWrite {
-            id: id as u64,
+            id,
             offset: curr_offset as u64,
             ptr: kbuf.as_ptr() as u64,
             len: chunk_len as u64,
@@ -486,8 +529,9 @@ pub fn sys_root_bytespace_write(
     Ok(total_written)
 }
 
-pub fn sys_root_bytespace_info(id: usize) -> SysResult<usize> {
-    let reply = root_svc::enqueue(RootOp::BytespaceInfo { id: id as u64 });
+pub fn sys_root_bytespace_info(id_ptr: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
+    let reply = root_svc::enqueue(RootOp::BytespaceInfo { id });
     
     loop {
         let done = reply.done.load(Ordering::Acquire);
@@ -507,12 +551,13 @@ pub fn sys_root_bytespace_info(id: usize) -> SysResult<usize> {
     }
 }
 
-pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
+pub fn sys_root_bytespace_map(id_ptr: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
     // Get caller's TID
     let tid = unsafe { crate::task::scheduler::current_tid_current() };
     
     let reply = root_svc::enqueue(RootOp::BytespaceMap {
-        id: id as u64,
+        id,
         tid,
     });
     
@@ -546,11 +591,12 @@ pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
     }
 }
 
-pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
+pub fn sys_root_bytespace_unmap(id_ptr: usize, user_va: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
     let tid = unsafe { crate::task::scheduler::current_tid_current() };
     
     let reply = root_svc::enqueue(RootOp::BytespaceUnmap {
-        id: id as u64,
+        id,
         user_va: user_va as u64,
         tid,
     });
@@ -560,8 +606,6 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
         if done != 0 {
             let status = reply.status.load(Ordering::Relaxed);
             if status == 0 {
-                // TODO: Actually unmap pages from page tables
-                // For v0, we just remove the mapping record
                 return Ok(0);
             } else {
                 return Err(Errno::ENOENT);
@@ -573,8 +617,9 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
     }
 }
 
-pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
-    let reply = root_svc::enqueue(RootOp::BytespacePhys { id: id as u64 });
+pub fn sys_root_bytespace_phys(id_ptr: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
+    let reply = root_svc::enqueue(RootOp::BytespacePhys { id });
 
     loop {
         let done = reply.done.load(Ordering::Acquire);
@@ -589,18 +634,22 @@ pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
         }
         unsafe {
             crate::task::scheduler::yield_now_current();
+        }
     }
 }
 
-}
-   use crate::kinfo;
+use crate::kinfo;
 
-pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
+pub fn sys_root_watch_open(spec_ptr: usize, out_ptr: usize) -> SysResult<usize> {
     use abi::types::WatchSpec;
     use abi::query::QueryStep;
     use abi::root::RootWatchFilter;
     use crate::root::query::PreparedStep;
     use crate::root::graph::WatchFilter;
+
+    if out_ptr != 0 {
+        validate_user_range(out_ptr, 16, true)?;
+    }
 
     kinfo!("sys_root_watch_open: ptr={:#x}", spec_ptr);
     let mut spec = WatchSpec::default();
@@ -634,7 +683,11 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
         unsafe { copyin(slice, ptr)? };
 
         let sym_id = match step.symbol.tag {
-            abi::symbols::SYMBOL_REF_TAG_ID => step.symbol.ptr_or_id as u32,
+            abi::symbols::SYMBOL_REF_TAG_ID => {
+                let id_ptr = step.symbol.ptr_or_id as usize;
+                let id = read_thing(id_ptr)?;
+                SymbolId(id.0)
+            },
             abi::symbols::SYMBOL_REF_TAG_STR => {
                 let s_ptr = step.symbol.ptr_or_id as usize;
                 let s_len = step.symbol.len as usize;
@@ -645,11 +698,14 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
                 let mut buf = [0u8; 256];
                 unsafe { copyin(&mut buf[..s_len], s_ptr)? };
                 let s = core::str::from_utf8(&buf[..s_len]).map_err(|_| Errno::EINVAL)?;
+                // We use stack buffer for ID output
+                let mut id_buf = SymbolId::default();
                 let intern_msg = RootOp::Intern {
                     name: String::from(s),
+                    out_ptr: &mut id_buf as *mut _ as u64,
                 };
-                let id = root_call(intern_msg)?;
-                id as u32
+                root_call(intern_msg)?;
+                id_buf
             }
             _ => return Err(Errno::EINVAL),
         };
@@ -677,10 +733,10 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
             flags: abi_filter.flags,
             kind_id: abi_filter.kind_id,
             predicate_id: abi_filter.predicate_id,
-            subject_lo: abi_filter.subject_lo,
+            subject: abi_filter.subject,
         }
     } else {
-        WatchFilter::default() // flags=0 means match all
+        WatchFilter::default()
     };
 
     let msg = RootOp::WatchOpen {
@@ -688,16 +744,18 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
         start_seq: spec.start_seq,
         query: steps,
         filter,
+        out_ptr: out_ptr as u64,
     };
     root_call(msg)
 }
 
 pub fn sys_root_watch_next(
-    id: usize,
+    id_ptr: usize,
     out_seq_ptr: usize,
     out_ptr: usize,
     out_len: usize,
 ) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
     validate_user_range(out_seq_ptr, core::mem::size_of::<u64>(), true)?;
     validate_user_range(out_ptr, out_len, true)?;
 
@@ -706,7 +764,7 @@ pub fn sys_root_watch_next(
     let mut kbuf = alloc::vec![0u8; cap];
 
     let reply = root_svc::enqueue(RootOp::WatchNext {
-        id: id as u64,
+        id,
         out_seq_ptr: 0,
         out_ptr: kbuf.as_mut_ptr() as u64,
         out_len: out_len as u64,
@@ -738,13 +796,12 @@ pub fn sys_root_watch_next(
                     -75 => return Err(Errno::EOVERFLOW),
                     -28 => return Err(Errno::ENOSPC),
                     -11 => return Err(Errno::EAGAIN),
-                    -22 => return Err(Errno::EINVAL), // Invalid handle
-                    -9 => return Err(Errno::EBADF),   // Bad/stale watch descriptor
+                    -22 => return Err(Errno::EINVAL),
+                    -9 => return Err(Errno::EBADF),
                     _ => {
-                        // Log unexpected status for debugging
                         let tid = unsafe { crate::task::scheduler::current_tid_current() };
                         crate::kinfo!(
-                            "watch_next: UNEXPECTED status={} wid={} tid={}",
+                            "watch_next: UNEXPECTED status={} wid={:?} tid={}",
                             status,
                             id,
                             tid
@@ -791,6 +848,7 @@ pub fn sys_root_apply_batch(ptr: usize, len: usize) -> SysResult<usize> {
     }
 }
 
-pub fn sys_root_watch_close(id: usize) -> SysResult<usize> {
-    root_call(RootOp::WatchClose { id: id as u64 })
+pub fn sys_root_watch_close(id_ptr: usize) -> SysResult<usize> {
+    let id = read_thing(id_ptr)?;
+    root_call(RootOp::WatchClose { id })
 }

@@ -5,10 +5,10 @@ extern crate alloc;
 
 use stem::info;
 use stem::thing::ThingId;
-use stem::thing::sys::{find, prop_get, prop_set, watch_subscribe, stream_poll, intern};
+use stem::thing::sys::{find, prop_get_raw, prop_set_raw, watch_subscribe, stream_poll, intern};
 use abi::schema::{kinds, keys};
 use abi::types::RootWatchEvent;
-use abi::ids::HandleId;  // Import trait for from_u64/to_u64_lossy methods
+use abi::ids::HandleId;
 use alloc::vec::Vec;
 use core::time::Duration;
 
@@ -38,8 +38,8 @@ fn main() -> ! {
                     let b_id = binding_ids[i];
 
                     // Read properties
-                    let src_id = prop_get(b_id, keys::BINDING_SOURCE).map(ThingId::from_u64).unwrap_or(ThingId::default());
-                    let dst_id = prop_get(b_id, keys::BINDING_TARGET).map(ThingId::from_u64).unwrap_or(ThingId::default());
+                    let src_id = prop_get_raw(b_id, keys::BINDING_SOURCE).map(ThingId).unwrap_or(ThingId::default());
+                    let dst_id = prop_get_raw(b_id, keys::BINDING_TARGET).map(ThingId).unwrap_or(ThingId::default());
 
                     if src_id.to_u64_lossy() == 0 || dst_id.to_u64_lossy() == 0 {
                         continue;
@@ -88,12 +88,13 @@ fn main() -> ! {
                     did_work = true;
                     // Check if the changed key matches what we care about
                     // For v0, we only map clock.now_text -> ui.text
-                    if event.key == clock_now_text_key as u64 {
-                        // event.value is the new value (BytespaceID)
+                    // event.key is SymbolId
+                    if event.key == clock_now_text_key {
+                        // event.value is [u8; 16] (BytespaceID or value)
                         // Write to target ui.text
-                        // Note: prop_set expects a u64 value.
-                        if prop_set(binding.target, keys::UI_TEXT, event.value).is_ok() {
-                            // info!("Updated target {} with val {}", binding.target.0, event.value);
+                        // prop_set_raw expects &[u8; 16]
+                        if prop_set_raw(binding.target, keys::UI_TEXT, &event.value).is_ok() {
+                            // info!("Updated target {} with val {:?}", binding.target, event.value);
                         }
                     }
                 }

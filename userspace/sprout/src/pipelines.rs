@@ -87,11 +87,8 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         }
     };
 
-    let role_sym = match thingsys::intern("display.compositor") {
-        Ok(sym) => sym,
-        Err(_) => 0,
-    };
-    let _ = thingsys::prop_set(bs_id, "display_role", role_sym as u64);
+    let role_sym = thingsys::intern("display.compositor").unwrap_or_default();
+    let _ = thingsys::prop_set_raw(bs_id, "display_role", &role_sym.0);
     let _ = thingsys::prop_set(bs_id, keys::WIDTH, display_width as u64);
     let _ = thingsys::prop_set(bs_id, keys::HEIGHT, display_height as u64);
     let _ = thingsys::prop_set(bs_id, keys::STRIDE, display_stride as u64);
@@ -99,7 +96,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     
     // Store backend name as a property so Bloom can query it
     if let Ok(backend_sym) = thingsys::intern(backend_name) {
-        let _ = thingsys::prop_set(bs_id, "display_backend", backend_sym as u64);
+        let _ = thingsys::prop_set_raw(bs_id, "display_backend", &backend_sym.0);
     }
 
     let drv_req = match port_create(4096) {

@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use alloc::vec;
 use alloc::collections::BTreeMap;
 use stem::thing::ThingId;
-use stem::thing::sys::{prop_get, get_kind};
+use stem::thing::sys::{prop_get_raw, get_kind};
 use abi::schema::{keys, rels};
 use abi::symbols::SymbolId;
 use abi::ids::HandleId;
@@ -16,17 +16,17 @@ pub enum UiNodeKind {
     Text,
     Image,
     Overlay,
-    Unknown(u32),
+    Unknown(SymbolId),
 }
 
 #[derive(Clone, Copy)]
 pub struct KindIds {
-    pub root: u32,
-    pub window: u32,
-    pub panel: u32,
-    pub text: u32,
-    pub image: u32,
-    pub overlay: u32,
+    pub root: SymbolId,
+    pub window: SymbolId,
+    pub panel: SymbolId,
+    pub text: SymbolId,
+    pub image: SymbolId,
+    pub overlay: SymbolId,
 }
 
 #[derive(Clone, Copy)]
@@ -54,30 +54,30 @@ pub struct UiKeys {
 impl UiKeys {
     pub fn intern() -> Self {
         Self {
-            x: stem::thing::sys::intern(keys::UI_X).unwrap_or(0),
-            y: stem::thing::sys::intern(keys::UI_Y).unwrap_or(0),
-            w: stem::thing::sys::intern(keys::UI_WIDTH).unwrap_or(0),
-            h: stem::thing::sys::intern(keys::UI_HEIGHT).unwrap_or(0),
-            color: stem::thing::sys::intern(keys::UI_COLOR).unwrap_or(0),
-            text: stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0),
-            font: stem::thing::sys::intern(keys::UI_FONT).unwrap_or(0),
-            font_size: stem::thing::sys::intern(keys::UI_FONT_SIZE).unwrap_or(0),
-            radius: stem::thing::sys::intern(keys::UI_RADIUS).unwrap_or(0),
-            title: stem::thing::sys::intern(keys::UI_TITLE).unwrap_or(0),
-            hidden: stem::thing::sys::intern(keys::UI_HIDDEN).unwrap_or(0),
-            z_index: stem::thing::sys::intern(keys::UI_Z_INDEX).unwrap_or(0),
-            center_x: stem::thing::sys::intern(keys::UI_CENTER_X).unwrap_or(0),
-            center_y: stem::thing::sys::intern(keys::UI_CENTER_Y).unwrap_or(0),
-            fill_parent: stem::thing::sys::intern(keys::UI_FILL_PARENT).unwrap_or(0),
-            bg_color: stem::thing::sys::intern(keys::UI_BG_COLOR).unwrap_or(0),
-            fg_color: stem::thing::sys::intern(keys::UI_FG_COLOR).unwrap_or(0),
-            has_child: stem::thing::sys::intern(rels::HAS_CHILD).unwrap_or(0),
+            x: stem::thing::sys::intern(keys::UI_X).unwrap_or_default(),
+            y: stem::thing::sys::intern(keys::UI_Y).unwrap_or_default(),
+            w: stem::thing::sys::intern(keys::UI_WIDTH).unwrap_or_default(),
+            h: stem::thing::sys::intern(keys::UI_HEIGHT).unwrap_or_default(),
+            color: stem::thing::sys::intern(keys::UI_COLOR).unwrap_or_default(),
+            text: stem::thing::sys::intern(keys::UI_TEXT).unwrap_or_default(),
+            font: stem::thing::sys::intern(keys::UI_FONT).unwrap_or_default(),
+            font_size: stem::thing::sys::intern(keys::UI_FONT_SIZE).unwrap_or_default(),
+            radius: stem::thing::sys::intern(keys::UI_RADIUS).unwrap_or_default(),
+            title: stem::thing::sys::intern(keys::UI_TITLE).unwrap_or_default(),
+            hidden: stem::thing::sys::intern(keys::UI_HIDDEN).unwrap_or_default(),
+            z_index: stem::thing::sys::intern(keys::UI_Z_INDEX).unwrap_or_default(),
+            center_x: stem::thing::sys::intern(keys::UI_CENTER_X).unwrap_or_default(),
+            center_y: stem::thing::sys::intern(keys::UI_CENTER_Y).unwrap_or_default(),
+            fill_parent: stem::thing::sys::intern(keys::UI_FILL_PARENT).unwrap_or_default(),
+            bg_color: stem::thing::sys::intern(keys::UI_BG_COLOR).unwrap_or_default(),
+            fg_color: stem::thing::sys::intern(keys::UI_FG_COLOR).unwrap_or_default(),
+            has_child: stem::thing::sys::intern(rels::HAS_CHILD).unwrap_or_default(),
         }
     }
 }
 
 impl UiNodeKind {
-    pub fn from_symbol(id: u32, kinds: &KindIds) -> Self {
+    pub fn from_symbol(id: SymbolId, kinds: &KindIds) -> Self {
         if id == kinds.root { Self::Root }
         else if id == kinds.window { Self::Window }
         else if id == kinds.panel { Self::Panel }
@@ -92,7 +92,7 @@ impl UiNodeKind {
 pub struct UiNodeSnapshot {
     pub id: ThingId,
     pub kind: UiNodeKind,
-    pub props: BTreeMap<SymbolId, u64>,
+    pub props: BTreeMap<SymbolId, [u8; 16]>,
     pub strings: BTreeMap<SymbolId, String>,
     pub children: Vec<ThingId>,
 }
@@ -114,12 +114,12 @@ impl UiSnapshot {
     pub fn capture(root_id: ThingId) -> Self {
         use abi::schema::kinds;
         let kind_ids = KindIds {
-            root: stem::thing::sys::intern(kinds::UI_ROOT).unwrap_or(0),
-            window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0),
-            panel: stem::thing::sys::intern(kinds::UI_PANEL).unwrap_or(0),
-            text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or(0),
-            image: stem::thing::sys::intern(kinds::UI_IMAGE).unwrap_or(0),
-            overlay: stem::thing::sys::intern(kinds::UI_OVERLAY).unwrap_or(0),
+            root: stem::thing::sys::intern(kinds::UI_ROOT).unwrap_or_default(),
+            window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or_default(),
+            panel: stem::thing::sys::intern(kinds::UI_PANEL).unwrap_or_default(),
+            text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or_default(),
+            image: stem::thing::sys::intern(kinds::UI_IMAGE).unwrap_or_default(),
+            overlay: stem::thing::sys::intern(kinds::UI_OVERLAY).unwrap_or_default(),
         };
 
         let keys = UiKeys::intern();
@@ -137,7 +137,50 @@ impl UiSnapshot {
 
         let kind_sym = get_kind(id).ok();
         let kind = match kind_sym {
-            Some(sym) => UiNodeKind::from_symbol(sym.0 as u32, kind_ids),
+            Some(sym) => {
+                 // get_kind returns ThingKind which wraps u64 (old) or SymbolId?
+                 // stem::thing::sys::get_kind(id) returns Result<ThingKind, Errno>
+                 // ThingKind is u64 wrapper in stem/src/thing/mod.rs likely.
+                 // But wait, my stem/src/thing/sys.rs implementation of get_kind:
+                 /*
+                    pub fn get_kind(id: ThingId) -> Result<ThingKind, Errno> {
+                        let mut out = SymbolId::default();
+                        // ... syscall ...
+                        let mut bytes = [0u8; 8];
+                        bytes.copy_from_slice(&out.0[0..8]);
+                        let val = u64::from_le_bytes(bytes);
+                        errno(ret).map(|_| ThingKind(val))
+                    }
+                 */
+                 // It returns ThingKind which is u64 wrapper. It truncates SymbolId.
+                 // This is bad if symbols are UUIDs.
+                 // UiNodeKind::from_symbol expects SymbolId.
+                 // I need to change get_kind in stem/src/thing/sys.rs to return SymbolId or ThingKind wrapping [u8; 16].
+                 // For now, I will assume get_kind returns ThingKind(u64) which is truncated SymbolId.
+                 // This is inconsistent.
+
+                 // If I look at stem/src/thing/mod.rs, ThingKind is struct ThingKind(pub u64).
+                 // I should probably skip fixing stem ThingKind definition for now and just deal with what I have,
+                 // or fix stem ThingKind to be u128/UUID.
+
+                 // User said "From userland, I should always just work with UUIDs proper."
+                 // So I MUST fix stem::ThingKind to be UUID-compatible.
+
+                 // If I change ThingKind to wrap [u8; 16], it breaks other things?
+                 // Let's assume for this step I just want bloom to compile.
+
+                 // But wait, `UiNodeKind::from_symbol` takes `SymbolId` (16 bytes).
+                 // `get_kind` returns `ThingKind` (u64).
+                 // In `traverse`, I need to call `root_get_kind` directly or fix `get_kind`.
+
+                 // Let's call `stem::syscall::root_get_kind` directly to get full SymbolId.
+                 let mut sym = SymbolId::default();
+                 if let Ok(_) = stem::syscall::root_get_kind(&id, &mut sym) {
+                     UiNodeKind::from_symbol(sym, kind_ids)
+                 } else {
+                     return;
+                 }
+            },
             None => return,
         };
 
@@ -147,10 +190,16 @@ impl UiSnapshot {
         if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
             for edge in &edges_buf[..count] {
                 // Check if (id)-[:HAS_CHILD]->(child)
-                let rel_u64 = edge.predicate.to_u64_lossy();
-                let target_u64 = edge.to.to_u64_lossy();
+                let rel = edge.predicate; // PredicateId ([u8; 16])
+                let target = edge.to; // ThingId ([u8; 16])
+
+                // Compare with keys.has_child (SymbolId)
+                // PredicateId and SymbolId are both [u8; 16].
+                // keys.has_child is SymbolId.
+                // Assuming PredicateId has .0 or is compatible.
+                // If PredicateId is [u8; 16], we can compare bytes.
                 
-                if rel_u64 == keys.has_child as u64 && target_u64 != id.to_u64_lossy() {
+                if rel.0 == keys.has_child.0 && target != id {
                     children.push(edge.to);
                 }
             }
@@ -166,7 +215,7 @@ impl UiSnapshot {
         ];
 
         for (key_id, key_str) in common_keys {
-            if let Ok(val) = prop_get(id, key_str) {
+            if let Ok(val) = prop_get_raw(id, key_str) {
                 props.insert(key_id, val);
             }
         }
@@ -186,14 +235,17 @@ impl UiSnapshot {
         };
 
         for (key_id, key_str) in kind_keys {
-            if let Ok(val) = prop_get(id, key_str) {
+            if let Ok(val) = prop_get_raw(id, key_str) {
                 props.insert(key_id, val);
                 
                 // If this is a string property, snapshot its content
                 if key_id == keys.text || key_id == keys.font || key_id == keys.title {
-                    if val != 0 {
-                        let mut s_buf = [0u8; 1024];
-                        if let Ok(len) = stem::thing::sys::bytespace_read(ThingId::from_u64(val), 0, &mut s_buf) {
+                    // val is [u8; 16] (ThingId of bytespace)
+                    // Check if it is not null/zero?
+                    if val != [0u8; 16] {
+                         let bs_id = ThingId(val);
+                         let mut s_buf = [0u8; 1024];
+                        if let Ok(len) = stem::thing::sys::bytespace_read(bs_id, 0, &mut s_buf) {
                             let s = String::from(core::str::from_utf8(&s_buf[..len]).unwrap_or_default());
                             strings.insert(key_id, s);
                         }

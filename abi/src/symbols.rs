@@ -1,4 +1,4 @@
-pub type SymbolId = u32;
+pub use crate::wire::SymbolId;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

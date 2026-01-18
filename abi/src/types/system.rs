@@ -1,16 +1,14 @@
 //! Shared types used in syscall payloads.
 //! Must be #[repr(C)] to ensure stable layout.
 
+use crate::wire::{ThingId, SymbolId};
+
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct TimeSpec {
     pub seconds: u64,
     pub nanoseconds: u32,
 }
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default)]
-pub struct ThingId(pub u64);
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
@@ -40,9 +38,9 @@ pub struct EventHeader {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RootWatchEvent {
-    pub target: u64,
-    pub key: u64,
-    pub value: u64,
+    pub target: ThingId,
+    pub key: SymbolId,
+    pub value: [u8; 16], // Updated to 16 bytes
 }
 
 #[repr(u64)]
@@ -99,7 +97,7 @@ pub struct WatchSpec {
 #[derive(Debug, Clone, Copy, Default)]
 pub struct WatchEvent {
     pub kind: u32, // 1=Found, 2=Lost
-    pub node_id: u64,
+    pub node_id: ThingId,
     pub handle: u64,
     pub size: u64,
 }
@@ -107,6 +105,6 @@ pub struct WatchEvent {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, Default)]
 pub struct GraphEdge {
-    pub rel: u64,
-    pub target: u64,
+    pub rel: SymbolId,
+    pub target: ThingId,
 }

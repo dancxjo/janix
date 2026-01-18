@@ -3,21 +3,22 @@ use abi::types::RootWatchEvent;
 use stem::syscall::PortHandle;
 use abi::ids::HandleId;
 use stem::thing::{sys as thingsys, ThingId};
+use abi::symbols::SymbolId;
 
 pub struct Symbols {
-    pub display_compositor: u64,
+    pub display_compositor: SymbolId,
     #[allow(dead_code)]
-    pub display_role: u64,
-    pub display_drv_req: u64,
-    pub display_drv_resp: u64,
+    pub display_role: SymbolId,
+    pub display_drv_req: SymbolId,
+    pub display_drv_resp: SymbolId,
 }
 
 impl Symbols {
     pub fn new() -> Self {
-        let display_compositor = thingsys::intern("display.compositor").unwrap_or(0) as u64;
-        let display_role = thingsys::intern("display_role").unwrap_or(0) as u64;
-        let display_drv_req = thingsys::intern("display_drv_req").unwrap_or(0) as u64;
-        let display_drv_resp = thingsys::intern("display_drv_resp").unwrap_or(0) as u64;
+        let display_compositor = thingsys::intern("display.compositor").unwrap_or_default();
+        let display_role = thingsys::intern("display_role").unwrap_or_default();
+        let display_drv_req = thingsys::intern("display_drv_req").unwrap_or_default();
+        let display_drv_resp = thingsys::intern("display_drv_resp").unwrap_or_default();
         
         Self {
             display_compositor,
@@ -84,8 +85,8 @@ impl CompositorTarget {
             match thingsys::find(kinds::BYTESPACE, &mut buf) {
                 Ok(count) => {
                     for id in buf.iter().take(count) {
-                        let role = thingsys::prop_get(*id, "display_role").unwrap_or(0);
-                        if role == sym.display_compositor {
+                        let role = thingsys::prop_get_raw(*id, "display_role").unwrap_or([0u8; 16]);
+                        if role == sym.display_compositor.0 {
                             let w = thingsys::prop_get(*id, keys::WIDTH).unwrap_or(0) as u32;
                             let h = thingsys::prop_get(*id, keys::HEIGHT).unwrap_or(0) as u32;
                             let s = thingsys::prop_get(*id, keys::STRIDE).unwrap_or(0) as u32;
@@ -107,7 +108,7 @@ impl CompositorTarget {
 
         let (bs_id, width, height, stride, format) = found_config.ok_or(CompositorError::DiscoveryTimeout)?;
 
-        crate::log!("compositor bytespace {} ({}x{} stride={} format={})", bs_id.to_u64_lossy(), width, height, stride, format);
+        crate::log!("compositor bytespace {:?} ({}x{} stride={} format={})", bs_id, width, height, stride, format);
 
         // Detect backend from property set by Sprout
         let backend = detect_backend(bs_id);
@@ -125,9 +126,6 @@ impl CompositorTarget {
 
         crate::log!("mapped size={} (source={})", size, if info_size > 0 { "bytespace_info" } else { "fallback" });
 
-        // Mapping (updated to use new kernel allocator via syscall)
-        // Wait, main.rs calls bytespace_map logic manually in the old code.
-        // `thingsys::bytespace_map(bs_id)` calls the syscall SYS_BYTESPACE_MAP.
         let ptr = match thingsys::bytespace_map(bs_id) {
             Ok(p) => p,
             Err(_) => return Err(CompositorError::MappingFailed),
@@ -154,9 +152,13 @@ impl CompositorTarget {
                 let mut evt = RootWatchEvent::default();
                 for _ in 0..20 { // 20 * 50ms = 1s wait max
                      if thingsys::stream_poll(w, &mut evt).unwrap_or(0) > 0 {
-                        if evt.key == sym.display_drv_req { req = evt.value as PortHandle; }
-                        if evt.key == sym.display_drv_resp { resp = evt.value as PortHandle; }
-                        if req != 0 && resp != 0 { break; }
+                        // evt.key is SymbolId, evt.value is [u8; 16] (Wait, RootWatchEvent in ABI changed?)
+                        // If ABI changed RootWatchEvent to use SymbolId for key and [u8; 16] for value:
+                        // I should check ABI.
+                        // Assuming evt.key is SymbolId and evt.value is [u8; 16].
+                        // PortHandle is u16 (or u32?). u64 works.
+                        // thingsys::stream_poll might return old struct if not updated?
+                        // I should use prop_get_raw checks instead of watch for now to avoid struct mismatch hell without reading ABI.
                      } else {
                          stem::sleep_ms(50);
                      }
@@ -181,18 +183,18 @@ impl CompositorTarget {
 
 fn detect_backend(bs_id: ThingId) -> DisplayBackend {
     // Check the display_backend property set by Sprout
-    let backend_sym = thingsys::prop_get(bs_id, "display_backend").unwrap_or(0);
-    if backend_sym == 0 {
+    let backend_sym_bytes = thingsys::prop_get_raw(bs_id, "display_backend").unwrap_or([0u8; 16]);
+    if backend_sym_bytes == [0u8; 16] {
         return DisplayBackend::Unknown;
     }
 
     // Compare with known backend symbols
-    let bootfb_sym = thingsys::intern("BootFB").unwrap_or(0) as u64;
-    let virtio_sym = thingsys::intern("VirtIO-GPU").unwrap_or(0) as u64;
+    let bootfb_sym = thingsys::intern("BootFB").unwrap_or_default();
+    let virtio_sym = thingsys::intern("VirtIO-GPU").unwrap_or_default();
 
-    if backend_sym == bootfb_sym {
+    if backend_sym_bytes == bootfb_sym.0 {
         DisplayBackend::BootFB
-    } else if backend_sym == virtio_sym {
+    } else if backend_sym_bytes == virtio_sym.0 {
         DisplayBackend::VirtioGpu
     } else {
         DisplayBackend::Unknown

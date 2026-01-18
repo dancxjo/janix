@@ -3,6 +3,8 @@
 //! Defines the binary format for `SYS_ROOT_APPLY_BATCH`.
 //! Use safe byte-level parsing; do not cast unaligned bytes to these structs.
 
+use crate::wire::{ThingId, SymbolId};
+
 /// Batch Header (8 bytes)
 /// [Magic: 4] [Version: 2] [OpCount: 2]
 pub const BATCH_MAGIC: u32 = 0x54485254; // "THRT"
@@ -59,7 +61,7 @@ pub const WATCH_F_KIND: u32 = 1 << 0;     // Filter by kind_id
 pub const WATCH_F_PREDICATE: u32 = 1 << 1; // Filter by predicate_id
 pub const WATCH_F_SUBJECT: u32 = 1 << 2;   // Filter by subject ThingId
 
-/// Compact watch filter (32 bytes, C-compatible)
+/// Compact watch filter (56 bytes, C-compatible)
 /// 
 /// Used with `SYS_ROOT_WATCH_OPEN` to filter which commits are delivered.
 /// If `flags == 0`, all commits match. Otherwise, only commits containing
@@ -69,22 +71,18 @@ pub const WATCH_F_SUBJECT: u32 = 1 << 2;   // Filter by subject ThingId
 pub struct RootWatchFilter {
     /// Filter flags (combination of WATCH_F_* constants)
     pub flags: u32,
-    /// Kind ID to filter by (requires WATCH_F_KIND flag)
-    /// Must be an interned SymbolId from SYS_ROOT_INTERN
-    pub kind_id: u32,
-    /// Predicate ID to filter by (requires WATCH_F_PREDICATE flag)
-    /// Must be an interned SymbolId from SYS_ROOT_INTERN
-    pub predicate_id: u32,
     /// Reserved for alignment
     pub _reserved: u32,
-    /// Subject ThingId high bits (reserved for 128-bit ThingId expansion)
-    pub subject_hi: u64,
+    /// Kind ID to filter by (requires WATCH_F_KIND flag)
+    pub kind_id: SymbolId,
+    /// Predicate ID to filter by (requires WATCH_F_PREDICATE flag)
+    pub predicate_id: SymbolId,
     /// Subject ThingId to filter by (requires WATCH_F_SUBJECT flag)
-    pub subject_lo: u64,
+    pub subject: ThingId,
 }
 
 impl RootWatchFilter {
-    pub const SIZE: usize = 32;
+    pub const SIZE: usize = 56;
     
     /// Create a filter that matches all commits
     pub fn all() -> Self {
@@ -92,16 +90,16 @@ impl RootWatchFilter {
     }
     
     /// Create a filter for a specific subject
-    pub fn subject(id: u64) -> Self {
+    pub fn subject(id: ThingId) -> Self {
         Self {
             flags: WATCH_F_SUBJECT,
-            subject_lo: id,
+            subject: id,
             ..Default::default()
         }
     }
     
     /// Create a filter for a specific predicate
-    pub fn predicate(predicate_id: u32) -> Self {
+    pub fn predicate(predicate_id: SymbolId) -> Self {
         Self {
             flags: WATCH_F_PREDICATE,
             predicate_id,
@@ -110,7 +108,7 @@ impl RootWatchFilter {
     }
     
     /// Create a filter for a specific kind
-    pub fn kind(kind_id: u32) -> Self {
+    pub fn kind(kind_id: SymbolId) -> Self {
         Self {
             flags: WATCH_F_KIND,
             kind_id,

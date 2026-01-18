@@ -12,7 +12,7 @@ use stem::thing::ThingId;
 struct SystemSymbolResolver;
 
 impl SymbolResolver for SystemSymbolResolver {
-    fn resolve(&self, key: &str) -> Option<u32> {
+    fn resolve(&self, key: &str) -> Option<abi::symbols::SymbolId> {
         stem::thing::sys::intern(key).ok()
     }
 }

@@ -51,8 +51,9 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_DEVICE_DMA_PHYS => handlers::sys_device_dma_phys(args[0]),
         SYS_DEVICE_IRQ_WAIT => handlers::sys_device_irq_wait(args[0], args[1], args[2]),
 
-        SYS_ROOT_GET_KIND => handlers::sys_root_get_kind(args[0]),
-        SYS_ROOT_BYTESPACE_CREATE => handlers::sys_root_bytespace_create(args[0], args[1], args[2]),
+        // Root/Graph Syscalls - Updated for UUIDs & out_ptr
+        SYS_ROOT_GET_KIND => handlers::sys_root_get_kind(args[0], args[1]),
+        SYS_ROOT_BYTESPACE_CREATE => handlers::sys_root_bytespace_create(args[0], args[1], args[2], args[3]),
         SYS_ROOT_BYTESPACE_READ => {
             handlers::sys_root_bytespace_read(args[0], args[1], args[2], args[3])
         }
@@ -63,7 +64,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ROOT_BYTESPACE_MAP => handlers::sys_root_bytespace_map(args[0]),
         SYS_ROOT_BYTESPACE_UNMAP => handlers::sys_root_bytespace_unmap(args[0], args[1]),
         SYS_ROOT_BYTESPACE_PHYS => handlers::sys_root_bytespace_phys(args[0]),
-        SYS_ROOT_WATCH_SUBSCRIBE => handlers::sys_root_watch_subscribe(args[0], args[1]),
+        SYS_ROOT_WATCH_SUBSCRIBE => handlers::sys_root_watch_subscribe(args[0], args[1], args[2]),
         SYS_ROOT_STREAM_POLL => handlers::sys_root_stream_poll(args[0], args[1], args[2]),
         SYS_ROOT_PROP_SET => handlers::sys_root_prop_set(args[0], args[1], args[2]),
         SYS_ROOT_DESCRIBE_THING => handlers::sys_root_describe_thing(args[0], args[1], args[2]),
@@ -73,14 +74,14 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ROOT_LINK => handlers::sys_root_link(args[0], args[1], args[2]),
         SYS_ROOT_DUMP_EDGES => handlers::sys_root_dump_edges(args[0], args[1], args[2]),
         SYS_ROOT_GET_EDGES => handlers::sys_root_get_edges(args[0], args[1], args[2]),
-        SYS_ROOT_INTERN => handlers::sys_root_intern(args[0], args[1]),
+        SYS_ROOT_INTERN => handlers::sys_root_intern(args[0], args[1], args[2]),
         SYS_ROOT_PROP_GET => handlers::sys_root_prop_get(args[0], args[1], args[2]),
         SYS_ROOT_FIND => handlers::sys_root_find(args[0], args[1], args[2]),
-        SYS_ROOT_CREATE_NODE => handlers::sys_root_create_node(args[0]),
+        SYS_ROOT_CREATE_NODE => handlers::sys_root_create_node(args[0], args[1]),
         SYS_ROOT_QUERY => handlers::sys_root_query(args[0], args[1], args[2], args[3]),
         SYS_ROOT_DUMP_GRAPH => handlers::sys_root_dump_graph(args[0]),
 
-        SYS_ROOT_WATCH_OPEN => handlers::sys_root_watch_open(args[0]),
+        SYS_ROOT_WATCH_OPEN => handlers::sys_root_watch_open(args[0], args[1]),
         SYS_ROOT_WATCH_NEXT => {
             handlers::sys_root_watch_next(args[0], args[1], args[2], args[3])
         }

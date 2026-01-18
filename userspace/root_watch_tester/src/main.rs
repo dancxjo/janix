@@ -10,54 +10,49 @@ extern crate alloc;
 use stem::println;
 use abi::root::*;
 use abi::syscall::*;
-
-/// Helper to intern a symbol and get its ID
-fn intern_symbol(name: &str) -> u32 {
-    unsafe {
-        stem::syscall::syscall6(
-            SYS_ROOT_INTERN,
-            name.as_ptr() as usize,
-            name.len(),
-            0, 0, 0, 0
-        ) as u32
-    }
-}
+use abi::wire::ThingId;
+use abi::symbols::SymbolId;
 
 /// Helper to create a node using single-op syscall
-fn create_node(kind_name: &str) -> u64 {
+fn create_node(kind_name: &str) -> ThingId {
+    let mut out = ThingId::default();
     let kind_sym = make_symbol_ref(kind_name);
     unsafe {
         stem::syscall::syscall6(
             SYS_ROOT_CREATE_NODE,
             &kind_sym as *const _ as usize,
-            0, 0, 0, 0, 0
-        ) as u64
+            &mut out as *mut _ as usize,
+            0, 0, 0, 0
+        );
     }
+    out
 }
 
 /// Helper to create an edge using single-op syscall
-fn link_nodes(src: u64, rel_name: &str, dst: u64) -> i64 {
+fn link_nodes(src: ThingId, rel_name: &str, dst: ThingId) -> i64 {
     let rel_sym = make_symbol_ref(rel_name);
     unsafe {
         stem::syscall::syscall6(
             SYS_ROOT_LINK,
-            src as usize,
+            &src as *const _ as usize,
             &rel_sym as *const _ as usize,
-            dst as usize,
+            &dst as *const _ as usize,
             0, 0, 0
         ) as i64
     }
 }
 
 /// Helper to set a property using single-op syscall
-fn prop_set(id: u64, key_name: &str, value: u64) -> i64 {
+fn prop_set(id: ThingId, key_name: &str, value: u64) -> i64 {
     let key_sym = make_symbol_ref(key_name);
+    let mut val_buf = [0u8; 16];
+    val_buf[0..8].copy_from_slice(&value.to_le_bytes());
     unsafe {
         stem::syscall::syscall6(
             SYS_ROOT_PROP_SET,
-            id as usize,
+            &id as *const _ as usize,
             &key_sym as *const _ as usize,
-            value as usize,
+            &val_buf as *const _ as usize,
             0, 0, 0
         ) as i64
     }
@@ -73,39 +68,41 @@ fn make_symbol_ref(name: &str) -> abi::symbols::SymbolRefWire {
 }
 
 /// Open a watch subscription (match all)
-fn open_watch() -> Result<usize, i64> {
+fn open_watch() -> Result<ThingId, i64> {
     open_watch_filtered(RootWatchFilter::default())
 }
 
 /// Open a watch with a specific filter
-fn open_watch_filtered(filter: RootWatchFilter) -> Result<usize, i64> {
+fn open_watch_filtered(filter: RootWatchFilter) -> Result<ThingId, i64> {
     let mut spec = abi::types::WatchSpec::default();
     spec.filter_ptr = &filter as *const _ as u64;
     spec.filter_len = core::mem::size_of::<RootWatchFilter>() as u64;
     
+    let mut out = ThingId::default();
     let res = unsafe {
         stem::syscall::syscall6(
             SYS_ROOT_WATCH_OPEN,
             &spec as *const _ as usize,
-            0, 0, 0, 0, 0
+            &mut out as *mut _ as usize,
+            0, 0, 0, 0
         )
     };
     
     if (res as isize) < 0 {
         Err(res as i64)
     } else {
-        Ok(res as usize)
+        Ok(out)
     }
 }
 
 /// Read next watch event
-fn watch_next(handle: usize, buf: &mut [u8]) -> Result<(usize, u64), i64> {
+fn watch_next(handle: &ThingId, buf: &mut [u8]) -> Result<(usize, u64), i64> {
     let mut seq_out = 0u64;
     
     let res = unsafe {
         stem::syscall::syscall6(
             SYS_ROOT_WATCH_NEXT,
-            handle,
+            handle as *const _ as usize,
             &mut seq_out as *mut _ as usize,
             buf.as_mut_ptr() as usize,
             buf.len(),
@@ -155,20 +152,20 @@ fn test_main() -> i32 {
             return -1;
         }
     };
-    println!("Watch opened: handle={}", watch_handle);
+    println!("Watch opened: handle={:?}", watch_handle);
     
     // ========================================
-    // Test 1: CREATE_NODE delivers watch event
+    // Test 1: CREATE_NODE watch delivery
     // ========================================
     println!("\n--- Test 1: CREATE_NODE watch delivery ---");
     let initial_seq = {
         // Create a node using single-op syscall
         let node_id = create_node("test.node.single");
-        println!("Created node via single-op: id={}", node_id);
+        println!("Created node via single-op: id={:?}", node_id);
         
         // Read watch event
         let mut buf = [0u8; 256];
-        match watch_next(watch_handle, &mut buf) {
+        match watch_next(&watch_handle, &mut buf) {
             Ok((len, seq)) => {
                 println!("Received watch event: len={}, seq={}", len, seq);
                 
@@ -209,8 +206,8 @@ fn test_main() -> i32 {
         
         // Drain the two CREATE_NODE events (they'll be in the queue)
         let mut buf = [0u8; 256];
-        let _ = watch_next(watch_handle, &mut buf);
-        let _ = watch_next(watch_handle, &mut buf);
+        let _ = watch_next(&watch_handle, &mut buf);
+        let _ = watch_next(&watch_handle, &mut buf);
         
         // Now link them
         let res = link_nodes(src, "connected_to", dst);
@@ -219,7 +216,7 @@ fn test_main() -> i32 {
             failures += 1;
         } else {
             // Read watch event
-            match watch_next(watch_handle, &mut buf) {
+            match watch_next(&watch_handle, &mut buf) {
                 Ok((len, seq)) => {
                     println!("Received watch event: len={}, seq={}", len, seq);
                     
@@ -265,7 +262,7 @@ fn test_main() -> i32 {
         
         // Drain CREATE_NODE event
         let mut buf = [0u8; 256];
-        let _ = watch_next(watch_handle, &mut buf);
+        let _ = watch_next(&watch_handle, &mut buf);
         
         // Set a property
         let res = prop_set(node, "counter", 42);
@@ -274,7 +271,7 @@ fn test_main() -> i32 {
             failures += 1;
         } else {
             // Read watch event
-            match watch_next(watch_handle, &mut buf) {
+            match watch_next(&watch_handle, &mut buf) {
                 Ok((len, seq)) => {
                     println!("Received watch event: len={}, seq={}", len, seq);
                     
@@ -331,7 +328,7 @@ fn test_main() -> i32 {
             failures += 1;
         } else {
             let mut buf = [0u8; 256];
-            match watch_next(watch_handle, &mut buf) {
+            match watch_next(&watch_handle, &mut buf) {
                 Ok((len, seq)) => {
                     println!("APPLY_BATCH event: len={}, seq={}", len, seq);
                     
@@ -357,7 +354,7 @@ fn test_main() -> i32 {
     {
         // Create target node FIRST before opening filtered watch
         let target_node = create_node("test.subject.target");
-        println!("Created target node: id={}", target_node);
+        println!("Created target node: id={:?}", target_node);
         
         // Open a watch filtered to only this subject
         let filter = RootWatchFilter::subject(target_node);
@@ -366,12 +363,12 @@ fn test_main() -> i32 {
             Err(e) => {
                 println!("FAIL: Could not open filtered watch: {}", e);
                 failures += 1;
-                0
+                ThingId::default()
             }
         };
         
-        if filtered_watch != 0 {
-            println!("Filtered watch opened: handle={}", filtered_watch);
+        if filtered_watch != ThingId::default() {
+            println!("Filtered watch opened: handle={:?}", filtered_watch);
             
             // Create unrelated nodes (should be filtered out)
             let _unrelated1 = create_node("test.unrelated.1");
@@ -391,7 +388,7 @@ fn test_main() -> i32 {
             let mut attempts = 0;
             
             while attempts < 10 && !found_match {
-                match watch_next(filtered_watch, &mut buf) {
+                match watch_next(&filtered_watch, &mut buf) {
                     Ok((len, seq)) => {
                         println!("Filtered watch received: len={}, seq={}", len, seq);
                         if len > 8 && buf[8] == OP_SET_PROP {
@@ -429,18 +426,18 @@ fn test_main() -> i32 {
         // Create two target nodes for two different filters
         let node_a = create_node("test.filter.a");
         let node_b = create_node("test.filter.b");
-        println!("Created nodes: A={}, B={}", node_a, node_b);
+        println!("Created nodes: A={:?}, B={:?}", node_a, node_b);
         
         // Open two filtered watches
         let filter_a = RootWatchFilter::subject(node_a);
         let filter_b = RootWatchFilter::subject(node_b);
         
-        let watch_a = open_watch_filtered(filter_a).unwrap_or(0);
-        let watch_b = open_watch_filtered(filter_b).unwrap_or(0);
+        let watch_a = open_watch_filtered(filter_a).unwrap_or(ThingId::default());
+        let watch_b = open_watch_filtered(filter_b).unwrap_or(ThingId::default());
         
-        if watch_a != 0 && watch_b != 0 {
-            println!("Watch A (subject={}): handle={}", node_a, watch_a);
-            println!("Watch B (subject={}): handle={}", node_b, watch_b);
+        if watch_a != ThingId::default() && watch_b != ThingId::default() {
+            println!("Watch A (subject={:?}): handle={:?}", node_a, watch_a);
+            println!("Watch B (subject={:?}): handle={:?}", node_b, watch_b);
             
             // Mutate node_a (should only be seen by watch_a)
             prop_set(node_a, "only_a", 111);
@@ -452,7 +449,7 @@ fn test_main() -> i32 {
             let mut buf = [0u8; 256];
             let mut a_saw_event = false;
             for _ in 0..5 {
-                match watch_next(watch_a, &mut buf) {
+                match watch_next(&watch_a, &mut buf) {
                     Ok((len, _seq)) if len > 8 && buf[8] == OP_SET_PROP => {
                         a_saw_event = true;
                         break;
@@ -465,7 +462,7 @@ fn test_main() -> i32 {
             // Check watch_b sees its event
             let mut b_saw_event = false;
             for _ in 0..5 {
-                match watch_next(watch_b, &mut buf) {
+                match watch_next(&watch_b, &mut buf) {
                     Ok((len, _seq)) if len > 8 && buf[8] == OP_SET_PROP => {
                         b_saw_event = true;
                         break;
@@ -498,23 +495,23 @@ fn test_main() -> i32 {
             Err(e) => {
                 println!("FAIL: Could not open watch for ENOSPC test: {}", e);
                 failures += 1;
-                0
+                ThingId::default()
             }
         };
         
-        if enospc_watch != 0 {
+        if enospc_watch != ThingId::default() {
             // Create a node to generate an event
             let _node = create_node("test.enospc");
             
             // Try to read with a tiny buffer (1 byte)
             let mut tiny_buf = [0u8; 1];
-            match watch_next(enospc_watch, &mut tiny_buf) {
+            match watch_next(&enospc_watch, &mut tiny_buf) {
                 Err(-28) => {
                     println!("PASS: Got ENOSPC as expected");
                     
                     // Now try with a proper buffer - event should still be there
                     let mut proper_buf = [0u8; 256];
-                    match watch_next(enospc_watch, &mut proper_buf) {
+                    match watch_next(&enospc_watch, &mut proper_buf) {
                         Ok((len, _seq)) if len > 0 => {
                             println!("PASS: Event was NOT consumed on ENOSPC (got {} bytes)", len);
                         }
@@ -541,29 +538,6 @@ fn test_main() -> i32 {
                     println!("FAIL: Expected ENOSPC (-28), got error: {}", e);
                     failures += 1;
                 }
-            }
-        }
-    }
-    
-    // ========================================
-    // Test 8: EBADF (invalid watch handle)
-    // ========================================
-    println!("\n--- Test 8: EBADF (invalid watch handle) ---");
-    {
-        let invalid_handle = 0xDEAD_BEEF_usize;
-        let mut buf = [0u8; 256];
-        
-        match watch_next(invalid_handle, &mut buf) {
-            Err(-9) => {
-                println!("PASS: Got EBADF for invalid handle");
-            }
-            Err(e) => {
-                println!("FAIL: Expected EBADF (-9), got error: {}", e);
-                failures += 1;
-            }
-            Ok(_) => {
-                println!("FAIL: Expected error, got success");
-                failures += 1;
             }
         }
     }

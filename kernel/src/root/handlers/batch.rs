@@ -4,13 +4,13 @@
 //! Both multi-op batches (SYS_ROOT_APPLY_BATCH) and single-op syscalls
 //! (CREATE_NODE, LINK, PROP_SET) route through `apply_ops_and_commit()`.
 
-use crate::root::graph::{Graph, ThingId, CommitSummary};
+use crate::root::graph::{Graph, CommitSummary};
 use crate::root::handlers::HandlerResult;
 use abi::root::{
     BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP,
     REF_ABSOLUTE, REF_LOCAL, MAX_BATCH_BYTES, MAX_BATCH_OPS, MAX_LOCAL_REFS,
 };
-use abi::symbols::SymbolId;
+use abi::wire::{ThingId, SymbolId};
 use core::sync::atomic::{AtomicU64, Ordering};
 use alloc::vec::Vec;
 use crate::root::symbols::Interner;
@@ -54,7 +54,7 @@ impl RootBatchScratch {
         Self {
             ops,
             // Use Box to avoid 9KB stack allocation
-            locals: alloc::boxed::Box::new([0; MAX_LOCAL_REFS]),
+            locals: alloc::boxed::Box::new([ThingId::default(); MAX_LOCAL_REFS]),
             locals_init: alloc::boxed::Box::new([false; MAX_LOCAL_REFS]),
         }
     }
@@ -76,7 +76,7 @@ pub enum ValidatedOp {
     /// Create an edge between two nodes.
     PutEdge { src: ThingId, rel: SymbolId, dst: ThingId },
     /// Set a property on a node.
-    SetProp { id: ThingId, key: SymbolId, value: u64 },
+    SetProp { id: ThingId, key: SymbolId, value: [u8; 16] },
 }
 
 /// Result from applying operations.
@@ -118,7 +118,7 @@ pub fn apply_ops_and_commit(
                 let new_id = graph.alloc(*kind);
                 created_ids.push(new_id);
                 if *out_idx >= local_refs.len() {
-                    local_refs.resize(*out_idx + 1, 0);
+                    local_refs.resize(*out_idx + 1, ThingId::default());
                 }
                 local_refs[*out_idx] = new_id;
                 // Track kind for summary
@@ -202,13 +202,13 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
                 if cursor + 18 > batch.len() { return Err(-22); }
                 
                 // KIND filter matching:
-                // The 16-byte kind in the batch is a hash. To properly match, we'd 
-                // need to intern it and compare with filter.kind_id. For v0, we 
-                // match any CREATE_NODE when kind filter is set (conservative).
                 if (filter.flags & WATCH_F_KIND) != 0 {
-                    // TODO: Full kind matching requires comparing interned symbols
-                    // For now, any CREATE_NODE matches if kind filter is set
-                    return Ok(true);
+                    let mut kind_bytes = [0u8; 16];
+                    kind_bytes.copy_from_slice(&batch[cursor..cursor+16]);
+                    let kind_id = SymbolId(kind_bytes);
+                    if kind_id == filter.kind_id {
+                        return Ok(true);
+                    }
                 }
                 cursor += 18;
             }
@@ -222,18 +222,20 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
                 let subject_size = if ref_kind == REF_ABSOLUTE { 16 } else if ref_kind == REF_LOCAL { 2 } else { return Err(-22); };
                 if cursor + subject_size > batch.len() { return Err(-22); }
                 
-                // Extract subject ID if absolute
                 let subject_id = if ref_kind == REF_ABSOLUTE {
-                    u64::from_le_bytes(batch[cursor..cursor+8].try_into().unwrap())
+                    let mut b = [0u8; 16];
+                    b.copy_from_slice(&batch[cursor..cursor+16]);
+                    Some(ThingId(b))
                 } else {
-                    0 // Local refs can't match absolute filters
+                    None // Local refs
                 };
                 cursor += subject_size;
                 
-                // Predicate: 16 bytes (hash)
+                // Predicate: 16 bytes
                 if cursor + 16 > batch.len() { return Err(-22); }
-                // Note: We store predicate position for future use
-                let _pred_start = cursor;
+                let mut pred_bytes = [0u8; 16];
+                pred_bytes.copy_from_slice(&batch[cursor..cursor+16]);
+                let pred_id = SymbolId(pred_bytes);
                 cursor += 16;
                 
                 // Object ThingRef
@@ -250,20 +252,22 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
                 
                 // Check SUBJECT filter
                 if (filter.flags & WATCH_F_SUBJECT) != 0 {
-                    if ref_kind == REF_ABSOLUTE && subject_id == filter.subject_lo {
-                        return Ok(true);
+                    if let Some(sid) = subject_id {
+                        if sid == filter.subject {
+                            return Ok(true);
+                        }
                     }
                 }
                 
                 // Check PREDICATE filter
-                // TODO: Full predicate matching requires comparing interned symbols
-                // For v0, any PUT_EDGE matches if predicate filter is set
                 if (filter.flags & WATCH_F_PREDICATE) != 0 {
-                    return Ok(true);
+                    if pred_id == filter.predicate_id {
+                        return Ok(true);
+                    }
                 }
             }
             OP_SET_PROP => {
-                // subject: ThingRef, key: 16 bytes, value: 8 bytes
+                // subject: ThingRef, key: 16 bytes, value: 16 bytes
                 if cursor >= batch.len() { return Err(-22); }
                 let ref_kind = batch[cursor];
                 cursor += 1;
@@ -271,20 +275,24 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
                 if cursor + subject_size > batch.len() { return Err(-22); }
                 
                 let subject_id = if ref_kind == REF_ABSOLUTE {
-                    u64::from_le_bytes(batch[cursor..cursor+8].try_into().unwrap())
+                    let mut b = [0u8; 16];
+                    b.copy_from_slice(&batch[cursor..cursor+16]);
+                    Some(ThingId(b))
                 } else {
-                    0
+                    None
                 };
                 cursor += subject_size;
                 
-                // Key (16 bytes) + value (8 bytes) = 24 bytes
-                if cursor + 24 > batch.len() { return Err(-22); }
-                cursor += 24;
+                // Key (16 bytes) + value (16 bytes) = 32 bytes
+                if cursor + 32 > batch.len() { return Err(-22); }
+                cursor += 32;
                 
                 // Check SUBJECT filter
                 if (filter.flags & WATCH_F_SUBJECT) != 0 {
-                    if ref_kind == REF_ABSOLUTE && subject_id == filter.subject_lo {
-                        return Ok(true);
+                    if let Some(sid) = subject_id {
+                        if sid == filter.subject {
+                            return Ok(true);
+                        }
                     }
                 }
             }
@@ -325,9 +333,10 @@ fn parse_ref_scratch(
     match kind {
         REF_ABSOLUTE => {
             if *cursor + 16 > data.len() { return Err(-22); }
-            let val = u64::from_le_bytes(data[*cursor..*cursor+8].try_into().unwrap());
+            let mut bytes = [0u8; 16];
+            bytes.copy_from_slice(&data[*cursor..*cursor+16]);
             *cursor += 16;
-            Ok(val)
+            Ok(ThingId(bytes))
         }
         REF_LOCAL => {
             if *cursor + 2 > data.len() { return Err(-22); }
@@ -353,7 +362,7 @@ fn parse_ref_scratch(
 /// - `-22` (EINVAL): malformed format, invalid refs
 fn parse_batch_scratch(
     batch: &[u8],
-    interner: &mut Interner,
+    _interner: &mut Interner,
     scratch: &mut RootBatchScratch,
 ) -> Result<(), i32> {
     // Cap validation: batch size
@@ -393,10 +402,10 @@ fn parse_batch_scratch(
         match tag {
             OP_CREATE_NODE => {
                 if cursor + 16 > batch.len() { return Err(-22); }
-                let kind_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
+                let mut kind_bytes = [0u8; 16];
+                kind_bytes.copy_from_slice(&batch[cursor..cursor + 16]);
                 cursor += 16;
-                let kind_str = bytes_to_hex(&kind_bytes);
-                let kind = interner.intern(&kind_str);
+                let kind = SymbolId(kind_bytes);
 
                 if cursor + 2 > batch.len() { return Err(-22); }
                 let out_idx = u16::from_le_bytes(batch[cursor..cursor+2].try_into().unwrap()) as usize;
@@ -409,18 +418,18 @@ fn parse_batch_scratch(
 
                 scratch.ops.push(ValidatedOp::CreateNode { kind, out_idx });
                 
-                // Mark local ref as initialized (placeholder value, filled at apply time)
-                scratch.locals[out_idx] = 0;
+                // Mark local ref as initialized
+                scratch.locals[out_idx] = ThingId::default();
                 scratch.locals_init[out_idx] = true;
             }
             OP_PUT_EDGE => {
                 let src = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
                 if cursor + 16 > batch.len() { return Err(-22); }
-                let rel_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
+                let mut rel_bytes = [0u8; 16];
+                rel_bytes.copy_from_slice(&batch[cursor..cursor + 16]);
                 cursor += 16;
-                let rel_str = bytes_to_hex(&rel_bytes);
-                let rel = interner.intern(&rel_str);
+                let rel = SymbolId(rel_bytes);
 
                 let dst = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
@@ -430,14 +439,15 @@ fn parse_batch_scratch(
                 let id = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
                 if cursor + 16 > batch.len() { return Err(-22); }
-                let key_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
+                let mut key_bytes = [0u8; 16];
+                key_bytes.copy_from_slice(&batch[cursor..cursor + 16]);
                 cursor += 16;
-                let key_str = bytes_to_hex(&key_bytes);
-                let key = interner.intern(&key_str);
+                let key = SymbolId(key_bytes);
 
-                if cursor + 8 > batch.len() { return Err(-22); }
-                let value = u64::from_le_bytes(batch[cursor..cursor + 8].try_into().unwrap());
-                cursor += 8;
+                if cursor + 16 > batch.len() { return Err(-22); }
+                let mut value = [0u8; 16];
+                value.copy_from_slice(&batch[cursor..cursor + 16]);
+                cursor += 16;
 
                 scratch.ops.push(ValidatedOp::SetProp { id, key, value });
             }

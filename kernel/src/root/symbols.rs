@@ -1,22 +1,20 @@
 use abi::symbols::SymbolId;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
-use alloc::vec::Vec;
+use blake3::Hasher;
 
 pub struct Interner {
     // Forward lookup: SymbolId -> String
-    // We store the string data here.
-    names: Vec<String>,
+    names: BTreeMap<SymbolId, String>,
 
     // Reverse lookup: String -> SymbolId
-    // We duplicate the string key for now to satisfy BTreeMap ownership in no_std easily.
     map: BTreeMap<String, SymbolId>,
 }
 
 impl Interner {
     pub fn new() -> Self {
         Self {
-            names: Vec::new(),
+            names: BTreeMap::new(),
             map: BTreeMap::new(),
         }
     }
@@ -26,16 +24,23 @@ impl Interner {
             return id;
         }
 
-        let id = self.names.len() as SymbolId;
+        // Generate hash-based ID
+        let mut hasher = Hasher::new();
+        hasher.update(s.as_bytes());
+        let hash = hasher.finalize();
+        let mut bytes = [0u8; 16];
+        bytes.copy_from_slice(&hash.as_bytes()[0..16]);
+        let id = SymbolId(bytes);
+
         let s_owned = String::from(s);
 
-        self.names.push(s_owned.clone());
+        self.names.insert(id, s_owned.clone());
         self.map.insert(s_owned, id);
 
         id
     }
 
     pub fn resolve(&self, id: SymbolId) -> Option<&str> {
-        self.names.get(id as usize).map(|s| s.as_str())
+        self.names.get(&id).map(|s| s.as_str())
     }
 }

@@ -1,51 +1,53 @@
-//! Syscall handler implementations
-//!
-//! Organized into focused modules by function category.
+//! Graph handlers helper
 
-mod device;
-mod logging;
-mod memory;
-mod port;
+pub mod device;
+pub mod logging;
+pub mod memory;
+pub mod port;
+pub mod process;
+pub mod root_handlers;
 pub mod stream;
-mod process;
-mod root_handlers;
-mod time;
-mod trace;
+pub mod time;
+pub mod trace;
 
-// Re-export all syscall handlers
 pub use device::*;
 pub use logging::*;
 pub use memory::*;
 pub use port::*;
 pub use process::*;
 pub use root_handlers::*;
+pub use stream::*;
 pub use time::*;
 pub use trace::*;
 
-// Shared utilities used by multiple handlers
-use crate::root::{self as root_svc, RootOp, SymbolShell};
-use crate::syscall::validate::{copyin, copyout};
+use crate::root::SymbolShell;
+use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR};
 use abi::errors::{Errno, SysResult};
-use abi::symbols::{SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR, SymbolRefWire};
+use crate::syscall::validate::validate_user_range;
 use alloc::string::String;
-use core::sync::atomic::Ordering;
+use abi::wire::SymbolId;
 
-/// Blocking call to Root service
-pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
-    let reply = root_svc::enqueue(op);
+// Helper to copy data in from user
+pub unsafe fn copyin(dest: &mut [u8], src_ptr: usize) -> Result<(), Errno> {
+    crate::memory::copy_from_user(dest, src_ptr)
+}
+
+// Helper to copy data out to user
+pub unsafe fn copyout(dest_ptr: usize, src: &[u8]) -> Result<(), Errno> {
+    crate::memory::copy_to_user(dest_ptr, src)
+}
+
+pub fn root_call(op: crate::root::RootOp) -> SysResult<usize> {
+    let reply = crate::root::enqueue(op);
     loop {
-        let done = reply.done.load(Ordering::Acquire);
+        let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
         if done != 0 {
-            let status = reply.status.load(Ordering::Relaxed);
-            let value = reply.value.load(Ordering::Relaxed);
-
-            #[cfg(feature = "diagnostic-apps")]
-            crate::ktrace!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
-
+            let status = reply.status.load(core::sync::atomic::Ordering::Relaxed);
+            let value = reply.value.load(core::sync::atomic::Ordering::Relaxed);
             if status == 0 {
                 return Ok(value as usize);
             } else {
-                return abi::errors::errno(status as isize);
+                return Err(abi::errors::errno(status as isize).unwrap_err());
             }
         }
         unsafe {
@@ -54,54 +56,35 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
     }
 }
 
-/// Read a symbol reference from userspace
-pub(crate) fn read_symbol(ptr: usize) -> SysResult<SymbolShell> {
-    use crate::syscall::validate::validate_user_range;
-
-    let size = core::mem::size_of::<SymbolRefWire>();
-    validate_user_range(ptr, size, false)?;
-
-    let mut wire: SymbolRefWire = unsafe { core::mem::zeroed() };
-    let slice = unsafe { core::slice::from_raw_parts_mut(&mut wire as *mut _ as *mut u8, size) };
-    unsafe {
-        copyin(slice, ptr)?;
-    }
+pub fn read_symbol(ptr: usize) -> SysResult<SymbolShell> {
+    validate_user_range(ptr, core::mem::size_of::<SymbolRefWire>(), false)?;
+    let mut wire = SymbolRefWire { tag: 0, ptr_or_id: 0, len: 0 };
+    let slice = unsafe {
+        core::slice::from_raw_parts_mut(&mut wire as *mut _ as *mut u8, core::mem::size_of::<SymbolRefWire>())
+    };
+    unsafe { copyin(slice, ptr)? };
 
     match wire.tag {
-        SYMBOL_REF_TAG_ID => Ok(SymbolShell::Id(wire.ptr_or_id as u32)),
+        SYMBOL_REF_TAG_ID => {
+            // ptr_or_id points to SymbolId (16 bytes)
+            let id_ptr = wire.ptr_or_id as usize;
+            validate_user_range(id_ptr, 16, false)?;
+            let mut bytes = [0u8; 16];
+            unsafe { copyin(&mut bytes, id_ptr)? };
+            Ok(SymbolShell::Id(SymbolId(bytes)))
+        },
         SYMBOL_REF_TAG_STR => {
-            let s_ptr = wire.ptr_or_id as usize;
-            let s_len = wire.len as usize;
-            if s_len > 256 {
-                crate::kprintln!("SYSCALL: Symbol string too long: {}", s_len);
+            let len = wire.len as usize;
+            if len > 256 {
                 return Err(Errno::EINVAL);
             }
-
-            if let Err(e) = validate_user_range(s_ptr, s_len, false) {
-                crate::kprintln!(
-                    "SYSCALL: Symbol string ptr {:x} len {} validation failed: {:?}",
-                    s_ptr,
-                    s_len,
-                    e
-                );
-                return Err(e);
-            }
+            let s_ptr = wire.ptr_or_id as usize;
+            validate_user_range(s_ptr, len, false)?;
             let mut buf = [0u8; 256];
-            unsafe {
-                copyin(&mut buf[..s_len], s_ptr)?;
-            }
-
-            match core::str::from_utf8(&buf[..s_len]) {
-                Ok(s) => Ok(SymbolShell::Str(String::from(s))),
-                Err(_) => {
-                    crate::kprintln!("SYSCALL: Symbol string invalid utf8");
-                    Err(Errno::EINVAL)
-                }
-            }
-        }
-        _ => {
-            crate::kprintln!("SYSCALL: Unknown symbol tag: {}", wire.tag);
-            Err(Errno::EINVAL)
-        }
+            unsafe { copyin(&mut buf[..len], s_ptr)? };
+            let s = core::str::from_utf8(&buf[..len]).map_err(|_| Errno::EINVAL)?;
+            Ok(SymbolShell::Str(String::from(s)))
+        },
+        _ => Err(Errno::EINVAL),
     }
 }

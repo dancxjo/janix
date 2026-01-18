@@ -1,50 +1,36 @@
-//! Debug and describe handlers.
+//! Debug/Describe handlers.
 
 use crate::root::graph::Graph;
+use abi::wire::ThingId;
 use crate::root::symbols::Interner;
 use crate::root::SymbolShell;
-use core::fmt::Write;
-
-use super::graph::resolve_shell;
 use super::HandlerResult;
+use super::graph::resolve_shell;
+use alloc::format;
+use crate::root::debug_fmt;
 
-/// Helper for formatting into user-provided buffers.
-pub struct FmtBuffer {
-    pub ptr: *mut u8,
-    pub len: usize,
-    pub pos: usize,
-}
-
-impl core::fmt::Write for FmtBuffer {
-    fn write_str(&mut self, s: &str) -> core::fmt::Result {
-        let bytes = s.as_bytes();
-        let rem = self.len - self.pos;
-        let copy_len = core::cmp::min(bytes.len(), rem);
-        if copy_len > 0 {
-            unsafe {
-                core::ptr::copy_nonoverlapping(bytes.as_ptr(), self.ptr.add(self.pos), copy_len);
-            }
-            self.pos += copy_len;
-        }
-        Ok(())
-    }
-}
-
+/// Describe a Thing (Kind + Props) into a buffer.
 pub fn handle_describe_thing(
     graph: &Graph,
-    interner: &Interner,
-    id: u64,
+    interner: &mut Interner,
+    id: ThingId,
     buffer: u64,
     len: u64,
 ) -> HandlerResult {
-    let mut fmt = FmtBuffer {
-        ptr: buffer as *mut u8,
-        len: len as usize,
-        pos: 0,
-    };
-    let res = crate::root::debug_fmt::fmt_thing(graph, interner, id, &mut fmt);
-    if res.is_ok() {
-        (0, fmt.pos as u64)
+    if let Some(_kind) = graph.get_kind(id) {
+        // Use a temporary buffer to format
+        // We use a small string buffer
+        let mut s = alloc::string::String::new();
+        let _ = debug_fmt::dump_node(graph, interner, id, &mut s);
+
+        let bytes = s.as_bytes();
+        let to_copy = core::cmp::min(bytes.len(), len as usize);
+
+        unsafe {
+            let _ = crate::memory::copy_to_user(buffer as usize, &bytes[..to_copy]);
+        }
+
+        (0, to_copy as u64)
     } else {
         (-1, 0)
     }
@@ -53,126 +39,73 @@ pub fn handle_describe_thing(
 pub fn handle_describe_edge(
     graph: &Graph,
     interner: &mut Interner,
-    src: u64,
+    src: ThingId,
     rel: SymbolShell,
-    dst: u64,
+    dst: ThingId,
     buffer: u64,
     len: u64,
 ) -> HandlerResult {
     let rid = resolve_shell(rel, interner);
-    let mut fmt = FmtBuffer {
-        ptr: buffer as *mut u8,
-        len: len as usize,
-        pos: 0,
-    };
-    let res = crate::root::debug_fmt::fmt_edge(graph, interner, src, rid, dst, &mut fmt);
-    if res.is_ok() {
-        (0, fmt.pos as u64)
-    } else {
-        (-1, 0)
+    let rname = interner.resolve(rid).unwrap_or("?");
+
+    // Check if edge exists? Or just format?
+    // "src --[rel]--> dst"
+    let s = format!("{:?} --[{}]--> {:?}", src, rname, dst);
+    let bytes = s.as_bytes();
+    let to_copy = core::cmp::min(bytes.len(), len as usize);
+
+    unsafe {
+        let _ = crate::memory::copy_to_user(buffer as usize, &bytes[..to_copy]);
     }
+
+    (0, to_copy as u64)
 }
 
 pub fn handle_dump_edges(
     graph: &Graph,
-    interner: &Interner,
-    id: u64,
+    interner: &mut Interner,
+    id: ThingId,
     buffer: u64,
     len: u64,
 ) -> HandlerResult {
-    if let Some(node) = graph.get_kind(id).and_then(|_| graph.nodes.get(&id)) {
-        let mut fmt = FmtBuffer {
-            ptr: buffer as *mut u8,
-            len: len as usize,
-            pos: 0,
-        };
-        let mut count = 0;
-        
-        // 1. Outgoing edges
-        for (rel, dst) in &node.edges {
-            if count > 0 {
-                let _ = writeln!(fmt);
-            }
-            let _ = crate::root::debug_fmt::fmt_edge(graph, interner, id, *rel, *dst, &mut fmt);
-            count += 1;
-            if count >= 8 {
-                break;
-            }
+    if let Some(node) = graph.nodes.get(&id) {
+        let mut s = alloc::string::String::new();
+        for (r, d) in &node.edges {
+            let rname = interner.resolve(*r).unwrap_or("?");
+            use core::fmt::Write;
+            let _ = writeln!(s, "  --[{}]--> {:?}", rname, d);
         }
 
-        // 2. Incoming edges (scan all nodes)
-        // OPTIMIZATION: This scan is O(N) and causes massive slowdowns for UI traversal.
-        // We now rely on explicit double-linking (HAS_CHILD) for performance.
-        /*
-        if count < 8 {
-            for (src_id, src_node) in &graph.nodes {
-                if *src_id == id { continue; } // Already did outgoing
-                for (rel, dst_id) in &src_node.edges {
-                    if *dst_id == id {
-                        if count > 0 {
-                            let _ = writeln!(fmt);
-                        }
-                        let _ = crate::root::debug_fmt::fmt_edge(graph, interner, *src_id, *rel, id, &mut fmt);
-                        count += 1;
-                        if count >= 8 {
-                            break;
-                        }
-                    }
-                }
-                if count >= 8 { break; }
-            }
+        let bytes = s.as_bytes();
+        let to_copy = core::cmp::min(bytes.len(), len as usize);
+
+        unsafe {
+            let _ = crate::memory::copy_to_user(buffer as usize, &bytes[..to_copy]);
         }
-        */
-        (0, fmt.pos as u64)
+        (0, to_copy as u64)
     } else {
         (-1, 0)
     }
 }
 
-pub fn handle_dump_graph(graph: &Graph, interner: &Interner, limit: u64) -> HandlerResult {
-    let _txn = crate::logging::LogTransaction::begin("rootdump");
+pub fn handle_dump_graph(
+    graph: &Graph,
+    interner: &mut Interner,
+    limit: u64,
+) -> HandlerResult {
+    crate::kprintln!("=== GRAPH DUMP (limit={}) ===", limit);
 
-    crate::kinfo!("ROOT DUMP NODES count={}", graph.nodes.len());
     let mut count = 0;
-    for (id, _) in &graph.nodes {
-        if limit > 0 && count >= limit {
-            crate::kinfo!("... truncated ...");
-            break;
-        }
-        let mut buf = [0u8; 256];
-        let mut fmt = FmtBuffer {
-            ptr: buf.as_mut_ptr(),
-            len: buf.len(),
-            pos: 0,
-        };
-        let _ = crate::root::debug_fmt::fmt_thing(graph, interner, *id, &mut fmt);
-        if let Ok(s) = core::str::from_utf8(&buf[..fmt.pos]) {
-            crate::kprint!("{}\n", s);
-        }
+    for (id, _node) in &graph.nodes {
+        if count >= limit { break; }
+
+        let mut s = alloc::string::String::new();
+        let _ = debug_fmt::dump_node(graph, interner, *id, &mut s);
+        crate::kprint!("{}", s);
+
         count += 1;
     }
 
-    crate::kinfo!("ROOT DUMP EDGES");
-    count = 0;
-    'outer: for (src, node) in &graph.nodes {
-        for (rel, dst) in &node.edges {
-            if limit > 0 && count >= limit {
-                crate::kinfo!("... truncated ...");
-                break 'outer;
-            }
-            let mut buf = [0u8; 512];
-            let mut fmt = FmtBuffer {
-                ptr: buf.as_mut_ptr(),
-                len: buf.len(),
-                pos: 0,
-            };
-            let _ = crate::root::debug_fmt::fmt_edge(graph, interner, *src, *rel, *dst, &mut fmt);
-            if let Ok(s) = core::str::from_utf8(&buf[..fmt.pos]) {
-                crate::kprint!("{}\n", s);
-            }
-            count += 1;
-        }
-    }
-
-    (0, 0)
+    crate::kprintln!("=== END DUMP ===");
+    (0, count)
 }

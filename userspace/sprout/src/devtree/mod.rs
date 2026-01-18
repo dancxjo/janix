@@ -13,7 +13,7 @@ use stem::info;
 
 pub fn set_str_prop(id: ThingId, key: &str, val: &str) -> Result<(), ()> {
     let sym = thingsys::intern(val).map_err(|_| ())?;
-    thingsys::prop_set(id, key, sym as u64).map_err(|_| ())
+    thingsys::prop_set_raw(id, key, &sym.0).map_err(|_| ())
 }
 
 #[allow(dead_code)]

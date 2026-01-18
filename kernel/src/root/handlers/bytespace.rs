@@ -6,8 +6,7 @@ use crate::root::journal::{Journal, JournalOp};
 use crate::root::resources::{ResourceHandle, bytespace};
 use crate::root::symbols::Interner;
 use crate::root::RootMsg;
-#[allow(unused_imports)]
-use abi::symbols::SymbolId;
+use abi::wire::{ThingId, SymbolId};
 use core::sync::atomic::Ordering;
 
 /// Result type for handler operations: (status, value)
@@ -21,6 +20,7 @@ pub fn handle_bytespace_create<R: BootRuntime>(
     len: u64,
     _flags: u64,
     _format: u64,
+    out_ptr: u64,
 ) -> HandlerResult {
     let rt = crate::runtime::<R>();
     let hhdm_offset = rt.phys_to_virt_offset();
@@ -44,9 +44,15 @@ pub fn handle_bytespace_create<R: BootRuntime>(
         {
             let lock = handle.lock();
             if let Some(range_node) = graph.get_node_mut(range_id) {
-                range_node.props.insert(phys_base_key, lock.phys_base);
-                range_node.props.insert(size_key, lock.len as u64);
-                range_node.props.insert(page_count_key, lock.page_count as u64);
+                let mut val = [0u8; 16];
+                val[0..8].copy_from_slice(&lock.phys_base.to_le_bytes());
+                range_node.props.insert(phys_base_key, val);
+
+                val[0..8].copy_from_slice(&(lock.len as u64).to_le_bytes());
+                range_node.props.insert(size_key, val);
+
+                val[0..8].copy_from_slice(&(lock.page_count as u64).to_le_bytes());
+                range_node.props.insert(page_count_key, val);
             }
         }
         
@@ -59,9 +65,14 @@ pub fn handle_bytespace_create<R: BootRuntime>(
         }
         journal.append(JournalOp::CreateResult {
             id,
-            kind: kid as u64,
+            kind: kid,
         });
-        (0, id)
+
+        if out_ptr != 0 {
+            let _ = unsafe { crate::memory::copy_to_user(out_ptr as usize, &id.0) };
+        }
+
+        (0, 0)
     } else {
         (-1, 0) // Allocation failed
     }
@@ -73,6 +84,7 @@ pub fn handle_bytespace_create_from_ptr<R: BootRuntime>(
     interner: &mut Interner,
     ptr: u64,
     len: u64,
+    out_ptr: u64,
 ) -> HandlerResult {
     let rt = crate::runtime::<R>();
     let hhdm_offset = rt.phys_to_virt_offset();
@@ -91,8 +103,12 @@ pub fn handle_bytespace_create_from_ptr<R: BootRuntime>(
     {
         let lock = handle.lock();
         if let Some(range_node) = graph.get_node_mut(range_id) {
-            range_node.props.insert(phys_base_key, lock.phys_base);
-            range_node.props.insert(size_key, lock.len as u64);
+            let mut val = [0u8; 16];
+            val[0..8].copy_from_slice(&lock.phys_base.to_le_bytes());
+            range_node.props.insert(phys_base_key, val);
+
+            val[0..8].copy_from_slice(&(lock.len as u64).to_le_bytes());
+            range_node.props.insert(size_key, val);
         }
     }
     
@@ -104,14 +120,19 @@ pub fn handle_bytespace_create_from_ptr<R: BootRuntime>(
     }
     journal.append(JournalOp::CreateResult {
         id,
-        kind: kid as u64,
+        kind: kid,
     });
-    (0, id)
+
+    if out_ptr != 0 {
+        let _ = unsafe { crate::memory::copy_to_user(out_ptr as usize, &id.0) };
+    }
+
+    (0, 0)
 }
 
 pub fn handle_bytespace_write(
     graph: &mut Graph,
-    id: u64,
+    id: ThingId,
     offset: u64,
     ptr: u64,
     len: u64,
@@ -121,11 +142,8 @@ pub fn handle_bytespace_write(
             let lock = handle.lock();
             if (offset + len) as usize <= lock.len {
                 unsafe {
-                    core::ptr::copy_nonoverlapping(
-                        ptr as *const u8,
-                        (lock.kernel_va as *mut u8).add(offset as usize),
-                        len as usize,
-                    );
+                    let dest = core::slice::from_raw_parts_mut((lock.kernel_va as *mut u8).add(offset as usize), len as usize);
+                    let _ = crate::memory::copy_from_user(dest, ptr as usize);
                 }
                 (0, len)
             } else {
@@ -141,7 +159,7 @@ pub fn handle_bytespace_write(
 
 pub fn handle_bytespace_read(
     graph: &mut Graph,
-    id: u64,
+    id: ThingId,
     offset: u64,
     ptr: u64,
     len: u64,
@@ -151,11 +169,8 @@ pub fn handle_bytespace_read(
             let lock = handle.lock();
             if (offset + len) as usize <= lock.len {
                 unsafe {
-                    core::ptr::copy_nonoverlapping(
-                        (lock.kernel_va as *const u8).add(offset as usize),
-                        ptr as *mut u8,
-                        len as usize,
-                    );
+                    let src = core::slice::from_raw_parts((lock.kernel_va as *const u8).add(offset as usize), len as usize);
+                    let _ = crate::memory::copy_to_user(ptr as usize, src);
                 }
                 (0, len)
             } else {
@@ -172,7 +187,7 @@ pub fn handle_bytespace_read(
 pub fn handle_bytespace_info(
     graph: &mut Graph,
     msg: &RootMsg,
-    id: u64,
+    id: ThingId,
 ) -> HandlerResult {
     if let Some(node) = graph.get_node_mut(id) {
         if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {
@@ -192,7 +207,7 @@ pub fn handle_bytespace_info(
 pub fn handle_bytespace_map(
     graph: &mut Graph,
     msg: &RootMsg,
-    id: u64,
+    id: ThingId,
     tid: u64,
 ) -> HandlerResult {
     if let Some(node) = graph.get_node_mut(id) {
@@ -218,7 +233,7 @@ pub fn handle_bytespace_map(
 }
 
 pub fn handle_bytespace_unmap(
-    id: u64,
+    id: ThingId,
     user_va: u64,
     tid: u64,
 ) -> HandlerResult {
@@ -232,7 +247,7 @@ pub fn handle_bytespace_unmap(
 pub fn handle_bytespace_phys(
     graph: &mut Graph,
     msg: &RootMsg,
-    id: u64,
+    id: ThingId,
 ) -> HandlerResult {
     if let Some(node) = graph.get_node_mut(id) {
         if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {

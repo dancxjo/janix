@@ -8,6 +8,7 @@ use crate::root::graph::{Graph, GlobalWatch, WatchFilter, WATCH_SCAN_LIMIT, comm
 use crate::root::resources::{stream, ResourceHandle};
 use crate::root::symbols::Interner;
 use crate::root::query::PreparedStep;
+use abi::wire::ThingId;
 use super::HandlerResult;
 use core::sync::atomic::Ordering;
 
@@ -26,6 +27,7 @@ pub fn handle_watch_open(
     start_seq: u64,
     query: alloc::vec::Vec<PreparedStep>,
     filter: WatchFilter,
+    out_ptr: u64,
 ) -> HandlerResult {
 
     // 1. Create Stream
@@ -68,8 +70,11 @@ pub fn handle_watch_open(
     
     graph.global_watches.insert(stream_id, watch);
     
-    // Return the stream handle as the watch ID
-    (0, stream_id)
+    if out_ptr != 0 {
+        let _ = unsafe { crate::memory::copy_to_user(out_ptr as usize, &stream_id.0) };
+    }
+
+    (0, 0)
 }
 
 /// Retrieves the next committed batch payload that matches the watch's filter.
@@ -94,7 +99,7 @@ pub fn handle_watch_open(
 pub fn handle_watch_next(
     graph: &mut Graph,
     msg: &crate::root::RootMsg,
-    id: u64,
+    id: ThingId,
 ) -> HandlerResult {
     // Extract syscall parameters
     let out_ptr = if let crate::root::RootOp::WatchNext { out_ptr, .. } = msg.op { out_ptr } else { 0 };
@@ -201,9 +206,7 @@ pub fn handle_watch_next(
     
     // 6. Copy data to user buffer
     unsafe {
-        let src = data.as_ptr();
-        let dst = out_ptr as *mut u8;
-        core::ptr::copy_nonoverlapping(src, dst, data.len());
+        let _ = crate::memory::copy_to_user(out_ptr as usize, data);
     }
     
     // 7. Write seq into reply (out_seq_ptr handled by syscall layer via p0)
@@ -221,7 +224,7 @@ pub fn handle_watch_next(
 
 pub fn handle_watch_close(
     graph: &mut Graph,
-    id: u64,
+    id: ThingId,
 ) -> HandlerResult {
     if graph.global_watches.remove(&id).is_some() {
         (0, 0)

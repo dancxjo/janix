@@ -6,6 +6,7 @@ pub mod stream;
 use abi::device::{DEVICE_IRQ_SUBSCRIBE_DEVICE, DEVICE_IRQ_SUBSCRIBE_VECTOR};
 use abi::errors::Errno;
 pub use abi::syscall::*;
+use abi::wire::{ThingId, SymbolId};
 
 use arch::raw_syscall6;
 
@@ -195,8 +196,8 @@ pub fn trace_read(buf: &mut [abi::trace::TraceEvent]) -> Result<usize, Errno> {
 // Device MMIO and DMA syscalls
 
 /// Claim a device from the device registry
-pub fn device_claim(graph_id: u64) -> Result<usize, Errno> {
-    let ret = unsafe { raw_syscall6(SYS_DEVICE_CLAIM, graph_id as usize, 0, 0, 0, 0, 0) };
+pub fn device_claim(graph_id: &ThingId) -> Result<usize, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_DEVICE_CLAIM, graph_id as *const _ as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret)
 }
 
@@ -225,7 +226,6 @@ pub fn device_dma_phys(virt_addr: u64) -> Result<u64, Errno> {
 // ============================================================================
 
 /// Subscribe the current task to receive interrupts for a given vector.
-/// For PS/2 keyboard: vector 0x21 (IRQ1), PS/2 mouse: vector 0x2C (IRQ12)
 pub fn irq_subscribe(vector: u8) -> Result<(), Errno> {
     let ret = unsafe { raw_syscall6(SYS_DEVICE_IRQ_SUBSCRIBE, vector as usize, 0, DEVICE_IRQ_SUBSCRIBE_VECTOR as usize, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
@@ -270,11 +270,12 @@ pub fn device_irq_wait(claim_handle: usize, irq_index: u8) -> Result<u32, Errno>
 
 // --- Root / Graph Wrappers ---
 
-pub fn root_watch_open(spec: &abi::types::WatchSpec) -> Result<usize, Errno> {
+pub fn root_watch_open(spec: &abi::types::WatchSpec, out_id: &mut ThingId) -> Result<usize, Errno> {
     let ret = unsafe { match raw_syscall6(
         SYS_ROOT_WATCH_OPEN,
         spec as *const _ as usize,
-        0, 0, 0, 0, 0
+        out_id as *mut _ as usize,
+        0, 0, 0, 0
     ) {
         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
         r => r as usize
@@ -282,13 +283,14 @@ pub fn root_watch_open(spec: &abi::types::WatchSpec) -> Result<usize, Errno> {
     Ok(ret)
 }
 
-pub fn root_watch_next(id: usize, out: &mut abi::types::WatchEvent) -> Result<usize, Errno> {
+pub fn root_watch_next(id: &ThingId, out_seq: &mut u64, buf: &mut [u8]) -> Result<usize, Errno> {
     let ret = unsafe { match raw_syscall6(
         SYS_ROOT_WATCH_NEXT,
-        id,
-        out as *mut _ as usize,
-        core::mem::size_of::<abi::types::WatchEvent>(),
-        0, 0, 0
+        id as *const _ as usize,
+        out_seq as *mut _ as usize,
+        buf.as_mut_ptr() as usize,
+        buf.len(),
+        0, 0
     ) {
         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
         r => r as usize
@@ -296,18 +298,18 @@ pub fn root_watch_next(id: usize, out: &mut abi::types::WatchEvent) -> Result<us
     Ok(ret)
 }
 
-pub fn root_watch_close(id: usize) -> Result<(), Errno> {
-    unsafe { match raw_syscall6(SYS_ROOT_WATCH_CLOSE, id, 0, 0, 0, 0, 0) {
+pub fn root_watch_close(id: &ThingId) -> Result<(), Errno> {
+    unsafe { match raw_syscall6(SYS_ROOT_WATCH_CLOSE, id as *const _ as usize, 0, 0, 0, 0, 0) {
         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
         _ => {}
     }};
     Ok(())
 }
 
-pub fn root_bytespace_read(id: usize, offset: usize, buf: &mut [u8]) -> Result<usize, Errno> {
+pub fn root_bytespace_read(id: &ThingId, offset: usize, buf: &mut [u8]) -> Result<usize, Errno> {
     let ret = unsafe { match raw_syscall6(
         SYS_ROOT_BYTESPACE_READ,
-        id,
+        id as *const _ as usize,
         offset,
         buf.as_mut_ptr() as usize,
         buf.len(),
@@ -319,10 +321,10 @@ pub fn root_bytespace_read(id: usize, offset: usize, buf: &mut [u8]) -> Result<u
     Ok(ret)
 }
 
-pub fn root_bytespace_write(id: usize, offset: usize, buf: &[u8]) -> Result<usize, Errno> {
+pub fn root_bytespace_write(id: &ThingId, offset: usize, buf: &[u8]) -> Result<usize, Errno> {
     let ret = unsafe { match raw_syscall6(
         SYS_ROOT_BYTESPACE_WRITE,
-        id,
+        id as *const _ as usize,
         offset,
         buf.as_ptr() as usize,
         buf.len(),
@@ -334,10 +336,12 @@ pub fn root_bytespace_write(id: usize, offset: usize, buf: &[u8]) -> Result<usiz
     Ok(ret)
 }
 
-pub fn root_bytespace_create(len: usize, flags: usize, format: usize) -> Result<usize, Errno> {
+pub fn root_bytespace_create(len: usize, flags: usize, format: usize, out_id: &mut ThingId) -> Result<usize, Errno> {
     let ret = unsafe { match raw_syscall6(
         SYS_ROOT_BYTESPACE_CREATE,
-        len, flags, format, 0, 0, 0
+        len, flags, format,
+        out_id as *mut _ as usize,
+        0, 0
     ) {
         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
         r => r as usize
@@ -345,37 +349,12 @@ pub fn root_bytespace_create(len: usize, flags: usize, format: usize) -> Result<
     Ok(ret)
 }
 
-pub fn root_intern(name: &str) -> Result<usize, Errno> {
+pub fn root_intern(name: &str, out_id: &mut SymbolId) -> Result<usize, Errno> {
     let ret = unsafe { match raw_syscall6(
         SYS_ROOT_INTERN,
         name.as_ptr() as usize,
         name.len(),
-        0, 0, 0, 0
-    ) {
-        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-        r => r as usize
-    }};
-    Ok(ret)
-}
-
-pub fn root_create_node(kind_ptr: usize) -> Result<usize, Errno> {
-    let ret = unsafe { match raw_syscall6(
-        SYS_ROOT_CREATE_NODE,
-        kind_ptr,
-        0, 0, 0, 0, 0
-    ) {
-        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
-        r => r as usize
-    }};
-    Ok(ret)
-}
-
-pub fn root_prop_set(id: usize, key_ptr: usize, value: usize) -> Result<usize, Errno> {
-    let ret = unsafe { match raw_syscall6(
-        SYS_ROOT_PROP_SET,
-        id,
-        key_ptr,
-        value,
+        out_id as *mut _ as usize,
         0, 0, 0
     ) {
         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
@@ -384,12 +363,95 @@ pub fn root_prop_set(id: usize, key_ptr: usize, value: usize) -> Result<usize, E
     Ok(ret)
 }
 
-pub fn root_link(src: usize, rel_ptr: usize, dst: usize) -> Result<usize, Errno> {
+pub fn root_create_node(kind_ptr: usize, out_id: &mut ThingId) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        SYS_ROOT_CREATE_NODE,
+        kind_ptr,
+        out_id as *mut _ as usize,
+        0, 0, 0, 0
+    ) {
+        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+        r => r as usize
+    }};
+    Ok(ret)
+}
+
+pub fn root_prop_set(id: &ThingId, key_ptr: usize, value: &[u8; 16]) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        SYS_ROOT_PROP_SET,
+        id as *const _ as usize,
+        key_ptr,
+        value as *const _ as usize,
+        0, 0, 0
+    ) {
+        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+        r => r as usize
+    }};
+    Ok(ret)
+}
+
+pub fn root_link(src: &ThingId, rel_ptr: usize, dst: &ThingId) -> Result<usize, Errno> {
     let ret = unsafe { match raw_syscall6(
         SYS_ROOT_LINK,
-        src,
+        src as *const _ as usize,
         rel_ptr,
-        dst,
+        dst as *const _ as usize,
+        0, 0, 0
+    ) {
+        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+        r => r as usize
+    }};
+    Ok(ret)
+}
+
+pub fn root_query(plan_buf: &[u8], out_buf: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        SYS_ROOT_QUERY,
+        plan_buf.as_ptr() as usize,
+        plan_buf.len(),
+        out_buf.as_mut_ptr() as usize,
+        out_buf.len(),
+        0, 0
+    ) {
+        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+        r => r as usize
+    }};
+    Ok(ret)
+}
+
+pub fn root_find(kind_ptr: usize, out_buf: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        SYS_ROOT_FIND,
+        kind_ptr,
+        out_buf.as_mut_ptr() as usize,
+        out_buf.len(),
+        0, 0, 0
+    ) {
+        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+        r => r as usize
+    }};
+    Ok(ret)
+}
+
+pub fn root_get_kind(id: &ThingId, out_kind: &mut SymbolId) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        SYS_ROOT_GET_KIND,
+        id as *const _ as usize,
+        out_kind as *mut _ as usize,
+        0, 0, 0, 0
+    ) {
+        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+        r => r as usize
+    }};
+    Ok(ret)
+}
+
+pub fn root_prop_get(id: &ThingId, key_ptr: usize, out_val: &mut [u8; 16]) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        SYS_ROOT_PROP_GET,
+        id as *const _ as usize,
+        key_ptr,
+        out_val as *mut _ as usize,
         0, 0, 0
     ) {
         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),

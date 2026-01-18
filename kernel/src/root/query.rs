@@ -1,6 +1,7 @@
 use crate::root::graph::Graph;
 use abi::query::QueryRow;
 use abi::symbols::SymbolId;
+use abi::wire::ThingId;
 use alloc::vec::Vec;
 
 #[derive(Clone, Copy, Debug)]
@@ -34,8 +35,8 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
         for id in ids.iter().take(limit) {
             current_rows.push(QueryRow {
                 id: *id,
-                kind_rel: kind_sym as u64,
-                val_dst: 0,
+                kind_rel: kind_sym,
+                val_dst: ThingId::default(), // 0?
                 extra: 0,
             });
         }
@@ -46,13 +47,19 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
         let mut next_rows = Vec::new();
         match step.op {
             2 => {
-                // FilterEq
+                // FilterEq (Property Equality)
+                // val is u64 in PreparedStep::arg1.
+                // But props are [u8; 16].
+                // We need to match. If we assume u64 props are stored as zero-padded bytes...
                 let key = step.symbol;
-                let val = step.arg1;
+                let val_u64 = step.arg1;
+                let mut val_bytes = [0u8; 16];
+                val_bytes[0..8].copy_from_slice(&val_u64.to_le_bytes());
+
                 for row in current_rows {
                     if let Some(node) = graph.nodes.get(&row.id) {
-                        if let Some(&prop_val) = node.props.get(&key) {
-                            if prop_val == val {
+                        if let Some(prop_val) = node.props.get(&key) {
+                            if *prop_val == val_bytes {
                                 next_rows.push(row);
                             }
                         }
@@ -79,7 +86,7 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                                 if *r == rel {
                                     next_rows.push(QueryRow {
                                         id: row.id,
-                                        kind_rel: *r as u64,
+                                        kind_rel: *r,
                                         val_dst: *dst,
                                         extra: 0,
                                     });
@@ -94,7 +101,7 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                                     if *dst == row.id && *r == rel {
                                         next_rows.push(QueryRow {
                                             id: *nid,
-                                            kind_rel: *r as u64,
+                                            kind_rel: *r,
                                             val_dst: row.id,
                                             extra: 0,
                                         });

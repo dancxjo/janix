@@ -9,6 +9,7 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
+use abi::wire::ThingId;
 
 /// A bytespace backed by contiguous physical memory.
 #[derive(Clone)]
@@ -31,7 +32,7 @@ pub type BytespaceHandle = Arc<Mutex<Bytespace>>;
 
 /// Mapping record for tracking userspace mappings
 pub struct BytespaceMapping {
-    pub bytespace_id: u64,
+    pub bytespace_id: ThingId,
     pub tid: u64,
     pub user_va: u64,
     pub len: usize,
@@ -88,7 +89,7 @@ pub fn create_from_ptr(kernel_va: usize, len: usize, hhdm_offset: u64) -> Bytesp
 
 
 /// Record a mapping
-pub fn record_mapping(bytespace_id: u64, tid: u64, user_va: u64, len: usize) {
+pub fn record_mapping(bytespace_id: ThingId, tid: u64, user_va: u64, len: usize) {
     MAPPINGS.lock().push(BytespaceMapping {
         bytespace_id,
         tid,
@@ -98,7 +99,7 @@ pub fn record_mapping(bytespace_id: u64, tid: u64, user_va: u64, len: usize) {
 }
 
 /// Find and remove a mapping, returning it if found
-pub fn remove_mapping(bytespace_id: u64, tid: u64, user_va: u64) -> Option<BytespaceMapping> {
+pub fn remove_mapping(bytespace_id: ThingId, tid: u64, user_va: u64) -> Option<BytespaceMapping> {
     let mut mappings = MAPPINGS.lock();
     if let Some(idx) = mappings.iter().position(|m| {
         m.bytespace_id == bytespace_id && m.tid == tid && m.user_va == user_va
@@ -110,7 +111,7 @@ pub fn remove_mapping(bytespace_id: u64, tid: u64, user_va: u64) -> Option<Bytes
 }
 
 /// Find mapping by bytespace and tid
-pub fn find_mapping(bytespace_id: u64, tid: u64) -> Option<(u64, usize)> {
+pub fn find_mapping(bytespace_id: ThingId, tid: u64) -> Option<(u64, usize)> {
     let mappings = MAPPINGS.lock();
     mappings
         .iter()

@@ -4,8 +4,10 @@ use alloc::string::String;
 use crate::geometry::Color;
 use crate::damage::Rect;
 use crate::ui::layout::{LayoutTree, LayoutNode, SymbolResolver};
-use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot};
+use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
 use abi::schema::keys;
+use abi::symbols::SymbolId;
+use abi::WireType::ThingId;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PaintObject {
@@ -119,7 +121,11 @@ impl PaintBuilder {
 
     fn get_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> u64 {
         if let Some(id) = symbols.resolve(key) {
-            return *node.props.get(&id).unwrap_or(&0);
+            if let Some(val) = node.props.get(&id) {
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&val[0..8]);
+                return u64::from_le_bytes(bytes);
+            }
         }
         0
     }
@@ -140,25 +146,30 @@ mod tests {
     use alloc::vec;
 
     struct MockSymbolResolver {
-        map: BTreeMap<String, u32>,
+        map: BTreeMap<String, SymbolId>,
     }
 
     impl MockSymbolResolver {
         fn new() -> Self {
             let mut map = BTreeMap::new();
+            fn mk_sym(n: u8) -> SymbolId {
+                 let mut b = [0u8; 16];
+                 b[0] = n;
+                 SymbolId(b)
+            }
             // Pre-seed common keys
-            map.insert(keys::UI_X.to_string(), 1);
-            map.insert(keys::UI_Y.to_string(), 2);
-            map.insert(keys::UI_WIDTH.to_string(), 3);
-            map.insert(keys::UI_HEIGHT.to_string(), 4);
-            map.insert(keys::UI_COLOR.to_string(), 7);
-            map.insert(keys::UI_BG_COLOR.to_string(), 8);
+            map.insert(keys::UI_X.to_string(), mk_sym(1));
+            map.insert(keys::UI_Y.to_string(), mk_sym(2));
+            map.insert(keys::UI_WIDTH.to_string(), mk_sym(3));
+            map.insert(keys::UI_HEIGHT.to_string(), mk_sym(4));
+            map.insert(keys::UI_COLOR.to_string(), mk_sym(7));
+            map.insert(keys::UI_BG_COLOR.to_string(), mk_sym(8));
             Self { map }
         }
     }
 
     impl SymbolResolver for MockSymbolResolver {
-        fn resolve(&self, key: &str) -> Option<u32> {
+        fn resolve(&self, key: &str) -> Option<SymbolId> {
             self.map.get(key).cloned()
         }
     }
@@ -167,11 +178,27 @@ mod tests {
     fn test_paint_determinism() {
         // 1. Setup Snapshot
         let mut snapshot = UiSnapshot::new();
-        let root_id = ThingId(1);
+        fn make_id(n: u8) -> abi::ThingId {
+            let mut b = [0u8; 16];
+            b[0] = n;
+            abi::ThingId(b)
+        }
+        fn mk_sym(n: u8) -> SymbolId {
+             let mut b = [0u8; 16];
+             b[0] = n;
+             SymbolId(b)
+        }
+        fn mk_val(v: u64) -> [u8; 16] {
+             let mut b = [0u8; 16];
+             b[0..8].copy_from_slice(&v.to_le_bytes());
+             b
+        }
+
+        let root_id = make_id(1);
         snapshot.root_id = Some(root_id);
 
         let mut props = BTreeMap::new();
-        props.insert(8, 0xFF0000); // UI_BG_COLOR = Red
+        props.insert(mk_sym(8), mk_val(0xFF0000)); // UI_BG_COLOR = Red
 
         snapshot.nodes.insert(root_id, UiNodeSnapshot {
             id: root_id,

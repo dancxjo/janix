@@ -161,6 +161,12 @@ pub fn build_iso(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
             
             sh.remove_path("iso_root")?;
             println!("ISO created: {}", iso);
+
+            // Create symlink for BDD runner
+            let link_name = format!("thing-os-{}.iso", arch);
+            cmd!(sh, "ln -sf {iso} {link_name}").run()?;
+            println!("Symlink created: {} -> {}", link_name, iso);
+
             Ok(PathBuf::from(iso))
         }
         "aarch64" => {
@@ -178,6 +184,12 @@ pub fn build_iso(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
             
             sh.remove_path("iso_root")?;
             println!("ISO created: {}", iso);
+
+            // Create symlink for BDD runner
+            let link_name = format!("thing-os-{}.iso", arch);
+            cmd!(sh, "ln -sf {iso} {link_name}").run()?;
+            println!("Symlink created: {} -> {}", link_name, iso);
+
             Ok(PathBuf::from(iso))
         }
         "riscv64" => {

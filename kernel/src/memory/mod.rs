@@ -104,3 +104,15 @@ pub unsafe fn map_user_page_with_perms(
         Err(abi::errors::Errno::EIO)
     }
 }
+
+pub unsafe fn copy_from_user(dest: &mut [u8], src_ptr: usize) -> Result<(), abi::errors::Errno> {
+    let src = core::slice::from_raw_parts(src_ptr as *const u8, dest.len());
+    dest.copy_from_slice(src);
+    Ok(())
+}
+
+pub unsafe fn copy_to_user(dest_ptr: usize, src: &[u8]) -> Result<(), abi::errors::Errno> {
+    let dest = core::slice::from_raw_parts_mut(dest_ptr as *mut u8, src.len());
+    dest.copy_from_slice(src);
+    Ok(())
+}

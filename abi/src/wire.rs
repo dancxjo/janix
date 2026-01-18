@@ -5,6 +5,7 @@
 //! packed layouts for payload structs.
 
 use core::marker::PhantomData;
+use core::fmt;
 
 /// 128-bit unique identifier for a Thing in the graph.
 #[repr(C)]
@@ -34,20 +35,11 @@ pub struct PredicateId(pub [u8; 16]);
 impl ThingId {
     pub fn new() -> Self {
         // TODO: Use true randomness. For now, use a rudimentary counter or zero.
-        // Since we are no_std and don't have rand yet.
         Self([0; 16]) 
     }
 }
 
 impl SymbolId {
-    /// Convert a BlobId to a SymbolId.
-    /// 
-    /// In this implementation, we simply hash the BlobId to get a SymbolId,
-    /// or treating it as distinct type-safe handle.
-    /// For now, since they are both 16 bytes, we can map 1:1 if we want,
-    /// but let's do a quick mix to ensure they are distinct spaces if needed.
-    /// Actually, the prompt suggests "stable hash of the BlobId bytes" or simple mapping.
-    /// Let's use blake3 hashing of the BlobId bytes to be consistent with "derived" IDs.
     pub fn from_blob(blob: BlobId) -> SymbolId {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"SymbolId");
@@ -56,6 +48,29 @@ impl SymbolId {
         let mut out = [0u8; 16];
         out.copy_from_slice(&hash.as_bytes()[0..16]);
         SymbolId(out)
+    }
+}
+
+// Formatting
+impl fmt::LowerHex for ThingId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Format as UUID
+        write!(f, "{:02x}{:02x}{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}-{:02x}{:02x}{:02x}{:02x}{:02x}{:02x}",
+            self.0[0], self.0[1], self.0[2], self.0[3],
+            self.0[4], self.0[5],
+            self.0[6], self.0[7],
+            self.0[8], self.0[9],
+            self.0[10], self.0[11], self.0[12], self.0[13], self.0[14], self.0[15]
+        )
+    }
+}
+
+impl fmt::LowerHex for SymbolId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for b in self.0 {
+            write!(f, "{:02x}", b)?;
+        }
+        Ok(())
     }
 }
 

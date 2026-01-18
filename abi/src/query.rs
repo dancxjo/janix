@@ -1,4 +1,5 @@
 use crate::symbols::SymbolRefWire;
+use crate::wire::{ThingId, SymbolId};
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]
@@ -28,8 +29,8 @@ pub struct QueryStep {
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default)]
 pub struct QueryRow {
-    pub id: u64,       // Node ID or Src
-    pub kind_rel: u64, // SymbolId of Kind or Rel
-    pub val_dst: u64,  // Prop Value or Dst ID
+    pub id: ThingId,       // Node ID or Src
+    pub kind_rel: SymbolId, // SymbolId of Kind or Rel
+    pub val_dst: ThingId,  // Prop Value or Dst ID
     pub extra: u64,    // Reserved
 }

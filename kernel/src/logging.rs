@@ -8,6 +8,7 @@ use alloc::format;
 use core::fmt::{self, Write};
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use spin::Mutex;
+use abi::wire::ThingId;
 
 // Re-export for macros
 pub use abi::logging::Level;
@@ -137,7 +138,9 @@ pub unsafe fn force_unlock() {
 
 /// Helper to check if graph logging is safe/ready
 fn can_log_to_graph(level: Level) -> bool {
-    crate::root::is_inbox_ready() && level != Level::Trace
+    // Disable graph logging to debug panic
+    false
+    // crate::root::is_inbox_ready() && level != Level::Trace
 }
 
 pub fn _log_event(
@@ -145,7 +148,7 @@ pub fn _log_event(
     event_sym: crate::root::SymbolShell,
     msg_fmt: fmt::Arguments,
     fields: &[(&'static str, u64)],
-    about: &[u64],
+    about: &[ThingId],
 ) {
     // Get sequence number first (guarantees ordering)
     let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
@@ -201,7 +204,10 @@ pub fn _log_event(
 
             let mut field_vec = alloc::vec::Vec::with_capacity(fields.len());
             for (k, v) in fields {
-                field_vec.push((SymbolShell::Static(k), *v));
+                // Pack u64 value into [u8; 16]
+                let mut val = [0u8; 16];
+                val[0..8].copy_from_slice(&v.to_le_bytes());
+                field_vec.push((SymbolShell::Static(k), val));
             }
 
             let op = RootOp::LogEvent {

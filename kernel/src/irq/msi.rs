@@ -4,6 +4,7 @@ use core::ptr::{read_volatile, write_volatile};
 use alloc::string::String;
 
 use abi::errors::Errno;
+use abi::wire::{ThingId, SymbolId};
 
 use crate::device_registry::{IrqMode, MsiCapability, MsixCapability, PciLocation, REGISTRY};
 use crate::irq::{alloc_vector, free_vector};
@@ -57,7 +58,12 @@ pub fn enable_for_claim(claim_handle: usize, requested_vectors: u16, prefer_msix
         Ok(res) => {
             let mut reg = REGISTRY.lock();
             reg.set_irq_mode(claim_handle, res.mode, res.vector);
-            update_graph_irq(graph_id, res.mode, res.vector);
+            // Convert legacy graph_id (u64) to ThingId UUID
+            let mut id_bytes = [0u8; 16];
+            id_bytes[0..8].copy_from_slice(&graph_id.to_le_bytes());
+            let thing_id = ThingId(id_bytes);
+
+            update_graph_irq(thing_id, res.mode, res.vector);
             Ok(res)
         }
         Err(err) => {
@@ -179,7 +185,7 @@ fn pci_write_config_u16(location: PciLocation, offset: u8, value: u16) {
     }
 }
 
-fn update_graph_irq(graph_id: u64, mode: IrqMode, vector: u8) {
+fn update_graph_irq(graph_id: ThingId, mode: IrqMode, vector: u8) {
     if !root::is_inbox_ready() {
         return;
     }
@@ -190,27 +196,39 @@ fn update_graph_irq(graph_id: u64, mode: IrqMode, vector: u8) {
         IrqMode::Msix => "msix",
     };
 
+    // Intern mode string to get SymbolId (UUID)
+    // We need to pass a pointer for the result.
+    // Use a stack variable.
+    let mut mode_sym = SymbolId::default();
+
     let reply = root::enqueue(RootOp::Intern {
         name: String::from(mode_str),
+        out_ptr: &mut mode_sym as *mut _ as u64,
     });
     while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
         unsafe { crate::task::scheduler::yield_now_current(); }
     }
-    let mode_sym = reply.value.load(core::sync::atomic::Ordering::Relaxed);
+    // Result is now in mode_sym (UUID)
+
+    let mut val_bytes = [0u8; 16];
+    val_bytes.copy_from_slice(&mode_sym.0);
 
     let reply = root::enqueue(RootOp::PropSet {
         id: graph_id,
         key: SymbolShell::Str(String::from(abi::schema::keys::IRQ_MODE)),
-        value: mode_sym,
+        value: val_bytes,
     });
     while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
         unsafe { crate::task::scheduler::yield_now_current(); }
     }
 
+    let mut vector_bytes = [0u8; 16];
+    vector_bytes[0..8].copy_from_slice(&(vector as u64).to_le_bytes());
+
     let reply = root::enqueue(RootOp::PropSet {
         id: graph_id,
         key: SymbolShell::Str(String::from(abi::schema::keys::VECTOR)),
-        value: vector as u64,
+        value: vector_bytes,
     });
     while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
         unsafe { crate::task::scheduler::yield_now_current(); }

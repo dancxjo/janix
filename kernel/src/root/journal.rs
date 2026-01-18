@@ -1,9 +1,10 @@
 use alloc::vec::Vec;
+use abi::wire::{ThingId, SymbolId};
 
 pub enum JournalOp {
     Init,
-    CreateResult { id: u64, kind: u64 },
-    UpdateProp { id: u64, key: u64, val: u64 },
+    CreateResult { id: ThingId, kind: SymbolId },
+    UpdateProp { id: ThingId, key: SymbolId, val: [u8; 16] },
 }
 
 pub struct JournalEntry {

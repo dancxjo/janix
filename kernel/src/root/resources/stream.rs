@@ -1,12 +1,13 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use spin::Mutex;
+use abi::wire::{ThingId, SymbolId};
 
 #[derive(Clone)]
 pub struct WatchEvent {
-    pub target: u64,
-    pub key: u64,
-    pub value: u64,
+    pub target: ThingId,
+    pub key: SymbolId,
+    pub value: [u8; 16],
 }
 
 pub struct Stream {

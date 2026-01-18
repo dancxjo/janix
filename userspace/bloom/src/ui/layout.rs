@@ -6,6 +6,7 @@ use crate::damage::Rect;
 use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot};
 use abi::schema::keys;
 use crate::asset::AssetBank;
+use abi::symbols::SymbolId;
 
 #[derive(Debug, Clone)]
 pub struct LayoutNode {
@@ -20,7 +21,7 @@ pub struct LayoutTree {
 }
 
 pub trait SymbolResolver {
-    fn resolve(&self, key: &str) -> Option<u32>;
+    fn resolve(&self, key: &str) -> Option<SymbolId>;
 }
 
 pub struct LayoutSolver {
@@ -154,7 +155,11 @@ impl LayoutSolver {
 
     fn get_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> u64 {
         if let Some(id) = symbols.resolve(key) {
-            return *node.props.get(&id).unwrap_or(&0);
+            if let Some(val) = node.props.get(&id) {
+                let mut bytes = [0u8; 8];
+                bytes.copy_from_slice(&val[0..8]);
+                return u64::from_le_bytes(bytes);
+            }
         }
         0
     }
@@ -177,25 +182,31 @@ mod tests {
     use alloc::string::ToString;
 
     struct MockSymbolResolver {
-        map: BTreeMap<String, u32>,
+        map: BTreeMap<String, SymbolId>,
     }
 
     impl MockSymbolResolver {
         fn new() -> Self {
             let mut map = BTreeMap::new();
+            // Helper to make dummy symbols
+            fn mk_sym(n: u8) -> SymbolId {
+                let mut b = [0u8; 16];
+                b[0] = n;
+                SymbolId(b)
+            }
             // Pre-seed common keys
-            map.insert(keys::UI_X.to_string(), 1);
-            map.insert(keys::UI_Y.to_string(), 2);
-            map.insert(keys::UI_WIDTH.to_string(), 3);
-            map.insert(keys::UI_HEIGHT.to_string(), 4);
-            map.insert(keys::UI_CENTER_X.to_string(), 5);
-            map.insert(keys::UI_CENTER_Y.to_string(), 6);
+            map.insert(keys::UI_X.to_string(), mk_sym(1));
+            map.insert(keys::UI_Y.to_string(), mk_sym(2));
+            map.insert(keys::UI_WIDTH.to_string(), mk_sym(3));
+            map.insert(keys::UI_HEIGHT.to_string(), mk_sym(4));
+            map.insert(keys::UI_CENTER_X.to_string(), mk_sym(5));
+            map.insert(keys::UI_CENTER_Y.to_string(), mk_sym(6));
             Self { map }
         }
     }
 
     impl SymbolResolver for MockSymbolResolver {
-        fn resolve(&self, key: &str) -> Option<u32> {
+        fn resolve(&self, key: &str) -> Option<SymbolId> {
             self.map.get(key).cloned()
         }
     }
@@ -203,8 +214,25 @@ mod tests {
     #[test]
     fn test_layout_centering() {
         let mut snapshot = UiSnapshot::new();
-        let root_id = ThingId(1);
-        let child_id = ThingId(2);
+
+        fn make_id(n: u8) -> ThingId {
+            let mut b = [0u8; 16];
+            b[0] = n;
+            ThingId(b)
+        }
+        fn mk_sym(n: u8) -> SymbolId {
+             let mut b = [0u8; 16];
+             b[0] = n;
+             SymbolId(b)
+        }
+        fn mk_val(v: u64) -> [u8; 16] {
+             let mut b = [0u8; 16];
+             b[0..8].copy_from_slice(&v.to_le_bytes());
+             b
+        }
+
+        let root_id = make_id(1);
+        let child_id = make_id(2);
         snapshot.root_id = Some(root_id);
         
         // Root node
@@ -219,10 +247,10 @@ mod tests {
 
         // Child node: 100x50, centered
         let mut child_props = BTreeMap::new();
-        child_props.insert(3, 100); // UI_WIDTH
-        child_props.insert(4, 50);  // UI_HEIGHT
-        child_props.insert(5, 1);   // UI_CENTER_X
-        child_props.insert(6, 1);   // UI_CENTER_Y
+        child_props.insert(mk_sym(3), mk_val(100)); // UI_WIDTH
+        child_props.insert(mk_sym(4), mk_val(50));  // UI_HEIGHT
+        child_props.insert(mk_sym(5), mk_val(1));   // UI_CENTER_X
+        child_props.insert(mk_sym(6), mk_val(1));   // UI_CENTER_Y
 
         snapshot.nodes.insert(child_id, UiNodeSnapshot {
             id: child_id,
@@ -237,7 +265,8 @@ mod tests {
 
         // Screen 800x600.
         // Child 100x50 centered should be at x=350, y=275
-        let tree = LayoutSolver::solve(&snapshot, 800, 600, &assets, &resolver);
+        let mut solver = LayoutSolver::new();
+        let tree = solver.solve(&snapshot, 800, 600, &assets, &resolver);
 
         assert!(tree.root.is_some());
         let root = tree.root.unwrap();

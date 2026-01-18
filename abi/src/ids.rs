@@ -25,3 +25,27 @@ impl HandleId for ThingId {
         u64::from_le_bytes(bytes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_id_roundtrip() {
+        let original = 0xDEAD_BEEF_CAFE_BABE;
+        let thing_id = ThingId::from_u64(original);
+        let recovered = thing_id.to_u64_lossy();
+        assert_eq!(original, recovered, "Handle roundtrip failed");
+    }
+
+    #[test]
+    fn test_handle_id_layout() {
+        let val = 0x0102030405060708;
+        let thing_id = ThingId::from_u64(val);
+        // Little endian: 08, 07, 06...
+        let expected = [
+            0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01, 0, 0, 0, 0, 0, 0, 0, 0,
+        ];
+        assert_eq!(thing_id.0, expected, "ThingId layout mismatch");
+    }
+}

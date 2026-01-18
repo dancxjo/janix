@@ -21,6 +21,7 @@ pub fn resolve_shell(shell: SymbolShell, interner: &mut Interner) -> SymbolId {
     match shell {
         SymbolShell::Id(id) => id,
         SymbolShell::Str(s) => interner.intern(&s),
+        SymbolShell::Static(s) => interner.intern(s),
     }
 }
 

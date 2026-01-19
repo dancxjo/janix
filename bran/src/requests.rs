@@ -19,14 +19,14 @@ pub static DTB_REQUEST: DeviceTreeBlobRequest = DeviceTreeBlobRequest::new();
 
 pub static HHDM_REQUEST: HhdmRequest = HhdmRequest::new();
 
-static mut MODULES_CACHE: [BootModuleDesc; 32] = [BootModuleDesc {
+static mut MODULES_CACHE: [BootModuleDesc; 64] = [BootModuleDesc {
     name: "",
     cmdline: "",
     bytes: &[],
     phys_start: 0,
     phys_end: 0,
     kind: BootModuleKind::Unknown,
-}; 32];
+}; 64];
 static mut MODULES_LEN: usize = 0;
 static mut MODULES_INIT: bool = false;
 
@@ -35,7 +35,7 @@ pub fn get_modules() -> &'static [BootModuleDesc] {
         if !MODULES_INIT {
             if let Some(response) = MODULE_REQUEST.get_response() {
                 let files = response.modules();
-                let count = core::cmp::min(files.len(), 32);
+                let count = core::cmp::min(files.len(), 64);
                 for i in 0..count {
                     let file = files[i];
 

@@ -20,7 +20,7 @@ impl Registry {
 
     pub fn scan(&mut self) {
         info!("SPROUT: Scanning boot modules...");
-        let mut modules = [ThingId::default(); 32];
+        let mut modules = [ThingId::default(); 64];
         let count = thingsys::find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
         for i in 0..count {
             self.scan_module(modules[i]);

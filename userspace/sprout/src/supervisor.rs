@@ -58,7 +58,7 @@ impl Supervisor {
 
     fn discover(&mut self) {
         info!("SPROUT: Discovering modules...");
-        let mut modules = [ThingId::new(); 32];
+        let mut modules = [ThingId::new(); 64];
         let count =
             thingsys::find(stem::abi::schema::kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
         info!("SPROUT: Found {} modules", count);

@@ -60,6 +60,10 @@ fn generate_limine_config(
         // But scanning WalkDir returns "assets/foo/bar.bmp".
         // Limine path: boot():/assets/foo/bar.bmp
         let path_str = asset.to_string_lossy();
+        // Skip unnecessary text/config files
+        if path_str.ends_with(".txt") || path_str.ends_with(".crs") {
+             continue;
+        }
         if !path_str.starts_with("assets/") {
              continue;
         }

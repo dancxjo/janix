@@ -146,6 +146,11 @@ pub fn apply_ops_and_commit(
     // Push to shared commit history with summary for O(1) filter matching
     graph.commit_history.push(new_seq, commit_bytes.to_vec(), summary);
 
+    // Diagnostic logging: log commit if there are active watches
+    if !graph.global_watches.is_empty() {
+        crate::kinfo!("ROOT COMMIT: seq={} ops={} watches={}", 
+                      new_seq, ops.len(), graph.global_watches.len());
+    }
 
     ApplyResult {
         status: 0,
@@ -153,7 +158,6 @@ pub fn apply_ops_and_commit(
         created_ids,
     }
 }
-
 // ============================================================================
 // Batch Filter Matching
 // ============================================================================

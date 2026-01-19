@@ -94,6 +94,7 @@ fn main() -> ! {
             }
         }
         stem::sleep(Duration::from_millis(500));
+        i += 1;
     }
 
     if ui_root.to_u64_lossy() == 0 {
@@ -147,8 +148,13 @@ fn main() -> ! {
         // Or since we just copy the bytespace ID, 0 is fine if bindd knows what to do.
         prop_set(binding, keys::BINDING_MAP, 1).ok();
 
-        info!("Binding created: {} (Clock->Text)", binding.to_u64_lossy());
+        info!("Binding created: {} (source={} target={})", 
+              binding.to_u64_lossy(), 
+              clock_thing.to_u64_lossy(), 
+              text.to_u64_lossy());
     }
+
+    info!("CLOCK: Entering main loop, publishing to thing_id={}", clock_thing.to_u64_lossy());
 
     loop {
         let unix = stem::time::now_unix_seconds();
@@ -166,7 +172,10 @@ fn main() -> ! {
             // A production version would implement bytespace reuse or a garbage collector.
             set_string_prop(clock_thing, keys::CLOCK_NOW_TEXT, &time_str);
             // Update clock:tick
-            prop_set(clock_thing, keys::CLOCK_TICK, mono_ns).ok();
+            if prop_set(clock_thing, keys::CLOCK_TICK, mono_ns).is_ok() {
+                info!("CLOCK PUBLISH: thing={} now_text='{}' tick={}", 
+                      clock_thing.to_u64_lossy(), time_str, mono_ns);
+            }
         }
 
         // NO direct UI update here!

@@ -8,7 +8,7 @@ use stem::thing::ThingId;
 use stem::thing::sys::{find, prop_get, prop_set};
 use stem::syscall::{root_watch_open, root_watch_next};
 use abi::schema::{kinds, keys};
-use abi::types::{WatchSpec, WATCH_START_LATEST};
+use abi::types::WatchSpec;
 use abi::root::{RootWatchFilter, OP_SET_PROP, REF_ABSOLUTE, BATCH_MAGIC, BATCH_VERSION};
 use abi::ids::HandleId;
 use alloc::vec::Vec;
@@ -18,6 +18,8 @@ struct ActiveBinding {
     source: ThingId,
     target: ThingId,
     watch_id: usize,
+    /// Cached last value (for initial sync)
+    last_value: Option<u64>,
 }
 
 /// Parse a batch and find SET_PROP operations on the given subject.
@@ -115,9 +117,51 @@ fn find_set_prop_value(batch: &[u8], subject: u64) -> Option<u64> {
     result
 }
 
+/// Drain a watch until EAGAIN, applying any relevant events.
+/// Returns the number of events processed.
+fn drain_watch(binding: &mut ActiveBinding, batch_buf: &mut [u8]) -> usize {
+    let mut count = 0;
+    loop {
+        let mut seq: u64 = 0;
+        match root_watch_next(binding.watch_id, &mut seq, batch_buf) {
+            Ok(len) if len > 0 => {
+                count += 1;
+                if let Some(value) = find_set_prop_value(&batch_buf[..len], binding.source.to_u64_lossy()) {
+                    binding.last_value = Some(value);
+                    // Apply immediately during drain
+                    if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
+                        info!(
+                            "DRAIN: Updated target {} with value {} (seq={})",
+                            binding.target.to_u64_lossy(),
+                            value,
+                            seq
+                        );
+                    }
+                }
+            }
+            Ok(_) => {
+                // Zero-length batch, continue
+            }
+            Err(abi::errors::Errno::EAGAIN) => {
+                // No more pending events
+                break;
+            }
+            Err(abi::errors::Errno::EOVERFLOW) => {
+                info!("DRAIN: Watch {} overflow during catch-up", binding.watch_id);
+                // Continue draining
+            }
+            Err(e) => {
+                info!("DRAIN: watch_next error: {:?}", e);
+                break;
+            }
+        }
+    }
+    count
+}
+
 #[stem::main]
 fn main() -> ! {
-    info!("bindd starting (v2: root_watch_open)...");
+    info!("bindd starting (v3: catch-up then stream)...");
 
     let mut bindings: Vec<ActiveBinding> = Vec::new();
 
@@ -143,10 +187,11 @@ fn main() -> ! {
                     }
 
                     // Create a Root watch with subject filter
+                    // Use start_seq=0 to catch up from oldest available
                     let filter = RootWatchFilter::subject(src_id.to_u64_lossy());
                     let spec = WatchSpec {
                         mode: 1, // StreamOnly
-                        start_seq: WATCH_START_LATEST,
+                        start_seq: 0, // Catch-up from oldest available (not WATCH_START_LATEST)
                         filter_ptr: &filter as *const _ as u64,
                         filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
                         ..Default::default()
@@ -155,7 +200,7 @@ fn main() -> ! {
                     match root_watch_open(&spec) {
                         Ok(watch_id) => {
                             info!(
-                                "Opened watch {} for source {} (binding {})",
+                                "Opened watch {} for source {} (binding {}, start_seq=0)",
                                 watch_id,
                                 src_id.to_u64_lossy(),
                                 b_id.to_u64_lossy()
@@ -164,6 +209,7 @@ fn main() -> ! {
                                 source: src_id,
                                 target: dst_id,
                                 watch_id,
+                                last_value: None,
                             });
                         }
                         Err(e) => {
@@ -184,14 +230,32 @@ fn main() -> ! {
         }
     }
 
-    info!("Entering event loop with {} bindings (v2)", bindings.len());
-
+    // ============================================================
+    // PHASE 1: Drain all watches to catch up on historical events
+    // ============================================================
+    info!("CATCH-UP: Draining {} watches for historical events...", bindings.len());
     let mut batch_buf = [0u8; 4096];
+    let mut total_drained = 0usize;
+    
+    for binding in &mut bindings {
+        let drained = drain_watch(binding, &mut batch_buf);
+        if drained > 0 {
+            info!("CATCH-UP: Watch {} drained {} events", binding.watch_id, drained);
+        }
+        total_drained += drained;
+    }
+    
+    info!("CATCH-UP complete: {} total events processed", total_drained);
+
+    // ============================================================
+    // PHASE 2: Enter steady-state event loop
+    // ============================================================
+    info!("Entering event loop with {} bindings (v3)", bindings.len());
 
     loop {
         let mut did_work = false;
 
-        for binding in &bindings {
+        for binding in &mut bindings {
             let mut seq: u64 = 0;
 
             match root_watch_next(binding.watch_id, &mut seq, &mut batch_buf) {
@@ -200,6 +264,7 @@ fn main() -> ! {
 
                     // Parse batch to find SET_PROP value for our subject
                     if let Some(value) = find_set_prop_value(&batch_buf[..len], binding.source.to_u64_lossy()) {
+                        binding.last_value = Some(value);
                         // Update target's UI_TEXT property
                         if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
                             info!(
@@ -209,6 +274,16 @@ fn main() -> ! {
                                 seq
                             );
                         }
+                    } else {
+                        // Log unrecognized event for debugging
+                        let hex_preview: alloc::string::String = batch_buf[..core::cmp::min(len, 32)]
+                            .iter()
+                            .map(|b| alloc::format!("{:02x}", b))
+                            .collect();
+                        info!(
+                            "Unrecognized event: seq={} len={} preview={}",
+                            seq, len, hex_preview
+                        );
                     }
                 }
                 Ok(_) => {

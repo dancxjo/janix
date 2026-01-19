@@ -29,6 +29,14 @@ pub fn clean(sh: &Shell) -> Result<()> {
     sh.remove_path("vendor/ovmf/ovmf-vars-riscv64.fd")?;
     sh.remove_path("vendor/ovmf/ovmf-code-loongarch64.fd")?;
     sh.remove_path("vendor/ovmf/ovmf-vars-loongarch64.fd")?;
+    
+    // Remove variable (downloaded) assets, preserve static assets (wallpapers)
+    println!("Cleaning downloaded assets (preserving wallpapers)...");
+    sh.remove_path("assets/cursors")?;
+    sh.remove_path("assets/fonts")?;
+    sh.remove_path("assets/icons")?;
+    sh.remove_path("assets/pci")?;
+    
     Ok(())
 }
 

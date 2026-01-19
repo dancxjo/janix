@@ -497,6 +497,7 @@ fn main(arg: usize) -> ! {
     let mut wallpaper_loaded = false;
     let mut font_loaded = false;
     let mut ui_watch_id: Option<usize> = None;
+    let mut ui_text_pred_id: u32 = 0;  // For userspace filtering
     let mut ui_watch_buf = [0u8; 4096];
     let mut ui_force_damage = false;
     let mut ui_poll_deadline_ns = stem::monotonic_ns().saturating_add(1_000_000_000);
@@ -518,19 +519,21 @@ fn main(arg: usize) -> ! {
         use abi::types::{WatchMode, WatchSpec, WATCH_START_LATEST};
 
         let ui_text_pred = stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0);
+            ui_text_pred_id = ui_text_pred;
         if ui_text_pred != 0 {
-            let filter = RootWatchFilter::predicate(ui_text_pred);
+            // WORKAROUND: unfiltered watch
+            // let filter = RootWatchFilter::predicate(ui_text_pred);
             let spec = WatchSpec {
                 mode: WatchMode::StreamOnly as u32,
                 start_seq: 0, // Catch-up mode
-                filter_ptr: &filter as *const _ as u64,
-                filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+                filter_ptr: 0,
+                filter_len: 0,
                 ..Default::default()
             };
             match stem::syscall::root_watch_open(&spec) {
                 Ok(id) => {
                     ui_watch_id = Some(id);
-                    log!("[bloom] ui watch opened for predicate UI_TEXT (id={}) - watching for changes to this property", ui_text_pred);
+                    log!("[bloom] ui watch opened UNFILTERED (userspace filter pred=UI_TEXT id={})", ui_text_pred);
 
                     // Drain initial events to catch up
                     let mut drain_buf = [0u8; 4096];
@@ -675,24 +678,39 @@ fn main(arg: usize) -> ! {
             let mut seq: u64 = 0;
             match stem::syscall::root_watch_next(watch_id, &mut seq, &mut ui_watch_buf) {
                 Ok(len) if len > 0 => {
-                    // Parse and log watch events to diagnose predicate mismatch
-                    let now_ms = crate::log_ratelimit::now_ms();
-                    if crate::log_ratelimit::log_every(1000, now_ms) {
-                        // Decode first event in payload to see what we're receiving
-                        if let Ok((header, _value)) = abi::watch::decode_event(&ui_watch_buf[..len]) {
-                            crate::log!("[bloom][uiwatch] seq={} subj={} pred={} len={}",
-                                seq, 
-                                header.subject.to_u64_lossy(),
-                                header.predicate.to_u32_lossy(),
-                                len);
-                        } else {
-                            crate::log!("[bloom][watch] ui seq={} bytes={} (decode failed)", seq, len);
+                    // Parse ALL events in payload and mark dirty if ANY match UI_TEXT
+                    let mut found_ui_text = false;
+                    let mut cursor = 0usize;
+                    
+                    while cursor < len {
+                        match abi::watch::decode_event(&ui_watch_buf[cursor..len]) {
+                            Ok((header, value)) => {
+                                cursor += abi::watch::WATCH_EVENT_HEADER_LEN + value.len();
+                                
+                                // USERSPACE FILTER: check if this event is for UI_TEXT predicate
+                                if ui_text_pred_id != 0 && header.predicate.to_u32_lossy() == ui_text_pred_id {
+                                    found_ui_text = true;
+                                    
+                                    // Rate-limited diagnostic log
+                                    let now_ms = crate::log_ratelimit::now_ms();
+                                    if crate::log_ratelimit::log_every(1000, now_ms) {
+                                        crate::log!("[bloom][uiwatch] UI_TEXT event: seq={} subj={} pred={}", 
+                                            seq, 
+                                            header.subject.to_u64_lossy(),
+                                            header.predicate.to_u32_lossy());
+                                    }
+                                }
+                            }
+                            Err(_) => break,
                         }
                     }
                     
-                    crate::log!("[bloom][ui] DIRTY reason=watch_event seq={}", seq);
-                    ui_pipeline.mark_dirty();
-                    ui_force_damage = true;
+                    // Only mark dirty if we found a UI_TEXT event
+                    if found_ui_text {
+                        ui_pipeline.mark_dirty();
+                        ui_force_damage = true;
+                        crate::log!("[bloom][ui] DIRTY reason=ui_text watch seq={}", seq);
+                    }
                 }
                 Ok(_) => {}
                 Err(abi::errors::Errno::EAGAIN) => {}

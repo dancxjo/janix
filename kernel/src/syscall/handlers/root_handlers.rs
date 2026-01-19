@@ -612,6 +612,25 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     unsafe { copyin(spec_slice, spec_ptr)? };
     kinfo!("sys_root_watch_open: copyin success. mode={} start_seq={}", spec.mode, spec.start_seq);
 
+    // Decode filter if present for logging
+    if spec.filter_ptr != 0 && spec.filter_len >= core::mem::size_of::<RootWatchFilter>() as u64 {
+        // We already validated and copied it later, but let's peek for logging
+        let filter_ptr = spec.filter_ptr as usize;
+        let mut abi_filter = RootWatchFilter::default();
+        if validate_user_range(filter_ptr, core::mem::size_of::<RootWatchFilter>(), false).is_ok() {
+            let filter_slice = unsafe {
+                core::slice::from_raw_parts_mut(&mut abi_filter as *mut _ as *mut u8, 
+                    core::mem::size_of::<RootWatchFilter>())
+            };
+            if unsafe { copyin(filter_slice, filter_ptr) }.is_ok() {
+                kinfo!("sys_root_watch_open: DECODED FILTER: flags={:#x} kind={} pred={} subj_lo={}",
+                    abi_filter.flags, abi_filter.kind_id, abi_filter.predicate_id, abi_filter.subject_lo);
+            }
+        }
+    } else {
+        kinfo!("sys_root_watch_open: NO FILTER (filter_ptr={:#x} filter_len={})", spec.filter_ptr, spec.filter_len);
+    }
+
     // Validate mode enum (must be 0=QueryThenStream or 1=StreamOnly)
     if abi::types::WatchMode::from_u32(spec.mode).is_none() {
         kinfo!("sys_root_watch_open: invalid mode={}", spec.mode);

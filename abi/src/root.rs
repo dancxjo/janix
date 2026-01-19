@@ -4,7 +4,7 @@
 //! Use safe byte-level parsing; do not cast unaligned bytes to these structs.
 //!
 //! ============================================================================
-//! Watch Batch Wire Format (canonical)
+//! ApplyBatch Wire Format (canonical)
 //! ============================================================================
 //! All integers are little-endian.
 //!
@@ -28,7 +28,6 @@
 //!   OP_SET_PROP:
 //!     [tag: u8][subject: ThingRef][key_id: 16 bytes][value: u64]
 //!
-//! Watch consumers must treat each watch payload as a batch payload.
 
 /// Batch Header (8 bytes)
 /// [Magic: 4] [Version: 2] [OpCount: 2]

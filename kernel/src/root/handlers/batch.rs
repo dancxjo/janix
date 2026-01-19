@@ -10,6 +10,7 @@ use abi::root::{
     BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP,
     REF_ABSOLUTE, REF_LOCAL, MAX_BATCH_BYTES, MAX_BATCH_OPS, MAX_LOCAL_REFS,
 };
+use crate::root::handlers::watch_payload::{encode_watch_payload, track_watch_encode_reject};
 use abi::symbols::SymbolId;
 use core::sync::atomic::{AtomicU64, Ordering};
 use alloc::vec::Vec;
@@ -26,6 +27,19 @@ pub static BATCH_CALLS: AtomicU64 = AtomicU64::new(0);
 pub static BATCH_OPS_TOTAL: AtomicU64 = AtomicU64::new(0);
 /// Times scratch.ops Vec had to reallocate (should stabilize to 0)
 pub static BATCH_REALLOCATIONS: AtomicU64 = AtomicU64::new(0);
+/// Total watch payloads encoded successfully
+pub static WATCH_ENCODE_OK_TOTAL: AtomicU64 = AtomicU64::new(0);
+/// Total watch payloads rejected (all reasons)
+pub static WATCH_ENCODE_REJECT_TOTAL: AtomicU64 = AtomicU64::new(0);
+/// Watch payloads rejected due to invalid event encoding
+pub static WATCH_ENCODE_REJECT_INVALID_TOTAL: AtomicU64 = AtomicU64::new(0);
+/// Watch payloads rejected due to size constraints
+pub static WATCH_ENCODE_REJECT_TOO_LARGE_TOTAL: AtomicU64 = AtomicU64::new(0);
+/// Watch payloads rejected due to missing create mapping
+pub static WATCH_ENCODE_REJECT_MISSING_REF_TOTAL: AtomicU64 = AtomicU64::new(0);
+/// Throttle ROOT COMMIT logging (every N commits)
+pub static ROOT_COMMIT_LOG_EVERY: u64 = 1024;
+static ROOT_COMMIT_LOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 // ============================================================================
 // Per-CPU Scratch Buffer
@@ -96,14 +110,11 @@ pub struct ApplyResult {
 /// # Arguments
 /// * `graph` - The root graph to mutate
 /// * `ops` - Pre-validated operations to apply
-/// * `commit_bytes` - The wire-format batch bytes for watch consumers
-///
 /// # Returns
 /// * `ApplyResult` with status, seq, and created IDs
 pub fn apply_ops_and_commit(
     graph: &mut Graph,
     ops: &[ValidatedOp],
-    commit_bytes: &[u8],
 ) -> ApplyResult {
     let mut local_refs: Vec<ThingId> = Vec::with_capacity(16);
     let mut created_ids: Vec<ThingId> = Vec::new();
@@ -143,13 +154,36 @@ pub fn apply_ops_and_commit(
     // Commit: increment sequence number
     let new_seq = graph.root_seq.fetch_add(1, Ordering::SeqCst) + 1;
 
-    // Push to shared commit history with summary for O(1) filter matching
-    graph.commit_history.push(new_seq, commit_bytes.to_vec(), summary);
+    // Encode canonical watch payload bytes for consumers
+    let watch_payload_bytes = match encode_watch_payload(ops, &local_refs) {
+        Ok(bytes) => {
+            WATCH_ENCODE_OK_TOTAL.fetch_add(1, Ordering::Relaxed);
+            bytes
+        }
+        Err(reason) => {
+            WATCH_ENCODE_REJECT_TOTAL.fetch_add(1, Ordering::Relaxed);
+            track_watch_encode_reject(reason);
+            if cfg!(debug_assertions) {
+                panic!("watch_encode: contract violation ({:?})", reason);
+            }
+            Vec::new()
+        }
+    };
 
-    // Diagnostic logging: log commit if there are active watches
-    if !graph.global_watches.is_empty() {
-        crate::kinfo!("ROOT COMMIT: seq={} ops={} watches={}", 
-                      new_seq, ops.len(), graph.global_watches.len());
+    // Push to shared commit history with summary for O(1) filter matching
+    graph.commit_history.push(new_seq, watch_payload_bytes, summary);
+
+    // Diagnostic logging: throttle commit logs when watches are active
+    if cfg!(debug_assertions) && !graph.global_watches.is_empty() {
+        let n = ROOT_COMMIT_LOG_COUNTER.fetch_add(1, Ordering::Relaxed) + 1;
+        if n % ROOT_COMMIT_LOG_EVERY == 0 {
+            crate::kinfo!(
+                "ROOT COMMIT: seq={} ops={} watches={}",
+                new_seq,
+                ops.len(),
+                graph.global_watches.len()
+            );
+        }
     }
 
     ApplyResult {
@@ -483,7 +517,7 @@ pub fn handle_apply_batch_with_scratch(
     }
 
     // Apply through canonical commit path
-    let result = apply_ops_and_commit(graph, &scratch.ops, batch);
+    let result = apply_ops_and_commit(graph, &scratch.ops);
     
     (result.status, result.seq)
 }

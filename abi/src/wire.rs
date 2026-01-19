@@ -37,6 +37,18 @@ impl ThingId {
         // Since we are no_std and don't have rand yet.
         Self([0; 16]) 
     }
+
+    /// Lossy conversion of a 128-bit ThingId to a u64 (little-endian).
+    pub fn to_u64_lossy(self) -> u64 {
+        u64::from_le_bytes(self.0[0..8].try_into().unwrap())
+    }
+}
+
+impl PredicateId {
+    /// Lossy conversion of a 128-bit PredicateId to a u32 (little-endian).
+    pub fn to_u32_lossy(self) -> u32 {
+        u32::from_le_bytes(self.0[0..4].try_into().unwrap())
+    }
 }
 
 impl SymbolId {

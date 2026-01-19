@@ -9,7 +9,7 @@ pub type HandleId = usize;
 /// Statistics returned by `watch_drain`.
 #[derive(Debug, Clone, Default)]
 pub struct DrainStats {
-    /// Number of batches successfully processed.
+/// Number of watch payloads successfully processed.
     pub batches: usize,
     /// Number of overflow events encountered (and skipped).
     pub overflows: usize,
@@ -17,7 +17,7 @@ pub struct DrainStats {
     pub last_seq: Option<u64>,
 }
 
-/// Drain a watch until `EAGAIN`, processing each batch with the provided handler.
+/// Drain a watch until `EAGAIN`, processing each watch payload with the provided handler.
 ///
 /// This implements the "Catch-up" phase of the "Catch-up then Stream" pattern.
 /// It will loop until the kernel reports no more pending events (EAGAIN).
@@ -25,10 +25,10 @@ pub struct DrainStats {
 /// # Arguments
 ///
 /// * `handle` - The file descriptor/handle of the open Root watch.
-/// * `buf` - A buffer to use for reading batches. Must be large enough for the expected batches.
-/// * `handler` - A closure called for each successfully received batch.
+/// * `buf` - A buffer to use for reading watch payloads. Must be large enough for the expected payloads.
+/// * `handler` - A closure called for each successfully received watch payload.
 ///               Arguments are `(out_seq, batch_bytes)`.
-///               `out_seq` is the sequence number *after* the batch.
+///               `out_seq` is the sequence number *after* the payload.
 ///
 /// # Returns
 ///

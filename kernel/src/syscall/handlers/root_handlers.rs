@@ -713,8 +713,7 @@ pub fn sys_root_watch_next(
     validate_user_range(out_seq_ptr, core::mem::size_of::<u64>(), true)?;
     validate_user_range(out_ptr, out_len, true)?;
 
-    const MAX_WATCH_PAYLOAD: usize = 256 * 1024;
-    let cap = core::cmp::min(out_len, MAX_WATCH_PAYLOAD);
+    let cap = core::cmp::min(out_len, abi::watch::MAX_WATCH_PAYLOAD_BYTES);
     let mut kbuf = alloc::vec![0u8; cap];
 
     let reply = root_svc::enqueue(RootOp::WatchNext {

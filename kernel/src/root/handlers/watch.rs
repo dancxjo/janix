@@ -76,7 +76,7 @@ pub fn handle_watch_open(
     (0, stream_id)
 }
 
-/// Retrieves the next committed batch payload that matches the watch's filter.
+/// Retrieves the next committed watch payload that matches the watch's filter.
 ///
 /// # Algorithm (with filtering)
 /// 1. Validate handle else -EINVAL

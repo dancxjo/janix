@@ -126,35 +126,44 @@ extern "C" fn font_loader_entry() -> ! {
     };
 
     // Shared processing logic for both drain and stream
-    fn process_font_batch(buf: &[u8]) {
-        let len = buf.len();
-        // Minimal length check for WatchEvent
-        if len >= core::mem::size_of::<abi::types::WatchEvent>() {
-            let evt: abi::types::WatchEvent = unsafe {
-                core::ptr::read_unaligned(buf.as_ptr() as *const _)
-            };
-            let node_id = ThingId::from_u64(evt.node_id);
-            let mut desc_buf = [0u8; 512];
-            if let Ok(desc_len) = describe_thing(node_id, &mut desc_buf) {
-                let desc = core::str::from_utf8(&desc_buf[..desc_len]).unwrap_or("");
-                if desc.contains("name: \"")
-                    && (desc.contains(".ttf\"")
-                        || desc.contains(".otf\"")
-                        || desc.contains(".ttc\""))
-                {
-                    // log!("[font_loader] found font candidate: '{}' (seq={})", desc, seq);
-                    let bs_id = prop_get(node_id, "bytespace").map(ThingId::from_u64).ok();
-                    let size = bs_id.and_then(|id| bytespace_info(id).ok());
-
-                    if let (Some(bs), Some(sz)) = (bs_id, size) {
-                        log!(
-                            "[font_loader] enqueuing font load: bs={} size={} name='{}'",
-                            bs.to_u64_lossy(),
-                            sz,
-                            desc
-                        );
-                        ASSETS.enqueue_font_load(bs, sz, desc);
+    fn process_font_payload(buf: &[u8]) {
+        let mut cursor = 0usize;
+        while cursor < buf.len() {
+            match abi::watch::decode_event(&buf[cursor..]) {
+                Ok((header, value)) => {
+                    cursor += abi::watch::WATCH_EVENT_HEADER_LEN + value.len();
+                    if abi::watch::WatchOp::from_u8(header.op) != Some(abi::watch::WatchOp::Upsert) {
+                        continue;
                     }
+                    let node_id = ThingId::from_u64(header.subject.to_u64_lossy());
+                    if node_id.to_u64_lossy() == 0 {
+                        continue;
+                    }
+                    let mut desc_buf = [0u8; 512];
+                    if let Ok(desc_len) = describe_thing(node_id, &mut desc_buf) {
+                        let desc = core::str::from_utf8(&desc_buf[..desc_len]).unwrap_or("");
+                        if desc.contains("name: \"")
+                            && (desc.contains(".ttf\"")
+                                || desc.contains(".otf\"")
+                                || desc.contains(".ttc\""))
+                        {
+                            let bs_id = prop_get(node_id, "bytespace").map(ThingId::from_u64).ok();
+                            let size = bs_id.and_then(|id| bytespace_info(id).ok());
+
+                            if let (Some(bs), Some(sz)) = (bs_id, size) {
+                                log!(
+                                    "[font_loader] enqueuing font load: bs={} size={} name='{}'",
+                                    bs.to_u64_lossy(),
+                                    sz,
+                                    desc
+                                );
+                                ASSETS.enqueue_font_load(bs, sz, desc);
+                            }
+                        }
+                    }
+                }
+                Err(_) => {
+                    break;
                 }
             }
         }
@@ -164,11 +173,11 @@ extern "C" fn font_loader_entry() -> ! {
 
     // PHASE 1: Catch-up (Drain)
     match root_watch::watch_drain(watch_id, &mut watch_buf, |_seq, bytes| {
-        process_font_batch(bytes)
+        process_font_payload(bytes)
     }) {
         Ok(stats) => {
             if stats.batches > 0 || stats.overflows > 0 {
-                log!("[font_loader] drain complete: batches={} overflows={}", stats.batches, stats.overflows);
+                log!("[font_loader] drain complete: payloads={} overflows={}", stats.batches, stats.overflows);
             }
         }
         Err(e) => {
@@ -181,7 +190,7 @@ extern "C" fn font_loader_entry() -> ! {
     loop {
         match syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf) {
             Ok(len) if len > 0 => {
-                process_font_batch(&watch_buf[..len]);
+                process_font_payload(&watch_buf[..len]);
             }
             Ok(_) => {
                 // No data (or just heartbeat/ACK)

@@ -41,10 +41,10 @@ Returns:
 - `< 0`: Error code (e.g., `-EINVAL` for bad format).
 
 ## Watch Mechanism
-Watches are now sequence-based.
+Watches are sequence-based. Each commit produces a watch payload, not ApplyBatch bytes.
 - `SYS_ROOT_WATCH_OPEN`: Returns a handle.
-- `SYS_ROOT_WATCH_NEXT`: Reads the next batch of changes.
-  - Returns raw batch data.
+- `SYS_ROOT_WATCH_NEXT`: Reads the next watch payload for the next matching commit.
+  - Returns watch payload bytes containing 0..N watch events (see `abi::watch`).
   - Returns `EOVERFLOW` if the queue overflowed (slow reader).
   - Returns `ENOBUFS` if the provided buffer is too small.
 

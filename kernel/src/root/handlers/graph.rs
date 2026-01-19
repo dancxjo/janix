@@ -12,7 +12,6 @@ use abi::symbols::SymbolId;
 use core::sync::atomic::Ordering;
 
 use super::batch::{ValidatedOp, apply_ops_and_commit};
-use super::encode;
 use super::HandlerResult;
 
 /// Helper to resolve Shell to SymbolId
@@ -51,12 +50,8 @@ pub fn handle_create_node(
     // Build validated op
     let ops = [ValidatedOp::CreateNode { kind: kid, out_idx: 0 }];
     
-    // Encode as batch for watch consumers
-    let kind_bytes = encode::symbol_to_bytes(kid);
-    let commit_bytes = encode::encode_create_node(&kind_bytes, 0);
-    
-    // Apply through canonical commit path
-    let result = apply_ops_and_commit(graph, &ops, &commit_bytes);
+    // Apply through canonical commit path (watch payload is synthesized there)
+    let result = apply_ops_and_commit(graph, &ops);
     
     // Journal entry (kept separate for recovery purposes)
     if result.status == 0 && !result.created_ids.is_empty() {
@@ -111,12 +106,8 @@ pub fn handle_prop_set(
     // Build validated op
     let ops = [ValidatedOp::SetProp { id, key: kid, value }];
     
-    // Encode as batch for watch consumers
-    let key_bytes = encode::symbol_to_bytes(kid);
-    let commit_bytes = encode::encode_set_prop(id, &key_bytes, value);
-    
-    // Apply through canonical commit path
-    let result = apply_ops_and_commit(graph, &ops, &commit_bytes);
+    // Apply through canonical commit path (watch payload is synthesized there)
+    let result = apply_ops_and_commit(graph, &ops);
     
     if result.status != 0 {
         return (result.status, 0);
@@ -148,12 +139,8 @@ pub fn handle_link(
     // Build validated op
     let ops = [ValidatedOp::PutEdge { src, rel: rid, dst }];
     
-    // Encode as batch for watch consumers
-    let rel_bytes = encode::symbol_to_bytes(rid);
-    let commit_bytes = encode::encode_put_edge(src, &rel_bytes, dst);
-    
-    // Apply through canonical commit path
-    let result = apply_ops_and_commit(graph, &ops, &commit_bytes);
+    // Apply through canonical commit path (watch payload is synthesized there)
+    let result = apply_ops_and_commit(graph, &ops);
     
     (result.status, 0)
 }

@@ -7,6 +7,7 @@ pub mod encode;
 pub mod graph;
 pub mod logging;
 pub mod stream;
+pub mod watch_payload;
 
 pub use bytespace::*;
 pub use debug::*;

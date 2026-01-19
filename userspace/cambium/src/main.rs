@@ -9,9 +9,11 @@ use stem::thing::sys::{find, prop_get, prop_set};
 use stem::syscall::{root_watch_open, root_watch_next};
 use abi::schema::{kinds, keys};
 use abi::types::WatchSpec;
-use abi::root::{RootWatchFilter, OP_SET_PROP, REF_ABSOLUTE, BATCH_MAGIC, BATCH_VERSION};
+use abi::root::RootWatchFilter;
+use abi::watch::{self, DecodeError, ValueEncoding, WatchOp};
 use abi::ids::HandleId;
 use alloc::vec::Vec;
+use alloc::string::String;
 use core::time::Duration;
 
 struct ActiveBinding {
@@ -23,174 +25,179 @@ struct ActiveBinding {
     key_filter: Option<u32>,
 }
 
-#[derive(Clone, Copy)]
-enum BatchParseError {
-    BadHeader { magic: u32, version: u16 },
-    Truncated,
-    UnknownOp(u8),
-    InvalidRefKind(u8),
+fn hex_prefix(bytes: &[u8], max: usize) -> String {
+    let mut out = String::new();
+    let take = core::cmp::min(bytes.len(), max);
+    for &b in &bytes[..take] {
+        const HEX: &[u8; 16] = b"0123456789abcdef";
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0xf) as usize] as char);
+    }
+    out
 }
 
-fn log_unknown_shape_once(err: BatchParseError, len: usize) {
+fn log_unknown_shape_once(err: DecodeError, payload: &[u8], seq: u64) {
     use core::sync::atomic::{AtomicU64, Ordering};
 
-    const ISSUE_BAD_HEADER: u64 = 1 << 0;
-    const ISSUE_TRUNCATED: u64 = 1 << 1;
+    const ISSUE_BAD_VERSION: u64 = 1 << 0;
+    const ISSUE_UNKNOWN_OP: u64 = 1 << 1;
+    const ISSUE_UNKNOWN_ENCODING: u64 = 1 << 2;
+    const ISSUE_BAD_LENGTH: u64 = 1 << 3;
+    const ISSUE_INVALID_UTF8: u64 = 1 << 4;
+    const ISSUE_NONZERO_FLAGS: u64 = 1 << 5;
 
     static ISSUE_FLAGS: AtomicU64 = AtomicU64::new(0);
-    static UNKNOWN_TAGS: AtomicU64 = AtomicU64::new(0);
-    static INVALID_REF_KINDS: AtomicU64 = AtomicU64::new(0);
 
+    static WATCH_DECODE_ERRORS_TOTAL: AtomicU64 = AtomicU64::new(0);
+    static WATCH_DECODE_BAD_VERSION_TOTAL: AtomicU64 = AtomicU64::new(0);
+    static WATCH_DECODE_UNKNOWN_OP_TOTAL: AtomicU64 = AtomicU64::new(0);
+    static WATCH_DECODE_UNKNOWN_ENCODING_TOTAL: AtomicU64 = AtomicU64::new(0);
+    static WATCH_DECODE_BAD_LENGTH_TOTAL: AtomicU64 = AtomicU64::new(0);
+    static WATCH_DECODE_INVALID_UTF8_TOTAL: AtomicU64 = AtomicU64::new(0);
+    static WATCH_DECODE_NONZERO_FLAGS_TOTAL: AtomicU64 = AtomicU64::new(0);
+
+    WATCH_DECODE_ERRORS_TOTAL.fetch_add(1, Ordering::Relaxed);
+
+    let prefix = hex_prefix(payload, 16);
     match err {
-        BatchParseError::BadHeader { magic, version } => {
-            let prev = ISSUE_FLAGS.fetch_or(ISSUE_BAD_HEADER, Ordering::Relaxed);
-            if prev & ISSUE_BAD_HEADER == 0 {
+        DecodeError::BadVersion(version) => {
+            WATCH_DECODE_BAD_VERSION_TOTAL.fetch_add(1, Ordering::Relaxed);
+            let prev = ISSUE_FLAGS.fetch_or(ISSUE_BAD_VERSION, Ordering::Relaxed);
+            if prev & ISSUE_BAD_VERSION == 0 {
                 warn!(
-                    "cambium: unknown event shape: bad batch header magic=0x{:08x} version={} len={}",
-                    magic, version, len
+                    "cambium: unknown event shape: bad version={} len={} seq={} hex_prefix={}",
+                    version,
+                    payload.len(),
+                    seq,
+                    prefix
                 );
             }
         }
-        BatchParseError::Truncated => {
-            let prev = ISSUE_FLAGS.fetch_or(ISSUE_TRUNCATED, Ordering::Relaxed);
-            if prev & ISSUE_TRUNCATED == 0 {
+        DecodeError::UnknownOp(op) => {
+            WATCH_DECODE_UNKNOWN_OP_TOTAL.fetch_add(1, Ordering::Relaxed);
+            let prev = ISSUE_FLAGS.fetch_or(ISSUE_UNKNOWN_OP, Ordering::Relaxed);
+            if prev & ISSUE_UNKNOWN_OP == 0 {
                 warn!(
-                    "cambium: unknown event shape: truncated batch payload len={}",
-                    len
+                    "cambium: unknown event shape: unknown op=0x{:02x} len={} seq={} hex_prefix={}",
+                    op,
+                    payload.len(),
+                    seq,
+                    prefix
                 );
             }
         }
-        BatchParseError::UnknownOp(tag) => {
-            if tag < 64 {
-                let bit = 1u64 << tag;
-                let prev = UNKNOWN_TAGS.fetch_or(bit, Ordering::Relaxed);
-                if prev & bit == 0 {
-                    warn!(
-                        "cambium: unknown event shape: unknown op tag=0x{:02x}",
-                        tag
-                    );
-                }
-            } else {
+        DecodeError::UnknownEncoding(encoding) => {
+            WATCH_DECODE_UNKNOWN_ENCODING_TOTAL.fetch_add(1, Ordering::Relaxed);
+            let prev = ISSUE_FLAGS.fetch_or(ISSUE_UNKNOWN_ENCODING, Ordering::Relaxed);
+            if prev & ISSUE_UNKNOWN_ENCODING == 0 {
                 warn!(
-                    "cambium: unknown event shape: unknown op tag=0x{:02x}",
-                    tag
+                    "cambium: unknown event shape: unknown encoding=0x{:02x} len={} seq={} hex_prefix={}",
+                    encoding,
+                    payload.len(),
+                    seq,
+                    prefix
                 );
             }
         }
-        BatchParseError::InvalidRefKind(kind) => {
-            if kind < 64 {
-                let bit = 1u64 << kind;
-                let prev = INVALID_REF_KINDS.fetch_or(bit, Ordering::Relaxed);
-                if prev & bit == 0 {
-                    warn!(
-                        "cambium: unknown event shape: invalid thing ref kind=0x{:02x}",
-                        kind
-                    );
-                }
-            } else {
+        DecodeError::BadLength { expected, got } => {
+            WATCH_DECODE_BAD_LENGTH_TOTAL.fetch_add(1, Ordering::Relaxed);
+            let prev = ISSUE_FLAGS.fetch_or(ISSUE_BAD_LENGTH, Ordering::Relaxed);
+            if prev & ISSUE_BAD_LENGTH == 0 {
                 warn!(
-                    "cambium: unknown event shape: invalid thing ref kind=0x{:02x}",
-                    kind
+                    "cambium: unknown event shape: bad length expected={} got={} seq={} hex_prefix={}",
+                    expected,
+                    got,
+                    seq,
+                    prefix
+                );
+            }
+        }
+        DecodeError::InvalidUtf8 => {
+            WATCH_DECODE_INVALID_UTF8_TOTAL.fetch_add(1, Ordering::Relaxed);
+            let prev = ISSUE_FLAGS.fetch_or(ISSUE_INVALID_UTF8, Ordering::Relaxed);
+            if prev & ISSUE_INVALID_UTF8 == 0 {
+                warn!(
+                    "cambium: unknown event shape: invalid utf8 len={} seq={} hex_prefix={}",
+                    payload.len(),
+                    seq,
+                    prefix
+                );
+            }
+        }
+        DecodeError::NonZeroFlags(flags) => {
+            WATCH_DECODE_NONZERO_FLAGS_TOTAL.fetch_add(1, Ordering::Relaxed);
+            let prev = ISSUE_FLAGS.fetch_or(ISSUE_NONZERO_FLAGS, Ordering::Relaxed);
+            if prev & ISSUE_NONZERO_FLAGS == 0 {
+                warn!(
+                    "cambium: unknown event shape: nonzero flags=0x{:04x} len={} seq={} hex_prefix={}",
+                    flags,
+                    payload.len(),
+                    seq,
+                    prefix
                 );
             }
         }
     }
 }
 
-fn parse_ref(batch: &[u8], cursor: &mut usize) -> Result<u64, BatchParseError> {
-    if *cursor >= batch.len() {
-        return Err(BatchParseError::Truncated);
-    }
-    let kind = batch[*cursor];
-    *cursor += 1;
-    match kind {
-        REF_ABSOLUTE => {
-            if *cursor + 16 > batch.len() {
-                return Err(BatchParseError::Truncated);
-            }
-            let id = u64::from_le_bytes(batch[*cursor..*cursor + 8].try_into().unwrap());
-            *cursor += 16;
-            Ok(id)
-        }
-        abi::root::REF_LOCAL => {
-            if *cursor + 2 > batch.len() {
-                return Err(BatchParseError::Truncated);
-            }
-            *cursor += 2;
-            Ok(0)
-        }
-        _ => Err(BatchParseError::InvalidRefKind(kind)),
-    }
-}
+fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
+    let mut cursor = 0usize;
 
-/// Parse a batch and find SET_PROP operations on the given subject.
-/// Returns the value of the last SET_PROP found (for simplicity).
-fn find_set_prop_value(
-    batch: &[u8],
-    subject: u64,
-    key_filter: Option<u32>,
-) -> Result<Option<u64>, BatchParseError> {
-    // Minimal batch parsing: header (8 bytes) then ops
-    if batch.len() < 8 {
-        return Err(BatchParseError::Truncated);
-    }
-    let magic = u32::from_le_bytes(batch[0..4].try_into().unwrap());
-    let version = u16::from_le_bytes(batch[4..6].try_into().unwrap());
-    let op_count = u16::from_le_bytes(batch[6..8].try_into().unwrap()) as usize;
+    while cursor < payload.len() {
+        match watch::decode_event(&payload[cursor..]) {
+            Ok((header, value)) => {
+                let event_len = watch::WATCH_EVENT_HEADER_LEN + value.len();
+                cursor += event_len;
 
-    if magic != BATCH_MAGIC || version != BATCH_VERSION {
-        return Err(BatchParseError::BadHeader { magic, version });
-    }
-
-    let mut cursor = 8usize;
-    let mut result = None;
-
-    for _ in 0..op_count {
-        if cursor >= batch.len() {
-            return Err(BatchParseError::Truncated);
-        }
-        let tag = batch[cursor];
-        cursor += 1;
-
-        match tag {
-            OP_SET_PROP => {
-                // SET_PROP format: ThingRef + Key(16) + Value(8)
-                let subj = parse_ref(batch, &mut cursor)?;
-                if cursor + 16 + 8 > batch.len() {
-                    return Err(BatchParseError::Truncated);
+                let op = WatchOp::from_u8(header.op).unwrap_or(WatchOp::Upsert);
+                if op != WatchOp::Upsert {
+                    continue;
                 }
-                let key_id = u32::from_le_bytes(batch[cursor..cursor + 4].try_into().unwrap());
-                cursor += 16; // key
-                let value = u64::from_le_bytes(batch[cursor..cursor + 8].try_into().unwrap());
-                cursor += 8;
 
-                if subj == subject && subj != 0 && key_filter.map_or(true, |k| k == key_id) {
-                    result = Some(value);
+                let subject = header.subject.to_u64_lossy();
+                if subject == 0 || subject != binding.source.to_u64_lossy() {
+                    continue;
+                }
+
+                let predicate = header.predicate.to_u32_lossy();
+                if let Some(filter) = binding.key_filter {
+                    if predicate != filter {
+                        continue;
+                    }
+                }
+
+                let encoding = ValueEncoding::from_u8(header.value_encoding)
+                    .unwrap_or(ValueEncoding::Bytes);
+                if encoding != ValueEncoding::U64LE {
+                    continue;
+                }
+
+                if value.len() != 8 {
+                    log_unknown_shape_once(
+                        DecodeError::BadLength { expected: 8, got: value.len() },
+                        payload,
+                        seq,
+                    );
+                    break;
+                }
+
+                let next_value = u64::from_le_bytes(value.try_into().unwrap());
+                binding.last_value = Some(next_value);
+                if prop_set(binding.target, keys::UI_TEXT, next_value).is_ok() {
+                    info!(
+                        "Updated target {} with value {} (seq={})",
+                        binding.target.to_u64_lossy(),
+                        next_value,
+                        seq
+                    );
                 }
             }
-            0x01 => {
-                // CREATE_NODE: kind(16) + out_ref(2) = 18 bytes
-                if cursor + 18 > batch.len() {
-                    return Err(BatchParseError::Truncated);
-                }
-                cursor += 18;
-            }
-            0x02 => {
-                // PUT_EDGE: subject ThingRef + predicate(16) + object ThingRef
-                let _src = parse_ref(batch, &mut cursor)?;
-                if cursor + 16 > batch.len() {
-                    return Err(BatchParseError::Truncated);
-                }
-                cursor += 16; // predicate
-                let _dst = parse_ref(batch, &mut cursor)?;
-            }
-            _ => {
-                return Err(BatchParseError::UnknownOp(tag));
+            Err(e) => {
+                log_unknown_shape_once(e, payload, seq);
+                break;
             }
         }
     }
-
-    Ok(result)
 }
 
 // `drain_watch` removed, replaced by `stem::root_watch::watch_drain`
@@ -275,34 +282,14 @@ fn main() -> ! {
     // PHASE 1: Drain all watches to catch up on historical events
     // ============================================================
     info!("CATCH-UP: Draining {} watches for historical events...", bindings.len());
-    let mut batch_buf = [0u8; 4096];
+    let mut payload_buf = [0u8; 4096];
     let mut total_drained = 0usize;
     let mut total_overflows = 0usize;
     let mut last_seq_max: Option<u64> = None;
     
     for binding in &mut bindings {
-        let res = stem::root_watch::watch_drain(binding.watch_id, &mut batch_buf, |seq, batch| {
-            match find_set_prop_value(
-                batch,
-                binding.source.to_u64_lossy(),
-                binding.key_filter,
-            ) {
-                Ok(Some(value)) => {
-                    binding.last_value = Some(value);
-                    if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
-                        info!(
-                            "DRAIN: Updated target {} with value {} (seq={})",
-                            binding.target.to_u64_lossy(),
-                            value,
-                            seq
-                        );
-                    }
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    log_unknown_shape_once(e, batch.len());
-                }
-            }
+        let res = stem::root_watch::watch_drain(binding.watch_id, &mut payload_buf, |seq, payload| {
+            apply_watch_payload(payload, binding, seq);
         });
         
         match res {
@@ -325,13 +312,13 @@ fn main() -> ! {
     match last_seq_max {
         Some(seq) => {
             info!(
-                "cambium: drain complete batches={} overflows={} last_seq={}",
+                "cambium: drain complete payloads={} overflows={} last_seq={}",
                 total_drained, total_overflows, seq
             );
         }
         None => {
             info!(
-                "cambium: drain complete batches={} overflows={} last_seq=none",
+                "cambium: drain complete payloads={} overflows={} last_seq=none",
                 total_drained, total_overflows
             );
         }
@@ -348,36 +335,14 @@ fn main() -> ! {
         for binding in &mut bindings {
             let mut seq: u64 = 0;
 
-            match root_watch_next(binding.watch_id, &mut seq, &mut batch_buf) {
+            match root_watch_next(binding.watch_id, &mut seq, &mut payload_buf) {
                 Ok(len) if len > 0 => {
                     did_work = true;
 
-                    // Parse batch to find SET_PROP value for our subject
-                    match find_set_prop_value(
-                        &batch_buf[..len],
-                        binding.source.to_u64_lossy(),
-                        binding.key_filter,
-                    ) {
-                        Ok(Some(value)) => {
-                            binding.last_value = Some(value);
-                            // Update target's UI_TEXT property
-                            if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
-                                info!(
-                                    "Updated target {} with value {} (seq={})",
-                                    binding.target.to_u64_lossy(),
-                                    value,
-                                    seq
-                                );
-                            }
-                        }
-                        Ok(None) => {}
-                        Err(e) => {
-                            log_unknown_shape_once(e, len);
-                        }
-                    }
+                    apply_watch_payload(&payload_buf[..len], binding, seq);
                 }
                 Ok(_) => {
-                    // No events or zero-length batch
+                    // No events or zero-length payload
                 }
                 Err(abi::errors::Errno::EAGAIN) => {
                     // No pending events

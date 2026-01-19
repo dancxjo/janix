@@ -9,6 +9,7 @@
 extern crate alloc;
 use stem::println;
 use abi::root::*;
+use abi::watch;
 use abi::types::WATCH_START_LATEST;
 use abi::syscall::*;
 
@@ -132,7 +133,7 @@ fn watch_next(handle: usize, buf: &mut [u8]) -> Result<(usize, u64), i64> {
     }
 }
 
-/// Drain watch events until EAGAIN, returning number of batches seen.
+/// Drain watch events until EAGAIN, returning number of payloads seen.
 fn drain_until_eagain(handle: usize, buf: &mut [u8]) -> Result<usize, i64> {
     let mut batches = 0usize;
     loop {
@@ -152,14 +153,7 @@ fn drain_until_eagain(handle: usize, buf: &mut [u8]) -> Result<usize, i64> {
 
 /// Validate batch header
 fn validate_header(buf: &[u8]) -> bool {
-    if buf.len() < 8 {
-        return false;
-    }
-    let magic = u32::from_le_bytes(buf[0..4].try_into().unwrap());
-    let version = u16::from_le_bytes(buf[4..6].try_into().unwrap());
-    let op_count = u16::from_le_bytes(buf[6..8].try_into().unwrap());
-    
-    magic == BATCH_MAGIC && version == BATCH_VERSION && op_count == 1
+    watch::decode_event(buf).is_ok()
 }
 
 #[stem::main]
@@ -309,7 +303,7 @@ fn test_main() -> i32 {
                 println!("Received watch event: len={}, seq={}", len, seq);
                 
                 // Validate header
-                if validate_header(&buf) {
+                if validate_header(&buf[..len]) {
                     println!("PASS: Valid THRT header with op_count=1");
                 } else {
                     println!("FAIL: Invalid batch header");
@@ -360,7 +354,7 @@ fn test_main() -> i32 {
                     println!("Received watch event: len={}, seq={}", len, seq);
                     
                     // Validate header
-                    if validate_header(&buf) {
+                    if validate_header(&buf[..len]) {
                         println!("PASS: Valid THRT header with op_count=1");
                     } else {
                         println!("FAIL: Invalid batch header");
@@ -415,7 +409,7 @@ fn test_main() -> i32 {
                     println!("Received watch event: len={}, seq={}", len, seq);
                     
                     // Validate header
-                    if validate_header(&buf) {
+                    if validate_header(&buf[..len]) {
                         println!("PASS: Valid THRT header with op_count=1");
                     } else {
                         println!("FAIL: Invalid batch header");
@@ -471,7 +465,7 @@ fn test_main() -> i32 {
                 Ok((len, seq)) => {
                     println!("APPLY_BATCH event: len={}, seq={}", len, seq);
                     
-                    if validate_header(&buf) && len > 8 && buf[8] == OP_CREATE_NODE {
+                    if validate_header(&buf[..len]) {
                         println!("PASS: APPLY_BATCH and single-op both produce consistent watch events");
                     } else {
                         println!("FAIL: APPLY_BATCH event inconsistent");

@@ -21,6 +21,7 @@ pub mod types;
 pub mod root;
 pub mod ids;
 pub mod vm;
+pub mod watch;
 
 pub mod logging;
 pub mod hid;

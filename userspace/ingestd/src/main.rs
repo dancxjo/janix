@@ -3,7 +3,8 @@
 
 extern crate alloc;
 use stem::syscall;
-use abi::types::{WatchSpec, WatchEvent, WatchMode};
+use abi::types::{WatchSpec, WatchMode};
+use abi::watch::{self, WatchOp};
 use abi::query::{QueryStep};
 use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
 mod behavior;
@@ -50,14 +51,23 @@ fn main() -> Result<(), abi::errors::Errno> {
          let res = syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf);
          match res {
              Ok(len) if len > 0 => {
-                 // Parse WatchEvent from the returned batch payload
-                 if len >= core::mem::size_of::<WatchEvent>() {
-                     let evt: WatchEvent = unsafe {
-                         core::ptr::read_unaligned(watch_buf.as_ptr() as *const _)
-                     };
-                     // MatchFound
-                     if evt.kind == 1 { 
-                         process_asset(evt.node_id);
+                 let mut cursor = 0usize;
+                 let payload = &watch_buf[..len];
+                 while cursor < payload.len() {
+                     match watch::decode_event(&payload[cursor..]) {
+                         Ok((header, value)) => {
+                             cursor += watch::WATCH_EVENT_HEADER_LEN + value.len();
+                             if WatchOp::from_u8(header.op) != Some(WatchOp::Upsert) {
+                                 continue;
+                             }
+                             let node_id = header.subject.to_u64_lossy();
+                             if node_id != 0 {
+                                 process_asset(node_id);
+                             }
+                         }
+                         Err(_) => {
+                             break;
+                         }
                      }
                  }
              }

@@ -1,10 +1,12 @@
 //! Watch payload encoding for commit outputs.
 
 use alloc::vec::Vec;
-use abi::watch::{self, ValueEncoding, WatchEvent, WatchOp};
+use abi::root::{WATCH_F_KIND, WATCH_F_PREDICATE, WATCH_F_SUBJECT};
+use abi::watch::{self, DecodeError, ValueEncoding, WatchEvent, WatchOp};
 use abi::wire::{PredicateId, ThingId as WireThingId};
 use abi::symbols::SymbolId;
 use crate::root::graph::ThingId;
+use crate::root::graph::WatchFilter;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,4 +141,88 @@ pub fn track_watch_encode_reject(reason: WatchEncodeRejectReason) {
         }
     }
     log_watch_encode_reject_once(reason);
+}
+
+struct CoalesceEntry {
+    subject: WireThingId,
+    predicate: PredicateId,
+    encoding: u8,
+    value_len: usize,
+    offset: usize,
+}
+
+fn event_matches_filter(
+    header: &watch::WatchEventHeader,
+    value: &[u8],
+    filter: &WatchFilter,
+) -> bool {
+    if (filter.flags & WATCH_F_SUBJECT) != 0 {
+        if header.subject.to_u64_lossy() != filter.subject_lo {
+            return false;
+        }
+    }
+
+    if (filter.flags & WATCH_F_PREDICATE) != 0 {
+        if header.predicate.to_u32_lossy() != filter.predicate_id {
+            return false;
+        }
+    }
+
+    if (filter.flags & WATCH_F_KIND) != 0 {
+        if header.predicate != watch::WATCH_PRED_KIND {
+            return false;
+        }
+        if header.value_encoding != ValueEncoding::Bytes as u8 || value.len() != 4 {
+            return false;
+        }
+        let kind_id = u32::from_le_bytes(value.try_into().unwrap());
+        if kind_id != filter.kind_id {
+            return false;
+        }
+    }
+
+    true
+}
+
+pub fn filter_watch_payload(
+    payload: &[u8],
+    filter: &WatchFilter,
+) -> Result<Vec<u8>, DecodeError> {
+    let mut cursor = 0usize;
+    let mut out = Vec::new();
+    let mut coalesce: Vec<CoalesceEntry> = Vec::new();
+
+    while cursor < payload.len() {
+        let event_start = cursor;
+        let (header, value) = watch::decode_event(&payload[cursor..])?;
+        let event_len = watch::WATCH_EVENT_HEADER_LEN + value.len();
+        cursor += event_len;
+
+        if !event_matches_filter(&header, value, filter) {
+            continue;
+        }
+
+        if let Some(entry) = coalesce.iter_mut().find(|entry| {
+            entry.subject == header.subject
+                && entry.predicate == header.predicate
+                && entry.encoding == header.value_encoding
+                && entry.value_len == value.len()
+        }) {
+            let value_offset = entry.offset + watch::WATCH_EVENT_HEADER_LEN;
+            out[value_offset..value_offset + value.len()].copy_from_slice(value);
+            continue;
+        }
+
+        let offset = out.len();
+        out.extend_from_slice(&payload[event_start..event_start + event_len]);
+        coalesce.push(CoalesceEntry {
+            subject: header.subject,
+            predicate: header.predicate,
+            encoding: header.value_encoding,
+            value_len: value.len(),
+            offset,
+        });
+    }
+
+    Ok(out)
 }

@@ -84,6 +84,8 @@ extern "C" fn font_loader_entry() -> ! {
     use abi::query::{QueryOpKind, QueryStep};
     use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
     use abi::types::{WatchMode, WatchSpec};
+    use abi::schema::kinds;
+    use abi::root::RootWatchFilter;
     use stem::syscall;
     use stem::thing::sys::{bytespace_info, describe_thing, prop_get};
     use stem::thing::ThingId;
@@ -104,11 +106,16 @@ extern "C" fn font_loader_entry() -> ! {
         symbol,
     }];
 
+    let boot_module_kind = stem::thing::sys::intern(kinds::BOOT_MODULE).unwrap_or(0);
+    let filter = RootWatchFilter::kind(boot_module_kind);
+
     let spec = WatchSpec {
         mode: WatchMode::QueryThenStream as u32,
         query_ptr: steps.as_ptr() as u64,
         query_len: steps.len() as u64,
         start_seq: 0,
+        filter_ptr: &filter as *const _ as u64,
+        filter_len: core::mem::size_of::<abi::root::RootWatchFilter>() as u64,
         ..Default::default()
     };
 
@@ -185,7 +192,6 @@ extern "C" fn font_loader_entry() -> ! {
     }
 
     let mut watch_buf = [0u8; 4096];
-    let boot_module_kind = stem::thing::sys::intern(kinds::BOOT_MODULE).unwrap_or(0);
 
     // PHASE 1: Catch-up (Drain)
     match root_watch::watch_drain(watch_id, &mut watch_buf, |_seq, bytes| {

@@ -5,6 +5,7 @@
 //! Watches may filter commits by subject/predicate/kind using O(1) summary matching.
 
 use crate::root::graph::{Graph, GlobalWatch, WatchFilter, WATCH_SCAN_LIMIT, commit_matches};
+use crate::root::handlers::watch_payload::filter_watch_payload;
 use crate::root::resources::{stream, ResourceHandle};
 use crate::root::symbols::Interner;
 use crate::root::query::PreparedStep;
@@ -142,8 +143,7 @@ pub fn handle_watch_next(
     
     // 3. Bounded scan for matching commit
     let mut scanned = 0usize;
-    let mut found_cursor: Option<u64> = None;
-    
+
     while scanned < WATCH_SCAN_LIMIT {
         // Cursor ahead of newest: no new commits yet
         if cursor > newest {
@@ -166,61 +166,62 @@ pub fn handle_watch_next(
         };
         
         // Check if commit matches filter using summary (O(1))
-        if commit_matches(&filter, &record.summary) {
-            // Match found!
-            found_cursor = Some(cursor);
-            break;
-        } else {
+        if !commit_matches(&filter, &record.summary) {
             // No match, skip to next
             cursor += 1;
             scanned += 1;
             continue;
         }
-    }
-    
-    // If scan limit reached without finding a match
-    if found_cursor.is_none() {
-        // Save progress so next call continues from where we left off
+
+        let match_cursor = cursor;
+        let data = match graph.commit_history.get(match_cursor) {
+            Some(d) => d,
+            None => return (-75, 0), // Shouldn't happen, treat as overflow
+        };
+
+        let filtered = if filter.matches_all() {
+            None
+        } else {
+            match filter_watch_payload(data, &filter) {
+                Ok(bytes) => Some(bytes),
+                Err(_) => return (-22, 0),
+            }
+        };
+
+        let payload = match filtered.as_ref() {
+            Some(bytes) if bytes.is_empty() => {
+                cursor += 1;
+                scanned += 1;
+                continue;
+            }
+            Some(bytes) => bytes.as_slice(),
+            None => data,
+        };
+
+        if (out_len as usize) < payload.len() {
+            return (-28, 0); // -ENOSPC (do not advance cursor)
+        }
+
+        unsafe {
+            let src = payload.as_ptr();
+            let dst = out_ptr as *mut u8;
+            core::ptr::copy_nonoverlapping(src, dst, payload.len());
+        }
+
+        msg.reply.p0.store(match_cursor, Ordering::Relaxed);
+
         if let Some(watch) = graph.global_watches.get_mut(&id) {
-            watch.cursor_seq = cursor;
+            watch.cursor_seq = match_cursor + 1;
         }
-        return (-11, 0); // -EAGAIN (caller will retry)
+
+        return (0, payload.len() as u64);
     }
-    
-    let match_cursor = found_cursor.unwrap();
-    
-    // 4. Fetch matching commit and deliver
-    let data = match graph.commit_history.get(match_cursor) {
-        Some(d) => d,
-        None => {
-            // Shouldn't happen, treat as overflow
-            return (-75, 0);
-        }
-    };
-    
-    // 5. Check capacity
-    if (out_len as usize) < data.len() {
-        return (-28, 0); // -ENOSPC (do not advance cursor)
-    }
-    
-    // 6. Copy data to user buffer
-    unsafe {
-        let src = data.as_ptr();
-        let dst = out_ptr as *mut u8;
-        core::ptr::copy_nonoverlapping(src, dst, data.len());
-    }
-    
-    // 7. Write seq into reply (out_seq_ptr handled by syscall layer via p0)
-    msg.reply.p0.store(match_cursor, Ordering::Relaxed);
-    
-    let len = data.len();
-    
-    // 8. Advance cursor past the delivered commit
+
+    // Save progress so next call continues from where we left off
     if let Some(watch) = graph.global_watches.get_mut(&id) {
-        watch.cursor_seq = match_cursor + 1;
+        watch.cursor_seq = cursor;
     }
-    
-    (0, len as u64) // Success, return length
+    (-11, 0) // -EAGAIN (caller will retry)
 }
 
 pub fn handle_watch_close(

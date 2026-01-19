@@ -21,6 +21,7 @@ mod present;
 mod raster;
 mod reclaimer;
 mod surface;
+mod svg;
 // mod target;
 // mod target_cpu;
 pub mod ui;
@@ -405,6 +406,9 @@ fn main(arg: usize) -> ! {
         DisplayBackend::BootFB => geometry::Color::from_u32(0xFFFF0000),    // Bright red
         DisplayBackend::Unknown => geometry::Color::from_u32(0xFFFFFF00),   // Yellow for unknown
     };
+
+    // Set cursor target color based on backend (boot time configuration)
+    cursor::set_target_color(backend_indicator_color);
 
     // 2. Presenter Setup
     let mut presenter = if target.driver_req != 0 && target.driver_resp != 0 {

@@ -22,7 +22,56 @@ pub fn fetch() -> Result<()> {
     fetch_fonts(&assets)?;
     fetch_icons(&assets)?;
     fetch_cursors(&assets)?;
+    fetch_future_cursors(&assets)?;
     fetch_pciids(&assets)?;
+
+    Ok(())
+}
+
+fn fetch_future_cursors(assets: &Path) -> Result<()> {
+    println!("==> Fetching Future Cursors (SVG)...");
+    require_tool("git")?;
+
+    let root = project_root();
+    let vendor = root.join("vendor");
+    let future_dir = vendor.join("future-cursors");
+
+    if !future_dir.join(".git").exists() {
+        if future_dir.exists() {
+            fs::remove_dir_all(&future_dir)?;
+        }
+        println!("    Cloning Future-cursors repo...");
+        run_cmd(
+            Command::new("git")
+                .arg("clone")
+                .arg("--depth=1")
+                .arg("https://github.com/yeyushengfan258/Future-cursors")
+                .arg(&future_dir),
+        )?;
+    } else {
+        println!("    Future-cursors repo already exists.");
+    }
+
+    let dest_dir = assets.join("cursors/future");
+    if dest_dir.exists() {
+        fs::remove_dir_all(&dest_dir)?;
+    }
+    fs::create_dir_all(&dest_dir)?;
+
+    let src_dir = future_dir.join("src/svg");
+    if src_dir.exists() {
+        println!("    Copying SVGs to assets/cursors/future/...");
+        for entry in fs::read_dir(src_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().map_or(false, |e| e == "svg") {
+                let file_name = path.file_name().unwrap();
+                fs::copy(&path, dest_dir.join(file_name))?;
+            }
+        }
+    } else {
+        eprintln!("    [WARNING] src/svg not found in Future-cursors repo.");
+    }
 
     Ok(())
 }

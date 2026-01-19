@@ -47,6 +47,7 @@ pub fn encode_create_node(kind_bytes: &[u8; 16], out_ref: u16) -> Vec<u8> {
     buf.push(OP_CREATE_NODE);
     buf.extend_from_slice(kind_bytes);
     buf.extend_from_slice(&out_ref.to_le_bytes());
+    debug_assert_eq!(buf.len(), 8 + 1 + 16 + 2);
     buf
 }
 
@@ -65,6 +66,7 @@ pub fn encode_put_edge(src: ThingId, rel_bytes: &[u8; 16], dst: ThingId) -> Vec<
     encode_absolute_ref(&mut buf, src);
     buf.extend_from_slice(rel_bytes);
     encode_absolute_ref(&mut buf, dst);
+    debug_assert_eq!(buf.len(), 8 + 1 + 17 + 16 + 17);
     buf
 }
 
@@ -83,6 +85,7 @@ pub fn encode_set_prop(id: ThingId, key_bytes: &[u8; 16], value: u64) -> Vec<u8>
     encode_absolute_ref(&mut buf, id);
     buf.extend_from_slice(key_bytes);
     buf.extend_from_slice(&value.to_le_bytes());
+    debug_assert_eq!(buf.len(), 8 + 1 + 17 + 16 + 8);
     buf
 }
 

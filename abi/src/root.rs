@@ -2,6 +2,33 @@
 //!
 //! Defines the binary format for `SYS_ROOT_APPLY_BATCH`.
 //! Use safe byte-level parsing; do not cast unaligned bytes to these structs.
+//!
+//! ============================================================================
+//! Watch Batch Wire Format (canonical)
+//! ============================================================================
+//! All integers are little-endian.
+//!
+//! Batch header (8 bytes):
+//!   [magic: u32][version: u16][op_count: u16]
+//!
+//! Then `op_count` operations, each prefixed with a 1-byte op tag.
+//!
+//! ThingRef encoding (variable size):
+//!   tag: u8 (REF_ABSOLUTE or REF_LOCAL)
+//!   if REF_ABSOLUTE: [thing_id: 16 bytes]
+//!   if REF_LOCAL:    [local_index: u16]
+//!
+//! Operation layouts:
+//!   OP_CREATE_NODE:
+//!     [tag: u8][kind_id: 16 bytes][out_ref: u16]
+//!
+//!   OP_PUT_EDGE:
+//!     [tag: u8][subject: ThingRef][predicate_id: 16 bytes][object: ThingRef]
+//!
+//!   OP_SET_PROP:
+//!     [tag: u8][subject: ThingRef][key_id: 16 bytes][value: u64]
+//!
+//! Watch consumers must treat each watch payload as a batch payload.
 
 /// Batch Header (8 bytes)
 /// [Magic: 4] [Version: 2] [OpCount: 2]

@@ -126,12 +126,12 @@ extern "C" fn font_loader_entry() -> ! {
     };
 
     // Shared processing logic for both drain and stream
-    let mut process_batch = |_seq: u64, buf: &[u8]| {
+    fn process_font_batch(buf: &[u8]) {
         let len = buf.len();
         // Minimal length check for WatchEvent
         if len >= core::mem::size_of::<abi::types::WatchEvent>() {
-            let evt: abi::types::WatchEvent = unsafe { 
-                core::ptr::read_unaligned(buf.as_ptr() as *const _) 
+            let evt: abi::types::WatchEvent = unsafe {
+                core::ptr::read_unaligned(buf.as_ptr() as *const _)
             };
             let node_id = ThingId::from_u64(evt.node_id);
             let mut desc_buf = [0u8; 512];
@@ -158,12 +158,14 @@ extern "C" fn font_loader_entry() -> ! {
                 }
             }
         }
-    };
+    }
 
     let mut watch_buf = [0u8; 4096];
 
     // PHASE 1: Catch-up (Drain)
-    match root_watch::drain(watch_id, &mut watch_buf, &mut process_batch) {
+    match root_watch::watch_drain(watch_id, &mut watch_buf, |_seq, bytes| {
+        process_font_batch(bytes)
+    }) {
         Ok(stats) => {
             if stats.batches > 0 || stats.overflows > 0 {
                 log!("[font_loader] drain complete: batches={} overflows={}", stats.batches, stats.overflows);
@@ -179,7 +181,7 @@ extern "C" fn font_loader_entry() -> ! {
     loop {
         match syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf) {
             Ok(len) if len > 0 => {
-                process_batch(seq_out, &watch_buf[..len]);
+                process_font_batch(&watch_buf[..len]);
             }
             Ok(_) => {
                 // No data (or just heartbeat/ACK)

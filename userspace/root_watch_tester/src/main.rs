@@ -132,6 +132,24 @@ fn watch_next(handle: usize, buf: &mut [u8]) -> Result<(usize, u64), i64> {
     }
 }
 
+/// Drain watch events until EAGAIN, returning number of batches seen.
+fn drain_until_eagain(handle: usize, buf: &mut [u8]) -> Result<usize, i64> {
+    let mut batches = 0usize;
+    loop {
+        match watch_next(handle, buf) {
+            Ok((_len, _seq)) => {
+                batches += 1;
+            }
+            Err(-11) => {
+                return Ok(batches);
+            }
+            Err(e) => {
+                return Err(e);
+            }
+        }
+    }
+}
+
 /// Validate batch header
 fn validate_header(buf: &[u8]) -> bool {
     if buf.len() < 8 {
@@ -215,6 +233,53 @@ fn test_main() -> i32 {
         
         if replay_watch != 0 {
             println!("PASS: start_seq=0 watch opened successfully (will see historical events if any)");
+        }
+    }
+
+    // ========================================
+    // Test 0.5: Drain until EAGAIN contract
+    // ========================================
+    println!("\n--- Test 0.5: Drain until EAGAIN contract ---");
+    {
+        let drain_watch = match open_watch() {
+            Ok(h) => h,
+            Err(e) => {
+                println!("FAIL: Could not open drain watch: {}", e);
+                failures += 1;
+                0
+            }
+        };
+
+        if drain_watch != 0 {
+            let mut buf = [0u8; 256];
+            match watch_next(drain_watch, &mut buf) {
+                Err(-11) => {
+                    println!("PASS: Initial watch_next returned EAGAIN");
+                }
+                Ok((len, _)) => {
+                    println!("INFO: Initial watch_next returned {} bytes (non-fresh state)", len);
+                }
+                Err(e) => {
+                    println!("FAIL: Initial watch_next error: {}", e);
+                    failures += 1;
+                }
+            }
+
+            let _node = create_node("test.drain");
+            let mut drain_buf = [0u8; 256];
+            match drain_until_eagain(drain_watch, &mut drain_buf) {
+                Ok(batches) if batches > 0 => {
+                    println!("PASS: drain received {} batches then EAGAIN", batches);
+                }
+                Ok(_) => {
+                    println!("FAIL: drain received 0 batches");
+                    failures += 1;
+                }
+                Err(e) => {
+                    println!("FAIL: drain error: {}", e);
+                    failures += 1;
+                }
+            }
         }
     }
     

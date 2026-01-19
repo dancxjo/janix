@@ -8,7 +8,7 @@ use stem::info;
 use time::OffsetDateTime;
 use stem::thing::ThingId;
 use abi::ids::HandleId;
-use stem::thing::sys::{create_node, prop_set, link, bytespace_create, bytespace_write};
+use stem::thing::sys::{create_node, prop_set, link, bytespace_create, bytespace_write, intern};
 use abi::schema::{kinds, keys, rels};
 
 
@@ -143,10 +143,11 @@ fn main() -> ! {
         // Let's use properties pointing to ThingIds.
         prop_set(binding, keys::BINDING_SOURCE, clock_thing.to_u64_lossy()).ok();
         prop_set(binding, keys::BINDING_TARGET, text.to_u64_lossy()).ok();
-        // Map type: 0 = direct copy (or specific enum value).
-        // Plan said "clock_now_text_to_ui_text_value". Let's say that's 1.
-        // Or since we just copy the bytespace ID, 0 is fine if bindd knows what to do.
-        prop_set(binding, keys::BINDING_MAP, 1).ok();
+        // Map: source key symbol id to bind from (clock.now_text).
+        let map_key = intern(keys::CLOCK_NOW_TEXT).unwrap_or(0);
+        if map_key != 0 {
+            prop_set(binding, keys::BINDING_MAP, map_key as u64).ok();
+        }
 
         info!("Binding created: {} (source={} target={})", 
               binding.to_u64_lossy(), 

@@ -1,9 +1,12 @@
 //! Helper module for Root watch patterns.
 
-use crate::syscall::{self, root_watch_next};
 use abi::errors::Errno;
+use crate::syscall::root_watch_next;
 
-/// Statistics returned by `drain`.
+/// Root watch handle type (syscall handle id).
+pub type HandleId = usize;
+
+/// Statistics returned by `watch_drain`.
 #[derive(Debug, Clone, Default)]
 pub struct DrainStats {
     /// Number of batches successfully processed.
@@ -32,44 +35,34 @@ pub struct DrainStats {
 /// * `Ok(stats)` - Drain completed successfully (hit EAGAIN).
 /// * `Err(ENOSPC)` - The buffer was too small for a pending batch.
 /// * `Err(e)` - Other system error.
-pub fn drain<F>(
-    handle: usize,
+pub fn watch_drain<F>(
+    handle: HandleId,
     buf: &mut [u8],
     mut handler: F,
 ) -> Result<DrainStats, Errno>
 where
     F: FnMut(u64, &[u8]),
 {
-
     let mut stats = DrainStats::default();
     let mut seq_out = 0u64;
 
     loop {
         match root_watch_next(handle, &mut seq_out, buf) {
             Ok(len) => {
-                // Determine if this is a valid batch or empty
-                if len > 0 {
-                    stats.batches += 1;
-                    stats.last_seq = Some(seq_out);
-                    handler(seq_out, &buf[..len]);
-                } else {
-                    // Start seq 0 sometimes returns empty batch at start?
-                    // Or maybe just next? 
-                    // If len == 0 and Ok, it might be just an ACK? 
-                    // Usually watch_next returns EAGAIN if empty.
-                    // We'll treat len=0 as "no data but success", continue draining?
-                    // Safe to continue.
-                }
+                stats.batches += 1;
+                stats.last_seq = Some(seq_out);
+                handler(seq_out, &buf[..len]);
             }
             Err(Errno::EAGAIN) => {
                 // Done draining
                 return Ok(stats);
             }
             Err(Errno::EOVERFLOW) => {
-                // Watch overflowed, gap in sequence. Log and continue.
-                // We don't have logging here based on user request "No logging inside helper".
                 stats.overflows += 1;
                 continue;
+            }
+            Err(Errno::ENOSPC) => {
+                return Err(Errno::ENOSPC);
             }
             Err(e) => {
                 // Other errors (e.g. ENOSPC, EBADF) are fatal
@@ -77,4 +70,12 @@ where
             }
         }
     }
+}
+
+#[deprecated(note = "use watch_drain instead")]
+pub fn drain<F>(handle: HandleId, buf: &mut [u8], handler: F) -> Result<DrainStats, Errno>
+where
+    F: FnMut(u64, &[u8]),
+{
+    watch_drain(handle, buf, handler)
 }

@@ -3,7 +3,7 @@
 
 extern crate alloc;
 
-use stem::info;
+use stem::{info, warn};
 use stem::thing::ThingId;
 use stem::thing::sys::{find, prop_get, prop_set};
 use stem::syscall::{root_watch_open, root_watch_next};
@@ -20,21 +20,126 @@ struct ActiveBinding {
     watch_id: usize,
     /// Cached last value (for initial sync)
     last_value: Option<u64>,
+    key_filter: Option<u32>,
+}
+
+#[derive(Clone, Copy)]
+enum BatchParseError {
+    BadHeader { magic: u32, version: u16 },
+    Truncated,
+    UnknownOp(u8),
+    InvalidRefKind(u8),
+}
+
+fn log_unknown_shape_once(err: BatchParseError, len: usize) {
+    use core::sync::atomic::{AtomicU64, Ordering};
+
+    const ISSUE_BAD_HEADER: u64 = 1 << 0;
+    const ISSUE_TRUNCATED: u64 = 1 << 1;
+
+    static ISSUE_FLAGS: AtomicU64 = AtomicU64::new(0);
+    static UNKNOWN_TAGS: AtomicU64 = AtomicU64::new(0);
+    static INVALID_REF_KINDS: AtomicU64 = AtomicU64::new(0);
+
+    match err {
+        BatchParseError::BadHeader { magic, version } => {
+            let prev = ISSUE_FLAGS.fetch_or(ISSUE_BAD_HEADER, Ordering::Relaxed);
+            if prev & ISSUE_BAD_HEADER == 0 {
+                warn!(
+                    "cambium: unknown event shape: bad batch header magic=0x{:08x} version={} len={}",
+                    magic, version, len
+                );
+            }
+        }
+        BatchParseError::Truncated => {
+            let prev = ISSUE_FLAGS.fetch_or(ISSUE_TRUNCATED, Ordering::Relaxed);
+            if prev & ISSUE_TRUNCATED == 0 {
+                warn!(
+                    "cambium: unknown event shape: truncated batch payload len={}",
+                    len
+                );
+            }
+        }
+        BatchParseError::UnknownOp(tag) => {
+            if tag < 64 {
+                let bit = 1u64 << tag;
+                let prev = UNKNOWN_TAGS.fetch_or(bit, Ordering::Relaxed);
+                if prev & bit == 0 {
+                    warn!(
+                        "cambium: unknown event shape: unknown op tag=0x{:02x}",
+                        tag
+                    );
+                }
+            } else {
+                warn!(
+                    "cambium: unknown event shape: unknown op tag=0x{:02x}",
+                    tag
+                );
+            }
+        }
+        BatchParseError::InvalidRefKind(kind) => {
+            if kind < 64 {
+                let bit = 1u64 << kind;
+                let prev = INVALID_REF_KINDS.fetch_or(bit, Ordering::Relaxed);
+                if prev & bit == 0 {
+                    warn!(
+                        "cambium: unknown event shape: invalid thing ref kind=0x{:02x}",
+                        kind
+                    );
+                }
+            } else {
+                warn!(
+                    "cambium: unknown event shape: invalid thing ref kind=0x{:02x}",
+                    kind
+                );
+            }
+        }
+    }
+}
+
+fn parse_ref(batch: &[u8], cursor: &mut usize) -> Result<u64, BatchParseError> {
+    if *cursor >= batch.len() {
+        return Err(BatchParseError::Truncated);
+    }
+    let kind = batch[*cursor];
+    *cursor += 1;
+    match kind {
+        REF_ABSOLUTE => {
+            if *cursor + 16 > batch.len() {
+                return Err(BatchParseError::Truncated);
+            }
+            let id = u64::from_le_bytes(batch[*cursor..*cursor + 8].try_into().unwrap());
+            *cursor += 16;
+            Ok(id)
+        }
+        abi::root::REF_LOCAL => {
+            if *cursor + 2 > batch.len() {
+                return Err(BatchParseError::Truncated);
+            }
+            *cursor += 2;
+            Ok(0)
+        }
+        _ => Err(BatchParseError::InvalidRefKind(kind)),
+    }
 }
 
 /// Parse a batch and find SET_PROP operations on the given subject.
 /// Returns the value of the last SET_PROP found (for simplicity).
-fn find_set_prop_value(batch: &[u8], subject: u64) -> Option<u64> {
+fn find_set_prop_value(
+    batch: &[u8],
+    subject: u64,
+    key_filter: Option<u32>,
+) -> Result<Option<u64>, BatchParseError> {
     // Minimal batch parsing: header (8 bytes) then ops
     if batch.len() < 8 {
-        return None;
+        return Err(BatchParseError::Truncated);
     }
-    let magic = u32::from_le_bytes(batch[0..4].try_into().ok()?);
-    let version = u16::from_le_bytes(batch[4..6].try_into().ok()?);
-    let op_count = u16::from_le_bytes(batch[6..8].try_into().ok()?) as usize;
+    let magic = u32::from_le_bytes(batch[0..4].try_into().unwrap());
+    let version = u16::from_le_bytes(batch[4..6].try_into().unwrap());
+    let op_count = u16::from_le_bytes(batch[6..8].try_into().unwrap()) as usize;
 
     if magic != BATCH_MAGIC || version != BATCH_VERSION {
-        return None;
+        return Err(BatchParseError::BadHeader { magic, version });
     }
 
     let mut cursor = 8usize;
@@ -42,7 +147,7 @@ fn find_set_prop_value(batch: &[u8], subject: u64) -> Option<u64> {
 
     for _ in 0..op_count {
         if cursor >= batch.len() {
-            break;
+            return Err(BatchParseError::Truncated);
         }
         let tag = batch[cursor];
         cursor += 1;
@@ -50,74 +155,45 @@ fn find_set_prop_value(batch: &[u8], subject: u64) -> Option<u64> {
         match tag {
             OP_SET_PROP => {
                 // SET_PROP format: ThingRef + Key(16) + Value(8)
-                if cursor >= batch.len() {
-                    break;
+                let subj = parse_ref(batch, &mut cursor)?;
+                if cursor + 16 + 8 > batch.len() {
+                    return Err(BatchParseError::Truncated);
                 }
-                let ref_kind = batch[cursor];
-                cursor += 1;
-
-                let (subj, ref_size) = if ref_kind == REF_ABSOLUTE {
-                    if cursor + 16 > batch.len() {
-                        break;
-                    }
-                    let id = u64::from_le_bytes(batch[cursor..cursor+8].try_into().ok()?);
-                    (id, 16)
-                } else {
-                    // Local ref - skip (we only care about absolute refs to our subject)
-                    (0, 2)
-                };
-                cursor += ref_size;
-
-                // Key: 16 bytes
-                if cursor + 16 > batch.len() {
-                    break;
-                }
-                cursor += 16;
-
-                // Value: 8 bytes
-                if cursor + 8 > batch.len() {
-                    break;
-                }
-                let value = u64::from_le_bytes(batch[cursor..cursor+8].try_into().ok()?);
+                let key_id = u32::from_le_bytes(batch[cursor..cursor + 4].try_into().unwrap());
+                cursor += 16; // key
+                let value = u64::from_le_bytes(batch[cursor..cursor + 8].try_into().unwrap());
                 cursor += 8;
 
-                if subj == subject {
+                if subj == subject && subj != 0 && key_filter.map_or(true, |k| k == key_id) {
                     result = Some(value);
                 }
             }
             0x01 => {
                 // CREATE_NODE: kind(16) + out_ref(2) = 18 bytes
+                if cursor + 18 > batch.len() {
+                    return Err(BatchParseError::Truncated);
+                }
                 cursor += 18;
             }
             0x02 => {
-                // PUT_EDGE: subject ThingRef + predicate(16) + object ThingRef + flags(4)
-                // Variable size due to ThingRefs
-                if cursor >= batch.len() {
-                    break;
+                // PUT_EDGE: subject ThingRef + predicate(16) + object ThingRef
+                let _src = parse_ref(batch, &mut cursor)?;
+                if cursor + 16 > batch.len() {
+                    return Err(BatchParseError::Truncated);
                 }
-                let src_kind = batch[cursor];
-                cursor += 1;
-                cursor += if src_kind == REF_ABSOLUTE { 16 } else { 2 };
                 cursor += 16; // predicate
-                if cursor >= batch.len() {
-                    break;
-                }
-                let dst_kind = batch[cursor];
-                cursor += 1;
-                cursor += if dst_kind == REF_ABSOLUTE { 16 } else { 2 };
-                cursor += 4; // flags
+                let _dst = parse_ref(batch, &mut cursor)?;
             }
             _ => {
-                // Unknown op, stop parsing
-                break;
+                return Err(BatchParseError::UnknownOp(tag));
             }
         }
     }
 
-    result
+    Ok(result)
 }
 
-// `drain_watch` removed, replaced by `stem::root_watch::drain`
+// `drain_watch` removed, replaced by `stem::root_watch::watch_drain`
 
 
 #[stem::main]
@@ -142,6 +218,9 @@ fn main() -> ! {
                     let dst_id = prop_get(b_id, keys::BINDING_TARGET)
                         .map(ThingId::from_u64)
                         .unwrap_or(ThingId::default());
+                    let key_filter = prop_get(b_id, keys::BINDING_MAP)
+                        .ok()
+                        .and_then(|v| if v == 0 { None } else { Some(v as u32) });
 
                     if src_id.to_u64_lossy() == 0 || dst_id.to_u64_lossy() == 0 {
                         continue;
@@ -171,6 +250,7 @@ fn main() -> ! {
                                 target: dst_id,
                                 watch_id,
                                 last_value: None,
+                                key_filter,
                             });
                         }
                         Err(e) => {
@@ -198,37 +278,64 @@ fn main() -> ! {
     let mut batch_buf = [0u8; 4096];
     let mut total_drained = 0usize;
     let mut total_overflows = 0usize;
+    let mut last_seq_max: Option<u64> = None;
     
     for binding in &mut bindings {
-        let res = stem::root_watch::drain(binding.watch_id, &mut batch_buf, |seq, batch| {
-             if let Some(value) = find_set_prop_value(batch, binding.source.to_u64_lossy()) {
-                 binding.last_value = Some(value);
-                 if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
-                     info!(
-                         "DRAIN: Updated target {} with value {} (seq={})",
-                         binding.target.to_u64_lossy(),
-                         value,
-                         seq
-                     );
-                 }
-             }
+        let res = stem::root_watch::watch_drain(binding.watch_id, &mut batch_buf, |seq, batch| {
+            match find_set_prop_value(
+                batch,
+                binding.source.to_u64_lossy(),
+                binding.key_filter,
+            ) {
+                Ok(Some(value)) => {
+                    binding.last_value = Some(value);
+                    if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
+                        info!(
+                            "DRAIN: Updated target {} with value {} (seq={})",
+                            binding.target.to_u64_lossy(),
+                            value,
+                            seq
+                        );
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => {
+                    log_unknown_shape_once(e, batch.len());
+                }
+            }
         });
         
         match res {
             Ok(stats) => {
-                if stats.batches > 0 || stats.overflows > 0 {
-                     info!("CATCH-UP: Watch {} drained {} batches (overflows={})", binding.watch_id, stats.batches, stats.overflows);
-                }
                 total_drained += stats.batches;
                 total_overflows += stats.overflows;
+                if let Some(seq) = stats.last_seq {
+                    last_seq_max = Some(match last_seq_max {
+                        Some(current) => core::cmp::max(current, seq),
+                        None => seq,
+                    });
+                }
             }
             Err(e) => {
-                info!("CATCH-UP: Watch {} drain error: {:?}", binding.watch_id, e);
+                info!("cambium: drain error on watch {}: {:?}", binding.watch_id, e);
             }
         }
     }
     
-    info!("CATCH-UP complete: {} total batches processed, {} overflows", total_drained, total_overflows);
+    match last_seq_max {
+        Some(seq) => {
+            info!(
+                "cambium: drain complete batches={} overflows={} last_seq={}",
+                total_drained, total_overflows, seq
+            );
+        }
+        None => {
+            info!(
+                "cambium: drain complete batches={} overflows={} last_seq=none",
+                total_drained, total_overflows
+            );
+        }
+    }
 
     // ============================================================
     // PHASE 2: Enter steady-state event loop
@@ -246,27 +353,27 @@ fn main() -> ! {
                     did_work = true;
 
                     // Parse batch to find SET_PROP value for our subject
-                    if let Some(value) = find_set_prop_value(&batch_buf[..len], binding.source.to_u64_lossy()) {
-                        binding.last_value = Some(value);
-                        // Update target's UI_TEXT property
-                        if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
-                            info!(
-                                "Updated target {} with value {} (seq={})",
-                                binding.target.to_u64_lossy(),
-                                value,
-                                seq
-                            );
+                    match find_set_prop_value(
+                        &batch_buf[..len],
+                        binding.source.to_u64_lossy(),
+                        binding.key_filter,
+                    ) {
+                        Ok(Some(value)) => {
+                            binding.last_value = Some(value);
+                            // Update target's UI_TEXT property
+                            if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
+                                info!(
+                                    "Updated target {} with value {} (seq={})",
+                                    binding.target.to_u64_lossy(),
+                                    value,
+                                    seq
+                                );
+                            }
                         }
-                    } else {
-                        // Log unrecognized event for debugging
-                        let hex_preview: alloc::string::String = batch_buf[..core::cmp::min(len, 32)]
-                            .iter()
-                            .map(|b| alloc::format!("{:02x}", b))
-                            .collect();
-                        info!(
-                            "Unrecognized event: seq={} len={} preview={}",
-                            seq, len, hex_preview
-                        );
+                        Ok(None) => {}
+                        Err(e) => {
+                            log_unknown_shape_once(e, len);
+                        }
                     }
                 }
                 Ok(_) => {

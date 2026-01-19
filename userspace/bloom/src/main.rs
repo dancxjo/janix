@@ -448,6 +448,7 @@ fn main(arg: usize) -> ! {
     let mut ui_watch_id: Option<usize> = None;
     let mut ui_watch_buf = [0u8; 4096];
     let mut ui_force_damage = false;
+    let mut ui_poll_deadline_ns = stem::monotonic_ns().saturating_add(1_000_000_000);
 
     let screen_w = target.width as i32;
     let screen_h = target.height as i32;
@@ -615,6 +616,11 @@ fn main(arg: usize) -> ! {
                     log!("[bloom] ui watch error: {:?}", e);
                 }
             }
+        }
+        if frame_start >= ui_poll_deadline_ns {
+            ui_pipeline.mark_dirty();
+            ui_force_damage = true;
+            ui_poll_deadline_ns = frame_start.saturating_add(1_000_000_000);
         }
 
         // Key Overlay Update

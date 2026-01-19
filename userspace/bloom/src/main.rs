@@ -447,6 +447,7 @@ fn main(arg: usize) -> ! {
     let mut font_loaded = false;
     let mut ui_watch_id: Option<usize> = None;
     let mut ui_watch_buf = [0u8; 4096];
+    let mut ui_force_damage = false;
 
     let screen_w = target.width as i32;
     let screen_h = target.height as i32;
@@ -602,11 +603,13 @@ fn main(arg: usize) -> ! {
             match stem::syscall::root_watch_next(watch_id, &mut seq, &mut ui_watch_buf) {
                 Ok(len) if len > 0 => {
                     ui_pipeline.mark_dirty();
+                    ui_force_damage = true;
                 }
                 Ok(_) => {}
                 Err(abi::errors::Errno::EAGAIN) => {}
                 Err(abi::errors::Errno::EOVERFLOW) => {
                     ui_pipeline.mark_dirty();
+                    ui_force_damage = true;
                 }
                 Err(e) => {
                     log!("[bloom] ui watch error: {:?}", e);
@@ -687,7 +690,7 @@ fn main(arg: usize) -> ! {
             cursor.emit_drawlist(list);
         }
 
-        if ui_changed {
+        if ui_changed || ui_force_damage {
             if ui_damage.is_empty() {
                 builder.mark_full_damage();
             } else {
@@ -695,6 +698,7 @@ fn main(arg: usize) -> ! {
                     builder.add_damage(rect);
                 }
             }
+            ui_force_damage = false;
         }
 
         // Finish building - seal the token

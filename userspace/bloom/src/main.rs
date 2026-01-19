@@ -83,10 +83,11 @@ extern "C" fn font_loader_entry() -> ! {
 
     use abi::query::{QueryOpKind, QueryStep};
     use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
-    use abi::types::{WatchEvent, WatchMode, WatchSpec};
+    use abi::types::{WatchMode, WatchSpec};
     use stem::syscall;
     use stem::thing::sys::{bytespace_info, describe_thing, prop_get};
     use stem::thing::ThingId;
+    use stem::root_watch;
 
     // Phase 1: Scan for boot.Modules that look like fonts
     let kind_str = "boot.Module";
@@ -111,8 +112,7 @@ extern "C" fn font_loader_entry() -> ! {
         ..Default::default()
     };
 
-    // Pin watch_id to heap to avoid stack corruption
-    let watch_id_box = alloc::boxed::Box::new(match syscall::root_watch_open(&spec) {
+    let watch_id = match syscall::root_watch_open(&spec) {
         Ok(id) => {
             log!("[font_loader] watch opened (id={})", id);
             id
@@ -123,72 +123,78 @@ extern "C" fn font_loader_entry() -> ! {
                 stem::sleep_ms(10000);
             }
         }
-    });
+    };
 
-    let mut seq_out = 0u64;
-    let mut watch_buf = [0u8; 4096];
-    loop {
-        // Read watch_id from heap each iteration to avoid stack corruption
-        let watch_id = *watch_id_box;
-        match syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf) {
-            Ok(len) if len > 0 => {
-                // Parse WatchEvent from the returned batch payload
-                // For now just extract node_id from the THRT batch format
-                if len >= 8 + 1 + 16 {
-                    // Skip 8-byte header + 1-byte op tag, read 16-byte kind and node_id
-                    // The actual batch payload format: THRT header (8) + op tag (1) + kind symbol (16) + result_id (8)
-                    // Actually the result_id comes from reply, let's check commit data
-                    // For CreateNode: the node_id needs to be extracted properly
-                    // But root_watch delivers raw batch payloads, we need to get node from events
-                }
-                
-                // For now, parse as WatchEvent if kernel populated it that way
-                // This path needs better batch parsing, but the syscall fix is the key change
-                if len >= core::mem::size_of::<abi::types::WatchEvent>() {
-                    let evt: abi::types::WatchEvent = unsafe { 
-                        core::ptr::read_unaligned(watch_buf.as_ptr() as *const _) 
-                    };
-                    let node_id = ThingId::from_u64(evt.node_id);
-                    let mut buf = [0u8; 512];
-                    if let Ok(desc_len) = describe_thing(node_id, &mut buf) {
-                        let desc = core::str::from_utf8(&buf[..desc_len]).unwrap_or("");
-                        if desc.contains("name: \"")
-                            && (desc.contains(".ttf\"")
-                                || desc.contains(".otf\"")
-                                || desc.contains(".ttc\""))
-                        {
-                            log!("[font_loader] found font candidate: '{}'", desc);
-                            let bs_id = prop_get(node_id, "bytespace").map(ThingId::from_u64).ok();
-                            let size = bs_id.and_then(|id| bytespace_info(id).ok());
+    // Shared processing logic for both drain and stream
+    let mut process_batch = |_seq: u64, buf: &[u8]| {
+        let len = buf.len();
+        // Minimal length check for WatchEvent
+        if len >= core::mem::size_of::<abi::types::WatchEvent>() {
+            let evt: abi::types::WatchEvent = unsafe { 
+                core::ptr::read_unaligned(buf.as_ptr() as *const _) 
+            };
+            let node_id = ThingId::from_u64(evt.node_id);
+            let mut desc_buf = [0u8; 512];
+            if let Ok(desc_len) = describe_thing(node_id, &mut desc_buf) {
+                let desc = core::str::from_utf8(&desc_buf[..desc_len]).unwrap_or("");
+                if desc.contains("name: \"")
+                    && (desc.contains(".ttf\"")
+                        || desc.contains(".otf\"")
+                        || desc.contains(".ttc\""))
+                {
+                    // log!("[font_loader] found font candidate: '{}' (seq={})", desc, seq);
+                    let bs_id = prop_get(node_id, "bytespace").map(ThingId::from_u64).ok();
+                    let size = bs_id.and_then(|id| bytespace_info(id).ok());
 
-                            if let (Some(bs), Some(sz)) = (bs_id, size) {
-                                log!(
-                                    "[font_loader] enqueuing font load: bs={} size={} name='{}'",
-                                    bs.to_u64_lossy(),
-                                    sz,
-                                    desc
-                                );
-                                ASSETS.enqueue_font_load(bs, sz, desc);
-                            } else {
-                                log!(
-                                    "[font_loader] WARN: could not get bytespace/size for font '{}'",
-                                    desc
-                                );
-                            }
-                        }
+                    if let (Some(bs), Some(sz)) = (bs_id, size) {
+                        log!(
+                            "[font_loader] enqueuing font load: bs={} size={} name='{}'",
+                            bs.to_u64_lossy(),
+                            sz,
+                            desc
+                        );
+                        ASSETS.enqueue_font_load(bs, sz, desc);
                     }
                 }
             }
-            Ok(0) => {
-                // No data yet
+        }
+    };
+
+    let mut watch_buf = [0u8; 4096];
+
+    // PHASE 1: Catch-up (Drain)
+    match root_watch::drain(watch_id, &mut watch_buf, &mut process_batch) {
+        Ok(stats) => {
+            if stats.batches > 0 || stats.overflows > 0 {
+                log!("[font_loader] drain complete: batches={} overflows={}", stats.batches, stats.overflows);
+            }
+        }
+        Err(e) => {
+            log!("[font_loader] ERROR: drain failed: {:?}", e);
+        }
+    }
+
+    // PHASE 2: Steady Stream
+    let mut seq_out = 0u64;
+    loop {
+        match syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf) {
+            Ok(len) if len > 0 => {
+                process_batch(seq_out, &watch_buf[..len]);
+            }
+            Ok(_) => {
+                // No data (or just heartbeat/ACK)
+                // stem::sleep_ms(50); // Optional sleep to yield
+            }
+            Err(abi::errors::Errno::EAGAIN) => {
+                // No more pending events, sleep to yield
                 stem::sleep_ms(100);
+            }
+            Err(abi::errors::Errno::EOVERFLOW) => {
+                log!("[font_loader] watch overflow in steady state");
             }
             Err(e) => {
                 log!("[font_loader] watch next error: {:?}", e);
-                stem::sleep_ms(500);
-            }
-            _ => {
-                stem::sleep_ms(100);
+                stem::sleep_ms(1000);
             }
         }
     }

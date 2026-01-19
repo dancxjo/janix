@@ -271,6 +271,16 @@ pub fn device_irq_wait(claim_handle: usize, irq_index: u8) -> Result<u32, Errno>
 // --- Root / Graph Wrappers ---
 
 pub fn root_watch_open(spec: &abi::types::WatchSpec) -> Result<usize, Errno> {
+    // [DEPRECATION GUARDRAIL]
+    // Check for WATCH_START_LATEST usage and warn once.
+    // Assuming abi::types::WATCH_START_LATEST is available.
+    if spec.start_seq == abi::types::WATCH_START_LATEST {
+         static WARNED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+         if !WARNED.swap(true, core::sync::atomic::Ordering::Relaxed) {
+             let _ = log_write("WARN: WATCH_START_LATEST is deprecated; use start_seq=0 + drain.", 2);
+         }
+    }
+
     let ret = unsafe { match raw_syscall6(
         SYS_ROOT_WATCH_OPEN,
         spec as *const _ as usize,

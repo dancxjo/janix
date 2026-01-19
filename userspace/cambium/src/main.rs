@@ -117,47 +117,8 @@ fn find_set_prop_value(batch: &[u8], subject: u64) -> Option<u64> {
     result
 }
 
-/// Drain a watch until EAGAIN, applying any relevant events.
-/// Returns the number of events processed.
-fn drain_watch(binding: &mut ActiveBinding, batch_buf: &mut [u8]) -> usize {
-    let mut count = 0;
-    loop {
-        let mut seq: u64 = 0;
-        match root_watch_next(binding.watch_id, &mut seq, batch_buf) {
-            Ok(len) if len > 0 => {
-                count += 1;
-                if let Some(value) = find_set_prop_value(&batch_buf[..len], binding.source.to_u64_lossy()) {
-                    binding.last_value = Some(value);
-                    // Apply immediately during drain
-                    if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
-                        info!(
-                            "DRAIN: Updated target {} with value {} (seq={})",
-                            binding.target.to_u64_lossy(),
-                            value,
-                            seq
-                        );
-                    }
-                }
-            }
-            Ok(_) => {
-                // Zero-length batch, continue
-            }
-            Err(abi::errors::Errno::EAGAIN) => {
-                // No more pending events
-                break;
-            }
-            Err(abi::errors::Errno::EOVERFLOW) => {
-                info!("DRAIN: Watch {} overflow during catch-up", binding.watch_id);
-                // Continue draining
-            }
-            Err(e) => {
-                info!("DRAIN: watch_next error: {:?}", e);
-                break;
-            }
-        }
-    }
-    count
-}
+// `drain_watch` removed, replaced by `stem::root_watch::drain`
+
 
 #[stem::main]
 fn main() -> ! {
@@ -236,16 +197,38 @@ fn main() -> ! {
     info!("CATCH-UP: Draining {} watches for historical events...", bindings.len());
     let mut batch_buf = [0u8; 4096];
     let mut total_drained = 0usize;
+    let mut total_overflows = 0usize;
     
     for binding in &mut bindings {
-        let drained = drain_watch(binding, &mut batch_buf);
-        if drained > 0 {
-            info!("CATCH-UP: Watch {} drained {} events", binding.watch_id, drained);
+        let res = stem::root_watch::drain(binding.watch_id, &mut batch_buf, |seq, batch| {
+             if let Some(value) = find_set_prop_value(batch, binding.source.to_u64_lossy()) {
+                 binding.last_value = Some(value);
+                 if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {
+                     info!(
+                         "DRAIN: Updated target {} with value {} (seq={})",
+                         binding.target.to_u64_lossy(),
+                         value,
+                         seq
+                     );
+                 }
+             }
+        });
+        
+        match res {
+            Ok(stats) => {
+                if stats.batches > 0 || stats.overflows > 0 {
+                     info!("CATCH-UP: Watch {} drained {} batches (overflows={})", binding.watch_id, stats.batches, stats.overflows);
+                }
+                total_drained += stats.batches;
+                total_overflows += stats.overflows;
+            }
+            Err(e) => {
+                info!("CATCH-UP: Watch {} drain error: {:?}", binding.watch_id, e);
+            }
         }
-        total_drained += drained;
     }
     
-    info!("CATCH-UP complete: {} total events processed", total_drained);
+    info!("CATCH-UP complete: {} total batches processed, {} overflows", total_drained, total_overflows);
 
     // ============================================================
     // PHASE 2: Enter steady-state event loop

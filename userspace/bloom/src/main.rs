@@ -138,13 +138,12 @@ extern "C" fn font_loader_entry() -> ! {
                     // For CreateNode: the node_id needs to be extracted properly
                     // But root_watch delivers raw batch payloads, we need to get node from events
                 }
-                
+
                 // For now, parse as WatchEvent if kernel populated it that way
                 // This path needs better batch parsing, but the syscall fix is the key change
                 if len >= core::mem::size_of::<abi::types::WatchEvent>() {
-                    let evt: abi::types::WatchEvent = unsafe { 
-                        core::ptr::read_unaligned(watch_buf.as_ptr() as *const _) 
-                    };
+                    let evt: abi::types::WatchEvent =
+                        unsafe { core::ptr::read_unaligned(watch_buf.as_ptr() as *const _) };
                     let node_id = ThingId::from_u64(evt.node_id);
                     let mut buf = [0u8; 512];
                     if let Ok(desc_len) = describe_thing(node_id, &mut buf) {

@@ -8,24 +8,24 @@
 pub mod x86_64 {
     /// Syscall Number
     pub const REG_N: &str = "rax";
-    
+
     /// Argument 0
     pub const REG_A0: &str = "rdi";
-    
+
     /// Argument 1
     pub const REG_A1: &str = "rsi";
-    
+
     /// Argument 2
     pub const REG_A2: &str = "rdx";
-    
+
     /// Argument 3
     /// Note: Linux/SystemV ABI uses RCX for 4th arg in C, but `syscall` instruction clobbers RCX.
     /// So the kernel ABI expects the 4th argument in R10.
     pub const REG_A3: &str = "r10";
-    
+
     /// Argument 4
     pub const REG_A4: &str = "r8";
-    
+
     /// Argument 5
     pub const REG_A5: &str = "r9";
 }

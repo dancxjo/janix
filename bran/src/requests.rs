@@ -39,7 +39,6 @@ pub fn get_modules() -> &'static [BootModuleDesc] {
                 for i in 0..count {
                     let file = files[i];
 
-
                     // Name
                     let name = file.path().to_str().unwrap_or("unknown");
                     let cmdline = core::str::from_utf8(file.cmdline()).unwrap_or("");

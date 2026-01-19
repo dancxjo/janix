@@ -8,7 +8,11 @@ pub struct FrameLoop {
 
 impl FrameLoop {
     pub fn new(target_fps: u32) -> Self {
-        let target_ns = if target_fps > 0 { 1_000_000_000 / target_fps as u64 } else { 16_666_666 };
+        let target_ns = if target_fps > 0 {
+            1_000_000_000 / target_fps as u64
+        } else {
+            16_666_666
+        };
         crate::log!("running (fps_target={})", target_fps);
         Self {
             frame: 0,
@@ -38,7 +42,7 @@ impl FrameLoop {
 
     pub fn heartbeat(&mut self, _cursor_x: i32, _cursor_y: i32) {
         if self.frame > 0 && self.frame % 60 == 0 {
-             // Optional: log drift here if needed
+            // Optional: log drift here if needed
         }
     }
 }

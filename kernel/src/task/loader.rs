@@ -99,7 +99,7 @@ pub fn load_module<R: BootRuntime>(
                 }
 
                 let hhdm_virt = phys + rt.phys_to_virt_offset();
-                
+
                 if !reuse_page {
                     unsafe {
                         core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size as usize);
@@ -111,7 +111,7 @@ pub fn load_module<R: BootRuntime>(
                 let file_end = seg_vaddr.saturating_add(ph.filesz);
                 let copy_start = max(virt, file_start);
                 let copy_end = min(page_end, file_end);
-                
+
                 if copy_start < copy_end {
                     let src_off = ph.offset.saturating_add(copy_start - seg_vaddr);
                     let len = (copy_end - copy_start) as usize;
@@ -136,7 +136,7 @@ pub fn load_module<R: BootRuntime>(
                 last_virt_page = virt;
                 last_phys_page = phys;
                 last_perms = perms;
-                
+
                 virt += page_size;
             }
         }

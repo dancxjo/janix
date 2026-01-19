@@ -170,7 +170,12 @@ fn identify_drive(io_base: u16, ctrl_base: u16, is_slave: bool) -> Option<AtaDis
     })
 }
 
-fn read_sectors(disk: &AtaDisk, lba: u64, count: u16, buf: &mut [u8]) -> Result<usize, &'static str> {
+fn read_sectors(
+    disk: &AtaDisk,
+    lba: u64,
+    count: u16,
+    buf: &mut [u8],
+) -> Result<usize, &'static str> {
     if count == 0 || count > 256 {
         return Err("Invalid sector count");
     }
@@ -199,7 +204,10 @@ fn read_sectors(disk: &AtaDisk, lba: u64, count: u16, buf: &mut [u8]) -> Result<
         ata_outb(disk.io_base + ATA_REG_COMMAND, ATA_CMD_READ_SECTORS_EXT);
     } else {
         let lba28 = lba as u32;
-        ata_outb(disk.io_base + ATA_REG_DRIVE, drive_sel | ((lba28 >> 24) & 0x0F) as u8);
+        ata_outb(
+            disk.io_base + ATA_REG_DRIVE,
+            drive_sel | ((lba28 >> 24) & 0x0F) as u8,
+        );
         ata_outb(disk.io_base + ATA_REG_SECCOUNT, count as u8);
         ata_outb(disk.io_base + ATA_REG_LBA_LO, (lba28 & 0xFF) as u8);
         ata_outb(disk.io_base + ATA_REG_LBA_MID, ((lba28 >> 8) & 0xFF) as u8);
@@ -242,10 +250,17 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
     disk.graph_id = disk_id.0;
     thingsys::prop_set(disk_id, "sector_size", 512u64).ok();
     thingsys::prop_set(disk_id, "sector_count", disk.sector_count).ok();
-    thingsys::prop_set(disk_id, "lba48", if disk.supports_lba48 { 1u64 } else { 0u64 }).ok();
+    thingsys::prop_set(
+        disk_id,
+        "lba48",
+        if disk.supports_lba48 { 1u64 } else { 0u64 },
+    )
+    .ok();
     thingsys::prop_set(disk_id, "interface", 0u64).ok(); // 0 = ATA
 
-    let model_str = core::str::from_utf8(&disk.model).unwrap_or("Unknown").trim();
+    let model_str = core::str::from_utf8(&disk.model)
+        .unwrap_or("Unknown")
+        .trim();
     info!(
         "ATA_DISK: Registered disk {} ch={} drv={} sectors={} lba48={} model='{}'",
         disk.graph_id, channel, drive, disk.sector_count, disk.supports_lba48, model_str

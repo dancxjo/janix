@@ -1,9 +1,9 @@
 //! Stream and watch subscription handlers.
 
+use crate::root::RootMsg;
 use crate::root::graph::Graph;
 use crate::root::resources::{ResourceHandle, stream};
 use crate::root::symbols::Interner;
-use crate::root::RootMsg;
 use core::sync::atomic::Ordering;
 
 use super::HandlerResult;
@@ -31,11 +31,7 @@ pub fn handle_watch_subscribe(
     }
 }
 
-pub fn handle_stream_poll(
-    graph: &mut Graph,
-    msg: &RootMsg,
-    stream_id: u64,
-) -> HandlerResult {
+pub fn handle_stream_poll(graph: &mut Graph, msg: &RootMsg, stream_id: u64) -> HandlerResult {
     if let Some(node) = graph.get_node_mut(stream_id) {
         if let Some(ResourceHandle::Stream(handle)) = &node.resource {
             let mut lock = handle.lock();

@@ -3,9 +3,9 @@ pub mod loongarch64;
 pub mod riscv64;
 pub mod x86_64;
 
+use abi::ids::HandleId;
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use abi::ids::HandleId;
 // use alloc::vec::Vec;
 use abi::schema::{confidence, keys, kinds, rels, source};
 use alloc::vec;
@@ -125,7 +125,10 @@ pub fn build(ctx: &DevTreeCtx) -> Result<(), ()> {
     info!("SPROUT: build() called");
     // Attempt DTB parsing if available
     if let Some(bs_id) = ctx.dtb_bytespace {
-        info!("SPROUT: Found DTB bytespace {}, parsing...", bs_id.to_u64_lossy());
+        info!(
+            "SPROUT: Found DTB bytespace {}, parsing...",
+            bs_id.to_u64_lossy()
+        );
         let mut header = [0u8; 8];
         if let Ok(_) = thingsys::bytespace_read(bs_id, 0, &mut header) {
             let magic = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);

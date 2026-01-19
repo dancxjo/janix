@@ -21,7 +21,7 @@ use crate::build::build;
 use crate::clean::{clean, distclean};
 use crate::common::project_root;
 use crate::fetch::fetch;
-use crate::image::{build_hdd, build_iso, default_programs, ProgramConfig};
+use crate::image::{ProgramConfig, build_hdd, build_iso, default_programs};
 use crate::limine::limine;
 use crate::run::{run, run_bios, run_hdd};
 
@@ -199,8 +199,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             run_hdd(&sh, &env, &qemu_flags, &hdd_path)?;
         }
         Commands::Limine => limine(&sh)?,
-        Commands::Ovmf { env: _ } => fetch()?,  // OVMF handled by unified fetch
-        Commands::OvmfAll => fetch()?,  // OVMF handled by unified fetch
+        Commands::Ovmf { env: _ } => fetch()?, // OVMF handled by unified fetch
+        Commands::OvmfAll => fetch()?,         // OVMF handled by unified fetch
         Commands::Clean => clean(&sh)?,
         Commands::Distclean => distclean(&sh)?,
         Commands::Bdd {

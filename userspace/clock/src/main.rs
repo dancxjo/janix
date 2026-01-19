@@ -3,14 +3,13 @@
 
 extern crate alloc;
 
+use abi::ids::HandleId;
+use abi::schema::{keys, kinds, rels};
 use core::time::Duration;
 use stem::info;
-use time::OffsetDateTime;
+use stem::thing::sys::{bytespace_create, bytespace_write, create_node, link, prop_set};
 use stem::thing::ThingId;
-use abi::ids::HandleId;
-use stem::thing::sys::{create_node, prop_set, link, bytespace_create, bytespace_write};
-use abi::schema::{kinds, keys, rels};
-
+use time::OffsetDateTime;
 
 /// Print a single tick with both wall clock (if anchored) and monotonic time.
 fn print_tick(unix: u64, mono_ns: u64) {
@@ -76,17 +75,25 @@ fn main() -> ! {
     info!("Waiting for UI Root (Compositor)...");
     let mut ui_root = ThingId::default();
     let mut i = 0;
-    while i < 120 { // Wait up to 60 seconds for Bloom to start
+    while i < 120 {
+        // Wait up to 60 seconds for Bloom to start
         let mut ui_roots = [ThingId::default(); 1];
         match stem::thing::sys::find(kinds::UI_ROOT, &mut ui_roots) {
             Ok(count) if count > 0 => {
                 ui_root = ui_roots[0];
-                info!("Found UI Root: {} (attempt {})", ui_root.to_u64_lossy(), i + 1);
+                info!(
+                    "Found UI Root: {} (attempt {})",
+                    ui_root.to_u64_lossy(),
+                    i + 1
+                );
                 break;
             }
             Ok(_) => {
                 if i % 10 == 0 {
-                    info!("UI Root not found yet (attempt {}), still waiting...", i + 1);
+                    info!(
+                        "UI Root not found yet (attempt {}), still waiting...",
+                        i + 1
+                    );
                 }
             }
             Err(e) => {
@@ -99,7 +106,6 @@ fn main() -> ! {
     if ui_root.to_u64_lossy() == 0 {
         info!("ERROR: UI Root still not found after 60s, giving up on UI");
     }
-
 
     if ui_root.to_u64_lossy() != 0 {
         // Create Window
@@ -126,14 +132,12 @@ fn main() -> ! {
         prop_set(text, keys::UI_FG_COLOR, 0xFFFF0000).ok(); // Red
         set_string_prop(text, keys::UI_FONT, "DSEG7Classic-Regular.ttf");
         prop_set(text, keys::UI_FONT_SIZE, 64).ok(); // Large font
-        // Text Layout: Centered
+                                                     // Text Layout: Centered
         prop_set(text, keys::UI_CENTER_X, 1).ok();
         prop_set(text, keys::UI_CENTER_Y, 1).ok();
 
         // Initial text
         set_string_prop(text, keys::UI_TEXT, "--:--:--");
-
-
 
         // 3. Create Binding
         let binding = create_node(kinds::BINDING).expect("create binding");

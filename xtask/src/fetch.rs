@@ -1,4 +1,4 @@
-use anyhow::{ensure, Context, Result};
+use anyhow::{Context, Result, ensure};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -89,7 +89,7 @@ fn fetch_ovmf(vendor: &Path) -> Result<()> {
 
     let release = std::env::var("THINGOS_OVMF_RELEASE")
         .unwrap_or_else(|_| "edk2-stable202508-r1".to_string());
-    
+
     let mappings = [
         ("x64/code.fd", "ovmf-code-x86_64.fd"),
         ("x64/vars.fd", "ovmf-vars-x86_64.fd"),
@@ -218,10 +218,22 @@ fn fetch_fonts(assets: &Path) -> Result<()> {
     }
 
     let noto_fonts = [
-        ("NotoSans-Regular.ttf", "https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf"),
-        ("NotoSerif-Regular.ttf", "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSerif/NotoSerif-Regular.ttf"),
-        ("NotoSansSymbol-Regular.ttf", "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSansSymbols/NotoSansSymbols-Regular.ttf"),
-        ("NotoSansSymbol2-Regular.ttf", "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf"),
+        (
+            "NotoSans-Regular.ttf",
+            "https://raw.githubusercontent.com/notofonts/noto-fonts/main/hinted/ttf/NotoSans/NotoSans-Regular.ttf",
+        ),
+        (
+            "NotoSerif-Regular.ttf",
+            "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSerif/NotoSerif-Regular.ttf",
+        ),
+        (
+            "NotoSansSymbol-Regular.ttf",
+            "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSansSymbols/NotoSansSymbols-Regular.ttf",
+        ),
+        (
+            "NotoSansSymbol2-Regular.ttf",
+            "https://github.com/notofonts/noto-fonts/raw/HEAD/hinted/ttf/NotoSansSymbols2/NotoSansSymbols2-Regular.ttf",
+        ),
     ];
 
     for (name, url) in noto_fonts {

@@ -9,8 +9,11 @@ pub unsafe extern "C" fn entry_impl(arg: usize) -> ! {
     stem_user_main(arg)
 }
 
-
-#[cfg(all(target_arch = "x86_64", feature = "rt", any(target_os = "none", target_os = "thingos")))]
+#[cfg(all(
+    target_arch = "x86_64",
+    feature = "rt",
+    any(target_os = "none", target_os = "thingos")
+))]
 core::arch::global_asm!(
     r#"
     .section .text.entry
@@ -24,8 +27,11 @@ core::arch::global_asm!(
 "#
 );
 
-
-#[cfg(all(target_arch = "aarch64", feature = "rt", any(target_os = "none", target_os = "thingos")))]
+#[cfg(all(
+    target_arch = "aarch64",
+    feature = "rt",
+    any(target_os = "none", target_os = "thingos")
+))]
 core::arch::global_asm!(
     r#"
     .section .text.entry
@@ -37,7 +43,11 @@ core::arch::global_asm!(
     "#
 );
 
-#[cfg(all(target_arch = "riscv64", feature = "rt", any(target_os = "none", target_os = "thingos")))]
+#[cfg(all(
+    target_arch = "riscv64",
+    feature = "rt",
+    any(target_os = "none", target_os = "thingos")
+))]
 core::arch::global_asm!(
     r#"
     .section .text.entry
@@ -49,7 +59,11 @@ core::arch::global_asm!(
     "#
 );
 
-#[cfg(all(target_arch = "loongarch64", feature = "rt", any(target_os = "none", target_os = "thingos")))]
+#[cfg(all(
+    target_arch = "loongarch64",
+    feature = "rt",
+    any(target_os = "none", target_os = "thingos")
+))]
 core::arch::global_asm!(
     r#"
     .section .text.entry
@@ -60,5 +74,3 @@ core::arch::global_asm!(
         break 0
     "#
 );
-
-

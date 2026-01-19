@@ -13,7 +13,7 @@ pub const BATCH_VERSION: u16 = 1;
 // ============================================================================
 
 /// Maximum batch payload size in bytes
-pub const MAX_BATCH_BYTES: usize = 256 * 1024;   // 256 KiB
+pub const MAX_BATCH_BYTES: usize = 256 * 1024; // 256 KiB
 /// Maximum number of operations per batch
 pub const MAX_BATCH_OPS: usize = 4096;
 /// Maximum number of local references (CREATE_NODE outputs)
@@ -39,7 +39,7 @@ pub struct BatchHeader {
 
 impl BatchHeader {
     pub const SIZE: usize = 8;
-    
+
     pub fn to_le_bytes(self) -> [u8; 8] {
         let mut buf = [0u8; 8];
         buf[0..4].copy_from_slice(&self.magic.to_le_bytes());
@@ -54,13 +54,13 @@ impl BatchHeader {
 // ============================================================================
 
 /// Filter flags for RootWatchFilter
-pub const WATCH_F_ALL: u32 = 0;           // Match all commits (no filtering)
-pub const WATCH_F_KIND: u32 = 1 << 0;     // Filter by kind_id
+pub const WATCH_F_ALL: u32 = 0; // Match all commits (no filtering)
+pub const WATCH_F_KIND: u32 = 1 << 0; // Filter by kind_id
 pub const WATCH_F_PREDICATE: u32 = 1 << 1; // Filter by predicate_id
-pub const WATCH_F_SUBJECT: u32 = 1 << 2;   // Filter by subject ThingId
+pub const WATCH_F_SUBJECT: u32 = 1 << 2; // Filter by subject ThingId
 
 /// Compact watch filter (32 bytes, C-compatible)
-/// 
+///
 /// Used with `SYS_ROOT_WATCH_OPEN` to filter which commits are delivered.
 /// If `flags == 0`, all commits match. Otherwise, only commits containing
 /// at least one operation matching the specified criteria are delivered.
@@ -85,12 +85,12 @@ pub struct RootWatchFilter {
 
 impl RootWatchFilter {
     pub const SIZE: usize = 32;
-    
+
     /// Create a filter that matches all commits
     pub fn all() -> Self {
         Self::default()
     }
-    
+
     /// Create a filter for a specific subject
     pub fn subject(id: u64) -> Self {
         Self {
@@ -99,7 +99,7 @@ impl RootWatchFilter {
             ..Default::default()
         }
     }
-    
+
     /// Create a filter for a specific predicate
     pub fn predicate(predicate_id: u32) -> Self {
         Self {
@@ -108,7 +108,7 @@ impl RootWatchFilter {
             ..Default::default()
         }
     }
-    
+
     /// Create a filter for a specific kind
     pub fn kind(kind_id: u32) -> Self {
         Self {
@@ -124,6 +124,6 @@ pub fn thing_ref_size(kind: u8) -> usize {
     match kind {
         REF_ABSOLUTE => 1 + 16, // tag + ThingId
         REF_LOCAL => 1 + 2,     // tag + u16 index
-        _ => 0, // Invalid
+        _ => 0,                 // Invalid
     }
 }

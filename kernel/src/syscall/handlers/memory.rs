@@ -22,7 +22,8 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     validate_user_range(resp_ptr, resp_size, true)?;
 
     let mut req: VmMapReq = unsafe { core::mem::zeroed() };
-    let req_slice = unsafe { core::slice::from_raw_parts_mut(&mut req as *mut _ as *mut u8, req_size) };
+    let req_slice =
+        unsafe { core::slice::from_raw_parts_mut(&mut req as *mut _ as *mut u8, req_size) };
     unsafe {
         copyin(req_slice, req_ptr)?;
     }
@@ -74,7 +75,8 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     }
 
     let resp = VmMapResp { addr, len };
-    let resp_slice = unsafe { core::slice::from_raw_parts(&resp as *const _ as *const u8, resp_size) };
+    let resp_slice =
+        unsafe { core::slice::from_raw_parts(&resp as *const _ as *const u8, resp_size) };
     unsafe {
         copyout(resp_ptr, resp_slice)?;
     }

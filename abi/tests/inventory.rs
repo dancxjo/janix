@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
-    use abi::Graphable;
     use abi::types::*;
+    use abi::Graphable;
 
     #[test]
     fn inventory_check() {
@@ -9,7 +9,7 @@ mod tests {
         // Edge
         assert_eq!(core::mem::size_of::<Edge>(), 52); // 16*3 + 4 = 52
         assert_eq!(Edge::SCHEMA.size(), 52);
-        
+
         // Window
         assert_eq!(core::mem::size_of::<Window>(), 32); // 16 + 4 + 4 + 4 + 4 = 32
         assert_eq!(Window::SCHEMA.size(), 32);

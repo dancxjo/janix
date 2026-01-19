@@ -40,21 +40,20 @@ pub struct BytespaceMapping {
 /// Global mapping registry for v0. Later can be per-process.
 static MAPPINGS: Mutex<Vec<BytespaceMapping>> = Mutex::new(Vec::new());
 
-
 pub fn create(len: usize, hhdm_offset: u64) -> Option<BytespaceHandle> {
     // Round up to page boundary
     let page_count = (len + 4095) / 4096;
     let aligned_len = page_count * 4096;
-    
+
     // Allocate contiguous physical frames
     let phys_base = crate::memory::alloc_contiguous_frames(page_count)?;
     let kernel_va = (phys_base + hhdm_offset) as usize;
-    
+
     // Zero the memory
-    unsafe { 
-        core::ptr::write_bytes(kernel_va as *mut u8, 0, aligned_len); 
+    unsafe {
+        core::ptr::write_bytes(kernel_va as *mut u8, 0, aligned_len);
     }
-    
+
     Some(Arc::new(Mutex::new(Bytespace {
         kernel_va,
         phys_base,
@@ -74,7 +73,7 @@ pub fn create_from_ptr(kernel_va: usize, len: usize, hhdm_offset: u64) -> Bytesp
     } else {
         kernel_va as u64 // Already physical or identity-mapped
     };
-    
+
     Arc::new(Mutex::new(Bytespace {
         kernel_va,
         phys_base,
@@ -84,8 +83,6 @@ pub fn create_from_ptr(kernel_va: usize, len: usize, hhdm_offset: u64) -> Bytesp
         owned: false, // Don't free these pages
     }))
 }
-
-
 
 /// Record a mapping
 pub fn record_mapping(bytespace_id: u64, tid: u64, user_va: u64, len: usize) {
@@ -100,9 +97,10 @@ pub fn record_mapping(bytespace_id: u64, tid: u64, user_va: u64, len: usize) {
 /// Find and remove a mapping, returning it if found
 pub fn remove_mapping(bytespace_id: u64, tid: u64, user_va: u64) -> Option<BytespaceMapping> {
     let mut mappings = MAPPINGS.lock();
-    if let Some(idx) = mappings.iter().position(|m| {
-        m.bytespace_id == bytespace_id && m.tid == tid && m.user_va == user_va
-    }) {
+    if let Some(idx) = mappings
+        .iter()
+        .position(|m| m.bytespace_id == bytespace_id && m.tid == tid && m.user_va == user_va)
+    {
         Some(mappings.remove(idx))
     } else {
         None

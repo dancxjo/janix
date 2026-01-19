@@ -20,17 +20,19 @@ pub use blocking::{
     block_current, block_current_erased, init_blocking_hooks, wake_task, wake_task_erased,
 };
 pub use hooks::{
-    alloc_user_stack_current, current_tid_current, exit_current, handle_user_stack_fault_current,
+    alloc_user_stack_current, current_priority_current, current_tid_current, exit_current,
+    handle_user_stack_fault_current, set_priority_current, sleep_ticks_current,
     spawn_process_current, spawn_user_thread_current, task_status_current, yield_now_current,
-    set_priority_current, current_priority_current, sleep_ticks_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
-    spawn, spawn_process, spawn_user_task_full, spawn_user_thread, user_thread_trampoline,
-    spawn_with_priority,
+    spawn, spawn_process, spawn_user_task_full, spawn_user_thread, spawn_with_priority,
+    user_thread_trampoline,
 };
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
-pub use types::{ScheduleReason, Scheduler, SleepEntry, StackFaultResult, SwitchParams, DEFAULT_TIMESLICE};
+pub use types::{
+    DEFAULT_TIMESLICE, ScheduleReason, Scheduler, SleepEntry, StackFaultResult, SwitchParams,
+};
 
 use crate::task::{Task, TaskId, TaskPriority, TaskState};
 use crate::{BootRuntime, BootTasking};
@@ -47,7 +49,9 @@ fn get_time_helper<R: BootRuntime>() -> u64 {
     let rt = crate::runtime::<R>();
     let ticks = rt.mono_ticks();
     let freq = rt.mono_freq_hz();
-    if freq == 0 { return ticks; } // avoid div by zero
+    if freq == 0 {
+        return ticks;
+    } // avoid div by zero
     ticks.wrapping_mul(1_000_000_000 / freq)
 }
 
@@ -154,15 +158,15 @@ impl<R: BootRuntime> types::Scheduler<R> {
             ScheduleReason::PreemptTick => {
                 // Wake any sleeping tasks whose time has expired
                 self.wake_sleepers();
-                
+
                 // Check preemption watchdog
                 self.check_preempt_watchdog();
-                
+
                 if self.preempt_disable_depth > 0 {
                     self.need_resched = true;
                     return None;
                 }
-                
+
                 // Decrement current task's time slice
                 if let Some(current_id) = self.current {
                     if let Some(task) = self.tasks.iter_mut().find(|t| t.id == current_id) {
@@ -184,14 +188,16 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         self.prepare_yield()
     }
-    
+
     /// Check if preemption has been disabled too long
     fn check_preempt_watchdog(&mut self) {
         if self.preempt_disable_depth > 0 && !self.watchdog_warned {
             let now = TICK_COUNT.load(Ordering::Relaxed);
             if now.saturating_sub(self.preempt_disable_since) > 500 {
-                crate::kinfo!("WATCHDOG: preemption disabled for >500 ticks! depth={}", 
-                       self.preempt_disable_depth);
+                crate::kinfo!(
+                    "WATCHDOG: preemption disabled for >500 ticks! depth={}",
+                    self.preempt_disable_depth
+                );
                 self.watchdog_warned = true;
             }
         }
@@ -200,10 +206,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
     /// Wake any sleeping tasks whose sleep time has expired
     fn wake_sleepers(&mut self) {
         let now = TICK_COUNT.load(Ordering::Relaxed);
-        
+
         // Process sleep queue - we need to drain and rebuild since entries may not be sorted
         let mut remaining = alloc::collections::VecDeque::new();
-        
+
         while let Some(entry) = self.sleep_queue.pop_front() {
             if entry.wake_tick <= now {
                 // Task should wake up - add back to run queue
@@ -216,7 +222,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 remaining.push_back(entry);
             }
         }
-        
+
         self.sleep_queue = remaining;
     }
 
@@ -228,14 +234,14 @@ impl<R: BootRuntime> types::Scheduler<R> {
         }
         self.preempt_disable_depth += 1;
         if self.preempt_disable_depth == 1 {
-             // Only trace on transition to disabled? Or depth change?
-             // User task says "Record (..., preempt_disable_depth)".
-             // Let's trace all for now, or just 0->1.
-             // 0->1 is most important for start of disable region.
-             crate::trace::irq_ring::push(abi::trace::TraceEvent::PreemptDisable {
-                 depth: self.preempt_disable_depth as u32, 
-                 timestamp: crate::trace::now() 
-             });
+            // Only trace on transition to disabled? Or depth change?
+            // User task says "Record (..., preempt_disable_depth)".
+            // Let's trace all for now, or just 0->1.
+            // 0->1 is most important for start of disable region.
+            crate::trace::irq_ring::push(abi::trace::TraceEvent::PreemptDisable {
+                depth: self.preempt_disable_depth as u32,
+                timestamp: crate::trace::now(),
+            });
         }
     }
 
@@ -305,7 +311,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
         self.metrics.yields += 1;
 
         if Some(current_id) != self.idle_task {
-            let priority = self.tasks.iter().find(|t| t.id == current_id).map(|t| t.priority).unwrap_or(TaskPriority::Normal);
+            let priority = self
+                .tasks
+                .iter()
+                .find(|t| t.id == current_id)
+                .map(|t| t.priority)
+                .unwrap_or(TaskPriority::Normal);
             self.runq[priority as usize].push_back(current_id);
             self.metrics.pushes += 1;
         }
@@ -430,7 +441,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
             // If it's runnable and in a runq, move it to the new runq
             if self.tasks[idx].state == TaskState::Runnable {
-                if let Some(pos) = self.runq[old_priority as usize].iter().position(|&rid| rid == id) {
+                if let Some(pos) = self.runq[old_priority as usize]
+                    .iter()
+                    .position(|&rid| rid == id)
+                {
                     self.runq[old_priority as usize].remove(pos);
                     self.runq[priority as usize].push_back(id);
                 }

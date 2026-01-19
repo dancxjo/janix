@@ -4,15 +4,15 @@ use crate::BootRuntime;
 use crate::BootTasking;
 use crate::task::TaskState;
 
-use super::types::Scheduler;
 use super::SCHEDULER;
+use super::types::Scheduler;
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]
-use super::{read_cr3, log_context_switch};
+use super::{log_context_switch, read_cr3};
 
-static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> = 
+static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> =
     core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
-static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> = 
+static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> =
     core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
 
 pub fn block_current<R: BootRuntime>() {

@@ -4,17 +4,17 @@
 //! Both multi-op batches (SYS_ROOT_APPLY_BATCH) and single-op syscalls
 //! (CREATE_NODE, LINK, PROP_SET) route through `apply_ops_and_commit()`.
 
-use crate::root::graph::{Graph, ThingId, CommitSummary};
+use crate::root::graph::{CommitSummary, Graph, ThingId};
 use crate::root::handlers::HandlerResult;
+use crate::root::symbols::Interner;
 use abi::root::{
-    BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP,
-    REF_ABSOLUTE, REF_LOCAL, MAX_BATCH_BYTES, MAX_BATCH_OPS, MAX_LOCAL_REFS,
+    BATCH_MAGIC, BATCH_VERSION, MAX_BATCH_BYTES, MAX_BATCH_OPS, MAX_LOCAL_REFS, OP_CREATE_NODE,
+    OP_PUT_EDGE, OP_SET_PROP, REF_ABSOLUTE, REF_LOCAL,
 };
 use abi::symbols::SymbolId;
-use core::sync::atomic::{AtomicU64, Ordering};
-use alloc::vec::Vec;
-use crate::root::symbols::Interner;
 use alloc::string::String;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // Instrumentation Counters
@@ -32,10 +32,10 @@ pub static BATCH_REALLOCATIONS: AtomicU64 = AtomicU64::new(0);
 // ============================================================================
 
 /// Reusable scratch buffer for batch parsing and validation.
-/// 
+///
 /// Avoids repeated allocations by reusing capacity across ApplyBatch calls.
 /// Each root service instance owns one of these.
-/// 
+///
 /// Note: locals arrays are boxed to avoid stack overflow (9KB total).
 pub struct RootBatchScratch {
     /// Validated ops staging area (capacity preserved across calls)
@@ -58,10 +58,10 @@ impl RootBatchScratch {
             locals_init: alloc::boxed::Box::new([false; MAX_LOCAL_REFS]),
         }
     }
-    
+
     /// Reset scratch for next batch (preserves allocation capacity).
     pub fn reset(&mut self) {
-        self.ops.clear();  // Keeps capacity
+        self.ops.clear(); // Keeps capacity
         self.locals_init.fill(false);
         // locals array can be left as-is since locals_init guards access
     }
@@ -74,9 +74,17 @@ pub enum ValidatedOp {
     /// Create a new node with the given kind.
     CreateNode { kind: SymbolId, out_idx: usize },
     /// Create an edge between two nodes.
-    PutEdge { src: ThingId, rel: SymbolId, dst: ThingId },
+    PutEdge {
+        src: ThingId,
+        rel: SymbolId,
+        dst: ThingId,
+    },
     /// Set a property on a node.
-    SetProp { id: ThingId, key: SymbolId, value: u64 },
+    SetProp {
+        id: ThingId,
+        key: SymbolId,
+        value: u64,
+    },
 }
 
 /// Result from applying operations.
@@ -107,7 +115,7 @@ pub fn apply_ops_and_commit(
 ) -> ApplyResult {
     let mut local_refs: Vec<ThingId> = Vec::with_capacity(16);
     let mut created_ids: Vec<ThingId> = Vec::new();
-    
+
     // Compute summary from validated ops (O(1) filtering at read time)
     let mut summary = CommitSummary::default();
 
@@ -144,7 +152,9 @@ pub fn apply_ops_and_commit(
     let new_seq = graph.root_seq.fetch_add(1, Ordering::SeqCst) + 1;
 
     // Push to shared commit history with summary for O(1) filter matching
-    graph.commit_history.push(new_seq, commit_bytes.to_vec(), summary);
+    graph
+        .commit_history
+        .push(new_seq, commit_bytes.to_vec(), summary);
 
     ApplyResult {
         status: 0,
@@ -161,7 +171,7 @@ use crate::root::graph::WatchFilter;
 use abi::root::{WATCH_F_KIND, WATCH_F_PREDICATE, WATCH_F_SUBJECT};
 
 /// Check if a batch contains at least one op matching the filter.
-/// 
+///
 /// This function scans the batch without allocating, checking each operation
 /// against the filter criteria. It returns early on first match.
 ///
@@ -174,7 +184,7 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
     if filter.matches_all() {
         return Ok(true);
     }
-    
+
     // Validate header
     if batch.len() < 8 {
         return Err(-22); // EINVAL
@@ -182,28 +192,30 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
     let magic = u32::from_le_bytes(batch[0..4].try_into().unwrap());
     let version = u16::from_le_bytes(batch[4..6].try_into().unwrap());
     let op_count = u16::from_le_bytes(batch[6..8].try_into().unwrap());
-    
+
     if magic != BATCH_MAGIC || version != BATCH_VERSION {
         return Err(-22);
     }
-    
+
     let mut cursor = 8usize;
-    
+
     for _ in 0..op_count {
         if cursor >= batch.len() {
             return Err(-22);
         }
         let tag = batch[cursor];
         cursor += 1;
-        
+
         match tag {
             OP_CREATE_NODE => {
                 // kind_id: 16 bytes, out_ref: 2 bytes = 18 bytes total
-                if cursor + 18 > batch.len() { return Err(-22); }
-                
+                if cursor + 18 > batch.len() {
+                    return Err(-22);
+                }
+
                 // KIND filter matching:
-                // The 16-byte kind in the batch is a hash. To properly match, we'd 
-                // need to intern it and compare with filter.kind_id. For v0, we 
+                // The 16-byte kind in the batch is a hash. To properly match, we'd
+                // need to intern it and compare with filter.kind_id. For v0, we
                 // match any CREATE_NODE when kind filter is set (conservative).
                 if (filter.flags & WATCH_F_KIND) != 0 {
                     // TODO: Full kind matching requires comparing interned symbols
@@ -214,47 +226,71 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
             }
             OP_PUT_EDGE => {
                 // subject: ThingRef, predicate: 16 bytes, object: ThingRef, flags: 4 bytes
-                
+
                 // Parse subject ThingRef
-                if cursor >= batch.len() { return Err(-22); }
+                if cursor >= batch.len() {
+                    return Err(-22);
+                }
                 let ref_kind = batch[cursor];
                 cursor += 1;
-                let subject_size = if ref_kind == REF_ABSOLUTE { 16 } else if ref_kind == REF_LOCAL { 2 } else { return Err(-22); };
-                if cursor + subject_size > batch.len() { return Err(-22); }
-                
+                let subject_size = if ref_kind == REF_ABSOLUTE {
+                    16
+                } else if ref_kind == REF_LOCAL {
+                    2
+                } else {
+                    return Err(-22);
+                };
+                if cursor + subject_size > batch.len() {
+                    return Err(-22);
+                }
+
                 // Extract subject ID if absolute
                 let subject_id = if ref_kind == REF_ABSOLUTE {
-                    u64::from_le_bytes(batch[cursor..cursor+8].try_into().unwrap())
+                    u64::from_le_bytes(batch[cursor..cursor + 8].try_into().unwrap())
                 } else {
                     0 // Local refs can't match absolute filters
                 };
                 cursor += subject_size;
-                
+
                 // Predicate: 16 bytes (hash)
-                if cursor + 16 > batch.len() { return Err(-22); }
+                if cursor + 16 > batch.len() {
+                    return Err(-22);
+                }
                 // Note: We store predicate position for future use
                 let _pred_start = cursor;
                 cursor += 16;
-                
+
                 // Object ThingRef
-                if cursor >= batch.len() { return Err(-22); }
+                if cursor >= batch.len() {
+                    return Err(-22);
+                }
                 let obj_kind = batch[cursor];
                 cursor += 1;
-                let obj_size = if obj_kind == REF_ABSOLUTE { 16 } else if obj_kind == REF_LOCAL { 2 } else { return Err(-22); };
-                if cursor + obj_size > batch.len() { return Err(-22); }
+                let obj_size = if obj_kind == REF_ABSOLUTE {
+                    16
+                } else if obj_kind == REF_LOCAL {
+                    2
+                } else {
+                    return Err(-22);
+                };
+                if cursor + obj_size > batch.len() {
+                    return Err(-22);
+                }
                 cursor += obj_size;
-                
+
                 // Flags: 4 bytes
-                if cursor + 4 > batch.len() { return Err(-22); }
+                if cursor + 4 > batch.len() {
+                    return Err(-22);
+                }
                 cursor += 4;
-                
+
                 // Check SUBJECT filter
                 if (filter.flags & WATCH_F_SUBJECT) != 0 {
                     if ref_kind == REF_ABSOLUTE && subject_id == filter.subject_lo {
                         return Ok(true);
                     }
                 }
-                
+
                 // Check PREDICATE filter
                 // TODO: Full predicate matching requires comparing interned symbols
                 // For v0, any PUT_EDGE matches if predicate filter is set
@@ -264,23 +300,35 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
             }
             OP_SET_PROP => {
                 // subject: ThingRef, key: 16 bytes, value: 8 bytes
-                if cursor >= batch.len() { return Err(-22); }
+                if cursor >= batch.len() {
+                    return Err(-22);
+                }
                 let ref_kind = batch[cursor];
                 cursor += 1;
-                let subject_size = if ref_kind == REF_ABSOLUTE { 16 } else if ref_kind == REF_LOCAL { 2 } else { return Err(-22); };
-                if cursor + subject_size > batch.len() { return Err(-22); }
-                
+                let subject_size = if ref_kind == REF_ABSOLUTE {
+                    16
+                } else if ref_kind == REF_LOCAL {
+                    2
+                } else {
+                    return Err(-22);
+                };
+                if cursor + subject_size > batch.len() {
+                    return Err(-22);
+                }
+
                 let subject_id = if ref_kind == REF_ABSOLUTE {
-                    u64::from_le_bytes(batch[cursor..cursor+8].try_into().unwrap())
+                    u64::from_le_bytes(batch[cursor..cursor + 8].try_into().unwrap())
                 } else {
                     0
                 };
                 cursor += subject_size;
-                
+
                 // Key (16 bytes) + value (8 bytes) = 24 bytes
-                if cursor + 24 > batch.len() { return Err(-22); }
+                if cursor + 24 > batch.len() {
+                    return Err(-22);
+                }
                 cursor += 24;
-                
+
                 // Check SUBJECT filter
                 if (filter.flags & WATCH_F_SUBJECT) != 0 {
                     if ref_kind == REF_ABSOLUTE && subject_id == filter.subject_lo {
@@ -291,7 +339,7 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
             _ => return Err(-22), // Unknown op tag
         }
     }
-    
+
     // No ops matched the filter
     Ok(false)
 }
@@ -311,27 +359,33 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 }
 
 /// Parse a ThingRef from the batch buffer using scratch locals.
-/// 
+///
 /// Returns the resolved ThingId or an error code:
 /// - `-22` (EINVAL) for invalid format or uninitialized local ref
 fn parse_ref_scratch(
-    cursor: &mut usize, 
-    data: &[u8], 
-    scratch: &RootBatchScratch
+    cursor: &mut usize,
+    data: &[u8],
+    scratch: &RootBatchScratch,
 ) -> Result<ThingId, i32> {
-    if *cursor >= data.len() { return Err(-22); }
+    if *cursor >= data.len() {
+        return Err(-22);
+    }
     let kind = data[*cursor];
     *cursor += 1;
     match kind {
         REF_ABSOLUTE => {
-            if *cursor + 16 > data.len() { return Err(-22); }
-            let val = u64::from_le_bytes(data[*cursor..*cursor+8].try_into().unwrap());
+            if *cursor + 16 > data.len() {
+                return Err(-22);
+            }
+            let val = u64::from_le_bytes(data[*cursor..*cursor + 8].try_into().unwrap());
             *cursor += 16;
             Ok(val)
         }
         REF_LOCAL => {
-            if *cursor + 2 > data.len() { return Err(-22); }
-            let idx = u16::from_le_bytes(data[*cursor..*cursor+2].try_into().unwrap()) as usize;
+            if *cursor + 2 > data.len() {
+                return Err(-22);
+            }
+            let idx = u16::from_le_bytes(data[*cursor..*cursor + 2].try_into().unwrap()) as usize;
             *cursor += 2;
             // Validate local ref is within bounds and initialized
             if idx >= MAX_LOCAL_REFS {
@@ -342,12 +396,12 @@ fn parse_ref_scratch(
             }
             Ok(scratch.locals[idx])
         }
-        _ => Err(-22)
+        _ => Err(-22),
     }
 }
 
 /// Parse batch bytes into validated operations using scratch buffer.
-/// 
+///
 /// # Errors
 /// - `-7` (E2BIG): batch too large or too many ops
 /// - `-22` (EINVAL): malformed format, invalid refs
@@ -360,7 +414,7 @@ fn parse_batch_scratch(
     if batch.len() > MAX_BATCH_BYTES {
         return Err(-7); // E2BIG
     }
-    
+
     if batch.len() < 8 {
         return Err(-22); // EINVAL: too short for header
     }
@@ -372,7 +426,7 @@ fn parse_batch_scratch(
     if magic != BATCH_MAGIC || version != BATCH_VERSION {
         return Err(-22); // EINVAL
     }
-    
+
     // Cap validation: op count
     if op_count > MAX_BATCH_OPS {
         return Err(-7); // E2BIG
@@ -386,29 +440,36 @@ fn parse_batch_scratch(
     let mut cursor = 8usize;
 
     for _ in 0..op_count {
-        if cursor >= batch.len() { return Err(-22); }
+        if cursor >= batch.len() {
+            return Err(-22);
+        }
         let tag = batch[cursor];
         cursor += 1;
 
         match tag {
             OP_CREATE_NODE => {
-                if cursor + 16 > batch.len() { return Err(-22); }
+                if cursor + 16 > batch.len() {
+                    return Err(-22);
+                }
                 let kind_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
                 cursor += 16;
                 let kind_str = bytes_to_hex(&kind_bytes);
                 let kind = interner.intern(&kind_str);
 
-                if cursor + 2 > batch.len() { return Err(-22); }
-                let out_idx = u16::from_le_bytes(batch[cursor..cursor+2].try_into().unwrap()) as usize;
+                if cursor + 2 > batch.len() {
+                    return Err(-22);
+                }
+                let out_idx =
+                    u16::from_le_bytes(batch[cursor..cursor + 2].try_into().unwrap()) as usize;
                 cursor += 2;
-                
+
                 // Validate out_ref within bounds
                 if out_idx >= MAX_LOCAL_REFS {
                     return Err(-22); // EINVAL: out_ref too large
                 }
 
                 scratch.ops.push(ValidatedOp::CreateNode { kind, out_idx });
-                
+
                 // Mark local ref as initialized (placeholder value, filled at apply time)
                 scratch.locals[out_idx] = 0;
                 scratch.locals_init[out_idx] = true;
@@ -416,7 +477,9 @@ fn parse_batch_scratch(
             OP_PUT_EDGE => {
                 let src = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
-                if cursor + 16 > batch.len() { return Err(-22); }
+                if cursor + 16 > batch.len() {
+                    return Err(-22);
+                }
                 let rel_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
                 cursor += 16;
                 let rel_str = bytes_to_hex(&rel_bytes);
@@ -429,19 +492,25 @@ fn parse_batch_scratch(
             OP_SET_PROP => {
                 let id = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
-                if cursor + 16 > batch.len() { return Err(-22); }
+                if cursor + 16 > batch.len() {
+                    return Err(-22);
+                }
                 let key_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
                 cursor += 16;
                 let key_str = bytes_to_hex(&key_bytes);
                 let key = interner.intern(&key_str);
 
-                if cursor + 8 > batch.len() { return Err(-22); }
+                if cursor + 8 > batch.len() {
+                    return Err(-22);
+                }
                 let value = u64::from_le_bytes(batch[cursor..cursor + 8].try_into().unwrap());
                 cursor += 8;
 
                 scratch.ops.push(ValidatedOp::SetProp { id, key, value });
             }
-            _ => { return Err(-22); } // Unknown op tag
+            _ => {
+                return Err(-22);
+            } // Unknown op tag
         }
     }
 
@@ -459,18 +528,18 @@ pub fn handle_apply_batch_with_scratch(
 ) -> HandlerResult {
     // Increment call counter
     BATCH_CALLS.fetch_add(1, Ordering::Relaxed);
-    
+
     // Track capacity before parsing for reallocation detection
     let old_cap = scratch.ops.capacity();
-    
+
     // Reset scratch for this batch
     scratch.reset();
-    
+
     // Parse batch into scratch.ops (validation happens here)
     if let Err(code) = parse_batch_scratch(batch, interner, scratch) {
         return (code, 0);
     }
-    
+
     // Track ops and detect reallocations
     BATCH_OPS_TOTAL.fetch_add(scratch.ops.len() as u64, Ordering::Relaxed);
     if scratch.ops.capacity() != old_cap {
@@ -479,15 +548,15 @@ pub fn handle_apply_batch_with_scratch(
 
     // Apply through canonical commit path
     let result = apply_ops_and_commit(graph, &scratch.ops, batch);
-    
+
     (result.status, result.seq)
 }
 
 /// Handle SYS_ROOT_APPLY_BATCH (legacy interface without scratch - allocates each call)
 ///
 /// Parses the batch, validates operations, and commits through the canonical path.
-/// 
-/// NOTE: This allocates a new scratch each call. For zero-alloc hot path, 
+///
+/// NOTE: This allocates a new scratch each call. For zero-alloc hot path,
 /// use `handle_apply_batch_with_scratch` instead.
 pub fn handle_apply_batch(
     graph: &mut Graph,

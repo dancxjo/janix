@@ -1,7 +1,7 @@
 //! Root service message handlers, organized by domain.
 
-pub mod bytespace;
 pub mod batch;
+pub mod bytespace;
 pub mod debug;
 pub mod encode;
 pub mod graph;
@@ -18,4 +18,3 @@ pub use watch::*;
 
 /// Common handler result type: (status, value)
 pub type HandlerResult = (i32, u64);
-

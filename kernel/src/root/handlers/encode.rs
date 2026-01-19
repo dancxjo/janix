@@ -4,9 +4,11 @@
 //! This ensures that single-op mutations produce the same wire format
 //! as multi-op batches, enabling uniform treatment by watchers.
 
-use alloc::vec::Vec;
-use abi::root::{BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP, REF_ABSOLUTE};
 use crate::root::graph::ThingId;
+use abi::root::{
+    BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP, REF_ABSOLUTE,
+};
+use alloc::vec::Vec;
 
 /// Convert a SymbolId to 16-byte hex representation.
 /// This matches the batch decoder's `bytes_to_hex` conversion.
@@ -94,12 +96,12 @@ mod tests {
     fn test_encode_create_node_header() {
         let kind = [0xAB; 16];
         let batch = encode_create_node(&kind, 0);
-        
+
         // Check header
         assert_eq!(&batch[0..4], &BATCH_MAGIC.to_le_bytes());
         assert_eq!(&batch[4..6], &BATCH_VERSION.to_le_bytes());
         assert_eq!(&batch[6..8], &1u16.to_le_bytes()); // op_count = 1
-        
+
         // Check op tag
         assert_eq!(batch[8], OP_CREATE_NODE);
     }

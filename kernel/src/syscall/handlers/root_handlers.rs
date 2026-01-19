@@ -1,12 +1,11 @@
 //! Root/Graph syscalls
 
+use super::{copyin, copyout, read_symbol, root_call};
 use crate::root::{self as root_svc, RootOp};
 use crate::syscall::validate::validate_user_range;
-use super::{copyin, copyout, read_symbol, root_call};
 use abi::errors::{Errno, SysResult};
 use alloc::string::String;
 use core::sync::atomic::Ordering;
-
 
 pub fn sys_root_get_kind(id: usize) -> SysResult<usize> {
     root_call(RootOp::GetKind { id: id as u64 })
@@ -286,13 +285,13 @@ pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<u
 
 pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
     validate_user_range(out_ptr, len, true)?;
-    
+
     // Allocate a temporary kernel buffer to receive the edges
     // Must be large enough to hold some edges, but not too large for stack
     // GraphEdge is now abi::types::Edge (52 bytes).
     let mut kbuf = [0u8; 4096]; // ~78 edges max per batch
     let kbuf_len = core::cmp::min(len, kbuf.len());
-    
+
     let reply = root_svc::enqueue(RootOp::GetEdges {
         id: id as u64,
         buffer: kbuf.as_mut_ptr() as u64,
@@ -387,7 +386,12 @@ pub fn sys_root_watch_subscribe(target: usize, mask: usize) -> SysResult<usize> 
         mask: mask as u64,
     });
     if let Err(e) = res {
-        crate::kinfo!("FLAT: sys_root_watch_subscribe target={} mask={} failed: {:?}", target, mask, e);
+        crate::kinfo!(
+            "FLAT: sys_root_watch_subscribe target={} mask={} failed: {:?}",
+            target,
+            mask,
+            e
+        );
     }
     res
 }
@@ -488,7 +492,7 @@ pub fn sys_root_bytespace_write(
 
 pub fn sys_root_bytespace_info(id: usize) -> SysResult<usize> {
     let reply = root_svc::enqueue(RootOp::BytespaceInfo { id: id as u64 });
-    
+
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
@@ -510,12 +514,9 @@ pub fn sys_root_bytespace_info(id: usize) -> SysResult<usize> {
 pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
     // Get caller's TID
     let tid = unsafe { crate::task::scheduler::current_tid_current() };
-    
-    let reply = root_svc::enqueue(RootOp::BytespaceMap {
-        id: id as u64,
-        tid,
-    });
-    
+
+    let reply = root_svc::enqueue(RootOp::BytespaceMap { id: id as u64, tid });
+
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
@@ -524,17 +525,17 @@ pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
                 let user_va = reply.value.load(Ordering::Relaxed);
                 let phys_base = reply.p0.load(Ordering::Relaxed);
                 let page_count = reply.p1.load(Ordering::Relaxed) as usize;
-                
+
                 // Map pages using global mapping hook
                 for i in 0..page_count {
                     let virt = user_va + (i as u64 * 4096);
                     let phys = phys_base + (i as u64 * 4096);
-                    
+
                     unsafe {
                         crate::memory::map_user_page(virt, phys)?;
                     }
                 }
-                
+
                 return Ok(user_va as usize);
             } else {
                 return Err(Errno::ENOENT);
@@ -548,13 +549,13 @@ pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
 
 pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
     let tid = unsafe { crate::task::scheduler::current_tid_current() };
-    
+
     let reply = root_svc::enqueue(RootOp::BytespaceUnmap {
         id: id as u64,
         user_va: user_va as u64,
         tid,
     });
-    
+
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
@@ -589,28 +590,37 @@ pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
         }
         unsafe {
             crate::task::scheduler::yield_now_current();
+        }
     }
 }
-
-}
-   use crate::kinfo;
+use crate::kinfo;
 
 pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
-    use abi::types::WatchSpec;
+    use crate::root::graph::WatchFilter;
+    use crate::root::query::PreparedStep;
     use abi::query::QueryStep;
     use abi::root::RootWatchFilter;
-    use crate::root::query::PreparedStep;
-    use crate::root::graph::WatchFilter;
+    use abi::types::WatchSpec;
 
     kinfo!("sys_root_watch_open: ptr={:#x}", spec_ptr);
     let mut spec = WatchSpec::default();
-    let spec_slice = unsafe { 
-        core::slice::from_raw_parts_mut(&mut spec as *mut _ as *mut u8, core::mem::size_of::<WatchSpec>()) 
+    let spec_slice = unsafe {
+        core::slice::from_raw_parts_mut(
+            &mut spec as *mut _ as *mut u8,
+            core::mem::size_of::<WatchSpec>(),
+        )
     };
-    kinfo!("sys_root_watch_open: validating range len={}", spec_slice.len());
+    kinfo!(
+        "sys_root_watch_open: validating range len={}",
+        spec_slice.len()
+    );
     validate_user_range(spec_ptr, spec_slice.len(), false)?;
     unsafe { copyin(spec_slice, spec_ptr)? };
-    kinfo!("sys_root_watch_open: copyin success. mode={} start_seq={}", spec.mode, spec.start_seq);
+    kinfo!(
+        "sys_root_watch_open: copyin success. mode={} start_seq={}",
+        spec.mode,
+        spec.start_seq
+    );
 
     let plan_ptr = spec.query_ptr as usize;
     let plan_len = spec.query_len as usize;
@@ -628,9 +638,8 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     for i in 0..plan_len {
         let ptr = plan_ptr + i * step_size;
         let mut step: QueryStep = unsafe { core::mem::zeroed() };
-        let slice = unsafe { 
-            core::slice::from_raw_parts_mut(&mut step as *mut _ as *mut u8, step_size) 
-        };
+        let slice =
+            unsafe { core::slice::from_raw_parts_mut(&mut step as *mut _ as *mut u8, step_size) };
         unsafe { copyin(slice, ptr)? };
 
         let sym_id = match step.symbol.tag {
@@ -662,16 +671,20 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     }
 
     // Read filter if provided
-    let filter = if spec.filter_ptr != 0 && spec.filter_len >= core::mem::size_of::<RootWatchFilter>() as u64 {
+    let filter = if spec.filter_ptr != 0
+        && spec.filter_len >= core::mem::size_of::<RootWatchFilter>() as u64
+    {
         let filter_ptr = spec.filter_ptr as usize;
         validate_user_range(filter_ptr, core::mem::size_of::<RootWatchFilter>(), false)?;
         let mut abi_filter = RootWatchFilter::default();
         let filter_slice = unsafe {
-            core::slice::from_raw_parts_mut(&mut abi_filter as *mut _ as *mut u8, 
-                core::mem::size_of::<RootWatchFilter>())
+            core::slice::from_raw_parts_mut(
+                &mut abi_filter as *mut _ as *mut u8,
+                core::mem::size_of::<RootWatchFilter>(),
+            )
         };
         unsafe { copyin(filter_slice, filter_ptr)? };
-        
+
         // Convert ABI filter to kernel filter
         WatchFilter {
             flags: abi_filter.flags,
@@ -762,7 +775,7 @@ pub fn sys_root_watch_next(
 
 pub fn sys_root_apply_batch(ptr: usize, len: usize) -> SysResult<usize> {
     validate_user_range(ptr, len, false)?;
-    
+
     // Validated above
     let mut batch = alloc::vec::Vec::with_capacity(len);
     unsafe {
@@ -770,9 +783,7 @@ pub fn sys_root_apply_batch(ptr: usize, len: usize) -> SysResult<usize> {
         copyin(&mut batch, ptr)?;
     }
 
-    let reply = root_svc::enqueue(RootOp::ApplyBatch {
-        batch,
-    });
+    let reply = root_svc::enqueue(RootOp::ApplyBatch { batch });
 
     loop {
         let done = reply.done.load(Ordering::Acquire);

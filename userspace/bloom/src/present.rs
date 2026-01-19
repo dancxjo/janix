@@ -22,15 +22,15 @@ pub trait Presenter {
     /// Acquire a frame slot, snapshotting current asset generation.
     /// Returns a token that must be consumed by present_frame().
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken;
-    
+
     /// Present a completed frame (consumes token).
     /// Returns statistics about the presentation.
     fn present_frame(&mut self, token: FrameToken) -> PresentStats;
-    
+
     /// Legacy present method (deprecated, use present_frame)
     #[allow(dead_code)]
     fn present(&mut self, damage: &Damage);
-    
+
     /// Pump the message queue for driver communication.
     fn pump(&mut self);
 }
@@ -41,22 +41,22 @@ impl Presenter for NullPresenter {
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         static FRAME_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
         let frame_id = FRAME_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
-        
+
         // Register in-flight frame for safe eviction
         reclaimer::register_in_flight(frame_id, asset_gen);
-        
+
         FrameToken::new(frame_id, asset_gen, spec)
     }
-    
+
     fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         let ops_count = token.ops.iter().count();
         let damage_rect_count = token.damage.rect_count();
         let frame_id = token.frame_id;
         let asset_gen = token.asset_gen;
-        
+
         // Complete in-flight frame
         reclaimer::complete_in_flight(frame_id);
-        
+
         PresentStats {
             frame_id,
             asset_gen,
@@ -65,7 +65,7 @@ impl Presenter for NullPresenter {
             fast_path_taken: token.damage.is_empty(),
         }
     }
-    
+
     fn present(&mut self, _damage: &Damage) {}
     fn pump(&mut self) {}
 }
@@ -93,7 +93,6 @@ impl DriverPresenter {
         }
     }
 
-
     pub fn send_bind(&mut self, payload: &BindPayload) {
         let mut bytes = [0u8; core::mem::size_of::<BindPayload>()];
         bytes[0..8].copy_from_slice(&payload.bytespace_id.to_le_bytes());
@@ -116,7 +115,6 @@ impl DriverPresenter {
         // Max 8 rects => 128 bytes
         // Total payload max: 136 bytes
         let mut payload = [0u8; 136];
-        
 
         let mut offset = 8; // Skip header for now
 
@@ -132,7 +130,7 @@ impl DriverPresenter {
                 h: r.h.max(0) as u32,
             };
             let r_bytes: [u8; 16] = unsafe { core::mem::transmute(abi_rect) };
-            payload[offset..offset+16].copy_from_slice(&r_bytes);
+            payload[offset..offset + 16].copy_from_slice(&r_bytes);
             offset += 16;
         }
 
@@ -149,8 +147,10 @@ impl DriverPresenter {
         // DriverHeader (12) + Payload (136) = 148
         let mut buf = [0u8; 256];
         let payload_len = 8 + (rect_count as usize * 16);
-        
-        if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_PRESENT, &payload[..payload_len]) {
+
+        if let Some(len) =
+            drvproto::encode_message(&mut buf, drvproto::MSG_PRESENT, &payload[..payload_len])
+        {
             let _ = port_send(self.req_write, &buf[..len]);
         }
     }
@@ -165,8 +165,7 @@ impl DriverPresenter {
             let remaining = self.rx_buf.len().saturating_sub(self.rx_len);
             let to_copy = n.min(remaining);
             if to_copy > 0 {
-                self.rx_buf[self.rx_len..self.rx_len + to_copy]
-                    .copy_from_slice(&temp[..to_copy]);
+                self.rx_buf[self.rx_len..self.rx_len + to_copy].copy_from_slice(&temp[..to_copy]);
                 self.rx_len += to_copy;
             } else {
                 self.rx_len = 0;
@@ -179,13 +178,11 @@ impl DriverPresenter {
         match msg_type {
             drvproto::MSG_REGISTER => {
                 if payload_len >= core::mem::size_of::<RegisterPayload>() {
-                    let reg: RegisterPayload = unsafe {
-                        core::ptr::read_unaligned(payload_ptr as *const RegisterPayload)
-                    };
+                    let reg: RegisterPayload =
+                        unsafe { core::ptr::read_unaligned(payload_ptr as *const RegisterPayload) };
                     let driver_kind =
                         unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(reg.driver_kind)) };
-                    let caps =
-                        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(reg.caps)) };
+                    let caps = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(reg.caps)) };
                     info!(
                         "bloom: driver REGISTER (kind={} caps=0x{:x})",
                         driver_kind, caps
@@ -204,9 +201,8 @@ impl DriverPresenter {
             }
             drvproto::MSG_ERR => {
                 let code = if payload_len >= core::mem::size_of::<ErrResp>() {
-                    let err: ErrResp = unsafe {
-                        core::ptr::read_unaligned(payload_ptr as *const ErrResp)
-                    };
+                    let err: ErrResp =
+                        unsafe { core::ptr::read_unaligned(payload_ptr as *const ErrResp) };
                     unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(err.code)) }
                 } else {
                     0
@@ -267,13 +263,13 @@ impl DriverPresenter {
 impl Presenter for DriverPresenter {
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         self.frame_count += 1;
-        
+
         // Register in-flight frame for safe eviction
         reclaimer::register_in_flight(self.frame_count, asset_gen);
-        
+
         FrameToken::new(self.frame_count, asset_gen, spec)
     }
-    
+
     fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         let ops_count = token.ops.iter().count();
         let damage_rect_count = token.damage.rect_count();
@@ -288,16 +284,16 @@ impl Presenter for DriverPresenter {
             let _evictions = reclaimer::eviction_count();
             let _in_flight = reclaimer::in_flight_count();
             let _min_gen = reclaimer::min_live_gen();
-            
+
             /*
             if token.damage.is_full {
-                info!("bloom: frame {} gen={} (full redraw) mem={}/{}b evictions={} in_flight={} min_gen={}", 
+                info!("bloom: frame {} gen={} (full redraw) mem={}/{}b evictions={} in_flight={} min_gen={}",
                     frame_id, asset_gen.0, mem_used, mem_budget, evictions, in_flight, min_gen.0);
             } else if damage_rect_count == 0 {
-                info!("bloom: frame {} gen={} (no damage - idle) mem={}/{}b", 
+                info!("bloom: frame {} gen={} (no damage - idle) mem={}/{}b",
                     frame_id, asset_gen.0, mem_used, mem_budget);
             } else {
-                info!("bloom: frame {} gen={} ({} damage rects) mem={}/{}b", 
+                info!("bloom: frame {} gen={} ({} damage rects) mem={}/{}b",
                     frame_id, asset_gen.0, damage_rect_count, mem_used, mem_budget);
             }
             */
@@ -358,7 +354,7 @@ impl PresenterImpl {
             PresenterImpl::Driver(inner) => inner.acquire_frame(spec, asset_gen),
         }
     }
-    
+
     pub fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         match self {
             PresenterImpl::Null(inner) => inner.present_frame(token),

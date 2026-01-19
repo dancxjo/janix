@@ -26,31 +26,31 @@ pub fn disable_pic() {
     // Save existing masks (for debugging)
     let _mask1 = ioport_read_u8(PIC1_DATA);
     let _mask2 = ioport_read_u8(PIC2_DATA);
-    
+
     // ICW1: Start initialization sequence
     ioport_write_u8(PIC1_CMD, ICW1_INIT | ICW1_ICW4);
     io_wait();
     ioport_write_u8(PIC2_CMD, ICW1_INIT | ICW1_ICW4);
     io_wait();
-    
+
     // ICW2: Set vector offsets
     ioport_write_u8(PIC1_DATA, 0x20); // Master PIC starts at vector 0x20
     io_wait();
     ioport_write_u8(PIC2_DATA, 0x28); // Slave PIC starts at vector 0x28
     io_wait();
-    
+
     // ICW3: Configure cascading
     ioport_write_u8(PIC1_DATA, 0x04); // Slave on IRQ2
     io_wait();
     ioport_write_u8(PIC2_DATA, 0x02); // Cascade identity
     io_wait();
-    
+
     // ICW4: 8086 mode
     ioport_write_u8(PIC1_DATA, ICW4_8086);
     io_wait();
     ioport_write_u8(PIC2_DATA, ICW4_8086);
     io_wait();
-    
+
     // Mask all IRQs on both PICs
     ioport_write_u8(PIC1_DATA, 0xFF);
     io_wait();

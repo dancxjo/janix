@@ -1,5 +1,5 @@
-use alloc::vec::Vec;
 use alloc::vec;
+use alloc::vec::Vec;
 
 pub struct Bitset {
     bits: Vec<u64>,
@@ -63,14 +63,13 @@ mod tests {
     fn test_set_range() {
         let mut bs = Bitset::new(100);
         bs.set_range(10, 10); // 10..20
-        
+
         assert!(!bs.test(9));
         for i in 10..20 {
             assert!(bs.test(i));
         }
         assert!(!bs.test(20));
     }
-
 
     #[test]
     fn test_set_clear_test() {
@@ -88,7 +87,7 @@ mod tests {
         assert_eq!(bs.find_first_zero(), Some(0));
         bs.set(0);
         assert_eq!(bs.find_first_zero(), Some(1));
-        
+
         // Fill first word
         for i in 0..64 {
             bs.set(i);

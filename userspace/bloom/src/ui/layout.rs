@@ -1,11 +1,11 @@
-use alloc::vec::Vec;
+use crate::asset::AssetBank;
+use crate::damage::Rect;
+use crate::ui::snapshot::{UiNodeSnapshot, UiSnapshot};
+use abi::schema::keys;
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::vec::Vec;
 use stem::thing::ThingId;
-use crate::damage::Rect;
-use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot};
-use abi::schema::keys;
-use crate::asset::AssetBank;
 
 #[derive(Debug, Clone)]
 pub struct LayoutNode {
@@ -34,7 +34,14 @@ impl LayoutSolver {
         }
     }
 
-    pub fn solve(&mut self, snapshot: &UiSnapshot, screen_w: i32, screen_h: i32, assets: &AssetBank, symbols: &impl SymbolResolver) -> LayoutTree {
+    pub fn solve(
+        &mut self,
+        snapshot: &UiSnapshot,
+        screen_w: i32,
+        screen_h: i32,
+        assets: &AssetBank,
+        symbols: &impl SymbolResolver,
+    ) -> LayoutTree {
         let root_id = match snapshot.root_id {
             Some(id) => id,
             None => return LayoutTree { root: None },
@@ -53,23 +60,32 @@ impl LayoutSolver {
             children: Vec::new(),
         };
 
-        Self::layout_children(snapshot, root_node, &mut root_layout, assets, symbols, &mut self.measure_cache);
+        Self::layout_children(
+            snapshot,
+            root_node,
+            &mut root_layout,
+            assets,
+            symbols,
+            &mut self.measure_cache,
+        );
 
-        LayoutTree { root: Some(root_layout) }
+        LayoutTree {
+            root: Some(root_layout),
+        }
     }
 
     fn layout_children(
-        snapshot: &UiSnapshot, 
-        node: &UiNodeSnapshot, 
-        layout: &mut LayoutNode, 
-        assets: &AssetBank, 
+        snapshot: &UiSnapshot,
+        node: &UiNodeSnapshot,
+        layout: &mut LayoutNode,
+        assets: &AssetBank,
         symbols: &impl SymbolResolver,
         cache: &mut BTreeMap<(String, String, u32), (f32, f32)>,
     ) {
         for child_id in &node.children {
             if let Some(child_node) = snapshot.nodes.get(child_id) {
                 // Determine layout strategy for this node.
-                
+
                 let mut w = Self::get_prop(child_node, keys::UI_WIDTH, symbols) as i32;
                 let mut h = Self::get_prop(child_node, keys::UI_HEIGHT, symbols) as i32;
 
@@ -80,7 +96,8 @@ impl LayoutSolver {
                 if center_x || center_y {
                     // Try to measure if it's text
                     if let Some(text) = Self::get_str_prop(child_node, keys::UI_TEXT, symbols) {
-                        let font_name = Self::get_str_prop(child_node, keys::UI_FONT, symbols).unwrap_or_else(|| "NotoSans-Regular.ttf".into());
+                        let font_name = Self::get_str_prop(child_node, keys::UI_FONT, symbols)
+                            .unwrap_or_else(|| "NotoSans-Regular.ttf".into());
                         let size = Self::get_prop(child_node, keys::UI_FONT_SIZE, symbols) as f32;
                         let font_size = if size == 0.0 { 16.0 } else { size };
 
@@ -106,10 +123,10 @@ impl LayoutSolver {
                 let mut y = Self::get_prop(child_node, keys::UI_Y, symbols) as i32;
 
                 if center_x {
-                     x = (layout.rect.w - w) / 2;
+                    x = (layout.rect.w - w) / 2;
                 }
                 if center_y {
-                     y = (layout.rect.h - h) / 2;
+                    y = (layout.rect.h - h) / 2;
                 }
 
                 let z = Self::get_prop(child_node, keys::UI_Z_INDEX, symbols) as i32;
@@ -121,7 +138,14 @@ impl LayoutSolver {
                     children: Vec::new(),
                 };
 
-                Self::layout_children(snapshot, child_node, &mut child_layout, assets, symbols, cache);
+                Self::layout_children(
+                    snapshot,
+                    child_node,
+                    &mut child_layout,
+                    assets,
+                    symbols,
+                    cache,
+                );
                 layout.children.push(child_layout);
             }
         }
@@ -130,24 +154,31 @@ impl LayoutSolver {
         layout.children.sort_by_key(|n| n.z_index);
     }
 
-    fn measure_text(text: &str, font_name: &str, size: f32, assets: &AssetBank) -> Option<(f32, f32)> {
+    fn measure_text(
+        text: &str,
+        font_name: &str,
+        size: f32,
+        assets: &AssetBank,
+    ) -> Option<(f32, f32)> {
         // Find font
         let fonts = assets.get_fonts(); // Get all ready fonts
-        let font = fonts.iter().find(|f| f.name.contains(font_name))
+        let font = fonts
+            .iter()
+            .find(|f| f.name.contains(font_name))
             .or_else(|| fonts.first()); // Fallback
 
         if let Some(f) = font {
-             // Basic measurement: width sum + max height
-             // fontdue has metrics
-             let metrics = f.font.horizontal_line_metrics(size);
-             if let Some(m) = metrics {
-                  let mut width = 0.0;
-                  for ch in text.chars() {
-                      let metrics = f.font.metrics(ch, size);
-                      width += metrics.advance_width;
-                  }
-                  return Some((width, m.new_line_size));
-             }
+            // Basic measurement: width sum + max height
+            // fontdue has metrics
+            let metrics = f.font.horizontal_line_metrics(size);
+            if let Some(m) = metrics {
+                let mut width = 0.0;
+                for ch in text.chars() {
+                    let metrics = f.font.metrics(ch, size);
+                    width += metrics.advance_width;
+                }
+                return Some((width, m.new_line_size));
+            }
         }
         None
     }
@@ -159,7 +190,11 @@ impl LayoutSolver {
         0
     }
 
-    fn get_str_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> Option<String> {
+    fn get_str_prop(
+        node: &UiNodeSnapshot,
+        key: &str,
+        symbols: &impl SymbolResolver,
+    ) -> Option<String> {
         if let Some(id) = symbols.resolve(key) {
             return node.strings.get(&id).cloned();
         }
@@ -170,11 +205,11 @@ impl LayoutSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::snapshot::{UiNodeSnapshot, UiNodeKind};
-    use alloc::collections::BTreeMap;
-    use alloc::vec;
+    use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot};
     use abi::schema::keys;
+    use alloc::collections::BTreeMap;
     use alloc::string::ToString;
+    use alloc::vec;
 
     struct MockSymbolResolver {
         map: BTreeMap<String, u32>,
@@ -213,31 +248,37 @@ mod tests {
         let root_id = make_id(1);
         let child_id = make_id(2);
         snapshot.root_id = Some(root_id);
-        
+
         // Root node
         let root_props = BTreeMap::new();
-        snapshot.nodes.insert(root_id, UiNodeSnapshot {
-            id: root_id,
-            kind: UiNodeKind::Root,
-            props: root_props,
-            strings: BTreeMap::new(),
-            children: vec![child_id],
-        });
+        snapshot.nodes.insert(
+            root_id,
+            UiNodeSnapshot {
+                id: root_id,
+                kind: UiNodeKind::Root,
+                props: root_props,
+                strings: BTreeMap::new(),
+                children: vec![child_id],
+            },
+        );
 
         // Child node: 100x50, centered
         let mut child_props = BTreeMap::new();
         child_props.insert(3, 100); // UI_WIDTH
-        child_props.insert(4, 50);  // UI_HEIGHT
-        child_props.insert(5, 1);   // UI_CENTER_X
-        child_props.insert(6, 1);   // UI_CENTER_Y
+        child_props.insert(4, 50); // UI_HEIGHT
+        child_props.insert(5, 1); // UI_CENTER_X
+        child_props.insert(6, 1); // UI_CENTER_Y
 
-        snapshot.nodes.insert(child_id, UiNodeSnapshot {
-            id: child_id,
-            kind: UiNodeKind::Window, // or whatever
-            props: child_props,
-            strings: BTreeMap::new(),
-            children: vec![],
-        });
+        snapshot.nodes.insert(
+            child_id,
+            UiNodeSnapshot {
+                id: child_id,
+                kind: UiNodeKind::Window, // or whatever
+                props: child_props,
+                strings: BTreeMap::new(),
+                children: vec![],
+            },
+        );
 
         let assets = AssetBank::new();
         let resolver = MockSymbolResolver::new();

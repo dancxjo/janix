@@ -87,7 +87,7 @@ pub struct WatchSpec {
     pub query_ptr: u64,
     pub query_len: u64,
     pub mode: u32,
-    pub _padding: u32,  // Alignment padding
+    pub _padding: u32, // Alignment padding
     pub start_seq: u64,
     /// Pointer to RootWatchFilter (0 = no filter, match all)
     pub filter_ptr: u64,

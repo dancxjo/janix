@@ -239,11 +239,7 @@ pub fn lookup_vendor<'a>(tables: &'a GeneratedTables, vendor: u16) -> Option<&'a
         })
 }
 
-pub fn lookup_device<'a>(
-    tables: &'a GeneratedTables,
-    vendor: u16,
-    device: u16,
-) -> Option<&'a str> {
+pub fn lookup_device<'a>(tables: &'a GeneratedTables, vendor: u16, device: u16) -> Option<&'a str> {
     tables
         .devices
         .binary_search_by(|entry| {
@@ -409,7 +405,12 @@ fn parse_hex_id(id_hex: &str) -> Result<u16, ParseIdError> {
 fn strip_inline_comment(line: &str) -> &str {
     if let Some(idx) = line.find('#') {
         let (before, _) = line.split_at(idx);
-        if before.chars().last().map(|c| c.is_whitespace()).unwrap_or(true) {
+        if before
+            .chars()
+            .last()
+            .map(|c| c.is_whitespace())
+            .unwrap_or(true)
+        {
             return before.trim_end();
         }
     }
@@ -681,12 +682,18 @@ pub fn device_name(vendor: u16, device: u16) -> Option<&'static str> {
             Vendor {
                 id: 0x1234,
                 name: "Alpha".to_string(),
-                devices: vec![Device { id: 0x0001, name: "A1".to_string() }],
+                devices: vec![Device {
+                    id: 0x0001,
+                    name: "A1".to_string(),
+                }],
             },
             Vendor {
                 id: 0x1234,
                 name: "".to_string(),
-                devices: vec![Device { id: 0x0001, name: "A1".to_string() }],
+                devices: vec![Device {
+                    id: 0x0001,
+                    name: "A1".to_string(),
+                }],
             },
         ];
         let tables = build_tables(&vendors);

@@ -6,10 +6,10 @@
 //! - `EvictedAsset`: Placeholder for future rehydration support
 //! - Memory budget enforcement with LRU + reachability eviction
 
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use core::cell::UnsafeCell;
-use crate::frame::AssetGeneration;
 use crate::asset::AssetBank;
+use crate::frame::AssetGeneration;
+use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use stem::info;
 
 /// Default memory budget for decoded surfaces (32 MiB)
@@ -52,7 +52,11 @@ pub fn add_decoded_bytes(bytes: usize) {
 #[allow(dead_code)]
 pub fn sub_decoded_bytes(bytes: usize) {
     let prev = DECODED_BYTES.fetch_sub(bytes, Ordering::AcqRel);
-    info!("[reclaimer] -{} bytes (total: {})", bytes, prev.saturating_sub(bytes));
+    info!(
+        "[reclaimer] -{} bytes (total: {})",
+        bytes,
+        prev.saturating_sub(bytes)
+    );
 }
 pub fn eviction_count() -> u64 {
     EVICTION_COUNT.load(Ordering::Acquire)
@@ -110,9 +114,21 @@ impl InFlightFrames {
     const fn new() -> Self {
         Self {
             entries: [
-                UnsafeCell::new(InFlightEntry { frame_id: 0, asset_gen: 0, active: false }),
-                UnsafeCell::new(InFlightEntry { frame_id: 0, asset_gen: 0, active: false }),
-                UnsafeCell::new(InFlightEntry { frame_id: 0, asset_gen: 0, active: false }),
+                UnsafeCell::new(InFlightEntry {
+                    frame_id: 0,
+                    asset_gen: 0,
+                    active: false,
+                }),
+                UnsafeCell::new(InFlightEntry {
+                    frame_id: 0,
+                    asset_gen: 0,
+                    active: false,
+                }),
+                UnsafeCell::new(InFlightEntry {
+                    frame_id: 0,
+                    asset_gen: 0,
+                    active: false,
+                }),
             ],
         }
     }
@@ -122,7 +138,7 @@ impl InFlightFrames {
         // Find empty slot or oldest slot
         let mut oldest_idx = 0;
         let mut oldest_frame = u64::MAX;
-        
+
         for i in 0..MAX_IN_FLIGHT {
             let entry = unsafe { &*self.entries[i].get() };
             if !entry.active {
@@ -140,9 +156,12 @@ impl InFlightFrames {
                 oldest_idx = i;
             }
         }
-        
+
         // All slots full, replace oldest (shouldn't happen with proper complete() calls)
-        info!("[reclaimer] WARNING: in-flight slots full, replacing frame {}", oldest_frame);
+        info!(
+            "[reclaimer] WARNING: in-flight slots full, replacing frame {}",
+            oldest_frame
+        );
         unsafe {
             let ptr = self.entries[oldest_idx].get();
             (*ptr).frame_id = frame_id;
@@ -169,7 +188,7 @@ impl InFlightFrames {
     fn min_live_gen(&self) -> AssetGeneration {
         let mut min_gen = u64::MAX;
         let mut has_any = false;
-        
+
         for i in 0..MAX_IN_FLIGHT {
             let entry = unsafe { &*self.entries[i].get() };
             if entry.active {
@@ -179,7 +198,7 @@ impl InFlightFrames {
                 }
             }
         }
-        
+
         if has_any {
             AssetGeneration(min_gen)
         } else {
@@ -225,25 +244,26 @@ pub fn in_flight_count() -> usize {
     IN_FLIGHT.count()
 }
 
-
 /// Check memory pressure and evict if needed.
 /// Called once per frame after present.
 pub fn check_memory_pressure(assets: &AssetBank) {
     let current = decoded_bytes();
     let budget = memory_budget();
-    
+
     if current <= budget {
         return; // Under budget, no action needed
     }
-    
+
     let min_gen = min_live_gen();
-    info!("[reclaimer] memory pressure: {} > {} bytes, min_live_gen={}", 
-        current, budget, min_gen.0);
-    
+    info!(
+        "[reclaimer] memory pressure: {} > {} bytes, min_live_gen={}",
+        current, budget, min_gen.0
+    );
+
     // Try to evict until under budget
     let mut freed_total = 0usize;
     let mut evictions = 0u32;
-    
+
     while decoded_bytes() > budget {
         match assets.try_evict_one(min_gen) {
             Some(freed) => {
@@ -253,16 +273,22 @@ pub fn check_memory_pressure(assets: &AssetBank) {
             }
             None => {
                 // No more evictable assets
-                info!("[reclaimer] no more evictable assets (freed {} bytes in {} evictions)", 
-                    freed_total, evictions);
+                info!(
+                    "[reclaimer] no more evictable assets (freed {} bytes in {} evictions)",
+                    freed_total, evictions
+                );
                 break;
             }
         }
     }
-    
+
     if evictions > 0 {
-        info!("[reclaimer] evicted {} assets, freed {} bytes, now at {} bytes",
-            evictions, freed_total, decoded_bytes());
+        info!(
+            "[reclaimer] evicted {} assets, freed {} bytes, now at {} bytes",
+            evictions,
+            freed_total,
+            decoded_bytes()
+        );
     }
 }
 
@@ -273,22 +299,22 @@ mod tests {
     #[test]
     fn test_in_flight_register_complete() {
         let tracker = InFlightFrames::new();
-        
+
         assert_eq!(tracker.count(), 0);
         assert_eq!(tracker.min_live_gen(), AssetGeneration(u64::MAX));
-        
+
         tracker.register(1, AssetGeneration(5));
         assert_eq!(tracker.count(), 1);
         assert_eq!(tracker.min_live_gen(), AssetGeneration(5));
-        
+
         tracker.register(2, AssetGeneration(7));
         assert_eq!(tracker.count(), 2);
         assert_eq!(tracker.min_live_gen(), AssetGeneration(5));
-        
+
         tracker.complete(1);
         assert_eq!(tracker.count(), 1);
         assert_eq!(tracker.min_live_gen(), AssetGeneration(7));
-        
+
         tracker.complete(2);
         assert_eq!(tracker.count(), 0);
         assert_eq!(tracker.min_live_gen(), AssetGeneration(u64::MAX));
@@ -302,24 +328,24 @@ mod tests {
             decoded_bytes: 1000,
             reachable: false,
         };
-        
+
         let old_reachable = AssetMetadata {
             last_used_frame: 50,
             gen: AssetGeneration(1),
             decoded_bytes: 1000,
             reachable: true,
         };
-        
+
         let new_reachable = AssetMetadata {
             last_used_frame: 200,
             gen: AssetGeneration(1),
             decoded_bytes: 1000,
             reachable: true,
         };
-        
+
         // Unreachable should have lowest priority (evict first)
         assert_eq!(unreachable.eviction_priority(), 0);
-        
+
         // Older reachable < newer reachable
         assert!(old_reachable.eviction_priority() < new_reachable.eviction_priority());
     }

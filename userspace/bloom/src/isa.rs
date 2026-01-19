@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 // Re-export geometry types for use in the ISA
-pub use crate::geometry::{Color, Point, Rect, EdgeAA};
+pub use crate::geometry::{Color, EdgeAA, Point, Rect};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BlendMode {
     #[default]
     SrcOver, // Alpha blending (A over B)
-    Src,     // Copy (replace target)
-    Add,     // Additive blending
+    Src, // Copy (replace target)
+    Add, // Additive blending
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -40,15 +40,12 @@ impl Transform2D {
     pub const fn translate(tx: f32, ty: f32) -> Self {
         Self { tx, ty }
     }
-    
+
     // Helper to transform a point
     pub fn transform_point(&self, p: Point) -> Point {
-        Point::new(
-            (p.x as f32 + self.tx) as i32,
-            (p.y as f32 + self.ty) as i32,
-        )
+        Point::new((p.x as f32 + self.tx) as i32, (p.y as f32 + self.ty) as i32)
     }
-    
+
     // Helper to transform a rect (affects origin only for translation)
     pub fn transform_rect(&self, r: Rect) -> Rect {
         Rect::new(

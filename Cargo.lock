@@ -273,14 +273,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bindd"
-version = "0.1.0"
-dependencies = [
- "abi",
- "stem",
-]
-
-[[package]]
 name = "bit_field"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -396,6 +388,14 @@ name = "bytes"
 version = "1.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b35204fbdc0b3f4446b89fc1ac2cf84a8a68971995d0bf2e925ec7cd960f9cb3"
+
+[[package]]
+name = "cambium"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
 
 [[package]]
 name = "cc"

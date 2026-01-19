@@ -161,7 +161,7 @@ fn drain_watch(binding: &mut ActiveBinding, batch_buf: &mut [u8]) -> usize {
 
 #[stem::main]
 fn main() -> ! {
-    info!("bindd starting (v3: catch-up then stream)...");
+    info!("cambium starting (v3: catch-up then stream)...");
 
     let mut bindings: Vec<ActiveBinding> = Vec::new();
 

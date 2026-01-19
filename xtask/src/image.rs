@@ -27,7 +27,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig { name: "display_bootfb", is_init: false, features: vec![] },
         // Service daemons
         ProgramConfig { name: "ingestd", is_init: false, features: vec![] },
-        ProgramConfig { name: "bindd", is_init: false, features: vec![] },
+        ProgramConfig { name: "cambium", is_init: false, features: vec![] },
         // Scheduler fairness test apps
         ProgramConfig { name: "scheduler_fairness", is_init: false, features: vec![] },
         ProgramConfig { name: "hogger", is_init: false, features: vec![] },

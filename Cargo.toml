@@ -23,7 +23,7 @@ members = [
     "userspace/disk_probe",
     "userspace/ahci_disk",
     "tools/pciids", "userspace/ingestd",
-    "userspace/bindd",
+    "userspace/cambium",
     "userspace/tick_printer",
     "userspace/hogger",
     "userspace/irqdump", "abi-macros",

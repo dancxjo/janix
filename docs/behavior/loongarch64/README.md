@@ -1,6 +1,6 @@
-# BDD Test Results: x86_64
+# BDD Test Results: loongarch64
 
-> Last run: 2026-01-19 11:12:09
+> Last run: 2026-01-19 11:12:19
 
 ## Features
 

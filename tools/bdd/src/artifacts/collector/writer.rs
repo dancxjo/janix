@@ -4,21 +4,86 @@ use std::fs;
 use std::io::Write;
 use std::path::PathBuf;
 
-/// Architecture-level README generation is disabled to avoid stale cumulative reports.
-/// The scenario-level READMEs are the authoritative source of truth.
+/// Architecture-level README generation.
 pub fn generate_arch_readme(collector: &ArtifactCollector) -> std::io::Result<PathBuf> {
-    // Return the path but don't write anything - the arch README is not generated
-    // to avoid overwriting/desync issues when running individual features
-    Ok(collector.base_dir.join("README.md"))
+    let readme_path = collector.base_dir.join("README.md");
+    let mut file = fs::File::create(&readme_path)?;
+
+    writeln!(file, "# BDD Test Results: {}", collector.arch)?;
+    writeln!(file)?;
+    writeln!(
+        file,
+        "> Last run: {}",
+        collector.start_time.format("%Y-%m-%d %H:%M:%S")
+    )?;
+    writeln!(file)?;
+
+    writeln!(file, "## Features")?;
+    writeln!(file)?;
+    writeln!(file, "| Feature | Scenarios | Status |")?;
+    writeln!(file, "|---------|-----------|--------|")?;
+
+    for feature in &collector.features {
+        let passed_scenarios = feature.scenarios.iter().filter(|s| s.passed).count();
+        let total_scenarios = feature.scenarios.len();
+        
+        // Feature passes if all scenarios pass AND there's at least one scenario
+        let passed = total_scenarios > 0 && passed_scenarios == total_scenarios;
+        let icon = if passed { "✅" } else { "❌" };
+        
+        let rel_path = ArtifactCollector::slugify(&feature.name); // Using simple slugify for link
+        let link = format!("[{}]({}/README.md)", feature.name, rel_path);
+
+        writeln!(
+            file,
+            "| {} | {}/{} | {} |",
+            link, passed_scenarios, total_scenarios, icon
+        )?;
+    }
+
+    Ok(readme_path)
 }
 
-/// Feature-level README generation is disabled to avoid stale cumulative reports.
-/// The scenario-level READMEs are the authoritative source of truth.
+/// Feature-level README generation.
 pub fn write_feature_readme(
-    _collector: &ArtifactCollector,
-    _feature: &FeatureArtifacts,
+    collector: &ArtifactCollector,
+    feature: &FeatureArtifacts,
 ) -> std::io::Result<()> {
-    // No-op: feature READMEs are not generated to avoid overwriting/desync issues
+    let readme_path = feature.dir.join("README.md");
+    let mut file = fs::File::create(&readme_path)?;
+
+    writeln!(file, "# Feature: {}", feature.name)?;
+    writeln!(file)?;
+    writeln!(
+        file,
+        "> Last run: {}",
+        collector.start_time.format("%Y-%m-%d %H:%M:%S")
+    )?;
+    writeln!(file)?;
+
+    writeln!(file, "## Scenarios")?;
+    writeln!(file)?;
+    writeln!(file, "| Scenario | Steps | Status | Link |")?;
+    writeln!(file, "|----------|-------|--------|------|")?;
+
+    for scenario in &feature.scenarios {
+        let passed_steps = scenario
+            .steps
+            .iter()
+            .filter(|s| s.result == StepResult::Passed)
+            .count();
+        let total_steps = scenario.steps.len();
+        let icon = if scenario.passed { "✅" } else { "❌" };
+        
+        let rel_path = ArtifactCollector::slugify(&scenario.name);
+        
+        writeln!(
+            file,
+            "| {} | {}/{} | {} | [View Details]({}/README.md) |",
+            scenario.name, passed_steps, total_steps, icon, rel_path
+        )?;
+    }
+    
     Ok(())
 }
 

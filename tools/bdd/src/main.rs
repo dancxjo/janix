@@ -71,6 +71,9 @@ fn main() {
     // Check for failures
     let failed = tokio::runtime::Runtime::new().unwrap().block_on(async {
         let collector = artifacts::global().lock().await;
+        // Generate architecture report
+        let _ = collector.generate_arch_readme();
+        
         let (_, features_failed) = collector.count_features();
         features_failed > 0
     });

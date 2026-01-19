@@ -24,6 +24,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig { name: "ps2_mouse", is_init: false, features: vec![] },
         ProgramConfig { name: "root_batch_bench", is_init: false, features: vec![] },
         ProgramConfig { name: "root_watch_tester", is_init: false, features: vec![] },
+        ProgramConfig { name: "display_bootfb", is_init: false, features: vec![] },
         // Service daemons
         ProgramConfig { name: "ingestd", is_init: false, features: vec![] },
         ProgramConfig { name: "bindd", is_init: false, features: vec![] },

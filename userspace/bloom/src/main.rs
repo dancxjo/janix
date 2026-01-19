@@ -111,7 +111,8 @@ extern "C" fn font_loader_entry() -> ! {
         ..Default::default()
     };
 
-    let watch_id = match syscall::root_watch_open(&spec) {
+    // Pin watch_id to heap to avoid stack corruption
+    let watch_id_box = alloc::boxed::Box::new(match syscall::root_watch_open(&spec) {
         Ok(id) => {
             log!("[font_loader] watch opened (id={})", id);
             id
@@ -122,11 +123,13 @@ extern "C" fn font_loader_entry() -> ! {
                 stem::sleep_ms(10000);
             }
         }
-    };
+    });
 
     let mut seq_out = 0u64;
     let mut watch_buf = [0u8; 4096];
     loop {
+        // Read watch_id from heap each iteration to avoid stack corruption
+        let watch_id = *watch_id_box;
         match syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf) {
             Ok(len) if len > 0 => {
                 // Parse WatchEvent from the returned batch payload

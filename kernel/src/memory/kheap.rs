@@ -105,6 +105,12 @@ impl KernelHeap {
         Ok(())
     }
 
+    /// Reserve a contiguous region of virtual memory mapped to physical frames.
+    /// Used by the global allocator initialization.
+    pub fn reserve_region<R: BootRuntime>(&mut self, pages: usize) -> Result<(u64, usize), ()> {
+        self.map_new_region::<R>(pages)
+    }
+
     pub fn alloc_pinned(&mut self, layout: Layout) -> Result<NonNull<u8>, ()> {
         self.arena_system.alloc_pinned(layout)
     }

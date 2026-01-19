@@ -405,6 +405,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         platform_profile: "unknown", // todo: ask runtime
     };
     let inventory = crate::root::boot_register::register_all(&boot_info);
+    #[cfg(feature = "diagnostic-apps")]
     crate::root::debug_dump::dump_all_to_console();
     crate::kinfo!(
         "KERNEL: root census complete: host=t{:x} kernel=t{:x} root=t{:x}",

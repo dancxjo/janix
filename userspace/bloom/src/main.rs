@@ -126,13 +126,28 @@ extern "C" fn font_loader_entry() -> ! {
     };
 
     // Shared processing logic for both drain and stream
-    fn process_font_payload(buf: &[u8]) {
+    fn process_font_payload(buf: &[u8], boot_module_kind: u32) {
         let mut cursor = 0usize;
         while cursor < buf.len() {
             match abi::watch::decode_event(&buf[cursor..]) {
                 Ok((header, value)) => {
                     cursor += abi::watch::WATCH_EVENT_HEADER_LEN + value.len();
                     if abi::watch::WatchOp::from_u8(header.op) != Some(abi::watch::WatchOp::Upsert) {
+                        continue;
+                    }
+                    if header.predicate != abi::watch::WATCH_PRED_KIND {
+                        continue;
+                    }
+                    if abi::watch::ValueEncoding::from_u8(header.value_encoding)
+                        != Some(abi::watch::ValueEncoding::Bytes)
+                    {
+                        continue;
+                    }
+                    if value.len() != 4 {
+                        continue;
+                    }
+                    let kind_id = u32::from_le_bytes(value.try_into().unwrap());
+                    if kind_id != boot_module_kind {
                         continue;
                     }
                     let node_id = ThingId::from_u64(header.subject.to_u64_lossy());
@@ -170,10 +185,11 @@ extern "C" fn font_loader_entry() -> ! {
     }
 
     let mut watch_buf = [0u8; 4096];
+    let boot_module_kind = stem::thing::sys::intern(kinds::BOOT_MODULE).unwrap_or(0);
 
     // PHASE 1: Catch-up (Drain)
     match root_watch::watch_drain(watch_id, &mut watch_buf, |_seq, bytes| {
-        process_font_payload(bytes)
+        process_font_payload(bytes, boot_module_kind)
     }) {
         Ok(stats) => {
             if stats.batches > 0 || stats.overflows > 0 {
@@ -190,7 +206,7 @@ extern "C" fn font_loader_entry() -> ! {
     loop {
         match syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf) {
             Ok(len) if len > 0 => {
-                process_font_payload(&watch_buf[..len]);
+                process_font_payload(&watch_buf[..len], boot_module_kind);
             }
             Ok(_) => {
                 // No data (or just heartbeat/ACK)

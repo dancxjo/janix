@@ -5,7 +5,6 @@
 
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
-use crate::root::resources::ResourceHandle;
 use crate::root::symbols::Interner;
 use crate::root::SymbolShell;
 use abi::symbols::SymbolId;
@@ -130,26 +129,6 @@ pub fn handle_prop_set(
         val: value,
     });
     
-    // Also notify node-level stream watches (legacy mechanism)
-    let watches = graph
-        .get_node_mut(id)
-        .map(|n| n.watches.clone())
-        .unwrap_or_default();
-    
-    for (_mask, stream_id) in watches {
-        if let Some(stream_node) = graph.get_node_mut(stream_id) {
-            if let Some(ResourceHandle::Stream(handle)) = &stream_node.resource {
-                let mut lock = handle.lock();
-                if lock.events.len() < lock.capacity {
-                    lock.events.push_back(crate::root::resources::stream::WatchEvent {
-                        target: id,
-                        key: kid as u64,
-                        value,
-                    });
-                }
-            }
-        }
-    }
     
     (0, 0)
 }

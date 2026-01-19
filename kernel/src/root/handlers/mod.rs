@@ -18,4 +18,3 @@ pub use watch::*;
 
 /// Common handler result type: (status, value)
 pub type HandlerResult = (i32, u64);
-

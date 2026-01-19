@@ -146,6 +146,7 @@ pub fn apply_ops_and_commit(
     // Push to shared commit history with summary for O(1) filter matching
     graph.commit_history.push(new_seq, commit_bytes.to_vec(), summary);
 
+
     ApplyResult {
         status: 0,
         seq: new_seq,

@@ -78,7 +78,7 @@ fn parse_and_print_event(buf: &[u8]) {
                 // Copy to locals to avoid packed struct field reference
                 let dx = payload.dx;
                 let dy = payload.dy;
-                info!("PointerMove dx={} dy={}", dx, dy);
+                // info!("PointerMove dx={} dy={}", dx, dy);
             }
         }
         4 => { // PointerButtonDown

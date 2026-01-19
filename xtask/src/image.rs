@@ -18,6 +18,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig { name: "bristle", is_init: false, features: vec![] },
         ProgramConfig { name: "rtc_cmos", is_init: false, features: vec![] },
         ProgramConfig { name: "clock", is_init: false, features: vec![] },
+        ProgramConfig { name: "font_explorer", is_init: false, features: vec![] },
         ProgramConfig { name: "ps2_kbd", is_init: false, features: vec![] },
         ProgramConfig { name: "echo", is_init: false, features: vec![] },
         ProgramConfig { name: "bloom", is_init: false, features: vec![] },
@@ -44,7 +45,7 @@ fn generate_limine_config(
     conf.push_str("timeout: 0\nquiet: yes\nverbose: no\nserial: yes\n\n");
     conf.push_str("/ThingOS\n");
     conf.push_str("    protocol: limine\n");
-    conf.push_str("    resolution: 1280x720\n");
+    conf.push_str("    resolution: 1920x1080\n");
     conf.push_str("    kernel_path: boot():/boot/kernel\n");
 
     for prog in programs {

@@ -85,16 +85,6 @@ impl UiPipeline {
         let snapshot = UiSnapshot::capture(root_id);
         let t1 = stem::monotonic_ns();
 
-        // Rate-limited snapshot diagnostics
-        let now_ms = crate::log_ratelimit::now_ms();
-        if crate::log_ratelimit::log_every(500, now_ms) {
-            let node_count = snapshot.nodes.len();
-            let text_count = snapshot.nodes.values().filter(|n| matches!(n.kind, snapshot::UiNodeKind::Text)).count();
-            let text_str_count = snapshot.nodes.values().filter(|n| !n.strings.is_empty()).count();
-            crate::log!("[bloom][ui] snapshot: nodes={} text={} text_str={}",
-                node_count, text_count, text_str_count);
-        }
-
         // 2. Change Detection
         let changed_nodes = if let Some(prev) = &self.prev_snapshot {
             snapshot.diff(prev)

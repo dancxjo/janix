@@ -177,7 +177,7 @@ impl LayoutSolver {
 
     fn measure_text(text: &str, font_name: &str, size: f32, assets: &AssetBank) -> Option<(f32, f32)> {
         let now_ms = crate::log_ratelimit::now_ms();
-        let _log_enabled = crate::log_ratelimit::log_every(1000, now_ms);
+        let log_enabled = crate::log_ratelimit::log_every(1000, now_ms);
         
         let mut graph_result = None;
 

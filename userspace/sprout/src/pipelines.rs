@@ -339,11 +339,11 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
     }
 
-    /*
     // Spawn echo with evt_echo read handle
     match stem::syscall::spawn_process("/echo", evt_echo.1 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned echo (PID={})", pid);
+                let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/echo".to_string(),
                 kind: TaskKind::App,
@@ -356,7 +356,6 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
             stem::error!("SPROUT: Failed to spawn echo: {:?}", e);
         }
     }
-    */
 
     info!("SPROUT: Input pipeline ready (keyboard + mouse)");
 }

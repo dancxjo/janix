@@ -46,7 +46,14 @@ pub enum LowLevelOp {
     },
     
     // Text
-    TextSpan { text: alloc::sync::Arc<str>, pos: Point, size: f32, color: Color, font_name: Option<alloc::sync::Arc<str>> },
+    TextSpan {
+        text: alloc::sync::Arc<str>,
+        pos: Point,
+        size: f32,
+        color: Color,
+        font_name: Option<alloc::sync::Arc<str>>,
+        font_debug: bool,
+    },
 }
 
 pub struct LoweredDraw {
@@ -262,13 +269,14 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
             }
             
             // Text
-            DrawCmd::DrawText { text, position, size, color, font_name } => {
+            DrawCmd::DrawText { text, position, size, color, font_name, font_debug } => {
                 out.ops.push(LowLevelOp::TextSpan {
                     text: text.clone(),
                     pos: *position,
                     size: *size,
                     color: *color,
                     font_name: font_name.clone(),
+                    font_debug: *font_debug,
                 });
             }
 
@@ -487,4 +495,3 @@ mod tests {
         }
     }
 }
-

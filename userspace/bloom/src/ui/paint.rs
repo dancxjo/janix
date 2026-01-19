@@ -21,6 +21,7 @@ pub enum PaintObject {
         font: String,
         size: f32,
         color: Color,
+        font_debug: bool,
     },
     Image {
         rect: Rect,
@@ -54,6 +55,12 @@ impl PaintBuilder {
                 }
             }
         }
+        let now_ms = crate::log_ratelimit::now_ms();
+        if crate::log_ratelimit::log_every(1000, now_ms) {
+            let text_count = objects.iter().filter(|o| matches!(o, PaintObject::Text { .. })).count();
+            crate::log!("[bloom][paint] objs={} text={}", objects.len(), text_count);
+        }
+        
         PaintScene { objects }
     }
 
@@ -83,8 +90,12 @@ impl PaintBuilder {
 
         if has_text {
             let text = Self::get_str_prop(node, keys::UI_TEXT, symbols).unwrap_or_default();
-            let font = Self::get_str_prop(node, keys::UI_FONT, symbols).unwrap_or_else(|| "NotoSans-Regular.ttf".into());
+            let font_stack = Self::get_str_prop(node, keys::UI_FONT_STACK, symbols);
+            let font = font_stack
+                .or_else(|| Self::get_str_prop(node, keys::UI_FONT, symbols))
+                .unwrap_or_else(|| "Noto Sans".into());
             let size = Self::get_prop(node, keys::UI_FONT_SIZE, symbols) as f32;
+            let font_debug = Self::get_prop(node, keys::UI_FONT_DEBUG, symbols) != 0;
 
             let mut color_val = Self::get_prop(node, keys::UI_FG_COLOR, symbols);
             if color_val == 0 {
@@ -98,6 +109,7 @@ impl PaintBuilder {
                 font,
                 size: if size == 0.0 { 16.0 } else { size },
                 color,
+                font_debug,
             });
         }
 

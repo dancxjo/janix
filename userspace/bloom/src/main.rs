@@ -16,7 +16,9 @@ pub mod geometry; // Canonical geometry types
 mod isa; // Portable Render ISA types
 pub mod key_overlay;
 mod logging;
+mod log_ratelimit;
 mod lowered;
+mod font_graph;
 mod present;
 mod raster;
 mod reclaimer;
@@ -82,41 +84,53 @@ extern "C" fn wallpaper_loader_entry() -> ! {
 extern "C" fn font_loader_entry() -> ! {
     log!("[font_loader] thread started");
 
-    use abi::query::{QueryOpKind, QueryStep};
-    use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
+    // use abi::query::{QueryOpKind, QueryStep}; // Unused in StreamOnly mode
+    // use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
     use abi::types::{WatchMode, WatchSpec};
-    use abi::schema::kinds;
-    use abi::root::RootWatchFilter;
+    use abi::schema::{kinds, keys, rels};
     use stem::syscall;
-    use stem::thing::sys::{bytespace_info, describe_thing, prop_get};
+    use stem::thing::sys::{bytespace_info, bytespace_read, prop_get};
     use stem::thing::ThingId;
     use stem::root_watch;
+    use crate::font_graph;
 
-    // Phase 1: Scan for boot.Modules that look like fonts
-    let kind_str = "boot.Module";
-    let symbol = SymbolRefWire {
-        tag: SYMBOL_REF_TAG_STR,
-        ptr_or_id: kind_str.as_ptr() as u64,
-        len: kind_str.len() as u64,
-    };
+    // Intern relevant Keys and Kinds for Userspace Filtering
+    // (Query setup removed as we use StreamOnly)
 
-    let steps = [QueryStep {
-        op: QueryOpKind::Scan as u64,
-        arg1: 256, // limit
-        arg2: 0,
-        symbol,
-    }];
+    // Intern relevant Keys and Kinds for Userspace Filtering
+    let k_file = stem::thing::sys::intern(kinds::FONT_FILE).unwrap_or(0);
+    let k_family = stem::thing::sys::intern(kinds::FONT_FAMILY).unwrap_or(0);
+    let k_face = stem::thing::sys::intern(kinds::FONT_FACE).unwrap_or(0);
+    let k_super = stem::thing::sys::intern(kinds::FONT_SUPERFAMILY).unwrap_or(0);
 
-    let boot_module_kind = stem::thing::sys::intern(kinds::BOOT_MODULE).unwrap_or(0);
-    let filter = RootWatchFilter::kind(boot_module_kind);
+    let p_bs = stem::thing::sys::intern(keys::FONT_BYTESPACE).unwrap_or(0);
+    let p_sz = stem::thing::sys::intern(keys::FONT_SIZE_BYTES).unwrap_or(0);
+    let p_name = stem::thing::sys::intern(keys::FONT_NAME).unwrap_or(0);
 
+    // List of predicates that should trigger a FontGraph refresh
+    let dirty_keys = [
+        p_name,
+        stem::thing::sys::intern(keys::FONT_STYLE).unwrap_or(0),
+        stem::thing::sys::intern(keys::FONT_WEIGHT).unwrap_or(0),
+        stem::thing::sys::intern(keys::FONT_WIDTH).unwrap_or(0),
+        stem::thing::sys::intern(keys::FONT_SLOPE).unwrap_or(0),
+        stem::thing::sys::intern(keys::FONT_COVERAGE_RANGES).unwrap_or(0),
+        stem::thing::sys::intern(rels::FONT_CONTAINS).unwrap_or(0),
+        stem::thing::sys::intern(rels::FONT_COVERS).unwrap_or(0),
+    ];
+
+    // No Kernel Filter: We need to see structure updates (Family/Face) 
+    // which might not have Bytespace properties.
+    // We filter in userspace.
+    // Use StreamOnly with start_seq=0 to replay history and see ALL existing nodes.
+    // QueryThenStream with a specific query (like FONT_FILE) would miss pre-existing Families/Faces.
     let spec = WatchSpec {
-        mode: WatchMode::QueryThenStream as u32,
-        query_ptr: steps.as_ptr() as u64,
-        query_len: steps.len() as u64,
+        mode: WatchMode::StreamOnly as u32,
+        query_ptr: 0,
+        query_len: 0,
         start_seq: 0,
-        filter_ptr: &filter as *const _ as u64,
-        filter_len: core::mem::size_of::<abi::root::RootWatchFilter>() as u64,
+        filter_ptr: 0, // No filter (userspace filtering)
+        filter_len: 0,
         ..Default::default()
     };
 
@@ -133,56 +147,96 @@ extern "C" fn font_loader_entry() -> ! {
         }
     };
 
-    // Shared processing logic for both drain and stream
-    fn process_font_payload(buf: &[u8], boot_module_kind: u32) {
+    // Shared processing logic
+    fn read_name_from_bytespace(id: ThingId) -> Option<alloc::string::String> {
+        let size = bytespace_info(id).ok()?;
+        let mut buf = alloc::vec![0u8; size];
+        let len = bytespace_read(id, 0, &mut buf).ok()?;
+        Some(alloc::string::String::from(core::str::from_utf8(&buf[..len]).unwrap_or("")))
+    }
+
+    let process_payload = |buf: &[u8]| {
         let mut cursor = 0usize;
         while cursor < buf.len() {
             match abi::watch::decode_event(&buf[cursor..]) {
                 Ok((header, value)) => {
                     cursor += abi::watch::WATCH_EVENT_HEADER_LEN + value.len();
+                    
                     if abi::watch::WatchOp::from_u8(header.op) != Some(abi::watch::WatchOp::Upsert) {
                         continue;
                     }
-                    if header.predicate != abi::watch::WATCH_PRED_KIND {
-                        continue;
-                    }
-                    if abi::watch::ValueEncoding::from_u8(header.value_encoding)
-                        != Some(abi::watch::ValueEncoding::Bytes)
-                    {
-                        continue;
-                    }
-                    if value.len() != 4 {
-                        continue;
-                    }
-                    let kind_id = u32::from_le_bytes(value.try_into().unwrap());
-                    if kind_id != boot_module_kind {
-                        continue;
-                    }
-                    let node_id = ThingId::from_u64(header.subject.to_u64_lossy());
-                    if node_id.to_u64_lossy() == 0 {
-                        continue;
-                    }
-                    let mut desc_buf = [0u8; 512];
-                    if let Ok(desc_len) = describe_thing(node_id, &mut desc_buf) {
-                        let desc = core::str::from_utf8(&desc_buf[..desc_len]).unwrap_or("");
-                        if desc.contains("name: \"")
-                            && (desc.contains(".ttf\"")
-                                || desc.contains(".otf\"")
-                                || desc.contains(".ttc\""))
-                        {
-                            let bs_id = prop_get(node_id, "bytespace").map(ThingId::from_u64).ok();
-                            let size = bs_id.and_then(|id| bytespace_info(id).ok());
 
+                    let mut is_dirty = false;
+                    let mut is_file_update = false;
+
+                    // Check 1: Is this a KIND event for a Font Node?
+                    if header.predicate == abi::watch::WATCH_PRED_KIND {
+                         // Check kind ID in value
+                         if abi::watch::ValueEncoding::from_u8(header.value_encoding) 
+                            == Some(abi::watch::ValueEncoding::Bytes) && value.len() == 4 
+                         {
+                             let kind_id = u32::from_le_bytes(value.try_into().unwrap());
+                             if kind_id == k_file {
+                                 is_dirty = true;
+                                 is_file_update = true;
+                             } else if kind_id == k_family || kind_id == k_face || kind_id == k_super {
+                                 is_dirty = true;
+                             }
+                         }
+                    } 
+                    // Check 2: Is this a Property update for a Font Key?
+                    else {
+                        let pred = header.predicate.to_u32_lossy();
+                        // Check if pred is in our dirty_preds list
+                        for &k in &dirty_keys {
+                            if pred == k {
+                                is_dirty = true;
+                                break;
+                            }
+                        }
+                        // Also check File specific keys for loading
+                        if pred == p_bs || pred == p_sz || pred == p_name {
+                            is_dirty = true;
+                            // If bytespace/size changed, check if we need to load
+                            if pred == p_bs || pred == p_sz {
+                                is_file_update = true;
+                            }
+                        }
+                    }
+
+                    if is_dirty {
+                        font_graph::mark_dirty();
+                    }
+
+                    // Enqueue load if it matches File criteria (Kind=File OR Key=Bytespace)
+                    // Note: Just checking Kind=File isn't enough, we need to check if properties exist.
+                    // We check properties for ANY dirty event on a potential file node, to be safe.
+                    if is_dirty || is_file_update {
+                        let node_id = ThingId::from_u64(header.subject.to_u64_lossy());
+                         if node_id.to_u64_lossy() != 0 {
+                            let bs_id = prop_get(node_id, keys::FONT_BYTESPACE).map(ThingId::from_u64).ok();
+                            let size = prop_get(node_id, keys::FONT_SIZE_BYTES).ok().map(|v| v as usize);
+                            
+                            // Only enqueue if valid bytespace and size exist
                             if let (Some(bs), Some(sz)) = (bs_id, size) {
+                                // To avoid re-queuing too often, we could check if known?
+                                // AssetBank prevents dedup if pending? 
+                                // `enqueue_font_load` handles it.
+                                
+                                // Fetch name for logging
+                                let name_id = prop_get(node_id, keys::FONT_NAME).map(ThingId::from_u64).ok();
+                                let name = name_id.and_then(read_name_from_bytespace)
+                                    .unwrap_or_else(|| "font.bin".into());
+
                                 log!(
                                     "[font_loader] enqueuing font load: bs={} size={} name='{}'",
                                     bs.to_u64_lossy(),
                                     sz,
-                                    desc
+                                    name
                                 );
-                                ASSETS.enqueue_font_load(bs, sz, desc);
+                                ASSETS.enqueue_font_load(bs, sz, &name);
                             }
-                        }
+                         }
                     }
                 }
                 Err(_) => {
@@ -190,13 +244,13 @@ extern "C" fn font_loader_entry() -> ! {
                 }
             }
         }
-    }
+    };
 
     let mut watch_buf = [0u8; 4096];
 
     // PHASE 1: Catch-up (Drain)
     match root_watch::watch_drain(watch_id, &mut watch_buf, |_seq, bytes| {
-        process_font_payload(bytes, boot_module_kind)
+        process_payload(bytes)
     }) {
         Ok(stats) => {
             if stats.batches > 0 || stats.overflows > 0 {
@@ -213,18 +267,15 @@ extern "C" fn font_loader_entry() -> ! {
     loop {
         match syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf) {
             Ok(len) if len > 0 => {
-                process_font_payload(&watch_buf[..len], boot_module_kind);
+                process_payload(&watch_buf[..len]);
             }
-            Ok(_) => {
-                // No data (or just heartbeat/ACK)
-                // stem::sleep_ms(50); // Optional sleep to yield
-            }
+            Ok(_) => {}
             Err(abi::errors::Errno::EAGAIN) => {
-                // No more pending events, sleep to yield
                 stem::sleep_ms(100);
             }
             Err(abi::errors::Errno::EOVERFLOW) => {
                 log!("[font_loader] watch overflow in steady state");
+                font_graph::mark_dirty(); // Safety
             }
             Err(e) => {
                 log!("[font_loader] watch next error: {:?}", e);
@@ -471,7 +522,7 @@ fn main(arg: usize) -> ! {
             let filter = RootWatchFilter::predicate(ui_text_pred);
             let spec = WatchSpec {
                 mode: WatchMode::StreamOnly as u32,
-                start_seq: WATCH_START_LATEST,
+                start_seq: 0, // Catch-up mode
                 filter_ptr: &filter as *const _ as u64,
                 filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
                 ..Default::default()
@@ -479,7 +530,24 @@ fn main(arg: usize) -> ! {
             match stem::syscall::root_watch_open(&spec) {
                 Ok(id) => {
                     ui_watch_id = Some(id);
-                    log!("[bloom] ui watch opened (ui.text id={})", ui_text_pred);
+                    log!("[bloom] ui watch opened for predicate UI_TEXT (id={}) - watching for changes to this property", ui_text_pred);
+
+                    // Drain initial events to catch up
+                    let mut drain_buf = [0u8; 4096];
+                    match stem::root_watch::watch_drain(id, &mut drain_buf, |_seq, _payload| {
+                         // We don't need to parse payload because we do a full snapshot anyway
+                    }) {
+                        Ok(stats) => {
+                            if stats.batches > 0 {
+                                log!("[bloom] ui watch drained: {} batches", stats.batches);
+                                // Ensure we check UI on first frame
+                                ui_force_damage = true;
+                            }
+                        }
+                        Err(e) => {
+                            log!("[bloom] ui watch drain failed: {:?}", e);
+                        }
+                    }
                 }
                 Err(e) => {
                     log!("[bloom] ui watch open failed: {:?}", e);
@@ -554,11 +622,15 @@ fn main(arg: usize) -> ! {
                 builder.add_damage(cursor.bbox());
             }
         }
-        // Check if fonts are ready
+        // Check if fonts are ready via font graph OR legacy
         if !font_loaded {
-            if ASSETS.get_font_for_gen(gen_snapshot).is_some() {
+            let ready_graph = font_graph::with_graph(|graph| graph.has_fonts());
+            let ready_legacy = !ASSETS.get_fonts().is_empty();
+
+            if ready_graph || ready_legacy {
                 font_loaded = true;
-                log!("[bloom] frame {}: fonts available", frame_id);
+                let mode = if ready_graph { "graph" } else { "legacy" };
+                log!("[bloom] frame {}: fonts available (mode={})", frame_id, mode);
                 builder.mark_full_damage();
                 ui_pipeline.mark_dirty();
             }
@@ -603,6 +675,22 @@ fn main(arg: usize) -> ! {
             let mut seq: u64 = 0;
             match stem::syscall::root_watch_next(watch_id, &mut seq, &mut ui_watch_buf) {
                 Ok(len) if len > 0 => {
+                    // Parse and log watch events to diagnose predicate mismatch
+                    let now_ms = crate::log_ratelimit::now_ms();
+                    if crate::log_ratelimit::log_every(1000, now_ms) {
+                        // Decode first event in payload to see what we're receiving
+                        if let Ok((header, _value)) = abi::watch::decode_event(&ui_watch_buf[..len]) {
+                            crate::log!("[bloom][uiwatch] seq={} subj={} pred={} len={}",
+                                seq, 
+                                header.subject.to_u64_lossy(),
+                                header.predicate.to_u64_lossy(),
+                                len);
+                        } else {
+                            crate::log!("[bloom][watch] ui seq={} bytes={} (decode failed)", seq, len);
+                        }
+                    }
+                    
+                    crate::log!("[bloom][ui] DIRTY reason=watch_event seq={}", seq);
                     ui_pipeline.mark_dirty();
                     ui_force_damage = true;
                 }
@@ -718,6 +806,12 @@ fn main(arg: usize) -> ! {
         // PRESENT: Rasterize with damage, present to display
         // ═══════════════════════════════════════════════════════════════════
 
+        // Rate-limited damage logging
+        let now_ms = crate::log_ratelimit::now_ms();
+        if crate::log_ratelimit::log_every(1000, now_ms) {
+            crate::log!("[bloom][damage] rects={} frame={}", damage_for_raster.rect_count(), frame_id);
+        }
+        
         // Rasterize using damage-aware rendering
         if !damage_for_raster.is_empty() {
             let raster_start = stem::monotonic_ns();

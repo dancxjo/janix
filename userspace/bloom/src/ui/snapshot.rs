@@ -39,6 +39,8 @@ pub struct UiKeys {
     pub text: SymbolId,
     pub font: SymbolId,
     pub font_size: SymbolId,
+    pub font_stack: SymbolId,
+    pub font_debug: SymbolId,
     pub radius: SymbolId,
     pub title: SymbolId,
     pub hidden: SymbolId,
@@ -62,6 +64,8 @@ impl UiKeys {
             text: stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0),
             font: stem::thing::sys::intern(keys::UI_FONT).unwrap_or(0),
             font_size: stem::thing::sys::intern(keys::UI_FONT_SIZE).unwrap_or(0),
+            font_stack: stem::thing::sys::intern(keys::UI_FONT_STACK).unwrap_or(0),
+            font_debug: stem::thing::sys::intern(keys::UI_FONT_DEBUG).unwrap_or(0),
             radius: stem::thing::sys::intern(keys::UI_RADIUS).unwrap_or(0),
             title: stem::thing::sys::intern(keys::UI_TITLE).unwrap_or(0),
             hidden: stem::thing::sys::intern(keys::UI_HIDDEN).unwrap_or(0),
@@ -174,8 +178,9 @@ impl UiSnapshot {
 
         let kind_keys = match kind {
             UiNodeKind::Text => vec![
-                (keys.text, keys::UI_TEXT), (keys.font, keys::UI_FONT), 
-                (keys.font_size, keys::UI_FONT_SIZE), (keys.color, keys::UI_COLOR),
+                (keys.text, keys::UI_TEXT), (keys.font, keys::UI_FONT),
+                (keys.font_stack, keys::UI_FONT_STACK), (keys.font_size, keys::UI_FONT_SIZE),
+                (keys.font_debug, keys::UI_FONT_DEBUG), (keys.color, keys::UI_COLOR),
                 (keys.fg_color, keys::UI_FG_COLOR),
                 (keys.center_x, keys::UI_CENTER_X), (keys.center_y, keys::UI_CENTER_Y),
             ],
@@ -192,11 +197,21 @@ impl UiSnapshot {
                 props.insert(key_id, val);
                 
                 // If this is a string property, snapshot its content
-                if key_id == keys.text || key_id == keys.font || key_id == keys.title {
+                if key_id == keys.text || key_id == keys.font || key_id == keys.font_stack || key_id == keys.title {
                     if val != 0 {
                         let mut s_buf = [0u8; 1024];
                         if let Ok(len) = stem::thing::sys::bytespace_read(ThingId::from_u64(val), 0, &mut s_buf) {
                             let s = String::from(core::str::from_utf8(&s_buf[..len]).unwrap_or_default());
+                            
+                            // Rate-limited logging for text nodes
+                            if key_id == keys.text {
+                                let now_ms = crate::log_ratelimit::now_ms();
+                                if crate::log_ratelimit::log_every(2000, now_ms) {
+                                    crate::log!("[bloom][snapshot] text_capture: node={} bs_id={} len={} text='{}'",
+                                        id.to_u64_lossy(), val, len, &s);
+                                }
+                            }
+                            
                             strings.insert(key_id, s);
                         }
                     }

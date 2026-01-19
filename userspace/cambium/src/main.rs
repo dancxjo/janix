@@ -151,6 +151,19 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
 }
 
 fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    static LAST_LOG_MS: AtomicU64 = AtomicU64::new(0);
+    let now_ms = stem::monotonic_ns() / 1_000_000;
+    let should_log = {
+        let last = LAST_LOG_MS.load(Ordering::Relaxed);
+        if now_ms.wrapping_sub(last) >= 1000 {
+            LAST_LOG_MS.store(now_ms, Ordering::Relaxed);
+            true
+        } else {
+            false
+        }
+    };
+    
     let mut cursor = 0usize;
 
     while cursor < payload.len() {
@@ -191,6 +204,21 @@ fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
 
                         let next_value = u64::from_le_bytes(value.try_into().unwrap());
                         binding.last_value = Some(next_value);
+                        
+                        // Get the UI_TEXT symbol for logging
+                        let ui_text_sym = stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0);
+                        
+                        if should_log {
+                            info!(
+                                "[cambium] write: binding_src={} target={} pred=ui.Text({}) val={} seq={}",
+                                binding.source.to_u64_lossy(),
+                                binding.target.to_u64_lossy(),
+                                ui_text_sym,
+                                next_value,
+                                seq
+                            );
+                        }
+                        
                         if prop_set(binding.target, keys::UI_TEXT, next_value).is_ok() {
                             info!(
                                 "Updated target {} with value {} (seq={})",

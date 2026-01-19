@@ -163,7 +163,10 @@ impl Supervisor {
         info!("SPROUT: spawn_apps start. tasks len={}", self.tasks.len());
         
         self.ensure_app("/clock");
-        self.ensure_app("/echo");  // Show keyboard input
+        self.ensure_app("/clock");
+        // self.ensure_app("/echo");  // Handled by pipelines.rs now
+        self.ensure_app("/font_explorer");
+        self.ensure_app("/font_explorer");
         // self.ensure_app("/ata_disk");
         // self.ensure_app("/disk_probe");
         // self.ensure_app("/ahci_disk");

@@ -102,6 +102,21 @@ pub mod keys {
     pub const UI_BG_COLOR: &str = "ui.style.bg_color";
     pub const UI_FG_COLOR: &str = "ui.style.fg_color";
     pub const UI_FONT_SIZE_PX: &str = "ui.style.font_size_px";
+
+    // Font Graph Properties
+    pub const FONT_NAME: &str = "font.name";
+    pub const FONT_STYLE: &str = "font.style";
+    pub const FONT_FAMILY_KEY: &str = "font.family_key";
+    pub const FONT_FACE_KEY: &str = "font.face_key";
+    pub const FONT_WEIGHT: &str = "font.weight";
+    pub const FONT_WIDTH: &str = "font.width";
+    pub const FONT_SLOPE: &str = "font.slope";
+    pub const FONT_BYTESPACE: &str = "font.bytespace";
+    pub const FONT_SIZE_BYTES: &str = "font.size_bytes";
+    pub const FONT_COVERAGE_RANGES: &str = "font.coverage_ranges";
+    pub const FONT_COVERAGE_COUNT: &str = "font.coverage_count";
+    pub const UI_FONT_STACK: &str = "ui.font_stack";
+    pub const UI_FONT_DEBUG: &str = "ui.font_debug";
 }
 
 pub mod kinds {
@@ -145,6 +160,13 @@ pub mod kinds {
     pub const UI_IMAGE: &str = "ui.Image";
     pub const UI_OVERLAY: &str = "ui.Overlay";
 
+    // Font Graph Kinds
+    pub const FONT_SUPERFAMILY: &str = "font.Superfamily";
+    pub const FONT_FAMILY: &str = "font.Family";
+    pub const FONT_FACE: &str = "font.Face";
+    pub const FONT_FILE: &str = "font.File";
+    pub const FONT_COVERAGE: &str = "font.Coverage";
+
     pub const CLOCK: &str = "Clock";
     pub const BINDING: &str = "Binding";
 }
@@ -174,6 +196,13 @@ pub mod rels {
     pub const HAS_CHILD: &str = "HAS_CHILD";
     pub const CLIP_TO: &str = "CLIP_TO";
     pub const ROOT_UI: &str = "ROOT_UI";
+
+    // Font Graph Relationships
+    pub const FONT_CONTAINS: &str = "font.contains";
+    pub const FONT_COVERS: &str = "font.covers";
+    pub const FONT_MEMBER_OF: &str = "font.member_of";
+    pub const FONT_FALLBACK_AFTER: &str = "font.fallback_after";
+    pub const FONT_ALIAS: &str = "font.alias";
 }
 
 // Virtio GPU additions

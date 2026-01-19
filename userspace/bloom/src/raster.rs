@@ -5,6 +5,8 @@
 //! Text rendering delegates to fontd via font_client.
 
 use alloc::vec::Vec;
+use alloc::string::String;
+use alloc::format;
 
 use crate::damage::{Damage, Rect as DamageRect};
 use crate::drawlist::DrawList;
@@ -12,11 +14,11 @@ use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use crate::asset::Image;
 use crate::isa::{BlendMode, FilterMode, Transform2D, Rect, EdgeAA};
+use stem::thing::ThingId;
 // use crate::font_client; // No longer needed
-use crate::ASSETS;
+use crate::font_graph::{self, FontStyle};
 use crate::log;
-use fontdue::layout::{Layout, CoordinateSystem, TextStyle};
-use core::sync::atomic::{AtomicBool, Ordering};
+use fontdue::layout::GlyphRasterConfig;
 
 /// Execution Context maintaining state stacks
 struct RasterContext<'a> {
@@ -151,7 +153,7 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
                 }
             },
 
-            LowLevelOp::TextSpan { text, pos, size, color, font_name } => {
+            LowLevelOp::TextSpan { text, pos, size, color, font_name, font_debug } => {
                 let p = ctx.current_transform.transform_point(*pos);
                 rasterize_text_locally(
                     ctx.surface, 
@@ -161,7 +163,8 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
                     *size, 
                     color.to_u32(), 
                     &ctx.current_clip,
-                    font_name.as_deref()
+                    font_name.as_deref(),
+                    *font_debug
                 );
             }
         }
@@ -261,7 +264,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 }
             },
             
-            LowLevelOp::TextSpan { text, pos, size, color, font_name } => {
+            LowLevelOp::TextSpan { text, pos, size, color, font_name, font_debug } => {
                 let p = ctx.current_transform.transform_point(*pos);
                 rasterize_text_locally(
                     ctx.surface, 
@@ -271,7 +274,8 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                     *size, 
                     color.to_u32(), 
                     &ctx.current_clip,
-                    font_name.as_deref()
+                    font_name.as_deref(),
+                    *font_debug
                 );
             }
         }
@@ -612,87 +616,290 @@ fn blit_alpha(
 
 /// Render text using local fontdue rasterization and a simple glyph cache.
 fn rasterize_text_locally(
-    surface: &mut Surface, 
-    text: &str, 
-    x: i32, 
-    y: i32, 
-    size: f32, 
-    color: u32, 
+    surface: &mut Surface,
+    text: &str,
+    x: i32,
+    y: i32,
+    size: f32,
+    color: u32,
     clip: &Rect,
-    requested_font: Option<&str>
+    requested_font: Option<&str>,
+    font_debug: bool,
 ) {
-    static CLOCK_FONT_LOGGED: AtomicBool = AtomicBool::new(false);
     let ca = ((color >> 24) & 0xFF) as u8;
-    if ca == 0 { return; }
+    if ca == 0 {
+        return;
+    }
 
-    // 1. Get current fonts
-    let font_assets = ASSETS.get_fonts();
-    if font_assets.is_empty() { 
-        return; 
+    let mut debug_lines: Vec<String> = Vec::new();
+
+    let mut handled = false;
+    font_graph::with_graph(|graph| {
+        let style = FontStyle::default();
+        let stack = graph.resolve_stack(requested_font);
+        if stack.is_empty() {
+            return;
+        }
+
+        let primary_face_id = stack
+            .iter()
+            .find_map(|family| graph.select_face_for_family(*family, style));
+        let primary_face_id = match primary_face_id {
+            Some(id) => id,
+            None => return,
+        };
+        let primary_font = match graph.font_for_face(primary_face_id) {
+            Some(font) => font,
+            None => return,
+        };
+
+        handled = true; // Graph is usable
+
+        let line_metrics = primary_font.font.horizontal_line_metrics(size);
+        let (line_height, ascent) = if let Some(metrics) = line_metrics {
+            (metrics.new_line_size.max(size * 1.1), metrics.ascent)
+        } else {
+            (size * 1.2, size * 0.8)
+        };
+        let baseline = y as f32 + ascent;
+
+        let mut pen_x = x as f32;
+        let mut pen_y = baseline;
+
+        for ch in text.chars() {
+            if ch == '\n' {
+                pen_x = x as f32;
+                pen_y += line_height;
+                continue;
+            }
+            if ch == '\r' {
+                continue;
+            }
+
+            let codepoint = ch as u32;
+            let resolved = graph
+                .resolve_face_for_glyph(&stack, style, codepoint)
+                .or_else(|| graph.resolved_face_by_id(primary_face_id));
+            let resolved = match resolved {
+                Some(r) => r,
+                None => {
+                    pen_x += size * 0.4;
+                    continue;
+                }
+            };
+
+            let font = match graph.font_for_face(resolved.face_id) {
+                Some(font) => font,
+                None => continue,
+            };
+            let glyph_index = font.font.lookup_glyph_index(ch);
+            if glyph_index == 0 {
+                pen_x += size * 0.4;
+                continue;
+            }
+
+            let config = GlyphRasterConfig {
+                glyph_index,
+                px: size,
+                font_hash: font.font.file_hash(),
+            };
+            let (metrics, bitmap) = font.get_glyph(config);
+
+            let gx = (pen_x + metrics.xmin as f32) as i32;
+            let gy = (pen_y + metrics.ymin as f32) as i32;
+
+            let glyph_color = if font_debug {
+                family_color(resolved.family_id)
+            } else {
+                color
+            };
+            let gr = ((glyph_color >> 16) & 0xFF) as u8;
+            let gg = ((glyph_color >> 8) & 0xFF) as u8;
+            let gb = (glyph_color & 0xFF) as u8;
+
+            for row in 0..metrics.height {
+                for col in 0..metrics.width {
+                    let px = gx + col as i32;
+                    let py = gy + row as i32;
+
+                    if px < clip.x()
+                        || px >= clip.x() + clip.width()
+                        || py < clip.y()
+                        || py >= clip.y() + clip.height()
+                    {
+                        continue;
+                    }
+
+                    let alpha = bitmap[row * metrics.width + col];
+                    if alpha == 0 {
+                        continue;
+                    }
+
+                    let final_alpha = ((alpha as u32 * ca as u32) / 255) as u8;
+                    blend_pixel(surface, px, py, gr, gg, gb, final_alpha);
+                }
+            }
+
+            if font_debug {
+                let label = format!(
+                    "U+{:04X} '{}' -> {} / {}",
+                    codepoint,
+                    if ch.is_control() { ' ' } else { ch },
+                    resolved.family_name,
+                    resolved.style_name
+                );
+                debug_lines.push(label);
+            }
+
+            pen_x += metrics.advance_width;
+        }
+    });
+
+    if !handled {
+        rasterize_text_fallback(surface, text, x, y, size, color, clip, requested_font, font_debug);
     }
     
-    // 2. Select and prioritize fonts
-    let mut prioritized_fonts = font_assets;
-    if let Some(req) = requested_font {
-        if let Some(pos) = prioritized_fonts.iter().position(|f| f.name.contains(req)) {
-            let font = prioritized_fonts.remove(pos);
-            prioritized_fonts.insert(0, font);
-        }
-        if req.contains("DSEG") && !CLOCK_FONT_LOGGED.swap(true, Ordering::Relaxed) {
-            let resolved = prioritized_fonts
-                .first()
-                .map(|f| f.name.as_ref())
-                .unwrap_or("<none>");
-            let fallback = !resolved.contains(req);
-            crate::log!(
-                "[clock] font_resolve: requested={} resolved={} fallback={}",
-                req,
-                resolved,
-                fallback
-            );
-        }
+    if handled && font_debug && !debug_lines.is_empty() {
+        render_debug_overlay(surface, &debug_lines, clip, requested_font);
+    }
+}
+
+fn rasterize_text_fallback(
+    surface: &mut Surface,
+    text: &str,
+    x: i32,
+    y: i32,
+    size: f32,
+    color: u32,
+    clip: &Rect,
+    requested_font: Option<&str>,
+    font_debug: bool,
+) {
+    let fonts = crate::ASSETS.get_fonts();
+    if fonts.is_empty() {
+        return;
+    }
+
+    // Select font: try requested, else default to first
+    let font = if let Some(req) = requested_font {
+        fonts.iter().find(|f| f.name.contains(req))
+            .or_else(|| fonts.iter().find(|f| f.name.contains("NotoSans-Regular")))
+            .unwrap_or(&fonts[0])
     } else {
-        if let Some(pos) = prioritized_fonts.iter().position(|f| f.name.contains("NotoSans-Regular")) {
-            let font = prioritized_fonts.remove(pos);
-            prioritized_fonts.insert(0, font);
+        fonts.iter().find(|f| f.name.contains("NotoSans-Regular"))
+            .unwrap_or(&fonts[0])
+    };
+
+    let ca = ((color >> 24) & 0xFF) as u8;
+    let sr = ((color >> 16) & 0xFF) as u8;
+    let sg = ((color >> 8) & 0xFF) as u8;
+    let sb = (color & 0xFF) as u8;
+
+    let line_metrics = font.font.horizontal_line_metrics(size);
+    let (line_height, ascent) = if let Some(metrics) = line_metrics {
+        (metrics.new_line_size.max(size * 1.1), metrics.ascent)
+    } else {
+        (size * 1.2, size * 0.8)
+    };
+    let baseline = y as f32 + ascent;
+
+    let mut pen_x = x as f32;
+    let mut pen_y = baseline;
+
+    for ch in text.chars() {
+        if ch == '\n' {
+            pen_x = x as f32;
+            pen_y += line_height;
+            continue;
         }
-    }
-    
-    // 3. Layout text with multi-font fallback
-    let mut layout = Layout::new(CoordinateSystem::PositiveYDown);
-    let font_refs: Vec<_> = prioritized_fonts.iter().map(|f| f.font.as_ref()).collect();
-    layout.append(&font_refs, &TextStyle::new(text, size, 0));
-    
-    let cr = ((color >> 16) & 0xFF) as u8;
-    let cg = ((color >> 8) & 0xFF) as u8;
-    let cb = (color & 0xFF) as u8;
+        if ch == '\r' { continue; }
 
-    // 4. Rasterize and blend each glyph
-    for glyph in layout.glyphs() {
-        let target_font = &prioritized_fonts[glyph.font_index];
-        let (metrics, bitmap) = target_font.get_glyph(glyph.key);
+        let glyph_index = font.font.lookup_glyph_index(ch);
+        if glyph_index == 0 {
+             pen_x += size * 0.4;
+             continue;
+        }
 
-        let gx = x + glyph.x as i32;
-        let gy = y + glyph.y as i32;
-        
+        let config = GlyphRasterConfig {
+            glyph_index,
+            px: size,
+            font_hash: font.font.file_hash(),
+        };
+        let (metrics, bitmap) = font.get_glyph(config);
+
+        let gx = (pen_x + metrics.xmin as f32) as i32;
+        let gy = (pen_y + metrics.ymin as f32) as i32;
+
         for row in 0..metrics.height {
             for col in 0..metrics.width {
                 let px = gx + col as i32;
                 let py = gy + row as i32;
-                
-                if px < clip.x() || px >= clip.x() + clip.width() || py < clip.y() || py >= clip.y() + clip.height() {
+
+                if px < clip.x() || px >= clip.x() + clip.width() || 
+                   py < clip.y() || py >= clip.y() + clip.height() {
                     continue;
                 }
-                
+
                 let alpha = bitmap[row * metrics.width + col];
                 if alpha == 0 { continue; }
-                
-                // Blend
+
                 let final_alpha = ((alpha as u32 * ca as u32) / 255) as u8;
-                blend_pixel(surface, px, py, cr, cg, cb, final_alpha);
+                blend_pixel(surface, px, py, sr, sg, sb, final_alpha);
             }
         }
+        pen_x += metrics.advance_width;
     }
+
+    if font_debug {
+        // Simple legacy overlay (avoid recursion)
+        // ... or simple logs?
+        // Let's just draw a red box or something? 
+        // Or recursively call ourselves but force debug=false
+        // Guard against recursion: render_debug_overlay calls rasterize_text_locally with false.
+        let msg = format!("Legacy: used '{}'", font.name);
+        let debug_lines = alloc::vec![msg];
+        render_debug_overlay(surface, &debug_lines, clip, None);
+    }
+}
+
+fn render_debug_overlay(
+    surface: &mut Surface,
+    lines: &[String],
+    clip: &Rect,
+    requested_font: Option<&str>,
+) {
+    let max_lines = 24usize;
+    let font_size = 12.0;
+    let start_x = clip.x() + 8;
+    let mut cursor_y = clip.y() + 8;
+
+    for line in lines.iter().take(max_lines) {
+        rasterize_text_locally(
+            surface,
+            line,
+            start_x,
+            cursor_y,
+            font_size,
+            0xFFFFFFFF,
+            clip,
+            requested_font,
+            false,
+        );
+        cursor_y += (font_size as i32) + 2;
+    }
+}
+
+fn family_color(family_id: ThingId) -> u32 {
+    const PALETTE: [u32; 6] = [
+        0xFFE76F51,
+        0xFFF4A261,
+        0xFF2A9D8F,
+        0xFF264653,
+        0xFF3A86FF,
+        0xFF06D6A0,
+    ];
+    let idx = (family_id.to_u64_lossy() as usize) % PALETTE.len();
+    PALETTE[idx]
 }
 
 

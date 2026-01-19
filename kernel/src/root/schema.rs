@@ -38,6 +38,13 @@ pub mod kinds {
     pub const UI_TEXT: &str = "ui.Text";
     pub const UI_IMAGE: &str = "ui.Image";
     pub const UI_OVERLAY: &str = "ui.Overlay";
+
+    // Font Graph
+    pub const FONT_SUPERFAMILY: &str = "font.Superfamily";
+    pub const FONT_FAMILY: &str = "font.Family";
+    pub const FONT_FACE: &str = "font.Face";
+    pub const FONT_FILE: &str = "font.File";
+    pub const FONT_COVERAGE: &str = "font.Coverage";
 }
 
 pub mod rels {
@@ -58,6 +65,13 @@ pub mod rels {
     pub const CHILD_OF: &str = "CHILD_OF";
     pub const CLIP_TO: &str = "CLIP_TO";
     pub const ROOT_UI: &str = "ROOT_UI";
+
+    // Font Graph
+    pub const FONT_CONTAINS: &str = "font.contains";
+    pub const FONT_COVERS: &str = "font.covers";
+    pub const FONT_MEMBER_OF: &str = "font.member_of";
+    pub const FONT_FALLBACK_AFTER: &str = "font.fallback_after";
+    pub const FONT_ALIAS: &str = "font.alias";
 }
 
 pub mod props {
@@ -108,6 +122,21 @@ pub mod props {
     pub const UI_TITLE: &str = "ui.title";
     pub const UI_HIDDEN: &str = "ui.hidden";
     pub const UI_Z_INDEX: &str = "ui.z_index";
+
+    // Font Graph Properties
+    pub const FONT_NAME: &str = "font.name";
+    pub const FONT_STYLE: &str = "font.style";
+    pub const FONT_FAMILY_KEY: &str = "font.family_key";
+    pub const FONT_FACE_KEY: &str = "font.face_key";
+    pub const FONT_WEIGHT: &str = "font.weight";
+    pub const FONT_WIDTH: &str = "font.width";
+    pub const FONT_SLOPE: &str = "font.slope";
+    pub const FONT_BYTESPACE: &str = "font.bytespace";
+    pub const FONT_SIZE_BYTES: &str = "font.size_bytes";
+    pub const FONT_COVERAGE_RANGES: &str = "font.coverage_ranges";
+    pub const FONT_COVERAGE_COUNT: &str = "font.coverage_count";
+    pub const UI_FONT_STACK: &str = "ui.font_stack";
+    pub const UI_FONT_DEBUG: &str = "ui.font_debug";
 }
 
 // Common categorical values derived from provenance

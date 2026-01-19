@@ -419,3 +419,117 @@ impl Graph {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_small_id_set() {
+        let mut set = SmallIdSet::default();
+        assert!(!set.overflowed);
+        assert!(!set.contains(10));
+
+        // Insert unique items
+        for i in 0..MAX_SUMMARY_IDS {
+            set.insert(i as u32);
+        }
+
+        assert!(!set.overflowed);
+        assert!(set.contains(0));
+        assert!(set.contains((MAX_SUMMARY_IDS - 1) as u32));
+        assert!(!set.contains(100));
+
+        // Duplicate insert shouldn't overflow
+        set.insert(0);
+        assert!(!set.overflowed);
+
+        // Overflow
+        set.insert(100);
+        assert!(set.overflowed);
+
+        // Once overflowed, contains doesn't guarantee false negatives, but implementation logic
+        // says "overflowed" flag is just a flag. The set content is still valid for what it holds.
+        // Wait, commit_matches checks: if !overflowed && !contains -> return false.
+        // So if overflowed, it returns true (match).
+        // The set itself still works as a set of what it holds.
+        assert!(set.contains(0));
+    }
+
+    #[test]
+    fn test_small_thing_set() {
+        let mut set = SmallThingSet::default();
+
+        for i in 0..MAX_SUMMARY_THINGS {
+            set.insert(i as u64);
+        }
+        assert!(!set.overflowed);
+        assert!(set.contains(0));
+
+        set.insert(100);
+        assert!(set.overflowed);
+    }
+
+    #[test]
+    fn test_commit_history_ring() {
+        // Create small history: max 3 commits, max 100 bytes
+        let mut history = CommitHistory::new(3, 100);
+
+        // Push 1
+        history.push(1, vec![1, 2, 3], CommitSummary::default());
+        assert_eq!(history.oldest_seq(), Some(1));
+        assert_eq!(history.newest_seq(), Some(1));
+        assert_eq!(history.len(), 1);
+        assert!(history.contains(1));
+        assert_eq!(history.get(1), Some(vec![1, 2, 3].as_slice()));
+
+        // Push 2
+        history.push(2, vec![4, 5], CommitSummary::default());
+        assert_eq!(history.oldest_seq(), Some(1));
+        assert_eq!(history.newest_seq(), Some(2));
+        assert_eq!(history.len(), 2);
+
+        // Push 3
+        history.push(3, vec![6], CommitSummary::default());
+        assert_eq!(history.oldest_seq(), Some(1));
+        assert_eq!(history.newest_seq(), Some(3));
+        assert_eq!(history.len(), 3);
+
+        // Push 4 (Evicts 1)
+        history.push(4, vec![7], CommitSummary::default());
+        assert_eq!(history.oldest_seq(), Some(2));
+        assert_eq!(history.newest_seq(), Some(4));
+        assert_eq!(history.len(), 3);
+        assert!(!history.contains(1));
+        assert!(history.contains(2));
+        assert_eq!(history.get(4), Some(vec![7].as_slice()));
+    }
+
+    #[test]
+    fn test_commit_history_byte_limit() {
+        // Max 10 commits, but max 10 bytes
+        let mut history = CommitHistory::new(10, 10);
+
+        // Push 5 bytes
+        history.push(1, vec![1, 2, 3, 4, 5], CommitSummary::default());
+        assert_eq!(history.len(), 1);
+
+        // Push 6 bytes (Total 11 > 10, evicts first)
+        history.push(2, vec![1, 2, 3, 4, 5, 6], CommitSummary::default());
+        assert_eq!(history.len(), 1);
+        assert_eq!(history.oldest_seq(), Some(2));
+
+        // Push 11 bytes (Evicts everything, but stores this one? Or refuses?)
+        // Code: while ... bytes + data_len > max_bytes { pop }
+        // If data_len > max_bytes, it will pop everything and then push.
+        // Then we have 1 item that exceeds limit?
+        // Code:
+        // while !empty && (len >= max || bytes + new > max) pop
+        // push
+        // So yes, it allows a single commit larger than max_bytes if it's the only one.
+        history.push(3, vec![0; 11], CommitSummary::default());
+        assert_eq!(history.len(), 1);
+        assert_eq!(history.oldest_seq(), Some(3));
+        assert_eq!(history.bytes, 11);
+    }
+}

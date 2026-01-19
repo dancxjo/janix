@@ -15,9 +15,7 @@ impl VmHeapAllocator {
     }
 
     pub unsafe fn init(&self, heap_start: usize, heap_size: usize) {
-        self.heap
-            .lock()
-            .init(heap_start as *mut u8, heap_size);
+        self.heap.lock().init(heap_start as *mut u8, heap_size);
     }
 
     pub unsafe fn extend(&self, by: usize) {

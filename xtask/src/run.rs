@@ -46,7 +46,6 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path) -> Result<
     Ok(())
 }
 
-
 /// Run in QEMU BIOS mode (x86_64 only).
 pub fn run_bios(sh: &Shell, qemu_flags: &str, iso_path: &Path) -> Result<()> {
     let iso = iso_path.to_str().unwrap();

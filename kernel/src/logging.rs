@@ -132,7 +132,9 @@ pub unsafe fn init(runtime: &'static dyn BootRuntimeBase) {
 
 pub unsafe fn force_unlock() {
     // SAFETY: Only called from panic handler when logger lock may be poisoned
-    unsafe { GLOBAL_LOGGER.force_unlock(); }
+    unsafe {
+        GLOBAL_LOGGER.force_unlock();
+    }
 }
 
 /// Helper to check if graph logging is safe/ready
@@ -222,7 +224,13 @@ pub fn _log_event(
 
 // Backward compatibility shim for kinfo! etc
 pub fn _log(meta: LogMetadata, args: fmt::Arguments) {
-    _log_event(meta.clone(), crate::root::SymbolShell::Static(meta.module), args, &[], &[]);
+    _log_event(
+        meta.clone(),
+        crate::root::SymbolShell::Static(meta.module),
+        args,
+        &[],
+        &[],
+    );
 }
 
 /// Log a raw string without any formatting (for kprint! compatibility)

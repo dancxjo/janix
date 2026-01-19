@@ -1,7 +1,7 @@
 //! Process lifecycle and task management syscalls
 
-use crate::syscall::validate::validate_user_range;
 use super::copyin;
+use crate::syscall::validate::validate_user_range;
 use abi::errors::{Errno, SysResult};
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
@@ -52,11 +52,7 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
 
     let tid = unsafe {
         crate::task::scheduler::spawn_user_thread_current(
-            req.entry,
-            req.sp,
-            0,
-            req.stack,
-            current_p,
+            req.entry, req.sp, 0, req.stack, current_p,
         )
     };
     if let Some(tid) = tid {
@@ -107,7 +103,7 @@ pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
 pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
     loop {
         let status_opt = unsafe { crate::task::scheduler::task_status_current(tid as u64) };
-        
+
         match status_opt {
             Some((state, exit_code)) => {
                 if state == crate::task::TaskState::Dead {

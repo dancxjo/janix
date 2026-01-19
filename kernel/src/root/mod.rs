@@ -5,12 +5,12 @@ use spin::Mutex;
 
 pub mod abi;
 pub mod graph;
+pub mod handlers;
 pub mod journal;
 pub mod pci;
 pub mod resources;
 pub mod schema;
 pub mod service;
-pub mod handlers;
 
 pub use service::root_main;
 
@@ -198,7 +198,11 @@ static ROOT_TID: AtomicU64 = AtomicU64::new(0);
 pub fn init_root_service<R: crate::BootRuntime>() {
     *ROOT_INBOX.lock() = Some(VecDeque::new());
     crate::kinfo!("Spawning Root service...");
-    let tid = crate::task::spawn_with_priority::<R>(service::root_main::<R>, 0, crate::task::TaskPriority::High);
+    let tid = crate::task::spawn_with_priority::<R>(
+        service::root_main::<R>,
+        0,
+        crate::task::TaskPriority::High,
+    );
     ROOT_TID.store(tid, Ordering::SeqCst);
 }
 
@@ -234,7 +238,6 @@ pub fn is_inbox_ready() -> bool {
 pub fn queue_len() -> usize {
     ROOT_INBOX.lock().as_ref().map(|q| q.len()).unwrap_or(0)
 }
-
 
 pub mod debug {
     use crate::root::SymbolShell;

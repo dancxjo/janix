@@ -1,14 +1,17 @@
 //! Static hook system for type-erased scheduler access.
 
-use crate::task::{TaskId, TaskState};
 use super::types::StackFaultResult;
+use crate::task::{TaskId, TaskState};
 
 pub(crate) static mut YIELD_HOOK: Option<fn()> = None;
 pub(crate) static mut EXIT_HOOK: Option<fn(i32)> = None;
-pub(crate) static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize, abi::types::StackInfo, crate::task::TaskPriority) -> TaskId> = None;
+pub(crate) static mut SPAWN_USER_HOOK: Option<
+    unsafe fn(usize, usize, usize, abi::types::StackInfo, crate::task::TaskPriority) -> TaskId,
+> = None;
 pub(crate) static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, usize) -> Option<TaskId>> = None;
 pub(crate) static mut CURRENT_TID_HOOK: Option<fn() -> u64> = None;
-pub(crate) static mut TASK_STATUS_HOOK: Option<fn(TaskId) -> Option<(TaskState, Option<i32>)>> = None;
+pub(crate) static mut TASK_STATUS_HOOK: Option<fn(TaskId) -> Option<(TaskState, Option<i32>)>> =
+    None;
 pub(crate) static mut SET_PRIORITY_HOOK: Option<fn(TaskId, crate::task::TaskPriority)> = None;
 pub(crate) static mut CURRENT_PRIORITY_HOOK: Option<fn() -> crate::task::TaskPriority> = None;
 pub(crate) static mut ALLOC_USER_STACK_HOOK: Option<fn(usize) -> Option<usize>> = None;

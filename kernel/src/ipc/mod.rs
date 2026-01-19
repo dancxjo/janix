@@ -22,7 +22,7 @@ pub static GLOBAL_HANDLE_TABLE: Mutex<HandleTable> = Mutex::new(HandleTable::new
 pub fn create_port(capacity: usize) -> PortId {
     let port = Arc::new(Port::new(capacity));
     let mut ports = PORTS.lock();
-    
+
     // Find a free slot or append
     for (i, slot) in ports.iter_mut().enumerate() {
         if slot.is_none() {
@@ -30,7 +30,7 @@ pub fn create_port(capacity: usize) -> PortId {
             return PortId(i as u32);
         }
     }
-    
+
     // No free slot, append
     let id = ports.len() as u32;
     ports.push(Some(port));

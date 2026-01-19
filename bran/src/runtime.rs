@@ -90,9 +90,15 @@ pub trait ArchRuntime {
     fn tlb_flush_page(&self, _virt: u64) {}
 
     // IO Port primitives (x86-only, stubs for other archs)
-    fn ioport_read_u8(&self, _port: u16) -> u8 { 0 }
-    fn ioport_read_u16(&self, _port: u16) -> u16 { 0 }
-    fn ioport_read_u32(&self, _port: u16) -> u32 { 0 }
+    fn ioport_read_u8(&self, _port: u16) -> u8 {
+        0
+    }
+    fn ioport_read_u16(&self, _port: u16) -> u16 {
+        0
+    }
+    fn ioport_read_u32(&self, _port: u16) -> u32 {
+        0
+    }
     fn ioport_write_u8(&self, _port: u16, _value: u8) {}
     fn ioport_write_u16(&self, _port: u16, _value: u16) {}
     fn ioport_write_u32(&self, _port: u16, _value: u32) {}

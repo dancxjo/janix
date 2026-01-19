@@ -2,9 +2,9 @@ use super::symbol::IntoSymbolRef;
 use super::{ThingId, ThingKind};
 use crate::errors::{errno, Errno};
 use crate::syscall::syscall6;
+use abi::ids::HandleId;
 use abi::symbols::SymbolId;
 use abi::syscall::*;
-use abi::ids::HandleId;
 
 pub fn get_kind(id: ThingId) -> Result<ThingKind, Errno> {
     let ret = unsafe { syscall6(SYS_ROOT_GET_KIND, id.to_u64_lossy() as usize, 0, 0, 0, 0, 0) };
@@ -42,7 +42,11 @@ pub fn bytespace_read(id: ThingId, offset: usize, out: &mut [u8]) -> Result<usiz
 }
 
 pub fn watch_subscribe(target: ThingId, mask: u64) -> Result<ThingId, Errno> {
-    crate::println!("STEM: watch_subscribe target={} mask={}", target.to_u64_lossy(), mask);
+    crate::println!(
+        "STEM: watch_subscribe target={} mask={}",
+        target.to_u64_lossy(),
+        mask
+    );
     let ret = unsafe {
         syscall6(
             SYS_ROOT_WATCH_SUBSCRIBE,

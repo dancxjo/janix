@@ -1,14 +1,18 @@
 //! Task and thread spawning functions.
 
-use crate::{BootRuntime, BootTasking, UserEntry};
 use crate::task::{Task, TaskId, TaskState};
+use crate::{BootRuntime, BootTasking, UserEntry};
 
-use super::types::{Scheduler, DEFAULT_TIMESLICE};
 use super::SCHEDULER;
-
+use super::types::{DEFAULT_TIMESLICE, Scheduler};
 
 impl<R: BootRuntime> Scheduler<R> {
-    pub fn spawn(&mut self, entry: extern "C" fn(usize) -> !, arg: usize, priority: crate::task::TaskPriority) -> TaskId {
+    pub fn spawn(
+        &mut self,
+        entry: extern "C" fn(usize) -> !,
+        arg: usize,
+        priority: crate::task::TaskPriority,
+    ) -> TaskId {
         let rt = crate::runtime::<R>();
         let id = self.next_id;
         self.next_id += 1;
@@ -151,7 +155,11 @@ pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> Ta
     sched.spawn(entry, arg, crate::task::TaskPriority::Normal)
 }
 
-pub fn spawn_with_priority<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize, priority: crate::task::TaskPriority) -> TaskId {
+pub fn spawn_with_priority<R: BootRuntime>(
+    entry: extern "C" fn(usize) -> !,
+    arg: usize,
+    priority: crate::task::TaskPriority,
+) -> TaskId {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
@@ -184,12 +192,14 @@ pub unsafe fn spawn_user_task_full<R: BootRuntime>(
 }
 
 pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<TaskId> {
-    unsafe {
-        spawn_process_with_priority::<R>(name, arg, crate::task::TaskPriority::Normal)
-    }
+    unsafe { spawn_process_with_priority::<R>(name, arg, crate::task::TaskPriority::Normal) }
 }
 
-pub unsafe fn spawn_process_with_priority<R: BootRuntime>(name: &str, arg: usize, priority: crate::task::TaskPriority) -> Option<TaskId> {
+pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
+    name: &str,
+    arg: usize,
+    priority: crate::task::TaskPriority,
+) -> Option<TaskId> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
     let module = modules.iter().find(|m| m.name.contains(name))?;

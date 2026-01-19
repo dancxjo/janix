@@ -4,21 +4,21 @@
 //! language-neutral Schema and WireSafe layout. It also includes the canonical
 //! `Edge` and example `Window` payloads.
 
-use crate::wire::{WireSafe, KindId, ThingId, BlobId, PredicateId};
-use crate::wire_schema::{Schema, schema_hash};
-use crate::packed::{encode_schema, decode_schema};
-use crate::errors::{Result, Error};
+use crate::errors::{Error, Result};
+use crate::packed::{decode_schema, encode_schema};
+use crate::wire::{BlobId, KindId, PredicateId, ThingId, WireSafe};
+use crate::wire_schema::{schema_hash, Schema};
 use core::mem::size_of;
 
 /// A type that can be stored as a Node in the Graph.
-/// 
+///
 /// Implementing this implies:
 /// 1. The type is `WireSafe` (no pointers, packed layout).
 /// 2. The type has a static `SCHEMA` that describes it.
 /// 3. The type's `KIND` is derived from the hash of the SCHEMA.
 pub trait Graphable: WireSafe + Sized {
     const SCHEMA: Schema;
-    
+
     // Explicitly declaring the expected wire size helps automated checks.
     const ENCODED_SIZE: usize = size_of::<Self>();
 
@@ -30,29 +30,30 @@ pub trait Graphable: WireSafe + Sized {
     fn encode(&self, out: &mut [u8]) -> Result<usize> {
         // Safety: We trust that Self is layout-compatible with bound Schema if used correctly.
         // WireSafe ensures it's POD.
-        unsafe {
-            encode_schema(self as *const Self as *const u8, &Self::SCHEMA, out)
-        }
+        unsafe { encode_schema(self as *const Self as *const u8, &Self::SCHEMA, out) }
     }
 
     /// Decode from packed LE bytes using the Schema with validation.
     fn decode(bytes: &[u8]) -> Result<Self> {
         let mut val = core::mem::MaybeUninit::<Self>::zeroed();
         unsafe {
-             decode_schema(bytes, &Self::SCHEMA, val.as_mut_ptr() as *mut u8)?;
-             let v = val.assume_init();
-             v.validate()?;
-             Ok(v)
+            decode_schema(bytes, &Self::SCHEMA, val.as_mut_ptr() as *mut u8)?;
+            let v = val.assume_init();
+            v.validate()?;
+            Ok(v)
         }
     }
 
     /// Validate the decoded payload.
-    /// 
+    ///
     /// Default implementation checks that the size matches the schema definition.
     /// Overriding implementations can check value ranges, flags validity, etc.
     fn validate(&self) -> Result<()> {
         if size_of::<Self>() != Self::SCHEMA.size() {
-            return Err(Error::InvalidDataLength { expected: Self::SCHEMA.size(), actual: size_of::<Self>() });
+            return Err(Error::InvalidDataLength {
+                expected: Self::SCHEMA.size(),
+                actual: size_of::<Self>(),
+            });
         }
         Ok(())
     }
@@ -85,7 +86,7 @@ pub struct Window {
     pub h: u32,
 }
 
-// Note: Automatic derive provides default `validate`. 
+// Note: Automatic derive provides default `validate`.
 // If we want custom validation for Window (e.g. w > 0), we need to handle that.
 // The macro generates `impl Graphable for Window { const SCHEMA = ...; }`.
 // Currently the macro logic doesn't allow overriding `validate` easily unless we make it partial impl or use specialization.
@@ -99,8 +100,8 @@ pub struct Window {
 mod tests {
     use super::*;
     use crate::thing::Thing;
-    use crate::wire::{assert_wire_safe};
-    use crate::{thing, edge}; // Test macros
+    use crate::wire::assert_wire_safe;
+    use crate::{edge, thing}; // Test macros
     use core::mem::size_of;
 
     #[test]
@@ -123,11 +124,11 @@ mod tests {
         let mut buf = [0u8; 128]; // ample space
         let written = original.encode(&mut buf).expect("Encode failed");
         assert_eq!(written, size_of::<Window>());
-        
+
         let decoded = Window::decode(&buf[..written]).expect("Decode failed");
         assert_eq!(original, decoded);
     }
-    
+
     #[test]
     fn test_thing_macro() {
         let t: Thing<Window> = thing!(Window {
@@ -142,15 +143,15 @@ mod tests {
         let k = t.kind;
         assert_eq!(k, Window::kind());
     }
-    
+
     #[test]
     fn test_edge_macro() {
         let from = ThingId([1; 16]);
         let to = ThingId([2; 16]);
         let pred = PredicateId([3; 16]);
-        
+
         let e: Thing<Edge> = edge!(from, pred, to, 0u32);
-        
+
         let e_from = e.value.from;
         let e_to = e.value.to;
         let e_pred = e.value.predicate;

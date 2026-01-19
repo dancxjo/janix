@@ -4,8 +4,8 @@ use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{BootRuntime, BootTasking, MapKind, MapPerms, memory};
 
-use super::types::{Scheduler, StackFaultResult};
 use super::SCHEDULER;
+use super::types::{Scheduler, StackFaultResult};
 
 const DEFAULT_USER_STACK_PAGES: usize = 16;
 const MAX_USER_STACK_PAGES: usize = 256;
@@ -73,7 +73,8 @@ pub unsafe fn map_user_page<R: BootRuntime>(virt: u64, phys: u64) -> Result<(), 
     };
     let hook = MapHook;
 
-    rt.tasking().map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)?;
+    rt.tasking()
+        .map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)?;
     rt.tasking().tlb_flush_page(virt);
 
     Ok(())

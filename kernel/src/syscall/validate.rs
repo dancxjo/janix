@@ -30,7 +30,11 @@ pub fn validate_user_range(base: usize, len: usize, _writable: bool) -> SysResul
 /// In a real implementation this would use `copy_from_user` assembly or similar to handle page faults safely.
 pub unsafe fn copyin(dst_kernel: &mut [u8], src_user: usize) -> SysResult<()> {
     if let Err(e) = validate_user_range(src_user, dst_kernel.len(), false) {
-        crate::kinfo!("copyin: EFAULT src={:#x} len={}", src_user, dst_kernel.len());
+        crate::kinfo!(
+            "copyin: EFAULT src={:#x} len={}",
+            src_user,
+            dst_kernel.len()
+        );
         return Err(e);
     }
     let src = src_user as *const u8;
@@ -47,7 +51,11 @@ pub unsafe fn copyin(dst_kernel: &mut [u8], src_user: usize) -> SysResult<()> {
 /// Copies data from kernel memory to user memory.
 pub unsafe fn copyout(dst_user: usize, src_kernel: &[u8]) -> SysResult<()> {
     if let Err(e) = validate_user_range(dst_user, src_kernel.len(), true) {
-        crate::kinfo!("copyout: EFAULT dst={:#x} len={}", dst_user, src_kernel.len());
+        crate::kinfo!(
+            "copyout: EFAULT dst={:#x} len={}",
+            dst_user,
+            src_kernel.len()
+        );
         return Err(e);
     }
     let dst = dst_user as *mut u8;
@@ -56,4 +64,3 @@ pub unsafe fn copyout(dst_user: usize, src_kernel: &[u8]) -> SysResult<()> {
     }
     Ok(())
 }
-

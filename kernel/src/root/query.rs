@@ -88,12 +88,12 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                             }
                         } else {
                             // In
-                            // Slow scan for incoming
-                            for (nid, n) in &graph.nodes {
-                                for (r, dst) in &n.edges {
-                                    if *dst == row.id && *r == rel {
+                            // Fast scan using incoming_edges index
+                            if let Some(incoming) = graph.incoming_edges.get(&row.id) {
+                                for (r, src) in incoming {
+                                    if *r == rel {
                                         next_rows.push(QueryRow {
-                                            id: *nid,
+                                            id: *src,
                                             kind_rel: *r as u64,
                                             val_dst: row.id,
                                             extra: 0,

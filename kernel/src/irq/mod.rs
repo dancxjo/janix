@@ -32,33 +32,33 @@ impl IrqRegistry {
             subscribers: [const { Vec::new() }; MAX_VECTORS],
         }
     }
-    
+
     /// Subscribe a task to receive interrupts for a vector
     pub fn subscribe(&mut self, vector: u8, task_id: usize) -> Result<(), ()> {
         let subs = &mut self.subscribers[vector as usize];
-        
+
         // Check if already subscribed
         for sub in subs.iter() {
             if sub.task_id == task_id {
                 return Err(()); // Already subscribed
             }
         }
-        
+
         subs.push(IrqSubscription {
             task_id,
             pending_count: 0,
         });
-        
+
         Ok(())
     }
-    
+
     /// Unsubscribe a task from a vector
     #[allow(dead_code)]
     pub fn unsubscribe(&mut self, vector: u8, task_id: usize) {
         let subs = &mut self.subscribers[vector as usize];
         subs.retain(|s| s.task_id != task_id);
     }
-    
+
     /// Dispatch an interrupt - increment pending count and wake waiters
     pub fn dispatch(&mut self, vector: u8) {
         let subs = &mut self.subscribers[vector as usize];
@@ -70,7 +70,7 @@ impl IrqRegistry {
             }
         }
     }
-    
+
     /// Wait for interrupt - returns pending count and resets it
     /// Returns 0 if caller should block
     pub fn try_wait(&mut self, vector: u8, task_id: usize) -> u32 {
@@ -141,7 +141,7 @@ pub static VECTOR_ALLOC: Mutex<VectorAllocator> = Mutex::new(VectorAllocator::ne
 pub fn dispatch_irq(vector: u8) {
     crate::trace::irq_ring::push(abi::trace::TraceEvent::Irq {
         vector,
-        timestamp: crate::trace::now()
+        timestamp: crate::trace::now(),
     });
     IRQ_REGISTRY.lock().dispatch(vector);
 }
@@ -168,7 +168,7 @@ pub fn subscribe(vector: u8) -> Result<(), ()> {
 /// Returns number of pending interrupts
 pub fn wait(vector: u8) -> u32 {
     let task_id = unsafe { crate::task::scheduler::current_tid_current() } as usize;
-    
+
     loop {
         {
             let mut reg = IRQ_REGISTRY.lock();

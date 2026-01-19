@@ -24,15 +24,15 @@ impl EvictHandle {
     pub fn resolve(&self) -> Option<NonNull<u8>> {
         // This requires access to the global ArenaHeap.
         // We will need to expose a way to query the global heap.
-        // For now, this is a placeholder. The actual resolution logic 
+        // For now, this is a placeholder. The actual resolution logic
         // will likely need to be a method on `ArenaHeap` or a global helper function
         // that locks the global allocator.
-        
+
         // Option 1: Pass the heap to resolve.
         // Option 2: Use a global accessor (e.g. `kernel::memory::arena::resolve(self)`)
-        
+
         // Implementation will be done in `kheap.rs` or `mod.rs` where we have access to the global lock.
         // For now, let's leave this struct definition here.
-        None 
+        None
     }
 }

@@ -39,7 +39,7 @@ pub fn decode(bytes: &[u8]) -> Result<BmpImage, BmpError> {
 
     let data_offset = u32::from_le_bytes(bytes[10..14].try_into().unwrap()) as usize;
     let header_size = u32::from_le_bytes(bytes[14..18].try_into().unwrap());
-    
+
     if header_size < 40 {
         return Err(BmpError::InvalidHeader);
     }
@@ -50,8 +50,12 @@ pub fn decode(bytes: &[u8]) -> Result<BmpImage, BmpError> {
     let bit_count = u16::from_le_bytes(bytes[28..30].try_into().unwrap());
     let compression = u32::from_le_bytes(bytes[30..34].try_into().unwrap());
 
-    if planes != 1 { return Err(BmpError::InvalidHeader); }
-    if compression != 0 { return Err(BmpError::UnsupportedCompression(())); } // BI_RGB only
+    if planes != 1 {
+        return Err(BmpError::InvalidHeader);
+    }
+    if compression != 0 {
+        return Err(BmpError::UnsupportedCompression(()));
+    } // BI_RGB only
 
     let w = width.abs() as usize;
     let h = height.abs() as usize;
@@ -65,7 +69,7 @@ pub fn decode(bytes: &[u8]) -> Result<BmpImage, BmpError> {
 
     let row_stride = (w * bytes_per_pixel + 3) & !3; // Align to 4 bytes
     let pixel_data_len = row_stride * h;
-    
+
     if bytes.len() < data_offset + pixel_data_len {
         return Err(BmpError::InvalidSize);
     }
@@ -79,25 +83,25 @@ pub fn decode(bytes: &[u8]) -> Result<BmpImage, BmpError> {
 
         match bit_count {
             32 => {
-                 // BGRA -> XRGB (Assuming alpha is ignored or simple)
-                 // Windows BMP 32-bit usually BGRA or BGRX
-                 for chunk in row_data.chunks_exact(4) {
-                     let b = chunk[0] as u32;
-                     let g = chunk[1] as u32;
-                     let r = chunk[2] as u32;
-                     // let a = chunk[3] as u32;
-                     pixels.push(0xFF000000 | (r << 16) | (g << 8) | b);
-                 }
-            },
+                // BGRA -> XRGB (Assuming alpha is ignored or simple)
+                // Windows BMP 32-bit usually BGRA or BGRX
+                for chunk in row_data.chunks_exact(4) {
+                    let b = chunk[0] as u32;
+                    let g = chunk[1] as u32;
+                    let r = chunk[2] as u32;
+                    // let a = chunk[3] as u32;
+                    pixels.push(0xFF000000 | (r << 16) | (g << 8) | b);
+                }
+            }
             24 => {
-                 // BGR -> XRGB
-                 for chunk in row_data.chunks_exact(3) {
-                     let b = chunk[0] as u32;
-                     let g = chunk[1] as u32;
-                     let r = chunk[2] as u32;
-                     pixels.push(0xFF000000 | (r << 16) | (g << 8) | b);
-                 }
-            },
+                // BGR -> XRGB
+                for chunk in row_data.chunks_exact(3) {
+                    let b = chunk[0] as u32;
+                    let g = chunk[1] as u32;
+                    let r = chunk[2] as u32;
+                    pixels.push(0xFF000000 | (r << 16) | (g << 8) | b);
+                }
+            }
             _ => unreachable!(),
         }
     }
@@ -136,8 +140,12 @@ pub fn decode_dib(bytes: &[u8]) -> Result<BmpImage, BmpError> {
     let bit_count = u16::from_le_bytes(bytes[14..16].try_into().unwrap());
     let compression = u32::from_le_bytes(bytes[16..20].try_into().unwrap());
 
-    if planes != 1 { return Err(BmpError::InvalidHeader); }
-    if compression != 0 { return Err(BmpError::UnsupportedCompression(())); }
+    if planes != 1 {
+        return Err(BmpError::InvalidHeader);
+    }
+    if compression != 0 {
+        return Err(BmpError::UnsupportedCompression(()));
+    }
 
     let w = width.abs() as usize;
     // ICO/CUR DIB height is 2x actual (XOR image + AND mask), so divide by 2
@@ -163,11 +171,11 @@ pub fn decode_dib(bytes: &[u8]) -> Result<BmpImage, BmpError> {
     for y in 0..h {
         let src_y = if top_down { y } else { h - 1 - y };
         let offset = data_offset + src_y * row_stride;
-        
+
         if offset + w * bytes_per_pixel > bytes.len() {
             return Err(BmpError::InvalidSize);
         }
-        
+
         let row_data = &bytes[offset..offset + w * bytes_per_pixel];
 
         match bit_count {
@@ -180,7 +188,7 @@ pub fn decode_dib(bytes: &[u8]) -> Result<BmpImage, BmpError> {
                     let a = chunk[3] as u32;
                     pixels.push((a << 24) | (r << 16) | (g << 8) | b);
                 }
-            },
+            }
             24 => {
                 // BGR -> XRGB (no alpha channel)
                 for chunk in row_data.chunks_exact(3) {
@@ -189,7 +197,7 @@ pub fn decode_dib(bytes: &[u8]) -> Result<BmpImage, BmpError> {
                     let r = chunk[2] as u32;
                     pixels.push(0xFF000000 | (r << 16) | (g << 8) | b);
                 }
-            },
+            }
             _ => unreachable!(),
         }
     }

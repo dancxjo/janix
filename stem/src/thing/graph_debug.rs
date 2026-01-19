@@ -26,7 +26,9 @@ impl fmt::Display for DebugEdge {
                 write!(
                     f,
                     "(t{:x})-[:{:x}]->(t{:x})",
-                    self.src.to_u64_lossy(), self.rel, self.dst.to_u64_lossy()
+                    self.src.to_u64_lossy(),
+                    self.rel,
+                    self.dst.to_u64_lossy()
                 )
             }
         }

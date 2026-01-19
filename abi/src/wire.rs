@@ -1,5 +1,5 @@
 //! Wire-safe primitives and IDs for the Graphable contract.
-//! 
+//!
 //! This module defines the fundamental fixed-size IDs used in the Thing-OS
 //! data graph and the `WireSafe` trait used to enforce pointer-free,
 //! packed layouts for payload structs.
@@ -35,13 +35,13 @@ impl ThingId {
     pub fn new() -> Self {
         // TODO: Use true randomness. For now, use a rudimentary counter or zero.
         // Since we are no_std and don't have rand yet.
-        Self([0; 16]) 
+        Self([0; 16])
     }
 }
 
 impl SymbolId {
     /// Convert a BlobId to a SymbolId.
-    /// 
+    ///
     /// In this implementation, we simply hash the BlobId to get a SymbolId,
     /// or treating it as distinct type-safe handle.
     /// For now, since they are both 16 bytes, we can map 1:1 if we want,
@@ -60,9 +60,9 @@ impl SymbolId {
 }
 
 /// Marker trait for types that are safe to transmit over the wire (pointer-free, packed, fixed-size).
-/// 
+///
 /// # Safety
-/// 
+///
 /// Implementing this trait asserts that:
 /// 1. The type is `Copy` and `'static`.
 /// 2. The type contains NO pointers, references, `Box`, `Vec`, `String`, etc.
@@ -98,6 +98,6 @@ unsafe impl WireSafe for PredicateId {}
 unsafe impl<T: WireSafe, const N: usize> WireSafe for [T; N] {}
 
 /// Assert that a type is WireSafe at compile time.
-/// 
+///
 /// Used in impl blocks to enforce constraints.
 pub const fn assert_wire_safe<T: WireSafe>() {}

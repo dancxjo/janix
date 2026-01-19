@@ -1,7 +1,7 @@
 //! Logging and debug output syscalls
 
-use crate::syscall::validate::validate_user_range;
 use super::copyin;
+use crate::syscall::validate::validate_user_range;
 use abi::errors::{Errno, SysResult};
 
 pub fn sys_log_write(ptr: usize, len: usize, level_arg: usize) -> SysResult<usize> {

@@ -1,5 +1,5 @@
 //! Device Registry for capability-based device claiming
-//! 
+//!
 //! This module tracks claimable devices and their allowed I/O port ranges
 //! and MMIO BARs. When a task claims a device, it receives a handle that
 //! authorizes resource access within the device's declared ranges.
@@ -48,9 +48,9 @@ pub struct MsixCapability {
 pub struct DeviceEntry {
     pub kind: &'static str,
     pub ioport_ranges: &'static [(u16, u16)], // (start, end) inclusive
-    pub graph_id: u64, // ThingId in the graph
-    pub mmio_bars: [u64; MAX_BARS],   // BAR physical addresses
-    pub mmio_sizes: [u64; MAX_BARS],  // BAR sizes
+    pub graph_id: u64,                        // ThingId in the graph
+    pub mmio_bars: [u64; MAX_BARS],           // BAR physical addresses
+    pub mmio_sizes: [u64; MAX_BARS],          // BAR sizes
     pub pci_location: Option<PciLocation>,
     pub msi_cap: Option<MsiCapability>,
     pub msix_cap: Option<MsixCapability>,
@@ -59,7 +59,11 @@ pub struct DeviceEntry {
 }
 
 impl DeviceEntry {
-    pub const fn new_legacy(kind: &'static str, ioport_ranges: &'static [(u16, u16)], graph_id: u64) -> Self {
+    pub const fn new_legacy(
+        kind: &'static str,
+        ioport_ranges: &'static [(u16, u16)],
+        graph_id: u64,
+    ) -> Self {
         Self {
             kind,
             ioport_ranges,
@@ -74,7 +78,12 @@ impl DeviceEntry {
         }
     }
 
-    pub const fn new_mmio(kind: &'static str, graph_id: u64, bars: [u64; MAX_BARS], sizes: [u64; MAX_BARS]) -> Self {
+    pub const fn new_mmio(
+        kind: &'static str,
+        graph_id: u64,
+        bars: [u64; MAX_BARS],
+        sizes: [u64; MAX_BARS],
+    ) -> Self {
         Self {
             kind,
             ioport_ranges: &[],
@@ -123,12 +132,17 @@ impl DeviceRegistry {
         Self {
             devices: [None; MAX_DEVICES],
             device_count: 0,
-            claims: [ClaimedDevice { 
-                device_index: 0, 
-                task_id: 0, 
+            claims: [ClaimedDevice {
+                device_index: 0,
+                task_id: 0,
                 valid: false,
                 mapped_bar_virt: [0; MAX_BARS],
-                dma_buffers: [DmaBuffer { phys_addr: 0, virt_addr: 0, page_count: 0, valid: false }; 4],
+                dma_buffers: [DmaBuffer {
+                    phys_addr: 0,
+                    virt_addr: 0,
+                    page_count: 0,
+                    valid: false,
+                }; 4],
             }; MAX_CLAIMS],
         }
     }
@@ -144,7 +158,13 @@ impl DeviceRegistry {
         Some(idx)
     }
 
-    pub fn set_pci_info(&mut self, device_index: usize, location: PciLocation, msi_cap: Option<MsiCapability>, msix_cap: Option<MsixCapability>) -> bool {
+    pub fn set_pci_info(
+        &mut self,
+        device_index: usize,
+        location: PciLocation,
+        msi_cap: Option<MsiCapability>,
+        msix_cap: Option<MsixCapability>,
+    ) -> bool {
         if device_index >= self.device_count {
             return false;
         }
@@ -217,7 +237,7 @@ impl DeviceRegistry {
         if !claim.valid {
             return None;
         }
-        
+
         if let Some(device) = self.get(claim.device_index) {
             let addr = device.mmio_bars[bar_index];
             let size = device.mmio_sizes[bar_index];
@@ -235,7 +255,10 @@ impl DeviceRegistry {
         }
     }
 
-    pub fn get_pci_info(&self, claim_handle: usize) -> Option<(PciLocation, Option<MsiCapability>, Option<MsixCapability>)> {
+    pub fn get_pci_info(
+        &self,
+        claim_handle: usize,
+    ) -> Option<(PciLocation, Option<MsiCapability>, Option<MsixCapability>)> {
         if claim_handle >= MAX_CLAIMS {
             return None;
         }
@@ -304,7 +327,13 @@ impl DeviceRegistry {
     }
 
     /// Allocate DMA buffer tracking slot
-    pub fn alloc_dma_slot(&mut self, claim_handle: usize, phys: u64, virt: u64, pages: usize) -> Option<usize> {
+    pub fn alloc_dma_slot(
+        &mut self,
+        claim_handle: usize,
+        phys: u64,
+        virt: u64,
+        pages: usize,
+    ) -> Option<usize> {
         if claim_handle >= MAX_CLAIMS {
             return None;
         }
@@ -312,7 +341,7 @@ impl DeviceRegistry {
         if !claim.valid {
             return None;
         }
-        
+
         for (i, buf) in claim.dma_buffers.iter_mut().enumerate() {
             if !buf.valid {
                 buf.phys_addr = phys;
@@ -334,7 +363,7 @@ impl DeviceRegistry {
         if !claim.valid {
             return false;
         }
-        
+
         if let Some(device) = self.get(claim.device_index) {
             for &(start, end) in device.ioport_ranges {
                 if port >= start && port <= end {

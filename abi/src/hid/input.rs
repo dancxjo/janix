@@ -30,12 +30,12 @@ impl InputDeviceKind {
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct RawInputEnvelope {
-    pub device_id: u64,     // ThingId of device
-    pub timestamp_ns: u64,  // Driver-side timestamp
-    pub kind: u8,           // InputDeviceKind
-    pub payload_len: u8,    // Length of payload
-    pub _pad: [u8; 6],      // Alignment padding
-    // payload bytes follow
+    pub device_id: u64,    // ThingId of device
+    pub timestamp_ns: u64, // Driver-side timestamp
+    pub kind: u8,          // InputDeviceKind
+    pub payload_len: u8,   // Length of payload
+    pub _pad: [u8; 6],     // Alignment padding
+                           // payload bytes follow
 }
 
 impl RawInputEnvelope {
@@ -76,8 +76,8 @@ impl RawInputEnvelope {
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct Ps2KeyPayload {
-    pub scancode: u8,  // Raw scancode (bit 7 = break)
-    pub flags: u8,     // bit0 = extended (E0 prefix)
+    pub scancode: u8, // Raw scancode (bit 7 = break)
+    pub flags: u8,    // bit0 = extended (E0 prefix)
 }
 
 impl Ps2KeyPayload {
@@ -88,6 +88,9 @@ impl Ps2KeyPayload {
     }
 
     pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
-        Self { scancode: bytes[0], flags: bytes[1] }
+        Self {
+            scancode: bytes[0],
+            flags: bytes[1],
+        }
     }
 }

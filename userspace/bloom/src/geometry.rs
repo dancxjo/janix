@@ -38,10 +38,18 @@ impl Rect {
         }
     }
 
-    pub fn x(&self) -> i32 { self.origin.x }
-    pub fn y(&self) -> i32 { self.origin.y }
-    pub fn width(&self) -> i32 { self.size.width }
-    pub fn height(&self) -> i32 { self.size.height }
+    pub fn x(&self) -> i32 {
+        self.origin.x
+    }
+    pub fn y(&self) -> i32 {
+        self.origin.y
+    }
+    pub fn width(&self) -> i32 {
+        self.size.width
+    }
+    pub fn height(&self) -> i32 {
+        self.size.height
+    }
 
     pub fn intersection(&self, other: &Rect) -> Option<Rect> {
         let x0 = self.x().max(other.x());
@@ -94,9 +102,12 @@ impl Color {
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Transform {
-    pub m11: f32, pub m12: f32,
-    pub m21: f32, pub m22: f32,
-    pub dx: f32,  pub dy: f32,
+    pub m11: f32,
+    pub m12: f32,
+    pub m21: f32,
+    pub m22: f32,
+    pub dx: f32,
+    pub dy: f32,
 }
 
 impl Default for Transform {
@@ -108,15 +119,19 @@ impl Default for Transform {
 impl Transform {
     pub const fn identity() -> Self {
         Self {
-            m11: 1.0, m12: 0.0,
-            m21: 0.0, m22: 1.0,
-            dx: 0.0,  dy: 0.0,
+            m11: 1.0,
+            m12: 0.0,
+            m21: 0.0,
+            m22: 1.0,
+            dx: 0.0,
+            dy: 0.0,
         }
     }
 
     pub fn translate(dx: f32, dy: f32) -> Self {
         Self {
-            dx, dy,
+            dx,
+            dy,
             ..Self::identity()
         }
     }

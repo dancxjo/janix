@@ -18,19 +18,23 @@ unsafe impl GlobalAlloc for ArenaAllocator {
         // No-op as per design. Pinned memory is never freed individually.
         // It is reclaimed only if the entire arena is dropped (which pinned ones aren't).
     }
-    
+
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
         // Default realloc is alloc + memcpy + dealloc.
         // Since dealloc is no-op, we just implement alloc + memcpy.
         // SAFETY: Layout::from_size_align_unchecked is unsafe.
         let new_layout = unsafe { Layout::from_size_align_unchecked(new_size, layout.align()) };
-        // SAFETY: self.alloc is unsafe, but we are in an unsafe fn. 
+        // SAFETY: self.alloc is unsafe, but we are in an unsafe fn.
         // Rust 2024 requires explicit unsafe block even inside unsafe fn.
         let new_ptr = unsafe { self.alloc(new_layout) };
         if !new_ptr.is_null() {
-            // SAFETY: copy_nonoverlapping is unsafe. 
+            // SAFETY: copy_nonoverlapping is unsafe.
             unsafe {
-                core::ptr::copy_nonoverlapping(ptr, new_ptr, core::cmp::min(layout.size(), new_size));
+                core::ptr::copy_nonoverlapping(
+                    ptr,
+                    new_ptr,
+                    core::cmp::min(layout.size(), new_size),
+                );
             }
         }
         new_ptr
@@ -52,4 +56,3 @@ pub fn init<R: BootRuntime>(_rt: &R) {
 
     crate::kinfo!("Arena allocator initialized (pinned pre-expanded)");
 }
-

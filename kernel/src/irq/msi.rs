@@ -7,15 +7,19 @@ use abi::errors::Errno;
 
 use crate::device_registry::{IrqMode, MsiCapability, MsixCapability, PciLocation, REGISTRY};
 use crate::irq::{alloc_vector, free_vector};
-use crate::root::{self, RootOp, SymbolShell};
 use crate::root::pci::{pci_read_config, pci_write_config};
+use crate::root::{self, RootOp, SymbolShell};
 
 pub struct EnableResult {
     pub vector: u8,
     pub mode: IrqMode,
 }
 
-pub fn enable_for_claim(claim_handle: usize, requested_vectors: u16, prefer_msix: bool) -> Result<EnableResult, Errno> {
+pub fn enable_for_claim(
+    claim_handle: usize,
+    requested_vectors: u16,
+    prefer_msix: bool,
+) -> Result<EnableResult, Errno> {
     if requested_vectors == 0 || requested_vectors > 1 {
         return Err(Errno::EINVAL);
     }
@@ -24,7 +28,9 @@ pub fn enable_for_claim(claim_handle: usize, requested_vectors: u16, prefer_msix
         let reg = REGISTRY.lock();
         let (location, msi_cap, msix_cap) = reg.get_pci_info(claim_handle).ok_or(Errno::ENODEV)?;
         let bars = reg.get_bars(claim_handle).ok_or(Errno::ENODEV)?;
-        let graph_id = reg.get_graph_id_for_claim(claim_handle).ok_or(Errno::ENODEV)?;
+        let graph_id = reg
+            .get_graph_id_for_claim(claim_handle)
+            .ok_or(Errno::ENODEV)?;
         (location, msi_cap, msix_cap, graph_id, bars)
     };
 
@@ -36,19 +42,31 @@ pub fn enable_for_claim(claim_handle: usize, requested_vectors: u16, prefer_msix
     let result = if prefer_msix {
         if let Some(msix) = msix_cap {
             program_msix(location, msix, vector, bars)?;
-            Ok(EnableResult { vector, mode: IrqMode::Msix })
+            Ok(EnableResult {
+                vector,
+                mode: IrqMode::Msix,
+            })
         } else if let Some(msi) = msi_cap {
             program_msi(location, msi, vector)?;
-            Ok(EnableResult { vector, mode: IrqMode::Msi })
+            Ok(EnableResult {
+                vector,
+                mode: IrqMode::Msi,
+            })
         } else {
             Err(Errno::ENOSYS)
         }
     } else if let Some(msi) = msi_cap {
         program_msi(location, msi, vector)?;
-        Ok(EnableResult { vector, mode: IrqMode::Msi })
+        Ok(EnableResult {
+            vector,
+            mode: IrqMode::Msi,
+        })
     } else if let Some(msix) = msix_cap {
         program_msix(location, msix, vector, bars)?;
-        Ok(EnableResult { vector, mode: IrqMode::Msix })
+        Ok(EnableResult {
+            vector,
+            mode: IrqMode::Msix,
+        })
     } else {
         Err(Errno::ENOSYS)
     };
@@ -74,9 +92,21 @@ fn program_msi(location: PciLocation, msi: MsiCapability, vector: u8) -> Result<
     ctrl_new |= 0x1;
 
     unsafe {
-        pci_write_config(location.bus, location.dev, location.func, msi.offset + 0x4, addr);
+        pci_write_config(
+            location.bus,
+            location.dev,
+            location.func,
+            msi.offset + 0x4,
+            addr,
+        );
         if msi.is_64bit {
-            pci_write_config(location.bus, location.dev, location.func, msi.offset + 0x8, 0);
+            pci_write_config(
+                location.bus,
+                location.dev,
+                location.func,
+                msi.offset + 0x8,
+                0,
+            );
             pci_write_config_u16(location, msi.offset + 0xC, data as u16);
         } else {
             pci_write_config_u16(location, msi.offset + 0x8, data as u16);
@@ -87,7 +117,12 @@ fn program_msi(location: PciLocation, msi: MsiCapability, vector: u8) -> Result<
     Ok(())
 }
 
-fn program_msix(location: PciLocation, msix: MsixCapability, vector: u8, bars: ([u64; 6], [u64; 6])) -> Result<(), Errno> {
+fn program_msix(
+    location: PciLocation,
+    msix: MsixCapability,
+    vector: u8,
+    bars: ([u64; 6], [u64; 6]),
+) -> Result<(), Errno> {
     let (addr, data) = build_msi_message(vector);
     let (bar_addrs, bar_sizes) = bars;
     let bar_index = msix.table_bar as usize;
@@ -194,7 +229,9 @@ fn update_graph_irq(graph_id: u64, mode: IrqMode, vector: u8) {
         name: String::from(mode_str),
     });
     while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
-        unsafe { crate::task::scheduler::yield_now_current(); }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
     }
     let mode_sym = reply.value.load(core::sync::atomic::Ordering::Relaxed);
 
@@ -204,7 +241,9 @@ fn update_graph_irq(graph_id: u64, mode: IrqMode, vector: u8) {
         value: mode_sym,
     });
     while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
-        unsafe { crate::task::scheduler::yield_now_current(); }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
     }
 
     let reply = root::enqueue(RootOp::PropSet {
@@ -213,6 +252,8 @@ fn update_graph_irq(graph_id: u64, mode: IrqMode, vector: u8) {
         value: vector as u64,
     });
     while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
-        unsafe { crate::task::scheduler::yield_now_current(); }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
     }
 }

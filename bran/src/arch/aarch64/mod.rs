@@ -44,7 +44,9 @@ impl ArchRuntime for AArch64Runtime {
     }
 
     fn wait_for_interrupt(&self) {
-        unsafe { core::arch::asm!("wfe", options(nomem, nostack)); }
+        unsafe {
+            core::arch::asm!("wfe", options(nomem, nostack));
+        }
     }
 
     fn mono_ticks(&self) -> u64 {

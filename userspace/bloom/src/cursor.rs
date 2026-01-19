@@ -1,6 +1,6 @@
+use crate::asset::{CursorAsset, CursorFrame};
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
-use crate::asset::{CursorAsset, CursorFrame};
 use crate::geometry::Color;
 
 pub struct CursorState {
@@ -12,9 +12,14 @@ pub struct CursorState {
 
 impl CursorState {
     pub fn new(x: i32, y: i32) -> Self {
-        Self { x, y, buttons: 0, asset: None }
+        Self {
+            x,
+            y,
+            buttons: 0,
+            asset: None,
+        }
     }
-    
+
     pub fn set_asset(&mut self, asset: CursorAsset) {
         self.asset = Some(asset);
     }
@@ -22,10 +27,18 @@ impl CursorState {
     pub fn apply_move(&mut self, dx: i16, dy: i16, w: i32, h: i32) {
         let mut nx = self.x + dx as i32;
         let mut ny = self.y + dy as i32;
-        if nx < 0 { nx = 0; }
-        if ny < 0 { ny = 0; }
-        if nx >= w { nx = w.saturating_sub(1); }
-        if ny >= h { ny = h.saturating_sub(1); }
+        if nx < 0 {
+            nx = 0;
+        }
+        if ny < 0 {
+            ny = 0;
+        }
+        if nx >= w {
+            nx = w.saturating_sub(1);
+        }
+        if ny >= h {
+            ny = h.saturating_sub(1);
+        }
         self.x = nx;
         self.y = ny;
     }
@@ -53,7 +66,7 @@ impl CursorState {
             Color::from_u32(0x00FFFFFF)
         }
     }
-    
+
     fn current_frame(&self) -> Option<&CursorFrame> {
         match &self.asset {
             Some(CursorAsset::Static(frame)) => Some(frame),
@@ -71,7 +84,12 @@ impl CursorState {
         if let Some(frame) = self.current_frame() {
             let dx = self.x - frame.hotspot_x as i32;
             let dy = self.y - frame.hotspot_y as i32;
-            Rect::new(dx, dy, frame.image.width as i32 + 3, frame.image.height as i32 + 3)
+            Rect::new(
+                dx,
+                dy,
+                frame.image.width as i32 + 3,
+                frame.image.height as i32 + 3,
+            )
         } else {
             // Fallback cursor size (crosshair)
             Rect::new(self.x - 5, self.y - 5, 11, 11)
@@ -80,13 +98,13 @@ impl CursorState {
 
     pub fn emit_drawlist(&self, list: &mut DrawList) {
         if let Some(frame) = self.current_frame() {
-             list.cursor(frame, self.x, self.y);
+            list.cursor(frame, self.x, self.y);
         } else {
             // Procedural Fallback: Crosshair
             let color = self.color();
             let x = self.x;
             let y = self.y;
-            
+
             // Horizontal line
             list.line(x - 5, y, x + 5, y, color);
             // Vertical line

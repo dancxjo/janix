@@ -2,6 +2,9 @@
 
 extern crate alloc;
 
+pub mod device_registry;
+pub mod ipc;
+pub mod irq;
 pub mod logging;
 pub mod memory;
 pub mod root;
@@ -10,9 +13,6 @@ pub mod syscall;
 pub mod task;
 pub mod tests;
 pub mod time;
-pub mod device_registry;
-pub mod ipc;
-pub mod irq;
 pub mod trace;
 
 #[unsafe(no_mangle)]
@@ -247,7 +247,7 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
 
     fn irq_disable(&self) -> IrqState;
     fn irq_restore(&self, state: IrqState);
-    
+
     /// Setup periodic preemption timer (e.g. 100Hz heartbeat)
     fn setup_preemption_timer(&self, _hz: u32) {}
 
@@ -259,9 +259,15 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     }
 
     // IO Port primitives (x86-only, stubs for other archs)
-    fn ioport_read_u8(&self, _port: u16) -> u8 { 0 }
-    fn ioport_read_u16(&self, _port: u16) -> u16 { 0 }
-    fn ioport_read_u32(&self, _port: u16) -> u32 { 0 }
+    fn ioport_read_u8(&self, _port: u16) -> u8 {
+        0
+    }
+    fn ioport_read_u16(&self, _port: u16) -> u16 {
+        0
+    }
+    fn ioport_read_u32(&self, _port: u16) -> u32 {
+        0
+    }
     fn ioport_write_u8(&self, _port: u16, _value: u8) {}
     fn ioport_write_u16(&self, _port: u16, _value: u16) {}
     fn ioport_write_u32(&self, _port: u16, _value: u32) {}
@@ -288,7 +294,6 @@ pub fn runtime_base() -> &'static dyn BootRuntimeBase {
     unsafe { RUNTIME_BASE.expect("Runtime not initialized") }
 }
 
-
 // Global IO port accessor functions
 // On x86, these use inline asm. On other archs, they are no-ops.
 #[inline]
@@ -296,11 +301,15 @@ pub fn ioport_read_u8(_port: u16) -> u8 {
     #[cfg(target_arch = "x86_64")]
     {
         let val: u8;
-        unsafe { core::arch::asm!("in al, dx", out("al") val, in("dx") _port, options(nostack, preserves_flags)) };
+        unsafe {
+            core::arch::asm!("in al, dx", out("al") val, in("dx") _port, options(nostack, preserves_flags))
+        };
         val
     }
     #[cfg(not(target_arch = "x86_64"))]
-    { 0 }
+    {
+        0
+    }
 }
 
 #[inline]
@@ -308,11 +317,15 @@ pub fn ioport_read_u16(_port: u16) -> u16 {
     #[cfg(target_arch = "x86_64")]
     {
         let val: u16;
-        unsafe { core::arch::asm!("in ax, dx", out("ax") val, in("dx") _port, options(nostack, preserves_flags)) };
+        unsafe {
+            core::arch::asm!("in ax, dx", out("ax") val, in("dx") _port, options(nostack, preserves_flags))
+        };
         val
     }
     #[cfg(not(target_arch = "x86_64"))]
-    { 0 }
+    {
+        0
+    }
 }
 
 #[inline]
@@ -320,32 +333,40 @@ pub fn ioport_read_u32(_port: u16) -> u32 {
     #[cfg(target_arch = "x86_64")]
     {
         let val: u32;
-        unsafe { core::arch::asm!("in eax, dx", out("eax") val, in("dx") _port, options(nostack, preserves_flags)) };
+        unsafe {
+            core::arch::asm!("in eax, dx", out("eax") val, in("dx") _port, options(nostack, preserves_flags))
+        };
         val
     }
     #[cfg(not(target_arch = "x86_64"))]
-    { 0 }
+    {
+        0
+    }
 }
 
 #[inline]
 pub fn ioport_write_u8(_port: u16, _val: u8) {
     #[cfg(target_arch = "x86_64")]
-    unsafe { core::arch::asm!("out dx, al", in("dx") _port, in("al") _val, options(nostack, preserves_flags)) };
+    unsafe {
+        core::arch::asm!("out dx, al", in("dx") _port, in("al") _val, options(nostack, preserves_flags))
+    };
 }
 
 #[inline]
 pub fn ioport_write_u16(_port: u16, _val: u16) {
     #[cfg(target_arch = "x86_64")]
-    unsafe { core::arch::asm!("out dx, ax", in("dx") _port, in("ax") _val, options(nostack, preserves_flags)) };
+    unsafe {
+        core::arch::asm!("out dx, ax", in("dx") _port, in("ax") _val, options(nostack, preserves_flags))
+    };
 }
 
 #[inline]
 pub fn ioport_write_u32(_port: u16, _val: u32) {
     #[cfg(target_arch = "x86_64")]
-    unsafe { core::arch::asm!("out dx, eax", in("dx") _port, in("eax") _val, options(nostack, preserves_flags)) };
+    unsafe {
+        core::arch::asm!("out dx, eax", in("dx") _port, in("eax") _val, options(nostack, preserves_flags))
+    };
 }
-
-
 
 struct GlobalAllocHook;
 impl FrameAllocatorHook for GlobalAllocHook {
@@ -415,11 +436,17 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     let modules = runtime.modules();
 
     // Look for module with "init" in cmdline, otherwise fallback to "sprout" by name
-    let init_module = modules.iter().find(|m| m.cmdline.contains("init"))
+    let init_module = modules
+        .iter()
+        .find(|m| m.cmdline.contains("init"))
         .or_else(|| modules.iter().find(|m| m.name.contains("sprout")));
 
     if let Some(mod_desc) = init_module {
-        kinfo!("Found init module: {} (cmdline: '{}'), loading...", mod_desc.name, mod_desc.cmdline);
+        kinfo!(
+            "Found init module: {} (cmdline: '{}'), loading...",
+            mod_desc.name,
+            mod_desc.cmdline
+        );
 
         let aspace = runtime.tasking().make_user_address_space();
         let _hook = GlobalAllocHook;
@@ -496,7 +523,12 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             let mut entry = user_entry;
             entry.arg0 = 0x600000; // arg0 = registry ptr
             // Spawn at Normal priority - all tasks share the same priority for fair scheduling
-            crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info, crate::task::TaskPriority::Normal);
+            crate::task::scheduler::spawn_user_task_full::<R>(
+                entry,
+                aspace,
+                stack_info,
+                crate::task::TaskPriority::Normal,
+            );
         }
     } else {
         kinfo!("Sprout not found. Checking fallback...");
@@ -512,7 +544,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
                         .expect("Failed to load threads_demo");
                 unsafe {
                     crate::task::scheduler::spawn_user_task_full::<R>(
-                        user_entry, aspace, stack_info, crate::task::TaskPriority::Normal,
+                        user_entry,
+                        aspace,
+                        stack_info,
+                        crate::task::TaskPriority::Normal,
                     );
                 }
                 spawned_fallback = true;

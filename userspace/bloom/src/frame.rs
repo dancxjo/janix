@@ -20,7 +20,7 @@ pub struct AssetGeneration(pub u64);
 #[allow(dead_code)]
 impl AssetGeneration {
     pub const ZERO: Self = Self(0);
-    
+
     pub fn next(self) -> Self {
         Self(self.0.saturating_add(1))
     }
@@ -38,7 +38,11 @@ pub struct FrameSpec {
 #[allow(dead_code)]
 impl FrameSpec {
     pub fn new(width: u32, height: u32, format: u32) -> Self {
-        Self { width, height, format }
+        Self {
+            width,
+            height,
+            format,
+        }
     }
 }
 
@@ -54,7 +58,7 @@ pub struct PresentStats {
 }
 
 /// Token granting exclusive ownership of a frame slot.
-/// 
+///
 /// # Invariants
 /// - Cannot be cloned (exclusive ownership)
 /// - Must be consumed by `present_frame()` or dropped
@@ -120,7 +124,10 @@ pub struct FrameBuilder {
 impl FrameBuilder {
     /// Create a new builder from a token.
     pub fn new(token: FrameToken) -> Self {
-        Self { token, finished: false }
+        Self {
+            token,
+            finished: false,
+        }
     }
 
     /// Push a draw command to the frame's op list.
@@ -141,10 +148,7 @@ impl FrameBuilder {
     #[inline]
     pub fn mark_full_damage(&mut self) {
         debug_assert!(!self.finished, "Cannot mark damage after finish()");
-        let bounds = Rect::full(
-            self.token.spec.width as i32,
-            self.token.spec.height as i32,
-        );
+        let bounds = Rect::full(self.token.spec.width as i32, self.token.spec.height as i32);
         self.token.damage = Damage::full(bounds);
     }
 
@@ -192,7 +196,7 @@ mod tests {
         let g0 = AssetGeneration(0);
         let g1 = AssetGeneration(1);
         let g2 = AssetGeneration(2);
-        
+
         assert!(g0 < g1);
         assert!(g1 < g2);
         assert!(g0 <= g0);
@@ -203,7 +207,7 @@ mod tests {
     fn test_frame_token_creation() {
         let spec = FrameSpec::new(800, 600, 0);
         let token = FrameToken::new(1, AssetGeneration(5), spec);
-        
+
         assert_eq!(token.frame_id(), 1);
         assert_eq!(token.asset_generation(), AssetGeneration(5));
     }
@@ -212,10 +216,10 @@ mod tests {
     fn test_builder_lifecycle() {
         let spec = FrameSpec::new(100, 100, 0);
         let token = FrameToken::new(1, AssetGeneration(0), spec);
-        
+
         let mut builder = FrameBuilder::new(token);
         builder.add_damage(Rect::new(10, 10, 20, 20));
-        
+
         // Should be able to finish
         let token = builder.finish();
         assert_eq!(token.frame_id(), 1);

@@ -89,7 +89,7 @@ impl InterruptOverride {
         let pol = self.flags & 0x03;
         pol == 0x03 // 11 = active low
     }
-    
+
     /// Returns true if level triggered
     pub fn is_level_triggered(&self) -> bool {
         let trigger = (self.flags >> 2) & 0x03;
@@ -120,7 +120,7 @@ impl MadtInfo {
         // Default: identity mapping, edge triggered, active high
         (irq as u32, false, false)
     }
-    
+
     /// Find which IOAPIC handles a given GSI
     #[allow(dead_code)]
     pub fn gsi_to_ioapic(&self, gsi: u32) -> Option<(usize, u8)> {
@@ -137,43 +137,61 @@ impl MadtInfo {
 }
 
 /// Parse the ACPI MADT from RSDP
-/// 
+///
 /// # Safety
 /// Caller must ensure hhdm_offset is valid and ACPI tables are mapped.
 pub unsafe fn parse_madt(rsdp_virt: u64, hhdm_offset: u64) -> Option<MadtInfo> {
     let rsdp_phys = rsdp_phys_from_virt(rsdp_virt, hhdm_offset);
     map_phys_range(rsdp_phys, 4096, hhdm_offset);
     let rsdp = (rsdp_phys + hhdm_offset) as *const Rsdp;
-    
+
     // Validate RSDP signature
     let sig = unsafe { ptr::read_unaligned(ptr::addr_of!((*rsdp).signature)) };
     if &sig != b"RSD PTR " {
         return None;
     }
-    
+
     let revision = unsafe { ptr::read_unaligned(ptr::addr_of!((*rsdp).revision)) };
-    
+
     let madt_phys = if revision >= 2 {
         // ACPI 2.0+: use XSDT
         let xsdt_phys = unsafe { ptr::read_unaligned(ptr::addr_of!((*rsdp).xsdt_address)) };
-        map_phys_range(xsdt_phys, core::mem::size_of::<AcpiSdtHeader>() as u64, hhdm_offset);
+        map_phys_range(
+            xsdt_phys,
+            core::mem::size_of::<AcpiSdtHeader>() as u64,
+            hhdm_offset,
+        );
         let xsdt_virt = xsdt_phys + hhdm_offset;
-        let length = unsafe { ptr::read_unaligned(ptr::addr_of!((*(xsdt_virt as *const AcpiSdtHeader)).length)) };
+        let length = unsafe {
+            ptr::read_unaligned(ptr::addr_of!((*(xsdt_virt as *const AcpiSdtHeader)).length))
+        };
         map_phys_range(xsdt_phys, length as u64, hhdm_offset);
         unsafe { find_table_xsdt(xsdt_virt, &MADT_SIGNATURE, hhdm_offset) }?
     } else {
         // ACPI 1.0: use RSDT
         let rsdt_phys = unsafe { ptr::read_unaligned(ptr::addr_of!((*rsdp).rsdt_address)) };
-        map_phys_range(rsdt_phys as u64, core::mem::size_of::<AcpiSdtHeader>() as u64, hhdm_offset);
+        map_phys_range(
+            rsdt_phys as u64,
+            core::mem::size_of::<AcpiSdtHeader>() as u64,
+            hhdm_offset,
+        );
         let rsdt_virt = (rsdt_phys as u64) + hhdm_offset;
-        let length = unsafe { ptr::read_unaligned(ptr::addr_of!((*(rsdt_virt as *const AcpiSdtHeader)).length)) };
+        let length = unsafe {
+            ptr::read_unaligned(ptr::addr_of!((*(rsdt_virt as *const AcpiSdtHeader)).length))
+        };
         map_phys_range(rsdt_phys as u64, length as u64, hhdm_offset);
         unsafe { find_table_rsdt(rsdt_virt, &MADT_SIGNATURE, hhdm_offset) }?
     };
-    
+
     let madt_virt = madt_phys + hhdm_offset;
-    map_phys_range(madt_phys, core::mem::size_of::<AcpiSdtHeader>() as u64, hhdm_offset);
-    let madt_length = unsafe { ptr::read_unaligned(ptr::addr_of!((*(madt_virt as *const AcpiSdtHeader)).length)) };
+    map_phys_range(
+        madt_phys,
+        core::mem::size_of::<AcpiSdtHeader>() as u64,
+        hhdm_offset,
+    );
+    let madt_length = unsafe {
+        ptr::read_unaligned(ptr::addr_of!((*(madt_virt as *const AcpiSdtHeader)).length))
+    };
     map_phys_range(madt_phys, madt_length as u64, hhdm_offset);
     unsafe { parse_madt_table(madt_virt) }
 }
@@ -183,7 +201,7 @@ unsafe fn find_table_rsdt(rsdt_virt: u64, sig: &[u8; 4], hhdm: u64) -> Option<u6
     let length = unsafe { ptr::read_unaligned(ptr::addr_of!((*header).length)) };
     let entry_count = (length as usize - 36) / 4;
     let entries = (rsdt_virt + 36) as *const u32;
-    
+
     for i in 0..entry_count {
         let addr = unsafe { ptr::read_unaligned(entries.add(i)) } as u64;
         map_phys_range(addr, core::mem::size_of::<AcpiSdtHeader>() as u64, hhdm);
@@ -201,7 +219,7 @@ unsafe fn find_table_xsdt(xsdt_virt: u64, sig: &[u8; 4], hhdm: u64) -> Option<u6
     let length = unsafe { ptr::read_unaligned(ptr::addr_of!((*header).length)) };
     let entry_count = (length as usize - 36) / 8;
     let entries = (xsdt_virt + 36) as *const u64;
-    
+
     for i in 0..entry_count {
         let addr = unsafe { ptr::read_unaligned(entries.add(i)) };
         map_phys_range(addr, core::mem::size_of::<AcpiSdtHeader>() as u64, hhdm);
@@ -218,7 +236,7 @@ unsafe fn parse_madt_table(madt_virt: u64) -> Option<MadtInfo> {
     let header = madt_virt as *const MadtHeader;
     let length = unsafe { ptr::read_unaligned(ptr::addr_of!((*header).header.length)) };
     let local_apic_addr = unsafe { ptr::read_unaligned(ptr::addr_of!((*header).local_apic_addr)) };
-    
+
     let mut info = MadtInfo {
         local_apic_addr: local_apic_addr as u64,
         ioapics: [IoapicInfo::default(); MAX_IOAPICS],
@@ -226,25 +244,26 @@ unsafe fn parse_madt_table(madt_virt: u64) -> Option<MadtInfo> {
         overrides: [InterruptOverride::default(); MAX_ISO],
         override_count: 0,
     };
-    
+
     let entries_start = madt_virt + 44; // sizeof(MadtHeader)
     let entries_end = madt_virt + length as u64;
     let mut ptr = entries_start;
-    
+
     while ptr + 2 <= entries_end {
         let entry_type = unsafe { ptr::read_unaligned(ptr as *const u8) };
         let entry_len = unsafe { ptr::read_unaligned((ptr + 1) as *const u8) };
-        
+
         if entry_len < 2 {
             break; // Invalid entry
         }
-        
+
         match entry_type {
             ENTRY_IOAPIC if info.ioapic_count < MAX_IOAPICS => {
                 let entry = ptr as *const IoapicEntry;
                 info.ioapics[info.ioapic_count] = IoapicInfo {
                     id: unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).ioapic_id)) },
-                    mmio_base: unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).ioapic_addr)) } as u64,
+                    mmio_base: unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).ioapic_addr)) }
+                        as u64,
                     gsi_base: unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).gsi_base)) },
                 };
                 info.ioapic_count += 1;
@@ -261,10 +280,10 @@ unsafe fn parse_madt_table(madt_virt: u64) -> Option<MadtInfo> {
             }
             _ => {}
         }
-        
+
         ptr += entry_len as u64;
     }
-    
+
     Some(info)
 }
 

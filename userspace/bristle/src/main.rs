@@ -11,24 +11,26 @@ mod normalizer;
 mod thigmonasty;
 
 use abi::hid::{
-    BristleEventHeader, EventType, Key, KeyEventPayload, Mods,
-    PointerMovePayload, PointerButtonPayload,
-    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
+    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType, Key,
+    KeyEventPayload, Mods, PointerButtonPayload, PointerMovePayload,
 };
+use abi::ids::HandleId;
 use mouse::{MouseState, PointerEvent};
 use stem::info;
-use stem::syscall::{port_recv, port_send, port_wait, PortHandle};
+use stem::syscall::{PortHandle, port_recv, port_send, port_wait};
 #[cfg(feature = "diagnostic-apps")]
 use stem::syscall::{port_create, spawn_process};
 use stem::thing::sys as thingsys;
 use thigmonasty::{KeyEdge, KeyboardState};
-use abi::ids::HandleId;
 
 /// Register Bristle in the Root graph
 fn register_in_graph() {
     match thingsys::create_node(abi::schema::hid::SVC_INPUT) {
         Ok(node_id) => {
-            info!("bristle: registered in graph as svc.Input (id={})", node_id.to_u64_lossy());
+            info!(
+                "bristle: registered in graph as svc.Input (id={})",
+                node_id.to_u64_lossy()
+            );
         }
         Err(e) => {
             info!("bristle: failed to register in graph: {:?}", e);
@@ -37,8 +39,16 @@ fn register_in_graph() {
 }
 
 /// Serialize a KeyDown event
-fn serialize_key_down(key: Key, mods: Mods, repeat: bool, timestamp_ns: u64, buf: &mut [u8]) -> usize {
-    if buf.len() < 24 { return 0; }
+fn serialize_key_down(
+    key: Key,
+    mods: Mods,
+    repeat: bool,
+    timestamp_ns: u64,
+    buf: &mut [u8],
+) -> usize {
+    if buf.len() < 24 {
+        return 0;
+    }
     let header = BristleEventHeader {
         magic: BRISTLE_EVENT_MAGIC,
         version: BRISTLE_EVENT_VERSION,
@@ -53,14 +63,20 @@ fn serialize_key_down(key: Key, mods: Mods, repeat: bool, timestamp_ns: u64, buf
     };
     unsafe {
         core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
-        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 4);
+        core::ptr::copy_nonoverlapping(
+            &payload as *const _ as *const u8,
+            buf.as_mut_ptr().add(20),
+            4,
+        );
     }
     24
 }
 
 /// Serialize a KeyUp event
 fn serialize_key_up(key: Key, mods: Mods, timestamp_ns: u64, buf: &mut [u8]) -> usize {
-    if buf.len() < 24 { return 0; }
+    if buf.len() < 24 {
+        return 0;
+    }
     let header = BristleEventHeader {
         magic: BRISTLE_EVENT_MAGIC,
         version: BRISTLE_EVENT_VERSION,
@@ -75,14 +91,20 @@ fn serialize_key_up(key: Key, mods: Mods, timestamp_ns: u64, buf: &mut [u8]) -> 
     };
     unsafe {
         core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
-        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 4);
+        core::ptr::copy_nonoverlapping(
+            &payload as *const _ as *const u8,
+            buf.as_mut_ptr().add(20),
+            4,
+        );
     }
     24
 }
 
 /// Serialize a PointerMove event
 fn serialize_pointer_move(dx: i16, dy: i16, timestamp_ns: u64, buf: &mut [u8]) -> usize {
-    if buf.len() < 24 { return 0; }
+    if buf.len() < 24 {
+        return 0;
+    }
     let header = BristleEventHeader {
         magic: BRISTLE_EVENT_MAGIC,
         version: BRISTLE_EVENT_VERSION,
@@ -93,14 +115,20 @@ fn serialize_pointer_move(dx: i16, dy: i16, timestamp_ns: u64, buf: &mut [u8]) -
     let payload = PointerMovePayload { dx, dy };
     unsafe {
         core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
-        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 4);
+        core::ptr::copy_nonoverlapping(
+            &payload as *const _ as *const u8,
+            buf.as_mut_ptr().add(20),
+            4,
+        );
     }
     24
 }
 
 /// Serialize a PointerButtonDown event
 fn serialize_pointer_button_down(button: u8, timestamp_ns: u64, buf: &mut [u8]) -> usize {
-    if buf.len() < 24 { return 0; }
+    if buf.len() < 24 {
+        return 0;
+    }
     let header = BristleEventHeader {
         magic: BRISTLE_EVENT_MAGIC,
         version: BRISTLE_EVENT_VERSION,
@@ -111,14 +139,20 @@ fn serialize_pointer_button_down(button: u8, timestamp_ns: u64, buf: &mut [u8]) 
     let payload = PointerButtonPayload { button, _pad: 0 };
     unsafe {
         core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
-        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 2);
+        core::ptr::copy_nonoverlapping(
+            &payload as *const _ as *const u8,
+            buf.as_mut_ptr().add(20),
+            2,
+        );
     }
     22
 }
 
 /// Serialize a PointerButtonUp event
 fn serialize_pointer_button_up(button: u8, timestamp_ns: u64, buf: &mut [u8]) -> usize {
-    if buf.len() < 24 { return 0; }
+    if buf.len() < 24 {
+        return 0;
+    }
     let header = BristleEventHeader {
         magic: BRISTLE_EVENT_MAGIC,
         version: BRISTLE_EVENT_VERSION,
@@ -129,7 +163,11 @@ fn serialize_pointer_button_up(button: u8, timestamp_ns: u64, buf: &mut [u8]) ->
     let payload = PointerButtonPayload { button, _pad: 0 };
     unsafe {
         core::ptr::copy_nonoverlapping(&header as *const _ as *const u8, buf.as_mut_ptr(), 20);
-        core::ptr::copy_nonoverlapping(&payload as *const _ as *const u8, buf.as_mut_ptr().add(20), 2);
+        core::ptr::copy_nonoverlapping(
+            &payload as *const _ as *const u8,
+            buf.as_mut_ptr().add(20),
+            2,
+        );
     }
     22
 }
@@ -151,12 +189,12 @@ fn main(packed_handles: usize) -> ! {
         "bristle: online (kbd={}, mouse={}, evt={}, evt_echo={})",
         kbd_read, mouse_read, evt_write, evt_echo_write
     );
-    
+
     register_in_graph();
 
     let mut kbd_state = KeyboardState::new();
     let mut mouse_state = MouseState::new();
-    
+
     #[cfg(feature = "diagnostic-apps")]
     let evt_mouse_write: PortHandle = {
         let mut write_handle: PortHandle = 0;
@@ -178,7 +216,7 @@ fn main(packed_handles: usize) -> ! {
         }
         write_handle
     };
-    
+
     #[cfg(not(feature = "diagnostic-apps"))]
     let evt_mouse_write: PortHandle = 0;
 
@@ -191,7 +229,7 @@ fn main(packed_handles: usize) -> ! {
     let wait_handles = [kbd_read, mouse_read];
     loop {
         let timestamp_ns = event_count * 1_000_000;
-        
+
         // Block until keyboard or mouse data arrives
         let _ = port_wait(&wait_handles);
 
@@ -236,8 +274,8 @@ fn main(packed_handles: usize) -> ! {
                 }
             }
         }
-        
-        // Process mouse input  
+
+        // Process mouse input
         if let Ok(n) = port_recv(mouse_read, &mut mouse_buf) {
             if n >= 3 {
                 // Process 3-byte packets
@@ -248,7 +286,7 @@ fn main(packed_handles: usize) -> ! {
                         mouse_buf[offset + 1],
                         mouse_buf[offset + 2],
                     ];
-                    
+
                     let (events, count) = mouse_state.process_packet(&packet);
                     for i in 0..count {
                         if let Some(evt) = events[i] {
@@ -257,7 +295,11 @@ fn main(packed_handles: usize) -> ! {
                                     serialize_pointer_move(dx, dy, timestamp_ns, &mut send_buf)
                                 }
                                 PointerEvent::ButtonDown { button } => {
-                                    serialize_pointer_button_down(button, timestamp_ns, &mut send_buf)
+                                    serialize_pointer_button_down(
+                                        button,
+                                        timestamp_ns,
+                                        &mut send_buf,
+                                    )
                                 }
                                 PointerEvent::ButtonUp { button } => {
                                     serialize_pointer_button_up(button, timestamp_ns, &mut send_buf)
@@ -294,7 +336,7 @@ fn main(packed_handles: usize) -> ! {
                 }
             }
         }
-        
+
         // Rate-limited drop logging
         if drop_counter > 0 && drop_counter % 100 == 0 {
             info!("bristle: dropped {} events (port full)", drop_counter);

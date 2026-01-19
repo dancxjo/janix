@@ -2,9 +2,9 @@ use super::symbol::IntoSymbolRef;
 use crate::errors::{errno, Errno};
 use crate::syscall::syscall6;
 use crate::thing::ThingId;
+use abi::ids::HandleId;
 use abi::query::*;
 use abi::syscall::SYS_ROOT_QUERY;
-use abi::ids::HandleId;
 use alloc::vec::Vec;
 
 pub fn query_nodes_by_kind(kind: &str, limit: usize, out: &mut [ThingId]) -> Result<usize, Errno> {

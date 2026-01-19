@@ -1,0 +1,8 @@
+thing-os-loongarch64-1768845254.iso
+thing-os-loongarch64-1768845446.iso
+thing-os-riscv64-1768845188.iso
+thing-os-riscv64-1768845441.iso
+thing-os-x86_64-1768844782.iso
+thing-os-x86_64-1768844940.iso
+thing-os-x86_64-1768845053.iso
+thing-os-x86_64-1768845401.iso

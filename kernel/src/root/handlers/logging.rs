@@ -5,8 +5,8 @@ use crate::root::symbols::Interner;
 use crate::root::{LogProvenance, SymbolShell};
 use abi::symbols::SymbolId;
 
-use super::graph::resolve_shell;
 use super::HandlerResult;
+use super::graph::resolve_shell;
 
 pub struct LogSymbols {
     pub log_entry: SymbolId,

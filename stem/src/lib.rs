@@ -2,7 +2,6 @@
 #![allow(unexpected_cfgs)]
 extern crate alloc;
 
-
 pub use abi;
 #[cfg(feature = "rt")]
 pub use stem_macros::main;
@@ -22,8 +21,8 @@ pub mod stack;
 pub mod syscall;
 pub mod thread;
 pub mod time;
-pub mod utils;
 pub mod ui;
+pub mod utils;
 pub mod vm;
 
 #[macro_export]

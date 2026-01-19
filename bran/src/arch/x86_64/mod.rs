@@ -4,17 +4,17 @@ use core::arch::asm;
 use kernel::time::MonotonicClamp;
 use kernel::{FrameAllocatorHook, IrqState, MapKind, MapPerms, UserEntry, UserTaskSpec};
 
+pub mod acpi;
 pub mod cmos;
 pub mod gdt;
 pub mod idt;
+pub mod ioapic;
 pub mod paging;
+pub mod pic;
 pub mod simd;
 pub mod syscall;
 pub mod task;
 pub mod trap;
-pub mod pic;
-pub mod acpi;
-pub mod ioapic;
 
 pub struct X86_64Runtime {
     clamp: MonotonicClamp,
@@ -104,7 +104,7 @@ impl ArchRuntime for X86_64Runtime {
         unsafe {
             syscall::init();
         }
-        
+
         // Initialize IOAPIC for interrupt routing (after IDT is set up)
         crate::arch::init_ioapic();
     }
@@ -122,7 +122,9 @@ impl ArchRuntime for X86_64Runtime {
 
     fn wait_for_interrupt(&self) {
         // Enable interrupts and halt until next IRQ
-        unsafe { core::arch::asm!("sti", "hlt", options(nomem, nostack)); }
+        unsafe {
+            core::arch::asm!("sti", "hlt", options(nomem, nostack));
+        }
     }
 
     fn mono_ticks(&self) -> u64 {

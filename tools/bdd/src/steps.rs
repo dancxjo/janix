@@ -498,7 +498,7 @@ async fn check_liveness(world: &mut ThingOsWorld) {
 async fn log_does_not_contain(world: &mut ThingOsWorld, pattern: String) {
     // Give a brief window for any late output
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    
+
     let log = world.get_serial_log().await;
     if log.contains(&pattern) {
         eprintln!("\n=== Unexpected pattern found in log ===");
@@ -526,7 +526,7 @@ async fn log_matches_pattern(world: &mut ThingOsWorld, pattern: String) {
         Ok(r) => r,
         Err(e) => panic!("Invalid regex pattern '{}': {}", pattern, e),
     };
-    
+
     if !re.is_match(&log) {
         eprintln!("\n=== Pattern Match Failed ===");
         eprintln!("Pattern: {}", pattern);

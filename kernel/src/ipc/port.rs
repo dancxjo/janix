@@ -5,8 +5,8 @@
 
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
-use spin::Mutex;
 use core::sync::atomic::{AtomicUsize, Ordering};
+use spin::Mutex;
 
 /// Unique identifier for a port in the global registry
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -62,7 +62,7 @@ impl Port {
     pub fn send(&self, data: &[u8]) -> usize {
         let available = self.available();
         let to_write = data.len().min(available);
-        
+
         if to_write == 0 {
             return 0;
         }
@@ -79,8 +79,9 @@ impl Port {
             }
         }
 
-        self.head.store(head.wrapping_add(to_write), Ordering::Release);
-        
+        self.head
+            .store(head.wrapping_add(to_write), Ordering::Release);
+
         // Wake up waiters
         let mut handlers = self.waiters.lock();
         while let Some(tid) = handlers.pop_front() {
@@ -88,7 +89,7 @@ impl Port {
                 crate::task::scheduler::wake_task_erased(tid as usize);
             }
         }
-        
+
         to_write
     }
 
@@ -125,7 +126,8 @@ impl Port {
             buf[i] = self.buf[idx];
         }
 
-        self.tail.store(tail.wrapping_add(to_read), Ordering::Release);
+        self.tail
+            .store(tail.wrapping_add(to_read), Ordering::Release);
         to_read
     }
 }

@@ -148,6 +148,9 @@ mod tests {
     #[test]
     fn driver_ctx_size() {
         // ThingId(u64) + RootCaps
-        assert_eq!(core::mem::size_of::<DriverCtx>(), core::mem::size_of::<ThingId>() + core::mem::size_of::<RootCaps>());
+        assert_eq!(
+            core::mem::size_of::<DriverCtx>(),
+            core::mem::size_of::<ThingId>() + core::mem::size_of::<RootCaps>()
+        );
     }
 }

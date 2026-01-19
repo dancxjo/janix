@@ -3,14 +3,14 @@
 
 extern crate alloc;
 
-use stem::info;
-use stem::thing::ThingId;
-use stem::thing::sys::{find, prop_get, prop_set, watch_subscribe, stream_poll, intern};
-use abi::schema::{kinds, keys};
+use abi::ids::HandleId; // Import trait for from_u64/to_u64_lossy methods
+use abi::schema::{keys, kinds};
 use abi::types::RootWatchEvent;
-use abi::ids::HandleId;  // Import trait for from_u64/to_u64_lossy methods
 use alloc::vec::Vec;
 use core::time::Duration;
+use stem::info;
+use stem::thing::sys::{find, intern, prop_get, prop_set, stream_poll, watch_subscribe};
+use stem::thing::ThingId;
 
 struct ActiveBinding {
     _source: ThingId, // kept for ref?
@@ -38,8 +38,12 @@ fn main() -> ! {
                     let b_id = binding_ids[i];
 
                     // Read properties
-                    let src_id = prop_get(b_id, keys::BINDING_SOURCE).map(ThingId::from_u64).unwrap_or(ThingId::default());
-                    let dst_id = prop_get(b_id, keys::BINDING_TARGET).map(ThingId::from_u64).unwrap_or(ThingId::default());
+                    let src_id = prop_get(b_id, keys::BINDING_SOURCE)
+                        .map(ThingId::from_u64)
+                        .unwrap_or(ThingId::default());
+                    let dst_id = prop_get(b_id, keys::BINDING_TARGET)
+                        .map(ThingId::from_u64)
+                        .unwrap_or(ThingId::default());
 
                     if src_id.to_u64_lossy() == 0 || dst_id.to_u64_lossy() == 0 {
                         continue;
@@ -50,7 +54,11 @@ fn main() -> ! {
                     // Usually we want changes.
                     // Let's assume mask 1 is CHANGE. Or just pass !0 for everything.
                     if let Ok(stream) = watch_subscribe(src_id, !0) {
-                        info!("Subscribed to source {} for binding {}", src_id.to_u64_lossy(), b_id.to_u64_lossy());
+                        info!(
+                            "Subscribed to source {} for binding {}",
+                            src_id.to_u64_lossy(),
+                            b_id.to_u64_lossy()
+                        );
                         bindings.push(ActiveBinding {
                             _source: src_id,
                             target: dst_id,
@@ -68,7 +76,9 @@ fn main() -> ! {
 
     if bindings.is_empty() {
         info!("No bindings found after retries. Exiting.");
-        loop { stem::sleep(Duration::from_secs(10)); }
+        loop {
+            stem::sleep(Duration::from_secs(10));
+        }
     }
 
     info!("Entering event loop with {} bindings", bindings.len());

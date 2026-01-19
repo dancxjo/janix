@@ -683,7 +683,7 @@ fn main(arg: usize) -> ! {
                             crate::log!("[bloom][uiwatch] seq={} subj={} pred={} len={}",
                                 seq, 
                                 header.subject.to_u64_lossy(),
-                                header.predicate.to_u64_lossy(),
+                                header.predicate.to_u32_lossy(),
                                 len);
                         } else {
                             crate::log!("[bloom][watch] ui seq={} bytes={} (decode failed)", seq, len);

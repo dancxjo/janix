@@ -5,7 +5,7 @@ extern crate alloc;
 
 use stem::{info, warn};
 use stem::thing::ThingId;
-use stem::thing::sys::{find, prop_get, prop_set};
+use stem::thing::sys::{bytespace_create, bytespace_write, find, prop_get, prop_set};
 use stem::syscall::{root_watch_open, root_watch_next};
 use abi::schema::{kinds, keys};
 use abi::types::WatchSpec;
@@ -140,6 +140,16 @@ fn log_unknown_shape_once(err: DecodeError, payload: &[u8], seq: u64) {
     }
 }
 
+fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
+    if value.is_empty() {
+        prop_set(id, key_name, 0).ok();
+        return;
+    }
+    let bs_id = bytespace_create(value.len(), 0, 0).expect("create bytespace");
+    bytespace_write(bs_id, 0, value.as_bytes()).ok();
+    prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
+}
+
 fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
     let mut cursor = 0usize;
 
@@ -168,28 +178,46 @@ fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
 
                 let encoding = ValueEncoding::from_u8(header.value_encoding)
                     .unwrap_or(ValueEncoding::Bytes);
-                if encoding != ValueEncoding::U64LE {
-                    continue;
-                }
+                match encoding {
+                    ValueEncoding::U64LE => {
+                        if value.len() != 8 {
+                            log_unknown_shape_once(
+                                DecodeError::BadLength { expected: 8, got: value.len() },
+                                payload,
+                                seq,
+                            );
+                            break;
+                        }
 
-                if value.len() != 8 {
-                    log_unknown_shape_once(
-                        DecodeError::BadLength { expected: 8, got: value.len() },
-                        payload,
-                        seq,
-                    );
-                    break;
-                }
-
-                let next_value = u64::from_le_bytes(value.try_into().unwrap());
-                binding.last_value = Some(next_value);
-                if prop_set(binding.target, keys::UI_TEXT, next_value).is_ok() {
-                    info!(
-                        "Updated target {} with value {} (seq={})",
-                        binding.target.to_u64_lossy(),
-                        next_value,
-                        seq
-                    );
+                        let next_value = u64::from_le_bytes(value.try_into().unwrap());
+                        binding.last_value = Some(next_value);
+                        if prop_set(binding.target, keys::UI_TEXT, next_value).is_ok() {
+                            info!(
+                                "Updated target {} with value {} (seq={})",
+                                binding.target.to_u64_lossy(),
+                                next_value,
+                                seq
+                            );
+                        }
+                    }
+                    ValueEncoding::Utf8 => {
+                        if let Ok(text) = core::str::from_utf8(value) {
+                            set_string_prop(binding.target, keys::UI_TEXT, text);
+                            binding.last_value = None;
+                            info!(
+                                "Updated target {} with text '{}' (seq={})",
+                                binding.target.to_u64_lossy(),
+                                text,
+                                seq
+                            );
+                        } else {
+                            log_unknown_shape_once(DecodeError::InvalidUtf8, payload, seq);
+                            break;
+                        }
+                    }
+                    _ => {
+                        continue;
+                    }
                 }
             }
             Err(e) => {

@@ -163,6 +163,7 @@ impl UiSnapshot {
         let common_keys = [
             (keys.x, keys::UI_X), (keys.y, keys::UI_Y), (keys.w, keys::UI_WIDTH), (keys.h, keys::UI_HEIGHT),
             (keys.z_index, keys::UI_Z_INDEX), (keys.hidden, keys::UI_HIDDEN),
+            (keys.center_x, keys::UI_CENTER_X), (keys.center_y, keys::UI_CENTER_Y),
         ];
 
         for (key_id, key_str) in common_keys {
@@ -175,6 +176,7 @@ impl UiSnapshot {
             UiNodeKind::Text => vec![
                 (keys.text, keys::UI_TEXT), (keys.font, keys::UI_FONT), 
                 (keys.font_size, keys::UI_FONT_SIZE), (keys.color, keys::UI_COLOR),
+                (keys.fg_color, keys::UI_FG_COLOR),
                 (keys.center_x, keys::UI_CENTER_X), (keys.center_y, keys::UI_CENTER_Y),
             ],
             UiNodeKind::Panel | UiNodeKind::Window => vec![

@@ -19,6 +19,25 @@ pub struct LayoutTree {
     pub root: Option<LayoutNode>,
 }
 
+impl LayoutTree {
+    pub fn find_rect(&self, id: ThingId) -> Option<Rect> {
+        let root = self.root.as_ref()?;
+        Self::find_rect_in(root, id)
+    }
+
+    fn find_rect_in(node: &LayoutNode, id: ThingId) -> Option<Rect> {
+        if node.id == id {
+            return Some(node.rect);
+        }
+        for child in &node.children {
+            if let Some(rect) = Self::find_rect_in(child, id) {
+                return Some(rect);
+            }
+        }
+        None
+    }
+}
+
 pub trait SymbolResolver {
     fn resolve(&self, key: &str) -> Option<u32>;
 }
@@ -72,23 +91,37 @@ impl LayoutSolver {
                 
                 let mut w = Self::get_prop(child_node, keys::UI_WIDTH, symbols) as i32;
                 let mut h = Self::get_prop(child_node, keys::UI_HEIGHT, symbols) as i32;
+                let fill_parent = Self::get_prop(child_node, keys::UI_FILL_PARENT, symbols) != 0;
+                if fill_parent {
+                    w = layout.rect.w;
+                    h = layout.rect.h;
+                }
 
                 // Check if centering requested
                 let center_x = Self::get_prop(child_node, keys::UI_CENTER_X, symbols) != 0;
                 let center_y = Self::get_prop(child_node, keys::UI_CENTER_Y, symbols) != 0;
 
-                if center_x || center_y {
+                if (center_x || center_y) && (w == 0 || h == 0) {
                     // Try to measure if it's text
                     if let Some(text) = Self::get_str_prop(child_node, keys::UI_TEXT, symbols) {
                         let font_name = Self::get_str_prop(child_node, keys::UI_FONT, symbols).unwrap_or_else(|| "NotoSans-Regular.ttf".into());
                         let size = Self::get_prop(child_node, keys::UI_FONT_SIZE, symbols) as f32;
                         let font_size = if size == 0.0 { 16.0 } else { size };
 
-                        let cache_key = (text.clone(), font_name.clone(), font_size as u32);
+                        let (cache_text, is_time) = if Self::is_time_text(&text) {
+                            (String::from("##:##:##"), true)
+                        } else {
+                            (text.clone(), false)
+                        };
+                        let cache_key = (cache_text, font_name.clone(), font_size as u32);
                         let dims = if let Some(d) = cache.get(&cache_key) {
                             Some(*d)
                         } else {
-                            let d = Self::measure_text(&text, &font_name, font_size, assets);
+                            let d = if is_time {
+                                Self::measure_time_text(&font_name, font_size, assets)
+                            } else {
+                                Self::measure_text(&text, &font_name, font_size, assets)
+                            };
                             if let Some(res) = d {
                                 cache.insert(cache_key, res);
                             }
@@ -96,14 +129,23 @@ impl LayoutSolver {
                         };
 
                         if let Some(dims) = dims {
-                            w = dims.0 as i32;
-                            h = dims.1 as i32;
+                            if w == 0 {
+                                w = dims.0 as i32;
+                            }
+                            if h == 0 {
+                                h = dims.1 as i32;
+                            }
                         }
                     }
                 }
 
                 let mut x = Self::get_prop(child_node, keys::UI_X, symbols) as i32;
                 let mut y = Self::get_prop(child_node, keys::UI_Y, symbols) as i32;
+
+                if fill_parent {
+                    x = 0;
+                    y = 0;
+                }
 
                 if center_x {
                      x = (layout.rect.w - w) / 2;
@@ -150,6 +192,48 @@ impl LayoutSolver {
              }
         }
         None
+    }
+
+    fn measure_time_text(font_name: &str, size: f32, assets: &AssetBank) -> Option<(f32, f32)> {
+        let fonts = assets.get_fonts();
+        let font = fonts.iter().find(|f| f.name.contains(font_name))
+            .or_else(|| fonts.first());
+
+        if let Some(f) = font {
+            let metrics = f.font.horizontal_line_metrics(size);
+            if let Some(m) = metrics {
+                let mut max_digit = 0.0;
+                for ch in '0'..='9' {
+                    let metrics = f.font.metrics(ch, size);
+                    if metrics.advance_width > max_digit {
+                        max_digit = metrics.advance_width;
+                    }
+                }
+                let colon = f.font.metrics(':', size).advance_width;
+                let width = (max_digit * 6.0) + (colon * 2.0);
+                return Some((width, m.new_line_size));
+            }
+        }
+        None
+    }
+
+    fn is_time_text(text: &str) -> bool {
+        let bytes = text.as_bytes();
+        if bytes.len() != 8 {
+            return false;
+        }
+        if bytes[2] != b':' || bytes[5] != b':' {
+            return false;
+        }
+        for (idx, b) in bytes.iter().enumerate() {
+            if idx == 2 || idx == 5 {
+                continue;
+            }
+            if !b.is_ascii_digit() && *b != b'-' {
+                return false;
+            }
+        }
+        true
     }
 
     fn get_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> u64 {

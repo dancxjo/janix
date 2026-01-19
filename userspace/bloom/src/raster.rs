@@ -16,6 +16,7 @@ use crate::isa::{BlendMode, FilterMode, Transform2D, Rect, EdgeAA};
 use crate::ASSETS;
 use crate::log;
 use fontdue::layout::{Layout, CoordinateSystem, TextStyle};
+use core::sync::atomic::{AtomicBool, Ordering};
 
 /// Execution Context maintaining state stacks
 struct RasterContext<'a> {
@@ -620,6 +621,7 @@ fn rasterize_text_locally(
     clip: &Rect,
     requested_font: Option<&str>
 ) {
+    static CLOCK_FONT_LOGGED: AtomicBool = AtomicBool::new(false);
     let ca = ((color >> 24) & 0xFF) as u8;
     if ca == 0 { return; }
 
@@ -635,6 +637,19 @@ fn rasterize_text_locally(
         if let Some(pos) = prioritized_fonts.iter().position(|f| f.name.contains(req)) {
             let font = prioritized_fonts.remove(pos);
             prioritized_fonts.insert(0, font);
+        }
+        if req.contains("DSEG") && !CLOCK_FONT_LOGGED.swap(true, Ordering::Relaxed) {
+            let resolved = prioritized_fonts
+                .first()
+                .map(|f| f.name.as_ref())
+                .unwrap_or("<none>");
+            let fallback = !resolved.contains(req);
+            crate::log!(
+                "[clock] font_resolve: requested={} resolved={} fallback={}",
+                req,
+                resolved,
+                fallback
+            );
         }
     } else {
         if let Some(pos) = prioritized_fonts.iter().position(|f| f.name.contains("NotoSans-Regular")) {

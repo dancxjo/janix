@@ -27,6 +27,7 @@ pub mod ui;
 
 use abi::display_driver_protocol::BindPayload;
 use abi::ids::HandleId;
+use abi::schema::keys;
 use stem::syscall::PortHandle;
 
 use crate::asset::AssetType;
@@ -444,6 +445,8 @@ fn main(arg: usize) -> ! {
     let mut cursor_loaded = false;
     let mut wallpaper_loaded = false;
     let mut font_loaded = false;
+    let mut ui_watch_id: Option<usize> = None;
+    let mut ui_watch_buf = [0u8; 4096];
 
     let screen_w = target.width as i32;
     let screen_h = target.height as i32;
@@ -457,6 +460,31 @@ fn main(arg: usize) -> ! {
     let mut ui_pipeline = ui::UiPipeline::new();
     let ui_root = stem::ui::UiBuilder::create_root();
     ui_pipeline.set_root(ui_root);
+    {
+        use abi::root::RootWatchFilter;
+        use abi::types::{WatchMode, WatchSpec, WATCH_START_LATEST};
+
+        let ui_text_pred = stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0);
+        if ui_text_pred != 0 {
+            let filter = RootWatchFilter::predicate(ui_text_pred);
+            let spec = WatchSpec {
+                mode: WatchMode::StreamOnly as u32,
+                start_seq: WATCH_START_LATEST,
+                filter_ptr: &filter as *const _ as u64,
+                filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+                ..Default::default()
+            };
+            match stem::syscall::root_watch_open(&spec) {
+                Ok(id) => {
+                    ui_watch_id = Some(id);
+                    log!("[bloom] ui watch opened (ui.text id={})", ui_text_pred);
+                }
+                Err(e) => {
+                    log!("[bloom] ui watch open failed: {:?}", e);
+                }
+            }
+        }
+    }
 
     // Track held keys
     let mut keys = BTreeSet::new();
@@ -568,6 +596,24 @@ fn main(arg: usize) -> ! {
         }
         prev_cursor_bbox = Some(new_cursor_bbox);
 
+        // UI Watch Update
+        if let Some(watch_id) = ui_watch_id {
+            let mut seq: u64 = 0;
+            match stem::syscall::root_watch_next(watch_id, &mut seq, &mut ui_watch_buf) {
+                Ok(len) if len > 0 => {
+                    ui_pipeline.mark_dirty();
+                }
+                Ok(_) => {}
+                Err(abi::errors::Errno::EAGAIN) => {}
+                Err(abi::errors::Errno::EOVERFLOW) => {
+                    ui_pipeline.mark_dirty();
+                }
+                Err(e) => {
+                    log!("[bloom] ui watch error: {:?}", e);
+                }
+            }
+        }
+
         // Key Overlay Update
         if key_overlay.update(&keys, screen_w, screen_h) {
             ui_pipeline.mark_dirty();
@@ -580,6 +626,7 @@ fn main(arg: usize) -> ! {
 
         // Build Scene - record ops into the builder's DrawList
         let mut ui_changed = false;
+        let mut ui_damage: alloc::vec::Vec<Rect> = alloc::vec::Vec::new();
         {
             let list = builder.ops();
 
@@ -630,7 +677,9 @@ fn main(arg: usize) -> ! {
 
                 // Run UI Pipeline
                 let ui_start = stem::monotonic_ns();
-                ui_changed = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
+                let ui_result = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
+                ui_changed = ui_result.changed;
+                ui_damage = ui_result.damage;
                 perf.ui_ns += stem::monotonic_ns().saturating_sub(ui_start);
             }
 
@@ -639,7 +688,13 @@ fn main(arg: usize) -> ! {
         }
 
         if ui_changed {
-            builder.mark_full_damage();
+            if ui_damage.is_empty() {
+                builder.mark_full_damage();
+            } else {
+                for rect in ui_damage {
+                    builder.add_damage(rect);
+                }
+            }
         }
 
         // Finish building - seal the token

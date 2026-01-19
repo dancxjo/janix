@@ -6,6 +6,7 @@ use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
 use self::snapshot::UiSnapshot;
 use crate::asset::AssetBank;
+use crate::damage::Rect;
 use crate::drawlist::DrawList;
 use stem::thing::ThingId;
 
@@ -23,6 +24,11 @@ pub struct UiPipeline {
     pub solver: LayoutSolver,
     dirty: bool,
     cached_scene: Option<PaintScene>,
+}
+
+pub struct UiRunResult {
+    pub changed: bool,
+    pub damage: alloc::vec::Vec<Rect>,
 }
 
 impl UiPipeline {
@@ -50,17 +56,25 @@ impl UiPipeline {
         screen_h: i32,
         list: &mut DrawList,
         assets: &AssetBank,
-    ) -> bool {
+    ) -> UiRunResult {
         let root_id = match self.root_id {
             Some(id) => id,
-            None => return false,
+            None => {
+                return UiRunResult {
+                    changed: false,
+                    damage: alloc::vec::Vec::new(),
+                }
+            }
         };
 
         // Fast path: if nothing changed, reuse the last paint scene and only lower.
         if !self.dirty {
             if let Some(scene) = &self.cached_scene {
                 Self::lower(scene, list);
-                return false;
+                return UiRunResult {
+                    changed: false,
+                    damage: alloc::vec::Vec::new(),
+                };
             }
         }
 
@@ -72,16 +86,28 @@ impl UiPipeline {
         let t1 = stem::monotonic_ns();
 
         // 2. Change Detection
-        let changed = if let Some(prev) = &self.prev_snapshot {
-            !snapshot.diff(prev).is_empty()
+        let changed_nodes = if let Some(prev) = &self.prev_snapshot {
+            snapshot.diff(prev)
         } else {
-            true // First snapshot is always a change
+            snapshot.nodes.keys().cloned().collect()
         };
+        let changed = !changed_nodes.is_empty();
         let t2 = stem::monotonic_ns();
 
         // Store for next frame
         self.prev_snapshot = Some(snapshot.clone());
         let t3 = stem::monotonic_ns();
+
+        if !changed {
+            if let Some(scene) = &self.cached_scene {
+                Self::lower(scene, list);
+            }
+            self.dirty = false;
+            return UiRunResult {
+                changed: false,
+                damage: alloc::vec::Vec::new(),
+            };
+        }
 
         // 3. Layout
         let resolver = SystemSymbolResolver;
@@ -116,7 +142,16 @@ impl UiPipeline {
         self.cached_scene = Some(paint_scene);
         self.dirty = false;
 
-        changed
+        let mut damage = alloc::vec::Vec::new();
+        for id in changed_nodes {
+            if let Some(rect) = layout.find_rect(id) {
+                if !rect.is_empty() {
+                    damage.push(rect);
+                }
+            }
+        }
+
+        UiRunResult { changed, damage }
     }
 
     fn lower(scene: &PaintScene, list: &mut DrawList) {

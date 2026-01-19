@@ -127,3 +127,7 @@ pub fn thing_ref_size(kind: u8) -> usize {
         _ => 0, // Invalid
     }
 }
+
+/// Mask of all known filter flags (for validation)
+/// Unknown flag bits should be rejected with EINVAL.
+pub const WATCH_F_KNOWN_MASK: u32 = WATCH_F_KIND | WATCH_F_PREDICATE | WATCH_F_SUBJECT;

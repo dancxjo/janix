@@ -47,10 +47,14 @@ pub fn handle_watch_open(
     let fact_rel = interner.intern("has_fact");
     
     // 3. Determine cursor position
-    // If start_seq == 0: cursor = history.next_seq ("from now", next commit will have this seq)
-    // Else: cursor = start_seq (resume/replay from that point)
-    let cursor_seq = if start_seq == 0 {
+    // WATCH CONTRACT:
+    // - start_seq == 0: from oldest available (replay history)
+    // - start_seq == WATCH_START_LATEST: from next commit only (skip history)
+    // - start_seq == N: resume from that sequence
+    let cursor_seq = if start_seq == abi::types::WATCH_START_LATEST {
         graph.commit_history.next_seq
+    } else if start_seq == 0 {
+        graph.commit_history.oldest_seq().unwrap_or(1)
     } else {
         start_seq
     };

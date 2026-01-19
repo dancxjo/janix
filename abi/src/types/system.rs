@@ -110,3 +110,22 @@ pub struct GraphEdge {
     pub rel: u64,
     pub target: u64,
 }
+
+// ============================================================================
+// Watch Semantics
+// ============================================================================
+
+/// Start from next commit only (no history replay)
+/// Use this to ignore historical events and only see future mutations.
+pub const WATCH_START_LATEST: u64 = u64::MAX;
+
+impl WatchMode {
+    /// Convert raw u32 to WatchMode, returning None for unknown values.
+    pub fn from_u32(v: u32) -> Option<Self> {
+        match v {
+            0 => Some(Self::QueryThenStream),
+            1 => Some(Self::StreamOnly),
+            _ => None,
+        }
+    }
+}

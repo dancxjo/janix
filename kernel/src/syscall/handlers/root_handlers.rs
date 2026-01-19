@@ -612,6 +612,12 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     unsafe { copyin(spec_slice, spec_ptr)? };
     kinfo!("sys_root_watch_open: copyin success. mode={} start_seq={}", spec.mode, spec.start_seq);
 
+    // Validate mode enum (must be 0=QueryThenStream or 1=StreamOnly)
+    if abi::types::WatchMode::from_u32(spec.mode).is_none() {
+        kinfo!("sys_root_watch_open: invalid mode={}", spec.mode);
+        return Err(Errno::EINVAL);
+    }
+
     let plan_ptr = spec.query_ptr as usize;
     let plan_len = spec.query_len as usize;
     let step_size = core::mem::size_of::<QueryStep>();
@@ -671,6 +677,12 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
                 core::mem::size_of::<RootWatchFilter>())
         };
         unsafe { copyin(filter_slice, filter_ptr)? };
+
+        // Validate filter flags - reject unknown bits
+        if (abi_filter.flags & !abi::root::WATCH_F_KNOWN_MASK) != 0 {
+            kinfo!("sys_root_watch_open: unknown filter flags={:#x}", abi_filter.flags);
+            return Err(Errno::EINVAL);
+        }
         
         // Convert ABI filter to kernel filter
         WatchFilter {

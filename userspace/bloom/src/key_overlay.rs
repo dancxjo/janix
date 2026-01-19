@@ -5,6 +5,8 @@ use crate::drawlist::DrawList;
 use crate::damage::Rect;
 use crate::geometry::Color;
 use stem::ui::UiBuilder;
+use stem::thing::sys::prop_set;
+use abi::schema::keys;
 use abi::hid::Key;
 use stem::thing::ThingId;
 
@@ -29,13 +31,14 @@ impl KeyOverlay {
     }
 
     pub fn setup(&mut self, ui_root: ThingId) {
-        let panel = UiBuilder::create_panel(ui_root);
-        let text = UiBuilder::create_text(panel, "");
+        let window = UiBuilder::create_window(ui_root, "Keys");
+        let text = UiBuilder::create_text(window, "");
         
-        UiBuilder::set_color(panel, Color::from_u32(0x99000000).to_u32());
-        UiBuilder::set_color(text, Color::from_u32(0xFFFFFFFF).to_u32());
+        prop_set(window, keys::UI_BG_COLOR, Color::from_u32(0x99000000).to_u32() as u64).ok();
+        prop_set(text, keys::UI_FG_COLOR, Color::from_u32(0xFFFFFFFF).to_u32() as u64).ok();
+        prop_set(text, keys::UI_FONT_SIZE, 24).ok();
         
-        self.root_node = Some(panel);
+        self.root_node = Some(window);
         self.text_node = Some(text);
     }
 

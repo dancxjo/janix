@@ -163,7 +163,7 @@ extern "C" fn font_loader_entry() -> ! {
     let mut watch_buf = [0u8; 4096];
 
     // PHASE 1: Catch-up (Drain)
-    match root_watch::drain(watch_id, &mut watch_buf, &mut process_batch) {
+    match root_watch::watch_drain(watch_id, &mut watch_buf, &mut process_batch) {
         Ok(stats) => {
             if stats.batches > 0 || stats.overflows > 0 {
                 log!("[font_loader] drain complete: batches={} overflows={}", stats.batches, stats.overflows);

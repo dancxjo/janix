@@ -32,7 +32,7 @@ pub struct DrainStats {
 /// * `Ok(stats)` - Drain completed successfully (hit EAGAIN).
 /// * `Err(ENOSPC)` - The buffer was too small for a pending batch.
 /// * `Err(e)` - Other system error.
-pub fn drain<F>(
+pub fn watch_drain<F>(
     handle: usize,
     buf: &mut [u8],
     mut handler: F,

@@ -638,6 +638,66 @@ fn test_main() -> i32 {
             }
         }
     }
+
+    // ========================================
+    // Test 9: Drain Semantics (start_seq=0 + loop)
+    // ========================================
+    println!("\n--- Test 9: Drain semantics ---");
+    {
+        // 1. Open with start_seq=0
+        let watch = match open_watch() {
+            Ok(h) => h,
+            Err(e) => {
+                println!("FAIL: Could not open watch for drain test: {}", e);
+                failures += 1;
+                0
+            }
+        };
+
+        if watch != 0 {
+            // 2. Perform a mutation (CREATE_NODE) to guarantee at least one commit
+            let _ = create_node("test.drain.guarantee");
+
+            // 3. Local drain loop
+            let mut buf = [0u8; 256];
+            let mut batches = 0;
+            let mut overflows = 0;
+            let mut drained = false;
+
+            // Simple loop up to some limit to avoid infinite hangs if broken
+            for _ in 0..100 {
+                 match watch_next(watch, &mut buf) {
+                     Ok((len, _seq)) => {
+                         if len > 0 {
+                             batches += 1;
+                         }
+                     }
+                     Err(-11) => { // EAGAIN
+                         drained = true;
+                         break;
+                     }
+                     Err(-75) => { // EOVERFLOW
+                         overflows += 1;
+                     }
+                     Err(e) => {
+                         println!("FAIL: watch_next error during drain: {}", e);
+                         failures += 1;
+                         break;
+                     }
+                 }
+            }
+
+            if drained && batches > 0 {
+                println!("PASS: drain received {} batches then EAGAIN (overflows={})", batches, overflows);
+            } else if !drained {
+                println!("FAIL: Drain did not hit EAGAIN (batches={})", batches);
+                failures += 1;
+            } else {
+                 println!("FAIL: Drain hit EAGAIN but received 0 batches (expected at least 1)");
+                 failures += 1;
+            }
+        }
+    }
     
     if failures > 0 {
         -failures

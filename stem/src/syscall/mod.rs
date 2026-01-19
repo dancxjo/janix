@@ -277,7 +277,7 @@ pub fn root_watch_open(spec: &abi::types::WatchSpec) -> Result<usize, Errno> {
     if spec.start_seq == abi::types::WATCH_START_LATEST {
          static WARNED: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
          if !WARNED.swap(true, core::sync::atomic::Ordering::Relaxed) {
-             let _ = log_write("WARN: WATCH_START_LATEST is deprecated; use start_seq=0 + drain.", 2);
+             let _ = log_write("WARN: WATCH_START_LATEST is deprecated; use start_seq=0 + watch_drain.", 2);
          }
     }
 

@@ -117,7 +117,7 @@ fn find_set_prop_value(batch: &[u8], subject: u64) -> Option<u64> {
     result
 }
 
-// `drain_watch` removed, replaced by `stem::root_watch::drain`
+// `drain_watch` removed, replaced by `stem::root_watch::watch_drain`
 
 
 #[stem::main]
@@ -200,7 +200,7 @@ fn main() -> ! {
     let mut total_overflows = 0usize;
     
     for binding in &mut bindings {
-        let res = stem::root_watch::drain(binding.watch_id, &mut batch_buf, |seq, batch| {
+        let res = stem::root_watch::watch_drain(binding.watch_id, &mut batch_buf, |seq, batch| {
              if let Some(value) = find_set_prop_value(batch, binding.source.to_u64_lossy()) {
                  binding.last_value = Some(value);
                  if prop_set(binding.target, keys::UI_TEXT, value).is_ok() {

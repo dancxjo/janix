@@ -318,6 +318,75 @@ async fn bloom_cursor_visible(world: &mut ThingOsWorld) {
     }
 }
 
+#[then("the clock window should be visible")]
+async fn clock_window_visible(world: &mut ThingOsWorld) {
+    let mut attempts = 0;
+    let max_attempts = 10;
+    let mut last_error = String::new();
+
+    while attempts < max_attempts {
+        let screenshot_path = crate::artifacts::global()
+            .lock()
+            .await
+            .screenshot_path(&format!("clock_window_{}", attempts));
+
+        let png_path = match world.take_screenshot(&screenshot_path).await {
+            Ok(p) => p,
+            Err(e) => {
+                eprintln!("Failed to take screenshot: {}", e);
+                break;
+            }
+        };
+
+        let img = image::open(&png_path).expect("Failed to open screenshot");
+        let rgb = img.to_rgb8();
+        let (width, height) = rgb.dimensions();
+        if width == 0 || height == 0 {
+            panic!("Screenshot has invalid dimensions");
+        }
+
+        let cx = width / 2;
+        let cy = height / 2;
+
+        // Sample a 100x50 box in the center.
+        let mut black_count = 0;
+        let mut red_count = 0;
+        let mut other_count = 0;
+
+        // Check center region (inside the 400x150 window)
+        // +/- 50 pixels from center should be well within the clock window.
+        for y in (cy - 50)..(cy + 50) {
+            for x in (cx - 100)..(cx + 100) {
+                let pixel = rgb.get_pixel(x, y).0;
+                match pixel {
+                    [0, 0, 0] => black_count += 1,
+                    [255, 0, 0] => red_count += 1,
+                    _ => other_count += 1,
+                }
+            }
+        }
+
+        let total = black_count + red_count + other_count;
+
+        // We expect mostly black and some red.
+        // If other_count is high (e.g. blue background), then clock is not visible.
+        if other_count <= total / 10 {
+            // Success!
+            return;
+        }
+
+        last_error = format!(
+            "Clock window not detected in center. Found {} black, {} red, {} other pixels. Expected mostly black/red.",
+            black_count, red_count, other_count
+        );
+
+        attempts += 1;
+        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
+    }
+
+    panic!("Failed after {} attempts: {}", max_attempts, last_error);
+}
+
 #[given("the machine is booted")]
 async fn machine_is_booted(world: &mut ThingOsWorld) {
     turn_on_machine(world).await;

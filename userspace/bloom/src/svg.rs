@@ -299,6 +299,67 @@ impl<'a> PathTokenizer<'a> {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::drawlist::DrawList;
+
+    #[test]
+    fn test_parse_default_svg() {
+        let svg_data = include_str!("default.svg");
+        let mut list = DrawList::new();
+        SvgParser::render(svg_data, &mut list, 0, 0, 1.0, Color::WHITE);
+
+        // Basic check: did we get any commands?
+        assert!(!list.iter().as_slice().is_empty());
+
+        // Iterate to check for panics or weirdness
+        for cmd in list.iter() {
+            // println!("{:?}", cmd);
+        }
+    }
+
+    #[test]
+    fn test_tokenizer() {
+        let input = "M10 20 L 30.5,40";
+        let mut tokenizer = PathTokenizer::new(input);
+        match tokenizer.next() {
+            Some(Token::Command('M')) => {},
+            _ => panic!("Expected M"),
+        }
+        match tokenizer.next() {
+             Some(Token::Number(n)) if n == 10.0 => {},
+             _ => panic!("Expected 10"),
+        }
+        match tokenizer.next() {
+             Some(Token::Number(n)) if n == 20.0 => {},
+             _ => panic!("Expected 20"),
+        }
+        match tokenizer.next() {
+             Some(Token::Command('L')) => {},
+             _ => panic!("Expected L"),
+        }
+        match tokenizer.next() {
+             Some(Token::Number(n)) if n == 30.5 => {},
+             _ => panic!("Expected 30.5"),
+        }
+    }
+
+    #[test]
+    fn test_scientific() {
+        let input = "l2e-3";
+        let mut tokenizer = PathTokenizer::new(input);
+        match tokenizer.next() {
+            Some(Token::Command('l')) => {},
+             _ => panic!("Expected l"),
+        }
+        match tokenizer.next() {
+             Some(Token::Number(n)) => assert!((n - 0.002).abs() < 1e-6),
+             _ => panic!("Expected 0.002"),
+        }
+    }
+}
+
 fn parse_path(d: &str, list: &mut DrawList) {
     let mut tokenizer = PathTokenizer::new(d);
     let mut current_cmd = ' ';

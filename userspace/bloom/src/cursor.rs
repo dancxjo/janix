@@ -1,7 +1,8 @@
+use alloc::vec::Vec;
 use crate::damage::Rect;
-use crate::drawlist::DrawList;
+use crate::drawlist::{DrawList, DrawCmd};
 use crate::asset::{CursorAsset, CursorFrame};
-use crate::geometry::Color;
+use crate::geometry::{Color, Transform};
 use crate::svg::SvgParser;
 
 // Embed the cursor SVG
@@ -20,11 +21,19 @@ pub struct CursorState {
     pub y: i32,
     buttons: u32,
     asset: Option<CursorAsset>,
+    cached_normal: Option<Vec<DrawCmd>>,
+    cached_active: Option<Vec<DrawCmd>>,
 }
 
 impl CursorState {
     pub fn new(x: i32, y: i32) -> Self {
-        Self { x, y, buttons: 0, asset: None }
+        Self {
+            x, y,
+            buttons: 0,
+            asset: None,
+            cached_normal: None,
+            cached_active: None,
+        }
     }
     
     pub fn set_asset(&mut self, asset: CursorAsset) {
@@ -89,21 +98,46 @@ impl CursorState {
         Rect::new(self.x, self.y, size, size)
     }
 
-    pub fn emit_drawlist(&self, list: &mut DrawList) {
-        // Render SVG Cursor
-        // We ignore the bitmap asset if we want to force the SVG one,
-        // OR we can prefer SVG if available.
-        // The prompt says "Put the normal cursor in the modules as an svg".
-        // And "replace the current cursor set".
-        // So we should always use the SVG.
+    fn ensure_cache(&mut self) {
+        if self.cached_normal.is_none() {
+            let scale = 3.0;
+            let color = unsafe { TARGET_COLOR };
+            let mut temp = DrawList::new();
+            // Parse at (0,0) with scale
+            SvgParser::render(CURSOR_SVG, &mut temp, 0, 0, scale, color);
+            self.cached_normal = Some(temp.commands().clone());
+        }
 
-        let scale = 3.0;
-        let color = if self.buttons != 0 {
-             self.color()
+        if self.cached_active.is_none() {
+            let scale = 3.0;
+            // Active color (buttons pressed) - just use red/generic for now or self.color() logic?
+            // self.color() depends on buttons state.
+            // We can cache a few variants or just re-parse if complex.
+            // But usually it's just normal or "clicking".
+            // Let's cache one variant for clicking (e.g. red).
+            let color = Color::from_u32(0xFF00FF00); // Green for active/click
+            let mut temp = DrawList::new();
+            SvgParser::render(CURSOR_SVG, &mut temp, 0, 0, scale, color);
+            self.cached_active = Some(temp.commands().clone());
+        }
+    }
+
+    pub fn emit_drawlist(&mut self, list: &mut DrawList) {
+        self.ensure_cache();
+
+        let transform = Transform::translate(self.x as f32, self.y as f32);
+        list.commands().push(DrawCmd::PushTransform { transform });
+
+        if self.buttons != 0 {
+            if let Some(cmds) = &self.cached_active {
+                list.commands().extend(cmds.iter().cloned());
+            }
         } else {
-             unsafe { TARGET_COLOR }
-        };
+             if let Some(cmds) = &self.cached_normal {
+                 list.commands().extend(cmds.iter().cloned());
+             }
+        }
 
-        SvgParser::render(CURSOR_SVG, list, self.x, self.y, scale, color);
+        list.commands().push(DrawCmd::PopTransform);
     }
 }

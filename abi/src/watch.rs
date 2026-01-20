@@ -280,10 +280,12 @@ mod tests {
         let (header, payload) = decode_event(&buf).expect("decode");
         assert_eq!(header.version, WATCH_EVENT_VERSION);
         assert_eq!(header.op, WatchOp::Upsert as u8);
-        assert_eq!(header.flags, 0);
+        let header_flags = header.flags;
+        assert_eq!(header_flags, 0);
         assert_eq!(header.subject, subject);
         assert_eq!(header.predicate, predicate);
-        assert_eq!(header.value_len, 8);
+        let header_value_len = header.value_len;
+        assert_eq!(header_value_len, 8);
         assert_eq!(header.value_encoding, ValueEncoding::U64LE as u8);
         assert_eq!(payload, &value);
     }
@@ -425,12 +427,14 @@ mod tests {
         let second_len = encode_event(&mut payload[first_len..], &event_b).expect("encode b");
 
         let (header_a, payload_a) = decode_event(&payload[..first_len]).expect("decode a");
-        assert_eq!(header_a.value_len, 8);
+        let header_a_value_len = header_a.value_len;
+        assert_eq!(header_a_value_len, 8);
         assert_eq!(payload_a, &value_a);
 
         let (header_b, payload_b) =
             decode_event(&payload[first_len..first_len + second_len]).expect("decode b");
-        assert_eq!(header_b.value_len, 8);
+        let header_b_value_len = header_b.value_len;
+        assert_eq!(header_b_value_len, 8);
         assert_eq!(payload_b, &value_b);
     }
 }

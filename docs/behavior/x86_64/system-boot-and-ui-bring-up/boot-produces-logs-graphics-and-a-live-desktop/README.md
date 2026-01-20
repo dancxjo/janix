@@ -1,14 +1,14 @@
 # ✅ Scenario: Boot produces logs, graphics, and a live desktop
 
-> Last run: 2026-01-19 20:26:42
+> Last run: 2026-01-19 20:28:41
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | When I start the machine | ✅ | 8880ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
-| 2 | Then I should see log messages on the terminal | ✅ | 1512ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> [📜](./02/serial.log) [💾](./02/registers.txt) |
-| 3 | And each log message should include a monotonically increasing timestamp | ⏭️ | 1526ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
+| 1 | When I start the machine | ✅ | 8481ms | <a href="./01/after.png"><img src="./01/after.png" width="150" /></a> [📜](./01/serial.log) [💾](./01/registers.txt) |
+| 2 | Then I should see log messages on the terminal | ✅ | 1701ms | <a href="./02/after.png"><img src="./02/after.png" width="150" /></a> [📜](./02/serial.log) [💾](./02/registers.txt) |
+| 3 | And each log message should include a monotonically increasing timestamp | ⏭️ | 1442ms | <a href="./03/after.png"><img src="./03/after.png" width="150" /></a> [📜](./03/serial.log) [💾](./03/registers.txt) |
 
 <details>
 <summary>📜 Full Serial Log</summary>
@@ -16,465 +16,459 @@
 ```
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[18871982547] [INFO] [kernel] thing-os kernel starting...
-[18894901971] [INFO] [kernel::memory] Memory map has 64 entries
-[18901954962] [INFO] [kernel::memory]   [0] 0x0 - 0xa0000 (Usable)
-[18906990498] [INFO] [kernel::memory]   [1] 0x100000 - 0x800000 (Usable)
-[18907551135] [INFO] [kernel::memory]   [2] 0x800000 - 0x808000 (Other)
-[18909684453] [INFO] [kernel::memory]   [3] 0x808000 - 0x80b000 (Usable)
-[18910244199] [INFO] [kernel::memory]   [4] 0x80b000 - 0x80c000 (Other)
-[18910774938] [INFO] [kernel::memory]   [5] 0x80c000 - 0x811000 (Usable)
-[18911334849] [INFO] [kernel::memory]   [6] 0x811000 - 0x900000 (Other)
-[18911864499] [INFO] [kernel::memory]   [7] 0x900000 - 0x1780000 (Reserved)
-[18912460875] [INFO] [kernel::memory]   [8] 0x1780000 - 0x7866b000 (Usable)
-[18913089888] [INFO] [kernel::memory]   [9] 0x7866b000 - 0x786cd000 (Reserved)
-[18913678806] [INFO] [kernel::memory]   [10] 0x786cd000 - 0x7884f000 (Other)
-[18914272971] [INFO] [kernel::memory]   [11] 0x7884f000 - 0x78850000 (Reserved)
-[18918313425] [INFO] [kernel::memory]   [12] 0x78850000 - 0x788e7000 (Other)
-[18920337381] [INFO] [kernel::memory]   [13] 0x788e7000 - 0x788e8000 (Reserved)
-[18920952699] [INFO] [kernel::memory]   [14] 0x788e8000 - 0x78989000 (Other)
-[18921522576] [INFO] [kernel::memory]   [15] 0x78989000 - 0x7898a000 (Reserved)
-[18922112286] [INFO] [kernel::memory]   [16] 0x7898a000 - 0x789ca000 (Other)
-[18922679754] [INFO] [kernel::memory]   [17] 0x789ca000 - 0x789cb000 (Reserved)
-[18923267352] [INFO] [kernel::memory]   [18] 0x789cb000 - 0x78a56000 (Other)
-[18923835480] [INFO] [kernel::memory]   [19] 0x78a56000 - 0x78a57000 (Reserved)
-[18927731328] [INFO] [kernel::memory]   [20] 0x78a57000 - 0x78aa3000 (Other)
-[18930517287] [INFO] [kernel::memory]   [21] 0x78aa3000 - 0x78aa4000 (Reserved)
-[18931132506] [INFO] [kernel::memory]   [22] 0x78aa4000 - 0x78aaa000 (Other)
-[18931698621] [INFO] [kernel::memory]   [23] 0x78aaa000 - 0x78aab000 (Reserved)
-[18932284668] [INFO] [kernel::memory]   [24] 0x78aab000 - 0x78f2c000 (Other)
-[18932851905] [INFO] [kernel::memory]   [25] 0x78f2c000 - 0x78f2d000 (Reserved)
-[18933436797] [INFO] [kernel::memory]   [26] 0x78f2d000 - 0x793ae000 (Other)
-[18934019247] [INFO] [kernel::memory]   [27] 0x793ae000 - 0x793af000 (Reserved)
-[18934605921] [INFO] [kernel::memory]   [28] 0x793af000 - 0x796b0000 (Other)
-[18935171706] [INFO] [kernel::memory]   [29] 0x796b0000 - 0x796b1000 (Reserved)
-[18935822499] [INFO] [kernel::memory]   [30] 0x796b1000 - 0x796ba000 (Other)
-[18936386205] [INFO] [kernel::memory]   [31] 0x796ba000 - 0x796bb000 (Reserved)
-[18936971955] [INFO] [kernel::memory]   [32] 0x796bb000 - 0x796bf000 (Other)
-[18944103387] [INFO] [kernel::memory]   [33] 0x796bf000 - 0x796c0000 (Reserved)
-[18944891196] [INFO] [kernel::memory]   [34] 0x796c0000 - 0x796c2000 (Other)
-[18945453285] [INFO] [kernel::memory]   [35] 0x796c2000 - 0x796c3000 (Reserved)
-[18946026957] [INFO] [kernel::memory]   [36] 0x796c3000 - 0x796c5000 (Other)
-[18946581588] [INFO] [kernel::memory]   [37] 0x796c5000 - 0x796c6000 (Reserved)
-[18947179482] [INFO] [kernel::memory]   [38] 0x796c6000 - 0x796c8000 (Other)
-[18947735532] [INFO] [kernel::memory]   [39] 0x796c8000 - 0x796c9000 (Reserved)
-[18948312306] [INFO] [kernel::memory]   [40] 0x796c9000 - 0x796cb000 (Other)
-[18948868950] [INFO] [kernel::memory]   [41] 0x796cb000 - 0x796cc000 (Reserved)
-[18949445559] [INFO] [kernel::memory]   [42] 0x796cc000 - 0x796ce000 (Other)
-[18954549042] [INFO] [kernel::memory]   [43] 0x796ce000 - 0x796cf000 (Reserved)
-[18957586296] [INFO] [kernel::memory]   [44] 0x796cf000 - 0x796d9000 (Other)
-[18958217256] [INFO] [kernel::memory]   [45] 0x796d9000 - 0x796da000 (Reserved)
-[18958796835] [INFO] [kernel::memory]   [46] 0x796da000 - 0x796de000 (Other)
-[18959357604] [INFO] [kernel::memory]   [47] 0x796de000 - 0x796df000 (Reserved)
-[18963043374] [INFO] [kernel::memory]   [48] 0x796df000 - 0x796e1000 (Other)
-[18963630147] [INFO] [kernel::memory]   [49] 0x796e1000 - 0x796e2000 (Reserved)
-[18964208142] [INFO] [kernel::memory]   [50] 0x796e2000 - 0x796e4000 (Other)
-[18964768647] [INFO] [kernel::memory]   [51] 0x796e4000 - 0x796e5000 (Reserved)
-[18965345850] [INFO] [kernel::memory]   [52] 0x796e5000 - 0x796e9000 (Other)
-[18965902560] [INFO] [kernel::memory]   [53] 0x796e9000 - 0x79758000 (Other)
-[18966457422] [INFO] [kernel::memory]   [54] 0x79758000 - 0x7990e000 (Other)
-[18967027959] [INFO] [kernel::memory]   [55] 0x7990e000 - 0x7a16c000 (Reserved)
-[18967600476] [INFO] [kernel::memory]   [56] 0x7a16c000 - 0x7bb6c000 (Usable)
-[18968160882] [INFO] [kernel::memory]   [57] 0x7bb6c000 - 0x7bb8d000 (Reserved)
-[18968732442] [INFO] [kernel::memory]   [58] 0x7bb8d000 - 0x7bb91000 (Other)
-[18969287040] [INFO] [kernel::memory]   [59] 0x7bb91000 - 0x7bb92000 (Reserved)
-[18969859557] [INFO] [kernel::memory]   [60] 0x7bb92000 - 0x7bb94000 (Other)
-[18970429764] [INFO] [kernel::memory]   [61] 0x7bb94000 - 0x7bb95000 (Reserved)
-[18971002017] [INFO] [kernel::memory]   [62] 0x7bb95000 - 0x7bb97000 (Other)
-[18971552688] [INFO] [kernel::memory]   [63] 0x7bb97000 - 0x7bb98000 (Reserved)
-[18972543546] [INFO] [kernel::memory] HHDM Offset: 0xffff800000000000
-[19392539166] [INFO] [kernel::memory] Frame allocator initialized with 495747 free frames
-[19411220136] [INFO] [bran::arch] IOAPIC: hhdm=0xffff800000000000
-[19423562037] [INFO] [bran::arch] IOAPIC: Disabling legacy PIC...
-[19425651300] [INFO] [bran::arch] IOAPIC: PIC disabled OK
-[19431127683] [INFO] [bran::arch] IOAPIC: RSDP virt=0x7f77e014
-[19444136712] [INFO] [bran::arch] IOAPIC: MADT parsed OK
-[19449435654] [INFO] [bran::arch] IOAPIC: Found at phys 0xfec00000, GSI base 0
-[19459011099] [INFO] [bran::arch] IOAPIC: Registers initialized
-[19461405381] [INFO] [bran::arch] IOAPIC: version 0x20, 24 redir entries
-[19463878071] [INFO] [bran::arch] IOAPIC: All pins masked
-[19466107815] [INFO] [bran::arch] IOAPIC: IRQ1 -> GSI 1 -> 0x21
-[19467129033] [INFO] [bran::arch] IOAPIC: IRQ12 -> GSI 12 -> 0x2C
-[19469060193] [INFO] [bran::arch] IOAPIC: Init complete
-[19473738042] [INFO] [kernel] Initializing global allocator...
-[20157650865] [INFO] [kernel::memory::global_alloc] Global allocator initialized (LinkedHeap, 32MB)
-[20161715706] [INFO] [kernel] Initializing SIMD...
-[20164762398] [INFO] [kernel] Initializing tasking...
-[20176518087] [INFO] [kernel::task::scheduler]   Acquiring scheduler lock...
-[20177722521] [INFO] [kernel::task::scheduler]   Lock acquired, checking if initialized...
-[20178661668] [INFO] [kernel::task::scheduler]   Allocating scheduler...
-[20189079735] [INFO] [kernel::task::scheduler]   Leaking scheduler...
-[20195053890] [INFO] [kernel::task::scheduler]   Initializing boot task...
-[20198680095] [INFO] [kernel::task::scheduler]   Creating boot task...
-[20208380181] [INFO] [kernel::task::scheduler]   Creating idle task...
-[20217337074] [INFO] [kernel::task::scheduler]   Boot task initialized
-[20223427323] [INFO] [kernel::task::scheduler]   Storing scheduler pointer...
-[20230785531] [INFO] [kernel::task::scheduler]   Scheduler initialized
-[20245176930] [INFO] [kernel::root] Spawning Root service...
-[20264276538] [INFO] [kernel::root::boot_register] ROOT: boot registration begin (Census Phase 1 v0.2)
-[20283995985] [INFO] [kernel::root::service] ROOT: started once
-[21835032219] [INFO] [kernel::root::boot_register] ROOT: Census Phase 2: PCI
-[21840168603] [INFO] [kernel::root::pci] PCI: Starting enumeration...
-[21921845847] [INFO] [kernel::root::pci] PCI: 00:00.0 8086:29c0 Intel Corporation 82G33/G31/P35/P31 Express DRAM Controller class=06:00 prog_if=00 rev=00
-[21961759545] [INFO] [kernel::root::pci] PCI: 00:01.0 1234:1111 (unknown vendor) (unknown device) class=03:00 prog_if=00 rev=02
-[22013720586] [INFO] [kernel::root::pci] PCI: 00:02.0 8086:10d3 Intel Corporation 82574L Gigabit Network Connection class=02:00 prog_if=00 rev=00
-[22080611685] [INFO] [kernel::root::pci] PCI: 00:1f.0 8086:2918 Intel Corporation 82801IB (ICH9) LPC Interface Controller class=06:01 prog_if=00 rev=02
-[22084812288] [INFO] [kernel::root::pci] PCI: Found LPC/ISA bridge at 00:1f.0
-[22157179308] [INFO] [kernel::root::pci] LPC: Created Legacy IO bus with CMOS and PS/2 controller
-[22216569474] [INFO] [kernel::root::pci] PCI: 00:1f.2 8086:2922 Intel Corporation 82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode] class=01:06 prog_if=01 rev=02
-[22229675622] [INFO] [kernel::root::pci] PCI: Found AHCI SATA controller at 00:1f.2
-[22238511537] [INFO] [kernel::root::pci] PCI: Registered AHCI controller (graph_id=224, idx=3) BAR5=0x810c4000
-[22280430414] [INFO] [kernel::root::pci] PCI: 00:1f.3 8086:2930 Intel Corporation 82801I (ICH9 Family) SMBus Controller class=0c:05 prog_if=00 rev=02
-[22288172709] [INFO] [kernel::root::boot_register] ROOT: registered items. host=3 kernel=6
-[22294441191] [INFO] [kernel] KERNEL: root census complete: host=t3 kernel=t6 root=t7
-[22300368618] [INFO] [kernel] Found init module: /boot/sprout (cmdline: ''), loading...
-[22305072240] [INFO] [kernel::task::loader] Loading module: /boot/sprout
-[22312796682] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[22334954103] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[22360792443] [INFO] [kernel::task::loader] Segment: vaddr=20d230 exec=false
-[22365262128] [INFO] [kernel::task::loader]   Overlap at 20d000: merging perms to r=true w=false x=true
-[22370285850] [INFO] [kernel::task::loader] Segment: vaddr=2100a8 exec=false
-[22374576708] [INFO] [kernel::task::loader]   Overlap at 210000: merging perms to r=true w=true x=true
-[22388636589] [INFO] [kernel] Spawning sprout with registry at 0x600000...
-[22393573290] [INFO] [kernel] Spawning init process...
-[22396777425] [INFO] [kernel] System initialized. Setting up preemption timer (100Hz)...
-[22432970274] [INFO] [bran::arch::x86_64::ioapic] LAPIC: calibrated timer (62500900 ticks/sec), init_cnt=625009 for 100Hz
-[22442409693] [INFO] [kernel] Entering scheduler loop.
-[22444806087] [DEBUG] [sched.switch] Context switch from_tid=0 to_tid=2 from_user=0 to_user=0 cr3_before=50319360 cr3_after=2020306944
-[22475188362] [DEBUG] [sched.switch] Context switch from_tid=2 to_tid=3 from_user=0 to_user=1 cr3_before=2020306944 cr3_after=50319360
-[22482280689] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0008580
+[2J[01;01H[01;01H[2J[01;01H[01;01H[18818616432] [INFO] [kernel] thing-os kernel starting...
+[18840541038] [INFO] [kernel::memory] Memory map has 64 entries
+[18846139587] [INFO] [kernel::memory]   [0] 0x0 - 0xa0000 (Usable)
+[18847141500] [INFO] [kernel::memory]   [1] 0x100000 - 0x800000 (Usable)
+[18847710156] [INFO] [kernel::memory]   [2] 0x800000 - 0x808000 (Other)
+[18848340027] [INFO] [kernel::memory]   [3] 0x808000 - 0x80b000 (Usable)
+[18848901951] [INFO] [kernel::memory]   [4] 0x80b000 - 0x80c000 (Other)
+[18849457275] [INFO] [kernel::memory]   [5] 0x80c000 - 0x811000 (Usable)
+[18850016658] [INFO] [kernel::memory]   [6] 0x811000 - 0x900000 (Other)
+[18850566933] [INFO] [kernel::memory]   [7] 0x900000 - 0x1780000 (Reserved)
+[18851590593] [INFO] [kernel::memory]   [8] 0x1780000 - 0x7866b000 (Usable)
+[18857638437] [INFO] [kernel::memory]   [9] 0x7866b000 - 0x786cd000 (Reserved)
+[18861003414] [INFO] [kernel::memory]   [10] 0x786cd000 - 0x7884f000 (Other)
+[18861600780] [INFO] [kernel::memory]   [11] 0x7884f000 - 0x78850000 (Reserved)
+[18862190754] [INFO] [kernel::memory]   [12] 0x78850000 - 0x788e7000 (Other)
+[18862805841] [INFO] [kernel::memory]   [13] 0x788e7000 - 0x788e8000 (Reserved)
+[18863443302] [INFO] [kernel::memory]   [14] 0x788e8000 - 0x78989000 (Other)
+[18864050205] [INFO] [kernel::memory]   [15] 0x78989000 - 0x7898a000 (Reserved)
+[18864695784] [INFO] [kernel::memory]   [16] 0x7898a000 - 0x789ca000 (Other)
+[18865294635] [INFO] [kernel::memory]   [17] 0x789ca000 - 0x789cb000 (Reserved)
+[18865921437] [INFO] [kernel::memory]   [18] 0x789cb000 - 0x78a56000 (Other)
+[18866526393] [INFO] [kernel::memory]   [19] 0x78a56000 - 0x78a57000 (Reserved)
+[18867145737] [INFO] [kernel::memory]   [20] 0x78a57000 - 0x78aa3000 (Other)
+[18869132469] [INFO] [kernel::memory]   [21] 0x78aa3000 - 0x78aa4000 (Reserved)
+[18875514174] [INFO] [kernel::memory]   [22] 0x78aa4000 - 0x78aaa000 (Other)
+[18877883508] [INFO] [kernel::memory]   [23] 0x78aaa000 - 0x78aab000 (Reserved)
+[18878475231] [INFO] [kernel::memory]   [24] 0x78aab000 - 0x78f2c000 (Other)
+[18879037716] [INFO] [kernel::memory]   [25] 0x78f2c000 - 0x78f2d000 (Reserved)
+[18879618978] [INFO] [kernel::memory]   [26] 0x78f2d000 - 0x793ae000 (Other)
+[18880180176] [INFO] [kernel::memory]   [27] 0x793ae000 - 0x793af000 (Reserved)
+[18880768104] [INFO] [kernel::memory]   [28] 0x793af000 - 0x796b0000 (Other)
+[18881375370] [INFO] [kernel::memory]   [29] 0x796b0000 - 0x796b1000 (Reserved)
+[18881980656] [INFO] [kernel::memory]   [30] 0x796b1000 - 0x796ba000 (Other)
+[18882564327] [INFO] [kernel::memory]   [31] 0x796ba000 - 0x796bb000 (Reserved)
+[18883164300] [INFO] [kernel::memory]   [32] 0x796bb000 - 0x796bf000 (Other)
+[18883745133] [INFO] [kernel::memory]   [33] 0x796bf000 - 0x796c0000 (Reserved)
+[18886972302] [INFO] [kernel::memory]   [34] 0x796c0000 - 0x796c2000 (Other)
+[18893121819] [INFO] [kernel::memory]   [35] 0x796c2000 - 0x796c3000 (Reserved)
+[18894059151] [INFO] [kernel::memory]   [36] 0x796c3000 - 0x796c5000 (Other)
+[18894628698] [INFO] [kernel::memory]   [37] 0x796c5000 - 0x796c6000 (Reserved)
+[18895215405] [INFO] [kernel::memory]   [38] 0x796c6000 - 0x796c8000 (Other)
+[18895778055] [INFO] [kernel::memory]   [39] 0x796c8000 - 0x796c9000 (Reserved)
+[18896359680] [INFO] [kernel::memory]   [40] 0x796c9000 - 0x796cb000 (Other)
+[18896920383] [INFO] [kernel::memory]   [41] 0x796cb000 - 0x796cc000 (Reserved)
+[18897518409] [INFO] [kernel::memory]   [42] 0x796cc000 - 0x796ce000 (Other)
+[18898064460] [INFO] [kernel::memory]   [43] 0x796ce000 - 0x796cf000 (Reserved)
+[18898596519] [INFO] [kernel::memory]   [44] 0x796cf000 - 0x796d9000 (Other)
+[18899145573] [INFO] [kernel::memory]   [45] 0x796d9000 - 0x796da000 (Reserved)
+[18899747295] [INFO] [kernel::memory]   [46] 0x796da000 - 0x796de000 (Other)
+[18900350271] [INFO] [kernel::memory]   [47] 0x796de000 - 0x796df000 (Reserved)
+[18905838105] [INFO] [kernel::memory]   [48] 0x796df000 - 0x796e1000 (Other)
+[18909095469] [INFO] [kernel::memory]   [49] 0x796e1000 - 0x796e2000 (Reserved)
+[18909703428] [INFO] [kernel::memory]   [50] 0x796e2000 - 0x796e4000 (Other)
+[18910289508] [INFO] [kernel::memory]   [51] 0x796e4000 - 0x796e5000 (Reserved)
+[18910918554] [INFO] [kernel::memory]   [52] 0x796e5000 - 0x796e9000 (Other)
+[18911496351] [INFO] [kernel::memory]   [53] 0x796e9000 - 0x79758000 (Other)
+[18912075468] [INFO] [kernel::memory]   [54] 0x79758000 - 0x7990e000 (Other)
+[18912650262] [INFO] [kernel::memory]   [55] 0x7990e000 - 0x7a16c000 (Reserved)
+[18913243536] [INFO] [kernel::memory]   [56] 0x7a16c000 - 0x7bb6c000 (Usable)
+[18913848294] [INFO] [kernel::memory]   [57] 0x7bb6c000 - 0x7bb8d000 (Reserved)
+[18914445495] [INFO] [kernel::memory]   [58] 0x7bb8d000 - 0x7bb91000 (Other)
+[18915021345] [INFO] [kernel::memory]   [59] 0x7bb91000 - 0x7bb92000 (Reserved)
+[18915615609] [INFO] [kernel::memory]   [60] 0x7bb92000 - 0x7bb94000 (Other)
+[18916156116] [INFO] [kernel::memory]   [61] 0x7bb94000 - 0x7bb95000 (Reserved)
+[18916741833] [INFO] [kernel::memory]   [62] 0x7bb95000 - 0x7bb97000 (Other)
+[18920232969] [INFO] [kernel::memory]   [63] 0x7bb97000 - 0x7bb98000 (Reserved)
+[18926921343] [INFO] [kernel::memory] HHDM Offset: 0xffff800000000000
+[19348679559] [INFO] [kernel::memory] Frame allocator initialized with 495747 free frames
+[19367135139] [INFO] [bran::arch] IOAPIC: hhdm=0xffff800000000000
+[19377329169] [INFO] [bran::arch] IOAPIC: Disabling legacy PIC...
+[19380295605] [INFO] [bran::arch] IOAPIC: PIC disabled OK
+[19381465950] [INFO] [bran::arch] IOAPIC: RSDP virt=0x7f77e014
+[19393220187] [INFO] [bran::arch] IOAPIC: MADT parsed OK
+[19398310272] [INFO] [bran::arch] IOAPIC: Found at phys 0xfec00000, GSI base 0
+[19409102790] [INFO] [bran::arch] IOAPIC: Registers initialized
+[19413027843] [INFO] [bran::arch] IOAPIC: version 0x20, 24 redir entries
+[19415510301] [INFO] [bran::arch] IOAPIC: All pins masked
+[19417950717] [INFO] [bran::arch] IOAPIC: IRQ1 -> GSI 1 -> 0x21
+[19423654602] [INFO] [bran::arch] IOAPIC: IRQ12 -> GSI 12 -> 0x2C
+[19427873421] [INFO] [bran::arch] IOAPIC: Init complete
+[19428512103] [INFO] [kernel] Initializing global allocator...
+[20117686380] [INFO] [kernel::memory::global_alloc] Global allocator initialized (LinkedHeap, 32MB)
+[20126041815] [INFO] [kernel] Initializing SIMD...
+[20128752534] [INFO] [kernel] Initializing tasking...
+[20142864621] [INFO] [kernel::task::scheduler]   Acquiring scheduler lock...
+[20147927184] [INFO] [kernel::task::scheduler]   Lock acquired, checking if initialized...
+[20148880851] [INFO] [kernel::task::scheduler]   Allocating scheduler...
+[20158957203] [INFO] [kernel::task::scheduler]   Leaking scheduler...
+[20164919874] [INFO] [kernel::task::scheduler]   Initializing boot task...
+[20167183641] [INFO] [kernel::task::scheduler]   Creating boot task...
+[20175527460] [INFO] [kernel::task::scheduler]   Creating idle task...
+[20187640506] [INFO] [kernel::task::scheduler]   Boot task initialized
+[20191784019] [INFO] [kernel::task::scheduler]   Storing scheduler pointer...
+[20193319377] [INFO] [kernel::task::scheduler]   Scheduler initialized
+[20203647519] [INFO] [kernel::root] Spawning Root service...
+[20221865433] [INFO] [kernel::root::boot_register] ROOT: boot registration begin (Census Phase 1 v0.2)
+[20245744992] [INFO] [kernel::root::service] ROOT: started once
+[21780953370] [INFO] [kernel::root::boot_register] ROOT: Census Phase 2: PCI
+[21785022138] [INFO] [kernel::root::pci] PCI: Starting enumeration...
+[21858753180] [INFO] [kernel::root::pci] PCI: 00:00.0 8086:29c0 Intel Corporation 82G33/G31/P35/P31 Express DRAM Controller class=06:00 prog_if=00 rev=00
+[21895812609] [INFO] [kernel::root::pci] PCI: 00:01.0 1234:1111 (unknown vendor) (unknown device) class=03:00 prog_if=00 rev=02
+[21952325736] [INFO] [kernel::root::pci] PCI: 00:02.0 8086:10d3 Intel Corporation 82574L Gigabit Network Connection class=02:00 prog_if=00 rev=00
+[22018959864] [INFO] [kernel::root::pci] PCI: 00:1f.0 8086:2918 Intel Corporation 82801IB (ICH9) LPC Interface Controller class=06:01 prog_if=00 rev=02
+[22034187714] [INFO] [kernel::root::pci] PCI: Found LPC/ISA bridge at 00:1f.0
+[22098271371] [INFO] [kernel::root::pci] LPC: Created Legacy IO bus with CMOS and PS/2 controller
+[22148612277] [INFO] [kernel::root::pci] PCI: 00:1f.2 8086:2922 Intel Corporation 82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode] class=01:06 prog_if=01 rev=02
+[22166617374] [INFO] [kernel::root::pci] PCI: Found AHCI SATA controller at 00:1f.2
+[22177428537] [INFO] [kernel::root::pci] PCI: Registered AHCI controller (graph_id=224, idx=3) BAR5=0x810c4000
+[22219923759] [INFO] [kernel::root::pci] PCI: 00:1f.3 8086:2930 Intel Corporation 82801I (ICH9 Family) SMBus Controller class=0c:05 prog_if=00 rev=02
+[22227874779] [INFO] [kernel::root::boot_register] ROOT: registered items. host=3 kernel=6
+[22229546295] [INFO] [kernel] KERNEL: root census complete: host=t3 kernel=t6 root=t7
+[22235816229] [INFO] [kernel] Found init module: /boot/sprout (cmdline: ''), loading...
+[22247013195] [INFO] [kernel::task::loader] Loading module: /boot/sprout
+[22252183470] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[22268508570] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[22295875305] [INFO] [kernel::task::loader] Segment: vaddr=20d230 exec=false
+[22301366307] [INFO] [kernel::task::loader]   Overlap at 20d000: merging perms to r=true w=false x=true
+[22306333500] [INFO] [kernel::task::loader] Segment: vaddr=2100a8 exec=false
+[22311681183] [INFO] [kernel::task::loader]   Overlap at 210000: merging perms to r=true w=true x=true
+[22325516961] [INFO] [kernel] Spawning sprout with registry at 0x600000...
+[22332946053] [INFO] [kernel] Spawning init process...
+[22336952682] [INFO] [kernel] System initialized. Setting up preemption timer (100Hz)...
+[22372974789] [INFO] [bran::arch::x86_64::ioapic] LAPIC: calibrated timer (61947600 ticks/sec), init_cnt=619476 for 100Hz
+[22381017021] [INFO] [kernel] Entering scheduler loop.
+[22383049095] [DEBUG] [sched.switch] Context switch from_tid=0 to_tid=2 from_user=0 to_user=0 cr3_before=50319360 cr3_after=2020306944
+[22408095633] [DEBUG] [sched.switch] Context switch from_tid=2 to_tid=3 from_user=0 to_user=1 cr3_before=2020306944 cr3_after=50319360
+[22420606791] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0008580
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x600000
-[22490515377] [INFO] [task.user_enter] Entering user mode tid=3 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072367676096 RFLAGS_BEFORE=134 CR3_BEFORE=50319360 fs_base=0 gs_base=18446744071563776472
-[22526748816] [INFO] [sprout] [sprout] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ff9a0 rip=0x20038f rflags=0x206
-[22538279445] [INFO] [sprout] SPROUT: v0.4 starting (Supervisor Mode)...
-[22540180476] [INFO] [sprout::devtree] SPROUT: devtree::init entry (v0.2)
-[22541490906] [INFO] [sprout::devtree] SPROUT: Step 1: Find Host
-[22546459155] [DEBUG] [sched.switch] Context switch from_tid=3 to_tid=2 from_user=1 to_user=0 cr3_before=50319360 cr3_after=2020306944
-[22579073187] [DEBUG] [sched.switch] Context switch from_tid=0 to_tid=3 from_user=0 to_user=1 cr3_before=2020306944 cr3_after=50319360
-[22587105519] [INFO] [sprout::devtree] SPROUT: Step 2: HHDM
-[22589248968] [DEBUG] [sched.switch] Context switch from_tid=3 to_tid=2 from_user=1 to_user=0 cr3_before=50319360 cr3_after=2020306944
-[22597894803] [DEBUG] [sched.switch] Context switch from_tid=0 to_tid=3 from_user=0 to_user=1 cr3_before=2020306944 cr3_after=50319360
-[22611087015] [INFO] [sprout::devtree] SPROUT: Step 3: Platform Bus
-[22617408297] [DEBUG] [sched.switch] Context switch from_tid=3 to_tid=2 from_user=1 to_user=0 cr3_before=50319360 cr3_after=2020306944
-[22625318826] [DEBUG] [sched.switch] Context switch from_tid=0 to_tid=3 from_user=0 to_user=1 cr3_before=2020306944 cr3_after=50319360
-[22638248853] [INFO] [sprout::devtree] SPROUT: Step 4: Firmware
-[22640333100] [INFO] [sprout::devtree] SPROUT: Finding ACPI...
-[22649162382] [INFO] [sprout::devtree] SPROUT: Found 1 ACPI nodes
-[22658837586] [INFO] [sprout::devtree] SPROUT: ACPI RSDP = 0x7f77e014
-[22662895629] [INFO] [sprout::devtree] SPROUT: Finding DTB...
-[22670958255] [INFO] [sprout::devtree] SPROUT: Found 0 DTB nodes
-[22677527664] [INFO] [sprout::devtree] SPROUT: Init OK, returning context
-[22680876702] [INFO] [sprout::devtree] SPROUT: build() called
-[22681947882] [INFO] [sprout::devtree::x86_64] SPROUT: x86_64 platform enrichment... (v0.2)
-[22690608699] [INFO] [sprout::devtree::x86_64] SPROUT: x86_64 enumerate done
-[22698603246] [INFO] [sprout] SPROUT: About to create Supervisor...
-[22701526056] [INFO] [sprout] SPROUT: Supervisor created, calling run_forever...
-[22703581593] [INFO] [sprout::supervisor] SPROUT: Supervisor starting...
-[22705871133] [INFO] [sprout::supervisor] SPROUT: Discovering modules...
-[22716578907] [INFO] [sprout::supervisor] SPROUT: Found 42 modules
-[22832923872] [INFO] [sprout::supervisor] SPROUT: Module[0] = '/boot/sprout'
-[23006738535] [INFO] [sprout::supervisor] SPROUT: Module[1] = '/boot/bristle'
-[23012583429] [INFO] [sprout::supervisor] SPROUT: Module[2] = '/boot/rtc_cmos'
-[23029138077] [INFO] [sprout::supervisor] SPROUT: Module[3] = '/boot/clock'
-[23046316524] [INFO] [sprout::supervisor] SPROUT: Discovered app: /boot/clock
-[23051851845] [INFO] [sprout::supervisor] SPROUT: Module[4] = '/boot/font_explorer'
-[23075721504] [INFO] [sprout::supervisor] SPROUT: Module[5] = '/boot/ps2_kbd'
-[23094633408] [INFO] [sprout::supervisor] SPROUT: Module[6] = '/boot/echo'
-[23100702108] [INFO] [sprout::supervisor] SPROUT: Module[7] = '/boot/bloom'
-[23116479639] [INFO] [sprout::supervisor] SPROUT: Module[8] = '/boot/ps2_mouse'
-[23128944795] [INFO] [sprout::supervisor] SPROUT: Module[9] = '/boot/root_batch_bench'
-[23147785419] [INFO] [sprout::supervisor] SPROUT: Module[10] = '/boot/root_watch_tester'
-[23174756682] [INFO] [sprout::supervisor] SPROUT: Module[11] = '/boot/display_bootfb'
-[23193678915] [INFO] [sprout::supervisor] SPROUT: Module[12] = '/boot/ingestd'
-[23213188977] [INFO] [sprout::supervisor] SPROUT: Module[13] = '/boot/cambium'
-[23233006005] [INFO] [sprout::supervisor] SPROUT: Module[14] = '/boot/scheduler_fairness'
-[23239138230] [INFO] [sprout::supervisor] SPROUT: Module[15] = '/boot/hogger'
-[23267288022] [INFO] [sprout::supervisor] SPROUT: Module[16] = '/boot/tick_printer'
-[23274422490] [INFO] [sprout::supervisor] SPROUT: Module[17] = '/assets/cursors/plain/Alternate.cur'
-[23293513947] [INFO] [sprout::supervisor] SPROUT: Module[18] = '/assets/cursors/plain/Busy.cur'
-[23306036985] [INFO] [sprout::supervisor] SPROUT: Module[19] = '/assets/cursors/plain/Diagonal1.ani'
-[23321159565] [INFO] [sprout::supervisor] SPROUT: Module[20] = '/assets/cursors/plain/Diagonal2.ani'
-[23354920941] [INFO] [sprout::supervisor] SPROUT: Module[21] = '/assets/cursors/plain/Handwriting.cur'
-[23361857871] [INFO] [sprout::supervisor] SPROUT: Module[22] = '/assets/cursors/plain/Help.cur'
-[23380503102] [INFO] [sprout::supervisor] SPROUT: Module[23] = '/assets/cursors/plain/Horizontal.ani'
-[23394924564] [INFO] [sprout::supervisor] SPROUT: Module[24] = '/assets/cursors/plain/Link.ani'
-[23406774402] [INFO] [sprout::supervisor] SPROUT: Module[25] = '/assets/cursors/plain/Move.cur'
-[23413573029] [INFO] [sprout::supervisor] SPROUT: Module[26] = '/assets/cursors/plain/Normal.cur'
-[23427173748] [INFO] [sprout::supervisor] SPROUT: Module[27] = '/assets/cursors/plain/Precision.cur'
-[23438977287] [INFO] [sprout::supervisor] SPROUT: Module[28] = '/assets/cursors/plain/Text.cur'
-[23445309954] [INFO] [sprout::supervisor] SPROUT: Module[29] = '/assets/cursors/plain/Unavailabe.cur'
-[23452205766] [INFO] [sprout::supervisor] SPROUT: Module[30] = '/assets/cursors/plain/Vertical.ani'
-[23466392268] [INFO] [sprout::supervisor] SPROUT: Module[31] = '/assets/cursors/plain/Working.ani'
-[23474223597] [INFO] [sprout::supervisor] SPROUT: Module[32] = '/assets/wallpapers/clouds.bmp'
-[23480917878] [INFO] [sprout::supervisor] SPROUT: Module[33] = '/assets/wallpapers/leather.bmp'
-[23495342211] [INFO] [sprout::supervisor] SPROUT: Module[34] = '/assets/wallpapers/linen.bmp'
-[23505582837] [INFO] [sprout::supervisor] SPROUT: Module[35] = '/assets/fonts/DSEG7Classic-Regular.ttf'
-[23514420072] [INFO] [sprout::supervisor] SPROUT: Module[36] = '/assets/fonts/Hack-Regular.ttf'
-[23521641627] [INFO] [sprout::supervisor] SPROUT: Module[37] = '/assets/fonts/NotoSans-Regular.ttf'
-[23535081207] [INFO] [sprout::supervisor] SPROUT: Module[38] = '/assets/fonts/NotoSansSymbol-Regular.ttf'
-[23549147061] [INFO] [sprout::supervisor] SPROUT: Module[39] = '/assets/fonts/NotoSansSymbol2-Regular.ttf'
-[23559895062] [INFO] [sprout::supervisor] SPROUT: Module[40] = '/assets/fonts/NotoSerif-Regular.ttf'
-[23575853466] [INFO] [sprout::supervisor] SPROUT: Module[41] = '/assets/pci/pci.ids'
-[23598400287] [INFO] [sprout::registry] SPROUT: Scanning boot modules...
-[23649438318] [INFO] [sprout::registry] SPROUT: Registering driver 'dev.rtc.Cmos' -> '/boot/rtc_cmos' (fallback)
-[23908016319] [INFO] [sprout::registry] SPROUT: Registry scan complete. Found 1 drivers.
-[23909773833] [INFO] [sprout::supervisor] SPROUT: spawn_apps start. tasks len=1
-[23913264672] [INFO] [sprout::supervisor] SPROUT: Adding fallback app '/boot/font_explorer'
-[23931083088] [INFO] [sprout::supervisor] SPROUT: Adding fallback app '/boot/ingestd'
-[23945879232] [INFO] [sprout::supervisor] SPROUT: Adding fallback app '/boot/cambium'
-[23947639848] [INFO] [sprout::supervisor] SPROUT: Launching app '/boot/clock'
-[23952497976] [INFO] [kernel::task::loader] Loading module: /boot/clock
-[23953641294] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[23955890145] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[23976301305] [INFO] [kernel::task::loader] Segment: vaddr=203dc0 exec=false
-[23977838181] [INFO] [kernel::task::loader]   Overlap at 203000: merging perms to r=true w=false x=true
-[23982788148] [INFO] [kernel::task::loader] Segment: vaddr=204e30 exec=false
-[23984499528] [INFO] [kernel::task::loader]   Overlap at 204000: merging perms to r=true w=true x=true
-[23997465987] [INFO] [sprout::supervisor] SPROUT: App launched (PID=4)
-[24006908673] [INFO] [sprout::supervisor] SPROUT: Launching app '/boot/font_explorer'
-[24008683776] [INFO] [kernel::task::loader] Loading module: /boot/font_explorer
-[24009706578] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[24020227440] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[24029998839] [INFO] [kernel::task::loader] Segment: vaddr=2041a0 exec=false
-[24036471921] [INFO] [kernel::task::loader]   Overlap at 204000: merging perms to r=true w=false x=true
-[24042273486] [INFO] [kernel::task::loader] Segment: vaddr=204668 exec=false
-[24043317771] [INFO] [kernel::task::loader]   Overlap at 204000: merging perms to r=true w=true x=true
-[24055112037] [INFO] [sprout::supervisor] SPROUT: App launched (PID=5)
-[24062021049] [INFO] [sprout::supervisor] SPROUT: Launching app '/boot/ingestd'
-[24065466711] [INFO] [kernel::task::loader] Loading module: /boot/ingestd
-[24066491691] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[24068356092] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[24087264663] [INFO] [kernel::task::loader] Segment: vaddr=20f750 exec=false
-[24094046823] [INFO] [kernel::task::loader]   Overlap at 20f000: merging perms to r=true w=false x=true
-[24107006748] [INFO] [kernel::task::loader] Segment: vaddr=215300 exec=false
-[24108204714] [INFO] [kernel::task::loader]   Overlap at 215000: merging perms to r=true w=true x=true
-[24119875032] [INFO] [sprout::supervisor] SPROUT: App launched (PID=6)
-[24126470709] [INFO] [sprout::supervisor] SPROUT: Launching app '/boot/cambium'
-[24133994511] [INFO] [kernel::task::loader] Loading module: /boot/cambium
-[24139440633] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[24141385059] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[24150224175] [INFO] [kernel::task::loader] Segment: vaddr=203e50 exec=false
-[24156944427] [INFO] [kernel::task::loader]   Overlap at 203000: merging perms to r=true w=false x=true
-[24161484336] [INFO] [kernel::task::loader] Segment: vaddr=204c88 exec=false
-[24164857101] [INFO] [kernel::task::loader]   Overlap at 204000: merging perms to r=true w=true x=true
-[24176695026] [INFO] [sprout::supervisor] SPROUT: App launched (PID=7)
-[24183522726] [INFO] [sprout::pipelines] SPROUT: Setting up display pipeline...
-[24216014229] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0042c18
+[22431855105] [INFO] [task.user_enter] Entering user mode tid=3 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072367676096 RFLAGS_BEFORE=134 CR3_BEFORE=50319360 fs_base=0 gs_base=18446744071563776472
+[22463650473] [INFO] [sprout] [sprout] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ff9a0 rip=0x20038f rflags=0x206
+[22477507998] [INFO] [sprout] SPROUT: v0.4 starting (Supervisor Mode)...
+[22478880600] [INFO] [sprout::devtree] SPROUT: devtree::init entry (v0.2)
+[22480117275] [INFO] [sprout::devtree] SPROUT: Step 1: Find Host
+[22526780859] [DEBUG] [sched.switch] Context switch from_tid=3 to_tid=2 from_user=1 to_user=0 cr3_before=50319360 cr3_after=2020306944
+[22553042391] [DEBUG] [sched.switch] Context switch from_tid=0 to_tid=3 from_user=0 to_user=1 cr3_before=2020306944 cr3_after=50319360
+[22588031433] [INFO] [sprout::devtree] SPROUT: Step 2: HHDM
+[22590253290] [DEBUG] [sched.switch] Context switch from_tid=3 to_tid=2 from_user=1 to_user=0 cr3_before=50319360 cr3_after=2020306944
+[22604112795] [DEBUG] [sched.switch] Context switch from_tid=0 to_tid=3 from_user=0 to_user=1 cr3_before=2020306944 cr3_after=50319360
+[22632185136] [INFO] [sprout::devtree] SPROUT: Step 3: Platform Bus
+[22643553867] [DEBUG] [sched.switch] Context switch from_tid=3 to_tid=2 from_user=1 to_user=0 cr3_before=50319360 cr3_after=2020306944
+[22652014110] [DEBUG] [sched.switch] Context switch from_tid=0 to_tid=3 from_user=0 to_user=1 cr3_before=2020306944 cr3_after=50319360
+[22675514730] [INFO] [sprout::devtree] SPROUT: Step 4: Firmware
+[22676699232] [INFO] [sprout::devtree] SPROUT: Finding ACPI...
+[22688140167] [INFO] [sprout::devtree] SPROUT: Found 1 ACPI nodes
+[22710288612] [INFO] [sprout::devtree] SPROUT: ACPI RSDP = 0x7f77e014
+[22712226504] [INFO] [sprout::devtree] SPROUT: Finding DTB...
+[22724242530] [INFO] [sprout::devtree] SPROUT: Found 0 DTB nodes
+[22740107577] [INFO] [sprout::devtree] SPROUT: Init OK, returning context
+[22741378473] [INFO] [sprout::devtree] SPROUT: build() called
+[22742463018] [INFO] [sprout::devtree::x86_64] SPROUT: x86_64 platform enrichment... (v0.2)
+[22762131876] [INFO] [sprout::devtree::x86_64] SPROUT: x86_64 enumerate done
+[22776716589] [INFO] [sprout] SPROUT: About to create Supervisor...
+[22777941813] [INFO] [sprout] SPROUT: Supervisor created, calling run_forever...
+[22779232212] [INFO] [sprout::supervisor] SPROUT: Supervisor starting...
+[22780299201] [INFO] [sprout::supervisor] SPROUT: Discovering modules...
+[22793421915] [INFO] [sprout::supervisor] SPROUT: Found 42 modules
+[22918014735] [INFO] [sprout::supervisor] SPROUT: Module[0] = '/boot/sprout'
+[22946420937] [INFO] [sprout::supervisor] SPROUT: Module[1] = '/boot/bristle'
+[22966227999] [INFO] [sprout::supervisor] SPROUT: Module[2] = '/boot/rtc_cmos'
+[22983315564] [INFO] [sprout::supervisor] SPROUT: Module[3] = '/boot/clock'
+[23008400118] [INFO] [sprout::supervisor] SPROUT: Discovered app: /boot/clock
+[23014582635] [INFO] [sprout::supervisor] SPROUT: Module[4] = '/boot/font_explorer'
+[23033745009] [INFO] [sprout::supervisor] SPROUT: Module[5] = '/boot/ps2_kbd'
+[23043358734] [INFO] [sprout::supervisor] SPROUT: Module[6] = '/boot/echo'
+[23059621266] [INFO] [sprout::supervisor] SPROUT: Module[7] = '/boot/bloom'
+[23075471562] [INFO] [sprout::supervisor] SPROUT: Module[8] = '/boot/ps2_mouse'
+[23097026502] [INFO] [sprout::supervisor] SPROUT: Module[9] = '/boot/root_batch_bench'
+[23114319855] [INFO] [sprout::supervisor] SPROUT: Module[10] = '/boot/root_watch_tester'
+[23133746757] [INFO] [sprout::supervisor] SPROUT: Module[11] = '/boot/display_bootfb'
+[23156517186] [INFO] [sprout::supervisor] SPROUT: Module[12] = '/boot/ingestd'
+[23168680326] [INFO] [sprout::supervisor] SPROUT: Module[13] = '/boot/cambium'
+[23175426219] [INFO] [sprout::supervisor] SPROUT: Module[14] = '/boot/scheduler_fairness'
+[23184975495] [INFO] [sprout::supervisor] SPROUT: Module[15] = '/boot/hogger'
+[23191757094] [INFO] [sprout::supervisor] SPROUT: Module[16] = '/boot/tick_printer'
+[23203421010] [INFO] [sprout::supervisor] SPROUT: Module[17] = '/assets/cursors/plain/Alternate.cur'
+[23212281774] [INFO] [sprout::supervisor] SPROUT: Module[18] = '/assets/cursors/plain/Busy.cur'
+[23218291965] [INFO] [sprout::supervisor] SPROUT: Module[19] = '/assets/cursors/plain/Diagonal1.ani'
+[23288753532] [INFO] [sprout::supervisor] SPROUT: Module[20] = '/assets/cursors/plain/Diagonal2.ani'
+[23302332966] [INFO] [sprout::supervisor] SPROUT: Module[21] = '/assets/cursors/plain/Handwriting.cur'
+[23310062688] [INFO] [sprout::supervisor] SPROUT: Module[22] = '/assets/cursors/plain/Help.cur'
+[23321589390] [INFO] [sprout::supervisor] SPROUT: Module[23] = '/assets/cursors/plain/Horizontal.ani'
+[23336901522] [INFO] [sprout::supervisor] SPROUT: Module[24] = '/assets/cursors/plain/Link.ani'
+[23354388189] [INFO] [sprout::supervisor] SPROUT: Module[25] = '/assets/cursors/plain/Move.cur'
+[23380037637] [INFO] [sprout::supervisor] SPROUT: Module[26] = '/assets/cursors/plain/Normal.cur'
+[23386732842] [INFO] [sprout::supervisor] SPROUT: Module[27] = '/assets/cursors/plain/Precision.cur'
+[23406754932] [INFO] [sprout::supervisor] SPROUT: Module[28] = '/assets/cursors/plain/Text.cur'
+[23413015098] [INFO] [sprout::supervisor] SPROUT: Module[29] = '/assets/cursors/plain/Unavailabe.cur'
+[23439201918] [INFO] [sprout::supervisor] SPROUT: Module[30] = '/assets/cursors/plain/Vertical.ani'
+[23457270342] [INFO] [sprout::supervisor] SPROUT: Module[31] = '/assets/cursors/plain/Working.ani'
+[23463346467] [INFO] [sprout::supervisor] SPROUT: Module[32] = '/assets/wallpapers/clouds.bmp'
+[23482173330] [INFO] [sprout::supervisor] SPROUT: Module[33] = '/assets/wallpapers/leather.bmp'
+[23498384052] [INFO] [sprout::supervisor] SPROUT: Module[34] = '/assets/wallpapers/linen.bmp'
+[23519302851] [INFO] [sprout::supervisor] SPROUT: Module[35] = '/assets/fonts/DSEG7Classic-Regular.ttf'
+[23535725301] [INFO] [sprout::supervisor] SPROUT: Module[36] = '/assets/fonts/Hack-Regular.ttf'
+[23554799961] [INFO] [sprout::supervisor] SPROUT: Module[37] = '/assets/fonts/NotoSans-Regular.ttf'
+[23561688645] [INFO] [sprout::supervisor] SPROUT: Module[38] = '/assets/fonts/NotoSansSymbol-Regular.ttf'
+[23581029483] [INFO] [sprout::supervisor] SPROUT: Module[39] = '/assets/fonts/NotoSansSymbol2-Regular.ttf'
+[23587747623] [INFO] [sprout::supervisor] SPROUT: Module[40] = '/assets/fonts/NotoSerif-Regular.ttf'
+[23604106746] [INFO] [sprout::supervisor] SPROUT: Module[41] = '/assets/pci/pci.ids'
+[23608978899] [INFO] [sprout::registry] SPROUT: Scanning boot modules...
+[23664192024] [INFO] [sprout::registry] SPROUT: Registering driver 'dev.rtc.Cmos' -> '/boot/rtc_cmos' (fallback)
+[23867475687] [INFO] [sprout::registry] SPROUT: Registry scan complete. Found 1 drivers.
+[23879751159] [INFO] [sprout::supervisor] SPROUT: spawn_apps start. tasks len=1
+[23888688351] [INFO] [sprout::supervisor] SPROUT: Adding fallback app '/boot/font_explorer'
+[23890508202] [INFO] [sprout::supervisor] SPROUT: Adding fallback app '/boot/ingestd'
+[23891858793] [INFO] [sprout::supervisor] SPROUT: Adding fallback app '/boot/cambium'
+[23893261326] [INFO] [sprout::supervisor] SPROUT: Launching app '/boot/clock'
+[23897780049] [INFO] [kernel::task::loader] Loading module: /boot/clock
+[23903707674] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[23911381362] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[23917883484] [INFO] [kernel::task::loader] Segment: vaddr=203dc0 exec=false
+[23923812759] [INFO] [kernel::task::loader]   Overlap at 203000: merging perms to r=true w=false x=true
+[23926280730] [INFO] [kernel::task::loader] Segment: vaddr=204e30 exec=false
+[23927570469] [INFO] [kernel::task::loader]   Overlap at 204000: merging perms to r=true w=true x=true
+[23945316285] [INFO] [sprout::supervisor] SPROUT: App launched (PID=4)
+[23951182332] [INFO] [sprout::supervisor] SPROUT: Launching app '/boot/font_explorer'
+[23952872427] [INFO] [kernel::task::loader] Loading module: /boot/font_explorer
+[23956589613] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[23964943596] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[23972276757] [INFO] [kernel::task::loader] Segment: vaddr=2041a0 exec=false
+[23978695059] [INFO] [kernel::task::loader]   Overlap at 204000: merging perms to r=true w=false x=true
+[23982430824] [INFO] [kernel::task::loader] Segment: vaddr=204668 exec=false
+[23983509132] [INFO] [kernel::task::loader]   Overlap at 204000: merging perms to r=true w=true x=true
+[23996401440] [INFO] [sprout::supervisor] SPROUT: App launched (PID=5)
+[24002959365] [INFO] [sprout::supervisor] SPROUT: Launching app '/boot/ingestd'
+[24006896034] [INFO] [kernel::task::loader] Loading module: /boot/ingestd
+[24007814787] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[24009700638] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[24027736854] [INFO] [kernel::task::loader] Segment: vaddr=20f750 exec=false
+[24034371108] [INFO] [kernel::task::loader]   Overlap at 20f000: merging perms to r=true w=false x=true
+[24049708485] [INFO] [kernel::task::loader] Segment: vaddr=215300 exec=false
+[24051742110] [INFO] [kernel::task::loader]   Overlap at 215000: merging perms to r=true w=true x=true
+[24062921916] [INFO] [sprout::supervisor] SPROUT: App launched (PID=6)
+[24069617220] [INFO] [sprout::supervisor] SPROUT: Launching app '/boot/cambium'
+[24072735522] [INFO] [kernel::task::loader] Loading module: /boot/cambium
+[24075224943] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[24076985196] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[24083583678] [INFO] [kernel::task::loader] Segment: vaddr=203e50 exec=false
+[24089912352] [INFO] [kernel::task::loader]   Overlap at 203000: merging perms to r=true w=false x=true
+[24099239340] [INFO] [kernel::task::loader] Segment: vaddr=204c88 exec=false
+[24101785092] [INFO] [kernel::task::loader]   Overlap at 204000: merging perms to r=true w=true x=true
+[24112392843] [INFO] [sprout::supervisor] SPROUT: App launched (PID=7)
+[24116073399] [INFO] [sprout::pipelines] SPROUT: Setting up display pipeline...
+[24145940676] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0044678
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[24226745202] [INFO] [task.user_enter] Entering user mode tid=4 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072367998592 RFLAGS_BEFORE=130 CR3_BEFORE=50745344 fs_base=0 gs_base=18446744071563776472
-[24234072852] [INFO] [clock] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ffea0 rip=0x2000cf rflags=0x206
-[24235801590] [INFO] [clock] starting clock publisher
-[24252162792] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0004178
+[24158896410] [INFO] [task.user_enter] Entering user mode tid=4 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072367998400 RFLAGS_BEFORE=134 CR3_BEFORE=50745344 fs_base=0 gs_base=18446744071563776472
+[24167820534] [INFO] [clock] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ffea0 rip=0x2000cf rflags=0x206
+[24174035754] [INFO] [clock] starting clock publisher
+[24191349072] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0004178
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[24264783477] [INFO] [task.user_enter] Entering user mode tid=5 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368016976 RFLAGS_BEFORE=134 CR3_BEFORE=50851840 fs_base=0 gs_base=18446744071563776472
-[24280046505] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0044678
+[24199888845] [INFO] [task.user_enter] Entering user mode tid=5 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368016784 RFLAGS_BEFORE=134 CR3_BEFORE=50851840 fs_base=0 gs_base=18446744071563776472
+[24213759702] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0044898
 USER_TRAMPOLINE: PC=0x2083b0 SP=0x800000 ARG0=0x0
-[24290569974] [INFO] [task.user_enter] Entering user mode tid=6 target_pc=2130864 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368034544 RFLAGS_BEFORE=134 CR3_BEFORE=50958336 fs_base=0 gs_base=18446744071563776472
-[24294402198] [ERROR] [INGESTD] Starting...
-[24304811520] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb004a130
+[24225719694] [INFO] [task.user_enter] Entering user mode tid=6 target_pc=2130864 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368034352 RFLAGS_BEFORE=134 CR3_BEFORE=50958336 fs_base=0 gs_base=18446744071563776472
+[24230733549] [ERROR] [INGESTD] Starting...
+[24238474722] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb004a120
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[24307379184] [INFO] [task.user_enter] Entering user mode tid=7 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368062240 RFLAGS_BEFORE=130 CR3_BEFORE=51134464 fs_base=0 gs_base=18446744071563776472
-[24312613446] [INFO] [cambium] cambium starting (v3: catch-up then stream)...
-[24329405364] [INFO] [clock] Clock thing created: 367
-[24330656493] [INFO] [clock] Waiting for UI Root (Compositor)...
-[24354003003] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: ptr=0x7fef88
-[24356327226] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: validating range len=48
-[24358029795] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: copyin success. mode=0 start_seq=0
-[24370321569] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=51 subj_lo=0
-[24396919899] [INFO] [clock] UI Root not found yet (attempt 1), still waiting...
-[24437007408] [ERROR] [INGESTD] Watch active. Loop start.
-[24475294899] [INFO] [sprout::pipelines] SPROUT: Using boot framebuffer
-[24477635523] [INFO] [sprout::pipelines] SPROUT: Display backend: BootFB (1920x1080 stride=7680)
-[25218088764] [INFO] [kernel::task::loader] Loading module: /boot/display_bootfb
-[25225282038] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
-[25228530327] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[25233911340] [INFO] [kernel::task::loader] Segment: vaddr=202318 exec=false
-[25240565163] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
-[25244367126] [INFO] [kernel::task::loader] Segment: vaddr=202f00 exec=false
-[25245415470] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=true x=true
-[25257607485] [INFO] [sprout::pipelines] SPROUT: Spawned display driver '/display_bootfb' (PID=8)
-[25277504868] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0004178
+[24248059902] [INFO] [task.user_enter] Entering user mode tid=7 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368061616 RFLAGS_BEFORE=130 CR3_BEFORE=51134464 fs_base=0 gs_base=18446744071563776472
+[24255836121] [INFO] [cambium] cambium starting (v3: catch-up then stream)...
+[24267699357] [INFO] [clock] Clock thing created: 367
+[24272741163] [INFO] [clock] Waiting for UI Root (Compositor)...
+[24286785435] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: ptr=0x7fef88
+[24294231390] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: validating range len=48
+[24296476710] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: copyin success. mode=0 start_seq=0
+[24299025102] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=51 subj_lo=0
+[24320429628] [INFO] [clock] UI Root not found yet (attempt 1), still waiting...
+[24342831117] [ERROR] [INGESTD] Watch active. Loop start.
+[24357453846] [INFO] [sprout::pipelines] SPROUT: Using boot framebuffer
+[24365573001] [INFO] [sprout::pipelines] SPROUT: Display backend: BootFB (1920x1080 stride=7680)
+[25112740752] [INFO] [kernel::task::loader] Loading module: /boot/display_bootfb
+[25117273236] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
+[25119055566] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[25124370975] [INFO] [kernel::task::loader] Segment: vaddr=202318 exec=false
+[25130794491] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
+[25135249623] [INFO] [kernel::task::loader] Segment: vaddr=202f00 exec=false
+[25136270082] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=true x=true
+[25163623188] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0004178
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x30002
-[25282244196] [INFO] [task.user_enter] Entering user mode tid=8 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368113664 RFLAGS_BEFORE=134 CR3_BEFORE=59535360 fs_base=0 gs_base=18446744071563776472
-[25288596168] [INFO] [display_bootfb] display_bootfb: starting (drv_req_r=2, drv_resp_w=3)
-[25324490664] [INFO] [kernel::syscall::handlers::device] DEVICE: task 8 claimed device 199 (handle 0)
-[25359963618] [INFO] [kernel::syscall::handlers::device] DEVICE: Mapped BAR0 phys=0x80000000 size=0x7e9000 -> virt=0x10000000
-[25377722304] [INFO] [sprout::supervisor] SPROUT: Found match for RTC: driver '/boot/rtc_cmos'
-[25384716555] [INFO] [kernel::task::loader] Loading module: /boot/rtc_cmos
-[25386576435] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
-[25388441727] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[25393917285] [INFO] [kernel::task::loader] Segment: vaddr=202c20 exec=false
-[25400460129] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
-[25407531501] [INFO] [kernel::task::loader] Segment: vaddr=203b10 exec=false
-[25408527573] [INFO] [kernel::task::loader]   Overlap at 203000: merging perms to r=true w=true x=true
-[25420494231] [INFO] [sprout::supervisor] SPROUT: Driver launched (PID=9)
-[25428133467] [INFO] [sprout::pipelines] SPROUT: Setting up input pipeline (keyboard + mouse)...
-[25431577611] [INFO] [sprout::pipelines] SPROUT: Created kbd_raw port (w=5, r=6)
-[25435555068] [INFO] [sprout::pipelines] SPROUT: Created mouse_raw port (w=7, r=8)
-[25437925359] [INFO] [sprout::pipelines] SPROUT: Created evt port (w=9, r=10)
-[25439683500] [INFO] [kernel::task::loader] Loading module: /boot/ps2_kbd
-[25440541137] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[25442397024] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[25451368668] [INFO] [kernel::task::loader] Segment: vaddr=2015b0 exec=false
-[25457749977] [INFO] [kernel::task::loader]   Overlap at 201000: merging perms to r=true w=false x=true
-[25460994966] [INFO] [kernel::task::loader] Segment: vaddr=201f40 exec=false
-[25461909792] [INFO] [kernel::task::loader]   Overlap at 201000: merging perms to r=true w=true x=true
-[25477026465] [INFO] [sprout::pipelines] SPROUT: Spawned ps2_kbd (PID=10)
-[25479871395] [INFO] [kernel::task::loader] Loading module: /boot/ps2_mouse
-[25482714708] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[25484438430] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[25489695594] [INFO] [kernel::task::loader] Segment: vaddr=2026c0 exec=false
-[25496359053] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
-[25502140455] [INFO] [kernel::task::loader] Segment: vaddr=2032d0 exec=false
-[25503142632] [INFO] [kernel::task::loader]   Overlap at 203000: merging perms to r=true w=true x=true
-[25514823510] [INFO] [sprout::pipelines] SPROUT: Spawned ps2_mouse (PID=11)
-[25523421297] [INFO] [sprout::pipelines] SPROUT: Created evt_echo port (w=11, r=12)
-[25526336022] [INFO] [kernel::task::loader] Loading module: /boot/bristle
-[25527208575] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[25529316582] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[25539380493] [INFO] [kernel::task::loader] Segment: vaddr=2020e0 exec=false
-[25540867737] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
-[25542551133] [INFO] [kernel::task::loader] Segment: vaddr=202ef8 exec=false
-[25543484538] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=true x=true
-[25554864555] [INFO] [sprout::pipelines] SPROUT: Spawned bristle (PID=12)
-[25587803505] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0044678
+[25201800063] [INFO] [task.user_enter] Entering user mode tid=8 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=0 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368113760 RFLAGS_BEFORE=134 CR3_BEFORE=59535360 fs_base=0 gs_base=18446744071563776472
+[25213479621] [INFO] [display_bootfb] display_bootfb: starting (drv_req_r=2, drv_resp_w=3)
+[25230158811] [INFO] [sprout::pipelines] SPROUT: Spawned display driver '/display_bootfb' (PID=8)
+[25261102284] [INFO] [kernel::syscall::handlers::device] DEVICE: task 8 claimed device 199 (handle 0)
+[25294687209] [INFO] [kernel::syscall::handlers::device] DEVICE: Mapped BAR0 phys=0x80000000 size=0x7e9000 -> virt=0x10000000
+[25323915408] [INFO] [sprout::supervisor] SPROUT: Found match for RTC: driver '/boot/rtc_cmos'
+[25332291798] [INFO] [kernel::task::loader] Loading module: /boot/rtc_cmos
+[25333225500] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
+[25335153690] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[25341173352] [INFO] [kernel::task::loader] Segment: vaddr=202c20 exec=false
+[25347553044] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
+[25356864357] [INFO] [kernel::task::loader] Segment: vaddr=203b10 exec=false
+[25357853268] [INFO] [kernel::task::loader]   Overlap at 203000: merging perms to r=true w=true x=true
+[25370035977] [INFO] [sprout::supervisor] SPROUT: Driver launched (PID=9)
+[25378054713] [INFO] [sprout::pipelines] SPROUT: Setting up input pipeline (keyboard + mouse)...
+[25389252141] [INFO] [sprout::pipelines] SPROUT: Created kbd_raw port (w=5, r=6)
+[25391543991] [INFO] [sprout::pipelines] SPROUT: Created mouse_raw port (w=7, r=8)
+[25396546362] [INFO] [sprout::pipelines] SPROUT: Created evt port (w=9, r=10)
+[25411020690] [INFO] [kernel::task::loader] Loading module: /boot/ps2_kbd
+[25411979571] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25413788565] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[25420703352] [INFO] [kernel::task::loader] Segment: vaddr=2015b0 exec=false
+[25433471184] [INFO] [kernel::task::loader]   Overlap at 201000: merging perms to r=true w=false x=true
+[25435279122] [INFO] [kernel::task::loader] Segment: vaddr=201f40 exec=false
+[25436392905] [INFO] [kernel::task::loader]   Overlap at 201000: merging perms to r=true w=true x=true
+[25455988998] [INFO] [sprout::pipelines] SPROUT: Spawned ps2_kbd (PID=10)
+[25462010706] [INFO] [kernel::task::loader] Loading module: /boot/ps2_mouse
+[25463089509] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25465096602] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[25470820452] [INFO] [kernel::task::loader] Segment: vaddr=2026c0 exec=false
+[25482164070] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
+[25484776053] [INFO] [kernel::task::loader] Segment: vaddr=2032d0 exec=false
+[25485977946] [INFO] [kernel::task::loader]   Overlap at 203000: merging perms to r=true w=true x=true
+[25516143840] [INFO] [sprout::pipelines] SPROUT: Spawned ps2_mouse (PID=11)
+[25519477467] [INFO] [sprout::pipelines] SPROUT: Created evt_echo port (w=11, r=12)
+[25531486233] [INFO] [kernel::task::loader] Loading module: /boot/bristle
+[25532659284] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25534706406] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[25548210996] [INFO] [kernel::task::loader] Segment: vaddr=2020e0 exec=false
+[25549379196] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
+[25551087210] [INFO] [kernel::task::loader] Segment: vaddr=202ef8 exec=false
+[25552379589] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=true x=true
+[25574527275] [INFO] [sprout::pipelines] SPROUT: Spawned bristle (PID=12)
+[25631122176] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0044898
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0xdb
-[25591009224] [INFO] [task.user_enter] Entering user mode tid=9 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368136000 RFLAGS_BEFORE=130 CR3_BEFORE=59650048 fs_base=0 gs_base=18446744071563776472
-[25598767755] [INFO] [rtc_cmos] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ffed0 rip=0x200037 rflags=0x202
-[25607212950] [INFO] [rtc_cmos] Starting... arg=db
-[25609876545] [INFO] [rtc_cmos] Serving device ID: ThingId([219, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-[25617432324] [INFO] [rtc_cmos] RTC: 2026-01-20 04:26:49 = 1768883209 unix_secs
-[25623190989] [INFO] [kernel::time] System clock anchored: unix_secs=1768883209, mono_ns=12811171378, offset=1768883196188828622ns
-[25625269296] [INFO] [rtc_cmos] System clock anchored
-[25654810863] [INFO] [rtc_cmos] Publishing time. Entering maintenance loop.
-[25665478839] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb00944d0
+[25646317521] [INFO] [task.user_enter] Entering user mode tid=9 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368136048 RFLAGS_BEFORE=130 CR3_BEFORE=59650048 fs_base=0 gs_base=18446744071563776472
+[25654233792] [INFO] [rtc_cmos] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ffed0 rip=0x200037 rflags=0x202
+[25655922732] [INFO] [rtc_cmos] Starting... arg=db
+[25669239519] [INFO] [rtc_cmos] Serving device ID: ThingId([219, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+[25682202810] [INFO] [rtc_cmos] RTC: 2026-01-20 04:28:48 = 1768883328 unix_secs
+[25688215344] [INFO] [kernel::time] System clock anchored: unix_secs=1768883328, mono_ns=12843683902, offset=1768883315156316098ns
+[25700323176] [INFO] [rtc_cmos] System clock anchored
+[25761335985] [INFO] [rtc_cmos] Publishing time. Entering maintenance loop.
+[25777780380] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0091dd0
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x5
-[25668842826] [INFO] [task.user_enter] Entering user mode tid=10 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368170528 RFLAGS_BEFORE=130 CR3_BEFORE=59752448 fs_base=0 gs_base=18446744071563776472
-[25675221891] [INFO] [ps2_kbd] ps2_kbd: online (handle=5)
-[25682600163] [INFO] [kernel::syscall::handlers::device] DEVICE: task subscribed to vector 0x21
-[25688446245] [INFO] [ps2_kbd] ps2_kbd: subscribed to IRQ1 (vector 0x21)
-[25690254018] [INFO] [ps2_kbd] ps2_kbd: entering interrupt-driven loop
-[25707111903] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb00a1ad8
+[25780169910] [INFO] [task.user_enter] Entering user mode tid=10 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368170656 RFLAGS_BEFORE=134 CR3_BEFORE=59752448 fs_base=0 gs_base=18446744071563776472
+[25797449535] [INFO] [ps2_kbd] ps2_kbd: online (handle=5)
+[25811614257] [INFO] [kernel::syscall::handlers::device] DEVICE: task subscribed to vector 0x21
+[25815287916] [INFO] [ps2_kbd] ps2_kbd: subscribed to IRQ1 (vector 0x21)
+[25816821063] [INFO] [ps2_kbd] ps2_kbd: entering interrupt-driven loop
+[25838430783] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0094980
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x7
-[25719638802] [INFO] [task.user_enter] Entering user mode tid=11 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368188016 RFLAGS_BEFORE=130 CR3_BEFORE=59846656 fs_base=0 gs_base=18446744071563776472
-[25725972756] [INFO] [ps2_mouse] ps2_mouse: online (handle=7)
-[25728596223] [INFO] [ps2_mouse] ps2_mouse: enabling aux port
-[25740348447] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb00b5db8
+[25841137872] [INFO] [task.user_enter] Entering user mode tid=11 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368188144 RFLAGS_BEFORE=134 CR3_BEFORE=59846656 fs_base=0 gs_base=18446744071563776472
+[25858648035] [INFO] [ps2_mouse] ps2_mouse: online (handle=7)
+[25860502338] [INFO] [ps2_mouse] ps2_mouse: enabling aux port
+[25879737477] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb00ab0f8
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x600080009000b
-[25747568253] [INFO] [task.user_enter] Entering user mode tid=12 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368213888 RFLAGS_BEFORE=130 CR3_BEFORE=59949056 fs_base=0 gs_base=18446744071563776472
-[25753491588] [INFO] [bristle] bristle: online (kbd=6, mouse=8, evt=9, evt_echo=11)
-[25767936348] [INFO] [bristle] bristle: registered in graph as svc.Input (id=468)
-[25788846237] [INFO] [sprout::pipelines] SPROUT: Bloom handles via BS=442 backend=BootFB
-[25802269449] [INFO] [kernel::task::loader] Loading module: /boot/bloom
-[25807046859] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[25809027816] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[25908385899] [INFO] [kernel::task::loader] Segment: vaddr=261450 exec=false
-[25915697049] [INFO] [kernel::task::loader]   Overlap at 261000: merging perms to r=true w=false x=true
-[25935208926] [INFO] [kernel::task::loader] Segment: vaddr=26cfb8 exec=false
-[25939392072] [INFO] [kernel::task::loader]   Overlap at 26c000: merging perms to r=true w=true x=true
-[25952502279] [INFO] [sprout::pipelines] SPROUT: Spawned bloom (PID=13)
-[25960597608] [INFO] [kernel::task::loader] Loading module: /boot/echo
-[25966708713] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[25969297398] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
-[25974787707] [INFO] [kernel::task::loader] Segment: vaddr=202110 exec=false
-[25975842420] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
-[25982590755] [INFO] [kernel::task::loader] Segment: vaddr=202e58 exec=false
-[25988975496] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=true x=true
-[26003152065] [INFO] [sprout::pipelines] SPROUT: Spawned echo (PID=14)
-[26010774603] [INFO] [sprout::pipelines] SPROUT: Input pipeline ready (keyboard + mouse)
-[26014015071] [INFO] [sprout::supervisor] SPROUT: Entering supervisor loop.
-[26036131770] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0014b08
+[25882168521] [INFO] [task.user_enter] Entering user mode tid=12 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368214016 RFLAGS_BEFORE=134 CR3_BEFORE=59949056 fs_base=0 gs_base=18446744071563776472
+[25901369604] [INFO] [bristle] bristle: online (kbd=6, mouse=8, evt=9, evt_echo=11)
+[25938402996] [INFO] [bristle] bristle: registered in graph as svc.Input (id=468)
+[25969708116] [INFO] [sprout::pipelines] SPROUT: Bloom handles via BS=442 backend=BootFB
+[25972100418] [INFO] [kernel::task::loader] Loading module: /boot/bloom
+[25973050191] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25985680710] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[26216772516] [INFO] [kernel::task::loader] Segment: vaddr=261450 exec=false
+[26218516995] [INFO] [kernel::task::loader]   Overlap at 261000: merging perms to r=true w=false x=true
+[26241658443] [INFO] [kernel::task::loader] Segment: vaddr=26cfb8 exec=false
+[26253436209] [INFO] [kernel::task::loader]   Overlap at 26c000: merging perms to r=true w=true x=true
+[26285307642] [INFO] [sprout::pipelines] SPROUT: Spawned bloom (PID=13)
+[26289586257] [INFO] [kernel::task::loader] Loading module: /boot/echo
+[26302652706] [INFO] [kernel::task::loader]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[26304692337] [INFO] [kernel::task::loader] Segment: vaddr=200000 exec=true
+[26310111696] [INFO] [kernel::task::loader] Segment: vaddr=202110 exec=false
+[26311318308] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=false x=true
+[26323557348] [INFO] [kernel::task::loader] Segment: vaddr=202e58 exec=false
+[26324685354] [INFO] [kernel::task::loader]   Overlap at 202000: merging perms to r=true w=true x=true
+[26346898281] [INFO] [sprout::pipelines] SPROUT: Spawned echo (PID=14)
+[26349208512] [INFO] [sprout::pipelines] SPROUT: Input pipeline ready (keyboard + mouse)
+[26350582269] [INFO] [sprout::supervisor] SPROUT: Entering supervisor loop.
+[26398129956] [INFO] [ps2_mouse] ps2_mouse: controller cfg already correct (0x47)
+[26399955813] [INFO] [ps2_mouse] ps2_mouse: sending enable command (0xF4)
+[26412268377] [INFO] [ps2_mouse] ps2_mouse: enable ACK received (0xFA)
+[26428352742] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0014c50
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x1ba
-[26049020580] [INFO] [task.user_enter] Entering user mode tid=13 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368258464 RFLAGS_BEFORE=134 CR3_BEFORE=60055552 fs_base=0 gs_base=18446744071563776472
-[26058163263] [INFO] [bloom::logging] bloom: logging initialized
-[26077643328] [INFO] [ps2_mouse] ps2_mouse: controller cfg already correct (0x47)
-[26080248381] [INFO] [ps2_mouse] ps2_mouse: sending enable command (0xF4)
-[26082076449] [INFO] [ps2_mouse] ps2_mouse: enable ACK received (0xFA)
-[26087101986] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb00944d0
+[26430713100] [INFO] [task.user_enter] Entering user mode tid=13 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368258432 RFLAGS_BEFORE=130 CR3_BEFORE=60055552 fs_base=0 gs_base=18446744071563776472
+[26447106114] [INFO] [bloom::logging] bloom: logging initialized
+[26464647825] [INFO] [kernel::task::scheduler::spawn] Trampoline entered. Arg: 0xffffffffb0091ed0
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0xc
-[26096772174] [INFO] [task.user_enter] Entering user mode tid=14 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368275952 RFLAGS_BEFORE=134 CR3_BEFORE=60592128 fs_base=0 gs_base=18446744071563776472
-[26104164801] [INFO] [echo] echo: online (handle=12)
-[26109357351] [INFO] [echo] echo: ready for Bristle events (keyboard + mouse)
-[26125663806] [INFO] [bloom] bloom: [bloom] Bootstrapped via Bytespace ID=442
-[26138461932] [INFO] [bloom] bloom: [bloom] starting (arg_req=1 arg_resp=4 bristle=10 font_svc=0)
-[26158392216] [INFO] [bloom] bloom: [bloom] spawned wallpaper_loader thread (tid=15)
-[26180556765] [INFO] [bloom] bloom: [bloom] spawned cursor_loader thread (tid=16)
-[26202347787] [INFO] [bloom] bloom: [bloom] spawned font_loader thread (tid=17)
-[26214956196] [INFO] [bloom] bloom: [bloom] discovering compositor target...
-T:B040 [26234631885] [INFO] [bloom] bloom: [wallpaper_loader] thread started
-T:AC70 [26250829176] [INFO] [bloom] bloom: [cursor_loader] thread started
-T:A200 [26269297626] [INFO] [bloom] bloom: [font_loader] thread started
-[26271079527] [INFO] [bloom] bloom: [font_loader] scanning boot modules for fonts...
-[26290548966] [INFO] [bloom] bloom: [font_loader] found 42 boot modules
-[26657583150] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/DSEG7Classic-Regular.ttf'
-[26696774412] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=179 size=23272 name='/assets/fonts/DSEG7Classic-Regular.ttf'
-[26764262877] [INFO] [bloom::asset] [asset_bank] worker spawned tid=18 (priority=2)
-T:3620 [26784730500] [INFO] [bloom::asset] [asset_bank] worker started (priority bump)
-[26789162829] [INFO] [bloom::asset] [asset_bank] mapping font bytespace 179 (23272 bytes)
-[26795009340] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/Hack-Regular.ttf'
-[26810055987] [INFO] [ps2_mouse] ps2_mouse: init done
-[26811608109] [INFO] [kernel::syscall::handlers::device] DEVICE: task subscribed to vector 0x2c
-[26813093373] [INFO] [ps2_mouse] ps2_mouse: subscribed to IRQ12 (vector 0x2c)
-[26817129735] [INFO] [ps2_mouse] ps2_mouse: entering interrupt-driven loop
-[26827209651] [INFO] [bloom::asset] [asset_bank] mapped at 0x107eb000
-[26833088502] [INFO] [bloom::asset] [asset_bank] parsing font '/assets/fonts/DSEG7Classic-Regular.ttf'...
-[26873580855] [INFO] [bloom::asset] [asset_bank] SUCCESS: font parsed
-[26884208901] [INFO] [bloom::asset] [asset_bank] publish_font (pending): 'DSEG7Classic-Regular.ttf' in slot 0
-[26900751999] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=182 size=309408 name='/assets/fonts/Hack-Regular.ttf'
-[26918908764] [INFO] [bloom::asset] [asset_bank] mapping font bytespace 182 (309408 bytes)
-[26923490154] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/NotoSans-Regular.ttf'
-[26927950896] [INFO] [bloom] bloom: [wallpaper_loader] searching for wallpaper...
-[26935174266] [INFO] [bloom] bloom: [wallpaper_loader] trying: /assets/wallpapers/clouds.bmp
-[26949059973] [INFO] [bloom::asset] [asset_bank] mapped at 0x107f1000
-[26955354162] [INFO] [bloom::asset] [asset_bank] parsing font '/assets/fonts/Hack-Regular.ttf'...
-[27509823462] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=185 size=569208 name='/assets/fonts/NotoSans-Regular.ttf'
-[27525963564] [INFO] [bloom] bloom: [cursor_loader] searching for cursor...
-[27532940094] [INFO] [bloom] bloom: [cursor_loader] trying: /assets/cursors/plain/Normal.cur
-[27855359895] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/NotoSansSymbol-Regular.ttf'
-[27872360010] [INFO] [bloom::asset] [asset_bank] SUCCESS: font parsed
-[27876989382] [INFO] [bloom::asset] [asset_bank] publish_font (pending): 'Hack-Regular.ttf' in slot 1
-[27878422374] [INFO] [bloom::asset] [asset_bank] mapping font bytespace 185 (569208 bytes)
-[27893635374] [INFO] [bloom::asset] [asset_bank] mapped at 0x1083d000
-[27900043050] [INFO] [bloom::asset] [asset_bank] parsing font '/assets/fonts/NotoSans-Regular.ttf'...
-[28212445635] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=188 size=258156 name='/assets/fonts/NotoSansSymbol-Regular.ttf'
-[28672838535] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/NotoSansSymbol2-Regular.ttf'
-[29496112503] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=191 size=656852 name='/assets/fonts/NotoSansSymbol2-Regular.ttf'
-[29970449190] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/NotoSerif-Regular.ttf'
-[30344080767] [INFO] [bloom::compositor] bloom: compositor bytespace 387 (1920x1080 stride=7680 format=1)
-[30702115158] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=194 size=616196 name='/assets/fonts/NotoSerif-Regular.ttf'
-[31031672595] [INFO] [bloom] bloom: [font_loader] immediate scan complete, entering watch loop
-[31365005265] [INFO] [bloom::compositor] bloom: display backend: BootFB
-[31703680272] [INFO] [bloom::compositor] bloom: mapped size=8294400 (source=bytespace_info)
-[32056043250] [INFO] [bloom] bloom: [bloom] compositor target: 1920x1080 @ 0x108c8000 backend=BootFB
-[32058095685] [INFO] [bloom] bloom: [bloom] presenter: driver (req=1 resp=4)
-[32060355591] [INFO] [bloom::frame_loop] bloom: running (fps_target=60)
-[32452222869] [INFO] [stem::ui] UiBuilder: created root 552
-[32458665525] [INFO] [bloom] bloom: [bloom] created UI root node: 552
-[32492978364] [INFO] [display_bootfb] display_bootfb: bound bytespace 387
-[32564910246] [INFO] [bloom::asset] [asset_bank] SUCCESS: font parsed
-[32571377850] [INFO] [bloom::asset] [asset_bank] publish_font (pending): 'NotoSans-Regular.ttf' in slot 2
-[32573577333] [INFO] [bloom::asset] [asset_bank] mapping font bytespace 188 (258156 bytes)
-[32584130106] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: ptr=0x7fd5b0
-[32592292755] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: validating range len=48
-[32593723668] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: copyin success. mode=1 start_seq=0
-[32595272919] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: NO FILTER (filter_ptr=0x0 filter_len=0)
-[32609736852] [INFO] [bloom::asset] [asset_bank] mapped at 0x1189a000
-[32617319955] [INFO] [bloom::asset] [asset_bank] parsing font '/assets/fonts/NotoSansSymbol-Regular.ttf'...
-[32850634443] [INFO] [bloom] bloom: [bloom] ui watch opened UNFILTERED (userspace filter pred=UI_TEXT id=530)
-[33614517255] [INFO] [clock] Found UI Root: 552 (attempt 5)
-[36004687950] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: ptr=0x100c1b40
-[36006913899] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: validating range len=48
-[36008120478] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: copyin success. mode=1 start_seq=0
-[36009351378] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: NO FILTER (filter_ptr=0x0 filter_len=0)
-[36312950520] [INFO] [bloom::asset] [asset_bank] SUCCESS: font parsed
-[36321078651] [INFO] [bloom::asset] [asset_bank] publish_font (pending): 'NotoSansSymbol-Regular.ttf' in slot 3
-[36326672382] [INFO] [bloom::asset] [asset_bank] mapping font bytespace 191 (656852 bytes)
-[36335037354] [INFO] [bloom] bloom: [font_loader] watch opened (id=576)
-[36358886289] [INFO] [bloom::asset] [asset_bank] mapped at 0x118da000
-[36363948753] [INFO] [bloom::asset] [asset_bank] parsing font '/assets/fonts/NotoSansSymbol2-Regular.ttf'...
-[37956480771] [INFO] [bloom] bloom: [cursor_loader] SUCCESS: found candidate '/assets/cursors/plain/Normal.cur', enqueuing load
-[38637461874] [INFO] [bloom] bloom: [cursor_loader] thread done, sleeping forever
-[39643225347] [INFO] [bloom] bloom: [wallpaper_loader] SUCCESS: found candidate '/assets/wallpapers/clouds.bmp', enqueuing load
+[26467067022] [INFO] [task.user_enter] Entering user mode tid=14 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562132397 RSP_BEFORE=18446744072368275888 RFLAGS_BEFORE=130 CR3_BEFORE=60592128 fs_base=0 gs_base=18446744071563776472
+[26477532609] [INFO] [echo] echo: online (handle=12)
+[26479345629] [INFO] [echo] echo: ready for Bristle events (keyboard + mouse)
+[26518545405] [INFO] [bloom] bloom: [bloom] Bootstrapped via Bytespace ID=442
+[26527248264] [INFO] [bloom] bloom: [bloom] starting (arg_req=1 arg_resp=4 bristle=10 font_svc=0)
+[26574174033] [INFO] [bloom] bloom: [bloom] spawned wallpaper_loader thread (tid=15)
+[26603428368] [INFO] [bloom] bloom: [bloom] spawned cursor_loader thread (tid=16)
+[26636966334] [INFO] [bloom] bloom: [bloom] spawned font_loader thread (tid=17)
+[26638713222] [INFO] [bloom] bloom: [bloom] discovering compositor target...
+T:B040 [26657312484] [INFO] [bloom] bloom: [wallpaper_loader] thread started
+T:AC70 [26661095769] [INFO] [bloom] bloom: [cursor_loader] thread started
+T:A200 [26682100137] [INFO] [bloom] bloom: [font_loader] thread started
+[26684697006] [INFO] [bloom] bloom: [font_loader] scanning boot modules for fonts...
+[26702539512] [INFO] [bloom] bloom: [font_loader] found 42 boot modules
+[27084340503] [INFO] [ps2_mouse] ps2_mouse: init done
+[27095586573] [INFO] [kernel::syscall::handlers::device] DEVICE: task subscribed to vector 0x2c
+[27097640988] [INFO] [ps2_mouse] ps2_mouse: subscribed to IRQ12 (vector 0x2c)
+[27098939538] [INFO] [ps2_mouse] ps2_mouse: entering interrupt-driven loop
+[27133775295] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/DSEG7Classic-Regular.ttf'
+[27158648121] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=179 size=23272 name='/assets/fonts/DSEG7Classic-Regular.ttf'
+[27269030712] [INFO] [bloom::asset] [asset_bank] worker spawned tid=18 (priority=2)
+T:3620 [27283374789] [INFO] [bloom::asset] [asset_bank] worker started (priority bump)
+[27285542295] [INFO] [bloom::asset] [asset_bank] mapping font bytespace 179 (23272 bytes)
+[27290755338] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/Hack-Regular.ttf'
+[27309374433] [INFO] [bloom::asset] [asset_bank] mapped at 0x107eb000
+[27311018658] [INFO] [bloom::asset] [asset_bank] parsing font '/assets/fonts/DSEG7Classic-Regular.ttf'...
+[27404928276] [INFO] [bloom::asset] [asset_bank] SUCCESS: font parsed
+[27420029505] [INFO] [bloom::asset] [asset_bank] publish_font (pending): 'DSEG7Classic-Regular.ttf' in slot 0
+[27454587699] [INFO] [bloom] bloom: [wallpaper_loader] searching for wallpaper...
+[27456959145] [INFO] [bloom] bloom: [wallpaper_loader] trying: /assets/wallpapers/clouds.bmp
+[27476983941] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=182 size=309408 name='/assets/fonts/Hack-Regular.ttf'
+[27498339066] [INFO] [bloom::asset] [asset_bank] mapping font bytespace 182 (309408 bytes)
+[27504129972] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/NotoSans-Regular.ttf'
+[27525849516] [INFO] [bloom::asset] [asset_bank] mapped at 0x107f1000
+[27527370981] [INFO] [bloom::asset] [asset_bank] parsing font '/assets/fonts/Hack-Regular.ttf'...
+[27728694114] [INFO] [bloom] bloom: [cursor_loader] searching for cursor...
+[27762030879] [INFO] [bloom] bloom: [cursor_loader] trying: /assets/cursors/plain/Normal.cur
+[28080895029] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=185 size=569208 name='/assets/fonts/NotoSans-Regular.ttf'
+[28430662920] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/NotoSansSymbol-Regular.ttf'
+[28586385993] [INFO] [bloom::asset] [asset_bank] SUCCESS: font parsed
+[28589179014] [INFO] [bloom::asset] [asset_bank] publish_font (pending): 'Hack-Regular.ttf' in slot 1
+[28590751365] [INFO] [bloom::asset] [asset_bank] mapping font bytespace 185 (569208 bytes)
+[28606581069] [INFO] [bloom::asset] [asset_bank] mapped at 0x1083d000
+[28612480578] [INFO] [bloom::asset] [asset_bank] parsing font '/assets/fonts/NotoSans-Regular.ttf'...
+[28802172828] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=188 size=258156 name='/assets/fonts/NotoSansSymbol-Regular.ttf'
+[29147465424] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/NotoSansSymbol2-Regular.ttf'
+[29916352620] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=191 size=656852 name='/assets/fonts/NotoSansSymbol2-Regular.ttf'
+[30667150536] [INFO] [bloom] bloom: [font_loader] found font module: '/assets/fonts/NotoSerif-Regular.ttf'
+[30678769704] [INFO] [bloom::compositor] bloom: compositor bytespace 387 (1920x1080 stride=7680 format=1)
+[31366526862] [INFO] [bloom] bloom: [font_loader] enqueuing immediate font load: bs=194 size=616196 name='/assets/fonts/NotoSerif-Regular.ttf'
+[31784540238] [INFO] [bloom] bloom: [font_loader] immediate scan complete, entering watch loop
+[31796543922] [INFO] [bloom::compositor] bloom: display backend: BootFB
+[32138422734] [INFO] [bloom::compositor] bloom: mapped size=8294400 (source=bytespace_info)
+[32489712057] [INFO] [bloom] bloom: [bloom] compositor target: 1920x1080 @ 0x108c8000 backend=BootFB
+[32500183089] [INFO] [bloom] bloom: [bloom] presenter: driver (req=1 resp=4)
+[32505789096] [INFO] [bloom::frame_loop] bloom: running (fps_target=60)
+[32823950841] [INFO] [stem::ui] UiBuilder: created root 552
+[32829881073] [INFO] [bloom] bloom: [bloom] created UI root node: 552
+[32867570043] [INFO] [display_bootfb] display_bootfb: bound bytespace 387
+[33222686706] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: ptr=0x7fd5b0
+[33224221899] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: validating range len=48
+[33236485128] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[33238199115] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: NO FILTER (filter_ptr=0x0 filter_len=0)
+[33607759878] [INFO] [bloom] bloom: [bloom] ui watch opened UNFILTERED (userspace filter pred=UI_TEXT id=530)
+[34018328718] [INFO] [clock] Found UI Root: 552 (attempt 5)
+[34248955620] [INFO] [bloom::asset] [asset_bank] SUCCESS: font parsed
+[34265553531] [INFO] [bloom::asset] [asset_bank] publish_font (pending): 'NotoSans-Regular.ttf' in slot 2
+[34267348137] [INFO] [bloom::asset] [asset_bank] mapping font bytespace 188 (258156 bytes)
+[34326037515] [INFO] [bloom::asset] [asset_bank] mapped at 0x1189a000
+[34330297287] [INFO] [bloom::asset] [asset_bank] parsing font '/assets/fonts/NotoSansSymbol-Regular.ttf'...
+[36421812636] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: ptr=0x100c1b40
+[36423646743] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: validating range len=48
+[36424890579] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[36426083826] [INFO] [kernel::syscall::handlers::root_handlers] sys_root_watch_open: NO FILTER (filter_ptr=0x0 filter_len=0)
+[36806977218] [INFO] [bloom] bloom: [font_loader] watch opened (id=576)
+[37823553603] [INFO] [bloom] bloom: [cursor_loader] SUCCESS: found candidate '/assets/cursors/plain/Normal.cur', enqueuing load
+[39683346450] [INFO] [bloom] bloom: [wallpaper_loader] SUCCESS: found candidate '/assets/wallpapers/clouds.bmp', enqueuing load
 
 ```
 </details>

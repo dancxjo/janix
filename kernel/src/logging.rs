@@ -6,7 +6,7 @@
 use crate::BootRuntimeBase;
 use alloc::format;
 use core::fmt::{self, Write};
-use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use spin::Mutex;
 
 // Re-export for macros
@@ -16,6 +16,20 @@ pub type LogLevel = Level;
 static GLOBAL_LOGGER: Mutex<Option<Logger>> = Mutex::new(None);
 static IN_GRAPH_LOG: AtomicBool = AtomicBool::new(false);
 static MUTE_SERIAL: AtomicBool = AtomicBool::new(false);
+
+/// Minimum log level to output (1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace, 0=Contract-only)
+/// Default is 0 (contract-only) for performance. Set to 3 for Info+ during debugging.
+static MIN_LOG_LEVEL: AtomicU8 = AtomicU8::new(0);
+
+/// Set the minimum log level for output (0=Contract-only, 1=Error+, 2=Warn+, etc.)
+pub fn set_log_level(level: u8) {
+    MIN_LOG_LEVEL.store(level, Ordering::Relaxed);
+}
+
+/// Get the current minimum log level
+pub fn get_log_level() -> u8 {
+    MIN_LOG_LEVEL.load(Ordering::Relaxed)
+}
 
 /// Global sequence counter for log ordering
 static GLOBAL_SEQ: AtomicU64 = AtomicU64::new(1);
@@ -59,7 +73,7 @@ impl LogTransaction {
         let span_id = new_span();
         set_current_span(span_id);
 
-        // Emit BEGIN marker
+        // Emit BEGIN marker (always, like contract)
         let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
@@ -76,7 +90,7 @@ impl LogTransaction {
 
 impl Drop for LogTransaction {
     fn drop(&mut self) {
-        // Emit END marker
+        // Emit END marker (always, like contract)
         let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
@@ -140,6 +154,15 @@ fn can_log_to_graph(level: Level) -> bool {
     crate::root::is_inbox_ready() && level != Level::Trace
 }
 
+/// Check if this level should be logged (considering MIN_LOG_LEVEL)
+#[inline]
+fn should_log(level: Level) -> bool {
+    let min = MIN_LOG_LEVEL.load(Ordering::Relaxed);
+    // If min is 0, only contract! messages pass (they call _log_contract directly)
+    // Otherwise, check if level <= min (Error=1 is most severe, Trace=5 is least)
+    min > 0 && (level as u8) <= min
+}
+
 pub fn _log_event(
     meta: LogMetadata,
     event_sym: crate::root::SymbolShell,
@@ -147,6 +170,11 @@ pub fn _log_event(
     fields: &[(&'static str, u64)],
     about: &[u64],
 ) {
+    // Check log level filter
+    if !should_log(meta.level) {
+        return;
+    }
+
     // Get sequence number first (guarantees ordering)
     let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
 
@@ -225,6 +253,22 @@ pub fn _log(meta: LogMetadata, args: fmt::Arguments) {
     _log_event(meta.clone(), crate::root::SymbolShell::Static(meta.module), args, &[], &[]);
 }
 
+/// Contract-level logging - ALWAYS outputs regardless of log level filter.
+/// Use for critical boot milestones and test verification points.
+pub fn _log_contract(source: &'static str, args: fmt::Arguments) {
+    let _seq = GLOBAL_SEQ.fetch_add(1, Ordering::Relaxed);
+
+    if !MUTE_SERIAL.load(Ordering::Relaxed) {
+        let mut lock = GLOBAL_LOGGER.lock();
+        if let Some(writer) = lock.as_mut() {
+            let ts = writer.runtime.mono_ticks();
+            let _ = write!(writer, "[{}] [CONTRACT] [{}] ", ts, source);
+            let _ = writer.write_fmt(args);
+            let _ = writer.write_char('\n');
+        }
+    }
+}
+
 /// Log a raw string without any formatting (for kprint! compatibility)
 pub fn _log_raw(args: fmt::Arguments) {
     if !MUTE_SERIAL.load(Ordering::Relaxed) {
@@ -233,6 +277,15 @@ pub fn _log_raw(args: fmt::Arguments) {
             let _ = writer.write_fmt(args);
         }
     }
+}
+
+/// Contract-level logging macro - ALWAYS outputs regardless of log level.
+/// Use for critical boot milestones and BDD test verification points.
+#[macro_export]
+macro_rules! contract {
+    ($($arg:tt)*) => {
+        $crate::logging::_log_contract(module_path!(), format_args!($($arg)*))
+    };
 }
 
 #[macro_export]

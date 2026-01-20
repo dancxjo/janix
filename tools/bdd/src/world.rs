@@ -29,23 +29,47 @@ pub struct ThingOsWorld {
     /// VNC display number (for screenshot capture)
     #[world(skip)]
     pub vnc_display: Option<u16>,
+    /// Path to the ISO file created for this scenario
+    #[world(skip)]
+    pub iso_path: Option<PathBuf>,
 }
 
 impl ThingOsWorld {
     /// Boot the OS in QEMU for the given architecture.
+    /// This builds a unique ISO with 800x600 resolution for this scenario.
     pub async fn boot(&mut self, arch: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.arch = arch.to_string();
 
-        let iso_path = format!("thing-os-{}.iso", arch);
-        let ovmf_code = format!("vendor/ovmf/ovmf-code-{}.fd", arch);
-        let ovmf_vars = format!("vendor/ovmf/ovmf-vars-{}.fd", arch);
-
-        // Create unique socket paths for this test run
+        // Generate unique ISO name for this scenario
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .subsec_nanos();
         let pid = std::process::id();
+        let iso_name = format!("thing-os-bdd-{}-{}-{}.iso", arch, pid, nanos);
+        let iso_path = PathBuf::from(&iso_name);
+        
+        // Get resolution from environment (default 800x600 for BDD tests)
+        let resolution = std::env::var("BDD_RESOLUTION").unwrap_or_else(|_| "800x600".to_string());
+        
+        // Build ISO using xtask command
+        eprintln!("[bdd] Building ISO {} with resolution {}...", iso_name, resolution);
+        let build_status = std::process::Command::new("cargo")
+            .args(["xtask", "iso", "--resolution", &resolution, "--output", &iso_name])
+            .env("RUSTFLAGS", "-Awarnings")
+            .status()?;
+
+        if !build_status.success() {
+            return Err(format!("Failed to build ISO: {}", iso_name).into());
+        }
+
+        self.iso_path = Some(iso_path);
+        eprintln!("[bdd] ISO built: {}", iso_name);
+
+        let ovmf_code = format!("vendor/ovmf/ovmf-code-{}.fd", arch);
+        let ovmf_vars = format!("vendor/ovmf/ovmf-vars-{}.fd", arch);
+
+        // Create unique socket paths for this test run
         let qmp_global_path = PathBuf::from(format!("/tmp/qemu-bdd-global-{}-{}.sock", pid, nanos));
         let qmp_world_path = PathBuf::from(format!("/tmp/qemu-bdd-world-{}-{}.sock", pid, nanos));
 
@@ -55,11 +79,11 @@ impl ThingOsWorld {
         self.qmp_socket = Some(qmp_global_path.clone());
 
         // Use a random VNC display to avoid conflicts with potential zombies
-        let nanos = std::time::SystemTime::now()
+        let vnc_nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .subsec_nanos();
-        let vnc_display = ((nanos % 5000) + 1000) as u16;
+        let vnc_display = ((vnc_nanos % 5000) + 1000) as u16;
         self.vnc_display = Some(vnc_display);
 
         let qemu_bin = match arch {
@@ -85,7 +109,7 @@ impl ThingOsWorld {
                     "-drive",
                     &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars),
                 ]);
-                cmd.args(["-cdrom", &iso_path]);
+                cmd.args(["-cdrom", &iso_name]);
             }
             "aarch64" => {
                 cmd.args(["-M", "virt"]);
@@ -102,7 +126,7 @@ impl ThingOsWorld {
                     "-drive",
                     &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars),
                 ]);
-                cmd.args(["-cdrom", &iso_path]);
+                cmd.args(["-cdrom", &iso_name]);
             }
             "riscv64" => {
                 // riscv64 virt requires blockdev syntax with machine-level pflash assignment
@@ -126,7 +150,7 @@ impl ThingOsWorld {
                 cmd.args(["-device", "usb-mouse"]);
                 cmd.args([
                     "-drive",
-                    &format!("file={},format=raw,if=none,id=drive0,readonly=on", iso_path),
+                    &format!("file={},format=raw,if=none,id=drive0,readonly=on", iso_name),
                 ]);
                 cmd.args(["-device", "virtio-blk-device,drive=drive0"]);
             }
@@ -145,7 +169,7 @@ impl ThingOsWorld {
                     "-drive",
                     &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars),
                 ]);
-                cmd.args(["-cdrom", &iso_path]);
+                cmd.args(["-cdrom", &iso_name]);
             }
             _ => {}
         }
@@ -155,7 +179,7 @@ impl ThingOsWorld {
             "2G",
             // Disable default display, use VNC instead
             "-display",
-            "none",
+            "gtk",
             "-no-shutdown",
             // Serial to stdio for log capture
             "-serial",
@@ -337,7 +361,7 @@ impl ThingOsWorld {
         self.serial_log.lock().await.clone()
     }
 
-    /// Kill the QEMU process if running.
+    /// Kill the QEMU process if running and clean up the ISO.
     pub async fn shutdown(&mut self) {
         // Wait a bit to ensure any pending screenshots/logs are captured
         // The user specifically requested to keep QEMU open long enough.
@@ -354,6 +378,12 @@ impl ThingOsWorld {
         if let Some(ref socket_path) = self.qmp_socket {
             let _ = std::fs::remove_file(socket_path);
         }
+
+        // Clean up ISO file
+        if let Some(ref iso_path) = self.iso_path {
+            eprintln!("[bdd] Cleaning up ISO: {}", iso_path.display());
+            let _ = std::fs::remove_file(iso_path);
+        }
     }
 }
 
@@ -366,21 +396,21 @@ pub fn diag_enabled() -> bool {
 
 /// Required boot signals that must ALL appear (order irrelevant).
 /// Each entry is a list of acceptable alternatives - pass if ANY in the group matches.
+/// These signals now use [CONTRACT] prefix for critical boot milestones.
 pub const REQUIRED_BOOT_SIGNALS: &[&[&str]] = &[
-    // Kernel start
-    &["thing-os kernel", "starting..."],
+    // Kernel start - now uses CONTRACT level
+    &["[CONTRACT]", "thing-os kernel"],
     // SIMD init (replaces legacy paging boundary signal)
-    &["Initializing SIMD..."],
+    &["[CONTRACT]", "Initializing SIMD"],
     // Memory map / allocator
     &[
-        "Frame allocator initialized",
-        "Initializing Real Frame Allocator...",
+        "[CONTRACT]", "Frame allocator initialized",
     ],
-    &["Initializing global allocator...", "global_alloc:"],
+    &["[CONTRACT]", "Initializing global allocator"],
     // Tasking bring-up
-    &["Initializing tasking..."],
-    &["Scheduler initialized"],
-    &["Entering scheduler loop."],
+    &["[CONTRACT]", "Initializing tasking"],
+    &["[CONTRACT]", "Scheduler initialized"],
+    &["[CONTRACT]", "Entering scheduler loop"],
 ];
 
 /// Liveness signals - at least one of these must appear.
@@ -407,8 +437,8 @@ impl ThingOsWorld {
             let log = self.serial_log.lock().await;
             let missing: Vec<String> = required
                 .iter()
-                .filter(|alts| !alts.iter().any(|sig| log.contains(sig)))
-                .map(|alts| alts.join(" OR "))
+                .filter(|alts| !alts.iter().all(|sig| log.contains(sig)))
+                .map(|alts| alts.join(" AND "))
                 .collect();
 
             if missing.is_empty() {

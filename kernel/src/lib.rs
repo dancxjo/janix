@@ -358,16 +358,16 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     unsafe { init_runtime(runtime) };
     unsafe { crate::logging::init(runtime) };
 
-    kinfo!("thing-os kernel starting...");
+    contract!("thing-os kernel starting...");
 
     memory::init(runtime);
-    kinfo!("Initializing global allocator...");
+    contract!("Initializing global allocator...");
     memory::global_alloc::init(runtime);
 
-    kinfo!("Initializing SIMD...");
+    contract!("Initializing SIMD...");
     runtime.simd_init_cpu();
 
-    kinfo!("Initializing tasking...");
+    contract!("Initializing tasking...");
     crate::task::init::<R>();
 
     // Store global boot info for syscalls
@@ -407,7 +407,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     let inventory = crate::root::boot_register::register_all(&boot_info);
     #[cfg(feature = "diagnostic-apps")]
     crate::root::debug_dump::dump_all_to_console();
-    crate::kinfo!(
+    contract!(
         "KERNEL: root census complete: host=t{:x} kernel=t{:x} root=t{:x}",
         inventory.host,
         inventory.kernel,
@@ -493,7 +493,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
         kinfo!("Spawning sprout with registry at 0x600000...");
         unsafe {
-            kinfo!("Spawning init process...");
+            contract!("Spawning init process...");
             let mut entry = user_entry;
             entry.arg0 = 0x600000; // arg0 = registry ptr
             // Spawn at Normal priority - all tasks share the same priority for fair scheduling
@@ -534,7 +534,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     kinfo!("System initialized. Setting up preemption timer (100Hz)...");
     runtime.setup_preemption_timer(100);
 
-    kinfo!("Entering scheduler loop.");
+    contract!("Entering scheduler loop.");
     loop {
         crate::task::yield_now::<R>();
         // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty

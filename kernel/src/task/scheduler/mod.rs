@@ -92,7 +92,7 @@ pub fn init<R: BootRuntime>() {
         }
         blocking::init_blocking_hooks::<R>();
         crate::trace::register_time_source(get_time_helper::<R>);
-        crate::kinfo!("  Scheduler initialized");
+        crate::contract!("Scheduler initialized");
     }
 }
 

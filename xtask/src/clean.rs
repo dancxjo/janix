@@ -8,14 +8,19 @@ pub fn clean(sh: &Shell) -> Result<()> {
     println!("Cleaning build artifacts...");
     cmd!(sh, "cargo clean").run()?;
     sh.remove_path("iso_root")?;
-    sh.remove_path("thing-os-x86_64.iso")?;
-    sh.remove_path("thing-os-x86_64.hdd")?;
-    sh.remove_path("thing-os-aarch64.iso")?;
-    sh.remove_path("thing-os-aarch64.hdd")?;
-    sh.remove_path("thing-os-riscv64.iso")?;
-    sh.remove_path("thing-os-riscv64.hdd")?;
-    sh.remove_path("thing-os-loongarch64.iso")?;
-    sh.remove_path("thing-os-loongarch64.hdd")?;
+    
+    // Clean all thing-os ISO and HDD files (using glob pattern)
+    for entry in std::fs::read_dir(".").into_iter().flatten() {
+        if let Ok(entry) = entry {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str.starts_with("thing-os-") && (name_str.ends_with(".iso") || name_str.ends_with(".hdd")) {
+                println!("Removing {}", name_str);
+                let _ = sh.remove_path(entry.path());
+            }
+        }
+    }
+    
     sh.remove_path("bran/bin-x86_64")?;
     sh.remove_path("bran/bin-aarch64")?;
     sh.remove_path("bran/bin-riscv64")?;

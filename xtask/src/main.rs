@@ -21,7 +21,7 @@ use crate::build::build;
 use crate::clean::{clean, distclean};
 use crate::common::project_root;
 use crate::fetch::fetch;
-use crate::image::{build_hdd, build_iso, default_programs, ProgramConfig};
+use crate::image::{build_hdd, build_iso, build_iso_with_config, default_programs, IsoConfig, ProgramConfig};
 use crate::limine::limine;
 use crate::run::{run, run_bios, run_hdd};
 
@@ -56,6 +56,12 @@ enum Commands {
         /// Initial program to launch
         #[arg(long)]
         init: Option<String>,
+        /// Display resolution (e.g., 800x600, 1920x1080)
+        #[arg(long)]
+        resolution: Option<String>,
+        /// Output ISO file path
+        #[arg(long)]
+        output: Option<String>,
     },
     /// Create an HDD image
     Hdd {
@@ -147,12 +153,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Build { env, profile } => build(&sh, &env, &profile)?,
-        Commands::Iso { env, profile, init } => {
+        Commands::Iso { env, profile, init, resolution, output } => {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
-            let path = build_iso(&sh, &env, &programs)?;
+            
+            // Use config if resolution or output specified
+            let path = if resolution.is_some() || output.is_some() {
+                let output_path = output.as_ref().map(|s| std::path::Path::new(s.as_str()));
+                let config = IsoConfig {
+                    resolution: resolution.as_deref(),
+                    iso_path: output_path,
+                };
+                build_iso_with_config(&sh, &env, &programs, &config)?
+            } else {
+                build_iso(&sh, &env, &programs)?
+            };
             println!("ISO generated at: {}", path.display());
         }
         Commands::Hdd { env, profile, init } => {

@@ -48,7 +48,7 @@ pub fn init<R: crate::BootRuntime>(rt: &R) {
     let bitmap = boot_frame_alloc::init(map, offset);
     let alloc = frame_alloc::FrameAllocator::new_from_boot(map, _modules, bitmap, offset);
 
-    kinfo!(
+    crate::contract!(
         "Frame allocator initialized with {} free frames",
         alloc.free_count()
     );

@@ -563,6 +563,7 @@ fn main(arg: usize) -> ! {
     // Track previous cursor position for damage
     let mut prev_cursor_bbox: Option<Rect> = None;
     let mut first_frame = true;
+    let mut first_frame_rendered = false;
 
     // 4. UI Pipeline Setup
     let mut ui_pipeline = ui::UiPipeline::new();
@@ -904,6 +905,12 @@ fn main(arg: usize) -> ! {
 
         // Post-present overlay update
         key_overlay.post_present();
+        
+        // CONTRACT log after first frame is rendered
+        if !first_frame_rendered && frame_id >= 1 {
+            first_frame_rendered = true;
+            log!("[CONTRACT] [bloom] First frame rendered - compositor ready");
+        }
 
         // ═══════════════════════════════════════════════════════════════════
         // POST-PRESENT: Memory pressure check

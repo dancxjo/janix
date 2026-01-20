@@ -281,8 +281,8 @@ impl ThingOsWorld {
 
         // Get absolute path for QEMU
         let ppm_path = output_path.with_extension("ppm");
-        let ppm_abs = std::fs::canonicalize(output_path.parent().unwrap())?
-            .join(ppm_path.file_name().unwrap());
+        let ppm_abs = std::fs::canonicalize(output_path.parent().ok_or("Invalid output path")?)?
+            .join(ppm_path.file_name().ok_or("Invalid PPM path")?);
 
         let cmd = format!(
             r#"{{"execute": "screendump", "arguments": {{"filename": "{}"}}}}"#,

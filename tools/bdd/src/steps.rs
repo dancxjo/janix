@@ -219,7 +219,7 @@ async fn check_serial_monotonic(world: &mut ThingOsWorld) -> Result<(), StepErro
     for line in log.lines() {
         if let Some(caps) = re.captures(line) {
             let ts_str = caps.get(1).unwrap().as_str();
-            let ts: f64 = ts_str.parse().expect("Failed to parse timestamp");
+            let ts: f64 = ts_str.parse().map_err(|e| StepError(format!("Failed to parse timestamp: {}", e)))?;
 
             if ts < last_ts {
                 return Err(StepError(format!(
@@ -440,7 +440,7 @@ async fn check_ordering(world: &mut ThingOsWorld, second: String, first: String)
     if first_pos.is_none() {
         return Err(StepError(format!("Could not find '{}'", first)));
     }
-    let first_idx = first_pos.unwrap();
+    let first_idx = first_pos.ok_or_else(|| StepError(format!("Could not find '{}'", first)))?;
 
     // Check if 'second' appears ANYWHERE after that first occurrence
     let found_after = lines
@@ -707,7 +707,7 @@ async fn each_log_message_monotonic_timestamp_impl(world: &mut ThingOsWorld) -> 
     for line in log.lines() {
         if let Some(caps) = re.captures(line) {
             let ts_str = caps.get(1).unwrap().as_str();
-            let ts: f64 = ts_str.parse().expect("Failed to parse timestamp");
+            let ts: f64 = ts_str.parse().map_err(|e| StepError(format!("Failed to parse timestamp: {}", e)))?;
             
             if ts < last_ts {
                 return Err(StepError(format!(
@@ -752,8 +752,8 @@ async fn system_clock_tick_impl(world: &mut ThingOsWorld) -> Result<(), StepErro
         return Err(StepError("Not enough timestamps to verify clock progression".to_string()));
     }
     
-    let first = timestamps.first().unwrap();
-    let last = timestamps.last().unwrap();
+    let first = timestamps.first().ok_or_else(|| StepError("No timestamps found".to_string()))?;
+    let last = timestamps.last().ok_or_else(|| StepError("No timestamps found".to_string()))?;
     let elapsed = last - first;
     
     eprintln!("│  │  │      ⏱️ Clock elapsed: {:.2}s ({} samples)", elapsed, timestamps.len());
@@ -790,13 +790,39 @@ async fn wallpaper_within_timeout(world: &mut ThingOsWorld, timeout: u64) {
 
 #[then("I should see a cursor centered on the screen")]
 async fn cursor_centered_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
-    eprintln!("│  │  │      📍 Checking for cursor in center...");
-    // This requires QMP for screenshot - check if available
-    if world.qmp_control.is_none() {
-        eprintln!("│  │  │      ⚠️ No QMP connection - skipping visual verification");
-        return Ok(());
+    eprintln!("│  │  │      📍 Waiting for bloom first frame...");
+    
+    // Wait for bloom to render its first frame (CONTRACT log)
+    let bloom_ready = world.wait_for_serial("[CONTRACT] [bloom] First frame rendered", 30.0).await;
+    
+    if !bloom_ready {
+        // Check if bloom is at least running
+        let log = world.get_serial_log().await;
+        if log.contains("bloom:") {
+            eprintln!("│  │  │      ⚠️ Bloom running but no first frame CONTRACT log");
+        }
+        
+        // Capture diagnostics
+        capture_failure_diagnostics(world, "bloom first frame").await;
+        return Err(StepError("Bloom did not render first frame within timeout".to_string()));
     }
-    bloom_cursor_visible(world).await
+    
+    eprintln!("│  │  │      ✅ Bloom compositor rendered first frame");
+    
+    // Take a screenshot for visual verification if QMP available
+    if world.qmp_control.is_some() {
+        let screenshot_path = crate::artifacts::global()
+            .lock()
+            .await
+            .screenshot_path("cursor_check");
+        
+        match world.take_screenshot(&screenshot_path).await {
+            Ok(path) => eprintln!("│  │  │      📸 Cursor screenshot: {}", path.display()),
+            Err(e) => eprintln!("│  │  │      ⚠️ Screenshot failed: {}", e),
+        }
+    }
+    
+    Ok(())
 }
 
 #[then(regex = r#"^I should see the text "(.+)" in the top-left corner of the screen$"#)]
@@ -820,20 +846,24 @@ async fn frame_count_impl(world: &mut ThingOsWorld) {
 }
 
 #[then("I should see a clock window displaying a ticking clock")]
-async fn clock_window_impl(world: &mut ThingOsWorld) {
-    // Try to find clock evidence in logs - multiple patterns
-    let log = world.get_serial_log().await;
-    let has_clock = log.to_lowercase().contains("clock") 
-        || log.contains("CLOCK:")
-        || log.contains("clock:");
+async fn clock_window_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    eprintln!("│  │  │      🕐 Checking for clock window...");
     
-    if has_clock {
-        eprintln!("│  │  │      ✅ Clock app detected in logs");
-    } else {
-        eprintln!("│  │  │      ⚠️ Clock not found in logs - visual check needed");
+    // First wait for clock app to log that it's publishing
+    let clock_ready = world.wait_for_serial("CLOCK PUBLISH:", 30.0).await;
+    
+    if !clock_ready {
+        let log = world.get_serial_log().await;
+        if log.to_lowercase().contains("clock") {
+            eprintln!("│  │  │      ⚠️ Clock app running but no PUBLISH log");
+        }
+        capture_failure_diagnostics(world, "clock publish").await;
+        return Err(StepError("Clock app did not publish within timeout".to_string()));
     }
     
-    // Take screenshot for visual verification if QMP available
+    eprintln!("│  │  │      ✅ Clock app publishing");
+    
+    // Take screenshot and verify black/red pixels (DSEG7 clock style)
     if world.qmp_control.is_some() {
         let screenshot_path = crate::artifacts::global()
             .lock()
@@ -841,11 +871,62 @@ async fn clock_window_impl(world: &mut ThingOsWorld) {
             .screenshot_path("clock_check");
         
         match world.take_screenshot(&screenshot_path).await {
-            Ok(path) => eprintln!("│  │  │      📸 Clock screenshot: {}", path.display()),
+            Ok(path) => {
+                eprintln!("│  │  │      📸 Clock screenshot: {}", path.display());
+                
+                // Verify clock pixels - look for black and red in center region
+                match verify_clock_pixels(&path).await {
+                    Ok((black, red)) => {
+                        eprintln!("│  │  │      📊 Center pixels: {} black, {} red", black, red);
+                        if black < 100 && red < 5 {
+                            eprintln!("│  │  │      ⚠️ Clock window may not be visible (few black/red pixels)");
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("│  │  │      ⚠️ Pixel verification failed: {}", e);
+                    }
+                }
+            }
             Err(e) => eprintln!("│  │  │      ⚠️ Screenshot failed: {}", e),
         }
     }
-    // This step doesn't fail - it's informational for visual verification
+    
+    Ok(())
+}
+
+/// Check for black and red pixels in center region (clock window)
+async fn verify_clock_pixels(png_path: &std::path::Path) -> Result<(u32, u32), Box<dyn std::error::Error + Send + Sync>> {
+    let img = image::open(png_path)?;
+    let rgb = img.to_rgb8();
+    let (width, height) = rgb.dimensions();
+    
+    if width == 0 || height == 0 {
+        return Err("Invalid screenshot dimensions".into());
+    }
+    
+    let cx = width / 2;
+    let cy = height / 2;
+    
+    // Sample a region in the center where clock window should be
+    let mut black_count = 0u32;
+    let mut red_count = 0u32;
+    
+    // Check center region (inside the clock window area)
+    let sample_w = 200.min(width / 3);
+    let sample_h = 100.min(height / 4);
+    
+    for y in (cy.saturating_sub(sample_h / 2))..(cy + sample_h / 2).min(height) {
+        for x in (cx.saturating_sub(sample_w / 2))..(cx + sample_w / 2).min(width) {
+            let pixel = rgb.get_pixel(x, y).0;
+            match pixel {
+                [0, 0, 0] => black_count += 1,
+                [r, g, b] if r > 200 && g < 50 && b < 50 => red_count += 1,
+                _ => {}
+            }
+        }
+    }
+    
+    Ok((black_count, red_count))
 }
 
 /// Given steps for keyboard/pointer scenarios - boot machine if needed

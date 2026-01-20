@@ -20,6 +20,8 @@ pub struct ThingOsReporter {
     step_start_serial_len: usize,
     /// Step start time for duration
     step_start_time: Option<std::time::Instant>,
+    /// Track if we've seen scenario start without end (for crash recovery)
+    in_scenario: bool,
 }
 
 impl ThingOsReporter {
@@ -32,6 +34,7 @@ impl ThingOsReporter {
             scenario_failed: false,
             step_start_serial_len: 0,
             step_start_time: None,
+            in_scenario: false,
         }
     }
 }
@@ -59,7 +62,15 @@ where
                 eprintln!("╚══════════════════════════════════════════════════════════════╝\n");
             }
             Cucumber::Finished => {
-                // Report test completion
+                // Ensure any pending scenario is closed
+                if self.in_scenario {
+                    eprintln!("│  │  │  └─ ⚠️ scenario ended unexpectedly");
+                    let serial = artifacts::get_latest_serial().await;
+                    let mut collector = artifacts::global().lock().await;
+                    collector.on_scenario_end(false, &serial);
+                    self.in_scenario = false;
+                }
+                
                 let collector = artifacts::global().lock().await;
                 let (passed, failed) = collector.count_scenarios();
                 eprintln!("\n══════════════════════════════════════════════════════════════════");
@@ -84,6 +95,7 @@ where
                         match &retryable.event {
                             event::Scenario::Started => {
                                 self.scenario_failed = false;
+                                self.in_scenario = true;
                                 eprintln!("│  ├─ Scenario: {}", scenario.name);
                                 let mut collector = artifacts::global().lock().await;
                                 collector.on_scenario_start(&scenario.name);
@@ -93,6 +105,7 @@ where
                                 let serial = artifacts::get_latest_serial().await;
                                 let mut collector = artifacts::global().lock().await;
                                 collector.on_scenario_end(!self.scenario_failed, &serial);
+                                self.in_scenario = false;
                             }
                             event::Scenario::Step(step, step_event) => {
                                 self.handle_step(step, step_event).await;
@@ -113,6 +126,7 @@ where
                         event::Rule::Scenario(scenario, retryable) => match &retryable.event {
                             event::Scenario::Started => {
                                 self.scenario_failed = false;
+                                self.in_scenario = true;
                                 eprintln!("│  │  ├─ Scenario: {}", scenario.name);
                                 let mut collector = artifacts::global().lock().await;
                                 collector.on_scenario_start(&scenario.name);
@@ -121,6 +135,7 @@ where
                                 let serial = artifacts::get_latest_serial().await;
                                 let mut collector = artifacts::global().lock().await;
                                 collector.on_scenario_end(!self.scenario_failed, &serial);
+                                self.in_scenario = false;
                             }
                             _ => {}
                         },
@@ -155,11 +170,7 @@ impl ThingOsReporter {
 
                     match artifacts::take_screenshot_global(&path).await {
                         Ok(p) => Some(p),
-                        Err(_e) => {
-                            // Don't spam stderr if just not ready yet, but good for debug
-                            // eprintln!("│  │  │      ⚠️ Before Screenshot: {}", e);
-                            None
-                        }
+                        Err(_e) => None,
                     }
                 };
 
@@ -214,8 +225,6 @@ impl ThingOsReporter {
 
             match artifacts::dump_registers_global(&path).await {
                 Ok(p) => Some(p),
-                // Don't error log if QMP isn't available or fails (e.g. strict timeout)
-                // registers aren't critical for every step
                 Err(_) => None,
             }
         };

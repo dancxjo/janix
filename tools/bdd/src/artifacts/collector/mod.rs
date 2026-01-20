@@ -95,7 +95,13 @@ impl ArtifactCollector {
     /// Called when a feature ends.
     pub fn on_feature_end(&mut self) {
         if let Some(feature) = self.features.last() {
-            let _ = writer::write_feature_readme(self, feature);
+            match writer::write_feature_readme(self, feature) {
+                Ok(()) => {
+                    let readme_path = feature.dir.join("README.md");
+                    eprintln!("│  └─ 📄 Generated: {}", readme_path.display());
+                }
+                Err(e) => eprintln!("│  └─ ⚠️ Failed to write feature README: {}", e),
+            }
         }
         self.current_feature = None;
     }
@@ -140,7 +146,13 @@ impl ArtifactCollector {
         };
 
         if let Some(ref scenario) = scenario_to_write {
-            let _ = writer::write_scenario_readme(self, scenario);
+            match writer::write_scenario_readme(self, scenario) {
+                Ok(()) => {
+                    let readme_path = scenario.dir.join("README.md");
+                    eprintln!("│  │  └─ 📄 Generated: {}", readme_path.display());
+                }
+                Err(e) => eprintln!("│  │  └─ ⚠️ Failed to write scenario README: {}", e),
+            }
         }
         self.current_scenario = None;
     }
@@ -219,7 +231,7 @@ impl ArtifactCollector {
             let _ = fs::write(&log_path, &step_serial);
         }
 
-        let step_to_write = if let Some(feature) = self.features.last_mut() {
+        if let Some(feature) = self.features.last_mut() {
             if let Some(scenario) = feature.scenarios.last_mut() {
                 if let Some(step) = scenario.steps.last_mut() {
                     step.result = result;
@@ -233,19 +245,8 @@ impl ArtifactCollector {
                     };
                     step.serial_excerpt = step_serial;
                     step.duration_ms = duration_ms;
-                    Some(step.clone())
-                } else {
-                    None
                 }
-            } else {
-                None
             }
-        } else {
-            None
-        };
-
-        if let Some(ref step) = step_to_write {
-            let _ = writer::write_step_readme(step);
         }
     }
 
@@ -267,28 +268,6 @@ impl ArtifactCollector {
         let total: Vec<_> = self.features.iter().flat_map(|f| &f.scenarios).collect();
         let passed = total.iter().filter(|s| s.passed).count();
         (passed, total.len() - passed)
-    }
-
-    pub(crate) fn count_steps(&self) -> (usize, usize, usize) {
-        let total: Vec<_> = self
-            .features
-            .iter()
-            .flat_map(|f| &f.scenarios)
-            .flat_map(|s| &s.steps)
-            .collect();
-        let passed = total
-            .iter()
-            .filter(|s| s.result == StepResult::Passed)
-            .count();
-        let failed = total
-            .iter()
-            .filter(|s| s.result == StepResult::Failed)
-            .count();
-        let skipped = total
-            .iter()
-            .filter(|s| s.result == StepResult::Skipped)
-            .count();
-        (passed, failed, skipped)
     }
 
     pub fn slugify(name: &str) -> String {

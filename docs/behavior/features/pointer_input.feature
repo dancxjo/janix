@@ -8,4 +8,5 @@ Feature: Pointer Input
   Scenario: Cursor responds to mouse movement
     Given a cursor is visible on the screen
     When I move the mouse
-    Then the cursor should move correspondingly on the screen
+    Then the serial log should contain 'CONTRACT: input pointer_move'
+    And the cursor should move correspondingly on the screen

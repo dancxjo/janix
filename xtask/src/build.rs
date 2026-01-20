@@ -17,7 +17,7 @@ pub fn build(sh: &Shell, arch: &str, profile: &str) -> Result<()> {
     if cfg!(feature = "diagnostic-apps") {
         cmd = cmd.arg("--features").arg("diagnostic-apps");
     }
-    cmd.env("RUSTFLAGS", "-C relocation-model=static -C panic=abort")
+    cmd.env("RUSTFLAGS", "-Awarnings -C relocation-model=static -C panic=abort")
         .run()?;
 
     // Copy kernel binary to bran/bin-{arch}/

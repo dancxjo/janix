@@ -25,7 +25,7 @@ hdd arch=karch:
 # Run with QEMU (UEFI mode)
 # Examples: just run, just run aarch64, just run riscv64
 run arch=karch:
-    cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
+    RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
 
 # Run HDD with QEMU
 run-hdd arch=karch:
@@ -62,7 +62,7 @@ distclean:
 #   just behave --feature simple-boot
 #   just behave --tags @smoke
 behave *args:
-    cargo xtask bdd {{args}}
+    RUSTFLAGS="-Awarnings" cargo xtask bdd {{args}}
 
 # Alias for behave
 bdd *args:

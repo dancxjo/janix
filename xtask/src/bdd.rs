@@ -64,6 +64,7 @@ fn run_single_arch(sh: &Shell, feature: Option<&str>, arch: &str) -> Result<()> 
     let mut cmd = std::process::Command::new("cargo");
     cmd.args(["run", "-p", "bdd"]);
     cmd.env("BDD_ARCH", arch);
+    cmd.env("RUSTFLAGS", "-Awarnings");
 
     if let Some(f) = feature {
         cmd.env("BDD_FEATURE", f);

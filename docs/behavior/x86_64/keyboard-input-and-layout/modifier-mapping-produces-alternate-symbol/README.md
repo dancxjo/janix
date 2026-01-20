@@ -1,4 +1,4 @@
-# ✅ Scenario: Cursor responds to mouse movement
+# ✅ Scenario: Modifier mapping produces alternate symbol
 
 > Last run: 2026-01-19 20:26:42
 
@@ -6,7 +6,7 @@
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given a cursor is visible on the screen | ⏭️ | 0ms | - - - |
+| 1 | Given the clock window is ticking | ⏭️ | 0ms | - - - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

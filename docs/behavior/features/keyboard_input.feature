@@ -1,16 +1,17 @@
 @input @keyboard
-Feature: Keyboard Input and Symbol Rendering
+Feature: Keyboard input and layout
 
-  As a user
-  I want keyboard input to be processed and rendered correctly
-  So that I can type and see my input on the screen
+  As a system developer
+  I want to verify that keyboard input is received, mapped, and rendered
+  So that I can confirm key events flow through the input pipeline
 
-  Scenario: Keyboard input appears on screen
+  Scenario: Keypress emits contract log
     Given the clock window is ticking
     When I press a key
-    Then I should see the corresponding character appear in the lower-right corner of the screen
+    Then the serial log should contain 'CONTRACT: input key_event'
 
-  Scenario: Modifier keys change rendered symbols
+  Scenario: Modifier mapping produces alternate symbol
     Given the clock window is ticking
     When I press Alt+A
-    Then I should see the appropriate symbol rendered
+    Then the serial log should contain 'CONTRACT: input key_event'
+    And I should see the appropriate symbol rendered

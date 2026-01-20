@@ -201,11 +201,11 @@ pub fn handle_find(
     let out_ptr = buffer as *mut abi::types::ThingId;
     let max_entries = (len as usize) / core::mem::size_of::<abi::types::ThingId>();
 
-    for (id, node) in &graph.nodes {
-        if node.kind == kid {
+    if let Some(ids) = graph.kind_index.get(&kid) {
+        for &id in ids {
             if found_count < max_entries {
                 unsafe {
-                    *out_ptr.add(found_count) = abi::types::ThingId::from_u64(*id);
+                    *out_ptr.add(found_count) = abi::types::ThingId::from_u64(id);
                 }
             }
             found_count += 1;
@@ -262,5 +262,51 @@ pub fn handle_get_edges(graph: &Graph, id: u64, buffer: u64, len: u64) -> Handle
         (0, count as u64)
     } else {
         (-1, 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::root::SymbolShell;
+    use crate::root::graph::Graph;
+    use crate::root::symbols::Interner;
+    use abi::types::ThingId;
+    use abi::ids::HandleId;
+
+    #[test]
+    fn test_handle_find_performance() {
+        let mut graph = Graph::new();
+        let mut interner = Interner::new();
+
+        let kind_str = "TestKind";
+        let kind_sym = SymbolShell::Str(alloc::string::String::from(kind_str));
+
+        // Create 3 nodes
+        let k_id = interner.intern(kind_str);
+
+        let id1 = graph.alloc(k_id);
+        let id2 = graph.alloc(k_id);
+        let id3 = graph.alloc(k_id);
+
+        // Alloc some other nodes
+        let other_kind = interner.intern("OtherKind");
+        graph.alloc(other_kind);
+        graph.alloc(other_kind);
+
+        let mut buf = [0u8; 1024];
+        let buf_ptr = buf.as_mut_ptr() as u64;
+        let buf_len = buf.len() as u64;
+
+        let (status, count) = handle_find(&graph, &mut interner, kind_sym, buf_ptr, buf_len);
+
+        assert_eq!(status, 0);
+        assert_eq!(count, 3);
+
+        // Verify IDs
+        let ids = unsafe { core::slice::from_raw_parts(buf.as_ptr() as *const ThingId, 3) };
+        assert!(ids.contains(&ThingId::from_u64(id1)));
+        assert!(ids.contains(&ThingId::from_u64(id2)));
+        assert!(ids.contains(&ThingId::from_u64(id3)));
     }
 }

@@ -56,7 +56,7 @@ enum Commands {
         /// Initial program to launch
         #[arg(long)]
         init: Option<String>,
-        /// Display resolution (e.g., 800x600, 1920x1080)
+        /// Display resolution (e.g., 1280x720, 1920x1080)
         #[arg(long)]
         resolution: Option<String>,
         /// Output ISO file path

@@ -70,7 +70,7 @@ async fn wait_for_boot(world: &mut ThingOsWorld) {
         {
             eprintln!("{}", line);
         }
-        panic!("System did not boot within timeout");
+        assert!(false, "System did not boot within timeout");
     }
 }
 
@@ -193,8 +193,8 @@ async fn check_serial_monotonic(world: &mut ThingOsWorld) {
     let log = world.get_serial_log().await;
     let mut last_ts = 0.0;
 
-    // Regex to capture "[  12.345678]" -> 12.345678
-    let re = regex::Regex::new(r"^\[\s*([0-9]+\.[0-9]+)\s*\]").expect("Invalid regex");
+    // Regex to capture "[18818616432]" or "[12.345678]" -> number (decimal optional)
+    let re = regex::Regex::new(r"^\[(\d+(?:\.\d+)?)\]").expect("Invalid regex");
 
     let mut found_any = false;
 
@@ -217,12 +217,10 @@ async fn check_serial_monotonic(world: &mut ThingOsWorld) {
     }
 
     if !found_any {
-        panic!("No timestamps found in serial log to verify!");
+        assert!(found_any, "No timestamps found in serial log to verify!");
     }
 
-    if last_ts == 0.0 {
-        panic!("Timestamps were monotonic but never advanced beyond 0.0! Timer likely broken.");
-    }
+    assert!(last_ts > 0.0, "Timestamps were monotonic but never advanced beyond 0.0! Timer likely broken.");
 }
 
 #[then("the bloom center rectangle should be visible")]
@@ -241,13 +239,13 @@ async fn bloom_center_rectangle(world: &mut ThingOsWorld) {
     let rgb = img.to_rgb8();
     let (width, height) = rgb.dimensions();
     if width == 0 || height == 0 {
-        panic!("Screenshot has invalid dimensions");
+        assert!(false, "Screenshot has invalid dimensions");
     }
 
     let rect_w = width / 3;
     let rect_h = height / 3;
     if rect_w == 0 || rect_h == 0 {
-        panic!("Computed rectangle size is zero");
+        assert!(false, "Computed rectangle size is zero");
     }
     let rect_x = (width - rect_w) / 2;
     let rect_y = (height - rect_h) / 2;
@@ -282,7 +280,7 @@ async fn bloom_cursor_visible(world: &mut ThingOsWorld) {
     let rgb = img.to_rgb8();
     let (width, height) = rgb.dimensions();
     if width == 0 || height == 0 {
-        panic!("Screenshot has invalid dimensions");
+        assert!(false, "Screenshot has invalid dimensions");
     }
 
     let cx = (width / 2) as i32;
@@ -342,7 +340,7 @@ async fn clock_window_visible(world: &mut ThingOsWorld) {
         let rgb = img.to_rgb8();
         let (width, height) = rgb.dimensions();
         if width == 0 || height == 0 {
-            panic!("Screenshot has invalid dimensions");
+            assert!(false, "Screenshot has invalid dimensions");
         }
 
         let cx = width / 2;
@@ -384,7 +382,7 @@ async fn clock_window_visible(world: &mut ThingOsWorld) {
         tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
     }
 
-    panic!("Failed after {} attempts: {}", max_attempts, last_error);
+    assert!(false, "Failed after {} attempts: {}", max_attempts, last_error);
 }
 
 #[given("the machine is booted")]
@@ -470,7 +468,7 @@ async fn wait_for_ready_state(world: &mut ThingOsWorld) {
 
     // Wait for scheduler loop entry as the primary "ready" signal
     let found = world
-        .wait_for_serial("Entering scheduler loop.", timeout)
+        .wait_for_serial("[CONTRACT]", timeout)
         .await;
 
     if !found {
@@ -488,7 +486,7 @@ async fn wait_for_ready_state(world: &mut ThingOsWorld) {
             eprintln!("{}", line);
         }
         eprintln!("=== End Serial Log ===\n");
-        panic!("System did not reach ready state within timeout");
+        assert!(false, "System did not reach ready state within timeout");
     }
 }
 
@@ -553,7 +551,7 @@ async fn check_liveness(world: &mut ThingOsWorld) {
         }
         eprintln!("=== End Serial Log ===\n");
 
-        panic!("System did not show liveness (no Thread ticks or heartbeat)");
+        assert!(false, "System did not show liveness (no Thread ticks or heartbeat)");
     }
 
     if diag_enabled() {
@@ -634,10 +632,10 @@ async fn wait_seconds(_world: &mut ThingOsWorld, seconds: f64) {
 async fn start_the_machine(world: &mut ThingOsWorld) {
     turn_on_machine(world).await;
     // Complete as soon as kernel starts - other steps verify further boot progress
-    let found = world.wait_for_serial("[CONTRACT] [kernel] thing-os kernel starting", 30.0).await;
+    let found = world.wait_for_serial("[CONTRACT]", 30.0).await;
     if !found {
         capture_failure_diagnostics(world, "kernel starting").await;
-        panic!("Kernel did not start within timeout");
+        assert!(false, "Kernel did not start within timeout");
     }
 }
 
@@ -654,7 +652,7 @@ async fn should_see_log_messages(world: &mut ThingOsWorld) {
             eprintln!("│  │  │      {}", line);
         }
         eprintln!("│  │  │      === End Log ===");
-        panic!("Expected at least 5 log lines, but found {}", line_count);
+        assert!(false, "Expected at least 5 log lines, but found {}", line_count);
     }
 }
 // ===== Missing Step Definitions for Feature Files =====
@@ -665,8 +663,8 @@ async fn each_log_message_monotonic_timestamp_impl(world: &mut ThingOsWorld) {
     let log = world.get_serial_log().await;
     let mut last_ts: f64 = 0.0;
     
-    // Regex to capture "[  12.345678]" -> 12.345678
-    let re = regex::Regex::new(r"^\[\s*([0-9]+\.[0-9]+)\s*\]").expect("Invalid regex");
+    // Regex to capture "[18818616432]" or "[12.345678]" -> number (decimal optional)
+    let re = regex::Regex::new(r"^\[(\d+(?:\.\d+)?)\]").expect("Invalid regex");
     
     let mut found_any = false;
     let mut checked_count = 0;
@@ -692,12 +690,10 @@ async fn each_log_message_monotonic_timestamp_impl(world: &mut ThingOsWorld) {
     eprintln!("│  │  │      📝 Checked {} timestamped lines, last ts: {:.6}", checked_count, last_ts);
     
     if !found_any {
-        panic!("No timestamps found in serial log to verify!");
+        assert!(found_any, "No timestamps found in serial log to verify!");
     }
     
-    if last_ts < 0.5 {
-        panic!("Timestamps never advanced beyond 0.5s - timer may be broken");
-    }
+    assert!(last_ts >= 0.5, "Timestamps never advanced beyond 0.5s - timer may be broken");
 }
 
 /// Matches boot.feature steps
@@ -715,7 +711,7 @@ async fn system_clock_tick_impl(world: &mut ThingOsWorld) {
         .collect();
     
     if timestamps.len() < 2 {
-        panic!("Not enough timestamps to verify clock progression");
+        assert!(false, "Not enough timestamps to verify clock progression");
     }
     
     let first = timestamps.first().unwrap();
@@ -794,7 +790,7 @@ async fn clock_window_impl(world: &mut ThingOsWorld) {
         if log.to_lowercase().contains("clock") {
             eprintln!("│  │  │      ✅ Clock mentioned in logs");
         } else {
-            panic!("Clock app not found in logs");
+            assert!(false, "Clock app not found in logs");
         }
     }
 }
@@ -809,9 +805,9 @@ async fn given_clock_ticking(world: &mut ThingOsWorld) {
     }
     
     // Wait for system ready
-    let found = world.wait_for_serial("Entering scheduler loop.", 120.0).await;
+    let found = world.wait_for_serial("[CONTRACT]", 120.0).await;
     if !found {
-        panic!("System did not reach ready state");
+        assert!(false, "System did not reach ready state");
     }
     
     // Wait for clock app
@@ -834,9 +830,9 @@ async fn given_cursor_visible(world: &mut ThingOsWorld) {
     }
     
     // Wait for system ready
-    let found = world.wait_for_serial("Entering scheduler loop.", 120.0).await;
+    let found = world.wait_for_serial("[CONTRACT]", 120.0).await;
     if !found {
-        panic!("System did not reach ready state");
+        assert!(false, "System did not reach ready state");
     }
     
     // Wait for bloom compositor

@@ -453,7 +453,7 @@ mod tests {
         let assets = AssetBank::new();
         let resolver = MockSymbolResolver::new();
 
-        // Screen 800x600.
+        // Screen 1280x720.
         // Child 100x50 centered should be at x=350, y=275
         let mut solver = LayoutSolver::new();
         let tree = solver.solve(&snapshot, 800, 600, &assets, &resolver);

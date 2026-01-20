@@ -15,7 +15,7 @@ pub struct ProgramConfig {
 /// Configuration for ISO builds.
 #[derive(Default)]
 pub struct IsoConfig<'a> {
-    /// Display resolution (e.g., "800x600"). None = 1920x1080.
+    /// Display resolution (e.g., "1280x720"). None = 1920x1080.
     pub resolution: Option<&'a str>,
     /// Explicit ISO output path. None = use timestamped naming.
     pub iso_path: Option<&'a Path>,

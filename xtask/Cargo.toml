@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 diagnostic-apps = []
+svg-cursors = []
 
 [dependencies]
 anyhow = "1"

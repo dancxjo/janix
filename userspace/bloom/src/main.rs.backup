@@ -287,7 +287,6 @@ extern "C" fn font_loader_entry() -> ! {
     }
 }
 
-
 /// Background thread for loading cursor
 extern "C" fn cursor_loader_entry() -> ! {
     log!("[cursor_loader] thread started");
@@ -295,16 +294,6 @@ extern "C" fn cursor_loader_entry() -> ! {
     stem::sleep_ms(300);
     log!("[cursor_loader] searching for cursor...");
 
-    #[cfg(feature = "svg-cursors")]
-    let candidates = [
-        "/assets/cursors/future/default.svg",
-        "/assets/cursors/future/pointer.svg",
-        "/assets/cursors/plain/Normal.cur",
-        "cursors/plain/Normal.cur",
-        "Normal.cur",
-    ];
-
-    #[cfg(not(feature = "svg-cursors"))]
     let candidates = [
         "/assets/cursors/plain/Normal.cur",
         "cursors/plain/Normal.cur",
@@ -330,6 +319,7 @@ extern "C" fn cursor_loader_entry() -> ! {
         stem::syscall::sleep_ms(10000);
     }
 }
+
 #[cfg_attr(not(test), stem::main)]
 fn main(arg: usize) -> ! {
     logging::init();

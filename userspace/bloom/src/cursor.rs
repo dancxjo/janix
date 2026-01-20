@@ -3,6 +3,22 @@ use crate::drawlist::DrawList;
 use crate::asset::{CursorAsset, CursorFrame};
 use crate::geometry::Color;
 
+#[cfg(feature = "svg-cursors")]
+use crate::svg::SvgParser;
+
+#[cfg(feature = "svg-cursors")]
+const CURSOR_SVG: &str = include_str!("default.svg");
+
+#[cfg(feature = "svg-cursors")]
+static mut TARGET_COLOR: Color = Color::from_u32(0xFF00AAFF);
+
+#[cfg(feature = "svg-cursors")]
+pub fn set_target_color(color: Color) {
+    unsafe {
+        TARGET_COLOR = color;
+    }
+}
+
 pub struct CursorState {
     pub x: i32,
     pub y: i32,
@@ -68,31 +84,56 @@ impl CursorState {
 
     /// Compute the bounding box of the cursor at its current position.
     pub fn bbox(&self) -> Rect {
-        if let Some(frame) = self.current_frame() {
-            let dx = self.x - frame.hotspot_x as i32;
-            let dy = self.y - frame.hotspot_y as i32;
-            Rect::new(dx, dy, frame.image.width as i32 + 3, frame.image.height as i32 + 3)
-        } else {
-            // Fallback cursor size (crosshair)
-            Rect::new(self.x - 5, self.y - 5, 11, 11)
+        #[cfg(feature = "svg-cursors")]
+        {
+            // SVG cursor: 32x32 base, scale 3.0 = 96x96
+            let scale = 3.0;
+            let size = (32.0 * scale) as i32;
+            Rect::new(self.x, self.y, size, size)
+        }
+        
+        #[cfg(not(feature = "svg-cursors"))]
+        {
+            if let Some(frame) = self.current_frame() {
+                let dx = self.x - frame.hotspot_x as i32;
+                let dy = self.y - frame.hotspot_y as i32;
+                Rect::new(dx, dy, frame.image.width as i32 + 3, frame.image.height as i32 + 3)
+            } else {
+                // Fallback cursor size (crosshair)
+                Rect::new(self.x - 5, self.y - 5, 11, 11)
+            }
         }
     }
 
     pub fn emit_drawlist(&self, list: &mut DrawList) {
-        if let Some(frame) = self.current_frame() {
-             list.cursor(frame, self.x, self.y);
-        } else {
-            // Procedural Fallback: Crosshair
-            let color = self.color();
-            let x = self.x;
-            let y = self.y;
-            
-            // Horizontal line
-            list.line(x - 5, y, x + 5, y, color);
-            // Vertical line
-            list.line(x, y - 5, x, y + 5, color);
-            // Center dot
-            list.rect(x, y, 1, 1, color);
+        #[cfg(feature = "svg-cursors")]
+        {
+            let scale = 3.0;
+            let color = if self.buttons != 0 {
+                self.color()
+            } else {
+                unsafe { TARGET_COLOR }
+            };
+            SvgParser::render(CURSOR_SVG, list, self.x, self.y, scale, color);
+        }
+        
+        #[cfg(not(feature = "svg-cursors"))]
+        {
+            if let Some(frame) = self.current_frame() {
+                 list.cursor(frame, self.x, self.y);
+            } else {
+                // Procedural Fallback: Crosshair
+                let color = self.color();
+                let x = self.x;
+                let y = self.y;
+                
+                // Horizontal line
+                list.line(x - 5, y, x + 5, y, color);
+                // Vertical line
+                list.line(x, y - 5, x, y + 5, color);
+                // Center dot
+                list.rect(x, y, 1, 1, color);
+            }
         }
     }
 }

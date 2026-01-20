@@ -22,6 +22,9 @@ pub fn fetch() -> Result<()> {
     fetch_fonts(&assets)?;
     fetch_icons(&assets)?;
     fetch_cursors(&assets)?;
+
+    #[cfg(feature = "svg-cursors")]
+    fetch_future_cursors(&assets)?;
     fetch_pciids(&assets)?;
 
     Ok(())
@@ -398,4 +401,53 @@ fn run_cmd(cmd: &mut Command) -> Result<()> {
 fn project_root() -> PathBuf {
     let manifest_dir = env::var("CARGO_MANIFEST_DIR").unwrap();
     Path::new(&manifest_dir).parent().unwrap().to_path_buf()
+}
+
+#[cfg(feature = "svg-cursors")]
+fn fetch_future_cursors(assets: &Path) -> Result<()> {
+    println!("==> Fetching Future Cursors (SVG)...");
+    require_tool("git")?;
+
+    let root = project_root();
+    let vendor = root.join("vendor");
+    let future_dir = vendor.join("future-cursors");
+
+    if !future_dir.join(".git").exists() {
+        if future_dir.exists() {
+            fs::remove_dir_all(&future_dir)?;
+        }
+        println!("    Cloning Future-cursors repo...");
+        run_cmd(
+            Command::new("git")
+                .arg("clone")
+                .arg("--depth=1")
+                .arg("https://github.com/yeyushengfan258/Future-cursors")
+                .arg(&future_dir),
+        )?;
+    } else {
+        println!("    Future-cursors repo already exists.");
+    }
+
+    let dest_dir = assets.join("cursors/future");
+    if dest_dir.exists() {
+        fs::remove_dir_all(&dest_dir)?;
+    }
+    fs::create_dir_all(&dest_dir)?;
+
+    let src_dir = future_dir.join("src/svg");
+    if src_dir.exists() {
+        for entry in fs::read_dir(&src_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("svg") {
+                let file_name = path.file_name().unwrap();
+                fs::copy(&path, dest_dir.join(file_name))?;
+            }
+        }
+        println!("    Future SVG cursors copied to assets.");
+    } else {
+        eprintln!("    [WARNING] src/svg not found in Future-cursors repo.");
+    }
+
+    Ok(())
 }

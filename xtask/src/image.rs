@@ -113,6 +113,47 @@ pub fn build_iso(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
             asset_files.push(path.to_path_buf());
         }
     }
+    
+    // CRITICAL: Limine has a 64-module limit!
+    // Sort assets by priority to fit essential ones within limit:
+    // 1. .cur/.ani (cursors) - needed immediately
+    // 2. .bmp (wallpapers) - visual assets
+    // 3. .ttf (fonts) - text rendering
+    // 4. Other files
+    // 5. .svg (future cursors) - last as they're optional
+    asset_files.sort_by(|a, b| {
+        let a_str = a.to_string_lossy();
+        let b_str = b.to_string_lossy();
+        
+        let a_priority = if a_str.ends_with(".cur") || a_str.ends_with(".ani") {
+            0  // Highest priority
+        } else if a_str.ends_with(".bmp") {
+            1
+        } else if a_str.ends_with(".ttf") {
+            2
+        } else if a_str.ends_with(".svg") {
+            4  // Lowest priority
+        } else {
+            3  // Other files
+        };
+        
+        let b_priority = if b_str.ends_with(".cur") || b_str.ends_with(".ani") {
+            0
+        } else if b_str.ends_with(".bmp") {
+            1
+        } else if b_str.ends_with(".ttf") {
+            2
+        } else if b_str.ends_with(".svg") {
+            4
+        } else {
+            3
+        };
+        
+        match a_priority.cmp(&b_priority) {
+            std::cmp::Ordering::Equal => a_str.cmp(&b_str),  // Same priority: alphabetical
+            other => other
+        }
+    });
 
     // Copy kernel
     let kernel_src = format!("bran/bin-{}/kernel", arch);

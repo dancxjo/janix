@@ -892,60 +892,6 @@ impl AssetBank {
         Self::load_cursor_immediate(path)
     }
 
-
-    #[cfg(feature = "svg-cursors")]
-    fn load_svg_cursor(slice: &[u8], path: &str) -> Option<CursorAsset> {
-        // Convert bytes to UTF-8 string
-        let svg_content = match core::str::from_utf8(slice) {
-            Ok(s) => s,
-            Err(_) => {
-                info!("[asset_bank] SVG is not valid UTF-8");
-                return None;
-            }
-        };
-
-        info!("[asset_bank] parsing SVG cursor from {}", path);
-        
-        // Create a temporary drawlist to render the SVG
-        use crate::drawlist::DrawList;
-        use crate::geometry::Color;
-        use crate::svg::SvgParser;
-        
-        // Standard cursor size for SVG cursors
-        let cursor_size = 32u32;
-        let scale = 1.0;
-        
-        // Create a rendering buffer
-        let mut pixels = alloc::vec![0u32; (cursor_size * cursor_size) as usize];
-        
-        // We need to render the SVG to get the pixel data
-        // For now, we'll use a simplified approach: create a static cursor image
-        // The actual drawing will happen via SvgParser::render in cursor.rs
-        
-        // Since we're using SVG rendering at draw time (see cursor.rs),
-        // we just need to validate the SVG and create a placeholder asset
-        // The real rendering happens in cursor.rs via SvgParser::render
-        
-        // For now, create a minimal placeholder since SVG cursors are rendered procedurally
-        // The hotspot for most cursors is at the top-left
-        let hotspot_x = 0;
-        let hotspot_y = 0;
-        
-        info!("[asset_bank] SUCCESS: SVG cursor validated for {}", path);
-        
-        Some(CursorAsset::Static(CursorFrame {
-            image: Image {
-                width: cursor_size,
-                height: cursor_size,
-                pixels: Arc::from(pixels.as_slice()),
-                gen: AssetGeneration::ZERO,
-            },
-            delay_ms: 0,
-            hotspot_x,
-            hotspot_y,
-        }))
-    }
-
     pub fn load_cursor_immediate(path: &str) -> Option<CursorAsset> {
         info!("[asset_bank] load_cursor_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
@@ -954,21 +900,6 @@ impl AssetBank {
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
         info!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
-
-        // Check for SVG format first (when feature is enabled)
-        #[cfg(feature = "svg-cursors")]
-        {
-            // SVG files start with "<?xml" or "<svg"
-            if size > 5 && (
-                (slice[0] == b'<' && slice[1] == b'?' && slice[2] == b'x' && slice[3] == b'm' && slice[4] == b'l') ||
-                (slice[0] == b'<' && slice[1] == b's' && slice[2] == b'v' && slice[3] == b'g')
-            ) {
-                info!("[asset_bank] detected SVG format");
-                let result = Self::load_svg_cursor(slice, path);
-                let _ = stem::thing::sys::bytespace_unmap(id, ptr);
-                return result;
-            }
-        }
 
         info!("[asset_bank] checking CUR header: len={}", slice.len());
 
@@ -1033,6 +964,7 @@ impl AssetBank {
         info!("[asset_bank] bytespace unmapped, returning None");
         None
     }
+
     /// Load a TTF font from the system graph
     pub fn load_font_from_graph_by_path(path: &str) -> Option<FontAsset> {
         info!("[asset_bank] load_font_from_graph_by_path: {}", path);

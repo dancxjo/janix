@@ -46,5 +46,6 @@ pub fn distclean(sh: &Shell) -> Result<()> {
     println!("Removing downloaded dependencies...");
     sh.remove_path("vendor/limine")?;
     sh.remove_path("vendor/ovmf")?;
+    sh.remove_path("vendor/future-cursors")?;
     Ok(())
 }

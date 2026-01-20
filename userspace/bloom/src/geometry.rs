@@ -120,6 +120,30 @@ impl Transform {
             ..Self::identity()
         }
     }
+
+    #[cfg(feature = "svg-cursors")]
+    pub fn rotate_degrees(angle: f32) -> Self {
+        let rad = angle.to_radians();
+        let c = libm::cosf(rad);
+        let s = libm::sinf(rad);
+        Self {
+            m11: c, m12: -s,
+            m21: s, m22: c,
+            dx: 0.0, dy: 0.0,
+        }
+    }
+
+    #[cfg(feature = "svg-cursors")]
+    pub fn multiply(&self, other: &Self) -> Self {
+        Self {
+            m11: self.m11 * other.m11 + self.m12 * other.m21,
+            m12: self.m11 * other.m12 + self.m12 * other.m22,
+            m21: self.m21 * other.m11 + self.m22 * other.m21,
+            m22: self.m21 * other.m12 + self.m22 * other.m22,
+            dx: self.m11 * other.dx + self.m12 * other.dy + self.dx,
+            dy: self.m21 * other.dx + self.m22 * other.dy + self.dy,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]

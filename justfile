@@ -126,7 +126,7 @@ bristle arch=karch:
 
 # Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
 fetch:
-    cargo xtask fetch
+    cargo run -p xtask --features svg-cursors -- fetch
 
 # Run all unit tests (host-testable crates only)
 test *args:

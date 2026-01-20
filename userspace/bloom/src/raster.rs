@@ -850,16 +850,7 @@ fn rasterize_text_fallback(
         pen_x += metrics.advance_width;
     }
 
-    if font_debug {
-        // Simple legacy overlay (avoid recursion)
-        // ... or simple logs?
-        // Let's just draw a red box or something? 
-        // Or recursively call ourselves but force debug=false
-        // Guard against recursion: render_debug_overlay calls rasterize_text_locally with false.
-        let msg = format!("Legacy: used '{}'", font.name);
-        let debug_lines = alloc::vec![msg];
-        render_debug_overlay(surface, &debug_lines, clip, None);
-    }
+    // Legacy debug overlay removed
 }
 
 fn render_debug_overlay(

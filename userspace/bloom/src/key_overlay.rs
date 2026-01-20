@@ -65,7 +65,7 @@ impl KeyOverlay {
                 UiBuilder::set_size(root_id, rect.w, rect.h);
                 
                 if let Some(txt_id) = self.text_node {
-                     UiBuilder::set_pos(txt_id, rect.x + 12, rect.y + 6);
+                     UiBuilder::set_pos(txt_id, 12, 6);
                 }
             }
         }

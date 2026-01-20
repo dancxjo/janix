@@ -57,9 +57,15 @@ impl UiPipeline {
         list: &mut DrawList,
         assets: &AssetBank,
     ) -> UiRunResult {
+        let now_ms = crate::log_ratelimit::now_ms();
+        let log_this_frame = crate::log_ratelimit::log_every(1000, now_ms);
+
         let root_id = match self.root_id {
             Some(id) => id,
             None => {
+                if log_this_frame {
+                    crate::log!("[bloom][ui] ENTER_UI_BUILD dirty={} root_present=false windows_seen=0 reason=no_root_id", self.dirty);
+                }
                 return UiRunResult {
                     changed: false,
                     damage: alloc::vec::Vec::new(),
@@ -70,6 +76,13 @@ impl UiPipeline {
         // Fast path: if nothing changed, reuse the last paint scene and only lower.
         if !self.dirty {
             if let Some(scene) = &self.cached_scene {
+                if log_this_frame {
+                    // Count windows in prev_snapshot if available
+                    let window_count = self.prev_snapshot.as_ref().map(|s| {
+                        s.nodes.values().filter(|n| matches!(n.kind, snapshot::UiNodeKind::Window)).count()
+                    }).unwrap_or(0);
+                    crate::log!("[bloom][ui] ENTER_UI_BUILD dirty=false root_present=true windows_seen={} reason=fast_path_cached", window_count);
+                }
                 Self::lower(scene, list);
                 return UiRunResult {
                     changed: false,
@@ -85,14 +98,15 @@ impl UiPipeline {
         let snapshot = UiSnapshot::capture(root_id);
         let t1 = stem::monotonic_ns();
 
-        // Rate-limited snapshot diagnostics
-        let now_ms = crate::log_ratelimit::now_ms();
-        if crate::log_ratelimit::log_every(500, now_ms) {
-            let node_count = snapshot.nodes.len();
+        let window_count = snapshot.nodes.values().filter(|n| matches!(n.kind, snapshot::UiNodeKind::Window)).count();
+        let node_count = snapshot.nodes.len();
+
+        if log_this_frame {
             let text_count = snapshot.nodes.values().filter(|n| matches!(n.kind, snapshot::UiNodeKind::Text)).count();
             let text_str_count = snapshot.nodes.values().filter(|n| !n.strings.is_empty()).count();
-            crate::log!("[bloom][ui] snapshot: nodes={} text={} text_str={}",
-                node_count, text_count, text_str_count);
+            
+            crate::log!("[bloom][ui] ENTER_UI_BUILD dirty={} root_present=true windows_seen={} nodes={} (text={} text_str={}) reason=full_build",
+                self.dirty, window_count, node_count, text_count, text_str_count);
         }
 
         // 2. Change Detection

@@ -512,7 +512,7 @@ fn main(arg: usize) -> ! {
     let mut wallpaper_loaded = false;
     let mut font_loaded = false;
     let mut ui_watch_id: Option<usize> = None;
-    let mut ui_text_pred_id: u32 = 0;  // For userspace filtering
+    let ui_text_pred_id: u32;  // For userspace filtering
     let mut ui_watch_buf = [0u8; 4096];
     let mut ui_force_damage = false;
     let mut ui_poll_deadline_ns = stem::monotonic_ns().saturating_add(1_000_000_000);
@@ -528,6 +528,11 @@ fn main(arg: usize) -> ! {
     // 4. UI Pipeline Setup
     let mut ui_pipeline = ui::UiPipeline::new();
     let ui_root = stem::ui::UiBuilder::create_root();
+    if ui_root.to_u64_lossy() == 0 {
+        log!("[bloom] ERROR: failed to create UI root!");
+    } else {
+        log!("[bloom] created UI root node: {}", ui_root.to_u64_lossy());
+    }
     ui_pipeline.set_root(ui_root);
     {
         use abi::root::RootWatchFilter;
@@ -755,8 +760,8 @@ fn main(arg: usize) -> ! {
         }
 
         // Build Scene - record ops into the builder's DrawList
-        let mut ui_changed = false;
-        let mut ui_damage: alloc::vec::Vec<Rect> = alloc::vec::Vec::new();
+        let ui_changed;
+        let ui_damage;
         {
             let list = builder.ops();
 
@@ -804,14 +809,14 @@ fn main(arg: usize) -> ! {
                     16.0,
                     geometry::Color::from_u32(0xFFCCCCCC),
                 );
-
-                // Run UI Pipeline
-                let ui_start = stem::monotonic_ns();
-                let ui_result = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
-                ui_changed = ui_result.changed;
-                ui_damage = ui_result.damage;
-                perf.ui_ns += stem::monotonic_ns().saturating_sub(ui_start);
             }
+
+            // Run UI Pipeline (UNIFEROUS - runs regardless of font_loaded now)
+            let ui_start = stem::monotonic_ns();
+            let ui_result = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
+            ui_changed = ui_result.changed;
+            ui_damage = ui_result.damage;
+            perf.ui_ns += stem::monotonic_ns().saturating_sub(ui_start);
 
             // Cursor
             cursor.emit_drawlist(list);

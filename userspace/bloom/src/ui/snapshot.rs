@@ -1,25 +1,44 @@
-use alloc::vec::Vec;
-use alloc::vec;
 use alloc::collections::BTreeMap;
-use stem::thing::ThingId;
-use stem::thing::sys::{prop_get, get_kind};
-use abi::schema::{keys, rels};
-use abi::symbols::SymbolId;
-use abi::ids::HandleId;
 use alloc::string::String;
+use alloc::vec::Vec;
+use stem::thing::sys::get_kind;
+use stem::thing::ThingId;
+use abi::ids::HandleId;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiNodeKind {
+    Unknown,
     Root,
     Window,
     Panel,
     Text,
     Image,
     Overlay,
-    Unknown(u32),
 }
 
-#[derive(Clone, Copy)]
+impl UiNodeKind {
+    pub fn from_symbol(id: u32, kinds: &KindIds) -> Self {
+        if id == 0 {
+            return Self::Unknown;
+        }
+        if id == kinds.root {
+            Self::Root
+        } else if id == kinds.window {
+            Self::Window
+        } else if id == kinds.panel {
+            Self::Panel
+        } else if id == kinds.text {
+            Self::Text
+        } else if id == kinds.image {
+            Self::Image
+        } else if id == kinds.overlay {
+            Self::Overlay
+        } else {
+            Self::Unknown
+        }
+    }
+}
+
 pub struct KindIds {
     pub root: u32,
     pub window: u32,
@@ -29,32 +48,32 @@ pub struct KindIds {
     pub overlay: u32,
 }
 
-#[derive(Clone, Copy)]
 pub struct UiKeys {
-    pub x: SymbolId,
-    pub y: SymbolId,
-    pub w: SymbolId,
-    pub h: SymbolId,
-    pub color: SymbolId,
-    pub text: SymbolId,
-    pub font: SymbolId,
-    pub font_size: SymbolId,
-    pub font_stack: SymbolId,
-    pub font_debug: SymbolId,
-    pub radius: SymbolId,
-    pub title: SymbolId,
-    pub hidden: SymbolId,
-    pub z_index: SymbolId,
-    pub center_x: SymbolId,
-    pub center_y: SymbolId,
-    pub fill_parent: SymbolId,
-    pub bg_color: SymbolId,
-    pub fg_color: SymbolId,
-    pub has_child: SymbolId,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+    pub color: u32,
+    pub text: u32,
+    pub font: u32,
+    pub font_size: u32,
+    pub font_stack: u32,
+    pub font_debug: u32,
+    pub radius: u32,
+    pub title: u32,
+    pub hidden: u32,
+    pub z_index: u32,
+    pub center_x: u32,
+    pub center_y: u32,
+    pub fill_parent: u32,
+    pub bg_color: u32,
+    pub fg_color: u32,
+    pub has_child: u32,
 }
 
 impl UiKeys {
     pub fn intern() -> Self {
+        use abi::schema::{keys, rels};
         Self {
             x: stem::thing::sys::intern(keys::UI_X).unwrap_or(0),
             y: stem::thing::sys::intern(keys::UI_Y).unwrap_or(0),
@@ -80,38 +99,26 @@ impl UiKeys {
     }
 }
 
-impl UiNodeKind {
-    pub fn from_symbol(id: u32, kinds: &KindIds) -> Self {
-        if id == kinds.root { Self::Root }
-        else if id == kinds.window { Self::Window }
-        else if id == kinds.panel { Self::Panel }
-        else if id == kinds.text { Self::Text }
-        else if id == kinds.image { Self::Image }
-        else if id == kinds.overlay { Self::Overlay }
-        else { Self::Unknown(id) }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct UiNodeSnapshot {
     pub id: ThingId,
     pub kind: UiNodeKind,
-    pub props: BTreeMap<SymbolId, u64>,
-    pub strings: BTreeMap<SymbolId, String>,
+    pub props: BTreeMap<u32, u64>,
+    pub strings: BTreeMap<u32, String>,
     pub children: Vec<ThingId>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone)]
 pub struct UiSnapshot {
-    pub nodes: BTreeMap<ThingId, UiNodeSnapshot>,
     pub root_id: Option<ThingId>,
+    pub nodes: BTreeMap<ThingId, UiNodeSnapshot>,
 }
 
 impl UiSnapshot {
     pub fn new() -> Self {
         Self {
-            nodes: BTreeMap::new(),
             root_id: None,
+            nodes: BTreeMap::new(),
         }
     }
 
@@ -125,6 +132,16 @@ impl UiSnapshot {
             image: stem::thing::sys::intern(kinds::UI_IMAGE).unwrap_or(0),
             overlay: stem::thing::sys::intern(kinds::UI_OVERLAY).unwrap_or(0),
         };
+
+        // Diagnostic: log intern results once in a while
+        let now_ms = crate::log_ratelimit::now_ms();
+        if crate::log_ratelimit::log_every(2000, now_ms) {
+            crate::log!("[bloom][ui] KindIds: root={} window={} panel={} text={} image={}",
+                kind_ids.root, kind_ids.window, kind_ids.panel, kind_ids.text, kind_ids.image);
+            if kind_ids.root == 0 || kind_ids.window == 0 {
+                crate::log!("[bloom][ui] WARNING: UI_ROOT or UI_WINDOW failed to intern!");
+            }
+        }
 
         let keys = UiKeys::intern();
 
@@ -162,101 +179,102 @@ impl UiSnapshot {
 
         let mut props = BTreeMap::new();
         let mut strings = BTreeMap::new();
-        
-        // Property fetching using pre-interned keys
-        let common_keys = [
-            (keys.x, keys::UI_X), (keys.y, keys::UI_Y), (keys.w, keys::UI_WIDTH), (keys.h, keys::UI_HEIGHT),
-            (keys.z_index, keys::UI_Z_INDEX), (keys.hidden, keys::UI_HIDDEN),
-            (keys.center_x, keys::UI_CENTER_X), (keys.center_y, keys::UI_CENTER_Y),
+
+        // Standard properties
+        let prop_list = [
+            keys.x, keys.y, keys.w, keys.h, keys.color, keys.radius,
+            keys.hidden, keys.z_index, keys.center_x, keys.center_y,
+            keys.fill_parent, keys.bg_color, keys.fg_color,
+            keys.font_size, keys.font_debug,
         ];
 
-        for (key_id, key_str) in common_keys {
-            if let Ok(val) = prop_get(id, key_str) {
-                props.insert(key_id, val);
+        for &p in &prop_list {
+            if p == 0 { continue; }
+            if let Ok(val) = stem::thing::sys::prop_get(id, p) {
+                props.insert(p, val);
             }
         }
 
-        let kind_keys = match kind {
-            UiNodeKind::Text => vec![
-                (keys.text, keys::UI_TEXT), (keys.font, keys::UI_FONT),
-                (keys.font_stack, keys::UI_FONT_STACK), (keys.font_size, keys::UI_FONT_SIZE),
-                (keys.font_debug, keys::UI_FONT_DEBUG), (keys.color, keys::UI_COLOR),
-                (keys.fg_color, keys::UI_FG_COLOR),
-                (keys.center_x, keys::UI_CENTER_X), (keys.center_y, keys::UI_CENTER_Y),
-            ],
-            UiNodeKind::Panel | UiNodeKind::Window => vec![
-                (keys.radius, keys::UI_RADIUS), (keys.title, keys::UI_TITLE), 
-                (keys.bg_color, keys::UI_BG_COLOR), (keys.fg_color, keys::UI_FG_COLOR),
-                (keys.fill_parent, keys::UI_FILL_PARENT),
-            ],
-            _ => vec![],
-        };
-
-        for (key_id, key_str) in kind_keys {
-            if let Ok(val) = prop_get(id, key_str) {
-                props.insert(key_id, val);
-                
-                // If this is a string property, snapshot its content
-                if key_id == keys.text || key_id == keys.font || key_id == keys.font_stack || key_id == keys.title {
-                    if val != 0 {
-                        let mut s_buf = [0u8; 1024];
-                        if let Ok(len) = stem::thing::sys::bytespace_read(ThingId::from_u64(val), 0, &mut s_buf) {
-                            let s = String::from(core::str::from_utf8(&s_buf[..len]).unwrap_or_default());
-                            
-                            // Rate-limited logging for text nodes
-                            if key_id == keys.text {
-                                let now_ms = crate::log_ratelimit::now_ms();
-                                if crate::log_ratelimit::log_every(2000, now_ms) {
-                                    crate::log!("[bloom][snapshot] text_capture: node={} bs_id={} len={} text='{}'",
-                                        id.to_u64_lossy(), val, len, &s);
-                                }
-                            }
-                            
-                            strings.insert(key_id, s);
-                        }
+        // String properties
+        let str_list = [keys.text, keys.font, keys.font_stack, keys.title];
+        for &p in &str_list {
+            if p == 0 { continue; }
+            if let Ok(val) = stem::thing::sys::prop_get(id, p) {
+                // val is Bytespace ID
+                if val != 0 {
+                    if let Some(s) = self.read_string(ThingId::from_u64(val)) {
+                        strings.insert(p, s);
                     }
                 }
             }
         }
 
-        self.nodes.insert(id, UiNodeSnapshot {
+        self.nodes.insert(
             id,
-            kind,
-            props,
-            strings,
-            children: children.clone(),
-        });
+            UiNodeSnapshot {
+                id,
+                kind,
+                props,
+                strings,
+                children: children.clone(),
+            },
+        );
 
-        for child_id in children {
-            self.traverse(child_id, kind_ids, keys);
+        // Recurse
+        for child in children {
+            self.traverse(child, kind_ids, keys);
         }
     }
 
-    /// Returns a list of ThingIds that have changed between this snapshot and another.
-    pub fn diff(&self, other: &UiSnapshot) -> Vec<ThingId> {
-        let mut dirty = Vec::new();
+    fn read_string(&self, bs_id: ThingId) -> Option<String> {
+        use stem::thing::sys::{bytespace_info, bytespace_read};
+        let size = bytespace_info(bs_id).ok()?;
+        if size == 0 {
+            return Some(String::new());
+        }
+        let mut buf = alloc::vec![0u8; size];
+        let len = bytespace_read(bs_id, 0, &mut buf).ok()?;
+        Some(String::from(core::str::from_utf8(&buf[..len]).unwrap_or("")))
+    }
 
-        // Check for modified or new nodes
+    pub fn diff(&self, prev: &Self) -> Vec<ThingId> {
+        let mut changed = Vec::new();
+
+        // Nodes in self but not in prev, or different content
         for (id, node) in &self.nodes {
-            match other.nodes.get(id) {
-                Some(other_node) => {
-                    if node != other_node {
-                        dirty.push(*id);
-                    }
+            if let Some(prev_node) = prev.nodes.get(id) {
+                if !self.nodes_equal(node, prev_node) {
+                    changed.push(*id);
                 }
-                None => {
-                    dirty.push(*id);
-                }
+            } else {
+                changed.push(*id);
             }
         }
 
-        // Check for deleted nodes
-        for id in other.nodes.keys() {
+        // Nodes in prev but not in self (deleted) - we also need to damage their old areas.
+        // Actually the caller uses this to mark damage.
+        for id in prev.nodes.keys() {
             if !self.nodes.contains_key(id) {
-                dirty.push(*id);
+                changed.push(*id);
             }
         }
 
-        dirty
+        changed
+    }
+
+    fn nodes_equal(&self, a: &UiNodeSnapshot, b: &UiNodeSnapshot) -> bool {
+        if a.kind != b.kind {
+            return false;
+        }
+        if a.props != b.props {
+            return false;
+        }
+        if a.strings != b.strings {
+            return false;
+        }
+        if a.children != b.children {
+            return false;
+        }
+        true
     }
 }

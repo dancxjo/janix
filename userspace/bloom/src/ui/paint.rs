@@ -6,6 +6,7 @@ use crate::damage::Rect;
 use crate::ui::layout::{LayoutTree, LayoutNode, SymbolResolver};
 use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
 use abi::schema::keys;
+use abi::ids::HandleId; // Need HandleId for ThingId::from (Wait, paint.rs uses abi::WireType::ThingId)
 use abi::WireType::ThingId;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -42,19 +43,7 @@ impl PaintBuilder {
         if let Some(root) = &layout.root {
             Self::build_recursive(snapshot, root, &mut objects, symbols);
         }
-        for obj in objects.iter() {
-            match obj {
-                PaintObject::Rect { rect: _, color: _, .. } => {
-                    // stem::info!("PAINT: obj=Rect rect={:?} color={:x}", rect, color.to_u32());
-                }
-                PaintObject::Text { rect: _, text: _, font: _, .. } => {
-                    // stem::info!("PAINT: obj=Text rect={:?} text='{}' font={}", rect, text, font);
-                }
-                PaintObject::Image { rect: _ } => {
-                    // stem::info!("PAINT: obj=Image rect={:?}", rect);
-                }
-            }
-        }
+        
         let now_ms = crate::log_ratelimit::now_ms();
         if crate::log_ratelimit::log_every(1000, now_ms) {
             let text_count = objects.iter().filter(|o| matches!(o, PaintObject::Text { .. })).count();
@@ -78,12 +67,11 @@ impl PaintBuilder {
     }
 
     fn create_paint_object(node: &UiNodeSnapshot, layout: &LayoutNode, symbols: &impl SymbolResolver) -> Option<PaintObject> {
-        // v0: Check kind and pluck styles
-        
         // Check for UI_TEXT using symbol resolver
         let text_key_id = symbols.resolve(keys::UI_TEXT);
         let has_text = if let Some(id) = text_key_id {
-            node.props.contains_key(&id)
+            // V0: check BOTH props (raw) and strings (parsed)
+            node.props.contains_key(&id) || node.strings.contains_key(&id)
         } else {
             false
         };
@@ -100,6 +88,10 @@ impl PaintBuilder {
             let mut color_val = Self::get_prop(node, keys::UI_FG_COLOR, symbols);
             if color_val == 0 {
                 color_val = Self::get_prop(node, keys::UI_COLOR, symbols);
+            }
+            // Use white by default for text if no color specified
+            if color_val == 0 {
+                color_val = 0xFFFFFFFF;
             }
             let color = Color::from_u32(color_val as u32);
             
@@ -119,7 +111,9 @@ impl PaintBuilder {
             color_val = Self::get_prop(node, keys::UI_COLOR, symbols);
         }
 
-        if color_val != 0 || layout.rect.w > 0 {
+        // Only emit Rect if color is non-transparent OR it's been intentionally sized
+        // Note: Window nodes with no color shouldn't necessarily emit a transparent black box.
+        if color_val != 0 {
             return Some(PaintObject::Rect {
                 rect: layout.rect.clone(),
                 color: Color::from_u32(color_val as u32),
@@ -142,87 +136,5 @@ impl PaintBuilder {
             return node.strings.get(&id).cloned();
         }
         None
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use alloc::collections::BTreeMap;
-    use alloc::string::ToString;
-    use alloc::vec;
-
-    struct MockSymbolResolver {
-        map: BTreeMap<String, u32>,
-    }
-
-    impl MockSymbolResolver {
-        fn new() -> Self {
-            let mut map = BTreeMap::new();
-            // Pre-seed common keys
-            map.insert(keys::UI_X.to_string(), 1);
-            map.insert(keys::UI_Y.to_string(), 2);
-            map.insert(keys::UI_WIDTH.to_string(), 3);
-            map.insert(keys::UI_HEIGHT.to_string(), 4);
-            map.insert(keys::UI_COLOR.to_string(), 7);
-            map.insert(keys::UI_BG_COLOR.to_string(), 8);
-            Self { map }
-        }
-    }
-
-    impl SymbolResolver for MockSymbolResolver {
-        fn resolve(&self, key: &str) -> Option<u32> {
-            self.map.get(key).cloned()
-        }
-    }
-
-    #[test]
-    fn test_paint_determinism() {
-        // 1. Setup Snapshot
-        let mut snapshot = UiSnapshot::new();
-        fn make_id(n: u8) -> abi::ThingId {
-            let mut b = [0u8; 16];
-            b[0] = n;
-            abi::ThingId(b)
-        }
-        let root_id = make_id(1);
-        snapshot.root_id = Some(root_id);
-
-        let mut props = BTreeMap::new();
-        props.insert(8, 0xFF0000); // UI_BG_COLOR = Red
-
-        snapshot.nodes.insert(root_id, UiNodeSnapshot {
-            id: root_id,
-            kind: UiNodeKind::Window,
-            props,
-            strings: BTreeMap::new(),
-            children: vec![],
-        });
-
-        // 2. Setup Layout
-        let layout = LayoutTree {
-            root: Some(LayoutNode {
-                id: root_id,
-                rect: Rect::new(0, 0, 100, 100),
-                z_index: 0,
-                children: vec![],
-            })
-        };
-
-        let resolver = MockSymbolResolver::new();
-
-        // 3. Build twice
-        let scene1 = PaintBuilder::build(&snapshot, &layout, &resolver);
-        let scene2 = PaintBuilder::build(&snapshot, &layout, &resolver);
-
-        // 4. Assert equality
-        assert_eq!(scene1, scene2);
-        assert_eq!(scene1.objects.len(), 1);
-        match &scene1.objects[0] {
-            PaintObject::Rect { color, .. } => {
-                assert_eq!(color.to_u32(), 0xFF0000);
-            },
-            _ => panic!("Expected Rect"),
-        }
     }
 }

@@ -21,6 +21,96 @@ impl std::fmt::Display for StepError {
 
 impl std::error::Error for StepError {}
 
+// ===== Pixel Verification Helpers =====
+
+/// Known fallback background color (Thing-OS blue when no wallpaper)
+const FALLBACK_BG_COLOR: [u8; 3] = [0x00, 0x2d, 0x44]; // #002d44
+
+/// Check if a color is close to another (within tolerance)
+fn color_close(a: [u8; 3], b: [u8; 3], tolerance: u8) -> bool {
+    a[0].abs_diff(b[0]) <= tolerance 
+        && a[1].abs_diff(b[1]) <= tolerance 
+        && a[2].abs_diff(b[2]) <= tolerance
+}
+
+/// Verify wallpaper is NOT just fallback color - returns (total_pixels, fallback_pixels)
+fn verify_wallpaper_pixels(img: &image::RgbImage) -> (u32, u32) {
+    let (width, height) = img.dimensions();
+    let mut total = 0u32;
+    let mut fallback = 0u32;
+    
+    // Sample grid across the screen
+    for y in (0..height).step_by(20) {
+        for x in (0..width).step_by(20) {
+            let pixel = img.get_pixel(x, y).0;
+            total += 1;
+            if color_close(pixel, FALLBACK_BG_COLOR, 10) {
+                fallback += 1;
+            }
+        }
+    }
+    (total, fallback)
+}
+
+/// Verify clock window has black/red pixels in center - returns (black, red, other)
+fn verify_clock_center_pixels(img: &image::RgbImage) -> (u32, u32, u32) {
+    let (width, height) = img.dimensions();
+    let cx = width / 2;
+    let cy = height / 2;
+    
+    let mut black = 0u32;
+    let mut red = 0u32;
+    let mut other = 0u32;
+    
+    // Sample center region (200x100 box)
+    let sample_w = 100.min(width / 4);
+    let sample_h = 50.min(height / 6);
+    
+    for y in cy.saturating_sub(sample_h)..=(cy + sample_h).min(height - 1) {
+        for x in cx.saturating_sub(sample_w)..=(cx + sample_w).min(width - 1) {
+            let pixel = img.get_pixel(x, y).0;
+            if pixel[0] < 20 && pixel[1] < 20 && pixel[2] < 20 {
+                black += 1;
+            } else if pixel[0] > 180 && pixel[1] < 80 && pixel[2] < 80 {
+                red += 1;
+            } else {
+                other += 1;
+            }
+        }
+    }
+    (black, red, other)
+}
+
+/// Verify cursor-like pixels near center - returns count of non-background pixels
+fn verify_cursor_pixels(img: &image::RgbImage) -> u32 {
+    let (width, height) = img.dimensions();
+    let cx = width / 2;
+    let cy = height / 2;
+    
+    let mut non_bg = 0u32;
+    let radius = 15u32;
+    
+    // Get a sample of what background color is (from corner)
+    let bg_sample = img.get_pixel(10, 10).0;
+    
+    for dy in 0..=radius {
+        for dx in 0..=radius {
+            for (sx, sy) in [(1i32, 1i32), (1, -1), (-1, 1), (-1, -1)] {
+                let x = (cx as i32 + (dx as i32 * sx)) as u32;
+                let y = (cy as i32 + (dy as i32 * sy)) as u32;
+                if x < width && y < height {
+                    let pixel = img.get_pixel(x, y).0;
+                    if !color_close(pixel, bg_sample, 20) {
+                        non_bg += 1;
+                    }
+                }
+            }
+        }
+    }
+    non_bg
+}
+
+
 /// Capture diagnostic artifacts when a test fails or times out
 async fn capture_failure_diagnostics(world: &mut ThingOsWorld, context: &str) {
     use crate::artifacts;
@@ -765,63 +855,86 @@ async fn system_clock_tick_impl(world: &mut ThingOsWorld) -> Result<(), StepErro
 }
 
 #[then(regex = r#"^I should see the wallpaper on the screen within (\d+) seconds$"#)]
-async fn wallpaper_within_timeout(world: &mut ThingOsWorld, timeout: u64) {
-    // Wait for bloom to render
-    let found = world.wait_for_serial("bloom:", timeout as f64).await;
+async fn wallpaper_within_timeout(world: &mut ThingOsWorld, timeout: u64) -> Result<(), StepError> {
+    eprintln!("│  │  │      🖼️ Waiting for wallpaper...");
+    
+    // Wait for bloom first frame contract log
+    let found = world.wait_for_serial("[CONTRACT] [bloom] First frame rendered", timeout as f64).await;
     if !found {
-        eprintln!("│  │  │      ⚠️ Bloom not detected in logs within {}s", timeout);
-    }
-    
-    // Take a screenshot and verify it's not blank
-    if let Some(_qmp) = world.qmp_control.as_mut() {
-        let screenshot_path = crate::artifacts::global()
-            .lock()
-            .await
-            .screenshot_path("wallpaper");
-        
-        match world.take_screenshot(&screenshot_path).await {
-            Ok(path) => eprintln!("│  │  │      📸 Screenshot: {}", path.display()),
-            Err(e) => eprintln!("│  │  │      ⚠️ Screenshot failed: {}", e),
-        }
-    } else {
-        eprintln!("│  │  │      ⚠️ No QMP connection for screenshot");
-    }
-}
-
-#[then("I should see a cursor centered on the screen")]
-async fn cursor_centered_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
-    eprintln!("│  │  │      📍 Waiting for bloom first frame...");
-    
-    // Wait for bloom to render its first frame (CONTRACT log)
-    let bloom_ready = world.wait_for_serial("[CONTRACT] [bloom] First frame rendered", 30.0).await;
-    
-    if !bloom_ready {
-        // Check if bloom is at least running
-        let log = world.get_serial_log().await;
-        if log.contains("bloom:") {
-            eprintln!("│  │  │      ⚠️ Bloom running but no first frame CONTRACT log");
-        }
-        
-        // Capture diagnostics
         capture_failure_diagnostics(world, "bloom first frame").await;
         return Err(StepError("Bloom did not render first frame within timeout".to_string()));
     }
     
-    eprintln!("│  │  │      ✅ Bloom compositor rendered first frame");
-    
-    // Take a screenshot for visual verification if QMP available
-    if world.qmp_control.is_some() {
-        let screenshot_path = crate::artifacts::global()
-            .lock()
-            .await
-            .screenshot_path("cursor_check");
-        
-        match world.take_screenshot(&screenshot_path).await {
-            Ok(path) => eprintln!("│  │  │      📸 Cursor screenshot: {}", path.display()),
-            Err(e) => eprintln!("│  │  │      ⚠️ Screenshot failed: {}", e),
-        }
+    // Take screenshot and verify wallpaper is loaded (not fallback color)
+    if world.qmp_control.is_none() {
+        return Err(StepError("No QMP connection for screenshot".to_string()));
     }
     
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("wallpaper");
+    
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .map_err(|e| StepError(format!("Screenshot failed: {}", e)))?;
+    
+    eprintln!("│  │  │      📸 Screenshot: {}", png_path.display());
+    
+    // Verify wallpaper pixels
+    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let rgb = img.to_rgb8();
+    let (total, fallback) = verify_wallpaper_pixels(&rgb);
+    
+    let fallback_pct = (fallback as f64 / total as f64) * 100.0;
+    eprintln!("│  │  │      📊 Wallpaper check: {:.1}% fallback color ({}/{})", fallback_pct, fallback, total);
+    
+    if fallback_pct > 90.0 {
+        return Err(StepError(format!(
+            "Wallpaper not loaded - {:.1}% of pixels are fallback color", fallback_pct
+        )));
+    }
+    
+    eprintln!("│  │  │      ✅ Wallpaper is showing (not fallback)");
+    Ok(())
+}
+
+#[then("I should see a cursor centered on the screen")]
+async fn cursor_centered_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    eprintln!("│  │  │      📍 Checking for cursor at center...");
+    
+    // Take screenshot and verify cursor pixels at center
+    if world.qmp_control.is_none() {
+        return Err(StepError("No QMP connection for screenshot".to_string()));
+    }
+    
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("cursor_check");
+    
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .map_err(|e| StepError(format!("Screenshot failed: {}", e)))?;
+    
+    eprintln!("│  │  │      📸 Screenshot: {}", png_path.display());
+    
+    // Verify cursor pixels at center
+    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let rgb = img.to_rgb8();
+    let non_bg_pixels = verify_cursor_pixels(&rgb);
+    
+    eprintln!("│  │  │      📊 Cursor check: {} non-background pixels near center", non_bg_pixels);
+    
+    if non_bg_pixels < 10 {
+        return Err(StepError(format!(
+            "Cursor not visible - only {} non-background pixels near center", non_bg_pixels
+        )));
+    }
+    
+    eprintln!("│  │  │      ✅ Cursor detected at center");
     Ok(())
 }
 
@@ -853,81 +966,56 @@ async fn clock_window_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
     let clock_ready = world.wait_for_serial("CLOCK PUBLISH:", 30.0).await;
     
     if !clock_ready {
-        let log = world.get_serial_log().await;
-        if log.to_lowercase().contains("clock") {
-            eprintln!("│  │  │      ⚠️ Clock app running but no PUBLISH log");
-        }
         capture_failure_diagnostics(world, "clock publish").await;
         return Err(StepError("Clock app did not publish within timeout".to_string()));
     }
     
     eprintln!("│  │  │      ✅ Clock app publishing");
     
-    // Take screenshot and verify black/red pixels (DSEG7 clock style)
-    if world.qmp_control.is_some() {
-        let screenshot_path = crate::artifacts::global()
-            .lock()
-            .await
-            .screenshot_path("clock_check");
-        
-        match world.take_screenshot(&screenshot_path).await {
-            Ok(path) => {
-                eprintln!("│  │  │      📸 Clock screenshot: {}", path.display());
-                
-                // Verify clock pixels - look for black and red in center region
-                match verify_clock_pixels(&path).await {
-                    Ok((black, red)) => {
-                        eprintln!("│  │  │      📊 Center pixels: {} black, {} red", black, red);
-                        if black < 100 && red < 5 {
-                            eprintln!("│  │  │      ⚠️ Clock window may not be visible (few black/red pixels)");
-                        }
-                    }
-                    Err(e) => {
-                        eprintln!("│  │  │      ⚠️ Pixel verification failed: {}", e);
-                    }
-                }
-            }
-            Err(e) => eprintln!("│  │  │      ⚠️ Screenshot failed: {}", e),
-        }
+    // Wait a moment for UI to update
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    
+    // Take screenshot and verify clock pixels
+    if world.qmp_control.is_none() {
+        return Err(StepError("No QMP connection for screenshot".to_string()));
     }
     
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("clock_check");
+    
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .map_err(|e| StepError(format!("Screenshot failed: {}", e)))?;
+    
+    eprintln!("│  │  │      📸 Screenshot: {}", png_path.display());
+    
+    // Verify clock window pixels (black background with red digits)
+    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let rgb = img.to_rgb8();
+    let (black, red, other) = verify_clock_center_pixels(&rgb);
+    
+    let total = black + red + other;
+    let black_pct = (black as f64 / total as f64) * 100.0;
+    let red_pct = (red as f64 / total as f64) * 100.0;
+    
+    eprintln!("│  │  │      📊 Center pixels: {} black ({:.1}%), {} red ({:.1}%), {} other", 
+              black, black_pct, red, red_pct, other);
+    
+    // Clock window should have significant black (background) and some red (digits)
+    if black_pct < 10.0 {
+        return Err(StepError(format!(
+            "Clock window not visible - only {:.1}% black pixels in center", black_pct
+        )));
+    }
+    
+    eprintln!("│  │  │      ✅ Clock window detected");
     Ok(())
 }
 
-/// Check for black and red pixels in center region (clock window)
-async fn verify_clock_pixels(png_path: &std::path::Path) -> Result<(u32, u32), Box<dyn std::error::Error + Send + Sync>> {
-    let img = image::open(png_path)?;
-    let rgb = img.to_rgb8();
-    let (width, height) = rgb.dimensions();
-    
-    if width == 0 || height == 0 {
-        return Err("Invalid screenshot dimensions".into());
-    }
-    
-    let cx = width / 2;
-    let cy = height / 2;
-    
-    // Sample a region in the center where clock window should be
-    let mut black_count = 0u32;
-    let mut red_count = 0u32;
-    
-    // Check center region (inside the clock window area)
-    let sample_w = 200.min(width / 3);
-    let sample_h = 100.min(height / 4);
-    
-    for y in (cy.saturating_sub(sample_h / 2))..(cy + sample_h / 2).min(height) {
-        for x in (cx.saturating_sub(sample_w / 2))..(cx + sample_w / 2).min(width) {
-            let pixel = rgb.get_pixel(x, y).0;
-            match pixel {
-                [0, 0, 0] => black_count += 1,
-                [r, g, b] if r > 200 && g < 50 && b < 50 => red_count += 1,
-                _ => {}
-            }
-        }
-    }
-    
-    Ok((black_count, red_count))
-}
+
 
 /// Given steps for keyboard/pointer scenarios - boot machine if needed
 #[given("the clock window is ticking")]

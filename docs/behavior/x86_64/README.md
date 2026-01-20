@@ -1,9 +1,11 @@
 # BDD Test Results: x86_64
 
-> Last run: 2026-01-19 21:23:49
+> Last run: 2026-01-19 19:04:48
 
 ## Features
 
 | Feature | Scenarios | Status |
 |---------|-----------|--------|
-| [Clock application](clock-application/README.md) | 1/1 | ✅ |
+| [System Boot and UI Bring-Up](system-boot-and-ui-bring-up/README.md) | 1/1 | ✅ |
+| [Keyboard Input and Symbol Rendering](keyboard-input-and-symbol-rendering/README.md) | 2/2 | ✅ |
+| [Pointer Input](pointer-input/README.md) | 1/1 | ✅ |

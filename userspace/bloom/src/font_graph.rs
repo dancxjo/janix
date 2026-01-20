@@ -605,3 +605,26 @@ pub fn mark_dirty() {
         graph.mark_dirty();
     }
 }
+
+/// Non-blocking check if fonts are available.
+/// Returns false if graph is dirty and needs refresh (caller should use fallback).
+pub fn has_fonts_ready() -> bool {
+    let guard = FONT_GRAPH.lock();
+    match guard.as_ref() {
+        Some(graph) if !graph.dirty => !graph.faces.is_empty(),
+        _ => false,
+    }
+}
+
+/// Non-blocking graph access.
+/// Returns None if graph is dirty and needs refresh (caller should use fallback).
+pub fn try_with_graph_if_ready<F, R>(f: F) -> Option<R>
+where
+    F: FnOnce(&FontGraph) -> R,
+{
+    let guard = FONT_GRAPH.lock();
+    match guard.as_ref() {
+        Some(graph) if !graph.dirty => Some(f(graph)),
+        _ => None,
+    }
+}

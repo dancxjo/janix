@@ -69,6 +69,8 @@ pub struct UiKeys {
     pub bg_color: u32,
     pub fg_color: u32,
     pub has_child: u32,
+    pub inset_right: u32,
+    pub inset_bottom: u32,
 }
 
 impl UiKeys {
@@ -95,6 +97,8 @@ impl UiKeys {
             bg_color: stem::thing::sys::intern(keys::UI_BG_COLOR).unwrap_or(0),
             fg_color: stem::thing::sys::intern(keys::UI_FG_COLOR).unwrap_or(0),
             has_child: stem::thing::sys::intern(rels::HAS_CHILD).unwrap_or(0),
+            inset_right: stem::thing::sys::intern(keys::UI_INSET_RIGHT).unwrap_or(0),
+            inset_bottom: stem::thing::sys::intern(keys::UI_INSET_BOTTOM).unwrap_or(0),
         }
     }
 }
@@ -184,7 +188,7 @@ impl UiSnapshot {
         let prop_list = [
             keys.x, keys.y, keys.w, keys.h, keys.color, keys.radius,
             keys.hidden, keys.z_index, keys.center_x, keys.center_y,
-            keys.fill_parent, keys.bg_color, keys.fg_color,
+            keys.fill_parent, keys.bg_color, keys.fg_color, keys.inset_right, keys.inset_bottom,
             keys.font_size, keys.font_debug,
         ];
 

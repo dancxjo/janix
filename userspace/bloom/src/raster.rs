@@ -633,6 +633,12 @@ fn rasterize_text_locally(
 
     let mut debug_lines: Vec<String> = Vec::new();
 
+    // Early non-blocking check: skip graph if not ready
+    if !font_graph::has_fonts_ready() {
+        rasterize_text_fallback(surface, text, x, y, size, color, clip, requested_font, font_debug);
+        return;
+    }
+
     let mut handled = false;
     font_graph::with_graph(|graph| {
         let style = FontStyle::default();

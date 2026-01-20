@@ -150,6 +150,17 @@ impl LayoutSolver {
                     y = 0;
                 }
 
+                // Edge-relative positioning (insets from parent edges)
+                // Debug: log inset values for debugging
+                let inset_right = Self::get_prop(child_node, keys::UI_INSET_RIGHT, symbols) as i32;
+                let inset_bottom = Self::get_prop(child_node, keys::UI_INSET_BOTTOM, symbols) as i32;
+                if inset_right > 0 {
+                    x = layout.rect.w - inset_right - w;
+                }
+                if inset_bottom > 0 {
+                    y = layout.rect.h - inset_bottom - h;
+                }
+
                 if center_x {
                      x = (layout.rect.w - w) / 2;
                 }

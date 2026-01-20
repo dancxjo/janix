@@ -686,7 +686,7 @@ fn main(arg: usize) -> ! {
         }
         // Check if fonts are ready via font graph OR legacy
         if !font_loaded {
-            let ready_graph = font_graph::with_graph(|graph| graph.has_fonts());
+            let ready_graph = font_graph::has_fonts_ready();
             let ready_legacy = !ASSETS.get_fonts().is_empty();
 
             if ready_graph || ready_legacy {

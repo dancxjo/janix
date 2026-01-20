@@ -99,6 +99,8 @@ pub mod keys {
     pub const UI_CENTER_X: &str = "ui.layout.center_x";
     pub const UI_CENTER_Y: &str = "ui.layout.center_y";
     pub const UI_FILL_PARENT: &str = "ui.layout.fill_parent";
+    pub const UI_INSET_RIGHT: &str = "ui.layout.inset_right";
+    pub const UI_INSET_BOTTOM: &str = "ui.layout.inset_bottom";
     pub const UI_BG_COLOR: &str = "ui.style.bg_color";
     pub const UI_FG_COLOR: &str = "ui.style.fg_color";
     pub const UI_FONT_SIZE_PX: &str = "ui.style.font_size_px";

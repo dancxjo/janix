@@ -115,8 +115,10 @@ fn main() -> ! {
         // Window Layout: Bottom-right area (to avoid overlap with font_explorer)
         prop_set(win, keys::UI_WIDTH, 400).ok();
         prop_set(win, keys::UI_HEIGHT, 150).ok();
-        prop_set(win, keys::UI_X, 1100).ok();  // Right side
-        prop_set(win, keys::UI_Y, 700).ok();   // Bottom area
+        prop_set(win, keys::UI_X, 0).ok();  // Base at 0 (inset will override)
+        prop_set(win, keys::UI_Y, 0).ok();  // Base at 0 (inset will override)
+        prop_set(win, keys::UI_INSET_RIGHT, 20).ok();  // 20px from right edge
+        prop_set(win, keys::UI_INSET_BOTTOM, 30).ok(); // 30px from bottom edge
 
         // Create Text
         let text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");

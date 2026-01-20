@@ -1,9 +1,9 @@
 # Feature: System Boot and UI Bring-Up
 
-> Last run: 2026-01-19 20:28:41
+> Last run: 2026-01-19 21:17:21
 
 ## Scenarios
 
 | Scenario | Steps | Status | Link |
 |----------|-------|--------|------|
-| Boot produces logs, graphics, and a live desktop | 2/3 | ✅ | [View Details](boot-produces-logs-graphics-and-a-live-desktop/README.md) |
+| Boot produces logs, graphics, and a live desktop | 9/9 | ✅ | [View Details](boot-produces-logs-graphics-and-a-live-desktop/README.md) |

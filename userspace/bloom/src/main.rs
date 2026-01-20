@@ -83,23 +83,89 @@ extern "C" fn wallpaper_loader_entry() -> ! {
 }
 
 /// Background thread for loading fonts
+/// Background thread for loading fonts
 extern "C" fn font_loader_entry() -> ! {
     log!("[font_loader] thread started");
 
-    // use abi::query::{QueryOpKind, QueryStep}; // Unused in StreamOnly mode
-    // use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
-    use abi::types::{WatchMode, WatchSpec};
-    use abi::schema::{kinds, keys, rels};
-    use stem::syscall;
-    use stem::thing::sys::{bytespace_info, bytespace_read, prop_get};
+    use abi::schema::kinds;
+    use stem::thing::sys::{bytespace_info, bytespace_map, describe_thing, find, prop_get};
     use stem::thing::ThingId;
+
+    // =========================================================================
+    // PHASE 1: IMMEDIATE SCAN
+    // Directly scan all boot modules for TTF files and load them immediately.
+    // This ensures fonts are available as quickly as possible without waiting
+    // for ingestd processing or watch mechanisms.
+    // =========================================================================
+    
+    log!("[font_loader] scanning boot modules for fonts...");
+    
+    let mut modules = [ThingId::default(); 64];
+    let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
+    log!("[font_loader] found {} boot modules", count);
+    
+    for i in 0..count {
+        let mod_id = modules[i];
+        let mut buf = [0u8; 512];
+        let len = match describe_thing(mod_id, &mut buf) {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        
+        let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
+        let mod_name = if let Some(pos) = desc.find("name: \"") {
+            let rest = &desc[pos + 7..];
+            if let Some(end) = rest.find('"') {
+                &rest[..end]
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+        
+        // Check if this looks like a font file
+        let is_font = mod_name.ends_with(".ttf") 
+            || mod_name.ends_with(".TTF")
+            || mod_name.ends_with(".otf")
+            || mod_name.ends_with(".OTF");
+        
+        if !is_font {
+            continue;
+        }
+        
+        log!("[font_loader] found font module: '{}'", mod_name);
+        
+        // Get bytespace
+        let bs_id = match prop_get(mod_id, "bytespace") {
+            Ok(id) => ThingId::from_u64(id),
+            Err(_) => continue,
+        };
+        
+        let size = match bytespace_info(bs_id) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        
+        log!("[font_loader] enqueuing immediate font load: bs={} size={} name='{}'",
+            bs_id.to_u64_lossy(), size, mod_name);
+        ASSETS.enqueue_font_load(bs_id, size, mod_name);
+    }
+    
+    log!("[font_loader] immediate scan complete, entering watch loop");
+
+    // =========================================================================
+    // PHASE 2: WATCH-BASED UPDATES
+    // Continue watching for any new fonts added by ingestd or hot-loaded later.
+    // =========================================================================
+    
+    use abi::types::{WatchMode, WatchSpec};
+    use abi::schema::{keys, rels};
+    use stem::syscall;
+    use stem::thing::sys::bytespace_read;
     use stem::root_watch;
     use crate::font_graph;
 
-    // Intern relevant Keys and Kinds for Userspace Filtering
-    // (Query setup removed as we use StreamOnly)
-
-    // Intern relevant Keys and Kinds for Userspace Filtering
     let k_file = stem::thing::sys::intern(kinds::FONT_FILE).unwrap_or(0);
     let k_family = stem::thing::sys::intern(kinds::FONT_FAMILY).unwrap_or(0);
     let k_face = stem::thing::sys::intern(kinds::FONT_FACE).unwrap_or(0);
@@ -109,7 +175,6 @@ extern "C" fn font_loader_entry() -> ! {
     let p_sz = stem::thing::sys::intern(keys::FONT_SIZE_BYTES).unwrap_or(0);
     let p_name = stem::thing::sys::intern(keys::FONT_NAME).unwrap_or(0);
 
-    // List of predicates that should trigger a FontGraph refresh
     let dirty_keys = [
         p_name,
         stem::thing::sys::intern(keys::FONT_STYLE).unwrap_or(0),
@@ -121,17 +186,12 @@ extern "C" fn font_loader_entry() -> ! {
         stem::thing::sys::intern(rels::FONT_COVERS).unwrap_or(0),
     ];
 
-    // No Kernel Filter: We need to see structure updates (Family/Face) 
-    // which might not have Bytespace properties.
-    // We filter in userspace.
-    // Use StreamOnly with start_seq=0 to replay history and see ALL existing nodes.
-    // QueryThenStream with a specific query (like FONT_FILE) would miss pre-existing Families/Faces.
     let spec = WatchSpec {
         mode: WatchMode::StreamOnly as u32,
         query_ptr: 0,
         query_len: 0,
         start_seq: 0,
-        filter_ptr: 0, // No filter (userspace filtering)
+        filter_ptr: 0,
         filter_len: 0,
         ..Default::default()
     };
@@ -149,7 +209,6 @@ extern "C" fn font_loader_entry() -> ! {
         }
     };
 
-    // Shared processing logic
     fn read_name_from_bytespace(id: ThingId) -> Option<alloc::string::String> {
         let size = bytespace_info(id).ok()?;
         let mut buf = alloc::vec![0u8; size];
@@ -171,9 +230,7 @@ extern "C" fn font_loader_entry() -> ! {
                     let mut is_dirty = false;
                     let mut is_file_update = false;
 
-                    // Check 1: Is this a KIND event for a Font Node?
                     if header.predicate == abi::watch::WATCH_PRED_KIND {
-                         // Check kind ID in value
                          if abi::watch::ValueEncoding::from_u8(header.value_encoding) 
                             == Some(abi::watch::ValueEncoding::Bytes) && value.len() == 4 
                          {
@@ -185,21 +242,16 @@ extern "C" fn font_loader_entry() -> ! {
                                  is_dirty = true;
                              }
                          }
-                    } 
-                    // Check 2: Is this a Property update for a Font Key?
-                    else {
+                    } else {
                         let pred = header.predicate.to_u32_lossy();
-                        // Check if pred is in our dirty_preds list
                         for &k in &dirty_keys {
                             if pred == k {
                                 is_dirty = true;
                                 break;
                             }
                         }
-                        // Also check File specific keys for loading
                         if pred == p_bs || pred == p_sz || pred == p_name {
                             is_dirty = true;
-                            // If bytespace/size changed, check if we need to load
                             if pred == p_bs || pred == p_sz {
                                 is_file_update = true;
                             }
@@ -210,22 +262,13 @@ extern "C" fn font_loader_entry() -> ! {
                         font_graph::mark_dirty();
                     }
 
-                    // Enqueue load if it matches File criteria (Kind=File OR Key=Bytespace)
-                    // Note: Just checking Kind=File isn't enough, we need to check if properties exist.
-                    // We check properties for ANY dirty event on a potential file node, to be safe.
                     if is_dirty || is_file_update {
                         let node_id = ThingId::from_u64(header.subject.to_u64_lossy());
                          if node_id.to_u64_lossy() != 0 {
                             let bs_id = prop_get(node_id, keys::FONT_BYTESPACE).map(ThingId::from_u64).ok();
                             let size = prop_get(node_id, keys::FONT_SIZE_BYTES).ok().map(|v| v as usize);
                             
-                            // Only enqueue if valid bytespace and size exist
                             if let (Some(bs), Some(sz)) = (bs_id, size) {
-                                // To avoid re-queuing too often, we could check if known?
-                                // AssetBank prevents dedup if pending? 
-                                // `enqueue_font_load` handles it.
-                                
-                                // Fetch name for logging
                                 let name_id = prop_get(node_id, keys::FONT_NAME).map(ThingId::from_u64).ok();
                                 let name = name_id.and_then(read_name_from_bytespace)
                                     .unwrap_or_else(|| "font.bin".into());
@@ -250,7 +293,6 @@ extern "C" fn font_loader_entry() -> ! {
 
     let mut watch_buf = [0u8; 4096];
 
-    // PHASE 1: Catch-up (Drain)
     match root_watch::watch_drain(watch_id, &mut watch_buf, |_seq, bytes| {
         process_payload(bytes)
     }) {
@@ -264,7 +306,6 @@ extern "C" fn font_loader_entry() -> ! {
         }
     }
 
-    // PHASE 2: Steady Stream
     let mut seq_out = 0u64;
     loop {
         match syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf) {
@@ -277,7 +318,7 @@ extern "C" fn font_loader_entry() -> ! {
             }
             Err(abi::errors::Errno::EOVERFLOW) => {
                 log!("[font_loader] watch overflow in steady state");
-                font_graph::mark_dirty(); // Safety
+                font_graph::mark_dirty();
             }
             Err(e) => {
                 log!("[font_loader] watch next error: {:?}", e);
@@ -286,8 +327,6 @@ extern "C" fn font_loader_entry() -> ! {
         }
     }
 }
-
-
 /// Background thread for loading cursor
 extern "C" fn cursor_loader_entry() -> ! {
     log!("[cursor_loader] thread started");

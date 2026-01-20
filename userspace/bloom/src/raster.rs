@@ -706,7 +706,7 @@ fn rasterize_text_locally(
             let (metrics, bitmap) = font.get_glyph(config);
 
             let gx = (pen_x + metrics.xmin as f32) as i32;
-            let gy = (pen_y + metrics.ymin as f32) as i32;
+            let gy = pen_y as i32 - metrics.height as i32 - metrics.ymin;
 
             let glyph_color = if font_debug {
                 family_color(resolved.family_id)
@@ -828,7 +828,7 @@ fn rasterize_text_fallback(
         let (metrics, bitmap) = font.get_glyph(config);
 
         let gx = (pen_x + metrics.xmin as f32) as i32;
-        let gy = (pen_y + metrics.ymin as f32) as i32;
+        let gy = pen_y as i32 - metrics.height as i32 - metrics.ymin;
 
         for row in 0..metrics.height {
             for col in 0..metrics.width {

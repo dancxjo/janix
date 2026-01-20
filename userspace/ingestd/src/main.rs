@@ -192,9 +192,39 @@ fn is_font_mime(mime: &str) -> bool {
 }
 
 fn ingest_font(bytespace_id: ThingId, size: usize, data: &[u8]) {
+    // =========================================================================
+    // PHASE 1: IMMEDIATE AVAILABILITY
+    // Create a minimal font.File node right away so Bloom can load it immediately.
+    // This allows rendering to start before metadata parsing completes.
+    // =========================================================================
+    
+    let file_name = find_module_name(bytespace_id)
+        .unwrap_or_else(|| alloc::format!("font-{}.bin", bytespace_id.to_u64_lossy()));
+    
+    let file_id = get_or_create_node_by_prop(
+        kinds::FONT_FILE,
+        keys::FONT_BYTESPACE,
+        bytespace_id.to_u64_lossy(),
+    );
+    let _ = prop_set(file_id, keys::FONT_BYTESPACE, bytespace_id.to_u64_lossy());
+    let _ = prop_set(file_id, keys::FONT_SIZE_BYTES, size as u64);
+    set_prop_bytespace_str(file_id, keys::FONT_NAME, &file_name);
+    
+    let _ = syscall::log_write("INGESTD: Font immediately available for rendering", 1);
+
+    // =========================================================================
+    // PHASE 2: METADATA ENRICHMENT
+    // Parse the TTF to extract family/face metadata and link into the font graph.
+    // If parsing fails, the font is still usable via the file_id created above.
+    // =========================================================================
+    
     let face = match Face::parse(data, 0) {
         Ok(face) => face,
-        Err(_) => return,
+        Err(_) => {
+            // Parsing failed, but font is still available for rendering via file_id
+            let _ = syscall::log_write("INGESTD: Font metadata parse failed, file still usable", 1);
+            return;
+        }
     };
 
     let family_name = extract_name(&face, name_id::TYPOGRAPHIC_FAMILY, name_id::FAMILY)
@@ -207,9 +237,6 @@ fn ingest_font(bytespace_id: ThingId, size: usize, data: &[u8]) {
     let slope = if face.is_italic() || face.is_oblique() { 1u8 } else { 0u8 };
 
     let (ranges, count) = coverage_ranges(&face);
-
-    let file_name = find_module_name(bytespace_id)
-        .unwrap_or_else(|| alloc::format!("font-{}.bin", bytespace_id.to_u64_lossy()));
 
     let family_key = intern(&family_name).unwrap_or(0) as u64;
     let face_key = face_key_hash(family_key, weight, width, slope, &style_name);
@@ -234,14 +261,7 @@ fn ingest_font(bytespace_id: ThingId, size: usize, data: &[u8]) {
     set_prop_bytespace_str(face_id, keys::FONT_STYLE, &style_name);
     ensure_link(family_id, rels::FONT_CONTAINS, face_id);
 
-    let file_id = get_or_create_node_by_prop(
-        kinds::FONT_FILE,
-        keys::FONT_BYTESPACE,
-        bytespace_id.to_u64_lossy(),
-    );
-    let _ = prop_set(file_id, keys::FONT_BYTESPACE, bytespace_id.to_u64_lossy());
-    let _ = prop_set(file_id, keys::FONT_SIZE_BYTES, size as u64);
-    set_prop_bytespace_str(file_id, keys::FONT_NAME, &file_name);
+    // Link the existing file_id into the face
     ensure_link(face_id, rels::FONT_CONTAINS, file_id);
 
     let coverage_id = ensure_coverage_node(face_id);

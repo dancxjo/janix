@@ -104,8 +104,9 @@ fn main() -> ! {
     prop_set(win, keys::UI_BG_COLOR, 0xFF0E0F12).ok();
     prop_set(win, keys::UI_WIDTH, 900).ok();
     prop_set(win, keys::UI_HEIGHT, 520).ok();
-    prop_set(win, keys::UI_CENTER_X, 1).ok();
-    prop_set(win, keys::UI_CENTER_Y, 1).ok();
+    // Position at top-left with margin (to avoid overlap with clock at bottom-right)
+    prop_set(win, keys::UI_X, 50).ok();
+    prop_set(win, keys::UI_Y, 50).ok();
     set_string_prop(win, keys::UI_TITLE, "Font Explorer");
 
     let top_panel = create_node(kinds::UI_PANEL).expect("create UI_PANEL");

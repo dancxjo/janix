@@ -112,11 +112,11 @@ fn main() -> ! {
         prop_set(win, keys::UI_BG_COLOR, 0xFF000000).ok(); // Black
         set_string_prop(win, keys::UI_TITLE, "Clock");
 
-        // Window Layout: Centered, fixed size
+        // Window Layout: Bottom-right area (to avoid overlap with font_explorer)
         prop_set(win, keys::UI_WIDTH, 400).ok();
         prop_set(win, keys::UI_HEIGHT, 150).ok();
-        prop_set(win, keys::UI_CENTER_X, 1).ok();
-        prop_set(win, keys::UI_CENTER_Y, 1).ok();
+        prop_set(win, keys::UI_X, 1100).ok();  // Right side
+        prop_set(win, keys::UI_Y, 700).ok();   // Bottom area
 
         // Create Text
         let text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");

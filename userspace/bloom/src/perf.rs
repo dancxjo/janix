@@ -132,27 +132,27 @@ pub fn end_frame() -> Option<PerfFrame> {
     None
 }
 
-/// Print a compact one-liner for quick monitoring
 fn print_compact_stats(frame: &PerfFrame, frame_no: u64) {
-    // Extract key metrics
     let snap_ms = frame.spans.get("ui.snap").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
-    let prop_ms = frame.spans.get("ui.snap.prop_get").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
-    let layout_ms = frame.spans.get("ui.layout").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
-    let present_ms = frame.spans.get("present").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let build_ms = frame.spans.get("build").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
     let raster_ms = frame.spans.get("raster").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let present_ms = frame.spans.get("present").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let work_ms = frame.counters.get("frame.work_ns").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
     
-    // Syscall counts
-    let syscalls_prop = frame.counters.get("snap.syscalls.prop_get").copied().unwrap_or(0);
-    let syscalls_kind = frame.counters.get("snap.syscalls.get_kind").copied().unwrap_or(0);
-    let syscalls_edges = frame.counters.get("snap.syscalls.get_edges").copied().unwrap_or(0);
-    let syscalls_str = frame.counters.get("snap.syscalls.read_string").copied().unwrap_or(0);
-    let total_syscalls = syscalls_prop + syscalls_kind + syscalls_edges + syscalls_str;
+    let text_ns = frame.counters.get("text.ns").copied().unwrap_or(0);
+    let t_layout_ms = frame.counters.get("text.layout_ns").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let t_raster_ms = frame.counters.get("text.raster_ns").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let t_blit_ms = frame.counters.get("text.blit_ns").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let text_glyphs = frame.counters.get("text.glyphs").copied().unwrap_or(0);
     
-    let nodes = frame.counters.get("ui.snap.nodes_total").copied().unwrap_or(0);
-    
-    crate::log!("[PERF] f={} snap={:.1}ms prop={:.1}ms layout={:.1}ms nodes={} syscalls={} (prop={} kind={} edges={} str={})",
-        frame_no, snap_ms, prop_ms, layout_ms, nodes, total_syscalls,
-        syscalls_prop, syscalls_kind, syscalls_edges, syscalls_str);
+    let ops_fill = frame.counters.get("raster.ops.fill").copied().unwrap_or(0);
+    let ops_blit = frame.counters.get("raster.ops.blit").copied().unwrap_or(0) + frame.counters.get("raster.ops.blit_alpha").copied().unwrap_or(0);
+    let ops_text = frame.counters.get("raster.ops.text").copied().unwrap_or(0);
+
+    crate::log!("[PERF] f={} work={:.1}ms build={:.1}ms snap={:.1}ms raster={:.1}ms present={:.1}ms",
+        frame_no, work_ms, build_ms, snap_ms, raster_ms, present_ms);
+    crate::log!("[PERF]   ops: fill={} blit={} text={} | text: {:.2}ms (L={:.2} R={:.2} B={:.2}) glyphs={}",
+        ops_fill, ops_blit, ops_text, text_ns as f64 / 1_000_000.0, t_layout_ms, t_raster_ms, t_blit_ms, text_glyphs);
 }
 
 pub fn get_last_report() -> Option<PerfReport> {
@@ -180,6 +180,5 @@ macro_rules! trace_event {
     };
 }
 
-// Re-export for macro use
 pub use stem::perf::PerfSpan;
 pub use stem::perf::counter;

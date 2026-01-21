@@ -5,6 +5,7 @@ pub mod ref_;
 pub mod sys;
 
 pub use id::ThingId;
+pub use id::HandleId;
 pub use kind::ThingKind;
 pub use ref_::ThingRef;
 

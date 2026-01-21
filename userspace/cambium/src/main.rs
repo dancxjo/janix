@@ -4,14 +4,13 @@
 extern crate alloc;
 
 use stem::{info, warn};
-use stem::thing::ThingId;
+use stem::thing::{ThingId, HandleId};
 use stem::thing::sys::{bytespace_create, bytespace_write, find, prop_get, prop_set};
 use stem::syscall::{root_watch_open, root_watch_next};
 use abi::schema::{kinds, keys};
 use abi::types::WatchSpec;
 use abi::root::RootWatchFilter;
 use abi::watch::{self, DecodeError, ValueEncoding, WatchOp};
-use abi::ids::HandleId;
 use alloc::vec::Vec;
 use alloc::string::String;
 use core::time::Duration;
@@ -20,8 +19,10 @@ struct ActiveBinding {
     source: ThingId,
     target: ThingId,
     watch_id: usize,
-    /// Cached last value (for initial sync)
-    last_value: Option<u64>,
+    /// Cached last written numeric value
+    last_value_u64: Option<u64>,
+    /// Cached last written string bytes
+    last_value_bytes: Option<Vec<u8>>,
     key_filter: Option<u32>,
 }
 
@@ -203,7 +204,14 @@ fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
                         }
 
                         let next_value = u64::from_le_bytes(value.try_into().unwrap());
-                        binding.last_value = Some(next_value);
+                        
+                        // NO-OP suppression
+                        if binding.last_value_u64 == Some(next_value) {
+                            continue;
+                        }
+                        
+                        binding.last_value_u64 = Some(next_value);
+                        binding.last_value_bytes = None; // Reset string cache
                         
                         // Get the UI_TEXT symbol for logging
                         let ui_text_sym = stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0);
@@ -219,21 +227,22 @@ fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
                             );
                         }
                         
-                        if prop_set(binding.target, keys::UI_TEXT, next_value).is_ok() {
-                            info!(
-                                "Updated target {} with value {} (seq={})",
-                                binding.target.to_u64_lossy(),
-                                next_value,
-                                seq
-                            );
-                        }
+                        prop_set(binding.target, keys::UI_TEXT, next_value).ok();
                     }
                     ValueEncoding::Utf8 => {
+                        // NO-OP suppression (string comparison)
+                        if binding.last_value_bytes.as_deref() == Some(value) {
+                            continue;
+                        }
+                        
+                        binding.last_value_bytes = Some(value.to_vec());
+                        binding.last_value_u64 = None; // Reset numeric cache
+
                         if let Ok(text) = core::str::from_utf8(value) {
                             set_string_prop(binding.target, keys::UI_TEXT, text);
-                            binding.last_value = None;
+                            
                             info!(
-                                "Updated target {} with text '{}' (seq={})",
+                                "[cambium] write: target={} text='{}' seq={}",
                                 binding.target.to_u64_lossy(),
                                 text,
                                 seq
@@ -256,12 +265,9 @@ fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
     }
 }
 
-// `drain_watch` removed, replaced by `stem::root_watch::watch_drain`
-
-
 #[stem::main]
 fn main() -> ! {
-    info!("cambium starting (v3: catch-up then stream)...");
+    info!("cambium starting (v4: no-op suppression)...");
 
     let mut bindings: Vec<ActiveBinding> = Vec::new();
 
@@ -290,11 +296,10 @@ fn main() -> ! {
                     }
 
                     // Create a Root watch with subject filter
-                    // Use start_seq=0 to catch up from oldest available
                     let filter = RootWatchFilter::subject(src_id.to_u64_lossy());
                     let spec = WatchSpec {
                         mode: 1, // StreamOnly
-                        start_seq: 0, // Catch-up from oldest available (not WATCH_START_LATEST)
+                        start_seq: 0, // Catch-up from oldest available
                         filter_ptr: &filter as *const _ as u64,
                         filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
                         ..Default::default()
@@ -312,7 +317,8 @@ fn main() -> ! {
                                 source: src_id,
                                 target: dst_id,
                                 watch_id,
-                                last_value: None,
+                                last_value_u64: None,
+                                last_value_bytes: None,
                                 key_filter,
                             });
                         }
@@ -383,7 +389,7 @@ fn main() -> ! {
     // ============================================================
     // PHASE 2: Enter steady-state event loop
     // ============================================================
-    info!("Entering event loop with {} bindings (v3)", bindings.len());
+    info!("Entering event loop with {} bindings (v4)", bindings.len());
 
     loop {
         let mut did_work = false;
@@ -394,15 +400,10 @@ fn main() -> ! {
             match root_watch_next(binding.watch_id, &mut seq, &mut payload_buf) {
                 Ok(len) if len > 0 => {
                     did_work = true;
-
                     apply_watch_payload(&payload_buf[..len], binding, seq);
                 }
-                Ok(_) => {
-                    // No events or zero-length payload
-                }
-                Err(abi::errors::Errno::EAGAIN) => {
-                    // No pending events
-                }
+                Ok(_) => { }
+                Err(abi::errors::Errno::EAGAIN) => { }
                 Err(abi::errors::Errno::EOVERFLOW) => {
                     info!("Watch {} overflow, resyncing", binding.watch_id);
                 }

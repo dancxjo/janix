@@ -66,6 +66,12 @@ impl UiPipeline {
         (self.cached_keys.as_ref().unwrap(), self.cached_kinds.as_ref().unwrap())
     }
 
+    /// Fetch cached kind ids, ensuring they are interned once.
+    pub fn kind_ids(&mut self) -> KindIds {
+        let (_, kinds) = self.ensure_symbols();
+        kinds.clone()
+    }
+
     pub fn set_root(&mut self, id: ThingId) {
         self.root_id = Some(id);
     }

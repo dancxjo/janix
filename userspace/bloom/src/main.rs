@@ -31,7 +31,9 @@ pub mod perf;
 
 use core::sync::atomic::{AtomicBool, Ordering};
 use abi::hid::Key;
+use abi::root::RootWatchFilter;
 use stem::thing::{ThingId, HandleId};
+use abi::types::{WatchMode, WatchSpec};
 
 pub static DISABLE_TEXT: AtomicBool = AtomicBool::new(false);
 pub static DISABLE_WALLPAPER: AtomicBool = AtomicBool::new(false);
@@ -199,8 +201,9 @@ fn main(arg: usize) -> ! {
     let mut cursor = CursorState::new((target.width as i32) / 2, (target.height as i32) / 2);
     let mut loop_ctrl = FrameLoop::new(60);
     let (mut wallpaper_loaded, mut cursor_loaded, mut font_loaded) = (false, false, false);
-    let mut ui_watch_id = None;
-    let mut ui_watch_buf = [0u8; 4096];
+    let mut ui_watch_handles: alloc::vec::Vec<usize> = alloc::vec::Vec::new();
+    let mut ui_watch_bufs: alloc::vec::Vec<[u8; 4096]> = alloc::vec::Vec::new();
+    let mut ui_watch_seq: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
     let mut ui_force_damage = false;
     let mut ui_poll_deadline_ns = stem::monotonic_ns().saturating_add(1_000_000_000);
 
@@ -209,16 +212,33 @@ fn main(arg: usize) -> ! {
     let ui_root = stem::ui::UiBuilder::create_root();
     ui_pipeline.set_root(ui_root);
 
-    let ui_text_pred_id = stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0);
-    if ui_text_pred_id != 0 {
-        use abi::root::RootWatchFilter;
-        use abi::types::{WatchMode, WatchSpec};
-        let filter = RootWatchFilter::predicate(ui_text_pred_id);
-        let spec = WatchSpec { mode: WatchMode::StreamOnly as u32, start_seq: 0, filter_ptr: &filter as *const _ as u64, filter_len: core::mem::size_of::<RootWatchFilter>() as u64, ..Default::default() };
+    // Subscribe to UI-only updates (kinds), avoiding the global firehose.
+    let ui_kinds = ui_pipeline.kind_ids();
+    let watch_kinds = [
+        ui_kinds.root,
+        ui_kinds.window,
+        ui_kinds.panel,
+        ui_kinds.text,
+        ui_kinds.image,
+        ui_kinds.overlay,
+        ui_kinds.inline,
+    ];
+    for kid in watch_kinds.into_iter().filter(|k| *k != 0) {
+        let filter = RootWatchFilter::kind(kid);
+        let spec = WatchSpec {
+            mode: WatchMode::StreamOnly as u32,
+            start_seq: 0,
+            filter_ptr: &filter as *const _ as u64,
+            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+            ..Default::default()
+        };
         if let Ok(id) = stem::syscall::root_watch_open(&spec) {
-            ui_watch_id = Some(id);
-            let mut db = [0u8; 4096];
-            let _ = stem::root_watch::watch_drain(id, &mut db, |_,_| { ui_force_damage = true; });
+            ui_watch_handles.push(id);
+            ui_watch_bufs.push([0u8; 4096]);
+            ui_watch_seq.push(0);
+            let _ = stem::root_watch::watch_drain(id, ui_watch_bufs.last_mut().unwrap(), |_, _| {
+                ui_force_damage = true;
+            });
         }
     }
 
@@ -257,27 +277,28 @@ fn main(arg: usize) -> ! {
         else { builder.add_damage(new_bbox); }
         prev_cursor_bbox = Some(new_bbox);
 
-        if let Some(wid) = ui_watch_id {
-            let mut seq = 0;
-            loop {
-                match stem::syscall::root_watch_next(wid, &mut seq, &mut ui_watch_buf) {
-                    Ok(len) if len > 0 => {
-                        let mut c = 0;
-                        while c < len {
-                            if let Ok((h, v)) = abi::watch::decode_event(&ui_watch_buf[c..len]) {
-                                c += abi::watch::WATCH_EVENT_HEADER_LEN + v.len();
-                                if ui_text_pred_id != 0 && h.predicate.to_u32_lossy() == ui_text_pred_id {
-                                    let sid = h.subject;
-                                    ui_pipeline.mark_node_dirty(sid); ui_force_damage = true;
-                                    let now = crate::log_ratelimit::now_ms();
-                                    if crate::log_ratelimit::log_every(2000, now) { log!("[bloom][uiwatch] UI_TEXT event: seq={} subj={}", seq, sid.to_u64_lossy()); }
-                                }
-                            } else { break; }
+        {
+            crate::trace_span!("ui.watch_drain");
+            for (idx, wid) in ui_watch_handles.iter().enumerate() {
+                loop {
+                    match stem::syscall::root_watch_next(*wid, &mut ui_watch_seq[idx], &mut ui_watch_bufs[idx]) {
+                        Ok(len) if len > 0 => {
+                            let mut c = 0;
+                            let mut seen = 0u64;
+                            while c < len {
+                                if let Ok((h, v)) = abi::watch::decode_event(&ui_watch_bufs[idx][c..len]) {
+                                    c += abi::watch::WATCH_EVENT_HEADER_LEN + v.len();
+                                    ui_pipeline.mark_node_dirty(h.subject);
+                                    ui_force_damage = true;
+                                    seen += 1;
+                                } else { break; }
+                            }
+                            if seen > 0 { crate::perf::add_counter("ui.watch.events", seen); }
                         }
+                        Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,
+                        Err(abi::errors::Errno::EOVERFLOW) => { ui_pipeline.mark_dirty(); ui_force_damage = true; break; }
+                        Err(_) => break,
                     }
-                    Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,
-                    Err(abi::errors::Errno::EOVERFLOW) => { ui_pipeline.mark_dirty(); ui_force_damage = true; break; }
-                    Err(_) => break,
                 }
             }
         }

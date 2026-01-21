@@ -86,6 +86,13 @@ fn main() -> ! {
     let svgs = find_svg_assets();
     info!("Found {} SVG assets", svgs.len());
 
+    // 4. Set Window Icon (preferences-desktop-font.svg)
+    if let Some((_, bs_id)) = svgs.iter().find(|(name, _)| name.contains("preferences-desktop-font.svg")) {
+        prop_set(win, keys::UI_WINDOW_ICON, bs_id.to_u64_lossy()).ok();
+    } else if let Some((_, bs_id)) = svgs.first() {
+        prop_set(win, keys::UI_WINDOW_ICON, bs_id.to_u64_lossy()).ok(); // Fallback to first found
+    }
+
     let cols = 6;
     let icon_size = 64;
     let padding = 10;

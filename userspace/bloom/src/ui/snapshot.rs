@@ -62,6 +62,7 @@ pub struct UiKeys {
     pub fill_parent: u32, pub bg_color: u32, pub fg_color: u32,
     pub has_child: u32, pub inset_right: u32, pub inset_bottom: u32,
     pub inline_mode: u32, pub svg_bytes: u32,
+    pub window_icon: u32,
 }
 
 impl UiKeys {
@@ -72,6 +73,7 @@ impl UiKeys {
             title: 0, hidden: 0, z_index: 0, center_x: 0, center_y: 0,
             fill_parent: 0, bg_color: 0, fg_color: 0, has_child: 0,
             inset_right: 0, inset_bottom: 0, inline_mode: 0, svg_bytes: 0,
+            window_icon: 0,
         }
     }
     pub fn intern() -> Self {
@@ -102,26 +104,27 @@ impl UiKeys {
             inset_bottom: stem::thing::sys::intern(keys::UI_INSET_BOTTOM).unwrap_or(0),
             inline_mode: stem::thing::sys::intern(keys::UI_INLINE_MODE).unwrap_or(0),
             svg_bytes: stem::thing::sys::intern(keys::UI_SVG_BYTES).unwrap_or(0),
+            window_icon: stem::thing::sys::intern(keys::UI_WINDOW_ICON).unwrap_or(0),
         };
-        crate::trace_counter!("ui.init.syscalls.intern_keys", 24);
+        crate::trace_counter!("ui.init.syscalls.intern_keys", 25);
         k
     }
-    pub fn numeric_keys(&self) -> [u32; 19] {
+    pub fn numeric_keys(&self) -> [u32; 20] {
         [self.x, self.y, self.w, self.h, self.color, self.radius,
          self.hidden, self.z_index, self.center_x, self.center_y,
          self.fill_parent, self.bg_color, self.fg_color, 
          self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
-         self.inline_mode, self.svg_bytes]
+         self.inline_mode, self.svg_bytes, self.window_icon]
     }
     pub fn string_keys(&self) -> [u32; 4] {
         [self.text, self.font, self.font_stack, self.title]
     }
-    pub fn all_keys(&self) -> [u32; 23] {
+    pub fn all_keys(&self) -> [u32; 24] {
         [self.x, self.y, self.w, self.h, self.color, self.radius,
          self.hidden, self.z_index, self.center_x, self.center_y,
          self.fill_parent, self.bg_color, self.fg_color, 
          self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
-         self.inline_mode, self.svg_bytes,
+         self.inline_mode, self.svg_bytes, self.window_icon,
          self.text, self.font, self.font_stack, self.title]
     }
 }
@@ -134,6 +137,7 @@ pub struct UiNodeSnapshot {
     pub strings: BTreeMap<u32, String>,
     pub children: Vec<ThingId>,
     pub svg_content: Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+    pub window_icon_content: Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
 }
 
 /// Cached asset entry: bytespace_id -> decoded content
@@ -277,8 +281,8 @@ impl UiSnapshot {
             }
         }
 
-        let (props, strings, svg_content) = self.fetch_properties(id, keys, cache);
-        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children: children.clone(), svg_content });
+        let (props, strings, svg_content, window_icon_content) = self.fetch_properties(id, keys, cache);
+        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children: children.clone(), svg_content, window_icon_content });
         for child in children { self.traverse(child, kind_ids, keys, cache); }
     }
     
@@ -308,8 +312,8 @@ impl UiSnapshot {
             }
         }
 
-        let (props, strings, svg_content) = self.fetch_properties(id, keys, cache);
-        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children, svg_content });
+        let (props, strings, svg_content, window_icon_content) = self.fetch_properties(id, keys, cache);
+        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children, svg_content, window_icon_content });
     }
     
     fn fetch_properties(
@@ -317,10 +321,11 @@ impl UiSnapshot {
         id: ThingId, 
         keys: &UiKeys, 
         cache: &mut AssetCache
-    ) -> (BTreeMap<u32, u64>, BTreeMap<u32, String>, Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>) {
+    ) -> (BTreeMap<u32, u64>, BTreeMap<u32, String>, Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>, Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>) {
         let mut props = BTreeMap::new();
         let mut strings = BTreeMap::new();
         let mut svg_content = None;
+        let mut window_icon_content = None;
 
         let all_keys = keys.all_keys();
         let valid_keys: Vec<u32> = all_keys.iter().copied().filter(|&k| k != 0).collect();
@@ -350,6 +355,11 @@ impl UiSnapshot {
                                  props.insert(key, val); // Keep raw prop too
                                  svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
                              }
+                        } else if key == keys.window_icon {
+                             if val != 0 {
+                                 props.insert(key, val);
+                                 window_icon_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                             }
                         } else {
                             props.insert(key, val);
                         }
@@ -358,10 +368,10 @@ impl UiSnapshot {
             }
             Err(_) => {
                 crate::trace_counter!("ui.snap.bulk_fallback", 1);
-                self.fetch_fallback(id, keys, &mut props, &mut strings, &mut svg_content, cache);
+                self.fetch_fallback(id, keys, &mut props, &mut strings, &mut svg_content, &mut window_icon_content, cache);
             }
         }
-        (props, strings, svg_content)
+        (props, strings, svg_content, window_icon_content)
     }
     
     fn fetch_fallback(
@@ -371,6 +381,7 @@ impl UiSnapshot {
         props: &mut BTreeMap<u32, u64>, 
         strings: &mut BTreeMap<u32, String>, 
         svg_content: &mut Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        window_icon_content: &mut Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
         cache: &mut AssetCache
     ) {
         for &p in &keys.numeric_keys() {
@@ -380,6 +391,9 @@ impl UiSnapshot {
                 props.insert(p, val); 
                 if p == keys.svg_bytes && val != 0 {
                     *svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                }
+                if p == keys.window_icon && val != 0 {
+                    *window_icon_content = cache.get_or_parse_svg(ThingId::from_u64(val));
                 }
             }
         }

@@ -91,6 +91,7 @@ pub mod keys {
     pub const UI_FONT_SIZE: &str = "ui.font_size";
     pub const UI_RADIUS: &str = "ui.radius";
     pub const UI_TITLE: &str = "ui.title";
+    pub const UI_WINDOW_ICON: &str = "ui.window.icon";
     pub const UI_HIDDEN: &str = "ui.hidden";
     pub const UI_Z_INDEX: &str = "ui.z_index";
 

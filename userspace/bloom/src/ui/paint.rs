@@ -59,9 +59,7 @@ impl PaintBuilder {
     fn build_recursive(snapshot: &UiSnapshot, layout_node: &LayoutNode, objects: &mut Vec<PaintObject>, symbols: &impl SymbolResolver) {
         if let Some(node_snapshot) = snapshot.nodes.get(&layout_node.id) {
             // Create paint object based on kind and properties
-            if let Some(obj) = Self::create_paint_object(node_snapshot, layout_node, symbols) {
-                objects.push(obj);
-            }
+            Self::create_paint_objects(node_snapshot, layout_node, objects, symbols);
         }
 
         for child in &layout_node.children {
@@ -69,23 +67,88 @@ impl PaintBuilder {
         }
     }
 
-    fn create_paint_object(node: &UiNodeSnapshot, layout: &LayoutNode, symbols: &impl SymbolResolver) -> Option<PaintObject> {
+    fn create_paint_objects(node: &UiNodeSnapshot, layout: &LayoutNode, objects: &mut Vec<PaintObject>, symbols: &impl SymbolResolver) {
+        // Window special handling
+        if node.kind == UiNodeKind::Window {
+            // 1. Background
+            let mut bg_color = Self::get_prop(node, keys::UI_BG_COLOR, symbols);
+            if bg_color == 0 { bg_color = 0xFF000000; } // Default black if not set
+            
+            objects.push(PaintObject::Rect {
+                rect: layout.rect.clone(),
+                color: Color::from_u32(bg_color as u32),
+                radius: Self::get_prop(node, keys::UI_RADIUS, symbols) as u32,
+            });
+
+            // 2. Title Bar logic
+            // Title bar height is fixed for now (e.g. 24px)
+            // But we don't want to overdraw if the window is small.
+            let title_h = 24;
+            if layout.rect.h > title_h {
+                // Determine icon area
+                let icon_size = 16;
+                let icon_padding = 4;
+                let _bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
+                
+                // Draw title bar background (slightly lighter than bg? or separate color?)
+                // For now, let's just make it visible if we have a title or icon.
+                // Or maybe the window background handles it, and we just draw content on top.
+                
+                // Icon
+                let mut text_offset_x = icon_padding;
+                if let Some(icon_cmds) = &node.window_icon_content {
+                    let icon_rect = Rect::new(layout.rect.x + icon_padding, layout.rect.y + icon_padding, icon_size, icon_size);
+                     objects.push(PaintObject::Commands {
+                         cmds: icon_cmds.clone(),
+                         rect: icon_rect,
+                     });
+                     text_offset_x += icon_size + icon_padding;
+                } else {
+                    // Placeholder icon area?
+                    // Just a small empty box?
+                     let icon_rect = Rect::new(layout.rect.x + icon_padding, layout.rect.y + icon_padding, icon_size, icon_size);
+                     objects.push(PaintObject::Rect {
+                         rect: icon_rect,
+                         color: Color::new(50, 50, 50, 255), // Dark grey placeholder
+                         radius: 0,
+                     });
+                     text_offset_x += icon_size + icon_padding;
+                }
+                
+                // Title Text
+                let title = Self::get_str_prop(node, keys::UI_TITLE, symbols);
+                if let Some(t) = title {
+                    objects.push(PaintObject::Text {
+                        rect: Rect::new(layout.rect.x + text_offset_x, layout.rect.y + 2, layout.rect.w - text_offset_x, title_h),
+                        text: t,
+                        font: "NotoSans-Regular.ttf".into(),
+                        size: 14.0,
+                        color: Color::from_u32(0xFFFFFFFF),
+                        font_debug: false,
+                    });
+                }
+            }
+            return;
+        }
+
         // UI_INLINE special handling
         if node.kind == UiNodeKind::Inline {
              let mode = Self::get_prop(node, keys::UI_INLINE_MODE, symbols);
              if mode == 1 { // Svg
                  if let Some(cmds) = &node.svg_content {
-                     return Some(PaintObject::Commands {
+                     objects.push(PaintObject::Commands {
                          cmds: cmds.clone(),
                          rect: layout.rect.clone(),
                      });
+                     return;
                  } else {
                      // Fallback: Red Box
-                     return Some(PaintObject::Rect {
+                     objects.push(PaintObject::Rect {
                          rect: layout.rect.clone(),
                          color: Color::new(255, 0, 0, 255),
                          radius: 0,
                      });
+                     return;
                  }
              }
              // If mode == 0, fallthrough to Text logic
@@ -119,7 +182,7 @@ impl PaintBuilder {
             }
             let color = Color::from_u32(color_val as u32);
             
-            return Some(PaintObject::Text {
+            objects.push(PaintObject::Text {
                 rect: layout.rect.clone(),
                 text,
                 font,
@@ -127,6 +190,7 @@ impl PaintBuilder {
                 color,
                 font_debug,
             });
+            return;
         }
 
         // Default to a colored rect if it has dimensions or a color
@@ -138,14 +202,15 @@ impl PaintBuilder {
         // Only emit Rect if color is non-transparent OR it's been intentionally sized
         // Note: Window nodes with no color shouldn't necessarily emit a transparent black box.
         if color_val != 0 {
-            return Some(PaintObject::Rect {
+            objects.push(PaintObject::Rect {
                 rect: layout.rect.clone(),
                 color: Color::from_u32(color_val as u32),
                 radius: Self::get_prop(node, keys::UI_RADIUS, symbols) as u32,
             });
+            return;
         }
 
-        None
+
     }
 
     fn get_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> u64 {

@@ -8,8 +8,31 @@ use stem::info;
 use time::OffsetDateTime;
 use stem::thing::ThingId;
 use abi::ids::HandleId;
-use stem::thing::sys::{create_node, prop_set, link, bytespace_create, bytespace_write, intern};
+use stem::thing::sys::{create_node, prop_set, link, bytespace_create, bytespace_write, intern, find, describe_thing, prop_get};
 use abi::schema::{kinds, keys, rels};
+
+fn search_for_icon(suffix: &str) -> Option<ThingId> {
+    let mut modules = [ThingId::default(); 128];
+    let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
+    for i in 0..count {
+        let mut buf = [0u8; 512];
+        let len = describe_thing(modules[i], &mut buf).unwrap_or(0);
+        let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
+        
+        let mod_name = if let Some(pos) = desc.find("name: \"") {
+            let rest = &desc[pos + 7..];
+            if let Some(end) = rest.find('"') { &rest[..end] } else { continue; }
+        } else { continue; };
+
+        // Check if name contains our suffix and ends with .svg
+        if mod_name.ends_with(".svg") && mod_name.ends_with(suffix) {
+             if let Ok(bs_id) = prop_get(modules[i], "bytespace") {
+                 return Some(ThingId::from_u64(bs_id));
+             }
+        }
+    }
+    None
+}
 
 
 /// Print a single tick with both wall clock (if anchored) and monotonic time.
@@ -118,7 +141,16 @@ fn main() -> ! {
         prop_set(win, keys::UI_X, 0).ok();  // Base at 0 (inset will override)
         prop_set(win, keys::UI_Y, 0).ok();  // Base at 0 (inset will override)
         prop_set(win, keys::UI_INSET_RIGHT, 20).ok();  // 20px from right edge
+        prop_set(win, keys::UI_INSET_RIGHT, 20).ok();  // 20px from right edge
         prop_set(win, keys::UI_INSET_BOTTOM, 30).ok(); // 30px from bottom edge
+
+        // Window Icon
+        if let Some(icon_id) = search_for_icon("office-calendar.svg") {
+            info!("Found clock icon: {}", icon_id.to_u64_lossy());
+            prop_set(win, keys::UI_WINDOW_ICON, icon_id.to_u64_lossy()).ok();
+        } else {
+            info!("Clock icon not found");
+        }
 
         // Create Text
         let text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");

@@ -1,6 +1,6 @@
 # Feature: Keyboard input and layout
 
-> Last run: 2026-01-20 17:49:56
+> Last run: 2026-01-20 18:14:20
 
 ## Scenarios
 

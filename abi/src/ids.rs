@@ -25,3 +25,23 @@ impl HandleId for ThingId {
         u64::from_le_bytes(bytes)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_id_round_trip() {
+        let values = [0u64, 1, 42, u64::MAX, 0xDEADBEEFCAFEBABE];
+
+        for &val in &values {
+            let thing_id = ThingId::from_u64(val);
+            let result = thing_id.to_u64_lossy();
+            assert_eq!(result, val, "Round trip failed for value: {}", val);
+
+            // Verify the upper 8 bytes are zero (padding)
+            // The layout is [handle_bytes(8) | 0...0]
+            assert_eq!(&thing_id.0[8..16], &[0u8; 8], "Upper bytes must be zero-padded");
+        }
+    }
+}

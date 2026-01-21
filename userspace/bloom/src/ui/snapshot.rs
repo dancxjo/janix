@@ -75,8 +75,9 @@ pub struct UiKeys {
 
 impl UiKeys {
     pub fn intern() -> Self {
+        crate::trace_span!("ui.snap.intern_keys");
         use abi::schema::{keys, rels};
-        Self {
+        let keys = Self {
             x: stem::thing::sys::intern(keys::UI_X).unwrap_or(0),
             y: stem::thing::sys::intern(keys::UI_Y).unwrap_or(0),
             w: stem::thing::sys::intern(keys::UI_WIDTH).unwrap_or(0),
@@ -99,7 +100,9 @@ impl UiKeys {
             has_child: stem::thing::sys::intern(rels::HAS_CHILD).unwrap_or(0),
             inset_right: stem::thing::sys::intern(keys::UI_INSET_RIGHT).unwrap_or(0),
             inset_bottom: stem::thing::sys::intern(keys::UI_INSET_BOTTOM).unwrap_or(0),
-        }
+        };
+        crate::trace_counter!("ui.snap.syscalls", 22);
+        keys
     }
 }
 
@@ -128,13 +131,18 @@ impl UiSnapshot {
 
     pub fn capture(root_id: ThingId) -> Self {
         use abi::schema::kinds;
-        let kind_ids = KindIds {
-            root: stem::thing::sys::intern(kinds::UI_ROOT).unwrap_or(0),
-            window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0),
-            panel: stem::thing::sys::intern(kinds::UI_PANEL).unwrap_or(0),
-            text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or(0),
-            image: stem::thing::sys::intern(kinds::UI_IMAGE).unwrap_or(0),
-            overlay: stem::thing::sys::intern(kinds::UI_OVERLAY).unwrap_or(0),
+        let kind_ids = {
+            crate::trace_span!("ui.snap.intern_kinds");
+            let kids = KindIds {
+                root: stem::thing::sys::intern(kinds::UI_ROOT).unwrap_or(0),
+                window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0),
+                panel: stem::thing::sys::intern(kinds::UI_PANEL).unwrap_or(0),
+                text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or(0),
+                image: stem::thing::sys::intern(kinds::UI_IMAGE).unwrap_or(0),
+                overlay: stem::thing::sys::intern(kinds::UI_OVERLAY).unwrap_or(0),
+            };
+            crate::trace_counter!("ui.snap.syscalls", 6);
+            kids
         };
 
         // Diagnostic: log intern results once in a while
@@ -151,7 +159,11 @@ impl UiSnapshot {
 
         let mut snapshot = Self::new();
         snapshot.root_id = Some(root_id);
-        snapshot.traverse(root_id, &kind_ids, &keys);
+        {
+            crate::trace_span!("ui.snap.traverse_all");
+            snapshot.traverse(root_id, &kind_ids, &keys);
+        }
+        crate::trace_counter!("ui.snap.nodes_total", snapshot.nodes.len());
         snapshot
     }
 
@@ -160,23 +172,37 @@ impl UiSnapshot {
             return;
         }
 
-        let kind_sym = get_kind(id).ok();
+        let kind_sym = {
+            crate::trace_span!("ui.snap.get_kind");
+            crate::trace_counter!("ui.snap.syscalls", 1);
+            get_kind(id).ok()
+        };
         let kind = match kind_sym {
-            Some(sym) => UiNodeKind::from_symbol(sym.0 as u32, kind_ids),
+            Some(sym) => {
+                let k = UiNodeKind::from_symbol(sym.0 as u32, kind_ids);
+                if k == UiNodeKind::Text {
+                    crate::trace_counter!("ui.snap.text_nodes", 1);
+                }
+                k
+            },
             None => return,
         };
 
         // Query children via edges
         let mut children = Vec::new();
         let mut edges_buf = [abi::types::Edge::default(); 64];
-        if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
-            for edge in &edges_buf[..count] {
-                // Check if (id)-[:HAS_CHILD]->(child)
-                let rel_u64 = edge.predicate.to_u64_lossy();
-                let target_u64 = edge.to.to_u64_lossy();
-                
-                if rel_u64 == keys.has_child as u64 && target_u64 != id.to_u64_lossy() {
-                    children.push(edge.to);
+        {
+            crate::trace_span!("ui.snap.get_edges");
+            crate::trace_counter!("ui.snap.syscalls", 1);
+            if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
+                for edge in &edges_buf[..count] {
+                    // Check if (id)-[:HAS_CHILD]->(child)
+                    let rel_u64 = edge.predicate.to_u64_lossy();
+                    let target_u64 = edge.to.to_u64_lossy();
+                    
+                    if rel_u64 == keys.has_child as u64 && target_u64 != id.to_u64_lossy() {
+                        children.push(edge.to);
+                    }
                 }
             }
         }
@@ -192,10 +218,14 @@ impl UiSnapshot {
             keys.font_size, keys.font_debug,
         ];
 
-        for &p in &prop_list {
-            if p == 0 { continue; }
-            if let Ok(val) = stem::thing::sys::prop_get(id, p) {
-                props.insert(p, val);
+        {
+            crate::trace_span!("ui.snap.prop_get");
+            for &p in &prop_list {
+                if p == 0 { continue; }
+                crate::trace_counter!("ui.snap.syscalls", 1);
+                if let Ok(val) = stem::thing::sys::prop_get(id, p) {
+                    props.insert(p, val);
+                }
             }
         }
 
@@ -203,10 +233,15 @@ impl UiSnapshot {
         let str_list = [keys.text, keys.font, keys.font_stack, keys.title];
         for &p in &str_list {
             if p == 0 { continue; }
+            crate::trace_counter!("ui.snap.syscalls", 1);
             if let Ok(val) = stem::thing::sys::prop_get(id, p) {
                 // val is Bytespace ID
                 if val != 0 {
-                    if let Some(s) = self.read_string(ThingId::from_u64(val)) {
+                    let s = {
+                        crate::trace_span!("ui.snap.read_string");
+                        self.read_string(ThingId::from_u64(val))
+                    };
+                    if let Some(s) = s {
                         strings.insert(p, s);
                     }
                 }
@@ -232,6 +267,7 @@ impl UiSnapshot {
 
     fn read_string(&self, bs_id: ThingId) -> Option<String> {
         use stem::thing::sys::{bytespace_info, bytespace_read};
+        crate::trace_counter!("ui.snap.syscalls", 2); // info + read
         let size = bytespace_info(bs_id).ok()?;
         if size == 0 {
             return Some(String::new());

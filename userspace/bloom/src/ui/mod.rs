@@ -18,17 +18,14 @@ impl SymbolResolver for SystemSymbolResolver {
     }
 }
 
-pub struct UiPipeline {
-    pub root_id: Option<ThingId>,
-    pub prev_snapshot: Option<UiSnapshot>,
-    pub solver: LayoutSolver,
-    dirty: bool,
     cached_scene: Option<PaintScene>,
+    pub solid_text: bool,
 }
 
 pub struct UiRunResult {
     pub changed: bool,
     pub damage: alloc::vec::Vec<Rect>,
+    pub solid_text: bool,
 }
 
 impl UiPipeline {
@@ -39,6 +36,7 @@ impl UiPipeline {
             solver: LayoutSolver::new(),
             dirty: true,
             cached_scene: None,
+            solid_text: false,
         }
     }
 
@@ -69,6 +67,7 @@ impl UiPipeline {
                 return UiRunResult {
                     changed: false,
                     damage: alloc::vec::Vec::new(),
+                    solid_text: self.solid_text,
                 }
             }
         };
@@ -76,6 +75,7 @@ impl UiPipeline {
         // Fast path: if nothing changed, reuse the last paint scene and only lower.
         if !self.dirty {
             if let Some(scene) = &self.cached_scene {
+                crate::trace_event!("ui.run.path", "fast_path_cached");
                 if log_this_frame {
                     // Count windows in prev_snapshot if available
                     let window_count = self.prev_snapshot.as_ref().map(|s| {
@@ -87,6 +87,7 @@ impl UiPipeline {
                 return UiRunResult {
                     changed: false,
                     damage: alloc::vec::Vec::new(),
+                    solid_text: self.solid_text,
                 };
             }
         }
@@ -94,36 +95,34 @@ impl UiPipeline {
         let start = stem::monotonic_ns();
 
         // 1. Snapshot
-        let t0 = stem::monotonic_ns();
-        let snapshot = UiSnapshot::capture(root_id);
-        let t1 = stem::monotonic_ns();
+        let snapshot = {
+            crate::trace_span!("ui.snap");
+            UiSnapshot::capture(root_id)
+        };
 
-        let window_count = snapshot.nodes.values().filter(|n| matches!(n.kind, snapshot::UiNodeKind::Window)).count();
-        let node_count = snapshot.nodes.len();
-
-        if log_this_frame {
-            let text_count = snapshot.nodes.values().filter(|n| matches!(n.kind, snapshot::UiNodeKind::Text)).count();
-            let text_str_count = snapshot.nodes.values().filter(|n| !n.strings.is_empty()).count();
-            
-            crate::log!("[bloom][ui] ENTER_UI_BUILD dirty={} root_present=true windows_seen={} nodes={} (text={} text_str={}) reason=full_build",
-                self.dirty, window_count, node_count, text_count, text_str_count);
-        }
+        crate::trace_counter!("ui.nodes", snapshot.nodes.len());
 
         // 2. Change Detection
-        let changed_nodes = if let Some(prev) = &self.prev_snapshot {
-            snapshot.diff(prev)
-        } else {
-            snapshot.nodes.keys().cloned().collect()
+        let changed_nodes = {
+            crate::trace_span!("ui.diff");
+            if let Some(prev) = &self.prev_snapshot {
+                snapshot.diff(prev)
+            } else {
+                snapshot.nodes.keys().cloned().collect()
+            }
         };
         let changed = !changed_nodes.is_empty();
-        let t2 = stem::monotonic_ns();
 
         // Store for next frame
-        self.prev_snapshot = Some(snapshot.clone());
-        let t3 = stem::monotonic_ns();
+        {
+            crate::trace_span!("ui.clone");
+            self.prev_snapshot = Some(snapshot.clone());
+        }
 
         if !changed {
+            crate::trace_event!("ui.run.path", "no_changes");
             if let Some(scene) = &self.cached_scene {
+                crate::trace_span!("ui.lower");
                 Self::lower(scene, list);
             }
             self.dirty = false;
@@ -133,34 +132,29 @@ impl UiPipeline {
             };
         }
 
+        crate::trace_event!("ui.run.path", "full_build");
+
         // 3. Layout
         let resolver = SystemSymbolResolver;
-        let layout = self
-            .solver
-            .solve(&snapshot, screen_w, screen_h, assets, &resolver);
-        let t4 = stem::monotonic_ns();
+        let layout = {
+            crate::trace_span!("ui.layout");
+            self.solver
+                .solve(&snapshot, screen_w, screen_h, assets, &resolver)
+        };
 
         // 4. Paint
-        let paint_scene = PaintBuilder::build(&snapshot, &layout, &resolver);
-        let t5 = stem::monotonic_ns();
+        let paint_scene = {
+            crate::trace_span!("ui.paint");
+            PaintBuilder::build(&snapshot, &layout, &resolver)
+        };
 
         // 5. Lowering
-        Self::lower(&paint_scene, list);
-        let t6 = stem::monotonic_ns();
-
-        let total = t6.saturating_sub(start);
-        if total > 50_000_000 {
-            // > 50ms
-            crate::log!("[bloom::ui] WARN: slow UI run: total={:.1}ms (snap={:.1}ms diff={:.1}ms clone={:.1}ms layout={:.1}ms paint={:.1}ms lower={:.1}ms)",
-                total as f64 / 1_000_000.0,
-                (t1 - t0) as f64 / 1_000_000.0,
-                (t2 - t1) as f64 / 1_000_000.0,
-                (t3 - t2) as f64 / 1_000_000.0,
-                (t4 - t3) as f64 / 1_000_000.0,
-                (t5 - t4) as f64 / 1_000_000.0,
-                (t6 - t5) as f64 / 1_000_000.0,
-            );
+        {
+            crate::trace_span!("ui.lower");
+            Self::lower(&paint_scene, list);
         }
+
+        // Cache the scene so unchanged frames can skip snapshot/layout/paint.
 
         // Cache the scene so unchanged frames can skip snapshot/layout/paint.
         self.cached_scene = Some(paint_scene);
@@ -175,7 +169,7 @@ impl UiPipeline {
             }
         }
 
-        UiRunResult { changed, damage }
+        UiRunResult { changed, damage, solid_text: self.solid_text }
     }
 
     fn lower(scene: &PaintScene, list: &mut DrawList) {

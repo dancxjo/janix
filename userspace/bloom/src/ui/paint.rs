@@ -3,6 +3,7 @@ use alloc::string::String;
 
 use crate::geometry::Color;
 use crate::damage::Rect;
+use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT, TITLE_BAR_ICON_SIZE, TITLE_BAR_PADDING};
 use crate::ui::layout::{LayoutTree, LayoutNode, SymbolResolver};
 use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
 use abi::schema::keys;
@@ -11,6 +12,10 @@ use abi::WireType::ThingId;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PaintObject {
+    PushClip {
+        rect: Rect,
+    },
+    PopClip,
     Rect {
         rect: Rect,
         color: Color,
@@ -57,14 +62,21 @@ impl PaintBuilder {
     }
 
     fn build_recursive(snapshot: &UiSnapshot, layout_node: &LayoutNode, objects: &mut Vec<PaintObject>, symbols: &impl SymbolResolver) {
+        // Scope all drawing to this node's bounds before emitting content or children.
+        objects.push(PaintObject::PushClip {
+            rect: layout_node.rect.clone(),
+        });
+
         if let Some(node_snapshot) = snapshot.nodes.get(&layout_node.id) {
             // Create paint object based on kind and properties
             Self::create_paint_objects(node_snapshot, layout_node, objects, symbols);
+
+            for child in &layout_node.children {
+                Self::build_recursive(snapshot, child, objects, symbols);
+            }
         }
 
-        for child in &layout_node.children {
-            Self::build_recursive(snapshot, child, objects, symbols);
-        }
+        objects.push(PaintObject::PopClip);
     }
 
     fn create_paint_objects(node: &UiNodeSnapshot, layout: &LayoutNode, objects: &mut Vec<PaintObject>, symbols: &impl SymbolResolver) {
@@ -81,12 +93,12 @@ impl PaintBuilder {
             });
 
             // 2. Title Bar logic
-            // Title bar height increased to 40px
-            let title_h = 40;
-            if layout.rect.h > title_h {
+            let title_h = TITLE_BAR_HEIGHT;
+            let is_shaded = Self::get_prop(node, keys::UI_WINDOW_SHADED, symbols) != 0;
+            if layout.rect.h >= title_h {
                 // Determine icon area
-                let icon_size = 32;
-                let icon_padding = 4;
+                let icon_size = TITLE_BAR_ICON_SIZE;
+                let icon_padding = TITLE_BAR_PADDING;
                 let _bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
                 
                 // Icon Background
@@ -108,11 +120,32 @@ impl PaintBuilder {
                 
                 let text_offset_x = icon_size + (icon_padding * 2);
 
+                // Shade button
+                let shade_x = layout.rect.x + layout.rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
+                let shade_y = layout.rect.y + (title_h - SHADE_BUTTON_SIZE) / 2;
+                let shade_rect = Rect::new(shade_x, shade_y, SHADE_BUTTON_SIZE, SHADE_BUTTON_SIZE);
+                let shade_bg = if is_shaded { 0xFF2F3C4A } else { 0xFF4A5B6C };
+                objects.push(PaintObject::Rect {
+                    rect: shade_rect.clone(),
+                    color: Color::from_u32(shade_bg),
+                    radius: 6,
+                });
+                let shade_glyph = if is_shaded { "v" } else { "^" };
+                objects.push(PaintObject::Text {
+                    rect: shade_rect.clone(),
+                    text: shade_glyph.into(),
+                    font: "NotoSans-Regular.ttf".into(),
+                    size: 18.0,
+                    color: Color::from_u32(0xFFFFFFFF),
+                    font_debug: false,
+                });
+
                 // Title Text
                 let title = Self::get_str_prop(node, keys::UI_TITLE, symbols);
                 if let Some(t) = title {
+                    let text_w = (shade_x - (layout.rect.x + text_offset_x)).max(0);
                     objects.push(PaintObject::Text {
-                        rect: Rect::new(layout.rect.x + text_offset_x, layout.rect.y + 2, layout.rect.w - text_offset_x, title_h),
+                        rect: Rect::new(layout.rect.x + text_offset_x, layout.rect.y + 2, text_w, title_h),
                         text: t,
                         font: "NotoSans-Regular.ttf".into(),
                         size: 14.0,

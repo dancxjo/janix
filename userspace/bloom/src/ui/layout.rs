@@ -3,7 +3,8 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use stem::thing::ThingId;
 use crate::damage::Rect;
-use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot};
+use crate::ui::constants::TITLE_BAR_HEIGHT;
+use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
 use abi::schema::keys;
 use crate::asset::AssetBank;
 use crate::font_graph::{self, FontStyle};
@@ -11,11 +12,13 @@ use crate::font_graph::{self, FontStyle};
 #[derive(Debug, Clone)]
 pub struct LayoutNode {
     pub id: ThingId,
+    pub kind: UiNodeKind,
     pub rect: Rect,
     pub z_index: i32,
     pub children: Vec<LayoutNode>,
 }
 
+#[derive(Clone)]
 pub struct LayoutTree {
     pub root: Option<LayoutNode>,
 }
@@ -69,6 +72,7 @@ impl LayoutSolver {
         // For v0, we assume the root covers the whole screen or handles its own layout.
         let mut root_layout = LayoutNode {
             id: root_id,
+            kind: root_node.kind,
             rect: Rect::new(0, 0, screen_w, screen_h),
             z_index: 0,
             children: Vec::new(),
@@ -90,9 +94,20 @@ impl LayoutSolver {
         symbols: &impl SymbolResolver,
         cache: &mut BTreeMap<(String, String, u32), (f32, f32)>,
     ) {
+        let parent_is_window = node.kind == UiNodeKind::Window;
+        let parent_shaded = parent_is_window && Self::get_prop(node, keys::UI_WINDOW_SHADED, symbols) != 0;
+        let title_bar_h = TITLE_BAR_HEIGHT;
+
+        if parent_shaded {
+            // Shaded windows only render the title bar, so skip laying out children.
+            return;
+        }
+
         for child_id in &node.children {
             if let Some(child_node) = snapshot.nodes.get(child_id) {
                 // Determine layout strategy for this node.
+                let is_window = child_node.kind == UiNodeKind::Window;
+                let child_shaded = is_window && Self::get_prop(child_node, keys::UI_WINDOW_SHADED, symbols) != 0;
                 
                 let mut w = Self::get_prop(child_node, keys::UI_WIDTH, symbols) as i32;
                 let mut h = Self::get_prop(child_node, keys::UI_HEIGHT, symbols) as i32;
@@ -100,6 +115,16 @@ impl LayoutSolver {
                 if fill_parent {
                     w = layout.rect.w;
                     h = layout.rect.h;
+                }
+
+                if is_window {
+                    if child_shaded {
+                        h = title_bar_h;
+                    } else if h > 0 {
+                        h = h.saturating_add(title_bar_h);
+                    } else {
+                        h = title_bar_h;
+                    }
                 }
 
                 // Check if centering requested
@@ -156,6 +181,13 @@ impl LayoutSolver {
                     y = 0;
                 }
 
+                if parent_is_window {
+                    y = y.saturating_add(title_bar_h);
+                    if fill_parent {
+                        h = (layout.rect.h - title_bar_h).max(0);
+                    }
+                }
+
                 // Edge-relative positioning (insets from parent edges)
                 // Debug: log inset values for debugging
                 let inset_right = Self::get_prop(child_node, keys::UI_INSET_RIGHT, symbols) as i32;
@@ -178,6 +210,7 @@ impl LayoutSolver {
 
                 let mut child_layout = LayoutNode {
                     id: *child_id,
+                    kind: child_node.kind,
                     rect: Rect::new(layout.rect.x + x, layout.rect.y + y, w, h),
                     z_index: z,
                     children: Vec::new(),

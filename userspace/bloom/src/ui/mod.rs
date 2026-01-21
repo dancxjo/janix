@@ -1,3 +1,4 @@
+pub mod constants;
 pub mod layout;
 pub mod paint;
 pub mod snapshot;
@@ -8,6 +9,7 @@ use self::snapshot::{AssetCache, KindIds, UiKeys, UiSnapshot};
 use crate::asset::AssetBank;
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
+use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT};
 use stem::thing::ThingId;
 
 struct SystemSymbolResolver;
@@ -32,6 +34,8 @@ pub struct UiPipeline {
     asset_cache: AssetCache,
     // Dirty node tracking for incremental updates (Phase F)
     dirty_nodes: alloc::vec::Vec<ThingId>,
+    // Layout from the last run, used for hit-testing
+    last_layout: Option<layout::LayoutTree>,
 }
 
 pub struct UiRunResult {
@@ -53,6 +57,7 @@ impl UiPipeline {
             cached_kinds: None,
             asset_cache: AssetCache::new(),
             dirty_nodes: alloc::vec::Vec::new(),
+            last_layout: None,
         }
     }
 
@@ -109,6 +114,7 @@ impl UiPipeline {
         let root_id = match self.root_id {
             Some(id) => id,
             None => {
+                self.last_layout = None;
                 if log_this_frame {
                     crate::log!("[bloom][ui] ENTER_UI_BUILD dirty={} root_present=false windows_seen=0 reason=no_root_id", self.dirty);
                 }
@@ -217,6 +223,7 @@ impl UiPipeline {
             self.solver
                 .solve(&snapshot, screen_w, screen_h, assets, &resolver)
         };
+        self.last_layout = Some(layout.clone());
 
         // 4. Paint
         let paint_scene = {
@@ -250,9 +257,70 @@ impl UiPipeline {
         }
     }
 
+    /// Hit-test the shade button for the topmost window under the given point.
+    pub fn hit_test_shade_button(&self, x: i32, y: i32) -> Option<ThingId> {
+        let layout = self.last_layout.as_ref()?;
+        let root = layout.root.as_ref()?;
+        let mut best: Option<(ThingId, i32)> = None;
+        Self::hit_window_shade(root, x, y, &mut best);
+        best.map(|(id, _)| id)
+    }
+
+    fn hit_window_shade(
+        node: &layout::LayoutNode,
+        x: i32,
+        y: i32,
+        best: &mut Option<(ThingId, i32)>,
+    ) {
+        if node.kind == snapshot::UiNodeKind::Window {
+            let btn_x = node.rect.x + node.rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
+            let btn_y = node.rect.y + (TITLE_BAR_HEIGHT - SHADE_BUTTON_SIZE) / 2;
+            let inside = x >= btn_x
+                && x <= btn_x + SHADE_BUTTON_SIZE
+                && y >= btn_y
+                && y <= btn_y + SHADE_BUTTON_SIZE;
+            if inside {
+                if best.map(|(_, z)| node.z_index > z).unwrap_or(true) {
+                    *best = Some((node.id, node.z_index));
+                }
+            }
+        }
+
+        for child in &node.children {
+            Self::hit_window_shade(child, x, y, best);
+        }
+    }
+
+    /// Toggle the shaded state for a window and mark it dirty.
+    pub fn toggle_window_shade(&mut self, window_id: ThingId) -> bool {
+        let key_id = match self.cached_keys.as_ref().map(|k| k.window_shaded) {
+            Some(k) if k != 0 => k,
+            _ => return false,
+        };
+
+        let current = stem::thing::sys::prop_get(window_id, key_id).unwrap_or(0);
+        let next = if current == 0 { 1 } else { 0 };
+
+        if stem::thing::sys::prop_set(window_id, key_id, next).is_ok() {
+            self.mark_node_dirty(window_id);
+            true
+        } else {
+            false
+        }
+    }
+
     fn lower(scene: &PaintScene, list: &mut DrawList) {
+        use crate::drawlist::DrawCmd;
         for obj in &scene.objects {
             match obj {
+                PaintObject::PushClip { rect } => {
+                    list.commands().push(DrawCmd::PushClip {
+                        rect: crate::geometry::Rect::new(rect.x, rect.y, rect.w, rect.h),
+                    });
+                }
+                PaintObject::PopClip => {
+                    list.commands().push(DrawCmd::PopClip);
+                }
                 PaintObject::Rect {
                     rect,
                     color,
@@ -286,7 +354,6 @@ impl UiPipeline {
                     // TODO: Implement image lowering
                 }
                 PaintObject::Commands { cmds, rect } => {
-                    use crate::drawlist::DrawCmd;
                     use crate::geometry::Transform;
 
                     // Translate local 0,0 SVG to node position

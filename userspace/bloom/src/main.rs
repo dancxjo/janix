@@ -348,6 +348,7 @@ fn main(arg: usize) -> ! {
         target.format,
     );
     let mut cursor = CursorState::new((target.width as i32) / 2, (target.height as i32) / 2);
+    let mut prev_buttons: u32 = 0;
     let mut loop_ctrl = FrameLoop::new(60);
     let (mut wallpaper_loaded, mut cursor_loaded, mut font_loaded) = (false, false, false);
     let mut ui_watch_handles: alloc::vec::Vec<usize> = alloc::vec::Vec::new();
@@ -460,6 +461,10 @@ fn main(arg: usize) -> ! {
         }
         prev_cursor_bbox = Some(new_bbox);
 
+        let buttons = cursor.buttons();
+        let left_pressed = buttons & 0x1 != 0 && prev_buttons & 0x1 == 0;
+        prev_buttons = buttons;
+
         {
             crate::trace_span!("ui.watch_drain");
             for (idx, wid) in ui_watch_handles.iter().enumerate() {
@@ -546,6 +551,14 @@ fn main(arg: usize) -> ! {
             cursor.emit_drawlist(list);
             (res.changed, res.damage)
         };
+
+        if left_pressed {
+            if let Some(win) = ui_pipeline.hit_test_shade_button(cursor.x, cursor.y) {
+                if ui_pipeline.toggle_window_shade(win) {
+                    ui_force_damage = true;
+                }
+            }
+        }
 
         if keys.contains(&Key::LeftCtrl)
             && keys.contains(&Key::LeftAlt)

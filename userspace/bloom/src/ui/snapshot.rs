@@ -63,6 +63,7 @@ pub struct UiKeys {
     pub has_child: u32, pub inset_right: u32, pub inset_bottom: u32,
     pub inline_mode: u32, pub svg_bytes: u32,
     pub window_icon: u32,
+    pub window_shaded: u32,
 }
 
 impl UiKeys {
@@ -74,6 +75,7 @@ impl UiKeys {
             fill_parent: 0, bg_color: 0, fg_color: 0, has_child: 0,
             inset_right: 0, inset_bottom: 0, inline_mode: 0, svg_bytes: 0,
             window_icon: 0,
+            window_shaded: 0,
         }
     }
     pub fn intern() -> Self {
@@ -105,26 +107,27 @@ impl UiKeys {
             inline_mode: stem::thing::sys::intern(keys::UI_INLINE_MODE).unwrap_or(0),
             svg_bytes: stem::thing::sys::intern(keys::UI_SVG_BYTES).unwrap_or(0),
             window_icon: stem::thing::sys::intern(keys::UI_WINDOW_ICON).unwrap_or(0),
+            window_shaded: stem::thing::sys::intern(keys::UI_WINDOW_SHADED).unwrap_or(0),
         };
-        crate::trace_counter!("ui.init.syscalls.intern_keys", 25);
+        crate::trace_counter!("ui.init.syscalls.intern_keys", 26);
         k
     }
-    pub fn numeric_keys(&self) -> [u32; 20] {
+    pub fn numeric_keys(&self) -> [u32; 21] {
         [self.x, self.y, self.w, self.h, self.color, self.radius,
          self.hidden, self.z_index, self.center_x, self.center_y,
          self.fill_parent, self.bg_color, self.fg_color, 
          self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
-         self.inline_mode, self.svg_bytes, self.window_icon]
+         self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded]
     }
     pub fn string_keys(&self) -> [u32; 4] {
         [self.text, self.font, self.font_stack, self.title]
     }
-    pub fn all_keys(&self) -> [u32; 24] {
+    pub fn all_keys(&self) -> [u32; 25] {
         [self.x, self.y, self.w, self.h, self.color, self.radius,
          self.hidden, self.z_index, self.center_x, self.center_y,
          self.fill_parent, self.bg_color, self.fg_color, 
          self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
-         self.inline_mode, self.svg_bytes, self.window_icon,
+         self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded,
          self.text, self.font, self.font_stack, self.title]
     }
 }

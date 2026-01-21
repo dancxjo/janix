@@ -42,6 +42,10 @@ impl CursorState {
         }
     }
 
+    pub fn buttons(&self) -> u32 {
+        self.buttons
+    }
+
     fn color(&self) -> Color {
         if self.buttons & 0x1 != 0 {
             Color::from_u32(0x00FF0000)

@@ -92,6 +92,7 @@ pub mod keys {
     pub const UI_RADIUS: &str = "ui.radius";
     pub const UI_TITLE: &str = "ui.title";
     pub const UI_WINDOW_ICON: &str = "ui.window.icon";
+    pub const UI_WINDOW_SHADED: &str = "ui.window.shaded";
     pub const UI_HIDDEN: &str = "ui.hidden";
     pub const UI_Z_INDEX: &str = "ui.z_index";
 
@@ -241,20 +242,20 @@ pub mod virtio {
 // HID / Input additions (Bristle v0)
 pub mod hid {
     // Service kinds
-    pub const SVC_INPUT: &str = "svc.Input";           // Bristle broker
-    
+    pub const SVC_INPUT: &str = "svc.Input"; // Bristle broker
+
     // Device kinds
     pub const DEV_HID_KEYBOARD: &str = "dev.hid.Keyboard";
     pub const DEV_HID_MOUSE: &str = "dev.hid.Mouse";
     pub const DEV_HID_TOUCHPAD: &str = "dev.hid.Touchpad";
     pub const DEV_HID_GAMEPAD: &str = "dev.hid.Gamepad";
-    
+
     // Driver kinds
     pub const DRV_PS2_KEYBOARD: &str = "drv.Ps2Keyboard";
     pub const DRV_PS2_MOUSE: &str = "drv.Ps2Mouse";
-    
+
     // Relations
-    pub const REL_CONSUMES: &str = "CONSUMES";         // (svc.Input)-[:CONSUMES]->(dev.hid.Keyboard)
-    pub const REL_ROUTES_TO: &str = "ROUTES_TO";       // (svc.Input)-[:ROUTES_TO]->(app.Echo)
-    pub const REL_PRODUCES: &str = "PRODUCES";         // (drv.Ps2Keyboard)-[:PRODUCES]->(dev.hid.Keyboard)
+    pub const REL_CONSUMES: &str = "CONSUMES"; // (svc.Input)-[:CONSUMES]->(dev.hid.Keyboard)
+    pub const REL_ROUTES_TO: &str = "ROUTES_TO"; // (svc.Input)-[:ROUTES_TO]->(app.Echo)
+    pub const REL_PRODUCES: &str = "PRODUCES"; // (drv.Ps2Keyboard)-[:PRODUCES]->(dev.hid.Keyboard)
 }

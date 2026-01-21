@@ -98,6 +98,10 @@ pub const SYS_ROOT_APPLY_BATCH: u32 = 0x144;
 // 0x148-0x14F: Properties
 pub const SYS_ROOT_PROP_GET: u32 = 0x148;
 pub const SYS_ROOT_PROP_SET: u32 = 0x149;
+/// Bulk property fetch: get multiple properties for a single node in one syscall
+/// Args: node_id, keys_ptr, keys_len, out_ptr, out_len
+/// Returns: number of properties found
+pub const SYS_ROOT_PROPS_GET_MANY: u32 = 0x14A;
 
 // 0x150-0x157: Query/Find
 pub const SYS_ROOT_FIND: u32 = 0x150;

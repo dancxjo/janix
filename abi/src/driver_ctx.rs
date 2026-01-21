@@ -1,4 +1,5 @@
 use crate::types::ThingId;
+use crate::ids::HandleId;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -10,12 +11,10 @@ pub struct DriverCtx {
 /// Helper to convert ctx to raw arg (v0: fits in register)
 impl DriverCtx {
     pub fn to_raw(self) -> usize {
-        use crate::ids::HandleId;
         self.device_id.to_u64_lossy() as usize
     }
 
     pub fn from_raw(arg: usize) -> Self {
-        use crate::ids::HandleId;
         Self {
             device_id: ThingId::from_u64(arg as u64),
         }

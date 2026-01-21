@@ -190,6 +190,13 @@ impl Damage {
             return; // Outside bounds or empty
         }
 
+        // Threshold: if single rect > 25% of screen, collapse to full
+        let screen_area = self.bounds.area();
+        if clipped.area() * 4 > screen_area {
+            self.collapse_to_full();
+            return;
+        }
+
         // Try to merge with existing rects
         for i in 0..self.count {
             if self.rects[i].touches_or_overlaps(clipped) {
@@ -224,6 +231,11 @@ impl Damage {
                 for j in (i + 1)..self.count {
                     if self.rects[i].touches_or_overlaps(self.rects[j]) {
                         self.rects[i] = self.rects[i].union(self.rects[j]);
+                        // Check if merged rect exceeds threshold (25% of screen)
+                        if self.rects[i].area() * 4 > self.bounds.area() {
+                            self.collapse_to_full();
+                            return;
+                        }
                         // Remove j by swapping with last
                         self.count -= 1;
                         if j < self.count {

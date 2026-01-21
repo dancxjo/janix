@@ -222,3 +222,29 @@ pub fn handle_get_edges(graph: &Graph, id: u64, buffer: u64, len: u64) -> Handle
         (-1, 0)
     }
 }
+
+/// Bulk property fetch: get multiple properties for a node in a single call
+pub fn handle_props_get_many(
+    graph: &Graph,
+    node_id: u64,
+    keys: &[u32],
+    out: &mut abi::types::BulkPropsResponse,
+) -> HandlerResult {
+    out.node_id = node_id;
+    out.present_mask = 0;
+    
+    if let Some(node) = graph.nodes.get(&node_id) {
+        for (i, &key) in keys.iter().enumerate() {
+            if i >= abi::types::BULK_PROPS_MAX_KEYS {
+                break;
+            }
+            if let Some(&val) = node.props.get(&key) {
+                out.values[i] = val;
+                out.present_mask |= 1 << i;
+            }
+        }
+        (0, keys.len() as u64)
+    } else {
+        (-1, 0)
+    }
+}

@@ -177,7 +177,7 @@ pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw, solid_text:
 /// This basically applies an *additional* clip (the damage rect) on top of the op stream.
 /// However, since damage is a set of rects, we might run the ops multiple times or union the clip.
 /// For simplicity in v0: We iterate damage rects and set the initial clip to the damage rect.
-pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw, damage: &Damage) {
+pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw, damage: &Damage, solid_text: bool) {
     let mut damage_rects = [DamageRect::default(); 8];
     let mut damage_count = 0;
     for rect in damage.iter() {
@@ -208,12 +208,16 @@ pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw,
         for i in 0..damage_count {
             total_pixels += (damage_rects[i].w * damage_rects[i].h) as u64;
         }
+        let screen_pixels = (surface.width() * surface.height()) as u64;
+        let pct = if screen_pixels > 0 { (total_pixels * 100) / screen_pixels } else { 0 };
         
-        log!("[bloom::raster] WARN: slow rasterize ({} rects, {} px) = {:.1}ms", 
-             damage_count, total_pixels, elapsed as f64 / 1_000_000.0);
+        log!("[bloom::raster] WARN: slow rasterize ({} rects, {} px, {}% screen) = {:.1}ms", 
+             damage_count, total_pixels, pct, elapsed as f64 / 1_000_000.0);
         for i in 0..damage_count {
             let d = damage_rects[i];
-            log!("  rect[{}]: {}x{} @ {},{}", i, d.w, d.h, d.x, d.y);
+            let rect_px = (d.w * d.h) as u64;
+            let rect_pct = if screen_pixels > 0 { (rect_px * 100) / screen_pixels } else { 0 };
+            log!("  rect[{}]: {}x{} ({} px, {}%) @ {},{}", i, d.w, d.h, rect_px, rect_pct, d.x, d.y);
         }
     }
 }

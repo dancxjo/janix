@@ -3,7 +3,7 @@
 use crate::common::{Result, image_name};
 use xshell::{Shell, cmd};
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 /// Run ISO image in QEMU (UEFI mode).
 pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path) -> Result<()> {

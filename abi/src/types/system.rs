@@ -129,3 +129,58 @@ impl WatchMode {
         }
     }
 }
+
+// ============================================================================
+// Bulk Property Fetch (Performance Optimization)
+// ============================================================================
+
+/// Maximum number of properties that can be fetched in one bulk call
+pub const BULK_PROPS_MAX_KEYS: usize = 32;
+
+/// Request for bulk property fetch
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct BulkPropsRequest {
+    /// Node ID to query
+    pub node_id: u64,
+    /// Array of property key IDs (pre-interned SymbolIds)
+    pub keys: [u32; BULK_PROPS_MAX_KEYS],
+    /// Number of valid keys in the array
+    pub key_count: u8,
+    pub _pad: [u8; 3],
+}
+
+impl Default for BulkPropsRequest {
+    fn default() -> Self {
+        Self {
+            node_id: 0,
+            keys: [0; BULK_PROPS_MAX_KEYS],
+            key_count: 0,
+            _pad: [0; 3],
+        }
+    }
+}
+
+/// Response from bulk property fetch
+#[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct BulkPropsResponse {
+    /// Node ID that was queried
+    pub node_id: u64,
+    /// Property values (parallel to request keys array)
+    pub values: [u64; BULK_PROPS_MAX_KEYS],
+    /// Bitmask indicating which keys had values (bit N = key N present)
+    pub present_mask: u32,
+    pub _pad: u32,
+}
+
+impl Default for BulkPropsResponse {
+    fn default() -> Self {
+        Self {
+            node_id: 0,
+            values: [0; BULK_PROPS_MAX_KEYS],
+            present_mask: 0,
+            _pad: 0,
+        }
+    }
+}

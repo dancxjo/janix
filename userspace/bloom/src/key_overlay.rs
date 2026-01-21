@@ -121,20 +121,16 @@ impl KeyOverlay {
     fn compute_rect(&self, screen_w: i32, screen_h: i32) -> Option<Rect> {
         if self.active_keys.is_empty() && !self.show_perf { return None; }
         
-        let padding_x = 12;
-        let padding_y = 10;
+        // Fixed dimensions to prevent overflow and ensure predictable damage
+        const PERF_PANEL_W: i32 = 260;
+        const PERF_PANEL_H: i32 = 340;
+        const KEY_PANEL_H: i32 = 44;
         
-        let text_w = (self.cached_text.chars().count() as f32 * 24.0 * 0.6) as i32;
-        let content_w = text_w;
-        let content_h = 24;
-        
-        let mut box_w = content_w + padding_x * 2;
-        let mut box_h = content_h + padding_y * 2;
-        
-        if self.show_perf {
-            box_w = box_w.max(280);
-            box_h = box_h.max(300);
-        }
+        let box_w = if self.show_perf { PERF_PANEL_W } else {
+            let text_w = (self.cached_text.chars().count() as f32 * 24.0 * 0.6) as i32;
+            (text_w + 24).max(100)
+        };
+        let box_h = if self.show_perf { PERF_PANEL_H } else { KEY_PANEL_H };
         
         let x = screen_w - box_w - 16; 
         let y = screen_h - box_h - 16;

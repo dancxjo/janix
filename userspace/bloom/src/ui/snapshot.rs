@@ -39,6 +39,7 @@ impl UiNodeKind {
     }
 }
 
+#[derive(Clone)]
 pub struct KindIds {
     pub root: u32,
     pub window: u32,
@@ -48,6 +49,37 @@ pub struct KindIds {
     pub overlay: u32,
 }
 
+impl KindIds {
+    /// Create empty (uninitialized) KindIds
+    pub fn empty() -> Self {
+        Self {
+            root: 0,
+            window: 0,
+            panel: 0,
+            text: 0,
+            image: 0,
+            overlay: 0,
+        }
+    }
+
+    /// Intern all kind symbols from Root (expensive - do once at init)
+    pub fn intern() -> Self {
+        use abi::schema::kinds;
+        crate::trace_span!("ui.init.intern_kinds");
+        let kids = Self {
+            root: stem::thing::sys::intern(kinds::UI_ROOT).unwrap_or(0),
+            window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0),
+            panel: stem::thing::sys::intern(kinds::UI_PANEL).unwrap_or(0),
+            text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or(0),
+            image: stem::thing::sys::intern(kinds::UI_IMAGE).unwrap_or(0),
+            overlay: stem::thing::sys::intern(kinds::UI_OVERLAY).unwrap_or(0),
+        };
+        crate::trace_counter!("ui.init.syscalls.intern_kinds", 6);
+        kids
+    }
+}
+
+#[derive(Clone)]
 pub struct UiKeys {
     pub x: u32,
     pub y: u32,
@@ -74,8 +106,20 @@ pub struct UiKeys {
 }
 
 impl UiKeys {
+    /// Create empty (uninitialized) UiKeys
+    pub fn empty() -> Self {
+        Self {
+            x: 0, y: 0, w: 0, h: 0, color: 0, text: 0, font: 0,
+            font_size: 0, font_stack: 0, font_debug: 0, radius: 0,
+            title: 0, hidden: 0, z_index: 0, center_x: 0, center_y: 0,
+            fill_parent: 0, bg_color: 0, fg_color: 0, has_child: 0,
+            inset_right: 0, inset_bottom: 0,
+        }
+    }
+
+    /// Intern all key symbols from Root (expensive - do once at init)
     pub fn intern() -> Self {
-        crate::trace_span!("ui.snap.intern_keys");
+        crate::trace_span!("ui.init.intern_keys");
         use abi::schema::{keys, rels};
         let keys = Self {
             x: stem::thing::sys::intern(keys::UI_X).unwrap_or(0),
@@ -101,8 +145,24 @@ impl UiKeys {
             inset_right: stem::thing::sys::intern(keys::UI_INSET_RIGHT).unwrap_or(0),
             inset_bottom: stem::thing::sys::intern(keys::UI_INSET_BOTTOM).unwrap_or(0),
         };
-        crate::trace_counter!("ui.snap.syscalls", 22);
+        crate::trace_counter!("ui.init.syscalls.intern_keys", 22);
         keys
+    }
+    
+    /// Get the array of numeric property keys (for bulk fetch)
+    pub fn numeric_keys(&self) -> [u32; 17] {
+        [
+            self.x, self.y, self.w, self.h, self.color, self.radius,
+            self.hidden, self.z_index, self.center_x, self.center_y,
+            self.fill_parent, self.bg_color, self.fg_color, 
+            self.inset_right, self.inset_bottom,
+            self.font_size, self.font_debug,
+        ]
+    }
+    
+    /// Get the array of string property keys (for bulk fetch)
+    pub fn string_keys(&self) -> [u32; 4] {
+        [self.text, self.font, self.font_stack, self.title]
     }
 }
 
@@ -129,39 +189,13 @@ impl UiSnapshot {
         }
     }
 
-    pub fn capture(root_id: ThingId) -> Self {
-        use abi::schema::kinds;
-        let kind_ids = {
-            crate::trace_span!("ui.snap.intern_kinds");
-            let kids = KindIds {
-                root: stem::thing::sys::intern(kinds::UI_ROOT).unwrap_or(0),
-                window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0),
-                panel: stem::thing::sys::intern(kinds::UI_PANEL).unwrap_or(0),
-                text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or(0),
-                image: stem::thing::sys::intern(kinds::UI_IMAGE).unwrap_or(0),
-                overlay: stem::thing::sys::intern(kinds::UI_OVERLAY).unwrap_or(0),
-            };
-            crate::trace_counter!("ui.snap.syscalls", 6);
-            kids
-        };
-
-        // Diagnostic: log intern results once in a while
-        let now_ms = crate::log_ratelimit::now_ms();
-        if crate::log_ratelimit::log_every(2000, now_ms) {
-            crate::log!("[bloom][ui] KindIds: root={} window={} panel={} text={} image={}",
-                kind_ids.root, kind_ids.window, kind_ids.panel, kind_ids.text, kind_ids.image);
-            if kind_ids.root == 0 || kind_ids.window == 0 {
-                crate::log!("[bloom][ui] WARNING: UI_ROOT or UI_WINDOW failed to intern!");
-            }
-        }
-
-        let keys = UiKeys::intern();
-
+    /// Capture UI snapshot using pre-cached keys and kinds (no interning per frame)
+    pub fn capture(root_id: ThingId, keys: &UiKeys, kinds: &KindIds) -> Self {
         let mut snapshot = Self::new();
         snapshot.root_id = Some(root_id);
         {
             crate::trace_span!("ui.snap.traverse_all");
-            snapshot.traverse(root_id, &kind_ids, &keys);
+            snapshot.traverse(root_id, kinds, keys);
         }
         crate::trace_counter!("ui.snap.nodes_total", snapshot.nodes.len());
         snapshot
@@ -174,7 +208,7 @@ impl UiSnapshot {
 
         let kind_sym = {
             crate::trace_span!("ui.snap.get_kind");
-            crate::trace_counter!("ui.snap.syscalls", 1);
+            crate::trace_counter!("snap.syscalls.get_kind", 1);
             get_kind(id).ok()
         };
         let kind = match kind_sym {
@@ -193,10 +227,9 @@ impl UiSnapshot {
         let mut edges_buf = [abi::types::Edge::default(); 64];
         {
             crate::trace_span!("ui.snap.get_edges");
-            crate::trace_counter!("ui.snap.syscalls", 1);
+            crate::trace_counter!("snap.syscalls.get_edges", 1);
             if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
                 for edge in &edges_buf[..count] {
-                    // Check if (id)-[:HAS_CHILD]->(child)
                     let rel_u64 = edge.predicate.to_u64_lossy();
                     let target_u64 = edge.to.to_u64_lossy();
                     
@@ -210,19 +243,15 @@ impl UiSnapshot {
         let mut props = BTreeMap::new();
         let mut strings = BTreeMap::new();
 
-        // Standard properties
-        let prop_list = [
-            keys.x, keys.y, keys.w, keys.h, keys.color, keys.radius,
-            keys.hidden, keys.z_index, keys.center_x, keys.center_y,
-            keys.fill_parent, keys.bg_color, keys.fg_color, keys.inset_right, keys.inset_bottom,
-            keys.font_size, keys.font_debug,
-        ];
-
+        // Numeric properties - use cached key IDs (no interning!)
+        let numeric_keys = keys.numeric_keys();
         {
             crate::trace_span!("ui.snap.prop_get");
-            for &p in &prop_list {
-                if p == 0 { continue; }
-                crate::trace_counter!("ui.snap.syscalls", 1);
+            let valid_keys: Vec<u32> = numeric_keys.iter().copied().filter(|&k| k != 0).collect();
+            crate::trace_counter!("snap.syscalls.prop_get", valid_keys.len());
+            crate::trace_counter!("ui.snap.prop_get.calls", valid_keys.len());
+            for &p in &valid_keys {
+                // Using u32 key ID directly - no interning needed!
                 if let Ok(val) = stem::thing::sys::prop_get(id, p) {
                     props.insert(p, val);
                 }
@@ -230,19 +259,22 @@ impl UiSnapshot {
         }
 
         // String properties
-        let str_list = [keys.text, keys.font, keys.font_stack, keys.title];
-        for &p in &str_list {
-            if p == 0 { continue; }
-            crate::trace_counter!("ui.snap.syscalls", 1);
-            if let Ok(val) = stem::thing::sys::prop_get(id, p) {
-                // val is Bytespace ID
-                if val != 0 {
-                    let s = {
-                        crate::trace_span!("ui.snap.read_string");
-                        self.read_string(ThingId::from_u64(val))
-                    };
-                    if let Some(s) = s {
-                        strings.insert(p, s);
+        let string_keys = keys.string_keys();
+        {
+            let valid_keys: Vec<u32> = string_keys.iter().copied().filter(|&k| k != 0).collect();
+            crate::trace_counter!("ui.snap.read_string.calls", valid_keys.len());
+            for &p in &valid_keys {
+                crate::trace_counter!("snap.syscalls.prop_get", 1);
+                if let Ok(val) = stem::thing::sys::prop_get(id, p) {
+                    if val != 0 {
+                        let s = {
+                            crate::trace_span!("ui.snap.read_string");
+                            crate::trace_counter!("snap.syscalls.read_string", 2); // info + read
+                            self.read_string(ThingId::from_u64(val))
+                        };
+                        if let Some(s) = s {
+                            strings.insert(p, s);
+                        }
                     }
                 }
             }
@@ -267,7 +299,6 @@ impl UiSnapshot {
 
     fn read_string(&self, bs_id: ThingId) -> Option<String> {
         use stem::thing::sys::{bytespace_info, bytespace_read};
-        crate::trace_counter!("ui.snap.syscalls", 2); // info + read
         let size = bytespace_info(bs_id).ok()?;
         if size == 0 {
             return Some(String::new());
@@ -291,8 +322,7 @@ impl UiSnapshot {
             }
         }
 
-        // Nodes in prev but not in self (deleted) - we also need to damage their old areas.
-        // Actually the caller uses this to mark damage.
+        // Nodes in prev but not in self (deleted)
         for id in prev.nodes.keys() {
             if !self.nodes.contains_key(id) {
                 changed.push(*id);

@@ -804,10 +804,6 @@ fn main(arg: usize) -> ! {
             ui_pipeline.mark_dirty();
         }
 
-        // Damage text regions (frame counter changes every frame)
-        if font_loaded {
-            builder.add_damage(Rect::new(20, 20, 300, 100)); // Covers "thing-os" and "frame: N"
-        }
 
         // Build Scene - record ops into the builder's DrawList
         let ui_changed;
@@ -934,7 +930,7 @@ fn main(arg: usize) -> ! {
     // Rasterize using damage-aware rendering
     if !damage_for_raster.is_empty() {
         trace_span!("raster");
-        raster::execute_with_damage(&mut surface, &token.ops, &damage_for_raster);
+        raster::execute_with_damage(&mut surface, &token.ops, &damage_for_raster, ui_pipeline.solid_text);
     }
 
     // Present (consumes token)

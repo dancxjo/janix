@@ -4,7 +4,7 @@ pub mod snapshot;
 
 use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
-use self::snapshot::UiSnapshot;
+use self::snapshot::{UiSnapshot, UiKeys, KindIds};
 use crate::asset::AssetBank;
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
@@ -18,8 +18,16 @@ impl SymbolResolver for SystemSymbolResolver {
     }
 }
 
+pub struct UiPipeline {
+    root_id: Option<ThingId>,
+    prev_snapshot: Option<UiSnapshot>,
+    solver: LayoutSolver,
+    dirty: bool,
     cached_scene: Option<PaintScene>,
     pub solid_text: bool,
+    // Cached symbol IDs - initialized once, used every frame
+    cached_keys: Option<UiKeys>,
+    cached_kinds: Option<KindIds>,
 }
 
 pub struct UiRunResult {
@@ -37,7 +45,19 @@ impl UiPipeline {
             dirty: true,
             cached_scene: None,
             solid_text: false,
+            cached_keys: None,
+            cached_kinds: None,
         }
+    }
+
+    /// Ensure keys and kinds are interned (does work only on first call)
+    fn ensure_symbols(&mut self) -> (&UiKeys, &KindIds) {
+        if self.cached_keys.is_none() {
+            crate::log!("[bloom][ui] Initializing cached UI symbols (one-time)");
+            self.cached_keys = Some(UiKeys::intern());
+            self.cached_kinds = Some(KindIds::intern());
+        }
+        (self.cached_keys.as_ref().unwrap(), self.cached_kinds.as_ref().unwrap())
     }
 
     pub fn set_root(&mut self, id: ThingId) {
@@ -94,10 +114,16 @@ impl UiPipeline {
 
         let start = stem::monotonic_ns();
 
-        // 1. Snapshot
+        // Ensure symbols are cached (no-op after first frame)
+        let (keys, kinds) = self.ensure_symbols();
+        // Clone refs to avoid borrow issues
+        let keys = keys.clone();
+        let kinds = kinds.clone();
+
+        // 1. Snapshot - now uses cached keys/kinds, no per-frame interning!
         let snapshot = {
             crate::trace_span!("ui.snap");
-            UiSnapshot::capture(root_id)
+            UiSnapshot::capture(root_id, &keys, &kinds)
         };
 
         crate::trace_counter!("ui.nodes", snapshot.nodes.len());
@@ -129,6 +155,7 @@ impl UiPipeline {
             return UiRunResult {
                 changed: false,
                 damage: alloc::vec::Vec::new(),
+                solid_text: self.solid_text,
             };
         }
 
@@ -153,8 +180,6 @@ impl UiPipeline {
             crate::trace_span!("ui.lower");
             Self::lower(&paint_scene, list);
         }
-
-        // Cache the scene so unchanged frames can skip snapshot/layout/paint.
 
         // Cache the scene so unchanged frames can skip snapshot/layout/paint.
         self.cached_scene = Some(paint_scene);

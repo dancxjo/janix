@@ -1,7 +1,7 @@
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
-use stem::perf::{SpanEnterFn, SpanExitFn, CounterFn, EventFn, PerfSpan as StemPerfSpan};
 
 pub struct PerfState {
     pub current_frame: PerfFrame,
@@ -16,6 +16,10 @@ pub struct PerfReport {
 }
 
 static LAST_REPORT: Mutex<Option<PerfReport>> = Mutex::new(None);
+static FRAME_COUNTER: AtomicU64 = AtomicU64::new(0);
+
+/// How often to print a compact perf line (every N frames)
+pub const PERF_PRINT_CADENCE: u64 = 60;
 
 pub struct PerfFrame {
     pub spans: BTreeMap<&'static str, u64>,
@@ -64,9 +68,17 @@ pub fn add_counter(name: &'static str, value: u64) {
 }
 
 pub fn end_frame() -> Option<PerfFrame> {
+    let frame_no = FRAME_COUNTER.fetch_add(1, Ordering::Relaxed);
+    
     let mut lock = PERF.lock();
     let state = lock.as_mut()?;
     let finished_frame = core::mem::replace(&mut state.current_frame, PerfFrame::new());
+    
+    // Print compact one-liner every N frames
+    if frame_no % PERF_PRINT_CADENCE == 0 && frame_no > 0 {
+        print_compact_stats(&finished_frame, frame_no);
+    }
+    
     state.history.push(finished_frame);
     
     if state.history.len() >= 120 {
@@ -118,6 +130,29 @@ pub fn end_frame() -> Option<PerfFrame> {
     }
     
     None
+}
+
+/// Print a compact one-liner for quick monitoring
+fn print_compact_stats(frame: &PerfFrame, frame_no: u64) {
+    // Extract key metrics
+    let snap_ms = frame.spans.get("ui.snap").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let prop_ms = frame.spans.get("ui.snap.prop_get").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let layout_ms = frame.spans.get("ui.layout").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let present_ms = frame.spans.get("present").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    let raster_ms = frame.spans.get("raster").map(|&ns| ns as f64 / 1_000_000.0).unwrap_or(0.0);
+    
+    // Syscall counts
+    let syscalls_prop = frame.counters.get("snap.syscalls.prop_get").copied().unwrap_or(0);
+    let syscalls_kind = frame.counters.get("snap.syscalls.get_kind").copied().unwrap_or(0);
+    let syscalls_edges = frame.counters.get("snap.syscalls.get_edges").copied().unwrap_or(0);
+    let syscalls_str = frame.counters.get("snap.syscalls.read_string").copied().unwrap_or(0);
+    let total_syscalls = syscalls_prop + syscalls_kind + syscalls_edges + syscalls_str;
+    
+    let nodes = frame.counters.get("ui.snap.nodes_total").copied().unwrap_or(0);
+    
+    crate::log!("[PERF] f={} snap={:.1}ms prop={:.1}ms layout={:.1}ms nodes={} syscalls={} (prop={} kind={} edges={} str={})",
+        frame_no, snap_ms, prop_ms, layout_ms, nodes, total_syscalls,
+        syscalls_prop, syscalls_kind, syscalls_edges, syscalls_str);
 }
 
 pub fn get_last_report() -> Option<PerfReport> {

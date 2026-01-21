@@ -1,6 +1,6 @@
 # Feature: System Boot and UI Bring-Up
 
-> Last run: 2026-01-20 18:14:20
+> Last run: 2026-01-20 19:33:04
 
 ## Scenarios
 

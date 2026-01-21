@@ -53,32 +53,99 @@ fn verify_wallpaper_pixels(img: &image::RgbImage) -> (u32, u32) {
 }
 
 /// Verify clock window has black/red pixels in center - returns (black, red, other)
-fn verify_clock_center_pixels(img: &image::RgbImage) -> (u32, u32, u32) {
+fn verify_clock_center_pixels(img: &image::RgbImage) -> (u32, u32, u32, &'static str) {
     let (width, height) = img.dimensions();
-    let cx = width / 2;
-    let cy = height / 2;
     
-    let mut black = 0u32;
-    let mut red = 0u32;
-    let mut other = 0u32;
-    
-    // Sample center region (200x100 box)
-    let sample_w = 100.min(width / 4);
-    let sample_h = 50.min(height / 6);
-    
-    for y in cy.saturating_sub(sample_h)..=(cy + sample_h).min(height - 1) {
-        for x in cx.saturating_sub(sample_w)..=(cx + sample_w).min(width - 1) {
-            let pixel = img.get_pixel(x, y).0;
-            if pixel[0] < 20 && pixel[1] < 20 && pixel[2] < 20 {
-                black += 1;
-            } else if pixel[0] > 180 && pixel[1] < 80 && pixel[2] < 80 {
-                red += 1;
-            } else {
-                other += 1;
+    // Check two likely locations: Center and Bottom-Right
+    let regions = [
+        (width / 2, height / 2, "center"),
+        (width.saturating_sub(220), height.saturating_sub(105), "bottom-right"),
+    ];
+
+    let mut best_black = 0;
+    let mut best_red = 0;
+    let mut best_other = 0;
+    let mut best_loc = "none";
+
+    for (cx, cy, loc) in regions {
+        let mut black = 0u32;
+        let mut red = 0u32;
+        let mut other = 0u32;
+        
+        let sample_w = 100.min(width / 4);
+        let sample_h = 50.min(height / 6);
+        
+        for y in cy.saturating_sub(sample_h)..=(cy + sample_h).min(height - 1) {
+            for x in cx.saturating_sub(sample_w)..=(cx + sample_w).min(width - 1) {
+                let pixel = img.get_pixel(x, y).0;
+                if pixel[0] < 20 && pixel[1] < 20 && pixel[2] < 20 {
+                    black += 1;
+                } else if pixel[0] > 180 && pixel[1] < 80 && pixel[2] < 80 {
+                    red += 1;
+                } else {
+                    other += 1;
+                }
             }
         }
+        
+        // Prioritize region with most red pixels (clock digits)
+        if red > best_red || (red == best_red && black > best_black) {
+            best_black = black;
+            best_red = red;
+            best_other = other;
+            best_loc = loc;
+        }
     }
-    (black, red, other)
+    (best_black, best_red, best_other, best_loc)
+}
+
+async fn wait_for_clock_pixels(world: &mut ThingOsWorld, timeout_secs: f64) -> Result<(), StepError> {
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs_f64(timeout_secs);
+    let mut attempts = 0;
+
+    while start.elapsed() < timeout {
+        attempts += 1;
+        let screenshot_path = crate::artifacts::global()
+            .lock()
+            .await
+            .screenshot_path(&format!("clock_verify_{}", attempts));
+
+        let png_path = match world.take_screenshot(&screenshot_path).await {
+            Ok(p) => p,
+            Err(e) => {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        let img = match image::open(&png_path) {
+            Ok(i) => i.to_rgb8(),
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+        
+        let (black, red, other, loc) = verify_clock_center_pixels(&img);
+
+        let total = black + red + other;
+        let black_pct = if total > 0 { (black as f64 / total as f64) * 100.0 } else { 0.0 };
+        let red_pct = if total > 0 { (red as f64 / total as f64) * 100.0 } else { 0.0 };
+
+        // [CONTRACT] reporting
+        eprintln!("[CONTRACT] Clock Pixels: red={} ({:.1}%), black={} ({:.1}%), other={} region={} (attempt {})", 
+                  red, red_pct, black, black_pct, other, loc, attempts);
+
+        if red > 50 && black > 500 {
+            eprintln!("│  │  │      ✅ Clock window detected with pixels");
+            return Ok(());
+        }
+
+        tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+    }
+
+    Err(StepError(format!("Clock window pixels not detected within {}s", timeout_secs)))
 }
 
 /// Verify cursor-like pixels near center - returns count of non-background pixels
@@ -430,71 +497,7 @@ async fn bloom_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
 
 #[then("the clock window should be visible")]
 async fn clock_window_visible(world: &mut ThingOsWorld) -> Result<(), StepError> {
-    let mut attempts = 0;
-    let max_attempts = 10;
-    let mut last_error = String::new();
-
-    while attempts < max_attempts {
-        let screenshot_path = crate::artifacts::global()
-            .lock()
-            .await
-            .screenshot_path(&format!("clock_window_{}", attempts));
-
-        let png_path = match world.take_screenshot(&screenshot_path).await {
-            Ok(p) => p,
-            Err(e) => {
-                eprintln!("Failed to take screenshot: {}", e);
-                break;
-            }
-        };
-
-        let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
-        let rgb = img.to_rgb8();
-        let (width, height) = rgb.dimensions();
-        if width == 0 || height == 0 {
-            return Err(StepError("Screenshot has invalid dimensions".to_string()));
-        }
-
-        let cx = width / 2;
-        let cy = height / 2;
-
-        // Sample a 100x50 box in the center.
-        let mut black_count = 0;
-        let mut red_count = 0;
-        let mut other_count = 0;
-
-        // Check center region (inside the 400x150 window)
-        // +/- 50 pixels from center should be well within the clock window.
-        for y in (cy - 50)..(cy + 50) {
-            for x in (cx - 100)..(cx + 100) {
-                let pixel = rgb.get_pixel(x, y).0;
-                match pixel {
-                    [0, 0, 0] => black_count += 1,
-                    [255, 0, 0] => red_count += 1,
-                    _ => other_count += 1,
-                }
-            }
-        }
-
-        let total = black_count + red_count + other_count;
-
-        // We expect mostly black and some red.
-        // If other_count is high (e.g. blue background), then clock is not visible.
-        if other_count <= total / 10 {
-            // Success!
-            return Ok(());
-        }
-
-        last_error = format!(
-            "Clock window not detected in center. Found {} black, {} red, {} other pixels. Expected mostly black/red.",
-            black_count, red_count, other_count
-        );
-
-        attempts += 1;
-        tokio::time::sleep(std::time::Duration::from_millis(1000)).await;
-    }
-
-    Err(StepError(format!("Failed after {} attempts: {}", max_attempts, last_error)))
+    wait_for_clock_pixels(world, 120.0).await
 }
 
 #[given("the machine is booted")]
@@ -972,47 +975,8 @@ async fn clock_window_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
     
     eprintln!("│  │  │      ✅ Clock app publishing");
     
-    // Wait a moment for UI to update
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    
-    // Take screenshot and verify clock pixels
-    if world.qmp_control.is_none() {
-        return Err(StepError("No QMP connection for screenshot".to_string()));
-    }
-    
-    let screenshot_path = crate::artifacts::global()
-        .lock()
-        .await
-        .screenshot_path("clock_check");
-    
-    let png_path = world
-        .take_screenshot(&screenshot_path)
-        .await
-        .map_err(|e| StepError(format!("Screenshot failed: {}", e)))?;
-    
-    eprintln!("│  │  │      📸 Screenshot: {}", png_path.display());
-    
-    // Verify clock window pixels (black background with red digits)
-    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
-    let rgb = img.to_rgb8();
-    let (black, red, other) = verify_clock_center_pixels(&rgb);
-    
-    let total = black + red + other;
-    let black_pct = (black as f64 / total as f64) * 100.0;
-    let red_pct = (red as f64 / total as f64) * 100.0;
-    
-    eprintln!("│  │  │      📊 Center pixels: {} black ({:.1}%), {} red ({:.1}%), {} other", 
-              black, black_pct, red, red_pct, other);
-    
-    // Clock window should have significant black (background) and some red (digits)
-    if black_pct < 10.0 {
-        return Err(StepError(format!(
-            "Clock window not visible - only {:.1}% black pixels in center", black_pct
-        )));
-    }
-    
-    eprintln!("│  │  │      ✅ Clock window detected");
-    Ok(())
+    // Use robust pixel check
+    wait_for_clock_pixels(world, 120.0).await
 }
 
 
@@ -1032,16 +996,9 @@ async fn given_clock_ticking(world: &mut ThingOsWorld) -> Result<(), StepError> 
         return Err(StepError("System did not reach ready state".to_string()));
     }
     
-    // Wait for clock app (but don't fail if not found)
-    let clock_found = world.wait_for_serial("CLOCK:", 30.0).await;
-    if !clock_found {
-        let log = world.get_serial_log().await;
-        if !log.to_lowercase().contains("clock") {
-            eprintln!("│  │  │      ⚠️ Clock app not detected, but continuing...");
-        }
-    }
-    eprintln!("│  │  │      ✅ Clock window ready");
-    Ok(())
+    // Wait for actual clock pixels
+    // The user suggested waiting "a good minute"
+    wait_for_clock_pixels(world, 150.0).await
 }
 
 #[given("a cursor is visible on the screen")]

@@ -718,57 +718,66 @@ pub fn sys_root_watch_next(
     let cap = core::cmp::min(out_len, MAX_WATCH_PAYLOAD);
     let mut kbuf = alloc::vec![0u8; cap];
 
-    let reply = root_svc::enqueue(RootOp::WatchNext {
-        id: id as u64,
-        out_seq_ptr: 0,
-        out_ptr: kbuf.as_mut_ptr() as u64,
-        out_len: out_len as u64,
-    });
-
     loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            let status = reply.status.load(Ordering::Relaxed);
+        let reply = root_svc::enqueue(RootOp::WatchNext {
+            id: id as u64,
+            out_seq_ptr: 0,
+            out_ptr: kbuf.as_mut_ptr() as u64,
+            out_len: out_len as u64,
+        });
 
-            if status >= 0 {
-                let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
+        loop {
+            let done = reply.done.load(Ordering::Acquire);
+            if done != 0 {
+                let status = reply.status.load(Ordering::Relaxed);
 
-                if status == 0 {
-                    // Copy data
-                    unsafe {
-                        copyout(out_ptr, &kbuf[..bytes_read])?;
-                    }
-                    // Copy seq
-                    let seq = reply.p0.load(Ordering::Relaxed);
-                    unsafe {
-                        copyout(out_seq_ptr, &seq.to_le_bytes())?;
+                if status >= 0 {
+                    let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
+
+                    if status == 0 {
+                        // Copy data
+                        unsafe {
+                            copyout(out_ptr, &kbuf[..bytes_read])?;
+                        }
+                        // Copy seq
+                        let seq = reply.p0.load(Ordering::Relaxed);
+                        unsafe {
+                            copyout(out_seq_ptr, &seq.to_le_bytes())?;
+                        }
+                        return Ok(bytes_read);
                     }
                     return Ok(bytes_read);
-                }
-                return Ok(bytes_read);
-            } else {
-                match status {
-                    -75 => return Err(Errno::EOVERFLOW),
-                    -28 => return Err(Errno::ENOSPC),
-                    -11 => return Err(Errno::EAGAIN),
-                    -22 => return Err(Errno::EINVAL), // Invalid handle
-                    -9 => return Err(Errno::EBADF),   // Bad/stale watch descriptor
-                    _ => {
-                        // Log unexpected status for debugging
-                        let tid = unsafe { crate::task::scheduler::current_tid_current() };
-                        crate::kinfo!(
-                            "watch_next: UNEXPECTED status={} wid={} tid={}",
-                            status,
-                            id,
-                            tid
-                        );
-                        return Err(Errno::EIO);
+                } else {
+                    match status {
+                        -75 => return Err(Errno::EOVERFLOW),
+                        -28 => return Err(Errno::ENOSPC),
+                        -11 => return Err(Errno::EAGAIN),
+                        -22 => return Err(Errno::EINVAL), // Invalid handle
+                        -9 => return Err(Errno::EBADF),   // Bad/stale watch descriptor
+                        -115 => {
+                            // EINPROGRESS: Block until woken by root service, then retry request
+                            unsafe {
+                                crate::task::block_current_erased();
+                            }
+                            break; // Break inner loop to retry outer loop
+                        }
+                        _ => {
+                            // Log unexpected status for debugging
+                            let tid = unsafe { crate::task::scheduler::current_tid_current() };
+                            crate::kinfo!(
+                                "watch_next: UNEXPECTED status={} wid={} tid={}",
+                                status,
+                                id,
+                                tid
+                            );
+                            return Err(Errno::EIO);
+                        }
                     }
                 }
             }
-        }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
+            unsafe {
+                crate::task::scheduler::yield_now_current();
+            }
         }
     }
 }

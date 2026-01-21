@@ -25,6 +25,8 @@ mod reclaimer;
 #[cfg(feature = "svg-cursors")]
 mod svg;
 mod surface;
+#[cfg(feature = "svg-demo")]
+mod demo;
 pub mod ui;
 pub mod perf;
 
@@ -183,7 +185,7 @@ fn main(arg: usize) -> ! {
         DisplayBackend::BootFB => geometry::Color::from_u32(0xFFFF0000),
         _ => geometry::Color::from_u32(0xFFFFFF00),
     };
-    #[cfg(feature = "svg-cursors")] cursor::set_target_color(indicator_color);
+    // #[cfg(feature = "svg-cursors")] cursor::set_target_color(indicator_color); // Removed: cursor is image-based now
 
     let mut presenter = if target.driver_req != 0 {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
@@ -192,6 +194,9 @@ fn main(arg: usize) -> ! {
     } else { PresenterImpl::Null(present::NullPresenter) };
 
     let mut surface = unsafe { surface::Surface::new(target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes) };
+    
+    #[cfg(feature = "svg-demo")]
+    demo::run_svg_demo(unsafe { surface::Surface::new(target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes) }, presenter, target.width, target.height, target.format);
     let mut cursor = CursorState::new((target.width as i32) / 2, (target.height as i32) / 2);
     let mut loop_ctrl = FrameLoop::new(60);
     let (mut wallpaper_loaded, mut cursor_loaded, mut font_loaded) = (false, false, false);

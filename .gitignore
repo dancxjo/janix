@@ -14,7 +14,8 @@ iso_root/
 !/assets/wallpapers/
 /assets/cursors/
 /assets/fonts/
-/assets/icons/
+!/assets/icons/
+/assets/icons/tango/
 /assets/pci/
 
 # Bran binaries

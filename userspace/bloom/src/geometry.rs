@@ -133,6 +133,13 @@ impl Transform {
         }
     }
 
+    pub fn scale(sx: f32, sy: f32) -> Self {
+        Self {
+            m11: sx, m22: sy,
+            ..Self::identity()
+        }
+    }
+
     #[cfg(feature = "svg-cursors")]
     pub fn multiply(&self, other: &Self) -> Self {
         Self {

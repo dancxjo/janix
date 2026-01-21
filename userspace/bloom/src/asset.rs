@@ -895,7 +895,6 @@ impl AssetBank {
 
     #[cfg(feature = "svg-cursors")]
     fn load_svg_cursor(slice: &[u8], path: &str) -> Option<CursorAsset> {
-        // Convert bytes to UTF-8 string
         let svg_content = match core::str::from_utf8(slice) {
             Ok(s) => s,
             Err(_) => {
@@ -906,43 +905,34 @@ impl AssetBank {
 
         info!("[asset_bank] parsing SVG cursor from {}", path);
         
-        // Create a temporary drawlist to render the SVG
-        use crate::drawlist::DrawList;
-        use crate::geometry::Color;
-        use crate::svg::SvgParser;
+        // Rasterize SVG to 32x32 @ 1.0 scale (or scaled up? Windows uses 32x32 usually, large is 48)
+        // Let's use 32x32 for now.
+        // If we want high-dpi, we might want 64x64 or 96x96 and let the cursor asset handling know.
+        // But Image is pixel data.
+        // Current cursor.rs implementation uses scale=3.0 hardcoded for SVG.
+        // 32 * 3.0 = 96.
+        // Let's rasterize at 96x96 to match the "large" look checking cursor.rs logic.
+        let scale = 3.0;
+        let base_size = 32;
+        let size = (base_size as f32 * scale) as i32;
         
-        // Standard cursor size for SVG cursors
-        let cursor_size = 32u32;
-        let scale = 1.0;
+        let pixels_vec = crate::svg::render_to_buffer(svg_content, size, size, scale);
         
-        // Create a rendering buffer
-        let mut pixels = alloc::vec![0u32; (cursor_size * cursor_size) as usize];
-        
-        // We need to render the SVG to get the pixel data
-        // For now, we'll use a simplified approach: create a static cursor image
-        // The actual drawing will happen via SvgParser::render in cursor.rs
-        
-        // Since we're using SVG rendering at draw time (see cursor.rs),
-        // we just need to validate the SVG and create a placeholder asset
-        // The real rendering happens in cursor.rs via SvgParser::render
-        
-        // For now, create a minimal placeholder since SVG cursors are rendered procedurally
-        // The hotspot for most cursors is at the top-left
-        let hotspot_x = 0;
-        let hotspot_y = 0;
-        
-        info!("[asset_bank] SUCCESS: SVG cursor validated for {}", path);
+        // Convert Vec<u32> to Arc<[u32]>
+        let pixels = Arc::from(pixels_vec.into_boxed_slice());
+
+        info!("[asset_bank] SUCCESS: SVG cursor rasterized {}x{}", size, size);
         
         Some(CursorAsset::Static(CursorFrame {
             image: Image {
-                width: cursor_size,
-                height: cursor_size,
-                pixels: Arc::from(pixels.as_slice()),
+                width: size as u32,
+                height: size as u32,
+                pixels,
                 gen: AssetGeneration::ZERO,
             },
             delay_ms: 0,
-            hotspot_x,
-            hotspot_y,
+            hotspot_x: 0,
+            hotspot_y: 0,
         }))
     }
 

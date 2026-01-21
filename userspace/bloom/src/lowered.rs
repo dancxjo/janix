@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use crate::drawlist::{DrawList, DrawCmd, Insets};
 use crate::asset::Image;
-use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA}; // Use ISA types
+use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA, FillRule, LineCap, LineJoin, Path2D}; // Use ISA types
 
 // Low Level Operations - Portable Render ISA
 // This is the strict contract that the presenter must execute.
@@ -23,6 +23,23 @@ pub enum LowLevelOp {
     FillCircle { center: Point, radius: i32, color: Color },
     FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
     
+    // Path Operations
+    FillPath {
+        path: alloc::sync::Arc<Path2D>,
+        color: Color,
+        fill_rule: FillRule,
+        aa: EdgeAA,
+    },
+    StrokePath {
+        path: alloc::sync::Arc<Path2D>,
+        color: Color,
+        width: i32,
+        cap: LineCap,
+        join: LineJoin,
+        miter_limit: f32,
+        aa: EdgeAA,
+    },
+
     // Image Operations
     /// Blit opaque image with explicit scaling. 
     /// If src.size != dst.size, must scale according to filter.
@@ -83,9 +100,13 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
             DrawCmd::PopClip => out.ops.push(LowLevelOp::PopClip),
             DrawCmd::PushTransform { transform: t } => {
                 // Map DrawCmd geometry::Transform to ISA Transform2D
-                // Note: v0 ISA only supports translation
-                // For now, assume translation-only usage or warn
-                let isa_t = Transform2D { tx: t.dx, ty: t.dy };
+                // geometry: m11, m12, m21, m22, dx, dy
+                // isa: a, b, c, d, tx, ty (a=m11, c=m12, b=m21, d=m22)
+                let isa_t = Transform2D { 
+                    a: t.m11, b: t.m21, 
+                    c: t.m12, d: t.m22, 
+                    tx: t.dx, ty: t.dy 
+                };
                 out.ops.push(LowLevelOp::PushTransform { t: isa_t });
             },
             DrawCmd::PopTransform => out.ops.push(LowLevelOp::PopTransform),
@@ -279,6 +300,29 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
                     font_debug: *font_debug,
                 });
             }
+
+
+            
+            // Path lowering
+            DrawCmd::FillPath { path, color, fill_rule, aa } => {
+                out.ops.push(LowLevelOp::FillPath {
+                    path: path.clone(),
+                    color: *color,
+                    fill_rule: *fill_rule,
+                    aa: *aa,
+                });
+            },
+            DrawCmd::StrokePath { path, color, width, cap, join, miter_limit, aa } => {
+                out.ops.push(LowLevelOp::StrokePath {
+                    path: path.clone(),
+                    color: *color,
+                    width: *width,
+                    cap: *cap,
+                    join: *join,
+                    miter_limit: *miter_limit,
+                    aa: *aa,
+                });
+            },
 
             // Ignored/Unimplemented for v0
             _ => { /* Warn or ignore */ }

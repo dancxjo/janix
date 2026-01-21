@@ -104,6 +104,13 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 let c = ctx.current_transform.transform_point(*center);
                 fill_arc_clipped_blend(ctx.surface, c.x, c.y, *radius, *start_angle, *end_angle, color.to_u32(), *aa, &ctx.current_clip);
             },
+            LowLevelOp::FillPath { path, color, fill_rule, aa: _ } => {
+                // TODO: AA support
+                fill_path(ctx.surface, path, &ctx.current_transform, color.to_u32(), *fill_rule, &ctx.current_clip);
+            },
+            LowLevelOp::StrokePath { path, color, width, cap, join, miter_limit, aa: _ } => {
+                stroke_path(ctx.surface, path, &ctx.current_transform, color.to_u32(), *width, *cap, *join, *miter_limit, &ctx.current_clip);
+            },
         }
     }
 }
@@ -233,6 +240,7 @@ fn rasterize_text_locally(surface: &mut Surface, text: &str, x: i32, y: i32, siz
     crate::trace_counter!("text.raster_ns", r_ns_t); crate::trace_counter!("text.blit_ns", b_ns_t);
     crate::trace_counter!("text.ns", stem::monotonic_ns().saturating_sub(t_start));
 }
+
 fn rasterize_text_fallback(surface: &mut Surface, text: &str, x: i32, y: i32, size: f32, color: u32, clip: &Rect, rf: Option<&str>, _fd: bool) {
     let fonts = crate::ASSETS.get_fonts(); if fonts.is_empty() { return; }
     let font = if let Some(r) = rf { fonts.iter().find(|f| f.name.contains(r)).or_else(|| fonts.iter().find(|f| f.name.contains("NotoSans-Regular"))).unwrap_or(&fonts[0]) }
@@ -253,4 +261,237 @@ fn rasterize_text_fallback(surface: &mut Surface, text: &str, x: i32, y: i32, si
         } }
         px += m.advance_width;
     }
+}
+
+// Fixed point 16.16
+type Fixed = i32;
+const FIXED_SHIFT: i32 = 16;
+const FIXED_ONE: i32 = 1 << FIXED_SHIFT;
+fn float_to_fixed(f: f32) -> Fixed { (f * (FIXED_ONE as f32)) as i32 }
+fn int_to_fixed(i: i32) -> Fixed { i << FIXED_SHIFT }
+fn fixed_floor(f: Fixed) -> i32 { f >> FIXED_SHIFT }
+// fn fixed_ceil(f: Fixed) -> i32 { (f + FIXED_ONE - 1) >> FIXED_SHIFT }
+
+struct Edge {
+    y_max: i32, // scanline int
+    x: Fixed,   // current x at y_min (or current scanline)
+    dx_dy: Fixed, // slope
+    y_min: i32, // scanline int (start)
+    winding: i32, // 1 or -1
+}
+
+pub fn fill_path(surface: &mut Surface, path: &crate::isa::Path2D, transform: &Transform2D, color: u32, fill_rule: crate::isa::FillRule, clip: &Rect) {
+    let sa = ((color >> 24) & 0xFF) as u8; if sa == 0 { return; }
+    
+    // 1. Build edges
+    let mut edges: Vec<Edge> = Vec::with_capacity(path.verbs.len());
+    let mut start_p: Option<(f32, f32)> = None;
+    let mut current_p: Option<(f32, f32)> = None;
+    
+    let add_edge = |e: &mut Vec<Edge>, p0: (f32, f32), p1: (f32, f32)| {
+        let (x0, y0) = transform.transform_point_f(p0.0, p0.1);
+        let (x1, y1) = transform.transform_point_f(p1.0, p1.1);
+        
+        let y0_i = libm::floorf(y0) as i32;
+        let y1_i = libm::floorf(y1) as i32;
+        
+        if y0_i == y1_i { return; } // Horizontal edge (ignore for scanline)
+        
+        let (p_start, p_end, dir) = if y0_i < y1_i { ((x0, y0), (x1, y1), 1) } else { ((x1, y1), (x0, y0), -1) };
+        
+        let dy = p_end.1 - p_start.1;
+        let dx = p_end.0 - p_start.0;
+        let slope = if dy != 0.0 { float_to_fixed(dx / dy) } else { 0 };
+        
+        // Initial x at first scanline (y_min + 1 or y_min?)
+        // Scanlines are at integer y + 0.5 usually? Or assume pixel centers? 
+        // Simple scanline: rows y. Intersection at line y + 0.5.
+        // Let's sweep integer lines y.
+        // x at y_start_int:
+        let y_start_int = y0_i.min(y1_i);
+        let y_end_int = y0_i.max(y1_i);
+        
+        // x intersection at y = y_start_int (top of pixel row, or center?)
+        // If we fill pixels (x, y), we test if (x+0.5, y+0.5) is inside.
+        // Standard scan conversion usually intersects at y+0.5.
+        // Let's compute x at y_start_int + 0.5.
+        let y_isect = (y_start_int as f32) + 0.5;
+        let x_current = float_to_fixed(p_start.0 + (y_isect - p_start.1) * (dx / dy) );
+        
+        e.push(Edge {
+            y_min: y_start_int,
+            y_max: y_end_int,
+            x: x_current,
+            dx_dy: slope,
+            winding: dir,
+        });
+    };
+    
+    for verb in &path.verbs {
+        match verb {
+            crate::isa::PathVerb::MoveTo(p) => {
+                if let Some(c) = current_p { if let Some(s) = start_p { if c != s { /* Implicit close? No, SVG doesn't implicitly close on Move */ } } }
+                start_p = Some((p.x, p.y));
+                current_p = Some((p.x, p.y));
+            }
+            crate::isa::PathVerb::LineTo(p) => {
+                if let Some(c) = current_p {
+                    add_edge(&mut edges, c, (p.x, p.y));
+                    current_p = Some((p.x, p.y));
+                } else {
+                    start_p = Some((p.x, p.y));
+                    current_p = Some((p.x, p.y));
+                }
+            }
+            crate::isa::PathVerb::Close => {
+                if let (Some(c), Some(s)) = (current_p, start_p) {
+                    if c != s { add_edge(&mut edges, c, s); current_p = Some(s); }
+                }
+            }
+        }
+    }
+    
+    // Sort edges by y_min
+    edges.sort_by(|a, b| a.y_min.cmp(&b.y_min));
+    
+    // 2. Scanline Sweep
+    let y_min = clip.y();
+    let y_max = clip.y() + clip.height();
+    
+    let mut active_edges: Vec<Edge> = Vec::with_capacity(16);
+    let mut edge_idx = 0;
+    
+    let (sr, sg, sb) = (((color >> 16) & 0xFF) as u8, ((color >> 8) & 0xFF) as u8, (color & 0xFF) as u8);
+
+    for y in y_min..y_max {
+        // Add new edges
+        while edge_idx < edges.len() && edges[edge_idx].y_min <= y {
+             if edges[edge_idx].y_max > y {
+                 active_edges.push(Edge { ..edges[edge_idx] }); // Push copy
+             }
+             edge_idx += 1;
+        }
+        
+        // Remove finished edges
+        active_edges.retain(|e| e.y_max > y);
+        
+        if active_edges.is_empty() { continue; }
+        
+        // Sort by x
+        active_edges.sort_by(|a, b| a.x.cmp(&b.x));
+        
+        // Fill spans
+        match fill_rule {
+            crate::isa::FillRule::EvenOdd => {
+                // Pair: 0-1, 2-3
+                let mut i = 0;
+                while i + 1 < active_edges.len() {
+                    let x0 = fixed_floor(active_edges[i].x);
+                    let x1 = fixed_floor(active_edges[i+1].x);
+                    let start = x0.max(clip.x()).min(clip.x() + clip.width());
+                    let end = x1.max(clip.x()).min(clip.x() + clip.width());
+                    if end > start {
+                        if sa == 255 { fill_rect_copy(surface, start, y, end-start, 1, color); }
+                        else {
+                             for xx in start..end { blend_pixel(surface, xx, y, sr, sg, sb, sa); }
+                        }
+                    }
+                    i += 2;
+                }
+            },
+            crate::isa::FillRule::NonZero => {
+                 let mut winding = 0;
+                 let mut start_x = 0;
+                 for i in 0..active_edges.len() {
+                      let x = fixed_floor(active_edges[i].x);
+                      if winding == 0 { start_x = x; }
+                      winding += active_edges[i].winding;
+                      if winding == 0 {
+                           let end_x = x;
+                           let start = start_x.max(clip.x()).min(clip.x() + clip.width());
+                           let end = end_x.max(clip.x()).min(clip.x() + clip.width());
+                           if end > start {
+                               if sa == 255 { fill_rect_copy(surface, start, y, end-start, 1, color); }
+                               else {
+                                    for xx in start..end { blend_pixel(surface, xx, y, sr, sg, sb, sa); }
+                               }
+                           }
+                      }
+                 }
+            }
+        }
+        
+        // Update x for next scanline
+        for e in &mut active_edges {
+            e.x += e.dx_dy;
+        }
+    }
+}
+
+pub fn stroke_path(surface: &mut Surface, path: &crate::isa::Path2D, transform: &Transform2D, color: u32, width: i32, _cap: crate::isa::LineCap, _join: crate::isa::LineJoin, _miter: f32, clip: &Rect) {
+    // Simple implementation: convert segments to quads and fill.
+    // For now, implementing "Stroke as thick lines" - very basic.
+    // Better: Stroke expansion to a new Path, then fill.
+    // Given memory constraints, strict stroke expansion is complex.
+    // Fallback: Just draw lines using Bresenham with thickness (approx).
+    // Or scanline fill of quads.
+    // "Stroke as filled expanded geometry" was requested.
+    
+    // Convert lines to quads:
+    // For each segment P0->P1, compute normal, offset by width/2.
+    // Build a temp Path2D with quads, then fill.
+    
+    let w = width as f32 / 2.0;
+    if w <= 0.0 { return; }
+    
+    let mut stroke_verbs = Vec::new();
+    let mut start_p: Option<(f32, f32)> = None;
+    let mut current_p: Option<(f32, f32)> = None;
+    
+    let mut add_segment = |v: &mut Vec<crate::isa::PathVerb>, p0: (f32, f32), p1: (f32, f32)| {
+        let dx = p1.0 - p0.0;
+        let dy = p1.1 - p0.1;
+        let len = libm::sqrtf(dx*dx + dy*dy);
+        if len < 0.1 { return; }
+        let nx = -dy / len;
+        let ny = dx / len;
+        
+        // P0 offset
+        let p0_l = (p0.0 + nx * w, p0.1 + ny * w);
+        let p0_r = (p0.0 - nx * w, p0.1 - ny * w);
+        // P1 offset
+        let p1_l = (p1.0 + nx * w, p1.1 + ny * w);
+        let p1_r = (p1.0 - nx * w, p1.1 - ny * w);
+        
+        // Quad: p0_l -> p1_l -> p1_r -> p0_r
+        use crate::isa::{PathVerb, PointF};
+        v.push(PathVerb::MoveTo(PointF{x: p0_l.0, y: p0_l.1}));
+        v.push(PathVerb::LineTo(PointF{x: p1_l.0, y: p1_l.1}));
+        v.push(PathVerb::LineTo(PointF{x: p1_r.0, y: p1_r.1}));
+        v.push(PathVerb::LineTo(PointF{x: p0_r.0, y: p0_r.1}));
+        v.push(PathVerb::Close);
+    };
+    
+    for verb in &path.verbs {
+        match verb {
+            crate::isa::PathVerb::MoveTo(p) => {
+                start_p = Some((p.x, p.y));
+                current_p = Some((p.x, p.y));
+            }
+            crate::isa::PathVerb::LineTo(p) => {
+                 if let Some(c) = current_p {
+                     add_segment(&mut stroke_verbs, c, (p.x, p.y));
+                     current_p = Some((p.x, p.y));
+                 }
+            }
+            crate::isa::PathVerb::Close => {
+                 if let (Some(c), Some(s)) = (current_p, start_p) {
+                     if c != s { add_segment(&mut stroke_verbs, c, s); current_p = Some(s); }
+                 }
+            }
+        }
+    }
+    
+    let stroke_path = crate::isa::Path2D { verbs: stroke_verbs };
+    fill_path(surface, &stroke_path, transform, color, crate::isa::FillRule::NonZero, clip);
 }

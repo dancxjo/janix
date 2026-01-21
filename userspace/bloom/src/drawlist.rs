@@ -76,13 +76,21 @@ pub enum DrawCmd {
     DrawGlyphRun { font_id: u64, glyphs: Vec<u32>, positions: Vec<Point>, color: Color },
 
     // --- Paths (Vector-Like) ---
-    BeginPath,
-    MoveTo { point: Point },
-    LineTo { point: Point },
-    CurveTo { c1: Point, c2: Point, to: Point },
-    ClosePath,
-    FillPath { color: Color },
-    StrokePath { color: Color, width: i32 },
+    FillPath { 
+        path: Arc<crate::isa::Path2D>, 
+        color: Color, 
+        fill_rule: crate::isa::FillRule, 
+        aa: EdgeAA 
+    },
+    StrokePath { 
+        path: Arc<crate::isa::Path2D>, 
+        color: Color, 
+        width: i32, 
+        cap: crate::isa::LineCap, 
+        join: crate::isa::LineJoin, 
+        miter_limit: f32, 
+        aa: EdgeAA 
+    },
 
     // --- Compositing & Effects ---
     SetOpacity { alpha: u8 },
@@ -254,6 +262,14 @@ impl DrawList {
             font_name: Some(font.into()),
             font_debug,
         });
+    }
+
+    pub fn fill_path(&mut self, path: Arc<crate::isa::Path2D>, color: Color, fill_rule: crate::isa::FillRule, aa: EdgeAA) {
+        self.cmds.push(DrawCmd::FillPath { path, color, fill_rule, aa });
+    }
+
+    pub fn stroke_path(&mut self, path: Arc<crate::isa::Path2D>, color: Color, width: i32, cap: crate::isa::LineCap, join: crate::isa::LineJoin, miter_limit: f32, aa: EdgeAA) {
+        self.cmds.push(DrawCmd::StrokePath { path, color, width, cap, join, miter_limit, aa });
     }
 
     pub fn iter(&self) -> core::slice::Iter<'_, DrawCmd> {

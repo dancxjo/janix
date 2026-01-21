@@ -35,7 +35,14 @@ pub mod keys {
     pub const OFFSET_NS: &str = "offset_ns";
     pub const STATE: &str = "state";
     pub const QUALITY: &str = "quality";
+
     pub const LAST_UPDATED_MONO_NS: &str = "last_updated_mono_ns";
+
+    // XML Properties
+    pub const TAG: &str = "tag";
+    pub const TEXT: &str = "text";
+    pub const ATTR_NAME: &str = "attr_name";
+    pub const ATTR_VALUE: &str = "attr_value";
 
     // Legacy mapping (to be deprecated or mapped)
     pub const KIND: &str = "kind";
@@ -170,7 +177,14 @@ pub mod kinds {
     pub const FONT_COVERAGE: &str = "font.Coverage";
 
     pub const CLOCK: &str = "Clock";
+
     pub const BINDING: &str = "Binding";
+
+    // XML Graph Kinds
+    pub const XML_DOCUMENT: &str = "xml.Document";
+    pub const XML_ELEMENT: &str = "xml.Element";
+    pub const XML_ATTRIBUTE: &str = "xml.Attribute";
+    pub const XML_TEXT: &str = "xml.Text";
 }
 
 pub mod rels {
@@ -205,6 +219,10 @@ pub mod rels {
     pub const FONT_MEMBER_OF: &str = "font.member_of";
     pub const FONT_FALLBACK_AFTER: &str = "font.fallback_after";
     pub const FONT_ALIAS: &str = "font.alias";
+
+    // XML Relationships
+    pub const HAS_ROOT: &str = "HAS_ROOT";
+    pub const HAS_ATTR: &str = "HAS_ATTR";
 }
 
 // Virtio GPU additions

@@ -3,8 +3,10 @@ name = "bloom"
 version = "0.1.0"
 edition = "2021"
 
+
 [features]
 svg-cursors = []
+svg-demo = ["svg-cursors"]
 
 [dependencies]
 stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }

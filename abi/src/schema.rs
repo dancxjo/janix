@@ -100,6 +100,11 @@ pub mod keys {
     pub const BINDING_SOURCE: &str = "binding.source";
     pub const BINDING_TARGET: &str = "binding.target";
     pub const BINDING_MAP: &str = "binding.map";
+    pub const BINDING_TO: &str = "binding.to";
+
+    // UI Inline
+    pub const UI_INLINE_MODE: &str = "ui.inline.mode";
+    pub const UI_SVG_BYTES: &str = "ui.svg_bytes";
 
     // UI Layout & Style
     pub const UI_LAYOUT_MODE: &str = "ui.layout.mode";
@@ -168,6 +173,7 @@ pub mod kinds {
     pub const UI_TEXT: &str = "ui.Text";
     pub const UI_IMAGE: &str = "ui.Image";
     pub const UI_OVERLAY: &str = "ui.Overlay";
+    pub const UI_INLINE: &str = "ui.Inline";
 
     // Font Graph Kinds
     pub const FONT_SUPERFAMILY: &str = "font.Superfamily";

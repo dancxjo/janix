@@ -121,7 +121,6 @@ impl Transform {
         }
     }
 
-    #[cfg(feature = "svg-cursors")]
     pub fn rotate_degrees(angle: f32) -> Self {
         let rad = angle.to_radians();
         let c = libm::cosf(rad);
@@ -140,7 +139,6 @@ impl Transform {
         }
     }
 
-    #[cfg(feature = "svg-cursors")]
     pub fn multiply(&self, other: &Self) -> Self {
         Self {
             m11: self.m11 * other.m11 + self.m12 * other.m21,

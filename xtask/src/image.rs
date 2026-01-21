@@ -42,6 +42,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig { name: "scheduler_fairness", is_init: false, features: vec![] },
         ProgramConfig { name: "hogger", is_init: false, features: vec![] },
         ProgramConfig { name: "tick_printer", is_init: false, features: vec![] },
+        ProgramConfig { name: "photosynthesis", is_init: false, features: vec![] },
     ]
 }
 
@@ -128,7 +129,7 @@ pub fn build_iso_with_config(
         let entry: walkdir::DirEntry = entry?;
         if entry.file_type().is_file() {
             let path = entry.path();
-            if path.to_string_lossy().contains("assets/icons") {
+            if path.to_string_lossy().contains("assets/icons") && !path.to_string_lossy().contains("thingos") {
                  continue;
             }
             asset_files.push(path.to_path_buf());

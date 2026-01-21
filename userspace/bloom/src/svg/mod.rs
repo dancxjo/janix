@@ -168,10 +168,10 @@ impl SvgParser {
                 self.push_state();
                 self.apply_attributes(attrs);
                 
-                let x = attrs.get("x").and_then(parse_length_px).unwrap_or(0.0).round() as i32;
-                let y = attrs.get("y").and_then(parse_length_px).unwrap_or(0.0).round() as i32;
-                let w = attrs.get("width").and_then(parse_length_px).unwrap_or(0.0).round() as i32;
-                let h = attrs.get("height").and_then(parse_length_px).unwrap_or(0.0).round() as i32;
+                let x = libm::roundf(attrs.get("x").and_then(parse_length_px).unwrap_or(0.0)) as i32;
+                let y = libm::roundf(attrs.get("y").and_then(parse_length_px).unwrap_or(0.0)) as i32;
+                let w = libm::roundf(attrs.get("width").and_then(parse_length_px).unwrap_or(0.0)) as i32;
+                let h = libm::roundf(attrs.get("height").and_then(parse_length_px).unwrap_or(0.0)) as i32;
                 
                 self.emit_fill_rect(Rect::new(x, y, w, h));
                 // TODO: stroke rect? DrawCmd::StrokeRect exists.
@@ -201,9 +201,9 @@ impl SvgParser {
                 self.push_state();
                 self.apply_attributes(attrs);
                 
-                let cx = attrs.get("cx").and_then(parse_length_px).unwrap_or(0.0).round() as i32;
-                let cy = attrs.get("cy").and_then(parse_length_px).unwrap_or(0.0).round() as i32;
-                let r = attrs.get("r").and_then(parse_length_px).unwrap_or(0.0).round() as i32;
+                let cx = libm::roundf(attrs.get("cx").and_then(parse_length_px).unwrap_or(0.0)) as i32;
+                let cy = libm::roundf(attrs.get("cy").and_then(parse_length_px).unwrap_or(0.0)) as i32;
+                let r = libm::roundf(attrs.get("r").and_then(parse_length_px).unwrap_or(0.0)) as i32;
                 
                 self.emit_fill_circle(Point::new(cx, cy), r);
                 self.pop_state();

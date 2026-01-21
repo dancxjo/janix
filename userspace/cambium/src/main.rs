@@ -24,6 +24,7 @@ struct ActiveBinding {
     /// Cached last written string bytes
     last_value_bytes: Option<Vec<u8>>,
     key_filter: Option<u32>,
+    to_key: u32,
 }
 
 fn hex_prefix(bytes: &[u8], max: usize) -> String {
@@ -141,7 +142,9 @@ fn log_unknown_shape_once(err: DecodeError, payload: &[u8], seq: u64) {
     }
 }
 
-fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
+use stem::thing::symbol::IntoSymbolRef;
+
+fn set_string_prop<S: IntoSymbolRef + Copy>(id: ThingId, key_name: S, value: &str) {
     if value.is_empty() {
         prop_set(id, key_name, 0).ok();
         return;
@@ -192,6 +195,13 @@ fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
 
                 let encoding = ValueEncoding::from_u8(header.value_encoding)
                     .unwrap_or(ValueEncoding::Bytes);
+                
+                let target_key = if binding.to_key != 0 {
+                    binding.to_key
+                } else {
+                    stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0)
+                };
+
                 match encoding {
                     ValueEncoding::U64LE => {
                         if value.len() != 8 {
@@ -213,21 +223,18 @@ fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
                         binding.last_value_u64 = Some(next_value);
                         binding.last_value_bytes = None; // Reset string cache
                         
-                        // Get the UI_TEXT symbol for logging
-                        let ui_text_sym = stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0);
-                        
                         if should_log {
                             info!(
-                                "[cambium] write: binding_src={} target={} pred=ui.Text({}) val={} seq={}",
+                                "[cambium] write: binding_src={} target={} pred_key={} val={} seq={}",
                                 binding.source.to_u64_lossy(),
                                 binding.target.to_u64_lossy(),
-                                ui_text_sym,
+                                target_key,
                                 next_value,
                                 seq
                             );
                         }
                         
-                        prop_set(binding.target, keys::UI_TEXT, next_value).ok();
+                        prop_set(binding.target, target_key, next_value).ok();
                     }
                     ValueEncoding::Utf8 => {
                         // NO-OP suppression (string comparison)
@@ -239,7 +246,7 @@ fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
                         binding.last_value_u64 = None; // Reset numeric cache
 
                         if let Ok(text) = core::str::from_utf8(value) {
-                            set_string_prop(binding.target, keys::UI_TEXT, text);
+                            set_string_prop(binding.target, target_key, text);
                             
                             info!(
                                 "[cambium] write: target={} text='{}' seq={}",
@@ -290,6 +297,7 @@ fn main() -> ! {
                     let key_filter = prop_get(b_id, keys::BINDING_MAP)
                         .ok()
                         .and_then(|v| if v == 0 { None } else { Some(v as u32) });
+                    let to_key = prop_get(b_id, keys::BINDING_TO).unwrap_or(0) as u32;
 
                     if src_id.to_u64_lossy() == 0 || dst_id.to_u64_lossy() == 0 {
                         continue;
@@ -320,6 +328,7 @@ fn main() -> ! {
                                 last_value_u64: None,
                                 last_value_bytes: None,
                                 key_filter,
+                                to_key,
                             });
                         }
                         Err(e) => {

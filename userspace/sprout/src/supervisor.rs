@@ -181,6 +181,7 @@ impl Supervisor {
         self.ensure_app("/ingestd");
         // self.ensure_app("/png_creator");
         self.ensure_app("/cambium");
+        self.ensure_app("/photosynthesis");
         // self.ensure_app("/scheduler_verify");
         
         // Scheduler fairness verification apps (disabled after testing)

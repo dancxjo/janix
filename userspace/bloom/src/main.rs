@@ -22,7 +22,6 @@ mod font_graph;
 mod present;
 mod raster;
 mod reclaimer;
-#[cfg(feature = "svg-cursors")]
 mod svg;
 mod surface;
 #[cfg(feature = "svg-demo")]

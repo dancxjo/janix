@@ -4,7 +4,7 @@ pub mod snapshot;
 
 use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
-use self::snapshot::{UiSnapshot, UiKeys, KindIds, StringCache};
+use self::snapshot::{UiSnapshot, UiKeys, KindIds, AssetCache};
 use crate::asset::AssetBank;
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
@@ -28,8 +28,8 @@ pub struct UiPipeline {
     // Cached symbol IDs - initialized once, used every frame
     cached_keys: Option<UiKeys>,
     cached_kinds: Option<KindIds>,
-    // String cache - persists across frames (Phase C)
-    string_cache: StringCache,
+    // Asset cache - persists across frames (Phase C)
+    asset_cache: AssetCache,
     // Dirty node tracking for incremental updates (Phase F)
     dirty_nodes: alloc::vec::Vec<ThingId>,
 }
@@ -51,7 +51,7 @@ impl UiPipeline {
             solid_text: false,
             cached_keys: None,
             cached_kinds: None,
-            string_cache: StringCache::new(),
+            asset_cache: AssetCache::new(),
             dirty_nodes: alloc::vec::Vec::new(),
         }
     }
@@ -82,9 +82,9 @@ impl UiPipeline {
         self.dirty = true;
     }
     
-    /// Invalidate a string in the cache (when we know it changed)
-    pub fn invalidate_string(&mut self, bs_id: u64) {
-        self.string_cache.invalidate(bs_id);
+    /// Invalidate an asset in the cache (when we know it changed)
+    pub fn invalidate_asset(&mut self, bs_id: u64) {
+        self.asset_cache.invalidate(bs_id);
     }
 
     pub fn run(
@@ -137,7 +137,7 @@ impl UiPipeline {
         let keys = keys.clone();
         let kinds = kinds.clone();
 
-        // 1. Snapshot with string cache (Phase C) and optional incremental (Phase F)
+        // 1. Snapshot with asset cache (Phase C) and optional incremental (Phase F)
         let snapshot = {
             crate::trace_span!("ui.snap");
             
@@ -150,12 +150,12 @@ impl UiPipeline {
                 crate::trace_event!("ui.run.path", "incremental_snap");
                 let mut snap = self.prev_snapshot.take().unwrap();
                 let dirty = core::mem::take(&mut self.dirty_nodes);
-                snap.update_nodes(&dirty, &keys, &kinds, &mut self.string_cache);
+                snap.update_nodes(&dirty, &keys, &kinds, &mut self.asset_cache);
                 snap
             } else {
                 crate::trace_event!("ui.run.path", "full_snap");
                 self.dirty_nodes.clear();
-                UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.string_cache)
+                UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.asset_cache)
             }
         };
 
@@ -245,6 +245,24 @@ impl UiPipeline {
                 }
                 PaintObject::Image { rect: _ } => {
                     // TODO: Implement image lowering
+                }
+                PaintObject::Commands { cmds, rect } => {
+                    use crate::geometry::Transform;
+                    use crate::drawlist::DrawCmd;
+                    
+                    // Translate local 0,0 SVG to node position
+                    list.commands().push(DrawCmd::PushTransform { 
+                        transform: Transform::translate(rect.x as f32, rect.y as f32) 
+                    });
+                    
+                    // Append commands
+                    // Clone is cheap for Arc<Path> but we are cloning cmds into list
+                    // Since cmds is Arc<Vec<DrawCmd>>, we iterate and clone each cmd?
+                    // DrawCmd contains Arc<Path>.
+                    // DrawCmd is small enum.
+                    list.commands().extend(cmds.iter().cloned());
+                    
+                    list.commands().push(DrawCmd::PopTransform);
                 }
             }
         }

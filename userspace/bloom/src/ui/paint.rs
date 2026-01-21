@@ -26,7 +26,10 @@ pub enum PaintObject {
     },
     Image {
         rect: Rect,
-        // image_ref: ...
+    },
+    Commands {
+        cmds: alloc::sync::Arc<alloc::vec::Vec<crate::drawlist::DrawCmd>>,
+        rect: Rect,
     },
 }
 
@@ -67,6 +70,27 @@ impl PaintBuilder {
     }
 
     fn create_paint_object(node: &UiNodeSnapshot, layout: &LayoutNode, symbols: &impl SymbolResolver) -> Option<PaintObject> {
+        // UI_INLINE special handling
+        if node.kind == UiNodeKind::Inline {
+             let mode = Self::get_prop(node, keys::UI_INLINE_MODE, symbols);
+             if mode == 1 { // Svg
+                 if let Some(cmds) = &node.svg_content {
+                     return Some(PaintObject::Commands {
+                         cmds: cmds.clone(),
+                         rect: layout.rect.clone(),
+                     });
+                 } else {
+                     // Fallback: Red Box
+                     return Some(PaintObject::Rect {
+                         rect: layout.rect.clone(),
+                         color: Color::new(255, 0, 0, 255),
+                         radius: 0,
+                     });
+                 }
+             }
+             // If mode == 0, fallthrough to Text logic
+        }
+
         // Check for UI_TEXT using symbol resolver
         let text_key_id = symbols.resolve(keys::UI_TEXT);
         let has_text = if let Some(id) = text_key_id {

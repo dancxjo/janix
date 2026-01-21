@@ -179,7 +179,7 @@ impl ThingOsWorld {
             "2G",
             // Disable default display, use VNC instead
             "-display",
-            "gtk",
+            "none",
             "-no-shutdown",
             // Serial to stdio for log capture
             "-serial",

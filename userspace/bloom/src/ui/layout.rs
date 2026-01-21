@@ -55,6 +55,7 @@ impl LayoutSolver {
     }
 
     pub fn solve(&mut self, snapshot: &UiSnapshot, screen_w: i32, screen_h: i32, assets: &AssetBank, symbols: &impl SymbolResolver) -> LayoutTree {
+        crate::trace_span!("ui.layout.solve");
         let root_id = match snapshot.root_id {
             Some(id) => id,
             None => return LayoutTree { root: None },
@@ -73,7 +74,10 @@ impl LayoutSolver {
             children: Vec::new(),
         };
 
-        Self::layout_children(snapshot, root_node, &mut root_layout, assets, symbols, &mut self.measure_cache);
+        {
+            crate::trace_span!("ui.layout.tree_flow");
+            Self::layout_children(snapshot, root_node, &mut root_layout, assets, symbols, &mut self.measure_cache);
+        }
 
         LayoutTree { root: Some(root_layout) }
     }
@@ -118,8 +122,10 @@ impl LayoutSolver {
                         };
                         let cache_key = (cache_text, font_name.clone(), font_size as u32);
                         let dims = if let Some(d) = cache.get(&cache_key) {
+                            crate::trace_counter!("ui.layout.cache_hits", 1);
                             Some(*d)
                         } else {
+                            crate::trace_counter!("ui.layout.cache_misses", 1);
                             let d = if is_time {
                                 Self::measure_time_text(&font_name, font_size, assets)
                             } else {
@@ -187,6 +193,7 @@ impl LayoutSolver {
     }
 
     fn measure_text(text: &str, font_name: &str, size: f32, assets: &AssetBank) -> Option<(f32, f32)> {
+        crate::trace_span!("ui.layout.measure_text");
         let now_ms = crate::log_ratelimit::now_ms();
         let _log_enabled = crate::log_ratelimit::log_every(1000, now_ms);
         

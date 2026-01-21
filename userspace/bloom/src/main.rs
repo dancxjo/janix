@@ -28,6 +28,14 @@ mod surface;
 // mod target;
 // mod target_cpu;
 pub mod ui;
+pub mod perf;
+
+use core::sync::atomic::{AtomicBool, Ordering};
+use abi::hid::Key;
+
+pub static DISABLE_TEXT: AtomicBool = AtomicBool::new(false);
+pub static DISABLE_WALLPAPER: AtomicBool = AtomicBool::new(false);
+pub static FORCE_FULL_DAMAGE: AtomicBool = AtomicBool::new(false);
 
 use abi::display_driver_protocol::BindPayload;
 use abi::ids::HandleId;
@@ -372,6 +380,7 @@ extern "C" fn cursor_loader_entry() -> ! {
 #[cfg_attr(not(test), stem::main)]
 fn main(arg: usize) -> ! {
     logging::init();
+    perf::init();
 
     let arg_val = arg;
     let mut arg_req = 0;
@@ -631,7 +640,6 @@ fn main(arg: usize) -> ! {
     );
 
     // 4. Main Loop - Transactional Pattern
-    let mut perf = PerfStats::default();
 
     loop {
         let frame_start = stem::monotonic_ns();
@@ -717,7 +725,7 @@ fn main(arg: usize) -> ! {
         if bristle_evt != 0 {
             bristle::poll_bristle(bristle_evt, &mut cursor, &mut keys, screen_w, screen_h);
         }
-        perf.input_ns += stem::monotonic_ns().saturating_sub(input_start);
+        perf::add_counter("input.ns", stem::monotonic_ns().saturating_sub(input_start));
 
         // Track cursor movement damage
         let new_cursor_bbox = cursor.bbox();
@@ -775,6 +783,7 @@ fn main(arg: usize) -> ! {
                 Ok(_) => {}
                 Err(abi::errors::Errno::EAGAIN) => {}
                 Err(abi::errors::Errno::EOVERFLOW) => {
+                    crate::trace_event!("ui.watch.overflow", "true");
                     ui_pipeline.mark_dirty();
                     ui_force_damage = true;
                 }
@@ -784,6 +793,7 @@ fn main(arg: usize) -> ! {
             }
         }
         if frame_start >= ui_poll_deadline_ns {
+            crate::trace_event!("ui.poll.full_resync", "deadline_reached");
             ui_pipeline.mark_dirty();
             ui_force_damage = true;
             ui_poll_deadline_ns = frame_start.saturating_add(1_000_000_000);
@@ -805,147 +815,154 @@ fn main(arg: usize) -> ! {
         {
             let list = builder.ops();
 
-            // Background / Wallpaper (use generation-aware getter)
-            if let Some(clouds) = ASSETS.get_wallpaper_for_gen(gen_snapshot) {
-                let cw = clouds.width as i32;
-                let ch = clouds.height as i32;
-                for y in (0..screen_h).step_by(ch as usize) {
-                    for x in (0..screen_w).step_by(cw as usize) {
-                        list.blit_image(&clouds, x, y);
-                    }
+        if DISABLE_WALLPAPER.load(Ordering::Relaxed) {
+             // Skip
+        } else if let Some(clouds) = ASSETS.get_wallpaper_for_gen(gen_snapshot) {
+            let cw = clouds.width as i32;
+            let ch = clouds.height as i32;
+            for y in (0..screen_h).step_by(ch as usize) {
+                for x in (0..screen_w).step_by(cw as usize) {
+                    list.blit_image(&clouds, x, y);
                 }
-            } else {
-                // Aesthetic fallback: deep "Thing-OS" blue
-                list.clear(geometry::Color::from_u32(0xFF002d44));
             }
+        } else {
+            // Aesthetic fallback: deep "Thing-OS" blue
+            list.clear(geometry::Color::from_u32(0xFF002d44));
+        }
 
-            // Backend indicator: small box in top-right corner
-            let indicator_size = 24;
-            let indicator_x = screen_w - indicator_size - 8;
-            let indicator_y = 8;
-            list.rect(
-                indicator_x,
-                indicator_y,
-                indicator_size,
-                indicator_size,
-                backend_indicator_color,
+        // Backend indicator: small box in top-right corner
+        let indicator_size = 24;
+        let indicator_x = screen_w - indicator_size - 8;
+        let indicator_y = 8;
+        list.rect(
+            indicator_x,
+            indicator_y,
+            indicator_size,
+            indicator_size,
+            backend_indicator_color,
+        );
+
+        // Demo text rendering if font is loaded
+        if font_loaded && !DISABLE_TEXT.load(Ordering::Relaxed) {
+            list.text_font(
+                "thing-os",
+                "NotoSerif-Regular.ttf",
+                20,
+                40,
+                24.0,
+                geometry::Color::from_u32(0xFFFFFFFF),
             );
+            list.text_font(
+                &alloc::format!("frame: {}", frame_id),
+                "NotoSerif-Regular.ttf",
+                20,
+                70,
+                16.0,
+                geometry::Color::from_u32(0xFFCCCCCC),
+            );
+        }
 
-            // Demo text rendering if font is loaded
-            if font_loaded {
-                list.text_font(
-                    "thing-os",
-                    "NotoSerif-Regular.ttf",
-                    20,
-                    40,
-                    24.0,
-                    geometry::Color::from_u32(0xFFFFFFFF),
-                );
-                list.text_font(
-                    &alloc::format!("frame: {}", frame_id),
-                    "NotoSerif-Regular.ttf",
-                    20,
-                    70,
-                    16.0,
-                    geometry::Color::from_u32(0xFFCCCCCC),
-                );
+        // Run UI Pipeline (UNIFEROUS - runs regardless of font_loaded now)
+        let ui_result = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
+        ui_changed = ui_result.changed;
+        ui_damage = ui_result.damage;
+
+        // Cursor
+        cursor.emit_drawlist(list);
+    }
+    
+    // Check for diagnostic diagnostic key chords (Ctrl+Alt+Shift)
+    if keys.contains(&Key::LeftCtrl) && keys.contains(&Key::LeftAlt) && keys.contains(&Key::LeftShift) {
+        if keys.contains(&Key::T) {
+            let val = !DISABLE_TEXT.load(Ordering::Relaxed);
+            DISABLE_TEXT.store(val, Ordering::Relaxed);
+            log!("[bloom] TOGGLE: disable_text={}", val);
+            ui_pipeline.mark_dirty();
+            ui_force_damage = true;
+            stem::sleep_ms(200); // Debounce
+        }
+        if keys.contains(&Key::W) {
+            let val = !DISABLE_WALLPAPER.load(Ordering::Relaxed);
+            DISABLE_WALLPAPER.store(val, Ordering::Relaxed);
+            log!("[bloom] TOGGLE: disable_wallpaper={}", val);
+            ui_force_damage = true;
+            stem::sleep_ms(200); // Debounce
+        }
+        if keys.contains(&Key::D) {
+            let val = !FORCE_FULL_DAMAGE.load(Ordering::Relaxed);
+            FORCE_FULL_DAMAGE.store(val, Ordering::Relaxed);
+            log!("[bloom] TOGGLE: force_full_damage={}", val);
+            ui_force_damage = true;
+            stem::sleep_ms(200); // Debounce
+        }
+        if keys.contains(&Key::P) {
+            key_overlay.show_perf = !key_overlay.show_perf;
+            log!("[bloom] TOGGLE: show_perf={}", key_overlay.show_perf);
+            ui_pipeline.mark_dirty();
+            ui_force_damage = true;
+            stem::sleep_ms(200); // Debounce
+        }
+    }
+
+    if ui_changed || ui_force_damage || FORCE_FULL_DAMAGE.load(Ordering::Relaxed) {
+        if ui_damage.is_empty() || FORCE_FULL_DAMAGE.load(Ordering::Relaxed) {
+            builder.mark_full_damage();
+        } else {
+            for rect in ui_damage {
+                builder.add_damage(rect);
             }
-
-            // Run UI Pipeline (UNIFEROUS - runs regardless of font_loaded now)
-            let ui_start = stem::monotonic_ns();
-            let ui_result = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
-            ui_changed = ui_result.changed;
-            ui_damage = ui_result.damage;
-            perf.ui_ns += stem::monotonic_ns().saturating_sub(ui_start);
-
-            // Cursor
-            cursor.emit_drawlist(list);
         }
+        ui_force_damage = false;
+    }
 
-        if ui_changed || ui_force_damage {
-            if ui_damage.is_empty() {
-                builder.mark_full_damage();
-            } else {
-                for rect in ui_damage {
-                    builder.add_damage(rect);
-                }
-            }
-            ui_force_damage = false;
-        }
+    // Finish building - seal the token
+    let token = builder.finish();
 
-        // Finish building - seal the token
-        let token = builder.finish();
-        perf.build_ns += stem::monotonic_ns().saturating_sub(build_start);
+    // Get damage reference before consuming token
+    let damage_for_raster = token.damage.clone();
 
-        // Get damage reference before consuming token
-        let damage_for_raster = token.damage.clone();
+    // ═══════════════════════════════════════════════════════════════════
+    // PRESENT: Rasterize with damage, present to display
+    // ═══════════════════════════════════════════════════════════════════
 
-        // ═══════════════════════════════════════════════════════════════════
-        // PRESENT: Rasterize with damage, present to display
-        // ═══════════════════════════════════════════════════════════════════
+    // Rate-limited damage logging
+    let now_ms = crate::log_ratelimit::now_ms();
+    if crate::log_ratelimit::log_every(1000, now_ms) {
+        crate::log!("[bloom][damage] rects={} frame={}", damage_for_raster.rect_count(), frame_id);
+    }
+    
+    // Rasterize using damage-aware rendering
+    if !damage_for_raster.is_empty() {
+        trace_span!("raster");
+        raster::execute_with_damage(&mut surface, &token.ops, &damage_for_raster);
+    }
 
-        // Rate-limited damage logging
-        let now_ms = crate::log_ratelimit::now_ms();
-        if crate::log_ratelimit::log_every(1000, now_ms) {
-            crate::log!("[bloom][damage] rects={} frame={}", damage_for_raster.rect_count(), frame_id);
-        }
-        
-        // Rasterize using damage-aware rendering
-        if !damage_for_raster.is_empty() {
-            let raster_start = stem::monotonic_ns();
-            raster::execute_with_damage(&mut surface, &token.ops, &damage_for_raster);
-            perf.raster_ns += stem::monotonic_ns().saturating_sub(raster_start);
-        }
-
-        // Present (consumes token)
-        let present_start = stem::monotonic_ns();
+    // Present (consumes token)
+    {
+        trace_span!("present");
         let _stats = presenter.present_frame(token);
         presenter.pump();
-        perf.present_ns += stem::monotonic_ns().saturating_sub(present_start);
-
-        // Post-present overlay update
-        key_overlay.post_present();
-        
-        // CONTRACT log after first frame is rendered
-        if !first_frame_rendered && frame_id >= 1 {
-            first_frame_rendered = true;
-            log!("[CONTRACT] [bloom] First frame rendered - compositor ready");
-        }
-
-        // ═══════════════════════════════════════════════════════════════════
-        // POST-PRESENT: Memory pressure check
-        // ═══════════════════════════════════════════════════════════════════
-        reclaimer::check_memory_pressure(&ASSETS);
-
-        // Timing
-        loop_ctrl.heartbeat(cursor.x, cursor.y);
-
-        perf.count += 1;
-        perf.frame_ns += stem::monotonic_ns().saturating_sub(frame_start);
-
-        if perf.count >= 120 {
-            log!("[bloom] PERF: 120 frames avg: total={:.2}ms build={:.2}ms (ui={:.2}ms) raster={:.2}ms present={:.2}ms input={:.2}ms",
-                (perf.frame_ns as f64 / 120.0) / 1_000_000.0,
-                (perf.build_ns as f64 / 120.0) / 1_000_000.0,
-                (perf.ui_ns as f64 / 120.0) / 1_000_000.0,
-                (perf.raster_ns as f64 / 120.0) / 1_000_000.0,
-                (perf.present_ns as f64 / 120.0) / 1_000_000.0,
-                (perf.input_ns as f64 / 120.0) / 1_000_000.0,
-            );
-            perf = PerfStats::default();
-        }
-
-        loop_ctrl.sleep();
     }
-}
 
-#[derive(Default)]
-struct PerfStats {
-    count: u64,
-    frame_ns: u64,
-    input_ns: u64,
-    ui_ns: u64,
-    build_ns: u64,
-    raster_ns: u64,
-    present_ns: u64,
+    // Post-present overlay update
+    key_overlay.post_present();
+    
+    // CONTRACT log after first frame is rendered
+    if !first_frame_rendered && frame_id >= 1 {
+        first_frame_rendered = true;
+        log!("[CONTRACT] [bloom] First frame rendered - compositor ready");
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // POST-PRESENT: Memory pressure check
+    // ═══════════════════════════════════════════════════════════════════
+    reclaimer::check_memory_pressure(&ASSETS);
+
+    // Timing
+    loop_ctrl.heartbeat(cursor.x, cursor.y);
+
+    perf::end_frame();
+
+    loop_ctrl.sleep();
+}
 }

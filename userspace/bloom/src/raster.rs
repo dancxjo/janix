@@ -27,10 +27,11 @@ struct RasterContext<'a> {
     transform_stack: Vec<Transform2D>,
     current_clip: Rect,
     current_transform: Transform2D,
+    solid_text: bool,
 }
 
 impl<'a> RasterContext<'a> {
-    fn new(surface: &'a mut Surface) -> Self {
+    fn new(surface: &'a mut Surface, solid_text: bool) -> Self {
         let full_rect = Rect::new(0, 0, surface.width(), surface.height());
         Self {
             surface,
@@ -38,6 +39,7 @@ impl<'a> RasterContext<'a> {
             transform_stack: Vec::with_capacity(4),
             current_clip: full_rect,
             current_transform: Transform2D::identity(),
+            solid_text,
         }
     }
 
@@ -81,24 +83,24 @@ impl<'a> RasterContext<'a> {
 }
 
 /// Execute a DrawList on a CPU surface (convenience wrapper)
-pub fn execute(surface: &mut Surface, list: &DrawList) {
+pub fn execute(surface: &mut Surface, list: &DrawList, solid_text: bool) {
     let lowered = lower(list);
-    execute_lowered(surface, &lowered);
+    execute_lowered(surface, &lowered, solid_text);
 }
 
 /// Execute a DrawList respecting damage regions
-pub fn execute_with_damage(surface: &mut Surface, list: &DrawList, damage: &Damage) {
+pub fn execute_with_damage(surface: &mut Surface, list: &DrawList, damage: &Damage, solid_text: bool) {
     if damage.is_full {
-        execute(surface, list);
+        execute(surface, list, solid_text);
         return;
     }
     let lowered = lower(list);
-    execute_lowered_with_damage(surface, &lowered, damage);
+    execute_lowered_with_damage(surface, &lowered, damage, solid_text);
 }
 
 /// Execute lowered ops directly
-pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw) {
-    let mut ctx = RasterContext::new(surface);
+pub fn execute_lowered(surface: &mut Surface, lowered: &LoweredDraw, solid_text: bool) {
+    let mut ctx = RasterContext::new(surface, solid_text);
 
     for op in lowered.ops.iter() {
         match op {
@@ -189,8 +191,11 @@ pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw,
 
     for i in 0..damage_count {
         let d = damage_rects[i];
+        crate::trace_span!("raster.rect.total");
+        crate::trace_counter!("raster.rect.pixels", (d.w * d.h) as u64);
+        
         // Create a context where the initial clip is the damage rect
-        let mut ctx = RasterContext::new(surface);
+        let mut ctx = RasterContext::new(surface, solid_text);
         // Override initial clip
         ctx.current_clip = Rect::new(d.x, d.y, d.w, d.h);
 
@@ -199,15 +204,27 @@ pub fn execute_lowered_with_damage(surface: &mut Surface, lowered: &LoweredDraw,
 
     let elapsed = stem::monotonic_ns().saturating_sub(start);
     if elapsed > 10_000_000 { // 10ms threshold
-        log!("[bloom::raster] WARN: slow rasterize ({} rects) = {:.1}ms", damage_count, elapsed as f64 / 1_000_000.0);
+        let mut total_pixels: u64 = 0;
+        for i in 0..damage_count {
+            total_pixels += (damage_rects[i].w * damage_rects[i].h) as u64;
+        }
+        
+        log!("[bloom::raster] WARN: slow rasterize ({} rects, {} px) = {:.1}ms", 
+             damage_count, total_pixels, elapsed as f64 / 1_000_000.0);
+        for i in 0..damage_count {
+            let d = damage_rects[i];
+            log!("  rect[{}]: {}x{} @ {},{}", i, d.w, d.h, d.x, d.y);
+        }
     }
 }
 
 // Helper to run ops on an existing context (used by damage loop)
 fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
     for op in lowered.ops.iter() {
+        crate::trace_counter!("raster.ops", 1);
         match op {
             LowLevelOp::Clear { color } => {
+                crate::trace_counter!("raster.pixels", (ctx.current_clip.width() * ctx.current_clip.height()) as u64);
                 fill_rect_copy(ctx.surface, ctx.current_clip.x(), ctx.current_clip.y(), ctx.current_clip.width(), ctx.current_clip.height(), color.to_u32());
             },
             
@@ -221,6 +238,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 let t_rect = ctx.current_transform.transform_rect(*rect);
                 if let Some(clipped) = ctx.current_clip.intersection(&t_rect) {
                      let c = color.to_u32();
+                     crate::trace_counter!("raster.pixels", (clipped.width() * clipped.height()) as u64);
                      if (c >> 24) == 255 {
                          fill_rect_copy(ctx.surface, clipped.x(), clipped.y(), clipped.width(), clipped.height(), c);
                      } else {
@@ -253,6 +271,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             LowLevelOp::BlitOpaque { image, src, dst, filter } => {
                 let t_dst = ctx.current_transform.transform_rect(*dst);
                 if let Some(clipped_dst) = ctx.current_clip.intersection(&t_dst) {
+                    crate::trace_counter!("raster.pixels", (clipped_dst.width() * clipped_dst.height()) as u64);
                     blit_opaque(ctx.surface, image, src, &t_dst, &clipped_dst, *filter);
                 }
             },
@@ -260,6 +279,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             LowLevelOp::BlitAlpha { image, src, dst, filter, blend, const_alpha } => {
                 let t_dst = ctx.current_transform.transform_rect(*dst);
                 if let Some(clipped_dst) = ctx.current_clip.intersection(&t_dst) {
+                    crate::trace_counter!("raster.pixels", (clipped_dst.width() * clipped_dst.height()) as u64);
                     blit_alpha(ctx.surface, image, src, &t_dst, &clipped_dst, *filter, *blend, *const_alpha);
                 }
             },

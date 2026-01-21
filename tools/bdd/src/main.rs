@@ -59,9 +59,8 @@ fn main() {
         tokio::runtime::Runtime::new().unwrap().block_on(
             ThingOsWorld::cucumber()
                 .max_concurrent_scenarios(1) // Force sequential execution to avoid global artifact race conditions
-                .scenario_timeout(std::time::Duration::from_secs(600))
                 .with_writer(cucumber::writer::Tee::new(reporter, json_writer))
-                .after(|_feature, _rule, _scenario, _ev, world| {
+                .after(|_feature, _rule, _scenario, _ev, world: Option<&mut ThingOsWorld>| {
                     Box::pin(async move {
                         if let Some(w) = world {
                             w.shutdown().await;

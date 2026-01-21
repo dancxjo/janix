@@ -129,6 +129,8 @@ pub struct PointF {
 pub enum PathVerb {
     MoveTo(PointF),
     LineTo(PointF),
+    QuadTo(PointF, PointF), // control, end
+    CubicTo(PointF, PointF, PointF), // control1, control2, end
     Close,
 }
 

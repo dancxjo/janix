@@ -17,6 +17,7 @@ struct SvgState {
     stroke: Color,
     stroke_width: i32,
     opacity: u8,
+    fill_rule: crate::isa::FillRule,
 }
 
 impl Default for SvgState {
@@ -27,6 +28,7 @@ impl Default for SvgState {
             stroke: Color::TRANSPARENT,
             stroke_width: 1,
             opacity: 255,
+            fill_rule: crate::isa::FillRule::NonZero,
         }
     }
 }
@@ -36,6 +38,7 @@ pub struct SvgParser {
     cmds: Vec<DrawCmd>,
     width: i32,
     height: i32,
+    view_box: Option<Rect>,
 }
 
 impl SvgParser {
@@ -45,6 +48,7 @@ impl SvgParser {
             cmds: Vec::new(),
             width: 0,
             height: 0,
+            view_box: None,
         }
     }
     
@@ -84,7 +88,19 @@ impl SvgParser {
             if let Some(w) = parse_length_px(sw) { state.stroke_width = w as i32; }
         }
         if let Some(op) = attrs.get("opacity") {
-             if let Some(f) = parse_f32(op) { state.opacity = (f * 255.0) as u8; }
+             if let Some(f) = parse_f32(op) { state.opacity = (f * 255.0).clamp(0.0, 255.0) as u8; }
+        }
+        if let Some(fop) = attrs.get("fill-opacity") {
+             if let Some(f) = parse_f32(fop) { state.fill.a = (f * 255.0).clamp(0.0, 255.0) as u8; }
+        }
+        if let Some(sop) = attrs.get("stroke-opacity") {
+             if let Some(f) = parse_f32(sop) { state.stroke.a = (f * 255.0).clamp(0.0, 255.0) as u8; }
+        }
+        if let Some(fr) = attrs.get("fill-rule") {
+            match fr {
+                "evenodd" => state.fill_rule = crate::isa::FillRule::EvenOdd,
+                _ => state.fill_rule = crate::isa::FillRule::NonZero,
+            }
         }
         if let Some(trans) = attrs.get("transform") {
             transform_cmds.extend(parse_transform(trans));
@@ -101,6 +117,11 @@ impl SvgParser {
                          "fill" => if let Some(c) = parse_color(v) { state.fill = Color::new(c.r, c.g, c.b, c.a); },
                          "stroke" => if let Some(c) = parse_color(v) { state.stroke = Color::new(c.r, c.g, c.b, c.a); },
                          "stroke-width" => if let Some(w) = parse_length_px(v) { state.stroke_width = w as i32; },
+                         "opacity" => if let Some(f) = parse_f32(v) { state.opacity = (f * 255.0).clamp(0.0, 255.0) as u8; },
+                         "fill-rule" => match v {
+                             "evenodd" => state.fill_rule = crate::isa::FillRule::EvenOdd,
+                             _ => state.fill_rule = crate::isa::FillRule::NonZero,
+                         },
                          _ => {}
                      }
                  }
@@ -114,15 +135,9 @@ impl SvgParser {
                      state.transform = state.transform.multiply(&Transform::translate(tx, ty));
                 }
                 TransformCmd::Scale(sx, sy) => {
-                     // geometry::Transform doesn't have scale helper?
-                     // Implement manually
-                     state.transform.m11 *= sx;
-                     state.transform.m12 *= sx;
-                     state.transform.m21 *= sy;
-                     state.transform.m22 *= sy;
+                     state.transform = state.transform.multiply(&Transform::scale(sx, sy));
                 }
                 TransformCmd::Rotate(angle) => {
-                     // geometry::Transform::rotate_degrees is available with svg-cursors feature (which we are in)
                      state.transform = state.transform.multiply(&Transform::rotate_degrees(angle));
                 }
             }
@@ -159,6 +174,24 @@ impl SvgParser {
             "svg" => {
                  if let Some(w) = attrs.get("width").and_then(parse_length_px) { self.width = w as i32; }
                  if let Some(h) = attrs.get("height").and_then(parse_length_px) { self.height = h as i32; }
+                 if let Some(vb) = attrs.get("viewBox") {
+                     let parts: Vec<f32> = vb.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                     if parts.len() == 4 {
+                         let vbr = Rect::new(parts[0] as i32, parts[1] as i32, parts[2] as i32, parts[3] as i32);
+                         self.view_box = Some(vbr);
+                         
+                         // Apply viewbox scaling if we have width/height
+                         if self.width > 0 && self.height > 0 {
+                             let sx = self.width as f32 / parts[2];
+                             let sy = self.height as f32 / parts[3];
+                             let tx = -parts[0] * sx;
+                             let ty = -parts[1] * sy;
+                             let state = self.current_state_mut();
+                             state.transform = state.transform.multiply(&Transform::translate(tx, ty));
+                             state.transform = state.transform.multiply(&Transform::scale(sx, sy));
+                         }
+                     }
+                 }
             }
             "g" => {
                 self.push_state();
@@ -301,10 +334,11 @@ impl SvgParser {
         let path_arc = alloc::sync::Arc::new(path);
         
         if fill.a > 0 {
+            let fr = self.current_state().fill_rule;
             self.cmds.push(DrawCmd::FillPath { 
                 path: path_arc.clone(), 
                 color: fill, 
-                fill_rule: crate::isa::FillRule::NonZero, 
+                fill_rule: fr, 
                 aa: crate::geometry::EdgeAA::Coverage8 
             });
         }

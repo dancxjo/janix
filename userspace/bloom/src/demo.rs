@@ -15,6 +15,10 @@ pub fn run_svg_demo(mut surface: crate::surface::Surface, mut presenter: crate::
         (r##"<svg><g transform="translate(10, 10) rotate(45)"><rect x="0" y="0" width="50" height="50" fill="purple"/></g></svg>"##, "Transform"),
         // Polyline
         (r##"<svg><polyline points="0,80 20,20 40,80 60,20 80,80" fill="none" stroke="orange" stroke-width="3"/></svg>"##, "Polyline"),
+        // Bezier Heart
+        (r##"<svg><path d="M 50 80 C 20 50 20 20 50 20 C 80 20 80 50 50 80 Z" fill="red" stroke="white" stroke-width="2"/></svg>"##, "Heart (Cubic)"),
+        // Bezier Ghost
+        (r##"<svg><path d="M 20 80 L 20 40 Q 20 20 50 20 Q 80 20 80 40 L 80 80 L 65 70 L 50 80 L 35 70 Z" fill="#EEE" stroke="#999" stroke-width="2"/></svg>"##, "Ghost (Quad)"),
         // Ellipse approximation
         (r##"<svg><g transform="scale(1.5, 0.8)"><circle cx="30" cy="50" r="25" fill="cyan"/></g></svg>"##, "Ellipse"),
     ];

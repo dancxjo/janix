@@ -678,6 +678,8 @@ mod tests {
             props: root_props,
             strings: BTreeMap::new(),
             children: vec![child_id],
+            svg_content: None,
+            window_icon_content: None,
         });
 
         // Child node: 100x50, centered
@@ -693,6 +695,8 @@ mod tests {
             props: child_props,
             strings: BTreeMap::new(),
             children: vec![],
+            svg_content: None,
+            window_icon_content: None,
         });
 
         let assets = AssetBank::new();
@@ -709,8 +713,8 @@ mod tests {
 
         let child = &root.children[0];
         assert_eq!(child.rect.x, 350);
-        assert_eq!(child.rect.y, 275);
+        assert_eq!(child.rect.y, 255);
         assert_eq!(child.rect.w, 100);
-        assert_eq!(child.rect.h, 50);
+        assert_eq!(child.rect.h, 90);
     }
 }

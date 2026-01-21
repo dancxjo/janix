@@ -10,67 +10,113 @@ pub fn parse_path_d(d: &str) -> Path2D {
     
     let mut cx = 0.0;
     let mut cy = 0.0;
+    let mut last_cp: Option<PointF> = None;
+    let mut start_p: Option<PointF> = None;
     
     while let Some(cmd) = parser.next_command() {
         match cmd {
-            'M' => {
+            'M' | 'm' => {
+                let is_rel = cmd == 'm';
+                let mut first = true;
                 while let (Some(x), Some(y)) = (parser.next_number(), parser.next_number()) {
-                    verbs.push(PathCommand::MoveTo(PointF{x, y}));
-                    cx = x; cy = y;
+                    let p = if is_rel { PointF{x: cx + x, y: cy + y} } else { PointF{x, y} };
+                    if first {
+                        verbs.push(PathCommand::MoveTo(p));
+                        start_p = Some(p);
+                        first = false;
+                    } else {
+                        verbs.push(PathCommand::LineTo(p));
+                    }
+                    cx = p.x; cy = p.y;
+                    last_cp = None;
                 }
             }
-            'm' => {
-                while let (Some(dx), Some(dy)) = (parser.next_number(), parser.next_number()) {
-                    let x = cx + dx;
-                    let y = cy + dy;
-                    verbs.push(PathCommand::MoveTo(PointF{x, y}));
-                    cx = x; cy = y;
-                }
-            }
-            'L' => {
+            'L' | 'l' => {
+                let is_rel = cmd == 'l';
                 while let (Some(x), Some(y)) = (parser.next_number(), parser.next_number()) {
-                    verbs.push(PathCommand::LineTo(PointF{x, y}));
-                    cx = x; cy = y;
+                    let p = if is_rel { PointF{x: cx + x, y: cy + y} } else { PointF{x, y} };
+                    verbs.push(PathCommand::LineTo(p));
+                    cx = p.x; cy = p.y;
+                    last_cp = None;
                 }
             }
-            'l' => {
-                while let (Some(dx), Some(dy)) = (parser.next_number(), parser.next_number()) {
-                    let x = cx + dx;
-                    let y = cy + dy;
-                    verbs.push(PathCommand::LineTo(PointF{x, y}));
-                    cx = x; cy = y;
-                }
-            }
-            'H' => {
+            'H' | 'h' => {
+                let is_rel = cmd == 'h';
                 while let Some(x) = parser.next_number() {
-                    verbs.push(PathCommand::LineTo(PointF{x, y: cy}));
-                    cx = x;
+                    let nx = if is_rel { cx + x } else { x };
+                    verbs.push(PathCommand::LineTo(PointF{x: nx, y: cy}));
+                    cx = nx;
+                    last_cp = None;
                 }
             }
-            'h' => {
-                while let Some(dx) = parser.next_number() {
-                    let x = cx + dx;
-                    verbs.push(PathCommand::LineTo(PointF{x, y: cy}));
-                    cx = x;
-                }
-            }
-            'V' => {
+            'V' | 'v' => {
+                let is_rel = cmd == 'v';
                 while let Some(y) = parser.next_number() {
-                    verbs.push(PathCommand::LineTo(PointF{x: cx, y}));
-                    cy = y;
+                    let ny = if is_rel { cy + y } else { y };
+                    verbs.push(PathCommand::LineTo(PointF{x: cx, y: ny}));
+                    cy = ny;
+                    last_cp = None;
                 }
             }
-            'v' => {
-                while let Some(dy) = parser.next_number() {
-                    let y = cy + dy;
-                    verbs.push(PathCommand::LineTo(PointF{x: cx, y}));
-                    cy = y;
+            'C' | 'c' => {
+                let is_rel = cmd == 'c';
+                while let (Some(x1), Some(y1), Some(x2), Some(y2), Some(x), Some(y)) = 
+                      (parser.next_number(), parser.next_number(), parser.next_number(), parser.next_number(), parser.next_number(), parser.next_number()) {
+                    let p1 = if is_rel { PointF{x: cx + x1, y: cy + y1} } else { PointF{x: x1, y: y1} };
+                    let p2 = if is_rel { PointF{x: cx + x2, y: cy + y2} } else { PointF{x: x2, y: y2} };
+                    let p = if is_rel { PointF{x: cx + x, y: cy + y} } else { PointF{x, y} };
+                    verbs.push(PathCommand::CubicTo(p1, p2, p));
+                    cx = p.x; cy = p.y;
+                    last_cp = Some(p2);
+                }
+            }
+            'S' | 's' => {
+                let is_rel = cmd == 's';
+                while let (Some(x2), Some(y2), Some(x), Some(y)) = 
+                      (parser.next_number(), parser.next_number(), parser.next_number(), parser.next_number()) {
+                    let p1 = if let Some(cp) = last_cp {
+                        PointF{x: 2.0 * cx - cp.x, y: 2.0 * cy - cp.y}
+                    } else {
+                        PointF{x: cx, y: cy}
+                    };
+                    let p2 = if is_rel { PointF{x: cx + x2, y: cy + y2} } else { PointF{x: x2, y: y2} };
+                    let p = if is_rel { PointF{x: cx + x, y: cy + y} } else { PointF{x, y} };
+                    verbs.push(PathCommand::CubicTo(p1, p2, p));
+                    cx = p.x; cy = p.y;
+                    last_cp = Some(p2);
+                }
+            }
+            'Q' | 'q' => {
+                let is_rel = cmd == 'q';
+                while let (Some(x1), Some(y1), Some(x), Some(y)) = 
+                      (parser.next_number(), parser.next_number(), parser.next_number(), parser.next_number()) {
+                    let p1 = if is_rel { PointF{x: cx + x1, y: cy + y1} } else { PointF{x: x1, y: y1} };
+                    let p = if is_rel { PointF{x: cx + x, y: cy + y} } else { PointF{x, y} };
+                    verbs.push(PathCommand::QuadTo(p1, p));
+                    cx = p.x; cy = p.y;
+                    last_cp = Some(p1);
+                }
+            }
+            'T' | 't' => {
+                let is_rel = cmd == 't';
+                while let (Some(x), Some(y)) = (parser.next_number(), parser.next_number()) {
+                    let p1 = if let Some(cp) = last_cp {
+                        PointF{x: 2.0 * cx - cp.x, y: 2.0 * cy - cp.y}
+                    } else {
+                        PointF{x: cx, y: cy}
+                    };
+                    let p = if is_rel { PointF{x: cx + x, y: cy + y} } else { PointF{x, y} };
+                    verbs.push(PathCommand::QuadTo(p1, p));
+                    cx = p.x; cy = p.y;
+                    last_cp = Some(p1);
                 }
             }
             'Z' | 'z' => {
                 verbs.push(PathCommand::Close);
+                if let Some(s) = start_p { cx = s.x; cy = s.y; }
+                last_cp = None;
             }
-            _ => {} // Skip unknown
+            _ => { last_cp = None; } // Reset on unknown
         }
     }
 

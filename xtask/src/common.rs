@@ -56,8 +56,8 @@ mod tests {
     }
 
     #[test]
-    fn project_root_ends_with_repo_name() {
+    fn project_root_contains_cargo_toml() {
         let root = project_root();
-        assert!(root.ends_with("thing-os"));
+        assert!(root.join("Cargo.toml").exists());
     }
 }

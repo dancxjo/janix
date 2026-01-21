@@ -4,7 +4,7 @@ pub mod snapshot;
 
 use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
-use self::snapshot::{UiSnapshot, UiKeys, KindIds, AssetCache};
+use self::snapshot::{AssetCache, KindIds, UiKeys, UiSnapshot};
 use crate::asset::AssetBank;
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
@@ -63,7 +63,10 @@ impl UiPipeline {
             self.cached_keys = Some(UiKeys::intern());
             self.cached_kinds = Some(KindIds::intern());
         }
-        (self.cached_keys.as_ref().unwrap(), self.cached_kinds.as_ref().unwrap())
+        (
+            self.cached_keys.as_ref().unwrap(),
+            self.cached_kinds.as_ref().unwrap(),
+        )
     }
 
     /// Fetch cached kind ids, ensuring they are interned once.
@@ -79,7 +82,7 @@ impl UiPipeline {
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
-    
+
     /// Mark a specific node as dirty (for incremental updates from watch events)
     pub fn mark_node_dirty(&mut self, id: ThingId) {
         if !self.dirty_nodes.contains(&id) {
@@ -87,7 +90,7 @@ impl UiPipeline {
         }
         self.dirty = true;
     }
-    
+
     /// Invalidate an asset in the cache (when we know it changed)
     pub fn invalidate_asset(&mut self, bs_id: u64) {
         self.asset_cache.invalidate(bs_id);
@@ -113,7 +116,7 @@ impl UiPipeline {
                     changed: false,
                     damage: alloc::vec::Vec::new(),
                     solid_text: self.solid_text,
-                }
+                };
             }
         };
 
@@ -122,9 +125,16 @@ impl UiPipeline {
             if let Some(scene) = &self.cached_scene {
                 crate::trace_event!("ui.run.path", "fast_path_cached");
                 if log_this_frame {
-                    let window_count = self.prev_snapshot.as_ref().map(|s| {
-                        s.nodes.values().filter(|n| matches!(n.kind, snapshot::UiNodeKind::Window)).count()
-                    }).unwrap_or(0);
+                    let window_count = self
+                        .prev_snapshot
+                        .as_ref()
+                        .map(|s| {
+                            s.nodes
+                                .values()
+                                .filter(|n| matches!(n.kind, snapshot::UiNodeKind::Window))
+                                .count()
+                        })
+                        .unwrap_or(0);
                     crate::log!("[bloom][ui] ENTER_UI_BUILD dirty=false root_present=true windows_seen={} reason=fast_path_cached", window_count);
                 }
                 Self::lower(scene, list);
@@ -146,12 +156,12 @@ impl UiPipeline {
         // 1. Snapshot with asset cache (Phase C) and optional incremental (Phase F)
         let snapshot = {
             crate::trace_span!("ui.snap");
-            
+
             // Check if we can do incremental update
-            let can_incremental = !self.dirty_nodes.is_empty() 
+            let can_incremental = !self.dirty_nodes.is_empty()
                 && self.prev_snapshot.is_some()
                 && self.dirty_nodes.len() < 5; // Only worthwhile for small updates
-            
+
             if can_incremental {
                 crate::trace_event!("ui.run.path", "incremental_snap");
                 let mut snap = self.prev_snapshot.take().unwrap();
@@ -233,41 +243,64 @@ impl UiPipeline {
             }
         }
 
-        UiRunResult { changed, damage, solid_text: self.solid_text }
+        UiRunResult {
+            changed,
+            damage,
+            solid_text: self.solid_text,
+        }
     }
 
     fn lower(scene: &PaintScene, list: &mut DrawList) {
         for obj in &scene.objects {
             match obj {
-                PaintObject::Rect { rect, color, radius } => {
+                PaintObject::Rect {
+                    rect,
+                    color,
+                    radius,
+                } => {
                     if *radius > 0 {
-                        list.rounded_rect(rect.x, rect.y, rect.w, rect.h, *radius as i32, *color, crate::geometry::EdgeAA::None);
+                        list.rounded_rect(
+                            rect.x,
+                            rect.y,
+                            rect.w,
+                            rect.h,
+                            *radius as i32,
+                            *color,
+                            crate::geometry::EdgeAA::None,
+                        );
                     } else {
                         list.rect(rect.x, rect.y, rect.w, rect.h, *color);
                     }
                 }
-                PaintObject::Text { rect, text, font, size, color, font_debug } => {
+                PaintObject::Text {
+                    rect,
+                    text,
+                    font,
+                    size,
+                    color,
+                    font_debug,
+                } => {
                     list.text_font_debug(text, font, rect.x, rect.y, *size, *color, *font_debug);
                 }
                 PaintObject::Image { rect: _ } => {
                     // TODO: Implement image lowering
                 }
                 PaintObject::Commands { cmds, rect } => {
-                    use crate::geometry::Transform;
                     use crate::drawlist::DrawCmd;
-                    
+                    use crate::geometry::Transform;
+
                     // Translate local 0,0 SVG to node position
-                    list.commands().push(DrawCmd::PushTransform { 
-                        transform: Transform::translate(rect.x as f32, rect.y as f32) 
+                    list.commands().push(DrawCmd::PushTransform {
+                        transform: Transform::translate(rect.x as f32, rect.y as f32),
                     });
-                    
+
                     // Append commands
                     // Clone is cheap for Arc<Path> but we are cloning cmds into list
                     // Since cmds is Arc<Vec<DrawCmd>>, we iterate and clone each cmd?
                     // DrawCmd contains Arc<Path>.
                     // DrawCmd is small enum.
                     list.commands().extend(cmds.iter().cloned());
-                    
+
                     list.commands().push(DrawCmd::PopTransform);
                 }
             }

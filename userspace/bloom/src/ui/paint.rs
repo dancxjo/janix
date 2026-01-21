@@ -81,40 +81,33 @@ impl PaintBuilder {
             });
 
             // 2. Title Bar logic
-            // Title bar height is fixed for now (e.g. 24px)
-            // But we don't want to overdraw if the window is small.
-            let title_h = 24;
+            // Title bar height increased to 40px
+            let title_h = 40;
             if layout.rect.h > title_h {
                 // Determine icon area
-                let icon_size = 16;
+                let icon_size = 32;
                 let icon_padding = 4;
                 let _bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
                 
-                // Draw title bar background (slightly lighter than bg? or separate color?)
-                // For now, let's just make it visible if we have a title or icon.
-                // Or maybe the window background handles it, and we just draw content on top.
-                
+                // Icon Background
+                let icon_bg_rect = Rect::new(layout.rect.x + icon_padding, layout.rect.y + icon_padding, icon_size, icon_size);
+                objects.push(PaintObject::Rect {
+                    rect: icon_bg_rect.clone(),
+                    color: Color::from_u32(0xFF445566), // Slate blue/grey background
+                    radius: 4,
+                });
+
                 // Icon
-                let mut text_offset_x = icon_padding;
+                let icon_rect = Rect::new(layout.rect.x + icon_padding, layout.rect.y + icon_padding, icon_size, icon_size);
                 if let Some(icon_cmds) = &node.window_icon_content {
-                    let icon_rect = Rect::new(layout.rect.x + icon_padding, layout.rect.y + icon_padding, icon_size, icon_size);
                      objects.push(PaintObject::Commands {
                          cmds: icon_cmds.clone(),
                          rect: icon_rect,
                      });
-                     text_offset_x += icon_size + icon_padding;
-                } else {
-                    // Placeholder icon area?
-                    // Just a small empty box?
-                     let icon_rect = Rect::new(layout.rect.x + icon_padding, layout.rect.y + icon_padding, icon_size, icon_size);
-                     objects.push(PaintObject::Rect {
-                         rect: icon_rect,
-                         color: Color::new(50, 50, 50, 255), // Dark grey placeholder
-                         radius: 0,
-                     });
-                     text_offset_x += icon_size + icon_padding;
                 }
                 
+                let text_offset_x = icon_size + (icon_padding * 2);
+
                 // Title Text
                 let title = Self::get_str_prop(node, keys::UI_TITLE, symbols);
                 if let Some(t) = title {
@@ -128,6 +121,8 @@ impl PaintBuilder {
                     });
                 }
             }
+                
+
             return;
         }
 

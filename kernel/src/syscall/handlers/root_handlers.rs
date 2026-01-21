@@ -824,3 +824,73 @@ pub fn sys_root_apply_batch(ptr: usize, len: usize) -> SysResult<usize> {
 pub fn sys_root_watch_close(id: usize) -> SysResult<usize> {
     root_call(RootOp::WatchClose { id: id as u64 })
 }
+
+
+/// Bulk property fetch syscall - get multiple properties in one call
+pub fn sys_root_props_get_many(
+    node_id: usize,
+    keys_ptr: usize,
+    keys_len: usize,
+    out_ptr: usize,
+) -> SysResult<usize> {
+    use abi::types::{BulkPropsResponse, BULK_PROPS_MAX_KEYS};
+    
+    // Validate key count
+    if keys_len == 0 || keys_len > BULK_PROPS_MAX_KEYS {
+        return Err(Errno::EINVAL);
+    }
+    
+    // Validate input buffer (keys array)
+    let keys_bytes = keys_len * core::mem::size_of::<u32>();
+    validate_user_range(keys_ptr, keys_bytes, false)?;
+    
+    // Validate output buffer
+    validate_user_range(out_ptr, core::mem::size_of::<BulkPropsResponse>(), true)?;
+    
+    // Copy keys from userspace
+    let mut keys = alloc::vec::Vec::with_capacity(keys_len);
+    for i in 0..keys_len {
+        let key_ptr = keys_ptr + i * core::mem::size_of::<u32>();
+        let mut key_val: u32 = 0;
+        let key_slice = unsafe {
+            core::slice::from_raw_parts_mut(&mut key_val as *mut u32 as *mut u8, 4)
+        };
+        unsafe { copyin(key_slice, key_ptr)? };
+        keys.push(key_val);
+    }
+    
+    // Allocate kernel buffer for response
+    let mut kbuf = BulkPropsResponse::default();
+    
+    // Enqueue the operation with kernel buffer pointer
+    let reply = root_svc::enqueue(RootOp::PropsGetMany {
+        id: node_id as u64,
+        keys,
+        kbuf_ptr: &mut kbuf as *mut BulkPropsResponse as u64,
+    });
+    
+    // Wait for completion
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let value = reply.value.load(Ordering::Relaxed);
+            if status == 0 {
+                // Copy response from kernel buffer to user buffer
+                let src = unsafe {
+                    core::slice::from_raw_parts(
+                        &kbuf as *const BulkPropsResponse as *const u8,
+                        core::mem::size_of::<BulkPropsResponse>()
+                    )
+                };
+                unsafe { copyout(out_ptr, src)? };
+                return Ok(value as usize);
+            } else {
+                return Err(Errno::EIO);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}

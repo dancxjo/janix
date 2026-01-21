@@ -4,7 +4,7 @@ pub mod snapshot;
 
 use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
-use self::snapshot::{UiSnapshot, UiKeys, KindIds};
+use self::snapshot::{UiSnapshot, UiKeys, KindIds, StringCache};
 use crate::asset::AssetBank;
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
@@ -28,6 +28,10 @@ pub struct UiPipeline {
     // Cached symbol IDs - initialized once, used every frame
     cached_keys: Option<UiKeys>,
     cached_kinds: Option<KindIds>,
+    // String cache - persists across frames (Phase C)
+    string_cache: StringCache,
+    // Dirty node tracking for incremental updates (Phase F)
+    dirty_nodes: alloc::vec::Vec<ThingId>,
 }
 
 pub struct UiRunResult {
@@ -47,6 +51,8 @@ impl UiPipeline {
             solid_text: false,
             cached_keys: None,
             cached_kinds: None,
+            string_cache: StringCache::new(),
+            dirty_nodes: alloc::vec::Vec::new(),
         }
     }
 
@@ -66,6 +72,19 @@ impl UiPipeline {
 
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
+    }
+    
+    /// Mark a specific node as dirty (for incremental updates from watch events)
+    pub fn mark_node_dirty(&mut self, id: ThingId) {
+        if !self.dirty_nodes.contains(&id) {
+            self.dirty_nodes.push(id);
+        }
+        self.dirty = true;
+    }
+    
+    /// Invalidate a string in the cache (when we know it changed)
+    pub fn invalidate_string(&mut self, bs_id: u64) {
+        self.string_cache.invalidate(bs_id);
     }
 
     pub fn run(
@@ -97,7 +116,6 @@ impl UiPipeline {
             if let Some(scene) = &self.cached_scene {
                 crate::trace_event!("ui.run.path", "fast_path_cached");
                 if log_this_frame {
-                    // Count windows in prev_snapshot if available
                     let window_count = self.prev_snapshot.as_ref().map(|s| {
                         s.nodes.values().filter(|n| matches!(n.kind, snapshot::UiNodeKind::Window)).count()
                     }).unwrap_or(0);
@@ -116,14 +134,29 @@ impl UiPipeline {
 
         // Ensure symbols are cached (no-op after first frame)
         let (keys, kinds) = self.ensure_symbols();
-        // Clone refs to avoid borrow issues
         let keys = keys.clone();
         let kinds = kinds.clone();
 
-        // 1. Snapshot - now uses cached keys/kinds, no per-frame interning!
+        // 1. Snapshot with string cache (Phase C) and optional incremental (Phase F)
         let snapshot = {
             crate::trace_span!("ui.snap");
-            UiSnapshot::capture(root_id, &keys, &kinds)
+            
+            // Check if we can do incremental update
+            let can_incremental = !self.dirty_nodes.is_empty() 
+                && self.prev_snapshot.is_some()
+                && self.dirty_nodes.len() < 5; // Only worthwhile for small updates
+            
+            if can_incremental {
+                crate::trace_event!("ui.run.path", "incremental_snap");
+                let mut snap = self.prev_snapshot.take().unwrap();
+                let dirty = core::mem::take(&mut self.dirty_nodes);
+                snap.update_nodes(&dirty, &keys, &kinds, &mut self.string_cache);
+                snap
+            } else {
+                crate::trace_event!("ui.run.path", "full_snap");
+                self.dirty_nodes.clear();
+                UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.string_cache)
+            }
         };
 
         crate::trace_counter!("ui.nodes", snapshot.nodes.len());
@@ -200,33 +233,14 @@ impl UiPipeline {
     fn lower(scene: &PaintScene, list: &mut DrawList) {
         for obj in &scene.objects {
             match obj {
-                PaintObject::Rect {
-                    rect,
-                    color,
-                    radius,
-                } => {
+                PaintObject::Rect { rect, color, radius } => {
                     if *radius > 0 {
-                        list.rounded_rect(
-                            rect.x,
-                            rect.y,
-                            rect.w,
-                            rect.h,
-                            *radius as i32,
-                            *color,
-                            crate::geometry::EdgeAA::None,
-                        );
+                        list.rounded_rect(rect.x, rect.y, rect.w, rect.h, *radius as i32, *color, crate::geometry::EdgeAA::None);
                     } else {
                         list.rect(rect.x, rect.y, rect.w, rect.h, *color);
                     }
                 }
-                PaintObject::Text {
-                    rect,
-                    text,
-                    font,
-                    size,
-                    color,
-                    font_debug,
-                } => {
+                PaintObject::Text { rect, text, font, size, color, font_debug } => {
                     list.text_font_debug(text, font, rect.x, rect.y, *size, *color, *font_debug);
                 }
                 PaintObject::Image { rect: _ } => {

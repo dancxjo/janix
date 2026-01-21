@@ -160,6 +160,11 @@ pub enum RootOp {
     WatchClose {
         id: u64,
     },
+    PropsGetMany {
+        id: u64,
+        keys: alloc::vec::Vec<u32>,
+        kbuf_ptr: u64,
+    },
     ApplyBatch {
         batch: alloc::vec::Vec<u8>,
     },

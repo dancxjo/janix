@@ -312,3 +312,28 @@ pub fn bytespace_phys(id: ThingId) -> Result<u64, Errno> {
     };
     errno(ret).map(|v| v as u64)
 }
+
+/// Bulk property fetch - get multiple properties for a node in one syscall
+pub fn props_get_many(id: ThingId, keys: &[u32]) -> Result<abi::types::BulkPropsResponse, Errno> {
+    use abi::types::{BulkPropsResponse, BULK_PROPS_MAX_KEYS};
+    
+    if keys.is_empty() || keys.len() > BULK_PROPS_MAX_KEYS {
+        return Err(Errno::EINVAL);
+    }
+    
+    let mut response = BulkPropsResponse::default();
+    
+    let ret = unsafe {
+        syscall6(
+            abi::syscall::SYS_ROOT_PROPS_GET_MANY,
+            id.to_u64_lossy() as usize,
+            keys.as_ptr() as usize,
+            keys.len(),
+            &mut response as *mut BulkPropsResponse as usize,
+            0,
+            0,
+        )
+    };
+    
+    errno(ret).map(|_| response)
+}

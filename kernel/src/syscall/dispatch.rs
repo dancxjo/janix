@@ -86,6 +86,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         }
         SYS_ROOT_WATCH_CLOSE => handlers::sys_root_watch_close(args[0]),
         SYS_ROOT_APPLY_BATCH => handlers::sys_root_apply_batch(args[0], args[1]),
+        SYS_ROOT_PROPS_GET_MANY => handlers::sys_root_props_get_many(args[0], args[1], args[2], args[3]),
 
         _ => {
             crate::kprintln!("SYSCALL: Unknown syscall #{}", syscall_id);

@@ -7,62 +7,32 @@ use abi::ids::HandleId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiNodeKind {
-    Unknown,
-    Root,
-    Window,
-    Panel,
-    Text,
-    Image,
-    Overlay,
+    Unknown, Root, Window, Panel, Text, Image, Overlay,
 }
 
 impl UiNodeKind {
     pub fn from_symbol(id: u32, kinds: &KindIds) -> Self {
-        if id == 0 {
-            return Self::Unknown;
-        }
-        if id == kinds.root {
-            Self::Root
-        } else if id == kinds.window {
-            Self::Window
-        } else if id == kinds.panel {
-            Self::Panel
-        } else if id == kinds.text {
-            Self::Text
-        } else if id == kinds.image {
-            Self::Image
-        } else if id == kinds.overlay {
-            Self::Overlay
-        } else {
-            Self::Unknown
-        }
+        if id == 0 { return Self::Unknown; }
+        if id == kinds.root { Self::Root }
+        else if id == kinds.window { Self::Window }
+        else if id == kinds.panel { Self::Panel }
+        else if id == kinds.text { Self::Text }
+        else if id == kinds.image { Self::Image }
+        else if id == kinds.overlay { Self::Overlay }
+        else { Self::Unknown }
     }
 }
 
 #[derive(Clone)]
 pub struct KindIds {
-    pub root: u32,
-    pub window: u32,
-    pub panel: u32,
-    pub text: u32,
-    pub image: u32,
-    pub overlay: u32,
+    pub root: u32, pub window: u32, pub panel: u32,
+    pub text: u32, pub image: u32, pub overlay: u32,
 }
 
 impl KindIds {
-    /// Create empty (uninitialized) KindIds
     pub fn empty() -> Self {
-        Self {
-            root: 0,
-            window: 0,
-            panel: 0,
-            text: 0,
-            image: 0,
-            overlay: 0,
-        }
+        Self { root: 0, window: 0, panel: 0, text: 0, image: 0, overlay: 0 }
     }
-
-    /// Intern all kind symbols from Root (expensive - do once at init)
     pub fn intern() -> Self {
         use abi::schema::kinds;
         crate::trace_span!("ui.init.intern_kinds");
@@ -81,32 +51,16 @@ impl KindIds {
 
 #[derive(Clone)]
 pub struct UiKeys {
-    pub x: u32,
-    pub y: u32,
-    pub w: u32,
-    pub h: u32,
-    pub color: u32,
-    pub text: u32,
-    pub font: u32,
-    pub font_size: u32,
-    pub font_stack: u32,
-    pub font_debug: u32,
-    pub radius: u32,
-    pub title: u32,
-    pub hidden: u32,
-    pub z_index: u32,
-    pub center_x: u32,
-    pub center_y: u32,
-    pub fill_parent: u32,
-    pub bg_color: u32,
-    pub fg_color: u32,
-    pub has_child: u32,
-    pub inset_right: u32,
-    pub inset_bottom: u32,
+    pub x: u32, pub y: u32, pub w: u32, pub h: u32,
+    pub color: u32, pub text: u32, pub font: u32,
+    pub font_size: u32, pub font_stack: u32, pub font_debug: u32,
+    pub radius: u32, pub title: u32, pub hidden: u32,
+    pub z_index: u32, pub center_x: u32, pub center_y: u32,
+    pub fill_parent: u32, pub bg_color: u32, pub fg_color: u32,
+    pub has_child: u32, pub inset_right: u32, pub inset_bottom: u32,
 }
 
 impl UiKeys {
-    /// Create empty (uninitialized) UiKeys
     pub fn empty() -> Self {
         Self {
             x: 0, y: 0, w: 0, h: 0, color: 0, text: 0, font: 0,
@@ -116,12 +70,10 @@ impl UiKeys {
             inset_right: 0, inset_bottom: 0,
         }
     }
-
-    /// Intern all key symbols from Root (expensive - do once at init)
     pub fn intern() -> Self {
         crate::trace_span!("ui.init.intern_keys");
         use abi::schema::{keys, rels};
-        let keys = Self {
+        let k = Self {
             x: stem::thing::sys::intern(keys::UI_X).unwrap_or(0),
             y: stem::thing::sys::intern(keys::UI_Y).unwrap_or(0),
             w: stem::thing::sys::intern(keys::UI_WIDTH).unwrap_or(0),
@@ -146,23 +98,23 @@ impl UiKeys {
             inset_bottom: stem::thing::sys::intern(keys::UI_INSET_BOTTOM).unwrap_or(0),
         };
         crate::trace_counter!("ui.init.syscalls.intern_keys", 22);
-        keys
+        k
     }
-    
-    /// Get the array of numeric property keys (for bulk fetch)
     pub fn numeric_keys(&self) -> [u32; 17] {
-        [
-            self.x, self.y, self.w, self.h, self.color, self.radius,
-            self.hidden, self.z_index, self.center_x, self.center_y,
-            self.fill_parent, self.bg_color, self.fg_color, 
-            self.inset_right, self.inset_bottom,
-            self.font_size, self.font_debug,
-        ]
+        [self.x, self.y, self.w, self.h, self.color, self.radius,
+         self.hidden, self.z_index, self.center_x, self.center_y,
+         self.fill_parent, self.bg_color, self.fg_color, 
+         self.inset_right, self.inset_bottom, self.font_size, self.font_debug]
     }
-    
-    /// Get the array of string property keys (for bulk fetch)
     pub fn string_keys(&self) -> [u32; 4] {
         [self.text, self.font, self.font_stack, self.title]
+    }
+    pub fn all_keys(&self) -> [u32; 21] {
+        [self.x, self.y, self.w, self.h, self.color, self.radius,
+         self.hidden, self.z_index, self.center_x, self.center_y,
+         self.fill_parent, self.bg_color, self.fg_color, 
+         self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
+         self.text, self.font, self.font_stack, self.title]
     }
 }
 
@@ -175,7 +127,52 @@ pub struct UiNodeSnapshot {
     pub children: Vec<ThingId>,
 }
 
-#[derive(Debug, Clone)]
+/// Cached string entry: bytespace_id -> decoded string
+#[derive(Clone, Default)]
+pub struct StringCache {
+    cache: BTreeMap<u64, String>,
+}
+
+impl StringCache {
+    pub fn new() -> Self { Self { cache: BTreeMap::new() } }
+    
+    /// Get cached string or read from bytespace and cache it
+    pub fn get_or_read(&mut self, bs_id: ThingId) -> Option<String> {
+        let id = bs_id.to_u64_lossy();
+        if let Some(s) = self.cache.get(&id) {
+            crate::trace_counter!("ui.snap.string_cache_hit", 1);
+            return Some(s.clone());
+        }
+        crate::trace_counter!("ui.snap.string_cache_miss", 1);
+        let s = Self::read_string_raw(bs_id)?;
+        self.cache.insert(id, s.clone());
+        Some(s)
+    }
+    
+    fn read_string_raw(bs_id: ThingId) -> Option<String> {
+        use stem::thing::sys::{bytespace_info, bytespace_read};
+        crate::trace_counter!("snap.syscalls.read_string", 2);
+        let size = bytespace_info(bs_id).ok()?;
+        if size == 0 { return Some(String::new()); }
+        let mut buf = alloc::vec![0u8; size];
+        let len = bytespace_read(bs_id, 0, &mut buf).ok()?;
+        Some(String::from(core::str::from_utf8(&buf[..len]).unwrap_or("")))
+    }
+    
+    /// Invalidate a specific bytespace entry (when we know it changed)
+    pub fn invalidate(&mut self, bs_id: u64) {
+        self.cache.remove(&bs_id);
+    }
+    
+    /// Clear entire cache (e.g., on watch notification that strings changed)
+    pub fn clear(&mut self) {
+        self.cache.clear();
+    }
+    
+    pub fn len(&self) -> usize { self.cache.len() }
+}
+
+#[derive(Clone)]
 pub struct UiSnapshot {
     pub root_id: Option<ThingId>,
     pub nodes: BTreeMap<ThingId, UiNodeSnapshot>,
@@ -183,29 +180,44 @@ pub struct UiSnapshot {
 
 impl UiSnapshot {
     pub fn new() -> Self {
-        Self {
-            root_id: None,
-            nodes: BTreeMap::new(),
-        }
+        Self { root_id: None, nodes: BTreeMap::new() }
     }
 
-    /// Capture UI snapshot using pre-cached keys and kinds (no interning per frame)
+    /// Full capture from scratch
     pub fn capture(root_id: ThingId, keys: &UiKeys, kinds: &KindIds) -> Self {
+        let mut string_cache = StringCache::new();
+        Self::capture_with_cache(root_id, keys, kinds, &mut string_cache)
+    }
+    
+    /// Capture with string cache (Phase C optimization)
+    pub fn capture_with_cache(root_id: ThingId, keys: &UiKeys, kinds: &KindIds, string_cache: &mut StringCache) -> Self {
         let mut snapshot = Self::new();
         snapshot.root_id = Some(root_id);
         {
             crate::trace_span!("ui.snap.traverse_all");
-            snapshot.traverse(root_id, kinds, keys);
+            snapshot.traverse(root_id, kinds, keys, string_cache);
         }
         crate::trace_counter!("ui.snap.nodes_total", snapshot.nodes.len());
+        crate::trace_counter!("ui.snap.string_cache_size", string_cache.len());
         snapshot
     }
-
-    fn traverse(&mut self, id: ThingId, kind_ids: &KindIds, keys: &UiKeys) {
-        if self.nodes.contains_key(&id) {
-            return;
+    
+    /// Incremental update: only refresh specific dirty nodes (Phase F)
+    pub fn update_nodes(&mut self, dirty_ids: &[ThingId], keys: &UiKeys, kinds: &KindIds, string_cache: &mut StringCache) {
+        crate::trace_span!("ui.snap.incremental");
+        crate::trace_counter!("ui.snap.incremental_nodes", dirty_ids.len());
+        
+        for &id in dirty_ids {
+            // Remove old node data
+            self.nodes.remove(&id);
+            // Re-traverse just this node (not its children unless they're also dirty)
+            self.traverse_single(id, kinds, keys, string_cache);
         }
+    }
 
+    fn traverse(&mut self, id: ThingId, kind_ids: &KindIds, keys: &UiKeys, string_cache: &mut StringCache) {
+        if self.nodes.contains_key(&id) { return; }
+        
         let kind_sym = {
             crate::trace_span!("ui.snap.get_kind");
             crate::trace_counter!("snap.syscalls.get_kind", 1);
@@ -214,15 +226,12 @@ impl UiSnapshot {
         let kind = match kind_sym {
             Some(sym) => {
                 let k = UiNodeKind::from_symbol(sym.0 as u32, kind_ids);
-                if k == UiNodeKind::Text {
-                    crate::trace_counter!("ui.snap.text_nodes", 1);
-                }
+                if k == UiNodeKind::Text { crate::trace_counter!("ui.snap.text_nodes", 1); }
                 k
             },
             None => return,
         };
 
-        // Query children via edges
         let mut children = Vec::new();
         let mut edges_buf = [abi::types::Edge::default(); 64];
         {
@@ -232,7 +241,6 @@ impl UiSnapshot {
                 for edge in &edges_buf[..count] {
                     let rel_u64 = edge.predicate.to_u64_lossy();
                     let target_u64 = edge.to.to_u64_lossy();
-                    
                     if rel_u64 == keys.has_child as u64 && target_u64 != id.to_u64_lossy() {
                         children.push(edge.to);
                     }
@@ -240,111 +248,115 @@ impl UiSnapshot {
             }
         }
 
-        let mut props = BTreeMap::new();
-        let mut strings = BTreeMap::new();
+        let (props, strings) = self.fetch_properties(id, keys, string_cache);
+        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children: children.clone() });
+        for child in children { self.traverse(child, kind_ids, keys, string_cache); }
+    }
+    
+    /// Traverse a single node without recursing (for incremental updates)
+    fn traverse_single(&mut self, id: ThingId, kind_ids: &KindIds, keys: &UiKeys, string_cache: &mut StringCache) {
+        let kind_sym = {
+            crate::trace_counter!("snap.syscalls.get_kind", 1);
+            get_kind(id).ok()
+        };
+        let kind = match kind_sym {
+            Some(sym) => UiNodeKind::from_symbol(sym.0 as u32, kind_ids),
+            None => return,
+        };
 
-        // Numeric properties - use cached key IDs (no interning!)
-        let numeric_keys = keys.numeric_keys();
+        let mut children = Vec::new();
+        let mut edges_buf = [abi::types::Edge::default(); 64];
         {
-            crate::trace_span!("ui.snap.prop_get");
-            let valid_keys: Vec<u32> = numeric_keys.iter().copied().filter(|&k| k != 0).collect();
-            crate::trace_counter!("snap.syscalls.prop_get", valid_keys.len());
-            crate::trace_counter!("ui.snap.prop_get.calls", valid_keys.len());
-            for &p in &valid_keys {
-                // Using u32 key ID directly - no interning needed!
-                if let Ok(val) = stem::thing::sys::prop_get(id, p) {
-                    props.insert(p, val);
-                }
-            }
-        }
-
-        // String properties
-        let string_keys = keys.string_keys();
-        {
-            let valid_keys: Vec<u32> = string_keys.iter().copied().filter(|&k| k != 0).collect();
-            crate::trace_counter!("ui.snap.read_string.calls", valid_keys.len());
-            for &p in &valid_keys {
-                crate::trace_counter!("snap.syscalls.prop_get", 1);
-                if let Ok(val) = stem::thing::sys::prop_get(id, p) {
-                    if val != 0 {
-                        let s = {
-                            crate::trace_span!("ui.snap.read_string");
-                            crate::trace_counter!("snap.syscalls.read_string", 2); // info + read
-                            self.read_string(ThingId::from_u64(val))
-                        };
-                        if let Some(s) = s {
-                            strings.insert(p, s);
-                        }
+            crate::trace_counter!("snap.syscalls.get_edges", 1);
+            if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
+                for edge in &edges_buf[..count] {
+                    let rel_u64 = edge.predicate.to_u64_lossy();
+                    let target_u64 = edge.to.to_u64_lossy();
+                    if rel_u64 == keys.has_child as u64 && target_u64 != id.to_u64_lossy() {
+                        children.push(edge.to);
                     }
                 }
             }
         }
 
-        self.nodes.insert(
-            id,
-            UiNodeSnapshot {
-                id,
-                kind,
-                props,
-                strings,
-                children: children.clone(),
-            },
-        );
-
-        // Recurse
-        for child in children {
-            self.traverse(child, kind_ids, keys);
-        }
+        let (props, strings) = self.fetch_properties(id, keys, string_cache);
+        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children });
     }
+    
+    fn fetch_properties(&self, id: ThingId, keys: &UiKeys, string_cache: &mut StringCache) -> (BTreeMap<u32, u64>, BTreeMap<u32, String>) {
+        let mut props = BTreeMap::new();
+        let mut strings = BTreeMap::new();
 
-    fn read_string(&self, bs_id: ThingId) -> Option<String> {
-        use stem::thing::sys::{bytespace_info, bytespace_read};
-        let size = bytespace_info(bs_id).ok()?;
-        if size == 0 {
-            return Some(String::new());
+        let all_keys = keys.all_keys();
+        let valid_keys: Vec<u32> = all_keys.iter().copied().filter(|&k| k != 0).collect();
+        
+        let bulk_result = {
+            crate::trace_span!("ui.snap.prop_get");
+            crate::trace_counter!("snap.syscalls.prop_get", 1);
+            crate::trace_counter!("ui.snap.prop_get.calls", 1);
+            stem::thing::sys::props_get_many(id, &valid_keys)
+        };
+
+        match bulk_result {
+            Ok(response) => {
+                let string_keys = keys.string_keys();
+                for (i, &key) in valid_keys.iter().enumerate() {
+                    if response.present_mask & (1 << i) != 0 {
+                        let val = response.values[i];
+                        if string_keys.contains(&key) {
+                            if val != 0 {
+                                crate::trace_span!("ui.snap.read_string");
+                                if let Some(s) = string_cache.get_or_read(ThingId::from_u64(val)) {
+                                    strings.insert(key, s);
+                                }
+                            }
+                        } else {
+                            props.insert(key, val);
+                        }
+                    }
+                }
+            }
+            Err(_) => {
+                crate::trace_counter!("ui.snap.bulk_fallback", 1);
+                self.fetch_fallback(id, keys, &mut props, &mut strings, string_cache);
+            }
         }
-        let mut buf = alloc::vec![0u8; size];
-        let len = bytespace_read(bs_id, 0, &mut buf).ok()?;
-        Some(String::from(core::str::from_utf8(&buf[..len]).unwrap_or("")))
+        (props, strings)
+    }
+    
+    fn fetch_fallback(&self, id: ThingId, keys: &UiKeys, props: &mut BTreeMap<u32, u64>, strings: &mut BTreeMap<u32, String>, string_cache: &mut StringCache) {
+        for &p in &keys.numeric_keys() {
+            if p == 0 { continue; }
+            crate::trace_counter!("snap.syscalls.prop_get", 1);
+            if let Ok(val) = stem::thing::sys::prop_get(id, p) { props.insert(p, val); }
+        }
+        for &p in &keys.string_keys() {
+            if p == 0 { continue; }
+            crate::trace_counter!("snap.syscalls.prop_get", 1);
+            if let Ok(val) = stem::thing::sys::prop_get(id, p) {
+                if val != 0 {
+                    if let Some(s) = string_cache.get_or_read(ThingId::from_u64(val)) {
+                        strings.insert(p, s);
+                    }
+                }
+            }
+        }
     }
 
     pub fn diff(&self, prev: &Self) -> Vec<ThingId> {
         let mut changed = Vec::new();
-
-        // Nodes in self but not in prev, or different content
         for (id, node) in &self.nodes {
             if let Some(prev_node) = prev.nodes.get(id) {
-                if !self.nodes_equal(node, prev_node) {
-                    changed.push(*id);
-                }
-            } else {
-                changed.push(*id);
-            }
+                if !self.nodes_equal(node, prev_node) { changed.push(*id); }
+            } else { changed.push(*id); }
         }
-
-        // Nodes in prev but not in self (deleted)
         for id in prev.nodes.keys() {
-            if !self.nodes.contains_key(id) {
-                changed.push(*id);
-            }
+            if !self.nodes.contains_key(id) { changed.push(*id); }
         }
-
         changed
     }
 
     fn nodes_equal(&self, a: &UiNodeSnapshot, b: &UiNodeSnapshot) -> bool {
-        if a.kind != b.kind {
-            return false;
-        }
-        if a.props != b.props {
-            return false;
-        }
-        if a.strings != b.strings {
-            return false;
-        }
-        if a.children != b.children {
-            return false;
-        }
-        true
+        a.kind == b.kind && a.props == b.props && a.strings == b.strings && a.children == b.children
     }
 }

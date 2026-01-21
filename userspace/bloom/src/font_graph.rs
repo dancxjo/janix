@@ -428,6 +428,19 @@ impl FontGraph {
         }
         None
     }
+
+    /// Check if a font can be found by name or file name
+    /// Used to detect whether graph-based resolution would find the requested font
+    pub fn has_font(&self, name: &str) -> bool {
+        let needle = name.to_lowercase();
+        if self.find_family_by_name(&needle).is_some() {
+            return true;
+        }
+        if self.find_family_by_file_name(&needle).is_some() {
+            return true;
+        }
+        false
+    }
 }
 
 fn collect_nodes(kind: &str) -> Vec<ThingId> {

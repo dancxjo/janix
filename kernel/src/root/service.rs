@@ -70,6 +70,7 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::GetEdges { .. } => "GetEdges",
         RootOp::DumpGraph { .. } => "DumpGraph",
         RootOp::LogEvent { .. } => "LogEvent",
+        RootOp::PropsGetMany { .. } => "PropsGetMany",
     }
 }
 
@@ -96,6 +97,11 @@ fn handle_msg<R: BootRuntime>(
         // Property operations
         RootOp::PropGet { id, key } => root_handlers::handle_prop_get(graph, interner, id, key),
         RootOp::PropSet { id, key, value } => root_handlers::handle_prop_set(graph, journal, interner, id, key, value),
+        RootOp::PropsGetMany { id, keys, kbuf_ptr } => {
+            let response_ptr = kbuf_ptr as *mut abi::types::BulkPropsResponse;
+            let response = unsafe { &mut *response_ptr };
+            root_handlers::handle_props_get_many(graph, id, &keys, response)
+        }
 
         // Bytespace operations
         RootOp::BytespaceCreate { len, flags, format } => {

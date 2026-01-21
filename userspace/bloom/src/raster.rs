@@ -664,6 +664,17 @@ fn rasterize_text_locally(
     }
 
     let mut handled = false;
+
+    // If a specific font is requested, check if the graph has it
+    // If not, skip graph-based rendering and use fallback which can match by filename
+    if let Some(req) = requested_font {
+        let graph_has_font = font_graph::try_with_graph_if_ready(|g| g.has_font(req)).unwrap_or(false);
+        if !graph_has_font {
+            // Graph does not have the requested font - try fallback
+            rasterize_text_fallback(surface, text, x, y, size, color, clip, requested_font, font_debug);
+            return;
+        }
+    }
     font_graph::with_graph(|graph| {
         let style = FontStyle::default();
         let stack = graph.resolve_stack(requested_font);

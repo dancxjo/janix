@@ -26,6 +26,7 @@ pub mod utils;
 pub mod ui;
 pub mod vm;
 pub mod root_watch;
+pub mod perf;
 
 #[macro_export]
 macro_rules! print {

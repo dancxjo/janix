@@ -18,6 +18,8 @@ pub struct KeyOverlay {
     // UI Graph Handles
     root_node: Option<ThingId>,
     text_node: Option<ThingId>,
+    perf_node: Option<ThingId>,
+    pub show_perf: bool,
 }
 
 impl KeyOverlay {
@@ -27,19 +29,26 @@ impl KeyOverlay {
             cached_text: String::new(),
             root_node: None,
             text_node: None,
+            perf_node: None,
+            show_perf: false,
         }
     }
 
     pub fn setup(&mut self, ui_root: ThingId) {
-        let window = UiBuilder::create_window(ui_root, "Keys");
+        let window = UiBuilder::create_window(ui_root, "Overlay");
         let text = UiBuilder::create_text(window, "");
+        let perf = UiBuilder::create_text(window, "");
         
         prop_set(window, keys::UI_BG_COLOR, Color::from_u32(0x99000000).to_u32() as u64).ok();
         prop_set(text, keys::UI_FG_COLOR, Color::from_u32(0xFFFFFFFF).to_u32() as u64).ok();
         prop_set(text, keys::UI_FONT_SIZE, 24).ok();
+
+        prop_set(perf, keys::UI_FG_COLOR, Color::from_u32(0xFF00FF00).to_u32() as u64).ok();
+        prop_set(perf, keys::UI_FONT_SIZE, 14).ok();
         
         self.root_node = Some(window);
         self.text_node = Some(text);
+        self.perf_node = Some(perf);
     }
 
     pub fn update(&mut self, keys: &BTreeSet<Key>, screen_w: i32, screen_h: i32) -> bool {
@@ -57,6 +66,37 @@ impl KeyOverlay {
                 }
             }
         }
+
+        if self.show_perf {
+            if let Some(perf_id) = self.perf_node {
+                if let Some(report) = crate::perf::get_last_report() {
+                    let mut s = String::new();
+                    use core::fmt::Write;
+                    // Cap to 20 lines total to avoid running off screen
+                    let mut lines_left = 20;
+                    writeln!(s, "PERF REPORT (avg 120f):").ok();
+                    lines_left -= 1;
+
+                    for (name, avg) in report.avg_spans {
+                        if lines_left == 0 { break; }
+                        // Truncate name to 18 chars to fit box
+                        writeln!(s, "{:<18.18} {:>6.2}ms", name, avg).ok();
+                        lines_left -= 1;
+                    }
+                    for (name, avg) in report.avg_counters {
+                        if lines_left == 0 { break; }
+                        writeln!(s, "{:<18.18} {:>6.1}", name, avg).ok();
+                        lines_left -= 1;
+                    }
+                    UiBuilder::set_text(perf_id, &s);
+                    changed = true;
+                }
+            }
+        } else {
+             if let Some(perf_id) = self.perf_node {
+                 UiBuilder::set_text(perf_id, "");
+             }
+        }
         
         // Always ensure layout is correct
         if let Some(root_id) = self.root_node {
@@ -67,6 +107,9 @@ impl KeyOverlay {
                 if let Some(txt_id) = self.text_node {
                      UiBuilder::set_pos(txt_id, 12, 6);
                 }
+                if let Some(perf_id) = self.perf_node {
+                     UiBuilder::set_pos(perf_id, 12, 40);
+                }
             }
         }
         
@@ -76,7 +119,7 @@ impl KeyOverlay {
     pub fn post_present(&mut self) {}
 
     fn compute_rect(&self, screen_w: i32, screen_h: i32) -> Option<Rect> {
-        if self.active_keys.is_empty() { return None; }
+        if self.active_keys.is_empty() && !self.show_perf { return None; }
         
         let padding_x = 12;
         let padding_y = 10;
@@ -85,8 +128,13 @@ impl KeyOverlay {
         let content_w = text_w;
         let content_h = 24;
         
-        let box_w = content_w + padding_x * 2;
-        let box_h = content_h + padding_y * 2;
+        let mut box_w = content_w + padding_x * 2;
+        let mut box_h = content_h + padding_y * 2;
+        
+        if self.show_perf {
+            box_w = box_w.max(280);
+            box_h = box_h.max(300);
+        }
         
         let x = screen_w - box_w - 16; 
         let y = screen_h - box_h - 16;

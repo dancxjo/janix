@@ -823,7 +823,12 @@ fn rasterize_text_fallback(
 
     // Select font: try requested, else default to first
     let font = if let Some(req) = requested_font {
-        fonts.iter().find(|f| f.name.contains(req))
+        fonts.iter().find(|f| {
+            // Match by filename: extract the basename from both the font name and request
+            let font_basename = f.name.rsplit('/').next().unwrap_or(&f.name);
+            let req_basename = req.rsplit('/').next().unwrap_or(req);
+            font_basename.eq_ignore_ascii_case(req_basename) || f.name.contains(req)
+        })
             .or_else(|| fonts.iter().find(|f| f.name.contains("NotoSans-Regular")))
             .unwrap_or(&fonts[0])
     } else {

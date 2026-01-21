@@ -3,13 +3,16 @@
 
 extern crate alloc;
 
+use abi::ids::HandleId;
+use abi::schema::{keys, kinds, rels};
 use core::time::Duration;
 use stem::info;
-use time::OffsetDateTime;
+use stem::thing::sys::{
+    bytespace_create, bytespace_write, create_node, describe_thing, find, intern, link, prop_get,
+    prop_set,
+};
 use stem::thing::ThingId;
-use abi::ids::HandleId;
-use stem::thing::sys::{create_node, prop_set, link, bytespace_create, bytespace_write, intern, find, describe_thing, prop_get};
-use abi::schema::{kinds, keys, rels};
+use time::OffsetDateTime;
 
 fn search_for_icon(suffix: &str) -> Option<ThingId> {
     let mut modules = [ThingId::default(); 128];
@@ -18,22 +21,27 @@ fn search_for_icon(suffix: &str) -> Option<ThingId> {
         let mut buf = [0u8; 512];
         let len = describe_thing(modules[i], &mut buf).unwrap_or(0);
         let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
-        
+
         let mod_name = if let Some(pos) = desc.find("name: \"") {
             let rest = &desc[pos + 7..];
-            if let Some(end) = rest.find('"') { &rest[..end] } else { continue; }
-        } else { continue; };
+            if let Some(end) = rest.find('"') {
+                &rest[..end]
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
 
         // Check if name contains our suffix and ends with .svg
         if mod_name.ends_with(".svg") && mod_name.ends_with(suffix) {
-             if let Ok(bs_id) = prop_get(modules[i], "bytespace") {
-                 return Some(ThingId::from_u64(bs_id));
-             }
+            if let Ok(bs_id) = prop_get(modules[i], "bytespace") {
+                return Some(ThingId::from_u64(bs_id));
+            }
         }
     }
     None
 }
-
 
 /// Print a single tick with both wall clock (if anchored) and monotonic time.
 fn print_tick(unix: u64, mono_ns: u64) {
@@ -99,17 +107,25 @@ fn main() -> ! {
     info!("Waiting for UI Root (Compositor)...");
     let mut ui_root = ThingId::default();
     let mut i = 0;
-    while i < 120 { // Wait up to 60 seconds for Bloom to start
+    while i < 120 {
+        // Wait up to 60 seconds for Bloom to start
         let mut ui_roots = [ThingId::default(); 1];
         match stem::thing::sys::find(kinds::UI_ROOT, &mut ui_roots) {
             Ok(count) if count > 0 => {
                 ui_root = ui_roots[0];
-                info!("Found UI Root: {} (attempt {})", ui_root.to_u64_lossy(), i + 1);
+                info!(
+                    "Found UI Root: {} (attempt {})",
+                    ui_root.to_u64_lossy(),
+                    i + 1
+                );
                 break;
             }
             Ok(_) => {
                 if i % 10 == 0 {
-                    info!("UI Root not found yet (attempt {}), still waiting...", i + 1);
+                    info!(
+                        "UI Root not found yet (attempt {}), still waiting...",
+                        i + 1
+                    );
                 }
             }
             Err(e) => {
@@ -124,24 +140,23 @@ fn main() -> ! {
         info!("ERROR: UI Root still not found after 60s, giving up on UI");
     }
 
-
     if ui_root.to_u64_lossy() != 0 {
         // Create Window
         let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
         link(win, rels::CHILD_OF, ui_root).expect("link window");
         link(ui_root, rels::HAS_CHILD, win).expect("link window has_child");
 
-        // Window Style: Black Background
+        // Window Style: Black Background (explicit override)
         prop_set(win, keys::UI_BG_COLOR, 0xFF000000).ok(); // Black
         set_string_prop(win, keys::UI_TITLE, "Clock");
 
         // Window Layout: Bottom-right area (to avoid overlap with font_explorer)
         prop_set(win, keys::UI_WIDTH, 400).ok();
         prop_set(win, keys::UI_HEIGHT, 150).ok();
-        prop_set(win, keys::UI_X, 0).ok();  // Base at 0 (inset will override)
-        prop_set(win, keys::UI_Y, 0).ok();  // Base at 0 (inset will override)
-        prop_set(win, keys::UI_INSET_RIGHT, 20).ok();  // 20px from right edge
-        prop_set(win, keys::UI_INSET_RIGHT, 20).ok();  // 20px from right edge
+        prop_set(win, keys::UI_X, 0).ok(); // Base at 0 (inset will override)
+        prop_set(win, keys::UI_Y, 0).ok(); // Base at 0 (inset will override)
+        prop_set(win, keys::UI_INSET_RIGHT, 20).ok(); // 20px from right edge
+        prop_set(win, keys::UI_INSET_RIGHT, 20).ok(); // 20px from right edge
         prop_set(win, keys::UI_INSET_BOTTOM, 30).ok(); // 30px from bottom edge
 
         // Window Icon
@@ -161,14 +176,12 @@ fn main() -> ! {
         prop_set(text, keys::UI_FG_COLOR, 0xFFFF0000).ok(); // Red
         set_string_prop(text, keys::UI_FONT, "DSEG7Classic-Regular.ttf");
         prop_set(text, keys::UI_FONT_SIZE, 64).ok(); // Large font
-        // Text Layout: Centered
+                                                     // Text Layout: Centered
         prop_set(text, keys::UI_CENTER_X, 1).ok();
         prop_set(text, keys::UI_CENTER_Y, 1).ok();
 
         // Initial text
         set_string_prop(text, keys::UI_TEXT, "--:--:--");
-
-
 
         // 3. Create Binding
         let binding = create_node(kinds::BINDING).expect("create binding");
@@ -183,13 +196,18 @@ fn main() -> ! {
             prop_set(binding, keys::BINDING_MAP, map_key as u64).ok();
         }
 
-        info!("Binding created: {} (source={} target={})", 
-              binding.to_u64_lossy(), 
-              clock_thing.to_u64_lossy(), 
-              text.to_u64_lossy());
+        info!(
+            "Binding created: {} (source={} target={})",
+            binding.to_u64_lossy(),
+            clock_thing.to_u64_lossy(),
+            text.to_u64_lossy()
+        );
     }
 
-    info!("CLOCK: Entering main loop, publishing to thing_id={}", clock_thing.to_u64_lossy());
+    info!(
+        "CLOCK: Entering main loop, publishing to thing_id={}",
+        clock_thing.to_u64_lossy()
+    );
 
     loop {
         let unix = stem::time::now_unix_seconds();
@@ -208,8 +226,12 @@ fn main() -> ! {
             set_string_prop(clock_thing, keys::CLOCK_NOW_TEXT, &time_str);
             // Update clock:tick
             if prop_set(clock_thing, keys::CLOCK_TICK, mono_ns).is_ok() {
-                info!("CLOCK PUBLISH: thing={} now_text='{}' tick={}", 
-                      clock_thing.to_u64_lossy(), time_str, mono_ns);
+                info!(
+                    "CLOCK PUBLISH: thing={} now_text='{}' tick={}",
+                    clock_thing.to_u64_lossy(),
+                    time_str,
+                    mono_ns
+                );
             }
         }
 

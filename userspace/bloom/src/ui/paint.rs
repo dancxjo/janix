@@ -1,13 +1,16 @@
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 
-use crate::geometry::Color;
 use crate::damage::Rect;
-use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT, TITLE_BAR_ICON_SIZE, TITLE_BAR_PADDING};
-use crate::ui::layout::{LayoutTree, LayoutNode, SymbolResolver};
-use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
-use abi::schema::keys;
+use crate::geometry::Color;
+use crate::ui::constants::{
+    SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT, TITLE_BAR_ICON_SIZE,
+    TITLE_BAR_PADDING,
+};
+use crate::ui::layout::{LayoutNode, LayoutTree, SymbolResolver};
+use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot, UiSnapshot};
 use abi::ids::HandleId; // Need HandleId for ThingId::from (Wait, paint.rs uses abi::WireType::ThingId)
+use abi::schema::keys;
 use abi::WireType::ThingId;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -46,22 +49,34 @@ pub struct PaintScene {
 pub struct PaintBuilder;
 
 impl PaintBuilder {
-    pub fn build(snapshot: &UiSnapshot, layout: &LayoutTree, symbols: &impl SymbolResolver) -> PaintScene {
+    pub fn build(
+        snapshot: &UiSnapshot,
+        layout: &LayoutTree,
+        symbols: &impl SymbolResolver,
+    ) -> PaintScene {
         let mut objects = Vec::new();
         if let Some(root) = &layout.root {
             Self::build_recursive(snapshot, root, &mut objects, symbols);
         }
-        
+
         let now_ms = crate::log_ratelimit::now_ms();
         if crate::log_ratelimit::log_every(1000, now_ms) {
-            let text_count = objects.iter().filter(|o| matches!(o, PaintObject::Text { .. })).count();
+            let text_count = objects
+                .iter()
+                .filter(|o| matches!(o, PaintObject::Text { .. }))
+                .count();
             crate::log!("[bloom][paint] objs={} text={}", objects.len(), text_count);
         }
-        
+
         PaintScene { objects }
     }
 
-    fn build_recursive(snapshot: &UiSnapshot, layout_node: &LayoutNode, objects: &mut Vec<PaintObject>, symbols: &impl SymbolResolver) {
+    fn build_recursive(
+        snapshot: &UiSnapshot,
+        layout_node: &LayoutNode,
+        objects: &mut Vec<PaintObject>,
+        symbols: &impl SymbolResolver,
+    ) {
         // Scope all drawing to this node's bounds before emitting content or children.
         objects.push(PaintObject::PushClip {
             rect: layout_node.rect.clone(),
@@ -79,13 +94,20 @@ impl PaintBuilder {
         objects.push(PaintObject::PopClip);
     }
 
-    fn create_paint_objects(node: &UiNodeSnapshot, layout: &LayoutNode, objects: &mut Vec<PaintObject>, symbols: &impl SymbolResolver) {
+    fn create_paint_objects(
+        node: &UiNodeSnapshot,
+        layout: &LayoutNode,
+        objects: &mut Vec<PaintObject>,
+        symbols: &impl SymbolResolver,
+    ) {
         // Window special handling
         if node.kind == UiNodeKind::Window {
             // 1. Background
             let mut bg_color = Self::get_prop(node, keys::UI_BG_COLOR, symbols);
-            if bg_color == 0 { bg_color = 0xFF000000; } // Default black if not set
-            
+            if bg_color == 0 {
+                bg_color = 0xFFF5F5F0;
+            } // Default off-white if not set
+
             objects.push(PaintObject::Rect {
                 rect: layout.rect.clone(),
                 color: Color::from_u32(bg_color as u32),
@@ -100,9 +122,14 @@ impl PaintBuilder {
                 let icon_size = TITLE_BAR_ICON_SIZE;
                 let icon_padding = TITLE_BAR_PADDING;
                 let _bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
-                
+
                 // Icon Background
-                let icon_bg_rect = Rect::new(layout.rect.x + icon_padding, layout.rect.y + icon_padding, icon_size, icon_size);
+                let icon_bg_rect = Rect::new(
+                    layout.rect.x + icon_padding,
+                    layout.rect.y + icon_padding,
+                    icon_size,
+                    icon_size,
+                );
                 objects.push(PaintObject::Rect {
                     rect: icon_bg_rect.clone(),
                     color: Color::from_u32(0xFF445566), // Slate blue/grey background
@@ -110,18 +137,24 @@ impl PaintBuilder {
                 });
 
                 // Icon
-                let icon_rect = Rect::new(layout.rect.x + icon_padding, layout.rect.y + icon_padding, icon_size, icon_size);
+                let icon_rect = Rect::new(
+                    layout.rect.x + icon_padding,
+                    layout.rect.y + icon_padding,
+                    icon_size,
+                    icon_size,
+                );
                 if let Some(icon_cmds) = &node.window_icon_content {
-                     objects.push(PaintObject::Commands {
-                         cmds: icon_cmds.clone(),
-                         rect: icon_rect,
-                     });
+                    objects.push(PaintObject::Commands {
+                        cmds: icon_cmds.clone(),
+                        rect: icon_rect,
+                    });
                 }
-                
+
                 let text_offset_x = icon_size + (icon_padding * 2);
 
                 // Shade button
-                let shade_x = layout.rect.x + layout.rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
+                let shade_x =
+                    layout.rect.x + layout.rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
                 let shade_y = layout.rect.y + (title_h - SHADE_BUTTON_SIZE) / 2;
                 let shade_rect = Rect::new(shade_x, shade_y, SHADE_BUTTON_SIZE, SHADE_BUTTON_SIZE);
                 let shade_bg = if is_shaded { 0xFF2F3C4A } else { 0xFF4A5B6C };
@@ -145,7 +178,12 @@ impl PaintBuilder {
                 if let Some(t) = title {
                     let text_w = (shade_x - (layout.rect.x + text_offset_x)).max(0);
                     objects.push(PaintObject::Text {
-                        rect: Rect::new(layout.rect.x + text_offset_x, layout.rect.y + 2, text_w, title_h),
+                        rect: Rect::new(
+                            layout.rect.x + text_offset_x,
+                            layout.rect.y + 2,
+                            text_w,
+                            title_h,
+                        ),
                         text: t,
                         font: "NotoSans-Regular.ttf".into(),
                         size: 14.0,
@@ -154,32 +192,32 @@ impl PaintBuilder {
                     });
                 }
             }
-                
 
             return;
         }
 
         // UI_INLINE special handling
         if node.kind == UiNodeKind::Inline {
-             let mode = Self::get_prop(node, keys::UI_INLINE_MODE, symbols);
-             if mode == 1 { // Svg
-                 if let Some(cmds) = &node.svg_content {
-                     objects.push(PaintObject::Commands {
-                         cmds: cmds.clone(),
-                         rect: layout.rect.clone(),
-                     });
-                     return;
-                 } else {
-                     // Fallback: Red Box
-                     objects.push(PaintObject::Rect {
-                         rect: layout.rect.clone(),
-                         color: Color::new(255, 0, 0, 255),
-                         radius: 0,
-                     });
-                     return;
-                 }
-             }
-             // If mode == 0, fallthrough to Text logic
+            let mode = Self::get_prop(node, keys::UI_INLINE_MODE, symbols);
+            if mode == 1 {
+                // Svg
+                if let Some(cmds) = &node.svg_content {
+                    objects.push(PaintObject::Commands {
+                        cmds: cmds.clone(),
+                        rect: layout.rect.clone(),
+                    });
+                    return;
+                } else {
+                    // Fallback: Red Box
+                    objects.push(PaintObject::Rect {
+                        rect: layout.rect.clone(),
+                        color: Color::new(255, 0, 0, 255),
+                        radius: 0,
+                    });
+                    return;
+                }
+            }
+            // If mode == 0, fallthrough to Text logic
         }
 
         // Check for UI_TEXT using symbol resolver
@@ -209,7 +247,7 @@ impl PaintBuilder {
                 color_val = 0xFFFFFFFF;
             }
             let color = Color::from_u32(color_val as u32);
-            
+
             objects.push(PaintObject::Text {
                 rect: layout.rect.clone(),
                 text,
@@ -237,8 +275,6 @@ impl PaintBuilder {
             });
             return;
         }
-
-
     }
 
     fn get_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> u64 {
@@ -248,7 +284,11 @@ impl PaintBuilder {
         0
     }
 
-    fn get_str_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> Option<String> {
+    fn get_str_prop(
+        node: &UiNodeSnapshot,
+        key: &str,
+        symbols: &impl SymbolResolver,
+    ) -> Option<String> {
         if let Some(id) = symbols.resolve(key) {
             return node.strings.get(&id).cloned();
         }

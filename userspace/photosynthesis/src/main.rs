@@ -75,7 +75,7 @@ fn main() -> ! {
     link(win, rels::CHILD_OF, ui_root).expect("link");
     link(ui_root, rels::HAS_CHILD, win).expect("has_child");
 
-    prop_set(win, keys::UI_BG_COLOR, 0xFF101010).ok(); // Dark gray
+    prop_set(win, keys::UI_BG_COLOR, 0xFFF5F5F0).ok(); // Off-white
     prop_set(win, keys::UI_WIDTH, 600).ok();
     prop_set(win, keys::UI_HEIGHT, 400).ok();
     prop_set(win, keys::UI_X, 970).ok(); // To the right of font_explorer

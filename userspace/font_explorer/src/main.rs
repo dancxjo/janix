@@ -101,7 +101,7 @@ fn main() -> ! {
     let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
     link(win, rels::CHILD_OF, ui_root).expect("link window");
     link(ui_root, rels::HAS_CHILD, win).expect("link window has_child");
-    prop_set(win, keys::UI_BG_COLOR, 0xFF0E0F12).ok();
+    prop_set(win, keys::UI_BG_COLOR, 0xFFF5F5F0).ok();
     prop_set(win, keys::UI_WIDTH, 900).ok();
     prop_set(win, keys::UI_HEIGHT, 520).ok();
     // Position at top-left with margin (to avoid overlap with clock at bottom-right)
@@ -116,7 +116,7 @@ fn main() -> ! {
     prop_set(top_panel, keys::UI_Y, 0).ok();
     prop_set(top_panel, keys::UI_WIDTH, 900).ok();
     prop_set(top_panel, keys::UI_HEIGHT, 90).ok();
-    prop_set(top_panel, keys::UI_BG_COLOR, 0xFF1B1F24).ok();
+    prop_set(top_panel, keys::UI_BG_COLOR, 0xFFF5F5F0).ok();
 
     let stack_text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
     link(stack_text, rels::CHILD_OF, top_panel).expect("link stack text");

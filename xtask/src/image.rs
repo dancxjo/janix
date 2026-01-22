@@ -232,6 +232,10 @@ pub fn build_iso(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
 
             sh.remove_path("iso_root")?;
             println!("ISO created: {}", iso);
+
+            let link = format!("thing-os-{}.iso", arch);
+            cmd!(sh, "ln -sf {iso} {link}").run()?;
+
             Ok(PathBuf::from(iso))
         }
         "aarch64" => {
@@ -249,6 +253,10 @@ pub fn build_iso(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
 
             sh.remove_path("iso_root")?;
             println!("ISO created: {}", iso);
+
+            let link = format!("thing-os-{}.iso", arch);
+            cmd!(sh, "ln -sf {iso} {link}").run()?;
+
             Ok(PathBuf::from(iso))
         }
         "riscv64" => {
@@ -283,6 +291,10 @@ pub fn build_iso(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
 
             sh.remove_path("iso_root")?;
             println!("ISO created: {}", iso);
+
+            let link = format!("thing-os-{}.iso", arch);
+            cmd!(sh, "ln -sf {iso} {link}").run()?;
+
             Ok(PathBuf::from(iso))
         }
         "loongarch64" => {
@@ -317,6 +329,10 @@ pub fn build_iso(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
 
             sh.remove_path("iso_root")?;
             println!("ISO created: {}", iso);
+
+            let link = format!("thing-os-{}.iso", arch);
+            cmd!(sh, "ln -sf {iso} {link}").run()?;
+
             Ok(PathBuf::from(iso))
         }
         _ => return Err(format!("Unsupported architecture: {}", arch).into()),

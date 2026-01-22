@@ -190,8 +190,6 @@ fn main(packed_handles: usize) -> ! {
 
     let wait_handles = [kbd_read, mouse_read];
     loop {
-        let timestamp_ns = event_count * 1_000_000;
-        
         // Block until keyboard or mouse data arrives
         let _ = port_wait(&wait_handles);
 
@@ -200,6 +198,7 @@ fn main(packed_handles: usize) -> ! {
             if n > 0 {
                 for &byte in &kbd_buf[..n] {
                     if let Some(edge) = kbd_state.process_ps2(byte) {
+                        let timestamp_ns = stem::monotonic_ns();
                         let len = match edge {
                             KeyEdge::Down { key, mods, repeat } => {
                                 serialize_key_down(key, mods, repeat, timestamp_ns, &mut send_buf)
@@ -252,6 +251,7 @@ fn main(packed_handles: usize) -> ! {
                     let (events, count) = mouse_state.process_packet(&packet);
                     for i in 0..count {
                         if let Some(evt) = events[i] {
+                            let timestamp_ns = stem::monotonic_ns();
                             let len = match evt {
                                 PointerEvent::Move { dx, dy } => {
                                     serialize_pointer_move(dx, dy, timestamp_ns, &mut send_buf)

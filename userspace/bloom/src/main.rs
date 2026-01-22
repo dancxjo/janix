@@ -443,6 +443,8 @@ fn main(arg: usize) -> ! {
     key_overlay.setup(ui_root);
 
     let mut prev_cursor_bbox: Option<crate::damage::Rect> = None;
+    let mut accel_cfg = bristle::MouseAccelConfig::default();
+    let mut accel_state = bristle::MouseAccelState::default();
     let mut first_frame = true;
     let mut first_frame_rendered = false;
 
@@ -494,7 +496,15 @@ fn main(arg: usize) -> ! {
 
         let old_bbox = cursor.bbox();
         if bristle_evt != 0 {
-            bristle::poll_bristle(bristle_evt, &mut cursor, &mut keys, screen_w, screen_h);
+            bristle::poll_bristle(
+                bristle_evt,
+                &mut cursor,
+                &mut keys,
+                &accel_cfg,
+                &mut accel_state,
+                screen_w,
+                screen_h,
+            );
         }
         let new_bbox = cursor.bbox();
         if let Some(prev) = prev_cursor_bbox {

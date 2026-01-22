@@ -6,7 +6,7 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::thing::ThingId;
-use abi::ids::HandleId;
+use abi::types::HandleId;
 use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, link,
     prop_get, prop_set,
@@ -109,18 +109,16 @@ fn main() -> ! {
     prop_set(win, keys::UI_Y, 50).ok();
     set_string_prop(win, keys::UI_TITLE, "Font Explorer");
 
-    let top_panel = create_node(kinds::UI_PANEL).expect("create UI_PANEL");
-    link(top_panel, rels::CHILD_OF, win).expect("link panel");
-    link(win, rels::HAS_CHILD, top_panel).expect("link panel has_child");
-    prop_set(top_panel, keys::UI_X, 0).ok();
-    prop_set(top_panel, keys::UI_Y, 0).ok();
-    prop_set(top_panel, keys::UI_WIDTH, 900).ok();
-    prop_set(top_panel, keys::UI_HEIGHT, 90).ok();
-    prop_set(top_panel, keys::UI_BG_COLOR, 0xFFF5F5F0).ok();
+    let viewport = create_node(kinds::UI_VIEWPORT).expect("create UI_VIEWPORT");
+    link(viewport, rels::CHILD_OF, win).expect("link viewport");
+    link(win, rels::HAS_CHILD, viewport).expect("link window has_child");
+    prop_set(viewport, keys::UI_WIDTH, 900).ok();
+    prop_set(viewport, keys::UI_HEIGHT, 520).ok();
+    prop_set(viewport, keys::UI_CLIP, 1).ok();
 
-    let stack_text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
-    link(stack_text, rels::CHILD_OF, top_panel).expect("link stack text");
-    link(top_panel, rels::HAS_CHILD, stack_text).expect("link panel has_child");
+    let stack_text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
+    link(stack_text, rels::CHILD_OF, viewport).expect("link stack text");
+    link(viewport, rels::HAS_CHILD, stack_text).expect("link viewport has_child");
     prop_set(stack_text, keys::UI_X, 18).ok();
     prop_set(stack_text, keys::UI_Y, 18).ok();
     prop_set(stack_text, keys::UI_FONT_SIZE, 20).ok();
@@ -128,9 +126,9 @@ fn main() -> ! {
     set_string_prop(stack_text, keys::UI_TEXT, &stack_label);
     set_string_prop(stack_text, keys::UI_FONT_STACK, &stack_label);
 
-    let style_text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
-    link(style_text, rels::CHILD_OF, top_panel).expect("link style text");
-    link(top_panel, rels::HAS_CHILD, style_text).expect("link panel has_child");
+    let style_text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
+    link(style_text, rels::CHILD_OF, viewport).expect("link style text");
+    link(viewport, rels::HAS_CHILD, style_text).expect("link viewport has_child");
     prop_set(style_text, keys::UI_X, 18).ok();
     prop_set(style_text, keys::UI_Y, 50).ok();
     prop_set(style_text, keys::UI_FONT_SIZE, 14).ok();
@@ -140,9 +138,9 @@ fn main() -> ! {
 
     let demo_text = "Hello World\nα β γ ∑ ∞\n⚙︎ ☺︎ 🛠";
 
-    let main_text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
-    link(main_text, rels::CHILD_OF, win).expect("link main text");
-    link(win, rels::HAS_CHILD, main_text).expect("link window has_child");
+    let main_text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
+    link(main_text, rels::CHILD_OF, viewport).expect("link main text");
+    link(viewport, rels::HAS_CHILD, main_text).expect("link viewport has_child");
     prop_set(main_text, keys::UI_X, 24).ok();
     prop_set(main_text, keys::UI_Y, 120).ok();
     prop_set(main_text, keys::UI_FONT_SIZE, 40).ok();

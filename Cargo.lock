@@ -320,6 +320,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "blossom"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "bran"
 version = "0.1.0"
 dependencies = [

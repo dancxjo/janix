@@ -3,13 +3,12 @@
 
 extern crate alloc;
 
-use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
+use abi::types::HandleId;
 use core::time::Duration;
 use stem::info;
 use stem::thing::sys::{
-    bytespace_create, bytespace_write, create_node, describe_thing, find, intern, link, prop_get,
-    prop_set,
+    bytespace_create, bytespace_write, create_node, describe_thing, find, link, prop_get, prop_set,
 };
 use stem::thing::ThingId;
 use time::OffsetDateTime;
@@ -89,6 +88,14 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
     prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
 }
 
+fn update_text_bytespace(bs_id: ThingId, text: &str) {
+    let mut buf = [0u8; 16];
+    let bytes = text.as_bytes();
+    let len = bytes.len().min(buf.len());
+    buf[..len].copy_from_slice(&bytes[..len]);
+    let _ = bytespace_write(bs_id, 0, &buf[..len]);
+}
+
 #[stem::main]
 fn main() -> ! {
     let cpu = stem::arch::whoami();
@@ -104,6 +111,7 @@ fn main() -> ! {
     info!("Clock thing created: {}", clock_thing.to_u64_lossy());
 
     let mut text_node: Option<ThingId> = None;
+    let mut text_bs: Option<ThingId> = None;
 
     // 2. Setup UI
     info!("Waiting for UI Root (Compositor)...");
@@ -169,42 +177,32 @@ fn main() -> ! {
             info!("Clock icon not found");
         }
 
-        // Create Text
-        let text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
-        link(text, rels::CHILD_OF, win).expect("link text");
-        link(win, rels::HAS_CHILD, text).expect("link text has_child");
+        // Create viewport and text run
+        let viewport = create_node(kinds::UI_VIEWPORT).expect("create UI_VIEWPORT");
+        link(viewport, rels::CHILD_OF, win).expect("link viewport");
+        link(win, rels::HAS_CHILD, viewport).expect("link window has_child");
+        prop_set(viewport, keys::UI_WIDTH, 400).ok();
+        prop_set(viewport, keys::UI_HEIGHT, 150).ok();
+        prop_set(viewport, keys::UI_CLIP, 1).ok();
+
+        let text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
+        link(text, rels::CHILD_OF, viewport).expect("link text");
+        link(viewport, rels::HAS_CHILD, text).expect("link text has_child");
         text_node = Some(text);
 
         // Text Style: Red Foreground, DSEG Font
         prop_set(text, keys::UI_FG_COLOR, 0xFFFF0000).ok(); // Red
-        set_string_prop(text, keys::UI_FONT, "DSEG7Classic-Regular.ttf");
         prop_set(text, keys::UI_FONT_SIZE, 64).ok(); // Large font
                                                      // Text Layout: Centered
         prop_set(text, keys::UI_CENTER_X, 1).ok();
         prop_set(text, keys::UI_CENTER_Y, 1).ok();
 
-        // Initial text
-        set_string_prop(text, keys::UI_TEXT, "--:--:--");
-
-        // 3. Create Binding
-        let binding = create_node(kinds::BINDING).expect("create binding");
-        // We use properties for binding relations as per schema keys, but schema also defines relations?
-        // Schema keys: BINDING_SOURCE, BINDING_TARGET (strings).
-        // Let's use properties pointing to ThingIds.
-        prop_set(binding, keys::BINDING_SOURCE, clock_thing.to_u64_lossy()).ok();
-        prop_set(binding, keys::BINDING_TARGET, text.to_u64_lossy()).ok();
-        // Map: source key symbol id to bind from (clock.now_text).
-        let map_key = intern(keys::CLOCK_NOW_TEXT).unwrap_or(0);
-        if map_key != 0 {
-            prop_set(binding, keys::BINDING_MAP, map_key as u64).ok();
-        }
-
-        info!(
-            "Binding created: {} (source={} target={})",
-            binding.to_u64_lossy(),
-            clock_thing.to_u64_lossy(),
-            text.to_u64_lossy()
-        );
+        // Initial text bytespace
+        let bs_id = bytespace_create(8, 0, 0).expect("create text bytespace");
+        update_text_bytespace(bs_id, "--:--:--");
+        prop_set(text, keys::UI_TEXT, bs_id.to_u64_lossy()).ok();
+        prop_set(clock_thing, keys::CLOCK_NOW_TEXT, bs_id.to_u64_lossy()).ok();
+        text_bs = Some(bs_id);
     }
 
     info!(
@@ -222,13 +220,12 @@ fn main() -> ! {
         let dt = OffsetDateTime::from_unix_timestamp(unix_i64).ok();
         if let Some(dt) = dt {
             let time_str = alloc::format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second());
-            // Update clock:now_text
-            // Note: We create a new bytespace for every update.
-            // This ensures the ThingId changes, which triggers the 'bloom' UI snapshot diffing to detect a change.
-            // A production version would implement bytespace reuse or a garbage collector.
-            set_string_prop(clock_thing, keys::CLOCK_NOW_TEXT, &time_str);
-            if let Some(text) = text_node {
-                set_string_prop(text, keys::UI_TEXT, &time_str);
+            if let (Some(text), Some(bs_id)) = (text_node, text_bs) {
+                update_text_bytespace(bs_id, &time_str);
+                prop_set(clock_thing, keys::CLOCK_NOW_TEXT, 0).ok();
+                prop_set(clock_thing, keys::CLOCK_NOW_TEXT, bs_id.to_u64_lossy()).ok();
+                prop_set(text, keys::UI_TEXT, 0).ok();
+                prop_set(text, keys::UI_TEXT, bs_id.to_u64_lossy()).ok();
             }
             // Update clock:tick
             if prop_set(clock_thing, keys::CLOCK_TICK, mono_ns).is_ok() {

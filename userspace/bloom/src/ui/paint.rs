@@ -234,30 +234,49 @@ impl PaintBuilder {
                     color: Color::from_u32(shade_bg),
                     radius: 6,
                 });
-                let shade_glyph = if is_shaded { "v" } else { "^" };
+                // Use proper Unicode triangles from symbol font, centered in the button
+                // ▲ (U+25B2) for expanded, ▼ (U+25BC) for shaded/collapsed
+                let shade_glyph = if is_shaded { "\u{25BC}" } else { "\u{25B2}" };
+                // Center the glyph in the button area
+                // The glyph size is smaller than the button; leave room for centering
+                let glyph_size: f32 = 14.0;
+                // Calculate offset to center the glyph (approximate: glyph is roughly square)
+                let glyph_offset_x = (SHADE_BUTTON_SIZE as f32 - glyph_size) / 2.0;
+                let glyph_offset_y = (SHADE_BUTTON_SIZE as f32 - glyph_size) / 2.0;
+                let glyph_rect = Rect::new(
+                    shade_x + glyph_offset_x as i32,
+                    shade_y + glyph_offset_y as i32,
+                    glyph_size as i32,
+                    glyph_size as i32,
+                );
                 objects.push(PaintObject::Text {
-                    rect: shade_rect.clone(),
+                    rect: glyph_rect,
                     text: shade_glyph.into(),
-                    font: "NotoSans-Regular.ttf".into(),
-                    size: 18.0,
+                    font: "NotoSansSymbol-Regular.ttf".into(),
+                    size: glyph_size,
                     color: Color::from_u32(0xFFFFFFFF),
                     font_debug: false,
                 });
 
-                // Title Text
+                // Title Text - vertically centered in title bar
                 let title = Self::get_str_prop(node, keys::UI_TITLE, symbols);
                 if let Some(t) = title {
                     let text_w = (shade_x - (layout.rect.x + text_offset_x)).max(0);
+                    let font_size: f32 = 14.0;
+                    // Vertically center the text in the title bar
+                    // Title bar height is title_h, font_size is the text height (baseline to top)
+                    // We want the text center aligned with the bar center
+                    let text_y = layout.rect.y + (title_h - font_size as i32) / 2;
                     objects.push(PaintObject::Text {
                         rect: Rect::new(
                             layout.rect.x + text_offset_x,
-                            layout.rect.y + 2,
+                            text_y,
                             text_w,
-                            title_h,
+                            font_size as i32,
                         ),
                         text: t,
                         font: "NotoSans-Regular.ttf".into(),
-                        size: 14.0,
+                        size: font_size,
                         color: Color::from_u32(0xFFFFFFFF),
                         font_debug: false,
                     });

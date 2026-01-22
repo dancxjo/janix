@@ -276,7 +276,7 @@ fn main() -> ! {
 
         for binding in &mut bindings {
             binding.events_buffered_this_tick = 0;
-            let mut seq: u64 = 0;
+            let mut seq: u64 = binding.last_seen_seq.unwrap_or(0);
 
             loop {
                 match root_watch_next(binding.watch_id, &mut seq, &mut payload_buf) {

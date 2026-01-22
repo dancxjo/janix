@@ -27,6 +27,8 @@ pub mod ui;
 pub mod vm;
 pub mod root_watch;
 pub mod xml;
+#[cfg(feature = "rt")]
+pub mod memory;
 pub mod perf;
 
 #[macro_export]

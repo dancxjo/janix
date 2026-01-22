@@ -103,6 +103,8 @@ fn main() -> ! {
     let clock_thing = create_node(kinds::CLOCK).expect("create clock node");
     info!("Clock thing created: {}", clock_thing.to_u64_lossy());
 
+    let mut text_node: Option<ThingId> = None;
+
     // 2. Setup UI
     info!("Waiting for UI Root (Compositor)...");
     let mut ui_root = ThingId::default();
@@ -171,6 +173,7 @@ fn main() -> ! {
         let text = create_node(kinds::UI_TEXT).expect("create UI_TEXT");
         link(text, rels::CHILD_OF, win).expect("link text");
         link(win, rels::HAS_CHILD, text).expect("link text has_child");
+        text_node = Some(text);
 
         // Text Style: Red Foreground, DSEG Font
         prop_set(text, keys::UI_FG_COLOR, 0xFFFF0000).ok(); // Red
@@ -224,6 +227,9 @@ fn main() -> ! {
             // This ensures the ThingId changes, which triggers the 'bloom' UI snapshot diffing to detect a change.
             // A production version would implement bytespace reuse or a garbage collector.
             set_string_prop(clock_thing, keys::CLOCK_NOW_TEXT, &time_str);
+            if let Some(text) = text_node {
+                set_string_prop(text, keys::UI_TEXT, &time_str);
+            }
             // Update clock:tick
             if prop_set(clock_thing, keys::CLOCK_TICK, mono_ns).is_ok() {
                 info!(

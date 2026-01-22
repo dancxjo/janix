@@ -79,6 +79,8 @@ pub struct UiPipeline {
     pub last_layout: Option<layout::LayoutTree>,
     pub render_state: RenderState,
     pending_full_reason: Option<FullRefreshReason>,
+    // Temporary position overrides during drag operations
+    drag_overrides: BTreeMap<ThingId, (i32, i32)>,
 }
 
 pub struct UiRunResult {
@@ -141,6 +143,7 @@ impl UiPipeline {
             last_layout: None,
             render_state: RenderState::new(),
             pending_full_reason: None,
+            drag_overrides: BTreeMap::new(),
         }
     }
 

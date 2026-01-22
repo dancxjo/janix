@@ -1,5 +1,5 @@
 use alloc::vec::Vec;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use stem::thing::ThingId;
 use crate::damage::Rect;
@@ -29,6 +29,11 @@ impl LayoutTree {
         Self::find_rect_in(root, id)
     }
 
+    pub fn find_node(&self, id: ThingId) -> Option<&LayoutNode> {
+        let root = self.root.as_ref()?;
+        Self::find_node_in(root, id)
+    }
+
     fn find_rect_in(node: &LayoutNode, id: ThingId) -> Option<Rect> {
         if node.id == id {
             return Some(node.rect);
@@ -36,6 +41,18 @@ impl LayoutTree {
         for child in &node.children {
             if let Some(rect) = Self::find_rect_in(child, id) {
                 return Some(rect);
+            }
+        }
+        None
+    }
+
+    fn find_node_in(node: &LayoutNode, id: ThingId) -> Option<&LayoutNode> {
+        if node.id == id {
+            return Some(node);
+        }
+        for child in &node.children {
+            if let Some(found) = Self::find_node_in(child, id) {
+                return Some(found);
             }
         }
         None
@@ -86,6 +103,76 @@ impl LayoutSolver {
         LayoutTree { root: Some(root_layout) }
     }
 
+    pub fn solve_partial(
+        &mut self,
+        snapshot: &UiSnapshot,
+        screen_w: i32,
+        screen_h: i32,
+        assets: &AssetBank,
+        symbols: &impl SymbolResolver,
+        prev_layout: Option<&LayoutTree>,
+        dirty_windows: &BTreeSet<ThingId>,
+    ) -> LayoutTree {
+        crate::trace_span!("ui.layout.solve");
+        let root_id = match snapshot.root_id {
+            Some(id) => id,
+            None => return LayoutTree { root: None },
+        };
+
+        let root_node = match snapshot.nodes.get(&root_id) {
+            Some(n) => n,
+            None => return LayoutTree { root: None },
+        };
+
+        if dirty_windows.is_empty() {
+            if let Some(prev) = prev_layout {
+                if let Some(prev_root) = prev.root.as_ref() {
+                    if prev_root.rect.w == screen_w && prev_root.rect.h == screen_h {
+                        crate::trace_event!("ui.layout.path", "reuse_full");
+                        return prev.clone();
+                    }
+                }
+            }
+        }
+
+        let mut root_layout = LayoutNode {
+            id: root_id,
+            kind: root_node.kind,
+            rect: Rect::new(0, 0, screen_w, screen_h),
+            z_index: 0,
+            children: Vec::new(),
+        };
+
+        {
+            crate::trace_span!("ui.layout.tree_flow");
+            for child_id in &root_node.children {
+                if let Some(child_node) = snapshot.nodes.get(child_id) {
+                    if child_node.kind == UiNodeKind::Window
+                        && !dirty_windows.contains(child_id)
+                    {
+                        if let Some(prev) = prev_layout.and_then(|layout| layout.find_node(*child_id)) {
+                            root_layout.children.push(prev.clone());
+                            continue;
+                        }
+                    }
+                    let child_layout = Self::layout_child(
+                        snapshot,
+                        child_node,
+                        *child_id,
+                        &root_layout,
+                        assets,
+                        symbols,
+                        &mut self.measure_cache,
+                    );
+                    root_layout.children.push(child_layout);
+                }
+            }
+        }
+
+        root_layout.children.sort_by_key(|n| n.z_index);
+        LayoutTree { root: Some(root_layout) }
+    }
+
     fn layout_children(
         snapshot: &UiSnapshot, 
         node: &UiNodeSnapshot, 
@@ -96,7 +183,6 @@ impl LayoutSolver {
     ) {
         let parent_is_window = node.kind == UiNodeKind::Window;
         let parent_shaded = parent_is_window && Self::get_prop(node, keys::UI_WINDOW_SHADED, symbols) != 0;
-        let title_bar_h = TITLE_BAR_HEIGHT;
 
         if parent_shaded {
             // Shaded windows only render the title bar, so skip laying out children.
@@ -105,124 +191,145 @@ impl LayoutSolver {
 
         for child_id in &node.children {
             if let Some(child_node) = snapshot.nodes.get(child_id) {
-                // Determine layout strategy for this node.
-                let is_window = child_node.kind == UiNodeKind::Window;
-                let child_shaded = is_window && Self::get_prop(child_node, keys::UI_WINDOW_SHADED, symbols) != 0;
-                
-                let mut w = Self::get_prop(child_node, keys::UI_WIDTH, symbols) as i32;
-                let mut h = Self::get_prop(child_node, keys::UI_HEIGHT, symbols) as i32;
-                let fill_parent = Self::get_prop(child_node, keys::UI_FILL_PARENT, symbols) != 0;
-                if fill_parent {
-                    w = layout.rect.w;
-                    h = layout.rect.h;
-                }
-
-                if is_window {
-                    if child_shaded {
-                        h = title_bar_h;
-                    } else if h > 0 {
-                        h = h.saturating_add(title_bar_h);
-                    } else {
-                        h = title_bar_h;
-                    }
-                }
-
-                // Check if centering requested
-                let center_x = Self::get_prop(child_node, keys::UI_CENTER_X, symbols) != 0;
-                let center_y = Self::get_prop(child_node, keys::UI_CENTER_Y, symbols) != 0;
-
-                if (center_x || center_y) && (w == 0 || h == 0) {
-                    // Try to measure if it's text
-                    if let Some(text) = Self::get_str_prop(child_node, keys::UI_TEXT, symbols) {
-                        let font_name = Self::get_str_prop(child_node, keys::UI_FONT_STACK, symbols)
-                            .or_else(|| Self::get_str_prop(child_node, keys::UI_FONT, symbols))
-                            .unwrap_or_else(|| "Noto Sans".into());
-                        let size = Self::get_prop(child_node, keys::UI_FONT_SIZE, symbols) as f32;
-                        let font_size = if size == 0.0 { 16.0 } else { size };
-
-                        let (cache_text, is_time) = if Self::is_time_text(&text) {
-                            (String::from("##:##:##"), true)
-                        } else {
-                            (text.clone(), false)
-                        };
-                        let cache_key = (cache_text, font_name.clone(), font_size as u32);
-                        let dims = if let Some(d) = cache.get(&cache_key) {
-                            crate::trace_counter!("ui.layout.cache_hits", 1);
-                            Some(*d)
-                        } else {
-                            crate::trace_counter!("ui.layout.cache_misses", 1);
-                            let d = if is_time {
-                                Self::measure_time_text(&font_name, font_size, assets)
-                            } else {
-                                Self::measure_text(&text, &font_name, font_size, assets)
-                            };
-                            if let Some(res) = d {
-                                cache.insert(cache_key, res);
-                            }
-                            d
-                        };
-
-                        if let Some(dims) = dims {
-                            if w == 0 {
-                                w = dims.0 as i32;
-                            }
-                            if h == 0 {
-                                h = dims.1 as i32;
-                            }
-                        }
-                    }
-                }
-
-                let mut x = Self::get_prop(child_node, keys::UI_X, symbols) as i32;
-                let mut y = Self::get_prop(child_node, keys::UI_Y, symbols) as i32;
-
-                if fill_parent {
-                    x = 0;
-                    y = 0;
-                }
-
-                if parent_is_window {
-                    y = y.saturating_add(title_bar_h);
-                    if fill_parent {
-                        h = (layout.rect.h - title_bar_h).max(0);
-                    }
-                }
-
-                // Edge-relative positioning (insets from parent edges)
-                // Debug: log inset values for debugging
-                let inset_right = Self::get_prop(child_node, keys::UI_INSET_RIGHT, symbols) as i32;
-                let inset_bottom = Self::get_prop(child_node, keys::UI_INSET_BOTTOM, symbols) as i32;
-                if inset_right > 0 {
-                    x = layout.rect.w - inset_right - w;
-                }
-                if inset_bottom > 0 {
-                    y = layout.rect.h - inset_bottom - h;
-                }
-
-                if center_x {
-                     x = (layout.rect.w - w) / 2;
-                }
-                if center_y {
-                     y = (layout.rect.h - h) / 2;
-                }
-
-                let z = Self::get_prop(child_node, keys::UI_Z_INDEX, symbols) as i32;
-
-                let mut child_layout = LayoutNode {
-                    id: *child_id,
-                    kind: child_node.kind,
-                    rect: Rect::new(layout.rect.x + x, layout.rect.y + y, w, h),
-                    z_index: z,
-                    children: Vec::new(),
-                };
-
-                Self::layout_children(snapshot, child_node, &mut child_layout, assets, symbols, cache);
+                let child_layout = Self::layout_child(
+                    snapshot,
+                    child_node,
+                    *child_id,
+                    layout,
+                    assets,
+                    symbols,
+                    cache,
+                );
                 layout.children.push(child_layout);
             }
         }
 
         // Sort children by Z-index
         layout.children.sort_by_key(|n| n.z_index);
+    }
+
+    fn layout_child(
+        snapshot: &UiSnapshot,
+        child_node: &UiNodeSnapshot,
+        child_id: ThingId,
+        layout: &LayoutNode,
+        assets: &AssetBank,
+        symbols: &impl SymbolResolver,
+        cache: &mut BTreeMap<(String, String, u32), (f32, f32)>,
+    ) -> LayoutNode {
+        let parent_is_window = layout.kind == UiNodeKind::Window;
+        let title_bar_h = TITLE_BAR_HEIGHT;
+
+        let is_window = child_node.kind == UiNodeKind::Window;
+        let child_shaded =
+            is_window && Self::get_prop(child_node, keys::UI_WINDOW_SHADED, symbols) != 0;
+
+        let mut w = Self::get_prop(child_node, keys::UI_WIDTH, symbols) as i32;
+        let mut h = Self::get_prop(child_node, keys::UI_HEIGHT, symbols) as i32;
+        let fill_parent = Self::get_prop(child_node, keys::UI_FILL_PARENT, symbols) != 0;
+        if fill_parent {
+            w = layout.rect.w;
+            h = layout.rect.h;
+        }
+
+        if is_window {
+            if child_shaded {
+                h = title_bar_h;
+            } else if h > 0 {
+                h = h.saturating_add(title_bar_h);
+            } else {
+                h = title_bar_h;
+            }
+        }
+
+        let center_x = Self::get_prop(child_node, keys::UI_CENTER_X, symbols) != 0;
+        let center_y = Self::get_prop(child_node, keys::UI_CENTER_Y, symbols) != 0;
+
+        if (center_x || center_y) && (w == 0 || h == 0) {
+            if let Some(text) = Self::get_str_prop(child_node, keys::UI_TEXT, symbols) {
+                let font_name = Self::get_str_prop(child_node, keys::UI_FONT_STACK, symbols)
+                    .or_else(|| Self::get_str_prop(child_node, keys::UI_FONT, symbols))
+                    .unwrap_or_else(|| "Noto Sans".into());
+                let size = Self::get_prop(child_node, keys::UI_FONT_SIZE, symbols) as f32;
+                let font_size = if size == 0.0 { 16.0 } else { size };
+
+                let (cache_text, is_time) = if Self::is_time_text(&text) {
+                    (String::from("##:##:##"), true)
+                } else {
+                    (text.clone(), false)
+                };
+                let cache_key = (cache_text, font_name.clone(), font_size as u32);
+                let dims = if let Some(d) = cache.get(&cache_key) {
+                    crate::trace_counter!("ui.layout.cache_hits", 1);
+                    Some(*d)
+                } else {
+                    crate::trace_counter!("ui.layout.cache_misses", 1);
+                    let d = if is_time {
+                        Self::measure_time_text(&font_name, font_size, assets)
+                    } else {
+                        Self::measure_text(&text, &font_name, font_size, assets)
+                    };
+                    if let Some(res) = d {
+                        cache.insert(cache_key, res);
+                    }
+                    d
+                };
+
+                if let Some(dims) = dims {
+                    if w == 0 {
+                        w = dims.0 as i32;
+                    }
+                    if h == 0 {
+                        h = dims.1 as i32;
+                    }
+                }
+            }
+        }
+
+        let mut x = Self::get_prop(child_node, keys::UI_X, symbols) as i32;
+        let mut y = Self::get_prop(child_node, keys::UI_Y, symbols) as i32;
+
+        if fill_parent {
+            x = 0;
+            y = 0;
+        }
+
+        if parent_is_window {
+            y = y.saturating_add(title_bar_h);
+            if fill_parent {
+                h = (layout.rect.h - title_bar_h).max(0);
+            }
+        }
+
+        let inset_right = Self::get_prop(child_node, keys::UI_INSET_RIGHT, symbols) as i32;
+        let inset_bottom = Self::get_prop(child_node, keys::UI_INSET_BOTTOM, symbols) as i32;
+        if inset_right > 0 {
+            x = layout.rect.w - inset_right - w;
+        }
+        if inset_bottom > 0 {
+            y = layout.rect.h - inset_bottom - h;
+        }
+
+        if center_x {
+            x = (layout.rect.w - w) / 2;
+        }
+        if center_y {
+            y = (layout.rect.h - h) / 2;
+        }
+
+        let z = Self::get_prop(child_node, keys::UI_Z_INDEX, symbols) as i32;
+
+        let mut child_layout = LayoutNode {
+            id: child_id,
+            kind: child_node.kind,
+            rect: Rect::new(layout.rect.x + x, layout.rect.y + y, w, h),
+            z_index: z,
+            children: Vec::new(),
+        };
+
+        Self::layout_children(snapshot, child_node, &mut child_layout, assets, symbols, cache);
+
+        child_layout
     }
 
     fn measure_text(text: &str, font_name: &str, size: f32, assets: &AssetBank) -> Option<(f32, f32)> {

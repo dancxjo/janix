@@ -214,6 +214,28 @@ pub struct UiSnapshot {
     pub nodes: BTreeMap<ThingId, UiNodeSnapshot>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct NodeChange {
+    pub id: ThingId,
+    pub layout_dirty: bool,
+    pub measure_dirty: bool,
+}
+
+impl NodeChange {
+    fn new(id: ThingId) -> Self {
+        Self {
+            id,
+            layout_dirty: false,
+            measure_dirty: false,
+        }
+    }
+
+    fn merge(&mut self, other: NodeChange) {
+        self.layout_dirty |= other.layout_dirty;
+        self.measure_dirty |= other.measure_dirty;
+    }
+}
+
 impl UiSnapshot {
     pub fn new() -> Self {
         Self { root_id: None, nodes: BTreeMap::new() }
@@ -245,27 +267,28 @@ impl UiSnapshot {
         keys: &UiKeys,
         kinds: &KindIds,
         cache: &mut AssetCache,
-    ) -> Vec<ThingId> {
+    ) -> Vec<NodeChange> {
         crate::trace_span!("snap.update_dirty");
         if dirty.is_empty() {
             return Vec::new();
         }
 
-        let mut changed: BTreeSet<ThingId> = BTreeSet::new();
+        let mut changes: BTreeMap<ThingId, NodeChange> = BTreeMap::new();
 
         for &id in dirty.props() {
-            if self.refresh_node_props(id, keys, kinds, cache) {
-                changed.insert(id);
+            if let Some(change) = self.refresh_node_props(id, keys, kinds, cache) {
+                changes
+                    .entry(id)
+                    .and_modify(|existing| existing.merge(change))
+                    .or_insert(change);
             }
         }
 
         for &id in dirty.edges() {
-            if self.refresh_node_edges(id, keys, kinds, cache, &mut changed) {
-                changed.insert(id);
-            }
+            self.refresh_node_edges(id, keys, kinds, cache, &mut changes);
         }
 
-        changed.into_iter().collect()
+        changes.into_values().collect()
     }
 
     fn traverse(&mut self, id: ThingId, kind_ids: &KindIds, keys: &UiKeys, cache: &mut AssetCache) {
@@ -315,18 +338,44 @@ impl UiSnapshot {
         keys: &UiKeys,
         kinds: &KindIds,
         cache: &mut AssetCache,
-    ) -> bool {
+    ) -> Option<NodeChange> {
         let (props, strings, svg_content, window_icon_content) =
             self.fetch_properties(id, keys, cache);
         if let Some(node) = self.nodes.get_mut(&id) {
+            let mut change = NodeChange::new(id);
+            let mut any_changed = false;
+
+            if node.props != props {
+                any_changed = true;
+                if Self::layout_keys_changed(&node.props, &props, keys) {
+                    change.layout_dirty = true;
+                }
+                if Self::measure_keys_changed(&node.props, &props, &node.strings, &strings, keys) {
+                    change.measure_dirty = true;
+                }
+            }
+
+            if node.strings != strings {
+                any_changed = true;
+                if Self::measure_keys_changed(&node.props, &props, &node.strings, &strings, keys) {
+                    change.measure_dirty = true;
+                }
+            }
+
             node.props = props;
             node.strings = strings;
             node.svg_content = svg_content;
             node.window_icon_content = window_icon_content;
-            true
+            if any_changed {
+                return Some(change);
+            }
+            None
         } else {
             self.traverse_single(id, kinds, keys, cache);
-            true
+            let mut change = NodeChange::new(id);
+            change.layout_dirty = true;
+            change.measure_dirty = true;
+            Some(change)
         }
     }
 
@@ -336,25 +385,34 @@ impl UiSnapshot {
         keys: &UiKeys,
         kinds: &KindIds,
         cache: &mut AssetCache,
-        changed: &mut BTreeSet<ThingId>,
-    ) -> bool {
+        changes: &mut BTreeMap<ThingId, NodeChange>,
+    ) {
         if !self.nodes.contains_key(&id) {
             self.traverse_single(id, kinds, keys, cache);
         }
 
         let children = self.fetch_children(id, keys);
         if let Some(node) = self.nodes.get_mut(&id) {
+            if node.children != children {
+                let mut change = NodeChange::new(id);
+                change.layout_dirty = true;
+                changes
+                    .entry(id)
+                    .and_modify(|existing| existing.merge(change))
+                    .or_insert(change);
+            }
             node.children = children.clone();
         }
 
         for child in children {
             if !self.nodes.contains_key(&child) {
                 self.traverse(child, kinds, keys, cache);
-                changed.insert(child);
+                let mut change = NodeChange::new(child);
+                change.layout_dirty = true;
+                change.measure_dirty = true;
+                changes.insert(child, change);
             }
         }
-
-        true
     }
 
     fn fetch_children(&self, id: ThingId, keys: &UiKeys) -> Vec<ThingId> {
@@ -486,5 +544,64 @@ impl UiSnapshot {
 
     fn nodes_equal(&self, a: &UiNodeSnapshot, b: &UiNodeSnapshot) -> bool {
         a.kind == b.kind && a.props == b.props && a.strings == b.strings && a.children == b.children
+    }
+
+    fn layout_keys_changed(
+        old: &BTreeMap<u32, u64>,
+        new: &BTreeMap<u32, u64>,
+        keys: &UiKeys,
+    ) -> bool {
+        let layout_keys = [
+            keys.x,
+            keys.y,
+            keys.w,
+            keys.h,
+            keys.center_x,
+            keys.center_y,
+            keys.fill_parent,
+            keys.inset_right,
+            keys.inset_bottom,
+            keys.z_index,
+            keys.window_shaded,
+        ];
+        layout_keys.iter().copied().filter(|k| *k != 0).any(|k| {
+            old.get(&k).unwrap_or(&0) != new.get(&k).unwrap_or(&0)
+        })
+    }
+
+    fn measure_keys_changed(
+        old_props: &BTreeMap<u32, u64>,
+        new_props: &BTreeMap<u32, u64>,
+        old_strings: &BTreeMap<u32, String>,
+        new_strings: &BTreeMap<u32, String>,
+        keys: &UiKeys,
+    ) -> bool {
+        let mut changed = false;
+        let text_key = keys.text;
+        let font_key = keys.font;
+        let font_stack_key = keys.font_stack;
+        let size_key = keys.font_size;
+
+        if text_key != 0
+            && old_strings.get(&text_key) != new_strings.get(&text_key)
+        {
+            changed = true;
+        }
+        if font_key != 0
+            && old_strings.get(&font_key) != new_strings.get(&font_key)
+        {
+            changed = true;
+        }
+        if font_stack_key != 0
+            && old_strings.get(&font_stack_key) != new_strings.get(&font_stack_key)
+        {
+            changed = true;
+        }
+        if size_key != 0
+            && old_props.get(&size_key).unwrap_or(&0) != new_props.get(&size_key).unwrap_or(&0)
+        {
+            changed = true;
+        }
+        changed
     }
 }

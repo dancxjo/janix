@@ -5,13 +5,13 @@ pub mod snapshot;
 
 use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
-use self::snapshot::{AssetCache, KindIds, UiKeys, UiSnapshot};
+use self::snapshot::{AssetCache, KindIds, NodeChange, UiKeys, UiSnapshot};
 use crate::asset::AssetBank;
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
 use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT};
 use crate::render_state::RenderState;
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use stem::thing::ThingId;
 
 struct SystemSymbolResolver;
@@ -219,23 +219,33 @@ impl UiPipeline {
         // 1. Snapshot with asset cache (Phase C) and optional incremental (Phase F)
         let had_prev = self.prev_snapshot.is_some();
         let mut snapshot = self.prev_snapshot.take().unwrap_or_else(UiSnapshot::new);
-        let mut changed_nodes = alloc::vec::Vec::new();
+        let mut node_changes: alloc::vec::Vec<NodeChange> = alloc::vec::Vec::new();
         let mut snapshot_changed = false;
+        let mut full_snapshot = false;
         {
             crate::trace_span!("ui.snap");
             if !had_prev || self.dirty_full {
                 crate::trace_event!("ui.run.path", "full_snap");
                 self.dirty_full = false;
                 self.dirty_nodes.clear();
+                full_snapshot = true;
                 snapshot = UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.asset_cache);
-                changed_nodes = snapshot.nodes.keys().cloned().collect();
+                node_changes = snapshot
+                    .nodes
+                    .keys()
+                    .map(|id| NodeChange {
+                        id: *id,
+                        layout_dirty: true,
+                        measure_dirty: true,
+                    })
+                    .collect();
                 snapshot_changed = true;
             } else {
                 let dirty = core::mem::take(&mut self.dirty_nodes);
                 if !dirty.is_empty() {
                     crate::trace_event!("ui.run.path", "incremental_snap");
-                    changed_nodes = snapshot.update_dirty(&dirty, &keys, &kinds, &mut self.asset_cache);
-                    snapshot_changed = !changed_nodes.is_empty();
+                    node_changes = snapshot.update_dirty(&dirty, &keys, &kinds, &mut self.asset_cache);
+                    snapshot_changed = !node_changes.is_empty();
                 } else {
                     crate::trace_event!("ui.run.path", "snap_reuse");
                 }
@@ -249,11 +259,84 @@ impl UiPipeline {
         crate::trace_event!("ui.run.path", "full_build");
 
         // 3. Layout
+        let changed_nodes: alloc::vec::Vec<ThingId> =
+            node_changes.iter().map(|c| c.id).collect();
+
+        let mut force_full_layout = full_snapshot;
+        if !force_full_layout {
+            if let Some(layout) = self.last_layout.as_ref() {
+                if let Some(root) = layout.root.as_ref() {
+                    if root.rect.w != screen_w || root.rect.h != screen_h {
+                        force_full_layout = true;
+                    }
+                } else {
+                    force_full_layout = true;
+                }
+            } else {
+                force_full_layout = true;
+            }
+        }
+
+        let mut dirty_windows = BTreeSet::new();
+        let mut layout_dirty_nodes = BTreeSet::new();
+        if !force_full_layout && !node_changes.is_empty() {
+            if let Some(root_id) = snapshot.root_id {
+                let parent_map = build_parent_map(&snapshot, root_id);
+                for change in &node_changes {
+                    let node = match snapshot.nodes.get(&change.id) {
+                        Some(node) => node,
+                        None => continue,
+                    };
+                    let mut layout_dirty = change.layout_dirty;
+                    if !layout_dirty
+                        && change.measure_dirty
+                        && node_uses_intrinsic_size(node, &keys)
+                    {
+                        layout_dirty = true;
+                    }
+                    if layout_dirty {
+                        layout_dirty_nodes.insert(change.id);
+                        if let Some(window_id) =
+                            find_window_ancestor(change.id, &snapshot, &parent_map)
+                        {
+                            dirty_windows.insert(window_id);
+                        } else {
+                            force_full_layout = true;
+                            break;
+                        }
+                    }
+                }
+            } else {
+                force_full_layout = true;
+            }
+        }
+
+        if log_this_frame {
+            crate::log!(
+                "[bloom][ui] dirty_nodes_layout={} dirty_windows={} full_layout={}",
+                layout_dirty_nodes.len(),
+                dirty_windows.len(),
+                force_full_layout
+            );
+        }
+
         let resolver = SystemSymbolResolver;
         let layout = {
             crate::trace_span!("ui.layout");
-            self.solver
-                .solve(&snapshot, screen_w, screen_h, assets, &resolver)
+            if force_full_layout {
+                self.solver
+                    .solve(&snapshot, screen_w, screen_h, assets, &resolver)
+            } else {
+                self.solver.solve_partial(
+                    &snapshot,
+                    screen_w,
+                    screen_h,
+                    assets,
+                    &resolver,
+                    self.last_layout.as_ref(),
+                    &dirty_windows,
+                )
+            }
         };
         self.last_layout = Some(layout.clone());
 
@@ -409,4 +492,62 @@ impl UiPipeline {
             }
         }
     }
+}
+
+fn build_parent_map(snapshot: &UiSnapshot, root_id: ThingId) -> BTreeMap<ThingId, ThingId> {
+    let mut parents = BTreeMap::new();
+    let mut stack = alloc::vec![root_id];
+    while let Some(current) = stack.pop() {
+        if let Some(node) = snapshot.nodes.get(&current) {
+            for child in &node.children {
+                parents.insert(*child, current);
+                stack.push(*child);
+            }
+        }
+    }
+    parents
+}
+
+fn find_window_ancestor(
+    mut id: ThingId,
+    snapshot: &UiSnapshot,
+    parents: &BTreeMap<ThingId, ThingId>,
+) -> Option<ThingId> {
+    loop {
+        if let Some(node) = snapshot.nodes.get(&id) {
+            if node.kind == snapshot::UiNodeKind::Window {
+                return Some(id);
+            }
+        }
+        match parents.get(&id) {
+            Some(parent) => id = *parent,
+            None => return None,
+        }
+    }
+}
+
+fn node_uses_intrinsic_size(node: &snapshot::UiNodeSnapshot, keys: &UiKeys) -> bool {
+    let w = keys.w;
+    let h = keys.h;
+    let center_x = keys.center_x;
+    let center_y = keys.center_y;
+    let text_key = keys.text;
+
+    let w = if w != 0 {
+        *node.props.get(&w).unwrap_or(&0)
+    } else {
+        0
+    };
+    let h = if h != 0 {
+        *node.props.get(&h).unwrap_or(&0)
+    } else {
+        0
+    };
+
+    let has_center_x = center_x != 0 && *node.props.get(&center_x).unwrap_or(&0) != 0;
+    let has_center_y = center_y != 0 && *node.props.get(&center_y).unwrap_or(&0) != 0;
+
+    let has_text = text_key != 0 && node.strings.contains_key(&text_key);
+
+    (has_center_x || has_center_y) && (w == 0 || h == 0) && has_text
 }

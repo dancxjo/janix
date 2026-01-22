@@ -11,10 +11,9 @@ use crate::ui::constants::{
 };
 use crate::ui::layout::{LayoutNode, LayoutTree, SymbolResolver};
 use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot, UiSnapshot};
-use abi::ids::HandleId; // Need HandleId for ThingId::from (Wait, paint.rs uses abi::WireType::ThingId)
 use abi::schema::keys;
-use abi::WireType::ThingId;
 use crate::render_state::{RenderState, RasterKey};
+use stem::thing::ThingId;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PaintObject {
@@ -63,8 +62,12 @@ impl PaintBuilder {
         render_state: &mut RenderState,
     ) -> PaintScene {
         let mut objects = Vec::new();
+        let active_window = layout
+            .root
+            .as_ref()
+            .and_then(Self::find_active_window);
         if let Some(root) = &layout.root {
-            Self::build_recursive(snapshot, root, &mut objects, symbols, render_state);
+            Self::build_recursive(snapshot, root, &mut objects, symbols, render_state, active_window);
         }
 
         let now_ms = crate::log_ratelimit::now_ms();
@@ -85,6 +88,7 @@ impl PaintBuilder {
         objects: &mut Vec<PaintObject>,
         symbols: &impl SymbolResolver,
         render_state: &mut RenderState,
+        active_window: Option<ThingId>,
     ) {
         // Scope all drawing to this node's bounds before emitting content or children.
         objects.push(PaintObject::PushClip {
@@ -93,10 +97,17 @@ impl PaintBuilder {
 
         if let Some(node_snapshot) = snapshot.nodes.get(&layout_node.id) {
             // Create paint object based on kind and properties
-            Self::create_paint_objects(node_snapshot, layout_node, objects, symbols, render_state);
+            Self::create_paint_objects(
+                node_snapshot,
+                layout_node,
+                objects,
+                symbols,
+                render_state,
+                active_window,
+            );
 
             for child in &layout_node.children {
-                Self::build_recursive(snapshot, child, objects, symbols, render_state);
+                Self::build_recursive(snapshot, child, objects, symbols, render_state, active_window);
             }
         }
 
@@ -109,6 +120,7 @@ impl PaintBuilder {
         objects: &mut Vec<PaintObject>,
         symbols: &impl SymbolResolver,
         render_state: &mut RenderState,
+        active_window: Option<ThingId>,
     ) {
         // Window special handling
         if node.kind == UiNodeKind::Window {
@@ -131,7 +143,14 @@ impl PaintBuilder {
                 // Determine icon area
                 let icon_size = TITLE_BAR_ICON_SIZE;
                 let icon_padding = TITLE_BAR_PADDING;
-                let _bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
+                let bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
+                let is_active = active_window.map(|id| id == layout.id).unwrap_or(false);
+                let bar_color = if is_active { 0xFF2E7FD1 } else { 0xFF5A5A5A };
+                objects.push(PaintObject::Rect {
+                    rect: bar_rect,
+                    color: Color::from_u32(bar_color),
+                    radius: 0,
+                });
 
                 // Icon Background
                 let icon_bg_rect = Rect::new(
@@ -432,5 +451,36 @@ impl PaintBuilder {
             return node.strings.get(&id).cloned();
         }
         None
+    }
+
+    fn find_active_window(root: &LayoutNode) -> Option<ThingId> {
+        let mut best: Option<(ThingId, i32, usize)> = None;
+        let mut order = 0usize;
+        Self::find_active_window_recursive(root, &mut order, &mut best);
+        best.map(|(id, _, _)| id)
+    }
+
+    fn find_active_window_recursive(
+        node: &LayoutNode,
+        order: &mut usize,
+        best: &mut Option<(ThingId, i32, usize)>,
+    ) {
+        if node.kind == UiNodeKind::Window {
+            let current_order = *order;
+            let should_replace = match best {
+                None => true,
+                Some((_, best_z, best_order)) => {
+                    node.z_index > *best_z || (node.z_index == *best_z && current_order > *best_order)
+                }
+            };
+            if should_replace {
+                *best = Some((node.id, node.z_index, current_order));
+            }
+            *order = order.saturating_add(1);
+        }
+
+        for child in &node.children {
+            Self::find_active_window_recursive(child, order, best);
+        }
     }
 }

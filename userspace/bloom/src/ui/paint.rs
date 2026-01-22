@@ -63,10 +63,7 @@ impl PaintBuilder {
     ) -> PaintScene {
         let mut objects = Vec::new();
         let mut node_count = 0usize;
-        let active_window = layout
-            .root
-            .as_ref()
-            .and_then(Self::find_active_window);
+        let active_window = Self::active_window(layout);
         if let Some(root) = &layout.root {
             Self::build_recursive(
                 snapshot,
@@ -90,6 +87,31 @@ impl PaintBuilder {
         }
 
         PaintScene { objects }
+    }
+
+    pub fn build_subtree(
+        snapshot: &UiSnapshot,
+        subtree: &LayoutNode,
+        symbols: &impl SymbolResolver,
+        render_state: &mut RenderState,
+        active_window: Option<ThingId>,
+        node_count: &mut usize,
+    ) -> PaintScene {
+        let mut objects = Vec::new();
+        Self::build_recursive(
+            snapshot,
+            subtree,
+            &mut objects,
+            symbols,
+            render_state,
+            active_window,
+            node_count,
+        );
+        PaintScene { objects }
+    }
+
+    pub fn active_window(layout: &LayoutTree) -> Option<ThingId> {
+        layout.root.as_ref().and_then(Self::find_active_window)
     }
 
     fn build_recursive(

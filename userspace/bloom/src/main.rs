@@ -468,7 +468,7 @@ fn main(arg: usize) -> ! {
             if font_graph::has_fonts_ready() || !ASSETS.get_fonts().is_empty() {
                 font_loaded = true;
                 builder.mark_full_damage();
-                ui_pipeline.mark_dirty();
+                ui_pipeline.mark_dirty_full();
             }
         }
 

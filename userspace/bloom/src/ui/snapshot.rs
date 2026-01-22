@@ -219,6 +219,7 @@ pub struct NodeChange {
     pub id: ThingId,
     pub layout_dirty: bool,
     pub measure_dirty: bool,
+    pub paint_dirty: bool,
 }
 
 impl NodeChange {
@@ -227,12 +228,14 @@ impl NodeChange {
             id,
             layout_dirty: false,
             measure_dirty: false,
+            paint_dirty: false,
         }
     }
 
     fn merge(&mut self, other: NodeChange) {
         self.layout_dirty |= other.layout_dirty;
         self.measure_dirty |= other.measure_dirty;
+        self.paint_dirty |= other.paint_dirty;
     }
 }
 
@@ -258,6 +261,47 @@ impl UiSnapshot {
         crate::trace_counter!("ui.snap.nodes_total", snapshot.nodes.len());
         crate::trace_counter!("ui.snap.cache_size", cache.len());
         snapshot
+    }
+
+    /// Garbage collect unreachable nodes from the snapshot.
+    /// This is critical for preventing memory leaks in the incremental update engine
+    /// as nodes are removed from the graph but remain in `self.nodes`.
+    pub fn prune(&mut self) {
+        let root = match self.root_id {
+            Some(id) => id,
+            None => {
+                self.nodes.clear();
+                return;
+            }
+        };
+
+        crate::trace_span!("ui.snap.prune");
+        // Mark
+        let mut reachable = BTreeSet::new();
+        let mut stack = Vec::new();
+        stack.push(root);
+        
+        while let Some(current) = stack.pop() {
+            if reachable.contains(&current) { continue; }
+            reachable.insert(current);
+            
+            if let Some(node) = self.nodes.get(&current) {
+                for child in &node.children {
+                    stack.push(*child);
+                }
+            }
+        }
+
+        // Sweep
+        let before_count = self.nodes.len();
+        self.nodes.retain(|id, _| reachable.contains(id));
+        let removed = before_count.saturating_sub(self.nodes.len());
+        
+        if removed > 0 {
+            crate::log!("[bloom][snap] Pruned {} unreachable nodes ({} -> {})", 
+                removed, before_count, self.nodes.len());
+        }
+        crate::trace_counter!("ui.snap.pruned_nodes", removed);
     }
     
     /// Incremental update: refresh only dirty nodes (props/edges).
@@ -367,6 +411,7 @@ impl UiSnapshot {
             node.svg_content = svg_content;
             node.window_icon_content = window_icon_content;
             if any_changed {
+                change.paint_dirty = true;
                 return Some(change);
             }
             None
@@ -375,6 +420,7 @@ impl UiSnapshot {
             let mut change = NodeChange::new(id);
             change.layout_dirty = true;
             change.measure_dirty = true;
+            change.paint_dirty = true;
             Some(change)
         }
     }
@@ -396,6 +442,7 @@ impl UiSnapshot {
             if node.children != children {
                 let mut change = NodeChange::new(id);
                 change.layout_dirty = true;
+                change.paint_dirty = true;
                 changes
                     .entry(id)
                     .and_modify(|existing| existing.merge(change))
@@ -410,6 +457,7 @@ impl UiSnapshot {
                 let mut change = NodeChange::new(child);
                 change.layout_dirty = true;
                 change.measure_dirty = true;
+                change.paint_dirty = true;
                 changes.insert(child, change);
             }
         }

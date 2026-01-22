@@ -97,7 +97,17 @@ impl LayoutSolver {
 
         {
             crate::trace_span!("ui.layout.tree_flow");
-            Self::layout_children(snapshot, root_node, &mut root_layout, assets, symbols, &mut self.measure_cache);
+            Self::layout_children(
+                snapshot,
+                root_node,
+                &mut root_layout,
+                assets, 
+                symbols,
+                &mut self.measure_cache,
+                None, // prev_layout
+                &BTreeSet::new(), // dirty
+                &BTreeSet::new(), // subtree
+            );
         }
 
         LayoutTree { root: Some(root_layout) }
@@ -112,6 +122,8 @@ impl LayoutSolver {
         symbols: &impl SymbolResolver,
         prev_layout: Option<&LayoutTree>,
         dirty_windows: &BTreeSet<ThingId>,
+        layout_dirty: &BTreeSet<ThingId>,
+        subtree_dirty: &BTreeSet<ThingId>,
     ) -> LayoutTree {
         crate::trace_span!("ui.layout.solve");
         let root_id = match snapshot.root_id {
@@ -143,36 +155,32 @@ impl LayoutSolver {
             children: Vec::new(),
         };
 
+        let prev_root = prev_layout.and_then(|t| t.root.as_ref());
+
         {
             crate::trace_span!("ui.layout.tree_flow");
-            for child_id in &root_node.children {
-                if let Some(child_node) = snapshot.nodes.get(child_id) {
-                    if child_node.kind == UiNodeKind::Window
-                        && !dirty_windows.contains(child_id)
-                    {
-                        if let Some(prev) = prev_layout.and_then(|layout| layout.find_node(*child_id)) {
-                            root_layout.children.push(prev.clone());
-                            continue;
-                        }
-                    }
-                    let child_layout = Self::layout_child(
-                        snapshot,
-                        child_node,
-                        *child_id,
-                        &root_layout,
-                        assets,
-                        symbols,
-                        &mut self.measure_cache,
-                    );
-                    root_layout.children.push(child_layout);
-                }
-            }
+            // For the root's direct children (windows/panels), we can rely on dirty_windows set
+            // OR use the generic recursion if consistent. 
+            // The existing optimization for dirty_windows is valid but let's unify it 
+            // or keep it but use the new recursion for the "dirty" windows.
+            // Actually, let's just delegate to layout_children which handles all recursion.
+            Self::layout_children(
+                snapshot, 
+                root_node, 
+                &mut root_layout, 
+                assets, 
+                symbols, 
+                &mut self.measure_cache,
+                prev_root,
+                layout_dirty,
+                subtree_dirty
+            );
         }
 
-        root_layout.children.sort_by_key(|n| n.z_index);
         LayoutTree { root: Some(root_layout) }
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn layout_children(
         snapshot: &UiSnapshot, 
         node: &UiNodeSnapshot, 
@@ -180,17 +188,26 @@ impl LayoutSolver {
         assets: &AssetBank, 
         symbols: &impl SymbolResolver,
         cache: &mut BTreeMap<(String, String, u32), (f32, f32)>,
+        prev_node: Option<&LayoutNode>,
+        layout_dirty: &BTreeSet<ThingId>,
+        subtree_dirty: &BTreeSet<ThingId>,
     ) {
         let parent_is_window = node.kind == UiNodeKind::Window;
         let parent_shaded = parent_is_window && Self::get_prop(node, keys::UI_WINDOW_SHADED, symbols) != 0;
 
         if parent_shaded {
-            // Shaded windows only render the title bar, so skip laying out children.
             return;
         }
 
+        // Map previous children by ID for O(1) matching
+        let prev_children_map: BTreeMap<ThingId, &LayoutNode> = prev_node
+            .map(|pn| pn.children.iter().map(|c| (c.id, c)).collect())
+            .unwrap_or_default();
+
         for child_id in &node.children {
             if let Some(child_node) = snapshot.nodes.get(child_id) {
+                let prev_child = prev_children_map.get(child_id).copied();
+
                 let child_layout = Self::layout_child(
                     snapshot,
                     child_node,
@@ -199,6 +216,9 @@ impl LayoutSolver {
                     assets,
                     symbols,
                     cache,
+                    prev_child,
+                    layout_dirty,
+                    subtree_dirty,
                 );
                 layout.children.push(child_layout);
             }
@@ -208,6 +228,7 @@ impl LayoutSolver {
         layout.children.sort_by_key(|n| n.z_index);
     }
 
+    #[allow(clippy::too_many_arguments)]
     fn layout_child(
         snapshot: &UiSnapshot,
         child_node: &UiNodeSnapshot,
@@ -216,7 +237,21 @@ impl LayoutSolver {
         assets: &AssetBank,
         symbols: &impl SymbolResolver,
         cache: &mut BTreeMap<(String, String, u32), (f32, f32)>,
+        prev_child: Option<&LayoutNode>,
+        layout_dirty: &BTreeSet<ThingId>,
+        subtree_dirty: &BTreeSet<ThingId>,
     ) -> LayoutNode {
+        // Reuse Check:
+        // 1. Child is not dirty itself
+        // 2. Child subtree is not dirty
+        // 3. We have a previous layout for this child
+        // 4. Parent constraint invariant: The "content box" for this child is essentially same size
+        //    (For simplicity here, we check if parent size match. More granular check possible but this covers 90% cases)
+        // Note: We need to be careful. If the parent size changed, the child's relative positioning might change.
+        // We calculate new position/size. If they match the old position/size (relative to old parent), we can reuse subtree.
+        // Wait, we can't know new pos/size without running the layout logic below.
+        // So we run the calc below (cheap math), and THEN decide whether to recurse or reuse.
+        
         let parent_is_window = layout.kind == UiNodeKind::Window;
         let title_bar_h = TITLE_BAR_HEIGHT;
 
@@ -245,6 +280,7 @@ impl LayoutSolver {
         let center_x = Self::get_prop(child_node, keys::UI_CENTER_X, symbols) != 0;
         let center_y = Self::get_prop(child_node, keys::UI_CENTER_Y, symbols) != 0;
 
+        // Measure text block ...
         if (center_x || center_y) && (w == 0 || h == 0) {
             if let Some(text) = Self::get_str_prop(child_node, keys::UI_TEXT, symbols) {
                 let font_name = Self::get_str_prop(child_node, keys::UI_FONT_STACK, symbols)
@@ -318,18 +354,69 @@ impl LayoutSolver {
         }
 
         let z = Self::get_prop(child_node, keys::UI_Z_INDEX, symbols) as i32;
+        let absolute_x = layout.rect.x + x;
+        let absolute_y = layout.rect.y + y;
+        let absolute_rect = Rect::new(absolute_x, absolute_y, w, h);
 
         let mut child_layout = LayoutNode {
             id: child_id,
             kind: child_node.kind,
-            rect: Rect::new(layout.rect.x + x, layout.rect.y + y, w, h),
+            rect: absolute_rect,
             z_index: z,
             children: Vec::new(),
         };
 
-        Self::layout_children(snapshot, child_node, &mut child_layout, assets, symbols, cache);
+        // REUSE LOGIC
+        // If clean and size matches, reuse subtree!
+        let is_clean = !layout_dirty.contains(&child_id) && !subtree_dirty.contains(&child_id);
+        
+        if is_clean {
+            if let Some(prev) = prev_child {
+                // Determine if we can reuse the previous subtree.
+                // We must ensure the *inputs* to the subtree layout are invariant.
+                // The inputs are: child props (invariant since !dirty) and child size (w, h).
+                // If w and h calculated above match prev.rect.w and prev.rect.h, 
+                // then the internal layout of the child should be identical.
+                if prev.rect.w == w && prev.rect.h == h {
+                     // Reuse!
+                     crate::trace_counter!("ui.layout.subtree_reuse", 1);
+                     child_layout.children = prev.children.clone();
+                     
+                     // If position changed, we must translate all descendants
+                     if prev.rect.x != absolute_x || prev.rect.y != absolute_y {
+                         let dx = absolute_x - prev.rect.x;
+                         let dy = absolute_y - prev.rect.y;
+                         Self::translate_subtree(&mut child_layout.children, dx, dy);
+                     }
+                     
+                     return child_layout;
+                }
+            }
+        }
+
+        Self::layout_children(
+            snapshot, 
+            child_node, 
+            &mut child_layout, 
+            assets, 
+            symbols, 
+            cache,
+            prev_child,
+            layout_dirty,
+            subtree_dirty
+        );
 
         child_layout
+    }
+
+    fn translate_subtree(nodes: &mut [LayoutNode], dx: i32, dy: i32) {
+        for node in nodes.iter_mut() {
+            node.rect.x += dx;
+            node.rect.y += dy;
+            if !node.children.is_empty() {
+                Self::translate_subtree(&mut node.children, dx, dy);
+            }
+        }
     }
 
     fn measure_text(text: &str, font_name: &str, size: f32, assets: &AssetBank) -> Option<(f32, f32)> {

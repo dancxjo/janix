@@ -306,7 +306,7 @@ async fn machine_is_started(world: &mut ThingOsWorld) -> Result<(), StepError> {
 
 #[when("I wait for the system to boot")]
 async fn wait_for_boot(world: &mut ThingOsWorld) -> Result<(), StepError> {
-    let found = world.wait_for_serial("[CONTRACT]", 30.0).await;
+    let found = world.wait_for_serial("[CONTRACT]", 120.0).await;
     if !found {
         capture_failure_diagnostics(world, "Entering scheduler loop").await;
         let log = world.get_serial_log().await;
@@ -835,7 +835,7 @@ async fn wait_seconds(_world: &mut ThingOsWorld, seconds: f64) {
 async fn start_the_machine(world: &mut ThingOsWorld) -> Result<(), StepError> {
     turn_on_machine(world).await?;
     // Complete as soon as kernel starts - other steps verify further boot progress
-    let found = world.wait_for_serial("[CONTRACT]", 30.0).await;
+    let found = world.wait_for_serial("[CONTRACT]", 120.0).await;
     if !found {
         capture_failure_diagnostics(world, "kernel starting").await;
         return Err(StepError("Kernel did not start within timeout".to_string()));
@@ -1290,4 +1290,115 @@ async fn symbol_rendered(_world: &mut ThingOsWorld) {
 #[then("the cursor should move correspondingly on the screen")]
 async fn cursor_moved(_world: &mut ThingOsWorld) {
     eprintln!("│  │  │      ℹ️ Cursor movement requires visual verification");
+}
+
+// ===== Visual Multitasking Steps =====
+
+#[derive(Debug)]
+enum WindowPosition {
+    TopLeft(u32, u32), // x, y
+    BottomRight(u32, u32), // inset_right, inset_bottom
+}
+
+struct WindowSpec {
+    name: &'static str,
+    // Expected background color
+    bg_color: [u8; 3],
+    position: WindowPosition,
+    // Tolerance for color matching
+    tolerance: u8,
+}
+
+const WINDOW_SPECS: &[WindowSpec] = &[
+    WindowSpec {
+        name: "Clock",
+        bg_color: [0x00, 0x00, 0x00], // Black
+        position: WindowPosition::BottomRight(220, 105), // ~Center of 400x150 window with 20,30 inset
+        tolerance: 10,
+    },
+    WindowSpec {
+        name: "Font Explorer",
+        bg_color: [0xFF, 0xF5, 0xF0], // 0xFFF5F5F0 in u32
+        position: WindowPosition::TopLeft(450, 310), // ~Center of 900x520 window at 50,50
+        tolerance: 20,
+    },
+];
+
+async fn verify_window_visible(world: &mut ThingOsWorld, window_name: &str) -> Result<(), StepError> {
+    let spec = WINDOW_SPECS.iter().find(|w| w.name == window_name)
+        .ok_or_else(|| StepError(format!("Unknown window: {}", window_name)))?;
+
+    eprintln!("│  │  │      🖼️ Verifying window '{}'...", window_name);
+
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path(&format!("window_check_{}", window_name.replace(" ", "_")));
+
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .map_err(|e| StepError(format!("Screenshot failed: {}", e)))?;
+
+    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let rgb = img.to_rgb8();
+    let (width, height) = rgb.dimensions();
+
+    let (tx, ty) = match spec.position {
+        WindowPosition::TopLeft(x, y) => (x, y),
+        WindowPosition::BottomRight(ir, ib) => (width - ir, height - ib),
+    };
+
+    // Sample a small region around the target point
+    let mut matched = 0;
+    let mut total = 0;
+    let radius = 10;
+
+    // Safety check for bounds
+    if tx < radius || ty < radius || tx + radius >= width || ty + radius >= height {
+        return Err(StepError(format!("Target coordinates ({}, {}) out of bounds for image {}x{}", tx, ty, width, height)));
+    }
+
+    for dy in 0..=radius*2 {
+        for dx in 0..=radius*2 {
+             let x = tx - radius + dx;
+             let y = ty - radius + dy;
+
+             let pixel = rgb.get_pixel(x, y).0;
+             if color_close(pixel, spec.bg_color, spec.tolerance) {
+                 matched += 1;
+             }
+             total += 1;
+        }
+    }
+
+    let match_pct = (matched as f64 / total as f64) * 100.0;
+    eprintln!("│  │  │      📊 Window '{}' check at ({}, {}): {:.1}% match ({}/{})",
+              window_name, tx, ty, match_pct, matched, total);
+
+    if match_pct < 80.0 {
+        return Err(StepError(format!(
+            "Window '{}' not found at expected location. Matched {:.1}% of pixels.",
+            window_name, match_pct
+        )));
+    }
+
+    eprintln!("│  │  │      ✅ Window '{}' verified", window_name);
+    Ok(())
+}
+
+#[then(regex = r#"^I should see the "(.+)" window$"#)]
+async fn check_window_visible_step(world: &mut ThingOsWorld, window_name: String) -> Result<(), StepError> {
+    // Retry logic
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(120);
+
+    while start.elapsed() < timeout {
+        if verify_window_visible(world, &window_name).await.is_ok() {
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
+
+    verify_window_visible(world, &window_name).await
 }

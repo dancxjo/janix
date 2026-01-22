@@ -1,10 +1,11 @@
-use alloc::string::String;
-use alloc::vec::Vec;
-use alloc::sync::Arc;
 use crate::asset::Image;
+use alloc::string::String;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
 
 use crate::damage::Rect;
 use crate::geometry::Color;
+use crate::render_state::{RasterKey, RenderState};
 use crate::ui::constants::{
     SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT, TITLE_BAR_ICON_SIZE,
     TITLE_BAR_PADDING,
@@ -12,7 +13,6 @@ use crate::ui::constants::{
 use crate::ui::layout::{LayoutNode, LayoutTree, SymbolResolver};
 use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot, UiSnapshot};
 use abi::schema::keys;
-use crate::render_state::{RenderState, RasterKey};
 use stem::thing::ThingId;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -187,6 +187,7 @@ impl PaintBuilder {
                 let icon_padding = TITLE_BAR_PADDING;
                 let bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
                 let is_active = active_window.map(|id| id == layout.id).unwrap_or(false);
+                // Active window gets boot blue; inactive windows use a neutral gray.
                 let bar_color = if is_active { 0xFF2E7FD1 } else { 0xFF5A5A5A };
                 objects.push(PaintObject::Rect {
                     rect: bar_rect,
@@ -295,9 +296,14 @@ impl PaintBuilder {
                     let w = layout.rect.w as u32;
                     let h = layout.rect.h as u32;
                     if w > 0 && h > 0 {
-                        let content_hash =  cmds.as_ptr() as *const () as u64;
-                        let key = RasterKey::Svg { node_id: node.id.to_u64_lossy(), w, h, content_hash };
-                        
+                        let content_hash = cmds.as_ptr() as *const () as u64;
+                        let key = RasterKey::Svg {
+                            node_id: node.id.to_u64_lossy(),
+                            w,
+                            h,
+                            content_hash,
+                        };
+
                         if let Some(image) = render_state.raster_cache.get(&key) {
                             crate::perf::add_counter("paint.svg.hit", 1);
                             objects.push(PaintObject::Raster {
@@ -312,7 +318,7 @@ impl PaintBuilder {
                         let stride = w as usize * 4;
                         let len = stride * h as usize;
                         let mut pixels = alloc::vec![0u32; len / 4];
-                        
+
                         let mut surf = unsafe {
                             crate::surface::Surface::new(
                                 pixels.as_mut_ptr() as *mut u8,
@@ -322,7 +328,7 @@ impl PaintBuilder {
                                 stride as u32,
                             )
                         };
-                        
+
                         let mut list = crate::drawlist::DrawList::new();
                         // Transform to 0,0 since we are rasterizing into a surface of exactly the node size
                         // The paint logic in 'lower' handles translation of the Raster to layout.x/y
@@ -337,21 +343,21 @@ impl PaintBuilder {
                         // So if we rasterize into a w*h surface, we don't need any translation *if* the SVG fits in 0,0..w,h.
                         // The `rect` in `lower` translated them to the layout position on screen.
                         // So here we should NOT translate. We just draw them.
-                        // The `Raster` object itself has `rect: layout.rect`. 
+                        // The `Raster` object itself has `rect: layout.rect`.
                         // In `lower` (raster handling), we call `list.blit_image(image, rect.x, rect.y)`.
                         // `blit_image` creates `DrawCmd::DrawImage` with `dest = Rect(x, y, w, h)`.
                         // So yes, we rasterize locally at 0,0.
-                        
+
                         list.commands().extend(cmds.iter().cloned());
                         crate::raster::execute(&mut surf, &list, false);
-                        
+
                         let image = Arc::new(Image {
                             width: w,
                             height: h,
                             pixels: Arc::from(pixels),
                             gen: crate::frame::AssetGeneration(0),
                         });
-                        
+
                         render_state.raster_cache.insert(key, image.clone());
                         objects.push(PaintObject::Raster {
                             rect: layout.rect.clone(),
@@ -409,34 +415,44 @@ impl PaintBuilder {
             // Phase 1: Raster Cache for Text
             let w = layout.rect.w as u32;
             let h = layout.rect.h as u32;
-            
+
             // Simple DJB2-ish hash for text content and properties
             let mut hasher = 5381u64;
-            for b in text.as_bytes() { hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(*b as u64); }
-            for b in font.as_bytes() { hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(*b as u64); }
+            for b in text.as_bytes() {
+                hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(*b as u64);
+            }
+            for b in font.as_bytes() {
+                hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(*b as u64);
+            }
             // hash size (f32 bits), color (u32), font_debug (bool)
             hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(size.to_bits() as u64);
             hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(color.to_u32() as u64);
-            hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(if font_debug { 1 } else { 0 });
+            hasher =
+                ((hasher << 5).wrapping_add(hasher)).wrapping_add(if font_debug { 1 } else { 0 });
 
             if w > 0 && h > 0 {
-                let key = RasterKey::Text { node_id: node.id.to_u64_lossy(), w, h, content_hash: hasher };
+                let key = RasterKey::Text {
+                    node_id: node.id.to_u64_lossy(),
+                    w,
+                    h,
+                    content_hash: hasher,
+                };
                 if let Some(image) = render_state.raster_cache.get(&key) {
-                     crate::perf::add_counter("paint.text.hit", 1);
-                     objects.push(PaintObject::Raster {
+                    crate::perf::add_counter("paint.text.hit", 1);
+                    objects.push(PaintObject::Raster {
                         rect: layout.rect.clone(),
                         image: image.clone(),
                     });
                     return;
                 }
-                
+
                 crate::perf::add_counter("paint.text.miss", 1);
                 // Rasterize Text
-                 let stride = w as usize * 4;
-                 let len = stride * h as usize;
-                 let mut pixels = alloc::vec![0u32; len / 4];
-                 
-                 let mut surf = unsafe {
+                let stride = w as usize * 4;
+                let len = stride * h as usize;
+                let mut pixels = alloc::vec![0u32; len / 4];
+
+                let mut surf = unsafe {
                     crate::surface::Surface::new(
                         pixels.as_mut_ptr() as *mut u8,
                         len,
@@ -444,27 +460,27 @@ impl PaintBuilder {
                         h,
                         stride as u32,
                     )
-                 };
-                 
-                 let mut list = crate::drawlist::DrawList::new();
-                 // Draw text at 0,0 locally
-                 list.text_font_debug(&text, &font, 0, 0, size, color, font_debug);
-                 
-                 crate::raster::execute(&mut surf, &list, false);
-                 
-                 let image = Arc::new(Image {
+                };
+
+                let mut list = crate::drawlist::DrawList::new();
+                // Draw text at 0,0 locally
+                list.text_font_debug(&text, &font, 0, 0, size, color, font_debug);
+
+                crate::raster::execute(&mut surf, &list, false);
+
+                let image = Arc::new(Image {
                     width: w,
                     height: h,
                     pixels: Arc::from(pixels),
                     gen: crate::frame::AssetGeneration(0),
-                 });
-                 
-                 render_state.raster_cache.insert(key, image.clone());
-                 objects.push(PaintObject::Raster {
+                });
+
+                render_state.raster_cache.insert(key, image.clone());
+                objects.push(PaintObject::Raster {
                     rect: layout.rect.clone(),
                     image,
-                 });
-                 return;
+                });
+                return;
             }
 
             objects.push(PaintObject::Text {
@@ -531,7 +547,8 @@ impl PaintBuilder {
             let should_replace = match best {
                 None => true,
                 Some((_, best_z, best_order)) => {
-                    node.z_index > *best_z || (node.z_index == *best_z && current_order > *best_order)
+                    node.z_index > *best_z
+                        || (node.z_index == *best_z && current_order > *best_order)
                 }
             };
             if should_replace {

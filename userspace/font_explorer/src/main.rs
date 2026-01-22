@@ -124,7 +124,7 @@ fn main() -> ! {
     prop_set(stack_text, keys::UI_X, 18).ok();
     prop_set(stack_text, keys::UI_Y, 18).ok();
     prop_set(stack_text, keys::UI_FONT_SIZE, 20).ok();
-    prop_set(stack_text, keys::UI_FG_COLOR, 0xFFE6E6E6).ok();
+    prop_set(stack_text, keys::UI_FG_COLOR, 0xFF000000).ok();
     set_string_prop(stack_text, keys::UI_TEXT, &stack_label);
     set_string_prop(stack_text, keys::UI_FONT_STACK, &stack_label);
 
@@ -134,7 +134,7 @@ fn main() -> ! {
     prop_set(style_text, keys::UI_X, 18).ok();
     prop_set(style_text, keys::UI_Y, 50).ok();
     prop_set(style_text, keys::UI_FONT_SIZE, 14).ok();
-    prop_set(style_text, keys::UI_FG_COLOR, 0xFFB6C2D1).ok();
+    prop_set(style_text, keys::UI_FG_COLOR, 0xFF000000).ok();
     set_string_prop(style_text, keys::UI_TEXT, style_label);
     set_string_prop(style_text, keys::UI_FONT_STACK, &stack_label);
 
@@ -146,7 +146,7 @@ fn main() -> ! {
     prop_set(main_text, keys::UI_X, 24).ok();
     prop_set(main_text, keys::UI_Y, 120).ok();
     prop_set(main_text, keys::UI_FONT_SIZE, 40).ok();
-    prop_set(main_text, keys::UI_FG_COLOR, 0xFFEAE5D7).ok();
+    prop_set(main_text, keys::UI_FG_COLOR, 0xFF000000).ok();
     prop_set(main_text, keys::UI_FONT_DEBUG, 1).ok();
     set_string_prop(main_text, keys::UI_TEXT, demo_text);
     set_string_prop(main_text, keys::UI_FONT_STACK, &stack_label);

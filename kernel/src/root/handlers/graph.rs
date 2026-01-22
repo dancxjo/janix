@@ -271,8 +271,8 @@ mod tests {
     use crate::root::SymbolShell;
     use crate::root::graph::Graph;
     use crate::root::symbols::Interner;
-    use abi::types::ThingId;
     use abi::ids::HandleId;
+    use abi::types::ThingId;
 
     #[test]
     fn test_handle_find_performance() {

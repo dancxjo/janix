@@ -55,7 +55,10 @@ impl<'a> RasterContext<'a> {
 }
 
 pub fn execute(surface: &mut Surface, list: &DrawList, solid_text: bool) {
-    let lowered = lower(list);
+    let lowered = {
+        crate::trace_span!("raster.lower");
+        lower(list)
+    };
     let mut ctx = RasterContext::new(surface, solid_text);
     execute_lowered_on_context(&mut ctx, &lowered);
 }
@@ -70,7 +73,10 @@ pub fn execute_with_damage(
         execute(surface, list, solid_text);
         return;
     }
-    let lowered = lower(list);
+    let lowered = {
+        crate::trace_span!("raster.lower");
+        lower(list)
+    };
     execute_lowered_with_damage(surface, &lowered, damage, solid_text);
 }
 
@@ -88,7 +94,6 @@ pub fn execute_lowered_with_damage(
             count += 1;
         }
     }
-    let start = stem::monotonic_ns();
     for i in 0..count {
         let d = dr[i];
         crate::trace_span!("raster.rect.total");
@@ -96,28 +101,30 @@ pub fn execute_lowered_with_damage(
         ctx.current_clip = Rect::new(d.x, d.y, d.w, d.h);
         execute_lowered_on_context(&mut ctx, lowered);
     }
-    crate::trace_counter!(
-        "raster.execute_ns",
-        stem::monotonic_ns().saturating_sub(start)
-    );
 }
 
 fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
+    let start = stem::monotonic_ns();
+    crate::trace_span!("raster.execute");
     for op in lowered.ops.iter() {
         match op {
-            LowLevelOp::Clear { color } => fill_rect_copy(
-                ctx.surface,
-                ctx.current_clip.x(),
-                ctx.current_clip.y(),
-                ctx.current_clip.width(),
-                ctx.current_clip.height(),
-                color.to_u32(),
-            ),
+            LowLevelOp::Clear { color } => {
+                crate::trace_counter!("raster.ops.clear", 1);
+                fill_rect_copy(
+                    ctx.surface,
+                    ctx.current_clip.x(),
+                    ctx.current_clip.y(),
+                    ctx.current_clip.width(),
+                    ctx.current_clip.height(),
+                    color.to_u32(),
+                );
+            }
             LowLevelOp::PushClip { rect } => ctx.push_clip(*rect),
             LowLevelOp::PopClip => ctx.pop_clip(),
             LowLevelOp::PushTransform { t } => ctx.push_transform(*t),
             LowLevelOp::PopTransform => ctx.pop_transform(),
             LowLevelOp::FillRect { rect, color, aa: _ } => {
+                crate::trace_counter!("raster.ops.fill", 1);
                 let tr = ctx.current_transform.transform_rect(*rect);
                 if let Some(cl) = ctx.current_clip.intersection(&tr) {
                     let c = color.to_u32();
@@ -134,6 +141,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 dst,
                 filter,
             } => {
+                crate::trace_counter!("raster.ops.blit", 1);
                 let td = ctx.current_transform.transform_rect(*dst);
                 if let Some(cd) = ctx.current_clip.intersection(&td) {
                     blit_opaque(ctx.surface, image, src, &td, &cd, *filter);
@@ -147,6 +155,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 blend,
                 const_alpha,
             } => {
+                crate::trace_counter!("raster.ops.blit_alpha", 1);
                 let td = ctx.current_transform.transform_rect(*dst);
                 if let Some(cd) = ctx.current_clip.intersection(&td) {
                     blit_alpha(
@@ -169,6 +178,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 font_name,
                 font_debug,
             } => {
+                crate::trace_counter!("raster.ops.text", 1);
                 let p = ctx.current_transform.transform_point(*pos);
                 rasterize_text_locally(
                     ctx.surface,
@@ -183,6 +193,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 );
             }
             LowLevelOp::StrokeRect { rect, color, width } => {
+                crate::trace_counter!("raster.ops.stroke", 1);
                 let tr = ctx.current_transform.transform_rect(*rect);
                 stroke_rect_clipped_blend(
                     ctx.surface,
@@ -198,6 +209,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 color,
                 width: _,
             } => {
+                crate::trace_counter!("raster.ops.stroke", 1);
                 let p0 = ctx.current_transform.transform_point(*from);
                 let p1 = ctx.current_transform.transform_point(*to);
                 line(
@@ -215,6 +227,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 radius,
                 color,
             } => {
+                crate::trace_counter!("raster.ops.fill", 1);
                 let c = ctx.current_transform.transform_point(*center);
                 fill_circle_blend(
                     ctx.surface,
@@ -233,6 +246,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 color,
                 aa,
             } => {
+                crate::trace_counter!("raster.ops.fill", 1);
                 let c = ctx.current_transform.transform_point(*center);
                 fill_arc_clipped_blend(
                     ctx.surface,
@@ -252,6 +266,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 fill_rule,
                 aa: _,
             } => {
+                crate::trace_counter!("raster.ops.fill", 1);
                 // TODO: AA support
                 fill_path(
                     ctx.surface,
@@ -271,6 +286,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 miter_limit,
                 aa: _,
             } => {
+                crate::trace_counter!("raster.ops.stroke", 1);
                 stroke_path(
                     ctx.surface,
                     path,
@@ -285,6 +301,10 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             }
         }
     }
+    crate::trace_counter!(
+        "raster.execute_ns",
+        stem::monotonic_ns().saturating_sub(start)
+    );
 }
 
 #[inline(always)]

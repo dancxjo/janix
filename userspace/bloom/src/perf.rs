@@ -49,6 +49,10 @@ pub fn init() {
     stem::perf::register_hooks(span_enter, span_exit, add_counter, log_event);
 }
 
+pub fn frame_no() -> u64 {
+    FRAME_COUNTER.load(Ordering::Relaxed)
+}
+
 pub fn span_enter(_name: &'static str) {}
 
 pub fn span_exit(name: &'static str, duration: u64) {
@@ -75,6 +79,52 @@ pub fn end_frame() -> Option<PerfFrame> {
     let mut lock = PERF.lock();
     let state = lock.as_mut()?;
     let finished_frame = core::mem::replace(&mut state.current_frame, PerfFrame::new());
+    let ops_fill = finished_frame
+        .counters
+        .get("raster.ops.fill")
+        .copied()
+        .unwrap_or(0);
+    let ops_blit = finished_frame
+        .counters
+        .get("raster.ops.blit")
+        .copied()
+        .unwrap_or(0)
+        + finished_frame
+            .counters
+            .get("raster.ops.blit_alpha")
+            .copied()
+            .unwrap_or(0);
+    let ops_text = finished_frame
+        .counters
+        .get("raster.ops.text")
+        .copied()
+        .unwrap_or(0);
+    let ops_clear = finished_frame
+        .counters
+        .get("raster.ops.clear")
+        .copied()
+        .unwrap_or(0);
+    let ops_total = ops_fill + ops_blit + ops_text;
+    let raster_exec_ns = finished_frame
+        .counters
+        .get("raster.execute_ns")
+        .copied()
+        .unwrap_or(0);
+    if ops_total == 0 && ops_clear > 0 && raster_exec_ns > 200_000 {
+        crate::log!(
+            "[bloom][perf] raster:clearing raster_execute_ns={} f={}",
+            raster_exec_ns,
+            frame_no
+        );
+    }
+    if ops_total == 0 && ops_clear == 0 && raster_exec_ns > 200_000 {
+        crate::log!(
+            "[bloom][perf] raster invariant violated: ops=0 raster_execute_ns={} f={}",
+            raster_exec_ns,
+            frame_no
+        );
+        debug_assert!(false, "raster invariant violated");
+    }
 
     // Print compact one-liner every N frames and also at the late sample mark.
     if (frame_no % PERF_PRINT_CADENCE == 0 && frame_no > 0)
@@ -155,7 +205,8 @@ fn print_compact_stats(frame: &PerfFrame, frame_no: u64) {
         .unwrap_or(0.0);
     let raster_ms = frame
         .spans
-        .get("raster")
+        .get("raster.execute")
+        .or_else(|| frame.spans.get("raster"))
         .map(|&ns| ns as f64 / 1_000_000.0)
         .unwrap_or(0.0);
     let present_ms = frame

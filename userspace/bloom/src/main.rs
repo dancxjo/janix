@@ -40,6 +40,9 @@ pub static DISABLE_TEXT: AtomicBool = AtomicBool::new(false);
 pub static DISABLE_WALLPAPER: AtomicBool = AtomicBool::new(false);
 pub static FORCE_FULL_DAMAGE: AtomicBool = AtomicBool::new(false);
 
+const UI_WATCH_MAX_EVENTS: u64 = 1024;
+const UI_WATCH_BUDGET_NS: u64 = 2_000_000;
+
 const WATCH_OVERFLOW_COUNTERS: [&str; 32] = [
     "watch_overflows.0",
     "watch_overflows.1",
@@ -85,6 +88,7 @@ use crate::cursor::CursorState;
 use crate::frame::{FrameBuilder, FrameSpec};
 use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
+use crate::ui::FullRefreshReason;
 
 fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
@@ -237,6 +241,9 @@ extern "C" fn font_loader_entry() -> ! {
             ..Default::default()
         };
         if let Ok(wid) = syscall::root_watch_open(&spec) {
+            crate::perf::add_counter("bloom.watch_open_count", 1);
+            crate::perf::add_counter("bloom.watch_reopen_reason.font_graph", 1);
+            crate::perf::log_event("bloom.watch_reopen_reason", "font_graph");
             watch_ids.push(wid);
             watch_bufs.push([0u8; 4096]);
             watch_seq.push(0);
@@ -390,6 +397,7 @@ fn main(arg: usize) -> ! {
     let mut ui_watch_handles: alloc::vec::Vec<usize> = alloc::vec::Vec::new();
     let mut ui_watch_bufs: alloc::vec::Vec<[u8; 4096]> = alloc::vec::Vec::new();
     let mut ui_watch_seq: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
+    let mut ui_watch_pending = false;
     let mut ui_force_damage = false;
     let mut ui_poll_deadline_ns = stem::monotonic_ns().saturating_add(1_000_000_000);
 
@@ -418,6 +426,9 @@ fn main(arg: usize) -> ! {
             ..Default::default()
         };
         if let Ok(id) = stem::syscall::root_watch_open(&spec) {
+            crate::perf::add_counter("bloom.watch_open_count", 1);
+            crate::perf::add_counter("bloom.watch_reopen_reason.ui_predicate", 1);
+            crate::perf::log_event("bloom.watch_reopen_reason", "ui_predicate");
             ui_watch_handles.push(id);
             ui_watch_bufs.push([0u8; 4096]);
             ui_watch_seq.push(0);
@@ -468,7 +479,7 @@ fn main(arg: usize) -> ! {
             if font_graph::has_fonts_ready() || !ASSETS.get_fonts().is_empty() {
                 font_loaded = true;
                 builder.mark_full_damage();
-                ui_pipeline.mark_dirty_full();
+                ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::CacheInvalidated);
             }
         }
 
@@ -501,17 +512,27 @@ fn main(arg: usize) -> ! {
         prev_buttons = buttons;
 
         {
+            let drain_start = stem::monotonic_ns();
+            let mut drained_events = 0u64;
+            let mut drained_bytes = 0u64;
+            let mut budget_exhausted = false;
             crate::trace_span!("ui.watch_drain");
             for (idx, wid) in ui_watch_handles.iter().enumerate() {
                 loop {
+                    if drained_events >= UI_WATCH_MAX_EVENTS
+                        || stem::monotonic_ns().saturating_sub(drain_start) >= UI_WATCH_BUDGET_NS
+                    {
+                        budget_exhausted = true;
+                        break;
+                    }
                     match stem::syscall::root_watch_next(
                         *wid,
                         &mut ui_watch_seq[idx],
                         &mut ui_watch_bufs[idx],
                     ) {
                         Ok(len) if len > 0 => {
+                            drained_bytes = drained_bytes.saturating_add(len as u64);
                             let mut c = 0;
-                            let mut seen = 0u64;
                             while c < len {
                                 if let Ok((h, v)) =
                                     abi::watch::decode_event(&ui_watch_bufs[idx][c..len])
@@ -524,13 +545,14 @@ fn main(arg: usize) -> ! {
                                         ui_pipeline.mark_node_dirty(h.subject);
                                     }
                                     ui_force_damage = true;
-                                    seen += 1;
+                                    drained_events = drained_events.saturating_add(1);
+                                    if drained_events >= UI_WATCH_MAX_EVENTS {
+                                        budget_exhausted = true;
+                                        break;
+                                    }
                                 } else {
                                     break;
                                 }
-                            }
-                            if seen > 0 {
-                                crate::perf::add_counter("ui.watch.events", seen);
                             }
                         }
                         Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,
@@ -542,13 +564,35 @@ fn main(arg: usize) -> ! {
                             } else {
                                 crate::perf::add_counter("watch_overflows.other", 1);
                             }
-                            ui_pipeline.mark_dirty_full();
+                            ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchOverflow);
                             ui_force_damage = true;
                             break;
                         }
                         Err(_) => break,
                     }
+                    if budget_exhausted {
+                        break;
+                    }
                 }
+                if budget_exhausted {
+                    break;
+                }
+            }
+            let drain_ns = stem::monotonic_ns().saturating_sub(drain_start);
+            crate::perf::add_counter("ui.watch.drain_ns", drain_ns);
+            if drained_events > 0 {
+                crate::perf::add_counter("ui.watch.events", drained_events);
+                crate::perf::add_counter("ui.watch.event_ns", drain_ns / drained_events);
+            }
+            if drained_bytes > 0 {
+                crate::perf::add_counter("ui.watch.bytes", drained_bytes);
+            }
+            if budget_exhausted {
+                crate::perf::add_counter("ui.watch.budget_exhausted", 1);
+            }
+            ui_watch_pending = budget_exhausted;
+            if ui_watch_pending {
+                crate::perf::add_counter("ui.watch.pending", 1);
             }
         }
         if frame_start >= ui_poll_deadline_ns {
@@ -646,7 +690,6 @@ fn main(arg: usize) -> ! {
         let damage_total_area: i64 = dmg.iter().map(|rect| rect.area()).sum();
         crate::perf::add_counter("damage_total_area", damage_total_area.max(0) as u64);
         if !dmg.is_empty() {
-            trace_span!("raster");
             raster::execute_with_damage(&mut surface, &token.ops, &dmg, ui_pipeline.solid_text);
         }
         {

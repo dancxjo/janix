@@ -13,6 +13,44 @@ use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HE
 use crate::render_state::RenderState;
 use alloc::collections::{BTreeMap, BTreeSet};
 use stem::thing::ThingId;
+use spin::Mutex;
+
+#[derive(Clone, Copy)]
+pub enum FullRefreshReason {
+    FirstFrame,
+    WatchOverflow,
+    ResyncRequested,
+    CacheInvalidated,
+    BugFallback,
+}
+
+impl FullRefreshReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::FirstFrame => "FirstFrame",
+            Self::WatchOverflow => "WatchOverflow",
+            Self::ResyncRequested => "ResyncRequested",
+            Self::CacheInvalidated => "CacheInvalidated",
+            Self::BugFallback => "BugFallback",
+        }
+    }
+}
+
+struct UiInitState {
+    initialized: bool,
+    init_frame: u64,
+    init_callsite: &'static str,
+    keys: Option<UiKeys>,
+    kinds: Option<KindIds>,
+}
+
+static UI_INIT: Mutex<UiInitState> = Mutex::new(UiInitState {
+    initialized: false,
+    init_frame: 0,
+    init_callsite: "",
+    keys: None,
+    kinds: None,
+});
 
 struct SystemSymbolResolver;
 
@@ -40,6 +78,7 @@ pub struct UiPipeline {
     // Layout from the last run, used for hit-testing
     pub last_layout: Option<layout::LayoutTree>,
     pub render_state: RenderState,
+    pending_full_reason: Option<FullRefreshReason>,
 }
 
 pub struct UiRunResult {
@@ -101,15 +140,40 @@ impl UiPipeline {
             dirty_nodes: DirtySet::default(),
             last_layout: None,
             render_state: RenderState::new(),
+            pending_full_reason: None,
         }
     }
 
     /// Ensure keys and kinds are interned (does work only on first call)
-    fn ensure_symbols(&mut self) -> (&UiKeys, &KindIds) {
+    fn ensure_symbols(&mut self, caller: &'static str) -> (&UiKeys, &KindIds) {
         if self.cached_keys.is_none() {
-            crate::log!("[bloom][ui] Initializing cached UI symbols (one-time)");
-            self.cached_keys = Some(UiKeys::intern());
-            self.cached_kinds = Some(KindIds::intern());
+            let mut init = UI_INIT.lock();
+            if init.initialized {
+                let frame_no = crate::perf::frame_no();
+                let reason = "cached_keys_missing";
+                crate::log!(
+                    "[bloom][ui] INIT_REENTRY frame={} reason={} caller={} first_init_frame={} first_init_caller={}",
+                    frame_no,
+                    reason,
+                    caller,
+                    init.init_frame,
+                    init.init_callsite
+                );
+                debug_assert!(false, "ui init ran more than once");
+                self.cached_keys = init.keys.clone();
+                self.cached_kinds = init.kinds.clone();
+            } else {
+                crate::log!("[bloom][ui] Initializing cached UI symbols (one-time)");
+                let keys = UiKeys::intern();
+                let kinds = KindIds::intern();
+                init.initialized = true;
+                init.init_frame = crate::perf::frame_no();
+                init.init_callsite = caller;
+                init.keys = Some(keys.clone());
+                init.kinds = Some(kinds.clone());
+                self.cached_keys = Some(keys);
+                self.cached_kinds = Some(kinds);
+            }
         }
         (
             self.cached_keys.as_ref().unwrap(),
@@ -119,13 +183,13 @@ impl UiPipeline {
 
     /// Fetch cached kind ids, ensuring they are interned once.
     pub fn kind_ids(&mut self) -> KindIds {
-        let (_, kinds) = self.ensure_symbols();
+        let (_, kinds) = self.ensure_symbols("UiPipeline::kind_ids");
         kinds.clone()
     }
 
     /// Fetch cached UI key ids for watch setup.
     pub fn ui_keys(&mut self) -> UiKeys {
-        let (keys, _) = self.ensure_symbols();
+        let (keys, _) = self.ensure_symbols("UiPipeline::ui_keys");
         keys.clone()
     }
 
@@ -143,10 +207,15 @@ impl UiPipeline {
 
     /// Force a full snapshot rebuild on the next frame.
     pub fn mark_dirty_full(&mut self) {
+        self.mark_dirty_full_with_reason(FullRefreshReason::ResyncRequested);
+    }
+
+    pub fn mark_dirty_full_with_reason(&mut self, reason: FullRefreshReason) {
         self.dirty_full = true;
         self.dirty = true;
         self.dirty_nodes.clear();
         self.cached_drawlists.clear();
+        self.pending_full_reason = Some(reason);
     }
 
     /// Mark a specific node as dirty (for incremental updates from watch events)
@@ -217,7 +286,7 @@ impl UiPipeline {
         }
 
         // Ensure symbols are cached (no-op after first frame)
-        let (keys, kinds) = self.ensure_symbols();
+        let (keys, kinds) = self.ensure_symbols("UiPipeline::run");
         let keys = keys.clone();
         let kinds = kinds.clone();
 
@@ -227,12 +296,19 @@ impl UiPipeline {
         let mut node_changes: alloc::vec::Vec<NodeChange> = alloc::vec::Vec::new();
         let mut snapshot_changed = false;
         let mut full_snapshot = false;
+        let mut full_layout_reason: Option<FullRefreshReason> = None;
         let pending_dirty_count = self.dirty_nodes.total_len();
         let mut dirty_snap_count = 0usize;
         {
             crate::trace_span!("ui.snap");
             if !had_prev || self.dirty_full {
                 crate::trace_event!("ui.run.path", "full_snap");
+                if !had_prev {
+                    full_layout_reason = Some(FullRefreshReason::FirstFrame);
+                } else if self.dirty_full {
+                    full_layout_reason =
+                        Some(self.pending_full_reason.take().unwrap_or(FullRefreshReason::ResyncRequested));
+                }
                 self.dirty_full = false;
                 self.dirty_nodes.clear();
                 full_snapshot = true;
@@ -296,12 +372,15 @@ impl UiPipeline {
                 if let Some(root) = layout.root.as_ref() {
                     if root.rect.w != screen_w || root.rect.h != screen_h {
                         force_full_layout = true;
+                        full_layout_reason = Some(FullRefreshReason::CacheInvalidated);
                     }
                 } else {
                     force_full_layout = true;
+                    full_layout_reason = Some(FullRefreshReason::BugFallback);
                 }
             } else {
                 force_full_layout = true;
+                full_layout_reason = Some(FullRefreshReason::BugFallback);
             }
         }
 
@@ -330,12 +409,14 @@ impl UiPipeline {
                             dirty_windows.insert(window_id);
                         } else {
                             force_full_layout = true;
+                            full_layout_reason = Some(FullRefreshReason::BugFallback);
                             // breakdown: don't break, keep marking others
                         }
                     }
                 }
             } else {
                 force_full_layout = true;
+                full_layout_reason = Some(FullRefreshReason::BugFallback);
             }
         }
 
@@ -366,6 +447,18 @@ impl UiPipeline {
                 dirty_windows.len(),
                 force_full_layout
             );
+        }
+        if force_full_layout {
+            if let Some(reason) = full_layout_reason {
+                crate::trace_event!("ui.full_layout_reason", reason.as_str());
+                crate::trace_counter!("ui.full_layout", 1);
+                if log_this_frame {
+                    crate::log!(
+                        "[bloom][ui] full_layout_reason={}",
+                        reason.as_str()
+                    );
+                }
+            }
         }
         let layout_dirty_count = if force_full_layout {
             snapshot.nodes.len()

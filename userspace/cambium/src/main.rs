@@ -21,7 +21,6 @@ use core::time::Duration;
 // Constants & Configuration
 // ============================================================================
 
-const MAX_EVENTS_PER_TICK_TOTAL: usize = 4096;
 const RESYNC_COOLDOWN_MS: u64 = 250;
 
 // ============================================================================
@@ -32,6 +31,7 @@ struct ActiveBinding {
     source: ThingId,
     target: ThingId,
     watch_id: usize,
+    last_seen_seq: Option<u64>,
     
     last_value_u64: Option<u64>,
     last_value_bytes: Option<Vec<u8>>,
@@ -209,7 +209,7 @@ fn drain_watch_payload(payload: &[u8], binding: &mut ActiveBinding) {
 
 #[stem::main]
 fn main() -> ! {
-    info!("cambium starting (v5.1: drain-caps + smart-resync)...");
+    info!("cambium starting (v5.2: drain-to-eagain + smart-resync)...");
 
     let mut bindings: Vec<ActiveBinding> = Vec::new();
     let mut binding_ids = [ThingId::default(); 128];
@@ -242,6 +242,7 @@ fn main() -> ! {
                             info!("Opened watch {} for source {} (binding {})", watch_id, src_id.to_u64_lossy(), b_id.to_u64_lossy());
                             bindings.push(ActiveBinding {
                                 source: src_id, target: dst_id, watch_id,
+                                last_seen_seq: None,
                                 last_value_u64: None, last_value_bytes: None,
                                 key_filter, to_key,
                                 has_pending: false, pending_u64: None, pending_bytes: None,
@@ -272,24 +273,17 @@ fn main() -> ! {
 
     loop {
         let mut did_work = false;
-        let mut events_this_tick_global = 0usize;
-        let mut hit_global_cap = false;
 
         for binding in &mut bindings {
             binding.events_buffered_this_tick = 0;
             let mut seq: u64 = 0;
 
             loop {
-                if events_this_tick_global >= MAX_EVENTS_PER_TICK_TOTAL {
-                    hit_global_cap = true;
-                    break;
-                }
-
                 match root_watch_next(binding.watch_id, &mut seq, &mut payload_buf) {
                     Ok(len) if len > 0 => {
                         did_work = true;
+                        binding.last_seen_seq = Some(seq);
                         drain_watch_payload(&payload_buf[..len], binding);
-                        events_this_tick_global += len.min(10); 
                         binding.drained_events_total += 1; 
                     }
                     Ok(_) => { break; }
@@ -305,9 +299,10 @@ fn main() -> ! {
                 }
             }
             
+            let mut did_resync = false;
             if binding.needs_resync {
-                 let now = stem::monotonic_ns() / 1_000_000;
-                 if now.saturating_sub(binding.last_resync_time_ms) >= RESYNC_COOLDOWN_MS {
+                let now = stem::monotonic_ns() / 1_000_000;
+                if now.saturating_sub(binding.last_resync_time_ms) >= RESYNC_COOLDOWN_MS {
                     binding.resync_count += 1;
                     binding.needs_resync = false;
                     binding.last_resync_time_ms = now;
@@ -315,10 +310,15 @@ fn main() -> ! {
 
                     root_watch_close(binding.watch_id).ok();
 
+                    let start_seq = match binding.last_seen_seq {
+                        Some(last) => last.saturating_add(1),
+                        None => WATCH_START_LATEST,
+                    };
+
                     let filter = RootWatchFilter::subject(binding.source.to_u64_lossy());
                     let spec = WatchSpec {
                         mode: 1, 
-                        start_seq: WATCH_START_LATEST,
+                        start_seq,
                         filter_ptr: &filter as *const _ as u64,
                         filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
                         ..Default::default()
@@ -334,8 +334,10 @@ fn main() -> ! {
                         }
                         Err(e) => { warn!("Failed resync: {:?}", e); }
                     }
-                 }
-            } else {
+                    did_resync = true;
+                }
+            }
+            if !did_resync {
                 binding.apply_pending(seq);
             }
         }
@@ -359,8 +361,6 @@ fn main() -> ! {
 
         if !did_work {
             stem::sleep(Duration::from_millis(10));
-        } else if hit_global_cap {
-            stem::yield_now();
         }
     }
 }

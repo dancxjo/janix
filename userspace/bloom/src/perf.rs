@@ -196,6 +196,21 @@ fn print_compact_stats(frame: &PerfFrame, frame_no: u64) {
             .unwrap_or(0);
     let ops_text = frame.counters.get("raster.ops.text").copied().unwrap_or(0);
 
+    let dirty_snap = frame.counters.get("dirty_nodes_snap").copied().unwrap_or(0);
+    let dirty_layout = frame.counters.get("dirty_nodes_layout").copied().unwrap_or(0);
+    let dirty_paint = frame.counters.get("dirty_nodes_paint").copied().unwrap_or(0);
+    let damage_rects = frame
+        .counters
+        .get("damage_rect_count")
+        .copied()
+        .unwrap_or(0);
+    let damage_area = frame
+        .counters
+        .get("damage_total_area")
+        .copied()
+        .unwrap_or(0);
+    let watch_overflows = frame.counters.get("watch_overflows").copied().unwrap_or(0);
+
     crate::log!(
         "[PERF] f={} work={:.1}ms build={:.1}ms snap={:.1}ms raster={:.1}ms present={:.1}ms",
         frame_no,
@@ -215,6 +230,15 @@ fn print_compact_stats(frame: &PerfFrame, frame_no: u64) {
         t_raster_ms,
         t_blit_ms,
         text_glyphs
+    );
+    crate::log!(
+        "[PERF]   dirty: snap={} layout={} paint={} | damage: rects={} area={} | watch_overflows={}",
+        dirty_snap,
+        dirty_layout,
+        dirty_paint,
+        damage_rects,
+        damage_area,
+        watch_overflows
     );
 }
 

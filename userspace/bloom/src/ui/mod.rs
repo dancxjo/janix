@@ -59,6 +59,10 @@ impl DirtySet {
         self.props.is_empty() && self.edges.is_empty()
     }
 
+    pub fn total_len(&self) -> usize {
+        self.props.union(&self.edges).count()
+    }
+
     pub fn mark_prop(&mut self, id: ThingId) {
         self.props.insert(id);
     }
@@ -222,6 +226,8 @@ impl UiPipeline {
         let mut node_changes: alloc::vec::Vec<NodeChange> = alloc::vec::Vec::new();
         let mut snapshot_changed = false;
         let mut full_snapshot = false;
+        let pending_dirty_count = self.dirty_nodes.total_len();
+        let mut dirty_snap_count = 0usize;
         {
             crate::trace_span!("ui.snap");
             if !had_prev || self.dirty_full {
@@ -240,12 +246,14 @@ impl UiPipeline {
                     })
                     .collect();
                 snapshot_changed = true;
+                dirty_snap_count = snapshot.nodes.len();
             } else {
                 let dirty = core::mem::take(&mut self.dirty_nodes);
                 if !dirty.is_empty() {
                     crate::trace_event!("ui.run.path", "incremental_snap");
                     node_changes = snapshot.update_dirty(&dirty, &keys, &kinds, &mut self.asset_cache);
                     snapshot_changed = !node_changes.is_empty();
+                    dirty_snap_count = pending_dirty_count;
                 } else {
                     crate::trace_event!("ui.run.path", "snap_reuse");
                 }
@@ -253,6 +261,7 @@ impl UiPipeline {
         }
 
         crate::trace_counter!("ui.nodes", snapshot.nodes.len());
+        crate::trace_counter!("dirty_nodes_snap", dirty_snap_count);
 
         let changed = snapshot_changed || self.dirty;
 
@@ -319,6 +328,12 @@ impl UiPipeline {
                 force_full_layout
             );
         }
+        let layout_dirty_count = if force_full_layout {
+            snapshot.nodes.len()
+        } else {
+            layout_dirty_nodes.len()
+        };
+        crate::trace_counter!("dirty_nodes_layout", layout_dirty_count);
 
         let resolver = SystemSymbolResolver;
         let layout = {

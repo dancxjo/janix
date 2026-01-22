@@ -174,9 +174,15 @@ fn set_string_prop<S: IntoSymbolRef + Copy>(id: ThingId, key_name: S, value: &st
         prop_set(id, key_name, 0).ok();
         return;
     }
-    let bs_id = bytespace_create(value.len(), 0, 0).expect("create bytespace");
-    bytespace_write(bs_id, 0, value.as_bytes()).ok();
-    prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
+    match bytespace_create(value.len(), 0, 0) {
+        Ok(bs_id) => {
+            bytespace_write(bs_id, 0, value.as_bytes()).ok();
+            prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
+        }
+        Err(e) => {
+            warn!("cambium: bytespace_create failed for string prop: {:?}", e);
+        }
+    }
 }
 
 fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
@@ -231,7 +237,13 @@ fn apply_watch_payload(payload: &[u8], binding: &mut ActiveBinding, seq: u64) {
                 match encoding {
                     ValueEncoding::U64LE => {
                         if value.len() != 8 { break; }
-                        let next_value = u64::from_le_bytes(value.try_into().unwrap());
+                        let next_value = match <[u8; 8]>::try_from(value) {
+                            Ok(bytes) => u64::from_le_bytes(bytes),
+                            Err(_) => {
+                                warn!("cambium: invalid U64LE payload len={}", value.len());
+                                break;
+                            }
+                        };
                         
                         // NO-OP suppression
                         if binding.last_value_u64 == Some(next_value) { continue; }
@@ -297,13 +309,14 @@ fn main() -> ! {
     let mut bindings: Vec<ActiveBinding> = Vec::new();
 
     // Initial scan for bindings
-    let mut binding_ids = [ThingId::default(); 16];
+    let mut binding_ids = [ThingId::default(); 128];
 
     for _ in 0..120 {
         if let Ok(count) = find(kinds::BINDING, &mut binding_ids) {
             if count > 0 {
                 info!("Found {} bindings", count);
-                for i in 0..count {
+                let safe_count = core::cmp::min(count, binding_ids.len());
+                for i in 0..safe_count {
                     let b_id = binding_ids[i];
 
                     let src_id = prop_get(b_id, keys::BINDING_SOURCE)

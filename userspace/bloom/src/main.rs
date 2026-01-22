@@ -40,6 +40,41 @@ pub static DISABLE_TEXT: AtomicBool = AtomicBool::new(false);
 pub static DISABLE_WALLPAPER: AtomicBool = AtomicBool::new(false);
 pub static FORCE_FULL_DAMAGE: AtomicBool = AtomicBool::new(false);
 
+const WATCH_OVERFLOW_COUNTERS: [&str; 32] = [
+    "watch_overflows.0",
+    "watch_overflows.1",
+    "watch_overflows.2",
+    "watch_overflows.3",
+    "watch_overflows.4",
+    "watch_overflows.5",
+    "watch_overflows.6",
+    "watch_overflows.7",
+    "watch_overflows.8",
+    "watch_overflows.9",
+    "watch_overflows.10",
+    "watch_overflows.11",
+    "watch_overflows.12",
+    "watch_overflows.13",
+    "watch_overflows.14",
+    "watch_overflows.15",
+    "watch_overflows.16",
+    "watch_overflows.17",
+    "watch_overflows.18",
+    "watch_overflows.19",
+    "watch_overflows.20",
+    "watch_overflows.21",
+    "watch_overflows.22",
+    "watch_overflows.23",
+    "watch_overflows.24",
+    "watch_overflows.25",
+    "watch_overflows.26",
+    "watch_overflows.27",
+    "watch_overflows.28",
+    "watch_overflows.29",
+    "watch_overflows.30",
+    "watch_overflows.31",
+];
+
 use abi::display_driver_protocol::BindPayload;
 use abi::schema::keys;
 use stem::syscall::PortHandle;
@@ -501,6 +536,12 @@ fn main(arg: usize) -> ! {
                         Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,
                         Err(abi::errors::Errno::EOVERFLOW) => {
                             crate::perf::add_counter("ui.watch.overflows", 1);
+                            crate::perf::add_counter("watch_overflows", 1);
+                            if let Some(counter) = WATCH_OVERFLOW_COUNTERS.get(idx) {
+                                crate::perf::add_counter(counter, 1);
+                            } else {
+                                crate::perf::add_counter("watch_overflows.other", 1);
+                            }
                             ui_pipeline.mark_dirty_full();
                             ui_force_damage = true;
                             break;
@@ -601,6 +642,9 @@ fn main(arg: usize) -> ! {
 
         let token = builder.finish();
         let dmg = token.damage.clone();
+        crate::perf::add_counter("damage_rect_count", dmg.rect_count() as u64);
+        let damage_total_area: i64 = dmg.iter().map(|rect| rect.area()).sum();
+        crate::perf::add_counter("damage_total_area", damage_total_area.max(0) as u64);
         if !dmg.is_empty() {
             trace_span!("raster");
             raster::execute_with_damage(&mut surface, &token.ops, &dmg, ui_pipeline.solid_text);

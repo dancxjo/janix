@@ -62,13 +62,23 @@ impl PaintBuilder {
         render_state: &mut RenderState,
     ) -> PaintScene {
         let mut objects = Vec::new();
+        let mut node_count = 0usize;
         let active_window = layout
             .root
             .as_ref()
             .and_then(Self::find_active_window);
         if let Some(root) = &layout.root {
-            Self::build_recursive(snapshot, root, &mut objects, symbols, render_state, active_window);
+            Self::build_recursive(
+                snapshot,
+                root,
+                &mut objects,
+                symbols,
+                render_state,
+                active_window,
+                &mut node_count,
+            );
         }
+        crate::trace_counter!("dirty_nodes_paint", node_count);
 
         let now_ms = crate::log_ratelimit::now_ms();
         if crate::log_ratelimit::log_every(1000, now_ms) {
@@ -89,7 +99,9 @@ impl PaintBuilder {
         symbols: &impl SymbolResolver,
         render_state: &mut RenderState,
         active_window: Option<ThingId>,
+        node_count: &mut usize,
     ) {
+        *node_count += 1;
         // Scope all drawing to this node's bounds before emitting content or children.
         objects.push(PaintObject::PushClip {
             rect: layout_node.rect.clone(),
@@ -107,7 +119,15 @@ impl PaintBuilder {
             );
 
             for child in &layout_node.children {
-                Self::build_recursive(snapshot, child, objects, symbols, render_state, active_window);
+                Self::build_recursive(
+                    snapshot,
+                    child,
+                    objects,
+                    symbols,
+                    render_state,
+                    active_window,
+                    node_count,
+                );
             }
         }
 

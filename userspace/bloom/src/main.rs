@@ -363,19 +363,18 @@ fn main(arg: usize) -> ! {
     let ui_root = stem::ui::UiBuilder::create_root();
     ui_pipeline.set_root(ui_root);
 
-    // Subscribe to UI-only updates (kinds), avoiding the global firehose.
-    let ui_kinds = ui_pipeline.kind_ids();
-    let watch_kinds = [
-        ui_kinds.root,
-        ui_kinds.window,
-        ui_kinds.panel,
-        ui_kinds.text,
-        ui_kinds.image,
-        ui_kinds.overlay,
-        ui_kinds.inline,
-    ];
-    for kid in watch_kinds.into_iter().filter(|k| *k != 0) {
-        let filter = RootWatchFilter::kind(kid);
+    // Subscribe to UI updates by predicate (props + edges), avoiding the global firehose.
+    let ui_keys = ui_pipeline.ui_keys();
+    let mut watch_predicates = alloc::collections::BTreeSet::new();
+    for key in ui_keys.all_keys().into_iter().filter(|k| *k != 0) {
+        watch_predicates.insert(key);
+    }
+    if ui_keys.has_child != 0 {
+        watch_predicates.insert(ui_keys.has_child);
+    }
+
+    for predicate in watch_predicates.into_iter() {
+        let filter = RootWatchFilter::predicate(predicate);
         let spec = WatchSpec {
             mode: WatchMode::StreamOnly as u32,
             start_seq: 0,
@@ -483,7 +482,12 @@ fn main(arg: usize) -> ! {
                                     abi::watch::decode_event(&ui_watch_bufs[idx][c..len])
                                 {
                                     c += abi::watch::WATCH_EVENT_HEADER_LEN + v.len();
-                                    ui_pipeline.mark_node_dirty(h.subject);
+                                    let pred = h.predicate.to_u32_lossy();
+                                    if pred == ui_keys.has_child {
+                                        ui_pipeline.mark_node_edges_dirty(h.subject);
+                                    } else {
+                                        ui_pipeline.mark_node_dirty(h.subject);
+                                    }
                                     ui_force_damage = true;
                                     seen += 1;
                                 } else {
@@ -497,7 +501,7 @@ fn main(arg: usize) -> ! {
                         Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,
                         Err(abi::errors::Errno::EOVERFLOW) => {
                             crate::perf::add_counter("ui.watch.overflows", 1);
-                            ui_pipeline.mark_dirty();
+                            ui_pipeline.mark_dirty_full();
                             ui_force_damage = true;
                             break;
                         }

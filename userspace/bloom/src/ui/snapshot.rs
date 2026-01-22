@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::thing::sys::get_kind;
@@ -238,17 +238,34 @@ impl UiSnapshot {
         snapshot
     }
     
-    /// Incremental update: only refresh specific dirty nodes (Phase F)
-    pub fn update_nodes(&mut self, dirty_ids: &[ThingId], keys: &UiKeys, kinds: &KindIds, cache: &mut AssetCache) {
-        crate::trace_span!("ui.snap.incremental");
-        crate::trace_counter!("ui.snap.incremental_nodes", dirty_ids.len());
-        
-        for &id in dirty_ids {
-            // Remove old node data
-            self.nodes.remove(&id);
-            // Re-traverse just this node (not its children unless they're also dirty)
-            self.traverse_single(id, kinds, keys, cache);
+    /// Incremental update: refresh only dirty nodes (props/edges).
+    pub fn update_dirty(
+        &mut self,
+        dirty: &super::DirtySet,
+        keys: &UiKeys,
+        kinds: &KindIds,
+        cache: &mut AssetCache,
+    ) -> Vec<ThingId> {
+        crate::trace_span!("snap.update_dirty");
+        if dirty.is_empty() {
+            return Vec::new();
         }
+
+        let mut changed: BTreeSet<ThingId> = BTreeSet::new();
+
+        for &id in dirty.props() {
+            if self.refresh_node_props(id, keys, kinds, cache) {
+                changed.insert(id);
+            }
+        }
+
+        for &id in dirty.edges() {
+            if self.refresh_node_edges(id, keys, kinds, cache, &mut changed) {
+                changed.insert(id);
+            }
+        }
+
+        changed.into_iter().collect()
     }
 
     fn traverse(&mut self, id: ThingId, kind_ids: &KindIds, keys: &UiKeys, cache: &mut AssetCache) {
@@ -268,23 +285,9 @@ impl UiSnapshot {
             None => return,
         };
 
-        let mut children = Vec::new();
-        let mut edges_buf = [abi::types::Edge::default(); 64];
-        {
-            crate::trace_span!("ui.snap.get_edges");
-            crate::trace_counter!("snap.syscalls.get_edges", 1);
-            if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
-                for edge in &edges_buf[..count] {
-                    let rel_u64 = edge.predicate.to_u64_lossy();
-                    let target_u64 = edge.to.to_u64_lossy();
-                    if rel_u64 == keys.has_child as u64 && target_u64 != id.to_u64_lossy() {
-                        children.push(edge.to);
-                    }
-                }
-            }
-        }
-
-        let (props, strings, svg_content, window_icon_content) = self.fetch_properties(id, keys, cache);
+        let children = self.fetch_children(id, keys);
+        let (props, strings, svg_content, window_icon_content) =
+            self.fetch_properties(id, keys, cache);
         self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children: children.clone(), svg_content, window_icon_content });
         for child in children { self.traverse(child, kind_ids, keys, cache); }
     }
@@ -300,9 +303,65 @@ impl UiSnapshot {
             None => return,
         };
 
+        let children = self.fetch_children(id, keys);
+        let (props, strings, svg_content, window_icon_content) =
+            self.fetch_properties(id, keys, cache);
+        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children, svg_content, window_icon_content });
+    }
+
+    fn refresh_node_props(
+        &mut self,
+        id: ThingId,
+        keys: &UiKeys,
+        kinds: &KindIds,
+        cache: &mut AssetCache,
+    ) -> bool {
+        let (props, strings, svg_content, window_icon_content) =
+            self.fetch_properties(id, keys, cache);
+        if let Some(node) = self.nodes.get_mut(&id) {
+            node.props = props;
+            node.strings = strings;
+            node.svg_content = svg_content;
+            node.window_icon_content = window_icon_content;
+            true
+        } else {
+            self.traverse_single(id, kinds, keys, cache);
+            true
+        }
+    }
+
+    fn refresh_node_edges(
+        &mut self,
+        id: ThingId,
+        keys: &UiKeys,
+        kinds: &KindIds,
+        cache: &mut AssetCache,
+        changed: &mut BTreeSet<ThingId>,
+    ) -> bool {
+        if !self.nodes.contains_key(&id) {
+            self.traverse_single(id, kinds, keys, cache);
+        }
+
+        let children = self.fetch_children(id, keys);
+        if let Some(node) = self.nodes.get_mut(&id) {
+            node.children = children.clone();
+        }
+
+        for child in children {
+            if !self.nodes.contains_key(&child) {
+                self.traverse(child, kinds, keys, cache);
+                changed.insert(child);
+            }
+        }
+
+        true
+    }
+
+    fn fetch_children(&self, id: ThingId, keys: &UiKeys) -> Vec<ThingId> {
         let mut children = Vec::new();
         let mut edges_buf = [abi::types::Edge::default(); 64];
         {
+            crate::trace_span!("snap.refresh_node_edges");
             crate::trace_counter!("snap.syscalls.get_edges", 1);
             if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
                 for edge in &edges_buf[..count] {
@@ -314,9 +373,7 @@ impl UiSnapshot {
                 }
             }
         }
-
-        let (props, strings, svg_content, window_icon_content) = self.fetch_properties(id, keys, cache);
-        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children, svg_content, window_icon_content });
+        children
     }
     
     fn fetch_properties(
@@ -325,6 +382,7 @@ impl UiSnapshot {
         keys: &UiKeys, 
         cache: &mut AssetCache
     ) -> (BTreeMap<u32, u64>, BTreeMap<u32, String>, Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>, Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>) {
+        crate::trace_span!("snap.refresh_node_props");
         let mut props = BTreeMap::new();
         let mut strings = BTreeMap::new();
         let mut svg_content = None;

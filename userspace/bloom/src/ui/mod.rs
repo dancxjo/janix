@@ -11,6 +11,7 @@ use crate::damage::Rect;
 use crate::drawlist::DrawList;
 use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT};
 use crate::render_state::RenderState;
+use alloc::collections::BTreeSet;
 use stem::thing::ThingId;
 
 struct SystemSymbolResolver;
@@ -26,6 +27,7 @@ pub struct UiPipeline {
     prev_snapshot: Option<UiSnapshot>,
     solver: LayoutSolver,
     dirty: bool,
+    dirty_full: bool,
     cached_scene: Option<PaintScene>,
     pub solid_text: bool,
     // Cached symbol IDs - initialized once, used every frame
@@ -34,7 +36,7 @@ pub struct UiPipeline {
     // Asset cache - persists across frames (Phase C)
     asset_cache: AssetCache,
     // Dirty node tracking for incremental updates (Phase F)
-    pub dirty_nodes: alloc::vec::Vec<ThingId>,
+    pub dirty_nodes: DirtySet,
     // Layout from the last run, used for hit-testing
     pub last_layout: Option<layout::LayoutTree>,
     pub render_state: RenderState,
@@ -46,6 +48,39 @@ pub struct UiRunResult {
     pub solid_text: bool,
 }
 
+#[derive(Default, Clone)]
+pub struct DirtySet {
+    props: BTreeSet<ThingId>,
+    edges: BTreeSet<ThingId>,
+}
+
+impl DirtySet {
+    pub fn is_empty(&self) -> bool {
+        self.props.is_empty() && self.edges.is_empty()
+    }
+
+    pub fn mark_prop(&mut self, id: ThingId) {
+        self.props.insert(id);
+    }
+
+    pub fn mark_edge(&mut self, id: ThingId) {
+        self.edges.insert(id);
+    }
+
+    pub fn clear(&mut self) {
+        self.props.clear();
+        self.edges.clear();
+    }
+
+    pub fn props(&self) -> impl Iterator<Item = &ThingId> {
+        self.props.iter()
+    }
+
+    pub fn edges(&self) -> impl Iterator<Item = &ThingId> {
+        self.edges.iter()
+    }
+}
+
 impl UiPipeline {
     pub fn new() -> Self {
         Self {
@@ -53,12 +88,13 @@ impl UiPipeline {
             prev_snapshot: None,
             solver: LayoutSolver::new(),
             dirty: true,
+            dirty_full: false,
             cached_scene: None,
             solid_text: false,
             cached_keys: None,
             cached_kinds: None,
             asset_cache: AssetCache::new(),
-            dirty_nodes: alloc::vec::Vec::new(),
+            dirty_nodes: DirtySet::default(),
             last_layout: None,
             render_state: RenderState::new(),
         }
@@ -83,19 +119,39 @@ impl UiPipeline {
         kinds.clone()
     }
 
+    /// Fetch cached UI key ids for watch setup.
+    pub fn ui_keys(&mut self) -> UiKeys {
+        let (keys, _) = self.ensure_symbols();
+        keys.clone()
+    }
+
     pub fn set_root(&mut self, id: ThingId) {
         self.root_id = Some(id);
+        self.dirty_full = true;
+        self.dirty = true;
+        self.dirty_nodes.clear();
     }
 
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
 
+    /// Force a full snapshot rebuild on the next frame.
+    pub fn mark_dirty_full(&mut self) {
+        self.dirty_full = true;
+        self.dirty = true;
+        self.dirty_nodes.clear();
+    }
+
     /// Mark a specific node as dirty (for incremental updates from watch events)
     pub fn mark_node_dirty(&mut self, id: ThingId) {
-        if !self.dirty_nodes.contains(&id) {
-            self.dirty_nodes.push(id);
-        }
+        self.dirty_nodes.mark_prop(id);
+        self.dirty = true;
+    }
+
+    /// Mark a node's edges as dirty (structure change).
+    pub fn mark_node_edges_dirty(&mut self, id: ThingId) {
+        self.dirty_nodes.mark_edge(id);
         self.dirty = true;
     }
 
@@ -155,67 +211,40 @@ impl UiPipeline {
             }
         }
 
-        let start = stem::monotonic_ns();
-
         // Ensure symbols are cached (no-op after first frame)
         let (keys, kinds) = self.ensure_symbols();
         let keys = keys.clone();
         let kinds = kinds.clone();
 
         // 1. Snapshot with asset cache (Phase C) and optional incremental (Phase F)
-        let snapshot = {
+        let had_prev = self.prev_snapshot.is_some();
+        let mut snapshot = self.prev_snapshot.take().unwrap_or_else(UiSnapshot::new);
+        let mut changed_nodes = alloc::vec::Vec::new();
+        let mut snapshot_changed = false;
+        {
             crate::trace_span!("ui.snap");
-
-            // Check if we can do incremental update
-            let can_incremental = !self.dirty_nodes.is_empty()
-                && self.prev_snapshot.is_some()
-                && self.dirty_nodes.len() < 5; // Only worthwhile for small updates
-
-            if can_incremental {
-                crate::trace_event!("ui.run.path", "incremental_snap");
-                let mut snap = self.prev_snapshot.take().unwrap();
-                let dirty = core::mem::take(&mut self.dirty_nodes);
-                snap.update_nodes(&dirty, &keys, &kinds, &mut self.asset_cache);
-                snap
-            } else {
+            if !had_prev || self.dirty_full {
                 crate::trace_event!("ui.run.path", "full_snap");
+                self.dirty_full = false;
                 self.dirty_nodes.clear();
-                UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.asset_cache)
+                snapshot = UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.asset_cache);
+                changed_nodes = snapshot.nodes.keys().cloned().collect();
+                snapshot_changed = true;
+            } else {
+                let dirty = core::mem::take(&mut self.dirty_nodes);
+                if !dirty.is_empty() {
+                    crate::trace_event!("ui.run.path", "incremental_snap");
+                    changed_nodes = snapshot.update_dirty(&dirty, &keys, &kinds, &mut self.asset_cache);
+                    snapshot_changed = !changed_nodes.is_empty();
+                } else {
+                    crate::trace_event!("ui.run.path", "snap_reuse");
+                }
             }
-        };
+        }
 
         crate::trace_counter!("ui.nodes", snapshot.nodes.len());
 
-        // 2. Change Detection
-        let changed_nodes = {
-            crate::trace_span!("ui.diff");
-            if let Some(prev) = &self.prev_snapshot {
-                snapshot.diff(prev)
-            } else {
-                snapshot.nodes.keys().cloned().collect()
-            }
-        };
-        let changed = !changed_nodes.is_empty();
-
-        // Store for next frame
-        {
-            crate::trace_span!("ui.clone");
-            self.prev_snapshot = Some(snapshot.clone());
-        }
-
-        if !changed {
-            crate::trace_event!("ui.run.path", "no_changes");
-            if let Some(scene) = &self.cached_scene {
-                crate::trace_span!("ui.lower");
-                Self::lower(scene, list);
-            }
-            self.dirty = false;
-            return UiRunResult {
-                changed: false,
-                damage: alloc::vec::Vec::new(),
-                solid_text: self.solid_text,
-            };
-        }
+        let changed = snapshot_changed || self.dirty;
 
         crate::trace_event!("ui.run.path", "full_build");
 
@@ -243,6 +272,7 @@ impl UiPipeline {
         // Cache the scene so unchanged frames can skip snapshot/layout/paint.
         self.cached_scene = Some(paint_scene);
         self.dirty = false;
+        self.prev_snapshot = Some(snapshot);
 
         let mut damage = alloc::vec::Vec::new();
         for id in changed_nodes {

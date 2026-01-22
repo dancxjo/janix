@@ -3,15 +3,15 @@
 
 extern crate alloc;
 
+use abi::schema::{keys, kinds, rels};
+use abi::types::HandleId;
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::thing::ThingId;
-use abi::types::HandleId;
 use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, link,
     prop_get, prop_set,
 };
-use abi::schema::{kinds, keys, rels};
 
 fn set_string_prop(id: ThingId, key: &str, value: &str) {
     if value.is_empty() {
@@ -80,7 +80,11 @@ fn main() -> ! {
     let mut attempts = 0;
     while attempts < 120 {
         let mut roots = [ThingId::default(); 1];
-        if find(kinds::UI_ROOT, &mut roots).ok().filter(|c| *c > 0).is_some() {
+        if find(kinds::UI_ROOT, &mut roots)
+            .ok()
+            .filter(|c| *c > 0)
+            .is_some()
+        {
             ui_root = roots[0];
             break;
         }

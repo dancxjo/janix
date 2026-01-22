@@ -1,5 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
+use alloc::sync::Arc;
+use crate::asset::Image;
 
 use crate::damage::Rect;
 use crate::geometry::Color;
@@ -12,6 +14,7 @@ use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot, UiSnapshot};
 use abi::ids::HandleId; // Need HandleId for ThingId::from (Wait, paint.rs uses abi::WireType::ThingId)
 use abi::schema::keys;
 use abi::WireType::ThingId;
+use crate::render_state::{RenderState, RasterKey};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PaintObject {
@@ -35,6 +38,10 @@ pub enum PaintObject {
     Image {
         rect: Rect,
     },
+    Raster {
+        rect: Rect,
+        image: Arc<Image>,
+    },
     Commands {
         cmds: alloc::sync::Arc<alloc::vec::Vec<crate::drawlist::DrawCmd>>,
         rect: Rect,
@@ -53,10 +60,11 @@ impl PaintBuilder {
         snapshot: &UiSnapshot,
         layout: &LayoutTree,
         symbols: &impl SymbolResolver,
+        render_state: &mut RenderState,
     ) -> PaintScene {
         let mut objects = Vec::new();
         if let Some(root) = &layout.root {
-            Self::build_recursive(snapshot, root, &mut objects, symbols);
+            Self::build_recursive(snapshot, root, &mut objects, symbols, render_state);
         }
 
         let now_ms = crate::log_ratelimit::now_ms();
@@ -76,6 +84,7 @@ impl PaintBuilder {
         layout_node: &LayoutNode,
         objects: &mut Vec<PaintObject>,
         symbols: &impl SymbolResolver,
+        render_state: &mut RenderState,
     ) {
         // Scope all drawing to this node's bounds before emitting content or children.
         objects.push(PaintObject::PushClip {
@@ -84,10 +93,10 @@ impl PaintBuilder {
 
         if let Some(node_snapshot) = snapshot.nodes.get(&layout_node.id) {
             // Create paint object based on kind and properties
-            Self::create_paint_objects(node_snapshot, layout_node, objects, symbols);
+            Self::create_paint_objects(node_snapshot, layout_node, objects, symbols, render_state);
 
             for child in &layout_node.children {
-                Self::build_recursive(snapshot, child, objects, symbols);
+                Self::build_recursive(snapshot, child, objects, symbols, render_state);
             }
         }
 
@@ -99,6 +108,7 @@ impl PaintBuilder {
         layout: &LayoutNode,
         objects: &mut Vec<PaintObject>,
         symbols: &impl SymbolResolver,
+        render_state: &mut RenderState,
     ) {
         // Window special handling
         if node.kind == UiNodeKind::Window {
@@ -202,6 +212,74 @@ impl PaintBuilder {
             if mode == 1 {
                 // Svg
                 if let Some(cmds) = &node.svg_content {
+                    let w = layout.rect.w as u32;
+                    let h = layout.rect.h as u32;
+                    if w > 0 && h > 0 {
+                        let content_hash =  cmds.as_ptr() as *const () as u64;
+                        let key = RasterKey::Svg { node_id: node.id.to_u64_lossy(), w, h, content_hash };
+                        
+                        if let Some(image) = render_state.raster_cache.get(&key) {
+                            crate::perf::add_counter("paint.svg.hit", 1);
+                            objects.push(PaintObject::Raster {
+                                rect: layout.rect.clone(),
+                                image: image.clone(),
+                            });
+                            return;
+                        }
+
+                        crate::perf::add_counter("paint.svg.miss", 1);
+                        // Rasterize
+                        let stride = w as usize * 4;
+                        let len = stride * h as usize;
+                        let mut pixels = alloc::vec![0u32; len / 4];
+                        
+                        let mut surf = unsafe {
+                            crate::surface::Surface::new(
+                                pixels.as_mut_ptr() as *mut u8,
+                                len,
+                                w,
+                                h,
+                                stride as u32,
+                            )
+                        };
+                        
+                        let mut list = crate::drawlist::DrawList::new();
+                        // Transform to 0,0 since we are rasterizing into a surface of exactly the node size
+                        // The paint logic in 'lower' handles translation of the Raster to layout.x/y
+                        // But wait, the original Objects::Commands logic pushed a translation of (rect.x, rect.y).
+                        // If we rasterize 0..w, we don't need translation in the drawlist, we just draw at 0,0.
+                        // BUT SVG commands might have their own coordinates?
+                        // UiNodeKind::Inline SVG handling in `lower` (before my change) did:
+                        // list.commands().push(DrawCmd::PushTransform { transform: Transform::translate(rect.x, rect.y) });
+                        // Then appended commands.
+                        // So the commands are local to 0,0? Or local to where they were defined?
+                        // Usually SVG parser produces coords starting at 0,0.
+                        // So if we rasterize into a w*h surface, we don't need any translation *if* the SVG fits in 0,0..w,h.
+                        // The `rect` in `lower` translated them to the layout position on screen.
+                        // So here we should NOT translate. We just draw them.
+                        // The `Raster` object itself has `rect: layout.rect`. 
+                        // In `lower` (raster handling), we call `list.blit_image(image, rect.x, rect.y)`.
+                        // `blit_image` creates `DrawCmd::DrawImage` with `dest = Rect(x, y, w, h)`.
+                        // So yes, we rasterize locally at 0,0.
+                        
+                        list.commands().extend(cmds.iter().cloned());
+                        crate::raster::execute(&mut surf, &list, false);
+                        
+                        let image = Arc::new(Image {
+                            width: w,
+                            height: h,
+                            pixels: Arc::from(pixels),
+                            gen: crate::frame::AssetGeneration(0),
+                        });
+                        
+                        render_state.raster_cache.insert(key, image.clone());
+                        objects.push(PaintObject::Raster {
+                            rect: layout.rect.clone(),
+                            image,
+                        });
+                        return;
+                    }
+
                     objects.push(PaintObject::Commands {
                         cmds: cmds.clone(),
                         rect: layout.rect.clone(),
@@ -247,6 +325,67 @@ impl PaintBuilder {
                 color_val = 0xFFFFFFFF;
             }
             let color = Color::from_u32(color_val as u32);
+
+            // Phase 1: Raster Cache for Text
+            let w = layout.rect.w as u32;
+            let h = layout.rect.h as u32;
+            
+            // Simple DJB2-ish hash for text content and properties
+            let mut hasher = 5381u64;
+            for b in text.as_bytes() { hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(*b as u64); }
+            for b in font.as_bytes() { hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(*b as u64); }
+            // hash size (f32 bits), color (u32), font_debug (bool)
+            hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(size.to_bits() as u64);
+            hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(color.to_u32() as u64);
+            hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(if font_debug { 1 } else { 0 });
+
+            if w > 0 && h > 0 {
+                let key = RasterKey::Text { node_id: node.id.to_u64_lossy(), w, h, content_hash: hasher };
+                if let Some(image) = render_state.raster_cache.get(&key) {
+                     crate::perf::add_counter("paint.text.hit", 1);
+                     objects.push(PaintObject::Raster {
+                        rect: layout.rect.clone(),
+                        image: image.clone(),
+                    });
+                    return;
+                }
+                
+                crate::perf::add_counter("paint.text.miss", 1);
+                // Rasterize Text
+                 let stride = w as usize * 4;
+                 let len = stride * h as usize;
+                 let mut pixels = alloc::vec![0u32; len / 4];
+                 
+                 let mut surf = unsafe {
+                    crate::surface::Surface::new(
+                        pixels.as_mut_ptr() as *mut u8,
+                        len,
+                        w,
+                        h,
+                        stride as u32,
+                    )
+                 };
+                 
+                 let mut list = crate::drawlist::DrawList::new();
+                 // Draw text at 0,0 locally
+                 list.text_font_debug(&text, &font, 0, 0, size, color, font_debug);
+                 
+                 crate::raster::execute(&mut surf, &list, false);
+                 
+                 let image = Arc::new(Image {
+                    width: w,
+                    height: h,
+                    pixels: Arc::from(pixels),
+                    gen: crate::frame::AssetGeneration(0),
+                 });
+                 
+                 render_state.raster_cache.insert(key, image.clone());
+                 objects.push(PaintObject::Raster {
+                    rect: layout.rect.clone(),
+                    image,
+                 });
+                 return;
+            }
 
             objects.push(PaintObject::Text {
                 rect: layout.rect.clone(),

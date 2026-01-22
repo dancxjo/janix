@@ -10,6 +10,7 @@ use crate::asset::AssetBank;
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
 use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT};
+use crate::render_state::RenderState;
 use stem::thing::ThingId;
 
 struct SystemSymbolResolver;
@@ -33,9 +34,10 @@ pub struct UiPipeline {
     // Asset cache - persists across frames (Phase C)
     asset_cache: AssetCache,
     // Dirty node tracking for incremental updates (Phase F)
-    dirty_nodes: alloc::vec::Vec<ThingId>,
+    pub dirty_nodes: alloc::vec::Vec<ThingId>,
     // Layout from the last run, used for hit-testing
-    last_layout: Option<layout::LayoutTree>,
+    pub last_layout: Option<layout::LayoutTree>,
+    pub render_state: RenderState,
 }
 
 pub struct UiRunResult {
@@ -58,6 +60,7 @@ impl UiPipeline {
             asset_cache: AssetCache::new(),
             dirty_nodes: alloc::vec::Vec::new(),
             last_layout: None,
+            render_state: RenderState::new(),
         }
     }
 
@@ -228,7 +231,7 @@ impl UiPipeline {
         // 4. Paint
         let paint_scene = {
             crate::trace_span!("ui.paint");
-            PaintBuilder::build(&snapshot, &layout, &resolver)
+            PaintBuilder::build(&snapshot, &layout, &resolver, &mut self.render_state)
         };
 
         // 5. Lowering
@@ -352,6 +355,9 @@ impl UiPipeline {
                 }
                 PaintObject::Image { rect: _ } => {
                     // TODO: Implement image lowering
+                }
+                PaintObject::Raster { rect, image } => {
+                     list.blit_image(image, rect.x, rect.y);
                 }
                 PaintObject::Commands { cmds, rect } => {
                     use crate::geometry::Transform;

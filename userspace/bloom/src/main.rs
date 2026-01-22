@@ -25,6 +25,7 @@ pub mod perf;
 mod present;
 mod raster;
 mod reclaimer;
+mod render_state;
 mod surface;
 mod svg;
 pub mod ui;

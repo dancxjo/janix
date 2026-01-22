@@ -532,4 +532,38 @@ mod tests {
         assert_eq!(history.oldest_seq(), Some(3));
         assert_eq!(history.bytes, 11);
     }
+
+    #[test]
+    fn test_graph_alloc_and_link() {
+        let mut graph = Graph::new();
+        let kind1: SymbolId = 100;
+        let kind2: SymbolId = 200;
+        let rel: SymbolId = 300;
+
+        // Alloc first node
+        let id1 = graph.alloc(kind1);
+        assert_eq!(id1, 1);
+        assert_eq!(graph.next_id, 2);
+        assert!(graph.nodes.contains_key(&id1));
+        assert_eq!(graph.get_kind(id1), Some(kind1));
+
+        // Verify kind_index
+        assert!(graph.kind_index.contains_key(&kind1));
+        assert_eq!(graph.kind_index.get(&kind1), Some(&vec![id1]));
+
+        // Alloc second node
+        let id2 = graph.alloc(kind2);
+        assert_eq!(id2, 2);
+        assert_eq!(graph.next_id, 3);
+        assert!(graph.nodes.contains_key(&id2));
+        assert_eq!(graph.get_kind(id2), Some(kind2));
+
+        // Link
+        graph.link(id1, rel, id2);
+
+        // Verify link
+        let node1 = graph.nodes.get(&id1).expect("Node 1 should exist");
+        assert_eq!(node1.edges.len(), 1);
+        assert_eq!(node1.edges[0], (rel, id2));
+    }
 }

@@ -354,6 +354,8 @@ pub struct GlobalWatch {
     pub overflowed: bool,
     /// Watch filter (flags=0 means match all)
     pub filter: WatchFilter,
+    /// Tasks waiting for next commit (via EINPROGRESS)
+    pub pending_tids: Vec<u64>,
 }
 
 // ============================================================================
@@ -422,5 +424,29 @@ impl Graph {
         }
         // Maintain reverse index
         self.incoming_edges.entry(dst).or_default().push((rel, src));
+    }
+
+    /// Wake any tasks waiting for new commits (EINPROGRESS)
+    ///
+    /// Called after commit_history push.
+    pub fn check_and_wake_watches(&mut self) {
+        let newest = if let Some(n) = self.commit_history.newest_seq() {
+            n
+        } else {
+            return;
+        };
+
+        for watch in self.global_watches.values_mut() {
+            if !watch.pending_tids.is_empty() {
+                // If watch has fallen behind (newest >= cursor), wake waiters
+                if newest >= watch.cursor_seq {
+                    for tid in watch.pending_tids.drain(..) {
+                        unsafe {
+                            crate::task::scheduler::wake_task_erased(tid as usize);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -156,6 +156,9 @@ pub fn apply_ops_and_commit(
         .commit_history
         .push(new_seq, commit_bytes.to_vec(), summary);
 
+    // Wake any watchers waiting for new commits
+    graph.check_and_wake_watches();
+
     ApplyResult {
         status: 0,
         seq: new_seq,

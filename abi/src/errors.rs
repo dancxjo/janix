@@ -51,6 +51,7 @@ pub enum Errno {
     ENOSYS = 38,
     EOVERFLOW = 75,
     ENOBUFS = 105,
+    EINPROGRESS = 115,
     // Add more as needed, following Linux numbers usually helps debugging
 
     // Custom/Extension
@@ -99,6 +100,7 @@ pub fn errno(ret: isize) -> core::result::Result<usize, Errno> {
             14 => Err(Errno::EFAULT),
             22 => Err(Errno::EINVAL),
             38 => Err(Errno::ENOSYS),
+            115 => Err(Errno::EINPROGRESS),
             _ => Err(Errno::EINVAL), // Fallback
         }
     } else {

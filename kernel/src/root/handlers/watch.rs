@@ -64,6 +64,7 @@ pub fn handle_watch_open(
         cursor_seq,
         overflowed: false,
         filter,
+        pending_tids: alloc::vec::Vec::new(),
     };
 
     graph.global_watches.insert(stream_id, watch);
@@ -150,8 +151,10 @@ pub fn handle_watch_next(graph: &mut Graph, msg: &crate::root::RootMsg, id: u64)
             // Save progress before returning
             if let Some(watch) = graph.global_watches.get_mut(&id) {
                 watch.cursor_seq = cursor;
+                // Register for wakeup when new commits arrive
+                watch.pending_tids.push(msg.tid);
             }
-            return (-11, 0); // -EAGAIN
+            return (-115, 0); // -EINPROGRESS
         }
 
         // Get commit record (includes summary for O(1) matching)

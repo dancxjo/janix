@@ -190,6 +190,7 @@ impl ReplyCell {
 pub struct RootMsg {
     pub op: RootOp,
     pub reply: Arc<ReplyCell>,
+    pub tid: u64,
 }
 
 static ROOT_INBOX: Mutex<Option<VecDeque<RootMsg>>> = Mutex::new(None);
@@ -208,9 +209,11 @@ pub fn init_root_service<R: crate::BootRuntime>() {
 
 pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
     let reply = Arc::new(ReplyCell::new());
+    let tid = unsafe { crate::task::scheduler::current_tid_current() };
     let msg = RootMsg {
         op,
         reply: reply.clone(),
+        tid,
     };
 
     if let Some(q) = ROOT_INBOX.lock().as_mut() {

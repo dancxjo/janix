@@ -119,12 +119,12 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
         Some(id) => id,
         None => return StackFaultResult::NotStack,
     };
-    let idx = match sched.tasks.iter().position(|t| t.id == current_id) {
-        Some(i) => i,
+    let task = match sched.tasks.get_mut(&current_id) {
+        Some(t) => t,
         None => return StackFaultResult::NotStack,
     };
 
-    let info = match sched.tasks[idx].stack_info {
+    let info = match task.stack_info {
         Some(info) => info,
         None => return StackFaultResult::NotStack,
     };
@@ -182,7 +182,7 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
         virt += page_size;
     }
 
-    sched.tasks[idx].stack_info = Some(abi::types::StackInfo {
+    task.stack_info = Some(abi::types::StackInfo {
         committed_start: new_commit_start as usize,
         ..info
     });

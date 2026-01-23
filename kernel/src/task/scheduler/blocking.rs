@@ -33,13 +33,13 @@ pub fn block_current<R: BootRuntime>() {
         };
 
         // Move current from Running to Blocked
-        if let Some(idx) = sched.tasks.iter().position(|t| t.id == current_id) {
-            if sched.tasks[idx].wake_pending {
-                sched.tasks[idx].wake_pending = false;
+        if let Some(task) = sched.tasks.get_mut(&current_id) {
+            if task.wake_pending {
+                task.wake_pending = false;
                 rt.irq_restore(_irq);
                 return;
             }
-            sched.tasks[idx].state = TaskState::Blocked;
+            task.state = TaskState::Blocked;
         }
 
         // Add to wait queue
@@ -86,14 +86,14 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
     }
 
     // Update state to Runnable and add to runq
-    if let Some(idx) = sched.tasks.iter().position(|t| t.id == tid) {
-        if sched.tasks[idx].state == TaskState::Blocked {
-            sched.tasks[idx].state = TaskState::Runnable;
-            let priority = sched.tasks[idx].priority;
+    if let Some(task) = sched.tasks.get_mut(&tid) {
+        if task.state == TaskState::Blocked {
+            task.state = TaskState::Runnable;
+            let priority = task.priority;
             sched.runq[priority as usize].push_back(tid);
-            sched.tasks[idx].wake_pending = false;
+            task.wake_pending = false;
         } else {
-            sched.tasks[idx].wake_pending = true;
+            task.wake_pending = true;
         }
     }
 }

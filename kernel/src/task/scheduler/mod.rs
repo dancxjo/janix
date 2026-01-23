@@ -128,7 +128,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         stack_info: None,
         timeslice_remaining: types::DEFAULT_TIMESLICE,
     };
-    sched.tasks.push(task);
+    sched.tasks.insert(0, task);
     sched.current = Some(0);
     crate::kinfo!("  Creating idle task...");
 
@@ -168,17 +168,17 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 }
 
                 // Decrement current task's time slice
-                if let Some(current_id) = self.current {
-                    if let Some(task) = self.tasks.iter_mut().find(|t| t.id == current_id) {
-                        if task.timeslice_remaining > 0 {
-                            task.timeslice_remaining -= 1;
-                        }
-                        if task.timeslice_remaining == 0 {
-                            // Reset for next run
-                            task.timeslice_remaining = types::DEFAULT_TIMESLICE;
-                            // Force reschedule
-                            return self.prepare_yield();
-                        }
+                if let Some(current_id) = self.current
+                    && let Some(task) = self.tasks.get_mut(&current_id)
+                {
+                    if task.timeslice_remaining > 0 {
+                        task.timeslice_remaining -= 1;
+                    }
+                    if task.timeslice_remaining == 0 {
+                        // Reset for next run
+                        task.timeslice_remaining = types::DEFAULT_TIMESLICE;
+                        // Force reschedule
+                        return self.prepare_yield();
                     }
                 }
                 return None; // Not expired yet
@@ -213,7 +213,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
         while let Some(entry) = self.sleep_queue.pop_front() {
             if entry.wake_tick <= now {
                 // Task should wake up - add back to run queue
-                if let Some(task) = self.tasks.iter().find(|t| t.id == entry.task_id) {
+                if let Some(task) = self.tasks.get(&entry.task_id) {
                     let priority = task.priority;
                     self.runq[priority as usize].push_back(entry.task_id);
                 }
@@ -313,8 +313,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
         if Some(current_id) != self.idle_task {
             let priority = self
                 .tasks
-                .iter()
-                .find(|t| t.id == current_id)
+                .get(&current_id)
                 .map(|t| t.priority)
                 .unwrap_or(TaskPriority::Normal);
             self.runq[priority as usize].push_back(current_id);
@@ -366,20 +365,21 @@ impl<R: BootRuntime> types::Scheduler<R> {
             .expect("prepare_schedule called without current task");
 
         if next_id == current_id {
-            let idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
-            self.tasks[idx].state = TaskState::Running;
+            let task = self.tasks.get_mut(&current_id).unwrap();
+            task.state = TaskState::Running;
             return None;
         }
 
         self.current = Some(next_id);
 
-        let old_idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
-        let new_idx = self.tasks.iter().position(|t| t.id == next_id).unwrap();
+        let old_task_ptr = self.tasks.get_mut(&current_id).unwrap() as *mut Task<R>;
+        let new_task_ptr = self.tasks.get_mut(&next_id).unwrap() as *mut Task<R>;
 
-        let tasks_ptr = self.tasks.as_mut_ptr();
+        // Safety: We verified current_id != next_id. BTreeMap node pointers are stable
+        // as long as we don't modify the map structure (insert/remove), which we don't do here.
         unsafe {
-            let old_task = &mut *tasks_ptr.add(old_idx);
-            let new_task = &mut *tasks_ptr.add(new_idx);
+            let old_task = &mut *old_task_ptr;
+            let new_task = &mut *new_task_ptr;
 
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;
@@ -412,9 +412,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
             .current
             .expect("terminate_current called with no current task");
 
-        if let Some(idx) = self.tasks.iter().position(|t| t.id == current_id) {
-            self.tasks[idx].state = TaskState::Dead;
-            self.tasks[idx].exit_code = Some(code);
+        if let Some(task) = self.tasks.get_mut(&current_id) {
+            task.state = TaskState::Dead;
+            task.exit_code = Some(code);
         }
 
         unsafe {
@@ -435,19 +435,18 @@ impl<R: BootRuntime> types::Scheduler<R> {
     }
 
     pub fn set_priority(&mut self, id: TaskId, priority: TaskPriority) {
-        if let Some(idx) = self.tasks.iter().position(|t| t.id == id) {
-            let old_priority = self.tasks[idx].priority;
-            self.tasks[idx].priority = priority;
+        if let Some(task) = self.tasks.get_mut(&id) {
+            let old_priority = task.priority;
+            task.priority = priority;
 
             // If it's runnable and in a runq, move it to the new runq
-            if self.tasks[idx].state == TaskState::Runnable {
-                if let Some(pos) = self.runq[old_priority as usize]
+            if task.state == TaskState::Runnable
+                && let Some(pos) = self.runq[old_priority as usize]
                     .iter()
                     .position(|&rid| rid == id)
-                {
-                    self.runq[old_priority as usize].remove(pos);
-                    self.runq[priority as usize].push_back(id);
-                }
+            {
+                self.runq[old_priority as usize].remove(pos);
+                self.runq[priority as usize].push_back(id);
             }
         }
     }
@@ -468,11 +467,7 @@ pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>
     let lock = SCHEDULER.lock();
     if let Some(ptr) = *lock {
         let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-        sched
-            .tasks
-            .iter()
-            .find(|t| t.id == id)
-            .map(|t| (t.state, t.exit_code))
+        sched.tasks.get(&id).map(|t| (t.state, t.exit_code))
     } else {
         None
     }

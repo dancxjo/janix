@@ -204,10 +204,10 @@ impl SvgParser {
                 self.push_state();
                 self.apply_attributes(attrs);
                 
-                let x = libm::roundf(attrs.get("x").and_then(parse_length_px).unwrap_or(0.0)) as i32;
-                let y = libm::roundf(attrs.get("y").and_then(parse_length_px).unwrap_or(0.0)) as i32;
-                let w = libm::roundf(attrs.get("width").and_then(parse_length_px).unwrap_or(0.0)) as i32;
-                let h = libm::roundf(attrs.get("height").and_then(parse_length_px).unwrap_or(0.0)) as i32;
+                let x = attrs.get("x").and_then(parse_length_px).unwrap_or(0.0);
+                let y = attrs.get("y").and_then(parse_length_px).unwrap_or(0.0);
+                let w = attrs.get("width").and_then(parse_length_px).unwrap_or(0.0);
+                let h = attrs.get("height").and_then(parse_length_px).unwrap_or(0.0);
                 
                 let mut rx = attrs.get("rx").and_then(parse_length_px).unwrap_or(0.0);
                 let mut ry = attrs.get("ry").and_then(parse_length_px).unwrap_or(0.0);
@@ -216,7 +216,7 @@ impl SvgParser {
                 if rx == 0.0 && ry > 0.0 { rx = ry; }
                 if ry == 0.0 && rx > 0.0 { ry = rx; }
                 
-                self.emit_fill_rect(Rect::new(x, y, w, h), rx, ry);
+                self.emit_fill_rect(x, y, w, h, rx, ry);
                 // TODO: stroke rect? DrawCmd::StrokeRect exists.
             }
             "line" => {
@@ -242,11 +242,11 @@ impl SvgParser {
                 self.push_state();
                 self.apply_attributes(attrs);
                 
-                let cx = libm::roundf(attrs.get("cx").and_then(parse_length_px).unwrap_or(0.0)) as i32;
-                let cy = libm::roundf(attrs.get("cy").and_then(parse_length_px).unwrap_or(0.0)) as i32;
-                let r = libm::roundf(attrs.get("r").and_then(parse_length_px).unwrap_or(0.0)) as i32;
+                let cx = attrs.get("cx").and_then(parse_length_px).unwrap_or(0.0);
+                let cy = attrs.get("cy").and_then(parse_length_px).unwrap_or(0.0);
+                let r = attrs.get("r").and_then(parse_length_px).unwrap_or(0.0);
                 
-                self.emit_fill_circle(Point::new(cx, cy), r);
+                self.emit_fill_circle(cx, cy, r);
             }
             "path" => {
                 self.push_state();
@@ -292,12 +292,8 @@ impl SvgParser {
         self.pop_state();
     }
     
-    fn emit_fill_rect(&mut self, rect: Rect, rx: f32, ry: f32) {
+    fn emit_fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, rx: f32, ry: f32) {
         use crate::svg::ir::{PointF, PathCommand}; 
-        let x = rect.x() as f32;
-        let y = rect.y() as f32;
-        let w = rect.width() as f32;
-        let h = rect.height() as f32;
         
         // Clamp radius
         let rx = rx.min(w * 0.5).max(0.0);
@@ -361,14 +357,11 @@ impl SvgParser {
         self.emit_path(path);
     }
     
-    fn emit_fill_circle(&mut self, center: Point, radius: i32) {
+    fn emit_fill_circle(&mut self, cx: f32, cy: f32, r: f32) {
         use crate::svg::ir::{PointF, PathCommand};
         
         // Kappa for cubic bezier circle approximation
         const KAPPA: f32 = 0.55228475;
-        let r = radius as f32;
-        let cx = center.x as f32;
-        let cy = center.y as f32;
         let k = r * KAPPA;
         
         let mut verbs = Vec::with_capacity(6);

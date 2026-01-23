@@ -194,6 +194,14 @@ impl LayoutSolver {
     ) {
         let parent_is_window = node.kind == UiNodeKind::Window;
         let parent_shaded = parent_is_window && Self::get_prop(node, keys::UI_WINDOW_SHADED, symbols) != 0;
+        let parent_scroll = if node.kind == UiNodeKind::Viewport {
+            (
+                Self::get_prop(node, keys::UI_SCROLL_X, symbols) as i32,
+                Self::get_prop(node, keys::UI_SCROLL_Y, symbols) as i32,
+            )
+        } else {
+            (0, 0)
+        };
 
         if parent_shaded {
             return;
@@ -216,6 +224,7 @@ impl LayoutSolver {
                     assets,
                     symbols,
                     cache,
+                    parent_scroll,
                     prev_child,
                     layout_dirty,
                     subtree_dirty,
@@ -237,6 +246,7 @@ impl LayoutSolver {
         assets: &AssetBank,
         symbols: &impl SymbolResolver,
         cache: &mut BTreeMap<(String, String, u32), (f32, f32)>,
+        parent_scroll: (i32, i32),
         prev_child: Option<&LayoutNode>,
         layout_dirty: &BTreeSet<ThingId>,
         subtree_dirty: &BTreeSet<ThingId>,
@@ -253,6 +263,7 @@ impl LayoutSolver {
         // So we run the calc below (cheap math), and THEN decide whether to recurse or reuse.
         
         let parent_is_window = layout.kind == UiNodeKind::Window;
+        let parent_is_viewport = layout.kind == UiNodeKind::Viewport;
         let title_bar_h = TITLE_BAR_HEIGHT;
 
         let is_window = child_node.kind == UiNodeKind::Window;
@@ -351,6 +362,10 @@ impl LayoutSolver {
         }
         if center_y {
             y = (layout.rect.h - h) / 2;
+        }
+        if parent_is_viewport {
+            x = x.saturating_sub(parent_scroll.0);
+            y = y.saturating_sub(parent_scroll.1);
         }
 
         let z = Self::get_prop(child_node, keys::UI_Z_INDEX, symbols) as i32;

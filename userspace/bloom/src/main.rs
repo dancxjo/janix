@@ -27,7 +27,7 @@ mod reclaimer;
 mod render_state;
 mod surface;
 mod svg;
-mod snapshot;
+mod ui;
 
 use stem::thing::{ThingId, HandleId};
 
@@ -41,6 +41,7 @@ use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
 use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
 use crate::cursor::CursorState;
+use crate::ui::FullRefreshReason;
 use alloc::collections::BTreeSet;
 
 fn clear_surface(surface: &mut surface::Surface, color: u32) {
@@ -55,6 +56,58 @@ fn clear_surface(surface: &mut surface::Surface, color: u32) {
 
 fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
+}
+
+fn build_ui_watch_predicates(keys: &ui::snapshot::UiKeys) -> alloc::vec::Vec<u32> {
+    let mut preds = BTreeSet::new();
+    for &key in keys.all_keys().iter().chain(core::iter::once(&keys.has_child)) {
+        if key != 0 {
+            preds.insert(key);
+        }
+    }
+    preds.into_iter().collect()
+}
+
+fn is_bytespace_prop(pred: u32, keys: &ui::snapshot::UiKeys) -> bool {
+    pred == keys.text
+        || pred == keys.font
+        || pred == keys.font_stack
+        || pred == keys.title
+        || pred == keys.svg_bytes
+        || pred == keys.window_icon
+        || pred == keys.tile_asset
+}
+
+fn process_ui_watch_payload(
+    buf: &[u8],
+    ui_pipeline: &mut ui::UiPipeline,
+    keys: &ui::snapshot::UiKeys,
+) {
+    let mut cursor = 0usize;
+    while cursor < buf.len() {
+        let Ok((header, value)) = abi::watch::decode_event(&buf[cursor..]) else {
+            break;
+        };
+        cursor += abi::watch::WATCH_EVENT_HEADER_LEN + value.len();
+
+        let subject = ThingId(header.subject.0);
+        let pred = header.predicate.to_u32_lossy();
+        if pred == keys.has_child {
+            ui_pipeline.mark_node_edges_dirty(subject);
+        } else {
+            ui_pipeline.mark_node_dirty(subject);
+        }
+
+        if is_bytespace_prop(pred, keys)
+            && header.value_encoding == abi::watch::ValueEncoding::U64LE as u8
+            && value.len() == 8
+        {
+            let bs_id = u64::from_le_bytes(value.try_into().unwrap());
+            if bs_id != 0 {
+                ui_pipeline.invalidate_asset(bs_id);
+            }
+        }
+    }
 }
 
 use crate::asset::AssetBank;
@@ -439,7 +492,40 @@ fn main(arg: usize) -> ! {
         cursor.set_asset(asset);
     }
     
-    let _ui_root = stem::ui::UiBuilder::create_root();
+    let ui_root = {
+        let mut roots = [ThingId::default(); 1];
+        match stem::thing::sys::find(abi::schema::kinds::UI_ROOT, &mut roots) {
+            Ok(count) if count > 0 => roots[0],
+            _ => stem::ui::UiBuilder::create_root(),
+        }
+    };
+    let mut ui_pipeline = ui::UiPipeline::new();
+    ui_pipeline.set_root(ui_root);
+    let ui_keys = ui_pipeline.ui_keys();
+    let ui_watch_preds = build_ui_watch_predicates(&ui_keys);
+    let mut ui_watch_ids: alloc::vec::Vec<usize> = alloc::vec::Vec::new();
+    let mut ui_watch_bufs: alloc::vec::Vec<[u8; 4096]> = alloc::vec::Vec::new();
+    let mut ui_watch_seq: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
+    for pred in ui_watch_preds {
+        let filter = abi::root::RootWatchFilter::predicate(pred);
+        let spec = abi::types::WatchSpec {
+            mode: abi::types::WatchMode::StreamOnly as u32,
+            start_seq: 0,
+            filter_ptr: &filter as *const _ as u64,
+            filter_len: core::mem::size_of::<abi::root::RootWatchFilter>() as u64,
+            ..Default::default()
+        };
+        if let Ok(wid) = stem::syscall::root_watch_open(&spec) {
+            ui_watch_ids.push(wid);
+            ui_watch_bufs.push([0u8; 4096]);
+            ui_watch_seq.push(0);
+            let _ = stem::root_watch::watch_drain(
+                wid,
+                ui_watch_bufs.last_mut().unwrap(),
+                |_, bytes| process_ui_watch_payload(bytes, &mut ui_pipeline, &ui_keys),
+            );
+        }
+    }
 
     loop {
         loop_ctrl.next();
@@ -454,9 +540,30 @@ fn main(arg: usize) -> ! {
         let mut builder = FrameBuilder::new(token);
         builder.mark_full_damage();
         clear_surface(&mut surface, 0xFF101018);
-
-        let windows = snapshot::collect_windows(screen_w, screen_h);
-        snapshot::composite_windows(&mut surface, &windows);
+        for idx in 0..ui_watch_ids.len() {
+            match stem::syscall::root_watch_next(
+                ui_watch_ids[idx],
+                &mut ui_watch_seq[idx],
+                &mut ui_watch_bufs[idx],
+            ) {
+                Ok(len) if len > 0 => {
+                    process_ui_watch_payload(
+                        &ui_watch_bufs[idx][..len],
+                        &mut ui_pipeline,
+                        &ui_keys,
+                    );
+                }
+                Err(abi::errors::Errno::EOVERFLOW) => {
+                    crate::perf::add_counter("watch_overflows", 1);
+                    ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchOverflow);
+                }
+                Ok(_) | Err(abi::errors::Errno::EAGAIN) => {}
+                Err(_) => {}
+            }
+        }
+        let mut list = drawlist::DrawList::new();
+        let ui_result = ui_pipeline.run(screen_w, screen_h, &mut list, &ASSETS);
+        raster::execute(&mut surface, &list, ui_result.solid_text);
         
         // Poll input and update cursor
         if bristle_evt_handle != 0 {

@@ -5,6 +5,7 @@
 //! packed layouts for payload structs.
 
 use core::marker::PhantomData;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 /// 128-bit unique identifier for a Thing in the graph.
 #[repr(C)]
@@ -31,11 +32,48 @@ pub struct KindId(pub [u8; 16]);
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct PredicateId(pub [u8; 16]);
 
+static NEXT_THING_ID: AtomicU64 = AtomicU64::new(0);
+
 impl ThingId {
     pub fn new() -> Self {
-        // TODO: Use true randomness. For now, use a rudimentary counter or zero.
-        // Since we are no_std and don't have rand yet.
-        Self([0; 16]) 
+        let seq = NEXT_THING_ID.fetch_add(1, Ordering::Relaxed);
+        // Simple nonce to distinguish runs (if ASLR/pointers vary)
+        let bootish = (core::ptr::addr_of!(NEXT_THING_ID) as u64) ^ 0x5EED_C0DE_CAFE_BABE;
+
+        let mut bytes = [0u8; 16];
+        bytes[0..8].copy_from_slice(&bootish.to_le_bytes());
+        bytes[8..16].copy_from_slice(&seq.to_le_bytes());
+        let id = Self(bytes);
+
+        #[cfg(debug_assertions)]
+        {
+            // Simple tripwire to catch collisions in debug builds.
+            // Uses a small ring buffer and a spinlock.
+            static mut DEBUG_HISTORY: [ThingId; 1024] = [ThingId([0; 16]); 1024];
+            static mut DEBUG_CURSOR: usize = 0;
+            static DEBUG_LOCK: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
+            while DEBUG_LOCK.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+                core::hint::spin_loop();
+            }
+
+            // SAFETY: We hold the spinlock, so we have exclusive access to the static muts.
+            unsafe {
+                for i in 0..1024 {
+                    // Ignore zero-initialized slots if our ID is non-zero (which it should be).
+                    // If we somehow generated a zero ID, we'd panic on the first run, which is also good (bug).
+                    if DEBUG_HISTORY[i] == id {
+                        panic!("ThingId collision detected: {:?}", id);
+                    }
+                }
+                DEBUG_HISTORY[DEBUG_CURSOR] = id;
+                DEBUG_CURSOR = (DEBUG_CURSOR + 1) % 1024;
+            }
+
+            DEBUG_LOCK.store(false, Ordering::Release);
+        }
+
+        id
     }
 
     /// Lossy conversion of a 128-bit ThingId to a u64 (little-endian).

@@ -176,7 +176,7 @@ impl Supervisor {
         // }
         // self.ensure_app("/root_watch_tester");
         self.ensure_app("/ingestd");
-        // self.ensure_app("/png_creator");
+        self.ensure_app("/png_creator");
         self.ensure_app("/bindd");
         // self.ensure_app("/scheduler_verify");
 

@@ -45,7 +45,7 @@ fn main() -> Result<(), abi::errors::Errno> {
     syscall::log_write("INGESTD: Watch active. Loop start.", 1)?;
 
     let mut seq_out = 0u64;
-    let mut watch_buf = [0u8; 4096];
+    let mut watch_buf = [0u8; 1024];
     loop {
         let res = syscall::root_watch_next(watch_id, &mut seq_out, &mut watch_buf);
         match res {
@@ -56,6 +56,9 @@ fn main() -> Result<(), abi::errors::Errno> {
                         unsafe { core::ptr::read_unaligned(watch_buf.as_ptr() as *const _) };
                     // MatchFound
                     if evt.kind == 1 {
+                        use alloc::format;
+                        let msg = format!("Ingestd: Watch event received for node {}", evt.node_id);
+                        syscall::log_write(&msg, 1)?;
                         process_asset(evt.node_id);
                     }
                 }
@@ -72,7 +75,7 @@ fn main() -> Result<(), abi::errors::Errno> {
 }
 
 fn process_asset(id: u64) {
-    let mut buf = [0u8; 4096];
+    let mut buf = [0u8; 512];
     let len_res = syscall::root_bytespace_read(id as usize, 0, &mut buf);
 
     if let Ok(len) = len_res {

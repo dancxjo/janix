@@ -30,6 +30,7 @@ members = [
     "userspace/root_batch_bench",
     "userspace/root_watch_tester",
     "userspace/scheduler_fairness",
+    "userspace/png_creator",
 ]
 resolver = "2"
 

@@ -15,6 +15,8 @@ pub mod ipc;
 pub mod irq;
 pub mod trace;
 
+use abi::vm::{VmBackingKind, VmMapFlags, VmProt, VmRegionInfo};
+
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
     // Decode x86_64 page fault error code bits
@@ -426,7 +428,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         let _hook = GlobalAllocHook;
 
         // Load Sprout
-        let (user_entry, stack_info) = crate::task::loader::load_module(runtime, aspace, mod_desc)
+        let (user_entry, stack_info, mut regions) = crate::task::loader::load_module(runtime, aspace, mod_desc)
             .expect("Failed to load sprout");
 
         // Prepare Module Registry Page
@@ -488,6 +490,15 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             )
             .unwrap();
 
+        regions.push(VmRegionInfo {
+            start: 0x600000,
+            end: 0x601000,
+            prot: VmProt::USER | VmProt::READ,
+            flags: VmMapFlags::empty(),
+            backing_kind: VmBackingKind::Unknown,
+            _reserved: [0; 7],
+        });
+
         // Flush TLB by reloading CR3
         runtime.tasking().activate_address_space(aspace);
 
@@ -497,7 +508,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             let mut entry = user_entry;
             entry.arg0 = 0x600000; // arg0 = registry ptr
             // Spawn at Normal priority - all tasks share the same priority for fair scheduling
-            crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info, crate::task::TaskPriority::Normal);
+            crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info, regions, crate::task::TaskPriority::Normal);
         }
     } else {
         kinfo!("Sprout not found. Checking fallback...");
@@ -508,12 +519,12 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             if let Some(mod_desc) = modules.iter().find(|m| m.name.contains("threads_demo")) {
                 kinfo!("Found threads_demo fallback...");
                 let aspace = runtime.tasking().make_user_address_space();
-                let (user_entry, stack_info) =
+                let (user_entry, stack_info, regions) =
                     crate::task::loader::load_module(runtime, aspace, mod_desc)
                         .expect("Failed to load threads_demo");
                 unsafe {
                     crate::task::scheduler::spawn_user_task_full::<R>(
-                        user_entry, aspace, stack_info, crate::task::TaskPriority::Normal,
+                        user_entry, aspace, stack_info, regions, crate::task::TaskPriority::Normal,
                     );
                 }
                 spawned_fallback = true;

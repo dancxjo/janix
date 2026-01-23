@@ -5,10 +5,9 @@ use abi::errors::{Errno, SysResult};
 /// # Arguments
 /// * `base` - The base address of the range.
 /// * `len` - The length of the range.
-/// * `_writable` - Whether the range must be writable.
-pub fn validate_user_range(base: usize, len: usize, _writable: bool) -> SysResult<()> {
-    // TODO: Actually check against address space boundaries.
-    // For now, just check for null and overflow.
+/// * `writable` - Whether the range must be writable.
+pub fn validate_user_range(base: usize, len: usize, writable: bool) -> SysResult<()> {
+    // Basic checks
     if base == 0 {
         return Err(Errno::EFAULT);
     }
@@ -19,6 +18,15 @@ pub fn validate_user_range(base: usize, len: usize, _writable: bool) -> SysResul
     if base >= 0xffffffff80000000 {
         return Err(Errno::EFAULT);
     }
+
+    // Check against actual mappings if the hook is available
+    if let Some(valid) = unsafe { crate::task::scheduler::check_user_mapping_current(base, len, writable) } {
+        if !valid {
+             // crate::kinfo!("validate_user_range: check failed base={:#x} len={} w={}", base, len, writable);
+             return Err(Errno::EFAULT);
+        }
+    }
+
     Ok(())
 }
 

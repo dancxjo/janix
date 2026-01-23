@@ -36,6 +36,7 @@ impl<R: BootRuntime> Scheduler<R> {
             is_user: false,
             wake_pending: false,
             stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new())),
             timeslice_remaining: DEFAULT_TIMESLICE,
         };
 
@@ -65,6 +66,17 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let aspace = rt.tasking().active_address_space();
 
+        // Inherit mappings from current task
+        let mappings = if let Some(current_id) = self.current {
+            if let Some(parent) = self.tasks.iter().find(|t| t.id == current_id) {
+                parent.mappings.clone()
+            } else {
+                 alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new()))
+            }
+        } else {
+             alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new()))
+        };
+
         let spec = crate::UserTaskSpec {
             entry: entry as u64,
             stack_top: stack as u64,
@@ -88,6 +100,7 @@ impl<R: BootRuntime> Scheduler<R> {
             is_user: true,
             wake_pending: false,
             stack_info: Some(stack_info),
+            mappings,
             timeslice_remaining: DEFAULT_TIMESLICE,
         };
 
@@ -101,6 +114,7 @@ impl<R: BootRuntime> Scheduler<R> {
         entry: UserEntry,
         aspace: <R::Tasking as BootTasking>::AddressSpace,
         stack_info: abi::types::StackInfo,
+        regions: alloc::vec::Vec<abi::vm::VmRegionInfo>,
         priority: crate::task::TaskPriority,
     ) -> Option<TaskId> {
         let rt = crate::runtime::<R>();
@@ -121,6 +135,8 @@ impl<R: BootRuntime> Scheduler<R> {
             rt.tasking()
                 .init_kernel_context(user_thread_trampoline::<R>, stack_top, entry_ptr);
 
+        let mapping_list = crate::memory::mappings::MappingList { regions };
+
         let task: Task<R> = Task {
             id,
             state: TaskState::Runnable,
@@ -135,6 +151,7 @@ impl<R: BootRuntime> Scheduler<R> {
             is_user: true,
             wake_pending: false,
             stack_info: Some(stack_info),
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(mapping_list)),
             timeslice_remaining: DEFAULT_TIMESLICE,
         };
 
@@ -175,12 +192,13 @@ pub unsafe fn spawn_user_task_full<R: BootRuntime>(
     entry: UserEntry,
     aspace: <R::Tasking as BootTasking>::AddressSpace,
     stack_info: abi::types::StackInfo,
+    regions: alloc::vec::Vec<abi::vm::VmRegionInfo>,
     priority: crate::task::TaskPriority,
 ) -> Option<TaskId> {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn_user_task(entry, aspace, stack_info, priority)
+    sched.spawn_user_task(entry, aspace, stack_info, regions, priority)
 }
 
 pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<TaskId> {
@@ -196,14 +214,14 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(name: &str, arg: usize
 
     let aspace = rt.tasking().make_user_address_space();
 
-    let (mut entry, stack_info) = crate::task::loader::load_module(rt, aspace, module)?;
+    let (mut entry, stack_info, regions) = crate::task::loader::load_module(rt, aspace, module)?;
     entry.arg0 = arg;
 
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
-    sched.spawn_user_task(entry, aspace, stack_info, priority)
+    sched.spawn_user_task(entry, aspace, stack_info, regions, priority)
 }
 
 pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {

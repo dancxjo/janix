@@ -3,6 +3,7 @@ use crate::{
     BootModuleDesc, BootRuntime, BootTasking, FrameAllocatorHook, MapKind, MapPerms, UserEntry,
 };
 use abi::types::StackInfo;
+use abi::vm::{VmBackingKind, VmMapFlags, VmProt, VmRegionInfo};
 use core::cmp::{max, min};
 
 struct LoaderAllocHook;
@@ -16,7 +17,7 @@ pub fn load_module<R: BootRuntime>(
     rt: &R,
     aspace: <R::Tasking as BootTasking>::AddressSpace,
     module: &BootModuleDesc,
-) -> Option<(UserEntry, StackInfo)> {
+) -> Option<(UserEntry, StackInfo, alloc::vec::Vec<VmRegionInfo>)> {
     crate::kinfo!("Loading module: {}", module.name);
     if module.bytes.len() >= 16 {
         crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
@@ -39,6 +40,7 @@ pub fn load_module<R: BootRuntime>(
 
     let page_size = rt.page_size() as u64;
     let mut entry_pc = load_addr;
+    let mut regions = alloc::vec::Vec::new();
 
     // 1. Map ELF segments when available; otherwise fall back to a simple RWX layout.
     if let Some(mut elf) = parse_elf64(module.bytes) {
@@ -73,6 +75,21 @@ pub fn load_module<R: BootRuntime>(
                 exec: ph.exec,
             };
             crate::kinfo!("Segment: vaddr={:x} exec={}", seg_vaddr, perms.exec);
+
+            // Record mapping
+            let mut prot = VmProt::USER;
+            if perms.read { prot |= VmProt::READ; }
+            if perms.write { prot |= VmProt::WRITE; }
+            if perms.exec { prot |= VmProt::EXEC; }
+
+            regions.push(VmRegionInfo {
+                start: seg_start as usize,
+                end: seg_end as usize,
+                prot,
+                flags: VmMapFlags::empty(),
+                backing_kind: VmBackingKind::Anonymous,
+                _reserved: [0; 7],
+            });
 
             let mut virt = seg_start;
             while virt < seg_end {
@@ -150,6 +167,19 @@ pub fn load_module<R: BootRuntime>(
             exec: true,
         };
         let mut virt = load_addr as u64;
+
+        // Record mapping
+        let prot = VmProt::USER | VmProt::READ | VmProt::WRITE | VmProt::EXEC;
+        let len = align_up_u64(module.bytes.len() as u64, page_size);
+        regions.push(VmRegionInfo {
+            start: load_addr as usize,
+            end: (load_addr + len) as usize,
+            prot,
+            flags: VmMapFlags::empty(),
+            backing_kind: VmBackingKind::Anonymous,
+            _reserved: [0; 7],
+        });
+
         for chunk in module.bytes.chunks(page_size as usize) {
             let phys = memory::alloc_frame().expect("OOM loading module");
             let hhdm_virt = phys + rt.phys_to_virt_offset();
@@ -183,6 +213,16 @@ pub fn load_module<R: BootRuntime>(
     let commit_len = align_up_u64(initial_commit_bytes as u64, page_size);
     let commit_start = reserve_end.saturating_sub(commit_len);
 
+    // Record stack mapping (committed part)
+    regions.push(VmRegionInfo {
+        start: commit_start as usize,
+        end: reserve_end as usize,
+        prot: VmProt::USER | VmProt::READ | VmProt::WRITE,
+        flags: VmMapFlags::empty(),
+        backing_kind: VmBackingKind::Anonymous,
+        _reserved: [0; 7],
+    });
+
     let mut virt = commit_start;
     while virt < reserve_end {
         let phys = memory::alloc_frame().expect("OOM loading stack");
@@ -215,6 +255,7 @@ pub fn load_module<R: BootRuntime>(
             arg0: 0,
         },
         stack_info,
+        regions
     ))
 }
 

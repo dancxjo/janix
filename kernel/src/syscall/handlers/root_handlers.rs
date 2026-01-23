@@ -4,6 +4,7 @@ use crate::root::{self as root_svc, RootOp};
 use crate::syscall::validate::validate_user_range;
 use super::{copyin, copyout, read_symbol, root_call};
 use abi::errors::{Errno, SysResult};
+use abi::vm::{VmBackingKind, VmMapFlags, VmProt, VmRegionInfo};
 use alloc::string::String;
 use core::sync::atomic::Ordering;
 
@@ -535,6 +536,19 @@ pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
                     }
                 }
                 
+                // Add mapping
+                let region = VmRegionInfo {
+                    start: user_va as usize,
+                    end: (user_va as usize) + page_count * 4096,
+                    prot: VmProt::USER | VmProt::READ | VmProt::WRITE, // Assuming RW
+                    flags: VmMapFlags::SHARED, // Assuming shared
+                    backing_kind: VmBackingKind::Unknown,
+                    _reserved: [0; 7],
+                };
+                unsafe {
+                    crate::task::scheduler::add_user_mapping_current(region).ok();
+                }
+
                 return Ok(user_va as usize);
             } else {
                 return Err(Errno::ENOENT);
@@ -560,8 +574,22 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
         if done != 0 {
             let status = reply.status.load(Ordering::Relaxed);
             if status == 0 {
-                // TODO: Actually unmap pages from page tables
-                // For v0, we just remove the mapping record
+                // Unmap pages
+                if let Some(region) = unsafe { crate::task::scheduler::get_user_mapping_at_current(user_va) } {
+                    let len = region.end - region.start;
+                    unsafe {
+                        if let Ok(removed) = crate::task::scheduler::remove_user_mappings_current(user_va, len) {
+                            for (start, end) in removed {
+                                let mut virt = start as u64;
+                                let end_virt = end as u64;
+                                while virt < end_virt {
+                                    let _ = crate::memory::unmap_user_page(virt);
+                                    virt += 4096;
+                                }
+                            }
+                        }
+                    }
+                }
                 return Ok(0);
             } else {
                 return Err(Errno::ENOENT);

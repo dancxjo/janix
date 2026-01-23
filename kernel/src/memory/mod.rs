@@ -8,6 +8,7 @@ pub mod handle;
 pub mod kheap;
 pub mod layout;
 pub mod map;
+pub mod mappings;
 pub mod paging;
 
 use crate::kinfo;
@@ -71,6 +72,7 @@ pub fn alloc_contiguous_frames(count: usize) -> Option<u64> {
 /// Global hook for mapping user pages. Set by scheduler init.
 static mut MAP_USER_PAGE_HOOK: Option<unsafe fn(u64, u64) -> Result<(), ()>> = None;
 static mut MAP_USER_PAGE_PERMS_HOOK: Option<unsafe fn(u64, u64, MapPerms) -> Result<(), ()>> = None;
+static mut UNMAP_USER_PAGE_HOOK: Option<unsafe fn(u64) -> Result<(), ()>> = None;
 
 /// Initialize the user page mapping hook
 pub unsafe fn set_map_user_page_hook(hook: unsafe fn(u64, u64) -> Result<(), ()>) {
@@ -82,11 +84,25 @@ pub unsafe fn set_map_user_page_perms_hook(hook: unsafe fn(u64, u64, MapPerms) -
     unsafe { MAP_USER_PAGE_PERMS_HOOK = Some(hook) };
 }
 
+/// Initialize the user page unmapping hook.
+pub unsafe fn set_unmap_user_page_hook(hook: unsafe fn(u64) -> Result<(), ()>) {
+    unsafe { UNMAP_USER_PAGE_HOOK = Some(hook) };
+}
+
 /// Map a physical page into the current process's userspace at the given virtual address.
 /// This uses the global hook set during scheduler initialization.
 pub unsafe fn map_user_page(virt: u64, phys: u64) -> Result<(), abi::errors::Errno> {
     if let Some(hook) = unsafe { MAP_USER_PAGE_HOOK } {
         unsafe { hook(virt, phys) }.map_err(|_| abi::errors::Errno::ENOMEM)
+    } else {
+        Err(abi::errors::Errno::EIO)
+    }
+}
+
+/// Unmap a page from the current process's userspace.
+pub unsafe fn unmap_user_page(virt: u64) -> Result<(), abi::errors::Errno> {
+    if let Some(hook) = unsafe { UNMAP_USER_PAGE_HOOK } {
+        unsafe { hook(virt) }.map_err(|_| abi::errors::Errno::EINVAL)
     } else {
         Err(abi::errors::Errno::EIO)
     }

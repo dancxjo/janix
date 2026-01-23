@@ -7,6 +7,8 @@ use crate::BootRuntime;
 use crate::BootTasking;
 use crate::simd::SimdState;
 use abi::types::StackInfo;
+use alloc::sync::Arc;
+use spin::Mutex;
 
 pub type TaskId = u64;
 
@@ -46,6 +48,8 @@ pub struct Task<R: BootRuntime> {
 
     pub stack_info: Option<StackInfo>,
     
+    pub mappings: Arc<Mutex<crate::memory::mappings::MappingList>>,
+
     /// Remaining time slice in ticks before preemption
     pub timeslice_remaining: u32,
 }

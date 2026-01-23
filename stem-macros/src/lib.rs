@@ -64,8 +64,8 @@ pub fn main(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let expanded = quote! {
         #func
 
-        #[no_mangle]
-        pub extern "C" fn stem_user_main(__stem_arg: usize) -> ! {
+        #[unsafe(no_mangle)]
+        pub unsafe extern "C" fn stem_user_main(__stem_arg: usize) -> ! {
             #call_user
         }
     };

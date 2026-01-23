@@ -13,6 +13,10 @@ rust_profile := env_var_or_default("RUST_PROFILE", "dev")
 # Default target
 default: iso
 
+# Alias for iso
+build arch=karch:
+    @just iso {{arch}}
+
 # Build everything (ISO) - optionally specify architecture
 # Examples: just iso, just iso aarch64
 iso arch=karch:

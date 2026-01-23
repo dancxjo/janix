@@ -208,7 +208,12 @@ use abi::root::{WATCH_F_KIND, WATCH_F_PREDICATE, WATCH_F_SUBJECT};
 /// - `Ok(true)` if at least one op matches the filter
 /// - `Ok(false)` if no ops match
 /// - `Err(-22)` if batch is malformed (EINVAL)
-pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, i32> {
+pub fn batch_matches_filter(
+    batch: &[u8],
+    filter: &WatchFilter,
+    interner: &mut Interner,
+    graph: &Graph
+) -> Result<bool, i32> {
     // flags=0 means match all commits
     if filter.matches_all() {
         return Ok(true);
@@ -225,7 +230,8 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
     if magic != BATCH_MAGIC || version != BATCH_VERSION {
         return Err(-22);
     }
-    
+
+    let mut local_kinds = [None; MAX_LOCAL_REFS];
     let mut cursor = 8usize;
     
     for _ in 0..op_count {
@@ -238,18 +244,27 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
         match tag {
             OP_CREATE_NODE => {
                 // kind_id: 16 bytes, out_ref: 2 bytes = 18 bytes total
-                if cursor + 18 > batch.len() { return Err(-22); }
-                
-                // KIND filter matching:
-                // The 16-byte kind in the batch is a hash. To properly match, we'd 
-                // need to intern it and compare with filter.kind_id. For v0, we 
-                // match any CREATE_NODE when kind filter is set (conservative).
-                if (filter.flags & WATCH_F_KIND) != 0 {
-                    // TODO: Full kind matching requires comparing interned symbols
-                    // For now, any CREATE_NODE matches if kind filter is set
-                    return Ok(true);
+                if cursor + 16 > batch.len() { return Err(-22); }
+                let kind_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
+                cursor += 16;
+
+                // out_ref: 2 bytes
+                if cursor + 2 > batch.len() { return Err(-22); }
+                let out_idx = u16::from_le_bytes(batch[cursor..cursor+2].try_into().unwrap()) as usize;
+                cursor += 2;
+
+                let kind_str = bytes_to_hex(&kind_bytes);
+                let kind = interner.intern(&kind_str);
+
+                if out_idx < MAX_LOCAL_REFS {
+                    local_kinds[out_idx] = Some(kind);
                 }
-                cursor += 18;
+                
+                if (filter.flags & WATCH_F_KIND) != 0 {
+                    if kind == filter.kind_id {
+                        return Ok(true);
+                    }
+                }
             }
             OP_PUT_EDGE => {
                 // subject: ThingRef, predicate: 16 bytes, object: ThingRef, flags: 4 bytes
@@ -261,18 +276,19 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
                 let subject_size = if ref_kind == REF_ABSOLUTE { 16 } else if ref_kind == REF_LOCAL { 2 } else { return Err(-22); };
                 if cursor + subject_size > batch.len() { return Err(-22); }
                 
-                // Extract subject ID if absolute
-                let subject_id = if ref_kind == REF_ABSOLUTE {
+                // Extract subject ID/Index
+                let subject_val = if ref_kind == REF_ABSOLUTE {
                     u64::from_le_bytes(batch[cursor..cursor+8].try_into().unwrap())
+                } else if ref_kind == REF_LOCAL {
+                    u16::from_le_bytes(batch[cursor..cursor+2].try_into().unwrap()) as u64
                 } else {
-                    0 // Local refs can't match absolute filters
+                    0
                 };
                 cursor += subject_size;
                 
                 // Predicate: 16 bytes (hash)
                 if cursor + 16 > batch.len() { return Err(-22); }
-                // Note: We store predicate position for future use
-                let _pred_start = cursor;
+                let pred_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
                 cursor += 16;
                 
                 // Object ThingRef
@@ -287,17 +303,43 @@ pub fn batch_matches_filter(batch: &[u8], filter: &WatchFilter) -> Result<bool, 
                 if cursor + 4 > batch.len() { return Err(-22); }
                 cursor += 4;
                 
+                // Match logic
+                let mut matches = true;
+
                 // Check SUBJECT filter
                 if (filter.flags & WATCH_F_SUBJECT) != 0 {
-                    if ref_kind == REF_ABSOLUTE && subject_id == filter.subject_lo {
-                        return Ok(true);
+                    if ref_kind != REF_ABSOLUTE || subject_val != filter.subject_lo {
+                        matches = false;
                     }
                 }
                 
                 // Check PREDICATE filter
-                // TODO: Full predicate matching requires comparing interned symbols
-                // For v0, any PUT_EDGE matches if predicate filter is set
-                if (filter.flags & WATCH_F_PREDICATE) != 0 {
+                if matches && (filter.flags & WATCH_F_PREDICATE) != 0 {
+                    let pred_str = bytes_to_hex(&pred_bytes);
+                    let pred = interner.intern(&pred_str);
+                    if pred != filter.predicate_id {
+                        matches = false;
+                    }
+                }
+
+                // Check KIND filter (of the subject)
+                if matches && (filter.flags & WATCH_F_KIND) != 0 {
+                    let mut found_kind = None;
+                    if ref_kind == REF_ABSOLUTE {
+                        found_kind = graph.get_kind(subject_val);
+                    } else if ref_kind == REF_LOCAL {
+                        let idx = subject_val as usize;
+                        if idx < MAX_LOCAL_REFS {
+                            found_kind = local_kinds[idx];
+                        }
+                    }
+
+                    if found_kind != Some(filter.kind_id) {
+                        matches = false;
+                    }
+                }
+
+                if matches {
                     return Ok(true);
                 }
             }
@@ -535,4 +577,112 @@ pub fn handle_apply_batch(
 ) -> HandlerResult {
     let mut scratch = RootBatchScratch::new();
     handle_apply_batch_with_scratch(graph, interner, batch, &mut scratch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::root::graph::WatchFilter;
+    use crate::root::symbols::Interner;
+    use abi::root::{OP_CREATE_NODE, OP_PUT_EDGE, REF_LOCAL, WATCH_F_KIND, BATCH_MAGIC, BATCH_VERSION};
+
+    #[test]
+    fn test_batch_matches_filter_behavior() {
+        let mut interner = Interner::new();
+        let graph = Graph::new();
+
+        // Define kinds
+        let kind_a_str = "aaaaaaaabbbbbbbbccccccccdddddddd"; // 32 hex chars = 16 bytes
+        let kind_b_str = "11111111222222223333333344444444";
+
+        let kind_a_id = interner.intern(kind_a_str);
+
+        let mut filter = WatchFilter::default();
+        filter.flags = WATCH_F_KIND;
+        filter.kind_id = kind_a_id;
+
+        // Helper to make bytes from hex
+        let hex_to_bytes = |s: &str| -> [u8; 16] {
+            let mut b = [0u8; 16];
+            for i in 0..16 {
+                b[i] = u8::from_str_radix(&s[i*2..i*2+2], 16).unwrap();
+            }
+            b
+        };
+
+        let kind_a_bytes = hex_to_bytes(kind_a_str);
+        let kind_b_bytes = hex_to_bytes(kind_b_str);
+
+        // 1. Test Mismatch (CreateNode Kind B)
+        let mut batch_b = alloc::vec::Vec::new();
+        batch_b.extend_from_slice(&BATCH_MAGIC.to_le_bytes());
+        batch_b.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+        batch_b.extend_from_slice(&1u16.to_le_bytes());
+        batch_b.push(OP_CREATE_NODE);
+        batch_b.extend_from_slice(&kind_b_bytes);
+        batch_b.extend_from_slice(&0u16.to_le_bytes());
+
+        let result = batch_matches_filter(&batch_b, &filter, &mut interner, &graph).expect("parse failed");
+        assert!(!result, "Should NOT match kind B when filtering for kind A");
+
+        // 2. Test Match (CreateNode Kind A)
+        let mut batch_a = alloc::vec::Vec::new();
+        batch_a.extend_from_slice(&BATCH_MAGIC.to_le_bytes());
+        batch_a.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+        batch_a.extend_from_slice(&1u16.to_le_bytes());
+        batch_a.push(OP_CREATE_NODE);
+        batch_a.extend_from_slice(&kind_a_bytes);
+        batch_a.extend_from_slice(&0u16.to_le_bytes());
+
+        let result = batch_matches_filter(&batch_a, &filter, &mut interner, &graph).expect("parse failed");
+        assert!(result, "Should match kind A when filtering for kind A");
+
+        // 3. Test Edge Creation with Local Ref kind lookup
+        // Filter is Kind=A.
+        // Batch: CreateNode(Kind A, local=0) -> PutEdge(Src=local:0) => Should Match
+        let mut batch_edge_match = alloc::vec::Vec::new();
+        batch_edge_match.extend_from_slice(&BATCH_MAGIC.to_le_bytes());
+        batch_edge_match.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+        batch_edge_match.extend_from_slice(&2u16.to_le_bytes()); // 2 ops
+
+        // Op 1: CreateNode Kind A -> local 0
+        batch_edge_match.push(OP_CREATE_NODE);
+        batch_edge_match.extend_from_slice(&kind_a_bytes);
+        batch_edge_match.extend_from_slice(&0u16.to_le_bytes());
+
+        // Op 2: PutEdge Src=local:0
+        batch_edge_match.push(OP_PUT_EDGE);
+        batch_edge_match.push(REF_LOCAL);
+        batch_edge_match.extend_from_slice(&0u16.to_le_bytes()); // local index 0
+        batch_edge_match.extend_from_slice(&[0u8; 16]); // predicate (irrelevant)
+        batch_edge_match.push(REF_LOCAL); // object (irrelevant)
+        batch_edge_match.extend_from_slice(&0u16.to_le_bytes());
+        batch_edge_match.extend_from_slice(&0u32.to_le_bytes()); // flags
+
+        let result = batch_matches_filter(&batch_edge_match, &filter, &mut interner, &graph).expect("parse failed");
+        assert!(result, "Should match Edge from Kind A (local ref)");
+
+        // 4. Test Edge Creation Mismatch
+        // Filter is Kind=A.
+        // Batch: CreateNode(Kind B, local=0) -> PutEdge(Src=local:0) => Should NOT Match
+        let mut batch_edge_mismatch = alloc::vec::Vec::new();
+        batch_edge_mismatch.extend_from_slice(&BATCH_MAGIC.to_le_bytes());
+        batch_edge_mismatch.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+        batch_edge_mismatch.extend_from_slice(&2u16.to_le_bytes());
+
+        batch_edge_mismatch.push(OP_CREATE_NODE);
+        batch_edge_mismatch.extend_from_slice(&kind_b_bytes);
+        batch_edge_mismatch.extend_from_slice(&0u16.to_le_bytes());
+
+        batch_edge_mismatch.push(OP_PUT_EDGE);
+        batch_edge_mismatch.push(REF_LOCAL);
+        batch_edge_mismatch.extend_from_slice(&0u16.to_le_bytes());
+        batch_edge_mismatch.extend_from_slice(&[0u8; 16]);
+        batch_edge_mismatch.push(REF_LOCAL);
+        batch_edge_mismatch.extend_from_slice(&0u16.to_le_bytes());
+        batch_edge_mismatch.extend_from_slice(&0u32.to_le_bytes());
+
+        let result = batch_matches_filter(&batch_edge_mismatch, &filter, &mut interner, &graph).expect("parse failed");
+        assert!(!result, "Should NOT match Edge from Kind B (local ref)");
+    }
 }

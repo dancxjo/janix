@@ -5,7 +5,11 @@
 //! `Edge` and example `Window` payloads.
 
 use crate::wire::{WireSafe, KindId, ThingId, BlobId, PredicateId};
+#[cfg(feature = "hashing")]
 use crate::wire_schema::{Schema, schema_hash};
+#[cfg(not(feature = "hashing"))]
+use crate::wire_schema::Schema;
+
 use crate::packed::{encode_schema, decode_schema};
 use crate::errors::{Result, Error};
 use core::mem::size_of;
@@ -23,7 +27,15 @@ pub trait Graphable: WireSafe + Sized {
     const ENCODED_SIZE: usize = size_of::<Self>();
 
     fn kind() -> KindId {
-        schema_hash(&Self::SCHEMA)
+        #[cfg(feature = "hashing")]
+        {
+            schema_hash(&Self::SCHEMA)
+        }
+        #[cfg(not(feature = "hashing"))]
+        {
+            // Fallback for no-std/sysroot builds where hashing isn't needed/available
+            KindId([0; 16])
+        }
     }
 
     /// Encode self to packed LE bytes using the Schema.

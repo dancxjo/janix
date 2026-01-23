@@ -88,13 +88,13 @@ impl SvgParser {
             if let Some(w) = parse_length_px(sw) { state.stroke_width = w as i32; }
         }
         if let Some(op) = attrs.get("opacity") {
-             if let Some(f) = parse_f32(op) { state.opacity = (f * 255.0).clamp(0.0, 255.0) as u8; }
+             if let Some(f) = parse_f32(op) { state.opacity = f32::clamp(f * 255.0, 0.0, 255.0) as u8; }
         }
         if let Some(fop) = attrs.get("fill-opacity") {
-             if let Some(f) = parse_f32(fop) { state.fill.a = (f * 255.0).clamp(0.0, 255.0) as u8; }
+             if let Some(f) = parse_f32(fop) { state.fill.a = f32::clamp(f * 255.0, 0.0, 255.0) as u8; }
         }
         if let Some(sop) = attrs.get("stroke-opacity") {
-             if let Some(f) = parse_f32(sop) { state.stroke.a = (f * 255.0).clamp(0.0, 255.0) as u8; }
+             if let Some(f) = parse_f32(sop) { state.stroke.a = f32::clamp(f * 255.0, 0.0, 255.0) as u8; }
         }
         if let Some(fr) = attrs.get("fill-rule") {
             match fr {
@@ -108,7 +108,9 @@ impl SvgParser {
 
         // Inline style
         if let Some(style) = attrs.get("style") {
-             for part in style.split(';') {
+             let style_str: &str = style;
+             for part in style_str.split(';') {
+                 let part: &str = part;
                  let kv: Vec<&str> = part.split(':').collect();
                  if kv.len() == 2 {
                      let k = kv[0].trim();
@@ -117,7 +119,7 @@ impl SvgParser {
                          "fill" => if let Some(c) = parse_color(v) { state.fill = Color::new(c.r, c.g, c.b, c.a); },
                          "stroke" => if let Some(c) = parse_color(v) { state.stroke = Color::new(c.r, c.g, c.b, c.a); },
                          "stroke-width" => if let Some(w) = parse_length_px(v) { state.stroke_width = w as i32; },
-                         "opacity" => if let Some(f) = parse_f32(v) { state.opacity = (f * 255.0).clamp(0.0, 255.0) as u8; },
+                         "opacity" => if let Some(f) = parse_f32(v) { state.opacity = f32::clamp(f * 255.0, 0.0, 255.0) as u8; },
                          "fill-rule" => match v {
                              "evenodd" => state.fill_rule = crate::isa::FillRule::EvenOdd,
                              _ => state.fill_rule = crate::isa::FillRule::NonZero,
@@ -178,7 +180,8 @@ impl SvgParser {
                  if let Some(w) = attrs.get("width").and_then(parse_length_px) { self.width = w as i32; }
                  if let Some(h) = attrs.get("height").and_then(parse_length_px) { self.height = h as i32; }
                  if let Some(vb) = attrs.get("viewBox") {
-                     let parts: Vec<f32> = vb.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                     let vb_str: &str = vb;
+                     let parts: Vec<f32> = vb_str.split_whitespace().filter_map(|s: &str| s.parse::<f32>().ok()).collect();
                      if parts.len() == 4 {
                          let vbr = Rect::new(parts[0] as i32, parts[1] as i32, parts[2] as i32, parts[3] as i32);
                          self.view_box = Some(vbr);
@@ -258,7 +261,8 @@ impl SvgParser {
             "polyline" | "polygon" => {
                 self.push_state();
                 self.apply_attributes(attrs);
-                 if let Some(pts_str) = attrs.get("points") {
+                 if let Some(pts_string) = attrs.get("points") {
+                    let pts_str: &str = pts_string;
                     let pts: Vec<f32> = pts_str
                         .split(|c| c == ',' || c == ' ' || c == '\n')
                         .filter_map(parse_f32)

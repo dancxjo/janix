@@ -10,7 +10,7 @@ svg-cursors = []
 svg-demo = ["svg-cursors"]
 
 [dependencies]
-stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
+stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler", "xml"] }
 abi = { path = "../../abi" }
 fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc", "rc"] }

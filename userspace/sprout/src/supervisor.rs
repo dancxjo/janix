@@ -167,6 +167,7 @@ impl Supervisor {
         // self.ensure_app("/echo");  // Handled by pipelines.rs now
         self.ensure_app("/font_explorer");
         self.ensure_app("/font_explorer");
+        self.ensure_app("/std_smoke");
         // self.ensure_app("/ata_disk");
         // self.ensure_app("/disk_probe");
         // self.ensure_app("/ahci_disk");

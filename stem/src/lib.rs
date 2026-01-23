@@ -9,6 +9,7 @@ pub use stem_macros::main;
 
 pub mod arch;
 pub mod bitset;
+#[cfg(feature = "console")]
 pub mod console;
 pub mod device;
 pub mod errors;
@@ -23,19 +24,23 @@ pub mod syscall;
 pub mod thread;
 pub mod time;
 pub mod utils;
+#[cfg(feature = "console")]
 pub mod ui;
 pub mod vm;
 pub mod root_watch;
+#[cfg(feature = "xml")]
 pub mod xml;
 #[cfg(feature = "rt")]
 pub mod memory;
 pub mod perf;
 
+#[cfg(feature = "console")]
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ($crate::console::print(format_args!($($arg)*)));
 }
 
+#[cfg(feature = "console")]
 #[macro_export]
 macro_rules! println {
     () => ($crate::print!("\n"));
@@ -46,6 +51,7 @@ pub fn log(s: &str) {
     let _ = syscall::log_write(s, 3);
 }
 
+#[cfg(feature = "console")]
 #[macro_export]
 macro_rules! error {
     ($($arg:tt)*) => {{
@@ -57,6 +63,7 @@ macro_rules! error {
     }};
 }
 
+#[cfg(feature = "console")]
 #[macro_export]
 macro_rules! warn {
     ($($arg:tt)*) => {{
@@ -68,6 +75,7 @@ macro_rules! warn {
     }};
 }
 
+#[cfg(feature = "console")]
 #[macro_export]
 macro_rules! info {
     ($($arg:tt)*) => {{
@@ -79,6 +87,7 @@ macro_rules! info {
     }};
 }
 
+#[cfg(feature = "console")]
 #[macro_export]
 macro_rules! debug {
     ($($arg:tt)*) => {{
@@ -90,6 +99,7 @@ macro_rules! debug {
     }};
 }
 
+#[cfg(feature = "console")]
 #[macro_export]
 macro_rules! trace {
     ($($arg:tt)*) => {{

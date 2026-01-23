@@ -111,6 +111,11 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "std_smoke",
+            is_init: false,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "photosynthesis",
             is_init: false,
             features: vec![],
@@ -404,11 +409,18 @@ fn build_userspace_app_with_features(
 ) -> Result<()> {
     println!("Building {} ...", name);
 
+    let build_std = if name == "std_smoke" {
+        "std,panic_abort"
+    } else {
+        "core,alloc"
+    };
+
     let mut cmd = cmd!(
         sh,
-        "cargo build --target {target} --profile {profile} -p {name} -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
+        "cargo build --target {target} --profile {profile} -p {name} -Z build-std={build_std} -Z build-std-features=compiler-builtins-mem"
     )
-    .env("RUSTFLAGS", "-Awarnings");
+    .env("RUSTFLAGS", "-Awarnings")
+    .env("RUST_SRC_PATH", sh.current_dir().join("vendor/rust-src/library"));
 
     for f in features {
         cmd = cmd.arg("--features").arg(f);

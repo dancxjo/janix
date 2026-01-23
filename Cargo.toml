@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "userspace/thingos_std_shim",
     "userspace/virtio_gpu",
     "userspace/display_bootfb",
     "userspace/display_virtio_gpu",
@@ -33,6 +34,7 @@ members = [
     "userspace/scheduler_fairness",
     "userspace/photosynthesis",
     "userspace/blossom",
+    "userspace/std_smoke",
 ]
 resolver = "2"
 

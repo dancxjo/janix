@@ -42,6 +42,7 @@ pub fn bytespace_read(id: ThingId, offset: usize, out: &mut [u8]) -> Result<usiz
 }
 
 pub fn watch_subscribe(target: ThingId, mask: u64) -> Result<ThingId, Errno> {
+    #[cfg(feature = "console")]
     crate::println!("STEM: watch_subscribe target={} mask={}", target.to_u64_lossy(), mask);
     let ret = unsafe {
         syscall6(

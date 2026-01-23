@@ -8,6 +8,8 @@ iso_root/
 
 # Vendor dependencies (fetched by `just fetch`)
 /vendor/
+!/vendor/rust-src/
+
 
 # Fetched assets (managed by `just fetch`)
 # NOTE: /assets/wallpapers/ is tracked - must come before the ignore
@@ -20,3 +22,5 @@ iso_root/
 
 # Bran binaries
 /bran/bin-*
+
+!/vendor/rust-src/library/std/src/sys/pal/thingos/

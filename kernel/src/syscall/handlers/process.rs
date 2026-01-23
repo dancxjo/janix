@@ -54,7 +54,7 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
         crate::task::scheduler::spawn_user_thread_current(
             req.entry,
             req.sp,
-            0,
+            req.arg,
             req.stack,
             current_p,
         )

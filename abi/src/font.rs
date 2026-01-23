@@ -1,17 +1,21 @@
+#[cfg(feature = "serde")]
 use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 #[repr(C)]
 pub struct FontId(pub u64); // Graph Node ID
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct FaceId {
     pub font_id: FontId,
     pub index: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub enum FontRequest {
     ListFonts,
     RenderText {
@@ -27,14 +31,16 @@ pub enum FontRequest {
     },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub struct FontInfo {
     pub face_id: FaceId,
     pub family: alloc::string::String,
     pub style: alloc::string::String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub struct TextBitmap {
     pub width: u32,
     pub height: u32,
@@ -44,7 +50,8 @@ pub struct TextBitmap {
     pub format_a8: bool, // true = A8, false = ARGB
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub struct TextMetrics {
     pub width: u32,
     pub height: u32,
@@ -52,7 +59,8 @@ pub struct TextMetrics {
     pub advance_x: i32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[derive(Debug, Clone)]
 pub enum FontResponse {
     FontList(alloc::vec::Vec<FontInfo>),
     Rendered(TextBitmap),

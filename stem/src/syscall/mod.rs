@@ -115,6 +115,7 @@ pub fn spawn_thread(entry: extern "C" fn() -> !, stack: &crate::stack::Stack) ->
     let req = abi::types::SpawnThreadReq {
         entry: entry as usize,
         sp: stack.sp as usize,
+        arg: 0,
         stack: stack.info,
     };
     let ret = unsafe {
@@ -128,6 +129,36 @@ pub fn spawn_thread(entry: extern "C" fn() -> !, stack: &crate::stack::Stack) ->
             0,
         )
     };
+    abi::errors::errno(ret).map(|v| v as u64)
+}
+
+pub fn spawn_thread_with_arg(
+    entry: extern "C" fn(usize) -> !,
+    arg: usize,
+    stack: &crate::stack::Stack,
+) -> Result<u64, Errno> {
+    let req = abi::types::SpawnThreadReq {
+        entry: entry as usize,
+        sp: stack.sp as usize,
+        arg,
+        stack: stack.info,
+    };
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_SPAWN_THREAD,
+            &req as *const abi::types::SpawnThreadReq as usize,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u64)
+}
+
+pub fn get_tid() -> Result<u64, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_GET_TID, 0, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| v as u64)
 }
 
@@ -401,6 +432,46 @@ pub fn root_link(src: usize, rel_ptr: usize, dst: usize) -> Result<usize, Errno>
         src,
         rel_ptr,
         dst,
+        0, 0, 0
+    ) {
+        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+        r => r as usize
+    }};
+    Ok(ret)
+}
+
+pub fn root_get_edges(node: usize, buf: *mut u8, len: usize) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        SYS_ROOT_GET_EDGES,
+        node,
+        buf as usize,
+        len,
+        0, 0, 0
+    ) {
+        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+        r => r as usize
+    }};
+    Ok(ret)
+}
+
+pub fn root_bytespace_info(node: usize) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        SYS_ROOT_BYTESPACE_INFO,
+        node,
+        0, 0, 0, 0, 0
+    ) {
+        r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+        r => r as usize
+    }};
+    Ok(ret)
+}
+
+pub fn root_find(kind: usize, buf: *mut u8, len: usize) -> Result<usize, Errno> {
+    let ret = unsafe { match raw_syscall6(
+        SYS_ROOT_FIND,
+        kind,
+        buf as usize,
+        len,
         0, 0, 0
     ) {
         r if r < 0 => return Err(core::mem::transmute(-(r as i32))),

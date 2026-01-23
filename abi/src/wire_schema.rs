@@ -85,6 +85,7 @@ impl Schema {
 /// - Canonical encoding of fields in order.
 /// - Names utf-8 bytes.
 /// - Types with fixed tags.
+#[cfg(feature = "hashing")]
 pub fn schema_hash(schema: &Schema) -> KindId {
     let mut hasher = blake3::Hasher::new();
     hasher.update(b"ThingOS-Schema-v1");
@@ -108,6 +109,7 @@ pub fn schema_hash(schema: &Schema) -> KindId {
     KindId(out)
 }
 
+#[cfg(feature = "hashing")]
 fn hash_wire_type(hasher: &mut blake3::Hasher, ty: &WireType) {
     match ty {
         WireType::U8 => { hasher.update(&[1]); }

@@ -60,6 +60,7 @@ impl SymbolId {
     /// but let's do a quick mix to ensure they are distinct spaces if needed.
     /// Actually, the prompt suggests "stable hash of the BlobId bytes" or simple mapping.
     /// Let's use blake3 hashing of the BlobId bytes to be consistent with "derived" IDs.
+    #[cfg(feature = "hashing")]
     pub fn from_blob(blob: BlobId) -> SymbolId {
         let mut hasher = blake3::Hasher::new();
         hasher.update(b"SymbolId");

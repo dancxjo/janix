@@ -1,0 +1,11 @@
+[package]
+name = "thingos_std_shim"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+rt = ["stem/rt"]
+
+[dependencies]
+spin = "0.9"
+stem = { path = "../../stem", features = ["global-alloc", "panic-handler"] }

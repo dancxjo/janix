@@ -7,7 +7,7 @@ use abi::ids::HandleId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiNodeKind {
-    Unknown, Root, Window, Panel, Text, Image, Overlay, Inline,
+    Unknown, Root, Window, Panel, Text, TextRun, Image, Overlay, Inline, Viewport, Tile, Chrome,
 }
 
 impl UiNodeKind {
@@ -17,9 +17,13 @@ impl UiNodeKind {
         else if id == kinds.window { Self::Window }
         else if id == kinds.panel { Self::Panel }
         else if id == kinds.text { Self::Text }
+        else if id == kinds.text_run { Self::TextRun }
         else if id == kinds.image { Self::Image }
         else if id == kinds.overlay { Self::Overlay }
         else if id == kinds.inline { Self::Inline }
+        else if id == kinds.viewport { Self::Viewport }
+        else if id == kinds.tile { Self::Tile }
+        else if id == kinds.chrome { Self::Chrome }
         else { Self::Unknown }
     }
 }
@@ -27,13 +31,25 @@ impl UiNodeKind {
 #[derive(Clone)]
 pub struct KindIds {
     pub root: u32, pub window: u32, pub panel: u32,
-    pub text: u32, pub image: u32, pub overlay: u32,
-    pub inline: u32,
+    pub text: u32, pub text_run: u32, pub image: u32, pub overlay: u32,
+    pub inline: u32, pub viewport: u32, pub tile: u32, pub chrome: u32,
 }
 
 impl KindIds {
     pub fn empty() -> Self {
-        Self { root: 0, window: 0, panel: 0, text: 0, image: 0, overlay: 0, inline: 0 }
+        Self {
+            root: 0,
+            window: 0,
+            panel: 0,
+            text: 0,
+            text_run: 0,
+            image: 0,
+            overlay: 0,
+            inline: 0,
+            viewport: 0,
+            tile: 0,
+            chrome: 0,
+        }
     }
     pub fn intern() -> Self {
         use abi::schema::kinds;
@@ -43,11 +59,15 @@ impl KindIds {
             window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0),
             panel: stem::thing::sys::intern(kinds::UI_PANEL).unwrap_or(0),
             text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or(0),
+            text_run: stem::thing::sys::intern(kinds::UI_TEXT_RUN).unwrap_or(0),
             image: stem::thing::sys::intern(kinds::UI_IMAGE).unwrap_or(0),
             overlay: stem::thing::sys::intern(kinds::UI_OVERLAY).unwrap_or(0),
             inline: stem::thing::sys::intern(kinds::UI_INLINE).unwrap_or(0),
+            viewport: stem::thing::sys::intern(kinds::UI_VIEWPORT).unwrap_or(0),
+            tile: stem::thing::sys::intern(kinds::UI_TILE).unwrap_or(0),
+            chrome: stem::thing::sys::intern(kinds::UI_CHROME).unwrap_or(0),
         };
-        crate::trace_counter!("ui.init.syscalls.intern_kinds", 7);
+        crate::trace_counter!("ui.init.syscalls.intern_kinds", 11);
         kids
     }
 }
@@ -64,6 +84,8 @@ pub struct UiKeys {
     pub inline_mode: u32, pub svg_bytes: u32,
     pub window_icon: u32,
     pub window_shaded: u32,
+    pub scroll_x: u32, pub scroll_y: u32, pub clip: u32,
+    pub tile_asset: u32, pub tile_state: u32,
 }
 
 impl UiKeys {
@@ -76,6 +98,8 @@ impl UiKeys {
             inset_right: 0, inset_bottom: 0, inline_mode: 0, svg_bytes: 0,
             window_icon: 0,
             window_shaded: 0,
+            scroll_x: 0, scroll_y: 0, clip: 0,
+            tile_asset: 0, tile_state: 0,
         }
     }
     pub fn intern() -> Self {
@@ -108,26 +132,33 @@ impl UiKeys {
             svg_bytes: stem::thing::sys::intern(keys::UI_SVG_BYTES).unwrap_or(0),
             window_icon: stem::thing::sys::intern(keys::UI_WINDOW_ICON).unwrap_or(0),
             window_shaded: stem::thing::sys::intern(keys::UI_WINDOW_SHADED).unwrap_or(0),
+            scroll_x: stem::thing::sys::intern(keys::UI_SCROLL_X).unwrap_or(0),
+            scroll_y: stem::thing::sys::intern(keys::UI_SCROLL_Y).unwrap_or(0),
+            clip: stem::thing::sys::intern(keys::UI_CLIP).unwrap_or(0),
+            tile_asset: stem::thing::sys::intern(keys::UI_TILE_ASSET).unwrap_or(0),
+            tile_state: stem::thing::sys::intern(keys::UI_TILE_STATE).unwrap_or(0),
         };
-        crate::trace_counter!("ui.init.syscalls.intern_keys", 26);
+        crate::trace_counter!("ui.init.syscalls.intern_keys", 31);
         k
     }
-    pub fn numeric_keys(&self) -> [u32; 21] {
-        [self.x, self.y, self.w, self.h, self.color, self.radius,
-         self.hidden, self.z_index, self.center_x, self.center_y,
-         self.fill_parent, self.bg_color, self.fg_color, 
-         self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
-         self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded]
-    }
-    pub fn string_keys(&self) -> [u32; 4] {
-        [self.text, self.font, self.font_stack, self.title]
-    }
-    pub fn all_keys(&self) -> [u32; 25] {
+    pub fn numeric_keys(&self) -> [u32; 26] {
         [self.x, self.y, self.w, self.h, self.color, self.radius,
          self.hidden, self.z_index, self.center_x, self.center_y,
          self.fill_parent, self.bg_color, self.fg_color, 
          self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
          self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded,
+         self.scroll_x, self.scroll_y, self.clip, self.tile_asset, self.tile_state]
+    }
+    pub fn string_keys(&self) -> [u32; 4] {
+        [self.text, self.font, self.font_stack, self.title]
+    }
+    pub fn all_keys(&self) -> [u32; 30] {
+        [self.x, self.y, self.w, self.h, self.color, self.radius,
+         self.hidden, self.z_index, self.center_x, self.center_y,
+         self.fill_parent, self.bg_color, self.fg_color, 
+         self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
+         self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded,
+         self.scroll_x, self.scroll_y, self.clip, self.tile_asset, self.tile_state,
          self.text, self.font, self.font_stack, self.title]
     }
 }
@@ -346,7 +377,9 @@ impl UiSnapshot {
         let kind = match kind_sym {
             Some(sym) => {
                 let k = UiNodeKind::from_symbol(sym.0 as u32, kind_ids);
-                if k == UiNodeKind::Text { crate::trace_counter!("ui.snap.text_nodes", 1); }
+                if matches!(k, UiNodeKind::Text | UiNodeKind::TextRun) {
+                    crate::trace_counter!("ui.snap.text_nodes", 1);
+                }
                 k
             },
             None => return,
@@ -527,6 +560,11 @@ impl UiSnapshot {
                                  props.insert(key, val);
                                  window_icon_content = cache.get_or_parse_svg(ThingId::from_u64(val));
                              }
+                        } else if key == keys.tile_asset {
+                             if val != 0 {
+                                 props.insert(key, val);
+                                 svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                             }
                         } else {
                             props.insert(key, val);
                         }
@@ -561,6 +599,9 @@ impl UiSnapshot {
                 }
                 if p == keys.window_icon && val != 0 {
                     *window_icon_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                }
+                if p == keys.tile_asset && val != 0 {
+                    *svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
                 }
             }
         }

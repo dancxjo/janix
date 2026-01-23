@@ -333,15 +333,28 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa
         let dp = ptr.add(offset);
         let dv = *dp;
         if sa == 255 {
-            *dp = ((sr as u32) << 16) | ((sg as u32) << 8) | sb as u32;
+            *dp = ((sa as u32) << 24) | ((sr as u32) << 16) | ((sg as u32) << 8) | sb as u32;
             return;
         }
+        let da = ((dv >> 24) & 0xFF) as u8;
         let (dr, dg, db) = (
             ((dv >> 16) & 0xFF) as u8,
             ((dv >> 8) & 0xFF) as u8,
             (dv & 0xFF) as u8,
         );
-        *dp = ((blend_ch(sr, dr, sa) as u32) << 16)
+        // Alpha blend: out_a = sa + da * (255 - sa)
+        // This is strictly 'src over' assuming un-premultiplied color blending approx
+        let out_a = sa as u32 + ((da as u32 * (255 - sa as u32)) >> 8);
+        // Correct color blending requires weighing by alpha, but for now we stick to simple channel blending
+        // which matches the existing logic but adds Alpha write.
+        // Actually existing logic `blend_ch` interpolates channels based on SA. This is correct for SrcOver if Dst is opaque.
+        // If Dst is transparent, we need to respect that. 
+        // But for cursor (dst=0), simple blend_ch(s, 0, sa) = scale_ch(s, sa).
+        // This is premultiplied color result?
+        // Let's just write the blended rgb and the computed alpha.
+        
+        *dp = (out_a << 24)
+            | ((blend_ch(sr, dr, sa) as u32) << 16)
             | ((blend_ch(sg, dg, sa) as u32) << 8)
             | (blend_ch(sb, db, sa) as u32);
     }

@@ -532,4 +532,69 @@ mod tests {
         assert_eq!(history.oldest_seq(), Some(3));
         assert_eq!(history.bytes, 11);
     }
+
+    #[test]
+    fn test_commit_matches_filtering() {
+        let mut summary = CommitSummary::default();
+        summary.kinds.insert(10);
+        summary.predicates.insert(20);
+        summary.subjects.insert(30);
+
+        // 1. Match all (flags = 0)
+        let filter_all = WatchFilter::default();
+        assert!(commit_matches(&filter_all, &summary));
+
+        // 2. Match Kind
+        let mut filter_kind = WatchFilter::default();
+        filter_kind.flags |= WATCH_F_KIND;
+        filter_kind.kind_id = 10;
+        assert!(commit_matches(&filter_kind, &summary));
+
+        // Mismatch Kind
+        filter_kind.kind_id = 11;
+        assert!(!commit_matches(&filter_kind, &summary));
+
+        // 3. Match Predicate
+        let mut filter_pred = WatchFilter::default();
+        filter_pred.flags |= WATCH_F_PREDICATE;
+        filter_pred.predicate_id = 20;
+        assert!(commit_matches(&filter_pred, &summary));
+
+        // Mismatch Predicate
+        filter_pred.predicate_id = 21;
+        assert!(!commit_matches(&filter_pred, &summary));
+
+        // 4. Match Subject
+        let mut filter_subj = WatchFilter::default();
+        filter_subj.flags |= WATCH_F_SUBJECT;
+        filter_subj.subject_lo = 30;
+        assert!(commit_matches(&filter_subj, &summary));
+
+        // Mismatch Subject
+        filter_subj.subject_lo = 31;
+        assert!(!commit_matches(&filter_subj, &summary));
+
+        // 5. Match AND logic (Kind AND Predicate)
+        let mut filter_and = WatchFilter::default();
+        filter_and.flags = WATCH_F_KIND | WATCH_F_PREDICATE;
+        filter_and.kind_id = 10;
+        filter_and.predicate_id = 20;
+        assert!(commit_matches(&filter_and, &summary));
+
+        // One matches, other doesn't
+        filter_and.kind_id = 11; // Wrong kind
+        assert!(!commit_matches(&filter_and, &summary));
+
+        // 6. Overflow behavior
+        let mut summary_overflow = CommitSummary::default();
+        // Force overflow kinds
+        summary_overflow.kinds.overflowed = true;
+
+        let mut filter_overflow = WatchFilter::default();
+        filter_overflow.flags = WATCH_F_KIND;
+        filter_overflow.kind_id = 999; // Not in set (set is empty/irrelevant if overflowed)
+
+        // Should match because overflowed set is conservative
+        assert!(commit_matches(&filter_overflow, &summary_overflow));
+    }
 }

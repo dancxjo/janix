@@ -294,3 +294,11 @@ pub mod hid {
     pub const REL_ROUTES_TO: &str = "ROUTES_TO"; // (svc.Input)-[:ROUTES_TO]->(app.Echo)
     pub const REL_PRODUCES: &str = "PRODUCES"; // (drv.Ps2Keyboard)-[:PRODUCES]->(dev.hid.Keyboard)
 }
+
+// Pointer / Input properties
+pub mod pointer {
+    pub const POINTER_X: &str = "pointer.x";
+    pub const POINTER_Y: &str = "pointer.y";
+    pub const POINTER_BUTTONS: &str = "pointer.buttons";
+    pub const POINTER: &str = "input.Pointer";
+}

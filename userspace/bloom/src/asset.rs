@@ -918,10 +918,16 @@ impl AssetBank {
         
         let pixels_vec = crate::svg::render_to_buffer(svg_content, size, size, scale);
         
+        
         // Convert Vec<u32> to Arc<[u32]>
         let pixels = Arc::from(pixels_vec.into_boxed_slice());
 
         info!("[asset_bank] SUCCESS: SVG cursor rasterized {}x{}", size, size);
+        
+        // Hotspot: default.svg config says (6,4) at 24px, scale to 96px = (24,16)
+        let hotspot_scale = scale;
+        let hotspot_x = (6.0 * hotspot_scale) as u32;
+        let hotspot_y = (4.0 * hotspot_scale) as u32;
         
         Some(CursorAsset::Static(CursorFrame {
             image: Image {
@@ -931,8 +937,8 @@ impl AssetBank {
                 gen: AssetGeneration::ZERO,
             },
             delay_ms: 0,
-            hotspot_x: 0,
-            hotspot_y: 0,
+            hotspot_x,
+            hotspot_y,
         }))
     }
 

@@ -216,10 +216,21 @@ impl PaintBuilder {
                     icon_size,
                 );
                 if let Some(icon_cmds) = &node.window_icon_content {
-                    objects.push(PaintObject::Commands {
-                        cmds: icon_cmds.clone(),
-                        rect: icon_rect,
-                    });
+                    if let Some(raster) = Self::rasterize_svg(
+                        icon_cmds,
+                        &icon_rect,
+                        render_state,
+                        node.id.to_u64_lossy(),
+                        "paint.icon.hit",
+                        "paint.icon.miss",
+                    ) {
+                        objects.push(raster);
+                    } else {
+                        objects.push(PaintObject::Commands {
+                            cmds: icon_cmds.clone(),
+                            rect: icon_rect,
+                        });
+                    }
                 }
 
                 let text_offset_x = icon_size + (icon_padding * 2);
@@ -287,85 +298,45 @@ impl PaintBuilder {
             return;
         }
 
+        // UI_TILE special handling
+        if node.kind == UiNodeKind::Tile {
+            if let Some(cmds) = &node.svg_content {
+                if let Some(raster) = Self::rasterize_svg(
+                    cmds,
+                    &layout.rect,
+                    render_state,
+                    node.id.to_u64_lossy(),
+                    "paint.tile.hit",
+                    "paint.tile.miss",
+                ) {
+                    objects.push(raster);
+                    return;
+                }
+                objects.push(PaintObject::Commands {
+                    cmds: cmds.clone(),
+                    rect: layout.rect.clone(),
+                });
+                return;
+            }
+        }
+
         // UI_INLINE special handling
         if node.kind == UiNodeKind::Inline {
             let mode = Self::get_prop(node, keys::UI_INLINE_MODE, symbols);
             if mode == 1 {
                 // Svg
                 if let Some(cmds) = &node.svg_content {
-                    let w = layout.rect.w as u32;
-                    let h = layout.rect.h as u32;
-                    if w > 0 && h > 0 {
-                        let content_hash = cmds.as_ptr() as *const () as u64;
-                        let key = RasterKey::Svg {
-                            node_id: node.id.to_u64_lossy(),
-                            w,
-                            h,
-                            content_hash,
-                        };
-
-                        if let Some(image) = render_state.raster_cache.get(&key) {
-                            crate::perf::add_counter("paint.svg.hit", 1);
-                            objects.push(PaintObject::Raster {
-                                rect: layout.rect.clone(),
-                                image: image.clone(),
-                            });
-                            return;
-                        }
-
-                        crate::perf::add_counter("paint.svg.miss", 1);
-                        // Rasterize
-                        let stride = w as usize * 4;
-                        let len = stride * h as usize;
-                        let mut pixels = alloc::vec![0u32; len / 4];
-
-                        let mut surf = unsafe {
-                            crate::surface::Surface::new(
-                                pixels.as_mut_ptr() as *mut u8,
-                                len,
-                                w,
-                                h,
-                                stride as u32,
-                            )
-                        };
-
-                        let mut list = crate::drawlist::DrawList::new();
-                        // Transform to 0,0 since we are rasterizing into a surface of exactly the node size
-                        // The paint logic in 'lower' handles translation of the Raster to layout.x/y
-                        // But wait, the original Objects::Commands logic pushed a translation of (rect.x, rect.y).
-                        // If we rasterize 0..w, we don't need translation in the drawlist, we just draw at 0,0.
-                        // BUT SVG commands might have their own coordinates?
-                        // UiNodeKind::Inline SVG handling in `lower` (before my change) did:
-                        // list.commands().push(DrawCmd::PushTransform { transform: Transform::translate(rect.x, rect.y) });
-                        // Then appended commands.
-                        // So the commands are local to 0,0? Or local to where they were defined?
-                        // Usually SVG parser produces coords starting at 0,0.
-                        // So if we rasterize into a w*h surface, we don't need any translation *if* the SVG fits in 0,0..w,h.
-                        // The `rect` in `lower` translated them to the layout position on screen.
-                        // So here we should NOT translate. We just draw them.
-                        // The `Raster` object itself has `rect: layout.rect`.
-                        // In `lower` (raster handling), we call `list.blit_image(image, rect.x, rect.y)`.
-                        // `blit_image` creates `DrawCmd::DrawImage` with `dest = Rect(x, y, w, h)`.
-                        // So yes, we rasterize locally at 0,0.
-
-                        list.commands().extend(cmds.iter().cloned());
-                        crate::raster::execute(&mut surf, &list, false);
-
-                        let image = Arc::new(Image {
-                            width: w,
-                            height: h,
-                            pixels: Arc::from(pixels),
-                            gen: crate::frame::AssetGeneration(0),
-                        });
-
-                        render_state.raster_cache.insert(key, image.clone());
-                        objects.push(PaintObject::Raster {
-                            rect: layout.rect.clone(),
-                            image,
-                        });
+                    if let Some(raster) = Self::rasterize_svg(
+                        cmds,
+                        &layout.rect,
+                        render_state,
+                        node.id.to_u64_lossy(),
+                        "paint.svg.hit",
+                        "paint.svg.miss",
+                    ) {
+                        objects.push(raster);
                         return;
                     }
-
                     objects.push(PaintObject::Commands {
                         cmds: cmds.clone(),
                         rect: layout.rect.clone(),
@@ -517,6 +488,69 @@ impl PaintBuilder {
             return *node.props.get(&id).unwrap_or(&0);
         }
         0
+    }
+
+    fn rasterize_svg(
+        cmds: &alloc::sync::Arc<alloc::vec::Vec<crate::drawlist::DrawCmd>>,
+        rect: &Rect,
+        render_state: &mut RenderState,
+        node_id: u64,
+        hit_counter: &'static str,
+        miss_counter: &'static str,
+    ) -> Option<PaintObject> {
+        let w = rect.w as u32;
+        let h = rect.h as u32;
+        if w == 0 || h == 0 {
+            return None;
+        }
+
+        let content_hash = cmds.as_ptr() as *const () as u64;
+        let key = RasterKey::Svg {
+            node_id,
+            w,
+            h,
+            content_hash,
+        };
+
+        if let Some(image) = render_state.raster_cache.get(&key) {
+            crate::perf::add_counter(hit_counter, 1);
+            return Some(PaintObject::Raster {
+                rect: rect.clone(),
+                image: image.clone(),
+            });
+        }
+
+        crate::perf::add_counter(miss_counter, 1);
+        let stride = w as usize * 4;
+        let len = stride * h as usize;
+        let mut pixels = alloc::vec![0u32; len / 4];
+
+        let mut surf = unsafe {
+            crate::surface::Surface::new(
+                pixels.as_mut_ptr() as *mut u8,
+                len,
+                w,
+                h,
+                stride as u32,
+            )
+        };
+
+        let mut list = crate::drawlist::DrawList::new();
+        list.commands().extend(cmds.iter().cloned());
+        crate::raster::execute(&mut surf, &list, false);
+
+        let image = Arc::new(Image {
+            width: w,
+            height: h,
+            pixels: Arc::from(pixels),
+            gen: crate::frame::AssetGeneration(0),
+        });
+
+        render_state.raster_cache.insert(key, image.clone());
+        Some(PaintObject::Raster {
+            rect: rect.clone(),
+            image,
+        })
     }
 
     fn get_str_prop(

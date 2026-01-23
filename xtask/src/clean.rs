@@ -39,7 +39,24 @@ pub fn clean(sh: &Shell) -> Result<()> {
     println!("Cleaning downloaded assets (preserving wallpapers)...");
     sh.remove_path("assets/cursors")?;
     sh.remove_path("assets/fonts")?;
-    sh.remove_path("assets/icons")?;
+    // sh.remove_path("assets/icons")?; // OLD
+    
+    // Clean icons, preserving 'thingos'
+    if std::path::Path::new("assets/icons").exists() {
+        for entry in std::fs::read_dir("assets/icons")? {
+           let entry = entry?;
+           let path = entry.path();
+           if let Some(name) = path.file_name() {
+               if name != "thingos" {
+                   if path.is_dir() {
+                       sh.remove_path(path)?;
+                   } else {
+                       std::fs::remove_file(path)?;
+                   }
+               }
+           }
+       }
+   }
     sh.remove_path("assets/pci")?;
     
     Ok(())

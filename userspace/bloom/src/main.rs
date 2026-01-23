@@ -39,6 +39,9 @@ use crate::compositor::CompositorTarget;
 use crate::frame::FrameBuilder;
 use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
+use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
+use crate::cursor::CursorState;
+use alloc::collections::BTreeSet;
 
 fn clear_surface(surface: &mut surface::Surface, color: u32) {
     let w = surface.width();
@@ -240,6 +243,7 @@ extern "C" fn font_loader_entry() -> ! {
 
 extern "C" fn cursor_loader_entry() -> ! {
     stem::sleep_ms(300);
+    stem::info!("bloom cursor_loader started");
     #[cfg(feature = "svg-cursors")]
     let candidates = [
         "/assets/cursors/future/default.svg",
@@ -248,14 +252,87 @@ extern "C" fn cursor_loader_entry() -> ! {
     ];
     #[cfg(not(feature = "svg-cursors"))]
     let candidates = ["/assets/cursors/plain/Normal.cur"];
+    let mut found = false;
     for path in candidates.iter() {
         if ASSETS.probe_asset_exists(path) {
+            stem::info!("bloom cursor_loader found asset: {}", path);
             ASSETS.enqueue_cursor_load(path);
+            found = true;
             break;
         }
     }
+    if !found {
+        stem::info!("bloom cursor_loader: no cursor asset found!");
+    }
     loop {
         stem::syscall::sleep_ms(10000);
+    }
+}
+
+/// Draw cursor overlay onto surface
+fn draw_cursor_overlay(surface: &mut surface::Surface, cursor: &CursorState) {
+    let bbox = cursor.bbox();
+    let screen_w = surface.width() as i32;
+    let screen_h = surface.height() as i32;
+    
+    // Get cursor frame data
+    let mut list = drawlist::DrawList::new();
+    cursor.emit_drawlist(&mut list);
+    
+    for cmd in list.iter() {
+        if let drawlist::DrawCmd::Cursor { frame, position } = cmd {
+            let dx = position.x - frame.hotspot_x as i32;
+            let dy = position.y - frame.hotspot_y as i32;
+            
+            // Blit cursor bitmap with alpha blending
+            for py in 0..frame.image.height as i32 {
+                for px in 0..frame.image.width as i32 {
+                    let sx = dx + px;
+                    let sy = dy + py;
+                    if sx < 0 || sy < 0 || sx >= screen_w || sy >= screen_h {
+                        continue;
+                    }
+                    let idx = (py as usize * frame.image.width as usize + px as usize);
+                    if idx >= frame.image.pixels.len() {
+                        continue;
+                    }
+                    let rgba = frame.image.pixels[idx];
+                    let a = (rgba >> 24) & 0xFF;
+                    if a == 0 { continue; }
+                    if a == 0xFF {
+                        surface.put_px(sx, sy, rgba);
+                    } else {
+                        // Alpha blend
+                        let dst = surface.get_px(sx, sy);
+                        let sr = (rgba >> 16) & 0xFF;
+                        let sg = (rgba >> 8) & 0xFF;
+                        let sb = rgba & 0xFF;
+                        let dr = (dst >> 16) & 0xFF;
+                        let dg = (dst >> 8) & 0xFF;
+                        let db = dst & 0xFF;
+                        let inv = 255 - a;
+                        let r = (sr * a + dr * inv) / 255;
+                        let g = (sg * a + dg * inv) / 255;
+                        let b = (sb * a + db * inv) / 255;
+                        surface.put_px(sx, sy, 0xFF000000 | (r << 16) | (g << 8) | b);
+                    }
+                }
+            }
+        } else {
+            // Fallback: procedural crosshair
+            let cx = cursor.x;
+            let cy = cursor.y;
+            for dx in -5..=5 {
+                if cx + dx >= 0 && cx + dx < screen_w {
+                    surface.put_px(cx + dx, cy, 0xFFFFFFFF);
+                }
+            }
+            for dy in -5..=5 {
+                if cy + dy >= 0 && cy + dy < screen_h {
+                    surface.put_px(cx, cy + dy, 0xFFFFFFFF);
+                }
+            }
+        }
     }
 }
 
@@ -265,19 +342,19 @@ fn main(arg: usize) -> ! {
     perf::init();
     use stem::thing::sys::{bytespace_map, bytespace_unmap};
     let bs_id = ThingId::from_u64(arg as u64);
-    let (mut arg_req, mut arg_resp, mut _bristle_evt) = (0, 0, 0);
+    let (mut arg_req, mut arg_resp, mut bristle_evt) = (0, 0, 0);
     if let Ok(ptr) = bytespace_map(bs_id) {
         let slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, 16) };
         if slice[0] == 0xB100AA01 {
             arg_req = slice[1];
             arg_resp = slice[2];
-            _bristle_evt = slice[3];
+            bristle_evt = slice[3];
         }
         let _ = bytespace_unmap(bs_id, ptr);
     } else {
         arg_req = unpack_handle(arg, 0) as u32;
         arg_resp = unpack_handle(arg, 1) as u32;
-        _bristle_evt = unpack_handle(arg, 2) as u32;
+        bristle_evt = unpack_handle(arg, 2) as u32;
     }
 
     use stem::stack::{Stack, StackSpec};
@@ -348,10 +425,28 @@ fn main(arg: usize) -> ! {
     );
     let mut loop_ctrl = FrameLoop::new(60);
     let (screen_w, screen_h) = (target.width as i32, target.height as i32);
+    
+    // Cursor state
+    let bristle_evt_handle = bristle_evt as PortHandle;
+    let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
+    let mut pressed_keys: BTreeSet<abi::hid::Key> = BTreeSet::new();
+    let accel_cfg = MouseAccelConfig::default();
+    let mut accel_state = MouseAccelState::default();
+    let mut cursor_logged = false;
+    
+    // Load cursor asset if available
+    if let Some(asset) = ASSETS.get_cursor() {
+        cursor.set_asset(asset);
+    }
+    
     let _ui_root = stem::ui::UiBuilder::create_root();
 
     loop {
         loop_ctrl.next();
+        
+        // Promote pending assets (cursor, fonts, wallpaper) to ready
+        ASSETS.publish_pending();
+        
         let token = presenter.acquire_frame(
             crate::frame::FrameSpec::new(target.width, target.height, target.format),
             crate::frame::AssetGeneration::ZERO,
@@ -362,6 +457,32 @@ fn main(arg: usize) -> ! {
 
         let windows = snapshot::collect_windows(screen_w, screen_h);
         snapshot::composite_windows(&mut surface, &windows);
+        
+        // Poll input and update cursor
+        if bristle_evt_handle != 0 {
+            poll_bristle(
+                bristle_evt_handle, 
+                &mut cursor, 
+                &mut pressed_keys, 
+                &accel_cfg, 
+                &mut accel_state, 
+                screen_w, 
+                screen_h
+            );
+        }
+        
+        // Update cursor asset if newly loaded
+        if let Some(asset) = ASSETS.get_cursor() {
+            cursor.set_asset(asset);
+        }
+        
+        // Draw cursor overlay (always on top)
+        draw_cursor_overlay(&mut surface, &cursor);
+        
+        if !cursor_logged {
+            stem::info!("[CONTRACT] bloom cursor rendered at ({}, {})", cursor.x, cursor.y);
+            cursor_logged = true;
+        }
 
         let token = builder.finish();
         presenter.present_frame(token);

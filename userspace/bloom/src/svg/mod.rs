@@ -132,13 +132,16 @@ impl SvgParser {
          for cmd in transform_cmds {
             match cmd {
                 TransformCmd::Translate(tx, ty) => {
-                     state.transform = state.transform.multiply(&Transform::translate(tx, ty));
+                     let other = Transform::translate(tx, ty);
+                     state.transform = state.transform.multiply(&other);
                 }
                 TransformCmd::Scale(sx, sy) => {
-                     state.transform = state.transform.multiply(&Transform::scale(sx, sy));
+                     let other = Transform::scale(sx, sy);
+                     state.transform = state.transform.multiply(&other);
                 }
                 TransformCmd::Rotate(angle) => {
-                     state.transform = state.transform.multiply(&Transform::rotate_degrees(angle));
+                     let other = Transform::rotate_degrees(angle);
+                     state.transform = state.transform.multiply(&other);
                 }
             }
          }
@@ -206,9 +209,15 @@ impl SvgParser {
                 let w = libm::roundf(attrs.get("width").and_then(parse_length_px).unwrap_or(0.0)) as i32;
                 let h = libm::roundf(attrs.get("height").and_then(parse_length_px).unwrap_or(0.0)) as i32;
                 
-                self.emit_fill_rect(Rect::new(x, y, w, h));
+                let mut rx = attrs.get("rx").and_then(parse_length_px).unwrap_or(0.0);
+                let mut ry = attrs.get("ry").and_then(parse_length_px).unwrap_or(0.0);
+                
+                // SVG spec: if one is missing, use the other. If both missing, 0.
+                if rx == 0.0 && ry > 0.0 { rx = ry; }
+                if ry == 0.0 && rx > 0.0 { ry = rx; }
+                
+                self.emit_fill_rect(Rect::new(x, y, w, h), rx, ry);
                 // TODO: stroke rect? DrawCmd::StrokeRect exists.
-                self.pop_state();
             }
             "line" => {
                  // Line conversion to path or use DrawCmd::Line
@@ -228,7 +237,6 @@ impl SvgParser {
                  ];
                  let path = crate::isa::Path2D { verbs };
                  self.emit_path(path);
-                 self.pop_state();
             }
             "circle" => {
                 self.push_state();
@@ -239,7 +247,6 @@ impl SvgParser {
                 let r = libm::roundf(attrs.get("r").and_then(parse_length_px).unwrap_or(0.0)) as i32;
                 
                 self.emit_fill_circle(Point::new(cx, cy), r);
-                self.pop_state();
             }
             "path" => {
                 self.push_state();
@@ -248,7 +255,6 @@ impl SvgParser {
                     let path = crate::svg::parse::parse_path_d(d);
                     self.emit_path(path);
                 }
-                self.pop_state();
             }
             "polyline" | "polygon" => {
                 self.push_state();
@@ -277,7 +283,6 @@ impl SvgParser {
                          self.emit_path(path);
                     }
                 }
-                self.pop_state();
             }
              _ => { self.push_state(); }
         }
@@ -287,40 +292,116 @@ impl SvgParser {
         self.pop_state();
     }
     
-    fn emit_fill_rect(&mut self, rect: Rect) {
-        let (transform, fill, stroke, width) = {
-            let s = self.current_state();
-            (s.transform, apply_opacity(s.fill, s.opacity), apply_opacity(s.stroke, s.opacity), s.stroke_width)
-        };
+    fn emit_fill_rect(&mut self, rect: Rect, rx: f32, ry: f32) {
+        use crate::svg::ir::{PointF, PathCommand}; 
+        let x = rect.x() as f32;
+        let y = rect.y() as f32;
+        let w = rect.width() as f32;
+        let h = rect.height() as f32;
         
-        self.cmds.push(DrawCmd::PushTransform { transform });
+        // Clamp radius
+        let rx = rx.min(w * 0.5).max(0.0);
+        let ry = ry.min(h * 0.5).max(0.0);
         
-        if fill.a > 0 {
-             self.cmds.push(DrawCmd::FillRect { rect, color: fill, aa: crate::geometry::EdgeAA::None });
+        let mut verbs = Vec::with_capacity(10);
+        
+        if rx > 0.0 || ry > 0.0 {
+             // Rounded rect
+             const K: f32 = 0.55228475;
+             let kx = rx * K;
+             let ky = ry * K;
+             
+             verbs.push(PathCommand::MoveTo(PointF{x: x + rx, y}));
+             
+             // Top edge
+             verbs.push(PathCommand::LineTo(PointF{x: x + w - rx, y}));
+             // TR Corner
+             verbs.push(PathCommand::CubicTo(
+                 PointF{x: x + w - rx + kx, y},
+                 PointF{x: x + w, y: y + ry - ky},
+                 PointF{x: x + w, y: y + ry}
+             ));
+             
+             // Right edge
+             verbs.push(PathCommand::LineTo(PointF{x: x + w, y: y + h - ry}));
+             // BR Corner
+             verbs.push(PathCommand::CubicTo(
+                 PointF{x: x + w, y: y + h - ry + ky},
+                 PointF{x: x + w - rx + kx, y: y + h},
+                 PointF{x: x + w - rx, y: y + h}
+             ));
+             
+             // Bottom edge
+             verbs.push(PathCommand::LineTo(PointF{x: x + rx, y: y + h}));
+             // BL Corner
+             verbs.push(PathCommand::CubicTo(
+                 PointF{x: x + rx - kx, y: y + h},
+                 PointF{x: x, y: y + h - ry + ky},
+                 PointF{x: x, y: y + h - ry}
+             ));
+             
+             // Left edge
+             verbs.push(PathCommand::LineTo(PointF{x, y: y + ry}));
+             // TL Corner
+             verbs.push(PathCommand::CubicTo(
+                 PointF{x, y: y + ry - ky},
+                 PointF{x: x + rx - kx, y},
+                 PointF{x: x + rx, y}
+             ));
+             
+        } else {
+            verbs.push(PathCommand::MoveTo(PointF{x, y}));
+            verbs.push(PathCommand::LineTo(PointF{x: x + w, y}));
+            verbs.push(PathCommand::LineTo(PointF{x: x + w, y: y + h}));
+            verbs.push(PathCommand::LineTo(PointF{x, y: y + h}));
         }
-        if stroke.a > 0 {
-             self.cmds.push(DrawCmd::StrokeRect { rect, color: stroke, width });
-        }
+        verbs.push(PathCommand::Close);
         
-        self.cmds.push(DrawCmd::PopTransform);
+        let path = crate::isa::Path2D { verbs };
+        self.emit_path(path);
     }
     
     fn emit_fill_circle(&mut self, center: Point, radius: i32) {
-        let (transform, fill, stroke, width) = {
-            let s = self.current_state();
-            (s.transform, apply_opacity(s.fill, s.opacity), apply_opacity(s.stroke, s.opacity), s.stroke_width)
-        };
+        use crate::svg::ir::{PointF, PathCommand};
         
-        self.cmds.push(DrawCmd::PushTransform { transform });
+        // Kappa for cubic bezier circle approximation
+        const KAPPA: f32 = 0.55228475;
+        let r = radius as f32;
+        let cx = center.x as f32;
+        let cy = center.y as f32;
+        let k = r * KAPPA;
         
-        if fill.a > 0 {
-             self.cmds.push(DrawCmd::FillCircle { center, radius, color: fill });
-        }
-        if stroke.a > 0 {
-             self.cmds.push(DrawCmd::StrokeCircle { center, radius, color: stroke, width });
-        }
+        let mut verbs = Vec::with_capacity(6);
+        // Start right
+        verbs.push(PathCommand::MoveTo(PointF{x: cx + r, y: cy}));
+        // Q1 (Right -> Bottom)
+        verbs.push(PathCommand::CubicTo(
+            PointF{x: cx + r, y: cy + k}, 
+            PointF{x: cx + k, y: cy + r}, 
+            PointF{x: cx, y: cy + r}
+        ));
+        // Q2 (Bottom -> Left)
+        verbs.push(PathCommand::CubicTo(
+            PointF{x: cx - k, y: cy + r}, 
+            PointF{x: cx - r, y: cy + k}, 
+            PointF{x: cx - r, y: cy}
+        ));
+        // Q3 (Left -> Top)
+        verbs.push(PathCommand::CubicTo(
+            PointF{x: cx - r, y: cy - k}, 
+            PointF{x: cx - k, y: cy - r}, 
+            PointF{x: cx, y: cy - r}
+        ));
+        // Q4 (Top -> Right)
+        verbs.push(PathCommand::CubicTo(
+            PointF{x: cx + k, y: cy - r}, 
+            PointF{x: cx + r, y: cy - k}, 
+            PointF{x: cx + r, y: cy}
+        ));
+        verbs.push(PathCommand::Close);
         
-        self.cmds.push(DrawCmd::PopTransform);
+        let path = crate::isa::Path2D { verbs };
+        self.emit_path(path);
     }
     
     fn emit_path(&mut self, path: crate::isa::Path2D) {

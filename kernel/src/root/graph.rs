@@ -597,4 +597,39 @@ mod tests {
         // Should match because overflowed set is conservative
         assert!(commit_matches(&filter_overflow, &summary_overflow));
     }
+
+    #[test]
+    fn test_graph_structure() {
+        let mut graph = Graph::new();
+
+        let kind_a = 1;
+        let kind_b = 2;
+        let rel_x = 10;
+
+        // Alloc nodes
+        let node1 = graph.alloc(kind_a);
+        let node2 = graph.alloc(kind_b);
+
+        // IDs should be distinct
+        assert_ne!(node1, node2);
+
+        // Kinds should be retrievable
+        assert_eq!(graph.get_kind(node1), Some(kind_a));
+        assert_eq!(graph.get_kind(node2), Some(kind_b));
+
+        // Index check
+        assert!(graph.kind_index.contains_key(&kind_a));
+        assert!(graph.kind_index[&kind_a].contains(&node1));
+
+        assert!(graph.kind_index.contains_key(&kind_b));
+        assert!(graph.kind_index[&kind_b].contains(&node2));
+
+        // Link
+        graph.link(node1, rel_x, node2);
+
+        // Verify edge
+        let node1_ref = graph.nodes.get(&node1).expect("Node1 missing");
+        assert_eq!(node1_ref.edges.len(), 1);
+        assert_eq!(node1_ref.edges[0], (rel_x, node2));
+    }
 }

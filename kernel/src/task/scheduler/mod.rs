@@ -14,6 +14,7 @@ mod sleep;
 mod spawn;
 mod stack;
 mod types;
+mod vm;
 
 // Re-export all public items
 pub use blocking::{
@@ -23,6 +24,7 @@ pub use hooks::{
     alloc_user_stack_current, current_tid_current, exit_current, handle_user_stack_fault_current,
     spawn_process_current, spawn_user_thread_current, task_status_current, yield_now_current,
     set_priority_current, current_priority_current, sleep_ticks_current,
+    add_user_mapping_current, remove_user_mappings_current, check_user_mapping_current, get_user_mapping_at_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -87,8 +89,13 @@ pub fn init<R: BootRuntime>() {
             hooks::ALLOC_USER_STACK_HOOK = Some(stack::alloc_user_stack::<R>);
             crate::memory::set_map_user_page_hook(stack::map_user_page::<R>);
             crate::memory::set_map_user_page_perms_hook(stack::map_user_page_perms::<R>);
+            crate::memory::set_unmap_user_page_hook(stack::unmap_user_page::<R>);
             hooks::STACK_FAULT_HOOK = Some(stack::handle_stack_fault::<R>);
             hooks::SLEEP_TICKS_HOOK = Some(sleep::sleep_ticks::<R>);
+            hooks::ADD_USER_MAPPING_HOOK = Some(vm::add_user_mapping::<R>);
+            hooks::REMOVE_USER_MAPPINGS_HOOK = Some(vm::remove_user_mappings::<R>);
+            hooks::CHECK_USER_MAPPING_HOOK = Some(vm::check_user_mapping::<R>);
+            hooks::GET_USER_MAPPING_AT_HOOK = Some(vm::get_user_mapping_at::<R>);
         }
         blocking::init_blocking_hooks::<R>();
         crate::trace::register_time_source(get_time_helper::<R>);
@@ -122,6 +129,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         is_user: false,
         wake_pending: false,
         stack_info: None,
+        mappings: alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new())),
         timeslice_remaining: types::DEFAULT_TIMESLICE,
     };
     sched.tasks.push(task);

@@ -91,8 +91,50 @@ fn ensure_table(
     }
 }
 
-pub fn unmap_page(_aspace: X86_64AddressSpace, _virt: u64) -> Result<Option<u64>, ()> {
-    Ok(None)
+pub fn unmap_page(aspace: X86_64AddressSpace, virt: u64) -> Result<Option<u64>, ()> {
+    let pml4 = (aspace.0 + unsafe { HHDM_OFFSET }) as *mut u64;
+
+    let pml4_idx = (virt >> 39) & 0x1ff;
+    let pml4_entry = unsafe { *pml4.add(pml4_idx as usize) };
+    if pml4_entry & 1 == 0 {
+        return Ok(None);
+    }
+
+    let pdpt = ((pml4_entry & 0x000FFFFF_FFFFF000) + unsafe { HHDM_OFFSET }) as *mut u64;
+    let pdpt_idx = (virt >> 30) & 0x1ff;
+    let pdpt_entry = unsafe { *pdpt.add(pdpt_idx as usize) };
+    if pdpt_entry & 1 == 0 {
+        return Ok(None);
+    }
+
+    if pdpt_entry & 0x80 != 0 {
+        return Err(()); // 1GB page
+    }
+
+    let pd = ((pdpt_entry & 0x000FFFFF_FFFFF000) + unsafe { HHDM_OFFSET }) as *mut u64;
+    let pd_idx = (virt >> 21) & 0x1ff;
+    let pd_entry = unsafe { *pd.add(pd_idx as usize) };
+    if pd_entry & 1 == 0 {
+        return Ok(None);
+    }
+
+    if pd_entry & 0x80 != 0 {
+        return Err(()); // 2MB page
+    }
+
+    let pt = ((pd_entry & 0x000FFFFF_FFFFF000) + unsafe { HHDM_OFFSET }) as *mut u64;
+    let pt_idx = (virt >> 12) & 0x1ff;
+    let pt_entry = unsafe { *pt.add(pt_idx as usize) };
+    if pt_entry & 1 == 0 {
+        return Ok(None);
+    }
+
+    let phys = pt_entry & 0x000FFFFF_FFFFF000;
+    unsafe {
+        *pt.add(pt_idx as usize) = 0;
+    }
+
+    Ok(Some(phys))
 }
 
 /// Silent translation probe - returns None without logging if page is not mapped.

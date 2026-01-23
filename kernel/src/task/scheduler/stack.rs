@@ -104,6 +104,16 @@ pub unsafe fn map_user_page_perms<R: BootRuntime>(
     Ok(())
 }
 
+/// Unmap a user page in the current address space
+pub unsafe fn unmap_user_page<R: BootRuntime>(virt: u64) -> Result<(), ()> {
+    let rt = crate::runtime::<R>();
+    let aspace = rt.tasking().active_address_space();
+
+    rt.tasking().unmap_page(aspace, virt)?;
+    rt.tasking().tlb_flush_page(virt);
+    Ok(())
+}
+
 pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult {
     let rt = crate::runtime::<R>();
     let page_size = rt.page_size() as u64;

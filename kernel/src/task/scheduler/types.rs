@@ -2,8 +2,7 @@
 
 use crate::BootRuntime;
 use crate::task::{Task, TaskId};
-use alloc::collections::VecDeque;
-use alloc::vec::Vec;
+use alloc::collections::{BTreeMap, VecDeque};
 
 /// Default time slice in ticks (~100ms at 100Hz timer)
 pub const DEFAULT_TIMESLICE: u32 = 10;
@@ -50,7 +49,7 @@ pub(crate) struct SchedulerMetrics {
 }
 
 pub struct Scheduler<R: BootRuntime> {
-    pub(crate) tasks: Vec<Task<R>>,
+    pub(crate) tasks: BTreeMap<TaskId, Task<R>>,
     pub(crate) runq: [VecDeque<TaskId>; 5],
     pub(crate) wait_queue: VecDeque<TaskId>,
     pub(crate) sleep_queue: VecDeque<SleepEntry>, // tasks sleeping with wake times
@@ -79,7 +78,7 @@ impl SchedulerMetrics {
 impl<R: BootRuntime> Scheduler<R> {
     pub fn new() -> Self {
         Scheduler {
-            tasks: Vec::new(),
+            tasks: BTreeMap::new(),
             runq: [
                 VecDeque::new(),
                 VecDeque::new(),
@@ -110,6 +109,6 @@ impl<R: BootRuntime> Scheduler<R> {
 
     pub fn current_priority(&self) -> Option<crate::task::TaskPriority> {
         let tid = self.current?;
-        self.tasks.iter().find(|t| t.id == tid).map(|t| t.priority)
+        self.tasks.get(&tid).map(|t| t.priority)
     }
 }

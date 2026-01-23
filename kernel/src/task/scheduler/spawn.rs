@@ -43,7 +43,7 @@ impl<R: BootRuntime> Scheduler<R> {
             timeslice_remaining: DEFAULT_TIMESLICE,
         };
 
-        self.tasks.push(task);
+        self.tasks.insert(id, task);
         self.runq[priority as usize].push_back(id);
         id
     }
@@ -95,7 +95,7 @@ impl<R: BootRuntime> Scheduler<R> {
             timeslice_remaining: DEFAULT_TIMESLICE,
         };
 
-        self.tasks.push(task);
+        self.tasks.insert(id, task);
         self.runq[priority as usize].push_back(id);
         id
     }
@@ -142,7 +142,7 @@ impl<R: BootRuntime> Scheduler<R> {
             timeslice_remaining: DEFAULT_TIMESLICE,
         };
 
-        self.tasks.push(task);
+        self.tasks.insert(id, task);
         self.runq[priority as usize].push_back(id);
         Some(id)
     }

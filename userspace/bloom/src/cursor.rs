@@ -2,6 +2,7 @@ use crate::damage::Rect;
 use crate::drawlist::DrawList;
 use crate::asset::{CursorAsset, CursorFrame};
 use crate::geometry::Color;
+use crate::frame::AssetGeneration;
 
 pub struct CursorState {
     pub x: i32,
@@ -44,6 +45,13 @@ impl CursorState {
 
     pub fn buttons(&self) -> u32 {
         self.buttons
+    }
+
+    pub fn generation(&self) -> AssetGeneration {
+        self.asset
+            .as_ref()
+            .map(|asset| asset.generation())
+            .unwrap_or(AssetGeneration::ZERO)
     }
 
     fn color(&self) -> Color {

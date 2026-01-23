@@ -115,9 +115,34 @@ pub mod keys {
     pub const UI_FILL_PARENT: &str = "ui.layout.fill_parent";
     pub const UI_INSET_RIGHT: &str = "ui.layout.inset_right";
     pub const UI_INSET_BOTTOM: &str = "ui.layout.inset_bottom";
+    pub const UI_SCROLL_X: &str = "ui.scroll.x";
+    pub const UI_SCROLL_Y: &str = "ui.scroll.y";
+    pub const UI_CLIP: &str = "ui.clip";
     pub const UI_BG_COLOR: &str = "ui.style.bg_color";
     pub const UI_FG_COLOR: &str = "ui.style.fg_color";
     pub const UI_FONT_SIZE_PX: &str = "ui.style.font_size_px";
+    /// Snapshot bytespace id containing a view's latest presented pixels.
+    ///
+    /// Reserved for presenter-owned updates (Blossom).
+    pub const UI_SNAPSHOT_BYTESPACE: &str = "ui.snapshot.bytespace";
+    /// Snapshot width in pixels for the presented surface.
+    pub const UI_SNAPSHOT_WIDTH: &str = "ui.snapshot.width";
+    /// Snapshot height in pixels for the presented surface.
+    pub const UI_SNAPSHOT_HEIGHT: &str = "ui.snapshot.height";
+    /// Snapshot stride in bytes per row (pixel surfaces).
+    pub const UI_SNAPSHOT_STRIDE: &str = "ui.snapshot.stride";
+    /// Snapshot format (e.g. RGBA8888) for pixel surfaces.
+    pub const UI_SNAPSHOT_FORMAT: &str = "ui.snapshot.format";
+    /// Monotonic present epoch for atomic snapshot presentation.
+    ///
+    /// Reserved for presenter-owned updates (Blossom).
+    pub const UI_PRESENT_EPOCH: &str = "ui.present.epoch";
+    /// Optional bytespace id for packed damage rects.
+    pub const UI_DAMAGE_RECTS_BYTESPACE: &str = "ui.damage.rects.bytespace";
+    /// Tile asset bytespace id for UI_TILE nodes (e.g. SVG source).
+    pub const UI_TILE_ASSET: &str = "ui.tile.asset";
+    /// Optional tile state for UI_TILE nodes (0 = placeholder, 1 = ready).
+    pub const UI_TILE_STATE: &str = "ui.tile.state";
 
     // Font Graph Properties
     pub const FONT_NAME: &str = "font.name";
@@ -176,6 +201,10 @@ pub mod kinds {
     pub const UI_IMAGE: &str = "ui.Image";
     pub const UI_OVERLAY: &str = "ui.Overlay";
     pub const UI_INLINE: &str = "ui.Inline";
+    pub const UI_VIEWPORT: &str = "ui.Viewport";
+    pub const UI_TILE: &str = "ui.Tile";
+    pub const UI_TEXT_RUN: &str = "ui.TextRun";
+    pub const UI_CHROME: &str = "ui.Chrome";
 
     // Font Graph Kinds
     pub const FONT_SUPERFAMILY: &str = "font.Superfamily";
@@ -193,6 +222,12 @@ pub mod kinds {
     pub const XML_ELEMENT: &str = "xml.Element";
     pub const XML_ATTRIBUTE: &str = "xml.Attribute";
     pub const XML_TEXT: &str = "xml.Text";
+}
+
+/// Snapshot-related constants for UI presentation surfaces.
+pub mod ui_snapshot {
+    /// Pixel format for RGBA8888 surfaces.
+    pub const PIXEL_FORMAT_RGBA8888: u64 = 1;
 }
 
 pub mod rels {
@@ -258,4 +293,12 @@ pub mod hid {
     pub const REL_CONSUMES: &str = "CONSUMES"; // (svc.Input)-[:CONSUMES]->(dev.hid.Keyboard)
     pub const REL_ROUTES_TO: &str = "ROUTES_TO"; // (svc.Input)-[:ROUTES_TO]->(app.Echo)
     pub const REL_PRODUCES: &str = "PRODUCES"; // (drv.Ps2Keyboard)-[:PRODUCES]->(dev.hid.Keyboard)
+}
+
+// Pointer / Input properties
+pub mod pointer {
+    pub const POINTER_X: &str = "pointer.x";
+    pub const POINTER_Y: &str = "pointer.y";
+    pub const POINTER_BUTTONS: &str = "pointer.buttons";
+    pub const POINTER: &str = "input.Pointer";
 }

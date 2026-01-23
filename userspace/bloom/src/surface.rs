@@ -49,4 +49,19 @@ impl Surface {
             core::ptr::copy_nonoverlapping(bytes.as_ptr(), self.ptr.add(offset), 4);
         }
     }
+
+    pub fn get_px(&self, x: i32, y: i32) -> u32 {
+        if x < 0 || y < 0 || x >= self.width || y >= self.height {
+            return 0;
+        }
+        let offset = y as usize * self.stride_bytes + x as usize * 4;
+        if offset + 4 > self.len {
+            return 0;
+        }
+        unsafe {
+            let mut bytes = [0u8; 4];
+            core::ptr::copy_nonoverlapping(self.ptr.add(offset), bytes.as_mut_ptr(), 4);
+            u32::from_le_bytes(bytes)
+        }
+    }
 }

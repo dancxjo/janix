@@ -21,7 +21,9 @@ use crate::build::build;
 use crate::clean::{clean, distclean};
 use crate::common::project_root;
 use crate::fetch::fetch;
-use crate::image::{build_hdd, build_iso, build_iso_with_config, default_programs, IsoConfig, ProgramConfig};
+use crate::image::{
+    IsoConfig, ProgramConfig, build_hdd, build_iso, build_iso_with_config, default_programs,
+};
 use crate::limine::limine;
 use crate::run::{run, run_bios, run_hdd};
 
@@ -56,7 +58,7 @@ enum Commands {
         /// Initial program to launch
         #[arg(long)]
         init: Option<String>,
-        /// Display resolution (e.g., 1280x720, 1920x1080)
+        /// Display resolution (e.g., 1280x720, 1280x720)
         #[arg(long)]
         resolution: Option<String>,
         /// Output ISO file path
@@ -153,12 +155,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     match cli.command {
         Commands::Build { env, profile } => build(&sh, &env, &profile)?,
-        Commands::Iso { env, profile, init, resolution, output } => {
+        Commands::Iso {
+            env,
+            profile,
+            init,
+            resolution,
+            output,
+        } => {
             limine(&sh)?;
             build(&sh, &env, &profile)?;
             let mut programs = default_programs();
             apply_init(&mut programs, init);
-            
+
             // Use config if resolution or output specified
             let path = if resolution.is_some() || output.is_some() {
                 let output_path = output.as_ref().map(|s| std::path::Path::new(s.as_str()));
@@ -216,8 +224,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             run_hdd(&sh, &env, &qemu_flags, &hdd_path)?;
         }
         Commands::Limine => limine(&sh)?,
-        Commands::Ovmf { env: _ } => fetch()?,  // OVMF handled by unified fetch
-        Commands::OvmfAll => fetch()?,  // OVMF handled by unified fetch
+        Commands::Ovmf { env: _ } => fetch()?, // OVMF handled by unified fetch
+        Commands::OvmfAll => fetch()?,         // OVMF handled by unified fetch
         Commands::Clean => clean(&sh)?,
         Commands::Distclean => distclean(&sh)?,
         Commands::Bdd {

@@ -5,12 +5,52 @@ pub mod snapshot;
 
 use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
-use self::snapshot::{AssetCache, KindIds, UiKeys, UiSnapshot};
+use self::snapshot::{AssetCache, KindIds, NodeChange, UiKeys, UiSnapshot};
 use crate::asset::AssetBank;
 use crate::damage::Rect;
 use crate::drawlist::DrawList;
 use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT};
+use crate::render_state::RenderState;
+use alloc::collections::{BTreeMap, BTreeSet};
 use stem::thing::ThingId;
+use spin::Mutex;
+
+#[derive(Clone, Copy)]
+pub enum FullRefreshReason {
+    FirstFrame,
+    WatchOverflow,
+    ResyncRequested,
+    CacheInvalidated,
+    BugFallback,
+}
+
+impl FullRefreshReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::FirstFrame => "FirstFrame",
+            Self::WatchOverflow => "WatchOverflow",
+            Self::ResyncRequested => "ResyncRequested",
+            Self::CacheInvalidated => "CacheInvalidated",
+            Self::BugFallback => "BugFallback",
+        }
+    }
+}
+
+struct UiInitState {
+    initialized: bool,
+    init_frame: u64,
+    init_callsite: &'static str,
+    keys: Option<UiKeys>,
+    kinds: Option<KindIds>,
+}
+
+static UI_INIT: Mutex<UiInitState> = Mutex::new(UiInitState {
+    initialized: false,
+    init_frame: 0,
+    init_callsite: "",
+    keys: None,
+    kinds: None,
+});
 
 struct SystemSymbolResolver;
 
@@ -25,7 +65,8 @@ pub struct UiPipeline {
     prev_snapshot: Option<UiSnapshot>,
     solver: LayoutSolver,
     dirty: bool,
-    cached_scene: Option<PaintScene>,
+    dirty_full: bool,
+    cached_drawlists: BTreeMap<ThingId, DrawList>,
     pub solid_text: bool,
     // Cached symbol IDs - initialized once, used every frame
     cached_keys: Option<UiKeys>,
@@ -33,15 +74,56 @@ pub struct UiPipeline {
     // Asset cache - persists across frames (Phase C)
     asset_cache: AssetCache,
     // Dirty node tracking for incremental updates (Phase F)
-    dirty_nodes: alloc::vec::Vec<ThingId>,
+    pub dirty_nodes: DirtySet,
     // Layout from the last run, used for hit-testing
-    last_layout: Option<layout::LayoutTree>,
+    pub last_layout: Option<layout::LayoutTree>,
+    pub render_state: RenderState,
+    pending_full_reason: Option<FullRefreshReason>,
+    // Temporary position overrides during drag operations
+    drag_overrides: BTreeMap<ThingId, (i32, i32)>,
 }
 
 pub struct UiRunResult {
     pub changed: bool,
     pub damage: alloc::vec::Vec<Rect>,
     pub solid_text: bool,
+}
+
+#[derive(Default, Clone)]
+pub struct DirtySet {
+    props: BTreeSet<ThingId>,
+    edges: BTreeSet<ThingId>,
+}
+
+impl DirtySet {
+    pub fn is_empty(&self) -> bool {
+        self.props.is_empty() && self.edges.is_empty()
+    }
+
+    pub fn total_len(&self) -> usize {
+        self.props.union(&self.edges).count()
+    }
+
+    pub fn mark_prop(&mut self, id: ThingId) {
+        self.props.insert(id);
+    }
+
+    pub fn mark_edge(&mut self, id: ThingId) {
+        self.edges.insert(id);
+    }
+
+    pub fn clear(&mut self) {
+        self.props.clear();
+        self.edges.clear();
+    }
+
+    pub fn props(&self) -> impl Iterator<Item = &ThingId> {
+        self.props.iter()
+    }
+
+    pub fn edges(&self) -> impl Iterator<Item = &ThingId> {
+        self.edges.iter()
+    }
 }
 
 impl UiPipeline {
@@ -51,22 +133,50 @@ impl UiPipeline {
             prev_snapshot: None,
             solver: LayoutSolver::new(),
             dirty: true,
-            cached_scene: None,
+            dirty_full: false,
+            cached_drawlists: BTreeMap::new(),
             solid_text: false,
             cached_keys: None,
             cached_kinds: None,
             asset_cache: AssetCache::new(),
-            dirty_nodes: alloc::vec::Vec::new(),
+            dirty_nodes: DirtySet::default(),
             last_layout: None,
+            render_state: RenderState::new(),
+            pending_full_reason: None,
+            drag_overrides: BTreeMap::new(),
         }
     }
 
     /// Ensure keys and kinds are interned (does work only on first call)
-    fn ensure_symbols(&mut self) -> (&UiKeys, &KindIds) {
+    fn ensure_symbols(&mut self, caller: &'static str) -> (&UiKeys, &KindIds) {
         if self.cached_keys.is_none() {
-            crate::log!("[bloom][ui] Initializing cached UI symbols (one-time)");
-            self.cached_keys = Some(UiKeys::intern());
-            self.cached_kinds = Some(KindIds::intern());
+            let mut init = UI_INIT.lock();
+            if init.initialized {
+                let frame_no = crate::perf::frame_no();
+                let reason = "cached_keys_missing";
+                crate::log!(
+                    "[bloom][ui] INIT_REENTRY frame={} reason={} caller={} first_init_frame={} first_init_caller={}",
+                    frame_no,
+                    reason,
+                    caller,
+                    init.init_frame,
+                    init.init_callsite
+                );
+                debug_assert!(false, "ui init ran more than once");
+                self.cached_keys = init.keys.clone();
+                self.cached_kinds = init.kinds.clone();
+            } else {
+                crate::log!("[bloom][ui] Initializing cached UI symbols (one-time)");
+                let keys = UiKeys::intern();
+                let kinds = KindIds::intern();
+                init.initialized = true;
+                init.init_frame = crate::perf::frame_no();
+                init.init_callsite = caller;
+                init.keys = Some(keys.clone());
+                init.kinds = Some(kinds.clone());
+                self.cached_keys = Some(keys);
+                self.cached_kinds = Some(kinds);
+            }
         }
         (
             self.cached_keys.as_ref().unwrap(),
@@ -76,23 +186,50 @@ impl UiPipeline {
 
     /// Fetch cached kind ids, ensuring they are interned once.
     pub fn kind_ids(&mut self) -> KindIds {
-        let (_, kinds) = self.ensure_symbols();
+        let (_, kinds) = self.ensure_symbols("UiPipeline::kind_ids");
         kinds.clone()
+    }
+
+    /// Fetch cached UI key ids for watch setup.
+    pub fn ui_keys(&mut self) -> UiKeys {
+        let (keys, _) = self.ensure_symbols("UiPipeline::ui_keys");
+        keys.clone()
     }
 
     pub fn set_root(&mut self, id: ThingId) {
         self.root_id = Some(id);
+        self.dirty_full = true;
+        self.dirty = true;
+        self.dirty_nodes.clear();
+        self.cached_drawlists.clear();
     }
 
     pub fn mark_dirty(&mut self) {
         self.dirty = true;
     }
 
+    /// Force a full snapshot rebuild on the next frame.
+    pub fn mark_dirty_full(&mut self) {
+        self.mark_dirty_full_with_reason(FullRefreshReason::ResyncRequested);
+    }
+
+    pub fn mark_dirty_full_with_reason(&mut self, reason: FullRefreshReason) {
+        self.dirty_full = true;
+        self.dirty = true;
+        self.dirty_nodes.clear();
+        self.cached_drawlists.clear();
+        self.pending_full_reason = Some(reason);
+    }
+
     /// Mark a specific node as dirty (for incremental updates from watch events)
     pub fn mark_node_dirty(&mut self, id: ThingId) {
-        if !self.dirty_nodes.contains(&id) {
-            self.dirty_nodes.push(id);
-        }
+        self.dirty_nodes.mark_prop(id);
+        self.dirty = true;
+    }
+
+    /// Mark a node's edges as dirty (structure change).
+    pub fn mark_node_edges_dirty(&mut self, id: ThingId) {
+        self.dirty_nodes.mark_edge(id);
         self.dirty = true;
     }
 
@@ -126,9 +263,9 @@ impl UiPipeline {
             }
         };
 
-        // Fast path: if nothing changed, reuse the last paint scene and only lower.
+        // Fast path: if nothing changed, reuse cached drawlists.
         if !self.dirty {
-            if let Some(scene) = &self.cached_scene {
+            if self.emit_cached_drawlists(list) {
                 crate::trace_event!("ui.run.path", "fast_path_cached");
                 if log_this_frame {
                     let window_count = self
@@ -143,7 +280,6 @@ impl UiPipeline {
                         .unwrap_or(0);
                     crate::log!("[bloom][ui] ENTER_UI_BUILD dirty=false root_present=true windows_seen={} reason=fast_path_cached", window_count);
                 }
-                Self::lower(scene, list);
                 return UiRunResult {
                     changed: false,
                     damage: alloc::vec::Vec::new(),
@@ -152,100 +288,328 @@ impl UiPipeline {
             }
         }
 
-        let start = stem::monotonic_ns();
-
         // Ensure symbols are cached (no-op after first frame)
-        let (keys, kinds) = self.ensure_symbols();
+        let (keys, kinds) = self.ensure_symbols("UiPipeline::run");
         let keys = keys.clone();
         let kinds = kinds.clone();
 
         // 1. Snapshot with asset cache (Phase C) and optional incremental (Phase F)
-        let snapshot = {
-            crate::trace_span!("ui.snap");
-
-            // Check if we can do incremental update
-            let can_incremental = !self.dirty_nodes.is_empty()
-                && self.prev_snapshot.is_some()
-                && self.dirty_nodes.len() < 5; // Only worthwhile for small updates
-
-            if can_incremental {
-                crate::trace_event!("ui.run.path", "incremental_snap");
-                let mut snap = self.prev_snapshot.take().unwrap();
-                let dirty = core::mem::take(&mut self.dirty_nodes);
-                snap.update_nodes(&dirty, &keys, &kinds, &mut self.asset_cache);
-                snap
-            } else {
-                crate::trace_event!("ui.run.path", "full_snap");
-                self.dirty_nodes.clear();
-                UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.asset_cache)
-            }
-        };
-
-        crate::trace_counter!("ui.nodes", snapshot.nodes.len());
-
-        // 2. Change Detection
-        let changed_nodes = {
-            crate::trace_span!("ui.diff");
-            if let Some(prev) = &self.prev_snapshot {
-                snapshot.diff(prev)
-            } else {
-                snapshot.nodes.keys().cloned().collect()
-            }
-        };
-        let changed = !changed_nodes.is_empty();
-
-        // Store for next frame
+        let had_prev = self.prev_snapshot.is_some();
+        let mut snapshot = self.prev_snapshot.take().unwrap_or_else(UiSnapshot::new);
+        let mut node_changes: alloc::vec::Vec<NodeChange> = alloc::vec::Vec::new();
+        let mut snapshot_changed = false;
+        let mut full_snapshot = false;
+        let mut full_layout_reason: Option<FullRefreshReason> = None;
+        let pending_dirty_count = self.dirty_nodes.total_len();
+        let mut dirty_snap_count = 0usize;
         {
-            crate::trace_span!("ui.clone");
-            self.prev_snapshot = Some(snapshot.clone());
+            crate::trace_span!("ui.snap");
+            if !had_prev || self.dirty_full {
+                crate::trace_event!("ui.run.path", "full_snap");
+                if !had_prev {
+                    full_layout_reason = Some(FullRefreshReason::FirstFrame);
+                } else if self.dirty_full {
+                    full_layout_reason =
+                        Some(self.pending_full_reason.take().unwrap_or(FullRefreshReason::ResyncRequested));
+                }
+                self.dirty_full = false;
+                self.dirty_nodes.clear();
+                full_snapshot = true;
+                snapshot = UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.asset_cache);
+                node_changes = snapshot
+                    .nodes
+                    .keys()
+                    .map(|id| NodeChange {
+                        id: *id,
+                        layout_dirty: true,
+                        measure_dirty: true,
+                        paint_dirty: true,
+                    })
+                    .collect();
+                snapshot_changed = true;
+                dirty_snap_count = snapshot.nodes.len();
+            } else {
+                let dirty = core::mem::take(&mut self.dirty_nodes);
+                if !dirty.is_empty() {
+                    crate::trace_event!("ui.run.path", "incremental_snap");
+                    node_changes = snapshot.update_dirty(&dirty, &keys, &kinds, &mut self.asset_cache);
+                    snapshot_changed = !node_changes.is_empty();
+                    dirty_snap_count = pending_dirty_count;
+
+                    // If graph topology changed, garbage collect unreachable nodes
+                    // to prevent memory leaks.
+                    if !dirty.edges.is_empty() {
+                         snapshot.prune();
+                    }
+                } else {
+                    crate::trace_event!("ui.run.path", "snap_reuse");
+                }
+            }
         }
 
-        if !changed {
-            crate::trace_event!("ui.run.path", "no_changes");
-            if let Some(scene) = &self.cached_scene {
-                crate::trace_span!("ui.lower");
-                Self::lower(scene, list);
+        crate::trace_counter!("ui.nodes", snapshot.nodes.len());
+        crate::trace_counter!("dirty_nodes_snap", dirty_snap_count);
+
+        let changed = snapshot_changed || self.dirty;
+
+        if self.dirty && !snapshot_changed && node_changes.is_empty() && !self.dirty_full {
+            if self.emit_cached_drawlists(list) {
+                self.dirty = false;
+                self.prev_snapshot = Some(snapshot);
+                return UiRunResult {
+                    changed: false,
+                    damage: alloc::vec::Vec::new(),
+                    solid_text: self.solid_text,
+                };
             }
-            self.dirty = false;
-            return UiRunResult {
-                changed: false,
-                damage: alloc::vec::Vec::new(),
-                solid_text: self.solid_text,
-            };
         }
 
         crate::trace_event!("ui.run.path", "full_build");
 
+        let prev_layout = self.last_layout.clone();
+
         // 3. Layout
+        let mut force_full_layout = full_snapshot;
+        if !force_full_layout {
+            if let Some(layout) = self.last_layout.as_ref() {
+                if let Some(root) = layout.root.as_ref() {
+                    if root.rect.w != screen_w || root.rect.h != screen_h {
+                        force_full_layout = true;
+                        full_layout_reason = Some(FullRefreshReason::CacheInvalidated);
+                    }
+                } else {
+                    force_full_layout = true;
+                    full_layout_reason = Some(FullRefreshReason::BugFallback);
+                }
+            } else {
+                force_full_layout = true;
+                full_layout_reason = Some(FullRefreshReason::BugFallback);
+            }
+        }
+
+        let mut dirty_windows = BTreeSet::new();
+        let mut layout_dirty_nodes = BTreeSet::new();
+        if !force_full_layout && !node_changes.is_empty() {
+            if let Some(root_id) = snapshot.root_id {
+                let parent_map = build_parent_map(&snapshot, root_id);
+                for change in &node_changes {
+                    let node = match snapshot.nodes.get(&change.id) {
+                        Some(node) => node,
+                        None => continue,
+                    };
+                    let mut layout_dirty = change.layout_dirty;
+                    if !layout_dirty
+                        && change.measure_dirty
+                        && node_uses_intrinsic_size(node, &keys)
+                    {
+                        layout_dirty = true;
+                    }
+                    if layout_dirty {
+                        layout_dirty_nodes.insert(change.id);
+                        if let Some(window_id) =
+                            find_window_ancestor(change.id, &snapshot, &parent_map)
+                        {
+                            dirty_windows.insert(window_id);
+                        } else {
+                            force_full_layout = true;
+                            full_layout_reason = Some(FullRefreshReason::BugFallback);
+                            // breakdown: don't break, keep marking others
+                        }
+                    }
+                }
+            } else {
+                force_full_layout = true;
+                full_layout_reason = Some(FullRefreshReason::BugFallback);
+            }
+        }
+
+        // Compute dirty subtrees (ancestors of dirty nodes need to know they contain dirt)
+        // This allows us to skip recursion for clean subtrees.
+        let mut subtree_layout_dirty = BTreeSet::new();
+        if !force_full_layout {
+            if let Some(root_id) = snapshot.root_id {
+                 let parent_map = build_parent_map(&snapshot, root_id);
+                 for &dirty_id in &layout_dirty_nodes {
+                     let mut current = dirty_id;
+                     subtree_layout_dirty.insert(current);
+                     while let Some(parent) = parent_map.get(&current) {
+                         if subtree_layout_dirty.contains(parent) {
+                             break;
+                         }
+                         subtree_layout_dirty.insert(*parent);
+                         current = *parent;
+                     }
+                 }
+            }
+        }
+
+        if log_this_frame {
+            crate::log!(
+                "[bloom][ui] dirty_nodes_layout={} dirty_windows={} full_layout={}",
+                layout_dirty_nodes.len(),
+                dirty_windows.len(),
+                force_full_layout
+            );
+        }
+        if force_full_layout {
+            if let Some(reason) = full_layout_reason {
+                crate::trace_event!("ui.full_layout_reason", reason.as_str());
+                crate::trace_counter!("ui.full_layout", 1);
+                if log_this_frame {
+                    crate::log!(
+                        "[bloom][ui] full_layout_reason={}",
+                        reason.as_str()
+                    );
+                }
+            }
+        }
+        let layout_dirty_count = if force_full_layout {
+            snapshot.nodes.len()
+        } else {
+            layout_dirty_nodes.len()
+        };
+        crate::trace_counter!("dirty_nodes_layout", layout_dirty_count);
+
         let resolver = SystemSymbolResolver;
         let layout = {
             crate::trace_span!("ui.layout");
-            self.solver
-                .solve(&snapshot, screen_w, screen_h, assets, &resolver)
+            if force_full_layout {
+                self.solver
+                    .solve(&snapshot, screen_w, screen_h, assets, &resolver)
+            } else {
+                self.solver.solve_partial(
+                    &snapshot,
+                    screen_w,
+                    screen_h,
+                    assets,
+                    &resolver,
+                    self.last_layout.as_ref(),
+                    &dirty_windows,
+                    &layout_dirty_nodes,
+                    &subtree_layout_dirty,
+                )
+            }
         };
         self.last_layout = Some(layout.clone());
 
-        // 4. Paint
-        let paint_scene = {
-            crate::trace_span!("ui.paint");
-            PaintBuilder::build(&snapshot, &layout, &resolver)
-        };
-
-        // 5. Lowering
-        {
-            crate::trace_span!("ui.lower");
-            Self::lower(&paint_scene, list);
+        let mut paint_dirty_nodes = BTreeSet::new();
+        for change in &node_changes {
+            if change.paint_dirty || change.layout_dirty || change.measure_dirty {
+                paint_dirty_nodes.insert(change.id);
+            }
         }
 
-        // Cache the scene so unchanged frames can skip snapshot/layout/paint.
-        self.cached_scene = Some(paint_scene);
+        let mut dirty_subtrees = BTreeSet::new();
+        let mut paint_all = full_snapshot
+            || force_full_layout
+            || (self.dirty && node_changes.is_empty());
+        if !paint_all && !paint_dirty_nodes.is_empty() {
+            if let Some(root_id) = snapshot.root_id {
+                if paint_dirty_nodes.contains(&root_id) {
+                    paint_all = true;
+                } else {
+                    let parent_map = build_parent_map(&snapshot, root_id);
+                    for id in &paint_dirty_nodes {
+                        if let Some(subtree) =
+                            find_root_child_ancestor(*id, root_id, &parent_map)
+                        {
+                            dirty_subtrees.insert(subtree);
+                        }
+                    }
+                }
+            } else {
+                paint_all = true;
+            }
+        }
+
+        let mut paint_node_count = 0usize;
+        let mut paint_obj_count = 0usize;
+        let mut paint_text_count = 0usize;
+        let mut rebuilt_any = false;
+        let active_window = PaintBuilder::active_window(&layout);
+
+        if let Some(root) = layout.root.as_ref() {
+            crate::trace_span!("ui.paint");
+            for child in &root.children {
+                let needs_rebuild = paint_all
+                    || dirty_subtrees.contains(&child.id)
+                    || !self.cached_drawlists.contains_key(&child.id);
+                if needs_rebuild {
+                    let mut node_count = 0usize;
+                    let scene = PaintBuilder::build_subtree(
+                        &snapshot,
+                        child,
+                        &resolver,
+                        &mut self.render_state,
+                        active_window,
+                        &mut node_count,
+                    );
+                    paint_node_count = paint_node_count.saturating_add(node_count);
+                    paint_obj_count = paint_obj_count.saturating_add(scene.objects.len());
+                    paint_text_count = paint_text_count.saturating_add(
+                        scene
+                            .objects
+                            .iter()
+                            .filter(|o| matches!(o, PaintObject::Text { .. }))
+                            .count(),
+                    );
+                    let mut subtree_list = DrawList::new();
+                    Self::lower(&scene, &mut subtree_list);
+                    self.cached_drawlists.insert(child.id, subtree_list);
+                    rebuilt_any = true;
+                }
+            }
+        }
+
+        crate::trace_counter!("dirty_nodes_paint", paint_node_count);
+        if rebuilt_any {
+            let now_ms = crate::log_ratelimit::now_ms();
+            if crate::log_ratelimit::log_every(1000, now_ms) {
+                crate::log!(
+                    "[bloom][paint] objs={} text={}",
+                    paint_obj_count,
+                    paint_text_count
+                );
+            }
+        }
+
+        {
+            crate::trace_span!("ui.lower");
+            if let Some(root) = layout.root.as_ref() {
+                let mut active_subtrees = BTreeSet::new();
+                for child in &root.children {
+                    active_subtrees.insert(child.id);
+                    if let Some(drawlist) = self.cached_drawlists.get(&child.id) {
+                        drawlist.append_to(list);
+                    }
+                }
+                self.cached_drawlists
+                    .retain(|id, _| active_subtrees.contains(id));
+            } else {
+                self.cached_drawlists.clear();
+            }
+        }
+
         self.dirty = false;
+        self.prev_snapshot = Some(snapshot);
 
         let mut damage = alloc::vec::Vec::new();
-        for id in changed_nodes {
-            if let Some(rect) = layout.find_rect(id) {
-                if !rect.is_empty() {
-                    damage.push(rect);
+        let bounds = Rect::full(screen_w, screen_h);
+        if paint_all && paint_dirty_nodes.is_empty() {
+            damage.push(bounds);
+        } else {
+            for id in paint_dirty_nodes {
+                if let Some(prev) = prev_layout.as_ref().and_then(|l| l.find_rect(id)) {
+                    let clipped = prev.clip(bounds);
+                    if !clipped.is_empty() {
+                        damage.push(clipped);
+                    }
+                }
+                if let Some(next) = layout.find_rect(id) {
+                    let clipped = next.clip(bounds);
+                    if !clipped.is_empty() {
+                        damage.push(clipped);
+                    }
                 }
             }
         }
@@ -264,6 +628,21 @@ impl UiPipeline {
         let mut best: Option<(ThingId, i32)> = None;
         Self::hit_window_shade(root, x, y, &mut best);
         best.map(|(id, _)| id)
+    }
+
+    fn emit_cached_drawlists(&self, list: &mut DrawList) -> bool {
+        let root = match self.last_layout.as_ref().and_then(|layout| layout.root.as_ref()) {
+            Some(root) => root,
+            None => return false,
+        };
+        for child in &root.children {
+            let drawlist = match self.cached_drawlists.get(&child.id) {
+                Some(drawlist) => drawlist,
+                None => return false,
+            };
+            drawlist.append_to(list);
+        }
+        true
     }
 
     fn hit_window_shade(
@@ -353,6 +732,9 @@ impl UiPipeline {
                 PaintObject::Image { rect: _ } => {
                     // TODO: Implement image lowering
                 }
+                PaintObject::Raster { rect, image } => {
+                     list.blit_image(image, rect.x, rect.y);
+                }
                 PaintObject::Commands { cmds, rect } => {
                     use crate::geometry::Transform;
 
@@ -373,4 +755,80 @@ impl UiPipeline {
             }
         }
     }
+}
+
+fn build_parent_map(snapshot: &UiSnapshot, root_id: ThingId) -> BTreeMap<ThingId, ThingId> {
+    let mut parents = BTreeMap::new();
+    let mut stack = alloc::vec![root_id];
+    while let Some(current) = stack.pop() {
+        if let Some(node) = snapshot.nodes.get(&current) {
+            for child in &node.children {
+                parents.insert(*child, current);
+                stack.push(*child);
+            }
+        }
+    }
+    parents
+}
+
+fn find_window_ancestor(
+    mut id: ThingId,
+    snapshot: &UiSnapshot,
+    parents: &BTreeMap<ThingId, ThingId>,
+) -> Option<ThingId> {
+    loop {
+        if let Some(node) = snapshot.nodes.get(&id) {
+            if node.kind == snapshot::UiNodeKind::Window {
+                return Some(id);
+            }
+        }
+        match parents.get(&id) {
+            Some(parent) => id = *parent,
+            None => return None,
+        }
+    }
+}
+
+fn find_root_child_ancestor(
+    id: ThingId,
+    root_id: ThingId,
+    parents: &BTreeMap<ThingId, ThingId>,
+) -> Option<ThingId> {
+    if id == root_id {
+        return Some(root_id);
+    }
+    let mut current = id;
+    while let Some(parent) = parents.get(&current) {
+        if *parent == root_id {
+            return Some(current);
+        }
+        current = *parent;
+    }
+    None
+}
+
+fn node_uses_intrinsic_size(node: &snapshot::UiNodeSnapshot, keys: &UiKeys) -> bool {
+    let w = keys.w;
+    let h = keys.h;
+    let center_x = keys.center_x;
+    let center_y = keys.center_y;
+    let text_key = keys.text;
+
+    let w = if w != 0 {
+        *node.props.get(&w).unwrap_or(&0)
+    } else {
+        0
+    };
+    let h = if h != 0 {
+        *node.props.get(&h).unwrap_or(&0)
+    } else {
+        0
+    };
+
+    let has_center_x = center_x != 0 && *node.props.get(&center_x).unwrap_or(&0) != 0;
+    let has_center_y = center_y != 0 && *node.props.get(&center_y).unwrap_or(&0) != 0;
+
+    let has_text = text_key != 0 && node.strings.contains_key(&text_key);
+
+    (has_center_x || has_center_y) && (w == 0 || h == 0) && has_text
 }

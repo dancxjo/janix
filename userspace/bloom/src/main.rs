@@ -17,7 +17,6 @@ mod frame;
 mod frame_loop;
 pub mod geometry;
 mod isa;
-pub mod key_overlay;
 mod log_ratelimit;
 mod logging;
 mod lowered;
@@ -25,33 +24,96 @@ pub mod perf;
 mod present;
 mod raster;
 mod reclaimer;
+mod render_state;
 mod surface;
 mod svg;
-pub mod ui;
+mod ui;
 
-use abi::hid::Key;
-use abi::root::RootWatchFilter;
-use abi::types::{WatchMode, WatchSpec};
-use core::sync::atomic::{AtomicBool, Ordering};
-use stem::thing::{HandleId, ThingId};
-
-pub static DISABLE_TEXT: AtomicBool = AtomicBool::new(false);
-pub static DISABLE_WALLPAPER: AtomicBool = AtomicBool::new(false);
-pub static FORCE_FULL_DAMAGE: AtomicBool = AtomicBool::new(false);
+use stem::thing::{ThingId, HandleId};
 
 use abi::display_driver_protocol::BindPayload;
 use abi::schema::keys;
 use stem::syscall::PortHandle;
 
-use crate::asset::AssetType;
-use crate::compositor::{CompositorTarget, DisplayBackend};
-use crate::cursor::CursorState;
-use crate::frame::{FrameBuilder, FrameSpec};
+use crate::compositor::CompositorTarget;
+use crate::frame::FrameBuilder;
 use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
+use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
+use crate::cursor::CursorState;
+use crate::ui::FullRefreshReason;
+use alloc::collections::BTreeSet;
+
+fn clear_surface(surface: &mut surface::Surface, color: u32) {
+    let w = surface.width();
+    let h = surface.height();
+    for y in 0..h {
+        for x in 0..w {
+            surface.put_px(x, y, color);
+        }
+    }
+}
+
+fn clear_damage(surface: &mut surface::Surface, damage: &crate::damage::Damage, color: u32) {
+    for rect in damage.iter() {
+        raster::fill_rect_copy(surface, rect.x, rect.y, rect.w, rect.h, color);
+    }
+}
 
 fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
+}
+
+fn build_ui_watch_predicates(keys: &ui::snapshot::UiKeys) -> alloc::vec::Vec<u32> {
+    let mut preds = BTreeSet::new();
+    for &key in keys.all_keys().iter().chain(core::iter::once(&keys.has_child)) {
+        if key != 0 {
+            preds.insert(key);
+        }
+    }
+    preds.into_iter().collect()
+}
+
+fn is_bytespace_prop(pred: u32, keys: &ui::snapshot::UiKeys) -> bool {
+    pred == keys.text
+        || pred == keys.font
+        || pred == keys.font_stack
+        || pred == keys.title
+        || pred == keys.svg_bytes
+        || pred == keys.window_icon
+        || pred == keys.tile_asset
+}
+
+fn process_ui_watch_payload(
+    buf: &[u8],
+    ui_pipeline: &mut ui::UiPipeline,
+    keys: &ui::snapshot::UiKeys,
+) {
+    let mut cursor = 0usize;
+    while cursor < buf.len() {
+        let Ok((header, value)) = abi::watch::decode_event(&buf[cursor..]) else {
+            break;
+        };
+        cursor += abi::watch::WATCH_EVENT_HEADER_LEN + value.len();
+
+        let subject = ThingId(header.subject.0);
+        let pred = header.predicate.to_u32_lossy();
+        if pred == keys.has_child {
+            ui_pipeline.mark_node_edges_dirty(subject);
+        } else {
+            ui_pipeline.mark_node_dirty(subject);
+        }
+
+        if is_bytespace_prop(pred, keys)
+            && header.value_encoding == abi::watch::ValueEncoding::U64LE as u8
+            && value.len() == 8
+        {
+            let bs_id = u64::from_le_bytes(value.try_into().unwrap());
+            if bs_id != 0 {
+                ui_pipeline.invalidate_asset(bs_id);
+            }
+        }
+    }
 }
 
 use crate::asset::AssetBank;
@@ -113,6 +175,7 @@ extern "C" fn font_loader_entry() -> ! {
             ASSETS.enqueue_font_load(bs_id, size, mod_name);
         }
     }
+    use abi::root::RootWatchFilter;
     use abi::schema::rels;
     use abi::types::{WatchMode, WatchSpec};
     use stem::root_watch;
@@ -201,6 +264,9 @@ extern "C" fn font_loader_entry() -> ! {
             ..Default::default()
         };
         if let Ok(wid) = syscall::root_watch_open(&spec) {
+            crate::perf::add_counter("bloom.watch_open_count", 1);
+            crate::perf::add_counter("bloom.watch_reopen_reason.font_graph", 1);
+            crate::perf::log_event("bloom.watch_reopen_reason", "font_graph");
             watch_ids.push(wid);
             watch_bufs.push([0u8; 4096]);
             watch_seq.push(0);
@@ -236,6 +302,7 @@ extern "C" fn font_loader_entry() -> ! {
 
 extern "C" fn cursor_loader_entry() -> ! {
     stem::sleep_ms(300);
+    stem::info!("bloom cursor_loader started");
     #[cfg(feature = "svg-cursors")]
     let candidates = [
         "/assets/cursors/future/default.svg",
@@ -244,14 +311,87 @@ extern "C" fn cursor_loader_entry() -> ! {
     ];
     #[cfg(not(feature = "svg-cursors"))]
     let candidates = ["/assets/cursors/plain/Normal.cur"];
+    let mut found = false;
     for path in candidates.iter() {
         if ASSETS.probe_asset_exists(path) {
+            stem::info!("bloom cursor_loader found asset: {}", path);
             ASSETS.enqueue_cursor_load(path);
+            found = true;
             break;
         }
     }
+    if !found {
+        stem::info!("bloom cursor_loader: no cursor asset found!");
+    }
     loop {
         stem::syscall::sleep_ms(10000);
+    }
+}
+
+/// Draw cursor overlay onto surface
+fn draw_cursor_overlay(surface: &mut surface::Surface, cursor: &CursorState) {
+    let bbox = cursor.bbox();
+    let screen_w = surface.width() as i32;
+    let screen_h = surface.height() as i32;
+    
+    // Get cursor frame data
+    let mut list = drawlist::DrawList::new();
+    cursor.emit_drawlist(&mut list);
+    
+    for cmd in list.iter() {
+        if let drawlist::DrawCmd::Cursor { frame, position } = cmd {
+            let dx = position.x - frame.hotspot_x as i32;
+            let dy = position.y - frame.hotspot_y as i32;
+            
+            // Blit cursor bitmap with alpha blending
+            for py in 0..frame.image.height as i32 {
+                for px in 0..frame.image.width as i32 {
+                    let sx = dx + px;
+                    let sy = dy + py;
+                    if sx < 0 || sy < 0 || sx >= screen_w || sy >= screen_h {
+                        continue;
+                    }
+                    let idx = (py as usize * frame.image.width as usize + px as usize);
+                    if idx >= frame.image.pixels.len() {
+                        continue;
+                    }
+                    let rgba = frame.image.pixels[idx];
+                    let a = (rgba >> 24) & 0xFF;
+                    if a == 0 { continue; }
+                    if a == 0xFF {
+                        surface.put_px(sx, sy, rgba);
+                    } else {
+                        // Alpha blend
+                        let dst = surface.get_px(sx, sy);
+                        let sr = (rgba >> 16) & 0xFF;
+                        let sg = (rgba >> 8) & 0xFF;
+                        let sb = rgba & 0xFF;
+                        let dr = (dst >> 16) & 0xFF;
+                        let dg = (dst >> 8) & 0xFF;
+                        let db = dst & 0xFF;
+                        let inv = 255 - a;
+                        let r = (sr * a + dr * inv) / 255;
+                        let g = (sg * a + dg * inv) / 255;
+                        let b = (sb * a + db * inv) / 255;
+                        surface.put_px(sx, sy, 0xFF000000 | (r << 16) | (g << 8) | b);
+                    }
+                }
+            }
+        } else {
+            // Fallback: procedural crosshair
+            let cx = cursor.x;
+            let cy = cursor.y;
+            for dx in -5..=5 {
+                if cx + dx >= 0 && cx + dx < screen_w {
+                    surface.put_px(cx + dx, cy, 0xFFFFFFFF);
+                }
+            }
+            for dy in -5..=5 {
+                if cy + dy >= 0 && cy + dy < screen_h {
+                    surface.put_px(cx, cy + dy, 0xFFFFFFFF);
+                }
+            }
+        }
     }
 }
 
@@ -300,12 +440,7 @@ fn main(arg: usize) -> ! {
 
     let target =
         CompositorTarget::discover_and_map((arg_req, arg_resp), 2000).expect("compositor discover");
-    let indicator_color = match target.backend {
-        DisplayBackend::VirtioGpu => geometry::Color::from_u32(0xFF00FF00),
-        DisplayBackend::BootFB => geometry::Color::from_u32(0xFFFF0000),
-        _ => geometry::Color::from_u32(0xFFFFFF00),
-    };
-    // #[cfg(feature = "svg-cursors")] cursor::set_target_color(indicator_color); // Removed: cursor is image-based now
+    let _ = target.backend;
 
     let mut presenter = if target.driver_req != 0 {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
@@ -347,276 +482,162 @@ fn main(arg: usize) -> ! {
         target.height,
         target.format,
     );
-    let mut cursor = CursorState::new((target.width as i32) / 2, (target.height as i32) / 2);
-    let mut prev_buttons: u32 = 0;
     let mut loop_ctrl = FrameLoop::new(60);
-    let (mut wallpaper_loaded, mut cursor_loaded, mut font_loaded) = (false, false, false);
-    let mut ui_watch_handles: alloc::vec::Vec<usize> = alloc::vec::Vec::new();
+    let (screen_w, screen_h) = (target.width as i32, target.height as i32);
+    
+    // Cursor state
+    let bristle_evt_handle = bristle_evt as PortHandle;
+    let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
+    let mut prev_cursor_bbox = cursor.bbox();
+    let mut prev_cursor_gen = cursor.generation();
+    let mut pressed_keys: BTreeSet<abi::hid::Key> = BTreeSet::new();
+    let accel_cfg = MouseAccelConfig::default();
+    let mut accel_state = MouseAccelState::default();
+    let mut cursor_logged = false;
+    
+    // Load cursor asset if available
+    if let Some(asset) = ASSETS.get_cursor() {
+        cursor.set_asset(asset);
+    }
+    
+    let ui_root = {
+        let mut roots = [ThingId::default(); 1];
+        match stem::thing::sys::find(abi::schema::kinds::UI_ROOT, &mut roots) {
+            Ok(count) if count > 0 => roots[0],
+            _ => stem::ui::UiBuilder::create_root(),
+        }
+    };
+    let mut ui_pipeline = ui::UiPipeline::new();
+    ui_pipeline.set_root(ui_root);
+    let ui_keys = ui_pipeline.ui_keys();
+    let ui_watch_preds = build_ui_watch_predicates(&ui_keys);
+    let mut ui_watch_ids: alloc::vec::Vec<usize> = alloc::vec::Vec::new();
     let mut ui_watch_bufs: alloc::vec::Vec<[u8; 4096]> = alloc::vec::Vec::new();
     let mut ui_watch_seq: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
-    let mut ui_force_damage = false;
-    let mut ui_poll_deadline_ns = stem::monotonic_ns().saturating_add(1_000_000_000);
-
-    let (screen_w, screen_h) = (target.width as i32, target.height as i32);
-    let mut ui_pipeline = ui::UiPipeline::new();
-    let ui_root = stem::ui::UiBuilder::create_root();
-    ui_pipeline.set_root(ui_root);
-
-    // Subscribe to UI-only updates (kinds), avoiding the global firehose.
-    let ui_kinds = ui_pipeline.kind_ids();
-    let watch_kinds = [
-        ui_kinds.root,
-        ui_kinds.window,
-        ui_kinds.panel,
-        ui_kinds.text,
-        ui_kinds.image,
-        ui_kinds.overlay,
-        ui_kinds.inline,
-    ];
-    for kid in watch_kinds.into_iter().filter(|k| *k != 0) {
-        let filter = RootWatchFilter::kind(kid);
-        let spec = WatchSpec {
-            mode: WatchMode::StreamOnly as u32,
+    for pred in ui_watch_preds {
+        let filter = abi::root::RootWatchFilter::predicate(pred);
+        let spec = abi::types::WatchSpec {
+            mode: abi::types::WatchMode::StreamOnly as u32,
             start_seq: 0,
             filter_ptr: &filter as *const _ as u64,
-            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+            filter_len: core::mem::size_of::<abi::root::RootWatchFilter>() as u64,
             ..Default::default()
         };
-        if let Ok(id) = stem::syscall::root_watch_open(&spec) {
-            ui_watch_handles.push(id);
+        if let Ok(wid) = stem::syscall::root_watch_open(&spec) {
+            ui_watch_ids.push(wid);
             ui_watch_bufs.push([0u8; 4096]);
             ui_watch_seq.push(0);
-            let _ = stem::root_watch::watch_drain(id, ui_watch_bufs.last_mut().unwrap(), |_, _| {
-                ui_force_damage = true;
-            });
+            let _ = stem::root_watch::watch_drain(
+                wid,
+                ui_watch_bufs.last_mut().unwrap(),
+                |_, bytes| process_ui_watch_payload(bytes, &mut ui_pipeline, &ui_keys),
+            );
         }
     }
 
-    let mut keys = alloc::collections::BTreeSet::new();
-    let mut key_overlay = key_overlay::KeyOverlay::new();
-    key_overlay.setup(ui_root);
-
-    let mut prev_cursor_bbox: Option<crate::damage::Rect> = None;
-    let mut first_frame = true;
-    let mut first_frame_rendered = false;
-
     loop {
-        let frame_start = stem::monotonic_ns();
         loop_ctrl.next();
-        let asset_gen = ASSETS.publish_pending();
+        
+        // Promote pending assets (cursor, fonts, wallpaper) to ready
+        ASSETS.publish_pending();
+        
+        for idx in 0..ui_watch_ids.len() {
+            match stem::syscall::root_watch_next(
+                ui_watch_ids[idx],
+                &mut ui_watch_seq[idx],
+                &mut ui_watch_bufs[idx],
+            ) {
+                Ok(len) if len > 0 => {
+                    process_ui_watch_payload(
+                        &ui_watch_bufs[idx][..len],
+                        &mut ui_pipeline,
+                        &ui_keys,
+                    );
+                }
+                Err(abi::errors::Errno::EOVERFLOW) => {
+                    crate::perf::add_counter("watch_overflows", 1);
+                    ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchOverflow);
+                }
+                Ok(_) | Err(abi::errors::Errno::EAGAIN) => {}
+                Err(_) => {}
+            }
+        }
+        let mut list = drawlist::DrawList::new();
+        let ui_result = ui_pipeline.run(screen_w, screen_h, &mut list, &ASSETS);
+        
+        // Poll input and update cursor
+        let old_cursor_bbox = prev_cursor_bbox;
+        let old_cursor_gen = prev_cursor_gen;
+        if bristle_evt_handle != 0 {
+            poll_bristle(
+                bristle_evt_handle, 
+                &mut cursor, 
+                &mut pressed_keys, 
+                &accel_cfg, 
+                &mut accel_state, 
+                screen_w, 
+                screen_h
+            );
+        }
+        
+        // Update cursor asset if newly loaded
+        if let Some(asset) = ASSETS.get_cursor() {
+            cursor.set_asset(asset);
+        }
+        let new_cursor_bbox = cursor.bbox();
+        prev_cursor_bbox = new_cursor_bbox;
+        let new_cursor_gen = cursor.generation();
+        prev_cursor_gen = new_cursor_gen;
+
+        let bounds = damage::Rect::full(screen_w, screen_h);
+        let mut damage = damage::Damage::empty(bounds);
+        for rect in &ui_result.damage {
+            damage.add_rect(*rect);
+        }
+        if old_cursor_bbox != new_cursor_bbox || old_cursor_gen != new_cursor_gen {
+            damage.add_rect(old_cursor_bbox);
+            damage.add_rect(new_cursor_bbox);
+        }
+        if ui_result.changed && damage.is_empty() {
+            damage = damage::Damage::full(bounds);
+        }
+
+        if damage.is_empty() {
+            presenter.pump();
+            loop_ctrl.sleep();
+            continue;
+        }
+
         let token = presenter.acquire_frame(
             crate::frame::FrameSpec::new(target.width, target.height, target.format),
-            asset_gen,
+            crate::frame::AssetGeneration::ZERO,
         );
-        let frame_id = token.frame_id();
-
-        trace_span!("build");
         let mut builder = FrameBuilder::new(token);
-        let gen = builder.asset_generation();
-
-        if first_frame {
+        if damage.is_full {
+            clear_surface(&mut surface, 0xFF101018);
             builder.mark_full_damage();
-            first_frame = false;
-        }
-        if !wallpaper_loaded && ASSETS.get_wallpaper_for_gen(gen).is_some() {
-            wallpaper_loaded = true;
-            builder.mark_full_damage();
-        }
-        if !cursor_loaded {
-            if let Some(a) = ASSETS.get_cursor_for_gen(gen) {
-                cursor.set_asset(a);
-                cursor_loaded = true;
-                builder.add_damage(cursor.bbox());
-            }
-        }
-        if !font_loaded {
-            if font_graph::has_fonts_ready() || !ASSETS.get_fonts().is_empty() {
-                font_loaded = true;
-                builder.mark_full_damage();
-                ui_pipeline.mark_dirty();
-            }
-        }
-
-        ASSETS.mark_reachable(AssetType::Wallpaper, wallpaper_loaded);
-        ASSETS.mark_reachable(AssetType::Cursor, cursor_loaded);
-        if wallpaper_loaded {
-            ASSETS.mark_used(AssetType::Wallpaper, frame_id);
-        }
-        if cursor_loaded {
-            ASSETS.mark_used(AssetType::Cursor, frame_id);
-        }
-
-        let old_bbox = cursor.bbox();
-        if bristle_evt != 0 {
-            bristle::poll_bristle(bristle_evt, &mut cursor, &mut keys, screen_w, screen_h);
-        }
-        let new_bbox = cursor.bbox();
-        if let Some(prev) = prev_cursor_bbox {
-            if prev != new_bbox {
-                builder.add_damage(old_bbox);
-                builder.add_damage(new_bbox);
-            }
         } else {
-            builder.add_damage(new_bbox);
-        }
-        prev_cursor_bbox = Some(new_bbox);
-
-        let buttons = cursor.buttons();
-        let left_pressed = buttons & 0x1 != 0 && prev_buttons & 0x1 == 0;
-        prev_buttons = buttons;
-
-        {
-            crate::trace_span!("ui.watch_drain");
-            for (idx, wid) in ui_watch_handles.iter().enumerate() {
-                loop {
-                    match stem::syscall::root_watch_next(
-                        *wid,
-                        &mut ui_watch_seq[idx],
-                        &mut ui_watch_bufs[idx],
-                    ) {
-                        Ok(len) if len > 0 => {
-                            let mut c = 0;
-                            let mut seen = 0u64;
-                            while c < len {
-                                if let Ok((h, v)) =
-                                    abi::watch::decode_event(&ui_watch_bufs[idx][c..len])
-                                {
-                                    c += abi::watch::WATCH_EVENT_HEADER_LEN + v.len();
-                                    ui_pipeline.mark_node_dirty(h.subject);
-                                    ui_force_damage = true;
-                                    seen += 1;
-                                } else {
-                                    break;
-                                }
-                            }
-                            if seen > 0 {
-                                crate::perf::add_counter("ui.watch.events", seen);
-                            }
-                        }
-                        Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,
-                        Err(abi::errors::Errno::EOVERFLOW) => {
-                            crate::perf::add_counter("ui.watch.overflows", 1);
-                            ui_pipeline.mark_dirty();
-                            ui_force_damage = true;
-                            break;
-                        }
-                        Err(_) => break,
-                    }
-                }
-            }
-        }
-        if frame_start >= ui_poll_deadline_ns {
-            ui_pipeline.mark_dirty();
-            ui_force_damage = true;
-            ui_poll_deadline_ns = frame_start.saturating_add(1_000_000_000);
-        }
-        if key_overlay.update(&keys, screen_w, screen_h) {
-            ui_pipeline.mark_dirty();
-        }
-
-        let (ui_changed, ui_dmg) = {
-            let list = builder.ops();
-            if !DISABLE_WALLPAPER.load(Ordering::Relaxed) {
-                if let Some(clouds) = ASSETS.get_wallpaper_for_gen(gen) {
-                    let (cw, ch) = (clouds.width as i32, clouds.height as i32);
-                    for y in (0..screen_h).step_by(ch as usize) {
-                        for x in (0..screen_w).step_by(cw as usize) {
-                            list.blit_image(&clouds, x, y);
-                        }
-                    }
-                } else {
-                    list.clear(geometry::Color::from_u32(0xFF002d44));
-                }
-            }
-            list.rect(screen_w - 32, 8, 24, 24, indicator_color);
-            if font_loaded && !DISABLE_TEXT.load(Ordering::Relaxed) {
-                list.text_font(
-                    "thing-os",
-                    "NotoSerif-Regular.ttf",
-                    20,
-                    40,
-                    24.0,
-                    geometry::Color::from_u32(0xFFFFFFFF),
-                );
-                list.text_font(
-                    &alloc::format!("frame: {}", frame_id),
-                    "NotoSerif-Regular.ttf",
-                    20,
-                    70,
-                    16.0,
-                    geometry::Color::from_u32(0xFFCCCCCC),
-                );
-            }
-            let res = ui_pipeline.run(screen_w, screen_h, list, &ASSETS);
-            cursor.emit_drawlist(list);
-            (res.changed, res.damage)
-        };
-
-        if left_pressed {
-            if let Some(win) = ui_pipeline.hit_test_shade_button(cursor.x, cursor.y) {
-                if ui_pipeline.toggle_window_shade(win) {
-                    ui_force_damage = true;
-                }
+            clear_damage(&mut surface, &damage, 0xFF101018);
+            for rect in damage.iter() {
+                builder.add_damage(rect);
             }
         }
 
-        if keys.contains(&Key::LeftCtrl)
-            && keys.contains(&Key::LeftAlt)
-            && keys.contains(&Key::LeftShift)
-        {
-            if keys.contains(&Key::T) {
-                DISABLE_TEXT.fetch_xor(true, Ordering::Relaxed);
-                ui_pipeline.mark_dirty();
-                ui_force_damage = true;
-                stem::sleep_ms(200);
-            }
-            if keys.contains(&Key::W) {
-                DISABLE_WALLPAPER.fetch_xor(true, Ordering::Relaxed);
-                ui_force_damage = true;
-                stem::sleep_ms(200);
-            }
-            if keys.contains(&Key::P) {
-                key_overlay.show_perf = !key_overlay.show_perf;
-                ui_pipeline.mark_dirty();
-                ui_force_damage = true;
-                stem::sleep_ms(200);
-            }
+        if !damage.is_empty() {
+            raster::execute_with_damage(&mut surface, &list, &damage, ui_result.solid_text);
         }
-
-        if ui_changed || ui_force_damage || FORCE_FULL_DAMAGE.load(Ordering::Relaxed) {
-            if ui_dmg.is_empty() || FORCE_FULL_DAMAGE.load(Ordering::Relaxed) {
-                builder.mark_full_damage();
-            } else {
-                for r in ui_dmg {
-                    builder.add_damage(r);
-                }
-            }
-            ui_force_damage = false;
+        
+        // Draw cursor overlay (always on top)
+        draw_cursor_overlay(&mut surface, &cursor);
+        
+        if !cursor_logged {
+            stem::info!("[CONTRACT] bloom cursor rendered at ({}, {})", cursor.x, cursor.y);
+            cursor_logged = true;
         }
 
         let token = builder.finish();
-        let dmg = token.damage.clone();
-        if !dmg.is_empty() {
-            trace_span!("raster");
-            raster::execute_with_damage(&mut surface, &token.ops, &dmg, ui_pipeline.solid_text);
-        }
-        {
-            trace_span!("present");
-            presenter.present_frame(token);
-            presenter.pump();
-        }
-        key_overlay.post_present();
-        if !first_frame_rendered && frame_id >= 1 {
-            first_frame_rendered = true;
-            log!("[CONTRACT] [bloom] First frame rendered");
-        }
-        reclaimer::check_memory_pressure(&ASSETS);
-        loop_ctrl.heartbeat(cursor.x, cursor.y);
-        perf::add_counter(
-            "frame.work_ns",
-            stem::monotonic_ns().saturating_sub(frame_start),
-        );
-        perf::end_frame();
+        presenter.present_frame(token);
+        presenter.pump();
         loop_ctrl.sleep();
     }
 }

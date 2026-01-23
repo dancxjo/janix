@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use core::time::Duration;
 use stem::info;
 use stem::thing::{ThingId, HandleId};
-use stem::thing::sys::{create_node, prop_set, link, find, describe_thing, prop_get, intern};
+use stem::thing::sys::{create_node, prop_set, link, find, describe_thing, prop_get};
 use abi::schema::{kinds, keys, rels};
 
 fn find_svg_assets() -> Vec<(String, ThingId)> {
@@ -96,76 +96,31 @@ fn main() -> ! {
     let cols = 6;
     let icon_size = 64;
     let padding = 10;
-    
-    // keys::UI_SVG_BYTES
-    
-    // We need interned keys for generic binding
-    let k_svg_bytes = intern(keys::UI_SVG_BYTES).unwrap_or(0);
+
+    let viewport = create_node(kinds::UI_VIEWPORT).expect("viewport");
+    link(viewport, rels::CHILD_OF, win).expect("link viewport");
+    link(win, rels::HAS_CHILD, viewport).expect("has_child");
+    prop_set(viewport, keys::UI_WIDTH, 600).ok();
+    prop_set(viewport, keys::UI_HEIGHT, 400).ok();
+    prop_set(viewport, keys::UI_CLIP, 1).ok();
 
     for (i, (name, bs_id)) in svgs.iter().enumerate() {
         let row = i / cols;
         let col = i % cols;
-        
-        // A. Create Source Thing (simulating a data model)
-        let source = create_node("Thing").expect("source");
-        // Set the SVG bytes on the source
-        prop_set(source, keys::UI_SVG_BYTES, bs_id.to_u64_lossy()).ok();
-        
-        // B. Create UI_INLINE Node
-        let node = create_node(kinds::UI_INLINE).expect("ui_inline");
-        link(node, rels::CHILD_OF, win).expect("child");
-        link(win, rels::HAS_CHILD, node).expect("has_child");
-        
-        // Position
+
+        let tile = create_node(kinds::UI_TILE).expect("tile");
+        link(tile, rels::CHILD_OF, viewport).expect("child");
+        link(viewport, rels::HAS_CHILD, tile).expect("has_child");
+
         let x = padding + col * (icon_size + padding);
-        let y = padding + row * (icon_size + padding) + 30; // +30 for title bar area approximation
-        
-        prop_set(node, keys::UI_X, x as u64).ok();
-        prop_set(node, keys::UI_Y, y as u64).ok();
-        prop_set(node, keys::UI_WIDTH, icon_size as u64).ok();
-        prop_set(node, keys::UI_HEIGHT, icon_size as u64).ok();
-        
-        prop_set(node, keys::UI_INLINE_MODE, 1).ok(); // 1 = SVG Mode
-        
-        // C. Bind Source -> Node
-        let binding = create_node(kinds::BINDING).expect("binding");
-        prop_set(binding, keys::BINDING_SOURCE, source.to_u64_lossy()).ok();
-        prop_set(binding, keys::BINDING_TARGET, node.to_u64_lossy()).ok();
-        
-        // Map UI_SVG_BYTES -> UI_SVG_BYTES
-        // "binding.map" = source key (UI_SVG_BYTES)
-        if k_svg_bytes != 0 {
-            prop_set(binding, keys::BINDING_MAP, k_svg_bytes as u64).ok();
-            
-            // "binding.to" = target key (UI_SVG_BYTES)
-            // This relies on the new generic binding feature!
-            prop_set(binding, keys::BINDING_TO, k_svg_bytes as u64).ok();
-        }
-        
-        info!("Bound {} -> {} for {}", name, node.to_u64_lossy(), bs_id.to_u64_lossy());
-        
-        // Add label below?
-        let label = create_node(kinds::UI_TEXT).expect("text");
-        link(label, rels::CHILD_OF, win).expect("link");
-        link(win, rels::HAS_CHILD, label).expect("link");
-        prop_set(label, keys::UI_X, x as u64).ok();
-        prop_set(label, keys::UI_Y, (y + icon_size as usize) as u64).ok();
-        prop_set(label, keys::UI_FONT_SIZE, 10).ok();
-        prop_set(label, keys::UI_FG_COLOR, 0xFFCCCCCC).ok();
-        set_string_prop(label, keys::UI_TEXT, name);
-    }
-    
-    // Create one Text Mode UI_INLINE for comparison/demo
-    {
-        let t_node = create_node(kinds::UI_INLINE).expect("ui_inline text");
-        link(t_node, rels::CHILD_OF, win).expect("win");
-        link(win, rels::HAS_CHILD, t_node).expect("win");
-        
-        prop_set(t_node, keys::UI_X, 10).ok();
-        prop_set(t_node, keys::UI_Y, 350).ok();
-        prop_set(t_node, keys::UI_INLINE_MODE, 0).ok(); // 0 = Text Mode
-        set_string_prop(t_node, keys::UI_TEXT, "I am a UI_INLINE in Text Mode!");
-        prop_set(t_node, keys::UI_FG_COLOR, 0xFF00FF00).ok();
+        let y = padding + row * (icon_size + padding) + 30;
+        prop_set(tile, keys::UI_X, x as u64).ok();
+        prop_set(tile, keys::UI_Y, y as u64).ok();
+        prop_set(tile, keys::UI_WIDTH, icon_size as u64).ok();
+        prop_set(tile, keys::UI_HEIGHT, icon_size as u64).ok();
+        prop_set(tile, keys::UI_TILE_ASSET, bs_id.to_u64_lossy()).ok();
+
+        info!("Tile {} -> {} ({})", name, tile.to_u64_lossy(), bs_id.to_u64_lossy());
     }
 
     info!("Photosynthesis ready. Floating...");

@@ -1,17 +1,19 @@
+use crate::asset::Image;
 use alloc::string::String;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
 
 use crate::damage::Rect;
 use crate::geometry::Color;
+use crate::render_state::{RasterKey, RenderState};
 use crate::ui::constants::{
     SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT, TITLE_BAR_ICON_SIZE,
     TITLE_BAR_PADDING,
 };
 use crate::ui::layout::{LayoutNode, LayoutTree, SymbolResolver};
 use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot, UiSnapshot};
-use abi::ids::HandleId; // Need HandleId for ThingId::from (Wait, paint.rs uses abi::WireType::ThingId)
 use abi::schema::keys;
-use abi::WireType::ThingId;
+use stem::thing::ThingId;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum PaintObject {
@@ -35,6 +37,10 @@ pub enum PaintObject {
     Image {
         rect: Rect,
     },
+    Raster {
+        rect: Rect,
+        image: Arc<Image>,
+    },
     Commands {
         cmds: alloc::sync::Arc<alloc::vec::Vec<crate::drawlist::DrawCmd>>,
         rect: Rect,
@@ -53,11 +59,23 @@ impl PaintBuilder {
         snapshot: &UiSnapshot,
         layout: &LayoutTree,
         symbols: &impl SymbolResolver,
+        render_state: &mut RenderState,
     ) -> PaintScene {
         let mut objects = Vec::new();
+        let mut node_count = 0usize;
+        let active_window = Self::active_window(layout);
         if let Some(root) = &layout.root {
-            Self::build_recursive(snapshot, root, &mut objects, symbols);
+            Self::build_recursive(
+                snapshot,
+                root,
+                &mut objects,
+                symbols,
+                render_state,
+                active_window,
+                &mut node_count,
+            );
         }
+        crate::trace_counter!("dirty_nodes_paint", node_count);
 
         let now_ms = crate::log_ratelimit::now_ms();
         if crate::log_ratelimit::log_every(1000, now_ms) {
@@ -71,12 +89,41 @@ impl PaintBuilder {
         PaintScene { objects }
     }
 
+    pub fn build_subtree(
+        snapshot: &UiSnapshot,
+        subtree: &LayoutNode,
+        symbols: &impl SymbolResolver,
+        render_state: &mut RenderState,
+        active_window: Option<ThingId>,
+        node_count: &mut usize,
+    ) -> PaintScene {
+        let mut objects = Vec::new();
+        Self::build_recursive(
+            snapshot,
+            subtree,
+            &mut objects,
+            symbols,
+            render_state,
+            active_window,
+            node_count,
+        );
+        PaintScene { objects }
+    }
+
+    pub fn active_window(layout: &LayoutTree) -> Option<ThingId> {
+        layout.root.as_ref().and_then(Self::find_active_window)
+    }
+
     fn build_recursive(
         snapshot: &UiSnapshot,
         layout_node: &LayoutNode,
         objects: &mut Vec<PaintObject>,
         symbols: &impl SymbolResolver,
+        render_state: &mut RenderState,
+        active_window: Option<ThingId>,
+        node_count: &mut usize,
     ) {
+        *node_count += 1;
         // Scope all drawing to this node's bounds before emitting content or children.
         objects.push(PaintObject::PushClip {
             rect: layout_node.rect.clone(),
@@ -84,10 +131,25 @@ impl PaintBuilder {
 
         if let Some(node_snapshot) = snapshot.nodes.get(&layout_node.id) {
             // Create paint object based on kind and properties
-            Self::create_paint_objects(node_snapshot, layout_node, objects, symbols);
+            Self::create_paint_objects(
+                node_snapshot,
+                layout_node,
+                objects,
+                symbols,
+                render_state,
+                active_window,
+            );
 
             for child in &layout_node.children {
-                Self::build_recursive(snapshot, child, objects, symbols);
+                Self::build_recursive(
+                    snapshot,
+                    child,
+                    objects,
+                    symbols,
+                    render_state,
+                    active_window,
+                    node_count,
+                );
             }
         }
 
@@ -99,6 +161,8 @@ impl PaintBuilder {
         layout: &LayoutNode,
         objects: &mut Vec<PaintObject>,
         symbols: &impl SymbolResolver,
+        render_state: &mut RenderState,
+        active_window: Option<ThingId>,
     ) {
         // Window special handling
         if node.kind == UiNodeKind::Window {
@@ -121,7 +185,15 @@ impl PaintBuilder {
                 // Determine icon area
                 let icon_size = TITLE_BAR_ICON_SIZE;
                 let icon_padding = TITLE_BAR_PADDING;
-                let _bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
+                let bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
+                let is_active = active_window.map(|id| id == layout.id).unwrap_or(false);
+                // Active window gets boot blue; inactive windows use a neutral gray.
+                let bar_color = if is_active { 0xFF2E7FD1 } else { 0xFF5A5A5A };
+                objects.push(PaintObject::Rect {
+                    rect: bar_rect,
+                    color: Color::from_u32(bar_color),
+                    radius: 0,
+                });
 
                 // Icon Background
                 let icon_bg_rect = Rect::new(
@@ -144,10 +216,21 @@ impl PaintBuilder {
                     icon_size,
                 );
                 if let Some(icon_cmds) = &node.window_icon_content {
-                    objects.push(PaintObject::Commands {
-                        cmds: icon_cmds.clone(),
-                        rect: icon_rect,
-                    });
+                    if let Some(raster) = Self::rasterize_svg(
+                        icon_cmds,
+                        &icon_rect,
+                        render_state,
+                        node.id.to_u64_lossy(),
+                        "paint.icon.hit",
+                        "paint.icon.miss",
+                    ) {
+                        objects.push(raster);
+                    } else {
+                        objects.push(PaintObject::Commands {
+                            cmds: icon_cmds.clone(),
+                            rect: icon_rect,
+                        });
+                    }
                 }
 
                 let text_offset_x = icon_size + (icon_padding * 2);
@@ -163,30 +246,49 @@ impl PaintBuilder {
                     color: Color::from_u32(shade_bg),
                     radius: 6,
                 });
-                let shade_glyph = if is_shaded { "v" } else { "^" };
+                // Use proper Unicode triangles from symbol font, centered in the button
+                // ▲ (U+25B2) for expanded, ▼ (U+25BC) for shaded/collapsed
+                let shade_glyph = if is_shaded { "\u{25BC}" } else { "\u{25B2}" };
+                // Center the glyph in the button area
+                // The glyph size is smaller than the button; leave room for centering
+                let glyph_size: f32 = 14.0;
+                // Calculate offset to center the glyph (approximate: glyph is roughly square)
+                let glyph_offset_x = (SHADE_BUTTON_SIZE as f32 - glyph_size) / 2.0;
+                let glyph_offset_y = (SHADE_BUTTON_SIZE as f32 - glyph_size) / 2.0;
+                let glyph_rect = Rect::new(
+                    shade_x + glyph_offset_x as i32,
+                    shade_y + glyph_offset_y as i32,
+                    glyph_size as i32,
+                    glyph_size as i32,
+                );
                 objects.push(PaintObject::Text {
-                    rect: shade_rect.clone(),
+                    rect: glyph_rect,
                     text: shade_glyph.into(),
-                    font: "NotoSans-Regular.ttf".into(),
-                    size: 18.0,
+                    font: "NotoSansSymbol-Regular.ttf".into(),
+                    size: glyph_size,
                     color: Color::from_u32(0xFFFFFFFF),
                     font_debug: false,
                 });
 
-                // Title Text
+                // Title Text - vertically centered in title bar
                 let title = Self::get_str_prop(node, keys::UI_TITLE, symbols);
                 if let Some(t) = title {
                     let text_w = (shade_x - (layout.rect.x + text_offset_x)).max(0);
+                    let font_size: f32 = 14.0;
+                    // Vertically center the text in the title bar
+                    // Title bar height is title_h, font_size is the text height (baseline to top)
+                    // We want the text center aligned with the bar center
+                    let text_y = layout.rect.y + (title_h - font_size as i32) / 2;
                     objects.push(PaintObject::Text {
                         rect: Rect::new(
                             layout.rect.x + text_offset_x,
-                            layout.rect.y + 2,
+                            text_y,
                             text_w,
-                            title_h,
+                            font_size as i32,
                         ),
                         text: t,
                         font: "NotoSans-Regular.ttf".into(),
-                        size: 14.0,
+                        size: font_size,
                         color: Color::from_u32(0xFFFFFFFF),
                         font_debug: false,
                     });
@@ -196,12 +298,45 @@ impl PaintBuilder {
             return;
         }
 
+        // UI_TILE special handling
+        if node.kind == UiNodeKind::Tile {
+            if let Some(cmds) = &node.svg_content {
+                if let Some(raster) = Self::rasterize_svg(
+                    cmds,
+                    &layout.rect,
+                    render_state,
+                    node.id.to_u64_lossy(),
+                    "paint.tile.hit",
+                    "paint.tile.miss",
+                ) {
+                    objects.push(raster);
+                    return;
+                }
+                objects.push(PaintObject::Commands {
+                    cmds: cmds.clone(),
+                    rect: layout.rect.clone(),
+                });
+                return;
+            }
+        }
+
         // UI_INLINE special handling
         if node.kind == UiNodeKind::Inline {
             let mode = Self::get_prop(node, keys::UI_INLINE_MODE, symbols);
             if mode == 1 {
                 // Svg
                 if let Some(cmds) = &node.svg_content {
+                    if let Some(raster) = Self::rasterize_svg(
+                        cmds,
+                        &layout.rect,
+                        render_state,
+                        node.id.to_u64_lossy(),
+                        "paint.svg.hit",
+                        "paint.svg.miss",
+                    ) {
+                        objects.push(raster);
+                        return;
+                    }
                     objects.push(PaintObject::Commands {
                         cmds: cmds.clone(),
                         rect: layout.rect.clone(),
@@ -248,6 +383,77 @@ impl PaintBuilder {
             }
             let color = Color::from_u32(color_val as u32);
 
+            // Phase 1: Raster Cache for Text
+            let w = layout.rect.w as u32;
+            let h = layout.rect.h as u32;
+
+            // Simple DJB2-ish hash for text content and properties
+            let mut hasher = 5381u64;
+            for b in text.as_bytes() {
+                hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(*b as u64);
+            }
+            for b in font.as_bytes() {
+                hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(*b as u64);
+            }
+            // hash size (f32 bits), color (u32), font_debug (bool)
+            hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(size.to_bits() as u64);
+            hasher = ((hasher << 5).wrapping_add(hasher)).wrapping_add(color.to_u32() as u64);
+            hasher =
+                ((hasher << 5).wrapping_add(hasher)).wrapping_add(if font_debug { 1 } else { 0 });
+
+            if w > 0 && h > 0 {
+                let key = RasterKey::Text {
+                    node_id: node.id.to_u64_lossy(),
+                    w,
+                    h,
+                    content_hash: hasher,
+                };
+                if let Some(image) = render_state.raster_cache.get(&key) {
+                    crate::perf::add_counter("paint.text.hit", 1);
+                    objects.push(PaintObject::Raster {
+                        rect: layout.rect.clone(),
+                        image: image.clone(),
+                    });
+                    return;
+                }
+
+                crate::perf::add_counter("paint.text.miss", 1);
+                // Rasterize Text
+                let stride = w as usize * 4;
+                let len = stride * h as usize;
+                let mut pixels = alloc::vec![0u32; len / 4];
+
+                let mut surf = unsafe {
+                    crate::surface::Surface::new(
+                        pixels.as_mut_ptr() as *mut u8,
+                        len,
+                        w,
+                        h,
+                        stride as u32,
+                    )
+                };
+
+                let mut list = crate::drawlist::DrawList::new();
+                // Draw text at 0,0 locally
+                list.text_font_debug(&text, &font, 0, 0, size, color, font_debug);
+
+                crate::raster::execute(&mut surf, &list, false);
+
+                let image = Arc::new(Image {
+                    width: w,
+                    height: h,
+                    pixels: Arc::from(pixels),
+                    gen: crate::frame::AssetGeneration(0),
+                });
+
+                render_state.raster_cache.insert(key, image.clone());
+                objects.push(PaintObject::Raster {
+                    rect: layout.rect.clone(),
+                    image,
+                });
+                return;
+            }
+
             objects.push(PaintObject::Text {
                 rect: layout.rect.clone(),
                 text,
@@ -284,6 +490,69 @@ impl PaintBuilder {
         0
     }
 
+    fn rasterize_svg(
+        cmds: &alloc::sync::Arc<alloc::vec::Vec<crate::drawlist::DrawCmd>>,
+        rect: &Rect,
+        render_state: &mut RenderState,
+        node_id: u64,
+        hit_counter: &'static str,
+        miss_counter: &'static str,
+    ) -> Option<PaintObject> {
+        let w = rect.w as u32;
+        let h = rect.h as u32;
+        if w == 0 || h == 0 {
+            return None;
+        }
+
+        let content_hash = cmds.as_ptr() as *const () as u64;
+        let key = RasterKey::Svg {
+            node_id,
+            w,
+            h,
+            content_hash,
+        };
+
+        if let Some(image) = render_state.raster_cache.get(&key) {
+            crate::perf::add_counter(hit_counter, 1);
+            return Some(PaintObject::Raster {
+                rect: rect.clone(),
+                image: image.clone(),
+            });
+        }
+
+        crate::perf::add_counter(miss_counter, 1);
+        let stride = w as usize * 4;
+        let len = stride * h as usize;
+        let mut pixels = alloc::vec![0u32; len / 4];
+
+        let mut surf = unsafe {
+            crate::surface::Surface::new(
+                pixels.as_mut_ptr() as *mut u8,
+                len,
+                w,
+                h,
+                stride as u32,
+            )
+        };
+
+        let mut list = crate::drawlist::DrawList::new();
+        list.commands().extend(cmds.iter().cloned());
+        crate::raster::execute(&mut surf, &list, false);
+
+        let image = Arc::new(Image {
+            width: w,
+            height: h,
+            pixels: Arc::from(pixels),
+            gen: crate::frame::AssetGeneration(0),
+        });
+
+        render_state.raster_cache.insert(key, image.clone());
+        Some(PaintObject::Raster {
+            rect: rect.clone(),
+            image,
+        })
+    }
+
     fn get_str_prop(
         node: &UiNodeSnapshot,
         key: &str,
@@ -293,5 +562,37 @@ impl PaintBuilder {
             return node.strings.get(&id).cloned();
         }
         None
+    }
+
+    fn find_active_window(root: &LayoutNode) -> Option<ThingId> {
+        let mut best: Option<(ThingId, i32, usize)> = None;
+        let mut order = 0usize;
+        Self::find_active_window_recursive(root, &mut order, &mut best);
+        best.map(|(id, _, _)| id)
+    }
+
+    fn find_active_window_recursive(
+        node: &LayoutNode,
+        order: &mut usize,
+        best: &mut Option<(ThingId, i32, usize)>,
+    ) {
+        if node.kind == UiNodeKind::Window {
+            let current_order = *order;
+            let should_replace = match best {
+                None => true,
+                Some((_, best_z, best_order)) => {
+                    node.z_index > *best_z
+                        || (node.z_index == *best_z && current_order > *best_order)
+                }
+            };
+            if should_replace {
+                *best = Some((node.id, node.z_index, current_order));
+            }
+            *order = order.saturating_add(1);
+        }
+
+        for child in &node.children {
+            Self::find_active_window_recursive(child, order, best);
+        }
     }
 }

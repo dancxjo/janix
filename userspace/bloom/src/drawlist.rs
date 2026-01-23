@@ -157,6 +157,14 @@ impl DrawList {
         &mut self.cmds
     }
 
+    pub fn commands_ref(&self) -> &Vec<DrawCmd> {
+        &self.cmds
+    }
+
+    pub fn append_to(&self, target: &mut DrawList) {
+        target.commands().extend(self.cmds.iter().cloned());
+    }
+
     pub fn clear(&mut self, color: Color) {
         self.cmds.push(DrawCmd::Clear { color });
     }

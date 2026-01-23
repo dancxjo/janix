@@ -5,6 +5,7 @@ edition = "2021"
 
 
 [features]
+default = ["svg-cursors"]
 svg-cursors = []
 svg-demo = ["svg-cursors"]
 

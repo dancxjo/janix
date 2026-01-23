@@ -55,7 +55,10 @@ impl<'a> RasterContext<'a> {
 }
 
 pub fn execute(surface: &mut Surface, list: &DrawList, solid_text: bool) {
-    let lowered = lower(list);
+    let lowered = {
+        crate::trace_span!("raster.lower");
+        lower(list)
+    };
     let mut ctx = RasterContext::new(surface, solid_text);
     execute_lowered_on_context(&mut ctx, &lowered);
 }
@@ -70,7 +73,10 @@ pub fn execute_with_damage(
         execute(surface, list, solid_text);
         return;
     }
-    let lowered = lower(list);
+    let lowered = {
+        crate::trace_span!("raster.lower");
+        lower(list)
+    };
     execute_lowered_with_damage(surface, &lowered, damage, solid_text);
 }
 
@@ -88,7 +94,6 @@ pub fn execute_lowered_with_damage(
             count += 1;
         }
     }
-    let start = stem::monotonic_ns();
     for i in 0..count {
         let d = dr[i];
         crate::trace_span!("raster.rect.total");
@@ -96,28 +101,30 @@ pub fn execute_lowered_with_damage(
         ctx.current_clip = Rect::new(d.x, d.y, d.w, d.h);
         execute_lowered_on_context(&mut ctx, lowered);
     }
-    crate::trace_counter!(
-        "raster.execute_ns",
-        stem::monotonic_ns().saturating_sub(start)
-    );
 }
 
 fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
+    let start = stem::monotonic_ns();
+    crate::trace_span!("raster.execute");
     for op in lowered.ops.iter() {
         match op {
-            LowLevelOp::Clear { color } => fill_rect_copy(
-                ctx.surface,
-                ctx.current_clip.x(),
-                ctx.current_clip.y(),
-                ctx.current_clip.width(),
-                ctx.current_clip.height(),
-                color.to_u32(),
-            ),
+            LowLevelOp::Clear { color } => {
+                crate::trace_counter!("raster.ops.clear", 1);
+                fill_rect_copy(
+                    ctx.surface,
+                    ctx.current_clip.x(),
+                    ctx.current_clip.y(),
+                    ctx.current_clip.width(),
+                    ctx.current_clip.height(),
+                    color.to_u32(),
+                );
+            }
             LowLevelOp::PushClip { rect } => ctx.push_clip(*rect),
             LowLevelOp::PopClip => ctx.pop_clip(),
             LowLevelOp::PushTransform { t } => ctx.push_transform(*t),
             LowLevelOp::PopTransform => ctx.pop_transform(),
             LowLevelOp::FillRect { rect, color, aa: _ } => {
+                crate::trace_counter!("raster.ops.fill", 1);
                 let tr = ctx.current_transform.transform_rect(*rect);
                 if let Some(cl) = ctx.current_clip.intersection(&tr) {
                     let c = color.to_u32();
@@ -134,6 +141,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 dst,
                 filter,
             } => {
+                crate::trace_counter!("raster.ops.blit", 1);
                 let td = ctx.current_transform.transform_rect(*dst);
                 if let Some(cd) = ctx.current_clip.intersection(&td) {
                     blit_opaque(ctx.surface, image, src, &td, &cd, *filter);
@@ -147,6 +155,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 blend,
                 const_alpha,
             } => {
+                crate::trace_counter!("raster.ops.blit_alpha", 1);
                 let td = ctx.current_transform.transform_rect(*dst);
                 if let Some(cd) = ctx.current_clip.intersection(&td) {
                     blit_alpha(
@@ -169,6 +178,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 font_name,
                 font_debug,
             } => {
+                crate::trace_counter!("raster.ops.text", 1);
                 let p = ctx.current_transform.transform_point(*pos);
                 rasterize_text_locally(
                     ctx.surface,
@@ -183,6 +193,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 );
             }
             LowLevelOp::StrokeRect { rect, color, width } => {
+                crate::trace_counter!("raster.ops.stroke", 1);
                 let tr = ctx.current_transform.transform_rect(*rect);
                 stroke_rect_clipped_blend(
                     ctx.surface,
@@ -198,6 +209,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 color,
                 width: _,
             } => {
+                crate::trace_counter!("raster.ops.stroke", 1);
                 let p0 = ctx.current_transform.transform_point(*from);
                 let p1 = ctx.current_transform.transform_point(*to);
                 line(
@@ -215,6 +227,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 radius,
                 color,
             } => {
+                crate::trace_counter!("raster.ops.fill", 1);
                 let c = ctx.current_transform.transform_point(*center);
                 fill_circle_blend(
                     ctx.surface,
@@ -233,6 +246,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 color,
                 aa,
             } => {
+                crate::trace_counter!("raster.ops.fill", 1);
                 let c = ctx.current_transform.transform_point(*center);
                 fill_arc_clipped_blend(
                     ctx.surface,
@@ -252,6 +266,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 fill_rule,
                 aa: _,
             } => {
+                crate::trace_counter!("raster.ops.fill", 1);
                 // TODO: AA support
                 fill_path(
                     ctx.surface,
@@ -271,6 +286,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 miter_limit,
                 aa: _,
             } => {
+                crate::trace_counter!("raster.ops.stroke", 1);
                 stroke_path(
                     ctx.surface,
                     path,
@@ -285,6 +301,10 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             }
         }
     }
+    crate::trace_counter!(
+        "raster.execute_ns",
+        stem::monotonic_ns().saturating_sub(start)
+    );
 }
 
 #[inline(always)]
@@ -313,15 +333,28 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa
         let dp = ptr.add(offset);
         let dv = *dp;
         if sa == 255 {
-            *dp = ((sr as u32) << 16) | ((sg as u32) << 8) | sb as u32;
+            *dp = ((sa as u32) << 24) | ((sr as u32) << 16) | ((sg as u32) << 8) | sb as u32;
             return;
         }
+        let da = ((dv >> 24) & 0xFF) as u8;
         let (dr, dg, db) = (
             ((dv >> 16) & 0xFF) as u8,
             ((dv >> 8) & 0xFF) as u8,
             (dv & 0xFF) as u8,
         );
-        *dp = ((blend_ch(sr, dr, sa) as u32) << 16)
+        // Alpha blend: out_a = sa + da * (255 - sa)
+        // This is strictly 'src over' assuming un-premultiplied color blending approx
+        let out_a = sa as u32 + ((da as u32 * (255 - sa as u32)) >> 8);
+        // Correct color blending requires weighing by alpha, but for now we stick to simple channel blending
+        // which matches the existing logic but adds Alpha write.
+        // Actually existing logic `blend_ch` interpolates channels based on SA. This is correct for SrcOver if Dst is opaque.
+        // If Dst is transparent, we need to respect that. 
+        // But for cursor (dst=0), simple blend_ch(s, 0, sa) = scale_ch(s, sa).
+        // This is premultiplied color result?
+        // Let's just write the blended rgb and the computed alpha.
+        
+        *dp = (out_a << 24)
+            | ((blend_ch(sr, dr, sa) as u32) << 16)
             | ((blend_ch(sg, dg, sa) as u32) << 8)
             | (blend_ch(sb, db, sa) as u32);
     }
@@ -826,6 +859,44 @@ struct Edge {
     winding: i32, // 1 or -1
 }
 
+fn flatten_quad<F>(p0: (f32, f32), p1: (f32, f32), p2: (f32, f32), transform: &Transform2D, add_edge_fn: &mut F) 
+where F: FnMut((f32, f32), (f32, f32)) {
+    // Simple flatness check: distance from p1 to (p0+p2)/2
+    let mid_x = (p0.0 + p2.0) * 0.5;
+    let mid_y = (p0.1 + p2.1) * 0.5;
+    let dx = p1.0 - mid_x;
+    let dy = p1.1 - mid_y;
+    if dx*dx + dy*dy < 0.25 {
+        add_edge_fn(p0, p2);
+    } else {
+        let p01 = ((p0.0 + p1.0) * 0.5, (p0.1 + p1.1) * 0.5);
+        let p12 = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5);
+        let p012 = ((p01.0 + p12.0) * 0.5, (p01.1 + p12.1) * 0.5);
+        flatten_quad(p0, p01, p012, transform, add_edge_fn);
+        flatten_quad(p012, p12, p2, transform, add_edge_fn);
+    }
+}
+
+fn flatten_cubic<F>(p0: (f32, f32), p1: (f32, f32), p2: (f32, f32), p3: (f32, f32), transform: &Transform2D, add_edge_fn: &mut F) 
+where F: FnMut((f32, f32), (f32, f32)) {
+    let mid_x = (p0.0 + p3.0) * 0.5;
+    let mid_y = (p0.1 + p3.1) * 0.5;
+    let dx1 = p1.0 - mid_x; let dy1 = p1.1 - mid_y;
+    let dx2 = p2.0 - mid_x; let dy2 = p2.1 - mid_y;
+    if dx1*dx1 + dy1*dy1 + dx2*dx2 + dy2*dy2 < 0.5 {
+        add_edge_fn(p0, p3);
+    } else {
+        let p01 = ((p0.0 + p1.0) * 0.5, (p0.1 + p1.1) * 0.5);
+        let p12 = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5);
+        let p23 = ((p2.0 + p3.0) * 0.5, (p2.1 + p3.1) * 0.5);
+        let p012 = ((p01.0 + p12.0) * 0.5, (p01.1 + p12.1) * 0.5);
+        let p123 = ((p12.0 + p23.0) * 0.5, (p12.1 + p23.1) * 0.5);
+        let p0123 = ((p012.0 + p123.0) * 0.5, (p012.1 + p123.1) * 0.5);
+        flatten_cubic(p0, p01, p012, p0123, transform, add_edge_fn);
+        flatten_cubic(p0123, p123, p23, p3, transform, add_edge_fn);
+    }
+}
+
 pub fn fill_path(
     surface: &mut Surface,
     path: &crate::isa::Path2D,
@@ -838,11 +909,11 @@ pub fn fill_path(
     if sa == 0 {
         return;
     }
+    let sr = ((color >> 16) & 0xFF) as u8;
+    let sg = ((color >> 8) & 0xFF) as u8;
+    let sb = (color & 0xFF) as u8;
 
-    // 1. Build edges
     let mut edges: Vec<Edge> = Vec::with_capacity(path.verbs.len());
-    let mut start_p: Option<(f32, f32)> = None;
-    let mut current_p: Option<(f32, f32)> = None;
 
     let add_edge = |e: &mut Vec<Edge>, p0: (f32, f32), p1: (f32, f32)| {
         let (x0, y0) = transform.transform_point_f(p0.0, p0.1);
@@ -853,7 +924,7 @@ pub fn fill_path(
 
         if y0_i == y1_i {
             return;
-        } // Horizontal edge (ignore for scanline)
+        }
 
         let (p_start, p_end, dir) = if y0_i < y1_i {
             ((x0, y0), (x1, y1), 1)
@@ -869,18 +940,8 @@ pub fn fill_path(
             0
         };
 
-        // Initial x at first scanline (y_min + 1 or y_min?)
-        // Scanlines are at integer y + 0.5 usually? Or assume pixel centers?
-        // Simple scanline: rows y. Intersection at line y + 0.5.
-        // Let's sweep integer lines y.
-        // x at y_start_int:
         let y_start_int = y0_i.min(y1_i);
         let y_end_int = y0_i.max(y1_i);
-
-        // x intersection at y = y_start_int (top of pixel row, or center?)
-        // If we fill pixels (x, y), we test if (x+0.5, y+0.5) is inside.
-        // Standard scan conversion usually intersects at y+0.5.
-        // Let's compute x at y_start_int + 0.5.
         let y_isect = (y_start_int as f32) + 0.5;
         let x_current = float_to_fixed(p_start.0 + (y_isect - p_start.1) * (dx / dy));
 
@@ -893,14 +954,12 @@ pub fn fill_path(
         });
     };
 
+    let mut current_p: Option<(f32, f32)> = None;
+    let mut start_p: Option<(f32, f32)> = None;
+
     for verb in &path.verbs {
         match verb {
             crate::isa::PathVerb::MoveTo(p) => {
-                if let Some(c) = current_p {
-                    if let Some(s) = start_p {
-                        if c != s { /* Implicit close? No, SVG doesn't implicitly close on Move */ }
-                    }
-                }
                 start_p = Some((p.x, p.y));
                 current_p = Some((p.x, p.y));
             }
@@ -908,8 +967,21 @@ pub fn fill_path(
                 if let Some(c) = current_p {
                     add_edge(&mut edges, c, (p.x, p.y));
                     current_p = Some((p.x, p.y));
-                } else {
-                    start_p = Some((p.x, p.y));
+                }
+            }
+            crate::isa::PathVerb::QuadTo(p1, p) => {
+                if let Some(c) = current_p {
+                    flatten_quad(c, (p1.x, p1.y), (p.x, p.y), transform, &mut |p0, p1| {
+                        add_edge(&mut edges, p0, p1);
+                    });
+                    current_p = Some((p.x, p.y));
+                }
+            }
+            crate::isa::PathVerb::CubicTo(p1, p2, p) => {
+                if let Some(c) = current_p {
+                    flatten_cubic(c, (p1.x, p1.y), (p2.x, p2.y), (p.x, p.y), transform, &mut |p0, p1| {
+                        add_edge(&mut edges, p0, p1);
+                    });
                     current_p = Some((p.x, p.y));
                 }
             }
@@ -934,7 +1006,8 @@ pub fn fill_path(
     let mut active_edges: Vec<Edge> = Vec::with_capacity(16);
     let mut edge_idx = 0;
 
-    let (sr, sg, sb) = (
+    let (sa, sr, sg, sb) = (
+        ((color >> 24) & 0xFF) as u8,
         ((color >> 16) & 0xFF) as u8,
         ((color >> 8) & 0xFF) as u8,
         (color & 0xFF) as u8,
@@ -1094,6 +1167,22 @@ pub fn stroke_path(
             crate::isa::PathVerb::LineTo(p) => {
                 if let Some(c) = current_p {
                     add_segment(&mut stroke_verbs, c, (p.x, p.y));
+                    current_p = Some((p.x, p.y));
+                }
+            }
+            crate::isa::PathVerb::QuadTo(p1, p) => {
+                if let Some(c) = current_p {
+                    flatten_quad(c, (p1.x, p1.y), (p.x, p.y), transform, &mut |p0, p1| {
+                         add_segment(&mut stroke_verbs, p0, p1);
+                    });
+                    current_p = Some((p.x, p.y));
+                }
+            }
+            crate::isa::PathVerb::CubicTo(p1, p2, p) => {
+                if let Some(c) = current_p {
+                    flatten_cubic(c, (p1.x, p1.y), (p2.x, p2.y), (p.x, p.y), transform, &mut |p0, p1| {
+                         add_segment(&mut stroke_verbs, p0, p1);
+                    });
                     current_p = Some((p.x, p.y));
                 }
             }

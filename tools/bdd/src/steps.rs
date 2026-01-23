@@ -5,6 +5,7 @@
 
 use crate::world::ThingOsWorld;
 use cucumber::{given, then, when};
+use std::collections::HashMap;
 
 /// Default timeout for waiting on serial output (seconds).
 const DEFAULT_TIMEOUT_SECS: f64 = 120.0;
@@ -146,6 +147,86 @@ async fn wait_for_clock_pixels(world: &mut ThingOsWorld, timeout_secs: f64) -> R
     }
 
     Err(StepError(format!("Clock window pixels not detected within {}s", timeout_secs)))
+}
+
+struct PerfReport {
+    spans: HashMap<String, f64>,
+    counters: HashMap<String, f64>,
+}
+
+fn parse_last_perf_report(log: &str) -> Option<PerfReport> {
+    let marker = "--- PERF REPORT";
+    let start = log.rfind(marker)?;
+    let section = &log[start..];
+    let re = regex::Regex::new(r"^\s{2}(\S+)\s+avg=([0-9.]+)(ms)?").ok()?;
+    let mut spans = HashMap::new();
+    let mut counters = HashMap::new();
+
+    for line in section.lines().skip(1) {
+        if let Some(caps) = re.captures(line) {
+            let name = caps.get(1)?.as_str().to_string();
+            let avg: f64 = caps.get(2)?.as_str().parse().ok()?;
+            if caps.get(3).is_some() {
+                spans.insert(name, avg);
+            } else {
+                counters.insert(name, avg);
+            }
+        }
+    }
+
+    if spans.is_empty() && counters.is_empty() {
+        return None;
+    }
+
+    Some(PerfReport { spans, counters })
+}
+
+async fn wait_for_perf_report(
+    world: &mut ThingOsWorld,
+    timeout_secs: f64,
+) -> Result<PerfReport, StepError> {
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs_f64(timeout_secs);
+
+    loop {
+        let log = world.get_serial_log().await;
+        if let Some(report) = parse_last_perf_report(&log) {
+            return Ok(report);
+        }
+
+        if start.elapsed() > timeout {
+            return Err(StepError("Timed out waiting for PERF REPORT".to_string()));
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
+}
+
+async fn wait_for_clock_ticks(
+    world: &mut ThingOsWorld,
+    ticks: usize,
+    timeout_secs: f64,
+) -> Result<(), StepError> {
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs_f64(timeout_secs);
+
+    loop {
+        let log = world.get_serial_log().await;
+        let count = log.matches("CLOCK PUBLISH:").count();
+        if count >= ticks {
+            eprintln!("│  │  │      🕐 Clock ticks observed: {}", count);
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            return Err(StepError(format!(
+                "Timed out waiting for {} clock ticks (saw {})",
+                ticks, count
+            )));
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
 }
 
 /// Verify cursor-like pixels near center - returns count of non-background pixels
@@ -999,6 +1080,93 @@ async fn given_clock_ticking(world: &mut ThingOsWorld) -> Result<(), StepError> 
     // Wait for actual clock pixels
     // The user suggested waiting "a good minute"
     wait_for_clock_pixels(world, 150.0).await
+}
+
+#[when(regex = r"^I wait for (\d+) clock ticks$")]
+async fn wait_for_clock_ticks_impl(
+    world: &mut ThingOsWorld,
+    ticks: usize,
+) -> Result<(), StepError> {
+    wait_for_clock_ticks(world, ticks, 30.0).await
+}
+
+#[then("watch overflows should be 0")]
+async fn watch_overflows_zero(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    let report = wait_for_perf_report(world, DEFAULT_TIMEOUT_SECS).await?;
+    let mut found = false;
+    for (name, avg) in &report.counters {
+        if name == "watch_overflows" || name.starts_with("watch_overflows.") {
+            found = true;
+            if *avg > 0.0 {
+                return Err(StepError(format!(
+                    "Expected no watch overflows, but {} avg={}",
+                    name, avg
+                )));
+            }
+        }
+    }
+    if !found {
+        eprintln!("│  │  │      ⚠️ No watch overflow counters found; assuming zero");
+    }
+    Ok(())
+}
+
+#[then(regex = r"^dirty nodes layout should stay below (\d+)$")]
+async fn dirty_nodes_layout_below(
+    world: &mut ThingOsWorld,
+    threshold: u64,
+) -> Result<(), StepError> {
+    let report = wait_for_perf_report(world, DEFAULT_TIMEOUT_SECS).await?;
+    let avg = report
+        .counters
+        .get("dirty_nodes_layout")
+        .copied()
+        .ok_or_else(|| StepError("Missing dirty_nodes_layout counter".to_string()))?;
+    if avg > threshold as f64 {
+        return Err(StepError(format!(
+            "dirty_nodes_layout avg {:.2} exceeds threshold {}",
+            avg, threshold
+        )));
+    }
+    Ok(())
+}
+
+#[then(regex = r"^ui\.snap\.traverse_all should be absent or below ([0-9.]+) ms$")]
+async fn traverse_all_absent_or_below(
+    world: &mut ThingOsWorld,
+    threshold_ms: f64,
+) -> Result<(), StepError> {
+    let report = wait_for_perf_report(world, DEFAULT_TIMEOUT_SECS).await?;
+    if let Some(avg) = report.spans.get("ui.snap.traverse_all").copied() {
+        if avg > threshold_ms {
+            return Err(StepError(format!(
+                "ui.snap.traverse_all avg {:.2}ms exceeds {:.2}ms",
+                avg, threshold_ms
+            )));
+        }
+    }
+    Ok(())
+}
+
+#[then(regex = r"^average frame time should be below (\d+) ms$")]
+async fn average_frame_time_below(
+    world: &mut ThingOsWorld,
+    threshold_ms: u64,
+) -> Result<(), StepError> {
+    let report = wait_for_perf_report(world, DEFAULT_TIMEOUT_SECS).await?;
+    let avg_ns = report
+        .counters
+        .get("frame.work_ns")
+        .copied()
+        .ok_or_else(|| StepError("Missing frame.work_ns counter".to_string()))?;
+    let avg_ms = avg_ns / 1_000_000.0;
+    if avg_ms > threshold_ms as f64 {
+        return Err(StepError(format!(
+            "frame.work_ns avg {:.2}ms exceeds threshold {}ms",
+            avg_ms, threshold_ms
+        )));
+    }
+    Ok(())
 }
 
 #[given("a cursor is visible on the screen")]

@@ -216,8 +216,7 @@ impl SvgParser {
                 if rx == 0.0 && ry > 0.0 { rx = ry; }
                 if ry == 0.0 && rx > 0.0 { ry = rx; }
                 
-                self.emit_fill_rect(x, y, w, h, rx, ry);
-                // TODO: stroke rect? DrawCmd::StrokeRect exists.
+                self.emit_rect(x, y, w, h, rx, ry);
             }
             "line" => {
                  // Line conversion to path or use DrawCmd::Line
@@ -246,7 +245,7 @@ impl SvgParser {
                 let cy = attrs.get("cy").and_then(parse_length_px).unwrap_or(0.0);
                 let r = attrs.get("r").and_then(parse_length_px).unwrap_or(0.0);
                 
-                self.emit_fill_circle(cx, cy, r);
+                self.emit_circle(cx, cy, r);
             }
             "path" => {
                 self.push_state();
@@ -292,7 +291,7 @@ impl SvgParser {
         self.pop_state();
     }
     
-    fn emit_fill_rect(&mut self, x: f32, y: f32, w: f32, h: f32, rx: f32, ry: f32) {
+    fn emit_rect(&mut self, x: f32, y: f32, w: f32, h: f32, rx: f32, ry: f32) {
         use crate::svg::ir::{PointF, PathCommand}; 
         
         // Clamp radius
@@ -357,7 +356,7 @@ impl SvgParser {
         self.emit_path(path);
     }
     
-    fn emit_fill_circle(&mut self, cx: f32, cy: f32, r: f32) {
+    fn emit_circle(&mut self, cx: f32, cy: f32, r: f32) {
         use crate::svg::ir::{PointF, PathCommand};
         
         // Kappa for cubic bezier circle approximation

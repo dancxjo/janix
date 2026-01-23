@@ -54,6 +54,12 @@ fn clear_surface(surface: &mut surface::Surface, color: u32) {
     }
 }
 
+fn clear_damage(surface: &mut surface::Surface, damage: &crate::damage::Damage, color: u32) {
+    for rect in damage.iter() {
+        raster::fill_rect_copy(surface, rect.x, rect.y, rect.w, rect.h, color);
+    }
+}
+
 fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
 }
@@ -482,6 +488,8 @@ fn main(arg: usize) -> ! {
     // Cursor state
     let bristle_evt_handle = bristle_evt as PortHandle;
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
+    let mut prev_cursor_bbox = cursor.bbox();
+    let mut prev_cursor_gen = cursor.generation();
     let mut pressed_keys: BTreeSet<abi::hid::Key> = BTreeSet::new();
     let accel_cfg = MouseAccelConfig::default();
     let mut accel_state = MouseAccelState::default();
@@ -533,13 +541,6 @@ fn main(arg: usize) -> ! {
         // Promote pending assets (cursor, fonts, wallpaper) to ready
         ASSETS.publish_pending();
         
-        let token = presenter.acquire_frame(
-            crate::frame::FrameSpec::new(target.width, target.height, target.format),
-            crate::frame::AssetGeneration::ZERO,
-        );
-        let mut builder = FrameBuilder::new(token);
-        builder.mark_full_damage();
-        clear_surface(&mut surface, 0xFF101018);
         for idx in 0..ui_watch_ids.len() {
             match stem::syscall::root_watch_next(
                 ui_watch_ids[idx],
@@ -563,9 +564,10 @@ fn main(arg: usize) -> ! {
         }
         let mut list = drawlist::DrawList::new();
         let ui_result = ui_pipeline.run(screen_w, screen_h, &mut list, &ASSETS);
-        raster::execute(&mut surface, &list, ui_result.solid_text);
         
         // Poll input and update cursor
+        let old_cursor_bbox = prev_cursor_bbox;
+        let old_cursor_gen = prev_cursor_gen;
         if bristle_evt_handle != 0 {
             poll_bristle(
                 bristle_evt_handle, 
@@ -581,6 +583,48 @@ fn main(arg: usize) -> ! {
         // Update cursor asset if newly loaded
         if let Some(asset) = ASSETS.get_cursor() {
             cursor.set_asset(asset);
+        }
+        let new_cursor_bbox = cursor.bbox();
+        prev_cursor_bbox = new_cursor_bbox;
+        let new_cursor_gen = cursor.generation();
+        prev_cursor_gen = new_cursor_gen;
+
+        let bounds = damage::Rect::full(screen_w, screen_h);
+        let mut damage = damage::Damage::empty(bounds);
+        for rect in &ui_result.damage {
+            damage.add_rect(*rect);
+        }
+        if old_cursor_bbox != new_cursor_bbox || old_cursor_gen != new_cursor_gen {
+            damage.add_rect(old_cursor_bbox);
+            damage.add_rect(new_cursor_bbox);
+        }
+        if ui_result.changed && damage.is_empty() {
+            damage = damage::Damage::full(bounds);
+        }
+
+        if damage.is_empty() {
+            presenter.pump();
+            loop_ctrl.sleep();
+            continue;
+        }
+
+        let token = presenter.acquire_frame(
+            crate::frame::FrameSpec::new(target.width, target.height, target.format),
+            crate::frame::AssetGeneration::ZERO,
+        );
+        let mut builder = FrameBuilder::new(token);
+        if damage.is_full {
+            clear_surface(&mut surface, 0xFF101018);
+            builder.mark_full_damage();
+        } else {
+            clear_damage(&mut surface, &damage, 0xFF101018);
+            for rect in damage.iter() {
+                builder.add_damage(rect);
+            }
+        }
+
+        if !damage.is_empty() {
+            raster::execute_with_damage(&mut surface, &list, &damage, ui_result.solid_text);
         }
         
         // Draw cursor overlay (always on top)

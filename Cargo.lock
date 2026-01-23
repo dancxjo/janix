@@ -2175,6 +2175,8 @@ dependencies = [
  "abi",
  "linked_list_allocator",
  "pciids",
+ "rustc-std-workspace-alloc",
+ "rustc-std-workspace-core",
  "spin",
  "stem-macros",
  "xml-no-std",

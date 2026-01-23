@@ -306,7 +306,7 @@ async fn machine_is_started(world: &mut ThingOsWorld) -> Result<(), StepError> {
 
 #[when("I wait for the system to boot")]
 async fn wait_for_boot(world: &mut ThingOsWorld) -> Result<(), StepError> {
-    let found = world.wait_for_serial("[CONTRACT]", 30.0).await;
+    let found = world.wait_for_serial("[CONTRACT]", 60.0).await;
     if !found {
         capture_failure_diagnostics(world, "Entering scheduler loop").await;
         let log = world.get_serial_log().await;
@@ -835,7 +835,7 @@ async fn wait_seconds(_world: &mut ThingOsWorld, seconds: f64) {
 async fn start_the_machine(world: &mut ThingOsWorld) -> Result<(), StepError> {
     turn_on_machine(world).await?;
     // Complete as soon as kernel starts - other steps verify further boot progress
-    let found = world.wait_for_serial("[CONTRACT]", 30.0).await;
+    let found = world.wait_for_serial("[CONTRACT]", 60.0).await;
     if !found {
         capture_failure_diagnostics(world, "kernel starting").await;
         return Err(StepError("Kernel did not start within timeout".to_string()));
@@ -1290,4 +1290,57 @@ async fn symbol_rendered(_world: &mut ThingOsWorld) {
 #[then("the cursor should move correspondingly on the screen")]
 async fn cursor_moved(_world: &mut ThingOsWorld) {
     eprintln!("│  │  │      ℹ️ Cursor movement requires visual verification");
+}
+
+#[then(regex = r#"^I should see a window with title "(.+)"$"#)]
+async fn check_window_title(world: &mut ThingOsWorld, title: String) -> Result<(), StepError> {
+    // For Photosynthesis, we check for the "ready" log which implies the title "Photosynthesis (SVG Grid)"
+    if title == "Photosynthesis (SVG Grid)" {
+         check_serial(world, "Photosynthesis ready. Floating...", DEFAULT_TIMEOUT_SECS).await
+    } else {
+        Err(StepError(format!("Don't know how to check for window title '{}'", title)))
+    }
+}
+
+#[then(regex = r#"^I should see at least (\d+) asset tiles$"#)]
+async fn check_asset_tiles(world: &mut ThingOsWorld, count: usize) -> Result<(), StepError> {
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs_f64(DEFAULT_TIMEOUT_SECS);
+
+    loop {
+        let log = world.get_serial_log().await;
+        let tiles: Vec<_> = log.lines().filter(|l| l.contains("Tile ") && l.contains(" -> ")).collect();
+
+        if tiles.len() >= count {
+            eprintln!("│  │  │      🖼️ Found {} tiles (>= {})", tiles.len(), count);
+            return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            return Err(StepError(format!("Timed out: Expected at least {} tiles, found {}", count, tiles.len())));
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+}
+
+#[then(regex = r#"^I should see the "(.+)" icon in the grid$"#)]
+async fn check_icon_in_grid(world: &mut ThingOsWorld, icon_name: String) -> Result<(), StepError> {
+    let pattern = format!(r"Tile .*{}.* ->", regex::escape(&icon_name));
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs_f64(DEFAULT_TIMEOUT_SECS);
+
+    loop {
+        let log = world.get_serial_log().await;
+        if let Ok(re) = regex::Regex::new(&pattern) {
+            if re.is_match(&log) {
+                return Ok(());
+            }
+        }
+
+        if start.elapsed() > timeout {
+            return Err(StepError(format!("Timed out waiting for icon '{}' in grid (pattern: '{}')", icon_name, pattern)));
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
 }

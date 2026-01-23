@@ -14,7 +14,9 @@ use abi::schema::{kinds, keys, rels};
 fn find_svg_assets() -> Vec<(String, ThingId)> {
     let mut assets = Vec::new();
     let mut modules = [ThingId::default(); 128];
+    info!("Searching boot modules...");
     let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
+    info!("Found {} boot modules", count);
     
     for i in 0..count {
         let mut buf = [0u8; 512];

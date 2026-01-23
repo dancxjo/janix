@@ -1,11 +1,9 @@
 # BDD Test Results: x86_64
 
-> Last run: 2026-01-19 21:36:59
+> Last run: 2026-01-23 22:35:28
 
 ## Features
 
 | Feature | Scenarios | Status |
 |---------|-----------|--------|
-| [System Boot and UI Bring-Up](system-boot-and-ui-bring-up/README.md) | 1/1 | ✅ |
-| [Keyboard input and layout](keyboard-input-and-layout/README.md) | 1/2 | ❌ |
-| [Pointer Input](pointer-input/README.md) | 1/1 | ✅ |
+| [Asset Gallery](asset-gallery/README.md) | 1/1 | ✅ |

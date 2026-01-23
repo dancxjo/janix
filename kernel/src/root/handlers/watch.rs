@@ -30,7 +30,7 @@ pub fn handle_watch_open(
 ) -> HandlerResult {
 
     // 1. Create Stream
-    let stream_handle = stream::create(128); // Buffer size
+    let stream_handle = stream::create(512); // Buffer size
     let kid = interner.intern("stream.watch");
     let stream_id = graph.alloc(kid);
     

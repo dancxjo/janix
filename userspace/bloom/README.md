@@ -2,6 +2,11 @@
 
 Bloom is the reference compositor for Thing-OS, implementing a damage-aware, transactional rendering pipeline.
 
+## Mouse Acceleration (Tuning Notes)
+- Current curve: logarithmic gain `1 + a * ln(1 + speed / s)` with `a=0.8`, `s=500`.
+- `max_gain=4.0` is a safety cap; raise for faster flicks on 4K+.
+- If slow moves feel too fast, lower `a`; if fast flicks feel too weak, lower `s`.
+
 ## Portable Render ISA (v0)
 
 Bloom strictly separates high-level drawing commands (`DrawCmd`) from low-level execution primitives (`LowLevelOp`). The `LowLevelOp` instruction set serves as a portable contract that any backend (CPU rasterizer, VirtIO-GPU, accelerated hardware) must implement.

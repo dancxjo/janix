@@ -232,6 +232,11 @@ pub fn build_iso(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
 
             sh.remove_path("iso_root")?;
             println!("ISO created: {}", iso);
+
+            // Create fixed-name copy for BDD/testing
+            let fixed_name = format!("thing-os-{}.iso", arch);
+            sh.copy_file(&iso, &fixed_name)?;
+
             Ok(PathBuf::from(iso))
         }
         "aarch64" => {

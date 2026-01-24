@@ -153,6 +153,7 @@ pub fn handle_watch_next(graph: &mut Graph, msg: &crate::root::RootMsg, id: u64)
                 watch.cursor_seq = cursor;
                 // Register for wakeup when new commits arrive
                 watch.pending_tids.push(msg.tid);
+                graph.pending_watches.insert(id);
             }
             return (-115, 0); // -EINPROGRESS
         }
@@ -228,6 +229,7 @@ pub fn handle_watch_next(graph: &mut Graph, msg: &crate::root::RootMsg, id: u64)
 
 pub fn handle_watch_close(graph: &mut Graph, id: u64) -> HandlerResult {
     if graph.global_watches.remove(&id).is_some() {
+        graph.pending_watches.remove(&id);
         (0, 0)
     } else {
         (-1, 0)

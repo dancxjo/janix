@@ -1,6 +1,7 @@
 use super::resources::ResourceHandle;
 use abi::symbols::SymbolId;
 use alloc::collections::BTreeMap;
+use alloc::collections::BTreeSet;
 use alloc::vec::Vec;
 
 use alloc::collections::VecDeque;
@@ -370,6 +371,8 @@ pub struct Graph {
     /// Reverse index for O(1) inbound edge lookups: Target -> [(Rel, Source)]
     pub incoming_edges: BTreeMap<ThingId, Vec<(SymbolId, ThingId)>>,
     pub global_watches: BTreeMap<u64, GlobalWatch>,
+    /// Set of watch IDs that have pending tasks waiting for a commit
+    pub pending_watches: BTreeSet<u64>,
     /// Shared commit history ring buffer
     pub commit_history: CommitHistory,
 }
@@ -383,6 +386,7 @@ impl Graph {
             kind_index: BTreeMap::new(),
             incoming_edges: BTreeMap::new(),
             global_watches: BTreeMap::new(),
+            pending_watches: BTreeSet::new(),
             commit_history: CommitHistory::with_defaults(),
         }
     }
@@ -436,17 +440,33 @@ impl Graph {
             return;
         };
 
-        for watch in self.global_watches.values_mut() {
-            if !watch.pending_tids.is_empty() {
-                // If watch has fallen behind (newest >= cursor), wake waiters
-                if newest >= watch.cursor_seq {
-                    for tid in watch.pending_tids.drain(..) {
-                        unsafe {
-                            crate::task::scheduler::wake_task_erased(tid as usize);
+        let mut to_remove = Vec::new();
+
+        for &id in &self.pending_watches {
+            if let Some(watch) = self.global_watches.get_mut(&id) {
+                if !watch.pending_tids.is_empty() {
+                    // If watch has fallen behind (newest >= cursor), wake waiters
+                    if newest >= watch.cursor_seq {
+                        for tid in watch.pending_tids.drain(..) {
+                            unsafe {
+                                crate::task::scheduler::wake_task_erased(tid as usize);
+                            }
                         }
+                        // Tasks woken, no longer pending
+                        to_remove.push(id);
                     }
+                } else {
+                    // Watch has no pending tasks, should not be in set
+                    to_remove.push(id);
                 }
+            } else {
+                // Watch no longer exists
+                to_remove.push(id);
             }
+        }
+
+        for id in to_remove {
+            self.pending_watches.remove(&id);
         }
     }
 }

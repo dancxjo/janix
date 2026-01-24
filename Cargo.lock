@@ -312,7 +312,6 @@ name = "bloom"
 version = "0.1.0"
 dependencies = [
  "abi",
- "fontdue",
  "libm",
  "serde",
  "spin",
@@ -324,6 +323,10 @@ name = "blossom"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "fontdue",
+ "libm",
+ "serde",
+ "spin",
  "stem",
 ]
 

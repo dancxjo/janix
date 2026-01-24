@@ -137,6 +137,16 @@ pub mod keys {
     ///
     /// Reserved for presenter-owned updates (Blossom).
     pub const UI_PRESENT_EPOCH: &str = "ui.present.epoch";
+    /// Monotonic paint epoch (Bloom/Requester bumps, Blossom watches).
+    pub const UI_PAINT_EPOCH: &str = "ui.paint.epoch";
+
+    // Cursor Snapshot keys
+    pub const UI_CURSOR_SNAPSHOT_BYTESPACE: &str = "ui.cursor.snapshot.bytespace";
+    pub const UI_CURSOR_SNAPSHOT_WIDTH: &str = "ui.cursor.snapshot.width";
+    pub const UI_CURSOR_SNAPSHOT_HEIGHT: &str = "ui.cursor.snapshot.height";
+    pub const UI_CURSOR_SNAPSHOT_STRIDE: &str = "ui.cursor.snapshot.stride";
+    pub const UI_CURSOR_SNAPSHOT_FORMAT: &str = "ui.cursor.snapshot.format";
+
     /// Optional bytespace id for packed damage rects.
     pub const UI_DAMAGE_RECTS_BYTESPACE: &str = "ui.damage.rects.bytespace";
     /// Tile asset bytespace id for UI_TILE nodes (e.g. SVG source).

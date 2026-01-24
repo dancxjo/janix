@@ -96,6 +96,10 @@ pub trait ArchRuntime {
     fn ioport_write_u8(&self, _port: u16, _value: u8) {}
     fn ioport_write_u16(&self, _port: u16, _value: u16) {}
     fn ioport_write_u32(&self, _port: u16, _value: u32) {}
+
+    fn debug_active_aspace_root(&self) -> u64 {
+        0
+    }
 }
 
 // --- Generic Runtime ---
@@ -252,6 +256,10 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
 
     fn setup_preemption_timer(&self, hz: u32) {
         self.arch.setup_preemption_timer(hz)
+    }
+
+    fn debug_active_aspace_root(&self) -> u64 {
+        self.arch.debug_active_aspace_root()
     }
 }
 

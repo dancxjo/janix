@@ -8,7 +8,7 @@ use super::types::Scheduler;
 use super::SCHEDULER;
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]
-use super::{read_cr3, log_context_switch};
+use super::log_context_switch;
 
 static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> = 
     core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
@@ -51,12 +51,12 @@ pub fn block_current<R: BootRuntime>() {
 
     if let Some(switch) = switch_params {
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_before = read_cr3();
+        let cr3_before = rt.debug_active_aspace_root();
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_after = read_cr3();
+        let cr3_after = rt.debug_active_aspace_root();
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         log_context_switch::<R>(&switch, cr3_before, cr3_after);
 

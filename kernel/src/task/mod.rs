@@ -110,12 +110,12 @@ pub fn preempt_enable<R: BootRuntime>() {
 
     if let Some(switch) = switch_params {
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_before = scheduler::read_cr3();
+        let cr3_before = rt.debug_active_aspace_root();
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_after = scheduler::read_cr3();
+        let cr3_after = rt.debug_active_aspace_root();
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
@@ -168,12 +168,12 @@ pub fn resched_if_needed<R: BootRuntime>() {
 
     if let Some(switch) = switch_params {
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_before = scheduler::read_cr3();
+        let cr3_before = rt.debug_active_aspace_root();
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_after = scheduler::read_cr3();
+        let cr3_after = rt.debug_active_aspace_root();
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 

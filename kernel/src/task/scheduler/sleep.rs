@@ -7,7 +7,7 @@ use super::types::{ScheduleReason, Scheduler};
 use super::SCHEDULER;
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]
-use super::{read_cr3, log_context_switch};
+use super::log_context_switch;
 
 pub fn yield_now<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
@@ -22,12 +22,12 @@ pub fn yield_now<R: BootRuntime>() {
 
     if let Some(switch) = switch_params {
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_before = read_cr3();
+        let cr3_before = rt.debug_active_aspace_root();
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_after = read_cr3();
+        let cr3_after = rt.debug_active_aspace_root();
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
@@ -78,12 +78,12 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
 
     if let Some(switch) = switch_params {
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_before = read_cr3();
+        let cr3_before = rt.debug_active_aspace_root();
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
         #[cfg(any(feature = "sched_debug", debug_assertions))]
-        let cr3_after = read_cr3();
+        let cr3_after = rt.debug_active_aspace_root();
         #[cfg(any(feature = "sched_debug", debug_assertions))]
         log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
@@ -116,10 +116,10 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
             unsafe {
                 let _irq = rt.irq_disable();
                 #[cfg(any(feature = "sched_debug", debug_assertions))]
-                let cr3_before = read_cr3();
+                let cr3_before = rt.debug_active_aspace_root();
                 rt.tasking().activate_address_space(switch.to_aspace);
                 #[cfg(any(feature = "sched_debug", debug_assertions))]
-                let cr3_after = read_cr3();
+                let cr3_after = rt.debug_active_aspace_root();
                 #[cfg(any(feature = "sched_debug", debug_assertions))]
                 log_context_switch::<R>(&switch, cr3_before, cr3_after);
                 rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);

@@ -267,6 +267,10 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn ioport_write_u8(&self, _port: u16, _value: u8) {}
     fn ioport_write_u16(&self, _port: u16, _value: u16) {}
     fn ioport_write_u32(&self, _port: u16, _value: u32) {}
+
+    fn debug_active_aspace_root(&self) -> u64 {
+        0
+    }
 }
 
 static mut RUNTIME: Option<&'static dyn core::any::Any> = None;

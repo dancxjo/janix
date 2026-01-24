@@ -419,10 +419,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
             loop {
                 if let Some(switch) = self.prepare_schedule() {
                     #[cfg(any(feature = "sched_debug", debug_assertions))]
-                    let cr3_before = read_cr3();
+                    let cr3_before = rt.debug_active_aspace_root();
                     rt.tasking().activate_address_space(switch.to_aspace);
                     #[cfg(any(feature = "sched_debug", debug_assertions))]
-                    let cr3_after = read_cr3();
+                    let cr3_after = rt.debug_active_aspace_root();
                     #[cfg(any(feature = "sched_debug", debug_assertions))]
                     log_context_switch::<R>(&switch, cr3_before, cr3_after);
                     rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
@@ -517,25 +517,6 @@ pub fn dump_stats<R: BootRuntime>() {
         sched.task_count(),
         sched.current_id()
     );
-}
-
-#[cfg(any(feature = "sched_debug", debug_assertions))]
-pub(crate) fn read_cr3() -> u64 {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        let cr3: u64;
-        core::arch::asm!("mov {}, cr3", out(reg) cr3);
-        cr3
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        0
-    }
-}
-
-#[cfg(not(any(feature = "sched_debug", debug_assertions)))]
-pub(crate) fn read_cr3() -> u64 {
-    0
 }
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]

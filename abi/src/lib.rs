@@ -26,6 +26,7 @@ pub mod watch;
 pub mod logging;
 pub mod hid;
 pub mod font;
+pub mod pixel;
 
 pub mod wire;
 pub mod packed;

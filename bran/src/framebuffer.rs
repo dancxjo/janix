@@ -51,7 +51,8 @@ pub fn get_info() -> Option<FramebufferInfo> {
                 pitch: fb.pitch() as u32,
                 bpp: fb.bpp() as u16,
                 format: match fb.memory_model() {
-                    limine::framebuffer::MemoryModel::RGB => PixelFormat::Xrgb8888,
+                    // Limine "RGB" memory model is actually BGRX in memory layout
+                    limine::framebuffer::MemoryModel::RGB => PixelFormat::Bgrx8888,
                     _ => PixelFormat::Unknown,
                 },
             });

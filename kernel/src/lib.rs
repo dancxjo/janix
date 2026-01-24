@@ -111,12 +111,28 @@ pub struct FramebufferInfo {
     pub format: PixelFormat,
 }
 
+/// Pixel format for framebuffer surfaces.
+///
+/// Values match `abi::schema::pixel_format` constants for wire compatibility.
+#[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
-    Xrgb8888,
-    Argb8888,
-    Rgb565,
-    Unknown,
+    /// Unknown or unsupported format.
+    Unknown = 0,
+    /// 32-bit BGRA: Memory [B, G, R, A] -> u32 0xAARRGGBB.
+    Bgra8888 = 1,
+    /// 32-bit BGRX: Memory [B, G, R, X] -> u32 0xXXRRGGBB (alpha ignored).
+    Bgrx8888 = 2,
+    /// 16-bit RGB565.
+    Rgb565 = 3,
+}
+
+impl PixelFormat {
+    /// Convert to wire-compatible u64 for graph properties.
+    #[inline]
+    pub const fn to_wire(self) -> u64 {
+        self as u64
+    }
 }
 
 #[repr(transparent)]

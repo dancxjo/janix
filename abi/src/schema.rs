@@ -260,7 +260,20 @@ pub mod kinds {
 /// Snapshot-related constants for UI presentation surfaces.
 pub mod ui_snapshot {
     /// Pixel format for RGBA8888 surfaces.
+    #[deprecated(note = "Use pixel_format::BGRA8888 instead")]
     pub const PIXEL_FORMAT_RGBA8888: u64 = 1;
+}
+
+/// Canonical pixel format constants matching `abi::pixel::PixelFormat`.
+pub mod pixel_format {
+    /// Unknown or unsupported format.
+    pub const UNKNOWN: u64 = 0;
+    /// 32-bit BGRA: Memory [B, G, R, A] -> u32 0xAARRGGBB.
+    pub const BGRA8888: u64 = 1;
+    /// 32-bit BGRX: Memory [B, G, R, X] -> u32 0xXXRRGGBB (alpha ignored).
+    pub const BGRX8888: u64 = 2;
+    /// 16-bit RGB565: No alpha channel.
+    pub const RGB565: u64 = 3;
 }
 
 pub mod rels {

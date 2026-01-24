@@ -250,13 +250,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             link(fb_node, rels::BACKED_BY, backing_mem);
         }
 
-        let fmt = match fb.format {
-            crate::PixelFormat::Xrgb8888 => 1,
-            crate::PixelFormat::Argb8888 => 2,
-            crate::PixelFormat::Rgb565 => 3,
-            _ => 0,
-        };
-        set(fb_node, keys::FORMAT, fmt); // Using keys::FORMAT ("format") which maps to string
+        let fmt = fb.format.to_wire();
+        set(fb_node, keys::FORMAT, fmt);
 
         set(fb_node, keys::SOURCE, src_boot);
         set(fb_node, keys::CONFIDENCE, conf_high);

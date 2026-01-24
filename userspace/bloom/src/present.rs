@@ -1,11 +1,11 @@
-//! Presenter implementations for Bloom compositor
-//!
-//! Presenters handle the final step of getting rendered frames to the display.
-//! They receive damage information to potentially optimize transfers.
-//!
-//! Frame Transaction API:
-//! - `acquire_frame()`: Acquire a frame slot with asset generation snapshot
-//! - `present_frame()`: Present a completed frame (consumes token)
+// Presenter implementations for Bloom compositor
+//
+// Presenters handle the final step of getting rendered frames to the display.
+// They receive damage information to potentially optimize transfers.
+//
+// Frame Transaction API:
+// - `acquire_frame()`: Acquire a frame slot with asset generation snapshot
+// - `present_frame()`: Present a completed frame (consumes token)
 
 use abi::display_driver_protocol as drvproto;
 use abi::display_driver_protocol::{BindPayload, ErrResp, RegisterPayload};

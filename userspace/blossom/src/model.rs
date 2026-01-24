@@ -8,6 +8,7 @@ extern crate alloc;
 use alloc::string::String;
 use alloc::vec::Vec;
 use abi::schema::{kinds, keys, rels};
+use abi::ids::HandleId;
 use stem::thing::sys::{bytespace_info, bytespace_read, get_edges, get_kind, intern, prop_get};
 use stem::thing::ThingId;
 

@@ -13,6 +13,10 @@ rust_profile := env_var_or_default("RUST_PROFILE", "dev")
 # Default target
 default: iso
 
+# Check UI split
+check-ui-split:
+    ./scripts/ci_check_ui_split.sh
+
 # Alias for iso
 build arch=karch:
     @just iso {{arch}}
@@ -135,6 +139,10 @@ fetch:
 # Run all unit tests (host-testable crates only)
 test *args:
     cargo test -p abi -p pciids -p xtask {{args}}
+
+# Check everything (compilation + UI split)
+check: check-ui-split
+    cargo +nightly check -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target targets/x86_64-unknown-thingos.json -p bloom -p blossom
 
 # Run smoke tests (quick boot validation)
 smoke:

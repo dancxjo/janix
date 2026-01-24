@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Point, Rect, Color, Transform, EdgeAA};
 
-// Re-export damage::Rect for legacy compatibility where needed, 
+// Re-export damage::Rect for legacy compatibility where needed,
 // but we prefer geometry::Rect for new commands.
 // Usage: crate::drawlist::DamageRect
 #[allow(unused_imports)]
@@ -47,15 +47,10 @@ pub enum DrawCmd {
     StrokeCircle { center: Point, radius: i32, color: Color, width: i32 },
     Line { from: Point, to: Point, color: Color, width: i32 },
     FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
+    Polyline { points: Vec<Point>, color: Color, width: i32 },
+    Polygon { points: Vec<Point>, fill: Color, stroke: Color },
 
     // --- Image & Bitmap Operations ---
-    DrawSnapshot {
-        bs_id: u64,
-        width: u32,
-        height: u32,
-        stride: u32,
-        dest: Rect,
-    },
     DrawImage { image: crate::asset::Image, dest: Rect },
     DrawImageRegion { image: crate::asset::Image, src: Rect, dest: Rect },
     DrawImageTiled { image: crate::asset::Image, dest: Rect },
@@ -63,9 +58,39 @@ pub enum DrawCmd {
 
     // --- 9-Slice & UI-Specific ---
     DrawNineSlice { image: crate::asset::Image, dest: Rect, margins: Insets },
-    
+
     // Legacy Cursor (Specific to Bloom's optimization need, kept as first-class for now)
     Cursor { frame: crate::asset::CursorFrame, position: Point },
+
+    // --- Text Rendering ---
+    // Using simple text string for v0, will evolve to GlyphRun
+    DrawText {
+        text: Arc<str>,
+        position: Point,
+        size: f32,
+        color: Color,
+        font_name: Option<Arc<str>>,
+        font_debug: bool,
+    },
+    // Placeholder for future GlyphRun
+    DrawGlyphRun { font_id: u64, glyphs: Vec<u32>, positions: Vec<Point>, color: Color },
+
+    // --- Paths (Vector-Like) ---
+    FillPath {
+        path: Arc<crate::isa::Path2D>,
+        color: Color,
+        fill_rule: crate::isa::FillRule,
+        aa: EdgeAA
+    },
+    StrokePath {
+        path: Arc<crate::isa::Path2D>,
+        color: Color,
+        width: i32,
+        cap: crate::isa::LineCap,
+        join: crate::isa::LineJoin,
+        miter_limit: f32,
+        aa: EdgeAA
+    },
 
     // --- Compositing & Effects ---
     SetOpacity { alpha: u8 },
@@ -100,7 +125,6 @@ impl DrawCmd {
                 let r = *radius;
                 Rect::new(center.x - r, center.y - r, r*2, r*2)
             }
-            DrawCmd::DrawSnapshot { dest, .. } => *dest,
             DrawCmd::DrawImage { dest, .. } => *dest,
             DrawCmd::DrawImageRegion { dest, .. } => *dest,
             DrawCmd::DrawNineSlice { dest, .. } => *dest,
@@ -108,6 +132,11 @@ impl DrawCmd {
                  let dx = position.x - frame.hotspot_x as i32;
                  let dy = position.y - frame.hotspot_y as i32;
                  Rect::new(dx, dy, frame.image.width as i32 + 3, frame.image.height as i32 + 3)
+            }
+            DrawCmd::DrawText { text, position, size, .. } => {
+                 let est_width = (text.len() as f32 * size * 0.6) as i32;
+                 let est_height = (*size * 1.2) as i32;
+                 Rect::new(position.x, position.y, est_width.max(1), est_height.max(1))
             }
             // Fallback for others (return empty or minimal rect)
             _ => Rect::default(),
@@ -141,8 +170,8 @@ impl DrawList {
     }
 
     pub fn rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
-        self.cmds.push(DrawCmd::FillRect { 
-            rect: Rect::new(x, y, w, h), 
+        self.cmds.push(DrawCmd::FillRect {
+            rect: Rect::new(x, y, w, h),
             color,
             aa: EdgeAA::None,
         });
@@ -166,11 +195,11 @@ impl DrawList {
     }
 
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
-        self.cmds.push(DrawCmd::Line { 
-            from: Point::new(x0, y0), 
-            to: Point::new(x1, y1), 
+        self.cmds.push(DrawCmd::Line {
+            from: Point::new(x0, y0),
+            to: Point::new(x1, y1),
             color,
-            width: 1 
+            width: 1
         });
     }
 
@@ -187,9 +216,9 @@ impl DrawList {
 
     pub fn blit_image(&mut self, image: &crate::asset::Image, x: i32, y: i32) {
         let dest = Rect::new(x, y, image.width as i32, image.height as i32);
-        self.cmds.push(DrawCmd::DrawImage { 
+        self.cmds.push(DrawCmd::DrawImage {
             image: image.clone(),
-            dest 
+            dest
         });
     }
 
@@ -206,6 +235,49 @@ impl DrawList {
             dest: dst,
             margins: insets,
         });
+    }
+
+    pub fn text(&mut self, text: &str, x: i32, y: i32, size: f32, color: Color) {
+        self.cmds.push(DrawCmd::DrawText {
+            text: text.into(),
+            position: Point::new(x, y),
+            size,
+            color,
+            font_name: None,
+            font_debug: false,
+        });
+    }
+
+    pub fn text_font(&mut self, text: &str, font: &str, x: i32, y: i32, size: f32, color: Color) {
+        self.text_font_debug(text, font, x, y, size, color, false);
+    }
+
+    pub fn text_font_debug(
+        &mut self,
+        text: &str,
+        font: &str,
+        x: i32,
+        y: i32,
+        size: f32,
+        color: Color,
+        font_debug: bool,
+    ) {
+        self.cmds.push(DrawCmd::DrawText {
+            text: text.into(),
+            position: Point::new(x, y),
+            size,
+            color,
+            font_name: Some(font.into()),
+            font_debug,
+        });
+    }
+
+    pub fn fill_path(&mut self, path: Arc<crate::isa::Path2D>, color: Color, fill_rule: crate::isa::FillRule, aa: EdgeAA) {
+        self.cmds.push(DrawCmd::FillPath { path, color, fill_rule, aa });
+    }
+
+    pub fn stroke_path(&mut self, path: Arc<crate::isa::Path2D>, color: Color, width: i32, cap: crate::isa::LineCap, join: crate::isa::LineJoin, miter_limit: f32, aa: EdgeAA) {
+        self.cmds.push(DrawCmd::StrokePath { path, color, width, cap, join, miter_limit, aa });
     }
 
     pub fn iter(&self) -> core::slice::Iter<'_, DrawCmd> {

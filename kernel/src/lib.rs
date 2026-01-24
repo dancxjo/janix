@@ -13,6 +13,7 @@ pub mod time;
 pub mod device_registry;
 pub mod ipc;
 pub mod irq;
+pub mod once_cell;
 pub mod trace;
 
 use abi::vm::{VmBackingKind, VmMapFlags, VmProt, VmRegionInfo};
@@ -299,25 +300,24 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn unmap_phys_temp(&self, _virt: u64, _size: usize) {}
 }
 
-static mut RUNTIME: Option<&'static dyn core::any::Any> = None;
-static mut RUNTIME_BASE: Option<&'static dyn BootRuntimeBase> = None;
+static RUNTIME: once_cell::OnceCell<&'static dyn core::any::Any> = once_cell::OnceCell::new();
+static RUNTIME_BASE: once_cell::OnceCell<&'static dyn BootRuntimeBase> = once_cell::OnceCell::new();
 
-pub unsafe fn init_runtime<R: BootRuntime>(runtime: &'static R) {
-    unsafe { RUNTIME = Some(runtime) };
-    unsafe { RUNTIME_BASE = Some(runtime as &'static dyn BootRuntimeBase) };
+/// Initialize the runtime. Panics if called more than once.
+pub fn init_runtime<R: BootRuntime>(runtime: &'static R) {
+    RUNTIME.set(runtime);
+    RUNTIME_BASE.set(runtime as &'static dyn BootRuntimeBase);
 }
 
 pub fn runtime<R: BootRuntime>() -> &'static R {
-    unsafe {
-        RUNTIME
-            .expect("Runtime not initialized")
-            .downcast_ref::<R>()
-            .expect("Runtime type mismatch")
-    }
+    RUNTIME
+        .get()
+        .downcast_ref::<R>()
+        .expect("Runtime type mismatch")
 }
 
 pub fn runtime_base() -> &'static dyn BootRuntimeBase {
-    unsafe { RUNTIME_BASE.expect("Runtime not initialized") }
+    *RUNTIME_BASE.get()
 }
 
 
@@ -387,7 +387,7 @@ impl FrameAllocatorHook for GlobalAllocHook {
 }
 
 pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
-    unsafe { init_runtime(runtime) };
+    init_runtime(runtime);
     unsafe { crate::logging::init(runtime) };
 
     contract!("thing-os kernel starting...");

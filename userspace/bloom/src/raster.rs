@@ -1,12 +1,11 @@
 use crate::asset::Image;
 use crate::damage::{Damage, Rect as DamageRect};
 use crate::drawlist::DrawList;
-use crate::font_graph::{self, FontStyle};
 use crate::isa::{BlendMode, EdgeAA, FilterMode, Rect, Transform2D};
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use alloc::vec::Vec;
-use fontdue::layout::GlyphRasterConfig;
+use abi::ids::HandleId;
 
 struct RasterContext<'a> {
     surface: &'a mut Surface,
@@ -14,11 +13,10 @@ struct RasterContext<'a> {
     transform_stack: Vec<Transform2D>,
     current_clip: Rect,
     current_transform: Transform2D,
-    solid_text: bool,
 }
 
 impl<'a> RasterContext<'a> {
-    fn new(surface: &'a mut Surface, solid_text: bool) -> Self {
+    fn new(surface: &'a mut Surface) -> Self {
         let fr = Rect::new(0, 0, surface.width(), surface.height());
         Self {
             surface,
@@ -26,7 +24,6 @@ impl<'a> RasterContext<'a> {
             transform_stack: Vec::with_capacity(4),
             current_clip: fr,
             current_transform: Transform2D::identity(),
-            solid_text,
         }
     }
     fn push_clip(&mut self, rect: Rect) {
@@ -54,12 +51,12 @@ impl<'a> RasterContext<'a> {
     }
 }
 
-pub fn execute(surface: &mut Surface, list: &DrawList, solid_text: bool) {
+pub fn execute(surface: &mut Surface, list: &DrawList, _solid_text: bool) {
     let lowered = {
         crate::trace_span!("raster.lower");
         lower(list)
     };
-    let mut ctx = RasterContext::new(surface, solid_text);
+    let mut ctx = RasterContext::new(surface);
     execute_lowered_on_context(&mut ctx, &lowered);
 }
 
@@ -77,14 +74,13 @@ pub fn execute_with_damage(
         crate::trace_span!("raster.lower");
         lower(list)
     };
-    execute_lowered_with_damage(surface, &lowered, damage, solid_text);
+    execute_lowered_with_damage(surface, &lowered, damage);
 }
 
 pub fn execute_lowered_with_damage(
     surface: &mut Surface,
     lowered: &LoweredDraw,
     damage: &Damage,
-    solid_text: bool,
 ) {
     let mut dr = [DamageRect::default(); 8];
     let mut count = 0;
@@ -97,7 +93,7 @@ pub fn execute_lowered_with_damage(
     for i in 0..count {
         let d = dr[i];
         crate::trace_span!("raster.rect.total");
-        let mut ctx = RasterContext::new(surface, solid_text);
+        let mut ctx = RasterContext::new(surface);
         ctx.current_clip = Rect::new(d.x, d.y, d.w, d.h);
         execute_lowered_on_context(&mut ctx, lowered);
     }
@@ -135,6 +131,18 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                     }
                 }
             }
+            LowLevelOp::BlitSnapshot { bs_id, width, height, stride, src, dst } => {
+                crate::trace_counter!("raster.ops.blit_snap", 1);
+                let td = ctx.current_transform.transform_rect(*dst);
+                if let Some(cd) = ctx.current_clip.intersection(&td) {
+                    if let Ok(ptr) = stem::thing::sys::bytespace_map(stem::thing::ThingId::from_u64(*bs_id)) {
+                        let len = (*stride * *height) as usize;
+                        let src_surf = unsafe { Surface::new(ptr as *mut u8, len, *width, *height, *stride) };
+                        blit_surface(ctx.surface, &src_surf, src, &td, &cd);
+                        let _ = stem::thing::sys::bytespace_unmap(stem::thing::ThingId::from_u64(*bs_id), ptr);
+                    }
+                }
+            }
             LowLevelOp::BlitOpaque {
                 image,
                 src,
@@ -169,28 +177,6 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                         *const_alpha,
                     );
                 }
-            }
-            LowLevelOp::TextSpan {
-                text,
-                pos,
-                size,
-                color,
-                font_name,
-                font_debug,
-            } => {
-                crate::trace_counter!("raster.ops.text", 1);
-                let p = ctx.current_transform.transform_point(*pos);
-                rasterize_text_locally(
-                    ctx.surface,
-                    text,
-                    p.x,
-                    p.y,
-                    *size,
-                    color.to_u32(),
-                    &ctx.current_clip,
-                    font_name.as_deref(),
-                    *font_debug,
-                );
             }
             LowLevelOp::StrokeRect { rect, color, width } => {
                 crate::trace_counter!("raster.ops.stroke", 1);
@@ -260,45 +246,6 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                     &ctx.current_clip,
                 );
             }
-            LowLevelOp::FillPath {
-                path,
-                color,
-                fill_rule,
-                aa: _,
-            } => {
-                crate::trace_counter!("raster.ops.fill", 1);
-                // TODO: AA support
-                fill_path(
-                    ctx.surface,
-                    path,
-                    &ctx.current_transform,
-                    color.to_u32(),
-                    *fill_rule,
-                    &ctx.current_clip,
-                );
-            }
-            LowLevelOp::StrokePath {
-                path,
-                color,
-                width,
-                cap,
-                join,
-                miter_limit,
-                aa: _,
-            } => {
-                crate::trace_counter!("raster.ops.stroke", 1);
-                stroke_path(
-                    ctx.surface,
-                    path,
-                    &ctx.current_transform,
-                    color.to_u32(),
-                    *width,
-                    *cap,
-                    *join,
-                    *miter_limit,
-                    &ctx.current_clip,
-                );
-            }
         }
     }
     crate::trace_counter!(
@@ -342,16 +289,7 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa
             ((dv >> 8) & 0xFF) as u8,
             (dv & 0xFF) as u8,
         );
-        // Alpha blend: out_a = sa + da * (255 - sa)
-        // This is strictly 'src over' assuming un-premultiplied color blending approx
         let out_a = sa as u32 + ((da as u32 * (255 - sa as u32)) >> 8);
-        // Correct color blending requires weighing by alpha, but for now we stick to simple channel blending
-        // which matches the existing logic but adds Alpha write.
-        // Actually existing logic `blend_ch` interpolates channels based on SA. This is correct for SrcOver if Dst is opaque.
-        // If Dst is transparent, we need to respect that. 
-        // But for cursor (dst=0), simple blend_ch(s, 0, sa) = scale_ch(s, sa).
-        // This is premultiplied color result?
-        // Let's just write the blended rgb and the computed alpha.
         
         *dp = (out_a << 24)
             | ((blend_ch(sr, dr, sa) as u32) << 16)
@@ -630,582 +568,41 @@ fn blit_alpha(
     }
 }
 
-fn rasterize_text_locally(
-    surface: &mut Surface,
-    text: &str,
-    x: i32,
-    y: i32,
-    size: f32,
-    color: u32,
-    clip: &Rect,
-    rf: Option<&str>,
-    fd: bool,
+fn blit_surface(
+    dst_surface: &mut Surface,
+    src_surface: &Surface,
+    src_rect: &Rect,
+    fd: &Rect,
+    cd: &Rect,
 ) {
-    let t_start = stem::monotonic_ns();
-    let mut stats = (0u64, 0u64, 0u64, 0u64);
-    if !font_graph::has_fonts_ready() {
-        rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
-        return;
-    }
-    let mut handled = false;
-    if let Some(r) = rf {
-        if !font_graph::try_with_graph_if_ready(|g| g.has_font(r)).unwrap_or(false) {
-            rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
-            return;
-        }
-    }
-    let (mut r_ns_t, mut b_ns_t) = (0u64, 0u64);
-    font_graph::with_graph(|graph| {
-        let stack = graph.resolve_stack(rf);
-        if stack.is_empty() {
-            return;
-        }
-        let primary_face_id = stack
-            .iter()
-            .find_map(|f| graph.select_face_for_family(*f, FontStyle::default()));
-        let primary_font = match primary_face_id.and_then(|id| graph.font_for_face(id)) {
-            Some(f) => f,
-            None => return,
-        };
-        handled = true;
-        let met = match primary_font.font.horizontal_line_metrics(size) {
-            Some(m) => m,
-            None => fontdue::LineMetrics {
-                ascent: size * 0.8f32,
-                descent: size * 0.2f32,
-                line_gap: 0.0,
-                new_line_size: size * 1.2f32,
-            },
-        };
-        let (mut pen_x, mut pen_y) = (x as f32, y as f32 + met.ascent);
-        for ch in text.chars() {
-            if ch == '\n' {
-                pen_x = x as f32;
-                pen_y += libm::fmaxf(met.new_line_size, size * 1.1f32);
-                continue;
-            }
-            if ch == '\r' {
-                continue;
-            }
-            let res = graph
-                .resolve_face_for_glyph(&stack, FontStyle::default(), ch as u32)
-                .or_else(|| primary_face_id.and_then(|id| graph.resolved_face_by_id(id)));
-            let f = match res.and_then(|r| graph.font_for_face(r.face_id)) {
-                Some(f) => f,
-                None => {
-                    pen_x += size * 0.4f32;
-                    continue;
-                }
-            };
-            let gi = f.font.lookup_glyph_index(ch);
-            if gi == 0 {
-                pen_x += size * 0.4f32;
-                continue;
-            }
-            let r_start = stem::monotonic_ns();
-            let (m, b) = f.get_glyph(GlyphRasterConfig {
-                glyph_index: gi,
-                px: size,
-                font_hash: f.font.file_hash(),
-            });
-            r_ns_t += stem::monotonic_ns().saturating_sub(r_start);
-            stats.0 += 1;
-            let (gx, gy) = (
-                (pen_x + m.xmin as f32) as i32,
-                pen_y as i32 - m.height as i32 - m.ymin,
+    let (sx_f, sy_f) = (
+        src_rect.width() as f32 / fd.width() as f32,
+        src_rect.height() as f32 / fd.height() as f32,
+    );
+    for dy in cd.y()..cd.y() + cd.height() {
+        for dx in cd.x()..cd.x() + cd.width() {
+            let (sx, sy) = (
+                (src_rect.x() as f32 + (dx - fd.x()) as f32 * sx_f) as i32,
+                (src_rect.y() as f32 + (dy - fd.y()) as f32 * sy_f) as i32,
             );
-            let (sr, sg, sb, sa) = (
-                ((color >> 16) & 0xFF) as u8,
-                ((color >> 8) & 0xFF) as u8,
-                (color & 0xFF) as u8,
-                ((color >> 24) & 0xFF) as u8,
+            let px = src_surface.get_px(sx, sy);
+            let mut a = (px >> 24) & 0xFF;
+            if a == 0 {
+                continue;
+            }
+            if a == 255 {
+                dst_surface.put_px(dx, dy, px);
+                continue;
+            }
+            blend_pixel(
+                dst_surface,
+                dx,
+                dy,
+                ((px >> 16) & 0xFF) as u8,
+                ((px >> 8) & 0xFF) as u8,
+                (px & 0xFF) as u8,
+                a as u8,
             );
-            let b_start = stem::monotonic_ns();
-            for r in 0..m.height {
-                for c in 0..m.width {
-                    let (cx, cy) = (gx + c as i32, gy + r as i32);
-                    if cx >= clip.x()
-                        && cx < clip.x() + clip.width()
-                        && cy >= clip.y()
-                        && cy < clip.y() + clip.height()
-                    {
-                        let a = b[r * (m.width as usize) + c];
-                        if a > 0 {
-                            blend_pixel(surface, cx, cy, sr, sg, sb, scale_ch(a, sa) as u8);
-                            stats.1 += 1;
-                        }
-                    }
-                }
-            }
-            b_ns_t += stem::monotonic_ns().saturating_sub(b_start);
-            pen_x += m.advance_width;
-        }
-    });
-    if !handled {
-        rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
-    }
-    crate::trace_counter!("text.glyphs", stats.0);
-    crate::trace_counter!("text.pixels", stats.1);
-    crate::trace_counter!("text.raster_ns", r_ns_t);
-    crate::trace_counter!("text.blit_ns", b_ns_t);
-    crate::trace_counter!("text.ns", stem::monotonic_ns().saturating_sub(t_start));
-}
-
-fn rasterize_text_fallback(
-    surface: &mut Surface,
-    text: &str,
-    x: i32,
-    y: i32,
-    size: f32,
-    color: u32,
-    clip: &Rect,
-    rf: Option<&str>,
-    _fd: bool,
-) {
-    let fonts = crate::ASSETS.get_fonts();
-    if fonts.is_empty() {
-        return;
-    }
-    let font = if let Some(r) = rf {
-        fonts
-            .iter()
-            .find(|f| f.name.contains(r))
-            .or_else(|| fonts.iter().find(|f| f.name.contains("NotoSans-Regular")))
-            .unwrap_or(&fonts[0])
-    } else {
-        fonts
-            .iter()
-            .find(|f| f.name.contains("NotoSans-Regular"))
-            .unwrap_or(&fonts[0])
-    };
-    let (sa, sr, sg, sb) = (
-        ((color >> 24) & 0xFF) as u8,
-        ((color >> 16) & 0xFF) as u8,
-        ((color >> 8) & 0xFF) as u8,
-        (color & 0xFF) as u8,
-    );
-    let met = match font.font.horizontal_line_metrics(size) {
-        Some(m) => m,
-        None => fontdue::LineMetrics {
-            ascent: size * 0.8f32,
-            descent: size * 0.2f32,
-            line_gap: 0.0,
-            new_line_size: size * 1.2f32,
-        },
-    };
-    let (mut px, mut py) = (x as f32, y as f32 + met.ascent);
-    for ch in text.chars() {
-        if ch == '\n' {
-            px = x as f32;
-            py += libm::fmaxf(met.new_line_size, size * 1.1f32);
-            continue;
-        }
-        if ch == '\r' {
-            continue;
-        }
-        let gi = font.font.lookup_glyph_index(ch);
-        if gi == 0 {
-            px += size * 0.4f32;
-            continue;
-        }
-        let (m, b) = font.get_glyph(GlyphRasterConfig {
-            glyph_index: gi,
-            px: size,
-            font_hash: font.font.file_hash(),
-        });
-        let (gx, gy) = (
-            (px + m.xmin as f32) as i32,
-            py as i32 - m.height as i32 - m.ymin,
-        );
-        for r in 0..m.height {
-            for c in 0..m.width {
-                let (cx, cy) = (gx + c as i32, gy + r as i32);
-                if cx >= clip.x()
-                    && cx < clip.x() + clip.width()
-                    && cy >= clip.y()
-                    && cy < clip.y() + clip.height()
-                {
-                    let a = b[r * (m.width as usize) + c];
-                    if a > 0 {
-                        blend_pixel(surface, cx, cy, sr, sg, sb, scale_ch(a, sa) as u8);
-                    }
-                }
-            }
-        }
-        px += m.advance_width;
-    }
-}
-
-// Fixed point 16.16
-type Fixed = i32;
-const FIXED_SHIFT: i32 = 16;
-const FIXED_ONE: i32 = 1 << FIXED_SHIFT;
-fn float_to_fixed(f: f32) -> Fixed {
-    (f * (FIXED_ONE as f32)) as i32
-}
-fn int_to_fixed(i: i32) -> Fixed {
-    i << FIXED_SHIFT
-}
-fn fixed_floor(f: Fixed) -> i32 {
-    f >> FIXED_SHIFT
-}
-// fn fixed_ceil(f: Fixed) -> i32 { (f + FIXED_ONE - 1) >> FIXED_SHIFT }
-
-struct Edge {
-    y_max: i32,   // scanline int
-    x: Fixed,     // current x at y_min (or current scanline)
-    dx_dy: Fixed, // slope
-    y_min: i32,   // scanline int (start)
-    winding: i32, // 1 or -1
-}
-
-fn flatten_quad<F>(p0: (f32, f32), p1: (f32, f32), p2: (f32, f32), transform: &Transform2D, add_edge_fn: &mut F) 
-where F: FnMut((f32, f32), (f32, f32)) {
-    // Simple flatness check: distance from p1 to (p0+p2)/2
-    let mid_x = (p0.0 + p2.0) * 0.5;
-    let mid_y = (p0.1 + p2.1) * 0.5;
-    let dx = p1.0 - mid_x;
-    let dy = p1.1 - mid_y;
-    if dx*dx + dy*dy < 0.25 {
-        add_edge_fn(p0, p2);
-    } else {
-        let p01 = ((p0.0 + p1.0) * 0.5, (p0.1 + p1.1) * 0.5);
-        let p12 = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5);
-        let p012 = ((p01.0 + p12.0) * 0.5, (p01.1 + p12.1) * 0.5);
-        flatten_quad(p0, p01, p012, transform, add_edge_fn);
-        flatten_quad(p012, p12, p2, transform, add_edge_fn);
-    }
-}
-
-fn flatten_cubic<F>(p0: (f32, f32), p1: (f32, f32), p2: (f32, f32), p3: (f32, f32), transform: &Transform2D, add_edge_fn: &mut F) 
-where F: FnMut((f32, f32), (f32, f32)) {
-    let mid_x = (p0.0 + p3.0) * 0.5;
-    let mid_y = (p0.1 + p3.1) * 0.5;
-    let dx1 = p1.0 - mid_x; let dy1 = p1.1 - mid_y;
-    let dx2 = p2.0 - mid_x; let dy2 = p2.1 - mid_y;
-    if dx1*dx1 + dy1*dy1 + dx2*dx2 + dy2*dy2 < 0.5 {
-        add_edge_fn(p0, p3);
-    } else {
-        let p01 = ((p0.0 + p1.0) * 0.5, (p0.1 + p1.1) * 0.5);
-        let p12 = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5);
-        let p23 = ((p2.0 + p3.0) * 0.5, (p2.1 + p3.1) * 0.5);
-        let p012 = ((p01.0 + p12.0) * 0.5, (p01.1 + p12.1) * 0.5);
-        let p123 = ((p12.0 + p23.0) * 0.5, (p12.1 + p23.1) * 0.5);
-        let p0123 = ((p012.0 + p123.0) * 0.5, (p012.1 + p123.1) * 0.5);
-        flatten_cubic(p0, p01, p012, p0123, transform, add_edge_fn);
-        flatten_cubic(p0123, p123, p23, p3, transform, add_edge_fn);
-    }
-}
-
-pub fn fill_path(
-    surface: &mut Surface,
-    path: &crate::isa::Path2D,
-    transform: &Transform2D,
-    color: u32,
-    fill_rule: crate::isa::FillRule,
-    clip: &Rect,
-) {
-    let sa = ((color >> 24) & 0xFF) as u8;
-    if sa == 0 {
-        return;
-    }
-    let sr = ((color >> 16) & 0xFF) as u8;
-    let sg = ((color >> 8) & 0xFF) as u8;
-    let sb = (color & 0xFF) as u8;
-
-    let mut edges: Vec<Edge> = Vec::with_capacity(path.verbs.len());
-
-    let add_edge = |e: &mut Vec<Edge>, p0: (f32, f32), p1: (f32, f32)| {
-        let (x0, y0) = transform.transform_point_f(p0.0, p0.1);
-        let (x1, y1) = transform.transform_point_f(p1.0, p1.1);
-
-        let y0_i = libm::floorf(y0) as i32;
-        let y1_i = libm::floorf(y1) as i32;
-
-        if y0_i == y1_i {
-            return;
-        }
-
-        let (p_start, p_end, dir) = if y0_i < y1_i {
-            ((x0, y0), (x1, y1), 1)
-        } else {
-            ((x1, y1), (x0, y0), -1)
-        };
-
-        let dy = p_end.1 - p_start.1;
-        let dx = p_end.0 - p_start.0;
-        let slope = if dy != 0.0 {
-            float_to_fixed(dx / dy)
-        } else {
-            0
-        };
-
-        let y_start_int = y0_i.min(y1_i);
-        let y_end_int = y0_i.max(y1_i);
-        let y_isect = (y_start_int as f32) + 0.5;
-        let x_current = float_to_fixed(p_start.0 + (y_isect - p_start.1) * (dx / dy));
-
-        e.push(Edge {
-            y_min: y_start_int,
-            y_max: y_end_int,
-            x: x_current,
-            dx_dy: slope,
-            winding: dir,
-        });
-    };
-
-    let mut current_p: Option<(f32, f32)> = None;
-    let mut start_p: Option<(f32, f32)> = None;
-
-    for verb in &path.verbs {
-        match verb {
-            crate::isa::PathVerb::MoveTo(p) => {
-                start_p = Some((p.x, p.y));
-                current_p = Some((p.x, p.y));
-            }
-            crate::isa::PathVerb::LineTo(p) => {
-                if let Some(c) = current_p {
-                    add_edge(&mut edges, c, (p.x, p.y));
-                    current_p = Some((p.x, p.y));
-                }
-            }
-            crate::isa::PathVerb::QuadTo(p1, p) => {
-                if let Some(c) = current_p {
-                    flatten_quad(c, (p1.x, p1.y), (p.x, p.y), transform, &mut |p0, p1| {
-                        add_edge(&mut edges, p0, p1);
-                    });
-                    current_p = Some((p.x, p.y));
-                }
-            }
-            crate::isa::PathVerb::CubicTo(p1, p2, p) => {
-                if let Some(c) = current_p {
-                    flatten_cubic(c, (p1.x, p1.y), (p2.x, p2.y), (p.x, p.y), transform, &mut |p0, p1| {
-                        add_edge(&mut edges, p0, p1);
-                    });
-                    current_p = Some((p.x, p.y));
-                }
-            }
-            crate::isa::PathVerb::Close => {
-                if let (Some(c), Some(s)) = (current_p, start_p) {
-                    if c != s {
-                        add_edge(&mut edges, c, s);
-                        current_p = Some(s);
-                    }
-                }
-            }
         }
     }
-
-    // Sort edges by y_min
-    edges.sort_by(|a, b| a.y_min.cmp(&b.y_min));
-
-    // 2. Scanline Sweep
-    let y_min = clip.y();
-    let y_max = clip.y() + clip.height();
-
-    let mut active_edges: Vec<Edge> = Vec::with_capacity(16);
-    let mut edge_idx = 0;
-
-    let (sa, sr, sg, sb) = (
-        ((color >> 24) & 0xFF) as u8,
-        ((color >> 16) & 0xFF) as u8,
-        ((color >> 8) & 0xFF) as u8,
-        (color & 0xFF) as u8,
-    );
-
-    for y in y_min..y_max {
-        // Add new edges
-        while edge_idx < edges.len() && edges[edge_idx].y_min <= y {
-            if edges[edge_idx].y_max > y {
-                active_edges.push(Edge { ..edges[edge_idx] }); // Push copy
-            }
-            edge_idx += 1;
-        }
-
-        // Remove finished edges
-        active_edges.retain(|e| e.y_max > y);
-
-        if active_edges.is_empty() {
-            continue;
-        }
-
-        // Sort by x
-        active_edges.sort_by(|a, b| a.x.cmp(&b.x));
-
-        // Fill spans
-        match fill_rule {
-            crate::isa::FillRule::EvenOdd => {
-                // Pair: 0-1, 2-3
-                let mut i = 0;
-                while i + 1 < active_edges.len() {
-                    let x0 = fixed_floor(active_edges[i].x);
-                    let x1 = fixed_floor(active_edges[i + 1].x);
-                    let start = x0.max(clip.x()).min(clip.x() + clip.width());
-                    let end = x1.max(clip.x()).min(clip.x() + clip.width());
-                    if end > start {
-                        if sa == 255 {
-                            fill_rect_copy(surface, start, y, end - start, 1, color);
-                        } else {
-                            for xx in start..end {
-                                blend_pixel(surface, xx, y, sr, sg, sb, sa);
-                            }
-                        }
-                    }
-                    i += 2;
-                }
-            }
-            crate::isa::FillRule::NonZero => {
-                let mut winding = 0;
-                let mut start_x = 0;
-                for i in 0..active_edges.len() {
-                    let x = fixed_floor(active_edges[i].x);
-                    if winding == 0 {
-                        start_x = x;
-                    }
-                    winding += active_edges[i].winding;
-                    if winding == 0 {
-                        let end_x = x;
-                        let start = start_x.max(clip.x()).min(clip.x() + clip.width());
-                        let end = end_x.max(clip.x()).min(clip.x() + clip.width());
-                        if end > start {
-                            if sa == 255 {
-                                fill_rect_copy(surface, start, y, end - start, 1, color);
-                            } else {
-                                for xx in start..end {
-                                    blend_pixel(surface, xx, y, sr, sg, sb, sa);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Update x for next scanline
-        for e in &mut active_edges {
-            e.x += e.dx_dy;
-        }
-    }
-}
-
-pub fn stroke_path(
-    surface: &mut Surface,
-    path: &crate::isa::Path2D,
-    transform: &Transform2D,
-    color: u32,
-    width: i32,
-    _cap: crate::isa::LineCap,
-    _join: crate::isa::LineJoin,
-    _miter: f32,
-    clip: &Rect,
-) {
-    // Simple implementation: convert segments to quads and fill.
-    // For now, implementing "Stroke as thick lines" - very basic.
-    // Better: Stroke expansion to a new Path, then fill.
-    // Given memory constraints, strict stroke expansion is complex.
-    // Fallback: Just draw lines using Bresenham with thickness (approx).
-    // Or scanline fill of quads.
-    // "Stroke as filled expanded geometry" was requested.
-
-    // Convert lines to quads:
-    // For each segment P0->P1, compute normal, offset by width/2.
-    // Build a temp Path2D with quads, then fill.
-
-    let w = width as f32 / 2.0;
-    if w <= 0.0 {
-        return;
-    }
-
-    let mut stroke_verbs = Vec::new();
-    let mut start_p: Option<(f32, f32)> = None;
-    let mut current_p: Option<(f32, f32)> = None;
-
-    let mut add_segment = |v: &mut Vec<crate::isa::PathVerb>, p0: (f32, f32), p1: (f32, f32)| {
-        let dx = p1.0 - p0.0;
-        let dy = p1.1 - p0.1;
-        let len = libm::sqrtf(dx * dx + dy * dy);
-        if len < 0.1 {
-            return;
-        }
-        let nx = -dy / len;
-        let ny = dx / len;
-
-        // P0 offset
-        let p0_l = (p0.0 + nx * w, p0.1 + ny * w);
-        let p0_r = (p0.0 - nx * w, p0.1 - ny * w);
-        // P1 offset
-        let p1_l = (p1.0 + nx * w, p1.1 + ny * w);
-        let p1_r = (p1.0 - nx * w, p1.1 - ny * w);
-
-        // Quad: p0_l -> p1_l -> p1_r -> p0_r
-        use crate::isa::{PathVerb, PointF};
-        v.push(PathVerb::MoveTo(PointF {
-            x: p0_l.0,
-            y: p0_l.1,
-        }));
-        v.push(PathVerb::LineTo(PointF {
-            x: p1_l.0,
-            y: p1_l.1,
-        }));
-        v.push(PathVerb::LineTo(PointF {
-            x: p1_r.0,
-            y: p1_r.1,
-        }));
-        v.push(PathVerb::LineTo(PointF {
-            x: p0_r.0,
-            y: p0_r.1,
-        }));
-        v.push(PathVerb::Close);
-    };
-
-    for verb in &path.verbs {
-        match verb {
-            crate::isa::PathVerb::MoveTo(p) => {
-                start_p = Some((p.x, p.y));
-                current_p = Some((p.x, p.y));
-            }
-            crate::isa::PathVerb::LineTo(p) => {
-                if let Some(c) = current_p {
-                    add_segment(&mut stroke_verbs, c, (p.x, p.y));
-                    current_p = Some((p.x, p.y));
-                }
-            }
-            crate::isa::PathVerb::QuadTo(p1, p) => {
-                if let Some(c) = current_p {
-                    flatten_quad(c, (p1.x, p1.y), (p.x, p.y), transform, &mut |p0, p1| {
-                         add_segment(&mut stroke_verbs, p0, p1);
-                    });
-                    current_p = Some((p.x, p.y));
-                }
-            }
-            crate::isa::PathVerb::CubicTo(p1, p2, p) => {
-                if let Some(c) = current_p {
-                    flatten_cubic(c, (p1.x, p1.y), (p2.x, p2.y), (p.x, p.y), transform, &mut |p0, p1| {
-                         add_segment(&mut stroke_verbs, p0, p1);
-                    });
-                    current_p = Some((p.x, p.y));
-                }
-            }
-            crate::isa::PathVerb::Close => {
-                if let (Some(c), Some(s)) = (current_p, start_p) {
-                    if c != s {
-                        add_segment(&mut stroke_verbs, c, s);
-                        current_p = Some(s);
-                    }
-                }
-            }
-        }
-    }
-
-    let stroke_path = crate::isa::Path2D {
-        verbs: stroke_verbs,
-    };
-    fill_path(
-        surface,
-        &stroke_path,
-        transform,
-        color,
-        crate::isa::FillRule::NonZero,
-        clip,
-    );
 }

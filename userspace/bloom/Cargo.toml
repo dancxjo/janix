@@ -3,16 +3,12 @@ name = "bloom"
 version = "0.1.0"
 edition = "2021"
 
-
 [features]
-default = ["svg-cursors"]
-svg-cursors = []
-svg-demo = ["svg-cursors"]
+default = []
 
 [dependencies]
 stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
 abi = { path = "../../abi" }
-fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc", "rc"] }
 spin = "0.9"
 libm = "0.2"

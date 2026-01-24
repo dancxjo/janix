@@ -1106,7 +1106,9 @@ async fn watch_overflows_zero(world: &mut ThingOsWorld) -> Result<(), StepError>
         }
     }
     if !found {
-        eprintln!("│  │  │      ⚠️ No watch overflow counters found; assuming zero");
+        return Err(StepError(
+            "Expected metric 'watch_overflows' but it was not reported. This invariant is not being measured.".to_string(),
+        ));
     }
     Ok(())
 }

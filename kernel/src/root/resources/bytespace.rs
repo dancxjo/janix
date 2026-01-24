@@ -10,6 +10,18 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
 
+/// Memory provenance - where this bytespace came from
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+pub enum Provenance {
+    /// Dynamically allocated by kernel
+    Kernel = 0,
+    /// Boot-provided (framebuffer, modules)
+    Boot = 1,
+    /// Firmware tables (ACPI, DTB)
+    Firmware = 2,
+}
+
 /// A bytespace backed by contiguous physical memory.
 #[derive(Clone)]
 pub struct Bytespace {
@@ -25,6 +37,12 @@ pub struct Bytespace {
     pub flags: u64,
     /// Whether this bytespace owns its memory (vs borrowing from boot/ACPI)
     pub owned: bool,
+    /// Provenance of this memory region
+    pub provenance: Provenance,
+    /// If true, this bytespace cannot be reallocated or have its backing changed
+    pub frozen: bool,
+    /// Canary value for corruption detection (hash of first 8 bytes on freeze)
+    pub canary: u64,
 }
 
 pub type BytespaceHandle = Arc<Mutex<Bytespace>>;
@@ -62,12 +80,20 @@ pub fn create(len: usize, hhdm_offset: u64) -> Option<BytespaceHandle> {
         page_count,
         flags: 0,
         owned: true,
+        provenance: Provenance::Kernel,
+        frozen: false,
+        canary: 0,
     })))
 }
 
 /// Create a bytespace from an existing physical pointer (for boot modules, ACPI, etc).
 /// This unifies the old `create_from_ptr` - the pointer is treated as a kernel VA.
-pub fn create_from_ptr(kernel_va: usize, len: usize, hhdm_offset: u64) -> BytespaceHandle {
+pub fn create_from_ptr(
+    kernel_va: usize,
+    len: usize,
+    hhdm_offset: u64,
+    provenance: Provenance,
+) -> BytespaceHandle {
     let page_count = (len + 4095) / 4096;
     let phys_base = if kernel_va as u64 >= hhdm_offset {
         kernel_va as u64 - hhdm_offset
@@ -82,6 +108,9 @@ pub fn create_from_ptr(kernel_va: usize, len: usize, hhdm_offset: u64) -> Bytesp
         page_count,
         flags: 0,
         owned: false, // Don't free these pages
+        provenance,
+        frozen: false, // Caller should freeze after setup if needed
+        canary: 0,
     }))
 }
 
@@ -116,4 +145,35 @@ pub fn find_mapping(bytespace_id: u64, tid: u64) -> Option<(u64, usize)> {
         .iter()
         .find(|m| m.bytespace_id == bytespace_id && m.tid == tid)
         .map(|m| (m.user_va, m.len))
+}
+
+impl Bytespace {
+    /// Compute a canary value from the first 8 bytes of the bytespace.
+    /// Used for corruption detection after freeze.
+    pub fn compute_canary(&self) -> u64 {
+        if self.len < 8 || self.kernel_va == 0 {
+            return 0;
+        }
+        unsafe {
+            let ptr = self.kernel_va as *const u64;
+            ptr.read_volatile()
+        }
+    }
+    
+    /// Freeze this bytespace, preventing reallocation and recording a canary.
+    /// Returns the computed canary value.
+    pub fn freeze(&mut self) -> u64 {
+        self.frozen = true;
+        self.canary = self.compute_canary();
+        self.canary
+    }
+    
+    /// Verify the canary value matches the current memory contents.
+    /// Returns true if canary matches or if bytespace is not frozen.
+    pub fn verify_canary(&self) -> bool {
+        if !self.frozen || self.canary == 0 {
+            return true;
+        }
+        self.compute_canary() == self.canary
+    }
 }

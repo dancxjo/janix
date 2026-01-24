@@ -4,6 +4,7 @@ use crate::BootRuntime;
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
 use crate::root::resources::{ResourceHandle, bytespace};
+use crate::root::resources::bytespace::Provenance;
 use crate::root::symbols::Interner;
 use crate::root::RootMsg;
 #[allow(unused_imports)]
@@ -79,7 +80,8 @@ pub fn handle_bytespace_create_from_ptr<R: BootRuntime>(
     
     let kid = interner.intern("Bytespace");
     let id = graph.alloc(kid);
-    let handle = bytespace::create_from_ptr(ptr as usize, len as usize, hhdm_offset);
+    // Boot assets created via this path get Boot provenance
+    let handle = bytespace::create_from_ptr(ptr as usize, len as usize, hhdm_offset, Provenance::Boot);
     
     // Create backing mem.Range node
     let range_kid = interner.intern("mem.Range");

@@ -632,4 +632,50 @@ mod tests {
         assert_eq!(node1_ref.edges.len(), 1);
         assert_eq!(node1_ref.edges[0], (rel_x, node2));
     }
+
+    #[test]
+    fn test_commit_summary_overflow_safety() {
+        let mut summary = CommitSummary::default();
+
+        // 1. Fill the set up to capacity
+        for i in 0..MAX_SUMMARY_IDS {
+            summary.kinds.insert(i as u32);
+        }
+
+        assert!(!summary.kinds.overflowed);
+        assert!(summary.kinds.contains(0));
+        assert!(summary.kinds.contains((MAX_SUMMARY_IDS - 1) as u32));
+        assert!(!summary.kinds.contains(MAX_SUMMARY_IDS as u32));
+
+        // Verify normal filtering works (non-match is rejected)
+        let mut filter_miss = WatchFilter::default();
+        filter_miss.flags = WATCH_F_KIND;
+        filter_miss.kind_id = MAX_SUMMARY_IDS as u32; // ID 16 (not in set)
+        assert!(!commit_matches(&filter_miss, &summary));
+
+        // 2. Trigger overflow
+        summary.kinds.insert(MAX_SUMMARY_IDS as u32);
+        assert!(summary.kinds.overflowed);
+
+        // The set implementation stops tracking new items on overflow,
+        // so contains() returns false for the item we just tried to add
+        // (because it didn't fit in the fixed array).
+        // This is implementation detail of SmallIdSet, but important to verify
+        // why we need the overflow flag.
+        assert!(!summary.kinds.contains(MAX_SUMMARY_IDS as u32));
+
+        // 3. Verify safety: commit_matches must return true even if contains() says false
+        // because the set is overflowed.
+        assert!(commit_matches(&filter_miss, &summary));
+
+        // Verify it also matches something completely random
+        filter_miss.kind_id = 9999;
+        assert!(commit_matches(&filter_miss, &summary));
+
+        // Verify it still matches things that ARE in the set
+        let mut filter_hit = WatchFilter::default();
+        filter_hit.flags = WATCH_F_KIND;
+        filter_hit.kind_id = 0;
+        assert!(commit_matches(&filter_hit, &summary));
+    }
 }

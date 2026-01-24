@@ -102,7 +102,8 @@ pub unsafe fn init() {
         // STAR: [47:32] = Kernel CS (0x08). [63:48] = User CS Base (0x18).
         // Sysret loads CS = Base + 16 = 0x28 (User Code 64).
         // Sysret loads SS = Base + 8  = 0x20 (User Data).
-        let star = ((0x08 as u64) << 32) | ((0x18 as u64) << 48);
+        let star = ((crate::arch::x86_64::gdt::KERNEL_CODE_SEL as u64) << 32)
+            | (((crate::arch::x86_64::gdt::USER_CODE32_SEL ^ 3) as u64) << 48);
         wrmsr(MSR_STAR, star);
 
         // 4. Setup LSTAR (Entry point)
@@ -158,10 +159,10 @@ syscall_entry:
     // We need to manufacture SS, RSP, RFLAGS, CS, RIP
     // User SS = 0x23 (Hardcoded matches task.rs) | OR we could just save what we think it is. 
     // But 'syscall' doesn't save SS. We assume standard user SS.
-    pushq $0x23        // SS (User Data 64, Index 4 | 3 -> 0x23)
+    pushq ${user_ss}        // SS
     pushq %gs:0         // User RSP (from scratch)
     pushq %r11          // RFLAGS
-    pushq $0x2B        // CS (User Code 64, Index 5 | 3 -> 0x2B)
+    pushq ${user_cs}        // CS
     pushq %rcx          // RIP
     
     // Error Code / Int No
@@ -301,5 +302,7 @@ syscall_entry:
     swapgs
     sysretq
 "#,
-    options(att_syntax)
+    options(att_syntax),
+    user_ss = const crate::arch::x86_64::gdt::USER_DATA_SEL,
+    user_cs = const crate::arch::x86_64::gdt::USER_CODE_SEL,
 );

@@ -34,3 +34,25 @@ pub struct UserTrapFrame {
     pub rsp: usize,
     pub ss: usize,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::arch::x86_64::gdt::{USER_CODE_SEL, USER_DATA_SEL};
+
+    #[test]
+    fn test_user_trap_frame_selectors() {
+        let frame = UserTrapFrame {
+            cs: USER_CODE_SEL as usize,
+            ss: USER_DATA_SEL as usize,
+            ..Default::default()
+        };
+
+        assert_eq!(frame.cs, 0x2B, "User CS should be 0x2B");
+        assert_eq!(frame.ss, 0x23, "User SS should be 0x23");
+        
+        // Assert RPL=3 (bits 0 and 1)
+        assert_eq!(frame.cs & 3, 3, "User CS must have RPL=3");
+        assert_eq!(frame.ss & 3, 3, "User SS must have RPL=3");
+    }
+}

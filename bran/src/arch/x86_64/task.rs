@@ -113,10 +113,10 @@ user_trampoline:
     // r12 = user_entry, r13 = user_stack, r14 = aspace.0 (cr3), r15 = arg
     mov cr3, r14
     
-    push 0x23  // User SS (udata selector)
+    push {user_ss}  // User SS (udata selector)
     push r13   // User RSP
     push 0x202 // RFLAGS (IF=1)
-    push 0x2B  // User CS (ucode64 selector)
+    push {user_cs}  // User CS (ucode64 selector)
     push r12   // User RIP
     
     mov rdi, r15
@@ -132,7 +132,9 @@ user_trampoline:
     xor r11, r11
     
     iretq
-"#
+"#,
+    user_ss = const super::gdt::USER_DATA_SEL,
+    user_cs = const super::gdt::USER_CODE_SEL,
 );
 
 pub fn init_kernel_context(

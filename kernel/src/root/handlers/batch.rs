@@ -193,6 +193,81 @@ pub fn apply_ops_and_commit(
     }
 }
 // ============================================================================
+// Internal Parsing Helpers (Non-Panicking)
+// ============================================================================
+
+/// Safely read a u16 from the data buffer and advance the cursor.
+fn read_u16(data: &[u8], cursor: &mut usize) -> Result<u16, i32> {
+    if *cursor + 2 > data.len() {
+        return Err(-22); // EINVAL
+    }
+    let val = u16::from_le_bytes([data[*cursor], data[*cursor + 1]]);
+    *cursor += 2;
+    Ok(val)
+}
+
+/// Safely read a u32 from the data buffer and advance the cursor.
+fn read_u32(data: &[u8], cursor: &mut usize) -> Result<u32, i32> {
+    if *cursor + 4 > data.len() {
+        return Err(-22); // EINVAL
+    }
+    let val = u32::from_le_bytes([
+        data[*cursor],
+        data[*cursor + 1],
+        data[*cursor + 2],
+        data[*cursor + 3],
+    ]);
+    *cursor += 4;
+    Ok(val)
+}
+
+/// Safely read a 16-byte ID and resolve it to a u64 handle.
+/// 
+/// Enforces the "u64-handle bridge": the upper 8 bytes MUST be zero.
+/// Returns the lower 8 bytes as a u64.
+fn read_u64_id(data: &[u8], cursor: &mut usize) -> Result<u64, i32> {
+    if *cursor + 16 > data.len() {
+        return Err(-22); // EINVAL
+    }
+
+    let mut id_bytes = [0u8; 16];
+    id_bytes.copy_from_slice(&data[*cursor..*cursor + 16]);
+    
+    let lo = u64::from_le_bytes([
+        id_bytes[0], id_bytes[1], id_bytes[2], id_bytes[3],
+        id_bytes[4], id_bytes[5], id_bytes[6], id_bytes[7],
+    ]);
+    let hi = u64::from_le_bytes([
+        id_bytes[8], id_bytes[9], id_bytes[10], id_bytes[11],
+        id_bytes[12], id_bytes[13], id_bytes[14], id_bytes[15],
+    ]);
+
+    if hi != 0 {
+        // ID Duality Violation: User tried to pass a true 128-bit ID
+        // where only u64 handles are currently supported by the kernel.
+        static LOGGED_VIOLATION: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+        if !LOGGED_VIOLATION.swap(true, Ordering::Relaxed) {
+           crate::kwarn!("Root: 16-byte ID duality violation (upper 8 bytes non-zero). Kernel only supports u64-bridge handles.");
+        }
+        return Err(-22); // EINVAL
+    }
+
+    *cursor += 16;
+    Ok(lo)
+}
+
+/// Safely read 16 bytes as a fixed array (e.g. for Symbols).
+fn read_16(data: &[u8], cursor: &mut usize) -> Result<[u8; 16], i32> {
+    if *cursor + 16 > data.len() {
+        return Err(-22); // EINVAL
+    }
+    let mut buf = [0u8; 16];
+    buf.copy_from_slice(&data[*cursor..*cursor + 16]);
+    *cursor += 16;
+    Ok(buf)
+}
+
+// ============================================================================
 // Batch Filter Matching
 // ============================================================================
 
@@ -214,25 +289,23 @@ pub fn batch_matches_filter(
     interner: &mut Interner,
     graph: &Graph
 ) -> Result<bool, i32> {
-    // flags=0 means match all commits
-    if filter.matches_all() {
-        return Ok(true);
-    }
-    
+    let mut cursor = 0usize;
+
     // Validate header
-    if batch.len() < 8 {
-        return Err(-22); // EINVAL
-    }
-    let magic = u32::from_le_bytes(batch[0..4].try_into().unwrap());
-    let version = u16::from_le_bytes(batch[4..6].try_into().unwrap());
-    let op_count = u16::from_le_bytes(batch[6..8].try_into().unwrap());
+    let magic = read_u32(batch, &mut cursor)?;
+    let version = read_u16(batch, &mut cursor)?;
+    let op_count = read_u16(batch, &mut cursor)?;
     
     if magic != BATCH_MAGIC || version != BATCH_VERSION {
         return Err(-22);
     }
 
+    // flags=0 means match all commits
+    if filter.matches_all() {
+        return Ok(true);
+    }
+
     let mut local_kinds = [None; MAX_LOCAL_REFS];
-    let mut cursor = 8usize;
     
     for _ in 0..op_count {
         if cursor >= batch.len() {
@@ -243,15 +316,8 @@ pub fn batch_matches_filter(
         
         match tag {
             OP_CREATE_NODE => {
-                // kind_id: 16 bytes, out_ref: 2 bytes = 18 bytes total
-                if cursor + 16 > batch.len() { return Err(-22); }
-                let kind_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
-                cursor += 16;
-
-                // out_ref: 2 bytes
-                if cursor + 2 > batch.len() { return Err(-22); }
-                let out_idx = u16::from_le_bytes(batch[cursor..cursor+2].try_into().unwrap()) as usize;
-                cursor += 2;
+                let kind_bytes = read_16(batch, &mut cursor)?;
+                let out_idx = read_u16(batch, &mut cursor)? as usize;
 
                 let kind_str = bytes_to_hex(&kind_bytes);
                 let kind = interner.intern(&kind_str);
@@ -273,35 +339,28 @@ pub fn batch_matches_filter(
                 if cursor >= batch.len() { return Err(-22); }
                 let ref_kind = batch[cursor];
                 cursor += 1;
-                let subject_size = if ref_kind == REF_ABSOLUTE { 16 } else if ref_kind == REF_LOCAL { 2 } else { return Err(-22); };
-                if cursor + subject_size > batch.len() { return Err(-22); }
                 
-                // Extract subject ID/Index
-                let subject_val = if ref_kind == REF_ABSOLUTE {
-                    u64::from_le_bytes(batch[cursor..cursor+8].try_into().unwrap())
-                } else if ref_kind == REF_LOCAL {
-                    u16::from_le_bytes(batch[cursor..cursor+2].try_into().unwrap()) as u64
-                } else {
-                    0
+                let subject_val = match ref_kind {
+                    REF_ABSOLUTE => read_u64_id(batch, &mut cursor)?,
+                    REF_LOCAL => read_u16(batch, &mut cursor)? as u64,
+                    _ => return Err(-22),
                 };
-                cursor += subject_size;
                 
                 // Predicate: 16 bytes (hash)
-                if cursor + 16 > batch.len() { return Err(-22); }
-                let pred_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
-                cursor += 16;
+                let pred_bytes = read_16(batch, &mut cursor)?;
                 
                 // Object ThingRef
                 if cursor >= batch.len() { return Err(-22); }
-                let obj_kind = batch[cursor];
+                let obj_ref_kind = batch[cursor];
                 cursor += 1;
-                let obj_size = if obj_kind == REF_ABSOLUTE { 16 } else if obj_kind == REF_LOCAL { 2 } else { return Err(-22); };
-                if cursor + obj_size > batch.len() { return Err(-22); }
-                cursor += obj_size;
+                match obj_ref_kind {
+                    REF_ABSOLUTE => { let _ = read_u64_id(batch, &mut cursor)?; }
+                    REF_LOCAL => { let _ = read_u16(batch, &mut cursor)?; }
+                    _ => return Err(-22),
+                }
                 
                 // Flags: 4 bytes
-                if cursor + 4 > batch.len() { return Err(-22); }
-                cursor += 4;
+                let _flags = read_u32(batch, &mut cursor)?;
                 
                 // Match logic
                 let mut matches = true;
@@ -348,19 +407,28 @@ pub fn batch_matches_filter(
                 if cursor >= batch.len() { return Err(-22); }
                 let ref_kind = batch[cursor];
                 cursor += 1;
-                let subject_size = if ref_kind == REF_ABSOLUTE { 16 } else if ref_kind == REF_LOCAL { 2 } else { return Err(-22); };
-                if cursor + subject_size > batch.len() { return Err(-22); }
                 
-                let subject_id = if ref_kind == REF_ABSOLUTE {
-                    u64::from_le_bytes(batch[cursor..cursor+8].try_into().unwrap())
-                } else {
-                    0
+                let subject_id = match ref_kind {
+                    REF_ABSOLUTE => read_u64_id(batch, &mut cursor)?,
+                    REF_LOCAL => {
+                        // SET_PROP on local ref is allowed, but filter matching 
+                        // against subject_lo only works for absolute IDs in current ABI.
+                        let _idx = read_u16(batch, &mut cursor)?;
+                        0 // Not an absolute ID
+                    }
+                    _ => return Err(-22),
                 };
-                cursor += subject_size;
                 
-                // Key (16 bytes) + value (8 bytes) = 24 bytes
-                if cursor + 24 > batch.len() { return Err(-22); }
-                cursor += 24;
+                // Key (16 bytes)
+                let _key_bytes = read_16(batch, &mut cursor)?;
+                
+                // Value (8 bytes)
+                if cursor + 8 > batch.len() { return Err(-22); }
+                let _value = u64::from_le_bytes([
+                    batch[cursor], batch[cursor+1], batch[cursor+2], batch[cursor+3],
+                    batch[cursor+4], batch[cursor+5], batch[cursor+6], batch[cursor+7]
+                ]);
+                cursor += 8;
                 
                 // Check SUBJECT filter
                 if (filter.flags & WATCH_F_SUBJECT) != 0 {
@@ -404,16 +472,9 @@ fn parse_ref_scratch(
     let kind = data[*cursor];
     *cursor += 1;
     match kind {
-        REF_ABSOLUTE => {
-            if *cursor + 16 > data.len() { return Err(-22); }
-            let val = u64::from_le_bytes(data[*cursor..*cursor+8].try_into().unwrap());
-            *cursor += 16;
-            Ok(val)
-        }
+        REF_ABSOLUTE => read_u64_id(data, cursor),
         REF_LOCAL => {
-            if *cursor + 2 > data.len() { return Err(-22); }
-            let idx = u16::from_le_bytes(data[*cursor..*cursor+2].try_into().unwrap()) as usize;
-            *cursor += 2;
+            let idx = read_u16(data, cursor)? as usize;
             // Validate local ref is within bounds and initialized
             if idx >= MAX_LOCAL_REFS {
                 return Err(-22); // EINVAL: out of bounds
@@ -442,13 +503,12 @@ fn parse_batch_scratch(
         return Err(-7); // E2BIG
     }
     
-    if batch.len() < 8 {
-        return Err(-22); // EINVAL: too short for header
-    }
+    let mut cursor = 0usize;
 
-    let magic = u32::from_le_bytes(batch[0..4].try_into().unwrap());
-    let version = u16::from_le_bytes(batch[4..6].try_into().unwrap());
-    let op_count = u16::from_le_bytes(batch[6..8].try_into().unwrap()) as usize;
+    // Parse header
+    let magic = read_u32(batch, &mut cursor)?;
+    let version = read_u16(batch, &mut cursor)?;
+    let op_count = read_u16(batch, &mut cursor)? as usize;
 
     if magic != BATCH_MAGIC || version != BATCH_VERSION {
         return Err(-22); // EINVAL
@@ -464,8 +524,6 @@ fn parse_batch_scratch(
         scratch.ops.reserve(op_count - scratch.ops.capacity());
     }
 
-    let mut cursor = 8usize;
-
     for _ in 0..op_count {
         if cursor >= batch.len() { return Err(-22); }
         let tag = batch[cursor];
@@ -473,15 +531,11 @@ fn parse_batch_scratch(
 
         match tag {
             OP_CREATE_NODE => {
-                if cursor + 16 > batch.len() { return Err(-22); }
-                let kind_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
-                cursor += 16;
+                let kind_bytes = read_16(batch, &mut cursor)?;
                 let kind_str = bytes_to_hex(&kind_bytes);
                 let kind = interner.intern(&kind_str);
 
-                if cursor + 2 > batch.len() { return Err(-22); }
-                let out_idx = u16::from_le_bytes(batch[cursor..cursor+2].try_into().unwrap()) as usize;
-                cursor += 2;
+                let out_idx = read_u16(batch, &mut cursor)? as usize;
                 
                 // Validate out_ref within bounds
                 if out_idx >= MAX_LOCAL_REFS {
@@ -496,28 +550,24 @@ fn parse_batch_scratch(
             }
             OP_PUT_EDGE => {
                 let src = parse_ref_scratch(&mut cursor, batch, scratch)?;
-
-                if cursor + 16 > batch.len() { return Err(-22); }
-                let rel_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
-                cursor += 16;
+                let rel_bytes = read_16(batch, &mut cursor)?;
                 let rel_str = bytes_to_hex(&rel_bytes);
                 let rel = interner.intern(&rel_str);
-
                 let dst = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
                 scratch.ops.push(ValidatedOp::PutEdge { src, rel, dst });
             }
             OP_SET_PROP => {
                 let id = parse_ref_scratch(&mut cursor, batch, scratch)?;
-
-                if cursor + 16 > batch.len() { return Err(-22); }
-                let key_bytes: [u8; 16] = batch[cursor..cursor + 16].try_into().unwrap();
-                cursor += 16;
+                let key_bytes = read_16(batch, &mut cursor)?;
                 let key_str = bytes_to_hex(&key_bytes);
                 let key = interner.intern(&key_str);
 
                 if cursor + 8 > batch.len() { return Err(-22); }
-                let value = u64::from_le_bytes(batch[cursor..cursor + 8].try_into().unwrap());
+                let value = u64::from_le_bytes([
+                    batch[cursor], batch[cursor+1], batch[cursor+2], batch[cursor+3],
+                    batch[cursor+4], batch[cursor+5], batch[cursor+6], batch[cursor+7]
+                ]);
                 cursor += 8;
 
                 scratch.ops.push(ValidatedOp::SetProp { id, key, value });
@@ -684,5 +734,73 @@ mod tests {
 
         let result = batch_matches_filter(&batch_edge_mismatch, &filter, &mut interner, &graph).expect("parse failed");
         assert!(!result, "Should NOT match Edge from Kind B (local ref)");
+    }
+
+    #[test]
+    fn test_batch_hardening_malformed_input() {
+        let mut interner = Interner::new();
+        let graph = Graph::new();
+        let mut scratch = RootBatchScratch::new();
+
+        // 1. Too short for header
+        let small = [0u8; 4];
+        assert_eq!(parse_batch_scratch(&small, &mut interner, &mut scratch), Err(-22));
+        assert_eq!(batch_matches_filter(&small, &WatchFilter::default(), &mut interner, &graph), Err(-22));
+
+        // 2. Correct header but magic mismatch
+        let mut bad_magic = alloc::vec::Vec::new();
+        bad_magic.extend_from_slice(&0u32.to_le_bytes()); // Not BATCH_MAGIC
+        bad_magic.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+        bad_magic.extend_from_slice(&1u16.to_le_bytes());
+        assert_eq!(parse_batch_scratch(&bad_magic, &mut interner, &mut scratch), Err(-22));
+
+        // 3. Truncated Op (CreateNode)
+        let mut truncated_op = alloc::vec::Vec::new();
+        truncated_op.extend_from_slice(&BATCH_MAGIC.to_le_bytes());
+        truncated_op.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+        truncated_op.extend_from_slice(&1u16.to_le_bytes());
+        truncated_op.push(OP_CREATE_NODE);
+        truncated_op.extend_from_slice(&[0u8; 10]); // Truncated kind_id (should be 16)
+        assert_eq!(parse_batch_scratch(&truncated_op, &mut interner, &mut scratch), Err(-22));
+        
+        // Use a filter that forces op parsing
+        let mut filter_kind = WatchFilter::default();
+        filter_kind.flags = abi::root::WATCH_F_KIND;
+        assert_eq!(batch_matches_filter(&truncated_op, &filter_kind, &mut interner, &graph), Err(-22));
+
+        // 4. Unknown Op Tag
+        let mut unknown_tag = alloc::vec::Vec::new();
+        unknown_tag.extend_from_slice(&BATCH_MAGIC.to_le_bytes());
+        unknown_tag.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+        unknown_tag.extend_from_slice(&1u16.to_le_bytes());
+        unknown_tag.push(0xFF); // Invalid tag
+        assert_eq!(parse_batch_scratch(&unknown_tag, &mut interner, &mut scratch), Err(-22));
+        assert_eq!(batch_matches_filter(&unknown_tag, &filter_kind, &mut interner, &graph), Err(-22));
+
+        // 5. Local Ref before init
+        let mut uninit_ref = alloc::vec::Vec::new();
+        uninit_ref.extend_from_slice(&BATCH_MAGIC.to_le_bytes());
+        uninit_ref.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+        uninit_ref.extend_from_slice(&1u16.to_le_bytes());
+        uninit_ref.push(OP_PUT_EDGE);
+        uninit_ref.push(REF_LOCAL);
+        uninit_ref.extend_from_slice(&0u16.to_le_bytes()); // Index 0 not initialized
+        assert_eq!(parse_batch_scratch(&uninit_ref, &mut interner, &mut scratch), Err(-22));
+
+        // 6. ID Duality Violation (non-zero upper bytes)
+        let mut bad_id = alloc::vec::Vec::new();
+        bad_id.extend_from_slice(&BATCH_MAGIC.to_le_bytes());
+        bad_id.extend_from_slice(&BATCH_VERSION.to_le_bytes());
+        bad_id.extend_from_slice(&1u16.to_le_bytes());
+        bad_id.push(OP_PUT_EDGE);
+        bad_id.push(REF_ABSOLUTE);
+        bad_id.extend_from_slice(&1u64.to_le_bytes()); // low 8
+        bad_id.extend_from_slice(&1u64.to_le_bytes()); // upper 8 (VIOLATION)
+        assert_eq!(parse_batch_scratch(&bad_id, &mut interner, &mut scratch), Err(-22));
+        
+        let mut filter = WatchFilter::default();
+        filter.flags = abi::root::WATCH_F_SUBJECT;
+        filter.subject_lo = 1;
+        assert_eq!(batch_matches_filter(&bad_id, &filter, &mut interner, &graph), Err(-22));
     }
 }

@@ -44,4 +44,21 @@ mod tests {
             assert_eq!(&thing_id.0[8..16], &[0u8; 8], "Upper bytes must be zero-padded");
         }
     }
+
+    #[test]
+    fn test_thing_id_default_is_zero_padded() {
+        let id = ThingId::default();
+        assert_eq!(id.to_u64_lossy(), 0);
+        assert_eq!(&id.0[8..16], &[0u8; 8], "Upper bytes must be zero-padded");
+    }
+
+    #[test]
+    #[cfg(feature = "kernel-id-gen")]
+    fn test_debug_nonce_violates_bridge() {
+        let _ = ThingId::new_debug_nonce();
+        let id = ThingId::new_debug_nonce();
+        // A debug nonce should have non-zero upper bytes (it uses them for sequence)
+        // This confirms it would be "lossy" or "cursed" if used as a handle.
+        assert_ne!(&id.0[8..16], &[0u8; 8], "Debug nonce must NOT be zero-padded (violations are documented)");
+    }
 }

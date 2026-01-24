@@ -35,7 +35,8 @@ pub struct PredicateId(pub [u8; 16]);
 static NEXT_THING_ID: AtomicU64 = AtomicU64::new(0);
 
 impl ThingId {
-    pub fn new() -> Self {
+    #[cfg(feature = "kernel-id-gen")]
+    pub fn new_debug_nonce() -> Self {
         let seq = NEXT_THING_ID.fetch_add(1, Ordering::Relaxed);
         // Simple nonce to distinguish runs (if ASLR/pointers vary)
         let bootish = (core::ptr::addr_of!(NEXT_THING_ID) as u64) ^ 0x5EED_C0DE_CAFE_BABE;

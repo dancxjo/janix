@@ -9,7 +9,7 @@ mod tests {
         let count = 10_000;
 
         for _ in 0..count {
-            let id = ThingId::new();
+            let id = ThingId::new_debug_nonce();
             if ids.contains(&id) {
                 panic!("Collision detected! ID {:?} already exists.", id);
             }

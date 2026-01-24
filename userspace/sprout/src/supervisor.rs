@@ -58,7 +58,7 @@ impl Supervisor {
 
     fn discover(&mut self) {
         info!("SPROUT: Discovering modules...");
-        let mut modules = [ThingId::new(); 64];
+        let mut modules = [ThingId::default(); 64];
         let count =
             thingsys::find(stem::abi::schema::kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
         info!("SPROUT: Found {} modules", count);
@@ -241,7 +241,7 @@ impl Supervisor {
         // Ideally we traverse the graph for "REQUIRES_DRIVER" or similar.
         // But for v0, we just look for RTC.
 
-        let mut buf = [ThingId::new(); 1];
+        let mut buf = [ThingId::default(); 1];
         if let Ok(1) = thingsys::find(stem::abi::schema::kinds::DEV_RTC_CMOS, &mut buf) {
             let rtc_id = buf[0];
             if let Some(driver_name) = self.registry.find_driver("dev.rtc.Cmos") {
@@ -300,7 +300,7 @@ impl Supervisor {
                                 // Ideally ManagedTask stores the argument too.
                                 // Quick hack: Re-find RTC
                                 if dk == "dev.rtc.Cmos" {
-                                    let mut buf = [ThingId::new(); 1];
+                                    let mut buf = [ThingId::default(); 1];
                                     if let Ok(1) = thingsys::find(
                                         stem::abi::schema::kinds::DEV_RTC_CMOS,
                                         &mut buf,

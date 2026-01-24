@@ -16,6 +16,7 @@ pub mod irq;
 pub mod trace;
 
 use abi::vm::{VmBackingKind, VmMapFlags, VmProt, VmRegionInfo};
+use abi::errors::Errno;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
@@ -199,6 +200,20 @@ pub trait BootRuntimeBase: 'static {
     fn mono_ticks(&self) -> u64;
     fn mono_freq_hz(&self) -> u64 {
         10_000_000
+    }
+
+    fn pci_cfg_read32(&self, _bus: u8, _dev: u8, _func: u8, _offset: u8) -> Result<u32, Errno> {
+        Err(Errno::NotSupported)
+    }
+    fn pci_cfg_write32(&self, _bus: u8, _dev: u8, _func: u8, _offset: u8, _value: u32) -> Result<(), Errno> {
+        Err(Errno::NotSupported)
+    }
+
+    fn lapic_id(&self) -> Result<u32, Errno> {
+        Err(Errno::NotSupported)
+    }
+    fn lapic_base_phys(&self) -> Result<u64, Errno> {
+        Err(Errno::NotSupported)
     }
 }
 

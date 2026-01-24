@@ -95,20 +95,25 @@ pub fn load_module<R: BootRuntime>(
             while virt < seg_end {
                 let phys;
                 let mut reuse_page = false;
+                let mut page_perms = perms;
 
                 if virt == last_virt_page {
                     // Overlap detected! Reuse the previous page and merge permissions.
                     phys = last_phys_page;
                     reuse_page = true;
-                    perms.exec |= last_perms.exec;
-                    perms.write |= last_perms.write;
-                    perms.read |= last_perms.read;
+                    page_perms = match merge_perms(last_perms, perms) {
+                        Ok(p) => p,
+                        Err(e) => {
+                            crate::kinfo!("ERROR: {} at {:x}", e, virt);
+                            return None;
+                        }
+                    };
                     crate::kinfo!(
                         "  Overlap at {:x}: merging perms to r={} w={} x={}",
                         virt,
-                        perms.read,
-                        perms.write,
-                        perms.exec
+                        page_perms.read,
+                        page_perms.write,
+                        page_perms.exec
                     );
                 } else {
                     // New page
@@ -147,12 +152,12 @@ pub fn load_module<R: BootRuntime>(
                 }
 
                 rt.tasking()
-                    .map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)
+                    .map_page(aspace, virt, phys, page_perms, MapKind::Normal, &hook)
                     .unwrap();
 
                 last_virt_page = virt;
                 last_phys_page = phys;
-                last_perms = perms;
+                last_perms = page_perms;
                 
                 virt += page_size;
             }
@@ -359,4 +364,72 @@ fn read_u64(bytes: &[u8], off: usize) -> Option<u64> {
     Some(u64::from_le_bytes([
         slice[0], slice[1], slice[2], slice[3], slice[4], slice[5], slice[6], slice[7],
     ]))
+}
+
+fn merge_perms(last: MapPerms, next: MapPerms) -> Result<MapPerms, &'static str> {
+    let merged = MapPerms {
+        user: last.user || next.user,
+        read: last.read || next.read,
+        write: last.write || next.write,
+        exec: last.exec || next.exec,
+    };
+
+    // Enforce W^X: never produce RWX
+    if merged.write && merged.exec {
+        return Err("Permission conflict: merging results in RWX (W^X violation)");
+    }
+
+    Ok(merged)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_merge_perms() {
+        let r = MapPerms {
+            user: true,
+            read: true,
+            write: false,
+            exec: false,
+        };
+        let rw = MapPerms {
+            user: true,
+            read: true,
+            write: true,
+            exec: false,
+        };
+        let rx = MapPerms {
+            user: true,
+            read: true,
+            write: false,
+            exec: true,
+        };
+        let x = MapPerms {
+            user: true,
+            read: false,
+            write: false,
+            exec: true,
+        };
+
+        // RX + RW -> Error
+        assert!(merge_perms(rx, rw).is_err());
+
+        // RX + R -> RX
+        let res = merge_perms(rx, r).expect("RX + R failed");
+        assert!(res.read && !res.write && res.exec);
+
+        // RW + R -> RW
+        let res = merge_perms(rw, r).expect("RW + R failed");
+        assert!(res.read && res.write && !res.exec);
+
+        // RX + X -> RX (normalize)
+        let res = merge_perms(rx, x).expect("RX + X failed");
+        assert!(res.read && !res.write && res.exec);
+        
+        // R + R -> R
+        let res = merge_perms(r, r).expect("R + R failed");
+        assert!(res.read && !res.write && !res.exec);
+    }
 }

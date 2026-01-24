@@ -1,14 +1,14 @@
 //! Task and thread spawning functions.
 
 use crate::{BootRuntime, BootTasking, UserEntry};
-use crate::task::{Task, TaskId, TaskState};
+use crate::task::{Task, TaskId, TaskState, StartupArg};
 
 use super::types::{Scheduler, DEFAULT_TIMESLICE};
 use super::SCHEDULER;
 
 
 impl<R: BootRuntime> Scheduler<R> {
-    pub fn spawn(&mut self, entry: extern "C" fn(usize) -> !, arg: usize, priority: crate::task::TaskPriority) -> TaskId {
+    pub fn spawn(&mut self, entry: extern "C" fn(usize) -> !, arg: StartupArg, priority: crate::task::TaskPriority) -> TaskId {
         let rt = crate::runtime::<R>();
         let id = self.next_id;
         self.next_id += 1;
@@ -20,7 +20,7 @@ impl<R: BootRuntime> Scheduler<R> {
         }
         let stack_top = (stack_base as u64) + 16384;
 
-        let ctx = rt.tasking().init_kernel_context(entry, stack_top, arg);
+        let ctx = rt.tasking().init_kernel_context(entry, stack_top, arg.to_raw());
 
         let task: Task<R> = Task {
             id,
@@ -49,7 +49,7 @@ impl<R: BootRuntime> Scheduler<R> {
         &mut self,
         entry: usize,
         stack: usize,
-        arg: usize,
+        arg: StartupArg,
         stack_info: abi::types::StackInfo,
         priority: crate::task::TaskPriority,
     ) -> TaskId {
@@ -81,7 +81,7 @@ impl<R: BootRuntime> Scheduler<R> {
             entry: entry as u64,
             stack_top: stack as u64,
             aspace,
-            arg,
+            arg: arg.to_raw(),
         };
 
         let ctx = rt.tasking().init_user_context(spec, kstack_top);
@@ -161,14 +161,14 @@ impl<R: BootRuntime> Scheduler<R> {
     }
 }
 
-pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
+pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: StartupArg) -> TaskId {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
     sched.spawn(entry, arg, crate::task::TaskPriority::Normal)
 }
 
-pub fn spawn_with_priority<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize, priority: crate::task::TaskPriority) -> TaskId {
+pub fn spawn_with_priority<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: StartupArg, priority: crate::task::TaskPriority) -> TaskId {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
@@ -178,7 +178,7 @@ pub fn spawn_with_priority<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg
 pub unsafe fn spawn_user_thread<R: BootRuntime>(
     entry: usize,
     stack: usize,
-    arg: usize,
+    arg: StartupArg,
     stack_info: abi::types::StackInfo,
     priority: crate::task::TaskPriority,
 ) -> TaskId {
@@ -201,13 +201,13 @@ pub unsafe fn spawn_user_task_full<R: BootRuntime>(
     sched.spawn_user_task(entry, aspace, stack_info, regions, priority)
 }
 
-pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: usize) -> Option<TaskId> {
+pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: StartupArg) -> Option<TaskId> {
     unsafe {
         spawn_process_with_priority::<R>(name, arg, crate::task::TaskPriority::Normal)
     }
 }
 
-pub unsafe fn spawn_process_with_priority<R: BootRuntime>(name: &str, arg: usize, priority: crate::task::TaskPriority) -> Option<TaskId> {
+pub unsafe fn spawn_process_with_priority<R: BootRuntime>(name: &str, arg: StartupArg, priority: crate::task::TaskPriority) -> Option<TaskId> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
     let module = modules.iter().find(|m| m.name.contains(name))?;
@@ -215,7 +215,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(name: &str, arg: usize
     let aspace = rt.tasking().make_user_address_space();
 
     let (mut entry, stack_info, regions) = crate::task::loader::load_module(rt, aspace, module)?;
-    entry.arg0 = arg;
+    entry.arg0 = arg.to_raw();
 
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
@@ -239,4 +239,90 @@ pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
 
     // Safety: we are entering user mode with the provided entry point
     unsafe { rt.tasking().enter_user(entry) }
+}
+
+#[cfg(test)]
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{BootRuntime, BootRuntimeBase, BootTasking, UserEntry, UserTaskSpec};
+    use crate::task::TaskPriority;
+
+    struct MockArch;
+    #[derive(Clone, Copy, Default)]
+    struct MockContext(usize);
+    #[derive(Clone, Copy, Default)]
+    struct MockAddressSpace(u64);
+
+    struct MockRuntime;
+    impl BootRuntimeBase for MockRuntime {
+        fn putchar(&self, _c: u8) {}
+        fn mono_ticks(&self) -> u64 { 0 }
+        fn mono_freq_hz(&self) -> u64 { 1 }
+    }
+    impl BootRuntime for MockRuntime {
+        type Tasking = MockRuntime;
+        fn tasking(&self) -> &Self { self }
+        fn halt(&self) -> ! { loop {} }
+        fn irq_disable(&self) -> crate::IrqState { crate::IrqState(0) }
+        fn irq_restore(&self, _state: crate::IrqState) {}
+        fn phys_memory_map(&self) -> &'static [crate::PhysRange] { &[] }
+        fn phys_to_virt_offset(&self) -> u64 { 0 }
+        fn modules(&self) -> &'static [crate::BootModuleDesc] { &[] }
+        fn framebuffer(&self) -> Option<crate::FramebufferInfo> { None }
+    }
+    impl BootTasking for MockRuntime {
+        type Runtime = MockRuntime;
+        type Context = MockContext;
+        type AddressSpace = MockAddressSpace;
+        fn init(&self, _hhdm: u64) {}
+        fn init_kernel_context(&self, _entry: extern "C" fn(usize) -> !, _st: u64, _arg: usize) -> Self::Context { MockContext(_arg) }
+        fn init_user_context(&self, _spec: UserTaskSpec<Self::AddressSpace>, _kst: u64) -> Self::Context { MockContext(_spec.arg) }
+        unsafe fn switch(&self, _f: &mut Self::Context, _t: &Self::Context) {}
+        unsafe fn enter_user(&self, _e: UserEntry) -> ! { loop {} }
+        fn make_user_address_space(&self) -> Self::AddressSpace { MockAddressSpace(0) }
+        fn active_address_space(&self) -> Self::AddressSpace { MockAddressSpace(0) }
+        fn activate_address_space(&self, _as: Self::AddressSpace) {}
+        fn map_page(&self, _as: Self::AddressSpace, _v: u64, _p: u64, _pr: crate::MapPerms, _k: crate::MapKind, _a: &dyn crate::FrameAllocatorHook) -> Result<(), ()> { Ok(()) }
+        fn unmap_page(&self, _as: Self::AddressSpace, _v: u64) -> Result<Option<u64>, ()> { Ok(None) }
+        fn translate(&self, _as: Self::AddressSpace, _v: u64) -> Option<u64> { None }
+        fn tlb_flush_page(&self, _v: u64) {}
+    }
+
+    #[test]
+    fn test_spawn_arg_semantics() {
+        // Mock runtime pointer for the SCHEDULER lock expectation if needed?
+        // Scheduler::new() doesn't need the runtime, but Scheduler<R>::spawn needs rt.tasking()
+        // We need to set up the global RUNTIME for current() etc to work if used.
+        // But here we call sched.spawn directly.
+        
+        let mut sched = Scheduler::<MockRuntime>::new();
+        
+        // We need a way to mock crate::runtime::<MockRuntime>()
+        // In kernel/src/lib.rs: 
+        // pub fn runtime<R: BootRuntime>() -> &'static R { ... RUNTIME.downcast_ref::<R>() ... }
+        
+        static RUNTIME: MockRuntime = MockRuntime;
+        unsafe { crate::init_runtime(&RUNTIME) };
+
+        let cases = [
+            (StartupArg::None, 0),
+            (StartupArg::BootRegistry, 0x600000),
+            (StartupArg::DeviceId(0x123), 0x123),
+            (StartupArg::Raw(0x42), 0x42),
+        ];
+
+        for (arg, expected) in cases {
+            let id = sched.spawn(mock_entry, arg, TaskPriority::Normal);
+            let task = sched.tasks.iter().find(|t| t.id == id).unwrap();
+            
+            // In our MockTasking.init_kernel_context, we store arg in MockContext.0
+            assert_eq!(task.ctx.0, expected);
+            assert_eq!(arg.to_raw(), expected);
+        }
+    }
+
+    extern "C" fn mock_entry(_arg: usize) -> ! {
+        loop {}
+    }
 }

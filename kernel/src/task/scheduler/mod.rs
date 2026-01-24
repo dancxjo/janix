@@ -34,7 +34,7 @@ pub use spawn::{
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
 pub use types::{ScheduleReason, Scheduler, SleepEntry, StackFaultResult, SwitchParams, DEFAULT_TIMESLICE};
 
-use crate::task::{Task, TaskId, TaskPriority, TaskState};
+use crate::task::{Task, TaskId, TaskPriority, TaskState, StartupArg};
 use crate::{BootRuntime, BootTasking};
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
@@ -136,7 +136,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
     sched.current = Some(0);
     crate::kinfo!("  Creating idle task...");
 
-    let idle_id = sched.spawn(idle_task::<R>, 0, TaskPriority::Idle);
+    let idle_id = sched.spawn(idle_task::<R>, StartupArg::None, TaskPriority::Idle);
     sched.idle_task = Some(idle_id);
 
     // Idle task should not be in any runq (it's handled as fallback)

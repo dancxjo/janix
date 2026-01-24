@@ -8,8 +8,8 @@ use alloc::vec::Vec;
 
 pub(crate) static mut YIELD_HOOK: Option<fn()> = None;
 pub(crate) static mut EXIT_HOOK: Option<fn(i32)> = None;
-pub(crate) static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, usize, abi::types::StackInfo, crate::task::TaskPriority) -> TaskId> = None;
-pub(crate) static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, usize) -> Option<TaskId>> = None;
+pub(crate) static mut SPAWN_USER_HOOK: Option<unsafe fn(usize, usize, crate::task::StartupArg, abi::types::StackInfo, crate::task::TaskPriority) -> TaskId> = None;
+pub(crate) static mut SPAWN_PROCESS_HOOK: Option<unsafe fn(&str, crate::task::StartupArg) -> Option<TaskId>> = None;
 pub(crate) static mut CURRENT_TID_HOOK: Option<fn() -> u64> = None;
 pub(crate) static mut TASK_STATUS_HOOK: Option<fn(TaskId) -> Option<(TaskState, Option<i32>)>> = None;
 pub(crate) static mut SET_PRIORITY_HOOK: Option<fn(TaskId, crate::task::TaskPriority)> = None;
@@ -61,7 +61,7 @@ pub unsafe fn get_user_mapping_at_current(addr: usize) -> Option<VmRegionInfo> {
     }
 }
 
-pub unsafe fn spawn_process_current(name: &str, arg: usize) -> Option<TaskId> {
+pub unsafe fn spawn_process_current(name: &str, arg: crate::task::StartupArg) -> Option<TaskId> {
     if let Some(hook) = unsafe { SPAWN_PROCESS_HOOK } {
         unsafe { hook(name, arg) }
     } else {
@@ -72,7 +72,7 @@ pub unsafe fn spawn_process_current(name: &str, arg: usize) -> Option<TaskId> {
 pub unsafe fn spawn_user_thread_current(
     entry: usize,
     stack: usize,
-    arg: usize,
+    arg: crate::task::StartupArg,
     stack_info: abi::types::StackInfo,
     priority: crate::task::TaskPriority,
 ) -> Option<TaskId> {

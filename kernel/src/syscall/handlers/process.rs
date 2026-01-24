@@ -3,6 +3,7 @@
 use crate::syscall::validate::validate_user_range;
 use super::copyin;
 use abi::errors::{Errno, SysResult};
+use crate::task::StartupArg;
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
     crate::kprintln!("SYSCALL EXIT: code={}", code);
@@ -54,7 +55,7 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
         crate::task::scheduler::spawn_user_thread_current(
             req.entry,
             req.sp,
-            0,
+            StartupArg::None,
             req.stack,
             current_p,
         )
@@ -76,7 +77,7 @@ pub fn sys_spawn_process(name_ptr: usize, name_len: usize, arg: usize) -> SysRes
         copyin(&mut buf[..name_len], name_ptr)?;
     }
     let name = core::str::from_utf8(&buf[..name_len]).map_err(|_| Errno::EINVAL)?;
-    let tid = unsafe { crate::task::scheduler::spawn_process_current(name, arg) };
+    let tid = unsafe { crate::task::scheduler::spawn_process_current(name, StartupArg::Raw(arg)) };
     if let Some(tid) = tid {
         Ok(tid as usize)
     } else {

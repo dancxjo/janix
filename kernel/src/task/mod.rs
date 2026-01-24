@@ -12,6 +12,25 @@ use spin::Mutex;
 
 pub type TaskId = u64;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StartupArg {
+    None,
+    BootRegistry,
+    DeviceId(u64),
+    Raw(usize),
+}
+
+impl StartupArg {
+    pub fn to_raw(self) -> usize {
+        match self {
+            StartupArg::None => 0,
+            StartupArg::BootRegistry => 0x600000,
+            StartupArg::DeviceId(id) => id as usize,
+            StartupArg::Raw(val) => val,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TaskPriority {
     Idle = 0,
@@ -58,13 +77,13 @@ pub fn init<R: BootRuntime>() {
     scheduler::init::<R>();
 }
 
-pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: usize) -> TaskId {
+pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: StartupArg) -> TaskId {
     scheduler::spawn::<R>(entry, arg)
 }
 
 pub fn spawn_with_priority<R: BootRuntime>(
     entry: extern "C" fn(usize) -> !,
-    arg: usize,
+    arg: StartupArg,
     priority: TaskPriority,
 ) -> TaskId {
     scheduler::spawn_with_priority::<R>(entry, arg, priority)

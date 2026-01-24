@@ -17,6 +17,7 @@ pub mod trace;
 
 use abi::vm::{VmBackingKind, VmMapFlags, VmProt, VmRegionInfo};
 use abi::errors::Errno;
+use crate::task::StartupArg;
 
 #[unsafe(no_mangle)]
 pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
@@ -525,7 +526,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         unsafe {
             contract!("Spawning init process...");
             let mut entry = user_entry;
-            entry.arg0 = 0x600000; // arg0 = registry ptr
+            entry.arg0 = StartupArg::BootRegistry.to_raw(); // arg0 = registry ptr
             // Spawn at Normal priority - all tasks share the same priority for fair scheduling
             crate::task::scheduler::spawn_user_task_full::<R>(entry, aspace, stack_info, regions, crate::task::TaskPriority::Normal);
         }
@@ -554,9 +555,9 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             kinfo!("No modules found. Checking threads_supported...");
             if runtime.threads_supported() {
                 kinfo!("Spawning Thread A...");
-                crate::task::spawn::<R>(thread_a, 1);
+                crate::task::spawn::<R>(thread_a, StartupArg::Raw(1));
                 kinfo!("Spawning Thread B...");
-                crate::task::spawn::<R>(thread_b, 2);
+                crate::task::spawn::<R>(thread_b, StartupArg::Raw(2));
             }
         }
     }

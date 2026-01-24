@@ -203,7 +203,7 @@ static ROOT_TID: AtomicU64 = AtomicU64::new(0);
 pub fn init_root_service<R: crate::BootRuntime>() {
     *ROOT_INBOX.lock() = Some(VecDeque::new());
     crate::kinfo!("Spawning Root service...");
-    let tid = crate::task::spawn_with_priority::<R>(service::root_main::<R>, 0, crate::task::TaskPriority::High);
+    let tid = crate::task::spawn_with_priority::<R>(service::root_main::<R>, crate::task::StartupArg::None, crate::task::TaskPriority::High);
     ROOT_TID.store(tid, Ordering::SeqCst);
 }
 

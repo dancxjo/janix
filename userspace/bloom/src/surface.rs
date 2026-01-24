@@ -1,3 +1,6 @@
+//! Pixels are canonical AARRGGBB in u32.
+//! Alpha 255 is fully opaque, 0 is fully transparent.
+
 pub struct Surface {
     pub ptr: *mut u8,
     pub len: usize,

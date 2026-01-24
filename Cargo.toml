@@ -32,7 +32,7 @@ members = [
     "userspace/root_watch_tester",
     "userspace/scheduler_fairness",
     "userspace/photosynthesis",
-    "userspace/blossom",
+    "userspace/fontd",
 ]
 resolver = "2"
 

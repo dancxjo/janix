@@ -1,18 +1,12 @@
-#![allow(dead_code)]
-
-extern crate alloc;
-
-use stem::thing::ThingId;
-use abi::ids::HandleId;
-use stem::thing::sys::{bytespace_info, describe_thing, find, prop_get};
-use stem::thing::sys::bytespace_read;
+use stem::thing::{ThingId, HandleId};
+use stem::thing::sys::{bytespace_info, describe_thing, find, prop_get, bytespace_read};
 use abi::schema::{kinds, keys, rels};
 use abi::root::RootWatchFilter;
 use abi::types::{WatchMode, WatchSpec};
 use stem::{root_watch, syscall, info};
 use crate::font_graph;
-
 use crate::asset::AssetBank;
+
 pub static ASSETS: AssetBank = AssetBank::new();
 
 pub extern "C" fn wallpaper_loader_entry() -> ! {
@@ -188,27 +182,7 @@ pub extern "C" fn font_loader_entry() -> ! {
 
 pub extern "C" fn cursor_loader_entry() -> ! {
     stem::sleep_ms(300);
-    info!("blossom cursor_loader started");
-    #[cfg(feature = "svg-cursors")]
-    let candidates = [
-        "/assets/cursors/future/default.svg",
-        "/assets/cursors/future/pointer.svg",
-        "/assets/cursors/plain/Normal.cur",
-    ];
-    #[cfg(not(feature = "svg-cursors"))]
-    let candidates = ["/assets/cursors/plain/Normal.cur"];
-    let mut found = false;
-    for path in candidates.iter() {
-        if ASSETS.probe_asset_exists(path) {
-            info!("blossom cursor_loader found asset: {}", path);
-            ASSETS.enqueue_cursor_load(path);
-            found = true;
-            break;
-        }
-    }
-    if !found {
-        info!("blossom cursor_loader: no cursor asset found!");
-    }
+    ASSETS.enqueue_cursor_load("/assets/cursors/plain/Normal.cur");
     loop {
         stem::syscall::sleep_ms(10000);
     }

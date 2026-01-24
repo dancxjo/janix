@@ -10,7 +10,7 @@ use abi::schema::{kinds, keys, rels};
 use crate::asset::{AssetBank, FontAsset};
 use spin::Mutex;
 use stem::thing::ThingId;
-use stem::thing::sys::{bytespace_info, bytespace_read, find, get_edges, intern, prop_get};
+use stem::thing::sys::{bytespace_info, bytespace_read, find, get_edges, intern, prop_get, prop_set};
 
 #[derive(Clone, Copy, Debug)]
 pub struct FontStyle {
@@ -109,6 +109,7 @@ pub struct FontGraph {
     file_name_index: BTreeMap<String, ThingId>,
     resolve_cache: BTreeMap<ResolveKey, ThingId>,
     font_cache: BTreeMap<ThingId, FontAsset>,
+    glyph_cache: BTreeMap<(ThingId, u16, u32), ThingId>,
     dirty: bool,
 }
 
@@ -123,6 +124,7 @@ impl FontGraph {
             file_name_index: BTreeMap::new(),
             resolve_cache: BTreeMap::new(),
             font_cache: BTreeMap::new(),
+            glyph_cache: BTreeMap::new(),
             dirty: true,
         }
     }
@@ -147,6 +149,7 @@ impl FontGraph {
         self.file_name_index.clear();
         self.resolve_cache.clear();
         self.font_cache.clear();
+        self.glyph_cache.clear();
         self.dirty = false;
 
         let symbols = FontSymbols::intern();
@@ -330,7 +333,7 @@ impl FontGraph {
         best_face_for_style(&family.faces, &self.faces, style)
     }
 
-    pub fn font_for_face(&mut self, face_id: ThingId) -> Option<&FontAsset> {
+    pub fn font_for_face(&mut self, face_id: ThingId) -> Option<FontAsset> {
         let face = self.faces.get(&face_id)?;
         let file = self.files.get(&face.file_id)?;
         if !self.font_cache.contains_key(&face.file_id) {
@@ -342,7 +345,7 @@ impl FontGraph {
                 self.font_cache.insert(face.file_id, asset);
             }
         }
-        self.font_cache.get(&face.file_id)
+        self.font_cache.get(&face.file_id).cloned()
     }
 
     pub fn has_fonts(&self) -> bool {
@@ -440,6 +443,41 @@ impl FontGraph {
             return true;
         }
         false
+    }
+
+    pub fn find_glyph(&mut self, face_id: ThingId, px_size: u16, codepoint: u32) -> Option<ThingId> {
+        let key = (face_id, px_size, codepoint);
+        if let Some(id) = self.glyph_cache.get(&key) {
+            return Some(*id);
+        }
+
+        // Check the graph for existing glyph
+        let mut edges = [abi::types::Edge::default(); 64];
+        if let Ok(count) = get_edges(face_id, &mut edges) {
+            let has_glyph_rel = intern(rels::FONT_HAS_GLYPH).unwrap_or(0) as u64;
+            for edge in edges.iter().take(count) {
+                if edge.predicate.to_u64_lossy() == has_glyph_rel {
+                    // Check if this glyph matches px_size and codepoint
+                    let gid = edge.to;
+                    let g_cp = prop_get(gid, keys::FONT_GLYPH_CODEPOINT).unwrap_or(0) as u32;
+                    let g_px = prop_get(gid, keys::FONT_GLYPH_PX_SIZE).unwrap_or(0) as u16;
+                    if g_cp == codepoint && g_px == px_size {
+                        self.glyph_cache.insert(key, gid);
+                        return Some(gid);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn request_glyph(&self, face_id: ThingId, px_size: u16, codepoint: u32) {
+        // Enqueue a FONT_GLYPH_REQUEST
+        if let Ok(req_id) = stem::thing::sys::create_node(kinds::FONT_GLYPH_REQUEST) {
+            let _ = prop_set(req_id, keys::FONT_REQUEST_FACE, face_id.to_u64_lossy());
+            let _ = prop_set(req_id, keys::FONT_REQUEST_CODEPOINT, codepoint as u64);
+            let _ = prop_set(req_id, keys::FONT_REQUEST_PX_SIZE, px_size as u64);
+        }
     }
 }
 

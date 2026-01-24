@@ -83,7 +83,11 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             is_init: false,
             features: vec![],
         },
-        // Service daemons
+        ProgramConfig {
+            name: "fontd",
+            is_init: false,
+            features: vec![],
+        },
         ProgramConfig {
             name: "ingestd",
             is_init: false,

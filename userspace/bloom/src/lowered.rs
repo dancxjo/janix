@@ -1,4 +1,5 @@
 use alloc::vec::Vec;
+use alloc::string::String;
 use crate::drawlist::{DrawList, DrawCmd, Insets};
 use crate::asset::Image;
 use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA};
@@ -52,6 +53,31 @@ pub enum LowLevelOp {
         filter: FilterMode,
         blend: BlendMode, 
         const_alpha: Option<u8>,
+    },
+
+    // Modern Text & Vector
+    TextSpan {
+        text: String,
+        pos: Point,
+        size: f32,
+        color: Color,
+        font_name: Option<String>,
+        font_debug: bool,
+    },
+    FillPath {
+        path: alloc::sync::Arc<crate::isa::Path2D>,
+        color: Color,
+        fill_rule: crate::isa::FillRule,
+        aa: EdgeAA,
+    },
+    StrokePath {
+        path: alloc::sync::Arc<crate::isa::Path2D>,
+        color: Color,
+        width: f32,
+        cap: crate::isa::LineCap,
+        join: crate::isa::LineJoin,
+        miter_limit: f32,
+        aa: EdgeAA,
     },
 }
 
@@ -280,6 +306,38 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
                     blend: BlendMode::SrcOver,
                     const_alpha: None,
                 });
+            }
+            
+            DrawCmd::Text { text, font, rect, size, color, font_debug } => {
+                out.ops.push(LowLevelOp::TextSpan {
+                    text: text.clone(),
+                    pos: Point::new(rect.x(), rect.y()),
+                    size: *size,
+                    color: *color,
+                    font_name: font.clone(),
+                    font_debug: *font_debug,
+                });
+            }
+
+            DrawCmd::Path { path, color, fill_rule, stroke } => {
+                if let Some(s) = stroke {
+                    out.ops.push(LowLevelOp::StrokePath {
+                        path: path.clone(),
+                        color: *color,
+                        width: s.width,
+                        cap: s.cap,
+                        join: s.join,
+                        miter_limit: s.miter_limit,
+                        aa: EdgeAA::Coverage8,
+                    });
+                } else {
+                    out.ops.push(LowLevelOp::FillPath {
+                        path: path.clone(),
+                        color: *color,
+                        fill_rule: *fill_rule,
+                        aa: EdgeAA::Coverage8,
+                    });
+                }
             }
             
             // Ignored/Unimplemented for v0

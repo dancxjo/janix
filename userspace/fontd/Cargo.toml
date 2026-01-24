@@ -1,16 +1,12 @@
 [package]
-name = "blossom"
+name = "fontd"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
 abi = { path = "../../abi" }
+log = "0.4.17"
 fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
-serde = { version = "1.0", default-features = false, features = ["derive", "alloc", "rc"] }
-spin = "0.9"
-libm = "0.2"
-
-[features]
-default = ["svg-cursors"]
-svg-cursors = []
+ttf-parser = { version = "0.25", default-features = false, features = ["no-std-float"] }
+hashbrown = { version = "0.14", default-features = false, features = ["ahash", "inline-more"] }

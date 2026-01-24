@@ -145,7 +145,8 @@ fn process_asset(id: u64) {
     if let Some(guess) = sniff(slice) {
         let _ = write_fact(id, guess.mime, guess.confidence);
         if is_font_mime(guess.mime) {
-            ingest_font(bytespace_id, size, slice);
+            // NEW: Delegate to FontD via FONT_IMPORT_REQUEST
+            let _ = create_font_import_request(bytespace_id);
         }
     } else {
         let _ = write_fact(id, "application/octet-stream", 0);
@@ -189,6 +190,12 @@ fn write_fact(target_id: u64, mime: &str, confidence: u16) -> Result<(), abi::er
 
 fn is_font_mime(mime: &str) -> bool {
     mime.starts_with("font/") || mime == "application/font-sfnt"
+}
+
+fn create_font_import_request(bytespace_id: ThingId) -> Result<ThingId, abi::errors::Errno> {
+    let req_id = create_node(kinds::FONT_IMPORT_REQUEST)?;
+    let _ = prop_set(req_id, keys::FONT_IMPORT_ASSET, bytespace_id.to_u64_lossy());
+    Ok(req_id)
 }
 
 fn ingest_font(bytespace_id: ThingId, size: usize, data: &[u8]) {

@@ -24,6 +24,12 @@ mod raster;
 mod reclaimer;
 mod render_state;
 mod surface;
+mod font_graph;
+mod ui;
+mod svg;
+pub mod painter_resources;
+
+pub use painter_resources::ASSETS;
 
 use abi::ids::HandleId;
 use stem::thing::ThingId;
@@ -38,7 +44,10 @@ use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
 use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
 use crate::cursor::CursorState;
+use crate::asset::AssetBank;
+use crate::ui::{UiPipeline, FullRefreshReason};
 use alloc::collections::BTreeSet;
+use alloc::sync::Arc;
 
 fn clear_surface(surface: &mut surface::Surface, color: u32) {
     let w = surface.width();
@@ -109,6 +118,23 @@ fn main(arg: usize) -> ! {
         )
     };
 
+    // UI Root
+    let mut roots = [ThingId::default(); 1];
+    let ui_root = match stem::thing::sys::find(abi::schema::kinds::UI_ROOT, &mut roots) {
+        Ok(count) if count > 0 => roots[0],
+        _ => stem::ui::UiBuilder::create_root(),
+    };
+
+    let mut ui_pipeline = UiPipeline::new();
+    ui_pipeline.set_root(ui_root);
+    
+    // Spawn asset workers
+    use stem::stack::{Stack, StackSpec};
+    let s_spec = StackSpec { reserve_bytes: 256 * 1024, ..StackSpec::default() };
+    let _ = stem::thread::spawn_on(Stack::alloc_growing_stack(s_spec).unwrap(), painter_resources::wallpaper_loader_entry);
+    let _ = stem::thread::spawn_on(Stack::alloc_growing_stack(s_spec).unwrap(), painter_resources::cursor_loader_entry);
+    let _ = stem::thread::spawn_on(Stack::alloc_growing_stack(s_spec).unwrap(), painter_resources::font_loader_entry);
+
     let mut loop_ctrl = FrameLoop::new(60);
     let (screen_w, screen_h) = (target.width as i32, target.height as i32);
     
@@ -119,40 +145,42 @@ fn main(arg: usize) -> ! {
     let mut pressed_keys: BTreeSet<abi::hid::Key> = BTreeSet::new();
     let accel_cfg = MouseAccelConfig::default();
     let mut accel_state = MouseAccelState::default();
-    
-    // UI Root
-    let mut roots = [ThingId::default(); 1];
-    let ui_root = match stem::thing::sys::find(abi::schema::kinds::UI_ROOT, &mut roots) {
-        Ok(count) if count > 0 => roots[0],
-        _ => stem::ui::UiBuilder::create_root(),
-    };
 
-    // We watch for UI_PRESENT_EPOCH on windows/root.
-    let epoch_pred = stem::thing::sys::intern(keys::UI_PRESENT_EPOCH).unwrap_or(0);
-    let mut ui_watch_id = 0;
-    let mut ui_watch_buf = [0u8; 4096];
-    let mut ui_watch_seq = 0u64;
-
-    if epoch_pred != 0 {
-        let filter = abi::root::RootWatchFilter::predicate(epoch_pred);
-        let spec = abi::types::WatchSpec {
-            mode: abi::types::WatchMode::StreamOnly as u32,
-            start_seq: 0,
+    // Glyph Arrival Watch
+    let glyph_watch_pred = stem::thing::sys::intern(kinds::FONT_GLYPH).unwrap_or(0);
+    let glyph_watch = if glyph_watch_pred != 0 {
+        use abi::types::{WatchSpec, WatchMode};
+        use abi::root::RootWatchFilter;
+        let filter = RootWatchFilter::predicate(glyph_watch_pred);
+        let spec = WatchSpec {
+            mode: WatchMode::StreamOnly as u32,
             filter_ptr: &filter as *const _ as u64,
-            filter_len: core::mem::size_of::<abi::root::RootWatchFilter>() as u64,
+            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
             ..Default::default()
         };
-        if let Ok(wid) = stem::syscall::root_watch_open(&spec) {
-            ui_watch_id = wid;
-            let _ = stem::root_watch::watch_drain(wid, &mut ui_watch_buf, |_, _| {});
-        }
-    }
+        stem::syscall::root_watch_open(&spec).ok()
+    } else {
+        None
+    };
 
     loop {
         loop_ctrl.next();
+        ASSETS.publish_pending();
+
+        // 0. Check for new glyphs in graph
+        if let Some(gw) = glyph_watch {
+            let mut g_seq = 0u64;
+            let mut g_buf = [0u8; 1024];
+            if let Ok(len) = stem::syscall::root_watch_next(gw, &mut g_seq, &mut g_buf) {
+                if len > 0 {
+                    crate::font_graph::mark_dirty();
+                    ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::AssetChange);
+                }
+            }
+        }
         
         // Input processing
-        let _old_cursor_bbox = prev_cursor_bbox;
+        let old_cursor_bbox = prev_cursor_bbox;
         if bristle_evt_handle != 0 {
             poll_bristle(
                 bristle_evt_handle, 
@@ -165,95 +193,66 @@ fn main(arg: usize) -> ! {
             );
         }
         
+        if let Some(asset) = ASSETS.get_cursor() {
+            cursor.set_asset(asset);
+        }
         let new_cursor_bbox = cursor.bbox();
         prev_cursor_bbox = new_cursor_bbox;
 
-        // Drain watches
-        if ui_watch_id != 0 {
-            loop {
-                match stem::syscall::root_watch_next(ui_watch_id, &mut ui_watch_seq, &mut ui_watch_buf) {
-                    Ok(len) if len > 0 => {},
-                    Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,
-                    _ => break,
-                }
-            }
-        }
-
-        // Build DrawList from Snapshots
+        // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
-
-        // 1. Wallpaper (Solid Color)
-        list.clear(geometry::Color::new(16, 16, 24, 255));
-
-        // 2. Windows
-        let mut windows = [ThingId::default(); 64];
-        let win_count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
-
-        for i in 0..win_count {
-            let wid = windows[i];
-            if let (Ok(bs_id), Ok(w), Ok(h), Ok(x), Ok(y)) = (
-                stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_BYTESPACE),
-                stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_WIDTH),
-                stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_HEIGHT),
-                stem::thing::sys::prop_get(wid, keys::UI_X),
-                stem::thing::sys::prop_get(wid, keys::UI_Y),
-            ) {
-                if bs_id != 0 {
-                    let stride = stem::thing::sys::prop_get(wid, keys::UI_SNAPSHOT_STRIDE).unwrap_or(w * 4);
-                    list.commands().push(drawlist::DrawCmd::DrawSnapshot {
-                        bs_id,
-                        width: w as u32,
-                        height: h as u32,
-                        stride: stride as u32,
-                        dest: geometry::Rect::new(x as i32, y as i32, w as i32, h as i32),
-                    });
-                } else {
-                    // Placeholder
-                    let w = stem::thing::sys::prop_get(wid, keys::UI_WIDTH).unwrap_or(100);
-                    let h = stem::thing::sys::prop_get(wid, keys::UI_HEIGHT).unwrap_or(100);
-                    let x = stem::thing::sys::prop_get(wid, keys::UI_X).unwrap_or(0);
-                    let y = stem::thing::sys::prop_get(wid, keys::UI_Y).unwrap_or(0);
-                    list.rect(x as i32, y as i32, w as i32, h as i32, geometry::Color::new(50, 50, 50, 255));
-
-                    // Request paint
-                    let epoch = stem::thing::sys::prop_get(wid, keys::UI_PAINT_EPOCH).unwrap_or(0);
-                    let _ = stem::thing::sys::prop_set(wid, keys::UI_PAINT_EPOCH, epoch + 1);
-                }
-            }
+        
+        // Render wallpaper first if available
+        if let Some(wp) = ASSETS.get_wallpaper() {
+            list.blit_image(&wp, 0, 0);
+        } else {
+            list.clear(crate::geometry::Color::from_u32(0xFF101018));
         }
 
-        // 3. Cursor
-        let cursor_bs = stem::thing::sys::prop_get(ui_root, keys::UI_CURSOR_SNAPSHOT_BYTESPACE).unwrap_or(0);
-        if cursor_bs != 0 {
-             let w = stem::thing::sys::prop_get(ui_root, keys::UI_CURSOR_SNAPSHOT_WIDTH).unwrap_or(0);
-             let h = stem::thing::sys::prop_get(ui_root, keys::UI_CURSOR_SNAPSHOT_HEIGHT).unwrap_or(0);
-             let stride = stem::thing::sys::prop_get(ui_root, keys::UI_CURSOR_SNAPSHOT_STRIDE).unwrap_or(w * 4);
-             let cx = cursor.x;
-             let cy = cursor.y;
-             // Assume hotspot is handled by Blossom painting (e.g. padding) or simple top-left for now.
-             list.commands().push(drawlist::DrawCmd::DrawSnapshot {
-                 bs_id: cursor_bs,
-                 width: w as u32,
-                 height: h as u32,
-                 stride: stride as u32,
-                 dest: geometry::Rect::new(cx, cy, w as i32, h as i32),
-             });
+        let ui_result = ui_pipeline.run(screen_w, screen_h, &mut list, &ASSETS);
+        
+        // Damage Tracking
+        let bounds = damage::Rect::full(screen_w, screen_h);
+        let mut damage = damage::Damage::empty(bounds);
+        for rect in &ui_result.damage {
+            damage.add_rect(*rect);
+        }
+        if old_cursor_bbox != new_cursor_bbox {
+            damage.add_rect(old_cursor_bbox);
+            damage.add_rect(new_cursor_bbox);
+        }
+        if ui_result.changed && damage.is_empty() {
+            damage = damage::Damage::full(bounds);
+        }
+
+        if damage.is_empty() {
+            presenter.pump();
+            loop_ctrl.sleep();
+            continue;
         }
 
         // Render
-        let bounds = damage::Rect::full(screen_w, screen_h);
-        let damage = damage::Damage::full(bounds);
-
         let token = presenter.acquire_frame(
             crate::frame::FrameSpec::new(target.width, target.height, target.format),
-            crate::frame::AssetGeneration::ZERO,
+            ASSETS.current_generation(),
         );
         let mut builder = FrameBuilder::new(token);
         
-        clear_surface(&mut surface, 0xFF101018);
-        builder.mark_full_damage();
+        if damage.is_full {
+             builder.mark_full_damage();
+        } else {
+             for rect in damage.iter() {
+                 builder.add_damage(rect);
+             }
+        }
         
-        raster::execute_with_damage(&mut surface, &list, &damage, false);
+        // Execute drawlist (wallpaper + UI)
+        raster::execute_with_damage(&mut surface, &list, &damage, ui_result.solid_text);
+        
+        // Always draw cursor on top (outside damage tracking for lowest latency)
+        // Note: cursor.emit_drawlist already adds it to the list for damage-tracked rendering,
+        // but draw_cursor_overlay was software blending into the final surface.
+        // We'll rely on the DrawList-based cursor for now.
 
         let token = builder.finish();
         presenter.present_frame(token);

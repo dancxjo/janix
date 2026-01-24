@@ -168,6 +168,25 @@ pub mod keys {
     pub const FONT_COVERAGE_COUNT: &str = "font.coverage_count";
     pub const UI_FONT_STACK: &str = "ui.font_stack";
     pub const UI_FONT_DEBUG: &str = "ui.font_debug";
+
+    // Font Glyph Properties
+    pub const FONT_GLYPH_CODEPOINT: &str = "font.glyph.codepoint";
+    pub const FONT_GLYPH_PX_SIZE: &str = "font.glyph.px_size";
+    pub const FONT_GLYPH_RASTER_MODE: &str = "font.glyph.raster_mode";
+    pub const FONT_GLYPH_ADVANCE: &str = "font.glyph.advance";
+    pub const FONT_GLYPH_WIDTH: &str = "font.glyph.width";
+    pub const FONT_GLYPH_HEIGHT: &str = "font.glyph.height";
+    pub const FONT_GLYPH_OFFSET_X: &str = "font.glyph.offset_x";
+    pub const FONT_GLYPH_OFFSET_Y: &str = "font.glyph.offset_y";
+    pub const FONT_GLYPH_BITMAP: &str = "font.glyph.bitmap"; // Bytespace ID
+    pub const FONT_GLYPH_CACHE_KEY: &str = "font.glyph.cache_key";
+
+    // Font Request Properties
+    pub const FONT_REQUEST_FACE: &str = "font.request.face";
+    pub const FONT_REQUEST_CODEPOINT: &str = "font.request.codepoint";
+    pub const FONT_REQUEST_PX_SIZE: &str = "font.request.px_size";
+    pub const FONT_IMPORT_ASSET: &str = "font.import.asset";
+    pub const FONT_IMPORT_STATUS: &str = "font.import.status";
 }
 
 pub mod kinds {
@@ -222,6 +241,10 @@ pub mod kinds {
     pub const FONT_FACE: &str = "font.Face";
     pub const FONT_FILE: &str = "font.File";
     pub const FONT_COVERAGE: &str = "font.Coverage";
+    pub const FONT_INSTANCE: &str = "font.Instance";
+    pub const FONT_GLYPH: &str = "font.Glyph";
+    pub const FONT_IMPORT_REQUEST: &str = "font.ImportRequest";
+    pub const FONT_GLYPH_REQUEST: &str = "font.GlyphRequest";
 
     pub const CLOCK: &str = "Clock";
 
@@ -272,6 +295,13 @@ pub mod rels {
     pub const FONT_MEMBER_OF: &str = "font.member_of";
     pub const FONT_FALLBACK_AFTER: &str = "font.fallback_after";
     pub const FONT_ALIAS: &str = "font.alias";
+    pub const FONT_HAS_FACE: &str = "font.has_face";
+    pub const FONT_HAS_ASSET: &str = "font.has_asset";
+    pub const FONT_HAS_COVERAGE: &str = "font.has_coverage";
+    pub const FONT_HAS_GLYPH: &str = "font.has_glyph";
+    pub const FONT_HAS_INSTANCE: &str = "font.has_instance";
+    pub const FONT_HAS_RESULT: &str = "font.has_result";
+    pub const FONT_FALLBACK_TO: &str = "font.fallback_to";
 
     // XML Relationships
     pub const HAS_ROOT: &str = "HAS_ROOT";

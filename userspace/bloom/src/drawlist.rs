@@ -1,7 +1,7 @@
 extern crate alloc;
 
 use alloc::sync::Arc;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 
@@ -66,6 +66,37 @@ pub enum DrawCmd {
     
     // Legacy Cursor (Specific to Bloom's optimization need, kept as first-class for now)
     Cursor { frame: crate::asset::CursorFrame, position: Point },
+    
+    // --- Modern Vector & Text ---
+    Text { 
+        text: String, 
+        font: Option<String>, 
+        rect: Rect, // dest rect for layout
+        size: f32, 
+        color: Color,
+        font_debug: bool,
+    },
+    Path {
+        path: Arc<crate::isa::Path2D>,
+        color: Color,
+        fill_rule: crate::isa::FillRule,
+        stroke: Option<Stroke>,
+    },
+    FillPath {
+        path: Arc<crate::isa::Path2D>,
+        color: Color,
+        fill_rule: crate::isa::FillRule,
+        aa: EdgeAA,
+    },
+    StrokePath {
+        path: Arc<crate::isa::Path2D>,
+        color: Color,
+        width: i32,
+        cap: crate::isa::LineCap,
+        join: crate::isa::LineJoin,
+        miter_limit: f32,
+        aa: EdgeAA,
+    },
 
     // --- Compositing & Effects ---
     SetOpacity { alpha: u8 },
@@ -109,6 +140,10 @@ impl DrawCmd {
                  let dy = position.y - frame.hotspot_y as i32;
                  Rect::new(dx, dy, frame.image.width as i32 + 3, frame.image.height as i32 + 3)
             }
+            DrawCmd::Text { rect, .. } => *rect,
+            DrawCmd::Path { .. } => Rect::new(0, 0, 10000, 10000), // Paths need better bbox
+            DrawCmd::FillPath { .. } => Rect::new(0, 0, 10000, 10000),
+            DrawCmd::StrokePath { .. } => Rect::new(0, 0, 10000, 10000),
             // Fallback for others (return empty or minimal rect)
             _ => Rect::default(),
         }
@@ -121,7 +156,9 @@ pub struct DrawList {
 
 impl DrawList {
     pub fn new() -> Self {
-        Self { cmds: Vec::new() }
+        Self { 
+            cmds: Vec::new(),
+        }
     }
 
     pub fn commands(&mut self) -> &mut Vec<DrawCmd> {
@@ -208,7 +245,46 @@ impl DrawList {
         });
     }
 
+    pub fn text(&mut self, text: &str, font: Option<&str>, x: i32, y: i32, size: f32, color: Color) {
+        self.cmds.push(DrawCmd::Text {
+            text: text.to_string(),
+            font: font.map(|s| s.to_string()),
+            rect: Rect::new(x, y, 0, 0), // Point-based text
+            size,
+            color,
+            font_debug: false,
+        });
+    }
+
+    pub fn text_font_debug(&mut self, text: &str, font: Option<&str>, x: i32, y: i32, size: f32, color: Color, font_debug: bool) {
+        self.cmds.push(DrawCmd::Text {
+            text: text.to_string(),
+            font: font.map(|s| s.to_string()),
+            rect: Rect::new(x, y, 0, 0),
+            size,
+            color,
+            font_debug,
+        });
+    }
+
+    pub fn path(&mut self, path: Arc<crate::isa::Path2D>, color: Color, fill_rule: crate::isa::FillRule) {
+        self.cmds.push(DrawCmd::Path {
+            path,
+            color,
+            fill_rule,
+            stroke: None,
+        });
+    }
+
     pub fn iter(&self) -> core::slice::Iter<'_, DrawCmd> {
         self.cmds.iter()
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct Stroke {
+    pub width: f32,
+    pub cap: crate::isa::LineCap,
+    pub join: crate::isa::LineJoin,
+    pub miter_limit: f32,
 }

@@ -3,6 +3,7 @@ use crate::runtime::ArchRuntime;
 use core::arch::asm;
 use kernel::time::MonotonicClamp;
 use kernel::{FrameAllocatorHook, IrqState, MapKind, MapPerms, UserEntry, UserTaskSpec};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub mod cmos;
 pub mod gdt;
@@ -15,15 +16,19 @@ pub mod trap;
 pub mod pic;
 pub mod acpi;
 pub mod ioapic;
+pub mod pci;
+pub mod apic;
 
 pub struct X86_64Runtime {
     clamp: MonotonicClamp,
+    hhdm_offset: AtomicU64,
 }
 
 impl X86_64Runtime {
     pub const fn new() -> Self {
         Self {
             clamp: MonotonicClamp::new(),
+            hhdm_offset: AtomicU64::new(0),
         }
     }
 
@@ -90,6 +95,7 @@ impl ArchRuntime for X86_64Runtime {
     type AddressSpace = X86_64AddressSpace;
 
     fn init(&self, hhdm_offset: u64) {
+        self.hhdm_offset.store(hhdm_offset, Ordering::Relaxed);
         unsafe {
             gdt::init();
 
@@ -299,6 +305,23 @@ impl ArchRuntime for X86_64Runtime {
 
     fn debug_active_aspace_root(&self) -> u64 {
         paging::active_address_space().0
+    }
+
+    fn pci_cfg_read32(&self, bus: u8, dev: u8, func: u8, offset: u8) -> Result<u32, abi::errors::Errno> {
+        Ok(pci::read_config(bus, dev, func, offset))
+    }
+    fn pci_cfg_write32(&self, bus: u8, dev: u8, func: u8, offset: u8, value: u32) -> Result<(), abi::errors::Errno> {
+        pci::write_config(bus, dev, func, offset, value);
+        Ok(())
+    }
+
+    fn lapic_id(&self) -> Result<u32, abi::errors::Errno> {
+        let base = apic::base_phys();
+        let hhdm = self.hhdm_offset.load(Ordering::Relaxed);
+        Ok(apic::id(base, hhdm))
+    }
+    fn lapic_base_phys(&self) -> Result<u64, abi::errors::Errno> {
+        Ok(apic::base_phys())
     }
 }
 

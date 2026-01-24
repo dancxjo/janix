@@ -100,6 +100,20 @@ pub trait ArchRuntime {
     fn debug_active_aspace_root(&self) -> u64 {
         0
     }
+
+    fn pci_cfg_read32(&self, _bus: u8, _dev: u8, _func: u8, _offset: u8) -> Result<u32, abi::errors::Errno> {
+        Err(abi::errors::Errno::NotSupported)
+    }
+    fn pci_cfg_write32(&self, _bus: u8, _dev: u8, _func: u8, _offset: u8, _value: u32) -> Result<(), abi::errors::Errno> {
+        Err(abi::errors::Errno::NotSupported)
+    }
+
+    fn lapic_id(&self) -> Result<u32, abi::errors::Errno> {
+        Err(abi::errors::Errno::NotSupported)
+    }
+    fn lapic_base_phys(&self) -> Result<u64, abi::errors::Errno> {
+        Err(abi::errors::Errno::NotSupported)
+    }
 }
 
 // --- Generic Runtime ---
@@ -166,6 +180,20 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     }
     fn mono_freq_hz(&self) -> u64 {
         self.arch.mono_freq_hz()
+    }
+
+    fn pci_cfg_read32(&self, bus: u8, dev: u8, func: u8, offset: u8) -> Result<u32, abi::errors::Errno> {
+        self.arch.pci_cfg_read32(bus, dev, func, offset)
+    }
+    fn pci_cfg_write32(&self, bus: u8, dev: u8, func: u8, offset: u8, value: u32) -> Result<(), abi::errors::Errno> {
+        self.arch.pci_cfg_write32(bus, dev, func, offset, value)
+    }
+
+    fn lapic_id(&self) -> Result<u32, abi::errors::Errno> {
+        self.arch.lapic_id()
+    }
+    fn lapic_base_phys(&self) -> Result<u64, abi::errors::Errno> {
+        self.arch.lapic_base_phys()
     }
 }
 
@@ -261,6 +289,7 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     fn debug_active_aspace_root(&self) -> u64 {
         self.arch.debug_active_aspace_root()
     }
+
 }
 
 impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {

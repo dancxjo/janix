@@ -4,53 +4,14 @@ use abi::schema::{confidence, keys, kinds, rels, source};
 use alloc::format;
 use stem::pci;
 
-// PCI Config Space Access (Legacy Mechanism #1)
-const PCI_CONFIG_ADDRESS: u16 = 0xCF8;
-const PCI_CONFIG_DATA: u16 = 0xCFC;
-const PCI_ENABLE_BIT: u32 = 0x80000000;
-
-#[inline]
-unsafe fn outl(_port: u16, _val: u32) {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        core::arch::asm!("out dx, eax", in("dx") _port, in("eax") _val);
-    }
-}
-
-#[inline]
-unsafe fn inl(_port: u16) -> u32 {
-    #[cfg(target_arch = "x86_64")]
-    unsafe {
-        let ret: u32;
-        core::arch::asm!("in eax, dx", out("eax") ret, in("dx") _port);
-        return ret;
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    0xFFFFFFFF
-}
-
+// Wrappers for BootRuntime PCI access
+// 0xFFFFFFFF is returned on error to simulate "not present"
 pub(crate) unsafe fn pci_read_config(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
-    let address = PCI_ENABLE_BIT
-        | ((bus as u32) << 16)
-        | ((dev as u32) << 11)
-        | ((func as u32) << 8)
-        | ((offset as u32) & 0xFC);
-    unsafe {
-        outl(PCI_CONFIG_ADDRESS, address);
-        inl(PCI_CONFIG_DATA)
-    }
+    crate::runtime_base().pci_cfg_read32(bus, dev, func, offset).unwrap_or(0xFFFFFFFF)
 }
 
 pub(crate) unsafe fn pci_write_config(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
-    let address = PCI_ENABLE_BIT
-        | ((bus as u32) << 16)
-        | ((dev as u32) << 11)
-        | ((func as u32) << 8)
-        | ((offset as u32) & 0xFC);
-    unsafe {
-        outl(PCI_CONFIG_ADDRESS, address);
-        outl(PCI_CONFIG_DATA, val);
-    }
+    let _ = crate::runtime_base().pci_cfg_write32(bus, dev, func, offset, val);
 }
 
 #[inline]
@@ -101,11 +62,14 @@ pub fn enumerate_and_publish<FCreate, FSet, FLink, FIntern>(
     FLink: FnMut(u64, &str, u64),
     FIntern: FnMut(&str) -> u64,
 {
-    if !cfg!(target_arch = "x86_64") {
+    crate::kinfo!("PCI: Starting enumeration...");
+
+    // Check if PCI legacy config is supported by attempting to read bus 0 dev 0
+    // If it returns NotSupported, we skip enumeration.
+    if let Err(abi::errors::Errno::NotSupported) = crate::runtime_base().pci_cfg_read32(0, 0, 0, 0) {
+        crate::kinfo!("PCI: Legacy config space not supported on this platform. Skipping.");
         return;
     }
-
-    crate::kinfo!("PCI: Starting enumeration...");
 
     let pci_bus_node = create(kinds::DEV_BUS_PCI);
     set(pci_bus_node, keys::NAME, intern("pci0"));

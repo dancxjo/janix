@@ -124,41 +124,10 @@ fn program_msix(location: PciLocation, msix: MsixCapability, vector: u8, bars: (
 }
 
 fn build_msi_message(vector: u8) -> (u32, u32) {
-    let dest_id = lapic_id() as u32;
+    let dest_id = crate::runtime_base().lapic_id().unwrap_or(0);
     let addr = 0xFEE0_0000u32 | (dest_id << 12);
     let data = vector as u32;
     (addr, data)
-}
-
-fn lapic_id() -> u8 {
-    #[cfg(target_arch = "x86_64")]
-    {
-        let base = lapic_base();
-        let hhdm = crate::boot_info::get().map(|i| i.hhdm_offset).unwrap_or(0);
-        let id_reg = base + hhdm + 0x20;
-        let val = unsafe { read_volatile(id_reg as *const u32) };
-        (val >> 24) as u8
-    }
-    #[cfg(not(target_arch = "x86_64"))]
-    {
-        0
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-fn lapic_base() -> u64 {
-    let eax: u32;
-    let edx: u32;
-    unsafe {
-        core::arch::asm!(
-            "rdmsr",
-            in("ecx") 0x1B_u32,
-            out("eax") eax,
-            out("edx") edx,
-            options(nostack, preserves_flags)
-        );
-    }
-    ((edx as u64) << 32 | eax as u64) & 0xFFFF_F000
 }
 
 fn pci_read_config_u16(location: PciLocation, offset: u8) -> u16 {

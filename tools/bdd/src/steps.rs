@@ -1293,3 +1293,47 @@ async fn symbol_rendered(_world: &mut ThingOsWorld) {
 async fn cursor_moved(_world: &mut ThingOsWorld) {
     eprintln!("│  │  │      ℹ️ Cursor movement requires visual verification");
 }
+
+#[then("I should see the Font Explorer window")]
+async fn check_font_explorer_window(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    eprintln!("│  │  │      Checking for Font Explorer window...");
+
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("font_explorer_check");
+
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .map_err(|e| StepError(format!("Screenshot failed: {}", e)))?;
+
+    eprintln!("│  │  │      📸 Screenshot: {}", png_path.display());
+
+    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let rgb = img.to_rgb8();
+
+    // Check pixel at (100, 100). Expected: F5 F5 F0
+    // Window is at 50, 50 with size 900x520. (100, 100) is well inside.
+    let x = 100;
+    let y = 100;
+
+    if x >= rgb.width() || y >= rgb.height() {
+        return Err(StepError(format!("Screenshot too small: {}x{}", rgb.width(), rgb.height())));
+    }
+
+    let pixel = rgb.get_pixel(x, y).0;
+    let expected = [0xF5, 0xF5, 0xF0];
+
+    eprintln!("│  │  │      🎨 Pixel at ({}, {}): {:?}", x, y, pixel);
+
+    if !color_close(pixel, expected, 5) {
+        return Err(StepError(format!(
+            "Font Explorer window not found. Pixel at ({}, {}) was {:?}, expected {:?} (off-white)",
+            x, y, pixel, expected
+        )));
+    }
+
+    eprintln!("│  │  │      ✅ Font Explorer window detected");
+    Ok(())
+}

@@ -7,6 +7,7 @@ edition = "2021"
 default = ["svg-cursors"]
 svg-cursors = []
 svg-demo = ["svg-cursors"]
+surface-poison = []
 
 [dependencies]
 stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }

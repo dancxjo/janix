@@ -27,6 +27,7 @@ impl<'a> Painter<'a> {
         
         if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
             let mut surf = unsafe { Surface::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
+            surf.clear(); // Ensure surface is zeroed before painting
             
             // Paint the list using the unified rasterizer
             crate::raster::execute(&mut surf, list, false);
@@ -51,8 +52,7 @@ impl<'a> Painter<'a> {
         
         if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
             let mut surf = unsafe { Surface::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
-            
-            // Debug pattern: Border + Gradient
+            surf.clear(); // Ensure surface is zeroed before painting
             let color_top = 0xFF303038u32;
             let color_bot = 0xFF101018u32;
             for y in 0..h as i32 {

@@ -3,6 +3,7 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::{BootRuntime, BootTasking, MapKind, MapPerms, memory};
+use crate::memory::MapError;
 
 use super::types::{Scheduler, StackFaultResult};
 use super::SCHEDULER;
@@ -53,7 +54,7 @@ pub fn alloc_user_stack<R: BootRuntime>(pages: usize) -> Option<usize> {
 }
 
 /// Map a user page in the current address space
-pub unsafe fn map_user_page<R: BootRuntime>(virt: u64, phys: u64) -> Result<(), ()> {
+pub unsafe fn map_user_page<R: BootRuntime>(virt: u64, phys: u64) -> Result<(), MapError> {
     use crate::FrameAllocatorHook;
 
     struct MapHook;
@@ -73,7 +74,8 @@ pub unsafe fn map_user_page<R: BootRuntime>(virt: u64, phys: u64) -> Result<(), 
     };
     let hook = MapHook;
 
-    rt.tasking().map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)?;
+    rt.tasking().map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)
+        .map_err(|()| MapError::OutOfMemory)?;
     rt.tasking().tlb_flush_page(virt);
 
     Ok(())
@@ -84,7 +86,7 @@ pub unsafe fn map_user_page_perms<R: BootRuntime>(
     virt: u64,
     phys: u64,
     perms: MapPerms,
-) -> Result<(), ()> {
+) -> Result<(), MapError> {
     use crate::FrameAllocatorHook;
 
     struct MapHook;
@@ -99,17 +101,19 @@ pub unsafe fn map_user_page_perms<R: BootRuntime>(
     let hook = MapHook;
 
     rt.tasking()
-        .map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)?;
+        .map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)
+        .map_err(|()| MapError::OutOfMemory)?;
     rt.tasking().tlb_flush_page(virt);
     Ok(())
 }
 
 /// Unmap a user page in the current address space
-pub unsafe fn unmap_user_page<R: BootRuntime>(virt: u64) -> Result<(), ()> {
+pub unsafe fn unmap_user_page<R: BootRuntime>(virt: u64) -> Result<(), MapError> {
     let rt = crate::runtime::<R>();
     let aspace = rt.tasking().active_address_space();
 
-    rt.tasking().unmap_page(aspace, virt)?;
+    rt.tasking().unmap_page(aspace, virt)
+        .map_err(|()| MapError::NotMapped)?;
     rt.tasking().tlb_flush_page(virt);
     Ok(())
 }

@@ -70,22 +70,52 @@ pub fn alloc_contiguous_frames(count: usize) -> Option<u64> {
 }
 
 /// Global hook for mapping user pages. Set by scheduler init.
-static mut MAP_USER_PAGE_HOOK: Option<unsafe fn(u64, u64) -> Result<(), ()>> = None;
-static mut MAP_USER_PAGE_PERMS_HOOK: Option<unsafe fn(u64, u64, MapPerms) -> Result<(), ()>> = None;
-static mut UNMAP_USER_PAGE_HOOK: Option<unsafe fn(u64) -> Result<(), ()>> = None;
+static mut MAP_USER_PAGE_HOOK: Option<unsafe fn(u64, u64) -> Result<(), MapError>> = None;
+static mut MAP_USER_PAGE_PERMS_HOOK: Option<unsafe fn(u64, u64, MapPerms) -> Result<(), MapError>> = None;
+static mut UNMAP_USER_PAGE_HOOK: Option<unsafe fn(u64) -> Result<(), MapError>> = None;
+
+/// Error from user page mapping operations.
+/// 
+/// Provides typed error information that can be mapped to appropriate errno values.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MapError {
+    /// Failed to allocate page table frame
+    OutOfMemory,
+    /// Page table walk failed (corrupt or invalid)
+    PageTableFault,
+    /// Page is already mapped
+    AlreadyMapped,
+    /// Page is not mapped (for unmap)
+    NotMapped,
+    /// Generic permission/access error
+    AccessDenied,
+}
+
+impl MapError {
+    /// Convert to the appropriate errno for syscall return
+    pub fn to_errno(self) -> abi::errors::Errno {
+        match self {
+            MapError::OutOfMemory => abi::errors::Errno::ENOMEM,
+            MapError::PageTableFault => abi::errors::Errno::EFAULT,
+            MapError::AlreadyMapped => abi::errors::Errno::EEXIST,
+            MapError::NotMapped => abi::errors::Errno::EINVAL,
+            MapError::AccessDenied => abi::errors::Errno::EACCES,
+        }
+    }
+}
 
 /// Initialize the user page mapping hook
-pub unsafe fn set_map_user_page_hook(hook: unsafe fn(u64, u64) -> Result<(), ()>) {
+pub unsafe fn set_map_user_page_hook(hook: unsafe fn(u64, u64) -> Result<(), MapError>) {
     unsafe { MAP_USER_PAGE_HOOK = Some(hook) };
 }
 
 /// Initialize the user page mapping hook with custom permissions.
-pub unsafe fn set_map_user_page_perms_hook(hook: unsafe fn(u64, u64, MapPerms) -> Result<(), ()>) {
+pub unsafe fn set_map_user_page_perms_hook(hook: unsafe fn(u64, u64, MapPerms) -> Result<(), MapError>) {
     unsafe { MAP_USER_PAGE_PERMS_HOOK = Some(hook) };
 }
 
 /// Initialize the user page unmapping hook.
-pub unsafe fn set_unmap_user_page_hook(hook: unsafe fn(u64) -> Result<(), ()>) {
+pub unsafe fn set_unmap_user_page_hook(hook: unsafe fn(u64) -> Result<(), MapError>) {
     unsafe { UNMAP_USER_PAGE_HOOK = Some(hook) };
 }
 
@@ -93,8 +123,9 @@ pub unsafe fn set_unmap_user_page_hook(hook: unsafe fn(u64) -> Result<(), ()>) {
 /// This uses the global hook set during scheduler initialization.
 pub unsafe fn map_user_page(virt: u64, phys: u64) -> Result<(), abi::errors::Errno> {
     if let Some(hook) = unsafe { MAP_USER_PAGE_HOOK } {
-        unsafe { hook(virt, phys) }.map_err(|_| abi::errors::Errno::ENOMEM)
+        unsafe { hook(virt, phys) }.map_err(|e| e.to_errno())
     } else {
+        kinfo!("WARN: map_user_page called before hook installed (virt=0x{:x})", virt);
         Err(abi::errors::Errno::EIO)
     }
 }
@@ -102,8 +133,9 @@ pub unsafe fn map_user_page(virt: u64, phys: u64) -> Result<(), abi::errors::Err
 /// Unmap a page from the current process's userspace.
 pub unsafe fn unmap_user_page(virt: u64) -> Result<(), abi::errors::Errno> {
     if let Some(hook) = unsafe { UNMAP_USER_PAGE_HOOK } {
-        unsafe { hook(virt) }.map_err(|_| abi::errors::Errno::EINVAL)
+        unsafe { hook(virt) }.map_err(|e| e.to_errno())
     } else {
+        kinfo!("WARN: unmap_user_page called before hook installed (virt=0x{:x})", virt);
         Err(abi::errors::Errno::EIO)
     }
 }
@@ -115,8 +147,10 @@ pub unsafe fn map_user_page_with_perms(
     perms: MapPerms,
 ) -> Result<(), abi::errors::Errno> {
     if let Some(hook) = unsafe { MAP_USER_PAGE_PERMS_HOOK } {
-        unsafe { hook(virt, phys, perms) }.map_err(|_| abi::errors::Errno::ENOMEM)
+        unsafe { hook(virt, phys, perms) }.map_err(|e| e.to_errno())
     } else {
+        kinfo!("WARN: map_user_page_with_perms called before hook installed (virt=0x{:x})", virt);
         Err(abi::errors::Errno::EIO)
     }
 }
+

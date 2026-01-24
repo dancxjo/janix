@@ -296,6 +296,10 @@ impl ArchRuntime for X86_64Runtime {
     fn setup_preemption_timer(&self, hz: u32) {
         ioapic::setup_lapic_timer(idt::IRQ_TIMER_VECTOR, hz);
     }
+
+    fn debug_active_aspace_root(&self) -> u64 {
+        paging::active_address_space().0
+    }
 }
 
 struct ProxyAllocator;

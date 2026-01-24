@@ -367,8 +367,66 @@ impl DeviceRegistry {
             false
         }
     }
+
+    /// Release all claims owned by a task
+    pub fn release_all_for_task(&mut self, task_id: u64) {
+        let mut count = 0;
+        for claim in self.claims.iter_mut() {
+            if claim.valid && claim.task_id == task_id {
+                claim.valid = false;
+                count += 1;
+            }
+        }
+        if count > 0 {
+            crate::kinfo!("DEVICE: released {} claims for task {}", count, task_id);
+        }
+    }
 }
 
 // Static device definitions for legacy devices
 pub static CMOS_IOPORT_RANGES: &[(u16, u16)] = &[(0x70, 0x71)];
 pub static PS2_IOPORT_RANGES: &[(u16, u16)] = &[(0x60, 0x64)];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_device_claiming_ownership() {
+        let mut reg = DeviceRegistry::new();
+        let dev_idx = reg.register(DeviceEntry::new_legacy("test_dev", &[], 123)).unwrap();
+
+        // Task A claims device
+        let claim_a = reg.claim(dev_idx, 10).expect("Task A should be able to claim");
+        assert_eq!(reg.claims[claim_a].task_id, 10);
+
+        // Task B tries to claim same device -> should fail
+        let claim_b = reg.claim(dev_idx, 20);
+        assert!(claim_b.is_none(), "Task B should NOT be able to claim already claimed device");
+
+        // Task A exits -> release all
+        reg.release_all_for_task(10);
+        assert!(!reg.claims[claim_a].valid, "Claim should be invalid after release");
+
+        // Task C claims same device -> should succeed
+        let _claim_c = reg.claim(dev_idx, 30).expect("Task C should be able to claim after Task A release");
+    }
+
+    #[test]
+    fn test_multiple_devices_per_task() {
+        let mut reg = DeviceRegistry::new();
+        let dev1 = reg.register(DeviceEntry::new_legacy("dev1", &[], 1)).unwrap();
+        let dev2 = reg.register(DeviceEntry::new_legacy("dev2", &[], 2)).unwrap();
+
+        reg.claim(dev1, 100).unwrap();
+        reg.claim(dev2, 100).unwrap();
+
+        reg.release_all_for_task(100);
+        
+        for claim in &reg.claims {
+            if claim.valid {
+                assert_ne!(claim.task_id, 100, "No claims for task 100 should be valid");
+            }
+        }
+    }
+}

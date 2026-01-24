@@ -1,6 +1,12 @@
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 pub static SYSTEM_TIME_OFFSET: AtomicU64 = AtomicU64::new(0);
+static IS_ANCHORED: AtomicBool = AtomicBool::new(false);
+
+/// Returns true if the system clock has been anchored to a wall-clock time source.
+pub fn is_anchored() -> bool {
+    IS_ANCHORED.load(Ordering::Relaxed)
+}
 
 /// Returns system time in nanoseconds (monotonic + offset)
 pub fn get_system_time_ns(mono_ns: u64) -> u64 {
@@ -18,6 +24,7 @@ pub fn anchor_system_clock(unix_secs: u64, mono_ns: u64) {
     let unix_ns = unix_secs.saturating_mul(1_000_000_000);
     let offset = unix_ns.saturating_sub(mono_ns);
     set_system_time_offset(offset);
+    IS_ANCHORED.store(true, Ordering::Relaxed);
     crate::kinfo!(
         "System clock anchored: unix_secs={}, mono_ns={}, offset={}ns",
         unix_secs,

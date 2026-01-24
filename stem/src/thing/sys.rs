@@ -214,7 +214,7 @@ pub fn find<S: IntoSymbolRef>(kind: S, out: &mut [ThingId]) -> Result<usize, Err
             0,
         )
     };
-    errno(ret).map(|v| v as usize)
+    errno(ret).map(|v| core::cmp::min(v as usize, out.len()))
 }
 
 pub fn create_node<S: IntoSymbolRef>(kind: S) -> Result<ThingId, Errno> {

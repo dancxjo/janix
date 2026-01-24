@@ -414,6 +414,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
             self.tasks[idx].exit_code = Some(code);
         }
 
+        // Release any claimed devices
+        crate::device_registry::REGISTRY.lock().release_all_for_task(current_id);
+
         unsafe {
             let rt = crate::runtime::<R>();
             loop {

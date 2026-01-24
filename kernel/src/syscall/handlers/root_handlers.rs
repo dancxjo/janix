@@ -96,12 +96,15 @@ pub fn sys_root_find(ptr_kind: usize, ptr_buf: usize, len: usize) -> SysResult<u
 
     let count = root_call(msg)?;
 
-    let bytes_to_copy = core::cmp::min(count * 16, len);
+    let entries_found = count;
+    let entries_to_copy = core::cmp::min(entries_found, len / 16);
+    let bytes_to_copy = entries_to_copy * 16;
+    
     unsafe {
         copyout(ptr_buf, &kbuf[..bytes_to_copy])?;
     }
 
-    Ok(count)
+    Ok(entries_to_copy)
 }
 
 pub fn sys_root_query(
@@ -176,13 +179,16 @@ pub fn sys_root_query(
 
     let count = root_call(msg)?;
 
-    let bytes_to_copy = count * row_size;
+    let rows_found = count;
+    let rows_to_copy = core::cmp::min(rows_found, safe_cap);
+    let bytes_to_copy = rows_to_copy * row_size;
+    
     let src = unsafe { core::slice::from_raw_parts(kbuf.as_ptr() as *const u8, bytes_to_copy) };
     unsafe {
         copyout(out_ptr, src)?;
     }
 
-    Ok(count)
+    Ok(rows_to_copy)
 }
 
 pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {

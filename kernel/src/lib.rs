@@ -566,6 +566,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     runtime.setup_preemption_timer(100);
 
     contract!("Entering scheduler loop.");
+    run_time_tests();
     loop {
         crate::task::yield_now::<R>();
         // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty
@@ -609,5 +610,8 @@ extern "C" fn thread_b(arg: usize) -> ! {
 }
 pub fn run_fairness_test<R: BootRuntime>() {
     tests::fairness::run::<R>();
+}
+pub fn run_time_tests() {
+    tests::time_test::run_selftest();
 }
 pub mod boot_info;

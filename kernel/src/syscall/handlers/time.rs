@@ -50,6 +50,9 @@ pub fn sys_time_monotonic_ns() -> SysResult<usize> {
 }
 
 pub fn sys_time_now() -> SysResult<usize> {
+    if !crate::time::is_anchored() {
+        return Err(abi::errors::Errno::EAGAIN);
+    }
     let rt = crate::runtime_base();
     let ticks = rt.mono_ticks();
     let freq = rt.mono_freq_hz();

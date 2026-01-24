@@ -6,6 +6,6 @@ pub mod fw_tables;
 pub mod memory_hook_test;
 pub mod bytespace_stability_test;
 pub mod snapshot_semantics_test;
+pub mod watch_overflow_test;
 #[cfg(test)]
 pub mod once_cell_test;
-

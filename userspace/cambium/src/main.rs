@@ -23,6 +23,9 @@ use core::time::Duration;
 
 const RESYNC_COOLDOWN_MS: u64 = 250;
 
+/// Maximum events to drain per binding per tick (prevents unbounded work)
+const MAX_DRAIN_PER_TICK: usize = 256;
+
 // ============================================================================
 // Active Binding State
 // ============================================================================
@@ -32,6 +35,8 @@ struct ActiveBinding {
     target: ThingId,
     watch_id: usize,
     last_seen_seq: Option<u64>,
+    /// Highest sequence ever processed (monotonic invariant)
+    high_watermark: u64,
     
     last_value_u64: Option<u64>,
     last_value_bytes: Option<Vec<u8>>,
@@ -243,6 +248,7 @@ fn main() -> ! {
                             bindings.push(ActiveBinding {
                                 source: src_id, target: dst_id, watch_id,
                                 last_seen_seq: None,
+                                high_watermark: 0,
                                 last_value_u64: None, last_value_bytes: None,
                                 key_filter, to_key,
                                 has_pending: false, pending_u64: None, pending_bytes: None,
@@ -278,11 +284,21 @@ fn main() -> ! {
             binding.events_buffered_this_tick = 0;
             let mut seq: u64 = binding.last_seen_seq.unwrap_or(0);
 
-            loop {
+            // Bounded drain loop: prevent unbounded work per tick
+            let mut drain_count = 0usize;
+            while drain_count < MAX_DRAIN_PER_TICK {
                 match root_watch_next(binding.watch_id, &mut seq, &mut payload_buf) {
                     Ok(len) if len > 0 => {
+                        drain_count += 1;
                         did_work = true;
+                        
+                        // INVARIANT: Sequences must be monotonically increasing
+                        if binding.high_watermark > 0 && seq <= binding.high_watermark {
+                            warn!("[cambium] NON-MONOTONIC seq={} <= hwm={}", seq, binding.high_watermark);
+                        }
+                        binding.high_watermark = seq;
                         binding.last_seen_seq = Some(seq);
+                        
                         drain_watch_payload(&payload_buf[..len], binding);
                         binding.drained_events_total += 1; 
                     }
@@ -306,14 +322,20 @@ fn main() -> ! {
                     binding.resync_count += 1;
                     binding.needs_resync = false;
                     binding.last_resync_time_ms = now;
+                    
+                    // ORDERING INVARIANT: On overflow, clear ALL pending state
+                    // to prevent partial replay of stale data
                     binding.has_pending = false;
+                    binding.pending_u64 = None;
+                    binding.pending_bytes = None;
+                    binding.last_value_u64 = None;
+                    binding.last_value_bytes = None;
 
                     root_watch_close(binding.watch_id).ok();
 
-                    let start_seq = match binding.last_seen_seq {
-                        Some(last) => last.saturating_add(1),
-                        None => WATCH_START_LATEST,
-                    };
+                    // ORDERING INVARIANT: On overflow, always reset to LATEST
+                    // Do NOT resume from last_seen_seq+1 as history may be evicted
+                    let start_seq = WATCH_START_LATEST;
 
                     let filter = RootWatchFilter::subject(binding.source.to_u64_lossy());
                     let spec = WatchSpec {

@@ -6,7 +6,7 @@ mod handles;
 mod port;
 
 pub use handles::{Handle, HandleEntry, HandleMode, HandleTable, MAX_HANDLES};
-pub use port::{Port, PortId};
+pub use port::{Port, PortId, Sender, Receiver};
 
 use alloc::sync::Arc;
 use alloc::vec::Vec;

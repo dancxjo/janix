@@ -176,4 +176,40 @@ impl Bytespace {
         }
         self.compute_canary() == self.canary
     }
+
+    /// Assert that this bytespace is not frozen (i.e., is mutable).
+    /// 
+    /// # Snapshot Invariant
+    /// Frozen bytespaces are read-only. Attempting to mutate one violates
+    /// the write-once snapshot contract.
+    /// 
+    /// # Behavior
+    /// - Debug builds: Panics with context message
+    /// - Release builds: Logs error (non-fatal for system stability)
+    /// 
+    /// # Returns
+    /// `true` if mutable, `false` if frozen
+    pub fn assert_mutable(&self, context: &str) -> bool {
+        if self.frozen {
+            #[cfg(debug_assertions)]
+            {
+                panic!(
+                    "SNAPSHOT INVARIANT VIOLATION: Attempted to mutate frozen bytespace \
+                     at phys=0x{:x} len={} (context: {})",
+                    self.phys_base, self.len, context
+                );
+            }
+            
+            #[cfg(not(debug_assertions))]
+            {
+                crate::kerror!(
+                    "SNAPSHOT INVARIANT VIOLATION: Attempted to mutate frozen bytespace \
+                     at phys=0x{:x} len={} (context: {})",
+                    self.phys_base, self.len, context
+                );
+                return false;
+            }
+        }
+        true
+    }
 }

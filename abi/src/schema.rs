@@ -147,6 +147,17 @@ pub mod keys {
     pub const UI_CURSOR_SNAPSHOT_STRIDE: &str = "ui.cursor.snapshot.stride";
     pub const UI_CURSOR_SNAPSHOT_FORMAT: &str = "ui.cursor.snapshot.format";
 
+    // Snapshot Semantics keys
+    /// Snapshot semantic mode (0 = WRITE_ONCE, 1 = MUTABLE_DIRTY).
+    /// Default is WRITE_ONCE if not specified.
+    pub const UI_SNAPSHOT_MODE: &str = "ui.snapshot.mode";
+    /// Dirty flag for MUTABLE_DIRTY mode (0 = clean, 1 = dirty).
+    /// Compositor must not read snapshot while dirty=1.
+    pub const UI_SNAPSHOT_DIRTY: &str = "ui.snapshot.dirty";
+    /// Frozen flag indicating snapshot bytespace is immutable.
+    /// Set automatically by presenter when committing in WRITE_ONCE mode.
+    pub const UI_SNAPSHOT_FROZEN: &str = "ui.snapshot.frozen";
+
     /// Optional bytespace id for packed damage rects.
     pub const UI_DAMAGE_RECTS_BYTESPACE: &str = "ui.damage.rects.bytespace";
     /// Tile asset bytespace id for UI_TILE nodes (e.g. SVG source).
@@ -257,11 +268,52 @@ pub mod kinds {
     pub const XML_TEXT: &str = "xml.Text";
 }
 
-/// Snapshot-related constants for UI presentation surfaces.
+/// Snapshot semantics and constants for UI presentation surfaces.
+///
+/// # The Snapshot Contract
+///
+/// ## Write-Once Mode (Default)
+///
+/// 1. Painter allocates a bytespace and renders into it.
+/// 2. Painter sets UI_SNAPSHOT_* metadata (bytespace, width, height, stride, format).
+/// 3. Painter sets UI_SNAPSHOT_FROZEN=1 (optional explicit freeze).
+/// 4. Painter sets UI_PRESENT_EPOCH to commit the snapshot.
+/// 5. Compositor reads snapshot; bytespace must not be mutated.
+/// 6. For next frame, painter allocates NEW bytespace and repeats.
+///
+/// ## Invariants
+///
+/// - A snapshot bytespace with a non-zero epoch MUST NOT be mutated.
+/// - If UI_SNAPSHOT_MODE is unset, assume WRITE_ONCE.
+/// - Two successive frames MUST NOT alias the same bytespace unless
+///   the first frame's epoch has been superseded.
+///
+/// ## Anti-Aliasing Guarantee
+///
+/// ```text
+/// Frame N:   epoch=5, bytespace=0x1234
+/// Frame N+1: epoch=6, bytespace=0x5678  // MUST be different
+///                                        // OR epoch=5 still present (no update)
+/// ```
 pub mod ui_snapshot {
     /// Pixel format for RGBA8888 surfaces.
     #[deprecated(note = "Use pixel_format::BGRA8888 instead")]
     pub const PIXEL_FORMAT_RGBA8888: u64 = 1;
+}
+
+/// Snapshot semantic modes for UI presentation surfaces.
+pub mod snapshot_mode {
+    /// Write-once mode: snapshot is immutable after presentation.
+    /// The bytespace becomes frozen when UI_PRESENT_EPOCH is set.
+    /// Updates require creating a new bytespace and atomically
+    /// replacing UI_SNAPSHOT_BYTESPACE.
+    pub const WRITE_ONCE: u64 = 0;
+
+    /// Mutable mode with dirty tracking (reserved for future use).
+    /// The bytespace can be modified in place; writers must set
+    /// UI_SNAPSHOT_DIRTY=1 before mutation and clear it after.
+    /// Compositor must check dirty flag and skip/retry if set.
+    pub const MUTABLE_DIRTY: u64 = 1;
 }
 
 /// Canonical pixel format constants matching `abi::pixel::PixelFormat`.

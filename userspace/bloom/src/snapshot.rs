@@ -5,7 +5,7 @@
 //! snapshot metadata.
 
 use alloc::vec::Vec;
-use abi::schema::{kinds, keys};
+use abi::schema::{kinds, keys, snapshot_mode};
 use stem::thing::sys::{bytespace_map, bytespace_unmap, find, prop_get};
 use stem::thing::{ThingId, HandleId};
 
@@ -30,6 +30,10 @@ pub struct SnapshotMeta {
     pub stride: u32,
     pub format: u32,
     pub epoch: u64,
+    /// Snapshot mode (WRITE_ONCE or MUTABLE_DIRTY)
+    pub mode: u64,
+    /// Whether the snapshot bytespace is frozen (immutable)
+    pub frozen: bool,
 }
 
 pub fn collect_windows(screen_w: i32, screen_h: i32) -> Vec<WindowSnapshot> {
@@ -63,7 +67,30 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
 
     let bytespace = ThingId::from_u64(prop_get(id, keys::UI_SNAPSHOT_BYTESPACE).unwrap_or(0));
     let epoch = prop_get(id, keys::UI_PRESENT_EPOCH).unwrap_or(0);
+    let mode = prop_get(id, keys::UI_SNAPSHOT_MODE).unwrap_or(snapshot_mode::WRITE_ONCE);
+    let frozen = prop_get(id, keys::UI_SNAPSHOT_FROZEN).unwrap_or(0) != 0;
+    let dirty = prop_get(id, keys::UI_SNAPSHOT_DIRTY).unwrap_or(0);
+
     let snapshot = if bytespace.to_u64_lossy() != 0 && epoch > 0 {
+        // Validate mode-specific invariants
+        if mode == snapshot_mode::MUTABLE_DIRTY {
+            // MUTABLE_DIRTY: skip if dirty flag is set
+            if dirty != 0 {
+                // Snapshot is being updated, skip this frame
+                return Some(WindowSnapshot {
+                    id,
+                    x,
+                    y,
+                    width,
+                    height,
+                    z_index,
+                    snapshot: None, // Skip dirty snapshot
+                });
+            }
+        }
+        // Note: For WRITE_ONCE mode, we trust the contract.
+        // In debug builds, the kernel will assert on mutation attempts.
+
         Some(SnapshotMeta {
             bytespace,
             width: prop_get(id, keys::UI_SNAPSHOT_WIDTH).unwrap_or(width as u64) as u32,
@@ -71,6 +98,8 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
             stride: prop_get(id, keys::UI_SNAPSHOT_STRIDE).unwrap_or((width * 4) as u64) as u32,
             format: prop_get(id, keys::UI_SNAPSHOT_FORMAT).unwrap_or(0) as u32,
             epoch,
+            mode,
+            frozen,
         })
     } else {
         None

@@ -105,12 +105,14 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
             break;
         }
 
+        let _irq = rt.irq_disable();
         let switch_params = {
             let lock = SCHEDULER.lock();
             let ptr = lock.expect("Scheduler not initialized");
             let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
             sched.schedule_point(ScheduleReason::SleepWait)
         };
+        rt.irq_restore(_irq);
 
         if let Some(switch) = switch_params {
             unsafe {

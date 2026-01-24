@@ -162,17 +162,25 @@ impl<R: BootRuntime> Scheduler<R> {
 }
 
 pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: StartupArg) -> TaskId {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn(entry, arg, crate::task::TaskPriority::Normal)
+    let id = sched.spawn(entry, arg, crate::task::TaskPriority::Normal);
+    rt.irq_restore(_irq);
+    id
 }
 
 pub fn spawn_with_priority<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: StartupArg, priority: crate::task::TaskPriority) -> TaskId {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn(entry, arg, priority)
+    let id = sched.spawn(entry, arg, priority);
+    rt.irq_restore(_irq);
+    id
 }
 
 pub unsafe fn spawn_user_thread<R: BootRuntime>(
@@ -182,10 +190,14 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(
     stack_info: abi::types::StackInfo,
     priority: crate::task::TaskPriority,
 ) -> TaskId {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn_user_thread(entry, stack, arg, stack_info, priority)
+    let id = sched.spawn_user_thread(entry, stack, arg, stack_info, priority);
+    rt.irq_restore(_irq);
+    id
 }
 
 pub unsafe fn spawn_user_task_full<R: BootRuntime>(
@@ -195,10 +207,14 @@ pub unsafe fn spawn_user_task_full<R: BootRuntime>(
     regions: alloc::vec::Vec<abi::vm::VmRegionInfo>,
     priority: crate::task::TaskPriority,
 ) -> Option<TaskId> {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    sched.spawn_user_task(entry, aspace, stack_info, regions, priority)
+    let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority);
+    rt.irq_restore(_irq);
+    id
 }
 
 pub unsafe fn spawn_process<R: BootRuntime>(name: &str, arg: StartupArg) -> Option<TaskId> {
@@ -217,11 +233,14 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(name: &str, arg: Start
     let (mut entry, stack_info, regions) = crate::task::loader::load_module(rt, aspace, module)?;
     entry.arg0 = arg.to_raw();
 
+    let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
-    sched.spawn_user_task(entry, aspace, stack_info, regions, priority)
+    let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority);
+    rt.irq_restore(_irq);
+    id
 }
 
 pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {

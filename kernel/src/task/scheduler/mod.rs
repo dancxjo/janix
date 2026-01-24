@@ -8,7 +8,7 @@
 //! - `stack`: User stack allocation and fault handling
 //! - `sleep`: Timing and yield functions
 
-mod blocking;
+pub(crate) mod blocking;
 mod hooks;
 mod sleep;
 mod spawn;
@@ -462,8 +462,10 @@ pub fn set_priority<R: BootRuntime>(id: TaskId, priority: TaskPriority) {
 }
 
 pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>)> {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
-    if let Some(ptr) = *lock {
+    let res = if let Some(ptr) = *lock {
         let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
         sched
             .tasks
@@ -472,11 +474,15 @@ pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>
             .map(|t| (t.state, t.exit_code))
     } else {
         None
-    }
+    };
+    rt.irq_restore(_irq);
+    res
 }
 
 pub fn current_priority<R: BootRuntime>() -> TaskPriority {
-    if let Some(lock) = SCHEDULER.try_lock() {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let res = if let Some(lock) = SCHEDULER.try_lock() {
         if let Some(ptr) = *lock {
             let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
             sched.current_priority().unwrap_or(TaskPriority::Normal)
@@ -485,11 +491,15 @@ pub fn current_priority<R: BootRuntime>() -> TaskPriority {
         }
     } else {
         TaskPriority::Normal
-    }
+    };
+    rt.irq_restore(_irq);
+    res
 }
 
 pub fn current_tid<R: BootRuntime>() -> u64 {
-    if let Some(lock) = SCHEDULER.try_lock() {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let res = if let Some(lock) = SCHEDULER.try_lock() {
         if let Some(ptr) = *lock {
             let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
             sched.current_id().unwrap_or(0)
@@ -498,7 +508,9 @@ pub fn current_tid<R: BootRuntime>() -> u64 {
         }
     } else {
         0
-    }
+    };
+    rt.irq_restore(_irq);
+    res
 }
 
 pub fn exit<R: BootRuntime>(code: i32) {
@@ -512,6 +524,8 @@ pub fn exit<R: BootRuntime>(code: i32) {
 }
 
 pub fn dump_stats<R: BootRuntime>() {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
@@ -520,6 +534,7 @@ pub fn dump_stats<R: BootRuntime>() {
         sched.task_count(),
         sched.current_id()
     );
+    rt.irq_restore(_irq);
 }
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]

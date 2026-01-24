@@ -118,24 +118,37 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
     let rt = crate::runtime::<R>();
     let page_size = rt.page_size() as u64;
 
+    let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
     let ptr = match *lock {
         Some(ptr) => ptr,
-        None => return StackFaultResult::NotStack,
+        None => {
+            rt.irq_restore(_irq);
+            return StackFaultResult::NotStack;
+        }
     };
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
     let current_id = match sched.current {
         Some(id) => id,
-        None => return StackFaultResult::NotStack,
+        None => {
+            rt.irq_restore(_irq);
+            return StackFaultResult::NotStack;
+        }
     };
     let idx = match sched.tasks.iter().position(|t| t.id == current_id) {
         Some(i) => i,
-        None => return StackFaultResult::NotStack,
+        None => {
+            rt.irq_restore(_irq);
+            return StackFaultResult::NotStack;
+        }
     };
 
     let info = match sched.tasks[idx].stack_info {
         Some(info) => info,
-        None => return StackFaultResult::NotStack,
+        None => {
+            rt.irq_restore(_irq);
+            return StackFaultResult::NotStack;
+        }
     };
 
     let guard_start = info.guard_start as u64;
@@ -145,10 +158,12 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
     let committed_start = info.committed_start as u64;
 
     if addr >= guard_start && addr < guard_end {
+        rt.irq_restore(_irq);
         return StackFaultResult::Overflow;
     }
 
     if addr < reserve_start || addr >= reserve_end || addr >= committed_start {
+        rt.irq_restore(_irq);
         return StackFaultResult::NotStack;
     }
 
@@ -164,6 +179,7 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
     }
 
     if new_commit_start == committed_start {
+        rt.irq_restore(_irq);
         return StackFaultResult::NotStack;
     }
 
@@ -179,13 +195,17 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
     while virt < committed_start {
         let phys = match crate::memory::alloc_frame() {
             Some(p) => p,
-            None => return StackFaultResult::NotStack,
+            None => {
+                rt.irq_restore(_irq);
+                return StackFaultResult::NotStack;
+            }
         };
         let hhdm_virt = phys + hhdm;
         unsafe {
             core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size as usize);
         }
         if unsafe { crate::memory::map_user_page_with_perms(virt, phys, perms) }.is_err() {
+            rt.irq_restore(_irq);
             return StackFaultResult::NotStack;
         }
         virt += page_size;
@@ -196,5 +216,6 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
         ..info
     });
 
+    rt.irq_restore(_irq);
     StackFaultResult::Grew
 }

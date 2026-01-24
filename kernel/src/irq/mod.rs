@@ -2,8 +2,8 @@
 //!
 //! Manages interrupt routing and userspace IRQ subscriptions.
 
-use alloc::vec::Vec;
 use spin::Mutex;
+use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
 
 pub mod msi;
 
@@ -12,82 +12,108 @@ pub const EXTERNAL_VECTOR_END: u8 = 0xEF;
 
 /// Maximum supported vectors for IRQ dispatch
 pub const MAX_VECTORS: usize = 256;
+pub const MAX_SUBSCRIBERS_PER_VECTOR: usize = 4;
 
-/// IRQ subscriber entry
-#[derive(Clone)]
-struct IrqSubscription {
-    task_id: usize,
-    pending_count: u32,
+/// IRQ slot for a single vector
+struct IrqSlot {
+    /// Task IDs subscribed to this vector (0 means empty)
+    subscribers: [AtomicUsize; MAX_SUBSCRIBERS_PER_VECTOR],
+    /// Pending interrupt counts per subscriber
+    pending_counts: [AtomicU32; MAX_SUBSCRIBERS_PER_VECTOR],
 }
 
-/// Global IRQ registry
+impl IrqSlot {
+    const fn new() -> Self {
+        Self {
+            subscribers: [const { AtomicUsize::new(0) }; MAX_SUBSCRIBERS_PER_VECTOR],
+            pending_counts: [const { AtomicU32::new(0) }; MAX_SUBSCRIBERS_PER_VECTOR],
+        }
+    }
+}
+
+/// Global IRQ registry (lock-free for IRQ context)
 pub struct IrqRegistry {
-    /// Subscribers per vector (vector -> list of subscribers)
-    subscribers: [Vec<IrqSubscription>; MAX_VECTORS],
+    slots: [IrqSlot; MAX_VECTORS],
 }
 
 impl IrqRegistry {
     pub const fn new() -> Self {
         Self {
-            subscribers: [const { Vec::new() }; MAX_VECTORS],
+            slots: [const { IrqSlot::new() }; MAX_VECTORS],
         }
     }
     
     /// Subscribe a task to receive interrupts for a vector
-    pub fn subscribe(&mut self, vector: u8, task_id: usize) -> Result<(), ()> {
-        let subs = &mut self.subscribers[vector as usize];
+    pub fn subscribe(&self, vector: u8, task_id: usize) -> Result<(), ()> {
+        let _lock = REGISTRY_MUTEX.lock();
+        let slot = &self.slots[vector as usize];
         
-        // Check if already subscribed
-        for sub in subs.iter() {
-            if sub.task_id == task_id {
+        let mut first_empty = None;
+        for i in 0..MAX_SUBSCRIBERS_PER_VECTOR {
+            let sub = slot.subscribers[i].load(Ordering::Relaxed);
+            if sub == task_id {
                 return Err(()); // Already subscribed
+            }
+            if sub == 0 && first_empty.is_none() {
+                first_empty = Some(i);
             }
         }
         
-        subs.push(IrqSubscription {
-            task_id,
-            pending_count: 0,
-        });
-        
-        Ok(())
+        if let Some(idx) = first_empty {
+            slot.pending_counts[idx].store(0, Ordering::Relaxed);
+            slot.subscribers[idx].store(task_id, Ordering::Release);
+            Ok(())
+        } else {
+            Err(()) // Out of slots
+        }
     }
     
     /// Unsubscribe a task from a vector
-    #[allow(dead_code)]
-    pub fn unsubscribe(&mut self, vector: u8, task_id: usize) {
-        let subs = &mut self.subscribers[vector as usize];
-        subs.retain(|s| s.task_id != task_id);
+    pub fn unsubscribe(&self, vector: u8, task_id: usize) {
+        let _lock = REGISTRY_MUTEX.lock();
+        let slot = &self.slots[vector as usize];
+        for i in 0..MAX_SUBSCRIBERS_PER_VECTOR {
+            if slot.subscribers[i].load(Ordering::Relaxed) == task_id {
+                slot.subscribers[i].store(0, Ordering::Relaxed);
+                slot.pending_counts[i].store(0, Ordering::Relaxed);
+            }
+        }
     }
     
     /// Dispatch an interrupt - increment pending count and wake waiters
-    pub fn dispatch(&mut self, vector: u8) {
-        let subs = &mut self.subscribers[vector as usize];
-        for sub in subs.iter_mut() {
-            sub.pending_count = sub.pending_count.saturating_add(1);
-            // Wake the task using type-erased hook
-            unsafe {
-                crate::task::scheduler::wake_task_erased(sub.task_id);
+    /// This MUST be IRQ-safe (lock-free)
+    pub fn dispatch(&self, vector: u8) {
+        let slot = &self.slots[vector as usize];
+        for i in 0..MAX_SUBSCRIBERS_PER_VECTOR {
+            let task_id = slot.subscribers[i].load(Ordering::Acquire);
+            if task_id != 0 {
+                slot.pending_counts[i].fetch_add(1, Ordering::Relaxed);
+                // Wake the task using type-erased hook
+                unsafe {
+                    crate::task::scheduler::wake_task_erased(task_id);
+                }
             }
         }
     }
     
     /// Wait for interrupt - returns pending count and resets it
-    /// Returns 0 if caller should block
-    pub fn try_wait(&mut self, vector: u8, task_id: usize) -> u32 {
-        let subs = &mut self.subscribers[vector as usize];
-        for sub in subs.iter_mut() {
-            if sub.task_id == task_id {
-                let count = sub.pending_count;
-                sub.pending_count = 0;
-                return count;
+    pub fn try_wait(&self, vector: u8, task_id: usize) -> u32 {
+        let slot = &self.slots[vector as usize];
+        for i in 0..MAX_SUBSCRIBERS_PER_VECTOR {
+            if slot.subscribers[i].load(Ordering::Acquire) == task_id {
+                return slot.pending_counts[i].swap(0, Ordering::SeqCst);
             }
         }
         0
     }
 }
 
+/// Mutex for protecting registry mutations (subscription/unsubscription)
+/// This is only used in task context.
+static REGISTRY_MUTEX: Mutex<()> = Mutex::new(());
+
 /// Global IRQ registry instance
-pub static IRQ_REGISTRY: Mutex<IrqRegistry> = Mutex::new(IrqRegistry::new());
+pub static IRQ_REGISTRY: IrqRegistry = IrqRegistry::new();
 
 pub struct VectorAllocator {
     used: [bool; MAX_VECTORS],
@@ -143,7 +169,7 @@ pub fn dispatch_irq(vector: u8) {
         vector,
         timestamp: crate::trace::now()
     });
-    IRQ_REGISTRY.lock().dispatch(vector);
+    IRQ_REGISTRY.dispatch(vector);
 }
 
 pub fn alloc_vector(graph_id: u64, irq_index: u8) -> Option<u8> {
@@ -161,7 +187,7 @@ pub fn vector_owner(vector: u8) -> Option<(u64, u8)> {
 /// Subscribe current task to a vector
 pub fn subscribe(vector: u8) -> Result<(), ()> {
     let task_id = unsafe { crate::task::scheduler::current_tid_current() } as usize;
-    IRQ_REGISTRY.lock().subscribe(vector, task_id)
+    IRQ_REGISTRY.subscribe(vector, task_id)
 }
 
 /// Wait for IRQ - blocks until interrupt fires
@@ -170,16 +196,69 @@ pub fn wait(vector: u8) -> u32 {
     let task_id = unsafe { crate::task::scheduler::current_tid_current() } as usize;
     
     loop {
-        {
-            let mut reg = IRQ_REGISTRY.lock();
-            let count = reg.try_wait(vector, task_id);
-            if count > 0 {
-                return count;
-            }
+        let count = IRQ_REGISTRY.try_wait(vector, task_id);
+        if count > 0 {
+            return count;
         }
+        
         // Block until woken by interrupt
         unsafe {
             crate::task::scheduler::block_current_erased();
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::sync::atomic::{AtomicU32, Ordering};
+
+    static WAKE_COUNT: AtomicU32 = AtomicU32::new(0);
+
+    fn mock_wake(id: usize) {
+        let _ = id;
+        WAKE_COUNT.fetch_add(1, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn test_irq_lock_free_dispatch() {
+        let registry = IrqRegistry::new();
+        let vector = 0x42;
+        
+        WAKE_COUNT.store(0, Ordering::Relaxed);
+        unsafe {
+            crate::task::scheduler::blocking::WAKE_TASK_HOOK.store(
+                mock_wake as *mut (),
+                Ordering::SeqCst
+            );
+        }
+
+        registry.subscribe(vector, 1).expect("Subscribe task 1");
+        registry.subscribe(vector, 2).expect("Subscribe task 2");
+        
+        registry.dispatch(vector);
+        
+        assert_eq!(WAKE_COUNT.load(Ordering::Relaxed), 2);
+        assert_eq!(registry.try_wait(vector, 1), 1);
+        assert_eq!(registry.try_wait(vector, 2), 1);
+        
+        registry.dispatch(vector);
+        registry.dispatch(vector);
+        assert_eq!(registry.try_wait(vector, 1), 2);
+    }
+
+    #[test]
+    fn test_irq_deadlock_prevention() {
+        let registry = IrqRegistry::new();
+        let vector = 0x43;
+        registry.subscribe(vector, 10).unwrap();
+        
+        // Lock the subscription mutex
+        let _lock = REGISTRY_MUTEX.lock();
+        
+        // Dispatch should still work (lock-free)
+        registry.dispatch(vector);
+        
+        assert_eq!(registry.try_wait(vector, 10), 1);
     }
 }

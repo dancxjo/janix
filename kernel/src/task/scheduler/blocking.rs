@@ -12,7 +12,7 @@ use super::log_context_switch;
 
 static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> = 
     core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
-static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> = 
+pub(crate) static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> = 
     core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
 
 pub fn block_current<R: BootRuntime>() {
@@ -71,10 +71,16 @@ pub fn block_current<R: BootRuntime>() {
 pub fn wake_task<R: BootRuntime>(id: usize) {
     use crate::task::TaskId;
 
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+
     let lock = SCHEDULER.lock();
     let ptr = match *lock {
         Some(p) => p,
-        None => return,
+        None => {
+            rt.irq_restore(_irq);
+            return;
+        }
     };
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
@@ -96,6 +102,8 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
             sched.tasks[idx].wake_pending = true;
         }
     }
+
+    rt.irq_restore(_irq);
 }
 
 /// Type-erased block for use from IRQ module

@@ -287,6 +287,16 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn debug_active_aspace_root(&self) -> u64 {
         0
     }
+
+    /// Map a physical range into a temporary virtual address for boot-time copies.
+    /// This is used for reading firmware tables that might not be in the HHDM.
+    /// Returns the virtual address of the start of the range.
+    fn map_phys_temp(&self, _phys: u64, _size: usize) -> Result<u64, Errno> {
+        Err(Errno::NotSupported)
+    }
+
+    /// Unmap a previously mapped temporary physical range.
+    fn unmap_phys_temp(&self, _virt: u64, _size: usize) {}
 }
 
 static mut RUNTIME: Option<&'static dyn core::any::Any> = None;
@@ -426,7 +436,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         },
         platform_profile: "unknown", // todo: ask runtime
     };
-    let inventory = crate::root::boot_register::register_all(&boot_info);
+    let inventory = crate::root::boot_register::register_all(runtime, &boot_info);
     #[cfg(feature = "diagnostic-apps")]
     crate::root::debug_dump::dump_all_to_console();
     contract!(
@@ -567,6 +577,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
     contract!("Entering scheduler loop.");
     run_time_tests();
+    crate::tests::fw_tables::run_selftest();
     loop {
         crate::task::yield_now::<R>();
         // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty

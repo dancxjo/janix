@@ -24,7 +24,7 @@ pub struct BootInventory {
     pub root: ThingId,
 }
 
-pub fn register_all(info: &BootInfo) -> BootInventory {
+pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> BootInventory {
     crate::kinfo!("ROOT: boot registration begin (Census Phase 1 v0.2)");
 
     let create = |kind: &str| -> u64 {
@@ -286,44 +286,67 @@ pub fn register_all(info: &BootInfo) -> BootInventory {
             set(acpi, keys::CONFIDENCE, conf_high);
 
             // Copy RSDP (36 bytes for v2, 20 for v1; safe to copy 36 if verified)
-            // Use HHDM to access physical memory
-            // FIXME: HHDM does not map ACPI region in current paging setup. Skipping copy to avoid Page Fault.
-            // let rsdp_virt = rsdp_phys + info.hhdm_offset;
+            // Use temporary mapping to access physical memory
             let size = 36;
-
-            let bs = bytespace_create(size);
-            // bytespace_write(bs, 0, rsdp_virt, size);
-
-            link(acpi, rels::BACKED_BY, bs);
-            link(fw_boot, rels::PROVIDES_TABLE, acpi);
+            if let Ok(virt) = runtime.map_phys_temp(rsdp_phys, size as usize) {
+                let bs = bytespace_create(size);
+                bytespace_write(bs, 0, virt, size);
+                runtime.unmap_phys_temp(virt, size as usize);
+                
+                link(acpi, rels::BACKED_BY, bs);
+                link(fw_boot, rels::PROVIDES_TABLE, acpi);
+            } else {
+                crate::kinfo!("ROOT: Warning: Failed to map ACPI RSDP at {:x}", rsdp_phys);
+                // Create a diagnostic node instead
+                let diag = create("diagnostic/error");
+                let msg = intern("Failed to map ACPI RSDP");
+                set(diag, "message", msg);
+                link(acpi, "error", diag);
+                link(fw_boot, rels::PROVIDES_TABLE, acpi);
+            }
         }
 
         if let Some(dtb_phys) = info.dtb_ptr {
             let dtb_node = create(kinds::FW_TABLE_DTB);
 
-            let dtb_virt = dtb_phys + info.hhdm_offset;
-
-            // Parse FDT header
-            // FIXME: Assuming DTB memory is mapped (usually Bootloader Reclaimable).
-            // Helper for Sprout v0.2 to access bytespace without query text
-
             crate::kinfo!("ROOT: Absorbing DTB (phys={:x})", dtb_phys);
 
-            // For safety, let's read size safely or fixed? FDT header is safe to assume present?
-            // If we crash here, we know DTB is also unmapped.
-            let header = unsafe { core::slice::from_raw_parts(dtb_virt as *const u8, 8) };
-            let size = u32::from_be_bytes([header[4], header[5], header[6], header[7]]) as u64;
+            // 1. Map header to get size
+            if let Ok(head_virt) = runtime.map_phys_temp(dtb_phys, 8) {
+                let header = unsafe { core::slice::from_raw_parts(head_virt as *const u8, 8) };
+                let size_u32 = u32::from_be_bytes([header[4], header[5], header[6], header[7]]);
+                let size = size_u32 as u64;
+                runtime.unmap_phys_temp(head_virt, 8);
 
-            let bs = bytespace_create(size);
-            bytespace_write(bs, 0, dtb_virt, size);
+                // 2. Validate size (sane cap: 2MB)
+                const DTB_MAX_SIZE: u64 = 2 * 1024 * 1024;
+                if size > 0 && size <= DTB_MAX_SIZE {
+                    // 3. Map full DTB and copy
+                    if let Ok(dtb_virt) = runtime.map_phys_temp(dtb_phys, size as usize) {
+                        let bs = bytespace_create(size);
+                        bytespace_write(bs, 0, dtb_virt, size);
+                        runtime.unmap_phys_temp(dtb_virt, size as usize);
 
-            link(dtb_node, rels::BACKED_BY, bs);
-            set(dtb_node, "bytespace", bs);
-
-            set(dtb_node, keys::SOURCE, src_boot);
-            set(dtb_node, keys::CONFIDENCE, conf_high);
-
-            link(fw_boot, rels::PROVIDES_TABLE, dtb_node);
+                        link(dtb_node, rels::BACKED_BY, bs);
+                        set(dtb_node, "bytespace", bs);
+                        set(dtb_node, keys::SOURCE, src_boot);
+                        set(dtb_node, keys::CONFIDENCE, conf_high);
+                        link(fw_boot, rels::PROVIDES_TABLE, dtb_node);
+                    } else {
+                        crate::kinfo!("ROOT: Warning: Failed to map full DTB sized {} at {:x}", size, dtb_phys);
+                    }
+                } else {
+                    crate::kinfo!("ROOT: Warning: DTB size {} is absurd, capping or skipping.", size);
+                    let diag = create("diagnostic/error");
+                    let msg = intern("DTB size invalid or too large");
+                    set(diag, "message", msg);
+                    set(diag, "reported_size", size);
+                    link(dtb_node, "error", diag);
+                    link(fw_boot, rels::PROVIDES_TABLE, dtb_node);
+                }
+            } else {
+                crate::kinfo!("ROOT: Warning: Failed to map DTB header at {:x}", dtb_phys);
+            }
         }
     }
 

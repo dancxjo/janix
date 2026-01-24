@@ -24,6 +24,8 @@ pub struct X86_64Runtime {
     hhdm_offset: AtomicU64,
 }
 
+const BOOT_TEMP_MAP_BASE: u64 = 0xffffff10_00000000;
+
 impl X86_64Runtime {
     pub const fn new() -> Self {
         Self {
@@ -322,6 +324,51 @@ impl ArchRuntime for X86_64Runtime {
     }
     fn lapic_base_phys(&self) -> Result<u64, abi::errors::Errno> {
         Ok(apic::base_phys())
+    }
+
+    fn map_phys_temp(&self, phys: u64, size: usize) -> Result<u64, abi::errors::Errno> {
+        let aspace = self.active_address_space();
+        let page_size = 4096u64;
+        let phys_aligned = phys & !(page_size - 1);
+        let offset = phys - phys_aligned;
+        let size_to_map = (size as u64 + offset + (page_size - 1)) & !(page_size - 1);
+        let pages = (size_to_map / page_size) as usize;
+
+        for i in 0..pages {
+            let p_addr = phys_aligned + (i as u64 * page_size);
+            let v_addr = BOOT_TEMP_MAP_BASE + (i as u64 * page_size);
+            self.map_page(
+                aspace,
+                v_addr,
+                p_addr,
+                MapPerms {
+                    user: false,
+                    read: true,
+                    write: false,
+                    exec: false,
+                },
+                MapKind::Normal,
+                &ProxyAllocator,
+            ).map_err(|_| abi::errors::Errno::ENOMEM)?;
+            self.tlb_flush_page(v_addr);
+        }
+
+        Ok(BOOT_TEMP_MAP_BASE + offset)
+    }
+
+    fn unmap_phys_temp(&self, virt: u64, size: usize) {
+        let aspace = self.active_address_space();
+        let page_size = 4096u64;
+        let virt_aligned = virt & !(page_size - 1);
+        let offset = virt - virt_aligned;
+        let size_to_unmap = (size as u64 + offset + (page_size - 1)) & !(page_size - 1);
+        let pages = (size_to_unmap / page_size) as usize;
+
+        for i in 0..pages {
+            let v_addr = virt_aligned + (i as u64 * page_size);
+            let _ = self.unmap_page(aspace, v_addr);
+            self.tlb_flush_page(v_addr);
+        }
     }
 }
 

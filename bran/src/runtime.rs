@@ -114,6 +114,12 @@ pub trait ArchRuntime {
     fn lapic_base_phys(&self) -> Result<u64, abi::errors::Errno> {
         Err(abi::errors::Errno::NotSupported)
     }
+
+    fn map_phys_temp(&self, _phys: u64, _size: usize) -> Result<u64, abi::errors::Errno> {
+        Err(abi::errors::Errno::NotSupported)
+    }
+
+    fn unmap_phys_temp(&self, _virt: u64, _size: usize) {}
 }
 
 // --- Generic Runtime ---
@@ -288,6 +294,14 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
 
     fn debug_active_aspace_root(&self) -> u64 {
         self.arch.debug_active_aspace_root()
+    }
+
+    fn map_phys_temp(&self, phys: u64, size: usize) -> Result<u64, abi::errors::Errno> {
+        self.arch.map_phys_temp(phys, size)
+    }
+
+    fn unmap_phys_temp(&self, virt: u64, size: usize) {
+        self.arch.unmap_phys_temp(virt, size)
     }
 
 }

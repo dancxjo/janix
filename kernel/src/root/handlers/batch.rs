@@ -490,6 +490,13 @@ fn parse_batch_scratch(
 
                 let dst = parse_ref_scratch(&mut cursor, batch, scratch)?;
 
+                // Consume flags (4 bytes)
+                if cursor + 4 > batch.len() {
+                    return Err(-22);
+                }
+                // Future: read flags
+                cursor += 4;
+
                 scratch.ops.push(ValidatedOp::PutEdge { src, rel, dst });
             }
             OP_SET_PROP => {
@@ -568,4 +575,68 @@ pub fn handle_apply_batch(
 ) -> HandlerResult {
     let mut scratch = RootBatchScratch::new();
     handle_apply_batch_with_scratch(graph, interner, batch, &mut scratch)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::root::handlers::encode;
+    use crate::root::graph::WatchFilter;
+
+    #[test]
+    fn test_put_edge_flags_mismatch() {
+        // Create a PUT_EDGE batch using current encoder
+        let src = 100;
+        let dst = 200;
+        let rel_bytes = [0xAA; 16];
+        let flags = 0;
+        let batch = encode::encode_put_edge(src, &rel_bytes, dst, flags);
+
+        // Try to match it with a filter that forces validation (not match-all)
+        // Filter by subject, but set ID to 0 (which won't match src=100) or match src=100.
+        // We just want to trigger the parsing loop.
+        let mut filter = WatchFilter::default();
+        filter.flags = abi::root::WATCH_F_SUBJECT;
+        filter.subject_lo = 100;
+
+        // This should return Ok(true) if it matches, or Ok(false) if not.
+        // But currently it returns Err(-22) because of missing flags.
+        let result = batch_matches_filter(&batch, &filter);
+
+        // We expect this to succeed (Ok(true))
+        assert_eq!(result, Ok(true), "Batch should match subject filter, got {:?}", result);
+    }
+
+    #[test]
+    fn test_parse_put_edge_with_flags() {
+        use crate::root::handlers::batch::RootBatchScratch;
+        use crate::root::symbols::Interner;
+
+        // Create a batch with flags
+        let src = 1;
+        let dst = 2;
+        let rel_bytes = [0xBB; 16];
+        let flags = 0xDEADBEEF;
+        let batch = encode::encode_put_edge(src, &rel_bytes, dst, flags);
+
+        let mut scratch = RootBatchScratch::new();
+        let mut interner = Interner::new();
+
+        // Parse it
+        let result = parse_batch_scratch(&batch, &mut interner, &mut scratch);
+
+        // Should succeed
+        assert!(result.is_ok(), "Parsing should succeed");
+        assert_eq!(scratch.ops.len(), 1);
+
+        // Verify op
+        if let ValidatedOp::PutEdge { src: s, rel: _, dst: d } = scratch.ops[0] {
+            assert_eq!(s, src);
+            assert_eq!(d, dst);
+            // Flags are currently dropped in ValidatedOp, so we can't check them there.
+            // But success implies they were parsed/consumed correctly.
+        } else {
+            panic!("Expected PutEdge op");
+        }
+    }
 }

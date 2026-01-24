@@ -60,13 +60,15 @@ pub fn encode_create_node(kind_bytes: &[u8; 16], out_ref: u16) -> Vec<u8> {
 /// - subject: ThingRef (17 bytes for absolute)
 /// - predicate_id: 16 bytes
 /// - object: ThingRef (17 bytes for absolute)
-pub fn encode_put_edge(src: ThingId, rel_bytes: &[u8; 16], dst: ThingId) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(8 + 1 + 17 + 16 + 17);
+/// - flags: u32 (4 bytes)
+pub fn encode_put_edge(src: ThingId, rel_bytes: &[u8; 16], dst: ThingId, flags: u32) -> Vec<u8> {
+    let mut buf = Vec::with_capacity(8 + 1 + 17 + 16 + 17 + 4);
     encode_header(&mut buf, 1);
     buf.push(OP_PUT_EDGE);
     encode_absolute_ref(&mut buf, src);
     buf.extend_from_slice(rel_bytes);
     encode_absolute_ref(&mut buf, dst);
+    buf.extend_from_slice(&flags.to_le_bytes());
     buf
 }
 

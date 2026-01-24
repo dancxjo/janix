@@ -179,7 +179,7 @@ pub fn handle_link(
 
     // Encode as batch for watch consumers
     let rel_bytes = encode::symbol_to_bytes(rid);
-    let commit_bytes = encode::encode_put_edge(src, &rel_bytes, dst);
+    let commit_bytes = encode::encode_put_edge(src, &rel_bytes, dst, 0);
 
     // Apply through canonical commit path
     let result = apply_ops_and_commit(graph, &ops, &commit_bytes);

@@ -705,25 +705,19 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     root_call(msg)
 }
 
-pub fn sys_root_watch_next(
+fn sys_root_watch_next_impl(
     id: usize,
     out_seq_ptr: usize,
     out_ptr: usize,
-    out_len: usize,
+    kbuf_len: usize,
+    kbuf_ptr: u64,
 ) -> SysResult<usize> {
-    validate_user_range(out_seq_ptr, core::mem::size_of::<u64>(), true)?;
-    validate_user_range(out_ptr, out_len, true)?;
-
-    const MAX_WATCH_PAYLOAD: usize = 256 * 1024;
-    let cap = core::cmp::min(out_len, MAX_WATCH_PAYLOAD);
-    let mut kbuf = alloc::vec![0u8; cap];
-
     loop {
         let reply = root_svc::enqueue(RootOp::WatchNext {
             id: id as u64,
             out_seq_ptr: 0,
-            out_ptr: kbuf.as_mut_ptr() as u64,
-            out_len: out_len as u64,
+            out_ptr: kbuf_ptr,
+            out_len: kbuf_len as u64,
         });
 
         loop {
@@ -737,7 +731,9 @@ pub fn sys_root_watch_next(
                     if status == 0 {
                         // Copy data
                         unsafe {
-                            copyout(out_ptr, &kbuf[..bytes_read])?;
+                            let src =
+                                core::slice::from_raw_parts(kbuf_ptr as *const u8, bytes_read);
+                            copyout(out_ptr, src)?;
                         }
                         // Copy seq
                         let seq = reply.p0.load(Ordering::Relaxed);
@@ -779,6 +775,48 @@ pub fn sys_root_watch_next(
                 crate::task::scheduler::yield_now_current();
             }
         }
+    }
+}
+
+pub fn sys_root_watch_next(
+    id: usize,
+    out_seq_ptr: usize,
+    out_ptr: usize,
+    out_len: usize,
+) -> SysResult<usize> {
+    validate_user_range(out_seq_ptr, core::mem::size_of::<u64>(), true)?;
+    validate_user_range(out_ptr, out_len, true)?;
+
+    const MAX_WATCH_PAYLOAD: usize = 256 * 1024;
+    let cap = core::cmp::min(out_len, MAX_WATCH_PAYLOAD);
+
+    // ⚖️ Steward Improvement: Stack-allocate small watch buffers
+    //
+    // Issue: Previously, this syscall allocated a Vec<u8> on the heap for every call,
+    //        causing allocator churn in the watch polling hot path.
+    // Fix:   For small payloads (<= 512 bytes), use a stack-allocated buffer.
+    //        512 bytes is safe for kernel stack (assuming typical 8KB+ stack) and covers
+    //        most common events (e.g. single ThingId/Prop updates).
+    // Safety: kbuf_len is correctly passed to the impl to prevent overflow.
+    // Verify: `cargo test -p kernel` and `root_watch_tester` behave identically.
+    if cap <= 512 {
+        let mut stack_buf = [0u8; 512];
+        sys_root_watch_next_impl(
+            id,
+            out_seq_ptr,
+            out_ptr,
+            cap,
+            stack_buf.as_mut_ptr() as u64,
+        )
+    } else {
+        let mut kbuf = alloc::vec![0u8; cap];
+        sys_root_watch_next_impl(
+            id,
+            out_seq_ptr,
+            out_ptr,
+            cap,
+            kbuf.as_mut_ptr() as u64,
+        )
     }
 }
 

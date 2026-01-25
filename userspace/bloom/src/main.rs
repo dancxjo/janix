@@ -186,11 +186,12 @@ fn main(arg: usize) -> ! {
     };
 
     // UI Window Watch - triggers dirty when windows are created/modified
-    let ui_window_pred = stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0);
-    let ui_window_watch = if ui_window_pred != 0 {
+    let ui_window_kind = stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0);
+    let ui_window_watch = if ui_window_kind != 0 {
         use abi::types::{WatchSpec, WatchMode};
         use abi::root::RootWatchFilter;
-        let filter = RootWatchFilter::predicate(ui_window_pred);
+        // Use kind() filter to watch for node creation, not predicate() which watches edges
+        let filter = RootWatchFilter::kind(ui_window_kind);
         let spec = WatchSpec {
             mode: WatchMode::StreamOnly as u32,
             filter_ptr: &filter as *const _ as u64,

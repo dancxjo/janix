@@ -26,6 +26,9 @@ pub mod asset;
 pub mod font;
 pub mod window;
 
+// Time
+pub mod instant;
+
 // Exports
 pub use edge::Edge;
 pub use kind::Kind;
@@ -37,3 +40,4 @@ pub use task::Task;
 pub use asset::Asset;
 pub use font::Font;
 pub use window::Window;
+pub use instant::{Instant, Duration};

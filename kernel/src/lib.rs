@@ -640,5 +640,6 @@ pub fn run_fairness_test<R: BootRuntime>() {
 }
 pub fn run_time_tests() {
     tests::time_test::run_selftest();
+    tests::time_monotonic_test::run_selftest();
 }
 pub mod boot_info;

@@ -9,6 +9,7 @@ mod bmp;
 mod bristle;
 mod compositor;
 mod cursor;
+mod cursor_rasterizer;
 mod damage;
 mod drawlist;
 mod frame;
@@ -44,6 +45,7 @@ use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
 use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
 use crate::cursor::CursorState;
+use crate::cursor_rasterizer::CursorRasterizer;
 use crate::asset::AssetBank;
 use crate::ui::{UiPipeline, FullRefreshReason};
 use alloc::collections::BTreeSet;
@@ -141,7 +143,7 @@ fn main(arg: usize) -> ! {
     // Cursor state
     let bristle_evt_handle = bristle_evt as PortHandle;
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
-    let mut prev_cursor_bbox = cursor.bbox();
+    let mut cursor_rasterizer = CursorRasterizer::new();
     let mut pressed_keys: BTreeSet<abi::hid::Key> = BTreeSet::new();
     let accel_cfg = MouseAccelConfig::default();
     let mut accel_state = MouseAccelState::default();
@@ -179,8 +181,7 @@ fn main(arg: usize) -> ! {
             }
         }
         
-        // Input processing
-        let old_cursor_bbox = prev_cursor_bbox;
+        // Input processing (logical state only, no cursor asset handling)
         if bristle_evt_handle != 0 {
             poll_bristle(
                 bristle_evt_handle, 
@@ -192,12 +193,6 @@ fn main(arg: usize) -> ! {
                 screen_h
             );
         }
-        
-        if let Some(asset) = ASSETS.get_cursor() {
-            cursor.set_asset(asset);
-        }
-        let new_cursor_bbox = cursor.bbox();
-        prev_cursor_bbox = new_cursor_bbox;
 
         // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
@@ -211,16 +206,13 @@ fn main(arg: usize) -> ! {
 
         let ui_result = ui_pipeline.run(screen_w, screen_h, &mut list, &ASSETS);
         
-        // Damage Tracking
+        // Damage Tracking (cursor is now blended post-damage, does not affect window damage)
         let bounds = damage::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
         for rect in &ui_result.damage {
             damage.add_rect(*rect);
         }
-        if old_cursor_bbox != new_cursor_bbox {
-            damage.add_rect(old_cursor_bbox);
-            damage.add_rect(new_cursor_bbox);
-        }
+        // Note: Cursor movement no longer triggers damage - cursor is blended post-damage
         if ui_result.changed && damage.is_empty() {
             damage = damage::Damage::full(bounds);
         }
@@ -246,13 +238,18 @@ fn main(arg: usize) -> ! {
              }
         }
         
-        // Execute drawlist (wallpaper + UI)
+        // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         raster::execute_with_damage(&mut surface, &list, &damage, ui_result.solid_text);
         
-        // Always draw cursor on top (outside damage tracking for lowest latency)
-        // Note: cursor.emit_drawlist already adds it to the list for damage-tracked rendering,
-        // but draw_cursor_overlay was software blending into the final surface.
-        // We'll rely on the DrawList-based cursor for now.
+        // Cursor overlay: blend cached snapshot at cursor position (post-damage)
+        // This ensures cursor movement does not trigger window repaints
+        if let Some(asset) = ASSETS.get_cursor() {
+            if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
+                let cx = cursor.x - snapshot.hotspot_x;
+                let cy = cursor.y - snapshot.hotspot_y;
+                raster::blit_cursor_overlay(&mut surface, &snapshot.image, cx, cy);
+            }
+        }
 
         let token = builder.finish();
         presenter.present_frame(token);

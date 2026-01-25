@@ -1,7 +1,7 @@
-use crate::asset::{Image, AssetBank};
+use crate::asset::AssetBank;
 use crate::drawlist::DrawList;
 use crate::surface::Surface;
-use stem::thing::{ThingId, HandleId};
+use stem::thing::ThingId;
 use abi::schema::keys;
 
 pub struct Painter<'a> {
@@ -71,7 +71,15 @@ impl<'a> Painter<'a> {
         Ok(())
     }
 
-    pub fn paint_cursor_snapshot(&mut self, ui_root: ThingId, cursor: &crate::cursor::CursorState) -> Result<(), abi::errors::Errno> {
+    /// Paint cursor snapshot to kernel graph bytespace.
+    /// 
+    /// This is used for kernel-level cursor snapshot management.
+    /// For direct compositor blending, use `CursorRasterizer` instead.
+    pub fn paint_cursor_snapshot(
+        &mut self, 
+        ui_root: ThingId, 
+        cursor_rasterizer: &mut crate::cursor_rasterizer::CursorRasterizer,
+    ) -> Result<(), abi::errors::Errno> {
         let bs_id_u64 = stem::thing::sys::prop_get(ui_root, keys::UI_CURSOR_SNAPSHOT_BYTESPACE).unwrap_or(0);
         if bs_id_u64 == 0 { return Err(abi::errors::Errno::ENOENT); }
         
@@ -84,16 +92,23 @@ impl<'a> Painter<'a> {
             let mut surf = unsafe { Surface::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };
             
             // Fill with transparency
-            for y in 0..h as i32 {
-                for x in 0..w as i32 {
-                    surf.put_px(x, y, 0); 
-                }
-            }
+            surf.clear();
 
+            // Get cursor snapshot from rasterizer if asset is available
             if let Some(asset) = self.assets.get_cursor() {
-                 let mut list = DrawList::new();
-                 cursor.emit_drawlist(&mut list);
-                 crate::raster::execute(&mut surf, &list, false);
+                if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
+                    // Blit the pre-composited cursor snapshot centered in the bytespace
+                    let src_w = snapshot.image.width.min(w as u32);
+                    let src_h = snapshot.image.height.min(h as u32);
+                    for sy in 0..src_h as i32 {
+                        for sx in 0..src_w as i32 {
+                            let px = snapshot.image.pixels[(sy as usize) * (snapshot.image.width as usize) + (sx as usize)];
+                            if (px >> 24) > 0 {
+                                surf.put_px(sx, sy, px);
+                            }
+                        }
+                    }
+                }
             } else {
                 // White arrow fallback
                 for i in 0..16 {

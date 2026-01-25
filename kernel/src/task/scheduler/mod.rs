@@ -44,15 +44,6 @@ static SWITCH_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
 #[cfg(any(feature = "sched_debug", debug_assertions))]
 static LAST_SWITCH: AtomicU64 = AtomicU64::new(0);
 
-// Helper for trace time source
-fn get_time_helper<R: BootRuntime>() -> u64 {
-    let rt = crate::runtime::<R>();
-    let ticks = rt.mono_ticks();
-    let freq = rt.mono_freq_hz();
-    if freq == 0 { return ticks; } // avoid div by zero
-    ticks.wrapping_mul(1_000_000_000 / freq)
-}
-
 pub static SCHEDULER: Mutex<Option<usize>> = Mutex::new(None);
 
 /// Global tick counter for debugging scheduler health
@@ -98,7 +89,6 @@ pub fn init<R: BootRuntime>() {
             hooks::GET_USER_MAPPING_AT_HOOK = Some(vm::get_user_mapping_at::<R>);
         }
         blocking::init_blocking_hooks::<R>();
-        crate::trace::register_time_source(get_time_helper::<R>);
         crate::contract!("Scheduler initialized");
     }
 }

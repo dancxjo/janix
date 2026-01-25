@@ -73,7 +73,7 @@ impl CompositorTarget {
         timeout_ms: u32
     ) -> Result<Self, CompositorError> {
         let sym = Symbols::new();
-        let deadline = stem::time::monotonic_ns() + (timeout_ms as u64 * 1_000_000); 
+        let deadline = stem::time::now() + stem::time::Duration::from_millis(timeout_ms as u64); 
         
         // Wait loop for discovery
         #[allow(unused_assignments)]
@@ -99,7 +99,7 @@ impl CompositorTarget {
             }
             if found_config.is_some() { break; }
             
-            if stem::time::monotonic_ns() > deadline {
+            if stem::time::now() > deadline {
                 break;
             }
             stem::sleep_ms(50);

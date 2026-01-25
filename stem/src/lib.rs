@@ -31,6 +31,9 @@ pub mod xml;
 pub mod memory;
 pub mod perf;
 
+// Re-export time types for convenience
+pub use time::{Instant, Duration};
+
 #[macro_export]
 macro_rules! print {
     ($($arg:tt)*) => ($crate::console::print(format_args!($($arg)*)));
@@ -105,8 +108,8 @@ pub fn yield_now() {
     thread::yield_now();
 }
 
-pub fn sleep(duration: core::time::Duration) {
-    time::sleep(duration);
+pub fn sleep(duration: impl Into<Duration>) {
+    time::sleep(duration.into());
 }
 
 pub fn sleep_ms(ms: u64) {
@@ -115,6 +118,12 @@ pub fn sleep_ms(ms: u64) {
 
 pub fn monotonic_ns() -> u64 {
     time::monotonic_ns()
+}
+
+/// Returns the current monotonic instant.
+#[inline]
+pub fn now() -> Instant {
+    time::now()
 }
 
 pub mod thing;

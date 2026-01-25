@@ -1,25 +1,40 @@
-use crate::damage::Rect;
-use crate::drawlist::DrawList;
-use crate::asset::{CursorAsset, CursorFrame};
-use crate::geometry::Color;
-use crate::frame::AssetGeneration;
+//! Cursor State - Pure logical cursor state.
+//!
+//! This module only manages the logical state of the cursor:
+//! - Position (x, y)
+//! - Button states
+//!
+//! Cursor rasterization and caching is handled by the `cursor_rasterizer` module.
+//! The compositor blends the cached cursor snapshot at the final stage.
 
+use crate::damage::Rect;
+
+/// Pure logical cursor state.
+/// 
+/// This struct only contains the logical state of the cursor position
+/// and button presses. It does NOT:
+/// - Hold cursor assets
+/// - Own cursor image data
+/// - Generate any drawing commands
+/// 
+/// This separation ensures that cursor position changes do not trigger
+/// any rasterization or window damage.
 pub struct CursorState {
+    /// Cursor X position on screen
     pub x: i32,
+    /// Cursor Y position on screen
     pub y: i32,
+    /// Bitmask of pressed buttons (bit 0 = left, bit 1 = right, bit 2 = middle, etc.)
     buttons: u32,
-    asset: Option<CursorAsset>,
 }
 
 impl CursorState {
+    /// Create a new cursor state at the given position.
     pub fn new(x: i32, y: i32) -> Self {
-        Self { x, y, buttons: 0, asset: None }
+        Self { x, y, buttons: 0 }
     }
     
-    pub fn set_asset(&mut self, asset: CursorAsset) {
-        self.asset = Some(asset);
-    }
-
+    /// Apply a relative movement delta, clamping to screen bounds.
     pub fn apply_move(&mut self, dx: i16, dy: i16, w: i32, h: i32) {
         let mut nx = self.x + dx as i32;
         let mut ny = self.y + dy as i32;
@@ -31,80 +46,94 @@ impl CursorState {
         self.y = ny;
     }
 
+    /// Record a button press.
     pub fn button_down(&mut self, button: u8) {
         if button < 32 {
             self.buttons |= 1u32 << button;
         }
     }
 
+    /// Record a button release.
     pub fn button_up(&mut self, button: u8) {
         if button < 32 {
             self.buttons &= !(1u32 << button);
         }
     }
 
+    /// Get the current button state bitmask.
     pub fn buttons(&self) -> u32 {
         self.buttons
     }
 
-    pub fn generation(&self) -> AssetGeneration {
-        self.asset
-            .as_ref()
-            .map(|asset| asset.generation())
-            .unwrap_or(AssetGeneration::ZERO)
+    /// Get the current position as a tuple.
+    pub fn position(&self) -> (i32, i32) {
+        (self.x, self.y)
     }
 
-    fn color(&self) -> Color {
-        if self.buttons & 0x1 != 0 {
-            Color::from_u32(0x00FF0000)
-        } else if self.buttons & 0x2 != 0 {
-            Color::from_u32(0x0000FFFF)
-        } else if self.buttons & 0x4 != 0 {
-            Color::from_u32(0x00FFFF00)
+    /// Check if any button is pressed.
+    pub fn any_button_pressed(&self) -> bool {
+        self.buttons != 0
+    }
+
+    /// Check if a specific button is pressed.
+    pub fn is_button_pressed(&self, button: u8) -> bool {
+        if button < 32 {
+            self.buttons & (1u32 << button) != 0
         } else {
-            Color::from_u32(0x00FFFFFF)
-        }
-    }
-    
-    fn current_frame(&self) -> Option<&CursorFrame> {
-        match &self.asset {
-            Some(CursorAsset::Static(frame)) => Some(frame),
-            Some(CursorAsset::Animated { frames, .. }) => {
-                // TODO: Animation logic using time
-                // For now, return first frame
-                frames.first()
-            }
-            None => None,
+            false
         }
     }
 
-    /// Compute the bounding box of the cursor at its current position.
+    /// Compute the cursor bounding box for damage tracking.
+    /// 
+    /// This returns a fixed-size bounding box based on typical cursor sizes.
+    /// The actual cursor dimensions come from the CursorRasterizer.
+    /// 
+    /// Note: This is used for cursor damage tracking when the cursor moves.
+    /// The size is an estimate; the actual cursor snapshot may be different.
     pub fn bbox(&self) -> Rect {
-        if let Some(frame) = self.current_frame() {
-            let dx = self.x - frame.hotspot_x as i32;
-            let dy = self.y - frame.hotspot_y as i32;
-            Rect::new(dx, dy, frame.image.width as i32 + 3, frame.image.height as i32 + 3)
-        } else {
-            // Fallback cursor size (crosshair)
-            Rect::new(self.x - 5, self.y - 5, 11, 11)
-        }
+        // Estimate: typical cursor is 32x32 + 3px shadow padding
+        const CURSOR_SIZE: i32 = 35;
+        Rect::new(self.x - 16, self.y - 16, CURSOR_SIZE, CURSOR_SIZE)
     }
 
-    pub fn emit_drawlist(&self, list: &mut DrawList) {
-        if let Some(frame) = self.current_frame() {
-             list.cursor(frame, self.x, self.y);
-        } else {
-            // Procedural Fallback: Crosshair
-            let color = self.color();
-            let x = self.x;
-            let y = self.y;
-            
-            // Horizontal line
-            list.line(x - 5, y, x + 5, y, color);
-            // Vertical line
-            list.line(x, y - 5, x, y + 5, color);
-            // Center dot
-            list.rect(x, y, 1, 1, color);
-        }
+    /// Compute cursor bounding box with known cursor dimensions.
+    pub fn bbox_with_size(&self, hotspot_x: i32, hotspot_y: i32, width: i32, height: i32) -> Rect {
+        let x = self.x - hotspot_x;
+        let y = self.y - hotspot_y;
+        Rect::new(x, y, width, height)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cursor_move_clamps_to_bounds() {
+        let mut cursor = CursorState::new(50, 50);
+        
+        // Move left past boundary
+        cursor.apply_move(-100, 0, 100, 100);
+        assert_eq!(cursor.x, 0);
+        
+        // Move right past boundary
+        cursor.apply_move(200, 0, 100, 100);
+        assert_eq!(cursor.x, 99);
+    }
+
+    #[test]
+    fn cursor_buttons_work() {
+        let mut cursor = CursorState::new(0, 0);
+        
+        assert!(!cursor.any_button_pressed());
+        
+        cursor.button_down(0);
+        assert!(cursor.is_button_pressed(0));
+        assert!(cursor.any_button_pressed());
+        
+        cursor.button_up(0);
+        assert!(!cursor.is_button_pressed(0));
+        assert!(!cursor.any_button_pressed());
     }
 }

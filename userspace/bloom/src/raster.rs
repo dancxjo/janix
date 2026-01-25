@@ -384,6 +384,53 @@ pub fn fill_rect_copy(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, col
         }
     }
 }
+
+/// Blit cursor overlay directly to surface (post-damage, always on top).
+/// 
+/// This function is called after the main DrawList rendering to composite
+/// the pre-rasterized cursor snapshot. It bypasses the damage tracking
+/// system since cursor movement should not trigger window repaints.
+/// 
+/// The cursor snapshot is expected to have pre-composited shadow layers.
+pub fn blit_cursor_overlay(surface: &mut Surface, cursor: &Image, x: i32, y: i32) {
+    let sw = surface.width();
+    let sh = surface.height();
+    
+    for sy in 0..cursor.height as i32 {
+        let dy = y + sy;
+        if dy < 0 || dy >= sh {
+            continue;
+        }
+        
+        for sx in 0..cursor.width as i32 {
+            let dx = x + sx;
+            if dx < 0 || dx >= sw {
+                continue;
+            }
+            
+            let px = cursor.pixels[(sy as usize) * (cursor.width as usize) + (sx as usize)];
+            let sa = ((px >> 24) & 0xFF) as u8;
+            
+            if sa == 0 {
+                continue;
+            }
+            
+            if sa == 255 {
+                surface.put_px(dx, dy, px);
+            } else {
+                blend_pixel(
+                    surface,
+                    dx,
+                    dy,
+                    ((px >> 16) & 0xFF) as u8,
+                    ((px >> 8) & 0xFF) as u8,
+                    (px & 0xFF) as u8,
+                    sa,
+                );
+            }
+        }
+    }
+}
 pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let a = ((color >> 24) & 0xFF) as u8;
     if a == 255 {

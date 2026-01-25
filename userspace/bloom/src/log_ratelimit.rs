@@ -19,5 +19,5 @@ pub fn log_every(interval_ms: u64, now_ms: u64) -> bool {
 /// Helper to get current time in milliseconds
 #[inline]
 pub fn now_ms() -> u64 {
-    stem::monotonic_ns() / 1_000_000
+    stem::time::now().as_millis()
 }

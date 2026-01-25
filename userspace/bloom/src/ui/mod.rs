@@ -23,6 +23,7 @@ pub enum FullRefreshReason {
     CacheInvalidated,
     AssetChange,
     BugFallback,
+    WatchActivity,
 }
 
 impl FullRefreshReason {
@@ -34,6 +35,7 @@ impl FullRefreshReason {
             Self::CacheInvalidated => "CacheInvalidated",
             Self::AssetChange => "AssetChange",
             Self::BugFallback => "BugFallback",
+            Self::WatchActivity => "WatchActivity",
         }
     }
 }
@@ -238,6 +240,11 @@ impl UiPipeline {
     /// Invalidate an asset in the cache (when we know it changed)
     pub fn invalidate_asset(&mut self, bs_id: u64) {
         self.asset_cache.invalidate(bs_id);
+    }
+
+    /// Clear the entire asset cache (when text bytespaces change)
+    pub fn asset_cache_clear(&mut self) {
+        self.asset_cache.clear();
     }
 
     pub fn run(

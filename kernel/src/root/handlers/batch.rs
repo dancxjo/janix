@@ -145,8 +145,9 @@ pub fn apply_ops_and_commit(
                 if let Some(node) = graph.get_node_mut(*id) {
                     node.props.insert(*key, *value);
                 }
-                // Track subject for summary
+                // Track subject AND predicate (key) for summary
                 summary.subjects.insert(*id);
+                summary.predicates.insert(*key);
             }
         }
     }
@@ -420,7 +421,7 @@ pub fn batch_matches_filter(
                 };
                 
                 // Key (16 bytes)
-                let _key_bytes = read_16(batch, &mut cursor)?;
+                let key_bytes = read_16(batch, &mut cursor)?;
                 
                 // Value (8 bytes)
                 if cursor + 8 > batch.len() { return Err(-22); }
@@ -433,6 +434,15 @@ pub fn batch_matches_filter(
                 // Check SUBJECT filter
                 if (filter.flags & WATCH_F_SUBJECT) != 0 {
                     if ref_kind == REF_ABSOLUTE && subject_id == filter.subject_lo {
+                        return Ok(true);
+                    }
+                }
+                
+                // Check PREDICATE filter (match key against predicate_id)
+                if (filter.flags & WATCH_F_PREDICATE) != 0 {
+                    let key_str = bytes_to_hex(&key_bytes);
+                    let key = interner.intern(&key_str);
+                    if key == filter.predicate_id {
                         return Ok(true);
                     }
                 }

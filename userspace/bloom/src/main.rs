@@ -224,6 +224,23 @@ fn main(arg: usize) -> ! {
     } else {
         None
     };
+
+    // UI Tile Asset Watch - triggers dirty when UI_TILE_ASSET property changes (for SVG tiles)
+    let ui_tile_asset_key = stem::thing::sys::intern(keys::UI_TILE_ASSET).unwrap_or(0);
+    let ui_tile_watch = if ui_tile_asset_key != 0 {
+        use abi::types::{WatchSpec, WatchMode};
+        use abi::root::RootWatchFilter;
+        let filter = RootWatchFilter::predicate(ui_tile_asset_key);
+        let spec = WatchSpec {
+            mode: WatchMode::StreamOnly as u32,
+            filter_ptr: &filter as *const _ as u64,
+            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+            ..Default::default()
+        };
+        stem::syscall::root_watch_open(&spec).ok()
+    } else {
+        None
+    };
     
     // Track watch event counts for diagnostics
     let mut ui_watch_events_total: u64 = 0;
@@ -280,6 +297,26 @@ fn main(arg: usize) -> ! {
             if drained > 0 {
                 stem::info!("[bloom] UI_TEXT watch: drained {} events", drained);
                 // Clear cached text bytespaces AND raster cache (pre-rendered text/SVG)
+                ui_pipeline.asset_cache_clear();
+                ui_pipeline.raster_cache_clear();
+                ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchActivity);
+            }
+        }
+        
+        // 3. Check for UI_TILE_ASSET property changes (SVG tiles)
+        if let Some(tilew) = ui_tile_watch {
+            let mut tile_seq = 0u64;
+            let mut tile_buf = [0u8; 256];
+            let mut drained = 0u32;
+            while let Ok(len) = stem::syscall::root_watch_next(tilew, &mut tile_seq, &mut tile_buf) {
+                if len > 0 {
+                    drained += 1;
+                } else {
+                    break;
+                }
+            }
+            if drained > 0 {
+                stem::info!("[bloom] UI_TILE_ASSET watch: drained {} events", drained);
                 ui_pipeline.asset_cache_clear();
                 ui_pipeline.raster_cache_clear();
                 ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchActivity);

@@ -250,6 +250,43 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
                     const_alpha: None, // No extra modulation by default
                 });
             },
+            // Tiled image: repeat across destination rect
+            DrawCmd::DrawImageTiled { image, dest } => {
+                let iw = image.width as i32;
+                let ih = image.height as i32;
+                if iw > 0 && ih > 0 {
+                    let dx0 = dest.x();
+                    let dy0 = dest.y();
+                    let dx1 = dest.x() + dest.width();
+                    let dy1 = dest.y() + dest.height();
+                    
+                    // Tile horizontally and vertically
+                    let mut y = dy0;
+                    while y < dy1 {
+                        let mut x = dx0;
+                        while x < dx1 {
+                            // Calculate the visible portion of this tile
+                            let tile_w = iw.min(dx1 - x);
+                            let tile_h = ih.min(dy1 - y);
+                            
+                            let tile_src = Rect::new(0, 0, tile_w, tile_h);
+                            let tile_dst = Rect::new(x, y, tile_w, tile_h);
+                            
+                            out.ops.push(LowLevelOp::BlitAlpha {
+                                image: image.clone(),
+                                src: tile_src,
+                                dst: tile_dst,
+                                filter: FilterMode::Nearest,
+                                blend: BlendMode::SrcOver,
+                                const_alpha: None,
+                            });
+                            
+                            x += iw;
+                        }
+                        y += ih;
+                    }
+                }
+            }
             
             // Complex Decompositions
             DrawCmd::DrawNineSlice { image, dest, margins } => {

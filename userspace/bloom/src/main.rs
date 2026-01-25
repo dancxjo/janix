@@ -258,9 +258,10 @@ fn main(arg: usize) -> ! {
         // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
         
-        // Render wallpaper first if available
+        // Render wallpaper first if available (tiled across the screen)
         if let Some(wp) = ASSETS.get_wallpaper() {
-            list.blit_image(&wp, 0, 0);
+            let dest = crate::geometry::Rect::new(0, 0, screen_w, screen_h);
+            list.blit_image_tiled(&wp, dest);
         } else {
             list.clear(crate::geometry::Color::from_u32(0xFF101018));
         }

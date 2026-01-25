@@ -230,6 +230,13 @@ impl DrawList {
         });
     }
 
+    pub fn blit_image_tiled(&mut self, image: &crate::asset::Image, dest: Rect) {
+        self.cmds.push(DrawCmd::DrawImageTiled {
+            image: image.clone(),
+            dest,
+        });
+    }
+
     pub fn cursor(&mut self, frame: &crate::asset::CursorFrame, x: i32, y: i32) {
         self.cmds.push(DrawCmd::Cursor {
             frame: frame.clone(),

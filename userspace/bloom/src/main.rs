@@ -167,6 +167,10 @@ fn main(arg: usize) -> ! {
     let mut pressed_keys: BTreeSet<abi::hid::Key> = BTreeSet::new();
     let accel_cfg = MouseAccelConfig::default();
     let mut accel_state = MouseAccelState::default();
+    // Track previous cursor position for damage computation
+    let mut prev_cursor_x = cursor.x;
+    let mut prev_cursor_y = cursor.y;
+    let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
 
     // Glyph Arrival Watch
     let glyph_watch_pred = stem::thing::sys::intern(kinds::FONT_GLYPH).unwrap_or(0);
@@ -274,7 +278,44 @@ fn main(arg: usize) -> ! {
         for rect in &ui_result.damage {
             damage.add_rect(*rect);
         }
-        // Note: Cursor movement no longer triggers damage - cursor is blended post-damage
+        // Cursor damage: add old + new cursor rectangles when cursor moved
+        if let Some(asset) = ASSETS.get_cursor() {
+            if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
+                let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
+                let cursor_changed = snapshot.gen != prev_cursor_gen;
+                
+                if cursor_moved || cursor_changed {
+                    let (cw, ch) = (snapshot.image.width as i32, snapshot.image.height as i32);
+                    
+                    // Old cursor rect (to erase)
+                    let old_rect = damage::Rect::new(
+                        prev_cursor_x - snapshot.hotspot_x,
+                        prev_cursor_y - snapshot.hotspot_y,
+                        cw, ch
+                    ).expand(2).clip(bounds);
+                    
+                    // New cursor rect (to draw)
+                    let new_rect = damage::Rect::new(
+                        cursor.x - snapshot.hotspot_x,
+                        cursor.y - snapshot.hotspot_y,
+                        cw, ch
+                    ).expand(2).clip(bounds);
+                    
+                    if !old_rect.is_empty() {
+                        damage.add_rect(old_rect);
+                    }
+                    if !new_rect.is_empty() {
+                        damage.add_rect(new_rect);
+                    }
+                    
+                    // Update previous state
+                    prev_cursor_x = cursor.x;
+                    prev_cursor_y = cursor.y;
+                    prev_cursor_gen = snapshot.gen;
+                }
+            }
+        }
+
         if ui_result.changed && damage.is_empty() {
             damage = damage::Damage::full(bounds);
         }

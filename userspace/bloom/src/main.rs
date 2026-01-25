@@ -26,6 +26,7 @@ mod reclaimer;
 mod render_state;
 mod surface;
 mod font_graph;
+mod font_client;
 mod ui;
 mod svg;
 pub mod painter_resources;

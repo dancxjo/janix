@@ -2,6 +2,7 @@ use crate::asset::Image;
 use crate::damage::{Damage, Rect as DamageRect};
 use crate::drawlist::DrawList;
 use crate::font_graph::{self, FontStyle};
+use crate::font_client;
 use crate::isa::{BlendMode, EdgeAA, FilterMode, Rect, Transform2D};
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
@@ -688,6 +689,120 @@ fn blit_alpha(
             }
         }
     }
+}
+
+/// Render text using atlas-based fontd IPC (batch EnsureGlyphs).
+/// Returns true if rendering was successful, false to fallback to old path.
+fn rasterize_text_atlas(
+    surface: &mut Surface,
+    text: &str,
+    x: i32,
+    y: i32,
+    size: f32,
+    color: u32,
+    clip: &Rect,
+    rf: Option<&str>,
+) -> bool {
+    // Check if font client is available
+    if !font_client::is_available() {
+        return false;
+    }
+
+    // Get face_id from font graph
+    let face_id = font_graph::try_with_graph_if_ready(|graph| {
+        let stack = graph.resolve_stack(rf);
+        stack.iter()
+            .find_map(|f| graph.select_face_for_family(*f, FontStyle::default()))
+    }).flatten();
+    
+    let face_id = match face_id {
+        Some(id) => id,
+        None => return false,
+    };
+
+    // Get metrics
+    let metrics = match font_client::get_metrics(face_id, size as u16) {
+        Some(m) => m,
+        None => return false,
+    };
+
+    // Collect glyph IDs for all characters
+    let glyph_ids: Vec<u32> = text.chars()
+        .filter(|c| *c != '\n' && *c != '\r')
+        .map(|c| c as u32)
+        .collect();
+    
+    if glyph_ids.is_empty() {
+        return true;
+    }
+
+    // Batch request all glyphs
+    let entries = font_client::ensure_glyphs(face_id, size as u16, &glyph_ids);
+    if entries.is_empty() {
+        return false; // No glyphs available yet
+    }
+
+    // Use the glyph cache directly for lookup
+    let (mut pen_x, pen_y) = (x as f32, y as f32 + metrics.ascent as f32);
+    let (sr, sg, sb, sa) = (
+        ((color >> 16) & 0xFF) as u8,
+        ((color >> 8) & 0xFF) as u8,
+        (color & 0xFF) as u8,
+        ((color >> 24) & 0xFF) as u8,
+    );
+
+    // Render each character
+    for ch in text.chars() {
+        if ch == '\n' || ch == '\r' {
+            continue; // Skip for now (single line)
+        }
+        
+        let glyph_id = ch as u32;
+        if let Some(g) = font_client::get_glyph(face_id, size as u16, glyph_id) {
+            // Empty glyph (space)
+            if g.w == 0 || g.h == 0 {
+                pen_x += g.advance as f32;
+                continue;
+            }
+            
+            // Blit from atlas
+            let gx = pen_x as i32 + g.bearing_x as i32;
+            let gy = pen_y as i32 - g.bearing_y as i32;
+            
+            // Get atlas mapping and blit
+            font_client::with_atlas(face_id, size as u16, |atlas| {
+                for row in 0..g.h as i32 {
+                    for col in 0..g.w as i32 {
+                        let cx = gx + col;
+                        let cy = gy + row;
+                        
+                        // Clip check
+                        if cx < clip.x() || cx >= clip.x() + clip.width() ||
+                           cy < clip.y() || cy >= clip.y() + clip.height() {
+                            continue;
+                        }
+                        
+                        // Get alpha from atlas
+                        let atlas_x = g.x as u32 + col as u32;
+                        let atlas_y = g.y as u32 + row as u32;
+                        let a = atlas.get_pixel(atlas_x, atlas_y);
+                        
+                        if a > 0 {
+                            let blended_a = scale_ch(a, sa) as u8;
+                            blend_pixel(surface, cx, cy, sr, sg, sb, blended_a);
+                        }
+                    }
+                }
+            });
+            
+            pen_x += g.advance as f32;
+        } else {
+            // Glyph not in cache - request and draw placeholder
+            pen_x += size * 0.4;
+        }
+    }
+    
+    true
 }
 
 fn rasterize_text_locally(

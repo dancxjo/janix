@@ -198,6 +198,17 @@ pub mod keys {
     pub const FONT_REQUEST_PX_SIZE: &str = "font.request.px_size";
     pub const FONT_IMPORT_ASSET: &str = "font.import.asset";
     pub const FONT_IMPORT_STATUS: &str = "font.import.status";
+
+    // Font Blob Properties (raw file backing)
+    pub const FONT_BLOB_SHA256: &str = "font.blob.sha256";
+    pub const FONT_BLOB_MIME: &str = "font.blob.mime";
+
+    // Font Atlas Properties
+    pub const FONT_ATLAS_BYTESPACE: &str = "font.atlas.bytespace";
+    pub const FONT_ATLAS_WIDTH: &str = "font.atlas.width";
+    pub const FONT_ATLAS_HEIGHT: &str = "font.atlas.height";
+    pub const FONT_ATLAS_FORMAT: &str = "font.atlas.format";   // 0=A8, 1=RGBA8888
+    pub const FONT_ATLAS_VERSION: &str = "font.atlas.version"; // Monotonic
 }
 
 pub mod kinds {
@@ -254,6 +265,8 @@ pub mod kinds {
     pub const FONT_COVERAGE: &str = "font.Coverage";
     pub const FONT_INSTANCE: &str = "font.Instance";
     pub const FONT_GLYPH: &str = "font.Glyph";
+    pub const FONT_BLOB: &str = "font.Blob";         // Raw font file backing store
+    pub const FONT_ATLAS: &str = "font.Atlas";       // Glyph atlas for (face, size)
     pub const FONT_IMPORT_REQUEST: &str = "font.ImportRequest";
     pub const FONT_GLYPH_REQUEST: &str = "font.GlyphRequest";
 
@@ -366,6 +379,8 @@ pub mod rels {
     pub const FONT_HAS_GLYPH: &str = "font.has_glyph";
     pub const FONT_HAS_INSTANCE: &str = "font.has_instance";
     pub const FONT_HAS_RESULT: &str = "font.has_result";
+    pub const FONT_HAS_BLOB: &str = "font.has_blob";   // Face -> Blob (raw file)
+    pub const FONT_HAS_ATLAS: &str = "font.has_atlas"; // Face -> Atlas
     pub const FONT_FALLBACK_TO: &str = "font.fallback_to";
 
     // XML Relationships

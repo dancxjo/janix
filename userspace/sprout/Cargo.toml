@@ -10,6 +10,7 @@ abi = { path = "../../abi" }
 
 [features]
 diagnostic-apps = []
+integration-test = []
 
 [[bin]]
 name = "sprout"

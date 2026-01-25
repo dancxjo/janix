@@ -56,6 +56,7 @@ fn main() -> Result<(), abi::errors::Errno> {
                         unsafe { core::ptr::read_unaligned(watch_buf.as_ptr() as *const _) };
                     // MatchFound
                     if evt.kind == 1 {
+                        let _ = syscall::log_write("Ingestd: Watch event received for node", 1);
                         process_asset(evt.node_id);
                     }
                 }

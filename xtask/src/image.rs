@@ -13,11 +13,16 @@ pub struct ProgramConfig {
 }
 
 pub fn default_programs() -> Vec<ProgramConfig> {
+    let mut sprout_features = vec!["diagnostic-apps"];
+    if std::env::var("THINGOS_INTEGRATION_TEST").is_ok() {
+        sprout_features.push("integration-test");
+    }
+
     vec![
         ProgramConfig {
             name: "sprout",
             is_init: false,
-            features: vec!["diagnostic-apps"],
+            features: sprout_features,
         },
         ProgramConfig {
             name: "bristle",
@@ -72,6 +77,11 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "bindd",
+            is_init: false,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "png_creator",
             is_init: false,
             features: vec![],
         },

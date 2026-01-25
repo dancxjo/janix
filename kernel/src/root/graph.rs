@@ -632,4 +632,36 @@ mod tests {
         assert_eq!(node1_ref.edges.len(), 1);
         assert_eq!(node1_ref.edges[0], (rel_x, node2));
     }
+
+    #[test]
+    fn test_commit_history_multi_eviction() {
+        // Max 100 bytes, enough commits to not trigger count limit
+        let mut history = CommitHistory::new(100, 100);
+
+        // Fill with 3 commits of 30 bytes each (Total 90)
+        history.push(1, vec![0; 30], CommitSummary::default());
+        history.push(2, vec![0; 30], CommitSummary::default());
+        history.push(3, vec![0; 30], CommitSummary::default());
+
+        assert_eq!(history.len(), 3);
+        assert_eq!(history.bytes, 90);
+        assert_eq!(history.oldest_seq(), Some(1));
+
+        // Push a larger commit (50 bytes).
+        // 90 + 50 = 140 > 100.
+        // Evict 1: 60 + 50 = 110 > 100.
+        // Evict 2: 30 + 50 = 80 <= 100. Stop.
+        // Result should be: [3, 4]
+        history.push(4, vec![0; 50], CommitSummary::default());
+
+        assert_eq!(history.len(), 2);
+        assert_eq!(history.oldest_seq(), Some(3));
+        assert_eq!(history.newest_seq(), Some(4));
+        assert_eq!(history.bytes, 80); // 30 + 50
+
+        assert!(!history.contains(1));
+        assert!(!history.contains(2));
+        assert!(history.contains(3));
+        assert!(history.contains(4));
+    }
 }

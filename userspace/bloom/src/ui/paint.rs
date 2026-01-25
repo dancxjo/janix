@@ -166,39 +166,118 @@ impl PaintBuilder {
     ) {
         // Window special handling
         if node.kind == UiNodeKind::Window {
-            // 1. Background
+            // Windows 3.1 style frame constants
+            const FRAME_OUTER: u32 = 0xFF000000; // Black outer border
+            const FRAME_INNER: u32 = 0xFFFFFFFF; // White inner border
+            const FRAME_WIDTH: i32 = 2; // Width of each border line
+
+            // 1. Outer black frame (drawn first, largest)
+            objects.push(PaintObject::Rect {
+                rect: layout.rect.clone(),
+                color: Color::from_u32(FRAME_OUTER),
+                radius: 0,
+            });
+
+            // 2. Inner white frame (inset by FRAME_WIDTH)
+            let inner_rect = Rect::new(
+                layout.rect.x + FRAME_WIDTH,
+                layout.rect.y + FRAME_WIDTH,
+                layout.rect.w - FRAME_WIDTH * 2,
+                layout.rect.h - FRAME_WIDTH * 2,
+            );
+            objects.push(PaintObject::Rect {
+                rect: inner_rect.clone(),
+                color: Color::from_u32(FRAME_INNER),
+                radius: 0,
+            });
+
+            // 3. Background fill (inset by another FRAME_WIDTH)
             let mut bg_color = Self::get_prop(node, keys::UI_BG_COLOR, symbols);
             if bg_color == 0 {
                 bg_color = 0xFFF5F5F0;
             } // Default off-white if not set
 
+            let content_rect = Rect::new(
+                layout.rect.x + FRAME_WIDTH * 2,
+                layout.rect.y + FRAME_WIDTH * 2,
+                layout.rect.w - FRAME_WIDTH * 4,
+                layout.rect.h - FRAME_WIDTH * 4,
+            );
             objects.push(PaintObject::Rect {
-                rect: layout.rect.clone(),
+                rect: content_rect,
                 color: Color::from_u32(bg_color as u32),
                 radius: Self::get_prop(node, keys::UI_RADIUS, symbols) as u32,
             });
 
-            // 2. Title Bar logic
+            // 4. Title Bar logic
             let title_h = TITLE_BAR_HEIGHT;
             let is_shaded = Self::get_prop(node, keys::UI_WINDOW_SHADED, symbols) != 0;
             if layout.rect.h >= title_h {
-                // Determine icon area
                 let icon_size = TITLE_BAR_ICON_SIZE;
                 let icon_padding = TITLE_BAR_PADDING;
-                let bar_rect = Rect::new(layout.rect.x, layout.rect.y, layout.rect.w, title_h);
+                let bar_rect = Rect::new(
+                    layout.rect.x + FRAME_WIDTH * 2,
+                    layout.rect.y + FRAME_WIDTH * 2,
+                    layout.rect.w - FRAME_WIDTH * 4,
+                    title_h - FRAME_WIDTH * 2,
+                );
                 let is_active = active_window.map(|id| id == layout.id).unwrap_or(false);
                 // Active window gets boot blue; inactive windows use a neutral gray.
-                let bar_color = if is_active { 0xFF2E7FD1 } else { 0xFF5A5A5A };
+                let bar_color = if is_active { 0xFF000080 } else { 0xFF808080 }; // Windows 3.1 classic blue/grey
+
+                // Title bar background
                 objects.push(PaintObject::Rect {
-                    rect: bar_rect,
+                    rect: bar_rect.clone(),
                     color: Color::from_u32(bar_color),
                     radius: 0,
                 });
 
-                // Icon Background
+                // Windows 3.1 style drag handles (horizontal lines pattern on sides of title)
+                let handle_line_count = 6;
+                let handle_width = 40;
+                let handle_spacing = 3;
+                let handle_start_y = bar_rect.y + (bar_rect.h - (handle_line_count * handle_spacing)) / 2;
+
+                // Left drag handle
+                let left_handle_x = bar_rect.x + 4;
+                for i in 0..handle_line_count {
+                    let line_y = handle_start_y + i * handle_spacing;
+                    // White line
+                    objects.push(PaintObject::Rect {
+                        rect: Rect::new(left_handle_x, line_y, handle_width, 1),
+                        color: Color::from_u32(FRAME_INNER),
+                        radius: 0,
+                    });
+                    // Black shadow line below
+                    objects.push(PaintObject::Rect {
+                        rect: Rect::new(left_handle_x, line_y + 1, handle_width, 1),
+                        color: Color::from_u32(FRAME_OUTER),
+                        radius: 0,
+                    });
+                }
+
+                // Right drag handle (mirror of left)
+                let right_handle_x = bar_rect.x + bar_rect.w - handle_width - 4;
+                for i in 0..handle_line_count {
+                    let line_y = handle_start_y + i * handle_spacing;
+                    // White line
+                    objects.push(PaintObject::Rect {
+                        rect: Rect::new(right_handle_x, line_y, handle_width, 1),
+                        color: Color::from_u32(FRAME_INNER),
+                        radius: 0,
+                    });
+                    // Black shadow line below
+                    objects.push(PaintObject::Rect {
+                        rect: Rect::new(right_handle_x, line_y + 1, handle_width, 1),
+                        color: Color::from_u32(FRAME_OUTER),
+                        radius: 0,
+                    });
+                }
+
+                // Icon Background (inset for frame)
                 let icon_bg_rect = Rect::new(
-                    layout.rect.x + icon_padding,
-                    layout.rect.y + icon_padding,
+                    bar_rect.x + icon_padding + handle_width + 8,
+                    layout.rect.y + FRAME_WIDTH * 2 + icon_padding,
                     icon_size,
                     icon_size,
                 );
@@ -210,8 +289,8 @@ impl PaintBuilder {
 
                 // Icon
                 let icon_rect = Rect::new(
-                    layout.rect.x + icon_padding,
-                    layout.rect.y + icon_padding,
+                    bar_rect.x + icon_padding + handle_width + 8,
+                    layout.rect.y + FRAME_WIDTH * 2 + icon_padding,
                     icon_size,
                     icon_size,
                 );
@@ -233,26 +312,51 @@ impl PaintBuilder {
                     }
                 }
 
-                let text_offset_x = icon_size + (icon_padding * 2);
+                let text_offset_x = handle_width + 8 + icon_size + (icon_padding * 2);
 
-                // Shade button
+                // Shade button with Windows 3.1 styling
                 let shade_x =
-                    layout.rect.x + layout.rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
-                let shade_y = layout.rect.y + (title_h - SHADE_BUTTON_SIZE) / 2;
-                let shade_rect = Rect::new(shade_x, shade_y, SHADE_BUTTON_SIZE, SHADE_BUTTON_SIZE);
-                let shade_bg = if is_shaded { 0xFF2F3C4A } else { 0xFF4A5B6C };
+                    bar_rect.x + bar_rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE - handle_width - 8;
+                let shade_y = bar_rect.y + (bar_rect.h - SHADE_BUTTON_SIZE) / 2;
+
+                // Button outer black border
                 objects.push(PaintObject::Rect {
-                    rect: shade_rect.clone(),
-                    color: Color::from_u32(shade_bg),
-                    radius: 6,
+                    rect: Rect::new(shade_x - 1, shade_y - 1, SHADE_BUTTON_SIZE + 2, SHADE_BUTTON_SIZE + 2),
+                    color: Color::from_u32(FRAME_OUTER),
+                    radius: 0,
                 });
+                // Button white fill
+                objects.push(PaintObject::Rect {
+                    rect: Rect::new(shade_x, shade_y, SHADE_BUTTON_SIZE, SHADE_BUTTON_SIZE),
+                    color: Color::from_u32(0xFFC0C0C0), // Windows 3.1 button grey
+                    radius: 0,
+                });
+                // Button 3D highlight (top-left white)
+                objects.push(PaintObject::Rect {
+                    rect: Rect::new(shade_x, shade_y, SHADE_BUTTON_SIZE - 1, 1),
+                    color: Color::from_u32(FRAME_INNER),
+                    radius: 0,
+                });
+                objects.push(PaintObject::Rect {
+                    rect: Rect::new(shade_x, shade_y, 1, SHADE_BUTTON_SIZE - 1),
+                    color: Color::from_u32(FRAME_INNER),
+                    radius: 0,
+                });
+                // Button 3D shadow (bottom-right black)
+                objects.push(PaintObject::Rect {
+                    rect: Rect::new(shade_x + 1, shade_y + SHADE_BUTTON_SIZE - 1, SHADE_BUTTON_SIZE - 1, 1),
+                    color: Color::from_u32(0xFF808080),
+                    radius: 0,
+                });
+                objects.push(PaintObject::Rect {
+                    rect: Rect::new(shade_x + SHADE_BUTTON_SIZE - 1, shade_y + 1, 1, SHADE_BUTTON_SIZE - 1),
+                    color: Color::from_u32(0xFF808080),
+                    radius: 0,
+                });
+
                 // Use proper Unicode triangles from symbol font, centered in the button
-                // ▲ (U+25B2) for expanded, ▼ (U+25BC) for shaded/collapsed
                 let shade_glyph = if is_shaded { "\u{25BC}" } else { "\u{25B2}" };
-                // Center the glyph in the button area
-                // The glyph size is smaller than the button; leave room for centering
                 let glyph_size: f32 = 14.0;
-                // Calculate offset to center the glyph (approximate: glyph is roughly square)
                 let glyph_offset_x = (SHADE_BUTTON_SIZE as f32 - glyph_size) / 2.0;
                 let glyph_offset_y = (SHADE_BUTTON_SIZE as f32 - glyph_size) / 2.0;
                 let glyph_rect = Rect::new(
@@ -266,22 +370,19 @@ impl PaintBuilder {
                     text: shade_glyph.into(),
                     font: "NotoSansSymbol-Regular.ttf".into(),
                     size: glyph_size,
-                    color: Color::from_u32(0xFFFFFFFF),
+                    color: Color::from_u32(0xFF000000), // Black text for Windows 3.1 style
                     font_debug: false,
                 });
 
                 // Title Text - vertically centered in title bar
                 let title = Self::get_str_prop(node, keys::UI_TITLE, symbols);
                 if let Some(t) = title {
-                    let text_w = (shade_x - (layout.rect.x + text_offset_x)).max(0);
+                    let text_w = (shade_x - (bar_rect.x + text_offset_x)).max(0);
                     let font_size: f32 = 14.0;
-                    // Vertically center the text in the title bar
-                    // Title bar height is title_h, font_size is the text height (baseline to top)
-                    // We want the text center aligned with the bar center
-                    let text_y = layout.rect.y + (title_h - font_size as i32) / 2;
+                    let text_y = bar_rect.y + (bar_rect.h - font_size as i32) / 2;
                     objects.push(PaintObject::Text {
                         rect: Rect::new(
-                            layout.rect.x + text_offset_x,
+                            bar_rect.x + text_offset_x,
                             text_y,
                             text_w,
                             font_size as i32,

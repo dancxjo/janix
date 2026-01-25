@@ -1293,3 +1293,116 @@ async fn symbol_rendered(_world: &mut ThingOsWorld) {
 async fn cursor_moved(_world: &mut ThingOsWorld) {
     eprintln!("│  │  │      ℹ️ Cursor movement requires visual verification");
 }
+
+// ===== Desktop App Steps =====
+
+#[then(regex = r#"^I should see a window at (\d+), (\d+) with background color "(.+)"$"#)]
+async fn check_window_bg_color(
+    world: &mut ThingOsWorld,
+    x: u32,
+    y: u32,
+    color_hex: String,
+) -> Result<(), StepError> {
+    let expected_color = if color_hex.starts_with('#') {
+        let hex = &color_hex[1..];
+        if hex.len() != 6 {
+            return Err(StepError(format!("Invalid hex color: {}", color_hex)));
+        }
+        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
+        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
+        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
+        [r, g, b]
+    } else {
+        return Err(StepError(format!("Color must start with #: {}", color_hex)));
+    };
+
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("window_bg_check");
+
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .map_err(|e| StepError(format!("Failed to take screenshot: {}", e)))?;
+
+    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let rgb = img.to_rgb8();
+    let (width, height) = rgb.dimensions();
+
+    if x >= width || y >= height {
+        return Err(StepError(format!("Coordinates ({}, {}) out of bounds ({}, {})", x, y, width, height)));
+    }
+
+    // Check inside the window (offset by +10, +10)
+    let sample_x = x + 10;
+    let sample_y = y + 10;
+
+    if sample_x >= width || sample_y >= height {
+        return Err(StepError("Sample point out of bounds".to_string()));
+    }
+
+    let pixel = rgb.get_pixel(sample_x, sample_y).0;
+
+    // Tolerance of 5
+    if !color_close(pixel, expected_color, 5) {
+        return Err(StepError(format!(
+            "Pixel at ({}, {}) was {:?}, expected {:?} (tolerance 5). Window might not be there.",
+            sample_x, sample_y, pixel, expected_color
+        )));
+    }
+
+    eprintln!("│  │  │      ✅ Window detected at ({}, {}) with color {:?}", x, y, expected_color);
+    Ok(())
+}
+
+#[then(regex = r#"^I should see text-like pixels inside the window at (\d+), (\d+)$"#)]
+async fn check_text_pixels(
+    world: &mut ThingOsWorld,
+    x: u32,
+    y: u32,
+) -> Result<(), StepError> {
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("window_text_check");
+
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .map_err(|e| StepError(format!("Failed to take screenshot: {}", e)))?;
+
+    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let rgb = img.to_rgb8();
+
+    let mut found_text = false;
+    let search_radius = 40;
+    let (width, height) = rgb.dimensions();
+
+    let mut black_pixels = 0;
+
+    for dy in 0..search_radius {
+        for dx in 0..search_radius {
+            let px = x + dx;
+            let py = y + dy;
+            if px < width && py < height {
+                let pixel = rgb.get_pixel(px, py).0;
+                // Check for dark pixels (text) - strict black/dark grey
+                if pixel[0] < 80 && pixel[1] < 80 && pixel[2] < 80 {
+                    black_pixels += 1;
+                }
+            }
+        }
+    }
+
+    eprintln!("│  │  │      📝 Found {} dark pixels in search area at ({}, {})", black_pixels, x, y);
+
+    if black_pixels < 5 {
+         return Err(StepError(format!(
+            "No text-like (dark) pixels found near ({}, {}). Found {}",
+            x, y, black_pixels
+        )));
+    }
+
+    Ok(())
+}

@@ -30,6 +30,7 @@ mod font_client;
 mod ui;
 mod svg;
 mod blossom_client;
+mod window_manager;
 pub mod painter_resources;
 
 pub use painter_resources::ASSETS;
@@ -45,11 +46,12 @@ use crate::compositor::CompositorTarget;
 use crate::frame::FrameBuilder;
 use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
-use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
+use crate::bristle::{poll_bristle, poll_pointer_events, PointerEvent, MouseAccelConfig, MouseAccelState};
 use crate::cursor::CursorState;
 use crate::cursor_rasterizer::CursorRasterizer;
 use crate::asset::AssetBank;
 use crate::ui::{UiPipeline, FullRefreshReason};
+use crate::window_manager::{WindowManager, WindowState, Hit, DragKind, ResizeAnchor, Edge, Corner};
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
@@ -172,6 +174,9 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_x = cursor.x;
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
+
+    // Window Manager for move/resize and hit testing
+    let mut window_manager = WindowManager::new(screen_w, screen_h);
 
     // Glyph Arrival Watch
     let glyph_watch_pred = stem::thing::sys::intern(kinds::FONT_GLYPH).unwrap_or(0);
@@ -324,17 +329,128 @@ fn main(arg: usize) -> ! {
             }
         }
         
-        // Input processing (logical state only, no cursor asset handling)
+        // Input processing with window management
         if bristle_evt_handle != 0 {
-            poll_bristle(
-                bristle_evt_handle, 
-                &mut cursor, 
-                &mut pressed_keys, 
-                &accel_cfg, 
-                &mut accel_state, 
-                screen_w, 
-                screen_h
+            let pointer_events = poll_pointer_events(
+                bristle_evt_handle,
+                &accel_cfg,
+                &mut accel_state,
             );
+
+            for event in pointer_events {
+                match event {
+                    PointerEvent::Move { dx, dy } => {
+                        // Update cursor position
+                        cursor.apply_move(dx, dy, screen_w, screen_h);
+                        
+                        // If dragging, update window geometry
+                        if window_manager.is_dragging() {
+                            if let Some(wid) = window_manager.dragging_window() {
+                                if let Some(current_rect) = ui_pipeline.get_window_rect(wid) {
+                                    if let Some(new_rect) = window_manager.update_drag(
+                                        (cursor.x, cursor.y),
+                                        current_rect,
+                                    ) {
+                                        ui_pipeline.set_window_rect(wid, new_rect);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    PointerEvent::ButtonDown { button } => {
+                        cursor.button_down(button);
+                        
+                        // Only process left button (button 0) for window management
+                        if button == 0 {
+                            // Build window states for hit testing
+                            let window_data = ui_pipeline.get_windows_for_hit_test();
+                            let window_states: alloc::vec::Vec<WindowState> = window_data
+                                .into_iter()
+                                .map(|(id, rect, is_shaded, is_maximized)| WindowState {
+                                    id,
+                                    rect,
+                                    is_shaded,
+                                    is_maximized,
+                                    pre_maximize_rect: None,
+                                })
+                                .collect();
+                            
+                            // Hit test
+                            if let Some((wid, hit)) = crate::window_manager::pick_window(
+                                cursor.x, cursor.y, &window_states
+                            ) {
+                                match hit {
+                                    Hit::TitleBar => {
+                                        // Start move drag
+                                        if let Some(win_rect) = ui_pipeline.get_window_rect(wid) {
+                                            window_manager.begin_drag(
+                                                wid,
+                                                DragKind::Move,
+                                                (cursor.x, cursor.y),
+                                                win_rect,
+                                            );
+                                            ui_pipeline.raise_window(wid);
+                                        }
+                                    }
+                                    Hit::ResizeEdge(edge) => {
+                                        // Start resize drag
+                                        if let Some(win_rect) = ui_pipeline.get_window_rect(wid) {
+                                            let anchor = ResizeAnchor::from_edge(edge);
+                                            window_manager.begin_drag(
+                                                wid,
+                                                DragKind::Resize { anchor },
+                                                (cursor.x, cursor.y),
+                                                win_rect,
+                                            );
+                                            ui_pipeline.raise_window(wid);
+                                        }
+                                    }
+                                    Hit::ResizeCorner(corner) => {
+                                        // Start corner resize drag
+                                        if let Some(win_rect) = ui_pipeline.get_window_rect(wid) {
+                                            let anchor = ResizeAnchor::from_corner(corner);
+                                            window_manager.begin_drag(
+                                                wid,
+                                                DragKind::Resize { anchor },
+                                                (cursor.x, cursor.y),
+                                                win_rect,
+                                            );
+                                            ui_pipeline.raise_window(wid);
+                                        }
+                                    }
+                                    Hit::ButtonShade => {
+                                        // Toggle shaded (minimize) state
+                                        ui_pipeline.toggle_window_shade(wid);
+                                    }
+                                    Hit::ButtonMaximize => {
+                                        // Toggle maximized state
+                                        // Get current window to toggle
+                                        if let Some(ws) = window_states.iter().find(|w| w.id == wid) {
+                                            let mut ws_clone = ws.clone();
+                                            let new_rect = window_manager.toggle_maximize(&mut ws_clone);
+                                            ui_pipeline.set_window_rect(wid, new_rect);
+                                        }
+                                    }
+                                    Hit::ClientArea => {
+                                        // Raise window on click but also allow drag to start
+                                        ui_pipeline.raise_window(wid);
+                                        // TODO: Route to app when Petals is ready
+                                    }
+                                    Hit::None => {}
+                                }
+                            }
+                        }
+                    }
+                    PointerEvent::ButtonUp { button } => {
+                        cursor.button_up(button);
+                        
+                        // End drag on left button release
+                        if button == 0 {
+                            window_manager.end_drag();
+                        }
+                    }
+                }
+            }
         }
 
         // Run UI Pipeline
@@ -355,6 +471,10 @@ fn main(arg: usize) -> ! {
         let mut damage = damage::Damage::empty(bounds);
         for rect in &ui_result.damage {
             damage.add_rect(*rect);
+        }
+        // Window manager damage (move/resize/maximize)
+        for rect in window_manager.take_damage() {
+            damage.add_rect(rect);
         }
         // Cursor damage: add old + new cursor rectangles when cursor moved
         if let Some(asset) = ASSETS.get_cursor() {

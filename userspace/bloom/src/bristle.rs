@@ -3,8 +3,20 @@ use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
 use stem::syscall::{port_recv, PortHandle};
+use alloc::vec::Vec;
 
 use crate::cursor::CursorState;
+
+/// Structured pointer event for window manager processing.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PointerEvent {
+    /// Relative movement (accelerated dx, dy).
+    Move { dx: i16, dy: i16 },
+    /// Button pressed at current cursor position.
+    ButtonDown { button: u8 },
+    /// Button released at current cursor position.
+    ButtonUp { button: u8 },
+}
 
 #[derive(Clone, Copy)]
 pub struct MouseAccelConfig {
@@ -161,6 +173,104 @@ pub fn poll_bristle(
                     let btn =
                         unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.button)) };
                     cursor.button_up(btn);
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Poll for pointer events and return them as structured events.
+/// 
+/// Unlike `poll_bristle`, this does not mutate cursor state.
+/// The caller is responsible for applying movement and button state
+/// after processing events through the window manager.
+pub fn poll_pointer_events(
+    handle: PortHandle,
+    accel_cfg: &MouseAccelConfig,
+    accel_state: &mut MouseAccelState,
+) -> Vec<PointerEvent> {
+    let mut events = Vec::new();
+    let mut buf = [0u8; 256];
+
+    loop {
+        let n = match port_recv(handle, &mut buf) {
+            Ok(n) => n,
+            Err(_) => return events,
+        };
+
+        if n == 0 {
+            return events;
+        }
+
+        if n < BristleEventHeader::SIZE {
+            continue;
+        }
+
+        let header: BristleEventHeader =
+            unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const BristleEventHeader) };
+        let magic = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.magic)) };
+        let version = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.version)) };
+        let event_type =
+            unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.event_type)) };
+        let payload_len =
+            unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.payload_len)) } as usize;
+        let timestamp_ns =
+            unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.timestamp_ns)) };
+
+        if magic != BRISTLE_EVENT_MAGIC || version != BRISTLE_EVENT_VERSION {
+            continue;
+        }
+
+        let total = BristleEventHeader::SIZE + payload_len;
+        if n < total {
+            continue;
+        }
+
+        match event_type {
+            3 => {
+                // PointerMove
+                if payload_len >= PointerMovePayload::SIZE {
+                    let payload: PointerMovePayload = unsafe {
+                        core::ptr::read_unaligned(
+                            buf.as_ptr().add(BristleEventHeader::SIZE) as *const PointerMovePayload
+                        )
+                    };
+                    let dx = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dx)) };
+                    let dy = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dy)) };
+                    let dt_s = match accel_state.last_timestamp_ns {
+                        Some(prev) if timestamp_ns > prev => (timestamp_ns - prev) as f32 * 1.0e-9,
+                        _ => 0.0,
+                    };
+                    accel_state.last_timestamp_ns = Some(timestamp_ns);
+
+                    let dt_s = if dt_s > 0.25 { 0.0 } else { dt_s };
+                    let (ax, ay) = apply_mouse_accel((dx, dy), dt_s, accel_cfg);
+                    events.push(PointerEvent::Move { dx: ax, dy: ay });
+                }
+            }
+            4 => {
+                // PointerButtonDown
+                if payload_len >= PointerButtonPayload::SIZE {
+                    let payload: PointerButtonPayload = unsafe {
+                        core::ptr::read_unaligned(buf.as_ptr().add(BristleEventHeader::SIZE)
+                            as *const PointerButtonPayload)
+                    };
+                    let btn =
+                        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.button)) };
+                    events.push(PointerEvent::ButtonDown { button: btn });
+                }
+            }
+            5 => {
+                // PointerButtonUp
+                if payload_len >= PointerButtonPayload::SIZE {
+                    let payload: PointerButtonPayload = unsafe {
+                        core::ptr::read_unaligned(buf.as_ptr().add(BristleEventHeader::SIZE)
+                            as *const PointerButtonPayload)
+                    };
+                    let btn =
+                        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.button)) };
+                    events.push(PointerEvent::ButtonUp { button: btn });
                 }
             }
             _ => {}

@@ -703,6 +703,125 @@ impl UiPipeline {
         }
     }
 
+    /// Get all windows for hit testing, in z-order (front to back).
+    /// 
+    /// Returns (id, rect, is_shaded, is_maximized) for each window.
+    pub fn get_windows_for_hit_test(&self) -> alloc::vec::Vec<(ThingId, Rect, bool, bool)> {
+        let layout = match self.last_layout.as_ref() {
+            Some(l) => l,
+            None => return alloc::vec::Vec::new(),
+        };
+        let root = match layout.root.as_ref() {
+            Some(r) => r,
+            None => return alloc::vec::Vec::new(),
+        };
+        let snapshot = match self.prev_snapshot.as_ref() {
+            Some(s) => s,
+            None => return alloc::vec::Vec::new(),
+        };
+
+        let mut windows: alloc::vec::Vec<(ThingId, Rect, bool, bool, i32)> = alloc::vec::Vec::new();
+        Self::collect_windows(root, snapshot, &self.cached_keys, &mut windows);
+
+        // Sort by z-index descending (front to back)
+        windows.sort_by(|a, b| b.4.cmp(&a.4));
+
+        windows.into_iter().map(|(id, rect, shaded, maximized, _z)| (id, rect, shaded, maximized)).collect()
+    }
+
+    fn collect_windows(
+        node: &layout::LayoutNode,
+        snapshot: &UiSnapshot,
+        keys: &Option<UiKeys>,
+        out: &mut alloc::vec::Vec<(ThingId, Rect, bool, bool, i32)>,
+    ) {
+        if node.kind == snapshot::UiNodeKind::Window {
+            let is_shaded = if let (Some(k), Some(n)) = (keys, snapshot.nodes.get(&node.id)) {
+                if k.window_shaded != 0 {
+                    n.props.get(&k.window_shaded).copied().unwrap_or(0) != 0
+                } else {
+                    false
+                }
+            } else {
+                false
+            };
+            // Check maximized state (not yet persisted in graph, so always false for now)
+            let is_maximized = false;
+            out.push((node.id, node.rect, is_shaded, is_maximized, node.z_index));
+        }
+        for child in &node.children {
+            Self::collect_windows(child, snapshot, keys, out);
+        }
+    }
+
+    /// Set a window's position and size in the graph.
+    /// 
+    /// This updates the UI_X, UI_Y, UI_WIDTH, UI_HEIGHT properties.
+    pub fn set_window_rect(&mut self, window_id: ThingId, rect: Rect) -> bool {
+        let keys = match self.cached_keys.as_ref() {
+            Some(k) => k,
+            None => return false,
+        };
+
+        let mut success = true;
+        if keys.x != 0 {
+            success &= stem::thing::sys::prop_set(window_id, keys.x, rect.x as u64).is_ok();
+        }
+        if keys.y != 0 {
+            success &= stem::thing::sys::prop_set(window_id, keys.y, rect.y as u64).is_ok();
+        }
+        if keys.w != 0 {
+            success &= stem::thing::sys::prop_set(window_id, keys.w, rect.w as u64).is_ok();
+        }
+        if keys.h != 0 {
+            // Subtract title bar height for stored value
+            let stored_h = (rect.h - TITLE_BAR_HEIGHT).max(0) as u64;
+            success &= stem::thing::sys::prop_set(window_id, keys.h, stored_h).is_ok();
+        }
+
+        if success {
+            self.mark_node_dirty(window_id);
+        }
+        success
+    }
+
+    /// Get the rect for a window from the layout tree.
+    pub fn get_window_rect(&self, window_id: ThingId) -> Option<Rect> {
+        self.last_layout.as_ref()?.find_rect(window_id)
+    }
+
+    /// Raise a window to the front by updating its z-index.
+    pub fn raise_window(&mut self, window_id: ThingId) -> bool {
+        let keys = match self.cached_keys.as_ref() {
+            Some(k) => k,
+            None => return false,
+        };
+
+        if keys.z_index == 0 {
+            return false;
+        }
+
+        // Find the max z-index of all windows
+        let windows = self.get_windows_for_hit_test();
+        let max_z = windows.iter().filter(|(id, _, _, _)| *id != window_id).map(|(_, _, _, _)| {
+            // Read z-index from snapshot
+            if let Some(snapshot) = self.prev_snapshot.as_ref() {
+                if let Some(node) = snapshot.nodes.get(&window_id) {
+                    return node.props.get(&keys.z_index).copied().unwrap_or(0) as i32;
+                }
+            }
+            0
+        }).max().unwrap_or(0);
+
+        let new_z = (max_z + 1) as u64;
+        if stem::thing::sys::prop_set(window_id, keys.z_index, new_z).is_ok() {
+            self.mark_node_dirty(window_id);
+            true
+        } else {
+            false
+        }
+    }
+
     fn lower(scene: &PaintScene, list: &mut DrawList) {
         use crate::drawlist::DrawCmd;
         for obj in &scene.objects {

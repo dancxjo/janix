@@ -18,4 +18,9 @@ impl RenderState {
             raster_cache: BTreeMap::new(),
         }
     }
+    
+    /// Clear the raster cache when UI content changes
+    pub fn clear_raster_cache(&mut self) {
+        self.raster_cache.clear();
+    }
 }

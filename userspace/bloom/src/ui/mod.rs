@@ -247,6 +247,11 @@ impl UiPipeline {
         self.asset_cache.clear();
     }
 
+    /// Clear the raster cache (pre-rendered text/SVG) when content changes
+    pub fn raster_cache_clear(&mut self) {
+        self.render_state.clear_raster_cache();
+    }
+
     pub fn run(
         &mut self,
         screen_w: i32,

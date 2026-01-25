@@ -291,8 +291,8 @@ impl LayoutSolver {
         let center_x = Self::get_prop(child_node, keys::UI_CENTER_X, symbols) != 0;
         let center_y = Self::get_prop(child_node, keys::UI_CENTER_Y, symbols) != 0;
 
-        // Measure text block ...
-        if (center_x || center_y) && (w == 0 || h == 0) {
+        // Measure text block when dimensions not explicitly set
+        if w == 0 || h == 0 {
             if let Some(text) = Self::get_str_prop(child_node, keys::UI_TEXT, symbols) {
                 let font_name = Self::get_str_prop(child_node, keys::UI_FONT_STACK, symbols)
                     .or_else(|| Self::get_str_prop(child_node, keys::UI_FONT, symbols))

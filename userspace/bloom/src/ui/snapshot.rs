@@ -631,6 +631,35 @@ impl UiSnapshot {
         changed
     }
 
+    /// Compute a hash of all windows for cache invalidation.
+    /// Includes window IDs, bounds, and title hashes.
+    pub fn windows_hash(&self) -> u64 {
+        let mut hash = 0xcbf29ce484222325u64;
+        let mut window_count = 0u32;
+        for (id, node) in &self.nodes {
+            if node.kind == UiNodeKind::Window {
+                window_count += 1;
+                // FNV-1a hash mix
+                hash ^= id.to_u64_lossy();
+                hash = hash.wrapping_mul(0x100000001b3);
+                // Include key properties to detect changes
+                for (k, v) in &node.props {
+                    hash ^= (*k as u64) ^ v;
+                    hash = hash.wrapping_mul(0x100000001b3);
+                }
+            }
+        }
+        // Include window count in hash
+        hash ^= window_count as u64;
+        hash
+    }
+
+    /// Count of window nodes in the snapshot
+    pub fn window_count(&self) -> usize {
+        self.nodes.values().filter(|n| n.kind == UiNodeKind::Window).count()
+    }
+
+
     fn nodes_equal(&self, a: &UiNodeSnapshot, b: &UiNodeSnapshot) -> bool {
         a.kind == b.kind && a.props == b.props && a.strings == b.strings && a.children == b.children
     }

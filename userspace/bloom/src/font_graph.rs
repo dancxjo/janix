@@ -11,6 +11,22 @@ use crate::asset::{AssetBank, FontAsset};
 use spin::Mutex;
 use stem::thing::ThingId;
 use stem::thing::sys::{bytespace_info, bytespace_read, find, get_edges, intern, prop_get, prop_set};
+use core::sync::atomic::{AtomicU64, Ordering};
+
+/// Font epoch counter - increments when font availability changes.
+/// Used by UiBuildKey to detect when text needs re-rendering.
+static FONT_EPOCH: AtomicU64 = AtomicU64::new(0);
+
+/// Get the current font epoch (for UI cache invalidation).
+pub fn get_epoch() -> u64 {
+    FONT_EPOCH.load(Ordering::Relaxed)
+}
+
+/// Increment font epoch (called when fonts change).
+fn increment_epoch() {
+    FONT_EPOCH.fetch_add(1, Ordering::Relaxed);
+}
+
 
 #[derive(Clone, Copy, Debug)]
 pub struct FontStyle {
@@ -654,6 +670,7 @@ pub fn mark_dirty() {
     let mut guard = FONT_GRAPH.lock();
     if let Some(graph) = guard.as_mut() {
         graph.mark_dirty();
+        increment_epoch();
     }
 }
 

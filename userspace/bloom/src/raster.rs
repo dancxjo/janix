@@ -954,6 +954,15 @@ fn rasterize_text_locally(
     if !handled {
         rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
     }
+    // Diagnostic: log text rasterization stats for debugging rendering issues
+    static mut LOG_COUNT: u64 = 0;
+    unsafe {
+        LOG_COUNT += 1;
+        if LOG_COUNT <= 10 || LOG_COUNT % 500 == 0 {
+            stem::info!("[raster] text glyphs={} pixels={} handled={} text_chars={}", 
+                stats.0, stats.1, handled, text.len());
+        }
+    }
     crate::trace_counter!("text.glyphs", stats.0);
     crate::trace_counter!("text.pixels", stats.1);
     crate::trace_counter!("text.raster_ns", r_ns_t);

@@ -270,17 +270,14 @@ impl UiPipeline {
             if self.emit_cached_drawlists(list) {
                 crate::trace_event!("ui.run.path", "fast_path_cached");
                 if log_this_frame {
-                    let window_count = self
+                    let (window_count, windows_hash) = self
                         .prev_snapshot
                         .as_ref()
-                        .map(|s| {
-                            s.nodes
-                                .values()
-                                .filter(|n| matches!(n.kind, snapshot::UiNodeKind::Window))
-                                .count()
-                        })
-                        .unwrap_or(0);
-                    crate::log!("[bloom][ui] ENTER_UI_BUILD dirty=false root_present=true windows_seen={} reason=fast_path_cached", window_count);
+                        .map(|s| (s.window_count(), s.windows_hash()))
+                        .unwrap_or((0, 0));
+                    let font_epoch = crate::font_graph::get_epoch();
+                    crate::log!("[bloom][ui] ENTER_UI_BUILD dirty=false root_present=true windows_seen={} windows_hash={:#x} font_epoch={} reason=fast_path_cached", 
+                        window_count, windows_hash, font_epoch);
                 }
                 return UiRunResult {
                     changed: false,

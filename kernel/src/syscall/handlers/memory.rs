@@ -84,8 +84,22 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
         _reserved: [0; 7],
     };
 
-    unsafe {
-        crate::task::scheduler::add_user_mapping_current(region)?;
+    // Only register regions that are actually accessible (not guard-only)
+    // Guard regions are virtual address reservations without actual page mappings
+    let is_accessible = req.prot.contains(VmProt::READ) || req.prot.contains(VmProt::WRITE);
+    
+    if is_accessible {
+        // For FIXED mappings, we may be replacing part of an existing region
+        // Remove the overlap first to avoid permission conflicts
+        if fixed {
+            unsafe {
+                let _ = crate::task::scheduler::remove_user_mappings_current(addr, len);
+            }
+        }
+        
+        unsafe {
+            crate::task::scheduler::add_user_mapping_current(region)?;
+        }
     }
 
     let resp = VmMapResp { addr, len };

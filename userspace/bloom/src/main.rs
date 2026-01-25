@@ -131,12 +131,31 @@ fn main(arg: usize) -> ! {
     let mut ui_pipeline = UiPipeline::new();
     ui_pipeline.set_root(ui_root);
     
-    // Spawn asset workers
+    // Spawn asset workers with diagnostic logging
     use stem::stack::{Stack, StackSpec};
     let s_spec = StackSpec { reserve_bytes: 256 * 1024, ..StackSpec::default() };
-    let _ = stem::thread::spawn_on(Stack::alloc_growing_stack(s_spec).unwrap(), painter_resources::wallpaper_loader_entry);
-    let _ = stem::thread::spawn_on(Stack::alloc_growing_stack(s_spec).unwrap(), painter_resources::cursor_loader_entry);
-    let _ = stem::thread::spawn_on(Stack::alloc_growing_stack(s_spec).unwrap(), painter_resources::font_loader_entry);
+    
+    match Stack::alloc_growing_stack(s_spec) {
+        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::wallpaper_loader_entry) {
+            Ok(tid) => stem::info!("bloom: spawned wallpaper loader (tid={})", tid),
+            Err(e) => stem::error!("bloom: FAILED to spawn wallpaper loader: {:?}", e),
+        },
+        Err(e) => stem::error!("bloom: FAILED to alloc wallpaper stack: {:?}", e),
+    }
+    match Stack::alloc_growing_stack(s_spec) {
+        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::cursor_loader_entry) {
+            Ok(tid) => stem::info!("bloom: spawned cursor loader (tid={})", tid),
+            Err(e) => stem::error!("bloom: FAILED to spawn cursor loader: {:?}", e),
+        },
+        Err(e) => stem::error!("bloom: FAILED to alloc cursor stack: {:?}", e),
+    }
+    match Stack::alloc_growing_stack(s_spec) {
+        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::font_loader_entry) {
+            Ok(tid) => stem::info!("bloom: spawned font loader (tid={})", tid),
+            Err(e) => stem::error!("bloom: FAILED to spawn font loader: {:?}", e),
+        },
+        Err(e) => stem::error!("bloom: FAILED to alloc font stack: {:?}", e),
+    }
 
     let mut loop_ctrl = FrameLoop::new(60);
     let (screen_w, screen_h) = (target.width as i32, target.height as i32);
@@ -166,6 +185,26 @@ fn main(arg: usize) -> ! {
         None
     };
 
+    // UI Window Watch - triggers dirty when windows are created/modified
+    let ui_window_pred = stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0);
+    let ui_window_watch = if ui_window_pred != 0 {
+        use abi::types::{WatchSpec, WatchMode};
+        use abi::root::RootWatchFilter;
+        let filter = RootWatchFilter::predicate(ui_window_pred);
+        let spec = WatchSpec {
+            mode: WatchMode::StreamOnly as u32,
+            filter_ptr: &filter as *const _ as u64,
+            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+            ..Default::default()
+        };
+        stem::syscall::root_watch_open(&spec).ok()
+    } else {
+        None
+    };
+    
+    // Track watch event counts for diagnostics
+    let mut ui_watch_events_total: u64 = 0;
+
     loop {
         loop_ctrl.next();
         ASSETS.publish_pending();
@@ -179,6 +218,26 @@ fn main(arg: usize) -> ! {
                     crate::font_graph::mark_dirty();
                     ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::AssetChange);
                 }
+            }
+        }
+        
+        // 1. Check for UI window changes
+        if let Some(uw) = ui_window_watch {
+            let mut w_seq = 0u64;
+            let mut w_buf = [0u8; 256];
+            let mut drained = 0u32;
+            // Drain all pending events this frame
+            while let Ok(len) = stem::syscall::root_watch_next(uw, &mut w_seq, &mut w_buf) {
+                if len > 0 {
+                    drained += 1;
+                } else {
+                    break;
+                }
+            }
+            if drained > 0 {
+                ui_watch_events_total += drained as u64;
+                stem::info!("[bloom] UI watch: drained {} events (total={})", drained, ui_watch_events_total);
+                ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchOverflow);
             }
         }
         

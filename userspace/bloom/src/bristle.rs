@@ -24,15 +24,18 @@ pub struct MouseAccelConfig {
     pub accel_strength: f32,
     pub speed_scale: f32,
     pub max_gain: Option<f32>,
+    /// Base sensitivity multiplier applied to all movement
+    pub base_sensitivity: f32,
 }
 
 impl Default for MouseAccelConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            accel_strength: 0.8,
-            speed_scale: 500.0,
-            max_gain: Some(4.0),
+            accel_strength: 1.2,      // Increased from 0.8 for more responsive acceleration
+            speed_scale: 200.0,       // Lowered from 500.0 for earlier acceleration onset
+            max_gain: Some(6.0),      // Increased from 4.0 for faster max speed
+            base_sensitivity: 2.0,    // 2x base multiplier for all movement
         }
     }
 }
@@ -43,12 +46,19 @@ pub struct MouseAccelState {
 }
 
 fn apply_mouse_accel(delta: (i16, i16), dt_s: f32, cfg: &MouseAccelConfig) -> (i16, i16) {
+    // Always apply base sensitivity
+    let dx = delta.0 as f32 * cfg.base_sensitivity;
+    let dy = delta.1 as f32 * cfg.base_sensitivity;
+    
     if !cfg.enabled || dt_s <= 0.0 || cfg.speed_scale <= 0.0 {
-        return delta;
+        let ax = libm::roundf(dx) as i32;
+        let ay = libm::roundf(dy) as i32;
+        return (
+            ax.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+            ay.clamp(i16::MIN as i32, i16::MAX as i32) as i16,
+        );
     }
 
-    let dx = delta.0 as f32;
-    let dy = delta.1 as f32;
     let speed = libm::sqrtf(dx * dx + dy * dy) / dt_s;
     let mut gain = 1.0 + cfg.accel_strength * libm::logf(1.0 + speed / cfg.speed_scale);
     if let Some(max_gain) = cfg.max_gain {

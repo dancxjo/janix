@@ -33,6 +33,7 @@ members = [
     "userspace/scheduler_fairness",
     "userspace/photosynthesis",
     "userspace/fontd",
+    "userspace/blossom",
 ]
 resolver = "2"
 

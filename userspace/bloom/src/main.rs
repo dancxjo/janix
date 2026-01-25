@@ -29,6 +29,7 @@ mod font_graph;
 mod font_client;
 mod ui;
 mod svg;
+mod blossom_client;
 pub mod painter_resources;
 
 pub use painter_resources::ASSETS;

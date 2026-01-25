@@ -209,6 +209,15 @@ pub mod keys {
     pub const FONT_ATLAS_HEIGHT: &str = "font.atlas.height";
     pub const FONT_ATLAS_FORMAT: &str = "font.atlas.format";   // 0=A8, 1=RGBA8888
     pub const FONT_ATLAS_VERSION: &str = "font.atlas.version"; // Monotonic
+
+    // SVG Cache Properties (Blossom service)
+    pub const SVG_CONTENT_HASH: &str = "svg.content_hash";
+    pub const SVG_VARIANT_HASH: &str = "svg.variant_hash";
+    pub const SVG_RASTER_BYTESPACE: &str = "svg.raster.bytespace";
+    pub const SVG_RASTER_WIDTH: &str = "svg.raster.width";
+    pub const SVG_RASTER_HEIGHT: &str = "svg.raster.height";
+    pub const SVG_RASTER_STRIDE: &str = "svg.raster.stride";
+    pub const SVG_RASTER_FORMAT: &str = "svg.raster.format";
 }
 
 pub mod kinds {
@@ -279,6 +288,10 @@ pub mod kinds {
     pub const XML_ELEMENT: &str = "xml.Element";
     pub const XML_ATTRIBUTE: &str = "xml.Attribute";
     pub const XML_TEXT: &str = "xml.Text";
+
+    // SVG Cache Kinds (Blossom service)
+    pub const SVG_ASSET: &str = "svg.Asset";
+    pub const SVG_RASTER_VARIANT: &str = "svg.RasterVariant";
 }
 
 /// Snapshot semantics and constants for UI presentation surfaces.
@@ -386,6 +399,10 @@ pub mod rels {
     // XML Relationships
     pub const HAS_ROOT: &str = "HAS_ROOT";
     pub const HAS_ATTR: &str = "HAS_ATTR";
+
+    // SVG Cache Relationships (Blossom service)
+    pub const SVG_VARIANT_OF: &str = "svg.variant_of";
+    pub const SVG_HAS_PIXELS: &str = "svg.has_pixels";
 }
 
 // Virtio GPU additions

@@ -1,0 +1,10 @@
+[package]
+name = "blossom"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
+abi = { path = "../../abi" }
+log = "0.4"
+hashbrown = "0.14"

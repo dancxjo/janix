@@ -1,0 +1,185 @@
+//! Blossom Client - IPC client for SVG rasterization service.
+//!
+//! This module provides a client for communicating with the Blossom SVG cache service.
+//! It handles connection establishment, request encoding, and caching of responses.
+
+use alloc::collections::BTreeMap;
+use abi::svg_protocol::{
+    RasterizeSvgRequest, RasterizeSvgResponse, SvgSource, SvgStatus,
+    encode_ping,
+};
+use abi::ids::HandleId;
+use stem::thing::ThingId;
+use stem::thing::sys::{find, prop_get};
+use stem::syscall;
+
+/// Cached raster variant metadata
+#[derive(Clone)]
+pub struct CachedRaster {
+    pub bytespace_id: ThingId,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub variant_hash: u64,
+}
+
+/// Blossom IPC client
+pub struct BlossomClient {
+    /// Port handle for sending requests (u32 as expected by syscall)
+    req_port: u32,
+    /// Port handle for receiving responses
+    resp_port: u32,
+    /// Local cache: variant_hash -> raster metadata
+    cache: BTreeMap<u64, CachedRaster>,
+    /// Connected flag
+    connected: bool,
+}
+
+impl BlossomClient {
+    /// Create a new disconnected client
+    pub fn new() -> Self {
+        Self {
+            req_port: 0,
+            resp_port: 0,
+            cache: BTreeMap::new(),
+            connected: false,
+        }
+    }
+    
+    /// Attempt to connect to the Blossom service
+    pub fn connect(&mut self) -> bool {
+        if self.connected {
+            return true;
+        }
+        
+        // Find svc.Blossom node
+        let mut nodes = [ThingId::default(); 8];
+        let count = match find("svc.Blossom", &mut nodes) {
+            Ok(c) => c,
+            Err(_) => {
+                return false;
+            }
+        };
+        
+        if count == 0 {
+            return false;
+        }
+        
+        let svc = nodes[0];
+        
+        // Get port handles
+        let req = match prop_get(svc, "blossom.req") {
+            Ok(v) => v as u32,
+            Err(_) => return false,
+        };
+        let resp = match prop_get(svc, "blossom.resp") {
+            Ok(v) => v as u32,
+            Err(_) => return false,
+        };
+        
+        self.req_port = req;
+        self.resp_port = resp;
+        
+        // Test connection with ping
+        let mut ping_buf = [0u8; 8];
+        if let Some(len) = encode_ping(&mut ping_buf) {
+            if syscall::port_send(req, &ping_buf[..len]).is_ok() {
+                let mut resp_buf = [0u8; 8];
+                if let Ok(resp_len) = syscall::port_recv(resp, &mut resp_buf) {
+                    if resp_len > 0 && resp_buf[0] == 0 {
+                        self.connected = true;
+                        stem::info!("BLOOM: Connected to Blossom service");
+                        return true;
+                    }
+                }
+            }
+        }
+        
+        false
+    }
+    
+    /// Check if connected to Blossom
+    #[allow(dead_code)]
+    pub fn is_connected(&self) -> bool {
+        self.connected
+    }
+    
+    /// Request rasterization of an SVG from a bytespace
+    #[allow(dead_code)]
+    pub fn rasterize(&mut self, svg_bytespace: ThingId, width: u32, height: u32) -> Option<CachedRaster> {
+        if !self.connected && !self.connect() {
+            return None;
+        }
+        
+        // Check local memoization cache
+        let svg_hash = svg_bytespace.to_u64_lossy();
+        let variant_key = compute_local_cache_key(svg_hash, width, height);
+        
+        if let Some(cached) = self.cache.get(&variant_key) {
+            return Some(cached.clone());
+        }
+        
+        // Build request
+        let request = RasterizeSvgRequest {
+            source: SvgSource::Bytespace(svg_bytespace),
+            width,
+            height,
+            pixel_format: 1, // BGRA8888
+            flags: 0,
+        };
+        
+        // Encode and send
+        let mut req_buf = [0u8; 256];
+        let req_len = request.encode(&mut req_buf)?;
+        
+        if syscall::port_send(self.req_port, &req_buf[..req_len]).is_err() {
+            self.connected = false;
+            return None;
+        }
+        
+        // Receive response
+        let mut resp_buf = [0u8; 256];
+        let resp_len = match syscall::port_recv(self.resp_port, &mut resp_buf) {
+            Ok(len) if len > 0 => len,
+            _ => {
+                self.connected = false;
+                return None;
+            }
+        };
+        
+        // Decode response
+        let response = RasterizeSvgResponse::decode(&resp_buf[..resp_len])?;
+        
+        if response.status != SvgStatus::Ok as u8 {
+            return None;
+        }
+        
+        // Cache locally
+        let cached = CachedRaster {
+            bytespace_id: response.raster_bytespace,
+            width: response.width,
+            height: response.height,
+            stride: response.stride_bytes,
+            variant_hash: response.variant_hash,
+        };
+        
+        self.cache.insert(variant_key, cached.clone());
+        
+        Some(cached)
+    }
+    
+    /// Invalidate local cache (e.g., when SVG content changes)
+    #[allow(dead_code)]
+    pub fn invalidate(&mut self, svg_bytespace: ThingId) {
+        let svg_hash = svg_bytespace.to_u64_lossy();
+        self.cache.retain(|k, _| (k >> 32) != svg_hash);
+    }
+}
+
+/// Compute a local cache key from SVG id and dimensions
+fn compute_local_cache_key(svg_hash: u64, width: u32, height: u32) -> u64 {
+    let mut key = svg_hash;
+    key = key.wrapping_mul(0x100000001b3) ^ (width as u64);
+    key = key.wrapping_mul(0x100000001b3) ^ (height as u64);
+    key
+}

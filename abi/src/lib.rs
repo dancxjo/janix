@@ -27,6 +27,7 @@ pub mod logging;
 pub mod hid;
 pub mod font;
 pub mod font_protocol;
+pub mod svg_protocol;
 pub mod pixel;
 
 pub mod wire;

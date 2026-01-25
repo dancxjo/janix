@@ -376,6 +376,27 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
                     });
                 }
             }
+
+            // FillPath and StrokePath are emitted directly by the SVG parser
+            DrawCmd::FillPath { path, color, fill_rule, aa } => {
+                out.ops.push(LowLevelOp::FillPath {
+                    path: path.clone(),
+                    color: *color,
+                    fill_rule: *fill_rule,
+                    aa: *aa,
+                });
+            }
+            DrawCmd::StrokePath { path, color, width, cap, join, miter_limit, aa } => {
+                out.ops.push(LowLevelOp::StrokePath {
+                    path: path.clone(),
+                    color: *color,
+                    width: *width as f32,
+                    cap: *cap,
+                    join: *join,
+                    miter_limit: *miter_limit,
+                    aa: *aa,
+                });
+            }
             
             // Ignored/Unimplemented for v0
             _ => { /* Warn or ignore */ }

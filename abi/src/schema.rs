@@ -95,6 +95,37 @@ pub mod keys {
     pub const UI_WINDOW_SHADED: &str = "ui.window.shaded";
     pub const UI_HIDDEN: &str = "ui.hidden";
     pub const UI_Z_INDEX: &str = "ui.z_index";
+    // DrawList (graph-native vector program) properties
+    /// Bytespace id containing packed drawlist commands.
+    pub const UI_DRAWLIST_BYTESPACE: &str = "ui.drawlist.bytespace";
+    /// Monotonic generation for drawlist updates.
+    pub const UI_DRAWLIST_GEN: &str = "ui.drawlist.gen";
+    /// Optional viewport bounds in pixels (RectI32Wire bytespace).
+    pub const UI_VIEWPORT_BYTESPACE: &str = "ui.viewport.bytespace";
+    /// Optional affine transform from window-local to device coords (Mat3x2fWire bytespace).
+    pub const UI_TRANSFORM_BYTESPACE: &str = "ui.transform.bytespace";
+    /// Optional clip program bytespace (packed clip paths/rect stack).
+    pub const UI_CLIP_BYTESPACE: &str = "ui.clip.bytespace";
+    /// Optional monotonic generation for clip updates.
+    pub const UI_CLIP_GEN: &str = "ui.clip.gen";
+    /// Optional monotonic generation for transform updates.
+    pub const UI_TRANSFORM_GEN: &str = "ui.transform.gen";
+
+    // Render cache roots (renderer-owned)
+    /// Root node for renderer cache artifacts for a window.
+    pub const RENDER_CACHE_ROOT: &str = "render.cache_root";
+    /// Derived artifact hash for render nodes.
+    pub const RENDER_HASH: &str = "render.hash";
+    /// Schema version for render artifact hashing.
+    pub const RENDER_SCHEMA_VERSION: &str = "render.schema_version";
+
+    // Render debug stats
+    pub const RENDER_DEBUG_PATHS: &str = "render.debug.paths";
+    pub const RENDER_DEBUG_FLATTENED: &str = "render.debug.flattened";
+    pub const RENDER_DEBUG_EDGES: &str = "render.debug.edges";
+    pub const RENDER_DEBUG_TILES: &str = "render.debug.tiles";
+    pub const RENDER_DEBUG_HIT: &str = "render.debug.cache_hits";
+    pub const RENDER_DEBUG_MISS: &str = "render.debug.cache_misses";
 
     // Clock & Binding Properties
     pub const CLOCK_NOW_TEXT: &str = "clock.now_text";
@@ -159,6 +190,9 @@ pub mod keys {
     pub const UI_SNAPSHOT_FROZEN: &str = "ui.snapshot.frozen";
 
     /// Optional bytespace id for packed damage rects.
+    ///
+    /// Bloom may publish these as derived, non-authoritative hints. They must
+    /// never be required for correctness.
     pub const UI_DAMAGE_RECTS_BYTESPACE: &str = "ui.damage.rects.bytespace";
     /// Tile asset bytespace id for UI_TILE nodes (e.g. SVG source).
     pub const UI_TILE_ASSET: &str = "ui.tile.asset";
@@ -235,6 +269,18 @@ pub mod kinds {
     pub const BOOT_MODULE: &str = "boot.Module";
     pub const DEV_CPU: &str = "dev.Cpu";
     pub const SVC_SCHEDULER: &str = "svc.Scheduler";
+
+    // Render artifact kinds (renderer-owned derived nodes)
+    pub const RENDER_CACHE_ROOT: &str = "render.CacheRoot";
+    pub const RENDER_PATH: &str = "render.Path";
+    pub const RENDER_FLATTENED_PATH: &str = "render.FlattenedPath";
+    pub const RENDER_EDGE_LIST: &str = "render.EdgeList";
+    pub const RENDER_SCANLINE_SPANS: &str = "render.ScanlineSpans";
+    pub const RENDER_COVERAGE_TILE: &str = "render.CoverageTile";
+    pub const RENDER_PAINT: &str = "render.Paint";
+    pub const RENDER_RASTER_TILE: &str = "render.RasterTile";
+    pub const RENDER_SNAPSHOT: &str = "render.Snapshot";
+    pub const RENDER_DEBUG_STATS: &str = "render.Debug.Stats";
     pub const FW_BOOT: &str = "fw.Boot";
     pub const TIME_WALL_CLOCK_SAMPLE: &str = "time.WallClockSample";
     pub const SVC_TIME_SYSTEM_CLOCK: &str = "svc.time.SystemClock";

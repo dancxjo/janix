@@ -23,6 +23,7 @@ pub mod perf;
 mod present;
 mod raster;
 mod reclaimer;
+mod render_graph;
 mod render_state;
 mod surface;
 mod font_graph;

@@ -10,3 +10,6 @@ abi-macros = { version = "0.1.0", path = "../abi-macros" }
 
 [features]
 kernel-id-gen = []
+
+[dev-dependencies]
+abi = { path = ".", features = ["kernel-id-gen"] }

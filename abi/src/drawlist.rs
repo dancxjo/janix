@@ -425,6 +425,14 @@ mod tests {
         let verbs = [PathVerb::MoveTo(PointF::new(0.0, 0.0))];
         builder.push_fill_path(&verbs, FillRule::NonZero, 0xff00ff00);
         let mut bytes = builder.finish();
+
+        // Tamper with the command length to include the extra byte
+        // Header (16) + Tag (4) = 20
+        let len_offset = 20;
+        let mut len = u32::from_le_bytes(bytes[len_offset..len_offset + 4].try_into().unwrap());
+        len += 1;
+        bytes[len_offset..len_offset + 4].copy_from_slice(&len.to_le_bytes());
+
         bytes.push(0);
         let mut reader = DrawListReader::new(&bytes).expect("reader");
         let cmd = reader.next().expect("cmd");

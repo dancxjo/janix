@@ -767,13 +767,24 @@ pub fn sys_root_watch_next(
     validate_user_range(out_ptr, out_len, true)?;
 
     let cap = core::cmp::min(out_len, abi::watch::MAX_WATCH_PAYLOAD_BYTES);
-    let mut kbuf = alloc::vec![0u8; cap];
+
+    // Hybrid allocation: use stack for small requests, heap for large ones.
+    // 1024 bytes covers ~20 small events (49 bytes each), sufficient for most polls.
+    let mut stack_buf = [0u8; 1024];
+    let mut heap_buf = alloc::vec::Vec::new();
+
+    let buf_ptr = if cap <= stack_buf.len() {
+        stack_buf.as_mut_ptr()
+    } else {
+        heap_buf.resize(cap, 0);
+        heap_buf.as_mut_ptr()
+    };
 
     let reply = root_svc::enqueue(RootOp::WatchNext {
         id: id as u64,
         out_seq_ptr: 0,
-        out_ptr: kbuf.as_mut_ptr() as u64,
-        out_len: out_len as u64,
+        out_ptr: buf_ptr as u64,
+        out_len: cap as u64,
     });
 
     loop {
@@ -787,7 +798,8 @@ pub fn sys_root_watch_next(
                 if status == 0 {
                     // Copy data
                     unsafe {
-                        copyout(out_ptr, &kbuf[..bytes_read])?;
+                        let src = core::slice::from_raw_parts(buf_ptr, bytes_read);
+                        copyout(out_ptr, src)?;
                     }
                     // Copy seq
                     let seq = reply.p0.load(Ordering::Relaxed);

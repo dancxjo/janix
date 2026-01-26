@@ -715,15 +715,30 @@ pub fn sys_root_watch_next(
     validate_user_range(out_ptr, out_len, true)?;
 
     const MAX_WATCH_PAYLOAD: usize = 256 * 1024;
+    const STACK_BUF_SIZE: usize = 512;
+
     let cap = core::cmp::min(out_len, MAX_WATCH_PAYLOAD);
-    let mut kbuf = alloc::vec![0u8; cap];
+
+    // Optimization: Use stack buffer for small requests to avoid heap allocation overhead
+    // in this hot path.
+    let mut stack_buf = [0u8; STACK_BUF_SIZE];
+    let mut heap_buf = alloc::vec::Vec::new();
+    let kbuf_ptr: u64;
+
+    if cap <= STACK_BUF_SIZE {
+        kbuf_ptr = stack_buf.as_mut_ptr() as u64;
+    } else {
+        // Fallback to heap for larger payloads
+        heap_buf.resize(cap, 0);
+        kbuf_ptr = heap_buf.as_mut_ptr() as u64;
+    }
 
     loop {
         let reply = root_svc::enqueue(RootOp::WatchNext {
             id: id as u64,
             out_seq_ptr: 0,
-            out_ptr: kbuf.as_mut_ptr() as u64,
-            out_len: out_len as u64,
+            out_ptr: kbuf_ptr,
+            out_len: cap as u64,
         });
 
         loop {
@@ -736,8 +751,15 @@ pub fn sys_root_watch_next(
 
                     if status == 0 {
                         // Copy data
+                        let src_ptr = if cap <= STACK_BUF_SIZE {
+                            stack_buf.as_ptr()
+                        } else {
+                            heap_buf.as_ptr()
+                        };
+
                         unsafe {
-                            copyout(out_ptr, &kbuf[..bytes_read])?;
+                            let src = core::slice::from_raw_parts(src_ptr, bytes_read);
+                            copyout(out_ptr, src)?;
                         }
                         // Copy seq
                         let seq = reply.p0.load(Ordering::Relaxed);

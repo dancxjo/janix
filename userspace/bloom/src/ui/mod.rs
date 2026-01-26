@@ -240,6 +240,7 @@ impl UiPipeline {
     /// Invalidate an asset in the cache (when we know it changed)
     pub fn invalidate_asset(&mut self, bs_id: u64) {
         self.asset_cache.invalidate(bs_id);
+        self.render_state.invalidate_svg_source(bs_id);
     }
 
     /// Clear the entire asset cache (when text bytespaces change)

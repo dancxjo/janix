@@ -171,14 +171,24 @@ pub struct UiNodeSnapshot {
     pub strings: BTreeMap<u32, String>,
     pub children: Vec<ThingId>,
     pub svg_content: Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+    pub svg_source: Option<ThingId>,
+    pub svg_hash: Option<u64>,
     pub window_icon_content: Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+    pub window_icon_source: Option<ThingId>,
+    pub window_icon_hash: Option<u64>,
 }
 
 /// Cached asset entry: bytespace_id -> decoded content
 #[derive(Clone, Default)]
 pub struct AssetCache {
     strings: BTreeMap<u64, String>,
-    svgs: BTreeMap<u64, alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+    svgs: BTreeMap<u64, SvgAsset>,
+}
+
+#[derive(Clone)]
+pub struct SvgAsset {
+    pub cmds: alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>,
+    pub xml_hash: u64,
 }
 
 impl AssetCache {
@@ -197,7 +207,7 @@ impl AssetCache {
         Some(s)
     }
 
-    pub fn get_or_parse_svg(&mut self, bs_id: ThingId) -> Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>> {
+    pub fn get_or_parse_svg(&mut self, bs_id: ThingId) -> Option<SvgAsset> {
         let id = bs_id.to_u64_lossy();
         if let Some(cmds) = self.svgs.get(&id) {
             return Some(cmds.clone());
@@ -205,13 +215,18 @@ impl AssetCache {
         
         // Parse
         let xml = Self::read_string_raw(bs_id)?;
+        let xml_hash = hash_bytes(xml.as_bytes());
         let mut parser = crate::svg::SvgParser::new();
         // SVG icons are usually small, parsing is fast enough to do on-demand if cached.
         let cmds = parser.parse(&xml);
         let arc_cmds = alloc::sync::Arc::new(cmds);
+        let asset = SvgAsset {
+            cmds: arc_cmds,
+            xml_hash,
+        };
         
-        self.svgs.insert(id, arc_cmds.clone());
-        Some(arc_cmds)
+        self.svgs.insert(id, asset.clone());
+        Some(asset)
     }
     
     fn read_string_raw(bs_id: ThingId) -> Option<String> {
@@ -237,6 +252,15 @@ impl AssetCache {
     }
     
     pub fn len(&self) -> usize { self.strings.len() + self.svgs.len() }
+}
+
+fn hash_bytes(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for &b in bytes {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 #[derive(Clone)]
@@ -386,9 +410,24 @@ impl UiSnapshot {
         };
 
         let children = self.fetch_children(id, keys);
-        let (props, strings, svg_content, window_icon_content) =
+        let (props, strings, svg_content, svg_source, svg_hash, window_icon_content, window_icon_source, window_icon_hash) =
             self.fetch_properties(id, keys, cache);
-        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children: children.clone(), svg_content, window_icon_content });
+        self.nodes.insert(
+            id,
+            UiNodeSnapshot {
+                id,
+                kind,
+                props,
+                strings,
+                children: children.clone(),
+                svg_content,
+                svg_source,
+                svg_hash,
+                window_icon_content,
+                window_icon_source,
+                window_icon_hash,
+            },
+        );
         for child in children { self.traverse(child, kind_ids, keys, cache); }
     }
     
@@ -404,9 +443,24 @@ impl UiSnapshot {
         };
 
         let children = self.fetch_children(id, keys);
-        let (props, strings, svg_content, window_icon_content) =
+        let (props, strings, svg_content, svg_source, svg_hash, window_icon_content, window_icon_source, window_icon_hash) =
             self.fetch_properties(id, keys, cache);
-        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children, svg_content, window_icon_content });
+        self.nodes.insert(
+            id,
+            UiNodeSnapshot {
+                id,
+                kind,
+                props,
+                strings,
+                children,
+                svg_content,
+                svg_source,
+                svg_hash,
+                window_icon_content,
+                window_icon_source,
+                window_icon_hash,
+            },
+        );
     }
 
     fn refresh_node_props(
@@ -416,7 +470,7 @@ impl UiSnapshot {
         kinds: &KindIds,
         cache: &mut AssetCache,
     ) -> Option<NodeChange> {
-        let (props, strings, svg_content, window_icon_content) =
+        let (props, strings, svg_content, svg_source, svg_hash, window_icon_content, window_icon_source, window_icon_hash) =
             self.fetch_properties(id, keys, cache);
         if let Some(node) = self.nodes.get_mut(&id) {
             let mut change = NodeChange::new(id);
@@ -439,10 +493,18 @@ impl UiSnapshot {
                 }
             }
 
+            if node.svg_hash != svg_hash || node.window_icon_hash != window_icon_hash {
+                any_changed = true;
+            }
+
             node.props = props;
             node.strings = strings;
             node.svg_content = svg_content;
+            node.svg_source = svg_source;
+            node.svg_hash = svg_hash;
             node.window_icon_content = window_icon_content;
+            node.window_icon_source = window_icon_source;
+            node.window_icon_hash = window_icon_hash;
             if any_changed {
                 change.paint_dirty = true;
                 return Some(change);
@@ -519,13 +581,26 @@ impl UiSnapshot {
         &self, 
         id: ThingId, 
         keys: &UiKeys, 
-        cache: &mut AssetCache
-    ) -> (BTreeMap<u32, u64>, BTreeMap<u32, String>, Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>, Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>) {
+        cache: &mut AssetCache,
+    ) -> (
+        BTreeMap<u32, u64>,
+        BTreeMap<u32, String>,
+        Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        Option<ThingId>,
+        Option<u64>,
+        Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        Option<ThingId>,
+        Option<u64>,
+    ) {
         crate::trace_span!("snap.refresh_node_props");
         let mut props = BTreeMap::new();
         let mut strings = BTreeMap::new();
         let mut svg_content = None;
+        let mut svg_source = None;
+        let mut svg_hash = None;
         let mut window_icon_content = None;
+        let mut window_icon_source = None;
+        let mut window_icon_hash = None;
 
         let all_keys = keys.all_keys();
         let valid_keys: Vec<u32> = all_keys.iter().copied().filter(|&k| k != 0).collect();
@@ -551,20 +626,35 @@ impl UiSnapshot {
                                 }
                             }
                         } else if key == keys.svg_bytes {
-                             if val != 0 {
-                                 props.insert(key, val); // Keep raw prop too
-                                 svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
-                             }
+                            if val != 0 {
+                                props.insert(key, val); // Keep raw prop too
+                                let bs_id = ThingId::from_u64(val);
+                                if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                                    svg_content = Some(asset.cmds);
+                                    svg_source = Some(bs_id);
+                                    svg_hash = Some(asset.xml_hash);
+                                }
+                            }
                         } else if key == keys.window_icon {
-                             if val != 0 {
-                                 props.insert(key, val);
-                                 window_icon_content = cache.get_or_parse_svg(ThingId::from_u64(val));
-                             }
+                            if val != 0 {
+                                props.insert(key, val);
+                                let bs_id = ThingId::from_u64(val);
+                                if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                                    window_icon_content = Some(asset.cmds);
+                                    window_icon_source = Some(bs_id);
+                                    window_icon_hash = Some(asset.xml_hash);
+                                }
+                            }
                         } else if key == keys.tile_asset {
-                             if val != 0 {
-                                 props.insert(key, val);
-                                 svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
-                             }
+                            if val != 0 {
+                                props.insert(key, val);
+                                let bs_id = ThingId::from_u64(val);
+                                if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                                    svg_content = Some(asset.cmds);
+                                    svg_source = Some(bs_id);
+                                    svg_hash = Some(asset.xml_hash);
+                                }
+                            }
                         } else {
                             props.insert(key, val);
                         }
@@ -573,10 +663,31 @@ impl UiSnapshot {
             }
             Err(_) => {
                 crate::trace_counter!("ui.snap.bulk_fallback", 1);
-                self.fetch_fallback(id, keys, &mut props, &mut strings, &mut svg_content, &mut window_icon_content, cache);
+                self.fetch_fallback(
+                    id,
+                    keys,
+                    &mut props,
+                    &mut strings,
+                    &mut svg_content,
+                    &mut svg_source,
+                    &mut svg_hash,
+                    &mut window_icon_content,
+                    &mut window_icon_source,
+                    &mut window_icon_hash,
+                    cache,
+                );
             }
         }
-        (props, strings, svg_content, window_icon_content)
+        (
+            props,
+            strings,
+            svg_content,
+            svg_source,
+            svg_hash,
+            window_icon_content,
+            window_icon_source,
+            window_icon_hash,
+        )
     }
     
     fn fetch_fallback(
@@ -586,8 +697,12 @@ impl UiSnapshot {
         props: &mut BTreeMap<u32, u64>, 
         strings: &mut BTreeMap<u32, String>, 
         svg_content: &mut Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        svg_source: &mut Option<ThingId>,
+        svg_hash: &mut Option<u64>,
         window_icon_content: &mut Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
-        cache: &mut AssetCache
+        window_icon_source: &mut Option<ThingId>,
+        window_icon_hash: &mut Option<u64>,
+        cache: &mut AssetCache,
     ) {
         for &p in &keys.numeric_keys() {
             if p == 0 { continue; }
@@ -595,13 +710,28 @@ impl UiSnapshot {
             if let Ok(val) = stem::thing::sys::prop_get(id, p) { 
                 props.insert(p, val); 
                 if p == keys.svg_bytes && val != 0 {
-                    *svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                    let bs_id = ThingId::from_u64(val);
+                    if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                        *svg_content = Some(asset.cmds);
+                        *svg_source = Some(bs_id);
+                        *svg_hash = Some(asset.xml_hash);
+                    }
                 }
                 if p == keys.window_icon && val != 0 {
-                    *window_icon_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                    let bs_id = ThingId::from_u64(val);
+                    if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                        *window_icon_content = Some(asset.cmds);
+                        *window_icon_source = Some(bs_id);
+                        *window_icon_hash = Some(asset.xml_hash);
+                    }
                 }
                 if p == keys.tile_asset && val != 0 {
-                    *svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                    let bs_id = ThingId::from_u64(val);
+                    if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                        *svg_content = Some(asset.cmds);
+                        *svg_source = Some(bs_id);
+                        *svg_hash = Some(asset.xml_hash);
+                    }
                 }
             }
         }
@@ -661,7 +791,12 @@ impl UiSnapshot {
 
 
     fn nodes_equal(&self, a: &UiNodeSnapshot, b: &UiNodeSnapshot) -> bool {
-        a.kind == b.kind && a.props == b.props && a.strings == b.strings && a.children == b.children
+        a.kind == b.kind
+            && a.props == b.props
+            && a.strings == b.strings
+            && a.children == b.children
+            && a.svg_hash == b.svg_hash
+            && a.window_icon_hash == b.window_icon_hash
     }
 
     fn layout_keys_changed(

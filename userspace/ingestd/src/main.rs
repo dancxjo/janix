@@ -2,26 +2,26 @@
 #![no_main]
 
 extern crate alloc;
-use stem::syscall;
-use abi::types::{WatchSpec, WatchMode};
+use abi::query::QueryStep;
+use abi::symbols::{SYMBOL_REF_TAG_STR, SymbolRefWire};
+use abi::types::{WatchMode, WatchSpec};
 use abi::watch::{self, WatchOp};
-use abi::query::{QueryStep};
-use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_STR};
+use stem::syscall;
 mod behavior;
-use behavior::sniff::sniff;
-use abi::schema::{kinds, keys, rels};
-use stem::thing::ThingId;
 use abi::ids::HandleId;
 use abi::root::RootWatchFilter;
-use stem::root_watch;
-use stem::thing::sys::{
-    bytespace_info, bytespace_map, bytespace_unmap, bytespace_create, bytespace_write, create_node,
-    link, prop_get, prop_set, get_edges, find, intern,
-};
-use alloc::vec::Vec;
+use abi::schema::{keys, kinds, rels};
 use alloc::string::String;
-use ttf_parser::{Face, name_id};
+use alloc::vec::Vec;
+use behavior::sniff::sniff;
+use stem::root_watch;
+use stem::thing::ThingId;
+use stem::thing::sys::{
+    bytespace_create, bytespace_info, bytespace_map, bytespace_unmap, bytespace_write, create_node,
+    find, get_edges, intern, link, prop_get, prop_set,
+};
 use ttf_parser::name::Name;
+use ttf_parser::{Face, name_id};
 
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn _start() -> ! {
@@ -57,7 +57,7 @@ fn main() -> Result<(), abi::errors::Errno> {
         filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
         ..Default::default()
     };
-    
+
     // We expect this to fail if kernel is not updated yet or similar, but
     // assuming kernel is ready.
     let watch_id = match syscall::root_watch_open(&spec) {
@@ -67,14 +67,14 @@ fn main() -> Result<(), abi::errors::Errno> {
             return Err(e);
         }
     };
-    
+
     // Pre-intern symbols to avoid allocation in loop
     // BUT root_intern takes &str. stem wrapper handles ptr/len.
     // For root_create_node, we need a SymbolRefWire (ptr or id).
     // We can use SYMBOL_REF_TAG_STR with ptr.
-    
+
     syscall::log_write("INGESTD: Watch active. Loop start.", 1)?;
-    
+
     fn process_payload(payload: &[u8]) {
         let mut cursor = 0usize;
         while cursor < payload.len() {
@@ -166,7 +166,7 @@ fn write_fact(target_id: u64, mime: &str, confidence: u16) -> Result<(), abi::er
     // Note: stem::root_create_node expects usize ptr to Wire.
     let kind_ptr = &kind_sym as *const _ as usize;
     let fact_id = syscall::root_create_node(kind_ptr)?;
-    
+
     // 2. Set props
     // mime
     set_prop_str(fact_id as usize, "mime", mime)?;
@@ -174,7 +174,7 @@ fn write_fact(target_id: u64, mime: &str, confidence: u16) -> Result<(), abi::er
     set_prop_u64(fact_id as usize, "confidence", confidence as u64)?;
     // detector
     set_prop_str(fact_id as usize, "detector", "magic-v0")?;
-    
+
     // 3. Link
     // rel = "has_fact"
     let rel_sym = SymbolRefWire {
@@ -182,9 +182,12 @@ fn write_fact(target_id: u64, mime: &str, confidence: u16) -> Result<(), abi::er
         ptr_or_id: "has_fact".as_ptr() as u64,
         len: "has_fact".len() as u64,
     };
-    syscall::root_link(target_id as usize, &rel_sym as *const _ as usize, fact_id as usize)?;
-    
-    syscall::log_write("INGESTD: Tagged asset", 1)?;
+    syscall::root_link(
+        target_id as usize,
+        &rel_sym as *const _ as usize,
+        fact_id as usize,
+    )?;
+
     Ok(())
 }
 
@@ -204,10 +207,10 @@ fn ingest_font(bytespace_id: ThingId, size: usize, data: &[u8]) {
     // Create a minimal font.File node right away so Bloom can load it immediately.
     // This allows rendering to start before metadata parsing completes.
     // =========================================================================
-    
+
     let file_name = find_module_name(bytespace_id)
         .unwrap_or_else(|| alloc::format!("font-{}.bin", bytespace_id.to_u64_lossy()));
-    
+
     let file_id = get_or_create_node_by_prop(
         kinds::FONT_FILE,
         keys::FONT_BYTESPACE,
@@ -216,7 +219,7 @@ fn ingest_font(bytespace_id: ThingId, size: usize, data: &[u8]) {
     let _ = prop_set(file_id, keys::FONT_BYTESPACE, bytespace_id.to_u64_lossy());
     let _ = prop_set(file_id, keys::FONT_SIZE_BYTES, size as u64);
     set_prop_bytespace_str(file_id, keys::FONT_NAME, &file_name);
-    
+
     let _ = syscall::log_write("INGESTD: Font immediately available for rendering", 1);
 
     // =========================================================================
@@ -224,7 +227,7 @@ fn ingest_font(bytespace_id: ThingId, size: usize, data: &[u8]) {
     // Parse the TTF to extract family/face metadata and link into the font graph.
     // If parsing fails, the font is still usable via the file_id created above.
     // =========================================================================
-    
+
     let face = match Face::parse(data, 0) {
         Ok(face) => face,
         Err(_) => {
@@ -241,20 +244,26 @@ fn ingest_font(bytespace_id: ThingId, size: usize, data: &[u8]) {
 
     let weight = face.weight().to_number();
     let width = face.width().to_number();
-    let slope = if face.is_italic() || face.is_oblique() { 1u8 } else { 0u8 };
+    let slope = if face.is_italic() || face.is_oblique() {
+        1u8
+    } else {
+        0u8
+    };
 
     let (ranges, count) = coverage_ranges(&face);
 
     let family_key = intern(&family_name).unwrap_or(0) as u64;
     let face_key = face_key_hash(family_key, weight, width, slope, &style_name);
 
-    let family_id = get_or_create_node_by_prop(kinds::FONT_FAMILY, keys::FONT_FAMILY_KEY, family_key);
+    let family_id =
+        get_or_create_node_by_prop(kinds::FONT_FAMILY, keys::FONT_FAMILY_KEY, family_key);
     set_prop_bytespace_str(family_id, keys::FONT_NAME, &family_name);
     let _ = prop_set(family_id, keys::FONT_FAMILY_KEY, family_key);
 
     if let Some(super_name) = superfamily_from_family(&family_name) {
         let super_key = intern(&super_name).unwrap_or(0) as u64;
-        let super_id = get_or_create_node_by_prop(kinds::FONT_SUPERFAMILY, keys::FONT_FAMILY_KEY, super_key);
+        let super_id =
+            get_or_create_node_by_prop(kinds::FONT_SUPERFAMILY, keys::FONT_FAMILY_KEY, super_key);
         set_prop_bytespace_str(super_id, keys::FONT_NAME, &super_name);
         let _ = prop_set(super_id, keys::FONT_FAMILY_KEY, super_key);
         ensure_link(super_id, rels::FONT_CONTAINS, family_id);
@@ -466,15 +475,15 @@ fn set_prop_str(id: usize, key: &str, val: &str) -> Result<(), abi::errors::Errn
     // So strings MUST be interned or we need PropSetStr?
     // The kernel `root_handlers.rs` `prop_set` takes value: usize.
     // If I want to store a string, I must intern it first and store the SymbolId.
-    
+
     let key_sym = SymbolRefWire {
         tag: SYMBOL_REF_TAG_STR,
         ptr_or_id: key.as_ptr() as u64,
         len: key.len() as u64,
     };
-    
+
     let val_id = syscall::root_intern(val)?; // Intern value
-    
+
     syscall::root_prop_set(id, &key_sym as *const _ as usize, val_id as usize)?;
     Ok(())
 }

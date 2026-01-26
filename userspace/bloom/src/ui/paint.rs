@@ -297,9 +297,10 @@ impl PaintBuilder {
                 if let Some(icon_cmds) = &node.window_icon_content {
                     if let Some(raster) = Self::rasterize_svg(
                         icon_cmds,
+                        node.window_icon_source.map(|id| id.to_u64_lossy()),
+                        node.window_icon_hash,
                         &icon_rect,
                         render_state,
-                        node.id.to_u64_lossy(),
                         "paint.icon.hit",
                         "paint.icon.miss",
                     ) {
@@ -469,9 +470,10 @@ impl PaintBuilder {
             if let Some(cmds) = &node.svg_content {
                 if let Some(raster) = Self::rasterize_svg(
                     cmds,
+                    node.svg_source.map(|id| id.to_u64_lossy()),
+                    node.svg_hash,
                     &layout.rect,
                     render_state,
-                    node.id.to_u64_lossy(),
                     "paint.tile.hit",
                     "paint.tile.miss",
                 ) {
@@ -494,9 +496,10 @@ impl PaintBuilder {
                 if let Some(cmds) = &node.svg_content {
                     if let Some(raster) = Self::rasterize_svg(
                         cmds,
+                        node.svg_source.map(|id| id.to_u64_lossy()),
+                        node.svg_hash,
                         &layout.rect,
                         render_state,
-                        node.id.to_u64_lossy(),
                         "paint.svg.hit",
                         "paint.svg.miss",
                     ) {
@@ -569,12 +572,11 @@ impl PaintBuilder {
 
             if w > 0 && h > 0 {
                 let key = RasterKey::Text {
-                    node_id: node.id.to_u64_lossy(),
                     w,
                     h,
                     content_hash: hasher,
                 };
-                if let Some(image) = render_state.raster_cache.get(&key) {
+                if let Some(image) = render_state.get_raster(&key) {
                     crate::perf::add_counter("paint.text.hit", 1);
                     objects.push(PaintObject::Raster {
                         rect: layout.rect.clone(),
@@ -612,7 +614,7 @@ impl PaintBuilder {
                     gen: crate::frame::AssetGeneration(0),
                 });
 
-                render_state.raster_cache.insert(key, image.clone());
+                render_state.insert_raster(key, image.clone(), None);
                 objects.push(PaintObject::Raster {
                     rect: layout.rect.clone(),
                     image,
@@ -658,9 +660,10 @@ impl PaintBuilder {
 
     fn rasterize_svg(
         cmds: &alloc::sync::Arc<alloc::vec::Vec<crate::drawlist::DrawCmd>>,
+        svg_source: Option<u64>,
+        svg_hash: Option<u64>,
         rect: &Rect,
         render_state: &mut RenderState,
-        node_id: u64,
         hit_counter: &'static str,
         miss_counter: &'static str,
     ) -> Option<PaintObject> {
@@ -670,15 +673,15 @@ impl PaintBuilder {
             return None;
         }
 
-        let content_hash = cmds.as_ptr() as *const () as u64;
+        let content_hash = svg_hash.unwrap_or_else(|| cmds.as_ptr() as *const () as u64);
         let key = RasterKey::Svg {
-            node_id,
+            source_id: svg_source.unwrap_or(0),
             w,
             h,
             content_hash,
         };
 
-        if let Some(image) = render_state.raster_cache.get(&key) {
+        if let Some(image) = render_state.get_raster(&key) {
             crate::perf::add_counter(hit_counter, 1);
             return Some(PaintObject::Raster {
                 rect: rect.clone(),
@@ -712,7 +715,7 @@ impl PaintBuilder {
             gen: crate::frame::AssetGeneration(0),
         });
 
-        render_state.raster_cache.insert(key, image.clone());
+        render_state.insert_raster(key, image.clone(), svg_source);
         Some(PaintObject::Raster {
             rect: rect.clone(),
             image,

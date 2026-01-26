@@ -303,9 +303,6 @@ fn main(arg: usize) -> ! {
             }
             if drained > 0 {
                 stem::info!("[bloom] UI_TEXT watch: drained {} events", drained);
-                // Clear cached text bytespaces AND raster cache (pre-rendered text/SVG)
-                ui_pipeline.asset_cache_clear();
-                ui_pipeline.raster_cache_clear();
                 ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchActivity);
             }
         }
@@ -324,8 +321,6 @@ fn main(arg: usize) -> ! {
             }
             if drained > 0 {
                 stem::info!("[bloom] UI_TILE_ASSET watch: drained {} events", drained);
-                ui_pipeline.asset_cache_clear();
-                ui_pipeline.raster_cache_clear();
                 ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchActivity);
             }
         }

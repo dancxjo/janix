@@ -1,5 +1,7 @@
-use stem::xml::{parse_color, parse_f32, parse_length_px, parse_transform, Attributes, TransformCmd};
 use alloc::vec::Vec;
+use stem::xml::{
+    parse_color, parse_f32, parse_length_px, parse_transform, Attributes, TransformCmd,
+};
 
 use crate::geometry::Color;
 

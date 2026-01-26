@@ -110,7 +110,7 @@ fn apply_style(style: &str, state: &mut SvgState) {
         })
         .collect();
 
-    for (key, value) in &pairs {
+    for &(key, value) in &pairs {
         match key {
             "fill" => apply_paint_value(value, state, PaintTarget::Fill),
             "stroke" => apply_paint_value(value, state, PaintTarget::Stroke),
@@ -144,7 +144,7 @@ fn apply_style(style: &str, state: &mut SvgState) {
         }
     }
 
-    for (key, value) in &pairs {
+    for &(key, value) in &pairs {
         match key {
             "opacity" => {
                 if let Some(f) = parse_f32(value) {

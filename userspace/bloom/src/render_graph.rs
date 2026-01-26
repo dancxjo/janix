@@ -59,15 +59,11 @@ impl RectF {
     }
 
     pub fn to_i32(&self) -> RectI32 {
-<<<<<<< ours
-        RectI32::new(self.x.floor() as i32, self.y.floor() as i32, self.w.ceil() as i32, self.h.ceil() as i32)
-=======
-        let x0 = self.x.floor();
-        let y0 = self.y.floor();
-        let x1 = (self.x + self.w).ceil();
-        let y1 = (self.y + self.h).ceil();
+        let x0 = libm::floorf(self.x);
+        let y0 = libm::floorf(self.y);
+        let x1 = libm::ceilf(self.x + self.w);
+        let y1 = libm::ceilf(self.y + self.h);
         RectI32::new(x0 as i32, y0 as i32, (x1 - x0) as i32, (y1 - y0) as i32)
->>>>>>> theirs
     }
 }
 
@@ -135,6 +131,7 @@ impl RenderGraphPipeline {
                     let hashes = self.render_item(&decoded.verbs, decoded.fill_rule, decoded.color, viewport, clip, &mut cache_hits, &mut cache_misses);
                     items.push(hashes);
                 }
+                DrawCmdTag::Unknown(_) => {}
             }
         }
         Some(RenderFrame { items, cache_hits, cache_misses })
@@ -248,15 +245,6 @@ fn rect_path(x: i32, y: i32, w: i32, h: i32) -> Vec<PathVerb> {
     let y0 = y as f32;
     let x1 = (x + w) as f32;
     let y1 = (y + h) as f32;
-<<<<<<< ours
-    vec![
-        PathVerb::MoveTo(PointF::new(x0, y0)),
-        PathVerb::LineTo(PointF::new(x1, y0)),
-        PathVerb::LineTo(PointF::new(x1, y1)),
-        PathVerb::LineTo(PointF::new(x0, y1)),
-        PathVerb::Close,
-    ]
-=======
     let mut verbs = Vec::with_capacity(5);
     verbs.push(PathVerb::MoveTo(PointF::new(x0, y0)));
     verbs.push(PathVerb::LineTo(PointF::new(x1, y0)));
@@ -264,7 +252,6 @@ fn rect_path(x: i32, y: i32, w: i32, h: i32) -> Vec<PathVerb> {
     verbs.push(PathVerb::LineTo(PointF::new(x0, y1)));
     verbs.push(PathVerb::Close);
     verbs
->>>>>>> theirs
 }
 
 fn compute_path_bounds(verbs: &[PathVerb]) -> RectF {
@@ -302,16 +289,11 @@ fn compute_path_bounds(verbs: &[PathVerb]) -> RectF {
 
 fn coverage_for_bounds(bounds: RectF, clip: RectI32) -> Vec<u8> {
     let tile_px = TILE_SIZE * TILE_SIZE;
-<<<<<<< ours
-    let mut bytes = vec![0u8; tile_px as usize];
-    let bounds_i32 = bounds.to_i32();
-=======
     let mut bytes = Vec::new();
     bytes.resize(tile_px as usize, 0u8);
     let bounds_i32 = bounds.to_i32();
     // Placeholder coverage: treat any intersection as fully covered.
     // TODO: replace with edge/scan conversion into per-tile coverage.
->>>>>>> theirs
     if bounds_i32.intersection(&clip).is_some() {
         for v in &mut bytes {
             *v = 255;
@@ -328,15 +310,8 @@ fn raster_solid_tile(color: u32, coverage: &[u8]) -> Vec<u8> {
     let b = (color & 0xFF) as u8;
     for cov in coverage {
         let alpha = ((*cov as u16 * a as u16) / 255) as u8;
-<<<<<<< ours
-        out.push(alpha);
-        out.push(r);
-        out.push(g);
-        out.push(b);
-=======
         let pixel = ((alpha as u32) << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
         out.extend_from_slice(&pixel.to_le_bytes());
->>>>>>> theirs
     }
     out
 }
@@ -424,28 +399,14 @@ fn hash_tag(schema: u32, tag: u32) -> u64 {
     hash
 }
 
-<<<<<<< ours
-fn hash_u64(mut hash: u64, value: u64) -> u64 {
-    for byte in value.to_le_bytes() {
-        hash ^= byte as u64;
-=======
 fn hash_bytes(mut hash: u64, bytes: &[u8]) -> u64 {
     for byte in bytes {
         hash ^= *byte as u64;
->>>>>>> theirs
         hash = hash.wrapping_mul(FNV_PRIME);
     }
     hash
 }
 
-<<<<<<< ours
-fn hash_u32(hash: u64, value: u32) -> u64 {
-    hash_u64(hash, value as u64)
-}
-
-fn hash_i32(hash: u64, value: i32) -> u64 {
-    hash_u64(hash, value as u64)
-=======
 fn hash_u64(hash: u64, value: u64) -> u64 {
     hash_bytes(hash, &value.to_le_bytes())
 }
@@ -456,7 +417,6 @@ fn hash_u32(hash: u64, value: u32) -> u64 {
 
 fn hash_i32(hash: u64, value: i32) -> u64 {
     hash_bytes(hash, &value.to_le_bytes())
->>>>>>> theirs
 }
 
 fn hash_f32(hash: u64, value: f32) -> u64 {
@@ -512,8 +472,6 @@ mod tests {
         assert_eq!(first.items[0].edges, second.items[0].edges);
         assert_ne!(first.items[0].coverage, second.items[0].coverage);
     }
-<<<<<<< ours
-=======
 
     #[test]
     fn hash_u32_and_u64_are_domain_separated() {
@@ -522,5 +480,4 @@ mod tests {
         let hash_u64_val = hash_u64(base, 0xfeed_beefu32 as u64);
         assert_ne!(hash_u32_val, hash_u64_val);
     }
->>>>>>> theirs
 }

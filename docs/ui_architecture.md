@@ -1,75 +1,86 @@
-Desired Final Form (Contract)
+Canonical Layering (Contract)
 
-Everything visible is a snapshot surface (RGBA8888 bytespace) presented with `UI_PRESENT_EPOCH`.
-Only Blossom presents snapshots.
-Bloom composites only from window snapshot surfaces.
-Apps publish only model nodes and assets.
+Apps / Clients
 
-The vibe
+- Own intent: “this is what my window looks like.”
+- Emit DrawList generations into the graph.
+- Never reason about pixels, damage, caching, or history.
 
-"I am a clock / grid / cursor. Here is my model and my assets. Go paint me."
+Graph
 
-What Bloom is allowed to do
+- Owns truth: current DrawLists, assets, window topology.
+- Is the only IPC path.
+- Provides watches + snapshots, nothing semantic.
 
-- Discover display target and map framebuffer bytespace.
-- Read window + cursor geometry, z-order, and snapshot metadata.
-- Composite RGBA8888 snapshot surfaces onto the framebuffer.
-- Emit loud diagnostics when a snapshot is missing.
+Bloom
 
-What Blossom is responsible for
+- Owns work: turning vectors into pixels efficiently.
+- Derives all secondary facts (bounds, damage, caches).
+- Writes back only derived, optional hints (never required for correctness).
 
-- SVG rasterization, text rasterization, and vector paint execution.
-- View composition: tile -> viewport -> window snapshots.
-- Cursor rendering into its own snapshot surface.
-- Presenting snapshots by writing `UI_SNAPSHOT_*` + `UI_PRESENT_EPOCH`.
-- `userspace/blossom/src/ui_paint.rs` is the paint boundary (Bloom never imports it).
+The litmus test
 
-What apps can do
+If you freeze the graph at time T and restart Bloom, the screen should
+eventually look identical. If not, some layer is doing work it does not own.
 
-- Publish UI model nodes (windows, viewports, tiles, text runs, cursor model).
-- Publish asset bytespaces (SVG, fonts, images).
-- Never present or render pixels; never write snapshot keys.
+DrawList: the published program
 
-Snapshot contract
+One DrawList = one immutable generation. New visual state means a new
+generation. Old generations are disposable by Bloom.
 
-- Keys:
-  - `UI_SNAPSHOT_BYTESPACE`, `UI_SNAPSHOT_WIDTH`, `UI_SNAPSHOT_HEIGHT`, `UI_SNAPSHOT_STRIDE`, `UI_SNAPSHOT_FORMAT`
-  - `UI_PRESENT_EPOCH`
-- Atomicity: `UI_PRESENT_EPOCH` is the commit stamp for the snapshot metadata.
-- Bloom only uses snapshot metadata with a non-zero `UI_PRESENT_EPOCH`.
+DrawList node schema (graph)
 
-Cursor model (Model A)
+- `window_id`
+- `generation`
+- `cmd_root` (edge to structured commands or chunk nodes)
+- optional: `declared_assets` (fonts, images)
 
-- `kinds::UI_CURSOR` node with `UI_SNAPSHOT_*` + `UI_PRESENT_EPOCH`.
-- Position lives in `UI_CURSOR_X` / `UI_CURSOR_Y`.
+Rules
 
-Progressive rendering rule
+- No in-place mutation of commands.
+- Bloom can diff by generation number, not content.
 
-- Tiles can present independently for progressive fill.
-- Viewports can present with partial tile availability.
-- Windows present composed snapshots with whatever tiles are ready.
+Damage ownership
 
-Forbidden dependencies (enforced)
+- Apps never emit damage.
+- The graph never stores damage as authoritative state.
+- Bloom derives damage from generation changes, window movement/resize,
+  z-order changes, and cursor movement.
 
-- Bloom must not depend on SVG parser/rasterizer modules.
-- Bloom must not depend on font rasterization modules.
-- Bloom must not import `ui/paint.rs`, `ui/layout.rs`, `lowered.rs`, or any model interpreter.
+Bloom hot loop (conceptual)
 
-Inventory (Phase 1)
+1. Drain graph watches.
+2. For each affected window:
+   - if generation changed: ingest new DrawList, compute bounds, invalidate caches.
+3. Compute union damage.
+4. Rasterize what intersects damage.
+5. Composite window surfaces.
+6. Present.
 
-Checklist (file -> action)
+Ingest vs Render (Bloom internal split)
 
-- `userspace/bloom/src/snapshot.rs`: keep (compositor snapshot reader)
-- `userspace/bloom/src/compositor.rs`: keep (display target discovery)
-- `userspace/bloom/src/surface.rs`: keep (framebuffer surface)
-- `userspace/bloom/src/frame_loop.rs`: keep (frame pacing)
-- `userspace/bloom/src/present.rs`: delete or replace (legacy frame pipeline)
-- `userspace/bloom/src/asset.rs`: delete (fonts/cursors/wallpaper)
-- `userspace/bloom/src/font_graph.rs`: delete (font resolution)
-- `userspace/bloom/src/svg/`: move to Blossom (SVG parsing/raster)
-- `userspace/bloom/src/raster.rs`: move to Blossom (vector/text raster)
-- `userspace/bloom/src/drawlist.rs`: move to Blossom (paint ISA)
-- `userspace/bloom/src/lowered.rs`: move to Blossom (low-level ops)
-- `userspace/bloom/src/ui/`: delete (model -> paint/layout)
-- `userspace/bloom/src/cursor.rs`: delete (cursor rendering)
-- `userspace/bloom/src/bristle.rs`: move to Blossom (pointer input)
+Ingest
+
+- Reads the graph.
+- Parses structured nodes.
+- Builds a fast internal representation.
+- Computes bounds once.
+
+Render
+
+- Consumes the internal representation.
+- Does rasterization + composition.
+- Knows nothing about the graph.
+
+Optional graph writes
+
+If Bloom writes derived information (damage rectangles, caches, snapshots),
+they are debug/introspection/recovery hints only and must never be required
+for correctness.
+
+Deletion checklist (after refactor)
+
+- Legacy snapshot paths.
+- Double rasterization layers.
+- App-side optimizations.
+- Old bloom/blossom split leftovers.

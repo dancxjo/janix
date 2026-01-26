@@ -22,19 +22,11 @@ Required per `UI_WINDOW`:
 
 - `ui.drawlist.bytespace` (`keys::UI_DRAWLIST_BYTESPACE`)
 - `ui.drawlist.gen` (`keys::UI_DRAWLIST_GEN`)
-<<<<<<< ours
-- `ui.viewport.bytespace` (`keys::UI_VIEWPORT_BYTESPACE`)
-
-Optional:
-
-- `ui.transform.bytespace` (`keys::UI_TRANSFORM_BYTESPACE`)
-=======
 - `ui.viewport.bytespace` (`keys::UI_VIEWPORT_BYTESPACE`, `abi::geometry::RectI32Wire`)
 
 Optional:
 
 - `ui.transform.bytespace` (`keys::UI_TRANSFORM_BYTESPACE`, `abi::geometry::Mat3x2fWire`)
->>>>>>> theirs
 - `ui.transform.gen` (`keys::UI_TRANSFORM_GEN`)
 - `ui.clip.bytespace` (`keys::UI_CLIP_BYTESPACE`)
 - `ui.clip.gen` (`keys::UI_CLIP_GEN`)

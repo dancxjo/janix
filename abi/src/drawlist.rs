@@ -46,18 +46,11 @@ pub enum DrawListVersion {
 }
 
 pub const DRAWLIST_MAGIC: u32 = 0x4453_4c54; // "DLST"
-<<<<<<< ours
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[repr(u32)]
-pub enum DrawCmdTag {
-    FillRect = 1,
-    FillPath = 2,
-=======
 const DRAWLIST_HEADER_BYTES: usize = 16;
 const DRAWLIST_CMD_COUNT_OFFSET: usize = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u32)]
 pub enum DrawCmdTag {
     FillRect = 1,
     FillPath = 2,
@@ -80,7 +73,6 @@ impl DrawCmdTag {
             DrawCmdTag::Unknown(raw) => raw,
         }
     }
->>>>>>> theirs
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -124,10 +116,7 @@ impl DrawListBuilder {
         bytes.extend_from_slice(&0u16.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
-<<<<<<< ours
-=======
         debug_assert_eq!(bytes.len(), DRAWLIST_HEADER_BYTES);
->>>>>>> theirs
         Self { bytes, cmd_count: 0 }
     }
 
@@ -153,22 +142,13 @@ impl DrawListBuilder {
 
     pub fn finish(mut self) -> Vec<u8> {
         let cmd_count_bytes = self.cmd_count.to_le_bytes();
-<<<<<<< ours
-        let count_offset = 8;
-        self.bytes[count_offset..count_offset + 4].copy_from_slice(&cmd_count_bytes);
-=======
         self.bytes[DRAWLIST_CMD_COUNT_OFFSET..DRAWLIST_CMD_COUNT_OFFSET + 4]
             .copy_from_slice(&cmd_count_bytes);
->>>>>>> theirs
         self.bytes
     }
 
     fn push_cmd(&mut self, tag: DrawCmdTag, payload: &[u8]) {
-<<<<<<< ours
-        self.bytes.extend_from_slice(&(tag as u32).to_le_bytes());
-=======
         self.bytes.extend_from_slice(&tag.as_raw().to_le_bytes());
->>>>>>> theirs
         self.bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         self.bytes.extend_from_slice(payload);
         self.cmd_count += 1;
@@ -208,38 +188,6 @@ impl<'a> DrawListReader<'a> {
         })
     }
 
-<<<<<<< ours
-    pub fn next(&mut self) -> Option<DrawCmdRef<'a>> {
-        if self.remaining == 0 {
-            return None;
-        }
-        if self.offset + 8 > self.bytes.len() {
-            self.remaining = 0;
-            return None;
-        }
-        let tag = u32::from_le_bytes(self.bytes[self.offset..self.offset + 4].try_into().ok()?);
-        let len = u32::from_le_bytes(self.bytes[self.offset + 4..self.offset + 8].try_into().ok()?);
-        self.offset += 8;
-        let end = self.offset + len as usize;
-        if end > self.bytes.len() {
-            self.remaining = 0;
-            return None;
-        }
-        let payload = &self.bytes[self.offset..end];
-        self.offset = end;
-        self.remaining -= 1;
-        Some(DrawCmdRef {
-            tag: match tag {
-                1 => DrawCmdTag::FillRect,
-                2 => DrawCmdTag::FillPath,
-                _ => return None,
-            },
-            payload,
-        })
-    }
-}
-
-=======
     /// Returns the next known command in the stream, skipping unknown tags.
     pub fn next(&mut self) -> Option<DrawCmdRef<'a>> {
         while self.remaining > 0 {
@@ -307,7 +255,6 @@ pub enum DrawListError {
     TrailingBytes,
 }
 
->>>>>>> theirs
 pub fn decode_fill_rect(payload: &[u8]) -> Option<(i32, i32, i32, i32, u32)> {
     if payload.len() != 20 {
         return None;
@@ -330,10 +277,7 @@ pub fn decode_fill_path(payload: &[u8]) -> Option<DecodedFillPath> {
     if payload.len() < 12 {
         return None;
     }
-<<<<<<< ours
-=======
     // Strict format: payload must match header + path bytes exactly.
->>>>>>> theirs
     let fill_rule = match u32::from_le_bytes(payload[0..4].try_into().ok()?) {
         0 => FillRule::NonZero,
         1 => FillRule::EvenOdd,
@@ -341,11 +285,7 @@ pub fn decode_fill_path(payload: &[u8]) -> Option<DecodedFillPath> {
     };
     let color = u32::from_le_bytes(payload[4..8].try_into().ok()?);
     let path_len = u32::from_le_bytes(payload[8..12].try_into().ok()?) as usize;
-<<<<<<< ours
-    if payload.len() < 12 + path_len {
-=======
     if payload.len() != 12 + path_len {
->>>>>>> theirs
         return None;
     }
     let verbs = decode_path(&payload[12..12 + path_len])?;
@@ -401,11 +341,7 @@ fn decode_path(bytes: &[u8]) -> Option<Vec<PathVerb>> {
     let verb_start = 8;
     let point_start = verb_start + verb_len;
     let point_bytes = point_len * 8;
-<<<<<<< ours
-    if bytes.len() < point_start + point_bytes {
-=======
     if bytes.len() != point_start + point_bytes {
->>>>>>> theirs
         return None;
     }
     let verb_bytes = &bytes[verb_start..point_start];
@@ -449,10 +385,6 @@ fn decode_path(bytes: &[u8]) -> Option<Vec<PathVerb>> {
         };
         verbs.push(verb);
     }
-<<<<<<< ours
-    Some(verbs)
-}
-=======
     if point_cursor != point_len {
         return None;
     }
@@ -544,4 +476,3 @@ mod tests {
         );
     }
 }
->>>>>>> theirs

@@ -182,7 +182,7 @@ pub extern "C" fn font_loader_entry() -> ! {
 
 pub extern "C" fn cursor_loader_entry() -> ! {
     stem::sleep_ms(300);
-    ASSETS.enqueue_cursor_load("/assets/cursors/plain/Normal.cur");
+    ASSETS.enqueue_cursor_load("/assets/cursors/future/default.svg");
     loop {
         stem::syscall::sleep_ms(10000);
     }

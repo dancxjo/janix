@@ -5,7 +5,9 @@
 //! packed layouts for payload structs.
 
 use core::marker::PhantomData;
-use core::sync::atomic::{AtomicU64, Ordering};
+use core::sync::atomic::AtomicU64;
+#[cfg(feature = "kernel-id-gen")]
+use core::sync::atomic::Ordering;
 
 /// 128-bit unique identifier for a Thing in the graph.
 #[repr(C)]
@@ -32,6 +34,7 @@ pub struct KindId(pub [u8; 16]);
 #[derive(Copy, Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub struct PredicateId(pub [u8; 16]);
 
+#[cfg(feature = "kernel-id-gen")]
 static NEXT_THING_ID: AtomicU64 = AtomicU64::new(0);
 
 impl ThingId {

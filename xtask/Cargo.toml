@@ -5,6 +5,7 @@ edition = "2024"
 
 [features]
 diagnostic-apps = []
+default = ["svg-cursors"]
 svg-cursors = []
 
 [dependencies]

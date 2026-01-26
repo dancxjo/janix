@@ -35,3 +35,5 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 ## Notes
 - Workspace members are listed in `Cargo.toml`.
 - `target/` is build output and can be ignored in reviews.
+- Reminder: use the `apply_patch` tool directly for file edits (avoid running it via exec). 
+- Reminder: hashing helpers must use the correct byte width for each integer type (u32/i32 = 4 bytes).

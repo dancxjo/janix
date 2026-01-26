@@ -37,3 +37,4 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 - `target/` is build output and can be ignored in reviews.
 - Reminder: use the `apply_patch` tool directly for file edits (avoid running it via exec). 
 - Reminder: hashing helpers must use the correct byte width for each integer type (u32/i32 = 4 bytes).
+- The `stem` build script expects `assets/pci/pci.ids`; ensure it exists (or skip builds that trigger `stem`'s build.rs) when running `cargo test`.

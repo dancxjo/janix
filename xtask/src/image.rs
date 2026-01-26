@@ -119,6 +119,11 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             is_init: false,
             features: vec![],
         },
+        ProgramConfig {
+            name: "drawlist_demo",
+            is_init: false,
+            features: vec![],
+        },
     ]
 }
 

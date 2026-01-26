@@ -189,6 +189,7 @@ impl Supervisor {
         // self.ensure_app("/scheduler_fairness");
         // self.ensure_app("/hogger");
         // self.ensure_app("/tick_printer");
+        self.ensure_app("/drawlist_demo");
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {

@@ -1406,3 +1406,55 @@ async fn check_text_pixels(
 
     Ok(())
 }
+
+#[then(regex = r#"^I should see a pixel at (\d+), (\d+) with color "(.+)"$"#)]
+async fn check_pixel_color(
+    world: &mut ThingOsWorld,
+    x: u32,
+    y: u32,
+    color_hex: String,
+) -> Result<(), StepError> {
+    let expected_color = if color_hex.starts_with('#') {
+        let hex = &color_hex[1..];
+        if hex.len() != 6 {
+            return Err(StepError(format!("Invalid hex color: {}", color_hex)));
+        }
+        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
+        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
+        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
+        [r, g, b]
+    } else {
+        return Err(StepError(format!("Color must start with #: {}", color_hex)));
+    };
+
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("pixel_check");
+
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .map_err(|e| StepError(format!("Failed to take screenshot: {}", e)))?;
+
+    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let rgb = img.to_rgb8();
+    let (width, height) = rgb.dimensions();
+
+    if x >= width || y >= height {
+        return Err(StepError(format!("Coordinates ({}, {}) out of bounds ({}, {})", x, y, width, height)));
+    }
+
+    let pixel = rgb.get_pixel(x, y).0;
+
+    // Tolerance of 5
+    if !color_close(pixel, expected_color, 5) {
+        return Err(StepError(format!(
+            "Pixel at ({}, {}) was {:?}, expected {:?} (tolerance 5).",
+            x, y, pixel, expected_color
+        )));
+    }
+
+    eprintln!("│  │  │      ✅ Pixel at ({}, {}) matches {:?}", x, y, expected_color);
+    Ok(())
+}

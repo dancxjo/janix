@@ -95,6 +95,18 @@ pub mod keys {
     pub const UI_WINDOW_SHADED: &str = "ui.window.shaded";
     pub const UI_HIDDEN: &str = "ui.hidden";
     pub const UI_Z_INDEX: &str = "ui.z_index";
+    pub const UI_KIND: &str = "ui.kind";
+    pub const UI_VISIBLE: &str = "ui.visible";
+    pub const UI_ENABLED: &str = "ui.enabled";
+    pub const UI_BUTTON_LABEL: &str = "ui.button.label";
+    pub const UI_BUTTON_ACTION_ID: &str = "ui.button.action_id";
+    pub const UI_BUTTON_PRESSED: &str = "ui.button.pressed";
+    pub const UI_CHECKBOX_LABEL: &str = "ui.checkbox.label";
+    pub const UI_CHECKBOX_CHECKED: &str = "ui.checkbox.checked";
+    pub const UI_CHECKBOX_INDETERMINATE: &str = "ui.checkbox.indeterminate";
+    pub const UI_CHECKBOX_VALUE_ID: &str = "ui.checkbox.value_id";
+    pub const UI_EVENT_QUEUE: &str = "ui.event.queue";
+    pub const UI_EVENT_GEN: &str = "ui.event.gen";
     // DrawList (graph-native vector program) properties
     /// Bytespace id containing packed drawlist commands.
     pub const UI_DRAWLIST_BYTESPACE: &str = "ui.drawlist.bytespace";
@@ -319,6 +331,10 @@ pub mod kinds {
     pub const UI_TILE: &str = "ui.Tile";
     pub const UI_TEXT_RUN: &str = "ui.TextRun";
     pub const UI_CHROME: &str = "ui.Chrome";
+    pub const UI_NODE: &str = "ui.Node";
+    pub const UI_BUTTON: &str = "ui.Button";
+    pub const UI_CHECKBOX: &str = "ui.Checkbox";
+    pub const UI_COLUMN: &str = "ui.Container.Column";
 
     // Font Graph Kinds
     pub const FONT_SUPERFAMILY: &str = "font.Superfamily";
@@ -406,6 +422,14 @@ pub mod pixel_format {
     pub const BGRX8888: u64 = 2;
     /// 16-bit RGB565: No alpha channel.
     pub const RGB565: u64 = 3;
+}
+
+/// UI kind tags stored in `keys::UI_KIND`.
+pub mod ui_kind {
+    pub const BUTTON: u64 = 1;
+    pub const CHECKBOX: u64 = 2;
+    pub const TEXT: u64 = 3;
+    pub const COLUMN: u64 = 4;
 }
 
 pub mod rels {

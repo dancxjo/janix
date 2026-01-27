@@ -1,12 +1,17 @@
 extern crate alloc;
 
 pub mod builder;
+pub mod graph;
 pub mod pack;
 
+use alloc::vec::Vec;
+
 pub use builder::{
-    AlignItems, Canvas, Checkbox, Color, Flex, FlexDirection, FontKey, Icon, Image, ImageFit,
-    JustifyContent, Line, Rect, Scene, Size, Styled, Text, Window,
+    AlignItems, Canvas, Checkbox, Color, Flex, FlexDirection, FontKey, FontKeyKind, Icon, Image,
+    ImageFit, JustifyContent, Line, Rect, Scene, Scroll, ScrollAxis, Separator, Size, Spacer,
+    Styled, Text, TextWrap, Window,
 };
+pub use graph::{Petals, UiTreeBuilder};
 
 use crate::errors::{Error, Result};
 use crate::thing::ThingId;
@@ -86,6 +91,7 @@ mod tests {
             .insert((target, keys::UI_SCENE_GEN), current.saturating_add(1));
         Ok(())
     }
+
 
     #[test]
     fn publish_increments_gen_and_updates_bytespace() {

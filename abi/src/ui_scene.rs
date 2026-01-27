@@ -1,7 +1,7 @@
 extern crate alloc;
 
 pub const UI_SCENE_MAGIC: u32 = 0x5343_4e45; // "SCNE"
-pub const UI_SCENE_VERSION: u16 = 1;
+pub const UI_SCENE_VERSION: u16 = 2;
 pub const UI_SCENE_HEADER_BYTES: usize = 24;
 pub const UI_SCENE_NODE_BYTES: usize = 128;
 pub const UI_SCENE_NODE_PAYLOAD_BYTES: usize = 44;
@@ -56,10 +56,16 @@ pub const UI_SCENE_FLEX_GAP_OFFSET: usize = 4;
 
 pub const UI_SCENE_TEXT_TEXT_OFFSET_OFFSET: usize = 0;
 pub const UI_SCENE_TEXT_TEXT_LEN_OFFSET: usize = 4;
-pub const UI_SCENE_TEXT_FONT_OFFSET_OFFSET: usize = 8;
-pub const UI_SCENE_TEXT_FONT_LEN_OFFSET: usize = 12;
-pub const UI_SCENE_TEXT_SIZE_OFFSET: usize = 16;
-pub const UI_SCENE_TEXT_COLOR_OFFSET: usize = 20;
+pub const UI_SCENE_TEXT_FONT_KIND_OFFSET: usize = 8;
+pub const UI_SCENE_TEXT_WRAP_OFFSET: usize = 9;
+pub const UI_SCENE_TEXT_WEIGHT_OFFSET: usize = 10;
+pub const UI_SCENE_TEXT_STYLE_OFFSET: usize = 11;
+pub const UI_SCENE_TEXT_FONT_NAME_OFFSET_OFFSET: usize = 12;
+pub const UI_SCENE_TEXT_FONT_NAME_LEN_OFFSET: usize = 16;
+pub const UI_SCENE_TEXT_FONT_THING_OFFSET: usize = 20;
+pub const UI_SCENE_TEXT_SIZE_OFFSET: usize = 28;
+pub const UI_SCENE_TEXT_ELLIPSIS_OFFSET: usize = 30;
+pub const UI_SCENE_TEXT_COLOR_OFFSET: usize = 32;
 
 pub const UI_SCENE_RECT_COLOR_OFFSET: usize = 0;
 pub const UI_SCENE_RECT_RADIUS_OFFSET: usize = 4;
@@ -75,6 +81,18 @@ pub const UI_SCENE_CHECKBOX_LABEL_LEN_OFFSET: usize = 8;
 pub const UI_SCENE_ICON_NAME_OFFSET_OFFSET: usize = 0;
 pub const UI_SCENE_ICON_NAME_LEN_OFFSET: usize = 4;
 pub const UI_SCENE_ICON_SIZE_OFFSET: usize = 8;
+
+pub const UI_SCENE_SCROLL_AXIS_OFFSET: usize = 0;
+pub const UI_SCENE_SCROLL_CLIP_OFFSET: usize = 1;
+pub const UI_SCENE_SCROLL_SCROLL_Y_OFFSET: usize = 4;
+pub const UI_SCENE_SCROLL_CONTENT_MIN_HEIGHT_OFFSET: usize = 8;
+pub const UI_SCENE_SCROLL_ESTIMATED_ROW_HEIGHT_OFFSET: usize = 12;
+pub const UI_SCENE_SCROLL_TOTAL_ROWS_OFFSET: usize = 16;
+
+pub const UI_SCENE_SPACER_HEIGHT_OFFSET: usize = 0;
+
+pub const UI_SCENE_SEPARATOR_THICKNESS_OFFSET: usize = 0;
+pub const UI_SCENE_SEPARATOR_COLOR_OFFSET: usize = 4;
 
 pub const UI_SCENE_LINE_X1_OFFSET: usize = 0;
 pub const UI_SCENE_LINE_Y1_OFFSET: usize = 4;
@@ -95,6 +113,9 @@ pub enum NodeKind {
     Canvas = 7,
     Line = 8,
     Icon = 9,
+    Scroll = 10,
+    Spacer = 11,
+    Separator = 12,
     Unknown(u16),
 }
 
@@ -110,6 +131,9 @@ impl NodeKind {
             7 => NodeKind::Canvas,
             8 => NodeKind::Line,
             9 => NodeKind::Icon,
+            10 => NodeKind::Scroll,
+            11 => NodeKind::Spacer,
+            12 => NodeKind::Separator,
             _ => NodeKind::Unknown(raw),
         }
     }
@@ -125,6 +149,9 @@ impl NodeKind {
             NodeKind::Canvas => 7,
             NodeKind::Line => 8,
             NodeKind::Icon => 9,
+            NodeKind::Scroll => 10,
+            NodeKind::Spacer => 11,
+            NodeKind::Separator => 12,
             NodeKind::Unknown(raw) => raw,
         }
     }
@@ -211,6 +238,39 @@ pub enum ImageFit {
     None = 3,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum FontKeyKind {
+    None = 0,
+    Name = 1,
+    Thing = 2,
+}
+
+impl FontKeyKind {
+    pub fn from_raw(raw: u8) -> Self {
+        match raw {
+            1 => FontKeyKind::Name,
+            2 => FontKeyKind::Thing,
+            _ => FontKeyKind::None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[repr(u8)]
+pub enum TextWrap {
+    NoWrap = 0,
+    WordWrap = 1,
+}
+
+impl TextWrap {
+    pub fn from_raw(raw: u8) -> Self {
+        match raw {
+            1 => TextWrap::WordWrap,
+            _ => TextWrap::NoWrap,
+        }
+    }
+}
 impl ImageFit {
     pub fn from_raw(raw: u8) -> Self {
         match raw {
@@ -271,8 +331,14 @@ pub struct FlexMeta {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct TextMeta {
     pub text: StringRef,
-    pub font: StringRef,
-    pub size: i32,
+    pub font_kind: FontKeyKind,
+    pub font_name: StringRef,
+    pub font_thing: u64,
+    pub size: u16,
+    pub weight: u8,
+    pub style: u8,
+    pub wrap: TextWrap,
+    pub ellipsis: bool,
     pub color: u32,
 }
 
@@ -308,6 +374,43 @@ pub struct LineMeta {
 pub struct IconMeta {
     pub name: StringRef,
     pub size: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(u8)]
+pub enum ScrollAxis {
+    Vertical = 0,
+    Horizontal = 1,
+}
+
+impl ScrollAxis {
+    pub fn from_raw(raw: u8) -> Self {
+        match raw {
+            1 => ScrollAxis::Horizontal,
+            _ => ScrollAxis::Vertical,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollMeta {
+    pub axis: ScrollAxis,
+    pub clip: bool,
+    pub scroll_y_px: i32,
+    pub content_min_height_px: i32,
+    pub estimated_row_height_px: u16,
+    pub total_rows: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SpacerMeta {
+    pub height_px: u16,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SeparatorMeta {
+    pub thickness_px: u8,
+    pub color: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -570,11 +673,17 @@ impl<'a> NodeView<'a> {
                 offset: read_u32(payload, UI_SCENE_TEXT_TEXT_OFFSET_OFFSET).unwrap_or(0),
                 len: read_u32(payload, UI_SCENE_TEXT_TEXT_LEN_OFFSET).unwrap_or(0),
             },
-            font: StringRef {
-                offset: read_u32(payload, UI_SCENE_TEXT_FONT_OFFSET_OFFSET).unwrap_or(0),
-                len: read_u32(payload, UI_SCENE_TEXT_FONT_LEN_OFFSET).unwrap_or(0),
+            font_kind: FontKeyKind::from_raw(payload[UI_SCENE_TEXT_FONT_KIND_OFFSET]),
+            font_name: StringRef {
+                offset: read_u32(payload, UI_SCENE_TEXT_FONT_NAME_OFFSET_OFFSET).unwrap_or(0),
+                len: read_u32(payload, UI_SCENE_TEXT_FONT_NAME_LEN_OFFSET).unwrap_or(0),
             },
-            size: read_i32(payload, UI_SCENE_TEXT_SIZE_OFFSET).unwrap_or(0),
+            font_thing: read_u64(payload, UI_SCENE_TEXT_FONT_THING_OFFSET).unwrap_or(0),
+            size: read_u16(payload, UI_SCENE_TEXT_SIZE_OFFSET).unwrap_or(0),
+            weight: payload[UI_SCENE_TEXT_WEIGHT_OFFSET],
+            style: payload[UI_SCENE_TEXT_STYLE_OFFSET],
+            wrap: TextWrap::from_raw(payload[UI_SCENE_TEXT_WRAP_OFFSET]),
+            ellipsis: payload[UI_SCENE_TEXT_ELLIPSIS_OFFSET] != 0,
             color: read_u32(payload, UI_SCENE_TEXT_COLOR_OFFSET).unwrap_or(0),
         })
     }
@@ -644,6 +753,44 @@ impl<'a> NodeView<'a> {
                 len: read_u32(payload, UI_SCENE_ICON_NAME_LEN_OFFSET).unwrap_or(0),
             },
             size: read_i32(payload, UI_SCENE_ICON_SIZE_OFFSET).unwrap_or(24),
+        })
+    }
+
+    pub fn scroll_meta(&self) -> Option<ScrollMeta> {
+        if self.kind() != NodeKind::Scroll {
+            return None;
+        }
+        let payload = self.payload();
+        Some(ScrollMeta {
+            axis: ScrollAxis::from_raw(payload[UI_SCENE_SCROLL_AXIS_OFFSET]),
+            clip: payload[UI_SCENE_SCROLL_CLIP_OFFSET] != 0,
+            scroll_y_px: read_i32(payload, UI_SCENE_SCROLL_SCROLL_Y_OFFSET).unwrap_or(0),
+            content_min_height_px: read_i32(payload, UI_SCENE_SCROLL_CONTENT_MIN_HEIGHT_OFFSET)
+                .unwrap_or(0),
+            estimated_row_height_px: read_u16(payload, UI_SCENE_SCROLL_ESTIMATED_ROW_HEIGHT_OFFSET)
+                .unwrap_or(0),
+            total_rows: read_u32(payload, UI_SCENE_SCROLL_TOTAL_ROWS_OFFSET).unwrap_or(0),
+        })
+    }
+
+    pub fn spacer_meta(&self) -> Option<SpacerMeta> {
+        if self.kind() != NodeKind::Spacer {
+            return None;
+        }
+        let payload = self.payload();
+        Some(SpacerMeta {
+            height_px: read_u16(payload, UI_SCENE_SPACER_HEIGHT_OFFSET).unwrap_or(0),
+        })
+    }
+
+    pub fn separator_meta(&self) -> Option<SeparatorMeta> {
+        if self.kind() != NodeKind::Separator {
+            return None;
+        }
+        let payload = self.payload();
+        Some(SeparatorMeta {
+            thickness_px: payload[UI_SCENE_SEPARATOR_THICKNESS_OFFSET],
+            color: read_u32(payload, UI_SCENE_SEPARATOR_COLOR_OFFSET).unwrap_or(0xFF000000),
         })
     }
 

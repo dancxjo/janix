@@ -34,6 +34,7 @@ mod blossom_client;
 mod window_manager;
 pub mod painter_resources;
 mod paint_vm;
+mod ui_events;
 
 pub use painter_resources::ASSETS;
 
@@ -221,6 +222,8 @@ fn main(arg: usize) -> ! {
     let mut cursor_rasterizer = CursorRasterizer::new();
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_keys: BTreeSet<Key> = BTreeSet::new();
+    let mut prev_cursor_buttons = cursor.buttons();
+    let mut ui_dispatch = ui_events::UiEventDispatcher::new();
     let mut focused_window: Option<ThingId> = None;
     let accel_cfg = MouseAccelConfig::default();
     let mut accel_state = MouseAccelState::default();
@@ -356,6 +359,13 @@ fn main(arg: usize) -> ! {
                     screen_h,
                 )
             }
+            let current_buttons = cursor.buttons();
+            let left_down = (current_buttons & 1) != 0;
+            let left_prev = (prev_cursor_buttons & 1) != 0;
+            if left_down && !left_prev {
+                ui_dispatch.dispatch_click(cursor.x, cursor.y, screen_w, screen_h);
+            }
+            prev_cursor_buttons = current_buttons;
             let alt_down = pressed_keys.contains(&Key::LeftAlt) || pressed_keys.contains(&Key::RightAlt);
             let shift_down = pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
             let tab_pressed = pressed_keys.contains(&Key::Tab) && !prev_keys.contains(&Key::Tab);

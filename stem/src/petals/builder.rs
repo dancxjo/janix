@@ -50,22 +50,68 @@ impl Color {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FontKey {
-    pub(crate) name: String,
-    pub(crate) size: i32,
+    pub(crate) kind: FontKeyKind,
+    pub(crate) name: Option<String>,
+    pub(crate) thing: Option<ThingId>,
+    pub(crate) size: u16,
+    pub(crate) weight: u8,
+    pub(crate) style: u8,
 }
 
 impl FontKey {
     pub fn new(name: &str) -> Self {
+        Self::name(name)
+    }
+
+    pub fn name(name: &str) -> Self {
         Self {
-            name: name.to_string(),
+            kind: FontKeyKind::Name,
+            name: Some(name.to_string()),
+            thing: None,
             size: 0,
+            weight: 0,
+            style: 0,
+        }
+    }
+
+    pub fn thing(id: ThingId) -> Self {
+        Self {
+            kind: FontKeyKind::Thing,
+            name: None,
+            thing: Some(id),
+            size: 0,
+            weight: 0,
+            style: 0,
         }
     }
 
     pub fn size(mut self, size: i32) -> Self {
-        self.size = size;
+        self.size = size.max(0) as u16;
         self
     }
+
+    pub fn weight(mut self, weight: u8) -> Self {
+        self.weight = weight;
+        self
+    }
+
+    pub fn style(mut self, style: u8) -> Self {
+        self.style = style;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FontKeyKind {
+    None,
+    Name,
+    Thing,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextWrap {
+    NoWrap,
+    WordWrap,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -324,8 +370,14 @@ impl Text {
         Self {
             node: Node::new(NodeData::Text(TextData {
                 text: text.to_string(),
-                font: None,
+                font_kind: FontKeyKind::None,
+                font_name: None,
+                font_thing: None,
                 size: 0,
+                weight: 0,
+                style: 0,
+                wrap: TextWrap::NoWrap,
+                ellipsis: false,
                 color: Color::from_argb_u32(0xFFFFFFFF),
             })),
         }
@@ -333,8 +385,56 @@ impl Text {
 
     pub fn font(mut self, font: FontKey) -> Self {
         if let NodeData::Text(ref mut data) = self.node.data {
-            data.font = Some(font.name);
-            data.size = font.size;
+            data.font_kind = font.kind;
+            data.font_name = font.name;
+            data.font_thing = font.thing;
+            if font.size > 0 {
+                data.size = font.size;
+            }
+            data.weight = font.weight;
+            data.style = font.style;
+        }
+        self
+    }
+
+    pub fn size(mut self, size: u16) -> Self {
+        if let NodeData::Text(ref mut data) = self.node.data {
+            data.size = size;
+        }
+        self
+    }
+
+    pub fn weight(mut self, weight: u8) -> Self {
+        if let NodeData::Text(ref mut data) = self.node.data {
+            data.weight = weight;
+        }
+        self
+    }
+
+    pub fn style(mut self, style: u8) -> Self {
+        if let NodeData::Text(ref mut data) = self.node.data {
+            data.style = style;
+        }
+        self
+    }
+
+    pub fn nowrap(mut self) -> Self {
+        if let NodeData::Text(ref mut data) = self.node.data {
+            data.wrap = TextWrap::NoWrap;
+        }
+        self
+    }
+
+    pub fn word_wrap(mut self) -> Self {
+        if let NodeData::Text(ref mut data) = self.node.data {
+            data.wrap = TextWrap::WordWrap;
+        }
+        self
+    }
+
+    pub fn ellipsis(mut self, enabled: bool) -> Self {
+        if let NodeData::Text(ref mut data) = self.node.data {
+            data.ellipsis = enabled;
         }
         self
     }
@@ -520,6 +620,113 @@ impl Styled for Line {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Scroll {
+    pub(crate) node: Node,
+}
+
+impl Scroll {
+    pub fn vertical() -> Self {
+        Self {
+            node: Node::new(NodeData::Scroll(ScrollData {
+                axis: ScrollAxis::Vertical,
+                scroll_y_px: 0,
+                content_min_height_px: 0,
+                clip: true,
+                estimated_row_height_px: 0,
+                total_rows: 0,
+            })),
+        }
+    }
+
+    pub fn scroll_y(mut self, value: i32) -> Self {
+        if let NodeData::Scroll(ref mut data) = self.node.data {
+            data.scroll_y_px = value;
+        }
+        self
+    }
+
+    pub fn content_min_height(mut self, value: i32) -> Self {
+        if let NodeData::Scroll(ref mut data) = self.node.data {
+            data.content_min_height_px = value;
+        }
+        self
+    }
+
+    pub fn clip(mut self, enabled: bool) -> Self {
+        if let NodeData::Scroll(ref mut data) = self.node.data {
+            data.clip = enabled;
+        }
+        self
+    }
+
+    pub fn estimated_row_height(mut self, value: u16) -> Self {
+        if let NodeData::Scroll(ref mut data) = self.node.data {
+            data.estimated_row_height_px = value;
+        }
+        self
+    }
+
+    pub fn total_rows(mut self, value: u32) -> Self {
+        if let NodeData::Scroll(ref mut data) = self.node.data {
+            data.total_rows = value;
+        }
+        self
+    }
+
+    pub fn push(mut self, child: impl Into<Node>) -> Self {
+        self.node.children.push(child.into());
+        self
+    }
+}
+
+impl Styled for Scroll {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Spacer {
+    pub(crate) node: Node,
+}
+
+impl Spacer {
+    pub fn new(height_px: u16) -> Self {
+        Self {
+            node: Node::new(NodeData::Spacer(SpacerData { height_px })),
+        }
+    }
+}
+
+impl Styled for Spacer {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Separator {
+    pub(crate) node: Node,
+}
+
+impl Separator {
+    pub fn new(thickness_px: u8, color: Color) -> Self {
+        Self {
+            node: Node::new(NodeData::Separator(SeparatorData {
+                thickness_px,
+                color,
+            })),
+        }
+    }
+}
+
+impl Styled for Separator {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Checkbox {
     pub(crate) node: Node,
 }
@@ -549,10 +756,10 @@ impl Styled for Checkbox {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct Node {
-    pub(crate) data: NodeData,
-    pub(crate) style: Style,
-    pub(crate) children: Vec<Node>,
+pub struct Node {
+    pub data: NodeData,
+    pub style: Style,
+    pub children: Vec<Node>,
 }
 
 impl Node {
@@ -566,7 +773,7 @@ impl Node {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) enum NodeData {
+pub enum NodeData {
     Window(WindowData),
     Flex(FlexData),
     Text(TextData),
@@ -575,66 +782,102 @@ pub(crate) enum NodeData {
     Canvas,
     Line(LineData),
     Icon(IconData),
+    Scroll(ScrollData),
+    Spacer(SpacerData),
+    Separator(SeparatorData),
     Checkbox(CheckboxData),
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct WindowData {
-    pub(crate) wid: ThingId,
-    pub(crate) title: Option<String>,
-    pub(crate) min_size: Option<(i32, i32)>,
-    pub(crate) max_size: Option<(i32, i32)>,
-    pub(crate) init_size: Option<(i32, i32)>,
+pub struct WindowData {
+    pub wid: ThingId,
+    pub title: Option<String>,
+    pub min_size: Option<(i32, i32)>,
+    pub max_size: Option<(i32, i32)>,
+    pub init_size: Option<(i32, i32)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct FlexData {
-    pub(crate) direction: FlexDirection,
-    pub(crate) align: AlignItems,
-    pub(crate) justify: JustifyContent,
-    pub(crate) gap: i32,
+pub struct FlexData {
+    pub direction: FlexDirection,
+    pub align: AlignItems,
+    pub justify: JustifyContent,
+    pub gap: i32,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct TextData {
-    pub(crate) text: String,
-    pub(crate) font: Option<String>,
-    pub(crate) size: i32,
-    pub(crate) color: Color,
+pub struct TextData {
+    pub text: String,
+    pub font_kind: FontKeyKind,
+    pub font_name: Option<String>,
+    pub font_thing: Option<ThingId>,
+    pub size: u16,
+    pub weight: u8,
+    pub style: u8,
+    pub wrap: TextWrap,
+    pub ellipsis: bool,
+    pub color: Color,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct RectData {
-    pub(crate) color: Color,
-    pub(crate) radius: Option<i32>,
+pub struct RectData {
+    pub color: Color,
+    pub radius: Option<i32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct ImageData {
-    pub(crate) key: String,
-    pub(crate) fit: ImageFit,
+pub struct ImageData {
+    pub key: String,
+    pub fit: ImageFit,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct LineData {
-    pub(crate) x1: i32,
-    pub(crate) y1: i32,
-    pub(crate) x2: i32,
-    pub(crate) y2: i32,
-    pub(crate) width: i32,
-    pub(crate) color: Color,
+pub struct LineData {
+    pub x1: i32,
+    pub y1: i32,
+    pub x2: i32,
+    pub y2: i32,
+    pub width: i32,
+    pub color: Color,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct IconData {
-    pub(crate) name: String,
-    pub(crate) size: i32,
+pub struct IconData {
+    pub name: String,
+    pub size: i32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScrollAxis {
+    Vertical,
+    Horizontal,
 }
 
 #[derive(Clone, Debug, PartialEq)]
-pub(crate) struct CheckboxData {
-    pub(crate) checked: bool,
-    pub(crate) label: Option<String>,
+pub struct ScrollData {
+    pub axis: ScrollAxis,
+    pub scroll_y_px: i32,
+    pub content_min_height_px: i32,
+    pub clip: bool,
+    pub estimated_row_height_px: u16,
+    pub total_rows: u32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpacerData {
+    pub height_px: u16,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct SeparatorData {
+    pub thickness_px: u8,
+    pub color: Color,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct CheckboxData {
+    pub checked: bool,
+    pub label: Option<String>,
 }
 
 impl From<Window> for Node {
@@ -681,6 +924,24 @@ impl From<Line> for Node {
 
 impl From<Icon> for Node {
     fn from(value: Icon) -> Self {
+        value.node
+    }
+}
+
+impl From<Scroll> for Node {
+    fn from(value: Scroll) -> Self {
+        value.node
+    }
+}
+
+impl From<Spacer> for Node {
+    fn from(value: Spacer) -> Self {
+        value.node
+    }
+}
+
+impl From<Separator> for Node {
+    fn from(value: Separator) -> Self {
         value.node
     }
 }

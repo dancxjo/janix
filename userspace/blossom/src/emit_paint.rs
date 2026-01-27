@@ -15,7 +15,16 @@ pub fn emit_paint(
     title_override: Option<&str>,
 ) -> Vec<u8> {
     let mut builder = PaintBuilder::new();
-    emit_node(scene, scene.root, layout, window_bg, title_override, &mut builder);
+    emit_node(
+        scene,
+        scene.root,
+        layout,
+        window_bg,
+        title_override,
+        0,
+        0,
+        &mut builder,
+    );
     builder.finish()
 }
 
@@ -25,10 +34,23 @@ fn emit_node(
     layout: &[LayoutRect],
     window_bg: u32,
     title_override: Option<&str>,
+    offset_x: i32,
+    offset_y: i32,
     builder: &mut PaintBuilder,
 ) {
     let node = &scene.nodes[index];
-    let rect = layout[index];
+    let base = layout[index];
+    let rect = LayoutRect {
+        x: base.x + offset_x,
+        y: base.y + offset_y,
+        w: base.w,
+        h: base.h,
+    };
+    
+    // Use stem::info loosely for tracing node types
+    if matches!(node.kind, NodeKind::Scroll | NodeKind::Flex | NodeKind::Separator | NodeKind::Spacer) {
+         // stem::info!("BLOSSOM: emit_node kind={:?} rect={:?}", node.kind, rect);
+    }
 
     match node.kind {
         NodeKind::Window => {
@@ -37,7 +59,16 @@ fn emit_node(
             if content.w > 0 && content.h > 0 {
                 builder.push_clip(content.x, content.y, content.w, content.h);
                 for &child in &node.children {
-                    emit_node(scene, child, layout, window_bg, title_override, builder);
+                    emit_node(
+                        scene,
+                        child,
+                        layout,
+                        window_bg,
+                        title_override,
+                        offset_x,
+                        offset_y,
+                        builder,
+                    );
                 }
                 builder.pop_clip();
             }
@@ -51,8 +82,13 @@ fn emit_node(
         NodeKind::Text => {
             if let Some(meta) = node.text_meta {
                 let text = scene.string(meta.text).unwrap_or("");
-                let font = scene.string(meta.font).unwrap_or("NotoSans-Regular");
-                let size = if meta.size > 0 { meta.size } else { 16 };
+                let font = match meta.font_kind {
+                    abi::ui_scene::FontKeyKind::Name => {
+                        scene.string(meta.font_name).unwrap_or("NotoSans-Regular")
+                    }
+                    _ => "NotoSans-Regular",
+                };
+                let size = if meta.size > 0 { meta.size as i32 } else { 16 };
                 let baseline = rect.y + size;
                 builder.draw_text_run(
                     rect.x,
@@ -85,6 +121,30 @@ fn emit_node(
                 builder.draw_icon(rect.x, rect.y, rect.w, rect.h, name);
             }
         }
+        NodeKind::Scroll => {
+            if let Some(meta) = node.scroll_meta {
+                if meta.clip {
+                    builder.push_clip(rect.x, rect.y, rect.w, rect.h);
+                }
+                let child_offset_y = offset_y - meta.scroll_y_px;
+                for &child in &node.children {
+                    emit_node(
+                        scene,
+                        child,
+                        layout,
+                        window_bg,
+                        title_override,
+                        offset_x,
+                        child_offset_y,
+                        builder,
+                    );
+                }
+                if meta.clip {
+                    builder.pop_clip();
+                }
+            }
+            return;
+        }
         NodeKind::Line => {
             if let Some(meta) = node.line_meta {
                 let min_x = meta.x1.min(meta.x2);
@@ -101,6 +161,12 @@ fn emit_node(
                 );
             }
         }
+        NodeKind::Separator => {
+            if let Some(meta) = node.separator_meta {
+                builder.fill_rect(rect.x, rect.y, rect.w, rect.h, meta.color);
+            }
+        }
+        NodeKind::Spacer => {}
         NodeKind::Checkbox => {
             draw_checkbox(scene, node, rect, builder);
         }
@@ -108,7 +174,16 @@ fn emit_node(
     }
 
     for &child in &node.children {
-        emit_node(scene, child, layout, window_bg, title_override, builder);
+        emit_node(
+            scene,
+            child,
+            layout,
+            window_bg,
+            title_override,
+            offset_x,
+            offset_y,
+            builder,
+        );
     }
 }
 

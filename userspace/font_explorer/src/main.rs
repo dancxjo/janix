@@ -7,7 +7,7 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::petals::{Color, Flex, FontKey, Scene, Styled, Text, Window};
+use stem::petals::{AlignItems, Color, Flex, FontKey, Scene, Scroll, Separator, Styled, Text, Window};
 use stem::thing::ThingId;
 use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, link,
@@ -46,33 +46,18 @@ fn read_bytespace_string(id: ThingId) -> Option<String> {
     Some(text.into())
 }
 
-fn select_font_stack() -> Vec<String> {
+fn list_fonts() -> Vec<String> {
     let mut names = Vec::new();
-    let mut families = [ThingId::default(); 128];
+    let mut families = [ThingId::default(); 256];
     let count = find(kinds::FONT_FAMILY, &mut families).unwrap_or(0);
     for id in families.iter().take(count) {
         if let Some(name) = read_string_prop(*id, keys::FONT_NAME) {
             names.push(name);
         }
     }
-
-    let mut stack = Vec::new();
-    let preferred = ["Noto Sans", "Noto Sans Symbols", "Noto Sans Symbols 2"];
-    for name in preferred {
-        if names.iter().any(|n| n == name) {
-            stack.push(name.into());
-        }
-    }
-    if stack.is_empty() && !names.is_empty() {
-        names.sort();
-        for name in names.into_iter().take(3) {
-            stack.push(name);
-        }
-    }
-    if stack.is_empty() {
-        stack.push("Noto Sans".into());
-    }
-    stack
+    names.sort();
+    names.dedup();
+    names
 }
 
 #[stem::main]
@@ -99,9 +84,8 @@ fn main() -> ! {
         }
     }
 
-    let stack = select_font_stack();
-    let stack_label = stack.join(" -> ");
-    let style_label = "Weight 400 / Width 5 / Slope 0";
+    const SAMPLE: &str = "Sphinx of black quartz, judge my vow. 0123456789";
+    let fonts = list_fonts();
 
     let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
     link(win, rels::CHILD_OF, ui_root).expect("link window");
@@ -114,37 +98,71 @@ fn main() -> ! {
     prop_set(win, keys::UI_Y, 50).ok();
     set_string_prop(win, keys::UI_TITLE, "Font Explorer");
 
-    let demo_text = "Hello World\nα β γ ∑ ∞\n⚙︎ ☺︎ 🛠";
-
-    let scene = Scene::new().window(
-        Window::new(win)
-            .title("Font Explorer")
-            .initial_size(900, 520)
-            .root(
-                Flex::column()
-                    .gap(12)
-                    .padding(18)
-                    .push(
-                        Text::new(&stack_label)
-                            .font(FontKey::new("NotoSans-Regular").size(20))
-                            .color(Color::rgb(0, 0, 0)),
-                    )
-                    .push(
-                        Text::new(style_label)
-                            .font(FontKey::new("NotoSans-Regular").size(14))
-                            .color(Color::rgb(0, 0, 0)),
-                    )
-                    .push(
-                        Text::new(demo_text)
-                            .font(FontKey::new("NotoSans-Regular").size(40))
-                            .color(Color::rgb(0, 0, 0)),
-                    ),
-            ),
-    );
-
-    let _ = stem::petals::publish_window(&scene);
+    let row_hint = 28u16;
+    let content_min = (row_hint as i32).saturating_mul(fonts.len() as i32);
+    let mut scroll_y = 0i32;
+    let mut last_tick = stem::monotonic_ns();
 
     loop {
-        stem::sleep_ms(1000);
+        let now = stem::monotonic_ns();
+        let dt_sec = (now.saturating_sub(last_tick) as f32) / 1_000_000_000.0;
+        last_tick = now;
+
+        // Simple auto-scroll for demonstration
+        scroll_y = (scroll_y + (10.0 * dt_sec) as i32) % content_min.max(1);
+
+        let mut rows = Flex::column().gap(0);
+        for (i, name) in fonts.iter().enumerate() {
+            let row = Flex::row()
+                .align_items(AlignItems::Center)
+                .gap(12)
+                .padding(6)
+                .push(
+                    Text::new(SAMPLE)
+                        .font(FontKey::name(name).size(18))
+                        .nowrap()
+                        .ellipsis(true)
+                        .flex_grow(1.0),
+                )
+                .push(
+                    Text::new(name)
+                        .font(FontKey::new("NotoSans-Regular").size(12))
+                        .color(Color::rgb(80, 80, 80)),
+                );
+            rows = rows.push(row);
+            if i + 1 < fonts.len() {
+                rows = rows.push(Separator::new(1, Color::from_argb_u32(0xFFE0E0E0)));
+            }
+        }
+
+        let scroll = Scroll::vertical()
+            .scroll_y(scroll_y)
+            .content_min_height(content_min)
+            .estimated_row_height(row_hint)
+            .total_rows(fonts.len() as u32)
+            .clip(true)
+            .flex_grow(1.0)
+            .push(rows);
+
+        let scene = Scene::new().window(
+            Window::new(win)
+                .title("Font Explorer")
+                .initial_size(900, 520)
+                .root(
+                    Flex::column()
+                        .gap(8)
+                        .padding(16)
+                        .push(
+                            Text::new("Fonts")
+                                .font(FontKey::new("NotoSans-Regular").size(20))
+                                .color(Color::rgb(0, 0, 0)),
+                        )
+                        .push(scroll),
+                ),
+        );
+
+        let _ = stem::petals::publish_window(&scene);
+
+        stem::sleep_ms(33); // ~30 FPS
     }
 }

@@ -6,7 +6,8 @@ use alloc::vec::Vec;
 
 use abi::ids::HandleId;
 use abi::ui_scene::{
-    AlignItems, FlexDirection, ImageFit, JustifyContent, NodeKind, SizeKind, StringRef,
+    AlignItems, FlexDirection, FontKeyKind as AbiFontKeyKind, ImageFit, JustifyContent, NodeKind,
+    ScrollAxis as AbiScrollAxis, SizeKind, StringRef, TextWrap as AbiTextWrap,
     UI_SCENE_HEADER_BYTES, UI_SCENE_HEADER_MAGIC_OFFSET, UI_SCENE_HEADER_NODE_BYTES_OFFSET,
     UI_SCENE_HEADER_NODE_COUNT_OFFSET, UI_SCENE_HEADER_STRING_BYTES_OFFSET,
     UI_SCENE_HEADER_VERSION_OFFSET, UI_SCENE_MAGIC, UI_SCENE_NODE_BYTES,
@@ -25,13 +26,20 @@ use abi::ui_scene::{
     UI_SCENE_WINDOW_MAX_W_OFFSET, UI_SCENE_WINDOW_MIN_H_OFFSET, UI_SCENE_WINDOW_MIN_W_OFFSET,
     UI_SCENE_WINDOW_TITLE_LEN_OFFSET, UI_SCENE_WINDOW_TITLE_OFFSET_OFFSET, UI_SCENE_WINDOW_WID_OFFSET,
     UI_SCENE_FLEX_ALIGN_OFFSET, UI_SCENE_FLEX_DIR_OFFSET, UI_SCENE_FLEX_GAP_OFFSET,
-    UI_SCENE_FLEX_JUSTIFY_OFFSET, UI_SCENE_TEXT_COLOR_OFFSET, UI_SCENE_TEXT_FONT_LEN_OFFSET,
-    UI_SCENE_TEXT_FONT_OFFSET_OFFSET, UI_SCENE_TEXT_SIZE_OFFSET, UI_SCENE_TEXT_TEXT_LEN_OFFSET,
-    UI_SCENE_TEXT_TEXT_OFFSET_OFFSET, UI_SCENE_RECT_COLOR_OFFSET, UI_SCENE_RECT_RADIUS_OFFSET,
+    UI_SCENE_FLEX_JUSTIFY_OFFSET, UI_SCENE_TEXT_COLOR_OFFSET, UI_SCENE_TEXT_ELLIPSIS_OFFSET,
+    UI_SCENE_TEXT_FONT_KIND_OFFSET, UI_SCENE_TEXT_FONT_NAME_LEN_OFFSET,
+    UI_SCENE_TEXT_FONT_NAME_OFFSET_OFFSET, UI_SCENE_TEXT_FONT_THING_OFFSET,
+    UI_SCENE_TEXT_SIZE_OFFSET, UI_SCENE_TEXT_STYLE_OFFSET, UI_SCENE_TEXT_TEXT_LEN_OFFSET,
+    UI_SCENE_TEXT_TEXT_OFFSET_OFFSET, UI_SCENE_TEXT_WEIGHT_OFFSET, UI_SCENE_TEXT_WRAP_OFFSET,
+    UI_SCENE_RECT_COLOR_OFFSET, UI_SCENE_RECT_RADIUS_OFFSET,
     UI_SCENE_IMAGE_FIT_OFFSET, UI_SCENE_IMAGE_KEY_LEN_OFFSET, UI_SCENE_IMAGE_KEY_OFFSET_OFFSET,
     UI_SCENE_CHECKBOX_CHECKED_OFFSET, UI_SCENE_CHECKBOX_LABEL_LEN_OFFSET,
     UI_SCENE_CHECKBOX_LABEL_OFFSET_OFFSET,
     UI_SCENE_ICON_NAME_LEN_OFFSET, UI_SCENE_ICON_NAME_OFFSET_OFFSET, UI_SCENE_ICON_SIZE_OFFSET,
+    UI_SCENE_SCROLL_AXIS_OFFSET, UI_SCENE_SCROLL_CLIP_OFFSET, UI_SCENE_SCROLL_CONTENT_MIN_HEIGHT_OFFSET,
+    UI_SCENE_SCROLL_ESTIMATED_ROW_HEIGHT_OFFSET, UI_SCENE_SCROLL_SCROLL_Y_OFFSET,
+    UI_SCENE_SCROLL_TOTAL_ROWS_OFFSET, UI_SCENE_SEPARATOR_COLOR_OFFSET,
+    UI_SCENE_SEPARATOR_THICKNESS_OFFSET, UI_SCENE_SPACER_HEIGHT_OFFSET,
     UI_SCENE_LINE_COLOR_OFFSET, UI_SCENE_LINE_WIDTH_OFFSET, UI_SCENE_LINE_X1_OFFSET,
     UI_SCENE_LINE_X2_OFFSET, UI_SCENE_LINE_Y1_OFFSET, UI_SCENE_LINE_Y2_OFFSET,
 };
@@ -39,8 +47,9 @@ use abi::ui_scene::{
 use crate::errors::{Error, Result};
 use crate::petals::builder::{
     AlignItems as BuilderAlign, CheckboxData, FlexData, FlexDirection as BuilderDirection,
-    IconData, ImageData, ImageFit as BuilderFit, JustifyContent as BuilderJustify, LineData, Node,
-    NodeData, Scene, Size, Style, TextData, WindowData,
+    FontKeyKind, IconData, ImageData, ImageFit as BuilderFit, JustifyContent as BuilderJustify,
+    LineData, Node, NodeData, Scene, ScrollAxis, ScrollData, SeparatorData, Size, SpacerData,
+    Style, TextData, TextWrap, WindowData,
 };
 
 pub fn pack_scene(scene: &Scene) -> Result<Vec<u8>> {
@@ -104,10 +113,10 @@ fn collect_strings(node: &Node, table: &mut StringTable) {
                 table.add(title);
             }
         }
-        NodeData::Text(TextData { text, font, .. }) => {
+        NodeData::Text(TextData { text, font_name, .. }) => {
             table.add(text);
-            if let Some(font) = font {
-                table.add(font);
+            if let Some(font_name) = font_name {
+                table.add(font_name);
             }
         }
         NodeData::Image(ImageData { key, .. }) => {
@@ -150,6 +159,9 @@ fn pack_node(
         NodeData::Canvas => (NodeKind::Canvas, PayloadWriter::None),
         NodeData::Line(data) => (NodeKind::Line, PayloadWriter::Line(data)),
         NodeData::Icon(data) => (NodeKind::Icon, PayloadWriter::Icon(data)),
+        NodeData::Scroll(data) => (NodeKind::Scroll, PayloadWriter::Scroll(data)),
+        NodeData::Spacer(data) => (NodeKind::Spacer, PayloadWriter::Spacer(data)),
+        NodeData::Separator(data) => (NodeKind::Separator, PayloadWriter::Separator(data)),
         NodeData::Checkbox(data) => (NodeKind::Checkbox, PayloadWriter::Checkbox(data)),
     };
     write_u16_slice(&mut buf, UI_SCENE_NODE_KIND_OFFSET, kind.as_raw());
@@ -238,6 +250,9 @@ enum PayloadWriter<'a> {
     Image(&'a ImageData),
     Line(&'a LineData),
     Icon(&'a IconData),
+    Scroll(&'a ScrollData),
+    Spacer(&'a SpacerData),
+    Separator(&'a SeparatorData),
     None,
     Checkbox(&'a CheckboxData),
 }
@@ -280,12 +295,29 @@ fn write_payload(buf: &mut [u8; UI_SCENE_NODE_BYTES], payload: PayloadWriter<'_>
         }
         PayloadWriter::Text(data) => {
             let text = table.ref_for(Some(&data.text));
-            let font = table.ref_for(data.font.as_deref());
+            let font_name = table.ref_for(data.font_name.as_deref());
             write_u32_slice(payload_buf, UI_SCENE_TEXT_TEXT_OFFSET_OFFSET, text.offset);
             write_u32_slice(payload_buf, UI_SCENE_TEXT_TEXT_LEN_OFFSET, text.len);
-            write_u32_slice(payload_buf, UI_SCENE_TEXT_FONT_OFFSET_OFFSET, font.offset);
-            write_u32_slice(payload_buf, UI_SCENE_TEXT_FONT_LEN_OFFSET, font.len);
-            write_i32_slice(payload_buf, UI_SCENE_TEXT_SIZE_OFFSET, data.size);
+            payload_buf[UI_SCENE_TEXT_FONT_KIND_OFFSET] = match data.font_kind {
+                FontKeyKind::Name => AbiFontKeyKind::Name as u8,
+                FontKeyKind::Thing => AbiFontKeyKind::Thing as u8,
+                FontKeyKind::None => AbiFontKeyKind::None as u8,
+            };
+            payload_buf[UI_SCENE_TEXT_WRAP_OFFSET] = match data.wrap {
+                TextWrap::NoWrap => AbiTextWrap::NoWrap as u8,
+                TextWrap::WordWrap => AbiTextWrap::WordWrap as u8,
+            };
+            payload_buf[UI_SCENE_TEXT_WEIGHT_OFFSET] = data.weight;
+            payload_buf[UI_SCENE_TEXT_STYLE_OFFSET] = data.style;
+            write_u32_slice(payload_buf, UI_SCENE_TEXT_FONT_NAME_OFFSET_OFFSET, font_name.offset);
+            write_u32_slice(payload_buf, UI_SCENE_TEXT_FONT_NAME_LEN_OFFSET, font_name.len);
+            write_u64_slice(
+                payload_buf,
+                UI_SCENE_TEXT_FONT_THING_OFFSET,
+                data.font_thing.map(|id| id.to_u64_lossy()).unwrap_or(0),
+            );
+            write_u16_slice(payload_buf, UI_SCENE_TEXT_SIZE_OFFSET, data.size);
+            payload_buf[UI_SCENE_TEXT_ELLIPSIS_OFFSET] = if data.ellipsis { 1 } else { 0 };
             write_u32_slice(payload_buf, UI_SCENE_TEXT_COLOR_OFFSET, data.color.0);
         }
         PayloadWriter::Rect(data) => {
@@ -322,6 +354,32 @@ fn write_payload(buf: &mut [u8; UI_SCENE_NODE_BYTES], payload: PayloadWriter<'_>
             write_u32_slice(payload_buf, UI_SCENE_ICON_NAME_OFFSET_OFFSET, name.offset);
             write_u32_slice(payload_buf, UI_SCENE_ICON_NAME_LEN_OFFSET, name.len);
             write_i32_slice(payload_buf, UI_SCENE_ICON_SIZE_OFFSET, data.size);
+        }
+        PayloadWriter::Scroll(data) => {
+            payload_buf[UI_SCENE_SCROLL_AXIS_OFFSET] = match data.axis {
+                ScrollAxis::Vertical => AbiScrollAxis::Vertical as u8,
+                ScrollAxis::Horizontal => AbiScrollAxis::Horizontal as u8,
+            };
+            payload_buf[UI_SCENE_SCROLL_CLIP_OFFSET] = if data.clip { 1 } else { 0 };
+            write_i32_slice(payload_buf, UI_SCENE_SCROLL_SCROLL_Y_OFFSET, data.scroll_y_px);
+            write_i32_slice(
+                payload_buf,
+                UI_SCENE_SCROLL_CONTENT_MIN_HEIGHT_OFFSET,
+                data.content_min_height_px,
+            );
+            write_u16_slice(
+                payload_buf,
+                UI_SCENE_SCROLL_ESTIMATED_ROW_HEIGHT_OFFSET,
+                data.estimated_row_height_px,
+            );
+            write_u32_slice(payload_buf, UI_SCENE_SCROLL_TOTAL_ROWS_OFFSET, data.total_rows);
+        }
+        PayloadWriter::Spacer(data) => {
+            write_u16_slice(payload_buf, UI_SCENE_SPACER_HEIGHT_OFFSET, data.height_px);
+        }
+        PayloadWriter::Separator(data) => {
+            payload_buf[UI_SCENE_SEPARATOR_THICKNESS_OFFSET] = data.thickness_px;
+            write_u32_slice(payload_buf, UI_SCENE_SEPARATOR_COLOR_OFFSET, data.color.0);
         }
         PayloadWriter::None => {}
     }
@@ -373,10 +431,6 @@ fn write_u32(buf: &mut [u8], offset: usize, value: u32) {
     buf[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
-fn write_u16_slice(buf: &mut [u8], offset: usize, value: u16) {
-    buf[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
-}
-
 fn write_u32_slice(buf: &mut [u8], offset: usize, value: u32) {
     buf[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
@@ -389,6 +443,10 @@ fn write_i32_slice(buf: &mut [u8], offset: usize, value: i32) {
     buf[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
 
+fn write_u16_slice(buf: &mut [u8], offset: usize, value: u16) {
+    buf[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+}
+
 fn write_f32_slice(buf: &mut [u8], offset: usize, value: f32) {
     buf[offset..offset + 4].copy_from_slice(&value.to_le_bytes());
 }
@@ -396,8 +454,12 @@ fn write_f32_slice(buf: &mut [u8], offset: usize, value: f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::petals::builder::{Checkbox, Color, Flex, FontKey, Scene, Text, Window};
+    use crate::petals::builder::{
+        Checkbox, Color, Flex, FontKey, Scene, Scroll, Separator, Styled, Text, Window,
+    };
     use crate::thing::ThingId;
+    use alloc::format;
+    use alloc::vec::Vec;
 
     #[test]
     fn deterministic_packing() {
@@ -435,5 +497,49 @@ mod tests {
         assert_eq!(window.kind(), NodeKind::Window);
         let meta = window.window_meta().unwrap();
         assert_eq!(decoded.string(meta.title).unwrap(), "Hello");
+    }
+
+    #[test]
+    fn pack_scroll_text_roundtrip() {
+        let wid = ThingId::default();
+        let scene = Scene::new().window(
+            Window::new(wid).root(
+                Scroll::vertical()
+                    .scroll_y(24)
+                    .estimated_row_height(18)
+                    .total_rows(10)
+                    .clip(true)
+                    .push(Flex::column().push(
+                        Text::new("Sample")
+                            .font(FontKey::new("NotoSans").size(14))
+                            .ellipsis(true),
+                    )),
+            ),
+        );
+        let bytes = pack_scene(&scene).expect("pack scene");
+        let decoded = abi::ui_scene::UiScene::decode(&bytes).expect("decode scene");
+        let scroll = decoded.node(1).unwrap();
+        assert_eq!(scroll.kind(), NodeKind::Scroll);
+        let meta = scroll.scroll_meta().unwrap();
+        assert_eq!(meta.scroll_y_px, 24);
+        assert_eq!(meta.estimated_row_height_px, 18);
+        assert_eq!(meta.total_rows, 10);
+    }
+
+    #[test]
+    fn deterministic_large_list() {
+        let wid = ThingId::default();
+        let mut list = Flex::column();
+        for i in 0..500 {
+            let name = format!("Font{}", i);
+            list = list
+                .push(Text::new("Sample").font(FontKey::new(&name).size(12)))
+                .push(Separator::new(1, Color::from_argb_u32(0xFFE0E0E0)));
+        }
+        let scene = Scene::new().window(Window::new(wid).root(list));
+        let bytes_a = pack_scene(&scene).expect("pack scene");
+        let bytes_b = pack_scene(&scene).expect("pack scene");
+        assert_eq!(bytes_a, bytes_b);
+        assert!(bytes_a.len() > 0);
     }
 }

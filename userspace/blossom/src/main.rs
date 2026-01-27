@@ -5,6 +5,7 @@ extern crate alloc;
 extern crate stem;
 
 mod emit_paint;
+mod graph_ui;
 mod layout;
 mod scene;
 
@@ -172,6 +173,7 @@ struct UiWatcher {
 struct UiPipeline {
     watchers: Vec<UiWatcher>,
     windows: BTreeMap<ThingId, WindowState>,
+    ui_symbols: graph_ui::UiSymbols,
 }
 
 impl UiPipeline {
@@ -207,6 +209,7 @@ impl UiPipeline {
         Self {
             watchers,
             windows: BTreeMap::new(),
+            ui_symbols: graph_ui::UiSymbols::intern_sys(),
         }
     }
 
@@ -285,6 +288,10 @@ impl UiPipeline {
     }
 
     fn process_window(&mut self, window_id: ThingId) -> Result<(), abi::errors::Errno> {
+        let mut sys_graph = graph_ui::SysGraph;
+        if let Some(root_id) = graph_ui::find_root_ui(&sys_graph, &self.ui_symbols, window_id) {
+            return self.process_graph_ui(window_id, root_id, &mut sys_graph);
+        }
         let bs_id = prop_get(window_id, keys::UI_SCENE_BYTESPACE).unwrap_or(0);
         if bs_id == 0 {
             return Ok(());
@@ -323,6 +330,46 @@ impl UiPipeline {
         let rects = layout::layout_scene(&scene, root_rect);
         let paint_bytes =
             emit_paint::emit_paint(&scene, &rects, window_bg, title_override.as_deref());
+        let paint_bs = bytespace_create(paint_bytes.len(), 0, 0)?;
+        let _ = bytespace_write(paint_bs, 0, &paint_bytes);
+        let _ = prop_set(window_id, keys::UI_PAINT_BYTESPACE, paint_bs.to_u64_lossy());
+        let current = prop_get(window_id, keys::UI_PAINT_GEN).unwrap_or(0);
+        let _ = prop_set(window_id, keys::UI_PAINT_GEN, current.saturating_add(1));
+
+        self.windows.insert(
+            window_id,
+            WindowState {
+                last_gen: prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0),
+                last_w: w,
+                last_h: h,
+                last_bg: window_bg,
+                last_title_bs: prop_get(window_id, keys::UI_TITLE).unwrap_or(0),
+            },
+        );
+        Ok(())
+    }
+
+    fn process_graph_ui(
+        &mut self,
+        window_id: ThingId,
+        root_id: ThingId,
+        graph: &mut graph_ui::SysGraph,
+    ) -> Result<(), abi::errors::Errno> {
+        let window_bg = prop_get(window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32;
+        let mut w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
+        let mut h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
+        if w <= 0 || h <= 0 {
+            return Ok(());
+        }
+
+        let tree = match graph_ui::build_tree(graph, &self.ui_symbols, root_id) {
+            Some(tree) => tree,
+            None => return Ok(()),
+        };
+        let root_rect = layout::LayoutRect { x: 0, y: 0, w, h };
+        let rects = graph_ui::layout_tree(&tree, root_rect);
+        graph_ui::write_bounds(graph, &tree, &rects);
+        let paint_bytes = graph_ui::emit_paint(&tree, &rects, window_bg);
         let paint_bs = bytespace_create(paint_bytes.len(), 0, 0)?;
         let _ = bytespace_write(paint_bs, 0, &paint_bytes);
         let _ = prop_set(window_id, keys::UI_PAINT_BYTESPACE, paint_bs.to_u64_lossy());

@@ -32,6 +32,10 @@ fn layout_node(scene: &SceneGraph, index: usize, rect: LayoutRect, out: &mut [La
         layout_canvas(scene, node, content, out);
         return;
     }
+    if node.kind == NodeKind::Scroll {
+        layout_scroll(scene, node, content, out);
+        return;
+    }
     if node.children.is_empty() {
         return;
     }
@@ -43,6 +47,32 @@ fn layout_node(scene: &SceneGraph, index: usize, rect: LayoutRect, out: &mut [La
             let child_rect = child_rect_in_content(scene, &scene.nodes[*child], content);
             layout_node(scene, *child, child_rect, out);
         }
+    }
+}
+
+fn layout_scroll(
+    scene: &SceneGraph,
+    node: &SceneNode,
+    content: LayoutRect,
+    out: &mut [LayoutRect],
+) {
+    if node.children.is_empty() {
+        return;
+    }
+    let mut child_content = content;
+    if let Some(meta) = node.scroll_meta {
+        if matches!(meta.axis, abi::ui_scene::ScrollAxis::Vertical) {
+            if meta.content_min_height_px > content.h {
+                child_content.h = meta.content_min_height_px;
+            }
+        } else if matches!(meta.axis, abi::ui_scene::ScrollAxis::Horizontal) {
+            // Horizontal scroll not fully implemented but could use content_min_width if added
+        }
+    }
+
+    for &child in &node.children {
+        let child_rect = child_rect_in_content(scene, &scene.nodes[child], child_content);
+        layout_node(scene, child, child_rect, out);
     }
 }
 
@@ -90,9 +120,15 @@ fn fallback_absolute_size(node: &SceneNode, container: i32, is_width: bool) -> i
         NodeKind::Text => node
             .text_meta
             .as_ref()
-            .map(|t| t.size.max(0))
+            .map(|t| t.size as i32)
             .unwrap_or(16),
         NodeKind::Rect | NodeKind::Image => container,
+        NodeKind::Icon => node.icon_meta.map(|m| m.size.max(0)).unwrap_or(24),
+        NodeKind::Spacer => node.spacer_meta.map(|m| m.height_px as i32).unwrap_or(0),
+        NodeKind::Separator => node
+            .separator_meta
+            .map(|m| m.thickness_px as i32)
+            .unwrap_or(1),
         NodeKind::Checkbox => 20,
         _ => {
             if is_width {
@@ -264,18 +300,27 @@ fn fallback_main_size(node: &SceneNode, main: i32, cross: i32, is_row: bool) -> 
         NodeKind::Text => node
             .text_meta
             .as_ref()
-            .map(|t| t.size.max(0))
+            .map(|t| t.size as i32)
             .unwrap_or(16),
         NodeKind::Rect | NodeKind::Image => main,
         NodeKind::Icon => node.icon_meta.map(|m| m.size.max(0)).unwrap_or(24),
-        NodeKind::Checkbox => 20,
-        _ => {
+        NodeKind::Spacer => node.spacer_meta.map(|m| m.height_px as i32).unwrap_or(0),
+        NodeKind::Separator => node
+            .separator_meta
+            .map(|m| m.thickness_px as i32)
+            .unwrap_or(1),
+        NodeKind::Flex
+        | NodeKind::Scroll
+        | NodeKind::Canvas
+        | NodeKind::Window
+        | NodeKind::Checkbox => {
             if is_row {
                 cross
             } else {
-                main.min(cross)
+                main
             }
         }
+        _ => 0,
     }
 }
 
@@ -284,14 +329,14 @@ fn fallback_cross_size(node: &SceneNode, cross: i32, align: AlignItems) -> i32 {
         NodeKind::Text => cross,
         NodeKind::Rect | NodeKind::Image => cross,
         NodeKind::Icon => node.icon_meta.map(|m| m.size.max(0)).unwrap_or(24),
-        NodeKind::Checkbox => 20,
-        _ => {
-            if matches!(align, AlignItems::Stretch) {
-                cross
-            } else {
-                0
-            }
-        }
+        NodeKind::Spacer => 0,
+        NodeKind::Separator => cross,
+        NodeKind::Flex
+        | NodeKind::Scroll
+        | NodeKind::Canvas
+        | NodeKind::Window
+        | NodeKind::Checkbox => cross,
+        _ => 0,
     }
 }
 
@@ -365,7 +410,7 @@ fn content_rect(rect: LayoutRect, node: &SceneNode) -> LayoutRect {
     }
 }
 
-fn child_rect_in_content(scene: &SceneGraph, child: &SceneNode, content: LayoutRect) -> LayoutRect {
+fn child_rect_in_content(_scene: &SceneGraph, child: &SceneNode, content: LayoutRect) -> LayoutRect {
     let mut rect = LayoutRect {
         x: content.x + child.margin.left,
         y: content.y + child.margin.top,

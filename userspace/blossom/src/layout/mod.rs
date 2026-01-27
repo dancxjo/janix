@@ -267,6 +267,7 @@ fn fallback_main_size(node: &SceneNode, main: i32, cross: i32, is_row: bool) -> 
             .map(|t| t.size.max(0))
             .unwrap_or(16),
         NodeKind::Rect | NodeKind::Image => main,
+        NodeKind::Icon => node.icon_meta.map(|m| m.size.max(0)).unwrap_or(24),
         NodeKind::Checkbox => 20,
         _ => {
             if is_row {
@@ -282,6 +283,7 @@ fn fallback_cross_size(node: &SceneNode, cross: i32, align: AlignItems) -> i32 {
     match node.kind {
         NodeKind::Text => cross,
         NodeKind::Rect | NodeKind::Image => cross,
+        NodeKind::Icon => node.icon_meta.map(|m| m.size.max(0)).unwrap_or(24),
         NodeKind::Checkbox => 20,
         _ => {
             if matches!(align, AlignItems::Stretch) {

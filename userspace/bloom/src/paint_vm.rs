@@ -186,6 +186,16 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
                     });
                 }
             }
+            PaintOpTag::DrawIcon => {
+                if let Some((x, y, w, h, name)) = decode_icon(op.payload) {
+                    if let Ok(id) = stem::thing::sys::intern(&name) {
+                        list.commands().push(DrawCmd::Icon {
+                            icon_name_id: id,
+                            dest: Rect::new(x + origin_x, y + origin_y, w, h),
+                        });
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -227,6 +237,24 @@ fn decode_line(payload: &[u8]) -> Option<(i32, i32, i32, i32, i32, u32)> {
     let width = i32::from_le_bytes(payload[16..20].try_into().ok()?);
     let color = u32::from_le_bytes(payload[20..24].try_into().ok()?);
     Some((x1, y1, x2, y2, width, color))
+}
+
+fn decode_icon(payload: &[u8]) -> Option<(i32, i32, i32, i32, String)> {
+    if payload.len() < 20 {
+        return None;
+    }
+    let x = i32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let y = i32::from_le_bytes(payload[4..8].try_into().ok()?);
+    let w = i32::from_le_bytes(payload[8..12].try_into().ok()?);
+    let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
+    let name_len = u32::from_le_bytes(payload[16..20].try_into().ok()?);
+    let start = 20;
+    let end = start + name_len as usize;
+    if end > payload.len() {
+        return None;
+    }
+    let name = String::from(core::str::from_utf8(&payload[start..end]).ok()?);
+    Some((x, y, w, h, name))
 }
 
 struct TextRunDecoded {

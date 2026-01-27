@@ -79,6 +79,12 @@ fn emit_node(
                 builder.blit_image(rect.x, rect.y, rect.w, rect.h, fit, key);
             }
         }
+        NodeKind::Icon => {
+            if let Some(meta) = node.icon_meta {
+                let name = scene.string(meta.name).unwrap_or("");
+                builder.draw_icon(rect.x, rect.y, rect.w, rect.h, name);
+            }
+        }
         NodeKind::Line => {
             if let Some(meta) = node.line_meta {
                 let min_x = meta.x1.min(meta.x2);

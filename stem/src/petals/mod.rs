@@ -4,7 +4,7 @@ pub mod builder;
 pub mod pack;
 
 pub use builder::{
-    AlignItems, Canvas, Checkbox, Color, Flex, FlexDirection, FontKey, Image, ImageFit,
+    AlignItems, Canvas, Checkbox, Color, Flex, FlexDirection, FontKey, Icon, Image, ImageFit,
     JustifyContent, Line, Rect, Scene, Size, Styled, Text, Window,
 };
 

@@ -419,6 +419,35 @@ impl Styled for Image {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Icon {
+    pub(crate) node: Node,
+}
+
+impl Icon {
+    pub fn new(name: &str) -> Self {
+        Self {
+            node: Node::new(NodeData::Icon(IconData {
+                name: name.to_string(),
+                size: 24,
+            })),
+        }
+    }
+
+    pub fn size(mut self, size: i32) -> Self {
+        if let NodeData::Icon(ref mut data) = self.node.data {
+            data.size = size;
+        }
+        self
+    }
+}
+
+impl Styled for Icon {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Canvas {
     pub(crate) node: Node,
 }
@@ -545,6 +574,7 @@ pub(crate) enum NodeData {
     Image(ImageData),
     Canvas,
     Line(LineData),
+    Icon(IconData),
     Checkbox(CheckboxData),
 }
 
@@ -596,6 +626,12 @@ pub(crate) struct LineData {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) struct IconData {
+    pub(crate) name: String,
+    pub(crate) size: i32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CheckboxData {
     pub(crate) checked: bool,
     pub(crate) label: Option<String>,
@@ -639,6 +675,12 @@ impl From<Canvas> for Node {
 
 impl From<Line> for Node {
     fn from(value: Line) -> Self {
+        value.node
+    }
+}
+
+impl From<Icon> for Node {
+    fn from(value: Icon) -> Self {
         value.node
     }
 }

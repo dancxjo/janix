@@ -8,7 +8,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::time::Duration;
 use stem::info;
-use stem::petals::{Canvas, Color, FontKey, Line, Rect, Scene, Size, Styled, Text, Window};
+use stem::petals::{Canvas, Color, FontKey, Icon, Line, Rect, Scene, Size, Styled, Text, Window};
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
 
@@ -193,7 +193,18 @@ fn build_graph_scene(
                 left,
                 top,
             );
-            let text_x = left + 12;
+            let icon_size = 24;
+            let icon_x = left + 6;
+            let icon_y = top + (h - icon_size) / 2;
+            canvas = canvas.push_at(
+                Icon::new(&node.kind)
+                    .size(icon_size)
+                    .width(Size::Px(icon_size))
+                    .height(Size::Px(icon_size)),
+                icon_x,
+                icon_y,
+            );
+            let text_x = left + 12 + icon_size;
             let text_y = top + 4;
             let name_w = (node.name.len() as i32 * 6).max(10);
             canvas = canvas.push_at(

@@ -31,6 +31,7 @@ use abi::ui_scene::{
     UI_SCENE_IMAGE_FIT_OFFSET, UI_SCENE_IMAGE_KEY_LEN_OFFSET, UI_SCENE_IMAGE_KEY_OFFSET_OFFSET,
     UI_SCENE_CHECKBOX_CHECKED_OFFSET, UI_SCENE_CHECKBOX_LABEL_LEN_OFFSET,
     UI_SCENE_CHECKBOX_LABEL_OFFSET_OFFSET,
+    UI_SCENE_ICON_NAME_LEN_OFFSET, UI_SCENE_ICON_NAME_OFFSET_OFFSET, UI_SCENE_ICON_SIZE_OFFSET,
     UI_SCENE_LINE_COLOR_OFFSET, UI_SCENE_LINE_WIDTH_OFFSET, UI_SCENE_LINE_X1_OFFSET,
     UI_SCENE_LINE_X2_OFFSET, UI_SCENE_LINE_Y1_OFFSET, UI_SCENE_LINE_Y2_OFFSET,
 };
@@ -38,8 +39,8 @@ use abi::ui_scene::{
 use crate::errors::{Error, Result};
 use crate::petals::builder::{
     AlignItems as BuilderAlign, CheckboxData, FlexData, FlexDirection as BuilderDirection,
-    ImageData, ImageFit as BuilderFit, JustifyContent as BuilderJustify, LineData, Node, NodeData,
-    Scene, Size, Style, TextData, WindowData,
+    IconData, ImageData, ImageFit as BuilderFit, JustifyContent as BuilderJustify, LineData, Node,
+    NodeData, Scene, Size, Style, TextData, WindowData,
 };
 
 pub fn pack_scene(scene: &Scene) -> Result<Vec<u8>> {
@@ -112,6 +113,9 @@ fn collect_strings(node: &Node, table: &mut StringTable) {
         NodeData::Image(ImageData { key, .. }) => {
             table.add(key);
         }
+        NodeData::Icon(IconData { name, .. }) => {
+            table.add(name);
+        }
         NodeData::Checkbox(CheckboxData { label, .. }) => {
             if let Some(label) = label {
                 table.add(label);
@@ -145,6 +149,7 @@ fn pack_node(
         NodeData::Image(data) => (NodeKind::Image, PayloadWriter::Image(data)),
         NodeData::Canvas => (NodeKind::Canvas, PayloadWriter::None),
         NodeData::Line(data) => (NodeKind::Line, PayloadWriter::Line(data)),
+        NodeData::Icon(data) => (NodeKind::Icon, PayloadWriter::Icon(data)),
         NodeData::Checkbox(data) => (NodeKind::Checkbox, PayloadWriter::Checkbox(data)),
     };
     write_u16_slice(&mut buf, UI_SCENE_NODE_KIND_OFFSET, kind.as_raw());
@@ -232,6 +237,7 @@ enum PayloadWriter<'a> {
     Rect(&'a crate::petals::builder::RectData),
     Image(&'a ImageData),
     Line(&'a LineData),
+    Icon(&'a IconData),
     None,
     Checkbox(&'a CheckboxData),
 }
@@ -310,6 +316,12 @@ fn write_payload(buf: &mut [u8; UI_SCENE_NODE_BYTES], payload: PayloadWriter<'_>
             write_i32_slice(payload_buf, UI_SCENE_LINE_Y2_OFFSET, data.y2);
             write_i32_slice(payload_buf, UI_SCENE_LINE_WIDTH_OFFSET, data.width);
             write_u32_slice(payload_buf, UI_SCENE_LINE_COLOR_OFFSET, data.color.0);
+        }
+        PayloadWriter::Icon(data) => {
+            let name = table.ref_for(Some(&data.name));
+            write_u32_slice(payload_buf, UI_SCENE_ICON_NAME_OFFSET_OFFSET, name.offset);
+            write_u32_slice(payload_buf, UI_SCENE_ICON_NAME_LEN_OFFSET, name.len);
+            write_i32_slice(payload_buf, UI_SCENE_ICON_SIZE_OFFSET, data.size);
         }
         PayloadWriter::None => {}
     }

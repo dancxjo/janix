@@ -327,11 +327,14 @@ fn main(arg: usize) -> ! {
         
         // Input processing with window management
         if bristle_evt_handle != 0 {
-            let pointer_events = poll_pointer_events(
-                bristle_evt_handle,
-                &accel_cfg,
-                &mut accel_state,
-            );
+            let pointer_events = {
+                crate::trace_span!("bloom.loop.poll_bristle");
+                poll_pointer_events(
+                    bristle_evt_handle,
+                    &accel_cfg,
+                    &mut accel_state,
+                )
+            };
 
             for event in pointer_events {
                 match event {
@@ -460,7 +463,10 @@ fn main(arg: usize) -> ! {
             list.clear(crate::geometry::Color::from_u32(0xFF101018));
         }
 
-        let ui_result = ui_pipeline.run(screen_w, screen_h, &mut list, &ASSETS);
+        let ui_result = {
+            crate::trace_span!("bloom.loop.ui_pipeline");
+            ui_pipeline.run(screen_w, screen_h, &mut list, &ASSETS)
+        };
         
         // Damage Tracking (cursor is now blended post-damage, does not affect window damage)
         let bounds = damage::Rect::full(screen_w, screen_h);
@@ -514,6 +520,11 @@ fn main(arg: usize) -> ! {
             damage = damage::Damage::full(bounds);
         }
 
+        {
+            crate::trace_span!("bloom.loop.damage");
+            // damage calculation trace (already mostly done but wrapping ensures consistency)
+        }
+
         if damage.is_empty() {
             presenter.pump();
             loop_ctrl.sleep();
@@ -536,7 +547,10 @@ fn main(arg: usize) -> ! {
         }
         
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
-        raster::execute_with_damage(&mut surface, &list, &damage, ui_result.solid_text);
+        {
+            crate::trace_span!("bloom.loop.raster");
+            raster::execute_with_damage(&mut surface, &list, &damage, ui_result.solid_text);
+        }
         
         // Cursor overlay: blend cached snapshot at cursor position (post-damage)
         // This ensures cursor movement does not trigger window repaints
@@ -548,9 +562,12 @@ fn main(arg: usize) -> ! {
             }
         }
 
-        let token = builder.finish();
-        presenter.present_frame(token);
-        presenter.pump();
+        {
+            crate::trace_span!("bloom.loop.present");
+            let token = builder.finish();
+            presenter.present_frame(token);
+            presenter.pump();
+        }
         loop_ctrl.sleep();
     }
 }

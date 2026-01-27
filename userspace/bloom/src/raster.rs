@@ -1155,7 +1155,7 @@ fn flatten_quad<F>(
     p0: (f32, f32),
     p1: (f32, f32),
     p2: (f32, f32),
-    transform: &Transform2D,
+    flatness_sq: f32,
     add_edge_fn: &mut F,
 ) where
     F: FnMut((f32, f32), (f32, f32)),
@@ -1165,14 +1165,14 @@ fn flatten_quad<F>(
     let mid_y = (p0.1 + p2.1) * 0.5;
     let dx = p1.0 - mid_x;
     let dy = p1.1 - mid_y;
-    if dx * dx + dy * dy < 0.25 {
+    if dx * dx + dy * dy < flatness_sq {
         add_edge_fn(p0, p2);
     } else {
         let p01 = ((p0.0 + p1.0) * 0.5, (p0.1 + p1.1) * 0.5);
         let p12 = ((p1.0 + p2.0) * 0.5, (p1.1 + p2.1) * 0.5);
         let p012 = ((p01.0 + p12.0) * 0.5, (p01.1 + p12.1) * 0.5);
-        flatten_quad(p0, p01, p012, transform, add_edge_fn);
-        flatten_quad(p012, p12, p2, transform, add_edge_fn);
+        flatten_quad(p0, p01, p012, flatness_sq, add_edge_fn);
+        flatten_quad(p012, p12, p2, flatness_sq, add_edge_fn);
     }
 }
 
@@ -1181,7 +1181,7 @@ fn flatten_cubic<F>(
     p1: (f32, f32),
     p2: (f32, f32),
     p3: (f32, f32),
-    transform: &Transform2D,
+    flatness_sq: f32,
     add_edge_fn: &mut F,
 ) where
     F: FnMut((f32, f32), (f32, f32)),
@@ -1192,7 +1192,7 @@ fn flatten_cubic<F>(
     let dy1 = p1.1 - mid_y;
     let dx2 = p2.0 - mid_x;
     let dy2 = p2.1 - mid_y;
-    if dx1 * dx1 + dy1 * dy1 + dx2 * dx2 + dy2 * dy2 < 0.5 {
+    if dx1 * dx1 + dy1 * dy1 + dx2 * dx2 + dy2 * dy2 < flatness_sq * 2.0 {
         add_edge_fn(p0, p3);
     } else {
         let p01 = ((p0.0 + p1.0) * 0.5, (p0.1 + p1.1) * 0.5);
@@ -1201,8 +1201,8 @@ fn flatten_cubic<F>(
         let p012 = ((p01.0 + p12.0) * 0.5, (p01.1 + p12.1) * 0.5);
         let p123 = ((p12.0 + p23.0) * 0.5, (p12.1 + p23.1) * 0.5);
         let p0123 = ((p012.0 + p123.0) * 0.5, (p012.1 + p123.1) * 0.5);
-        flatten_cubic(p0, p01, p012, p0123, transform, add_edge_fn);
-        flatten_cubic(p0123, p123, p23, p3, transform, add_edge_fn);
+        flatten_cubic(p0, p01, p012, p0123, flatness_sq, add_edge_fn);
+        flatten_cubic(p0123, p123, p23, p3, flatness_sq, add_edge_fn);
     }
 }
 
@@ -1249,6 +1249,10 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
         });
     };
 
+    let scale_sq = (transform.a * transform.a + transform.b * transform.b)
+        .max(transform.c * transform.c + transform.d * transform.d);
+    let flatness_sq = 0.25 / (scale_sq * scale as f32 * scale as f32).max(0.01);
+
     let mut current_p: Option<(f32, f32)> = None;
     let mut start_p: Option<(f32, f32)> = None;
 
@@ -1266,7 +1270,7 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
             }
             crate::isa::PathVerb::QuadTo(p1, p) => {
                 if let Some(c) = current_p {
-                    flatten_quad(c, (p1.x, p1.y), (p.x, p.y), transform, &mut |p0, p1| {
+                    flatten_quad(c, (p1.x, p1.y), (p.x, p.y), flatness_sq, &mut |p0, p1| {
                         add_edge(&mut edges, p0, p1);
                     });
                     current_p = Some((p.x, p.y));
@@ -1279,7 +1283,7 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
                         (p1.x, p1.y),
                         (p2.x, p2.y),
                         (p.x, p.y),
-                        transform,
+                        flatness_sq,
                         &mut |p0, p1| {
                             add_edge(&mut edges, p0, p1);
                         },
@@ -1476,13 +1480,37 @@ fn fill_path_aa(
 
     let y_min = clip.y() * SUPERSAMPLE_SCALE;
     let y_max = (clip.y() + clip.height()) * SUPERSAMPLE_SCALE;
-
-    let mut active_edges: Vec<Edge> = Vec::with_capacity(16);
-    let mut edge_idx = 0;
     let clip_x_sub = clip.x() * SUPERSAMPLE_SCALE;
     let clip_x_sub_max = (clip.x() + clip.width()) * SUPERSAMPLE_SCALE;
 
-    for y_sub in y_min..y_max {
+    let mut active_edges: Vec<Edge> = Vec::with_capacity(16);
+    let mut edge_idx = 0;
+    
+    // Calculate bounding box of all edges to narrow scan area
+    if edges.is_empty() { return; }
+    let mut b_xmin = edges[0].x;
+    let mut b_xmax = edges[0].x;
+    let mut b_ymin = edges[0].y_min;
+    let mut b_ymax = edges[0].y_max;
+    for e in &edges {
+        b_xmin = b_xmin.min(e.x).min(e.x + e.dx_dy * (e.y_max - e.y_min));
+        b_xmax = b_xmax.max(e.x).max(e.x + e.dx_dy * (e.y_max - e.y_min));
+        b_ymin = b_ymin.min(e.y_min);
+        b_ymax = b_ymax.max(e.y_max);
+    }
+    
+    let path_clip_xmin = fixed_floor(b_xmin).max(clip_x_sub);
+    let path_clip_xmax = (fixed_floor(b_xmax) + 1).min(clip_x_sub_max);
+    let path_clip_ymin = b_ymin.max(y_min);
+    let path_clip_ymax = b_ymax.min(y_max);
+    
+    if path_clip_xmax <= path_clip_xmin || path_clip_ymax <= path_clip_ymin {
+        return;
+    }
+
+    crate::trace_counter!("raster.path.edges", edges.len());
+
+    for y_sub in path_clip_ymin..path_clip_ymax {
         while edge_idx < edges.len() && edges[edge_idx].y_min <= y_sub {
             if edges[edge_idx].y_max > y_sub {
                 active_edges.push(Edge { ..edges[edge_idx] });
@@ -1504,8 +1532,8 @@ fn fill_path_aa(
                 while i + 1 < active_edges.len() {
                     let x0 = fixed_floor(active_edges[i].x);
                     let x1 = fixed_floor(active_edges[i + 1].x);
-                    let start = x0.max(clip_x_sub).min(clip_x_sub_max);
-                    let end = x1.max(clip_x_sub).min(clip_x_sub_max);
+                    let start = x0.max(path_clip_xmin).min(path_clip_xmax);
+                    let end = x1.max(path_clip_xmin).min(path_clip_xmax);
                     if end > start {
                         for x_sub in start..end {
                             let px = x_sub / SUPERSAMPLE_SCALE;
@@ -1530,8 +1558,8 @@ fn fill_path_aa(
                     winding += active_edges[i].winding;
                     if winding == 0 {
                         let end_x = x;
-                        let start = start_x.max(clip_x_sub).min(clip_x_sub_max);
-                        let end = end_x.max(clip_x_sub).min(clip_x_sub_max);
+                        let start = start_x.max(path_clip_xmin).min(path_clip_xmax);
+                        let end = end_x.max(path_clip_xmin).min(path_clip_xmax);
                         if end > start {
                             for x_sub in start..end {
                                 let px = x_sub / SUPERSAMPLE_SCALE;
@@ -1552,14 +1580,21 @@ fn fill_path_aa(
         }
     }
 
-    for py in 0..clip_h {
-        for px in 0..clip_w {
-            let cov = coverage[(py as usize) * (clip_w as usize) + (px as usize)];
+    let p_start = (path_clip_ymin / SUPERSAMPLE_SCALE).max(clip.y());
+    let p_end = ((path_clip_ymax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.y() + clip.height());
+    let px_start = (path_clip_xmin / SUPERSAMPLE_SCALE).max(clip.x());
+    let px_end = ((path_clip_xmax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.x() + clip.width());
+
+    for py in p_start..p_end {
+        let iy = (py - clip.y()) as usize;
+        for px in px_start..px_end {
+            let ix = (px - clip.x()) as usize;
+            let cov = coverage[iy * (clip_w as usize) + ix];
             if cov == 0 {
                 continue;
             }
             let alpha = ((sa as u16 * cov as u16) / SUPERSAMPLE_SAMPLES as u16) as u8;
-            blend_pixel(surface, clip.x() + px, clip.y() + py, sr, sg, sb, alpha);
+            blend_pixel(surface, px, py, sr, sg, sb, alpha);
         }
     }
 }
@@ -1635,6 +1670,13 @@ pub fn stroke_path(
         v.push(PathVerb::Close);
     };
 
+    let mut start_p: Option<(f32, f32)> = None;
+    let mut current_p: Option<(f32, f32)> = None;
+
+    let scale_sq = (transform.a * transform.a + transform.b * transform.b)
+        .max(transform.c * transform.c + transform.d * transform.d);
+    let flatness_sq = 0.25 / scale_sq.max(0.01);
+
     for verb in &path.verbs {
         match verb {
             crate::isa::PathVerb::MoveTo(p) => {
@@ -1649,7 +1691,7 @@ pub fn stroke_path(
             }
             crate::isa::PathVerb::QuadTo(p1, p) => {
                 if let Some(c) = current_p {
-                    flatten_quad(c, (p1.x, p1.y), (p.x, p.y), transform, &mut |p0, p1| {
+                    flatten_quad(c, (p1.x, p1.y), (p.x, p.y), flatness_sq, &mut |p0, p1| {
                         add_segment(&mut stroke_verbs, p0, p1);
                     });
                     current_p = Some((p.x, p.y));
@@ -1662,7 +1704,7 @@ pub fn stroke_path(
                         (p1.x, p1.y),
                         (p2.x, p2.y),
                         (p.x, p.y),
-                        transform,
+                        flatness_sq,
                         &mut |p0, p1| {
                             add_segment(&mut stroke_verbs, p0, p1);
                         },

@@ -18,6 +18,7 @@ use abi::types::HandleId;
 use abi::types::{WatchMode, WatchSpec};
 use abi::watch;
 use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
@@ -157,6 +158,8 @@ struct WindowState {
     last_gen: u64,
     last_w: i32,
     last_h: i32,
+    last_bg: u32,
+    last_title_bs: u64,
 }
 
 struct UiWatcher {
@@ -174,7 +177,13 @@ struct UiPipeline {
 impl UiPipeline {
     fn new() -> Self {
         let mut watchers = Vec::new();
-        let keys_to_watch = [keys::UI_SCENE_GEN, keys::UI_WIDTH, keys::UI_HEIGHT];
+        let keys_to_watch = [
+            keys::UI_SCENE_GEN,
+            keys::UI_WIDTH,
+            keys::UI_HEIGHT,
+            keys::UI_BG_COLOR,
+            keys::UI_TITLE,
+        ];
         for key in keys_to_watch {
             if let Ok(pred) = stem::thing::sys::intern(key) {
                 let filter = RootWatchFilter::predicate(pred);
@@ -234,8 +243,18 @@ impl UiPipeline {
                 last_gen: 0,
                 last_w: 0,
                 last_h: 0,
+                last_bg: 0,
+                last_title_bs: 0,
             });
             if gen != entry.last_gen || w != entry.last_w || h != entry.last_h {
+                dirty.insert(*window_id, true);
+            }
+            let bg = prop_get(*window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32;
+            if bg != entry.last_bg {
+                dirty.insert(*window_id, true);
+            }
+            let title_bs = prop_get(*window_id, keys::UI_TITLE).unwrap_or(0);
+            if title_bs != entry.last_title_bs {
                 dirty.insert(*window_id, true);
             }
         }
@@ -259,6 +278,8 @@ impl UiPipeline {
                 last_gen: 0,
                 last_w: 0,
                 last_h: 0,
+                last_bg: 0,
+                last_title_bs: 0,
             });
         }
     }
@@ -268,6 +289,8 @@ impl UiPipeline {
         if bs_id == 0 {
             return Ok(());
         }
+        let window_bg = prop_get(window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32;
+        let title_override = read_string_prop(window_id, keys::UI_TITLE);
         let bytes = read_bytespace(ThingId::from_u64(bs_id))?;
         let scene = match scene::SceneGraph::from_bytes(&bytes) {
             Ok(scene) => scene,
@@ -298,7 +321,8 @@ impl UiPipeline {
 
         let root_rect = layout::LayoutRect { x: 0, y: 0, w, h };
         let rects = layout::layout_scene(&scene, root_rect);
-        let paint_bytes = emit_paint::emit_paint(&scene, &rects);
+        let paint_bytes =
+            emit_paint::emit_paint(&scene, &rects, window_bg, title_override.as_deref());
         let paint_bs = bytespace_create(paint_bytes.len(), 0, 0)?;
         let _ = bytespace_write(paint_bs, 0, &paint_bytes);
         let _ = prop_set(window_id, keys::UI_PAINT_BYTESPACE, paint_bs.to_u64_lossy());
@@ -311,10 +335,23 @@ impl UiPipeline {
                 last_gen: prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0),
                 last_w: w,
                 last_h: h,
+                last_bg: window_bg,
+                last_title_bs: prop_get(window_id, keys::UI_TITLE).unwrap_or(0),
             },
         );
         Ok(())
     }
+}
+
+fn read_string_prop(node: ThingId, key: &str) -> Option<String> {
+    let bs = prop_get(node, key).ok()?;
+    if bs == 0 {
+        return None;
+    }
+    let bytes = read_bytespace(ThingId::from_u64(bs)).ok()?;
+    core::str::from_utf8(&bytes)
+        .ok()
+        .map(|s| s.trim_end_matches('\0').to_string())
 }
 
 fn read_bytespace(bs_id: ThingId) -> Result<Vec<u8>, abi::errors::Errno> {

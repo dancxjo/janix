@@ -5,26 +5,42 @@ use alloc::vec::Vec;
 use abi::ui_paint::{ImageFit, PaintBuilder};
 use abi::ui_scene::NodeKind;
 
-use crate::layout::LayoutRect;
+use crate::layout::{LayoutRect, WINDOW_BORDER, WINDOW_TITLE_HEIGHT};
 use crate::scene::{SceneGraph, SceneNode};
 
-pub fn emit_paint(scene: &SceneGraph, layout: &[LayoutRect]) -> Vec<u8> {
+pub fn emit_paint(
+    scene: &SceneGraph,
+    layout: &[LayoutRect],
+    window_bg: u32,
+    title_override: Option<&str>,
+) -> Vec<u8> {
     let mut builder = PaintBuilder::new();
-    emit_node(scene, scene.root, layout, &mut builder);
+    emit_node(scene, scene.root, layout, window_bg, title_override, &mut builder);
     builder.finish()
 }
 
-fn emit_node(scene: &SceneGraph, index: usize, layout: &[LayoutRect], builder: &mut PaintBuilder) {
+fn emit_node(
+    scene: &SceneGraph,
+    index: usize,
+    layout: &[LayoutRect],
+    window_bg: u32,
+    title_override: Option<&str>,
+    builder: &mut PaintBuilder,
+) {
     let node = &scene.nodes[index];
     let rect = layout[index];
 
     match node.kind {
         NodeKind::Window => {
-            builder.push_clip(rect.x, rect.y, rect.w, rect.h);
-            for &child in &node.children {
-                emit_node(scene, child, layout, builder);
+            draw_window_chrome(scene, node, rect, window_bg, title_override, builder);
+            let content = window_content_rect(node, rect);
+            if content.w > 0 && content.h > 0 {
+                builder.push_clip(content.x, content.y, content.w, content.h);
+                for &child in &node.children {
+                    emit_node(scene, child, layout, window_bg, title_override, builder);
+                }
+                builder.pop_clip();
             }
-            builder.pop_clip();
             return;
         }
         NodeKind::Rect => {
@@ -70,7 +86,7 @@ fn emit_node(scene: &SceneGraph, index: usize, layout: &[LayoutRect], builder: &
     }
 
     for &child in &node.children {
-        emit_node(scene, child, layout, builder);
+        emit_node(scene, child, layout, window_bg, title_override, builder);
     }
 }
 
@@ -106,6 +122,81 @@ fn draw_checkbox(scene: &SceneGraph, node: &SceneNode, rect: LayoutRect, builder
             label,
             0xFFFFFFFF,
         );
+    }
+}
+
+fn draw_window_chrome(
+    scene: &SceneGraph,
+    node: &SceneNode,
+    rect: LayoutRect,
+    window_bg: u32,
+    title_override: Option<&str>,
+    builder: &mut PaintBuilder,
+) {
+    let border = WINDOW_BORDER;
+    let title_h = WINDOW_TITLE_HEIGHT;
+    let chrome_color = 0xFF1E1E22;
+    let title_color = 0xFF2A2A30;
+    let border_color = 0xFF0A0A0F;
+
+    builder.fill_rect(rect.x, rect.y, rect.w, rect.h, border_color);
+
+    let inner_rect = LayoutRect {
+        x: rect.x + border,
+        y: rect.y + border,
+        w: (rect.w - border * 2).max(0),
+        h: (rect.h - border * 2).max(0),
+    };
+    builder.fill_rect(inner_rect.x, inner_rect.y, inner_rect.w, inner_rect.h, chrome_color);
+
+    let title_rect = LayoutRect {
+        x: inner_rect.x,
+        y: inner_rect.y,
+        w: inner_rect.w,
+        h: title_h.min(inner_rect.h),
+    };
+    if title_rect.h > 0 {
+        builder.fill_rect(title_rect.x, title_rect.y, title_rect.w, title_rect.h, title_color);
+        let title = node
+            .window_meta
+            .and_then(|meta| scene.string(meta.title))
+            .or(title_override);
+        if let Some(text) = title {
+            let baseline = title_rect.y + 14;
+            builder.draw_text_run(
+                title_rect.x + 8,
+                title_rect.y + 4,
+                (title_rect.w - 16).max(0),
+                (title_rect.h - 8).max(0),
+                baseline,
+                "NotoSans-Regular",
+                14,
+                text,
+                0xFFE6E6E6,
+            );
+        }
+    }
+
+    let content = window_content_rect(node, rect);
+    if window_bg != 0 && content.w > 0 && content.h > 0 {
+        builder.fill_rect(content.x, content.y, content.w, content.h, window_bg);
+    }
+}
+
+fn window_content_rect(node: &SceneNode, rect: LayoutRect) -> LayoutRect {
+    let x = rect.x + WINDOW_BORDER + node.padding.left;
+    let y = rect.y + WINDOW_BORDER + WINDOW_TITLE_HEIGHT + node.padding.top;
+    let w = rect
+        .w
+        .saturating_sub(WINDOW_BORDER * 2 + node.padding.left + node.padding.right);
+    let h = rect.h.saturating_sub(
+        WINDOW_BORDER * 2 + WINDOW_TITLE_HEIGHT + node.padding.top + node.padding.bottom,
+    );
+    LayoutRect {
+        x,
+        y,
+        w: w.max(0),
+        h: h.max(0),
     }
 }
 
@@ -155,7 +246,7 @@ mod tests {
         });
 
         let layout = vec![LayoutRect { x: 0, y: 0, w: 100, h: 20 }];
-        let bytes = emit_paint(&scene, &layout);
+        let bytes = emit_paint(&scene, &layout, 0, None);
         let mut reader = PaintReader::new(&bytes).expect("reader");
         let op = reader.next().expect("op");
         assert_eq!(op.tag, PaintOpTag::DrawTextRun);

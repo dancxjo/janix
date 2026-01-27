@@ -36,7 +36,7 @@ pub struct ThingOsWorld {
 
 impl ThingOsWorld {
     /// Boot the OS in QEMU for the given architecture.
-    /// This builds a unique ISO with 1280x720 resolution for this scenario.
+    /// This builds a unique ISO with 1920x1080 resolution for this scenario.
     pub async fn boot(&mut self, arch: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.arch = arch.to_string();
 
@@ -48,14 +48,25 @@ impl ThingOsWorld {
         let pid = std::process::id();
         let iso_name = format!("thing-os-bdd-{}-{}-{}.iso", arch, pid, nanos);
         let iso_path = PathBuf::from(&iso_name);
-        
-        // Get resolution from environment (default 1280x720 for BDD tests)
-        let resolution = std::env::var("BDD_RESOLUTION").unwrap_or_else(|_| "1280x720".to_string());
-        
+
+        // Get resolution from environment (default 1920x1080 for BDD tests)
+        let resolution =
+            std::env::var("BDD_RESOLUTION").unwrap_or_else(|_| "1920x1080".to_string());
+
         // Build ISO using xtask command
-        eprintln!("[bdd] Building ISO {} with resolution {}...", iso_name, resolution);
+        eprintln!(
+            "[bdd] Building ISO {} with resolution {}...",
+            iso_name, resolution
+        );
         let build_status = std::process::Command::new("cargo")
-            .args(["xtask", "iso", "--resolution", &resolution, "--output", &iso_name])
+            .args([
+                "xtask",
+                "iso",
+                "--resolution",
+                &resolution,
+                "--output",
+                &iso_name,
+            ])
             .env("RUSTFLAGS", "-Awarnings")
             .status()?;
 
@@ -403,9 +414,7 @@ pub const REQUIRED_BOOT_SIGNALS: &[&[&str]] = &[
     // SIMD init (replaces legacy paging boundary signal)
     &["[CONTRACT]", "Initializing SIMD"],
     // Memory map / allocator
-    &[
-        "[CONTRACT]", "Frame allocator initialized",
-    ],
+    &["[CONTRACT]", "Frame allocator initialized"],
     &["[CONTRACT]", "Initializing global allocator"],
     // Tasking bring-up
     &["[CONTRACT]", "Initializing tasking"],

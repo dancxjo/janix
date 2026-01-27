@@ -15,6 +15,9 @@ pub struct LayoutRect {
     pub h: i32,
 }
 
+pub const WINDOW_BORDER: i32 = 2;
+pub const WINDOW_TITLE_HEIGHT: i32 = 24;
+
 pub fn layout_scene(scene: &SceneGraph, root_rect: LayoutRect) -> Vec<LayoutRect> {
     let mut out = vec![LayoutRect::default(); scene.nodes.len()];
     layout_node(scene, scene.root, root_rect, &mut out);
@@ -269,6 +272,27 @@ fn cross_margin_trailing(node: &SceneNode, is_row: bool) -> i32 {
 }
 
 fn content_rect(rect: LayoutRect, node: &SceneNode) -> LayoutRect {
+    if matches!(node.kind, NodeKind::Window) {
+        let x = rect.x + WINDOW_BORDER + node.padding.left;
+        let y = rect.y + WINDOW_BORDER + WINDOW_TITLE_HEIGHT + node.padding.top;
+        let w = rect
+            .w
+            .saturating_sub(WINDOW_BORDER * 2 + node.padding.left + node.padding.right);
+        let h = rect
+            .h
+            .saturating_sub(
+                WINDOW_BORDER * 2
+                    + WINDOW_TITLE_HEIGHT
+                    + node.padding.top
+                    + node.padding.bottom,
+            );
+        return LayoutRect {
+            x,
+            y,
+            w: w.max(0),
+            h: h.max(0),
+        };
+    }
     LayoutRect {
         x: rect.x + node.padding.left,
         y: rect.y + node.padding.top,

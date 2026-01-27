@@ -7,6 +7,7 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
 use alloc::string::String;
 use alloc::vec::Vec;
+use stem::petals::{Color, Flex, FontKey, Scene, Styled, Text, Window};
 use stem::thing::ThingId;
 use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, link,
@@ -113,45 +114,35 @@ fn main() -> ! {
     prop_set(win, keys::UI_Y, 50).ok();
     set_string_prop(win, keys::UI_TITLE, "Font Explorer");
 
-    let viewport = create_node(kinds::UI_VIEWPORT).expect("create UI_VIEWPORT");
-    link(viewport, rels::CHILD_OF, win).expect("link viewport");
-    link(win, rels::HAS_CHILD, viewport).expect("link window has_child");
-    prop_set(viewport, keys::UI_WIDTH, 900).ok();
-    prop_set(viewport, keys::UI_HEIGHT, 520).ok();
-    prop_set(viewport, keys::UI_CLIP, 1).ok();
-
-    let stack_text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
-    link(stack_text, rels::CHILD_OF, viewport).expect("link stack text");
-    link(viewport, rels::HAS_CHILD, stack_text).expect("link viewport has_child");
-    prop_set(stack_text, keys::UI_X, 18).ok();
-    prop_set(stack_text, keys::UI_Y, 18).ok();
-    prop_set(stack_text, keys::UI_FONT_SIZE, 20).ok();
-    prop_set(stack_text, keys::UI_FG_COLOR, 0xFF000000).ok();
-    set_string_prop(stack_text, keys::UI_TEXT, &stack_label);
-    set_string_prop(stack_text, keys::UI_FONT_STACK, &stack_label);
-
-    let style_text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
-    link(style_text, rels::CHILD_OF, viewport).expect("link style text");
-    link(viewport, rels::HAS_CHILD, style_text).expect("link viewport has_child");
-    prop_set(style_text, keys::UI_X, 18).ok();
-    prop_set(style_text, keys::UI_Y, 50).ok();
-    prop_set(style_text, keys::UI_FONT_SIZE, 14).ok();
-    prop_set(style_text, keys::UI_FG_COLOR, 0xFF000000).ok();
-    set_string_prop(style_text, keys::UI_TEXT, style_label);
-    set_string_prop(style_text, keys::UI_FONT_STACK, &stack_label);
-
     let demo_text = "Hello World\nα β γ ∑ ∞\n⚙︎ ☺︎ 🛠";
 
-    let main_text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
-    link(main_text, rels::CHILD_OF, viewport).expect("link main text");
-    link(viewport, rels::HAS_CHILD, main_text).expect("link viewport has_child");
-    prop_set(main_text, keys::UI_X, 24).ok();
-    prop_set(main_text, keys::UI_Y, 120).ok();
-    prop_set(main_text, keys::UI_FONT_SIZE, 40).ok();
-    prop_set(main_text, keys::UI_FG_COLOR, 0xFF000000).ok();
-    prop_set(main_text, keys::UI_FONT_DEBUG, 1).ok();
-    set_string_prop(main_text, keys::UI_TEXT, demo_text);
-    set_string_prop(main_text, keys::UI_FONT_STACK, &stack_label);
+    let scene = Scene::new().window(
+        Window::new(win)
+            .title("Font Explorer")
+            .initial_size(900, 520)
+            .root(
+                Flex::column()
+                    .gap(12)
+                    .padding(18)
+                    .push(
+                        Text::new(&stack_label)
+                            .font(FontKey::new("NotoSans-Regular").size(20))
+                            .color(Color::rgb(0, 0, 0)),
+                    )
+                    .push(
+                        Text::new(style_label)
+                            .font(FontKey::new("NotoSans-Regular").size(14))
+                            .color(Color::rgb(0, 0, 0)),
+                    )
+                    .push(
+                        Text::new(demo_text)
+                            .font(FontKey::new("NotoSans-Regular").size(40))
+                            .color(Color::rgb(0, 0, 0)),
+                    ),
+            ),
+    );
+
+    let _ = stem::petals::publish_window(&scene);
 
     loop {
         stem::sleep_ms(1000);

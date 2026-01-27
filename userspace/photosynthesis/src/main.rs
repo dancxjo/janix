@@ -1,21 +1,22 @@
-
 #![no_std]
 #![no_main]
 
 extern crate alloc;
+use abi::ids::HandleId;
+use abi::schema::{keys, kinds, rels};
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::time::Duration;
 use stem::info;
-use stem::thing::{ThingId, HandleId};
-use stem::thing::sys::{create_node, prop_set, link, find, describe_thing, prop_get};
-use abi::schema::{kinds, keys, rels};
+use stem::petals::{Color, Flex, FontKey, Scene, Styled, Text, Window};
+use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
+use stem::thing::ThingId;
 
 fn find_svg_assets() -> Vec<(String, ThingId)> {
     let mut assets = Vec::new();
     let mut modules = [ThingId::default(); 128];
     let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
-    
+
     for i in 0..count {
         let mut buf = [0u8; 512];
         let len = match describe_thing(modules[i], &mut buf) {
@@ -28,14 +29,23 @@ fn find_svg_assets() -> Vec<(String, ThingId)> {
         // Let's rely on checking the "name" property if possible?
         // But bloom checks description string.
         // "BootModule(id) name: \"foo.svg\" ..."
-        
+
         let mod_name = if let Some(pos) = desc.find("name: \"") {
             let rest = &desc[pos + 7..];
-            if let Some(end) = rest.find('"') { &rest[..end] } else { continue; }
-        } else { continue; };
-        
+            if let Some(end) = rest.find('"') {
+                &rest[..end]
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+
         if mod_name.ends_with(".svg") {
-            let bs_id = match prop_get(modules[i], "bytespace") { Ok(id) => ThingId::from_u64(id), Err(_) => continue };
+            let bs_id = match prop_get(modules[i], "bytespace") {
+                Ok(id) => ThingId::from_u64(id),
+                Err(_) => continue,
+            };
             assets.push((String::from(mod_name), bs_id));
         }
     }
@@ -56,7 +66,7 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
 
 mod pipes;
 
-use pipes::{scan_system_graph, generate_layout, render_graph};
+use pipes::scan_system_graph;
 
 #[stem::main]
 fn main() -> ! {
@@ -88,26 +98,39 @@ fn main() -> ! {
 
     let mut last_nodes = Vec::new();
     let mut last_edges = Vec::new();
-    let mut drawlist_gen = 0u64;
 
     loop {
         // 3. Scan Graph
         let (nodes, edges) = scan_system_graph();
 
         if nodes != last_nodes || edges != last_edges {
-            let layout = generate_layout(&nodes);
-            let drawlist_bytes = render_graph(&nodes, &edges, &layout);
-
-            // 4. Update DrawList
-            use stem::thing::sys::{bytespace_create, bytespace_write};
-            let bs_id = bytespace_create(drawlist_bytes.len(), 0, 0).expect("create bs");
-            bytespace_write(bs_id, 0, &drawlist_bytes).ok();
-            
-            prop_set(win, keys::UI_DRAWLIST_BYTESPACE, bs_id.to_u64_lossy() as u64).ok();
-            
-            drawlist_gen += 1;
-            prop_set(win, keys::UI_DRAWLIST_GEN, drawlist_gen).ok();
-            
+            let summary = alloc::format!("Nodes: {}   Edges: {}", nodes.len(), edges.len());
+            let scene = Scene::new().window(
+                Window::new(win)
+                    .title("Photosynthesis")
+                    .initial_size(800, 600)
+                    .root(
+                        Flex::column()
+                            .gap(12)
+                            .padding(20)
+                            .push(
+                                Text::new("Photosynthesis (System Graph)")
+                                    .font(FontKey::new("NotoSans-Regular").size(20))
+                                    .color(Color::rgb(0, 0, 0)),
+                            )
+                            .push(
+                                Text::new(&summary)
+                                    .font(FontKey::new("NotoSans-Regular").size(16))
+                                    .color(Color::rgb(0, 0, 0)),
+                            )
+                            .push(
+                                Text::new("Graph rendering via Petals is coming soon.")
+                                    .font(FontKey::new("NotoSans-Regular").size(14))
+                                    .color(Color::rgb(80, 80, 80)),
+                            ),
+                    ),
+            );
+            let _ = stem::petals::publish_window(&scene);
             last_nodes = nodes;
             last_edges = edges;
         }

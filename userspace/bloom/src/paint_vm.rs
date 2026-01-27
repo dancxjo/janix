@@ -8,7 +8,7 @@ use abi::ui_paint::{PaintOpTag, PaintReader};
 use abi::schema::{keys, kinds};
 use abi::types::HandleId;
 use stem::thing::ThingId;
-use stem::thing::sys::{bytespace_info, bytespace_map, bytespace_unmap, find, prop_get};
+use stem::thing::sys::{bytespace_info, bytespace_read, find, prop_get};
 
 use crate::damage;
 use crate::drawlist::{DrawCmd, DrawList};
@@ -53,8 +53,6 @@ impl PaintPipeline {
             let paint_gen = prop_get(*id, keys::UI_PAINT_GEN).unwrap_or(0);
             let paint_bs = prop_get(*id, keys::UI_PAINT_BYTESPACE).unwrap_or(0);
             let z = prop_get(*id, keys::UI_Z_INDEX).unwrap_or(0) as i32;
-            let bg = prop_get(*id, keys::UI_BG_COLOR).unwrap_or(0) as u32;
-
             let mut needs_rebuild = false;
             let entry = self.windows.entry(*id).or_insert_with(|| WindowPaintState {
                 rect: Rect::new(0, 0, 0, 0),
@@ -76,7 +74,7 @@ impl PaintPipeline {
                 entry.z = z;
                 entry.paint_gen = paint_gen;
                 entry.paint_bs = paint_bs;
-                entry.list = build_drawlist(paint_bs, rect, bg);
+                entry.list = build_drawlist(paint_bs, rect);
                 damage.push(damage::Rect::new(
                     rect.x(),
                     rect.y(),
@@ -118,18 +116,15 @@ fn window_rect(window_id: ThingId, screen_w: i32, screen_h: i32) -> Rect {
     Rect::new(x, y, w, h)
 }
 
-fn build_drawlist(paint_bs: u64, rect: Rect, bg: u32) -> DrawList {
+fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
     let mut list = DrawList::new();
-    if bg != 0 {
-        list.commands().push(DrawCmd::FillRect {
-            rect,
-            color: Color::from_u32(bg),
-            aa: EdgeAA::None,
-        });
-    }
     if paint_bs == 0 {
         return list;
     }
+    if rect.width() <= 0 || rect.height() <= 0 {
+        return list;
+    }
+    list.commands().push(DrawCmd::PushClip { rect });
     let origin_x = rect.x();
     let origin_y = rect.y();
     let bytes = match read_bytespace(ThingId::from_u64(paint_bs)) {
@@ -184,6 +179,7 @@ fn build_drawlist(paint_bs: u64, rect: Rect, bg: u32) -> DrawList {
             _ => {}
         }
     }
+    list.commands().push(DrawCmd::PopClip);
     list
 }
 
@@ -256,9 +252,19 @@ fn decode_text_run(payload: &[u8]) -> Option<TextRunDecoded> {
 
 fn read_bytespace(bs_id: ThingId) -> Result<Vec<u8>, abi::errors::Errno> {
     let size = bytespace_info(bs_id)?;
-    let ptr = bytespace_map(bs_id)?;
-    let data = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
-    let bytes = data.to_vec();
-    let _ = bytespace_unmap(bs_id, ptr);
-    Ok(bytes)
+    if size == 0 {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::with_capacity(size);
+    out.resize(size, 0);
+    let mut offset = 0usize;
+    while offset < size {
+        let end = core::cmp::min(offset + 4096, size);
+        let read = bytespace_read(bs_id, offset, &mut out[offset..end])?;
+        if read == 0 {
+            break;
+        }
+        offset = offset.saturating_add(read);
+    }
+    Ok(out)
 }

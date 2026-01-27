@@ -226,3 +226,147 @@ pub fn filter_watch_payload(
 
     Ok(out)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::watch::{self, WatchEvent, WatchOp, ValueEncoding};
+    use abi::wire::{ThingId as WireThingId, PredicateId};
+    use crate::root::graph::WatchFilter;
+
+    fn make_thing(id: u64) -> WireThingId {
+        let mut bytes = [0u8; 16];
+        bytes[0..8].copy_from_slice(&id.to_le_bytes());
+        WireThingId(bytes)
+    }
+
+    fn make_pred(id: u32) -> PredicateId {
+        let mut bytes = [0u8; 16];
+        bytes[0..4].copy_from_slice(&id.to_le_bytes());
+        PredicateId(bytes)
+    }
+
+    #[test]
+    fn test_filter_coalesce() {
+        // Setup IDs
+        let subj1 = make_thing(1);
+        let pred1 = make_pred(10);
+        let pred2 = make_pred(20);
+
+        // Construct payload
+        let mut payload = Vec::new();
+        let mut buf = [0u8; 128];
+
+        // Event 1: S1, P1, V=1
+        let val1 = 1u64.to_le_bytes();
+        let evt1 = WatchEvent {
+            op: WatchOp::Upsert,
+            flags: 0,
+            subject: subj1,
+            predicate: pred1,
+            value_encoding: ValueEncoding::U64LE,
+            value: &val1,
+        };
+        let len1 = watch::encode_event(&mut buf, &evt1).unwrap();
+        payload.extend_from_slice(&buf[..len1]);
+
+        // Event 2: S1, P2, V=2
+        let val2 = 2u64.to_le_bytes();
+        let evt2 = WatchEvent {
+            op: WatchOp::Upsert,
+            flags: 0,
+            subject: subj1,
+            predicate: pred2,
+            value_encoding: ValueEncoding::U64LE,
+            value: &val2,
+        };
+        let len2 = watch::encode_event(&mut buf, &evt2).unwrap();
+        payload.extend_from_slice(&buf[..len2]);
+
+        // Event 3: S1, P1, V=3 (Should coalesce with Event 1)
+        let val3 = 3u64.to_le_bytes();
+        let evt3 = WatchEvent {
+            op: WatchOp::Upsert,
+            flags: 0,
+            subject: subj1,
+            predicate: pred1,
+            value_encoding: ValueEncoding::U64LE,
+            value: &val3,
+        };
+        let len3 = watch::encode_event(&mut buf, &evt3).unwrap();
+        payload.extend_from_slice(&buf[..len3]);
+
+        // Filter: Match All
+        let filter = WatchFilter::default();
+
+        // Run
+        let result = filter_watch_payload(&payload, &filter).expect("filter success");
+
+        // Decode result
+        let mut cursor = 0;
+
+        // Expect Event 1 (but with value 3)
+        let (h1, v1) = watch::decode_event(&result[cursor..]).unwrap();
+        cursor += watch::encoded_len(v1.len());
+
+        assert_eq!(h1.subject, subj1);
+        assert_eq!(h1.predicate, pred1);
+        assert_eq!(v1, &val3); // Coalesced value!
+
+        // Expect Event 2
+        let (h2, v2) = watch::decode_event(&result[cursor..]).unwrap();
+        cursor += watch::encoded_len(v2.len());
+
+        assert_eq!(h2.subject, subj1);
+        assert_eq!(h2.predicate, pred2);
+        assert_eq!(v2, &val2);
+
+        // Should be end
+        assert_eq!(cursor, result.len());
+    }
+
+    #[test]
+    fn test_filter_filtering() {
+        let subj1 = make_thing(1);
+        let subj2 = make_thing(2);
+        let pred1 = make_pred(10);
+
+        let mut payload = Vec::new();
+        let mut buf = [0u8; 128];
+
+        // Event 1: S1
+        let val = 0u64.to_le_bytes();
+        let evt1 = WatchEvent {
+            op: WatchOp::Upsert,
+            flags: 0,
+            subject: subj1,
+            predicate: pred1,
+            value_encoding: ValueEncoding::U64LE,
+            value: &val,
+        };
+        let len1 = watch::encode_event(&mut buf, &evt1).unwrap();
+        payload.extend_from_slice(&buf[..len1]);
+
+        // Event 2: S2
+        let evt2 = WatchEvent {
+            subject: subj2,
+            ..evt1
+        };
+        let len2 = watch::encode_event(&mut buf, &evt2).unwrap();
+        payload.extend_from_slice(&buf[..len2]);
+
+        // Filter: Only S2
+        let mut filter = WatchFilter::default();
+        filter.flags = abi::root::WATCH_F_SUBJECT;
+        filter.subject_lo = 2; // Matches subj2 which is make_thing(2) -> first 8 bytes = 2
+
+        let result = filter_watch_payload(&payload, &filter).expect("filter");
+
+        // Should only have Event 2
+        let mut cursor = 0;
+        let (h, _) = watch::decode_event(&result[cursor..]).unwrap();
+        cursor += watch::encoded_len(8);
+        assert_eq!(h.subject, subj2);
+        assert_eq!(cursor, result.len());
+    }
+}

@@ -204,10 +204,18 @@ impl PaintBuilder {
                 layout.rect.h - FRAME_WIDTH * 4,
             );
             objects.push(PaintObject::Rect {
-                rect: content_rect,
+                rect: content_rect.clone(),
                 color: Color::from_u32(bg_color as u32),
                 radius: Self::get_prop(node, keys::UI_RADIUS, symbols) as u32,
             });
+
+            // Native DrawList content (drawn over background, but under title bar)
+            if let Some(cmds) = &node.drawlist_content {
+                objects.push(PaintObject::Commands {
+                    cmds: cmds.clone(),
+                    rect: content_rect.clone(),
+                });
+            }
 
             // 4. Title Bar logic
             let title_h = TITLE_BAR_HEIGHT;
@@ -648,6 +656,14 @@ impl PaintBuilder {
                 radius: Self::get_prop(node, keys::UI_RADIUS, symbols) as u32,
             });
             return;
+        }
+
+        // Native DrawList content (for non-Window nodes)
+        if let Some(cmds) = &node.drawlist_content {
+            objects.push(PaintObject::Commands {
+                cmds: cmds.clone(),
+                rect: layout.rect.clone(),
+            });
         }
     }
 

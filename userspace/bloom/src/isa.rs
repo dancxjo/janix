@@ -125,6 +125,12 @@ pub struct PointF {
     pub x: f32, pub y: f32,
 }
 
+impl PointF {
+    pub const fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum PathVerb {
     MoveTo(PointF),
@@ -137,5 +143,38 @@ pub enum PathVerb {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Path2D {
     pub verbs: alloc::vec::Vec<PathVerb>,
+}
+
+impl From<abi::drawlist::FillRule> for FillRule {
+    fn from(f: abi::drawlist::FillRule) -> Self {
+        match f {
+            abi::drawlist::FillRule::NonZero => Self::NonZero,
+            abi::drawlist::FillRule::EvenOdd => Self::EvenOdd,
+        }
+    }
+}
+
+impl From<abi::drawlist::PointF> for PointF {
+    fn from(p: abi::drawlist::PointF) -> Self {
+        Self { x: p.x, y: p.y }
+    }
+}
+
+impl From<Point> for PointF {
+    fn from(p: Point) -> Self {
+        Self { x: p.x as f32, y: p.y as f32 }
+    }
+}
+
+impl From<abi::drawlist::PathVerb> for PathVerb {
+    fn from(v: abi::drawlist::PathVerb) -> Self {
+        match v {
+            abi::drawlist::PathVerb::MoveTo(p) => Self::MoveTo(p.into()),
+            abi::drawlist::PathVerb::LineTo(p) => Self::LineTo(p.into()),
+            abi::drawlist::PathVerb::QuadTo(c, p) => Self::QuadTo(c.into(), p.into()),
+            abi::drawlist::PathVerb::CubicTo(c1, c2, p) => Self::CubicTo(c1.into(), c2.into(), p.into()),
+            abi::drawlist::PathVerb::Close => Self::Close,
+        }
+    }
 }
 

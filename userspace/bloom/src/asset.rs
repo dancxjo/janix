@@ -13,6 +13,7 @@ use crate::frame::AssetGeneration;
 use crate::reclaimer;
 
 use alloc::collections::{BTreeMap, VecDeque};
+use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
 use spin::Mutex;
 
@@ -249,6 +250,10 @@ static FONTS_PENDING: [PendingSlot<FontAsset>; 8] = [
     PendingSlot::new(),
     PendingSlot::new(),
 ];
+
+// Icons (Name -> DrawList content)
+static ICONS_READY: Mutex<BTreeMap<Arc<str>, Arc<Vec<crate::drawlist::DrawCmd>>>> = Mutex::new(BTreeMap::new());
+static ICONS_PENDING: Mutex<BTreeMap<Arc<str>, Arc<Vec<crate::drawlist::DrawCmd>>>> = Mutex::new(BTreeMap::new());
 
 // Global generation counter
 static ASSET_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -529,6 +534,19 @@ impl AssetBank {
             }
         }
 
+        // Check and promote pending icons
+        {
+            let mut pending_lock = ICONS_PENDING.lock();
+            if !pending_lock.is_empty() {
+                let pending = core::mem::take(&mut *pending_lock);
+                let mut ready = ICONS_READY.lock();
+                for (name, cmds) in pending {
+                    ready.insert(name, cmds);
+                }
+                promoted = true;
+            }
+        }
+
         self.current_generation()
     }
 
@@ -606,6 +624,20 @@ impl AssetBank {
         } else {
             None
         }
+    }
+
+    pub fn load_icon_immediate(path: &str) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
+        let (bs_id, size) = Self::probe_asset(path)?;
+        let mut buf = alloc::vec![0u8; size];
+        let bytes_read = stem::thing::sys::bytespace_read(bs_id, 0, &mut buf).ok()?;
+        if bytes_read != size {
+            return None;
+        }
+
+        let xml = core::str::from_utf8(&buf).ok()?;
+        let mut parser = crate::svg::SvgParser::new();
+        let cmds = parser.parse(xml);
+        Some(Arc::new(cmds))
     }
 
     /// Publish font to pending (called by loader thread)
@@ -704,6 +736,21 @@ impl AssetBank {
             }
         }
         None
+    }
+
+    pub fn get_icon(&self, name: &str) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
+        let icons = ICONS_READY.lock();
+        icons.get(name).cloned()
+    }
+
+    pub fn publish_icon(&self, name: &str, cmds: Arc<Vec<crate::drawlist::DrawCmd>>) {
+        let mut icons = ICONS_PENDING.lock();
+        icons.insert(Arc::from(name), cmds);
+    }
+
+    pub fn get_icon_names(&self) -> Vec<Arc<str>> {
+        let icons = ICONS_READY.lock();
+        icons.keys().cloned().collect()
     }
 
     /// Mark an asset as used this frame

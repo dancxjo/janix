@@ -2,10 +2,11 @@ extern crate alloc;
 
 use alloc::sync::Arc;
 use alloc::string::{String, ToString};
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use serde::{Deserialize, Serialize};
 
 use crate::geometry::{Point, Rect, Color, Transform, EdgeAA};
+use crate::isa::PointF;
 
 // Re-export damage::Rect for legacy compatibility where needed, 
 // but we prefer geometry::Rect for new commands.
@@ -45,7 +46,7 @@ pub enum DrawCmd {
     StrokeRect { rect: Rect, color: Color, width: i32 },
     FillCircle { center: Point, radius: i32, color: Color },
     StrokeCircle { center: Point, radius: i32, color: Color, width: i32 },
-    Line { from: Point, to: Point, color: Color, width: i32 },
+    Line { from: PointF, to: PointF, color: Color, width: f32 },
     FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
 
     // --- Image & Bitmap Operations ---
@@ -60,6 +61,7 @@ pub enum DrawCmd {
     DrawImageRegion { image: crate::asset::Image, src: Rect, dest: Rect },
     DrawImageTiled { image: crate::asset::Image, dest: Rect },
     DrawImageScaled { image: crate::asset::Image, dest: Rect, filter: i32 }, // filter: simple enum placeholder
+    Icon { icon_name_id: u32, dest: Rect },
 
     // --- 9-Slice & UI-Specific ---
     DrawNineSlice { image: crate::asset::Image, dest: Rect, margins: Insets },
@@ -91,7 +93,7 @@ pub enum DrawCmd {
     StrokePath {
         path: Arc<crate::isa::Path2D>,
         color: Color,
-        width: i32,
+        width: f32,
         cap: crate::isa::LineCap,
         join: crate::isa::LineJoin,
         miter_limit: f32,
@@ -125,7 +127,13 @@ impl DrawCmd {
                 let min_y = from.y.min(to.y);
                 let max_x = from.x.max(to.x);
                 let max_y = from.y.max(to.y);
-                Rect::new(min_x - width, min_y - width, (max_x - min_x) + width*2, (max_y - min_y) + width*2)
+                let w = *width;
+                Rect::new(
+                    (min_x - w) as i32,
+                    (min_y - w) as i32,
+                    (max_x - min_x + w * 2.0) as i32,
+                    (max_y - min_y + w * 2.0) as i32,
+                )
             }
             DrawCmd::FillArc { center, radius, .. } => {
                 let r = *radius;
@@ -135,6 +143,7 @@ impl DrawCmd {
             DrawCmd::DrawImage { dest, .. } => *dest,
             DrawCmd::DrawImageRegion { dest, .. } => *dest,
             DrawCmd::DrawNineSlice { dest, .. } => *dest,
+            DrawCmd::Icon { dest, .. } => *dest,
             DrawCmd::Cursor { frame, position } => {
                  let dx = position.x - frame.hotspot_x as i32;
                  let dy = position.y - frame.hotspot_y as i32;
@@ -204,10 +213,19 @@ impl DrawList {
 
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
         self.cmds.push(DrawCmd::Line { 
-            from: Point::new(x0, y0), 
-            to: Point::new(x1, y1), 
+            from: PointF::new(x0 as f32, y0 as f32), 
+            to: PointF::new(x1 as f32, y1 as f32), 
             color,
-            width: 1 
+            width: 1.0 
+        });
+    }
+
+    pub fn line_f(&mut self, x0: f32, y0: f32, x1: f32, y1: f32, color: Color, width: f32) {
+        self.cmds.push(DrawCmd::Line {
+            from: PointF::new(x0, y0),
+            to: PointF::new(x1, y1),
+            color,
+            width,
         });
     }
 
@@ -294,4 +312,91 @@ pub struct Stroke {
     pub cap: crate::isa::LineCap,
     pub join: crate::isa::LineJoin,
     pub miter_limit: f32,
+}
+
+pub fn decode_native_drawlist(data: &[u8]) -> Vec<DrawCmd> {
+    use abi::drawlist::{
+        decode_fill_path, decode_fill_rect, decode_line, decode_stroke_path, decode_text_span,
+        DrawCmdTag, DrawListReader,
+    };
+
+    let mut reader = match DrawListReader::new(data) {
+        Some(r) => r,
+        None => return Vec::new(),
+    };
+
+    let mut cmds = Vec::new();
+    while let Some(raw_cmd) = reader.next() {
+        match raw_cmd.tag {
+            DrawCmdTag::FillRect => {
+                if let Some(c) = decode_fill_rect(raw_cmd.payload) {
+                    cmds.push(DrawCmd::FillRect {
+                        rect: Rect::new(c.0, c.1, c.2, c.3),
+                        color: Color::from_u32(c.4),
+                        aa: EdgeAA::None,
+                    });
+                }
+            }
+            DrawCmdTag::FillPath => {
+                if let Some(c) = decode_fill_path(raw_cmd.payload) {
+                    cmds.push(DrawCmd::FillPath {
+                        path: Arc::new(crate::isa::Path2D {
+                            verbs: c.verbs.into_iter().map(|v| v.into()).collect(),
+                        }),
+                        color: Color::from_u32(c.color),
+                        fill_rule: c.fill_rule.into(),
+                        aa: EdgeAA::Coverage8,
+                    });
+                }
+            }
+            DrawCmdTag::Line => {
+                if let Some(c) = decode_line(raw_cmd.payload) {
+                    cmds.push(DrawCmd::Line {
+                        from: PointF::new(c.0.x, c.0.y),
+                        to: PointF::new(c.1.x, c.1.y),
+                        color: Color::from_u32(c.2),
+                        width: c.3,
+                    });
+                }
+            }
+            DrawCmdTag::StrokePath => {
+                if let Some(c) = decode_stroke_path(raw_cmd.payload) {
+                    cmds.push(DrawCmd::StrokePath {
+                        path: Arc::new(crate::isa::Path2D {
+                            verbs: c.verbs.into_iter().map(|v| v.into()).collect(),
+                        }),
+                        color: Color::from_u32(c.color),
+                        width: c.width,
+                        cap: crate::isa::LineCap::Butt,
+                        join: crate::isa::LineJoin::Miter,
+                        miter_limit: 4.0,
+                        aa: EdgeAA::Coverage8,
+                    });
+                }
+            }
+            DrawCmdTag::TextSpan => {
+                if let Some(c) = decode_text_span(raw_cmd.payload) {
+                    cmds.push(DrawCmd::Text {
+                        text: c.text,
+                        font: None,
+                        rect: Rect::new(c.x as i32, c.y as i32, 0, 0),
+                        size: c.size,
+                        color: Color::from_u32(c.color),
+                        font_debug: false,
+                    });
+                }
+            }
+            DrawCmdTag::DrawIcon => {
+                use abi::drawlist::decode_draw_icon;
+                if let Some((x, y, w, h, icon_id)) = decode_draw_icon(raw_cmd.payload) {
+                    cmds.push(DrawCmd::Icon {
+                        icon_name_id: icon_id,
+                        dest: Rect::new(x, y, w, h),
+                    });
+                }
+            }
+            _ => {}
+        }
+    }
+    cmds
 }

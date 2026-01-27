@@ -187,3 +187,43 @@ pub extern "C" fn cursor_loader_entry() -> ! {
         stem::syscall::sleep_ms(10000);
     }
 }
+
+pub extern "C" fn icon_loader_entry() -> ! {
+    stem::sleep_ms(500);
+    info!("[bloom] icon loader started");
+
+    // Scan for all .svg files in /assets/icons/thingos
+    let mut modules = [ThingId::default(); 128];
+    let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
+    for i in 0..count {
+        let mut buf = [0u8; 512];
+        let len = match describe_thing(modules[i], &mut buf) {
+            Ok(l) => l,
+            Err(_) => continue,
+        };
+        let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
+        let mod_name = if let Some(pos) = desc.find("name: \"") {
+            let rest = &desc[pos + 7..];
+            if let Some(end) = rest.find('"') {
+                &rest[..end]
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+
+        if mod_name.starts_with("assets/icons/thingos/") && mod_name.ends_with(".svg") {
+            // Strip path and extension to get the icon name
+            let name = &mod_name[21..mod_name.len() - 4];
+            info!("[bloom] loading icon: {} from {}", name, mod_name);
+            if let Some(cmds) = AssetBank::load_icon_immediate(mod_name) {
+                ASSETS.publish_icon(name, cmds);
+            }
+        }
+    }
+
+    loop {
+        stem::syscall::sleep_ms(10000);
+    }
+}

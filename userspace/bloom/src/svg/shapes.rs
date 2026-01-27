@@ -286,10 +286,10 @@ impl SvgParser {
                 if let Some(from) = snapped_point(x1, y1, &transform) {
                     if let Some(to) = snapped_point(x2, y2, &transform) {
                         self.push_cmd(DrawCmd::Line {
-                            from,
-                            to,
+                            from: from.into(),
+                            to: to.into(),
                             color: stroke_style.color,
-                            width: stroke_style.width,
+                            width: stroke_style.width as f32,
                         });
                         return;
                     }
@@ -338,7 +338,7 @@ impl SvgParser {
             self.push_cmd(DrawCmd::StrokePath {
                 path: path_arc,
                 color: stroke_style.color,
-                width: stroke_style.width,
+                width: stroke_style.width as f32,
                 cap: stroke_style.cap,
                 join: stroke_style.join,
                 miter_limit: stroke_style.miter_limit,

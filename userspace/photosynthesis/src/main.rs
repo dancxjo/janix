@@ -54,6 +54,10 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
     prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
 }
 
+mod pipes;
+
+use pipes::{scan_system_graph, generate_layout, render_graph};
+
 #[stem::main]
 fn main() -> ! {
     info!("Photosynthesis starting...");
@@ -76,55 +80,38 @@ fn main() -> ! {
     link(ui_root, rels::HAS_CHILD, win).expect("has_child");
 
     prop_set(win, keys::UI_BG_COLOR, 0xFFF5F5F0).ok(); // Off-white
-    prop_set(win, keys::UI_WIDTH, 600).ok();
-    prop_set(win, keys::UI_HEIGHT, 400).ok();
-    prop_set(win, keys::UI_X, 970).ok(); // To the right of font_explorer
-    prop_set(win, keys::UI_Y, 50).ok();
-    set_string_prop(win, keys::UI_TITLE, "Photosynthesis (SVG Grid)");
+    prop_set(win, keys::UI_WIDTH, 800).ok();
+    prop_set(win, keys::UI_HEIGHT, 600).ok();
+    prop_set(win, keys::UI_X, 200).ok();
+    prop_set(win, keys::UI_Y, 100).ok();
+    set_string_prop(win, keys::UI_TITLE, "Photosynthesis (System Graph)");
 
-    // 3. Find SVGs
-    let svgs = find_svg_assets();
-    info!("Found {} SVG assets", svgs.len());
+    let mut last_nodes = Vec::new();
+    let mut last_edges = Vec::new();
+    let mut drawlist_gen = 0u64;
 
-    // 4. Set Window Icon (preferences-desktop-font.svg)
-    if let Some((_, bs_id)) = svgs.iter().find(|(name, _)| name.contains("preferences-desktop-font.svg")) {
-        prop_set(win, keys::UI_WINDOW_ICON, bs_id.to_u64_lossy()).ok();
-    } else if let Some((_, bs_id)) = svgs.first() {
-        prop_set(win, keys::UI_WINDOW_ICON, bs_id.to_u64_lossy()).ok(); // Fallback to first found
-    }
-
-    let cols = 6;
-    let icon_size = 64;
-    let padding = 10;
-
-    let viewport = create_node(kinds::UI_VIEWPORT).expect("viewport");
-    link(viewport, rels::CHILD_OF, win).expect("link viewport");
-    link(win, rels::HAS_CHILD, viewport).expect("has_child");
-    prop_set(viewport, keys::UI_WIDTH, 600).ok();
-    prop_set(viewport, keys::UI_HEIGHT, 400).ok();
-    prop_set(viewport, keys::UI_CLIP, 1).ok();
-
-    for (i, (name, bs_id)) in svgs.iter().enumerate() {
-        let row = i / cols;
-        let col = i % cols;
-
-        let tile = create_node(kinds::UI_TILE).expect("tile");
-        link(tile, rels::CHILD_OF, viewport).expect("child");
-        link(viewport, rels::HAS_CHILD, tile).expect("has_child");
-
-        let x = padding + col * (icon_size + padding);
-        let y = padding + row * (icon_size + padding) + 30;
-        prop_set(tile, keys::UI_X, x as u64).ok();
-        prop_set(tile, keys::UI_Y, y as u64).ok();
-        prop_set(tile, keys::UI_WIDTH, icon_size as u64).ok();
-        prop_set(tile, keys::UI_HEIGHT, icon_size as u64).ok();
-        prop_set(tile, keys::UI_TILE_ASSET, bs_id.to_u64_lossy()).ok();
-
-        info!("Tile {} -> {} ({})", name, tile.to_u64_lossy(), bs_id.to_u64_lossy());
-    }
-
-    info!("Photosynthesis ready. Floating...");
     loop {
-        stem::sleep(Duration::from_secs(10));
+        // 3. Scan Graph
+        let (nodes, edges) = scan_system_graph();
+
+        if nodes != last_nodes || edges != last_edges {
+            let layout = generate_layout(&nodes);
+            let drawlist_bytes = render_graph(&nodes, &edges, &layout);
+
+            // 4. Update DrawList
+            use stem::thing::sys::{bytespace_create, bytespace_write};
+            let bs_id = bytespace_create(drawlist_bytes.len(), 0, 0).expect("create bs");
+            bytespace_write(bs_id, 0, &drawlist_bytes).ok();
+            
+            prop_set(win, keys::UI_DRAWLIST_BYTESPACE, bs_id.to_u64_lossy() as u64).ok();
+            
+            drawlist_gen += 1;
+            prop_set(win, keys::UI_DRAWLIST_GEN, drawlist_gen).ok();
+            
+            last_nodes = nodes;
+            last_edges = edges;
+        }
+
+        stem::sleep(Duration::from_secs(2));
     }
 }

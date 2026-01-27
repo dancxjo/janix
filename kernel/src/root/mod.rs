@@ -94,6 +94,11 @@ pub enum RootOp {
         buffer: u64,
         len: u64,
     },
+    DescribeSymbol {
+        id: u32,
+        buffer: u64,
+        len: u64,
+    },
     DescribeEdge {
         src: u64,
         rel: SymbolShell,

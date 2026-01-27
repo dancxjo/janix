@@ -50,6 +50,25 @@ pub fn handle_describe_thing(
     }
 }
 
+pub fn handle_describe_symbol(
+    interner: &Interner,
+    id: u32,
+    buffer: u64,
+    len: u64,
+) -> HandlerResult {
+    if let Some(name) = interner.resolve(id) {
+        let mut fmt = FmtBuffer {
+            ptr: buffer as *mut u8,
+            len: len as usize,
+            pos: 0,
+        };
+        let _ = fmt.write_str(name);
+        (0, fmt.pos as u64)
+    } else {
+        (-1, 0)
+    }
+}
+
 pub fn handle_describe_edge(
     graph: &Graph,
     interner: &mut Interner,

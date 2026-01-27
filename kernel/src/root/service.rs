@@ -65,6 +65,7 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::WatchNext { .. } => "WatchNext",
         RootOp::WatchClose { .. } => "WatchClose",
         RootOp::DescribeThing { .. } => "DescribeThing",
+        RootOp::DescribeSymbol { .. } => "DescribeSymbol",
         RootOp::DescribeEdge { .. } => "DescribeEdge",
         RootOp::DumpEdges { .. } => "DumpEdges",
         RootOp::GetEdges { .. } => "GetEdges",
@@ -145,6 +146,9 @@ fn handle_msg<R: BootRuntime>(
         // Debug/Describe operations
         RootOp::DescribeThing { id, buffer, len } => {
             root_handlers::handle_describe_thing(graph, interner, id, buffer, len)
+        }
+        RootOp::DescribeSymbol { id, buffer, len } => {
+            root_handlers::handle_describe_symbol(interner, id, buffer, len)
         }
         RootOp::DescribeEdge { src, rel, dst, buffer, len } => {
             root_handlers::handle_describe_edge(graph, interner, src, rel, dst, buffer, len)

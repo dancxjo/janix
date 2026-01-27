@@ -160,6 +160,13 @@ fn main(arg: usize) -> ! {
         },
         Err(e) => stem::error!("bloom: FAILED to alloc font stack: {:?}", e),
     }
+    match Stack::alloc_growing_stack(s_spec) {
+        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::icon_loader_entry) {
+            Ok(tid) => stem::info!("bloom: spawned icon loader (tid={})", tid),
+            Err(e) => stem::error!("bloom: FAILED to spawn icon loader: {:?}", e),
+        },
+        Err(e) => stem::error!("bloom: FAILED to alloc icon stack: {:?}", e),
+    }
 
     let mut loop_ctrl = FrameLoop::new(60);
     let (screen_w, screen_h) = (target.width as i32, target.height as i32);

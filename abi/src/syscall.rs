@@ -110,6 +110,7 @@ pub const SYS_ROOT_QUERY: u32 = 0x151;
 // 0x158-0x15F: Debug/Describe
 pub const SYS_ROOT_DESCRIBE_THING: u32 = 0x158;
 pub const SYS_ROOT_DESCRIBE_EDGE: u32 = 0x159;
+pub const SYS_ROOT_DESCRIBE_SYMBOL: u32 = 0x15D; // Added
 pub const SYS_ROOT_DUMP_EDGES: u32 = 0x15A;
 pub const SYS_ROOT_DUMP_GRAPH: u32 = 0x15B;
 pub const SYS_ROOT_GET_EDGES: u32 = 0x15C;

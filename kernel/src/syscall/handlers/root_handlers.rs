@@ -221,6 +221,36 @@ pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResu
     }
 }
 
+pub fn sys_root_describe_symbol(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, len, true)?;
+    let mut kbuf = [0u8; 256];
+    let kbuf_len = core::cmp::min(len, kbuf.len());
+    let reply = root_svc::enqueue(RootOp::DescribeSymbol {
+        id: id as u32,
+        buffer: kbuf.as_mut_ptr() as u64,
+        len: kbuf_len as u64,
+    });
+
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let written = reply.value.load(Ordering::Relaxed) as usize;
+            if status == 0 {
+                unsafe {
+                    copyout(out_ptr, &kbuf[..written])?;
+                }
+                return Ok(written);
+            } else {
+                return Err(Errno::EIO);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}
+
 pub fn sys_root_describe_edge(
     src: usize,
     rel_ptr: usize,
@@ -313,11 +343,12 @@ pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<us
             let written = reply.value.load(Ordering::Relaxed) as usize;
             if status == 0 {
                 let edge_size = core::mem::size_of::<abi::types::Edge>();
-                let bytes_to_copy = core::cmp::min(written * edge_size, len);
+                let actual_count = core::cmp::min(written, kbuf_len / edge_size);
+                let bytes_to_copy = actual_count * edge_size;
                 unsafe {
                     copyout(out_ptr, &kbuf[..bytes_to_copy])?;
                 }
-                return Ok(written);
+                return Ok(actual_count);
             } else {
                 return Err(Errno::EIO);
             }

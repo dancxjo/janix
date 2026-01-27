@@ -207,12 +207,12 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 font_debug,
             } => {
                 crate::trace_counter!("raster.ops.text", 1);
-                let p = ctx.current_transform.transform_point(*pos);
+                let p = ctx.current_transform.transform_point_f(pos.x, pos.y);
                 rasterize_text_locally(
                     ctx.surface,
                     text,
-                    p.x,
-                    p.y,
+                    p.0,
+                    p.1,
                     *size,
                     color.to_u32(),
                     &ctx.current_clip,
@@ -235,17 +235,18 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 from,
                 to,
                 color,
-                width: _,
+                width,
             } => {
                 crate::trace_counter!("raster.ops.stroke", 1);
-                let p0 = ctx.current_transform.transform_point(*from);
-                let p1 = ctx.current_transform.transform_point(*to);
+                let p0 = ctx.current_transform.transform_point_f(from.x, from.y);
+                let p1 = ctx.current_transform.transform_point_f(to.x, to.y);
                 line(
                     ctx.surface,
-                    p0.x,
-                    p0.y,
-                    p1.x,
-                    p1.y,
+                    p0.0,
+                    p0.1,
+                    p1.0,
+                    p1.1,
+                    *width,
                     color.to_u32(),
                     &ctx.current_clip,
                 );
@@ -320,7 +321,7 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                     path,
                     &ctx.current_transform,
                     color.to_u32(),
-                    *width as i32,
+                    *width,
                     *cap,
                     *join,
                     *miter_limit,
@@ -596,37 +597,69 @@ pub fn fill_arc_clipped_blend(
 }
 pub fn line(
     surface: &mut Surface,
-    mut x0: i32,
-    mut y0: i32,
-    x1: i32,
-    y1: i32,
+    x0: f32,
+    y0: f32,
+    x1: f32,
+    y1: f32,
+    width: f32,
     xrgb: u32,
     clip: &Rect,
 ) {
-    let (dx, dy) = ((x1 - x0).abs(), -(y1 - y0).abs());
-    let (sx, sy) = (if x0 < x1 { 1 } else { -1 }, if y0 < y1 { 1 } else { -1 });
+    if width > 1.2 {
+        // Use thick line expansion: convert to quad and fill.
+        let dx = x1 - x0;
+        let dy = y1 - y0;
+        let len = libm::sqrtf(dx * dx + dy * dy);
+        if len < 0.1 {
+            return;
+        }
+        let nx = -dy / len;
+        let ny = dx / len;
+        let w2 = width * 0.5;
+
+        use crate::isa::{Path2D, PathVerb, PointF};
+        let verbs = vec![
+            PathVerb::MoveTo(PointF { x: x0 + nx * w2, y: y0 + ny * w2 }),
+            PathVerb::LineTo(PointF { x: x1 + nx * w2, y: y1 + ny * w2 }),
+            PathVerb::LineTo(PointF { x: x1 - nx * w2, y: y1 - ny * w2 }),
+            PathVerb::LineTo(PointF { x: x0 - nx * w2, y: y0 - ny * w2 }),
+            PathVerb::Close,
+        ];
+        let path = Path2D { verbs };
+        fill_path(surface, &path, &Transform2D::identity(), xrgb, crate::isa::FillRule::NonZero, EdgeAA::Coverage8, clip);
+        return;
+    }
+
+    // Basic Bresenham for narrow lines
+    let mut xi = x0 as i32;
+    let mut yi = y0 as i32;
+    let x1i = x1 as i32;
+    let y1i = y1 as i32;
+
+    let (dx, dy) = ((x1i - xi).abs(), -(y1i - yi).abs());
+    let (sx, sy) = (if xi < x1i { 1 } else { -1 }, if yi < y1i { 1 } else { -1 });
     let mut err = dx + dy;
     loop {
-        if x0 >= clip.x()
-            && x0 < clip.x() + clip.width()
-            && y0 >= clip.y()
-            && y0 < clip.y() + clip.height()
+        if xi >= clip.x()
+            && xi < clip.x() + clip.width()
+            && yi >= clip.y()
+            && yi < clip.y() + clip.height()
         {
-            if x0 >= 0 && x0 < surface.width() && y0 >= 0 && y0 < surface.height() {
-                surface.put_px(x0, y0, xrgb);
+            if xi >= 0 && xi < surface.width() && yi >= 0 && yi < surface.height() {
+                surface.put_px(xi, yi, xrgb);
             }
         }
-        if x0 == x1 && y0 == y1 {
+        if xi == x1i && yi == y1i {
             break;
         }
         let e2 = 2 * err;
         if e2 >= dy {
             err += dy;
-            x0 += sx;
+            xi += sx;
         }
         if e2 <= dx {
             err += dx;
-            y0 += sy;
+            yi += sy;
         }
     }
 }
@@ -711,8 +744,8 @@ fn blit_alpha(
 fn rasterize_text_atlas(
     surface: &mut Surface,
     text: &str,
-    x: i32,
-    y: i32,
+    x: f32,
+    y: f32,
     size: f32,
     color: u32,
     clip: &Rect,
@@ -761,7 +794,7 @@ fn rasterize_text_atlas(
     }
 
     // Use the glyph cache directly for lookup
-    let (mut pen_x, pen_y) = (x as f32, y as f32 + metrics.ascent as f32);
+    let (mut pen_x, pen_y) = (x, y + metrics.ascent as f32);
     let (sr, sg, sb, sa) = (
         ((color >> 16) & 0xFF) as u8,
         ((color >> 8) & 0xFF) as u8,
@@ -829,8 +862,8 @@ fn rasterize_text_atlas(
 fn rasterize_text_locally(
     surface: &mut Surface,
     text: &str,
-    x: i32,
-    y: i32,
+    x: f32,
+    y: f32,
     size: f32,
     color: u32,
     clip: &Rect,
@@ -873,10 +906,10 @@ fn rasterize_text_locally(
                 new_line_size: size * 1.2f32,
             },
         };
-        let (mut pen_x, mut pen_y) = (x as f32, y as f32 + met.ascent);
+        let (mut pen_x, mut pen_y) = (x, y + met.ascent);
         for ch in text.chars() {
             if ch == '\n' {
-                pen_x = x as f32;
+                pen_x = x;
                 pen_y += libm::fmaxf(met.new_line_size, size * 1.1f32);
                 continue;
             }
@@ -1044,8 +1077,8 @@ fn blit_surface(
 fn rasterize_text_fallback(
     surface: &mut Surface,
     text: &str,
-    x: i32,
-    y: i32,
+    x: f32,
+    y: f32,
     size: f32,
     color: u32,
     clip: &Rect,
@@ -1083,10 +1116,10 @@ fn rasterize_text_fallback(
             new_line_size: size * 1.2f32,
         },
     };
-    let (mut px, mut py) = (x as f32, y as f32 + met.ascent);
+    let (mut px, mut py) = (x, y + met.ascent);
     for ch in text.chars() {
         if ch == '\n' {
-            px = x as f32;
+            px = x;
             py += libm::fmaxf(met.new_line_size, size * 1.1f32);
             continue;
         }
@@ -1604,7 +1637,7 @@ pub fn stroke_path(
     path: &crate::isa::Path2D,
     transform: &Transform2D,
     color: u32,
-    width: i32,
+    width: f32,
     _cap: crate::isa::LineCap,
     _join: crate::isa::LineJoin,
     _miter: f32,

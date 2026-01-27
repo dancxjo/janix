@@ -13,6 +13,24 @@ impl Point {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PointF {
+    pub x: f32,
+    pub y: f32,
+}
+
+impl PointF {
+    pub const fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
+impl From<Point> for PointF {
+    fn from(p: Point) -> Self {
+        Self::new(p.x as f32, p.y as f32)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Size {
     pub width: i32,
     pub height: i32,

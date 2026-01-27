@@ -1,6 +1,6 @@
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
 use stem::thing::sys::get_kind;
 use stem::thing::ThingId;
 use abi::ids::HandleId;
@@ -86,6 +86,7 @@ pub struct UiKeys {
     pub window_shaded: u32,
     pub scroll_x: u32, pub scroll_y: u32, pub clip: u32,
     pub tile_asset: u32, pub tile_state: u32,
+    pub drawlist_bytespace: u32, pub drawlist_gen: u32,
 }
 
 impl UiKeys {
@@ -100,6 +101,7 @@ impl UiKeys {
             window_shaded: 0,
             scroll_x: 0, scroll_y: 0, clip: 0,
             tile_asset: 0, tile_state: 0,
+            drawlist_bytespace: 0, drawlist_gen: 0,
         }
     }
     pub fn intern() -> Self {
@@ -137,29 +139,33 @@ impl UiKeys {
             clip: stem::thing::sys::intern(keys::UI_CLIP).unwrap_or(0),
             tile_asset: stem::thing::sys::intern(keys::UI_TILE_ASSET).unwrap_or(0),
             tile_state: stem::thing::sys::intern(keys::UI_TILE_STATE).unwrap_or(0),
+            drawlist_bytespace: stem::thing::sys::intern(keys::UI_DRAWLIST_BYTESPACE).unwrap_or(0),
+            drawlist_gen: stem::thing::sys::intern(keys::UI_DRAWLIST_GEN).unwrap_or(0),
         };
-        crate::trace_counter!("ui.init.syscalls.intern_keys", 31);
+        crate::trace_counter!("ui.init.syscalls.intern_keys", 33);
         k
     }
-    pub fn numeric_keys(&self) -> [u32; 26] {
-        [self.x, self.y, self.w, self.h, self.color, self.radius,
-         self.hidden, self.z_index, self.center_x, self.center_y,
-         self.fill_parent, self.bg_color, self.fg_color, 
-         self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
-         self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded,
-         self.scroll_x, self.scroll_y, self.clip, self.tile_asset, self.tile_state]
-    }
-    pub fn string_keys(&self) -> [u32; 4] {
-        [self.text, self.font, self.font_stack, self.title]
-    }
-    pub fn all_keys(&self) -> [u32; 30] {
+    pub fn numeric_keys(&self) -> [u32; 28] {
         [self.x, self.y, self.w, self.h, self.color, self.radius,
          self.hidden, self.z_index, self.center_x, self.center_y,
          self.fill_parent, self.bg_color, self.fg_color, 
          self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
          self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded,
          self.scroll_x, self.scroll_y, self.clip, self.tile_asset, self.tile_state,
-         self.text, self.font, self.font_stack, self.title]
+         self.drawlist_bytespace, self.drawlist_gen]
+    }
+    pub fn string_keys(&self) -> [u32; 4] {
+        [self.text, self.font, self.font_stack, self.title]
+    }
+    pub fn all_keys(&self) -> [u32; 32] {
+        [self.x, self.y, self.w, self.h, self.color, self.radius,
+         self.hidden, self.z_index, self.center_x, self.center_y,
+         self.fill_parent, self.bg_color, self.fg_color, 
+         self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
+         self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded,
+         self.scroll_x, self.scroll_y, self.clip, self.tile_asset, self.tile_state,
+         self.text, self.font, self.font_stack, self.title,
+         self.drawlist_bytespace, self.drawlist_gen]
     }
 }
 
@@ -176,6 +182,9 @@ pub struct UiNodeSnapshot {
     pub window_icon_content: Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
     pub window_icon_source: Option<ThingId>,
     pub window_icon_hash: Option<u64>,
+    pub drawlist_content: Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+    pub drawlist_source: Option<ThingId>,
+    pub drawlist_hash: Option<u64>,
 }
 
 /// Cached asset entry: bytespace_id -> decoded content
@@ -183,6 +192,13 @@ pub struct UiNodeSnapshot {
 pub struct AssetCache {
     strings: BTreeMap<u64, String>,
     svgs: BTreeMap<u64, SvgAsset>,
+    drawlists: BTreeMap<u64, DrawListAsset>,
+}
+
+#[derive(Clone)]
+pub struct DrawListAsset {
+    pub cmds: alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>,
+    pub hash: u64,
 }
 
 #[derive(Clone)]
@@ -192,7 +208,7 @@ pub struct SvgAsset {
 }
 
 impl AssetCache {
-    pub fn new() -> Self { Self { strings: BTreeMap::new(), svgs: BTreeMap::new() } }
+    pub fn new() -> Self { Self { strings: BTreeMap::new(), svgs: BTreeMap::new(), drawlists: BTreeMap::new() } }
     
     /// Get cached string or read from bytespace and cache it
     pub fn get_or_read_string(&mut self, bs_id: ThingId) -> Option<String> {
@@ -227,6 +243,34 @@ impl AssetCache {
         
         self.svgs.insert(id, asset.clone());
         Some(asset)
+    }
+
+    pub fn get_or_parse_drawlist(&mut self, bs_id: ThingId, gen: u64) -> Option<DrawListAsset> {
+        let id = bs_id.to_u64_lossy();
+        if let Some(asset) = self.drawlists.get(&id) {
+            if asset.hash == gen {
+                return Some(asset.clone());
+            }
+        }
+
+        // Read and decode
+        let data = Self::read_bytes_raw(bs_id)?;
+        let cmds = crate::drawlist::decode_native_drawlist(&data);
+        let asset = DrawListAsset {
+            cmds: alloc::sync::Arc::new(cmds),
+            hash: gen,
+        };
+
+        self.drawlists.insert(id, asset.clone());
+        Some(asset)
+    }
+
+    fn read_bytes_raw(bs_id: ThingId) -> Option<Vec<u8>> {
+        use stem::thing::sys::{bytespace_info, bytespace_read};
+        let size = bytespace_info(bs_id).ok()?;
+        let mut buf = vec![0u8; size];
+        bytespace_read(bs_id, 0, &mut buf).ok()?;
+        Some(buf)
     }
     
     fn read_string_raw(bs_id: ThingId) -> Option<String> {
@@ -410,7 +454,9 @@ impl UiSnapshot {
         };
 
         let children = self.fetch_children(id, keys);
-        let (props, strings, svg_content, svg_source, svg_hash, window_icon_content, window_icon_source, window_icon_hash) =
+        let (props, strings, svg_content, svg_source, svg_hash, 
+             window_icon_content, window_icon_source, window_icon_hash,
+             drawlist_content, drawlist_source, drawlist_hash) =
             self.fetch_properties(id, keys, cache);
         self.nodes.insert(
             id,
@@ -426,6 +472,9 @@ impl UiSnapshot {
                 window_icon_content,
                 window_icon_source,
                 window_icon_hash,
+                drawlist_content,
+                drawlist_source,
+                drawlist_hash,
             },
         );
         for child in children { self.traverse(child, kind_ids, keys, cache); }
@@ -443,7 +492,9 @@ impl UiSnapshot {
         };
 
         let children = self.fetch_children(id, keys);
-        let (props, strings, svg_content, svg_source, svg_hash, window_icon_content, window_icon_source, window_icon_hash) =
+        let (props, strings, svg_content, svg_source, svg_hash, 
+             window_icon_content, window_icon_source, window_icon_hash,
+             drawlist_content, drawlist_source, drawlist_hash) =
             self.fetch_properties(id, keys, cache);
         self.nodes.insert(
             id,
@@ -459,6 +510,9 @@ impl UiSnapshot {
                 window_icon_content,
                 window_icon_source,
                 window_icon_hash,
+                drawlist_content,
+                drawlist_source,
+                drawlist_hash,
             },
         );
     }
@@ -470,8 +524,11 @@ impl UiSnapshot {
         kinds: &KindIds,
         cache: &mut AssetCache,
     ) -> Option<NodeChange> {
-        let (props, strings, svg_content, svg_source, svg_hash, window_icon_content, window_icon_source, window_icon_hash) =
+        let (props, strings, svg_content, svg_source, svg_hash, 
+             window_icon_content, window_icon_source, window_icon_hash,
+             drawlist_content, drawlist_source, drawlist_hash) =
             self.fetch_properties(id, keys, cache);
+
         if let Some(node) = self.nodes.get_mut(&id) {
             let mut change = NodeChange::new(id);
             let mut any_changed = false;
@@ -484,27 +541,36 @@ impl UiSnapshot {
                 if Self::measure_keys_changed(&node.props, &props, &node.strings, &strings, keys) {
                     change.measure_dirty = true;
                 }
+                node.props = props;
             }
-
             if node.strings != strings {
-                any_changed = true;
-                if Self::measure_keys_changed(&node.props, &props, &node.strings, &strings, keys) {
-                    change.measure_dirty = true;
+                if !any_changed {
+                    if Self::measure_keys_changed(&node.props, &node.props, &node.strings, &strings, keys) {
+                        change.measure_dirty = true;
+                    }
+                    any_changed = true;
                 }
+                node.strings = strings;
             }
-
-            if node.svg_hash != svg_hash || node.window_icon_hash != window_icon_hash {
+            if node.svg_hash != svg_hash {
                 any_changed = true;
+                node.svg_content = svg_content;
+                node.svg_source = svg_source;
+                node.svg_hash = svg_hash;
+            }
+            if node.window_icon_hash != window_icon_hash {
+                any_changed = true;
+                node.window_icon_content = window_icon_content;
+                node.window_icon_source = window_icon_source;
+                node.window_icon_hash = window_icon_hash;
+            }
+            if node.drawlist_hash != drawlist_hash {
+                any_changed = true;
+                node.drawlist_content = drawlist_content;
+                node.drawlist_source = drawlist_source;
+                node.drawlist_hash = drawlist_hash;
             }
 
-            node.props = props;
-            node.strings = strings;
-            node.svg_content = svg_content;
-            node.svg_source = svg_source;
-            node.svg_hash = svg_hash;
-            node.window_icon_content = window_icon_content;
-            node.window_icon_source = window_icon_source;
-            node.window_icon_hash = window_icon_hash;
             if any_changed {
                 change.paint_dirty = true;
                 return Some(change);
@@ -591,6 +657,9 @@ impl UiSnapshot {
         Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
         Option<ThingId>,
         Option<u64>,
+        Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        Option<ThingId>,
+        Option<u64>,
     ) {
         crate::trace_span!("snap.refresh_node_props");
         let mut props = BTreeMap::new();
@@ -601,6 +670,9 @@ impl UiSnapshot {
         let mut window_icon_content = None;
         let mut window_icon_source = None;
         let mut window_icon_hash = None;
+        let mut drawlist_content = None;
+        let mut drawlist_source = None;
+        let mut drawlist_hash = None;
 
         let all_keys = keys.all_keys();
         let valid_keys: Vec<u32> = all_keys.iter().copied().filter(|&k| k != 0).collect();
@@ -655,6 +727,24 @@ impl UiSnapshot {
                                     svg_hash = Some(asset.xml_hash);
                                 }
                             }
+                        } else if key == keys.drawlist_bytespace {
+                            if val != 0 {
+                                props.insert(key, val);
+                                let bs_id = ThingId::from_u64(val);
+                                let gen = bulk_result.as_ref().ok().and_then(|r| {
+                                    let idx = valid_keys.iter().position(|&k| k == keys.drawlist_gen)?;
+                                    if r.present_mask & (1 << idx) != 0 {
+                                        Some(r.values[idx])
+                                    } else {
+                                        None
+                                    }
+                                }).unwrap_or(0);
+                                if let Some(asset) = cache.get_or_parse_drawlist(bs_id, gen) {
+                                    drawlist_content = Some(asset.cmds);
+                                    drawlist_source = Some(bs_id);
+                                    drawlist_hash = Some(asset.hash);
+                                }
+                            }
                         } else {
                             props.insert(key, val);
                         }
@@ -674,6 +764,9 @@ impl UiSnapshot {
                     &mut window_icon_content,
                     &mut window_icon_source,
                     &mut window_icon_hash,
+                    &mut drawlist_content,
+                    &mut drawlist_source,
+                    &mut drawlist_hash,
                     cache,
                 );
             }
@@ -687,6 +780,9 @@ impl UiSnapshot {
             window_icon_content,
             window_icon_source,
             window_icon_hash,
+            drawlist_content,
+            drawlist_source,
+            drawlist_hash,
         )
     }
     
@@ -702,6 +798,9 @@ impl UiSnapshot {
         window_icon_content: &mut Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
         window_icon_source: &mut Option<ThingId>,
         window_icon_hash: &mut Option<u64>,
+        drawlist_content: &mut Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        drawlist_source: &mut Option<ThingId>,
+        drawlist_hash: &mut Option<u64>,
         cache: &mut AssetCache,
     ) {
         for &p in &keys.numeric_keys() {
@@ -731,6 +830,15 @@ impl UiSnapshot {
                         *svg_content = Some(asset.cmds);
                         *svg_source = Some(bs_id);
                         *svg_hash = Some(asset.xml_hash);
+                    }
+                }
+                if p == keys.drawlist_bytespace && val != 0 {
+                    let bs_id = ThingId::from_u64(val);
+                    let gen = stem::thing::sys::prop_get(id, keys.drawlist_gen).unwrap_or(0);
+                    if let Some(asset) = cache.get_or_parse_drawlist(bs_id, gen) {
+                        *drawlist_content = Some(asset.cmds);
+                        *drawlist_source = Some(bs_id);
+                        *drawlist_hash = Some(asset.hash);
                     }
                 }
             }
@@ -797,6 +905,7 @@ impl UiSnapshot {
             && a.children == b.children
             && a.svg_hash == b.svg_hash
             && a.window_icon_hash == b.window_icon_hash
+            && a.drawlist_hash == b.drawlist_hash
     }
 
     fn layout_keys_changed(

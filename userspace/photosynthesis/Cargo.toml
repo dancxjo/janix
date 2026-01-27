@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }
+libm = "0.2"

@@ -131,6 +131,7 @@ impl RenderGraphPipeline {
                     let hashes = self.render_item(&decoded.verbs, decoded.fill_rule, decoded.color, viewport, clip, &mut cache_hits, &mut cache_misses);
                     items.push(hashes);
                 }
+                DrawCmdTag::Line | DrawCmdTag::StrokePath | DrawCmdTag::TextSpan | DrawCmdTag::DrawIcon => {}
                 DrawCmdTag::Unknown(_) => {}
             }
         }

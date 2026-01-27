@@ -67,6 +67,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ROOT_STREAM_POLL => handlers::sys_root_stream_poll(args[0], args[1], args[2]),
         SYS_ROOT_PROP_SET => handlers::sys_root_prop_set(args[0], args[1], args[2]),
         SYS_ROOT_DESCRIBE_THING => handlers::sys_root_describe_thing(args[0], args[1], args[2]),
+        SYS_ROOT_DESCRIBE_SYMBOL => handlers::sys_root_describe_symbol(args[0], args[1], args[2]),
         SYS_ROOT_DESCRIBE_EDGE => {
             handlers::sys_root_describe_edge(args[0], args[1], args[2], args[3], args[4])
         }

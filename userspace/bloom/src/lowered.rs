@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use alloc::string::String;
 use crate::drawlist::{DrawList, DrawCmd, Insets};
 use crate::asset::Image;
-use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA};
+use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, PointF, EdgeAA};
 
 // Low Level Operations - Portable Render ISA
 // This is the strict contract that the presenter must execute.
@@ -20,7 +20,7 @@ pub enum LowLevelOp {
     FillRect { rect: Rect, color: Color, aa: EdgeAA },
     StrokeRect { rect: Rect, color: Color, width: i32 },
     #[allow(dead_code)]
-    Line { from: Point, to: Point, color: Color, width: i32 },
+    Line { from: PointF, to: PointF, color: Color, width: f32 },
     FillCircle { center: Point, radius: i32, color: Color },
     FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
     
@@ -58,7 +58,7 @@ pub enum LowLevelOp {
     // Modern Text & Vector
     TextSpan {
         text: String,
-        pos: Point,
+        pos: PointF,
         size: f32,
         color: Color,
         font_name: Option<String>,
@@ -98,9 +98,14 @@ impl LoweredDraw {
 /// 3. Asserting variants for rasterizer safety.
 pub fn lower(list: &DrawList) -> LoweredDraw {
     let mut out = LoweredDraw::new();
-    
     for cmd in list.iter() {
-        match cmd {
+        lower_cmd(cmd, &mut out);
+    }
+    out
+}
+
+fn lower_cmd(cmd: &DrawCmd, out: &mut LoweredDraw) {
+    match cmd {
             // Frame control (pass-through for now, or map to ISA state)
             DrawCmd::BeginFrame { .. } => {},
             DrawCmd::EndFrame => {},
@@ -290,7 +295,7 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
             
             // Complex Decompositions
             DrawCmd::DrawNineSlice { image, dest, margins } => {
-                lower_nine_slice(&mut out, image, dest, margins);
+                lower_nine_slice(out, image, dest, margins);
             }
             DrawCmd::Cursor { frame, position } => {
                 // Windows 2000 style 3-layer shadow
@@ -348,7 +353,7 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
             DrawCmd::Text { text, font, rect, size, color, font_debug } => {
                 out.ops.push(LowLevelOp::TextSpan {
                     text: text.clone(),
-                    pos: Point::new(rect.x(), rect.y()),
+                    pos: PointF::new(rect.x() as f32, rect.y() as f32),
                     size: *size,
                     color: *color,
                     font_name: font.clone(),
@@ -390,19 +395,47 @@ pub fn lower(list: &DrawList) -> LoweredDraw {
                 out.ops.push(LowLevelOp::StrokePath {
                     path: path.clone(),
                     color: *color,
-                    width: *width as f32,
+                    width: *width,
                     cap: *cap,
                     join: *join,
                     miter_limit: *miter_limit,
                     aa: *aa,
                 });
             }
+
+            DrawCmd::Icon { icon_name_id, dest } => {
+                let mut name_buf = [0u8; 128];
+                if let Ok(len) = stem::thing::sys::describe_symbol(*icon_name_id, &mut name_buf) {
+                    let name = core::str::from_utf8(&name_buf[..len]).unwrap_or("");
+                    if !name.is_empty() {
+                         if let Some(cmds) = crate::painter_resources::ASSETS.get_icon(name) {
+                             // Push Transform to dest position and scale
+                             // Assume standard 64x64 source for icons.
+                             let scale_x = dest.width() as f32 / 64.0;
+                             let scale_y = dest.height() as f32 / 64.0;
+                             let t = Transform2D {
+                                 a: scale_x, b: 0.0,
+                                 c: 0.0, d: scale_y,
+                                 tx: dest.x() as f32, ty: dest.y() as f32,
+                             };
+                             out.ops.push(LowLevelOp::PushTransform { t: t });
+                             
+                             for icon_cmd in cmds.iter() {
+                                 lower_cmd(icon_cmd, out);
+                             }
+                             
+                             out.ops.push(LowLevelOp::PopTransform);
+                             return;
+                         }
+                    }
+                }
+                // Fallback: draw a blue rect if icon not found
+                out.ops.push(LowLevelOp::FillRect { rect: *dest, color: Color::from_u32(0xFF44AAFF), aa: EdgeAA::None });
+            }
             
             // Ignored/Unimplemented for v0
             _ => { /* Warn or ignore */ }
-        }
     }
-    out
 }
 
 fn lower_nine_slice(out: &mut LoweredDraw, image: &Image, dst: &Rect, insets: &Insets) {

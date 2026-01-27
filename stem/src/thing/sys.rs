@@ -113,6 +113,21 @@ pub fn describe_thing(id: ThingId, out: &mut [u8]) -> Result<usize, Errno> {
     errno(ret).map(|v| v as usize)
 }
 
+pub fn describe_symbol(id: SymbolId, out: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_DESCRIBE_SYMBOL,
+            id as usize,
+            out.as_mut_ptr() as usize,
+            out.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as usize)
+}
+
 pub fn describe_edge<S: IntoSymbolRef>(
     src: ThingId,
     rel: S,

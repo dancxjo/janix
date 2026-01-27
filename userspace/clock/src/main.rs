@@ -204,34 +204,49 @@ fn main() -> ! {
     );
 
     loop {
-        let unix = stem::time::now_unix_seconds();
+        // 1. Get precise system time
+        let now_ns = stem::time::now_unix_nanos();
+        let unix = now_ns / 1_000_000_000;
         let mono_ns = stem::monotonic_ns();
-        print_tick(unix, mono_ns);
 
-        // Publish State to Graph
-        let unix_i64 = unix as i64;
-        let dt = OffsetDateTime::from_unix_timestamp(unix_i64).ok();
-        if let Some(dt) = dt {
-            let time_str = alloc::format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second());
-            if let Some(win) = window_id {
-                let scene = build_scene(win, &time_str);
-                if let Err(e) = stem::petals::publish_window(&scene) {
-                    info!("CLOCK: scene publish failed: {:?}", e);
+        if now_ns > 0 {
+            print_tick(unix, mono_ns);
+
+            // 2. Publish State to Graph
+            let dt = OffsetDateTime::from_unix_timestamp(unix as i64).ok();
+            if let Some(dt) = dt {
+                let time_str = alloc::format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second());
+                if let Some(win) = window_id {
+                    let scene = build_scene(win, &time_str);
+                    if let Err(e) = stem::petals::publish_window(&scene) {
+                        info!("CLOCK: scene publish failed: {:?}", e);
+                    }
                 }
-            }
-            // Update clock:tick
-            if prop_set(clock_thing, keys::CLOCK_TICK, mono_ns).is_ok() {
-                info!(
-                    "CLOCK PUBLISH: thing={} now_text='{}' tick={}",
-                    clock_thing.to_u64_lossy(),
-                    time_str,
-                    mono_ns
-                );
+                // Update clock:tick
+                if prop_set(clock_thing, keys::CLOCK_TICK, mono_ns).is_ok() {
+                    info!(
+                        "CLOCK PUBLISH: thing={} now_text='{}' tick={}",
+                        clock_thing.to_u64_lossy(),
+                        time_str,
+                        mono_ns
+                    );
+                }
             }
         }
 
-        // NO direct UI update here!
+        // 3. Sleep until the next whole second boundary
+        let now_ns_recheck = stem::time::now_unix_nanos();
+        let nanos_into_second = now_ns_recheck % 1_000_000_000;
+        let sleep_nanos = 1_000_000_000 - nanos_into_second;
+        
+        // Add a tiny buffer (1ms) if we are extremely close to the boundary to avoid double-ticks
+        // or busy-looping if the timer granularity is coarse.
+        let sleep_nanos = if sleep_nanos < 1_000_000 {
+            sleep_nanos + 1_000_000_000
+        } else {
+            sleep_nanos
+        };
 
-        stem::sleep(Duration::from_secs(1));
+        stem::sleep(Duration::from_nanos(sleep_nanos));
     }
 }

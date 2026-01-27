@@ -27,17 +27,79 @@ pub fn layout_scene(scene: &SceneGraph, root_rect: LayoutRect) -> Vec<LayoutRect
 fn layout_node(scene: &SceneGraph, index: usize, rect: LayoutRect, out: &mut [LayoutRect]) {
     out[index] = clamp_rect(rect);
     let node = &scene.nodes[index];
+    let content = content_rect(rect, node);
+    if node.kind == NodeKind::Canvas {
+        layout_canvas(scene, node, content, out);
+        return;
+    }
     if node.children.is_empty() {
         return;
     }
 
-    let content = content_rect(rect, node);
     if let Some(flex) = node.flex_meta {
         layout_flex(scene, node, flex.direction, flex.align, flex.justify, flex.gap, content, out);
     } else {
         for child in &node.children {
             let child_rect = child_rect_in_content(scene, &scene.nodes[*child], content);
             layout_node(scene, *child, child_rect, out);
+        }
+    }
+}
+
+fn layout_canvas(
+    scene: &SceneGraph,
+    node: &SceneNode,
+    content: LayoutRect,
+    out: &mut [LayoutRect],
+) {
+    for &child_idx in &node.children {
+        let child = &scene.nodes[child_idx];
+        if let Some(line) = child.line_meta {
+            let min_x = line.x1.min(line.x2);
+            let min_y = line.y1.min(line.y2);
+            let max_x = line.x1.max(line.x2);
+            let max_y = line.y1.max(line.y2);
+            let half = (line.width.max(1) as i32 + 1) / 2;
+            let rect = LayoutRect {
+                x: content.x + min_x - half,
+                y: content.y + min_y - half,
+                w: (max_x - min_x).max(0) + half * 2,
+                h: (max_y - min_y).max(0) + half * 2,
+            };
+            layout_node(scene, child_idx, rect, out);
+            continue;
+        }
+
+        let width = resolve_size_spec(child.width, content.w)
+            .unwrap_or_else(|| fallback_absolute_size(child, content.w, true));
+        let height = resolve_size_spec(child.height, content.h)
+            .unwrap_or_else(|| fallback_absolute_size(child, content.h, false));
+
+        let rect = LayoutRect {
+            x: content.x + child.margin.left,
+            y: content.y + child.margin.top,
+            w: width.max(0),
+            h: height.max(0),
+        };
+        layout_node(scene, child_idx, rect, out);
+    }
+}
+
+fn fallback_absolute_size(node: &SceneNode, container: i32, is_width: bool) -> i32 {
+    match node.kind {
+        NodeKind::Text => node
+            .text_meta
+            .as_ref()
+            .map(|t| t.size.max(0))
+            .unwrap_or(16),
+        NodeKind::Rect | NodeKind::Image => container,
+        NodeKind::Checkbox => 20,
+        _ => {
+            if is_width {
+                container
+            } else {
+                20
+            }
         }
     }
 }

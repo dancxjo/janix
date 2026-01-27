@@ -176,6 +176,16 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
             PaintOpTag::BlitImage => {
                 // TODO: hook into asset/image cache by key
             }
+            PaintOpTag::StrokeLine => {
+                if let Some((x1, y1, x2, y2, width, color)) = decode_line(op.payload) {
+                    list.commands().push(DrawCmd::Line {
+                        from: crate::isa::PointF::new((x1 + origin_x) as f32, (y1 + origin_y) as f32),
+                        to: crate::isa::PointF::new((x2 + origin_x) as f32, (y2 + origin_y) as f32),
+                        color: Color::from_u32(color),
+                        width: width as f32,
+                    });
+                }
+            }
             _ => {}
         }
     }
@@ -204,6 +214,19 @@ fn decode_fill_rect(payload: &[u8]) -> Option<(i32, i32, i32, i32, u32)> {
     let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
     let color = u32::from_le_bytes(payload[16..20].try_into().ok()?);
     Some((x, y, w, h, color))
+}
+
+fn decode_line(payload: &[u8]) -> Option<(i32, i32, i32, i32, i32, u32)> {
+    if payload.len() < 24 {
+        return None;
+    }
+    let x1 = i32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let y1 = i32::from_le_bytes(payload[4..8].try_into().ok()?);
+    let x2 = i32::from_le_bytes(payload[8..12].try_into().ok()?);
+    let y2 = i32::from_le_bytes(payload[12..16].try_into().ok()?);
+    let width = i32::from_le_bytes(payload[16..20].try_into().ok()?);
+    let color = u32::from_le_bytes(payload[20..24].try_into().ok()?);
+    Some((x1, y1, x2, y2, width, color))
 }
 
 struct TextRunDecoded {

@@ -4,8 +4,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use abi::ui_scene::{
-    CheckboxMeta, EdgeInsets, FlexMeta, ImageMeta, NodeKind, RectMeta, SizeSpec, StringRef,
-    TextMeta, UiScene, WindowMeta,
+    CheckboxMeta, EdgeInsets, FlexMeta, ImageMeta, LineMeta, NodeKind, RectMeta, SizeSpec,
+    StringRef, TextMeta, UiScene, WindowMeta,
 };
 
 #[derive(Clone, Debug)]
@@ -53,6 +53,7 @@ impl SceneGraph {
                 text_meta: view.text_meta(),
                 rect_meta: view.rect_meta(),
                 image_meta: view.image_meta(),
+                line_meta: view.line_meta(),
                 checkbox_meta: view.checkbox_meta(),
             });
         }
@@ -123,5 +124,6 @@ pub struct SceneNode {
     pub text_meta: Option<TextMeta>,
     pub rect_meta: Option<RectMeta>,
     pub image_meta: Option<ImageMeta>,
+    pub line_meta: Option<LineMeta>,
     pub checkbox_meta: Option<CheckboxMeta>,
 }

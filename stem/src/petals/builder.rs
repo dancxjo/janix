@@ -419,6 +419,78 @@ impl Styled for Image {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct Canvas {
+    pub(crate) node: Node,
+}
+
+impl Canvas {
+    pub fn new() -> Self {
+        Self {
+            node: Node::new(NodeData::Canvas),
+        }
+    }
+
+    pub fn push(mut self, child: impl Into<Node>) -> Self {
+        self.node.children.push(child.into());
+        self
+    }
+
+    pub fn push_at(mut self, child: impl Into<Node>, x: i32, y: i32) -> Self {
+        let mut node = child.into();
+        node.style.margin.left = x;
+        node.style.margin.top = y;
+        self.node.children.push(node);
+        self
+    }
+}
+
+impl Styled for Canvas {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Line {
+    pub(crate) node: Node,
+}
+
+impl Line {
+    pub fn new(x1: i32, y1: i32, x2: i32, y2: i32) -> Self {
+        Self {
+            node: Node::new(NodeData::Line(LineData {
+                x1,
+                y1,
+                x2,
+                y2,
+                width: 1,
+                color: Color::from_argb_u32(0xFF000000),
+            })),
+        }
+    }
+
+    pub fn width(mut self, width: i32) -> Self {
+        if let NodeData::Line(ref mut data) = self.node.data {
+            data.width = width;
+        }
+        self
+    }
+
+    pub fn color(mut self, color: Color) -> Self {
+        if let NodeData::Line(ref mut data) = self.node.data {
+            data.color = color;
+        }
+        self
+    }
+}
+
+impl Styled for Line {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Checkbox {
     pub(crate) node: Node,
 }
@@ -471,6 +543,8 @@ pub(crate) enum NodeData {
     Text(TextData),
     Rect(RectData),
     Image(ImageData),
+    Canvas,
+    Line(LineData),
     Checkbox(CheckboxData),
 }
 
@@ -512,6 +586,16 @@ pub(crate) struct ImageData {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub(crate) struct LineData {
+    pub(crate) x1: i32,
+    pub(crate) y1: i32,
+    pub(crate) x2: i32,
+    pub(crate) y2: i32,
+    pub(crate) width: i32,
+    pub(crate) color: Color,
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub(crate) struct CheckboxData {
     pub(crate) checked: bool,
     pub(crate) label: Option<String>,
@@ -543,6 +627,18 @@ impl From<Rect> for Node {
 
 impl From<Image> for Node {
     fn from(value: Image) -> Self {
+        value.node
+    }
+}
+
+impl From<Canvas> for Node {
+    fn from(value: Canvas) -> Self {
+        value.node
+    }
+}
+
+impl From<Line> for Node {
+    fn from(value: Line) -> Self {
         value.node
     }
 }

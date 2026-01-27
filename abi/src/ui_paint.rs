@@ -15,6 +15,7 @@ pub enum PaintOpTag {
     FillRect = 3,
     DrawTextRun = 4,
     BlitImage = 5,
+    StrokeLine = 6,
     Unknown(u32),
 }
 
@@ -26,6 +27,7 @@ impl PaintOpTag {
             3 => PaintOpTag::FillRect,
             4 => PaintOpTag::DrawTextRun,
             5 => PaintOpTag::BlitImage,
+            6 => PaintOpTag::StrokeLine,
             _ => PaintOpTag::Unknown(raw),
         }
     }
@@ -37,6 +39,7 @@ impl PaintOpTag {
             PaintOpTag::FillRect => 3,
             PaintOpTag::DrawTextRun => 4,
             PaintOpTag::BlitImage => 5,
+            PaintOpTag::StrokeLine => 6,
             PaintOpTag::Unknown(raw) => raw,
         }
     }
@@ -151,6 +154,25 @@ impl PaintBuilder {
         payload.extend_from_slice(&(key_bytes.len() as u32).to_le_bytes());
         payload.extend_from_slice(key_bytes);
         self.push_cmd(PaintOpTag::BlitImage, &payload);
+    }
+
+    pub fn stroke_line(
+        &mut self,
+        x1: i32,
+        y1: i32,
+        x2: i32,
+        y2: i32,
+        width: i32,
+        color: u32,
+    ) {
+        let mut payload = Vec::with_capacity(24);
+        payload.extend_from_slice(&x1.to_le_bytes());
+        payload.extend_from_slice(&y1.to_le_bytes());
+        payload.extend_from_slice(&x2.to_le_bytes());
+        payload.extend_from_slice(&y2.to_le_bytes());
+        payload.extend_from_slice(&width.to_le_bytes());
+        payload.extend_from_slice(&color.to_le_bytes());
+        self.push_cmd(PaintOpTag::StrokeLine, &payload);
     }
 
     pub fn finish(mut self) -> Vec<u8> {

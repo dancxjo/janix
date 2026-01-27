@@ -72,6 +72,17 @@ pub const UI_SCENE_CHECKBOX_CHECKED_OFFSET: usize = 0;
 pub const UI_SCENE_CHECKBOX_LABEL_OFFSET_OFFSET: usize = 4;
 pub const UI_SCENE_CHECKBOX_LABEL_LEN_OFFSET: usize = 8;
 
+pub const UI_SCENE_ICON_NAME_OFFSET_OFFSET: usize = 0;
+pub const UI_SCENE_ICON_NAME_LEN_OFFSET: usize = 4;
+pub const UI_SCENE_ICON_SIZE_OFFSET: usize = 8;
+
+pub const UI_SCENE_LINE_X1_OFFSET: usize = 0;
+pub const UI_SCENE_LINE_Y1_OFFSET: usize = 4;
+pub const UI_SCENE_LINE_X2_OFFSET: usize = 8;
+pub const UI_SCENE_LINE_Y2_OFFSET: usize = 12;
+pub const UI_SCENE_LINE_WIDTH_OFFSET: usize = 16;
+pub const UI_SCENE_LINE_COLOR_OFFSET: usize = 20;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u16)]
 pub enum NodeKind {
@@ -81,6 +92,9 @@ pub enum NodeKind {
     Rect = 4,
     Image = 5,
     Checkbox = 6,
+    Canvas = 7,
+    Line = 8,
+    Icon = 9,
     Unknown(u16),
 }
 
@@ -93,6 +107,9 @@ impl NodeKind {
             4 => NodeKind::Rect,
             5 => NodeKind::Image,
             6 => NodeKind::Checkbox,
+            7 => NodeKind::Canvas,
+            8 => NodeKind::Line,
+            9 => NodeKind::Icon,
             _ => NodeKind::Unknown(raw),
         }
     }
@@ -105,6 +122,9 @@ impl NodeKind {
             NodeKind::Rect => 4,
             NodeKind::Image => 5,
             NodeKind::Checkbox => 6,
+            NodeKind::Canvas => 7,
+            NodeKind::Line => 8,
+            NodeKind::Icon => 9,
             NodeKind::Unknown(raw) => raw,
         }
     }
@@ -272,6 +292,22 @@ pub struct ImageMeta {
 pub struct CheckboxMeta {
     pub checked: bool,
     pub label: StringRef,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LineMeta {
+    pub x1: i32,
+    pub y1: i32,
+    pub x2: i32,
+    pub y2: i32,
+    pub width: i32,
+    pub color: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct IconMeta {
+    pub name: StringRef,
+    pub size: i32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -579,6 +615,35 @@ impl<'a> NodeView<'a> {
                 offset: read_u32(payload, UI_SCENE_CHECKBOX_LABEL_OFFSET_OFFSET).unwrap_or(0),
                 len: read_u32(payload, UI_SCENE_CHECKBOX_LABEL_LEN_OFFSET).unwrap_or(0),
             },
+        })
+    }
+
+    pub fn line_meta(&self) -> Option<LineMeta> {
+        if self.kind() != NodeKind::Line {
+            return None;
+        }
+        let payload = self.payload();
+        Some(LineMeta {
+            x1: read_i32(payload, UI_SCENE_LINE_X1_OFFSET).unwrap_or(0),
+            y1: read_i32(payload, UI_SCENE_LINE_Y1_OFFSET).unwrap_or(0),
+            x2: read_i32(payload, UI_SCENE_LINE_X2_OFFSET).unwrap_or(0),
+            y2: read_i32(payload, UI_SCENE_LINE_Y2_OFFSET).unwrap_or(0),
+            width: read_i32(payload, UI_SCENE_LINE_WIDTH_OFFSET).unwrap_or(1),
+            color: read_u32(payload, UI_SCENE_LINE_COLOR_OFFSET).unwrap_or(0xFF000000),
+        })
+    }
+
+    pub fn icon_meta(&self) -> Option<IconMeta> {
+        if self.kind() != NodeKind::Icon {
+            return None;
+        }
+        let payload = self.payload();
+        Some(IconMeta {
+            name: StringRef {
+                offset: read_u32(payload, UI_SCENE_ICON_NAME_OFFSET_OFFSET).unwrap_or(0),
+                len: read_u32(payload, UI_SCENE_ICON_NAME_LEN_OFFSET).unwrap_or(0),
+            },
+            size: read_i32(payload, UI_SCENE_ICON_SIZE_OFFSET).unwrap_or(24),
         })
     }
 

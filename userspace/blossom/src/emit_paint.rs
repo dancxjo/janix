@@ -79,6 +79,22 @@ fn emit_node(
                 builder.blit_image(rect.x, rect.y, rect.w, rect.h, fit, key);
             }
         }
+        NodeKind::Line => {
+            if let Some(meta) = node.line_meta {
+                let min_x = meta.x1.min(meta.x2);
+                let min_y = meta.y1.min(meta.y2);
+                let dx = rect.x - min_x;
+                let dy = rect.y - min_y;
+                builder.stroke_line(
+                    meta.x1 + dx,
+                    meta.y1 + dy,
+                    meta.x2 + dx,
+                    meta.y2 + dy,
+                    meta.width.max(1),
+                    meta.color,
+                );
+            }
+        }
         NodeKind::Checkbox => {
             draw_checkbox(scene, node, rect, builder);
         }

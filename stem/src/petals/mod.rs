@@ -4,8 +4,8 @@ pub mod builder;
 pub mod pack;
 
 pub use builder::{
-    AlignItems, Checkbox, Color, Flex, FlexDirection, FontKey, Image, ImageFit, JustifyContent,
-    Rect, Scene, Size, Styled, Text, Window,
+    AlignItems, Canvas, Checkbox, Color, Flex, FlexDirection, FontKey, Image, ImageFit,
+    JustifyContent, Line, Rect, Scene, Size, Styled, Text, Window,
 };
 
 use crate::errors::{Error, Result};

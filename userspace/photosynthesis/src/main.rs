@@ -8,7 +8,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 use core::time::Duration;
 use stem::info;
-use stem::petals::{Color, Flex, FontKey, Scene, Styled, Text, Window};
+use stem::petals::{Canvas, Color, FontKey, Line, Rect, Scene, Size, Styled, Text, Window};
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
 
@@ -66,7 +66,7 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
 
 mod pipes;
 
-use pipes::scan_system_graph;
+use pipes::{generate_layout, scan_system_graph};
 
 #[stem::main]
 fn main() -> ! {
@@ -104,32 +104,8 @@ fn main() -> ! {
         let (nodes, edges) = scan_system_graph();
 
         if nodes != last_nodes || edges != last_edges {
-            let summary = alloc::format!("Nodes: {}   Edges: {}", nodes.len(), edges.len());
-            let scene = Scene::new().window(
-                Window::new(win)
-                    .title("Photosynthesis")
-                    .initial_size(800, 600)
-                    .root(
-                        Flex::column()
-                            .gap(12)
-                            .padding(20)
-                            .push(
-                                Text::new("Photosynthesis (System Graph)")
-                                    .font(FontKey::new("NotoSans-Regular").size(20))
-                                    .color(Color::rgb(0, 0, 0)),
-                            )
-                            .push(
-                                Text::new(&summary)
-                                    .font(FontKey::new("NotoSans-Regular").size(16))
-                                    .color(Color::rgb(0, 0, 0)),
-                            )
-                            .push(
-                                Text::new("Graph rendering via Petals is coming soon.")
-                                    .font(FontKey::new("NotoSans-Regular").size(14))
-                                    .color(Color::rgb(80, 80, 80)),
-                            ),
-                    ),
-            );
+            let layout = generate_layout(&nodes);
+            let scene = build_graph_scene(win, &nodes, &edges, &layout);
             let _ = stem::petals::publish_window(&scene);
             last_nodes = nodes;
             last_edges = edges;
@@ -137,4 +113,105 @@ fn main() -> ! {
 
         stem::sleep(Duration::from_secs(2));
     }
+}
+
+fn build_graph_scene(
+    win: ThingId,
+    nodes: &[pipes::NodeInfo],
+    edges: &[pipes::EdgeInfo],
+    layout: &pipes::GraphLayout,
+) -> Scene {
+    let mut canvas = Canvas::new()
+        .width(Size::Pct(100))
+        .height(Size::Pct(100));
+
+    for edge in edges {
+        if let (Some(&(x1, y1)), Some(&(x2, y2))) =
+            (layout.positions.get(&edge.from), layout.positions.get(&edge.to))
+        {
+            let (dx, dy) = (x2 - x1, y2 - y1);
+            let dist = libm::sqrtf(dx * dx + dy * dy);
+            if dist > 0.0 {
+                let (ux, uy) = (dx / dist, dy / dist);
+                let start_x = (x1 + ux * 55.0) as i32;
+                let start_y = (y1 + uy * 15.0) as i32;
+                let end_x = (x2 - ux * 55.0) as i32;
+                let end_y = (y2 - uy * 15.0) as i32;
+                canvas = canvas.push(
+                    Line::new(start_x, start_y, end_x, end_y)
+                        .width(2)
+                        .color(Color::from_argb_u32(0xFF888888)),
+                );
+
+                let angle = libm::atan2f(dy, dx);
+                let head_len = 8.0;
+                let a1 = angle + 3.14159 * 0.85;
+                let a2 = angle - 3.14159 * 0.85;
+                let hx1 = (x2 + head_len * libm::cosf(a1)) as i32;
+                let hy1 = (y2 + head_len * libm::sinf(a1)) as i32;
+                let hx2 = (x2 + head_len * libm::cosf(a2)) as i32;
+                let hy2 = (y2 + head_len * libm::sinf(a2)) as i32;
+                canvas = canvas
+                    .push(
+                        Line::new(end_x, end_y, hx1, hy1)
+                            .width(2)
+                            .color(Color::from_argb_u32(0xFF888888)),
+                    )
+                    .push(
+                        Line::new(end_x, end_y, hx2, hy2)
+                            .width(2)
+                            .color(Color::from_argb_u32(0xFF888888)),
+                    );
+
+                let mid_x = ((x1 + x2) / 2.0) as i32;
+                let mid_y = ((y1 + y2) / 2.0) as i32;
+                let label_w = (edge.rel.len() as i32 * 6).max(10);
+                canvas = canvas.push_at(
+                    Text::new(&edge.rel)
+                        .font(FontKey::new("NotoSans-Regular").size(9))
+                        .color(Color::from_argb_u32(0xFF666666))
+                        .width(Size::Px(label_w))
+                        .height(Size::Px(10)),
+                    mid_x,
+                    mid_y,
+                );
+            }
+        }
+    }
+
+    for node in nodes {
+        if let Some(&(x, y)) = layout.positions.get(&node.id) {
+            let w = 110;
+            let h = 30;
+            let left = x as i32 - w / 2;
+            let top = y as i32 - h / 2;
+            canvas = canvas.push_at(
+                Rect::new()
+                    .color(Color::from_argb_u32(0xFF44AAFF))
+                    .width(Size::Px(w))
+                    .height(Size::Px(h)),
+                left,
+                top,
+            );
+            let text_x = left + 12;
+            let text_y = top + 4;
+            let name_w = (node.name.len() as i32 * 6).max(10);
+            canvas = canvas.push_at(
+                Text::new(&node.name)
+                    .font(FontKey::new("NotoSans-Regular").size(9))
+                    .color(Color::from_argb_u32(0xFF000000))
+                    .width(Size::Px(name_w))
+                    .height(Size::Px(10)),
+                text_x,
+                text_y,
+            );
+        }
+    }
+
+    Scene::new().window(
+        Window::new(win)
+            .title("Photosynthesis")
+            .initial_size(800, 600)
+            .root(canvas),
+    )
 }

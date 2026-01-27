@@ -31,13 +31,15 @@ use abi::ui_scene::{
     UI_SCENE_IMAGE_FIT_OFFSET, UI_SCENE_IMAGE_KEY_LEN_OFFSET, UI_SCENE_IMAGE_KEY_OFFSET_OFFSET,
     UI_SCENE_CHECKBOX_CHECKED_OFFSET, UI_SCENE_CHECKBOX_LABEL_LEN_OFFSET,
     UI_SCENE_CHECKBOX_LABEL_OFFSET_OFFSET,
+    UI_SCENE_LINE_COLOR_OFFSET, UI_SCENE_LINE_WIDTH_OFFSET, UI_SCENE_LINE_X1_OFFSET,
+    UI_SCENE_LINE_X2_OFFSET, UI_SCENE_LINE_Y1_OFFSET, UI_SCENE_LINE_Y2_OFFSET,
 };
 
 use crate::errors::{Error, Result};
 use crate::petals::builder::{
     AlignItems as BuilderAlign, CheckboxData, FlexData, FlexDirection as BuilderDirection,
-    ImageData, ImageFit as BuilderFit, JustifyContent as BuilderJustify, Node, NodeData, Scene,
-    Size, Style, TextData, WindowData,
+    ImageData, ImageFit as BuilderFit, JustifyContent as BuilderJustify, LineData, Node, NodeData,
+    Scene, Size, Style, TextData, WindowData,
 };
 
 pub fn pack_scene(scene: &Scene) -> Result<Vec<u8>> {
@@ -141,6 +143,8 @@ fn pack_node(
         NodeData::Text(data) => (NodeKind::Text, PayloadWriter::Text(data)),
         NodeData::Rect(data) => (NodeKind::Rect, PayloadWriter::Rect(data)),
         NodeData::Image(data) => (NodeKind::Image, PayloadWriter::Image(data)),
+        NodeData::Canvas => (NodeKind::Canvas, PayloadWriter::None),
+        NodeData::Line(data) => (NodeKind::Line, PayloadWriter::Line(data)),
         NodeData::Checkbox(data) => (NodeKind::Checkbox, PayloadWriter::Checkbox(data)),
     };
     write_u16_slice(&mut buf, UI_SCENE_NODE_KIND_OFFSET, kind.as_raw());
@@ -227,6 +231,8 @@ enum PayloadWriter<'a> {
     Text(&'a TextData),
     Rect(&'a crate::petals::builder::RectData),
     Image(&'a ImageData),
+    Line(&'a LineData),
+    None,
     Checkbox(&'a CheckboxData),
 }
 
@@ -297,6 +303,15 @@ fn write_payload(buf: &mut [u8; UI_SCENE_NODE_BYTES], payload: PayloadWriter<'_>
             write_u32_slice(payload_buf, UI_SCENE_CHECKBOX_LABEL_OFFSET_OFFSET, label.offset);
             write_u32_slice(payload_buf, UI_SCENE_CHECKBOX_LABEL_LEN_OFFSET, label.len);
         }
+        PayloadWriter::Line(data) => {
+            write_i32_slice(payload_buf, UI_SCENE_LINE_X1_OFFSET, data.x1);
+            write_i32_slice(payload_buf, UI_SCENE_LINE_Y1_OFFSET, data.y1);
+            write_i32_slice(payload_buf, UI_SCENE_LINE_X2_OFFSET, data.x2);
+            write_i32_slice(payload_buf, UI_SCENE_LINE_Y2_OFFSET, data.y2);
+            write_i32_slice(payload_buf, UI_SCENE_LINE_WIDTH_OFFSET, data.width);
+            write_u32_slice(payload_buf, UI_SCENE_LINE_COLOR_OFFSET, data.color.0);
+        }
+        PayloadWriter::None => {}
     }
 }
 

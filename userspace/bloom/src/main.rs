@@ -37,6 +37,7 @@ mod paint_vm;
 
 pub use painter_resources::ASSETS;
 
+use abi::hid::Key;
 use abi::ids::HandleId;
 use stem::thing::ThingId;
 
@@ -48,7 +49,7 @@ use crate::compositor::CompositorTarget;
 use crate::frame::FrameBuilder;
 use crate::frame_loop::FrameLoop;
 use crate::present::{DriverPresenter, PresenterImpl};
-use crate::bristle::{poll_bristle, poll_pointer_events, PointerEvent, MouseAccelConfig, MouseAccelState};
+use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
 use crate::cursor::CursorState;
 use crate::cursor_rasterizer::CursorRasterizer;
 use crate::asset::AssetBank;
@@ -74,6 +75,49 @@ fn clear_damage(surface: &mut surface::Surface, damage: &crate::damage::Damage, 
 
 fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
+}
+
+fn cycle_windows(current: Option<ThingId>, reverse: bool) -> Option<ThingId> {
+    let mut windows = [ThingId::default(); 128];
+    let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
+    if count == 0 {
+        return None;
+    }
+
+    let mut list: alloc::vec::Vec<(ThingId, i32)> = alloc::vec::Vec::new();
+    for id in windows.iter().take(count) {
+        if stem::thing::sys::prop_get(*id, keys::UI_HIDDEN).unwrap_or(0) != 0 {
+            continue;
+        }
+        let z = stem::thing::sys::prop_get(*id, keys::UI_Z_INDEX).unwrap_or(0) as i32;
+        list.push((*id, z));
+    }
+
+    if list.is_empty() {
+        return None;
+    }
+
+    list.sort_by(|(a_id, a_z), (b_id, b_z)| {
+        b_z.cmp(a_z)
+            .then(a_id.to_u64_lossy().cmp(&b_id.to_u64_lossy()))
+    });
+
+    let max_z = list.iter().map(|(_, z)| *z).max().unwrap_or(0);
+    let target_idx = match current.and_then(|id| list.iter().position(|(wid, _)| *wid == id)) {
+        Some(idx) => {
+            if reverse {
+                if idx == 0 { list.len() - 1 } else { idx - 1 }
+            } else {
+                (idx + 1) % list.len()
+            }
+        }
+        None => {
+            if reverse { list.len() - 1 } else { 0 }
+        }
+    };
+    let target = list[target_idx].0;
+    let _ = stem::thing::sys::prop_set(target, keys::UI_Z_INDEX, (max_z as u64).saturating_add(1));
+    Some(target)
 }
 
 #[cfg_attr(not(test), stem::main)]
@@ -175,7 +219,9 @@ fn main(arg: usize) -> ! {
     let bristle_evt_handle = bristle_evt as PortHandle;
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
     let mut cursor_rasterizer = CursorRasterizer::new();
-    let mut pressed_keys: BTreeSet<abi::hid::Key> = BTreeSet::new();
+    let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
+    let mut prev_keys: BTreeSet<Key> = BTreeSet::new();
+    let mut focused_window: Option<ThingId> = None;
     let accel_cfg = MouseAccelConfig::default();
     let mut accel_state = MouseAccelState::default();
     // Track previous cursor position for damage computation
@@ -297,29 +343,26 @@ fn main(arg: usize) -> ! {
         
         // Input processing with window management
         if bristle_evt_handle != 0 {
-            let pointer_events = {
+            prev_keys = pressed_keys.clone();
+            {
                 crate::trace_span!("bloom.loop.poll_bristle");
-                poll_pointer_events(
+                poll_bristle(
                     bristle_evt_handle,
+                    &mut cursor,
+                    &mut pressed_keys,
                     &accel_cfg,
                     &mut accel_state,
+                    screen_w,
+                    screen_h,
                 )
-            };
-
-            for event in pointer_events {
-                match event {
-                    PointerEvent::Move { dx, dy } => {
-                        // Update cursor position
-                        cursor.apply_move(dx, dy, screen_w, screen_h);
-                        
-                        // Window dragging disabled in paint pipeline
-                    }
-                    PointerEvent::ButtonDown { button } => {
-                        cursor.button_down(button);
-                    }
-                    PointerEvent::ButtonUp { button } => {
-                        cursor.button_up(button);
-                    }
+            }
+            let alt_down = pressed_keys.contains(&Key::LeftAlt) || pressed_keys.contains(&Key::RightAlt);
+            let shift_down = pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
+            let tab_pressed = pressed_keys.contains(&Key::Tab) && !prev_keys.contains(&Key::Tab);
+            if alt_down && tab_pressed {
+                if let Some(next) = cycle_windows(focused_window, shift_down) {
+                    focused_window = Some(next);
+                    force_full_damage = true;
                 }
             }
         }

@@ -1,1 +1,2 @@
 2026-01-18 – [Logging Allocations] Learning: Logging in the kernel was allocating multiple Strings per event, putting pressure on the allocator in hot paths. Guardrail: Use `SymbolShell::Static` and `&'static str` for metadata that is known to be static.
+2026-01-27 – [Watch Allocations] Learning: The watch notification loop in `handle_watch_next` was allocating vectors for every filtered commit, even if discarded. Guardrail: Use reusable buffers (passed down from the handler) for operations that run in a loop, especially for transient data like filtered payloads.

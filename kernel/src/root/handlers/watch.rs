@@ -5,7 +5,7 @@
 //! Watches may filter commits by subject/predicate/kind using O(1) summary matching.
 
 use crate::root::graph::{Graph, GlobalWatch, WatchFilter, WATCH_SCAN_LIMIT, commit_matches};
-use crate::root::handlers::watch_payload::filter_watch_payload;
+use crate::root::handlers::watch_payload::{filter_watch_payload, CoalesceEntry};
 use crate::root::resources::{stream, ResourceHandle};
 use crate::root::symbols::Interner;
 use crate::root::query::PreparedStep;
@@ -143,6 +143,8 @@ pub fn handle_watch_next(
     
     // 3. Bounded scan for matching commit
     let mut scanned = 0usize;
+    let mut out_buf = alloc::vec::Vec::new();
+    let mut coalesce_buf: alloc::vec::Vec<CoalesceEntry> = alloc::vec::Vec::new();
 
     while scanned < WATCH_SCAN_LIMIT {
         // Cursor ahead of newest: no new commits yet
@@ -179,23 +181,23 @@ pub fn handle_watch_next(
             None => return (-75, 0), // Shouldn't happen, treat as overflow
         };
 
-        let filtered = if filter.matches_all() {
-            None
+        out_buf.clear();
+        coalesce_buf.clear();
+
+        let payload = if filter.matches_all() {
+            data
         } else {
-            match filter_watch_payload(data, &filter) {
-                Ok(bytes) => Some(bytes),
+            match filter_watch_payload(data, &filter, &mut out_buf, &mut coalesce_buf) {
+                Ok(()) => {
+                    if out_buf.is_empty() {
+                        cursor += 1;
+                        scanned += 1;
+                        continue;
+                    }
+                    out_buf.as_slice()
+                }
                 Err(_) => return (-22, 0),
             }
-        };
-
-        let payload = match filtered.as_ref() {
-            Some(bytes) if bytes.is_empty() => {
-                cursor += 1;
-                scanned += 1;
-                continue;
-            }
-            Some(bytes) => bytes.as_slice(),
-            None => data,
         };
 
         if (out_len as usize) < payload.len() {

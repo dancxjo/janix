@@ -143,7 +143,7 @@ pub fn track_watch_encode_reject(reason: WatchEncodeRejectReason) {
     log_watch_encode_reject_once(reason);
 }
 
-struct CoalesceEntry {
+pub(crate) struct CoalesceEntry {
     subject: WireThingId,
     predicate: PredicateId,
     encoding: u8,
@@ -184,13 +184,13 @@ fn event_matches_filter(
     true
 }
 
-pub fn filter_watch_payload(
+pub(crate) fn filter_watch_payload(
     payload: &[u8],
     filter: &WatchFilter,
-) -> Result<Vec<u8>, DecodeError> {
+    out: &mut Vec<u8>,
+    coalesce: &mut Vec<CoalesceEntry>,
+) -> Result<(), DecodeError> {
     let mut cursor = 0usize;
-    let mut out = Vec::new();
-    let mut coalesce: Vec<CoalesceEntry> = Vec::new();
 
     while cursor < payload.len() {
         let event_start = cursor;
@@ -224,5 +224,5 @@ pub fn filter_watch_payload(
         });
     }
 
-    Ok(out)
+    Ok(())
 }

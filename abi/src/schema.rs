@@ -100,6 +100,14 @@ pub mod keys {
     pub const UI_DRAWLIST_BYTESPACE: &str = "ui.drawlist.bytespace";
     /// Monotonic generation for drawlist updates.
     pub const UI_DRAWLIST_GEN: &str = "ui.drawlist.gen";
+    /// Bytespace id containing packed Petals ui scene.
+    pub const UI_SCENE_BYTESPACE: &str = "ui.scene.bytespace";
+    /// Monotonic generation for scene updates.
+    pub const UI_SCENE_GEN: &str = "ui.scene.gen";
+    /// Bytespace id containing packed paint ops.
+    pub const UI_PAINT_BYTESPACE: &str = "ui.paint.bytespace";
+    /// Monotonic generation for paint updates.
+    pub const UI_PAINT_GEN: &str = "ui.paint.gen";
     /// Optional viewport bounds in pixels (RectI32Wire bytespace).
     pub const UI_VIEWPORT_BYTESPACE: &str = "ui.viewport.bytespace";
     /// Optional affine transform from window-local to device coords (Mat3x2fWire bytespace).

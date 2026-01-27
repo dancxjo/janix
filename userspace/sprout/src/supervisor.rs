@@ -180,6 +180,7 @@ impl Supervisor {
         // self.ensure_app("/root_watch_tester");
         self.ensure_app("/ingestd");
         self.ensure_app("/fontd");
+        self.ensure_app("/blossom");
         // self.ensure_app("/png_creator");
         self.ensure_app("/cambium");
         self.ensure_app("/photosynthesis");

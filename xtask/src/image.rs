@@ -89,6 +89,11 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "blossom",
+            is_init: false,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "ingestd",
             is_init: false,
             features: vec![],

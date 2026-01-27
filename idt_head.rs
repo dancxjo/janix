@@ -266,12 +266,6 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
     // Send EOI to Local APIC early to avoid wedging during context switch
     crate::arch::x86_64::ioapic::send_eoi();
 
-    // Legacy PIC EOI if needed (vectors 0x20-0x2F or 0xF0-0xFF depending on remap)
-    // Even if "disabled", spurious IRQ7/15 or misconfigured hardware might fire.
-    if (resolved >= 0x20 && resolved <= 0x2F) || (resolved >= 0xF0) {
-        crate::arch::x86_64::pic::send_eoi(resolved);
-    }
-
     // IRQ_TIMER_VECTOR is our preemption heartbeat
     if resolved == IRQ_TIMER_VECTOR {
         kernel::task::scheduler::on_tick::<crate::arch::CurrentRuntime>();
@@ -281,7 +275,7 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) {
+pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) -> ! {
     let cr2: u64;
     unsafe {
         core::arch::asm!("mov {}, cr2", out(reg) cr2);
@@ -294,8 +288,6 @@ pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) {
             }
             kernel_handle_page_fault(frame.rip, cr2, frame.error_code);
         }
-        // If we handled it (e.g. stack growth), return to user mode
-        return;
     }
 
     panic!(

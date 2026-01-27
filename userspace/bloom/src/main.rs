@@ -33,6 +33,7 @@ mod svg;
 mod blossom_client;
 mod window_manager;
 pub mod painter_resources;
+mod paint_vm;
 
 pub use painter_resources::ASSETS;
 
@@ -51,8 +52,7 @@ use crate::bristle::{poll_bristle, poll_pointer_events, PointerEvent, MouseAccel
 use crate::cursor::CursorState;
 use crate::cursor_rasterizer::CursorRasterizer;
 use crate::asset::AssetBank;
-use crate::ui::{UiPipeline, FullRefreshReason};
-use crate::window_manager::{WindowManager, WindowState, Hit, DragKind, ResizeAnchor, Edge, Corner};
+use crate::paint_vm::PaintPipeline;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
@@ -132,8 +132,8 @@ fn main(arg: usize) -> ! {
         _ => stem::ui::UiBuilder::create_root(),
     };
 
-    let mut ui_pipeline = UiPipeline::new();
-    ui_pipeline.set_root(ui_root);
+    let _ = ui_root;
+    let mut paint_pipeline = PaintPipeline::new();
     
     // Spawn asset workers with diagnostic logging
     use stem::stack::{Stack, StackSpec};
@@ -183,8 +183,7 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
 
-    // Window Manager for move/resize and hit testing
-    let mut window_manager = WindowManager::new(screen_w, screen_h);
+    // Window Manager disabled in paint pipeline (no legacy chrome/hit testing)
 
     // Glyph Arrival Watch
     let glyph_watch_pred = stem::thing::sys::intern(kinds::FONT_GLYPH).unwrap_or(0);
@@ -221,30 +220,12 @@ fn main(arg: usize) -> ! {
         None
     };
     
-    // UI Text Watch - triggers dirty when UI_TEXT property changes (for clock updates)
-    let ui_text_key = stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0);
-    let ui_text_watch = if ui_text_key != 0 {
+    // UI Paint Watch - triggers dirty when paint generation changes
+    let ui_paint_gen_key = stem::thing::sys::intern(keys::UI_PAINT_GEN).unwrap_or(0);
+    let ui_paint_watch = if ui_paint_gen_key != 0 {
         use abi::types::{WatchSpec, WatchMode};
         use abi::root::RootWatchFilter;
-        // Watch for any SET_PROP with UI_TEXT predicate
-        let filter = RootWatchFilter::predicate(ui_text_key);
-        let spec = WatchSpec {
-            mode: WatchMode::StreamOnly as u32,
-            filter_ptr: &filter as *const _ as u64,
-            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
-            ..Default::default()
-        };
-        stem::syscall::root_watch_open(&spec).ok()
-    } else {
-        None
-    };
-
-    // UI Tile Asset Watch - triggers dirty when UI_TILE_ASSET property changes (for SVG tiles)
-    let ui_tile_asset_key = stem::thing::sys::intern(keys::UI_TILE_ASSET).unwrap_or(0);
-    let ui_tile_watch = if ui_tile_asset_key != 0 {
-        use abi::types::{WatchSpec, WatchMode};
-        use abi::root::RootWatchFilter;
-        let filter = RootWatchFilter::predicate(ui_tile_asset_key);
+        let filter = RootWatchFilter::predicate(ui_paint_gen_key);
         let spec = WatchSpec {
             mode: WatchMode::StreamOnly as u32,
             filter_ptr: &filter as *const _ as u64,
@@ -258,9 +239,11 @@ fn main(arg: usize) -> ! {
     
     // Track watch event counts for diagnostics
     let mut ui_watch_events_total: u64 = 0;
+    let mut force_full_damage = false;
 
     loop {
         loop_ctrl.next();
+        force_full_damage = false;
         ASSETS.publish_pending();
 
         // 0. Check for new glyphs in graph
@@ -270,7 +253,7 @@ fn main(arg: usize) -> ! {
             if let Ok(len) = stem::syscall::root_watch_next(gw, &mut g_seq, &mut g_buf) {
                 if len > 0 {
                     crate::font_graph::mark_dirty();
-                    ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::AssetChange);
+                    force_full_damage = true;
                 }
             }
         }
@@ -291,17 +274,16 @@ fn main(arg: usize) -> ! {
             if drained > 0 {
                 ui_watch_events_total += drained as u64;
                 stem::info!("[bloom] UI watch: drained {} events (total={})", drained, ui_watch_events_total);
-                ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchOverflow);
+                force_full_damage = true;
             }
         }
         
-        // 2. Check for UI_TEXT property changes (clock window, etc.)
-        if let Some(tw) = ui_text_watch {
-            let mut t_seq = 0u64;
-            let mut t_buf = [0u8; 256];
+        // 2. Check for UI_PAINT updates
+        if let Some(pw) = ui_paint_watch {
+            let mut p_seq = 0u64;
+            let mut p_buf = [0u8; 256];
             let mut drained = 0u32;
-            // Drain all pending events this frame
-            while let Ok(len) = stem::syscall::root_watch_next(tw, &mut t_seq, &mut t_buf) {
+            while let Ok(len) = stem::syscall::root_watch_next(pw, &mut p_seq, &mut p_buf) {
                 if len > 0 {
                     drained += 1;
                 } else {
@@ -309,26 +291,7 @@ fn main(arg: usize) -> ! {
                 }
             }
             if drained > 0 {
-                stem::info!("[bloom] UI_TEXT watch: drained {} events", drained);
-                ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchActivity);
-            }
-        }
-        
-        // 3. Check for UI_TILE_ASSET property changes (SVG tiles)
-        if let Some(tilew) = ui_tile_watch {
-            let mut tile_seq = 0u64;
-            let mut tile_buf = [0u8; 256];
-            let mut drained = 0u32;
-            while let Ok(len) = stem::syscall::root_watch_next(tilew, &mut tile_seq, &mut tile_buf) {
-                if len > 0 {
-                    drained += 1;
-                } else {
-                    break;
-                }
-            }
-            if drained > 0 {
-                stem::info!("[bloom] UI_TILE_ASSET watch: drained {} events", drained);
-                ui_pipeline.mark_dirty_full_with_reason(FullRefreshReason::WatchActivity);
+                force_full_damage = true;
             }
         }
         
@@ -349,111 +312,13 @@ fn main(arg: usize) -> ! {
                         // Update cursor position
                         cursor.apply_move(dx, dy, screen_w, screen_h);
                         
-                        // If dragging, update window geometry
-                        if window_manager.is_dragging() {
-                            if let Some(wid) = window_manager.dragging_window() {
-                                if let Some(current_rect) = ui_pipeline.get_window_rect(wid) {
-                                    if let Some(new_rect) = window_manager.update_drag(
-                                        (cursor.x, cursor.y),
-                                        current_rect,
-                                    ) {
-                                        ui_pipeline.set_window_rect(wid, new_rect);
-                                    }
-                                }
-                            }
-                        }
+                        // Window dragging disabled in paint pipeline
                     }
                     PointerEvent::ButtonDown { button } => {
                         cursor.button_down(button);
-                        
-                        // Only process left button (button 0) for window management
-                        if button == 0 {
-                            // Build window states for hit testing
-                            let window_data = ui_pipeline.get_windows_for_hit_test();
-                            let window_states: alloc::vec::Vec<WindowState> = window_data
-                                .into_iter()
-                                .map(|(id, rect, is_shaded, is_maximized)| WindowState {
-                                    id,
-                                    rect,
-                                    is_shaded,
-                                    is_maximized,
-                                    pre_maximize_rect: None,
-                                })
-                                .collect();
-                            
-                            // Hit test
-                            if let Some((wid, hit)) = crate::window_manager::pick_window(
-                                cursor.x, cursor.y, &window_states
-                            ) {
-                                match hit {
-                                    Hit::TitleBar => {
-                                        // Start move drag
-                                        if let Some(win_rect) = ui_pipeline.get_window_rect(wid) {
-                                            window_manager.begin_drag(
-                                                wid,
-                                                DragKind::Move,
-                                                (cursor.x, cursor.y),
-                                                win_rect,
-                                            );
-                                            ui_pipeline.raise_window(wid);
-                                        }
-                                    }
-                                    Hit::ResizeEdge(edge) => {
-                                        // Start resize drag
-                                        if let Some(win_rect) = ui_pipeline.get_window_rect(wid) {
-                                            let anchor = ResizeAnchor::from_edge(edge);
-                                            window_manager.begin_drag(
-                                                wid,
-                                                DragKind::Resize { anchor },
-                                                (cursor.x, cursor.y),
-                                                win_rect,
-                                            );
-                                            ui_pipeline.raise_window(wid);
-                                        }
-                                    }
-                                    Hit::ResizeCorner(corner) => {
-                                        // Start corner resize drag
-                                        if let Some(win_rect) = ui_pipeline.get_window_rect(wid) {
-                                            let anchor = ResizeAnchor::from_corner(corner);
-                                            window_manager.begin_drag(
-                                                wid,
-                                                DragKind::Resize { anchor },
-                                                (cursor.x, cursor.y),
-                                                win_rect,
-                                            );
-                                            ui_pipeline.raise_window(wid);
-                                        }
-                                    }
-                                    Hit::ButtonShade => {
-                                        // Toggle shaded (minimize) state
-                                        ui_pipeline.toggle_window_shade(wid);
-                                    }
-                                    Hit::ButtonMaximize => {
-                                        // Toggle maximized state
-                                        // Get current window to toggle
-                                        if let Some(ws) = window_states.iter().find(|w| w.id == wid) {
-                                            let mut ws_clone = ws.clone();
-                                            let new_rect = window_manager.toggle_maximize(&mut ws_clone);
-                                            ui_pipeline.set_window_rect(wid, new_rect);
-                                        }
-                                    }
-                                    Hit::ClientArea => {
-                                        // Raise window on click but also allow drag to start
-                                        ui_pipeline.raise_window(wid);
-                                        // TODO: Route to app when Petals is ready
-                                    }
-                                    Hit::None => {}
-                                }
-                            }
-                        }
                     }
                     PointerEvent::ButtonUp { button } => {
                         cursor.button_up(button);
-                        
-                        // End drag on left button release
-                        if button == 0 {
-                            window_manager.end_drag();
-                        }
                     }
                 }
             }
@@ -470,20 +335,16 @@ fn main(arg: usize) -> ! {
             list.clear(crate::geometry::Color::from_u32(0xFF101018));
         }
 
-        let ui_result = {
-            crate::trace_span!("bloom.loop.ui_pipeline");
-            ui_pipeline.run(screen_w, screen_h, &mut list, &ASSETS)
+        let paint_result = {
+            crate::trace_span!("bloom.loop.paint_pipeline");
+            paint_pipeline.run(screen_w, screen_h, &mut list)
         };
         
         // Damage Tracking (cursor is now blended post-damage, does not affect window damage)
         let bounds = damage::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
-        for rect in &ui_result.damage {
+        for rect in &paint_result.damage {
             damage.add_rect(*rect);
-        }
-        // Window manager damage (move/resize/maximize)
-        for rect in window_manager.take_damage() {
-            damage.add_rect(rect);
         }
         // Cursor damage: add old + new cursor rectangles when cursor moved
         if let Some(asset) = ASSETS.get_cursor() {
@@ -523,7 +384,7 @@ fn main(arg: usize) -> ! {
             }
         }
 
-        if ui_result.changed && damage.is_empty() {
+        if force_full_damage && damage.is_empty() {
             damage = damage::Damage::full(bounds);
         }
 
@@ -556,7 +417,7 @@ fn main(arg: usize) -> ! {
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
             crate::trace_span!("bloom.loop.raster");
-            raster::execute_with_damage(&mut surface, &list, &damage, ui_result.solid_text);
+            raster::execute_with_damage(&mut surface, &list, &damage, false);
         }
         
         // Cursor overlay: blend cached snapshot at cursor position (post-damage)

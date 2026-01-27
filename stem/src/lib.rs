@@ -30,6 +30,7 @@ pub mod xml;
 #[cfg(feature = "rt")]
 pub mod memory;
 pub mod perf;
+pub mod petals;
 
 // Re-export time types for convenience
 pub use time::{Instant, Duration};

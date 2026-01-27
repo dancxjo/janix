@@ -16,6 +16,8 @@ pub mod names;
 pub mod query;
 pub mod trace;
 pub mod drawlist;
+pub mod ui_scene;
+pub mod ui_paint;
 pub mod schema;
 pub mod symbols;
 pub mod syscall;

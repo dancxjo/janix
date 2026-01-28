@@ -12,15 +12,13 @@ use abi::display_driver_protocol::BindPayload;
 use abi::driver_frame::FrameReader;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::cmp::Ordering;
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 
 use crate::damage::Damage;
-use crate::damage_accumulator::DamageAccumulator;
-use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentStats};
-
+use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentDamageSnapshot, PresentStats};
 use crate::reclaimer;
+use crate::state::OverlayMode;
 
 #[derive(Clone, Copy, Debug)]
 struct DriverNegotiation {
@@ -28,6 +26,69 @@ struct DriverNegotiation {
     proto_minor: u16,
     caps: u32,
     max_rects: u16,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DisplayNegotiation {
+    pub caps: u32,
+    pub max_rects: u16,
+}
+
+pub(crate) struct PresentStrategy {
+    pub use_rects: bool,
+    pub flags: u32,
+    pub reason: &'static str,
+    pub mode: OverlayMode,
+}
+
+pub(crate) fn evaluate_present_strategy(
+    negotiation: Option<DisplayNegotiation>,
+    snapshot: &PresentDamageSnapshot,
+) -> PresentStrategy {
+    if snapshot.is_full() {
+        return PresentStrategy {
+            use_rects: false,
+            flags: drvproto::PRESENT_FLAG_FULLFRAME,
+            reason: "full-frame damage",
+            mode: OverlayMode::Fullframe,
+        };
+    }
+
+    if let Some(neg) = negotiation {
+        let rect_count = snapshot.len();
+        if (neg.caps & drvproto::CAP_DIRTY_RECTS != 0)
+            && rect_count <= neg.max_rects as usize
+            && !snapshot.overflowed()
+        {
+            PresentStrategy {
+                use_rects: true,
+                flags: 0,
+                reason: "DIRTY_RECTS",
+                mode: OverlayMode::DirtyRects,
+            }
+        } else {
+            let reason = if snapshot.overflowed() {
+                "damage overflow"
+            } else if rect_count > neg.max_rects as usize {
+                "rects exceed max_rects"
+            } else {
+                "driver lacks DIRTY_RECTS"
+            };
+            PresentStrategy {
+                use_rects: false,
+                flags: drvproto::PRESENT_FLAG_FULLFRAME,
+                reason,
+                mode: OverlayMode::Fullframe,
+            }
+        }
+    } else {
+        PresentStrategy {
+            use_rects: false,
+            flags: drvproto::PRESENT_FLAG_FULLFRAME,
+            reason: "no negotiation",
+            mode: OverlayMode::Fullframe,
+        }
+    }
 }
 
 fn caps_to_string(caps: u32) -> String {
@@ -82,6 +143,9 @@ pub trait Presenter {
 
     /// Pump the message queue for driver communication.
     fn pump(&mut self);
+
+    /// Get negotiated display capabilities (if available).
+    fn negotiation_info(&self) -> Option<DisplayNegotiation>;
 }
 
 pub struct NullPresenter;
@@ -117,6 +181,10 @@ impl Presenter for NullPresenter {
 
     fn present(&mut self, _damage: &Damage) {}
     fn pump(&mut self) {}
+
+    fn negotiation_info(&self) -> Option<DisplayNegotiation> {
+        None
+    }
 }
 
 pub struct DriverPresenter {
@@ -184,17 +252,16 @@ impl DriverPresenter {
         }
     }
 
-    fn send_present(&mut self, damage: &Damage) -> usize {
+    fn send_present(&mut self, snapshot: &PresentDamageSnapshot) -> usize {
         let mut payload = [0u8; MAX_PRESENT_PAYLOAD_BYTES];
         let mut buf = [0u8; MAX_PRESENT_MESSAGE_BYTES];
+        let strategy = evaluate_present_strategy(self.negotiation_info(), snapshot);
 
-        if damage.is_full {
-            let flags = drvproto::PRESENT_FLAG_FULLFRAME;
-            let reason = "full-frame damage";
-            self.log_fullframe_fallback(reason);
+        if !strategy.use_rects {
+            self.log_fullframe_fallback(strategy.reason);
             self.encode_and_send(
                 0,
-                flags,
+                strategy.flags,
                 core::iter::empty::<abi::display_driver_protocol::Rect>(),
                 &mut payload,
                 &mut buf,
@@ -202,67 +269,11 @@ impl DriverPresenter {
             return 0;
         }
 
-        let mut accumulator = DamageAccumulator::<MAX_LOCAL_DAMAGE_RECTS>::new();
-        for rect in damage.iter() {
-            accumulator.add(rect);
-        }
-
-        let overflowed = accumulator.is_overflowed();
-        let rects = accumulator.as_mut_slice();
-        if rects.len() > 1 {
-            rects.sort_by(|a, b| {
-                let ord = a.y.cmp(&b.y);
-                if ord == Ordering::Equal {
-                    a.x.cmp(&b.x)
-                } else {
-                    ord
-                }
-            });
-        }
-
-        let rect_count = rects.len();
-        let mut flags = 0u32;
-        let mut fallback_reason: Option<&'static str> = None;
-        let use_rects = if let Some(negotiated) = &self.negotiation {
-            if (negotiated.caps & drvproto::CAP_DIRTY_RECTS != 0)
-                && rect_count <= negotiated.max_rects as usize
-                && !overflowed
-            {
-                true
-            } else {
-                flags |= drvproto::PRESENT_FLAG_FULLFRAME;
-                fallback_reason = Some(if overflowed {
-                    "damage overflow"
-                } else if rect_count > negotiated.max_rects as usize {
-                    "rects exceed max_rects"
-                } else {
-                    "driver lacks DIRTY_RECTS"
-                });
-                false
-            }
-        } else {
-            flags |= drvproto::PRESENT_FLAG_FULLFRAME;
-            fallback_reason = Some("no negotiation");
-            false
-        };
-
-        if !use_rects {
-            let reason = fallback_reason.unwrap_or("using full-frame present");
-            self.log_fullframe_fallback(reason);
-            self.encode_and_send(
-                0,
-                flags,
-                core::iter::empty::<abi::display_driver_protocol::Rect>(),
-                &mut payload,
-                &mut buf,
-            );
-            return 0;
-        }
-
-        let rect_count_u32 = rect_count as u32;
+        let rects = snapshot.rects();
+        let rect_count = rects.len() as u32;
         self.encode_and_send(
-            rect_count_u32,
-            flags,
+            rect_count,
+            strategy.flags,
             rects.iter().map(|r| abi::display_driver_protocol::Rect {
                 x: r.x.max(0) as u32,
                 y: r.y.max(0) as u32,
@@ -272,7 +283,7 @@ impl DriverPresenter {
             &mut payload,
             &mut buf,
         );
-        rect_count
+        rect_count as usize
     }
 
     fn encode_and_send<I>(
@@ -445,7 +456,7 @@ impl Presenter for DriverPresenter {
         let damage_rect_count = if fast_path {
             0
         } else {
-            self.send_present(&token.damage)
+            self.send_present(&token.present_damage)
         };
 
         PresentStats {
@@ -474,12 +485,21 @@ impl Presenter for DriverPresenter {
         }
         */
 
-        self.send_present(damage);
+        let mut snapshot = PresentDamageSnapshot::new();
+        snapshot.update_from_damage(damage);
+        self.send_present(&snapshot);
     }
 
     fn pump(&mut self) {
         self.pump_port();
         self.process_rx();
+    }
+
+    fn negotiation_info(&self) -> Option<DisplayNegotiation> {
+        self.negotiation.as_ref().map(|n| DisplayNegotiation {
+            caps: n.caps,
+            max_rects: n.max_rects,
+        })
     }
 }
 
@@ -515,6 +535,13 @@ impl PresenterImpl {
         match self {
             PresenterImpl::Null(inner) => inner.pump(),
             PresenterImpl::Driver(inner) => inner.pump(),
+        }
+    }
+
+    pub fn negotiation_info(&self) -> Option<DisplayNegotiation> {
+        match self {
+            PresenterImpl::Null(inner) => inner.negotiation_info(),
+            PresenterImpl::Driver(inner) => inner.negotiation_info(),
         }
     }
 }

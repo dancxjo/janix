@@ -31,6 +31,7 @@ mod raster;
 mod reclaimer;
 mod render_graph;
 mod render_state;
+mod state;
 mod surface;
 mod svg;
 mod ui;
@@ -55,7 +56,8 @@ use crate::cursor_rasterizer::CursorRasterizer;
 use crate::frame::FrameBuilder;
 use crate::frame_loop::FrameLoop;
 use crate::paint_vm::PaintPipeline;
-use crate::present::{DriverPresenter, PresenterImpl};
+use crate::present::{evaluate_present_strategy, DriverPresenter, PresenterImpl};
+use crate::state::{DamageOverlayState, DebugFlags, OverlayMode};
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
@@ -491,6 +493,8 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
     let mut drag_state: Option<DragState> = None;
     let mut modal_mode = false;
+    let mut debug_flags = DebugFlags::default();
+    let mut overlay_state = DamageOverlayState::default();
 
     // Window Manager disabled in paint pipeline (no legacy chrome/hit testing)
 
@@ -642,11 +646,44 @@ fn main(arg: usize) -> ! {
                 )
             }
 
+            let shift_down =
+                pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
+
             // F1 Toggle
             if pressed_keys.contains(&Key::F1) && !prev_keys.contains(&Key::F1) {
                 modal_mode = !modal_mode;
                 force_full_damage = true;
                 stem::info!("[bloom] F1 pressed, toggling modal mode to: {}", modal_mode);
+            }
+
+            if pressed_keys.contains(&Key::F9) && !prev_keys.contains(&Key::F9) {
+                if shift_down {
+                    debug_flags.show_raw_damage_rects = !debug_flags.show_raw_damage_rects;
+                    stem::info!(
+                        "[bloom] debug: raw damage overlay {}",
+                        if debug_flags.show_raw_damage_rects {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    );
+                } else {
+                    debug_flags.show_damage_rects = !debug_flags.show_damage_rects;
+                    stem::info!(
+                        "[bloom] debug: damage overlay {}",
+                        if debug_flags.show_damage_rects {
+                            "ON"
+                        } else {
+                            "OFF"
+                        }
+                    );
+                }
+            }
+
+            if pressed_keys.contains(&Key::F7) && !prev_keys.contains(&Key::F7) {
+                tile_windows(screen_w, screen_h);
+                force_full_damage = true;
+                stem::info!("[bloom] F7 pressed, auto-tiling windows");
             }
 
             let current_buttons = cursor.buttons();
@@ -722,8 +759,6 @@ fn main(arg: usize) -> ! {
 
             let alt_down =
                 pressed_keys.contains(&Key::LeftAlt) || pressed_keys.contains(&Key::RightAlt);
-            let shift_down =
-                pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
             let tab_pressed = pressed_keys.contains(&Key::Tab) && !prev_keys.contains(&Key::Tab);
             let alt_pressed = alt_down && !alt_prev_down;
             let alt_released = !alt_down && alt_prev_down;
@@ -859,6 +894,18 @@ fn main(arg: usize) -> ! {
             }
         }
 
+        builder.prepare_present_damage();
+        let snapshot = builder.present_damage();
+        let strategy = evaluate_present_strategy(presenter.negotiation_info(), snapshot);
+        overlay_state.update(
+            snapshot.rects(),
+            snapshot.raw_rects(),
+            strategy.mode,
+            strategy.reason,
+            snapshot.overflowed(),
+        );
+        append_damage_overlay(&mut list, &overlay_state, &debug_flags, screen_w, screen_h);
+
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
             crate::trace_span!("bloom.loop.raster");
@@ -883,4 +930,77 @@ fn main(arg: usize) -> ! {
         }
         loop_ctrl.sleep();
     }
+}
+
+fn append_damage_overlay(
+    list: &mut drawlist::DrawList,
+    overlay_state: &DamageOverlayState,
+    flags: &DebugFlags,
+    screen_w: i32,
+    _screen_h: i32,
+) {
+    if !flags.show_damage_rects && !flags.show_raw_damage_rects && !flags.show_damage_stats {
+        return;
+    }
+
+    const MERGED_COLOR: u32 = 0xFFFF00FF;
+    const RAW_COLOR: u32 = 0xFF00FFFF;
+    const TEXT_BOX_COLOR: u32 = 0x88000000;
+    const TEXT_COLOR: u32 = 0xFFFFFFFF;
+
+    if flags.show_damage_rects {
+        for rect in overlay_state.present() {
+            draw_rect_outline(list, *rect, MERGED_COLOR);
+        }
+    }
+    if flags.show_raw_damage_rects {
+        for rect in overlay_state.raw() {
+            draw_rect_outline(list, *rect, RAW_COLOR);
+        }
+    }
+
+    if flags.show_damage_stats {
+        let suffix = if overlay_state.overflowed {
+            " (overflow)"
+        } else {
+            ""
+        };
+        let text = alloc::format!(
+            "DAMAGE: merged={} raw={} reason={}{}",
+            overlay_state.present().len(),
+            overlay_state.raw().len(),
+            overlay_state.reason,
+            suffix
+        );
+        let x = 8;
+        let y = 8;
+        let width = 360;
+        let height = 30;
+        list.rect(
+            x - 4,
+            y - 4,
+            width,
+            height,
+            crate::geometry::Color::from_u32(TEXT_BOX_COLOR),
+        );
+        list.text(
+            &text,
+            None,
+            x,
+            y,
+            14.0,
+            crate::geometry::Color::from_u32(TEXT_COLOR),
+        );
+    }
+}
+
+fn draw_rect_outline(list: &mut drawlist::DrawList, rect: crate::damage::Rect, color: u32) {
+    if rect.w <= 0 || rect.h <= 0 {
+        return;
+    }
+    let c = crate::geometry::Color::from_u32(color);
+    list.rect(rect.x, rect.y, rect.w, 1, c);
+    list.rect(rect.x, rect.y + rect.h - 1, rect.w, 1, c);
+    list.rect(rect.x, rect.y, 1, rect.h, c);
+    list.rect(rect.x + rect.w - 1, rect.y, 1, rect.h, c);
 }

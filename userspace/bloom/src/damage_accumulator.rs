@@ -1,5 +1,6 @@
 use crate::damage::Rect;
 
+pub const MAX_LOCAL_DAMAGE_RECTS: usize = 256;
 const MERGE_FUZZ_MARGIN: i32 = 2;
 
 pub struct DamageAccumulator<const MAX: usize> {
@@ -46,6 +47,10 @@ impl<const MAX: usize> DamageAccumulator<MAX> {
 
     pub fn as_mut_slice(&mut self) -> &mut [Rect] {
         &mut self.rects[..self.len]
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
     }
 
     pub fn is_overflowed(&self) -> bool {

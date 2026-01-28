@@ -1000,10 +1000,9 @@ impl AssetBank {
         // Let's use 32x32 for now.
         // If we want high-dpi, we might want 64x64 or 96x96 and let the cursor asset handling know.
         // But Image is pixel data.
-        // Current cursor.rs implementation uses scale=3.0 hardcoded for SVG.
-        // 32 * 3.0 = 96.
-        // Let's rasterize at 96x96 to match the "large" look checking cursor.rs logic.
-        let scale = 3.0;
+        // Rationalizing at 32x32 @ 1.0 scale (standard cursor size).
+        // High-DPI support can be added later via dynamic scaling.
+        let scale = 1.0;
         let base_size = 32;
         let size = (base_size as f32 * scale) as i32;
         
@@ -1015,7 +1014,8 @@ impl AssetBank {
 
         info!("[asset_bank] SUCCESS: SVG cursor rasterized {}x{}", size, size);
         
-        // Hotspot: default.svg config says (6,4) at 24px, scale to 96px = (24,16)
+        // Hotspot: default.svg config says (6,4) at 24px, scale to 32px is roughly 1.33x
+        // However, if we assume 32px base, let's keep it proportionate.
         let hotspot_scale = scale;
         let hotspot_x = (6.0 * hotspot_scale) as u32;
         let hotspot_y = (4.0 * hotspot_scale) as u32;

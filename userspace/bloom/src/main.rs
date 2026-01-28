@@ -514,10 +514,66 @@ fn main(arg: usize) -> ! {
             let current_buttons = cursor.buttons();
             let left_down = (current_buttons & 1) != 0;
             let left_prev = (prev_cursor_buttons & 1) != 0;
-            if left_down && !left_prev {
-                ui_dispatch.dispatch_click(cursor.x, cursor.y, screen_w, screen_h);
-            }
             prev_cursor_buttons = current_buttons;
+            let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
+
+            if left_down && !left_prev {
+                if let Some(hit) = top_window_at_point(cursor.x, cursor.y, screen_w, screen_h) {
+                    set_focus(&mut focused_window, Some(hit.id));
+                    if in_title_bar(hit.rect, cursor.x, cursor.y) {
+                        let inset_right =
+                            stem::thing::sys::prop_get(hit.id, keys::UI_INSET_RIGHT).unwrap_or(0);
+                        let inset_bottom =
+                            stem::thing::sys::prop_get(hit.id, keys::UI_INSET_BOTTOM).unwrap_or(0);
+                        if inset_right == 0 && inset_bottom == 0 {
+                            drag_state = Some(DragState {
+                                window_id: hit.id,
+                                start_mouse: (cursor.x, cursor.y),
+                                start_rect: hit.rect,
+                            });
+                            raise_window(hit.id);
+                        }
+                    } else if in_client_area(hit.rect, cursor.x, cursor.y) {
+                        raise_window(hit.id);
+                        ui_dispatch.dispatch_click(cursor.x, cursor.y, screen_w, screen_h);
+                    }
+                } else {
+                    set_focus(&mut focused_window, None);
+                }
+            }
+
+            if !left_down && left_prev {
+                drag_state = None;
+            }
+
+            if let Some(drag) = drag_state {
+                set_focus(&mut focused_window, Some(drag.window_id));
+                if left_down && cursor_moved {
+                    let delta_x = cursor.x - drag.start_mouse.0;
+                    let delta_y = cursor.y - drag.start_mouse.1;
+                    let mut next_rect = crate::geometry::Rect::new(
+                        drag.start_rect.x() + delta_x,
+                        drag.start_rect.y() + delta_y,
+                        drag.start_rect.width(),
+                        drag.start_rect.height(),
+                    );
+                    next_rect = clamp_window_rect(next_rect, screen_w, screen_h);
+                    let _ = stem::thing::sys::prop_set(
+                        drag.window_id,
+                        keys::UI_X,
+                        next_rect.x() as u64,
+                    );
+                    let _ = stem::thing::sys::prop_set(
+                        drag.window_id,
+                        keys::UI_Y,
+                        next_rect.y() as u64,
+                    );
+                }
+            } else {
+                let hovered = top_window_at_point(cursor.x, cursor.y, screen_w, screen_h).map(|h| h.id);
+                set_focus(&mut focused_window, hovered);
+            }
+
             let alt_down = pressed_keys.contains(&Key::LeftAlt) || pressed_keys.contains(&Key::RightAlt);
             let shift_down = pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
             let tab_pressed = pressed_keys.contains(&Key::Tab) && !prev_keys.contains(&Key::Tab);
@@ -548,14 +604,6 @@ fn main(arg: usize) -> ! {
                 }
             }
             alt_prev_down = alt_down;
-            
-            // If we have a focused window, ensure it's marked as such in the graph
-            // (in case it was set elsewhere or initialized)
-            if let Some(fid) = focused_window {
-                if stem::thing::sys::prop_get(fid, keys::UI_FOCUSED).unwrap_or(0) == 0 {
-                    let _ = stem::thing::sys::prop_set(fid, keys::UI_FOCUSED, 1);
-                }
-            }
         }
 
         // Run UI Pipeline

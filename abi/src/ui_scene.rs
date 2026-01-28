@@ -430,6 +430,7 @@ pub enum DecodeError {
     InvalidNodeBytes(u32),
 }
 
+#[derive(Debug)]
 pub struct UiScene<'a> {
     header: SceneHeader,
     nodes: &'a [u8],
@@ -855,6 +856,7 @@ fn read_f32(bytes: &[u8], offset: usize) -> Result<f32, DecodeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use alloc::vec;
 
     #[test]
     fn decode_rejects_bad_magic() {

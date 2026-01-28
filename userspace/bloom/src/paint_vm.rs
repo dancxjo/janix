@@ -67,6 +67,14 @@ impl PaintPipeline {
             }
             if entry.rect != rect || entry.z != z {
                 needs_rebuild = true;
+                if entry.rect != rect {
+                    damage.push(damage::Rect::new(
+                        entry.rect.x(),
+                        entry.rect.y(),
+                        entry.rect.width(),
+                        entry.rect.height(),
+                    ));
+                }
             }
 
             if needs_rebuild {

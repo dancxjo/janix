@@ -1,8 +1,9 @@
-use alloc::{vec, vec::Vec};
-use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+use alloc::collections::{BTreeMap, VecDeque};
+use core::cmp::Ordering;
 use stem::thing::ThingId;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct LayoutNode {
     pub id: ThingId,
     pub x: f32,
@@ -13,16 +14,20 @@ pub struct LayoutNode {
     pub rank: i32,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct LayoutEdge {
     pub from: ThingId,
     pub to: ThingId,
     pub weight: f32,
 }
 
+#[derive(Clone, Debug)]
 pub struct LayoutSettings {
     pub rank_spacing: f32,
     pub node_spacing: f32,
+    pub rank_padding: f32,
+    pub damping: f32,
+    pub max_iterations: usize,
 }
 
 impl Default for LayoutSettings {
@@ -30,171 +35,232 @@ impl Default for LayoutSettings {
         Self {
             rank_spacing: 120.0,
             node_spacing: 150.0,
+            rank_padding: 20.0,
+            damping: 0.5,
+            max_iterations: 2,
         }
     }
 }
 
-pub fn compute_layout(
-    nodes: &mut [LayoutNode],
-    edges: &[LayoutEdge],
-    settings: &LayoutSettings,
-) {
+// Internal structures for graph traversal
+struct InternalNode {
+    neighbors_in: Vec<usize>,
+    neighbors_out: Vec<usize>,
+    connection_count: usize,
+}
+
+pub fn compute_layout(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: &LayoutSettings) {
     if nodes.is_empty() {
         return;
     }
 
-    // Phase 1: Ranking (if not already set)
-    assign_ranks(nodes, edges);
+    // 1. Build index map
+    let mut id_map = BTreeMap::new();
+    let mut internal_nodes = Vec::with_capacity(nodes.len());
 
-    // Phase 2: Initial Placement
-    initial_placement(nodes, settings);
+    for (i, node) in nodes.iter().enumerate() {
+        id_map.insert(node.id, i);
+        internal_nodes.push(InternalNode {
+            neighbors_in: Vec::new(),
+            neighbors_out: Vec::new(),
+            connection_count: 0,
+        });
+    }
 
-    // Phase 3: Collision Resolution
+    // 2. Build graph topology
+    for edge in edges {
+        if let (Some(&src_idx), Some(&tgt_idx)) = (id_map.get(&edge.from), id_map.get(&edge.to)) {
+            internal_nodes[src_idx].neighbors_out.push(tgt_idx);
+            internal_nodes[src_idx].connection_count += 1;
+            
+            internal_nodes[tgt_idx].neighbors_in.push(src_idx);
+            internal_nodes[tgt_idx].connection_count += 1;
+        }
+    }
+
+    // 3. Assign Ranks (Phase 1)
+    assign_ranks(nodes, &internal_nodes);
+
+    // 4. Initial Placement
+    initial_placement(nodes, &internal_nodes, settings);
+
+    // 5. Collision Resolution (Phase 2)
     resolve_collisions(nodes, settings);
 
-    // Phase 4: Relaxation (Nudging)
-    relax_edges(nodes, edges, 2);
-    
-    // Final Collision Check after relaxation
-    resolve_collisions(nodes, settings);
+    // 6. Refinement (Phase 3)
+    for _ in 0..settings.max_iterations {
+        refine_edges(nodes, &internal_nodes, settings);
+        resolve_collisions(nodes, settings);
+    }
 }
 
-fn assign_ranks(nodes: &mut [LayoutNode], edges: &[LayoutEdge]) {
-    // Basic BFS-based ranking
-    let mut adjacency = BTreeMap::new();
-    for edge in edges {
-        adjacency.entry(edge.from).or_insert_with(Vec::new).push(edge.to);
-    }
-
-    let mut ranks = BTreeMap::new();
-    let mut queue = Vec::new();
-
-    // Find roots (nodes with no incoming edges)
-    let mut incoming_counts = BTreeMap::new();
-    for node in nodes.iter() {
-        incoming_counts.insert(node.id, 0);
-    }
-    for edge in edges {
-        *incoming_counts.entry(edge.to).or_insert(0) += 1;
-    }
-
-    for node in nodes.iter() {
-        if incoming_counts.get(&node.id).cloned().unwrap_or(0) == 0 {
-            queue.push((node.id, 0));
+fn assign_ranks(nodes: &mut [LayoutNode], internal: &[InternalNode]) {
+    // Collect roots
+    let mut queue = VecDeque::new();
+    
+    // Reset ranks for non-fixed nodes
+    for node in nodes.iter_mut() {
+        if !node.fixed {
+            node.rank = -1;
         }
     }
 
-    // If no roots (cycle?), pick the first node
+    // Initialize queue with sources (in-degree 0) or explicit roots
+    for (i, internal_node) in internal.iter().enumerate() {
+        if internal_node.neighbors_in.is_empty() {
+             if nodes[i].rank == -1 {
+                 nodes[i].rank = 0;
+             }
+             queue.push_back(i);
+        } else if nodes[i].rank == 0 {
+             // Forced root
+             queue.push_back(i);
+        }
+    }
+
+    // If queue is empty (cyclic graph with no roots), pick the first node
     if queue.is_empty() && !nodes.is_empty() {
-        queue.push((nodes[0].id, 0));
+        if nodes[0].rank == -1 { nodes[0].rank = 0; }
+        queue.push_back(0);
     }
 
-    let mut head = 0;
-    while head < queue.len() {
-        let (id, rank) = queue[head];
-        head += 1;
+    // Longest Path Layering
+    let max_passes = nodes.len() * 2; 
+    let mut passes = 0;
+    
+    let mut changed = true;
+    while changed && passes < max_passes {
+        changed = false;
+        passes += 1;
 
-        let current_rank = ranks.entry(id).or_insert(rank);
-        if rank > *current_rank {
-            *current_rank = rank;
-        }
+        for i in 0..nodes.len() {
+            let u_rank = nodes[i].rank;
+            if u_rank == -1 { continue; }
 
-        if let Some(neighbors) = adjacency.get(&id) {
-            for &neighbor in neighbors {
-                // To prevent infinite loops in cycles, we limit depth or check seen
-                if rank < 20 {
-                    queue.push((neighbor, rank + 1));
+            for &v_idx in &internal[i].neighbors_out {
+                if nodes[v_idx].fixed { continue; }
+
+                if nodes[v_idx].rank < u_rank + 1 {
+                     nodes[v_idx].rank = u_rank + 1;
+                     changed = true;
                 }
             }
         }
     }
 
+    // Ensure everyone has a rank
     for node in nodes.iter_mut() {
-        if let Some(&rank) = ranks.get(&node.id) {
-            node.rank = rank;
+        if node.rank == -1 {
+            node.rank = 0;
         }
     }
 }
 
-fn initial_placement(nodes: &mut [LayoutNode], settings: &LayoutSettings) {
+fn initial_placement(nodes: &mut [LayoutNode], internal: &[InternalNode], settings: &LayoutSettings) {
     // Group by rank
-    let mut rank_groups: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
+    let mut layers: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
     for (i, node) in nodes.iter().enumerate() {
-        rank_groups.entry(node.rank).or_insert_with(Vec::new).push(i);
+        layers.entry(node.rank).or_default().push(i);
     }
 
-    for (&rank, indices) in rank_groups.iter() {
-        // Sort indices by stable ID hash for determinism
-        let mut sorted_indices = indices.clone();
-        sorted_indices.sort_by_key(|&i| nodes[i].id.to_u64_lossy());
+    for (rank, indices) in &mut layers {
+        let rank_y = (*rank as f32) * settings.rank_spacing + 50.0;
+        
+        // Sort indices based on connection count / stability
+        indices.sort_by(|&a, &b| {
+            let nc_a = internal[a].connection_count;
+            let nc_b = internal[b].connection_count;
+            let res = nc_b.cmp(&nc_a); // descending
+            if res != Ordering::Equal {
+                return res;
+            }
+            nodes[a].id.cmp(&nodes[b].id) // stable tie-breaker
+        });
 
-        for (idx_in_rank, &node_idx) in sorted_indices.iter().enumerate() {
-            let node = &mut nodes[node_idx];
+        let mut current_x = 50.0;
+        for &idx in indices.iter() {
+            let node = &mut nodes[idx];
             if !node.fixed {
-                node.y = (rank as f32) * settings.rank_spacing + 60.0;
-                node.x = (idx_in_rank as f32) * settings.node_spacing + 60.0;
+                node.y = rank_y;
+                node.x = current_x;
+                current_x += node.w + settings.node_spacing;
+            } else {
+                 if node.x + node.w > current_x {
+                     current_x = node.x + node.w + settings.node_spacing;
+                 }
             }
         }
     }
 }
 
 fn resolve_collisions(nodes: &mut [LayoutNode], settings: &LayoutSettings) {
-    // Group by rank for horizontal sweep
-    let mut rank_groups: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
-    for (i, node) in nodes.iter().enumerate() {
-        rank_groups.entry(node.rank).or_insert_with(Vec::new).push(i);
-    }
+     let mut layers: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
+     for (i, node) in nodes.iter().enumerate() {
+         layers.entry(node.rank).or_default().push(i);
+     }
 
-    for indices in rank_groups.values() {
-        let mut sorted_indices = indices.clone();
-        sorted_indices.sort_by(|&a, &b| nodes[a].x.partial_cmp(&nodes[b].x).unwrap());
+     for (_, indices) in &mut layers {
+         // Sort by X
+         indices.sort_by(|&a, &b| nodes[a].x.partial_cmp(&nodes[b].x).unwrap_or(Ordering::Equal));
 
-        for i in 1..sorted_indices.len() {
-            let prev_idx = sorted_indices[i-1];
-            let curr_idx = sorted_indices[i];
-            
-            let prev_right = nodes[prev_idx].x + nodes[prev_idx].w / 2.0;
-            let curr_left = nodes[curr_idx].x - nodes[curr_idx].w / 2.0;
-            
-            let min_gap = 20.0;
-            if curr_left < prev_right + min_gap {
-                if !nodes[curr_idx].fixed {
-                    nodes[curr_idx].x = prev_right + min_gap + nodes[curr_idx].w / 2.0;
-                }
-            }
-        }
-    }
+         // Sweep left-to-right
+         for i in 1..indices.len() {
+             let left_idx = indices[i-1];
+             let curr_idx = indices[i];
+             
+             let left_right_edge = nodes[left_idx].x + nodes[left_idx].w + settings.rank_padding;
+             
+             if nodes[curr_idx].x < left_right_edge {
+                 if !nodes[curr_idx].fixed {
+                     nodes[curr_idx].x = left_right_edge;
+                 }
+             }
+         }
+     }
 }
 
-fn relax_edges(nodes: &mut [LayoutNode], edges: &[LayoutEdge], passes: usize) {
-    for _ in 0..passes {
-        let mut shifts = BTreeMap::new();
-        
-        for edge in edges {
-            let from_pos = nodes.iter().find(|n| n.id == edge.from).map(|n| n.x);
-            let to_pos = nodes.iter().find(|n| n.id == edge.to).map(|n| n.x);
-            
-            if let (Some(fx), Some(tx)) = (from_pos, to_pos) {
-                // Pull toward each other
-                let target = (fx + tx) / 2.0;
-                let pull_strength = 0.1;
-                
-                let from_shift = (target - fx) * pull_strength;
-                let to_shift = (target - tx) * pull_strength;
-                
-                *shifts.entry(edge.from).or_insert(0.0) += from_shift;
-                *shifts.entry(edge.to).or_insert(0.0) += to_shift;
-            }
+fn refine_edges(nodes: &mut [LayoutNode], internal: &[InternalNode], settings: &LayoutSettings) {
+    let max_move = 50.0;
+    
+    let mut moves = Vec::with_capacity(nodes.len());
+    
+    for (i, node) in nodes.iter().enumerate() {
+        if node.fixed {
+            moves.push(0.0);
+            continue;
+        }
+
+        let mut sum_x = 0.0;
+        let mut count = 0;
+
+        // Incoming neighbors
+        for &n_in in &internal[i].neighbors_in {
+            sum_x += nodes[n_in].x + (nodes[n_in].w / 2.0);
+            count += 1;
         }
         
-        for node in nodes.iter_mut() {
-            if !node.fixed {
-                if let Some(&shift) = shifts.get(&node.id) {
-                    // Clamp shift to preserve stability
-                    let max_delta = 20.0;
-                    node.x += shift.clamp(-max_delta, max_delta);
-                }
-            }
+        // Outgoing neighbors
+        for &n_out in &internal[i].neighbors_out {
+            sum_x += nodes[n_out].x + (nodes[n_out].w / 2.0);
+            count += 1;
+        }
+
+        if count > 0 {
+            let target_center = sum_x / (count as f32);
+            let current_center = node.x + (node.w / 2.0);
+            let delta = target_center - current_center;
+            
+            let move_amt = delta * settings.damping;
+            moves.push(move_amt.clamp(-max_move, max_move));
+        } else {
+            moves.push(0.0);
+        }
+    }
+
+    // Apply moves
+    for (i, move_amt) in moves.iter().enumerate() {
+        if *move_amt != 0.0 {
+            nodes[i].x += *move_amt;
         }
     }
 }
@@ -213,8 +279,12 @@ mod tests {
         let settings = LayoutSettings::default();
         resolve_collisions(&mut nodes, &settings);
         
-        let n1_right = nodes[0].x + nodes[0].w / 2.0;
-        let n2_left = nodes[1].x - nodes[1].w / 2.0;
-        assert!(n2_left >= n1_right + 19.9);
+        // Expected behavior: node 2 pushed to right of node 1 + padding
+        let n1_right = nodes[0].x + nodes[0].w;
+        // With x=100, w=100, right=200.
+        // n2 starts at 110.
+        // Should be pushed to 200 + 20 = 220.
+        
+        assert!(nodes[1].x >= 220.0, "Node 2 was not pushed enough, x={}", nodes[1].x);
     }
 }

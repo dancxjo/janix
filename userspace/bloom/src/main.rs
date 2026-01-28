@@ -58,6 +58,23 @@ use crate::paint_vm::PaintPipeline;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
+const BLOSSOM_BORDER: i32 = 2;
+const BLOSSOM_TITLE_BAR_HEIGHT: i32 = 24;
+
+#[derive(Clone, Copy)]
+struct WindowHit {
+    id: ThingId,
+    rect: crate::geometry::Rect,
+    z: i32,
+}
+
+#[derive(Clone, Copy)]
+struct DragState {
+    window_id: ThingId,
+    start_mouse: (i32, i32),
+    start_rect: crate::geometry::Rect,
+}
+
 fn clear_surface(surface: &mut surface::Surface, color: u32) {
     let w = surface.width();
     let h = surface.height();
@@ -78,11 +95,120 @@ fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
 }
 
-fn cycle_windows(current: Option<ThingId>, reverse: bool) -> Option<ThingId> {
+fn window_rect_from_props(window_id: ThingId, screen_w: i32, screen_h: i32) -> crate::geometry::Rect {
+    let w = stem::thing::sys::prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
+    let h = stem::thing::sys::prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
+    if w <= 0 || h <= 0 {
+        return crate::geometry::Rect::new(0, 0, 0, 0);
+    }
+    let mut x = stem::thing::sys::prop_get(window_id, keys::UI_X).unwrap_or(0) as i32;
+    let mut y = stem::thing::sys::prop_get(window_id, keys::UI_Y).unwrap_or(0) as i32;
+    let inset_right = stem::thing::sys::prop_get(window_id, keys::UI_INSET_RIGHT).unwrap_or(0) as i32;
+    let inset_bottom = stem::thing::sys::prop_get(window_id, keys::UI_INSET_BOTTOM).unwrap_or(0) as i32;
+    if inset_right > 0 {
+        x = screen_w - inset_right - w;
+    }
+    if inset_bottom > 0 {
+        y = screen_h - inset_bottom - h;
+    }
+    crate::geometry::Rect::new(x, y, w, h)
+}
+
+fn top_window_at_point(
+    x: i32,
+    y: i32,
+    screen_w: i32,
+    screen_h: i32,
+) -> Option<WindowHit> {
+    let mut windows = [ThingId::default(); 128];
+    let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
+    let mut best: Option<WindowHit> = None;
+    for win in windows.iter().take(count) {
+        if stem::thing::sys::prop_get(*win, keys::UI_HIDDEN).unwrap_or(0) != 0 {
+            continue;
+        }
+        let rect = window_rect_from_props(*win, screen_w, screen_h);
+        if rect.width() <= 0 || rect.height() <= 0 {
+            continue;
+        }
+        if x < rect.x() || y < rect.y() || x >= rect.x() + rect.width() || y >= rect.y() + rect.height() {
+            continue;
+        }
+        let z = stem::thing::sys::prop_get(*win, keys::UI_Z_INDEX).unwrap_or(0) as i32;
+        if best.map(|b| z >= b.z).unwrap_or(true) {
+            best = Some(WindowHit { id: *win, rect, z });
+        }
+    }
+    best
+}
+
+fn in_title_bar(rect: crate::geometry::Rect, x: i32, y: i32) -> bool {
+    let local_y = y - rect.y();
+    let title_top = BLOSSOM_BORDER;
+    let title_bottom = BLOSSOM_BORDER + BLOSSOM_TITLE_BAR_HEIGHT;
+    local_y >= title_top && local_y < title_bottom
+}
+
+fn in_client_area(rect: crate::geometry::Rect, x: i32, y: i32) -> bool {
+    let left = rect.x() + BLOSSOM_BORDER;
+    let right = rect.x() + rect.width() - BLOSSOM_BORDER;
+    let top = rect.y() + BLOSSOM_BORDER + BLOSSOM_TITLE_BAR_HEIGHT;
+    let bottom = rect.y() + rect.height() - BLOSSOM_BORDER;
+    x >= left && x < right && y >= top && y < bottom
+}
+
+fn clamp_window_rect(rect: crate::geometry::Rect, screen_w: i32, screen_h: i32) -> crate::geometry::Rect {
+    let mut r = rect;
+    let min_visible = BLOSSOM_TITLE_BAR_HEIGHT;
+    if r.y() + min_visible < 0 {
+        r.origin.y = -min_visible + 1;
+    }
+    if r.y() > screen_h - min_visible {
+        r.origin.y = screen_h - min_visible;
+    }
+    if r.x() + r.width() < min_visible {
+        r.origin.x = min_visible - r.width();
+    }
+    if r.x() > screen_w - min_visible {
+        r.origin.x = screen_w - min_visible;
+    }
+    r
+}
+
+fn raise_window(window_id: ThingId) {
+    let mut windows = [ThingId::default(); 128];
+    let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
+    let mut max_z = 0i32;
+    for win in windows.iter().take(count) {
+        if *win == window_id {
+            continue;
+        }
+        let z = stem::thing::sys::prop_get(*win, keys::UI_Z_INDEX).unwrap_or(0) as i32;
+        if z > max_z {
+            max_z = z;
+        }
+    }
+    let _ = stem::thing::sys::prop_set(window_id, keys::UI_Z_INDEX, (max_z as u64).saturating_add(1));
+}
+
+fn set_focus(focused_window: &mut Option<ThingId>, target: Option<ThingId>) {
+    if *focused_window == target {
+        return;
+    }
+    if let Some(prev) = focused_window.take() {
+        let _ = stem::thing::sys::prop_set(prev, keys::UI_FOCUSED, 0);
+    }
+    if let Some(next) = target {
+        let _ = stem::thing::sys::prop_set(next, keys::UI_FOCUSED, 1);
+        *focused_window = Some(next);
+    }
+}
+
+fn build_window_cycle_order() -> (alloc::vec::Vec<ThingId>, i32) {
     let mut windows = [ThingId::default(); 128];
     let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
     if count == 0 {
-        return None;
+        return (alloc::vec::Vec::new(), 0);
     }
 
     let mut list: alloc::vec::Vec<(ThingId, i32)> = alloc::vec::Vec::new();
@@ -95,7 +221,7 @@ fn cycle_windows(current: Option<ThingId>, reverse: bool) -> Option<ThingId> {
     }
 
     if list.is_empty() {
-        return None;
+        return (alloc::vec::Vec::new(), 0);
     }
 
     list.sort_by(|(a_id, a_z), (b_id, b_z)| {
@@ -104,27 +230,42 @@ fn cycle_windows(current: Option<ThingId>, reverse: bool) -> Option<ThingId> {
     });
 
     let max_z = list.iter().map(|(_, z)| *z).max().unwrap_or(0);
-    let target_idx = match current.and_then(|id| list.iter().position(|(wid, _)| *wid == id)) {
+    let order = list.into_iter().map(|(id, _)| id).collect();
+    (order, max_z)
+}
+
+fn cycle_windows_in_order(
+    order: &[ThingId],
+    current: Option<ThingId>,
+    reverse: bool,
+    max_z: &mut i32,
+) -> Option<ThingId> {
+    if order.is_empty() {
+        return None;
+    }
+
+    let target_idx = match current.and_then(|id| order.iter().position(|wid| *wid == id)) {
         Some(idx) => {
             if reverse {
-                if idx == 0 { list.len() - 1 } else { idx - 1 }
+                if idx == 0 { order.len() - 1 } else { idx - 1 }
             } else {
-                (idx + 1) % list.len()
+                (idx + 1) % order.len()
             }
         }
         None => {
-            if reverse { list.len() - 1 } else { 0 }
+            if reverse { order.len() - 1 } else { 0 }
         }
     };
-    let target = list[target_idx].0;
-    
+    let target = order[target_idx];
+
     // Publish focus status to graph
     if let Some(prev) = current {
         let _ = stem::thing::sys::prop_set(prev, keys::UI_FOCUSED, 0);
     }
     let _ = stem::thing::sys::prop_set(target, keys::UI_FOCUSED, 1);
-    
-    let _ = stem::thing::sys::prop_set(target, keys::UI_Z_INDEX, (max_z as u64).saturating_add(1));
+
+    *max_z = max_z.saturating_add(1);
+    let _ = stem::thing::sys::prop_set(target, keys::UI_Z_INDEX, *max_z as u64);
     Some(target)
 }
 
@@ -232,12 +373,16 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_buttons = cursor.buttons();
     let mut ui_dispatch = ui_events::UiEventDispatcher::new();
     let mut focused_window: Option<ThingId> = None;
+    let mut alt_cycle_order: alloc::vec::Vec<ThingId> = alloc::vec::Vec::new();
+    let mut alt_cycle_max_z: i32 = 0;
+    let mut alt_prev_down = false;
     let accel_cfg = MouseAccelConfig::default();
     let mut accel_state = MouseAccelState::default();
     // Track previous cursor position for damage computation
     let mut prev_cursor_x = cursor.x;
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
+    let mut drag_state: Option<DragState> = None;
 
     // Window Manager disabled in paint pipeline (no legacy chrome/hit testing)
 
@@ -376,12 +521,33 @@ fn main(arg: usize) -> ! {
             let alt_down = pressed_keys.contains(&Key::LeftAlt) || pressed_keys.contains(&Key::RightAlt);
             let shift_down = pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
             let tab_pressed = pressed_keys.contains(&Key::Tab) && !prev_keys.contains(&Key::Tab);
+            let alt_pressed = alt_down && !alt_prev_down;
+            let alt_released = !alt_down && alt_prev_down;
+            if alt_pressed {
+                let (order, max_z) = build_window_cycle_order();
+                alt_cycle_order = order;
+                alt_cycle_max_z = max_z;
+            }
+            if alt_released {
+                alt_cycle_order.clear();
+            }
             if alt_down && tab_pressed {
-                if let Some(next) = cycle_windows(focused_window, shift_down) {
+                if alt_cycle_order.is_empty() {
+                    let (order, max_z) = build_window_cycle_order();
+                    alt_cycle_order = order;
+                    alt_cycle_max_z = max_z;
+                }
+                if let Some(next) = cycle_windows_in_order(
+                    &alt_cycle_order,
+                    focused_window,
+                    shift_down,
+                    &mut alt_cycle_max_z,
+                ) {
                     focused_window = Some(next);
                     force_full_damage = true;
                 }
             }
+            alt_prev_down = alt_down;
             
             // If we have a focused window, ensure it's marked as such in the graph
             // (in case it was set elsewhere or initialized)

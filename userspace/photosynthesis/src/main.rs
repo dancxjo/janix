@@ -71,7 +71,8 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
 mod graph_layout;
 mod pipes;
 
-use graph_layout::{LayoutEdge, LayoutNode, LayoutSettings, compute_layout};
+use alloc::collections::BTreeMap;
+use graph_layout::{LayoutEdge, LayoutNode, LayoutSettings, compute_layout, route_edges};
 use pipes::{generate_layout, scan_system_graph};
 
 const TILE_WIDTH: i32 = 120;
@@ -121,6 +122,7 @@ fn main() -> ! {
 
     let mut last_nodes = Vec::new();
     let mut last_edges = Vec::new();
+    let mut last_routes = BTreeMap::new();
     let mut last_scan = stem::monotonic_ns();
     let mut dirty = true;
     let mut graph_watch = None;
@@ -181,8 +183,11 @@ fn main() -> ! {
                 // 2. Compute Layout
                 let settings = LayoutSettings::default();
                 compute_layout(&mut layout_nodes, &layout_edges, &settings);
+                
+                // 3. Compute Edge Routes
+                last_routes = route_edges(&layout_nodes, &layout_edges, &settings);
 
-                // 3. Persist back to graph (if changed significantly)
+                // 4. Persist back to graph (if changed significantly)
                 for ln in &layout_nodes {
                     let old = nodes.iter().find(|n| n.id == ln.id);
                     let changed = old
@@ -201,7 +206,7 @@ fn main() -> ! {
                     }
                 }
 
-                // 4. Update local NodeInfo with new positions for rendering
+                // 5. Update local NodeInfo with new positions for rendering
                 let mut final_nodes = nodes.clone();
                 for n in &mut final_nodes {
                     if let Some(ln) = layout_nodes.iter().find(|l| l.id == n.id) {
@@ -211,7 +216,7 @@ fn main() -> ! {
                 }
 
                 let layout = generate_layout(&final_nodes);
-                let scene = build_graph_scene(win, &final_nodes, &edges, &layout);
+                let scene = build_graph_scene(win, &final_nodes, &edges, &layout, &last_routes);
                 let _ = stem::petals::publish_window(&scene);
                 last_nodes = final_nodes;
                 last_edges = edges;
@@ -229,63 +234,76 @@ fn build_graph_scene(
     nodes: &[pipes::NodeInfo],
     edges: &[pipes::EdgeInfo],
     layout: &pipes::GraphLayout,
+    routes: &BTreeMap<(ThingId, ThingId), Vec<(f32, f32)>>,
 ) -> Scene {
     let mut canvas = Canvas::new().width(Size::Pct(100)).height(Size::Pct(100));
 
     for edge in edges {
-        if let (Some(&(x1, y1)), Some(&(x2, y2))) = (
-            layout.positions.get(&edge.from),
-            layout.positions.get(&edge.to),
-        ) {
-            let (dx, dy) = (x2 - x1, y2 - y1);
-            let dist = libm::sqrtf(dx * dx + dy * dy);
-            if dist > 0.0 {
-                let (ux, uy) = (dx / dist, dy / dist);
-                let half_w = TILE_WIDTH as f32 / 2.0;
-                let half_h = TILE_HEIGHT as f32 / 2.0;
-                let start_x = (x1 + ux * half_w) as i32;
-                let start_y = (y1 + uy * half_h) as i32;
-                let end_x = (x2 - ux * half_w) as i32;
-                let end_y = (y2 - uy * half_h) as i32;
+        if let Some(path) = routes.get(&(edge.from, edge.to)) {
+             if path.len() < 2 { continue; }
+             
+             // Draw segments
+            for i in 0..path.len()-1 {
+                let (x1, y1) = path[i];
+                let (x2, y2) = path[i+1];
+                
                 canvas = canvas.push(
-                    Line::new(start_x, start_y, end_x, end_y)
+                    Line::new(x1 as i32, y1 as i32, x2 as i32, y2 as i32)
                         .width(2)
                         .color(Color::from_argb_u32(0xFF888888)),
                 );
-
-                let angle = libm::atan2f(dy, dx);
-                let head_len = 8.0;
-                let a1 = angle + 3.14159 * 0.85;
-                let a2 = angle - 3.14159 * 0.85;
-                let hx1 = (x2 + head_len * libm::cosf(a1)) as i32;
-                let hy1 = (y2 + head_len * libm::sinf(a1)) as i32;
-                let hx2 = (x2 + head_len * libm::cosf(a2)) as i32;
-                let hy2 = (y2 + head_len * libm::sinf(a2)) as i32;
-                canvas = canvas
-                    .push(
-                        Line::new(end_x, end_y, hx1, hy1)
-                            .width(2)
-                            .color(Color::from_argb_u32(0xFF888888)),
-                    )
-                    .push(
-                        Line::new(end_x, end_y, hx2, hy2)
-                            .width(2)
-                            .color(Color::from_argb_u32(0xFF888888)),
-                    );
-
-                let mid_x = ((x1 + x2) / 2.0) as i32;
-                let mid_y = ((y1 + y2) / 2.0) as i32;
-                let label_w = (edge.rel.len() as i32 * 6).max(10);
-                canvas = canvas.push_at(
-                    Text::new(&edge.rel)
-                        .font(FontKey::new("NotoSans-Regular").size(9))
-                        .color(Color::from_argb_u32(0xFF666666))
-                        .width(Size::Px(label_w))
-                        .height(Size::Px(10)),
-                    mid_x,
-                    mid_y,
-                );
             }
+             
+             // Draw Arrow at the end
+            let (end_x, end_y) = path[path.len()-1];
+            let (prev_x, prev_y) = path[path.len()-2];
+            
+            let angle = libm::atan2f(end_y - prev_y, end_x - prev_x);
+            let head_len = 8.0;
+            let a1 = angle + 3.14159 * 0.85;
+            let a2 = angle - 3.14159 * 0.85;
+            
+            let hx1 = (end_x + head_len * libm::cosf(a1));
+            let hy1 = (end_y + head_len * libm::sinf(a1));
+            let hx2 = (end_x + head_len * libm::cosf(a2));
+            let hy2 = (end_y + head_len * libm::sinf(a2));
+            
+            canvas = canvas
+                .push(
+                    Line::new(end_x as i32, end_y as i32, hx1 as i32, hy1 as i32)
+                        .width(2)
+                        .color(Color::from_argb_u32(0xFF888888)),
+                )
+                .push(
+                    Line::new(end_x as i32, end_y as i32, hx2 as i32, hy2 as i32)
+                        .width(2)
+                        .color(Color::from_argb_u32(0xFF888888)),
+                );
+            
+            // Draw Label in Middle (Middle Segment)
+            let mid_seg_idx = (path.len() - 1) / 2;
+            let (aa, bb) = (path[mid_seg_idx], path[mid_seg_idx + 1]);
+            let mid_x = (aa.0 + bb.0) / 2.0;
+            let mid_y = (aa.1 + bb.1) / 2.0;
+            
+            let label_w = (edge.rel.len() as i32 * 6).max(10);
+            canvas = canvas.push_at(
+                Text::new(&edge.rel)
+                    .font(FontKey::new("NotoSans-Regular").size(9))
+                    .color(Color::from_argb_u32(0xFF666666))
+                    .width(Size::Px(label_w))
+                    .height(Size::Px(10)),
+                mid_x as i32,
+                mid_y as i32,
+            );
+        } else {
+            // Fallback (Direct Line)
+            // if let (Some(&(x1, y1)), Some(&(x2, y2))) = (
+            //     layout.positions.get(&edge.from),
+            //     layout.positions.get(&edge.to),
+            // ) {
+            //      // ... legacy direct line drawing ...
+            // }
         }
     }
 

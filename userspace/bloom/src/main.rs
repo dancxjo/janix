@@ -485,6 +485,7 @@ fn main(arg: usize) -> ! {
     let ui_dispatch = ui_events::UiEventDispatcher::new();
     let mut focused_window: Option<ThingId> = None;
     let mut alt_cycle_order: alloc::vec::Vec<ThingId> = alloc::vec::Vec::new();
+    let mut maximized_windows: alloc::collections::BTreeMap<ThingId, crate::geometry::Rect> = alloc::collections::BTreeMap::new();
     let mut alt_cycle_max_z: i32 = 0;
     let mut alt_prev_down = false;
     let accel_cfg = MouseAccelConfig::default();
@@ -494,7 +495,7 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
     let mut drag_state: Option<DragState> = None;
-    let mut modal_mode = false;
+    let mut drag_state: Option<DragState> = None;
     let mut debug_flags = DebugFlags::default();
     let mut overlay_state = DamageOverlayState::default();
 
@@ -651,10 +652,37 @@ fn main(arg: usize) -> ! {
                 pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
 
             // F1 Toggle
+            // F1 Toggle: Maximize/Restore focused window
             if pressed_keys.contains(&Key::F1) && !prev_keys.contains(&Key::F1) {
-                modal_mode = !modal_mode;
-                force_full_damage = true;
-                stem::info!("[bloom] F1 pressed, toggling modal mode to: {}", modal_mode);
+                if let Some(focused) = focused_window {
+                    if let Some(restore_rect) = maximized_windows.remove(&focused) {
+                        // Restore
+                        stem::info!("[bloom] F1: Restoring window {:?} to {:?}", focused, restore_rect);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_X, restore_rect.x() as u64);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, restore_rect.y() as u64);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_WIDTH, restore_rect.width() as u64);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_HEIGHT, restore_rect.height() as u64);
+                        // Ensure manual position is set so tiling doesn't clobber it immediately
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
+                    } else {
+                        // Maximize
+                        let x = stem::thing::sys::prop_get(focused, keys::UI_X).unwrap_or(0) as i32;
+                        let y = stem::thing::sys::prop_get(focused, keys::UI_Y).unwrap_or(0) as i32;
+                        let w = stem::thing::sys::prop_get(focused, keys::UI_WIDTH).unwrap_or(0) as i32;
+                        let h = stem::thing::sys::prop_get(focused, keys::UI_HEIGHT).unwrap_or(0) as i32;
+                        let current_rect = crate::geometry::Rect::new(x, y, w, h);
+                        
+                        maximized_windows.insert(focused, current_rect);
+                        stem::info!("[bloom] F1: Maximizing window {:?} (saved {:?})", focused, current_rect);
+
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_X, 0);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, 0);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_WIDTH, screen_w as u64);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_HEIGHT, screen_h as u64);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
+                    }
+                    force_full_damage = true;
+                }
             }
 
             if pressed_keys.contains(&Key::F9) && !prev_keys.contains(&Key::F9) {
@@ -795,19 +823,9 @@ fn main(arg: usize) -> ! {
         // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
 
-        let paint_result = if !modal_mode {
-            {
-                crate::trace_span!("bloom.loop.paint_updates");
-                paint_pipeline.process_updates(screen_w, screen_h)
-            }
-        } else {
-            // Modal Mode: Black screen, no windows
-            // We specifically add a Clear command to list to handle the black out.
-            list.clear(crate::geometry::Color::from_u32(0xFF000000));
-            // Return empty paint result (no windows)
-            crate::paint_vm::PaintResult {
-                damage: alloc::vec![],
-            }
+        let paint_result = {
+            crate::trace_span!("bloom.loop.paint_updates");
+            paint_pipeline.process_updates(screen_w, screen_h)
         };
 
         // Damage Tracking (cursor is now blended post-damage, does not affect window damage)
@@ -904,15 +922,13 @@ fn main(arg: usize) -> ! {
 
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
-            if !modal_mode {
-                let rects: alloc::vec::Vec<_> = damage.iter().collect();
-                paint_pipeline.compose(
-                    &mut surface,
-                    &rects,
-                    ASSETS.get_wallpaper().as_ref(),
-                    crate::geometry::Color::from_u32(0xFF101018),
-                );
-            }
+            let rects: alloc::vec::Vec<_> = damage.iter().collect();
+            paint_pipeline.compose(
+                &mut surface,
+                &rects,
+                ASSETS.get_wallpaper().as_ref(),
+                crate::geometry::Color::from_u32(0xFF101018),
+            );
 
             crate::trace_span!("bloom.loop.raster");
             raster::execute_with_damage(&mut surface, &list, &damage, false);

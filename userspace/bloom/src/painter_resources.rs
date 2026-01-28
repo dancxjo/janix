@@ -197,6 +197,8 @@ pub extern "C" fn icon_loader_entry() -> ! {
     // Explicitly load known icons using robust suffix matching via AssetBank
     let icons = [
         "bran.bran.svg",
+        "dev.bus.platform.svg",
+        "dev.cpu.svg",
         "dev.host.svg",
         "dev.input.svg",
         "dev.network.svg",

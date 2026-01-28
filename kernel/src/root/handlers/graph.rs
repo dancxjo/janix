@@ -159,11 +159,11 @@ pub fn handle_find(
     let out_ptr = buffer as *mut abi::types::ThingId;
     let max_entries = (len as usize) / core::mem::size_of::<abi::types::ThingId>();
 
-    for (id, node) in &graph.nodes {
-        if node.kind == kid {
+    if let Some(ids) = graph.kind_index.get(&kid) {
+        for &id in ids {
             if found_count < max_entries {
                 unsafe {
-                    *out_ptr.add(found_count) = abi::types::ThingId::from_u64(*id);
+                    *out_ptr.add(found_count) = abi::types::ThingId::from_u64(id);
                 }
             }
             found_count += 1;
@@ -246,5 +246,92 @@ pub fn handle_props_get_many(
         (0, keys.len() as u64)
     } else {
         (-1, 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::root::graph::Graph;
+    use crate::root::symbols::Interner;
+    use crate::root::SymbolShell;
+    use abi::types::ThingId;
+    use abi::ids::HandleId;
+
+    #[test]
+    fn test_handle_find_correctness() {
+        let mut graph = Graph::new();
+        let mut interner = Interner::new();
+
+        let kind_a = interner.intern("KindA");
+        let kind_b = interner.intern("KindB");
+
+        // Alloc nodes
+        let a1 = graph.alloc(kind_a);
+        let a2 = graph.alloc(kind_a);
+        let b1 = graph.alloc(kind_b);
+        let a3 = graph.alloc(kind_a);
+        let b2 = graph.alloc(kind_b);
+
+        // Prepare buffer
+        let max_ids = 10;
+        let mut buffer = vec![0u8; max_ids * core::mem::size_of::<ThingId>()];
+        let buf_ptr = buffer.as_mut_ptr() as u64;
+        let buf_len = buffer.len() as u64;
+
+        // Find KindA
+        let (status, count) = handle_find(
+            &graph,
+            &mut interner,
+            SymbolShell::Id(kind_a),
+            buf_ptr,
+            buf_len
+        );
+
+        assert_eq!(status, 0);
+        assert_eq!(count, 3);
+
+        // Verify IDs
+        let ids_slice = unsafe {
+            core::slice::from_raw_parts(buf_ptr as *const ThingId, count as usize)
+        };
+
+        let mut found_ids = ids_slice.to_vec();
+        found_ids.sort_by_key(|t| t.0);
+
+        // Let's just check containment for safety.
+        assert!(ids_slice.contains(&ThingId::from_u64(a1)));
+        assert!(ids_slice.contains(&ThingId::from_u64(a2)));
+        assert!(ids_slice.contains(&ThingId::from_u64(a3)));
+
+        // Find KindB
+        let (status, count) = handle_find(
+            &graph,
+            &mut interner,
+            SymbolShell::Id(kind_b),
+            buf_ptr,
+            buf_len
+        );
+
+        assert_eq!(status, 0);
+        assert_eq!(count, 2);
+
+        let ids_slice = unsafe {
+            core::slice::from_raw_parts(buf_ptr as *const ThingId, count as usize)
+        };
+        assert!(ids_slice.contains(&ThingId::from_u64(b1)));
+        assert!(ids_slice.contains(&ThingId::from_u64(b2)));
+
+        // Find non-existent
+        let kind_c = interner.intern("KindC");
+        let (status, count) = handle_find(
+            &graph,
+            &mut interner,
+            SymbolShell::Id(kind_c),
+            buf_ptr,
+            buf_len
+        );
+        assert_eq!(status, 0);
+        assert_eq!(count, 0);
     }
 }

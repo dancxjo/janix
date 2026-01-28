@@ -3,7 +3,7 @@ use crate::damage::{Damage, Rect as DamageRect};
 use crate::drawlist::DrawList;
 use crate::font_client;
 use crate::font_graph::{self, FontStyle};
-use crate::isa::{BlendMode, EdgeAA, FilterMode, Rect, Transform2D};
+use crate::isa::{BlendMode, Color, EdgeAA, FilterMode, Rect, Transform2D};
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use alloc::vec;
@@ -136,6 +136,13 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                     } else {
                         fill_rect_blend(ctx.surface, cl.x(), cl.y(), cl.width(), cl.height(), c);
                     }
+                }
+            }
+            LowLevelOp::FillLinearGradient { rect, color1, color2 } => {
+                crate::trace_counter!("raster.ops.fill", 1);
+                let tr = ctx.current_transform.transform_rect(*rect);
+                if let Some(cl) = ctx.current_clip.intersection(&tr) {
+                    fill_rect_linear_gradient(ctx.surface, &tr, &cl, *color1, *color2);
                 }
             }
             LowLevelOp::BlitSnapshot {
@@ -469,6 +476,48 @@ pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, co
     for yy in y0..y1 {
         for xx in x0..x1 {
             blend_pixel(surface, xx, yy, sr, sg, sb, a);
+        }
+    }
+}
+pub fn fill_rect_linear_gradient(
+    surface: &mut Surface,
+    rect: &Rect,
+    clip: &Rect,
+    color1: Color,
+    color2: Color,
+) {
+    let x0 = clip.x().max(0);
+    let y0 = clip.y().max(0);
+    let x1 = (clip.x() + clip.width()).min(surface.width());
+    let y1 = (clip.y() + clip.height()).min(surface.height());
+
+    let (r1, g1, b1, a1) = (color1.r, color1.g, color1.b, color1.a);
+    let (r2, g2, b2, a2) = (color2.r, color2.g, color2.b, color2.a);
+
+    let width = rect.width();
+    if width <= 0 {
+        return;
+    }
+
+    for yy in y0..y1 {
+        for xx in x0..x1 {
+            let t = (xx - rect.x()) as f32 / width as f32;
+            let t = t.clamp(0.0, 1.0);
+
+            let r = (r1 as f32 + (r2 as f32 - r1 as f32) * t) as u8;
+            let g = (g1 as f32 + (g2 as f32 - g1 as f32) * t) as u8;
+            let b = (b1 as f32 + (b2 as f32 - b1 as f32) * t) as u8;
+            let a = (a1 as f32 + (a2 as f32 - a1 as f32) * t) as u8;
+
+            if a == 255 {
+                surface.put_px(
+                    xx,
+                    yy,
+                    (255 << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32),
+                );
+            } else if a > 0 {
+                blend_pixel(surface, xx, yy, r, g, b, a);
+            }
         }
     }
 }
@@ -1090,9 +1139,25 @@ fn rasterize_text_fallback(
         return;
     }
     let font = if let Some(r) = rf {
-        fonts
-            .iter()
-            .find(|f| f.name.contains(r))
+        let needle = r.to_lowercase();
+        let needle_no_ext = needle
+            .strip_suffix(".ttf")
+            .or_else(|| needle.strip_suffix(".otf"))
+            .unwrap_or(&needle);
+        let mut match_font = fonts.iter().find(|f| {
+            let name = f.name.to_lowercase();
+            name.contains(&needle) || name.contains(needle_no_ext)
+        });
+        if match_font.is_none() {
+            let needle_norm = normalize_font_token(needle_no_ext);
+            if !needle_norm.is_empty() {
+                match_font = fonts.iter().find(|f| {
+                    let name_norm = normalize_font_token(&f.name);
+                    name_norm.contains(&needle_norm)
+                });
+            }
+        }
+        match_font
             .or_else(|| fonts.iter().find(|f| f.name.contains("NotoSans-Regular")))
             .unwrap_or(&fonts[0])
     } else {
@@ -1157,6 +1222,16 @@ fn rasterize_text_fallback(
         }
         px += m.advance_width;
     }
+}
+
+fn normalize_font_token(token: &str) -> alloc::string::String {
+    let mut out = alloc::string::String::with_capacity(token.len());
+    for ch in token.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        }
+    }
+    out
 }
 
 // Fixed point 16.16

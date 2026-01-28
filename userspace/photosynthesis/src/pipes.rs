@@ -3,22 +3,29 @@ use alloc::string::String;
 use alloc::format;
 use stem::thing::{ThingId};
 use stem::thing::sys::{find, describe_thing};
-use abi::schema::{kinds, rels};
+use abi::schema::{kinds, rels, keys};
+use abi::types::HandleId;
 use alloc::collections::BTreeMap;
 use abi::drawlist::{DrawListBuilder, PointF};
+use crate::graph_layout::{LayoutNode, LayoutEdge};
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NodeInfo {
     pub id: ThingId,
     pub kind: String,
     pub name: String,
+    pub x: f32,
+    pub y: f32,
+    pub fixed: bool,
+    pub rank: i32,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct EdgeInfo {
     pub from: ThingId,
     pub to: ThingId,
     pub rel: String,
+    pub weight: f32,
 }
 
 pub struct GraphLayout {
@@ -68,7 +75,12 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
             (format!("unknown_{:X}", id.to_u64_lossy()), String::from("unknown"))
         };
 
-        nodes.push(NodeInfo { id, kind, name });
+        let x = stem::thing::sys::prop_get(id, keys::UI_X).unwrap_or(0) as f32;
+        let y = stem::thing::sys::prop_get(id, keys::UI_Y).unwrap_or(0) as f32;
+        let rank = stem::thing::sys::prop_get(id, keys::UI_RANK).unwrap_or(u64::MAX) as i32;
+        let fixed = stem::thing::sys::prop_get(id, keys::UI_FIXED).unwrap_or(0) != 0;
+
+        nodes.push(NodeInfo { id, kind, name, x, y, fixed, rank });
         seen.insert(id, ());
 
         // Scan edges and discover new nodes
@@ -78,10 +90,12 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
             for i in 0..count {
                 let edge = &buf[i];
                 let predicate_id = edge.predicate.to_u64_lossy() as u32;
+                let weight = stem::thing::sys::prop_get(id, keys::EDGE_WEIGHT).unwrap_or(100) as f32 / 100.0;
                 edges.push(EdgeInfo {
                     from: id,
                     to: edge.to,
                     rel: get_predicate_name(predicate_id),
+                    weight,
                 });
                 if !seen.contains_key(&edge.to) && queue.len() < 512 {
                     queue.push(edge.to);
@@ -112,20 +126,9 @@ fn extract_info(desc: &str, id: ThingId) -> (String, String) {
 
 pub fn generate_layout(nodes: &[NodeInfo]) -> GraphLayout {
     let mut positions = BTreeMap::new();
-    let cols = 4;
-    let padding_x = 150.0;
-    let padding_y = 100.0;
-    let start_x = 60.0; // Slightly more start padding
-    let start_y = 60.0;
-
-    for (i, node) in nodes.iter().enumerate() {
-        let col = (i % cols) as f32;
-        let row = (i / cols) as f32;
-        let x = start_x + col * padding_x;
-        let y = start_y + row * padding_y;
-        positions.insert(node.id, (x, y));
+    for node in nodes {
+        positions.insert(node.id, (node.x, node.y));
     }
-
     GraphLayout { positions }
 }
 

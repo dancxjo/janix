@@ -220,6 +220,15 @@ pub extern "C" fn icon_loader_entry() -> ! {
             if let Some(cmds) = AssetBank::load_icon_immediate(mod_name) {
                 ASSETS.publish_icon(name, cmds);
             }
+        } else if mod_name.starts_with("assets/icons/tango/scalable/") && mod_name.ends_with(".svg") {
+            // Strip "assets/icons/tango/scalable/" (28 chars) and ".svg"
+            let sub_path = &mod_name[28..mod_name.len() - 4];
+            let mut name = alloc::string::String::from("tango/");
+            name.push_str(sub_path);
+            info!("[bloom] loading tango icon: {} from {}", name, mod_name);
+            if let Some(cmds) = AssetBank::load_icon_immediate(mod_name) {
+                ASSETS.publish_icon(&name, cmds);
+            }
         }
     }
 

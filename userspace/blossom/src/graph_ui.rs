@@ -95,7 +95,7 @@ impl UiGraph for SysGraph {
     }
 
     fn read_bytespace(&self, id: ThingId) -> Option<Vec<u8>> {
-        super::read_bytespace(id).ok()
+        crate::read_bytespace(id).ok()
     }
 }
 
@@ -208,7 +208,7 @@ pub fn write_bounds(graph: &mut impl UiGraph, tree: &UiTree, rects: &[LayoutRect
     }
 }
 
-pub fn emit_paint(tree: &UiTree, rects: &[LayoutRect], window_bg: u32) -> Vec<u8> {
+pub fn emit_paint(tree: &UiTree, rects: &[LayoutRect], window_bg: u32, _is_focused: bool) -> Vec<u8> {
     let mut builder = PaintBuilder::new();
     let root_rect = rects[tree.root];
     builder.fill_rect(root_rect.x, root_rect.y, root_rect.w, root_rect.h, window_bg);
@@ -615,7 +615,7 @@ mod tests {
         let tree = build_tree(&graph, &symbols, root).unwrap();
         let rects = layout_tree(&tree, LayoutRect { x: 0, y: 0, w: 220, h: 140 });
         write_bounds(&mut graph, &tree, &rects);
-        let paint = emit_paint(&tree, &rects, 0xFFCCCCCC);
+        let paint = emit_paint(&tree, &rects, 0xFFCCCCCC, false);
         let mut reader = PaintReader::new(&paint).expect("paint reader");
         assert!(reader.next().is_some());
 

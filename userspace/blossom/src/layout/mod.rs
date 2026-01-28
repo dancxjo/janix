@@ -7,6 +7,8 @@ use abi::ui_scene::{AlignItems, FlexDirection, JustifyContent, NodeKind, SizeKin
 
 use crate::scene::{SceneGraph, SceneNode};
 
+pub mod graph;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LayoutRect {
     pub x: i32,

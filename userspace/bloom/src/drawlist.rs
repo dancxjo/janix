@@ -48,6 +48,7 @@ pub enum DrawCmd {
     StrokeCircle { center: Point, radius: i32, color: Color, width: i32 },
     Line { from: PointF, to: PointF, color: Color, width: f32 },
     FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
+    FillLinearGradient { rect: Rect, color1: Color, color2: Color },
 
     // --- Image & Bitmap Operations ---
     DrawSnapshot {
@@ -139,6 +140,7 @@ impl DrawCmd {
                 let r = *radius;
                 Rect::new(center.x - r, center.y - r, r*2, r*2)
             }
+            DrawCmd::FillLinearGradient { rect, .. } => *rect,
             DrawCmd::DrawSnapshot { dest, .. } => *dest,
             DrawCmd::DrawImage { dest, .. } => *dest,
             DrawCmd::DrawImageRegion { dest, .. } => *dest,
@@ -392,6 +394,15 @@ pub fn decode_native_drawlist(data: &[u8]) -> Vec<DrawCmd> {
                     cmds.push(DrawCmd::Icon {
                         icon_name_id: icon_id,
                         dest: Rect::new(x, y, w, h),
+                    });
+                }
+            }
+            DrawCmdTag::Unknown(8) => {
+                if let Some((x, y, w, h, c1, c2)) = abi::ui_paint::decode_fill_linear_gradient(raw_cmd.payload) {
+                    cmds.push(DrawCmd::FillLinearGradient {
+                        rect: Rect::new(x, y, w, h),
+                        color1: Color::from_u32(c1),
+                        color2: Color::from_u32(c2),
                     });
                 }
             }

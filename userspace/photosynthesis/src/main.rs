@@ -4,11 +4,15 @@
 extern crate alloc;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
+use abi::root::RootWatchFilter;
+use abi::types::{WatchMode, WatchSpec};
+use abi::watch;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::time::Duration;
 use stem::info;
-use stem::petals::{Canvas, Color, FontKey, Icon, Line, Rect, Scene, Size, Styled, Text, Window};
+use stem::petals::{Canvas, Color, FontKey, Line, Rect, Scene, Size, Styled, Text, Window};
+use blossom::widgets::ThingosIcon;
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
 
@@ -65,8 +69,10 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
 }
 
 mod pipes;
+mod graph_layout;
 
 use pipes::{generate_layout, scan_system_graph};
+use graph_layout::{LayoutNode, LayoutEdge, LayoutSettings, compute_layout};
 
 #[stem::main]
 fn main() -> ! {
@@ -98,20 +104,93 @@ fn main() -> ! {
 
     let mut last_nodes = Vec::new();
     let mut last_edges = Vec::new();
+    let mut last_scan = stem::monotonic_ns();
+    let mut dirty = true;
+    let mut graph_watch = None;
+
+    let filter = RootWatchFilter::all();
+    let spec = WatchSpec {
+        mode: WatchMode::StreamOnly as u32,
+        filter_ptr: &filter as *const _ as u64,
+        filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+        ..Default::default()
+    };
+    graph_watch = stem::syscall::root_watch_open(&spec).ok();
 
     loop {
-        // 3. Scan Graph
-        let (nodes, edges) = scan_system_graph();
-
-        if nodes != last_nodes || edges != last_edges {
-            let layout = generate_layout(&nodes);
-            let scene = build_graph_scene(win, &nodes, &edges, &layout);
-            let _ = stem::petals::publish_window(&scene);
-            last_nodes = nodes;
-            last_edges = edges;
+        if let Some(watch_id) = graph_watch {
+            let mut seq = 0u64;
+            let mut buf = [0u8; 2048];
+            let mut drained = 0u32;
+            while let Ok(len) = stem::syscall::root_watch_next(watch_id, &mut seq, &mut buf) {
+                if len > 0 {
+                    drained += 1;
+                } else {
+                    break;
+                }
+            }
+            if drained > 0 {
+                dirty = true;
+            }
         }
 
-        stem::sleep(Duration::from_secs(2));
+        let now = stem::monotonic_ns();
+        if dirty && now.saturating_sub(last_scan) > 200_000_000 {
+            let (nodes, edges) = scan_system_graph();
+            if nodes != last_nodes || edges != last_edges {
+                // 1. Convert to Layout types
+                let mut layout_nodes: Vec<LayoutNode> = nodes.iter().map(|n| LayoutNode {
+                    id: n.id,
+                    x: n.x,
+                    y: n.y,
+                    w: 110.0,
+                    h: 30.0,
+                    fixed: n.fixed,
+                    rank: n.rank,
+                }).collect();
+
+                let layout_edges: Vec<LayoutEdge> = edges.iter().map(|e| LayoutEdge {
+                    from: e.from,
+                    to: e.to,
+                    weight: e.weight,
+                }).collect();
+
+                // 2. Compute Layout
+                let settings = LayoutSettings::default();
+                compute_layout(&mut layout_nodes, &layout_edges, &settings);
+
+                // 3. Persist back to graph (if changed significantly)
+                for ln in &layout_nodes {
+                    let old = nodes.iter().find(|n| n.id == ln.id);
+                    let changed = old.map(|o| (o.x - ln.x).abs() > 1.0 || (o.y - ln.y).abs() > 1.0).unwrap_or(true);
+                    
+                    if changed {
+                        prop_set(ln.id, keys::UI_X, ln.x as i32 as u64).ok();
+                        prop_set(ln.id, keys::UI_Y, ln.y as i32 as u64).ok();
+                        prop_set(ln.id, keys::UI_RANK, ln.rank as u64).ok();
+                    }
+                }
+
+                // 4. Update local NodeInfo with new positions for rendering
+                let mut final_nodes = nodes.clone();
+                for n in &mut final_nodes {
+                    if let Some(ln) = layout_nodes.iter().find(|l| l.id == n.id) {
+                        n.x = ln.x;
+                        n.y = ln.y;
+                    }
+                }
+
+                let layout = generate_layout(&final_nodes);
+                let scene = build_graph_scene(win, &final_nodes, &edges, &layout);
+                let _ = stem::petals::publish_window(&scene);
+                last_nodes = final_nodes;
+                last_edges = edges;
+            }
+            dirty = false;
+            last_scan = now;
+        }
+
+        stem::sleep(Duration::from_millis(50));
     }
 }
 
@@ -197,7 +276,7 @@ fn build_graph_scene(
             let icon_x = left + 6;
             let icon_y = top + (h - icon_size) / 2;
             canvas = canvas.push_at(
-                Icon::new(&node.kind)
+                ThingosIcon::for_kind(&node.kind)
                     .size(icon_size)
                     .width(Size::Px(icon_size))
                     .height(Size::Px(icon_size)),

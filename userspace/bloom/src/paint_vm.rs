@@ -196,6 +196,15 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
                     }
                 }
             }
+            PaintOpTag::FillLinearGradient => {
+                if let Some((x, y, w, h, c1, c2)) = abi::ui_paint::decode_fill_linear_gradient(op.payload) {
+                    list.commands().push(DrawCmd::FillLinearGradient {
+                        rect: Rect::new(x + origin_x, y + origin_y, w, h),
+                        color1: Color::from_u32(c1),
+                        color2: Color::from_u32(c2),
+                    });
+                }
+            }
             _ => {}
         }
     }

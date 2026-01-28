@@ -1,12 +1,14 @@
 extern crate alloc;
 
 use abi::schema::keys;
+use abi::schema::kinds;
 
 use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use abi::ids::HandleId;
 use stem::thing::ThingId;
+use stem::thing::sys::{bytespace_create, bytespace_write, create_node, find, intern, prop_get, prop_set};
 use stem::{info, thread, warn};
 
 use crate::frame::AssetGeneration;
@@ -642,6 +644,7 @@ impl AssetBank {
 
     /// Publish font to pending (called by loader thread)
     pub fn publish_font(&self, font: FontAsset) {
+        publish_font_family_node(&font.name);
         // Find an empty or replaceable pending slot
         for i in 0..8 {
             if !FONTS_PENDING[i].has_pending.load(Ordering::Acquire)
@@ -1183,5 +1186,32 @@ impl AssetBank {
                 None
             }
         }
+    }
+}
+
+fn publish_font_family_node(name: &str) {
+    if name.is_empty() {
+        return;
+    }
+    let key = intern(name).unwrap_or(0) as u64;
+    if key == 0 {
+        return;
+    }
+    let mut nodes = [ThingId::default(); 128];
+    if let Ok(count) = find(kinds::FONT_FAMILY, &mut nodes) {
+        for id in nodes.iter().take(count) {
+            if prop_get(*id, keys::FONT_FAMILY_KEY).unwrap_or(0) == key {
+                return;
+            }
+        }
+    }
+    let node = match create_node(kinds::FONT_FAMILY) {
+        Ok(id) => id,
+        Err(_) => return,
+    };
+    let _ = prop_set(node, keys::FONT_FAMILY_KEY, key);
+    if let Ok(bs) = bytespace_create(name.len(), 0, 0) {
+        let _ = bytespace_write(bs, 0, name.as_bytes());
+        let _ = prop_set(node, keys::FONT_NAME, bs.to_u64_lossy());
     }
 }

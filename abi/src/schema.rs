@@ -98,6 +98,9 @@ pub mod keys {
     pub const UI_KIND: &str = "ui.kind";
     pub const UI_VISIBLE: &str = "ui.visible";
     pub const UI_ENABLED: &str = "ui.enabled";
+    pub const UI_FOCUSED: &str = "ui.focused";
+    pub const UI_RANK: &str = "ui.rank";
+    pub const UI_FIXED: &str = "ui.fixed";
     pub const UI_BUTTON_LABEL: &str = "ui.button.label";
     pub const UI_BUTTON_ACTION_ID: &str = "ui.button.action_id";
     pub const UI_BUTTON_PRESSED: &str = "ui.button.pressed";
@@ -154,6 +157,8 @@ pub mod keys {
     pub const BINDING_TARGET: &str = "binding.target";
     pub const BINDING_MAP: &str = "binding.map";
     pub const BINDING_TO: &str = "binding.to";
+    pub const EDGE_KIND: &str = "edge.kind";
+    pub const EDGE_WEIGHT: &str = "edge.weight";
 
     // UI Inline
     pub const UI_INLINE_MODE: &str = "ui.inline.mode";
@@ -289,6 +294,11 @@ pub mod kinds {
     pub const BOOT_MODULE: &str = "boot.Module";
     pub const DEV_CPU: &str = "dev.Cpu";
     pub const SVC_SCHEDULER: &str = "svc.Scheduler";
+    pub const PROC_TASK: &str = "proc.Task";
+    pub const PROC_THREAD: &str = "proc.Thread";
+    pub const MEM_PAGE: &str = "mem.Page";
+    pub const MEM_STACK: &str = "mem.Stack";
+    pub const MEM_HEAP: &str = "mem.Heap";
 
     // Render artifact kinds (renderer-owned derived nodes)
     pub const RENDER_CACHE_ROOT: &str = "render.CacheRoot";
@@ -362,6 +372,14 @@ pub mod kinds {
     // SVG Cache Kinds (Blossom service)
     pub const SVG_ASSET: &str = "svg.Asset";
     pub const SVG_RASTER_VARIANT: &str = "svg.RasterVariant";
+    
+    pub const SVC_INIT: &str = "svc.Init";
+    pub const SVC_CAMBIUM: &str = "svc.Cambium";
+    pub const TIME_CLOCK: &str = "time.Clock";
+    pub const TIME_TIMER: &str = "time.Timer";
+    pub const UI_SCENE: &str = "ui.Scene";
+    pub const UI_THEME: &str = "ui.Theme";
+    pub const UI_WIDGET: &str = "ui.Widget";
 }
 
 /// Snapshot semantics and constants for UI presentation surfaces.
@@ -430,6 +448,7 @@ pub mod ui_kind {
     pub const CHECKBOX: u64 = 2;
     pub const TEXT: u64 = 3;
     pub const COLUMN: u64 = 4;
+    pub const WINDOW: u64 = 5;
 }
 
 pub mod rels {

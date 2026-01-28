@@ -23,6 +23,7 @@ pub enum LowLevelOp {
     Line { from: PointF, to: PointF, color: Color, width: f32 },
     FillCircle { center: Point, radius: i32, color: Color },
     FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
+    FillLinearGradient { rect: Rect, color1: Color, color2: Color },
     
     // Image Operations
     BlitSnapshot {
@@ -209,6 +210,13 @@ fn lower_cmd(cmd: &DrawCmd, out: &mut LoweredDraw) {
                     end_angle: *end_angle, 
                     color: *color,
                     aa: *aa
+                });
+            },
+            DrawCmd::FillLinearGradient { rect, color1, color2 } => {
+                out.ops.push(LowLevelOp::FillLinearGradient {
+                    rect: *rect,
+                    color1: *color1,
+                    color2: *color2,
                 });
             },
             DrawCmd::Line { from, to, color, width } => out.ops.push(LowLevelOp::Line { from: *from, to: *to, color: *color, width: *width }),

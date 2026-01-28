@@ -117,6 +117,13 @@ fn cycle_windows(current: Option<ThingId>, reverse: bool) -> Option<ThingId> {
         }
     };
     let target = list[target_idx].0;
+    
+    // Publish focus status to graph
+    if let Some(prev) = current {
+        let _ = stem::thing::sys::prop_set(prev, keys::UI_FOCUSED, 0);
+    }
+    let _ = stem::thing::sys::prop_set(target, keys::UI_FOCUSED, 1);
+    
     let _ = stem::thing::sys::prop_set(target, keys::UI_Z_INDEX, (max_z as u64).saturating_add(1));
     Some(target)
 }
@@ -373,6 +380,14 @@ fn main(arg: usize) -> ! {
                 if let Some(next) = cycle_windows(focused_window, shift_down) {
                     focused_window = Some(next);
                     force_full_damage = true;
+                }
+            }
+            
+            // If we have a focused window, ensure it's marked as such in the graph
+            // (in case it was set elsewhere or initialized)
+            if let Some(fid) = focused_window {
+                if stem::thing::sys::prop_get(fid, keys::UI_FOCUSED).unwrap_or(0) == 0 {
+                    let _ = stem::thing::sys::prop_set(fid, keys::UI_FOCUSED, 1);
                 }
             }
         }

@@ -414,9 +414,10 @@ fn lower_cmd(cmd: &DrawCmd, out: &mut LoweredDraw) {
             DrawCmd::Icon { icon_name_id, dest } => {
                 let mut name_buf = [0u8; 128];
                 if let Ok(len) = stem::thing::sys::describe_symbol(*icon_name_id, &mut name_buf) {
-                    let name = core::str::from_utf8(&name_buf[..len]).unwrap_or("");
+                    let name_raw = core::str::from_utf8(&name_buf[..len]).unwrap_or("");
+                    let name = name_raw.to_lowercase();
                     if !name.is_empty() {
-                         if let Some(cmds) = crate::painter_resources::ASSETS.get_icon(name) {
+                         if let Some(cmds) = crate::painter_resources::ASSETS.get_icon(&name) {
                              // Push Transform to dest position and scale
                              // Assume standard 64x64 source for icons.
                              let scale_x = dest.width() as f32 / 64.0;

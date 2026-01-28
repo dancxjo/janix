@@ -116,12 +116,26 @@ fn extract_info(desc: &str, id: ThingId) -> (String, String) {
             if let Some(colon) = identity.find(':') {
                 let first = &identity[..colon];
                 let kind_full = &identity[colon + 1..];
-                return (format!("{}:{}", first, kind_full.rsplit('.').next().unwrap_or(kind_full)), String::from(kind_full));
+                let icon = map_kind_to_icon(kind_full);
+                return (format!("{}:{}", first, kind_full.rsplit('.').next().unwrap_or(kind_full)), icon);
             }
             return (String::from(identity), String::from("unknown"));
         }
     }
     (format!("unknown_{:X}", id.to_u64_lossy()), String::from("unknown"))
+}
+
+fn map_kind_to_icon(kind: &str) -> String {
+    let lower = kind.to_lowercase();
+    match lower.as_str() {
+        "bytespace" => "kind.bytespace".into(),
+        "ui.window" => "ui.widget".into(),
+        "mem.range" => "mem.page".into(),
+        "fw.table.acpi" => "dev.host".into(),
+        "svc.root" => "ui.root".into(),
+        "boot.module" => "bran.bran".into(),
+        _ => lower,
+    }
 }
 
 pub fn generate_layout(nodes: &[NodeInfo]) -> GraphLayout {

@@ -6,6 +6,8 @@ use abi::types::{WatchMode, WatchSpec};
 use stem::{root_watch, syscall, info};
 use crate::font_graph;
 use crate::asset::AssetBank;
+use alloc::string::String;
+use alloc::string::ToString;
 
 pub static ASSETS: AssetBank = AssetBank::new();
 
@@ -215,10 +217,11 @@ pub extern "C" fn icon_loader_entry() -> ! {
 
         if mod_name.starts_with("assets/icons/thingos/") && mod_name.ends_with(".svg") {
             // Strip path and extension to get the icon name
-            let name = &mod_name[21..mod_name.len() - 4];
+            let name_raw = &mod_name[21..mod_name.len() - 4];
+            let name = name_raw.to_lowercase();
             info!("[bloom] loading icon: {} from {}", name, mod_name);
             if let Some(cmds) = AssetBank::load_icon_immediate(mod_name) {
-                ASSETS.publish_icon(name, cmds);
+                ASSETS.publish_icon(&name, cmds);
             }
         } else if mod_name.starts_with("assets/icons/tango/scalable/") && mod_name.ends_with(".svg") {
             // Strip "assets/icons/tango/scalable/" (28 chars) and ".svg"

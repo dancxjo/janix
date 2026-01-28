@@ -999,10 +999,9 @@ impl AssetBank {
         // Rasterize SVG to 32x32 @ 1.0 scale (or scaled up? Windows uses 32x32 usually, large is 48)
         // Let's use 32x32 for now.
         // If we want high-dpi, we might want 64x64 or 96x96 and let the cursor asset handling know.
-        // But Image is pixel data.
-        // Rationalizing at 32x32 @ 1.0 scale (standard cursor size).
+        // But Image 
         // High-DPI support can be added later via dynamic scaling.
-        let scale = 1.0;
+        let scale = 2.0;
         let base_size = 32;
         let size = (base_size as f32 * scale) as i32;
         

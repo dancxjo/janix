@@ -706,6 +706,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "display_fake"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
+name = "display_proto_tests"
+version = "0.1.0"
+dependencies = [
+ "abi",
+]
+
+[[package]]
 name = "display_virtio_gpu"
 version = "0.1.0"
 dependencies = [

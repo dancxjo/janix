@@ -49,3 +49,6 @@ pub use abi_macros::Graphable;
 pub use errors::{Error, Result};
 pub use wire::{ThingId, BlobId, SymbolId, KindId, PredicateId, WireSafe};
 pub use wire_schema::{Schema, Field, WireType};
+
+#[cfg(test)]
+mod display_driver_protocol_tests;

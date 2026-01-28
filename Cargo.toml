@@ -3,6 +3,7 @@ members = [
     "userspace/virtio_gpu",
     "userspace/display_bootfb",
     "userspace/display_virtio_gpu",
+    "userspace/display_fake",
     "bran",
     "xtask",
     "tools/bdd",
@@ -35,6 +36,7 @@ members = [
     "userspace/fontd",
     "userspace/blossom",
     "userspace/drawlist_demo",
+    "tools/display_proto_tests",
 ]
 resolver = "2"
 

@@ -110,7 +110,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "hogger",
+            name: "drawlist_demo",
             is_init: false,
             features: vec![],
         },

@@ -114,6 +114,51 @@ fn window_rect_from_props(window_id: ThingId, screen_w: i32, screen_h: i32) -> c
     crate::geometry::Rect::new(x, y, w, h)
 }
 
+fn tile_windows(screen_w: i32, screen_h: i32) {
+    let mut windows = [ThingId::default(); 128];
+    let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
+    
+    let mut photosynthesis = None;
+    let mut font_explorer = None;
+    
+    for win in windows.iter().take(count) {
+        let mut title_buf = [0u8; 128];
+        if let Ok(val) = stem::thing::sys::prop_get(*win, keys::UI_TITLE) {
+            let bs_id = ThingId::from_u64(val);
+            if let Ok(len) = stem::thing::sys::bytespace_read(bs_id, 0, &mut title_buf) {
+                let title = core::str::from_utf8(&title_buf[..len]).unwrap_or("");
+                if title.contains("Photosynthesis") {
+                    photosynthesis = Some(*win);
+                } else if title.contains("Font Explorer") {
+                    font_explorer = Some(*win);
+                }
+            }
+        }
+    }
+    
+    // Tiling logic:
+    // Photosynthesis: Left 1/2
+    // Font Explorer: Upper Right 1/4
+    
+    if let Some(win) = photosynthesis {
+        let _ = stem::thing::sys::prop_set(win, keys::UI_X, 0);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_Y, 0);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_WIDTH, (screen_w / 2) as u64);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_HEIGHT, screen_h as u64);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
+    }
+    
+    if let Some(win) = font_explorer {
+        let _ = stem::thing::sys::prop_set(win, keys::UI_X, (screen_w / 2) as u64);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_Y, 0);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_WIDTH, (screen_w / 2) as u64);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_HEIGHT, (screen_h / 2) as u64);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
+        let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
+    }
+}
+
 fn top_window_at_point(
     x: i32,
     y: i32,
@@ -442,6 +487,18 @@ fn main(arg: usize) -> ! {
     let mut ui_watch_events_total: u64 = 0;
     let mut force_full_damage = false;
 
+    // WAIT for critical assets (fonts) before showing anything
+    let mut startup_frames = 0;
+    while startup_frames < 60 { // Up to 1s at 60Hz
+        ASSETS.publish_pending();
+        if ASSETS.get_fonts().iter().any(|f| f.name.contains("NotoSans-Regular")) {
+            stem::info!("[bloom] NotoSans-Regular ready, starting UI loop");
+            break;
+        }
+        stem::sleep_ms(16);
+        startup_frames += 1;
+    }
+
     loop {
         loop_ctrl.next();
         force_full_damage = false;
@@ -476,6 +533,7 @@ fn main(arg: usize) -> ! {
                 ui_watch_events_total += drained as u64;
                 stem::info!("[bloom] UI watch: drained {} events (total={})", drained, ui_watch_events_total);
                 force_full_damage = true;
+                tile_windows(screen_w, screen_h);
             }
         }
         

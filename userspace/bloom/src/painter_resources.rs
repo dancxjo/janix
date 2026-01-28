@@ -12,7 +12,7 @@ use alloc::string::ToString;
 pub static ASSETS: AssetBank = AssetBank::new();
 
 pub extern "C" fn wallpaper_loader_entry() -> ! {
-    stem::sleep_ms(200);
+    stem::sleep_ms(50);
     let candidates = [
         "/assets/wallpapers/clouds.bmp",
         "wallpapers/clouds.bmp",
@@ -183,7 +183,7 @@ pub extern "C" fn font_loader_entry() -> ! {
 }
 
 pub extern "C" fn cursor_loader_entry() -> ! {
-    stem::sleep_ms(300);
+    stem::sleep_ms(20);
     ASSETS.enqueue_cursor_load("/assets/cursors/future/default.svg");
     loop {
         stem::syscall::sleep_ms(10000);
@@ -191,7 +191,7 @@ pub extern "C" fn cursor_loader_entry() -> ! {
 }
 
 pub extern "C" fn icon_loader_entry() -> ! {
-    stem::sleep_ms(500);
+    stem::sleep_ms(10);
     info!("[bloom] icon loader started");
 
     // Scan for all .svg files in /assets/icons/thingos

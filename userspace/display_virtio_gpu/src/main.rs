@@ -32,24 +32,6 @@ fn send_msg(handle: PortHandle, msg_type: u16, payload: &[u8]) {
     }
 }
 
-fn parse_header(buf: &[u8]) -> Option<drvproto::DriverHeader> {
-    if buf.len() < drvproto::HEADER_SIZE {
-        return None;
-    }
-
-    let magic = u32::from_le_bytes(buf[0..4].try_into().ok()?);
-    let version = u16::from_le_bytes(buf[4..6].try_into().ok()?);
-    let msg_type = u16::from_le_bytes(buf[6..8].try_into().ok()?);
-    let payload_len = u32::from_le_bytes(buf[8..12].try_into().ok()?);
-
-    Some(drvproto::DriverHeader {
-        magic,
-        version,
-        msg_type,
-        payload_len,
-    })
-}
-
 fn find_gpu() -> Option<ThingId> {
     let mut buf = [ThingId(0); 1];
     let count = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut buf).ok()?;
@@ -82,13 +64,10 @@ fn main(arg: usize) -> ! {
         driver_kind: drvproto::DRIVER_KIND_VIRTIO_GPU,
         caps: 0,
     };
-    let register_bytes = unsafe {
-        core::slice::from_raw_parts(
-            &register as *const _ as *const u8,
-            core::mem::size_of::<drvproto::RegisterPayload>(),
-        )
-    };
-    send_msg(drv_resp_write, drvproto::MSG_REGISTER, register_bytes);
+    let mut register_bytes = [0u8; drvproto::REGISTER_PAYLOAD_WIRE_SIZE];
+    if let Some(len) = drvproto::encode_register_payload_le(&register, &mut register_bytes) {
+        send_msg(drv_resp_write, drvproto::MSG_REGISTER, &register_bytes[..len]);
+    }
 
     let mut buf = [0u8; 512];
     let mut rx_buf = [0u8; 1024];
@@ -107,32 +86,10 @@ fn main(arg: usize) -> ! {
         }
 
         while rx_len >= drvproto::HEADER_SIZE {
-            let header = match parse_header(&rx_buf[..rx_len]) {
-                Some(header) => header,
-                None => {
-                    rx_len = 0;
-                    break;
-                }
-            };
-
-            if header.magic != drvproto::DRIVER_MAGIC || header.version != drvproto::DRIVER_VERSION {
-                rx_buf.copy_within(1..rx_len, 0);
-                rx_len -= 1;
-                continue;
-            }
-
-            let total = drvproto::HEADER_SIZE + (header.payload_len as usize);
-            if rx_len < total {
-                break;
-            }
-
-            let payload = &rx_buf[drvproto::HEADER_SIZE..total];
-            match header.msg_type {
+            if let Some((header, payload)) = drvproto::parse_message(&rx_buf[..rx_len]) {
+                match header.msg_type {
                 drvproto::MSG_BIND => {
-                    if payload.len() >= core::mem::size_of::<drvproto::BindPayload>() {
-                        let bind: drvproto::BindPayload = unsafe {
-                            core::ptr::read_unaligned(payload.as_ptr() as *const _)
-                        };
+                    if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
                         match thingsys::bytespace_map(ThingId(bind.bytespace_id)) {
                             Ok(_) => {
                                 bound = true;
@@ -142,13 +99,10 @@ fn main(arg: usize) -> ! {
                             Err(e) => {
                                 info!("display_virtio_gpu: bytespace_map failed: {:?}", e);
                                 let err = drvproto::ErrResp { code: 2 };
-                                let err_bytes = unsafe {
-                                    core::slice::from_raw_parts(
-                                        &err as *const _ as *const u8,
-                                        core::mem::size_of::<drvproto::ErrResp>(),
-                                    )
-                                };
-                                send_msg(drv_resp_write, drvproto::MSG_ERR, err_bytes);
+                                let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                    send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                }
                             }
                         }
                     }
@@ -159,22 +113,31 @@ fn main(arg: usize) -> ! {
                         send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
                     } else {
                         let err = drvproto::ErrResp { code: 1 };
-                        let err_bytes = unsafe {
-                            core::slice::from_raw_parts(
-                                &err as *const _ as *const u8,
-                                core::mem::size_of::<drvproto::ErrResp>(),
-                            )
-                        };
-                        send_msg(drv_resp_write, drvproto::MSG_ERR, err_bytes);
+                        let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                        if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                            send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                        }
                     }
                 }
                 _ => {}
             }
 
-            if total < rx_len {
-                rx_buf.copy_within(total..rx_len, 0);
+                let total = drvproto::HEADER_SIZE + payload.len();
+                if total < rx_len {
+                    rx_buf.copy_within(total..rx_len, 0);
+                }
+                rx_len -= total;
+                continue;
             }
-            rx_len -= total;
+
+            if let Some(total) = drvproto::message_total_len(&rx_buf[..rx_len]) {
+                if rx_len < total {
+                    break;
+                }
+            } else {
+                rx_buf.copy_within(1..rx_len, 0);
+                rx_len -= 1;
+            }
         }
         stem::yield_now();
     }

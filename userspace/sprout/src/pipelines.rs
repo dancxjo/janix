@@ -11,6 +11,7 @@ use stem::{info, warn};
 pub struct DisplayHandles {
     pub drv_req_write: PortHandle,
     pub drv_resp_read: PortHandle,
+    pub bs_id: ThingId,
     /// Which display backend was selected
     pub backend_name: &'static str,
 }
@@ -156,6 +157,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     Some(DisplayHandles {
         drv_req_write: drv_req.0,
         drv_resp_read: drv_resp.1,
+        bs_id,
         backend_name,
     })
 }
@@ -277,10 +279,10 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
 
     // Font handling is now integrated into Bloom. No standalone fontd service.
 
-    let (drv_req_write, drv_resp_read) = display
+    let (drv_req_write, drv_resp_read, display_bs_id) = display
         .as_ref()
-        .map(|d| (d.drv_req_write, d.drv_resp_read))
-        .unwrap_or((0, 0));
+        .map(|d| (d.drv_req_write, d.drv_resp_read, d.bs_id))
+        .unwrap_or((0, 0, ThingId::default()));
         
     // Bloom Bootstrap
     // Create bytespace to hold args
@@ -304,10 +306,10 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
               slice[2] = drv_resp_read as u32;
               slice[3] = evt.1 as u32; // bristle read
               
-              // New layout for Streams:
-              // 4: svc_font (u64 -> 2 u32s) - NO LONGER USED
-              slice[4] = 0;
-              slice[5] = 0;
+              // Display bytespace id (u64 split into two u32s)
+              let bs = display_bs_id.to_u64_lossy();
+              slice[4] = bs as u32;
+              slice[5] = (bs >> 32) as u32;
               
               let _ = bytespace_unmap(boot_bs, ptr);
          }

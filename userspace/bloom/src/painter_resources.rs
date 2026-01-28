@@ -209,7 +209,7 @@ pub extern "C" fn icon_loader_entry() -> ! {
         // Strip extension for name
         let name = &filename[..filename.len() - 4];
         // Construct full path for loading (AssetBank matches suffix)
-        let path = alloc::format!("assets/icons/thingos/{}", filename);
+        let path = alloc::format!("/assets/icons/thingos/{}", filename);
         
         info!("[bloom] loading icon: {} (path={})", name, path);
         if let Some(cmds) = AssetBank::load_icon_immediate(&path) {

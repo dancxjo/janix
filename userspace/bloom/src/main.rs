@@ -341,12 +341,14 @@ fn main(arg: usize) -> ! {
     use stem::thing::sys::{bytespace_map, bytespace_unmap};
     let bs_id = ThingId::from_u64(arg as u64);
     let (mut arg_req, mut arg_resp, mut bristle_evt) = (0, 0, 0);
+    let mut display_bs_id = 0u64;
     if let Ok(ptr) = bytespace_map(bs_id) {
         let slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, 16) };
         if slice[0] == 0xB100AA01 {
             arg_req = slice[1];
             arg_resp = slice[2];
             bristle_evt = slice[3];
+            display_bs_id = (slice[5] as u64) << 32 | (slice[4] as u64);
         }
         let _ = bytespace_unmap(bs_id, ptr);
     } else {
@@ -355,8 +357,13 @@ fn main(arg: usize) -> ! {
         bristle_evt = unpack_handle(arg, 2) as u32;
     }
 
-    let target =
-        CompositorTarget::discover_and_map((arg_req, arg_resp), 2000).expect("compositor discover");
+    let target = if display_bs_id != 0 {
+        CompositorTarget::map_from_bytespace(ThingId::from_u64(display_bs_id), (arg_req, arg_resp))
+            .or_else(|_| CompositorTarget::discover_and_map((arg_req, arg_resp), 2000))
+    } else {
+        CompositorTarget::discover_and_map((arg_req, arg_resp), 2000)
+    }
+    .expect("compositor discover");
     let _ = target.backend;
 
     let mut presenter = if target.driver_req != 0 {

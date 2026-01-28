@@ -8,7 +8,7 @@
 // - `present_frame()`: Present a completed frame (consumes token)
 
 use abi::display_driver_protocol as drvproto;
-use abi::display_driver_protocol::{BindPayload, ErrResp, RegisterPayload};
+use abi::display_driver_protocol::BindPayload;
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 
@@ -95,12 +95,10 @@ impl DriverPresenter {
 
 
     pub fn send_bind(&mut self, payload: &BindPayload) {
-        let mut bytes = [0u8; core::mem::size_of::<BindPayload>()];
-        bytes[0..8].copy_from_slice(&payload.bytespace_id.to_le_bytes());
-        bytes[8..12].copy_from_slice(&payload.width.to_le_bytes());
-        bytes[12..16].copy_from_slice(&payload.height.to_le_bytes());
-        bytes[16..20].copy_from_slice(&payload.stride.to_le_bytes());
-        bytes[20..24].copy_from_slice(&payload.format.to_le_bytes());
+        let mut bytes = [0u8; drvproto::BIND_PAYLOAD_WIRE_SIZE];
+        if drvproto::encode_bind_payload_le(payload, &mut bytes).is_none() {
+            return;
+        }
 
         let mut buf = [0u8; 128];
         if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_BIND, &bytes) {
@@ -116,42 +114,32 @@ impl DriverPresenter {
         // Max 8 rects => 128 bytes
         // Total payload max: 136 bytes
         let mut payload = [0u8; 136];
-        
-
-        let mut offset = 8; // Skip header for now
 
         // Always send explicit damage rectangles
         // (Even for Damage::full, which contains a single rect covering the bounds)
         let rect_count = damage.rect_count() as u32;
 
-        for r in damage.iter() {
-            let abi_rect = abi::display_driver_protocol::Rect {
-                x: r.x.max(0) as u32,
-                y: r.y.max(0) as u32,
-                w: r.w.max(0) as u32,
-                h: r.h.max(0) as u32,
-            };
-            let r_bytes: [u8; 16] = unsafe { core::mem::transmute(abi_rect) };
-            payload[offset..offset+16].copy_from_slice(&r_bytes);
-            offset += 16;
-        }
-
-        // Write header
-        let header = abi::display_driver_protocol::PresentHeader {
-            rect_count,
-            _pad: 0,
-        };
-        let h_bytes: [u8; 8] = unsafe { core::mem::transmute(header) };
-        payload[0..8].copy_from_slice(&h_bytes);
-
         // Send message
         // Encode message buffer needs to be large enough for header + payload
         // DriverHeader (12) + Payload (136) = 148
         let mut buf = [0u8; 256];
-        let payload_len = 8 + (rect_count as usize * 16);
-        
-        if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_PRESENT, &payload[..payload_len]) {
-            let _ = port_send(self.req_write, &buf[..len]);
+        let payload_len = drvproto::encode_present_payload_le(
+            rect_count,
+            damage.iter().map(|r| abi::display_driver_protocol::Rect {
+                x: r.x.max(0) as u32,
+                y: r.y.max(0) as u32,
+                w: r.w.max(0) as u32,
+                h: r.h.max(0) as u32,
+            }),
+            &mut payload,
+        );
+
+        if let Some(payload_len) = payload_len {
+            if let Some(len) =
+                drvproto::encode_message(&mut buf, drvproto::MSG_PRESENT, &payload[..payload_len])
+            {
+                let _ = port_send(self.req_write, &buf[..len]);
+            }
         }
     }
 
@@ -178,14 +166,10 @@ impl DriverPresenter {
     fn handle_message(&mut self, msg_type: u16, payload_ptr: *const u8, payload_len: usize) {
         match msg_type {
             drvproto::MSG_REGISTER => {
-                if payload_len >= core::mem::size_of::<RegisterPayload>() {
-                    let reg: RegisterPayload = unsafe {
-                        core::ptr::read_unaligned(payload_ptr as *const RegisterPayload)
-                    };
-                    let driver_kind =
-                        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(reg.driver_kind)) };
-                    let caps =
-                        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(reg.caps)) };
+                let payload = unsafe { core::slice::from_raw_parts(payload_ptr, payload_len) };
+                if let Some(reg) = drvproto::decode_register_payload_le(payload) {
+                    let driver_kind = reg.driver_kind;
+                    let caps = reg.caps;
                     info!(
                         "bloom: driver REGISTER (kind={} caps=0x{:x})",
                         driver_kind, caps
@@ -203,14 +187,10 @@ impl DriverPresenter {
                 // Silently accept PRESENT ACKs (high frequency)
             }
             drvproto::MSG_ERR => {
-                let code = if payload_len >= core::mem::size_of::<ErrResp>() {
-                    let err: ErrResp = unsafe {
-                        core::ptr::read_unaligned(payload_ptr as *const ErrResp)
-                    };
-                    unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(err.code)) }
-                } else {
-                    0
-                };
+                let payload = unsafe { core::slice::from_raw_parts(payload_ptr, payload_len) };
+                let code = drvproto::decode_err_resp_le(payload)
+                    .map(|err| err.code)
+                    .unwrap_or(0);
                 if self.awaiting_bind_ack {
                     info!("bloom: driver BIND ERR code={}", code);
                     self.awaiting_bind_ack = false;
@@ -228,26 +208,26 @@ impl DriverPresenter {
                 break;
             }
 
-            let magic = u32::from_le_bytes(self.rx_buf[0..4].try_into().unwrap());
-            let version = u16::from_le_bytes(self.rx_buf[4..6].try_into().unwrap());
-            if magic != drvproto::DRIVER_MAGIC || version != drvproto::DRIVER_VERSION {
-                self.shift_rx(1);
+            if let Some((header, payload)) = drvproto::parse_message(&self.rx_buf[..self.rx_len]) {
+                let payload_ptr = payload.as_ptr();
+                let payload_len = payload.len();
+                self.handle_message(header.msg_type, payload_ptr, payload_len);
+                let total = drvproto::HEADER_SIZE + payload_len;
+                self.shift_rx(total);
                 continue;
             }
-            let msg_type = u16::from_le_bytes(self.rx_buf[6..8].try_into().unwrap());
-            let payload_len = u32::from_le_bytes(self.rx_buf[8..12].try_into().unwrap()) as usize;
-            let total = drvproto::HEADER_SIZE + payload_len;
-            if total > self.rx_buf.len() {
-                self.rx_len = 0;
-                break;
-            }
-            if self.rx_len < total {
-                break;
-            }
 
-            let payload_ptr = unsafe { self.rx_buf.as_ptr().add(drvproto::HEADER_SIZE) };
-            self.handle_message(msg_type, payload_ptr, payload_len);
-            self.shift_rx(total);
+            if let Some(total) = drvproto::message_total_len(&self.rx_buf[..self.rx_len]) {
+                if total > self.rx_buf.len() {
+                    self.rx_len = 0;
+                    break;
+                }
+                if self.rx_len < total {
+                    break;
+                }
+            } else {
+                self.shift_rx(1);
+            }
         }
     }
 

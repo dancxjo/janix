@@ -4,6 +4,7 @@
 extern crate alloc;
 
 use abi::display_driver_protocol as drvproto;
+use abi::driver_frame::FrameReader;
 use abi::schema::kinds;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
@@ -70,24 +71,18 @@ fn main(arg: usize) -> ! {
     }
 
     let mut buf = [0u8; 512];
-    let mut rx_buf = [0u8; 1024];
-    let mut rx_len = 0usize;
+    let mut frames = FrameReader::<4096>::new();
     let mut bound = false;
 
     loop {
         if let Ok(n) = port_recv(drv_req_read, &mut buf) {
             if n > 0 {
-                if rx_len + n > rx_buf.len() {
-                    rx_len = 0;
-                }
-                rx_buf[rx_len..rx_len + n].copy_from_slice(&buf[..n]);
-                rx_len += n;
+                frames.push(&buf[..n]);
             }
         }
 
-        while rx_len >= drvproto::HEADER_SIZE {
-            if let Some((header, payload)) = drvproto::parse_message(&rx_buf[..rx_len]) {
-                match header.msg_type {
+        while let Some((header, payload)) = frames.next_message() {
+            match header.msg_type {
                 drvproto::MSG_BIND => {
                     if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
                         match thingsys::bytespace_map(ThingId(bind.bytespace_id)) {
@@ -120,23 +115,6 @@ fn main(arg: usize) -> ! {
                     }
                 }
                 _ => {}
-            }
-
-                let total = drvproto::HEADER_SIZE + payload.len();
-                if total < rx_len {
-                    rx_buf.copy_within(total..rx_len, 0);
-                }
-                rx_len -= total;
-                continue;
-            }
-
-            if let Some(total) = drvproto::message_total_len(&rx_buf[..rx_len]) {
-                if rx_len < total {
-                    break;
-                }
-            } else {
-                rx_buf.copy_within(1..rx_len, 0);
-                rx_len -= 1;
             }
         }
         stem::yield_now();

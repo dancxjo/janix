@@ -6,6 +6,7 @@ pub mod debug;
 pub mod device;
 pub mod display_driver_protocol;
 pub mod display_protocol;
+pub mod driver_frame;
 pub mod driver_ctx;
 pub mod errors;
 pub mod geometry;

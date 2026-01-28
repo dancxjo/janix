@@ -9,6 +9,7 @@
 
 use abi::display_driver_protocol as drvproto;
 use abi::display_driver_protocol::BindPayload;
+use abi::driver_frame::FrameReader;
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 
@@ -73,8 +74,7 @@ impl Presenter for NullPresenter {
 pub struct DriverPresenter {
     req_write: PortHandle,
     resp_read: PortHandle,
-    rx_buf: [u8; 1024],
-    rx_len: usize,
+    frames: FrameReader<4096>,
     registered: bool,
     awaiting_bind_ack: bool,
     frame_count: u64,
@@ -85,8 +85,7 @@ impl DriverPresenter {
         Self {
             req_write,
             resp_read,
-            rx_buf: [0u8; 1024],
-            rx_len: 0,
+            frames: FrameReader::new(),
             registered: false,
             awaiting_bind_ack: false,
             frame_count: 0,
@@ -150,23 +149,21 @@ impl DriverPresenter {
                 Ok(n) => n,
                 Err(_) => break,
             };
-            let remaining = self.rx_buf.len().saturating_sub(self.rx_len);
-            let to_copy = n.min(remaining);
-            if to_copy > 0 {
-                self.rx_buf[self.rx_len..self.rx_len + to_copy]
-                    .copy_from_slice(&temp[..to_copy]);
-                self.rx_len += to_copy;
-            } else {
-                self.rx_len = 0;
+            if n == 0 {
                 break;
             }
+            self.frames.push(&temp[..n]);
         }
     }
 
-    fn handle_message(&mut self, msg_type: u16, payload_ptr: *const u8, payload_len: usize) {
+    fn handle_message(
+        registered: &mut bool,
+        awaiting_bind_ack: &mut bool,
+        msg_type: u16,
+        payload: &[u8],
+    ) {
         match msg_type {
             drvproto::MSG_REGISTER => {
-                let payload = unsafe { core::slice::from_raw_parts(payload_ptr, payload_len) };
                 if let Some(reg) = drvproto::decode_register_payload_le(payload) {
                     let driver_kind = reg.driver_kind;
                     let caps = reg.caps;
@@ -177,23 +174,22 @@ impl DriverPresenter {
                 } else {
                     info!("bloom: driver REGISTER (payload too small)");
                 }
-                self.registered = true;
+                *registered = true;
             }
             drvproto::MSG_ACK => {
-                if self.awaiting_bind_ack {
+                if *awaiting_bind_ack {
                     info!("bloom: driver BIND ACK");
-                    self.awaiting_bind_ack = false;
+                    *awaiting_bind_ack = false;
                 }
                 // Silently accept PRESENT ACKs (high frequency)
             }
             drvproto::MSG_ERR => {
-                let payload = unsafe { core::slice::from_raw_parts(payload_ptr, payload_len) };
                 let code = drvproto::decode_err_resp_le(payload)
                     .map(|err| err.code)
                     .unwrap_or(0);
-                if self.awaiting_bind_ack {
+                if *awaiting_bind_ack {
                     info!("bloom: driver BIND ERR code={}", code);
-                    self.awaiting_bind_ack = false;
+                    *awaiting_bind_ack = false;
                 } else {
                     info!("bloom: driver PRESENT ERR code={}", code);
                 }
@@ -203,44 +199,12 @@ impl DriverPresenter {
     }
 
     fn process_rx(&mut self) {
-        loop {
-            if self.rx_len < drvproto::HEADER_SIZE {
-                break;
-            }
-
-            if let Some((header, payload)) = drvproto::parse_message(&self.rx_buf[..self.rx_len]) {
-                let payload_ptr = payload.as_ptr();
-                let payload_len = payload.len();
-                self.handle_message(header.msg_type, payload_ptr, payload_len);
-                let total = drvproto::HEADER_SIZE + payload_len;
-                self.shift_rx(total);
-                continue;
-            }
-
-            if let Some(total) = drvproto::message_total_len(&self.rx_buf[..self.rx_len]) {
-                if total > self.rx_buf.len() {
-                    self.rx_len = 0;
-                    break;
-                }
-                if self.rx_len < total {
-                    break;
-                }
-            } else {
-                self.shift_rx(1);
-            }
+        let frames = &mut self.frames;
+        let registered = &mut self.registered;
+        let awaiting_bind_ack = &mut self.awaiting_bind_ack;
+        while let Some((header, payload)) = frames.next_message() {
+            Self::handle_message(registered, awaiting_bind_ack, header.msg_type, payload);
         }
-    }
-
-    fn shift_rx(&mut self, count: usize) {
-        if count >= self.rx_len {
-            self.rx_len = 0;
-            return;
-        }
-        let remaining = self.rx_len - count;
-        for i in 0..remaining {
-            self.rx_buf[i] = self.rx_buf[count + i];
-        }
-        self.rx_len = remaining;
     }
 }
 

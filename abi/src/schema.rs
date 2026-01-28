@@ -329,6 +329,7 @@ pub mod kinds {
     pub const DEV_STORAGE_DISK: &str = "dev.storage.Disk";
     pub const DEV_STORAGE_PARTITION: &str = "dev.storage.Partition";
     pub const SVC_STORAGE: &str = "svc.Storage";
+    pub const LOG_ENTRY: &str = "log.Entry";
 
     // UI Kinds
     pub const UI_ROOT: &str = "ui.Root";

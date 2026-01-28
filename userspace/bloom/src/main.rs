@@ -171,6 +171,7 @@ fn tile_windows(screen_w: i32, screen_h: i32) {
             let _ = stem::thing::sys::prop_set(win, keys::UI_HEIGHT, screen_h as u64);
             let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
             let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_MANUAL_POSITION, 1);
         } else {
             stem::info!("[bloom] tile_windows: SKIPPING Photosynthesis (manual override)");
         }
@@ -190,6 +191,7 @@ fn tile_windows(screen_w: i32, screen_h: i32) {
             let _ = stem::thing::sys::prop_set(win, keys::UI_HEIGHT, (screen_h / 2) as u64);
             let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
             let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_MANUAL_POSITION, 1);
         } else {
             stem::info!("[bloom] tile_windows: SKIPPING FontExplorer (manual override)");
         }
@@ -609,7 +611,6 @@ fn main(arg: usize) -> ! {
                     ui_watch_events_total
                 );
                 force_full_damage = true;
-                tile_windows(screen_w, screen_h);
             }
         }
 
@@ -743,6 +744,8 @@ fn main(arg: usize) -> ! {
                         keys::UI_Y,
                         next_rect.y() as u64,
                     );
+                    let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_INSET_RIGHT, 0);
+                    let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_INSET_BOTTOM, 0);
 
                     // User moved the window, prevent auto-tiling
                     let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_MANUAL_POSITION, 1);

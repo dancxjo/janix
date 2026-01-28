@@ -4,15 +4,16 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use stem::thing::sys::{describe_thing, find};
 use stem::thing::ThingId;
+use stem::thing::sys::{describe_thing, find};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeInfo {
     pub id: ThingId,
-    pub kind: String,
+    pub icon: String,
+    pub kind_full: String,
     pub name: String,
     pub x: f32,
     pub y: f32,
@@ -60,7 +61,7 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
         }
 
         let mut buf = [0u8; 128];
-        let (name, kind) = if let Ok(len) = describe_thing(id, &mut buf) {
+        let (name, kind_full, icon) = if let Ok(len) = describe_thing(id, &mut buf) {
             let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
             if desc.contains(":mem.Range")
                 || desc.contains(":Bytespace")
@@ -74,6 +75,7 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
             (
                 format!("unknown_{:X}", id.to_u64_lossy()),
                 String::from("unknown"),
+                String::from("unknown"),
             )
         };
 
@@ -84,7 +86,8 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
 
         nodes.push(NodeInfo {
             id,
-            kind,
+            icon,
+            kind_full,
             name,
             x,
             y,
@@ -118,7 +121,7 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
     (nodes, edges)
 }
 
-fn extract_info(desc: &str, id: ThingId) -> (String, String) {
+fn extract_info(desc: &str, id: ThingId) -> (String, String, String) {
     // Description is like "(var_ID:Kind { ... })"
     if let Some(start) = desc.find('(') {
         if let Some(end) = desc.find(" {") {
@@ -128,20 +131,15 @@ fn extract_info(desc: &str, id: ThingId) -> (String, String) {
                 let first = &identity[..colon];
                 let kind_full = &identity[colon + 1..];
                 let icon = map_kind_to_icon(kind_full);
-                return (
-                    format!(
-                        "{}:{}",
-                        first,
-                        kind_full.rsplit('.').next().unwrap_or(kind_full)
-                    ),
-                    icon,
-                );
+                return (String::from(first), kind_full.to_string(), icon);
             }
-            return (String::from(identity), String::from("unknown"));
+            let icon = map_kind_to_icon(identity);
+            return (String::from(identity), identity.to_string(), icon);
         }
     }
     (
         format!("unknown_{:X}", id.to_u64_lossy()),
+        String::from("unknown"),
         String::from("unknown"),
     )
 }
@@ -201,7 +199,7 @@ pub fn render_graph(nodes: &[NodeInfo], edges: &[EdgeInfo], layout: &GraphLayout
             let h = 30.0;
 
             // Draw Icon instead of blue rectangle
-            if let Ok(icon_sid) = stem::thing::sys::intern(&node.kind) {
+            if let Ok(icon_sid) = stem::thing::sys::intern(&node.icon) {
                 builder.push_draw_icon(
                     (x - w / 2.0) as i32,
                     (y - h / 2.0) as i32,

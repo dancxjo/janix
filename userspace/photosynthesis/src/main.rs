@@ -13,8 +13,8 @@ use blossom::widgets::ThingosIcon;
 use core::time::Duration;
 use stem::info;
 use stem::petals::{Canvas, Color, FontKey, Line, Rect, Scene, Size, Styled, Text, Window};
-use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
+use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 
 fn find_svg_assets() -> Vec<(String, ThingId)> {
     let mut assets = Vec::new();
@@ -71,8 +71,25 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
 mod graph_layout;
 mod pipes;
 
-use graph_layout::{compute_layout, LayoutEdge, LayoutNode, LayoutSettings};
+use graph_layout::{LayoutEdge, LayoutNode, LayoutSettings, compute_layout};
 use pipes::{generate_layout, scan_system_graph};
+
+const TILE_WIDTH: i32 = 180;
+const TILE_HEIGHT: i32 = 240;
+const TILE_BORDER: i32 = 3;
+const TILE_RADIUS: i32 = 26;
+const ICON_SIZE: i32 = 96;
+const ICON_TOP_PADDING: i32 = 22;
+const TYPE_FONT_SIZE: i32 = 18;
+const ID_FONT_SIZE: i32 = 12;
+const TYPE_LINE_HEIGHT: i32 = 24;
+const ID_LINE_HEIGHT: i32 = 18;
+const TYPE_CHAR_WIDTH: i32 = 10;
+const ID_CHAR_WIDTH: i32 = 8;
+const TILE_BORDER_COLOR: Color = Color::from_argb_u32(0xFFE0E0E8);
+const TILE_FILL_COLOR: Color = Color::from_argb_u32(0xFFFFFFFF);
+const TYPE_TEXT_COLOR: Color = Color::from_argb_u32(0xFF383838);
+const ID_TEXT_COLOR: Color = Color::from_argb_u32(0xFF8A8A8C);
 
 #[stem::main]
 fn main() -> ! {
@@ -145,8 +162,8 @@ fn main() -> ! {
                         id: n.id,
                         x: n.x,
                         y: n.y,
-                        w: 110.0,
-                        h: 30.0,
+                        w: TILE_WIDTH as f32,
+                        h: TILE_HEIGHT as f32,
                         fixed: n.fixed,
                         rank: n.rank,
                     })
@@ -219,10 +236,12 @@ fn build_graph_scene(
             let dist = libm::sqrtf(dx * dx + dy * dy);
             if dist > 0.0 {
                 let (ux, uy) = (dx / dist, dy / dist);
-                let start_x = (x1 + ux * 55.0) as i32;
-                let start_y = (y1 + uy * 15.0) as i32;
-                let end_x = (x2 - ux * 55.0) as i32;
-                let end_y = (y2 - uy * 15.0) as i32;
+                let half_w = TILE_WIDTH as f32 / 2.0;
+                let half_h = TILE_HEIGHT as f32 / 2.0;
+                let start_x = (x1 + ux * half_w) as i32;
+                let start_y = (y1 + uy * half_h) as i32;
+                let end_x = (x2 - ux * half_w) as i32;
+                let end_y = (y2 - uy * half_h) as i32;
                 canvas = canvas.push(
                     Line::new(start_x, start_y, end_x, end_y)
                         .width(2)
@@ -267,40 +286,71 @@ fn build_graph_scene(
 
     for node in nodes {
         if let Some(&(x, y)) = layout.positions.get(&node.id) {
-            let w = 110;
-            let h = 30;
-            let left = x as i32 - w / 2;
-            let top = y as i32 - h / 2;
+            let left = x as i32 - TILE_WIDTH / 2;
+            let top = y as i32 - TILE_HEIGHT / 2;
+
             canvas = canvas.push_at(
                 Rect::new()
-                    .color(Color::from_argb_u32(0xFF44AAFF))
-                    .width(Size::Px(w))
-                    .height(Size::Px(h)),
+                    .color(TILE_BORDER_COLOR)
+                    .radius(TILE_RADIUS)
+                    .width(Size::Px(TILE_WIDTH))
+                    .height(Size::Px(TILE_HEIGHT)),
                 left,
                 top,
             );
-            let icon_size = 24;
-            let icon_x = left + 6;
-            let icon_y = top + (h - icon_size) / 2;
+
+            let inner_left = left + TILE_BORDER;
+            let inner_top = top + TILE_BORDER;
+            let inner_width = TILE_WIDTH - TILE_BORDER * 2;
+            let inner_height = TILE_HEIGHT - TILE_BORDER * 2;
             canvas = canvas.push_at(
-                ThingosIcon::for_kind(&node.kind)
-                    .size(icon_size)
-                    .width(Size::Px(icon_size))
-                    .height(Size::Px(icon_size)),
+                Rect::new()
+                    .color(TILE_FILL_COLOR)
+                    .radius(TILE_RADIUS - TILE_BORDER)
+                    .width(Size::Px(inner_width))
+                    .height(Size::Px(inner_height)),
+                inner_left,
+                inner_top,
+            );
+
+            let icon_x = x as i32 - ICON_SIZE / 2;
+            let icon_y = top + ICON_TOP_PADDING;
+            canvas = canvas.push_at(
+                ThingosIcon::new(&node.icon)
+                    .size(ICON_SIZE)
+                    .width(Size::Px(ICON_SIZE))
+                    .height(Size::Px(ICON_SIZE)),
                 icon_x,
                 icon_y,
             );
-            let text_x = left + 12 + icon_size;
-            let text_y = top + 4;
-            let name_w = (node.name.len() as i32 * 6).max(10);
+
+            let type_text = format_type_label(&node.kind_full, &node.name);
+            let id_text = format_id_label(&node.kind_full, &node.name);
+
+            let type_width = (type_text.chars().count() as i32 * TYPE_CHAR_WIDTH).max(40);
+            let type_left = x as i32 - type_width / 2;
+            let type_y = icon_y + ICON_SIZE + 12;
             canvas = canvas.push_at(
-                Text::new(&node.name)
-                    .font(FontKey::new("NotoSans-Regular").size(9))
-                    .color(Color::from_argb_u32(0xFF000000))
-                    .width(Size::Px(name_w))
-                    .height(Size::Px(10)),
-                text_x,
-                text_y,
+                Text::new(&type_text)
+                    .font(FontKey::new("NotoSans-Regular").size(TYPE_FONT_SIZE))
+                    .color(TYPE_TEXT_COLOR)
+                    .width(Size::Px(type_width))
+                    .height(Size::Px(TYPE_LINE_HEIGHT)),
+                type_left,
+                type_y,
+            );
+
+            let id_width = (id_text.chars().count() as i32 * ID_CHAR_WIDTH).max(30);
+            let id_left = x as i32 - id_width / 2;
+            let id_y = type_y + TYPE_LINE_HEIGHT;
+            canvas = canvas.push_at(
+                Text::new(&id_text)
+                    .font(FontKey::new("NotoSans-Regular").size(ID_FONT_SIZE))
+                    .color(ID_TEXT_COLOR)
+                    .width(Size::Px(id_width))
+                    .height(Size::Px(ID_LINE_HEIGHT)),
+                id_left,
+                id_y,
             );
         }
     }
@@ -311,4 +361,41 @@ fn build_graph_scene(
             .initial_size(800, 600)
             .root(canvas),
     )
+}
+
+fn format_type_label(kind_full: &str, fallback: &str) -> String {
+    let source = if kind_full.is_empty() {
+        fallback
+    } else {
+        kind_full
+    };
+    let segment = source
+        .rsplit('.')
+        .find(|seg| !seg.is_empty())
+        .unwrap_or(source);
+    let normalized = segment.replace('_', " ");
+    let label = normalized.trim();
+    if label.is_empty() {
+        if fallback.is_empty() {
+            String::from("UNKNOWN")
+        } else {
+            fallback.to_ascii_uppercase()
+        }
+    } else {
+        label.to_ascii_uppercase()
+    }
+}
+
+fn format_id_label(kind_full: &str, fallback: &str) -> String {
+    let source = if kind_full.is_empty() {
+        fallback
+    } else {
+        kind_full
+    };
+    let label = source.trim();
+    if label.is_empty() {
+        String::from("UNKNOWN")
+    } else {
+        label.to_ascii_uppercase()
+    }
 }

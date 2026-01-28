@@ -61,15 +61,6 @@ fn main(arg: usize) -> ! {
         }
     }
 
-    let register = drvproto::RegisterPayload {
-        driver_kind: drvproto::DRIVER_KIND_VIRTIO_GPU,
-        caps: 0,
-    };
-    let mut register_bytes = [0u8; drvproto::REGISTER_PAYLOAD_WIRE_SIZE];
-    if let Some(len) = drvproto::encode_register_payload_le(&register, &mut register_bytes) {
-        send_msg(drv_resp_write, drvproto::MSG_REGISTER, &register_bytes[..len]);
-    }
-
     let mut buf = [0u8; 512];
     let mut frames = FrameReader::<4096>::new();
     let mut bound = false;
@@ -83,6 +74,26 @@ fn main(arg: usize) -> ! {
 
         while let Some((header, payload)) = frames.next_message() {
             match header.msg_type {
+                drvproto::MSG_HELLO => {
+                    let want_caps = drvproto::decode_hello_payload_le(payload)
+                        .map(|hello| hello.want_caps)
+                        .unwrap_or(0);
+                    let supported_caps =
+                        drvproto::CAP_DIRTY_RECTS | drvproto::CAP_FULLFRAME;
+                    let welcome = drvproto::WelcomePayload {
+                        proto_major: drvproto::PROTO_MAJOR,
+                        proto_minor: drvproto::PROTO_MINOR,
+                        have_caps: supported_caps & want_caps,
+                        max_rects: 8,
+                        reserved: 0,
+                    };
+                    let mut welcome_bytes = [0u8; drvproto::WELCOME_PAYLOAD_WIRE_SIZE];
+                    if let Some(len) =
+                        drvproto::encode_welcome_payload_le(&welcome, &mut welcome_bytes)
+                    {
+                        send_msg(drv_resp_write, drvproto::MSG_WELCOME, &welcome_bytes[..len]);
+                    }
+                }
                 drvproto::MSG_BIND => {
                     if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
                         match thingsys::bytespace_map(ThingId(bind.bytespace_id)) {

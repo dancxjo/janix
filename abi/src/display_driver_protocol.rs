@@ -12,6 +12,19 @@ pub const MSG_BIND: u16 = 2;
 pub const MSG_PRESENT: u16 = 3;
 pub const MSG_ACK: u16 = 4;
 pub const MSG_ERR: u16 = 5;
+pub const MSG_HELLO: u16 = 6;
+pub const MSG_WELCOME: u16 = 7;
+pub const MSG_CAPS: u16 = 8;
+
+pub const PROTO_MAJOR: u16 = 1;
+pub const PROTO_MINOR: u16 = 0;
+
+pub const CAP_DIRTY_RECTS: u32 = 1 << 0;
+pub const CAP_FULLFRAME: u32 = 1 << 1;
+pub const CAP_MULTI_DISPLAY: u32 = 1 << 2;
+pub const CAP_FENCE: u32 = 1 << 3;
+
+pub const PRESENT_FLAG_FULLFRAME: u32 = 1 << 0;
 
 pub const DRIVER_KIND_BOOTFB: u32 = 1;
 pub const DRIVER_KIND_VIRTIO_GPU: u32 = 2;
@@ -31,6 +44,24 @@ pub struct DriverHeader {
 pub struct RegisterPayload {
     pub driver_kind: u32,
     pub caps: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct HelloPayload {
+    pub proto_major: u16,
+    pub proto_minor: u16,
+    pub want_caps: u32,
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct WelcomePayload {
+    pub proto_major: u16,
+    pub proto_minor: u16,
+    pub have_caps: u32,
+    pub max_rects: u16,
+    pub reserved: u16,
 }
 
 #[repr(C)]
@@ -67,6 +98,8 @@ pub struct ErrResp {
 
 pub const HEADER_SIZE: usize = size_of::<DriverHeader>();
 pub const REGISTER_PAYLOAD_WIRE_SIZE: usize = 8;
+pub const HELLO_PAYLOAD_WIRE_SIZE: usize = 8;
+pub const WELCOME_PAYLOAD_WIRE_SIZE: usize = 12;
 pub const BIND_PAYLOAD_WIRE_SIZE: usize = 24;
 pub const RECT_WIRE_SIZE: usize = 16;
 pub const PRESENT_HEADER_WIRE_SIZE: usize = 8;
@@ -161,6 +194,52 @@ pub fn decode_register_payload_le(buf: &[u8]) -> Option<RegisterPayload> {
     })
 }
 
+pub fn encode_hello_payload_le(payload: &HelloPayload, out: &mut [u8]) -> Option<usize> {
+    if out.len() < HELLO_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    out[0..2].copy_from_slice(&payload.proto_major.to_le_bytes());
+    out[2..4].copy_from_slice(&payload.proto_minor.to_le_bytes());
+    out[4..8].copy_from_slice(&payload.want_caps.to_le_bytes());
+    Some(HELLO_PAYLOAD_WIRE_SIZE)
+}
+
+pub fn decode_hello_payload_le(buf: &[u8]) -> Option<HelloPayload> {
+    if buf.len() < HELLO_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    Some(HelloPayload {
+        proto_major: u16::from_le_bytes(buf[0..2].try_into().ok()?),
+        proto_minor: u16::from_le_bytes(buf[2..4].try_into().ok()?),
+        want_caps: u32::from_le_bytes(buf[4..8].try_into().ok()?),
+    })
+}
+
+pub fn encode_welcome_payload_le(payload: &WelcomePayload, out: &mut [u8]) -> Option<usize> {
+    if out.len() < WELCOME_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    out[0..2].copy_from_slice(&payload.proto_major.to_le_bytes());
+    out[2..4].copy_from_slice(&payload.proto_minor.to_le_bytes());
+    out[4..8].copy_from_slice(&payload.have_caps.to_le_bytes());
+    out[8..10].copy_from_slice(&payload.max_rects.to_le_bytes());
+    out[10..12].copy_from_slice(&payload.reserved.to_le_bytes());
+    Some(WELCOME_PAYLOAD_WIRE_SIZE)
+}
+
+pub fn decode_welcome_payload_le(buf: &[u8]) -> Option<WelcomePayload> {
+    if buf.len() < WELCOME_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    Some(WelcomePayload {
+        proto_major: u16::from_le_bytes(buf[0..2].try_into().ok()?),
+        proto_minor: u16::from_le_bytes(buf[2..4].try_into().ok()?),
+        have_caps: u32::from_le_bytes(buf[4..8].try_into().ok()?),
+        max_rects: u16::from_le_bytes(buf[8..10].try_into().ok()?),
+        reserved: u16::from_le_bytes(buf[10..12].try_into().ok()?),
+    })
+}
+
 pub fn encode_bind_payload_le(payload: &BindPayload, out: &mut [u8]) -> Option<usize> {
     if out.len() < BIND_PAYLOAD_WIRE_SIZE {
         return None;
@@ -210,11 +289,19 @@ pub fn decode_rect_le(buf: &[u8]) -> Option<Rect> {
 }
 
 pub fn encode_present_header_le(rect_count: u32, out: &mut [u8]) -> Option<usize> {
+    encode_present_header_with_flags_le(rect_count, 0, out)
+}
+
+pub fn encode_present_header_with_flags_le(
+    rect_count: u32,
+    flags: u32,
+    out: &mut [u8],
+) -> Option<usize> {
     if out.len() < PRESENT_HEADER_WIRE_SIZE {
         return None;
     }
     out[0..4].copy_from_slice(&rect_count.to_le_bytes());
-    out[4..8].copy_from_slice(&0u32.to_le_bytes());
+    out[4..8].copy_from_slice(&flags.to_le_bytes());
     Some(PRESENT_HEADER_WIRE_SIZE)
 }
 
@@ -232,12 +319,24 @@ pub fn encode_present_payload_le<I>(rect_count: u32, rects: I, out: &mut [u8]) -
 where
     I: IntoIterator<Item = Rect>,
 {
+    encode_present_payload_with_flags_le(rect_count, 0, rects, out)
+}
+
+pub fn encode_present_payload_with_flags_le<I>(
+    rect_count: u32,
+    flags: u32,
+    rects: I,
+    out: &mut [u8],
+) -> Option<usize>
+where
+    I: IntoIterator<Item = Rect>,
+{
     let required = PRESENT_HEADER_WIRE_SIZE + rect_count as usize * RECT_WIRE_SIZE;
     if out.len() < required {
         return None;
     }
 
-    encode_present_header_le(rect_count, out)?;
+    encode_present_header_with_flags_le(rect_count, flags, out)?;
 
     let mut written = 0usize;
     let mut offset = PRESENT_HEADER_WIRE_SIZE;

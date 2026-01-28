@@ -368,6 +368,7 @@ fn main(arg: usize) -> ! {
 
     let mut presenter = if target.driver_req != 0 {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
+        d.start_handshake();
         d.send_bind(&BindPayload {
             bytespace_id: target.bs_id.to_u64_lossy(),
             width: target.width,

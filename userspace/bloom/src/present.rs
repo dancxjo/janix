@@ -10,6 +10,8 @@
 use abi::display_driver_protocol as drvproto;
 use abi::display_driver_protocol::BindPayload;
 use abi::driver_frame::FrameReader;
+use alloc::string::String;
+use alloc::vec::Vec;
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 
@@ -17,6 +19,45 @@ use crate::damage::Damage;
 use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentStats};
 
 use crate::reclaimer;
+
+#[derive(Clone, Copy, Debug)]
+struct DriverNegotiation {
+    proto_major: u16,
+    proto_minor: u16,
+    caps: u32,
+    max_rects: u16,
+}
+
+fn caps_to_string(caps: u32) -> String {
+    let mut out = String::new();
+    let mut first = true;
+    let mut push = |name: &str, out: &mut String, first: &mut bool| {
+        if !*first {
+            out.push('|');
+        }
+        out.push_str(name);
+        *first = false;
+    };
+
+    if caps & drvproto::CAP_DIRTY_RECTS != 0 {
+        push("DIRTY_RECTS", &mut out, &mut first);
+    }
+    if caps & drvproto::CAP_FULLFRAME != 0 {
+        push("FULLFRAME", &mut out, &mut first);
+    }
+    if caps & drvproto::CAP_MULTI_DISPLAY != 0 {
+        push("MULTI_DISPLAY", &mut out, &mut first);
+    }
+    if caps & drvproto::CAP_FENCE != 0 {
+        push("FENCE", &mut out, &mut first);
+    }
+
+    if out.is_empty() {
+        out.push_str("NONE");
+    }
+
+    out
+}
 
 /// Presenter trait with transactional frame API
 pub trait Presenter {
@@ -75,8 +116,11 @@ pub struct DriverPresenter {
     req_write: PortHandle,
     resp_read: PortHandle,
     frames: FrameReader<4096>,
-    registered: bool,
     awaiting_bind_ack: bool,
+    negotiation: Option<DriverNegotiation>,
+    pending_bind: Option<BindPayload>,
+    fallback_warned: bool,
+    unknown_msg_logged: bool,
     frame_count: u64,
 }
 
@@ -86,14 +130,31 @@ impl DriverPresenter {
             req_write,
             resp_read,
             frames: FrameReader::new(),
-            registered: false,
             awaiting_bind_ack: false,
+            negotiation: None,
+            pending_bind: None,
+            fallback_warned: false,
+            unknown_msg_logged: false,
             frame_count: 0,
         }
     }
 
+    pub fn start_handshake(&mut self) {
+        let hello = drvproto::HelloPayload {
+            proto_major: drvproto::PROTO_MAJOR,
+            proto_minor: drvproto::PROTO_MINOR,
+            want_caps: drvproto::CAP_DIRTY_RECTS | drvproto::CAP_FULLFRAME,
+        };
+        let mut hello_bytes = [0u8; drvproto::HELLO_PAYLOAD_WIRE_SIZE];
+        if let Some(len) = drvproto::encode_hello_payload_le(&hello, &mut hello_bytes) {
+            let mut buf = [0u8; 128];
+            if let Some(total) = drvproto::encode_message(&mut buf, drvproto::MSG_HELLO, &hello_bytes[..len]) {
+                let _ = port_send(self.req_write, &buf[..total]);
+            }
+        }
+    }
 
-    pub fn send_bind(&mut self, payload: &BindPayload) {
+    fn send_bind_now(&mut self, payload: &BindPayload) {
         let mut bytes = [0u8; drvproto::BIND_PAYLOAD_WIRE_SIZE];
         if drvproto::encode_bind_payload_le(payload, &mut bytes).is_none() {
             return;
@@ -106,6 +167,14 @@ impl DriverPresenter {
         }
     }
 
+    pub fn send_bind(&mut self, payload: &BindPayload) {
+        if self.negotiation.is_some() {
+            self.send_bind_now(payload);
+        } else {
+            self.pending_bind = Some(*payload);
+        }
+    }
+
     fn send_present(&mut self, damage: &Damage) {
         // Calculate payload size
         // Header: 8 bytes
@@ -114,24 +183,57 @@ impl DriverPresenter {
         // Total payload max: 136 bytes
         let mut payload = [0u8; 136];
 
-        // Always send explicit damage rectangles
-        // (Even for Damage::full, which contains a single rect covering the bounds)
         let rect_count = damage.rect_count() as u32;
+        let mut use_rects = true;
+        let mut flags = 0u32;
+        let mut fallback_reason: Option<&'static str> = None;
+        if let Some(negotiated) = &self.negotiation {
+            if (negotiated.caps & drvproto::CAP_DIRTY_RECTS != 0)
+                && rect_count <= negotiated.max_rects as u32
+            {
+                use_rects = true;
+            } else {
+                use_rects = false;
+                flags |= drvproto::PRESENT_FLAG_FULLFRAME;
+                if rect_count > negotiated.max_rects as u32 {
+                    fallback_reason = Some("rects exceed max_rects");
+                } else {
+                    fallback_reason = Some("driver lacks DIRTY_RECTS");
+                }
+            }
+        }
+
+        if !use_rects && !self.fallback_warned {
+            let reason = fallback_reason.unwrap_or("using full-frame present");
+            info!("display: {}, using full-frame present", reason);
+            self.fallback_warned = true;
+        }
 
         // Send message
         // Encode message buffer needs to be large enough for header + payload
         // DriverHeader (12) + Payload (136) = 148
         let mut buf = [0u8; 256];
-        let payload_len = drvproto::encode_present_payload_le(
-            rect_count,
-            damage.iter().map(|r| abi::display_driver_protocol::Rect {
-                x: r.x.max(0) as u32,
-                y: r.y.max(0) as u32,
-                w: r.w.max(0) as u32,
-                h: r.h.max(0) as u32,
-            }),
-            &mut payload,
-        );
+        let present_rect_count = if use_rects { rect_count } else { 0 };
+        let payload_len = if use_rects {
+            drvproto::encode_present_payload_with_flags_le(
+                present_rect_count,
+                flags,
+                damage.iter().map(|r| abi::display_driver_protocol::Rect {
+                    x: r.x.max(0) as u32,
+                    y: r.y.max(0) as u32,
+                    w: r.w.max(0) as u32,
+                    h: r.h.max(0) as u32,
+                }),
+                &mut payload,
+            )
+        } else {
+            drvproto::encode_present_payload_with_flags_le(
+                present_rect_count,
+                flags,
+                core::iter::empty::<abi::display_driver_protocol::Rect>(),
+                &mut payload,
+            )
+        };
 
         if let Some(payload_len) = payload_len {
             if let Some(len) =
@@ -156,13 +258,38 @@ impl DriverPresenter {
         }
     }
 
-    fn handle_message(
-        registered: &mut bool,
-        awaiting_bind_ack: &mut bool,
-        msg_type: u16,
-        payload: &[u8],
-    ) {
+    fn apply_negotiation(&mut self, negotiation: DriverNegotiation) {
+        if self.negotiation.is_some() {
+            return;
+        }
+        let caps_string = caps_to_string(negotiation.caps);
+        info!(
+            "display: negotiated proto {}.{} caps={} max_rects={}",
+            negotiation.proto_major,
+            negotiation.proto_minor,
+            caps_string,
+            negotiation.max_rects
+        );
+        self.negotiation = Some(negotiation);
+        if let Some(bind) = self.pending_bind.take() {
+            self.send_bind_now(&bind);
+        }
+    }
+
+    fn handle_message(&mut self, msg_type: u16, payload: &[u8]) {
         match msg_type {
+            drvproto::MSG_WELCOME => {
+                if let Some(welcome) = drvproto::decode_welcome_payload_le(payload) {
+                    self.apply_negotiation(DriverNegotiation {
+                        proto_major: welcome.proto_major,
+                        proto_minor: welcome.proto_minor,
+                        caps: welcome.have_caps,
+                        max_rects: welcome.max_rects,
+                    });
+                } else {
+                    info!("display: WELCOME payload too small");
+                }
+            }
             drvproto::MSG_REGISTER => {
                 if let Some(reg) = drvproto::decode_register_payload_le(payload) {
                     let driver_kind = reg.driver_kind;
@@ -171,15 +298,20 @@ impl DriverPresenter {
                         "bloom: driver REGISTER (kind={} caps=0x{:x})",
                         driver_kind, caps
                     );
+                    self.apply_negotiation(DriverNegotiation {
+                        proto_major: drvproto::PROTO_MAJOR,
+                        proto_minor: drvproto::PROTO_MINOR,
+                        caps,
+                        max_rects: crate::damage::MAX_RECTS as u16,
+                    });
                 } else {
                     info!("bloom: driver REGISTER (payload too small)");
                 }
-                *registered = true;
             }
             drvproto::MSG_ACK => {
-                if *awaiting_bind_ack {
+                if self.awaiting_bind_ack {
                     info!("bloom: driver BIND ACK");
-                    *awaiting_bind_ack = false;
+                    self.awaiting_bind_ack = false;
                 }
                 // Silently accept PRESENT ACKs (high frequency)
             }
@@ -187,23 +319,27 @@ impl DriverPresenter {
                 let code = drvproto::decode_err_resp_le(payload)
                     .map(|err| err.code)
                     .unwrap_or(0);
-                if *awaiting_bind_ack {
+                if self.awaiting_bind_ack {
                     info!("bloom: driver BIND ERR code={}", code);
-                    *awaiting_bind_ack = false;
+                    self.awaiting_bind_ack = false;
                 } else {
                     info!("bloom: driver PRESENT ERR code={}", code);
                 }
             }
-            _ => {}
+            _ => {
+                if !self.unknown_msg_logged {
+                    info!("display: ignoring unknown driver msg {}", msg_type);
+                    self.unknown_msg_logged = true;
+                }
+            }
         }
     }
 
     fn process_rx(&mut self) {
-        let frames = &mut self.frames;
-        let registered = &mut self.registered;
-        let awaiting_bind_ack = &mut self.awaiting_bind_ack;
-        while let Some((header, payload)) = frames.next_message() {
-            Self::handle_message(registered, awaiting_bind_ack, header.msg_type, payload);
+        while let Some((header, payload)) = self.frames.next_message() {
+            let msg_type = header.msg_type;
+            let payload_copy: Vec<u8> = payload.to_vec();
+            self.handle_message(msg_type, &payload_copy);
         }
     }
 }

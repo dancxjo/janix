@@ -187,7 +187,7 @@ fn top_window_at_point(
     best
 }
 
-fn in_title_bar(rect: crate::geometry::Rect, x: i32, y: i32) -> bool {
+fn in_title_bar(rect: crate::geometry::Rect, _x: i32, y: i32) -> bool {
     let local_y = y - rect.y();
     let title_top = BLOSSOM_BORDER;
     let title_bottom = BLOSSOM_BORDER + BLOSSOM_TITLE_BAR_HEIGHT;
@@ -416,7 +416,7 @@ fn main(arg: usize) -> ! {
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_cursor_buttons = cursor.buttons();
-    let mut ui_dispatch = ui_events::UiEventDispatcher::new();
+    let ui_dispatch = ui_events::UiEventDispatcher::new();
     let mut focused_window: Option<ThingId> = None;
     let mut alt_cycle_order: alloc::vec::Vec<ThingId> = alloc::vec::Vec::new();
     let mut alt_cycle_max_z: i32 = 0;
@@ -485,7 +485,7 @@ fn main(arg: usize) -> ! {
     
     // Track watch event counts for diagnostics
     let mut ui_watch_events_total: u64 = 0;
-    let mut force_full_damage = false;
+    let mut force_full_damage;
 
     // WAIT for critical assets (fonts) before showing anything
     let mut startup_frames = 0;

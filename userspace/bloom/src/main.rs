@@ -651,13 +651,12 @@ fn main(arg: usize) -> ! {
             let shift_down =
                 pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
 
-            // F1 Toggle
-            // F1 Toggle: Maximize/Restore focused window
-            if pressed_keys.contains(&Key::F1) && !prev_keys.contains(&Key::F1) {
+            // F11 Toggle: Maximize/Restore focused window
+            if pressed_keys.contains(&Key::F11) && !prev_keys.contains(&Key::F11) {
                 if let Some(focused) = focused_window {
                     if let Some(restore_rect) = maximized_windows.remove(&focused) {
                         // Restore
-                        stem::info!("[bloom] F1: Restoring window {:?} to {:?}", focused, restore_rect);
+                        stem::info!("[bloom] F11: Restoring window {:?} to {:?}", focused, restore_rect);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_X, restore_rect.x() as u64);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, restore_rect.y() as u64);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_WIDTH, restore_rect.width() as u64);
@@ -673,7 +672,7 @@ fn main(arg: usize) -> ! {
                         let current_rect = crate::geometry::Rect::new(x, y, w, h);
                         
                         maximized_windows.insert(focused, current_rect);
-                        stem::info!("[bloom] F1: Maximizing window {:?} (saved {:?})", focused, current_rect);
+                        stem::info!("[bloom] F11: Maximizing window {:?} (saved {:?})", focused, current_rect);
 
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_X, 0);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, 0);

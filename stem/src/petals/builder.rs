@@ -966,9 +966,7 @@ mod tests {
     #[test]
     fn window_root_replaces_children() {
         let wid = ThingId::default();
-        let window = Window::new(wid)
-            .root(Text::new("a"))
-            .root(Text::new("b"));
+        let window = Window::new(wid).root(Text::new("a")).root(Text::new("b"));
         assert_eq!(window.node.children.len(), 1);
     }
 }

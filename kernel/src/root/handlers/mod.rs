@@ -1,7 +1,7 @@
 //! Root service message handlers, organized by domain.
 
-pub mod bytespace;
 pub mod batch;
+pub mod bytespace;
 pub mod debug;
 pub mod encode;
 pub mod graph;

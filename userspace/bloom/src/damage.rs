@@ -28,7 +28,12 @@ impl Rect {
     /// Create a rectangle representing full screen bounds.
     #[inline]
     pub const fn full(width: i32, height: i32) -> Self {
-        Self { x: 0, y: 0, w: width, h: height }
+        Self {
+            x: 0,
+            y: 0,
+            w: width,
+            h: height,
+        }
     }
 
     /// Check if the rectangle is empty (zero or negative area).
@@ -62,26 +67,40 @@ impl Rect {
         let y0 = self.y.max(bounds.y);
         let x1 = (self.x + self.w).min(bounds.x + bounds.w);
         let y1 = (self.y + self.h).min(bounds.y + bounds.h);
-        
+
         if x1 <= x0 || y1 <= y0 {
             Self::default()
         } else {
-            Self { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+            Self {
+                x: x0,
+                y: y0,
+                w: x1 - x0,
+                h: y1 - y0,
+            }
         }
     }
 
     /// Compute the union (bounding box) of two rectangles.
     #[inline]
     pub fn union(self, other: Rect) -> Self {
-        if self.is_empty() { return other; }
-        if other.is_empty() { return self; }
-        
+        if self.is_empty() {
+            return other;
+        }
+        if other.is_empty() {
+            return self;
+        }
+
         let x0 = self.x.min(other.x);
         let y0 = self.y.min(other.y);
         let x1 = (self.x + self.w).max(other.x + other.w);
         let y1 = (self.y + self.h).max(other.y + other.h);
-        
-        Self { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+
+        Self {
+            x: x0,
+            y: y0,
+            w: x1 - x0,
+            h: y1 - y0,
+        }
     }
 
     /// Compute the intersection of two rectangles.
@@ -93,11 +112,16 @@ impl Rect {
         let y0 = self.y.max(other.y);
         let x1 = (self.x + self.w).min(other.x + other.w);
         let y1 = (self.y + self.h).min(other.y + other.h);
-        
+
         if x1 <= x0 || y1 <= y0 {
             Self::default()
         } else {
-            Self { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
+            Self {
+                x: x0,
+                y: y0,
+                w: x1 - x0,
+                h: y1 - y0,
+            }
         }
     }
 
@@ -133,7 +157,7 @@ impl Rect {
 }
 
 /// A collection of damage rectangles for a frame.
-/// 
+///
 /// Uses a fixed-size array to avoid allocation.
 /// If more than `MAX_RECTS` are added, collapses to full-frame damage.
 #[derive(Clone, Debug)]
@@ -160,8 +184,16 @@ impl Damage {
     /// Create full-frame damage.
     pub fn full(bounds: Rect) -> Self {
         Self {
-            rects: [bounds, Rect::default(), Rect::default(), Rect::default(),
-                    Rect::default(), Rect::default(), Rect::default(), Rect::default()],
+            rects: [
+                bounds,
+                Rect::default(),
+                Rect::default(),
+                Rect::default(),
+                Rect::default(),
+                Rect::default(),
+                Rect::default(),
+                Rect::default(),
+            ],
             count: 1,
             bounds,
             is_full: true,
@@ -175,7 +207,11 @@ impl Damage {
 
     /// Get the number of damage rects.
     pub fn rect_count(&self) -> usize {
-        if self.is_full { 1 } else { self.count }
+        if self.is_full {
+            1
+        } else {
+            self.count
+        }
     }
 
     /// Add a rectangle to the damage set.
@@ -359,15 +395,15 @@ mod tests {
     #[test]
     fn test_rect_clip() {
         let bounds = Rect::new(0, 0, 100, 100);
-        
+
         // Fully inside
         let r = Rect::new(10, 10, 20, 20);
         assert_eq!(r.clip(bounds), r);
-        
+
         // Partially outside
         let r = Rect::new(-10, 50, 30, 20);
         assert_eq!(r.clip(bounds), Rect::new(0, 50, 20, 20));
-        
+
         // Fully outside
         let r = Rect::new(200, 200, 10, 10);
         assert!(r.clip(bounds).is_empty());
@@ -379,7 +415,7 @@ mod tests {
         let b = Rect::new(20, 20, 10, 10);
         let u = a.union(b);
         assert_eq!(u, Rect::new(0, 0, 30, 30));
-        
+
         // Union with empty
         let e = Rect::default();
         assert_eq!(a.union(e), a);
@@ -392,7 +428,7 @@ mod tests {
         let b = Rect::new(10, 10, 20, 20);
         let i = a.intersect(b);
         assert_eq!(i, Rect::new(10, 10, 10, 10));
-        
+
         // No overlap
         let c = Rect::new(50, 50, 10, 10);
         assert!(a.intersect(c).is_empty());
@@ -409,9 +445,9 @@ mod tests {
     fn test_rect_touches_or_overlaps() {
         let a = Rect::new(0, 0, 10, 10);
         let b = Rect::new(10, 0, 10, 10); // Adjacent
-        let c = Rect::new(5, 5, 10, 10);  // Overlapping
+        let c = Rect::new(5, 5, 10, 10); // Overlapping
         let d = Rect::new(20, 20, 10, 10); // Separate
-        
+
         assert!(a.touches_or_overlaps(b));
         assert!(a.touches_or_overlaps(c));
         assert!(!a.touches_or_overlaps(d));
@@ -441,14 +477,14 @@ mod tests {
     fn test_damage_add_and_merge() {
         let bounds = Rect::full(100, 100);
         let mut d = Damage::empty(bounds);
-        
+
         d.add_rect(Rect::new(0, 0, 10, 10));
         assert_eq!(d.rect_count(), 1);
-        
+
         // Adjacent rect should merge
         d.add_rect(Rect::new(10, 0, 10, 10));
         assert_eq!(d.rect_count(), 1);
-        
+
         // Separate rect should not merge
         d.add_rect(Rect::new(50, 50, 10, 10));
         assert_eq!(d.rect_count(), 2);
@@ -458,7 +494,7 @@ mod tests {
     fn test_damage_clips_to_bounds() {
         let bounds = Rect::full(100, 100);
         let mut d = Damage::empty(bounds);
-        
+
         d.add_rect(Rect::new(-10, -10, 20, 20));
         let r: alloc::vec::Vec<_> = d.iter().collect();
         assert_eq!(r.len(), 1);
@@ -469,13 +505,13 @@ mod tests {
     fn test_damage_collapse_on_overflow() {
         let bounds = Rect::full(1000, 1000);
         let mut d = Damage::empty(bounds);
-        
+
         // Add MAX_RECTS separate rects
         for i in 0..MAX_RECTS {
             d.add_rect(Rect::new((i * 100) as i32, 0, 10, 10));
         }
         assert!(!d.is_full);
-        
+
         // One more should collapse
         d.add_rect(Rect::new(900, 0, 10, 10));
         assert!(d.is_full);
@@ -487,11 +523,11 @@ mod tests {
     fn test_tracker_cursor_move() {
         let mut t = DamageTracker::new();
         t.begin_frame(100, 100);
-        
+
         let old = Rect::new(10, 10, 16, 16);
         let new = Rect::new(20, 20, 16, 16);
         t.note_cursor_move(old, new);
-        
+
         let d = t.end_frame();
         // Should have damaged both old and new (merged since they might touch)
         assert!(!d.is_empty());
@@ -501,10 +537,10 @@ mod tests {
     fn test_tracker_clear_is_full() {
         let mut t = DamageTracker::new();
         t.begin_frame(100, 100);
-        
+
         // Clear damages entire screen
         t.note_bbox(Rect::full(100, 100));
-        
+
         let d = t.end_frame();
         // Full screen damage should be marked
         let bbox = d.bounding_box();

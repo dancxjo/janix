@@ -1,14 +1,14 @@
 extern crate alloc;
 
-use alloc::sync::Arc;
 use alloc::string::{String, ToString};
+use alloc::sync::Arc;
 use alloc::{vec, vec::Vec};
 use serde::{Deserialize, Serialize};
 
-use crate::geometry::{Point, Rect, Color, Transform, EdgeAA};
+use crate::geometry::{Color, EdgeAA, Point, Rect, Transform};
 use crate::isa::PointF;
 
-// Re-export damage::Rect for legacy compatibility where needed, 
+// Re-export damage::Rect for legacy compatibility where needed,
 // but we prefer geometry::Rect for new commands.
 // Usage: crate::drawlist::DamageRect
 #[allow(unused_imports)]
@@ -25,30 +25,81 @@ pub struct Insets {
 
 impl Insets {
     pub const fn new(left: i32, top: i32, right: i32, bottom: i32) -> Self {
-        Self { left, top, right, bottom }
+        Self {
+            left,
+            top,
+            right,
+            bottom,
+        }
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum DrawCmd {
     // --- Frame & Control ---
-    BeginFrame { id: u64 },
+    BeginFrame {
+        id: u64,
+    },
     EndFrame,
-    PushClip { rect: Rect },
+    PushClip {
+        rect: Rect,
+    },
     PopClip,
-    PushTransform { transform: Transform },
+    PushTransform {
+        transform: Transform,
+    },
     PopTransform,
-    Clear { color: Color },
+    Clear {
+        color: Color,
+    },
 
     // --- Primitive Geometry ---
-    FillRect { rect: Rect, color: Color, aa: EdgeAA },
-    FillRoundRect { rect: Rect, radius: i32, color: Color, aa: EdgeAA },
-    StrokeRect { rect: Rect, color: Color, width: i32 },
-    FillCircle { center: Point, radius: i32, color: Color },
-    StrokeCircle { center: Point, radius: i32, color: Color, width: i32 },
-    Line { from: PointF, to: PointF, color: Color, width: f32 },
-    FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
-    FillLinearGradient { rect: Rect, color1: Color, color2: Color },
+    FillRect {
+        rect: Rect,
+        color: Color,
+        aa: EdgeAA,
+    },
+    FillRoundRect {
+        rect: Rect,
+        radius: i32,
+        color: Color,
+        aa: EdgeAA,
+    },
+    StrokeRect {
+        rect: Rect,
+        color: Color,
+        width: i32,
+    },
+    FillCircle {
+        center: Point,
+        radius: i32,
+        color: Color,
+    },
+    StrokeCircle {
+        center: Point,
+        radius: i32,
+        color: Color,
+        width: i32,
+    },
+    Line {
+        from: PointF,
+        to: PointF,
+        color: Color,
+        width: f32,
+    },
+    FillArc {
+        center: Point,
+        radius: i32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+        aa: EdgeAA,
+    },
+    FillLinearGradient {
+        rect: Rect,
+        color1: Color,
+        color2: Color,
+    },
 
     // --- Image & Bitmap Operations ---
     DrawSnapshot {
@@ -58,24 +109,48 @@ pub enum DrawCmd {
         stride: u32,
         dest: Rect,
     },
-    DrawImage { image: crate::asset::Image, dest: Rect },
-    DrawImageRegion { image: crate::asset::Image, src: Rect, dest: Rect },
-    DrawImageTiled { image: crate::asset::Image, dest: Rect },
-    DrawImageScaled { image: crate::asset::Image, dest: Rect, filter: i32 }, // filter: simple enum placeholder
-    Icon { icon_name_id: u32, dest: Rect },
+    DrawImage {
+        image: crate::asset::Image,
+        dest: Rect,
+    },
+    DrawImageRegion {
+        image: crate::asset::Image,
+        src: Rect,
+        dest: Rect,
+    },
+    DrawImageTiled {
+        image: crate::asset::Image,
+        dest: Rect,
+    },
+    DrawImageScaled {
+        image: crate::asset::Image,
+        dest: Rect,
+        filter: i32,
+    }, // filter: simple enum placeholder
+    Icon {
+        icon_name_id: u32,
+        dest: Rect,
+    },
 
     // --- 9-Slice & UI-Specific ---
-    DrawNineSlice { image: crate::asset::Image, dest: Rect, margins: Insets },
-    
+    DrawNineSlice {
+        image: crate::asset::Image,
+        dest: Rect,
+        margins: Insets,
+    },
+
     // Legacy Cursor (Specific to Bloom's optimization need, kept as first-class for now)
-    Cursor { frame: crate::asset::CursorFrame, position: Point },
-    
+    Cursor {
+        frame: crate::asset::CursorFrame,
+        position: Point,
+    },
+
     // --- Modern Vector & Text ---
-    Text { 
-        text: String, 
-        font: Option<String>, 
+    Text {
+        text: String,
+        font: Option<String>,
         rect: Rect, // dest rect for layout
-        size: f32, 
+        size: f32,
         color: Color,
         font_debug: bool,
     },
@@ -102,14 +177,32 @@ pub enum DrawCmd {
     },
 
     // --- Compositing & Effects ---
-    SetOpacity { alpha: u8 },
-    SetBlendMode { mode: u8 }, // 0: Over, 1: Add, etc.
-    Shadow { offset: Point, blur: i32, color: Color },
+    SetOpacity {
+        alpha: u8,
+    },
+    SetBlendMode {
+        mode: u8,
+    }, // 0: Over, 1: Add, etc.
+    Shadow {
+        offset: Point,
+        blur: i32,
+        color: Color,
+    },
 
     // --- Debug ---
-    DebugRect { rect: Rect, color: Color },
-    DebugText { text: String, position: Point, color: Color },
-    DebugMarker { id: u64, position: Point },
+    DebugRect {
+        rect: Rect,
+        color: Color,
+    },
+    DebugText {
+        text: String,
+        position: Point,
+        color: Color,
+    },
+    DebugMarker {
+        id: u64,
+        position: Point,
+    },
 }
 
 impl DrawCmd {
@@ -121,9 +214,16 @@ impl DrawCmd {
             DrawCmd::FillRoundRect { rect, .. } => *rect,
             DrawCmd::StrokeRect { rect, width, .. } => {
                 let w = *width;
-                Rect::new(rect.x() - w, rect.y() - w, rect.width() + w*2, rect.height() + w*2)
+                Rect::new(
+                    rect.x() - w,
+                    rect.y() - w,
+                    rect.width() + w * 2,
+                    rect.height() + w * 2,
+                )
             }
-            DrawCmd::Line { from, to, width, .. } => {
+            DrawCmd::Line {
+                from, to, width, ..
+            } => {
                 let min_x = from.x.min(to.x);
                 let min_y = from.y.min(to.y);
                 let max_x = from.x.max(to.x);
@@ -138,7 +238,7 @@ impl DrawCmd {
             }
             DrawCmd::FillArc { center, radius, .. } => {
                 let r = *radius;
-                Rect::new(center.x - r, center.y - r, r*2, r*2)
+                Rect::new(center.x - r, center.y - r, r * 2, r * 2)
             }
             DrawCmd::FillLinearGradient { rect, .. } => *rect,
             DrawCmd::DrawSnapshot { dest, .. } => *dest,
@@ -147,9 +247,14 @@ impl DrawCmd {
             DrawCmd::DrawNineSlice { dest, .. } => *dest,
             DrawCmd::Icon { dest, .. } => *dest,
             DrawCmd::Cursor { frame, position } => {
-                 let dx = position.x - frame.hotspot_x as i32;
-                 let dy = position.y - frame.hotspot_y as i32;
-                 Rect::new(dx, dy, frame.image.width as i32 + 3, frame.image.height as i32 + 3)
+                let dx = position.x - frame.hotspot_x as i32;
+                let dy = position.y - frame.hotspot_y as i32;
+                Rect::new(
+                    dx,
+                    dy,
+                    frame.image.width as i32 + 3,
+                    frame.image.height as i32 + 3,
+                )
             }
             DrawCmd::Text { rect, .. } => *rect,
             DrawCmd::Path { .. } => Rect::new(0, 0, 10000, 10000), // Paths need better bbox
@@ -167,9 +272,7 @@ pub struct DrawList {
 
 impl DrawList {
     pub fn new() -> Self {
-        Self { 
-            cmds: Vec::new(),
-        }
+        Self { cmds: Vec::new() }
     }
 
     pub fn commands(&mut self) -> &mut Vec<DrawCmd> {
@@ -189,8 +292,8 @@ impl DrawList {
     }
 
     pub fn rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: Color) {
-        self.cmds.push(DrawCmd::FillRect { 
-            rect: Rect::new(x, y, w, h), 
+        self.cmds.push(DrawCmd::FillRect {
+            rect: Rect::new(x, y, w, h),
             color,
             aa: EdgeAA::None,
         });
@@ -204,7 +307,16 @@ impl DrawList {
         });
     }
 
-    pub fn rounded_rect(&mut self, x: i32, y: i32, w: i32, h: i32, radius: i32, color: Color, aa: EdgeAA) {
+    pub fn rounded_rect(
+        &mut self,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        radius: i32,
+        color: Color,
+        aa: EdgeAA,
+    ) {
         self.cmds.push(DrawCmd::FillRoundRect {
             rect: Rect::new(x, y, w, h),
             radius,
@@ -214,11 +326,11 @@ impl DrawList {
     }
 
     pub fn line(&mut self, x0: i32, y0: i32, x1: i32, y1: i32, color: Color) {
-        self.cmds.push(DrawCmd::Line { 
-            from: PointF::new(x0 as f32, y0 as f32), 
-            to: PointF::new(x1 as f32, y1 as f32), 
+        self.cmds.push(DrawCmd::Line {
+            from: PointF::new(x0 as f32, y0 as f32),
+            to: PointF::new(x1 as f32, y1 as f32),
             color,
-            width: 1.0 
+            width: 1.0,
         });
     }
 
@@ -231,7 +343,16 @@ impl DrawList {
         });
     }
 
-    pub fn arc(&mut self, cx: i32, cy: i32, r: i32, start: f32, end: f32, color: Color, aa: EdgeAA) {
+    pub fn arc(
+        &mut self,
+        cx: i32,
+        cy: i32,
+        r: i32,
+        start: f32,
+        end: f32,
+        color: Color,
+        aa: EdgeAA,
+    ) {
         self.cmds.push(DrawCmd::FillArc {
             center: Point::new(cx, cy),
             radius: r,
@@ -244,9 +365,9 @@ impl DrawList {
 
     pub fn blit_image(&mut self, image: &crate::asset::Image, x: i32, y: i32) {
         let dest = Rect::new(x, y, image.width as i32, image.height as i32);
-        self.cmds.push(DrawCmd::DrawImage { 
+        self.cmds.push(DrawCmd::DrawImage {
             image: image.clone(),
-            dest 
+            dest,
         });
     }
 
@@ -272,7 +393,15 @@ impl DrawList {
         });
     }
 
-    pub fn text(&mut self, text: &str, font: Option<&str>, x: i32, y: i32, size: f32, color: Color) {
+    pub fn text(
+        &mut self,
+        text: &str,
+        font: Option<&str>,
+        x: i32,
+        y: i32,
+        size: f32,
+        color: Color,
+    ) {
         self.cmds.push(DrawCmd::Text {
             text: text.to_string(),
             font: font.map(|s| s.to_string()),
@@ -283,7 +412,16 @@ impl DrawList {
         });
     }
 
-    pub fn text_font_debug(&mut self, text: &str, font: Option<&str>, x: i32, y: i32, size: f32, color: Color, font_debug: bool) {
+    pub fn text_font_debug(
+        &mut self,
+        text: &str,
+        font: Option<&str>,
+        x: i32,
+        y: i32,
+        size: f32,
+        color: Color,
+        font_debug: bool,
+    ) {
         self.cmds.push(DrawCmd::Text {
             text: text.to_string(),
             font: font.map(|s| s.to_string()),
@@ -294,7 +432,12 @@ impl DrawList {
         });
     }
 
-    pub fn path(&mut self, path: Arc<crate::isa::Path2D>, color: Color, fill_rule: crate::isa::FillRule) {
+    pub fn path(
+        &mut self,
+        path: Arc<crate::isa::Path2D>,
+        color: Color,
+        fill_rule: crate::isa::FillRule,
+    ) {
         self.cmds.push(DrawCmd::Path {
             path,
             color,
@@ -398,7 +541,9 @@ pub fn decode_native_drawlist(data: &[u8]) -> Vec<DrawCmd> {
                 }
             }
             DrawCmdTag::Unknown(8) => {
-                if let Some((x, y, w, h, c1, c2)) = abi::ui_paint::decode_fill_linear_gradient(raw_cmd.payload) {
+                if let Some((x, y, w, h, c1, c2)) =
+                    abi::ui_paint::decode_fill_linear_gradient(raw_cmd.payload)
+                {
                     cmds.push(DrawCmd::FillLinearGradient {
                         rect: Rect::new(x, y, w, h),
                         color1: Color::from_u32(c1),

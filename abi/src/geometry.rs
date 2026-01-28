@@ -23,10 +23,8 @@ impl RectI32Wire {
         let w = self.w.to_le_bytes();
         let h = self.h.to_le_bytes();
         [
-            x[0], x[1], x[2], x[3],
-            y[0], y[1], y[2], y[3],
-            w[0], w[1], w[2], w[3],
-            h[0], h[1], h[2], h[3],
+            x[0], x[1], x[2], x[3], y[0], y[1], y[2], y[3], w[0], w[1], w[2], w[3], h[0], h[1],
+            h[2], h[3],
         ]
     }
 
@@ -73,12 +71,9 @@ impl Mat3x2fWire {
         let dx = self.dx.to_le_bytes();
         let dy = self.dy.to_le_bytes();
         [
-            m11[0], m11[1], m11[2], m11[3],
-            m12[0], m12[1], m12[2], m12[3],
-            m21[0], m21[1], m21[2], m21[3],
-            m22[0], m22[1], m22[2], m22[3],
-            dx[0], dx[1], dx[2], dx[3],
-            dy[0], dy[1], dy[2], dy[3],
+            m11[0], m11[1], m11[2], m11[3], m12[0], m12[1], m12[2], m12[3], m21[0], m21[1], m21[2],
+            m21[3], m22[0], m22[1], m22[2], m22[3], dx[0], dx[1], dx[2], dx[3], dy[0], dy[1],
+            dy[2], dy[3],
         ]
     }
 
@@ -92,7 +87,14 @@ impl Mat3x2fWire {
         let m22 = f32::from_le_bytes(bytes[12..16].try_into().ok()?);
         let dx = f32::from_le_bytes(bytes[16..20].try_into().ok()?);
         let dy = f32::from_le_bytes(bytes[20..24].try_into().ok()?);
-        Some(Self { m11, m12, m21, m22, dx, dy })
+        Some(Self {
+            m11,
+            m12,
+            m21,
+            m22,
+            dx,
+            dy,
+        })
     }
 }
 
@@ -110,7 +112,14 @@ mod tests {
 
     #[test]
     fn mat3x2_roundtrip() {
-        let mat = Mat3x2fWire { m11: 1.0, m12: 2.0, m21: 3.0, m22: 4.0, dx: 5.0, dy: 6.0 };
+        let mat = Mat3x2fWire {
+            m11: 1.0,
+            m12: 2.0,
+            m21: 3.0,
+            m22: 4.0,
+            dx: 5.0,
+            dy: 6.0,
+        };
         let bytes = mat.as_bytes();
         let decoded = Mat3x2fWire::from_bytes(&bytes).expect("decode");
         assert_eq!(mat, decoded);

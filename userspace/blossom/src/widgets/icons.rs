@@ -1,6 +1,6 @@
-use stem::petals::{Icon, Styled};
-use stem::petals::builder::Node;
 use abi::schema::kinds;
+use stem::petals::builder::Node;
+use stem::petals::{Icon, Styled};
 
 // Correct kind names from abi::schema::kinds
 // Some kinds might not have constants yet, so we use string literals if needed

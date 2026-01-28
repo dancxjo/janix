@@ -1,11 +1,11 @@
 use crate::task::{ManagedTask, TaskKind};
+use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use alloc::string::ToString;
 use alloc::vec::Vec;
 use stem::syscall::{port_create, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use abi::ids::HandleId;
 use stem::{info, warn};
 
 pub struct DisplayHandles {
@@ -29,7 +29,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
 
     // NOTE: VirtIO GPU is not fully implemented (needs PCI capability parsing).
     // For now, prefer BootFB which works reliably.
-    
+
     // Check for boot framebuffer first (reliable)
     let mut fb_buf = [ThingId::default(); 1];
     if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
@@ -76,8 +76,10 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         return None;
     }
 
-    info!("SPROUT: Display backend: {} ({}x{} stride={})", 
-        backend_name, display_width, display_height, display_stride);
+    info!(
+        "SPROUT: Display backend: {} ({}x{} stride={})",
+        backend_name, display_width, display_height, display_stride
+    );
 
     let size = (display_height as usize) * (display_stride as usize);
     let bs_id = match thingsys::bytespace_create(size, 0, display_format as u64) {
@@ -97,7 +99,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     let _ = thingsys::prop_set(bs_id, keys::HEIGHT, display_height as u64);
     let _ = thingsys::prop_set(bs_id, keys::STRIDE, display_stride as u64);
     let _ = thingsys::prop_set(bs_id, keys::FORMAT, display_format as u64);
-    
+
     // Store backend name as a property so Bloom can query it
     if let Ok(backend_sym) = thingsys::intern(backend_name) {
         let _ = thingsys::prop_set(bs_id, "display_backend", backend_sym as u64);
@@ -128,7 +130,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
             "SPROUT: Spawned display driver '{}' (PID={})",
             driver_name, pid
         );
-            let _ = stem::thread::set_priority(pid, 2);
+        let _ = stem::thread::set_priority(pid, 2);
         tasks.push(ManagedTask {
             name: driver_name.to_string(),
             kind: TaskKind::Driver("dev.display".to_string()),
@@ -208,7 +210,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     match stem::syscall::spawn_process("/ps2_kbd", kbd_raw.0 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned ps2_kbd (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
+            let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/ps2_kbd".to_string(),
                 kind: TaskKind::Driver("dev.input.ps2.kbd".to_string()),
@@ -226,7 +228,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     match stem::syscall::spawn_process("/ps2_mouse", mouse_raw.0 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned ps2_mouse (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
+            let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/ps2_mouse".to_string(),
                 kind: TaskKind::Driver("dev.input.ps2.mouse".to_string()),
@@ -263,7 +265,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     match stem::syscall::spawn_process("/bristle", bristle_arg as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned bristle (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
+            let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/bristle".to_string(),
                 kind: TaskKind::App,
@@ -283,51 +285,52 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         .as_ref()
         .map(|d| (d.drv_req_write, d.drv_resp_read, d.bs_id))
         .unwrap_or((0, 0, ThingId::default()));
-        
+
     // Bloom Bootstrap
     // Create bytespace to hold args
-    // Layout: 
+    // Layout:
     // 0: magic (0xBl00mArg)
     // 8: drv_req
     // 12: drv_resp
     // 16: evt
     // 20: font_req (write) -> font_req.0
     // 24: font_resp (read) -> font_resp.1
-    
+
     let boot_size = 4096;
     let boot_bs = thingsys::bytespace_create(boot_size, 0, 0).unwrap_or(ThingId::default());
-    
+
     if boot_bs.to_u64_lossy() != 0 {
-         use stem::thing::sys::{bytespace_map, bytespace_unmap};
-         if let Ok(ptr) = bytespace_map(boot_bs) {
-              let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
-              slice[0] = 0xB100AA01; // Magic
-              slice[1] = drv_req_write as u32;
-              slice[2] = drv_resp_read as u32;
-              slice[3] = evt.1 as u32; // bristle read
-              
-              // Display bytespace id (u64 split into two u32s)
-              let bs = display_bs_id.to_u64_lossy();
-              slice[4] = bs as u32;
-              slice[5] = (bs >> 32) as u32;
-              
-              let _ = bytespace_unmap(boot_bs, ptr);
-         }
+        use stem::thing::sys::{bytespace_map, bytespace_unmap};
+        if let Ok(ptr) = bytespace_map(boot_bs) {
+            let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
+            slice[0] = 0xB100AA01; // Magic
+            slice[1] = drv_req_write as u32;
+            slice[2] = drv_resp_read as u32;
+            slice[3] = evt.1 as u32; // bristle read
+
+            // Display bytespace id (u64 split into two u32s)
+            let bs = display_bs_id.to_u64_lossy();
+            slice[4] = bs as u32;
+            slice[5] = (bs >> 32) as u32;
+
+            let _ = bytespace_unmap(boot_bs, ptr);
+        }
     }
-    
+
     let bloom_arg = boot_bs.to_u64_lossy() as usize;
-    
+
     let backend_info = display.as_ref().map(|d| d.backend_name).unwrap_or("none");
     info!(
         "SPROUT: Bloom handles via BS={} backend={}",
-        boot_bs.to_u64_lossy(), backend_info
+        boot_bs.to_u64_lossy(),
+        backend_info
     );
 
     // Spawn bloom
     match stem::syscall::spawn_process("/bloom", bloom_arg) {
         Ok(pid) => {
             info!("SPROUT: Spawned bloom (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
+            let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/bloom".to_string(),
                 kind: TaskKind::App,
@@ -345,7 +348,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     match stem::syscall::spawn_process("/echo", evt_echo.1 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned echo (PID={})", pid);
-                let _ = stem::thread::set_priority(pid, 2);
+            let _ = stem::thread::set_priority(pid, 2);
             tasks.push(ManagedTask {
                 name: "/echo".to_string(),
                 kind: TaskKind::App,

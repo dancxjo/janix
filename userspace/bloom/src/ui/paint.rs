@@ -7,8 +7,8 @@ use crate::damage::Rect;
 use crate::geometry::Color;
 use crate::render_state::{RasterKey, RenderState};
 use crate::ui::constants::{
-    SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT, TITLE_BAR_ICON_SIZE,
-    TITLE_BAR_PADDING, MAXIMIZE_BUTTON_SIZE, MAXIMIZE_BUTTON_PADDING,
+    MAXIMIZE_BUTTON_PADDING, MAXIMIZE_BUTTON_SIZE, SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE,
+    TITLE_BAR_HEIGHT, TITLE_BAR_ICON_SIZE, TITLE_BAR_PADDING,
 };
 use crate::ui::layout::{LayoutNode, LayoutTree, SymbolResolver};
 use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot, UiSnapshot};
@@ -244,7 +244,8 @@ impl PaintBuilder {
                 let handle_line_count = 6;
                 let handle_width = 40;
                 let handle_spacing = 3;
-                let handle_start_y = bar_rect.y + (bar_rect.h - (handle_line_count * handle_spacing)) / 2;
+                let handle_start_y =
+                    bar_rect.y + (bar_rect.h - (handle_line_count * handle_spacing)) / 2;
 
                 // Left drag handle
                 let left_handle_x = bar_rect.x + 4;
@@ -324,8 +325,11 @@ impl PaintBuilder {
                 let text_offset_x = handle_width + 8 + icon_size + (icon_padding * 2);
 
                 // Shade button with Windows 3.1 styling (rightmost)
-                let shade_x =
-                    bar_rect.x + bar_rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE - handle_width - 8;
+                let shade_x = bar_rect.x + bar_rect.w
+                    - SHADE_BUTTON_PADDING
+                    - SHADE_BUTTON_SIZE
+                    - handle_width
+                    - 8;
                 let shade_y = bar_rect.y + (bar_rect.h - SHADE_BUTTON_SIZE) / 2;
 
                 // Maximize button (left of shade button)
@@ -334,13 +338,23 @@ impl PaintBuilder {
 
                 // Maximize button outer black border
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(maximize_x - 1, maximize_y - 1, MAXIMIZE_BUTTON_SIZE + 2, MAXIMIZE_BUTTON_SIZE + 2),
+                    rect: Rect::new(
+                        maximize_x - 1,
+                        maximize_y - 1,
+                        MAXIMIZE_BUTTON_SIZE + 2,
+                        MAXIMIZE_BUTTON_SIZE + 2,
+                    ),
                     color: Color::from_u32(FRAME_OUTER),
                     radius: 0,
                 });
                 // Maximize button grey fill
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(maximize_x, maximize_y, MAXIMIZE_BUTTON_SIZE, MAXIMIZE_BUTTON_SIZE),
+                    rect: Rect::new(
+                        maximize_x,
+                        maximize_y,
+                        MAXIMIZE_BUTTON_SIZE,
+                        MAXIMIZE_BUTTON_SIZE,
+                    ),
                     color: Color::from_u32(0xFFC0C0C0), // Windows 3.1 button grey
                     radius: 0,
                 });
@@ -357,12 +371,22 @@ impl PaintBuilder {
                 });
                 // Maximize button 3D shadow (bottom-right grey)
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(maximize_x + 1, maximize_y + MAXIMIZE_BUTTON_SIZE - 1, MAXIMIZE_BUTTON_SIZE - 1, 1),
+                    rect: Rect::new(
+                        maximize_x + 1,
+                        maximize_y + MAXIMIZE_BUTTON_SIZE - 1,
+                        MAXIMIZE_BUTTON_SIZE - 1,
+                        1,
+                    ),
                     color: Color::from_u32(0xFF808080),
                     radius: 0,
                 });
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(maximize_x + MAXIMIZE_BUTTON_SIZE - 1, maximize_y + 1, 1, MAXIMIZE_BUTTON_SIZE - 1),
+                    rect: Rect::new(
+                        maximize_x + MAXIMIZE_BUTTON_SIZE - 1,
+                        maximize_y + 1,
+                        1,
+                        MAXIMIZE_BUTTON_SIZE - 1,
+                    ),
                     color: Color::from_u32(0xFF808080),
                     radius: 0,
                 });
@@ -395,7 +419,12 @@ impl PaintBuilder {
 
                 // Shade button outer black border
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(shade_x - 1, shade_y - 1, SHADE_BUTTON_SIZE + 2, SHADE_BUTTON_SIZE + 2),
+                    rect: Rect::new(
+                        shade_x - 1,
+                        shade_y - 1,
+                        SHADE_BUTTON_SIZE + 2,
+                        SHADE_BUTTON_SIZE + 2,
+                    ),
                     color: Color::from_u32(FRAME_OUTER),
                     radius: 0,
                 });
@@ -418,12 +447,22 @@ impl PaintBuilder {
                 });
                 // Button 3D shadow (bottom-right black)
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(shade_x + 1, shade_y + SHADE_BUTTON_SIZE - 1, SHADE_BUTTON_SIZE - 1, 1),
+                    rect: Rect::new(
+                        shade_x + 1,
+                        shade_y + SHADE_BUTTON_SIZE - 1,
+                        SHADE_BUTTON_SIZE - 1,
+                        1,
+                    ),
                     color: Color::from_u32(0xFF808080),
                     radius: 0,
                 });
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(shade_x + SHADE_BUTTON_SIZE - 1, shade_y + 1, 1, SHADE_BUTTON_SIZE - 1),
+                    rect: Rect::new(
+                        shade_x + SHADE_BUTTON_SIZE - 1,
+                        shade_y + 1,
+                        1,
+                        SHADE_BUTTON_SIZE - 1,
+                    ),
                     color: Color::from_u32(0xFF808080),
                     radius: 0,
                 });
@@ -451,7 +490,9 @@ impl PaintBuilder {
                 // Title Text - vertically centered in title bar
                 let title = Self::get_str_prop(node, keys::UI_TITLE, symbols);
                 if let Some(t) = title {
-                    let text_w = (maximize_x - MAXIMIZE_BUTTON_PADDING - (bar_rect.x + text_offset_x)).max(0);
+                    let text_w =
+                        (maximize_x - MAXIMIZE_BUTTON_PADDING - (bar_rect.x + text_offset_x))
+                            .max(0);
                     let font_size: f32 = 14.0;
                     let text_y = bar_rect.y + (bar_rect.h - font_size as i32) / 2;
                     objects.push(PaintObject::Text {
@@ -711,13 +752,7 @@ impl PaintBuilder {
         let mut pixels = alloc::vec![0u32; len / 4];
 
         let mut surf = unsafe {
-            crate::surface::Surface::new(
-                pixels.as_mut_ptr() as *mut u8,
-                len,
-                w,
-                h,
-                stride as u32,
-            )
+            crate::surface::Surface::new(pixels.as_mut_ptr() as *mut u8, len, w, h, stride as u32)
         };
 
         let mut list = crate::drawlist::DrawList::new();

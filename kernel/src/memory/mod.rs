@@ -12,8 +12,8 @@ pub mod mappings;
 pub mod paging;
 
 use crate::kinfo;
-use spin::Mutex;
 pub use frame_alloc::FRAME_ALLOCATOR;
+use spin::Mutex;
 
 /// Next user VA for mappings (starts at 0x1000_0000, grows up)
 static NEXT_MAP_VA: Mutex<u64> = Mutex::new(0x1000_0000);
@@ -26,7 +26,6 @@ pub fn alloc_user_va(size: usize) -> u64 {
     *next = (*next + size as u64 + 4095) & !4095;
     va
 }
-
 
 pub fn init<R: crate::BootRuntime>(rt: &R) {
     let map = rt.phys_memory_map();
@@ -71,11 +70,12 @@ pub fn alloc_contiguous_frames(count: usize) -> Option<u64> {
 
 /// Global hook for mapping user pages. Set by scheduler init.
 static mut MAP_USER_PAGE_HOOK: Option<unsafe fn(u64, u64) -> Result<(), MapError>> = None;
-static mut MAP_USER_PAGE_PERMS_HOOK: Option<unsafe fn(u64, u64, MapPerms) -> Result<(), MapError>> = None;
+static mut MAP_USER_PAGE_PERMS_HOOK: Option<unsafe fn(u64, u64, MapPerms) -> Result<(), MapError>> =
+    None;
 static mut UNMAP_USER_PAGE_HOOK: Option<unsafe fn(u64) -> Result<(), MapError>> = None;
 
 /// Error from user page mapping operations.
-/// 
+///
 /// Provides typed error information that can be mapped to appropriate errno values.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MapError {
@@ -110,7 +110,9 @@ pub unsafe fn set_map_user_page_hook(hook: unsafe fn(u64, u64) -> Result<(), Map
 }
 
 /// Initialize the user page mapping hook with custom permissions.
-pub unsafe fn set_map_user_page_perms_hook(hook: unsafe fn(u64, u64, MapPerms) -> Result<(), MapError>) {
+pub unsafe fn set_map_user_page_perms_hook(
+    hook: unsafe fn(u64, u64, MapPerms) -> Result<(), MapError>,
+) {
     unsafe { MAP_USER_PAGE_PERMS_HOOK = Some(hook) };
 }
 
@@ -125,7 +127,10 @@ pub unsafe fn map_user_page(virt: u64, phys: u64) -> Result<(), abi::errors::Err
     if let Some(hook) = unsafe { MAP_USER_PAGE_HOOK } {
         unsafe { hook(virt, phys) }.map_err(|e| e.to_errno())
     } else {
-        kinfo!("WARN: map_user_page called before hook installed (virt=0x{:x})", virt);
+        kinfo!(
+            "WARN: map_user_page called before hook installed (virt=0x{:x})",
+            virt
+        );
         Err(abi::errors::Errno::EIO)
     }
 }
@@ -135,7 +140,10 @@ pub unsafe fn unmap_user_page(virt: u64) -> Result<(), abi::errors::Errno> {
     if let Some(hook) = unsafe { UNMAP_USER_PAGE_HOOK } {
         unsafe { hook(virt) }.map_err(|e| e.to_errno())
     } else {
-        kinfo!("WARN: unmap_user_page called before hook installed (virt=0x{:x})", virt);
+        kinfo!(
+            "WARN: unmap_user_page called before hook installed (virt=0x{:x})",
+            virt
+        );
         Err(abi::errors::Errno::EIO)
     }
 }
@@ -149,8 +157,10 @@ pub unsafe fn map_user_page_with_perms(
     if let Some(hook) = unsafe { MAP_USER_PAGE_PERMS_HOOK } {
         unsafe { hook(virt, phys, perms) }.map_err(|e| e.to_errno())
     } else {
-        kinfo!("WARN: map_user_page_with_perms called before hook installed (virt=0x{:x})", virt);
+        kinfo!(
+            "WARN: map_user_page_with_perms called before hook installed (virt=0x{:x})",
+            virt
+        );
         Err(abi::errors::Errno::EIO)
     }
 }
-

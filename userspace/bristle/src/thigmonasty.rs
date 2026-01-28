@@ -6,8 +6,8 @@
 //! - Generates repeat events
 //! - Emits KeyDown/KeyUp edges
 
-use abi::hid::{Key, Mods};
 use crate::normalizer::ps2_to_key;
+use abi::hid::{Key, Mods};
 
 /// Keyboard state tracker
 pub struct KeyboardState {
@@ -16,7 +16,7 @@ pub struct KeyboardState {
     /// E0 extended prefix pending
     e0_prefix: bool,
     /// Currently pressed keys (simple bitset for common keys)
-    pressed: [u64; 4],  // 256 bits
+    pressed: [u64; 4], // 256 bits
 }
 
 /// Edge event emitted by the keyboard state machine
@@ -50,7 +50,7 @@ impl KeyboardState {
 
         // Convert to normalized key
         let key = ps2_to_key(scancode, extended);
-        
+
         // Update modifier state
         self.update_mods(key, !is_break);
 
@@ -58,28 +58,46 @@ impl KeyboardState {
         let key_idx = key as u16 as usize;
         let word_idx = key_idx / 64;
         let bit_idx = key_idx % 64;
-        
+
         if word_idx < 4 {
             let was_pressed = self.pressed[word_idx] & (1 << bit_idx) != 0;
-            
+
             if is_break {
                 // Key released
                 self.pressed[word_idx] &= !(1 << bit_idx);
-                Some(KeyEdge::Up { key, mods: Mods(self.mods) })
+                Some(KeyEdge::Up {
+                    key,
+                    mods: Mods(self.mods),
+                })
             } else if was_pressed {
                 // Key repeat
-                Some(KeyEdge::Down { key, mods: Mods(self.mods), repeat: true })
+                Some(KeyEdge::Down {
+                    key,
+                    mods: Mods(self.mods),
+                    repeat: true,
+                })
             } else {
                 // Key pressed
                 self.pressed[word_idx] |= 1 << bit_idx;
-                Some(KeyEdge::Down { key, mods: Mods(self.mods), repeat: false })
+                Some(KeyEdge::Down {
+                    key,
+                    mods: Mods(self.mods),
+                    repeat: false,
+                })
             }
         } else {
             // Key index out of range, emit without tracking
             if is_break {
-                Some(KeyEdge::Up { key, mods: Mods(self.mods) })
+                Some(KeyEdge::Up {
+                    key,
+                    mods: Mods(self.mods),
+                })
             } else {
-                Some(KeyEdge::Down { key, mods: Mods(self.mods), repeat: false })
+                Some(KeyEdge::Down {
+                    key,
+                    mods: Mods(self.mods),
+                    repeat: false,
+                })
             }
         }
     }
@@ -91,7 +109,8 @@ impl KeyboardState {
                     self.mods |= Mods::SHIFT;
                 } else {
                     // Only clear if BOTH Shift keys are now released
-                    if !self.is_key_pressed(Key::LeftShift) && !self.is_key_pressed(Key::RightShift) {
+                    if !self.is_key_pressed(Key::LeftShift) && !self.is_key_pressed(Key::RightShift)
+                    {
                         self.mods &= !Mods::SHIFT;
                     }
                 }
@@ -110,11 +129,17 @@ impl KeyboardState {
                 // modifiers we often want both to act as ALT.
                 // Bristle currently maps RightAlt to ALTGR bit.
                 if key == Key::LeftAlt {
-                    if pressed { self.mods |= Mods::ALT; }
-                    else { self.mods &= !Mods::ALT; }
+                    if pressed {
+                        self.mods |= Mods::ALT;
+                    } else {
+                        self.mods &= !Mods::ALT;
+                    }
                 } else {
-                    if pressed { self.mods |= Mods::ALTGR; }
-                    else { self.mods &= !Mods::ALTGR; }
+                    if pressed {
+                        self.mods |= Mods::ALTGR;
+                    } else {
+                        self.mods &= !Mods::ALTGR;
+                    }
                 }
             }
             Key::LeftMeta | Key::RightMeta => {

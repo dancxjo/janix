@@ -1,11 +1,11 @@
+use abi::ids::HandleId;
 use abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC, SECTION_NAME};
 use abi::schema::kinds;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
+use stem::info;
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use abi::ids::HandleId;
-use stem::info;
 
 pub struct Registry {
     drivers: BTreeMap<String, String>,

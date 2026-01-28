@@ -2,12 +2,12 @@ extern crate alloc;
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
-use alloc::vec::Vec;
 use alloc::vec;
+use alloc::vec::Vec;
 
+use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
-use abi::ids::HandleId;
 use stem::thing::ThingId;
 
 use crate::layout::LayoutRect;
@@ -99,7 +99,11 @@ impl UiGraph for SysGraph {
     }
 }
 
-pub fn find_root_ui(graph: &impl UiGraph, symbols: &UiSymbols, window_id: ThingId) -> Option<ThingId> {
+pub fn find_root_ui(
+    graph: &impl UiGraph,
+    symbols: &UiSymbols,
+    window_id: ThingId,
+) -> Option<ThingId> {
     let mut edges = [Edge::default(); 64];
     let count = graph.get_edges(window_id, &mut edges);
     for edge in edges.iter().take(count) {
@@ -142,7 +146,13 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
         let label_id = graph
             .get_prop(id, keys::UI_BUTTON_LABEL)
             .or_else(|| graph.get_prop(id, keys::UI_CHECKBOX_LABEL))
-            .and_then(|val| if val == 0 { None } else { Some(ThingId::from_u64(val)) });
+            .and_then(|val| {
+                if val == 0 {
+                    None
+                } else {
+                    Some(ThingId::from_u64(val))
+                }
+            });
 
         let text = if node_kind == UiNodeKind::Text {
             let bs = graph.get_prop(id, keys::UI_TEXT).unwrap_or(0);
@@ -208,10 +218,21 @@ pub fn write_bounds(graph: &mut impl UiGraph, tree: &UiTree, rects: &[LayoutRect
     }
 }
 
-pub fn emit_paint(tree: &UiTree, rects: &[LayoutRect], window_bg: u32, _is_focused: bool) -> Vec<u8> {
+pub fn emit_paint(
+    tree: &UiTree,
+    rects: &[LayoutRect],
+    window_bg: u32,
+    _is_focused: bool,
+) -> Vec<u8> {
     let mut builder = PaintBuilder::new();
     let root_rect = rects[tree.root];
-    builder.fill_rect(root_rect.x, root_rect.y, root_rect.w, root_rect.h, window_bg);
+    builder.fill_rect(
+        root_rect.x,
+        root_rect.y,
+        root_rect.w,
+        root_rect.h,
+        window_bg,
+    );
     emit_node(tree, rects, tree.root, &mut builder);
     builder.finish()
 }
@@ -305,7 +326,13 @@ fn emit_node(tree: &UiTree, rects: &[LayoutRect], index: usize, builder: &mut Pa
     }
 }
 
-fn draw_button(tree: &UiTree, rects: &[LayoutRect], index: usize, rect: LayoutRect, builder: &mut PaintBuilder) {
+fn draw_button(
+    tree: &UiTree,
+    rects: &[LayoutRect],
+    index: usize,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
     let node = &tree.nodes[index];
     let bg = if !node.enabled {
         BUTTON_BG_DISABLED
@@ -334,14 +361,38 @@ fn draw_button(tree: &UiTree, rects: &[LayoutRect], index: usize, rect: LayoutRe
     }
 }
 
-fn draw_checkbox(tree: &UiTree, rects: &[LayoutRect], index: usize, rect: LayoutRect, builder: &mut PaintBuilder) {
+fn draw_checkbox(
+    tree: &UiTree,
+    rects: &[LayoutRect],
+    index: usize,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
     let node = &tree.nodes[index];
     let box_rect = checkbox_box_rect(rect);
-    builder.fill_rect(box_rect.x, box_rect.y, box_rect.w, box_rect.h, CHECKBOX_FILL);
+    builder.fill_rect(
+        box_rect.x,
+        box_rect.y,
+        box_rect.w,
+        box_rect.h,
+        CHECKBOX_FILL,
+    );
     builder.fill_rect(box_rect.x, box_rect.y, box_rect.w, 1, CHECKBOX_BORDER);
-    builder.fill_rect(box_rect.x, box_rect.y + box_rect.h - 1, box_rect.w, 1, CHECKBOX_BORDER);
+    builder.fill_rect(
+        box_rect.x,
+        box_rect.y + box_rect.h - 1,
+        box_rect.w,
+        1,
+        CHECKBOX_BORDER,
+    );
     builder.fill_rect(box_rect.x, box_rect.y, 1, box_rect.h, CHECKBOX_BORDER);
-    builder.fill_rect(box_rect.x + box_rect.w - 1, box_rect.y, 1, box_rect.h, CHECKBOX_BORDER);
+    builder.fill_rect(
+        box_rect.x + box_rect.w - 1,
+        box_rect.y,
+        1,
+        box_rect.h,
+        CHECKBOX_BORDER,
+    );
 
     if node.checked {
         let x1 = box_rect.x + 3;
@@ -414,13 +465,13 @@ pub fn checkbox_box_rect(rect: LayoutRect) -> LayoutRect {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use stem::petals::graph::{GraphBackend, UiTreeBuilder};
-    use stem::errors::{Error, Result};
     use abi::errors::Errno;
-    use abi::ui_paint::PaintReader;
     use abi::ui_event::{UiEventKind, UiEventWire, UI_EVENT_BYTES};
+    use abi::ui_paint::PaintReader;
     use alloc::collections::BTreeMap;
     use alloc::string::String;
+    use stem::errors::{Error, Result};
+    use stem::petals::graph::{GraphBackend, UiTreeBuilder};
 
     #[derive(Default)]
     struct TestGraph {
@@ -472,7 +523,8 @@ mod tests {
         }
 
         fn prop_set(&mut self, id: ThingId, key: &str, value: u64) -> Result<()> {
-            self.props.insert((id.to_u64_lossy(), key.to_string()), value);
+            self.props
+                .insert((id.to_u64_lossy(), key.to_string()), value);
             Ok(())
         }
 
@@ -508,7 +560,9 @@ mod tests {
         }
 
         fn get_prop(&self, id: ThingId, key: &str) -> Option<u64> {
-            self.props.get(&(id.to_u64_lossy(), key.to_string())).copied()
+            self.props
+                .get(&(id.to_u64_lossy(), key.to_string()))
+                .copied()
         }
 
         fn set_prop(&mut self, id: ThingId, key: &str, val: u64) {
@@ -554,7 +608,15 @@ mod tests {
             kind_column: 104,
         };
         let tree = build_tree(&graph, &symbols, root).unwrap();
-        let rects = layout_tree(&tree, LayoutRect { x: 0, y: 0, w: 200, h: 200 });
+        let rects = layout_tree(
+            &tree,
+            LayoutRect {
+                x: 0,
+                y: 0,
+                w: 200,
+                h: 200,
+            },
+        );
         let child_rects: Vec<LayoutRect> = tree.nodes[tree.root]
             .children
             .iter()
@@ -563,10 +625,7 @@ mod tests {
         assert!(child_rects[0].y < child_rects[1].y);
         assert!(child_rects[1].y < child_rects[2].y);
 
-        let total_height = child_rects
-            .iter()
-            .map(|r| r.h)
-            .sum::<i32>()
+        let total_height = child_rects.iter().map(|r| r.h).sum::<i32>()
             + COLUMN_GAP * (child_rects.len() as i32 - 1)
             + COLUMN_PADDING * 2;
         assert!(total_height <= 200);
@@ -576,7 +635,9 @@ mod tests {
         assert!(box_rect.y + box_rect.h <= child_rects[0].y + child_rects[0].h);
 
         write_bounds(&mut graph, &tree, &rects);
-        let x = graph.get_prop(tree.nodes[tree.root].id, keys::UI_X).unwrap_or(1);
+        let x = graph
+            .get_prop(tree.nodes[tree.root].id, keys::UI_X)
+            .unwrap_or(1);
         assert_eq!(x, 0);
     }
 
@@ -600,9 +661,10 @@ mod tests {
         graph
             .props
             .insert((window_id.to_u64_lossy(), keys::UI_HEIGHT.to_string()), 140);
-        graph
-            .props
-            .insert((window_id.to_u64_lossy(), keys::UI_BG_COLOR.to_string()), 0xFFCCCCCC);
+        graph.props.insert(
+            (window_id.to_u64_lossy(), keys::UI_BG_COLOR.to_string()),
+            0xFFCCCCCC,
+        );
 
         let symbols = UiSymbols {
             rel_has_child: 201,
@@ -613,7 +675,15 @@ mod tests {
             kind_column: 104,
         };
         let tree = build_tree(&graph, &symbols, root).unwrap();
-        let rects = layout_tree(&tree, LayoutRect { x: 0, y: 0, w: 220, h: 140 });
+        let rects = layout_tree(
+            &tree,
+            LayoutRect {
+                x: 0,
+                y: 0,
+                w: 220,
+                h: 140,
+            },
+        );
         write_bounds(&mut graph, &tree, &rects);
         let paint = emit_paint(&tree, &rects, 0xFFCCCCCC, false);
         let mut reader = PaintReader::new(&paint).expect("paint reader");
@@ -628,13 +698,20 @@ mod tests {
             .unwrap();
         let checked = graph
             .props
-            .get(&(checkbox_id.to_u64_lossy(), keys::UI_CHECKBOX_CHECKED.to_string()))
+            .get(&(
+                checkbox_id.to_u64_lossy(),
+                keys::UI_CHECKBOX_CHECKED.to_string(),
+            ))
             .copied()
             .unwrap_or(0);
         let new_checked = if checked == 0 { 1 } else { 0 };
-        graph
-            .props
-            .insert((checkbox_id.to_u64_lossy(), keys::UI_CHECKBOX_CHECKED.to_string()), new_checked);
+        graph.props.insert(
+            (
+                checkbox_id.to_u64_lossy(),
+                keys::UI_CHECKBOX_CHECKED.to_string(),
+            ),
+            new_checked,
+        );
         let event = UiEventWire::new_toggled(checkbox_id.to_u64_lossy(), new_checked != 0, 11);
         let mut buf = [0u8; UI_EVENT_BYTES];
         event.encode(&mut buf).unwrap();
@@ -646,7 +723,10 @@ mod tests {
         graph.bytespaces.insert(queue, buf.to_vec());
 
         let decoded = UiEventWire::decode(&buf).unwrap();
-        assert_eq!(UiEventKind::from_raw(decoded.kind), Some(UiEventKind::Toggled));
+        assert_eq!(
+            UiEventKind::from_raw(decoded.kind),
+            Some(UiEventKind::Toggled)
+        );
         assert_eq!(decoded.node_id, checkbox_id.to_u64_lossy());
         assert_eq!(decoded.checked, new_checked as u8);
     }

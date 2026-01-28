@@ -1,4 +1,4 @@
-use crate::{Graphable, ThingId, BlobId};
+use crate::{BlobId, Graphable, ThingId};
 
 #[derive(Graphable, Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(C, packed)]

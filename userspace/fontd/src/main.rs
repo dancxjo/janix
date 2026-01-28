@@ -6,32 +6,31 @@ extern crate stem;
 
 mod atlas;
 
-use alloc::vec::Vec;
-use alloc::string::String;
-use alloc::format;
-use stem::thing::ThingId;
-use stem::thing::sys::{
-    bytespace_info, bytespace_map, bytespace_unmap, bytespace_create, bytespace_write,
-    create_node, link, prop_get, prop_set, get_edges, find, intern,
-};
-use abi::schema::{keys, kinds, rels};
-use abi::types::{WatchSpec, WatchMode, HandleId};
-use abi::watch::{self, WatchOp};
-use abi::root::RootWatchFilter;
 use abi::font_protocol::{
-    GetFaceMetrics, FaceMetrics, EnsureGlyphs, EnsureGlyphsResp,
-    GlyphPlacement, FontError, FontRequestTag, AtlasFormat,
-    encode_pong, encode_error, decode_request_tag,
+    decode_request_tag, encode_error, encode_pong, AtlasFormat, EnsureGlyphs, EnsureGlyphsResp,
+    FaceMetrics, FontError, FontRequestTag, GetFaceMetrics, GlyphPlacement,
 };
 use abi::ids::HandleId as AbiHandleId;
-use stem::syscall;
-use log::{info, error, warn, debug};
+use abi::root::RootWatchFilter;
+use abi::schema::{keys, kinds, rels};
+use abi::types::{HandleId, WatchMode, WatchSpec};
+use abi::watch::{self, WatchOp};
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 use fontdue::{Font, FontSettings};
-use ttf_parser::{Face, name_id};
+use log::{debug, error, info, warn};
+use stem::syscall;
+use stem::thing::sys::{
+    bytespace_create, bytespace_info, bytespace_map, bytespace_unmap, bytespace_write, create_node,
+    find, get_edges, intern, link, prop_get, prop_set,
+};
+use stem::thing::ThingId;
+use ttf_parser::{name_id, Face};
 
 use alloc::collections::BTreeMap;
-use hashbrown::HashMap;
 use atlas::{AtlasCache, AtlasKey};
+use hashbrown::HashMap;
 
 /// Font service port name
 const FONTD_PORT_NAME: &str = "fontd";
@@ -62,7 +61,7 @@ impl FontD {
         let size = bytespace_info(asset_id).ok()?;
         let ptr = bytespace_map(asset_id).ok()?;
         let data = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
-        
+
         // We MUST own the bytes for Fontdue (it doesn't copy)
         let mut owned = Vec::with_capacity(size);
         owned.extend_from_slice(data);
@@ -71,7 +70,7 @@ impl FontD {
         // Leak the Vec to get a 'static slice for Fontdue
         // In a real system we'd manage this better, but here we just keep it in memory
         let static_slice: &'static [u8] = Vec::leak(owned);
-        
+
         let font = match Font::from_bytes(static_slice, FontSettings::default()) {
             Ok(font) => font,
             Err(e) => {
@@ -97,9 +96,12 @@ fn main() -> ! {
         (Ok(req), Ok(resp)) => {
             // Create service node and advertise port handles
             if let Ok(svc_node) = create_node("svc.FontD") {
-                let _ = prop_set(svc_node, "fontd.req", req.0 as u64);  // Client writes here
+                let _ = prop_set(svc_node, "fontd.req", req.0 as u64); // Client writes here
                 let _ = prop_set(svc_node, "fontd.resp", resp.1 as u64); // Client reads here
-                info!("FONTD: Service node created, req={}, resp={}", req.0, resp.1);
+                info!(
+                    "FONTD: Service node created, req={}, resp={}",
+                    req.0, resp.1
+                );
             }
             (req.1, resp.0) // fontd uses (read, write) sides
         }
@@ -123,17 +125,23 @@ fn main() -> ! {
     loop {
         // Process watch events (legacy path)
         if let Ok(len) = syscall::root_watch_next(glyph_watch, &mut seq_out, &mut watch_buf) {
-            if len > 0 { process_glyph_events(&watch_buf[..len], &mut state); }
+            if len > 0 {
+                process_glyph_events(&watch_buf[..len], &mut state);
+            }
         }
         if let Ok(len) = syscall::root_watch_next(import_watch, &mut seq_out, &mut watch_buf) {
-            if len > 0 { process_import_events(&watch_buf[..len], &mut state); }
+            if len > 0 {
+                process_import_events(&watch_buf[..len], &mut state);
+            }
         }
 
         // Process IPC requests (new atlas-based path)
         if fontd_req != 0 {
             match syscall::port_recv(fontd_req, &mut ipc_buf) {
                 Ok(len) if len > 0 => {
-                    if let Some(resp_len) = handle_ipc_request(&ipc_buf[..len], &mut resp_buf, &mut state) {
+                    if let Some(resp_len) =
+                        handle_ipc_request(&ipc_buf[..len], &mut resp_buf, &mut state)
+                    {
                         let _ = syscall::port_send(fontd_resp, &resp_buf[..resp_len]);
                     }
                 }
@@ -164,9 +172,7 @@ fn open_watch(kind: &str) -> usize {
 fn handle_ipc_request(req: &[u8], resp: &mut [u8], state: &mut FontD) -> Option<usize> {
     let tag = decode_request_tag(req)?;
     match tag {
-        FontRequestTag::Ping => {
-            encode_pong(resp)
-        }
+        FontRequestTag::Ping => encode_pong(resp),
         FontRequestTag::GetFaceMetrics => {
             let metrics_req = GetFaceMetrics::decode(&req[1..])?;
             handle_get_metrics(metrics_req, resp, state)
@@ -180,47 +186,52 @@ fn handle_ipc_request(req: &[u8], resp: &mut [u8], state: &mut FontD) -> Option<
 
 fn handle_get_metrics(req: GetFaceMetrics, resp: &mut [u8], state: &mut FontD) -> Option<usize> {
     let cache_key = (req.face_id.to_u64_lossy(), req.px_size);
-    
+
     // Check cache first
     if let Some(metrics) = state.metrics_cache.get(&cache_key) {
         return metrics.encode(resp);
     }
-    
+
     // Load font and compute metrics
     let font = state.ensure_font(req.face_id)?;
     let line_metrics = font.horizontal_line_metrics(req.px_size as f32)?;
-    
+
     let metrics = FaceMetrics {
         ascent: line_metrics.ascent as i16,
         descent: line_metrics.descent as i16,
         line_gap: line_metrics.line_gap as i16,
         units_per_em: font.units_per_em() as u16,
     };
-    
+
     state.metrics_cache.insert(cache_key, metrics);
     metrics.encode(resp)
 }
 
 fn handle_ensure_glyphs(req: EnsureGlyphs, resp: &mut [u8], state: &mut FontD) -> Option<usize> {
     let atlas_key = AtlasKey::new(req.face_id, req.px_size);
-    
+
     // Ensure font is loaded first, this mutably borrows state briefly
     if state.ensure_font(req.face_id).is_none() {
         return encode_error(FontError::UnknownFace, resp);
     }
-    
+
     // Now process glyphs - separate borrows for font and atlas
     let mut placements = Vec::new();
     let mut missing = Vec::new();
-    
+
     // Pre-rasterize all needed glyphs (borrowing font only)
     let mut rasterized: Vec<(u32, fontdue::Metrics, Vec<u8>)> = Vec::new();
     for &glyph_id in &req.glyph_ids {
         // Check atlas first (immutable borrow of atlas_cache)
-        if state.atlas_cache.get(&atlas_key).map(|a| a.get_placement(glyph_id).is_some()).unwrap_or(false) {
+        if state
+            .atlas_cache
+            .get(&atlas_key)
+            .map(|a| a.get_placement(glyph_id).is_some())
+            .unwrap_or(false)
+        {
             continue; // Already in atlas
         }
-        
+
         // Need to rasterize
         if let Some(font) = state.fonts.get(&req.face_id) {
             let ch = core::char::from_u32(glyph_id).unwrap_or(' ');
@@ -228,24 +239,27 @@ fn handle_ensure_glyphs(req: EnsureGlyphs, resp: &mut [u8], state: &mut FontD) -
             rasterized.push((glyph_id, metrics, bitmap));
         }
     }
-    
+
     // Now pack everything into atlas (mutable borrow of atlas_cache only)
     let atlas = state.atlas_cache.get_or_create(atlas_key);
-    
+
     // First collect existing placements
     for &glyph_id in &req.glyph_ids {
         if let Some(p) = atlas.get_placement(glyph_id) {
             placements.push(*p);
         }
     }
-    
+
     // Now pack rasterized glyphs
     for (glyph_id, metrics, bitmap) in rasterized {
         if metrics.width == 0 || metrics.height == 0 {
             // Empty glyph (space, etc) - still valid
             let placement = GlyphPlacement {
                 glyph_id,
-                x: 0, y: 0, w: 0, h: 0,
+                x: 0,
+                y: 0,
+                w: 0,
+                h: 0,
                 bearing_x: 0,
                 bearing_y: 0,
                 advance: metrics.advance_width as i16,
@@ -253,7 +267,7 @@ fn handle_ensure_glyphs(req: EnsureGlyphs, resp: &mut [u8], state: &mut FontD) -
             placements.push(placement);
             continue;
         }
-        
+
         // Pack into atlas
         match atlas.pack_glyph(
             glyph_id,
@@ -268,12 +282,12 @@ fn handle_ensure_glyphs(req: EnsureGlyphs, resp: &mut [u8], state: &mut FontD) -
             None => missing.push(glyph_id),
         }
     }
-    
+
     // Commit atlas to bytespace
     if !atlas.commit() {
         return encode_error(FontError::AtlasAllocationFailed, resp);
     }
-    
+
     // Build response
     let response = EnsureGlyphsResp {
         atlas_bytespace: atlas.bytespace_id,
@@ -284,7 +298,7 @@ fn handle_ensure_glyphs(req: EnsureGlyphs, resp: &mut [u8], state: &mut FontD) -
         placements,
         missing,
     };
-    
+
     response.encode(resp)
 }
 
@@ -296,13 +310,17 @@ fn process_glyph_events(payload: &[u8], state: &mut FontD) {
             if WatchOp::from_u8(header.op) == Some(WatchOp::Upsert) {
                 handle_glyph_request(header.subject, state);
             }
-        } else { break; }
+        } else {
+            break;
+        }
     }
 }
 
 fn handle_glyph_request(req_id: ThingId, state: &mut FontD) {
     let face_handle = prop_get(req_id, keys::FONT_REQUEST_FACE).unwrap_or(0);
-    if face_handle == 0 { return; }
+    if face_handle == 0 {
+        return;
+    }
     let face_id = ThingId::from_u64(face_handle);
 
     let codepoint = prop_get(req_id, keys::FONT_REQUEST_CODEPOINT).unwrap_or(0) as u32;
@@ -319,9 +337,14 @@ fn handle_glyph_request(req_id: ThingId, state: &mut FontD) {
         None => return,
     };
 
-    let (metrics, bitmap) = font.rasterize(core::char::from_u32(codepoint).unwrap_or(' '), px_size as f32);
+    let (metrics, bitmap) = font.rasterize(
+        core::char::from_u32(codepoint).unwrap_or(' '),
+        px_size as f32,
+    );
     let glyph_node = create_node(kinds::FONT_GLYPH).unwrap_or_else(|_| ThingId::default());
-    if glyph_node == ThingId::default() { return; }
+    if glyph_node == ThingId::default() {
+        return;
+    }
 
     let bs_id = bytespace_create(bitmap.len(), 0, 0).unwrap_or_else(|_| ThingId::default());
     let _ = bytespace_write(bs_id, 0, &bitmap);
@@ -329,7 +352,11 @@ fn handle_glyph_request(req_id: ThingId, state: &mut FontD) {
     let _ = prop_set(glyph_node, keys::FONT_GLYPH_CODEPOINT, codepoint as u64);
     let _ = prop_set(glyph_node, keys::FONT_GLYPH_PX_SIZE, px_size as u64);
     let _ = prop_set(glyph_node, keys::FONT_GLYPH_BITMAP, bs_id.to_u64_lossy());
-    let _ = prop_set(glyph_node, keys::FONT_GLYPH_ADVANCE, metrics.advance_width as u64);
+    let _ = prop_set(
+        glyph_node,
+        keys::FONT_GLYPH_ADVANCE,
+        metrics.advance_width as u64,
+    );
     let _ = prop_set(glyph_node, keys::FONT_GLYPH_WIDTH, metrics.width as u64);
     let _ = prop_set(glyph_node, keys::FONT_GLYPH_HEIGHT, metrics.height as u64);
     let _ = prop_set(glyph_node, keys::FONT_GLYPH_OFFSET_X, metrics.xmin as u64);
@@ -349,19 +376,29 @@ fn process_import_events(payload: &[u8], state: &mut FontD) {
             if WatchOp::from_u8(header.op) == Some(WatchOp::Upsert) {
                 handle_import_request(header.subject, state);
             }
-        } else { break; }
+        } else {
+            break;
+        }
     }
 }
 
 fn handle_import_request(req_id: ThingId, _state: &mut FontD) {
     let bs_val = prop_get(req_id, keys::FONT_IMPORT_ASSET).unwrap_or(0);
-    if bs_val == 0 { return; }
+    if bs_val == 0 {
+        return;
+    }
     let asset_id = ThingId::from_u64(bs_val);
 
     info!("FONTD: Importing font asset {:?}", asset_id);
 
-    let size = match bytespace_info(asset_id) { Ok(s) => s, Err(_) => return };
-    let ptr = match bytespace_map(asset_id) { Ok(p) => p, Err(_) => return };
+    let size = match bytespace_info(asset_id) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let ptr = match bytespace_map(asset_id) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
     let data = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
 
     let face = match Face::parse(data, 0) {
@@ -372,11 +409,14 @@ fn handle_import_request(req_id: ThingId, _state: &mut FontD) {
         }
     };
 
-    let family_name = extract_name(&face, name_id::TYPOGRAPHIC_FAMILY, name_id::FAMILY).unwrap_or_else(|| "Unknown".into());
-    let style_name = extract_name(&face, name_id::TYPOGRAPHIC_SUBFAMILY, name_id::SUBFAMILY).unwrap_or_else(|| "Regular".into());
+    let family_name = extract_name(&face, name_id::TYPOGRAPHIC_FAMILY, name_id::FAMILY)
+        .unwrap_or_else(|| "Unknown".into());
+    let style_name = extract_name(&face, name_id::TYPOGRAPHIC_SUBFAMILY, name_id::SUBFAMILY)
+        .unwrap_or_else(|| "Regular".into());
 
     let family_key = intern(&family_name).unwrap_or(0) as u64;
-    let family_id = get_or_create_node_by_prop(kinds::FONT_FAMILY, keys::FONT_FAMILY_KEY, family_key);
+    let family_id =
+        get_or_create_node_by_prop(kinds::FONT_FAMILY, keys::FONT_FAMILY_KEY, family_key);
     let _ = prop_set(family_id, keys::FONT_FAMILY_KEY, family_key);
     set_prop_bytespace_str(family_id, keys::FONT_NAME, &family_name);
 
@@ -391,7 +431,10 @@ fn handle_import_request(req_id: ThingId, _state: &mut FontD) {
     // Mark as done
     let _ = prop_set(req_id, keys::FONT_IMPORT_STATUS, 1);
     let _ = bytespace_unmap(asset_id, ptr);
-    info!("FONTD: Imported family '{}' style '{}'", family_name, style_name);
+    info!(
+        "FONTD: Imported family '{}' style '{}'",
+        family_name, style_name
+    );
 }
 
 fn resolve_face_asset(face_id: ThingId) -> Option<ThingId> {
@@ -399,17 +442,27 @@ fn resolve_face_asset(face_id: ThingId) -> Option<ThingId> {
     let count = get_edges(face_id, &mut edges).ok()?;
     let asset_rel = intern(rels::FONT_HAS_ASSET).unwrap_or(0) as u64;
     for edge in edges.iter().take(count) {
-        if edge.predicate.to_u64_lossy() == asset_rel { return Some(edge.to); }
+        if edge.predicate.to_u64_lossy() == asset_rel {
+            return Some(edge.to);
+        }
     }
     None
 }
 
 fn extract_name(face: &Face<'_>, primary: u16, fallback: u16) -> Option<String> {
-    face.names().into_iter().find(|n| n.name_id == primary && n.is_unicode())
-        .or_else(|| face.names().into_iter().find(|n| n.name_id == fallback && n.is_unicode()))
+    face.names()
+        .into_iter()
+        .find(|n| n.name_id == primary && n.is_unicode())
+        .or_else(|| {
+            face.names()
+                .into_iter()
+                .find(|n| n.name_id == fallback && n.is_unicode())
+        })
         .and_then(|n| {
             let mut buf = Vec::with_capacity(n.name.len() / 2);
-            for chunk in n.name.chunks_exact(2) { buf.push(u16::from_be_bytes([chunk[0], chunk[1]])); }
+            for chunk in n.name.chunks_exact(2) {
+                buf.push(u16::from_be_bytes([chunk[0], chunk[1]]));
+            }
             String::from_utf16(&buf).ok()
         })
 }
@@ -418,7 +471,11 @@ fn get_or_create_node_by_prop(kind: &str, key: &str, val: u64) -> ThingId {
     let mut nodes = [ThingId::default(); 128];
     if let Ok(count) = find(kind, &mut nodes) {
         for id in nodes.iter().take(count) {
-            if let Ok(v) = prop_get(*id, key) { if v == val { return *id; } }
+            if let Ok(v) = prop_get(*id, key) {
+                if v == val {
+                    return *id;
+                }
+            }
         }
     }
     create_node(kind).unwrap_or_else(|_| ThingId::default())
@@ -433,7 +490,12 @@ fn set_prop_bytespace_str(id: ThingId, key: &str, val: &str) {
 
 fn hash64(a: u64, b: u32, c: u32) -> u64 {
     let mut hash = 0xcbf29ce484222325u64;
-    for &byte in a.to_le_bytes().iter().chain(b.to_le_bytes().iter()).chain(c.to_le_bytes().iter()) {
+    for &byte in a
+        .to_le_bytes()
+        .iter()
+        .chain(b.to_le_bytes().iter())
+        .chain(c.to_le_bytes().iter())
+    {
         hash ^= byte as u64;
         hash = hash.wrapping_mul(0x100000001b3);
     }

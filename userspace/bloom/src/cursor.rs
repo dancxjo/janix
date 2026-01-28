@@ -10,13 +10,13 @@
 use crate::damage::Rect;
 
 /// Pure logical cursor state.
-/// 
+///
 /// This struct only contains the logical state of the cursor position
 /// and button presses. It does NOT:
 /// - Hold cursor assets
 /// - Own cursor image data
 /// - Generate any drawing commands
-/// 
+///
 /// This separation ensures that cursor position changes do not trigger
 /// any rasterization or window damage.
 pub struct CursorState {
@@ -33,15 +33,23 @@ impl CursorState {
     pub fn new(x: i32, y: i32) -> Self {
         Self { x, y, buttons: 0 }
     }
-    
+
     /// Apply a relative movement delta, clamping to screen bounds.
     pub fn apply_move(&mut self, dx: i16, dy: i16, w: i32, h: i32) {
         let mut nx = self.x + dx as i32;
         let mut ny = self.y + dy as i32;
-        if nx < 0 { nx = 0; }
-        if ny < 0 { ny = 0; }
-        if nx >= w { nx = w.saturating_sub(1); }
-        if ny >= h { ny = h.saturating_sub(1); }
+        if nx < 0 {
+            nx = 0;
+        }
+        if ny < 0 {
+            ny = 0;
+        }
+        if nx >= w {
+            nx = w.saturating_sub(1);
+        }
+        if ny >= h {
+            ny = h.saturating_sub(1);
+        }
         self.x = nx;
         self.y = ny;
     }
@@ -85,10 +93,10 @@ impl CursorState {
     }
 
     /// Compute the cursor bounding box for damage tracking.
-    /// 
+    ///
     /// This returns a fixed-size bounding box based on typical cursor sizes.
     /// The actual cursor dimensions come from the CursorRasterizer.
-    /// 
+    ///
     /// Note: This is used for cursor damage tracking when the cursor moves.
     /// The size is an estimate; the actual cursor snapshot may be different.
     pub fn bbox(&self) -> Rect {
@@ -112,11 +120,11 @@ mod tests {
     #[test]
     fn cursor_move_clamps_to_bounds() {
         let mut cursor = CursorState::new(50, 50);
-        
+
         // Move left past boundary
         cursor.apply_move(-100, 0, 100, 100);
         assert_eq!(cursor.x, 0);
-        
+
         // Move right past boundary
         cursor.apply_move(200, 0, 100, 100);
         assert_eq!(cursor.x, 99);
@@ -125,13 +133,13 @@ mod tests {
     #[test]
     fn cursor_buttons_work() {
         let mut cursor = CursorState::new(0, 0);
-        
+
         assert!(!cursor.any_button_pressed());
-        
+
         cursor.button_down(0);
         assert!(cursor.is_button_pressed(0));
         assert!(cursor.any_button_pressed());
-        
+
         cursor.button_up(0);
         assert!(!cursor.is_button_pressed(0));
         assert!(!cursor.any_button_pressed());

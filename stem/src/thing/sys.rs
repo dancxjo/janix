@@ -2,9 +2,9 @@ use super::symbol::IntoSymbolRef;
 use super::{ThingId, ThingKind};
 use crate::errors::{errno, Errno};
 use crate::syscall::syscall6;
+use abi::ids::HandleId;
 use abi::symbols::SymbolId;
 use abi::syscall::*;
-use abi::ids::HandleId;
 
 pub fn get_kind(id: ThingId) -> Result<ThingKind, Errno> {
     let ret = unsafe { syscall6(SYS_ROOT_GET_KIND, id.to_u64_lossy() as usize, 0, 0, 0, 0, 0) };
@@ -42,7 +42,11 @@ pub fn bytespace_read(id: ThingId, offset: usize, out: &mut [u8]) -> Result<usiz
 }
 
 pub fn watch_subscribe(target: ThingId, mask: u64) -> Result<ThingId, Errno> {
-    crate::println!("STEM: watch_subscribe target={} mask={}", target.to_u64_lossy(), mask);
+    crate::println!(
+        "STEM: watch_subscribe target={} mask={}",
+        target.to_u64_lossy(),
+        mask
+    );
     let ret = unsafe {
         syscall6(
             SYS_ROOT_WATCH_SUBSCRIBE,
@@ -331,13 +335,13 @@ pub fn bytespace_phys(id: ThingId) -> Result<u64, Errno> {
 /// Bulk property fetch - get multiple properties for a node in one syscall
 pub fn props_get_many(id: ThingId, keys: &[u32]) -> Result<abi::types::BulkPropsResponse, Errno> {
     use abi::types::{BulkPropsResponse, BULK_PROPS_MAX_KEYS};
-    
+
     if keys.is_empty() || keys.len() > BULK_PROPS_MAX_KEYS {
         return Err(Errno::EINVAL);
     }
-    
+
     let mut response = BulkPropsResponse::default();
-    
+
     let ret = unsafe {
         syscall6(
             abi::syscall::SYS_ROOT_PROPS_GET_MANY,
@@ -349,6 +353,6 @@ pub fn props_get_many(id: ThingId, keys: &[u32]) -> Result<abi::types::BulkProps
             0,
         )
     };
-    
+
     errno(ret).map(|_| response)
 }

@@ -3,18 +3,20 @@
 
 extern crate alloc;
 
-use abi::schema::{keys, kinds, rels};
 use abi::root::RootWatchFilter;
+use abi::schema::{keys, kinds, rels};
+use abi::types::HandleId;
 use abi::types::{WatchMode, WatchSpec};
 use abi::watch;
-use abi::types::HandleId;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::petals::{AlignItems, Color, Flex, FontKey, Scene, Scroll, Separator, Styled, Text, Window};
+use stem::petals::{
+    AlignItems, Color, Flex, FontKey, Scene, Scroll, Separator, Styled, Text, Window,
+};
 use stem::thing::ThingId;
 use stem::thing::sys::{
-    bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, link,
-    prop_get, prop_set, intern,
+    bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, intern,
+    link, prop_get, prop_set,
 };
 
 fn set_string_prop(id: ThingId, key: &str, value: &str) {

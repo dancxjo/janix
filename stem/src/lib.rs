@@ -2,7 +2,6 @@
 #![allow(unexpected_cfgs)]
 extern crate alloc;
 
-
 pub use abi;
 #[cfg(feature = "rt")]
 pub use stem_macros::main;
@@ -14,26 +13,26 @@ pub mod device;
 pub mod errors;
 #[cfg(feature = "global-alloc")]
 pub mod heap;
+#[cfg(feature = "rt")]
+pub mod memory;
 #[cfg(feature = "panic-handler")]
 pub mod panic;
 pub mod pci;
+pub mod perf;
+pub mod petals;
+pub mod root_watch;
 pub mod rt;
 pub mod stack;
 pub mod syscall;
 pub mod thread;
 pub mod time;
-pub mod utils;
 pub mod ui;
+pub mod utils;
 pub mod vm;
-pub mod root_watch;
 pub mod xml;
-#[cfg(feature = "rt")]
-pub mod memory;
-pub mod perf;
-pub mod petals;
 
 // Re-export time types for convenience
-pub use time::{Instant, Duration};
+pub use time::{Duration, Instant};
 
 #[macro_export]
 macro_rules! print {

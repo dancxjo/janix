@@ -1,13 +1,15 @@
-use alloc::vec::Vec;
-use alloc::string::String;
-use alloc::boxed::Box;
-use abi::wire::ThingId;
 use abi::schema::keys as props;
-use alloc::format;
 use abi::types::HandleId;
+use abi::wire::ThingId;
+use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
-use crate::geometry::{Rect, Color, Transform};
-use crate::svg::ir::{SvgIrDocument, SvgOp, Path2D, Paint, FillRule, LineCap, LineJoin, PathCommand};
+use crate::geometry::{Color, Rect, Transform};
+use crate::svg::ir::{
+    FillRule, LineCap, LineJoin, Paint, Path2D, PathCommand, SvgIrDocument, SvgOp,
+};
 use crate::svg::parse;
 use crate::svg::walk::SvgGraph;
 
@@ -46,42 +48,48 @@ pub fn compile_graph_to_ir(
     graph: &dyn SvgGraph,
     doc_id: ThingId,
 ) -> Result<SvgIrDocument, CompileError> {
-    
     let root_id = graph.get_root(doc_id).ok_or(CompileError::NoRoot)?;
-    let tag = graph.get_prop_str(root_id, props::TAG).ok_or(CompileError::GraphError)?;
-    
+    let tag = graph
+        .get_prop_str(root_id, props::TAG)
+        .ok_or(CompileError::GraphError)?;
+
     if tag != "svg" {
         return Err(CompileError::InvalidRoot);
     }
-    
+
     let mut doc = SvgIrDocument {
         width: None,
         height: None,
         view_box: None,
         ops: Vec::new(),
     };
-    
+
     let attrs = graph.get_attributes(root_id);
     for (name, val) in &attrs {
         match name.as_str() {
             "width" => doc.width = val.parse().ok(),
             "height" => doc.height = val.parse().ok(),
             "viewBox" => {
-                let parts: Vec<f32> = val.split_whitespace().filter_map(|s| s.parse().ok()).collect();
+                let parts: Vec<f32> = val
+                    .split_whitespace()
+                    .filter_map(|s| s.parse().ok())
+                    .collect();
                 if parts.len() == 4 {
                     doc.view_box = Some(Rect::new(
-                        parts[0] as i32, parts[1] as i32, 
-                        parts[2] as i32, parts[3] as i32
+                        parts[0] as i32,
+                        parts[1] as i32,
+                        parts[2] as i32,
+                        parts[3] as i32,
                     )); // TODO: Rect is i32, viewbox is float usually. IR uses Rect (i32).
                 }
             }
             _ => {}
         }
     }
-    
+
     let initial_state = StyleState::default();
     compile_element(graph, root_id, &initial_state, &mut doc.ops)?;
-    
+
     Ok(doc)
 }
 
@@ -91,11 +99,10 @@ fn compile_element(
     parent_state: &StyleState,
     ops: &mut Vec<SvgOp>,
 ) -> Result<(), CompileError> {
-    
     // Resolve state for this node
     let mut state = parent_state.clone();
     let attrs = graph.get_attributes(node);
-    
+
     // 1. Transform
     for (k, v) in &attrs {
         if k == "transform" {
@@ -103,22 +110,30 @@ fn compile_element(
             state.transform = state.transform.multiply(&t);
         }
     }
-    
+
     // 2. Style (Presentation Attributes)
     // Precedence: explicit attr > style string (unsupported in v1 parse) > inherited
     for (k, v) in &attrs {
         match k.as_str() {
             "fill" => state.fill = parse::parse_color(v).map(Paint::Solid),
             "stroke" => state.stroke = parse::parse_color(v).map(Paint::Solid),
-            "opacity" => if let Ok(o) = v.parse::<f32>() { state.opacity *= o },
-            "stroke-width" => if let Ok(w) = v.parse::<f32>() { state.stroke_width = w },
+            "opacity" => {
+                if let Ok(o) = v.parse::<f32>() {
+                    state.opacity *= o
+                }
+            }
+            "stroke-width" => {
+                if let Ok(w) = v.parse::<f32>() {
+                    state.stroke_width = w
+                }
+            }
             // "style" => ... parse style string
-             _ => {}
+            _ => {}
         }
     }
 
     let tag = graph.get_prop_str(node, props::TAG).unwrap_or_default();
-    
+
     match tag.as_str() {
         "svg" | "g" => {
             // Container, recurse
@@ -131,38 +146,42 @@ fn compile_element(
         }
         "rect" => {
             // parse x, y, width, height
-            let mut x = 0.0; let mut y = 0.0;
-            let mut w = 0.0; let mut h = 0.0;
-             for (k, v) in &attrs {
-                 match k.as_str() {
-                     "x" => x = v.parse().unwrap_or(0.0),
-                     "y" => y = v.parse().unwrap_or(0.0),
-                     "width" => w = v.parse().unwrap_or(0.0),
-                     "height" => h = v.parse().unwrap_or(0.0),
-                     _ => {}
-                 }
-             }
-             use crate::svg::ir::PointF;
-             let path = Path2D { verbs:  alloc::vec![
-                 PathCommand::MoveTo(PointF{x, y}),
-                 PathCommand::LineTo(PointF{x: x + w, y}),
-                 PathCommand::LineTo(PointF{x: x + w, y: y + h}),
-                 PathCommand::LineTo(PointF{x, y: y + h}),
-                 PathCommand::Close
-             ]};
-             emit_shape(path, &state, ops);
+            let mut x = 0.0;
+            let mut y = 0.0;
+            let mut w = 0.0;
+            let mut h = 0.0;
+            for (k, v) in &attrs {
+                match k.as_str() {
+                    "x" => x = v.parse().unwrap_or(0.0),
+                    "y" => y = v.parse().unwrap_or(0.0),
+                    "width" => w = v.parse().unwrap_or(0.0),
+                    "height" => h = v.parse().unwrap_or(0.0),
+                    _ => {}
+                }
+            }
+            use crate::svg::ir::PointF;
+            let path = Path2D {
+                verbs: alloc::vec![
+                    PathCommand::MoveTo(PointF { x, y }),
+                    PathCommand::LineTo(PointF { x: x + w, y }),
+                    PathCommand::LineTo(PointF { x: x + w, y: y + h }),
+                    PathCommand::LineTo(PointF { x, y: y + h }),
+                    PathCommand::Close
+                ],
+            };
+            emit_shape(path, &state, ops);
         }
         "path" => {
             // parse d
             if let Some((_, d)) = attrs.iter().find(|(k, _)| k == "d") {
-                 let path = parse::parse_path_d(d);
-                 emit_shape(path, &state, ops);
+                let path = parse::parse_path_d(d);
+                emit_shape(path, &state, ops);
             }
         }
         // ... circle, etc.
         _ => {}
     }
-    
+
     Ok(())
 }
 
@@ -178,7 +197,7 @@ fn emit_shape(path: Path2D, state: &StyleState, ops: &mut Vec<SvgOp>) {
             opacity: state.opacity,
         });
     }
-    
+
     // Stroke
     if let Some(paint) = &state.stroke {
         ops.push(SvgOp::StrokePath {
@@ -197,10 +216,10 @@ fn emit_shape(path: Path2D, state: &StyleState, ops: &mut Vec<SvgOp>) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::string::ToString;
     use alloc::collections::BTreeMap;
-    use stem::xml::ingest::{ingest_xml_to_graph, XmlIngestOptions, GraphApply, XmlIngestError};
+    use alloc::string::ToString;
     use stem::thing::ThingId;
+    use stem::xml::ingest::{ingest_xml_to_graph, GraphApply, XmlIngestError, XmlIngestOptions};
 
     // A graph that supports both Ingestion (Write) and SvgGraph (Read)
     struct TestGraph {
@@ -244,7 +263,8 @@ mod tests {
                 self.props.insert((node, key.to_string()), s.clone());
             } else {
                 // Fallback (shouldn't happen in test flow)
-                self.props.insert((node, key.to_string()), format!("{}", val));
+                self.props
+                    .insert((node, key.to_string()), format!("{}", val));
             }
             Ok(())
         }
@@ -263,16 +283,18 @@ mod tests {
 
     impl SvgGraph for TestGraph {
         fn get_root(&self, doc: ThingId) -> Option<ThingId> {
-             self.edges.iter()
-                 .find(|(s, r, _)| *s == doc && r == "HAS_ROOT")
-                 .map(|(_, _, d)| *d)
+            self.edges
+                .iter()
+                .find(|(s, r, _)| *s == doc && r == "HAS_ROOT")
+                .map(|(_, _, d)| *d)
         }
 
         fn get_children(&self, elem: ThingId) -> Vec<ThingId> {
-             self.edges.iter()
-                 .filter(|(s, r, _)| *s == elem && r == "HAS_CHILD")
-                 .map(|(_, _, d)| *d)
-                 .collect()
+            self.edges
+                .iter()
+                .filter(|(s, r, _)| *s == elem && r == "HAS_CHILD")
+                .map(|(_, _, d)| *d)
+                .collect()
         }
 
         fn get_prop_str(&self, node: ThingId, key: &str) -> Option<String> {
@@ -282,11 +304,13 @@ mod tests {
         fn get_attributes(&self, elem: ThingId) -> Vec<(String, String)> {
             let mut res = Vec::new();
             // Find HAS_ATTR edges
-            let attr_nodes: Vec<ThingId> = self.edges.iter()
+            let attr_nodes: Vec<ThingId> = self
+                .edges
+                .iter()
                 .filter(|(s, r, _)| *s == elem && r == "HAS_ATTR")
                 .map(|(_, _, d)| *d)
                 .collect();
-            
+
             for attr in attr_nodes {
                 let name = self.get_prop_str(attr, "attr_name");
                 let val = self.get_prop_str(attr, "attr_value");
@@ -302,11 +326,12 @@ mod tests {
     fn test_compile_rect() {
         let xml = r#"<svg width="100" height="100"><rect x="10" y="10" width="80" height="80" fill="red" /></svg>"#;
         let mut graph = TestGraph::new();
-        let res = ingest_xml_to_graph(xml.as_bytes(), XmlIngestOptions::default(), &mut graph).expect("ingest");
-        
+        let res = ingest_xml_to_graph(xml.as_bytes(), XmlIngestOptions::default(), &mut graph)
+            .expect("ingest");
+
         // Compile
         let ir = compile_graph_to_ir(&graph, res.document).expect("compile");
-        
+
         assert_eq!(ir.ops.len(), 1);
         match &ir.ops[0] {
             SvgOp::FillPath { paint, .. } => {
@@ -320,16 +345,17 @@ mod tests {
             _ => panic!("Wrong op"),
         }
     }
-    
+
     #[test]
     fn test_compile_transforms_nesting() {
         let xml = r#"<svg><g transform="translate(10, 20)"><g transform="scale(2)"><rect width="10" height="10" /></g></g></svg>"#;
         let mut graph = TestGraph::new();
-        let res = ingest_xml_to_graph(xml.as_bytes(), XmlIngestOptions::default(), &mut graph).expect("ingest");
-        
+        let res = ingest_xml_to_graph(xml.as_bytes(), XmlIngestOptions::default(), &mut graph)
+            .expect("ingest");
+
         let ir = compile_graph_to_ir(&graph, res.document).expect("compile");
         assert_eq!(ir.ops.len(), 1);
-        
+
         match &ir.ops[0] {
             SvgOp::FillPath { transform, .. } => {
                 // Expected: translate(10, 20) -> scale(2)

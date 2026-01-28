@@ -1,23 +1,23 @@
 // Updated X86_64 runtime with user entry mapping and alignment check
 use crate::runtime::ArchRuntime;
 use core::arch::asm;
+use core::sync::atomic::{AtomicU64, Ordering};
 use kernel::time::MonotonicClamp;
 use kernel::{FrameAllocatorHook, IrqState, MapKind, MapPerms, UserEntry, UserTaskSpec};
-use core::sync::atomic::{AtomicU64, Ordering};
 
+pub mod acpi;
+pub mod apic;
 pub mod cmos;
 pub mod gdt;
 pub mod idt;
+pub mod ioapic;
 pub mod paging;
+pub mod pci;
+pub mod pic;
 pub mod simd;
 pub mod syscall;
 pub mod task;
 pub mod trap;
-pub mod pic;
-pub mod acpi;
-pub mod ioapic;
-pub mod pci;
-pub mod apic;
 
 pub struct X86_64Runtime {
     clamp: MonotonicClamp,
@@ -112,7 +112,7 @@ impl ArchRuntime for X86_64Runtime {
         unsafe {
             syscall::init();
         }
-        
+
         // Initialize IOAPIC for interrupt routing (after IDT is set up)
         crate::arch::init_ioapic();
     }
@@ -130,7 +130,9 @@ impl ArchRuntime for X86_64Runtime {
 
     fn wait_for_interrupt(&self) {
         // Enable interrupts and halt until next IRQ
-        unsafe { core::arch::asm!("sti", "hlt", options(nomem, nostack)); }
+        unsafe {
+            core::arch::asm!("sti", "hlt", options(nomem, nostack));
+        }
     }
 
     fn mono_ticks(&self) -> u64 {
@@ -309,10 +311,23 @@ impl ArchRuntime for X86_64Runtime {
         paging::active_address_space().0
     }
 
-    fn pci_cfg_read32(&self, bus: u8, dev: u8, func: u8, offset: u8) -> Result<u32, abi::errors::Errno> {
+    fn pci_cfg_read32(
+        &self,
+        bus: u8,
+        dev: u8,
+        func: u8,
+        offset: u8,
+    ) -> Result<u32, abi::errors::Errno> {
         Ok(pci::read_config(bus, dev, func, offset))
     }
-    fn pci_cfg_write32(&self, bus: u8, dev: u8, func: u8, offset: u8, value: u32) -> Result<(), abi::errors::Errno> {
+    fn pci_cfg_write32(
+        &self,
+        bus: u8,
+        dev: u8,
+        func: u8,
+        offset: u8,
+        value: u32,
+    ) -> Result<(), abi::errors::Errno> {
         pci::write_config(bus, dev, func, offset, value);
         Ok(())
     }
@@ -349,7 +364,8 @@ impl ArchRuntime for X86_64Runtime {
                 },
                 MapKind::Normal,
                 &ProxyAllocator,
-            ).map_err(|_| abi::errors::Errno::ENOMEM)?;
+            )
+            .map_err(|_| abi::errors::Errno::ENOMEM)?;
             self.tlb_flush_page(v_addr);
         }
 

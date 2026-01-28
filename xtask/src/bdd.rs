@@ -2,9 +2,9 @@
 
 use crate::build::build;
 use crate::common::{Result, rust_target};
+use crate::fetch::fetch;
 use crate::image::build_iso;
 use crate::limine::limine;
-use crate::fetch::fetch;
 use std::fs;
 use xshell::{Shell, cmd};
 

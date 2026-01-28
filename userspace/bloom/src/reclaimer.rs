@@ -6,10 +6,10 @@
 //! - `EvictedAsset`: Placeholder for future rehydration support
 //! - Memory budget enforcement with LRU + reachability eviction
 
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use core::cell::UnsafeCell;
-use crate::frame::AssetGeneration;
 use crate::asset::AssetBank;
+use crate::frame::AssetGeneration;
+use core::cell::UnsafeCell;
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use stem::info;
 
 /// Default memory budget for decoded surfaces (32 MiB)
@@ -52,7 +52,11 @@ pub fn add_decoded_bytes(bytes: usize) {
 #[allow(dead_code)]
 pub fn sub_decoded_bytes(bytes: usize) {
     let prev = DECODED_BYTES.fetch_sub(bytes, Ordering::AcqRel);
-    info!("[reclaimer] -{} bytes (total: {})", bytes, prev.saturating_sub(bytes));
+    info!(
+        "[reclaimer] -{} bytes (total: {})",
+        bytes,
+        prev.saturating_sub(bytes)
+    );
 }
 pub fn eviction_count() -> u64 {
     EVICTION_COUNT.load(Ordering::Acquire)
@@ -110,9 +114,21 @@ impl InFlightFrames {
     const fn new() -> Self {
         Self {
             entries: [
-                UnsafeCell::new(InFlightEntry { frame_id: 0, asset_gen: 0, active: false }),
-                UnsafeCell::new(InFlightEntry { frame_id: 0, asset_gen: 0, active: false }),
-                UnsafeCell::new(InFlightEntry { frame_id: 0, asset_gen: 0, active: false }),
+                UnsafeCell::new(InFlightEntry {
+                    frame_id: 0,
+                    asset_gen: 0,
+                    active: false,
+                }),
+                UnsafeCell::new(InFlightEntry {
+                    frame_id: 0,
+                    asset_gen: 0,
+                    active: false,
+                }),
+                UnsafeCell::new(InFlightEntry {
+                    frame_id: 0,
+                    asset_gen: 0,
+                    active: false,
+                }),
             ],
         }
     }
@@ -142,7 +158,10 @@ impl InFlightFrames {
         }
 
         // All slots full, replace oldest (shouldn't happen with proper complete() calls)
-        info!("[reclaimer] WARNING: in-flight slots full, replacing frame {}", oldest_frame);
+        info!(
+            "[reclaimer] WARNING: in-flight slots full, replacing frame {}",
+            oldest_frame
+        );
         unsafe {
             let ptr = self.entries[oldest_idx].get();
             (*ptr).frame_id = frame_id;
@@ -225,7 +244,6 @@ pub fn in_flight_count() -> usize {
     IN_FLIGHT.count()
 }
 
-
 /// Check memory pressure and evict if needed.
 /// Called once per frame after present.
 pub fn check_memory_pressure(assets: &AssetBank) {
@@ -237,8 +255,10 @@ pub fn check_memory_pressure(assets: &AssetBank) {
     }
 
     let min_gen = min_live_gen();
-    info!("[reclaimer] memory pressure: {} > {} bytes, min_live_gen={}",
-        current, budget, min_gen.0);
+    info!(
+        "[reclaimer] memory pressure: {} > {} bytes, min_live_gen={}",
+        current, budget, min_gen.0
+    );
 
     // Try to evict until under budget
     let mut freed_total = 0usize;
@@ -253,16 +273,22 @@ pub fn check_memory_pressure(assets: &AssetBank) {
             }
             None => {
                 // No more evictable assets
-                info!("[reclaimer] no more evictable assets (freed {} bytes in {} evictions)",
-                    freed_total, evictions);
+                info!(
+                    "[reclaimer] no more evictable assets (freed {} bytes in {} evictions)",
+                    freed_total, evictions
+                );
                 break;
             }
         }
     }
 
     if evictions > 0 {
-        info!("[reclaimer] evicted {} assets, freed {} bytes, now at {} bytes",
-            evictions, freed_total, decoded_bytes());
+        info!(
+            "[reclaimer] evicted {} assets, freed {} bytes, now at {} bytes",
+            evictions,
+            freed_total,
+            decoded_bytes()
+        );
     }
 }
 

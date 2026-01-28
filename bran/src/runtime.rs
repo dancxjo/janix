@@ -90,9 +90,15 @@ pub trait ArchRuntime {
     fn tlb_flush_page(&self, _virt: u64) {}
 
     // IO Port primitives (x86-only, stubs for other archs)
-    fn ioport_read_u8(&self, _port: u16) -> u8 { 0 }
-    fn ioport_read_u16(&self, _port: u16) -> u16 { 0 }
-    fn ioport_read_u32(&self, _port: u16) -> u32 { 0 }
+    fn ioport_read_u8(&self, _port: u16) -> u8 {
+        0
+    }
+    fn ioport_read_u16(&self, _port: u16) -> u16 {
+        0
+    }
+    fn ioport_read_u32(&self, _port: u16) -> u32 {
+        0
+    }
     fn ioport_write_u8(&self, _port: u16, _value: u8) {}
     fn ioport_write_u16(&self, _port: u16, _value: u16) {}
     fn ioport_write_u32(&self, _port: u16, _value: u32) {}
@@ -101,10 +107,23 @@ pub trait ArchRuntime {
         0
     }
 
-    fn pci_cfg_read32(&self, _bus: u8, _dev: u8, _func: u8, _offset: u8) -> Result<u32, abi::errors::Errno> {
+    fn pci_cfg_read32(
+        &self,
+        _bus: u8,
+        _dev: u8,
+        _func: u8,
+        _offset: u8,
+    ) -> Result<u32, abi::errors::Errno> {
         Err(abi::errors::Errno::NotSupported)
     }
-    fn pci_cfg_write32(&self, _bus: u8, _dev: u8, _func: u8, _offset: u8, _value: u32) -> Result<(), abi::errors::Errno> {
+    fn pci_cfg_write32(
+        &self,
+        _bus: u8,
+        _dev: u8,
+        _func: u8,
+        _offset: u8,
+        _value: u32,
+    ) -> Result<(), abi::errors::Errno> {
         Err(abi::errors::Errno::NotSupported)
     }
 
@@ -188,10 +207,23 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
         self.arch.mono_freq_hz()
     }
 
-    fn pci_cfg_read32(&self, bus: u8, dev: u8, func: u8, offset: u8) -> Result<u32, abi::errors::Errno> {
+    fn pci_cfg_read32(
+        &self,
+        bus: u8,
+        dev: u8,
+        func: u8,
+        offset: u8,
+    ) -> Result<u32, abi::errors::Errno> {
         self.arch.pci_cfg_read32(bus, dev, func, offset)
     }
-    fn pci_cfg_write32(&self, bus: u8, dev: u8, func: u8, offset: u8, value: u32) -> Result<(), abi::errors::Errno> {
+    fn pci_cfg_write32(
+        &self,
+        bus: u8,
+        dev: u8,
+        func: u8,
+        offset: u8,
+        value: u32,
+    ) -> Result<(), abi::errors::Errno> {
         self.arch.pci_cfg_write32(bus, dev, func, offset, value)
     }
 
@@ -303,7 +335,6 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     fn unmap_phys_temp(&self, virt: u64, size: usize) {
         self.arch.unmap_phys_temp(virt, size)
     }
-
 }
 
 impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {

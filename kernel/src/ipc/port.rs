@@ -5,9 +5,9 @@
 
 use alloc::boxed::Box;
 use alloc::collections::VecDeque;
-use spin::Mutex;
-use core::sync::atomic::{AtomicUsize, AtomicU64, Ordering};
 use alloc::sync::Arc;
+use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use spin::Mutex;
 
 /// Unique identifier for a port in the global registry
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -74,7 +74,7 @@ impl Port {
     /// Send bytes to the port. Returns number of bytes written.
     /// If buffer is full, drops bytes (bounded loss behavior).
     ///
-    /// This method is gated by debug assertions to ensure only one producer task 
+    /// This method is gated by debug assertions to ensure only one producer task
     /// accesses the port (SPSC).
     pub fn send(&self, data: &[u8]) -> usize {
         #[cfg(debug_assertions)]
@@ -82,7 +82,7 @@ impl Port {
 
         let available = self.available();
         let to_write = data.len().min(available);
-        
+
         if to_write == 0 {
             return 0;
         }
@@ -101,8 +101,9 @@ impl Port {
             }
         }
 
-        self.head.store(head.wrapping_add(to_write), Ordering::Release);
-        
+        self.head
+            .store(head.wrapping_add(to_write), Ordering::Release);
+
         // Wake up waiters
         let mut handlers = self.waiters.lock();
         while let Some(tid) = handlers.pop_front() {
@@ -110,7 +111,7 @@ impl Port {
                 crate::task::scheduler::wake_task_erased(tid as usize);
             }
         }
-        
+
         to_write
     }
 
@@ -153,7 +154,8 @@ impl Port {
             buf[i] = self.buf[idx];
         }
 
-        self.tail.store(tail.wrapping_add(to_read), Ordering::Release);
+        self.tail
+            .store(tail.wrapping_add(to_read), Ordering::Release);
         to_read
     }
 
@@ -165,16 +167,25 @@ impl Port {
             return; // Allow kernel/idle access
         }
 
-        let target = if is_sender { &self.sender_tid } else { &self.receiver_tid };
+        let target = if is_sender {
+            &self.sender_tid
+        } else {
+            &self.receiver_tid
+        };
         let owner = target.load(Ordering::Acquire);
-        
+
         if owner == 0 {
             // First task to use this half becomes the permanent owner
             target.store(current, Ordering::Release);
         } else {
-            assert_eq!(owner, current, 
+            assert_eq!(
+                owner,
+                current,
                 "IPC SPSC violation: Task {} tried to {} on a port owned by task {}",
-                current, if is_sender { "send" } else { "receive" }, owner);
+                current,
+                if is_sender { "send" } else { "receive" },
+                owner
+            );
         }
     }
 }

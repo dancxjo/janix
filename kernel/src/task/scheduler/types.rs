@@ -27,7 +27,7 @@ pub enum ScheduleReason {
 #[derive(Debug, Clone, Copy)]
 pub struct SleepEntry {
     pub task_id: TaskId,
-    pub wake_tick: u64,  // absolute tick count when task should wake
+    pub wake_tick: u64, // absolute tick count when task should wake
 }
 
 pub struct SwitchParams<Ctx, AS> {
@@ -53,7 +53,7 @@ pub struct Scheduler<R: BootRuntime> {
     pub(crate) tasks: Vec<Task<R>>,
     pub(crate) runq: [VecDeque<TaskId>; 5],
     pub(crate) wait_queue: VecDeque<TaskId>,
-    pub(crate) sleep_queue: VecDeque<SleepEntry>,  // tasks sleeping with wake times
+    pub(crate) sleep_queue: VecDeque<SleepEntry>, // tasks sleeping with wake times
     pub(crate) current: Option<TaskId>,
     pub(crate) next_id: TaskId,
     pub(crate) idle_task: Option<TaskId>,

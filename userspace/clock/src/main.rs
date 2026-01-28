@@ -7,9 +7,7 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
 use core::time::Duration;
 use stem::info;
-use stem::petals::{
-    AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Styled, Text, Window,
-};
+use stem::petals::{AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Styled, Text, Window};
 use stem::thing::sys::{
     bytespace_create, bytespace_write, create_node, describe_thing, find, link, prop_get, prop_set,
 };
@@ -215,7 +213,8 @@ fn main() -> ! {
             // 2. Publish State to Graph
             let dt = OffsetDateTime::from_unix_timestamp(unix as i64).ok();
             if let Some(dt) = dt {
-                let time_str = alloc::format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second());
+                let time_str =
+                    alloc::format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second());
                 if let Some(win) = window_id {
                     let scene = build_scene(win, &time_str);
                     if let Err(e) = stem::petals::publish_window(&scene) {
@@ -238,7 +237,7 @@ fn main() -> ! {
         let now_ns_recheck = stem::time::now_unix_nanos();
         let nanos_into_second = now_ns_recheck % 1_000_000_000;
         let sleep_nanos = 1_000_000_000 - nanos_into_second;
-        
+
         // Add a tiny buffer (1ms) if we are extremely close to the boundary to avoid double-ticks
         // or busy-looping if the timer granularity is coarse.
         let sleep_nanos = if sleep_nanos < 1_000_000 {

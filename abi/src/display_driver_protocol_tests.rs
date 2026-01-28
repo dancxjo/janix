@@ -15,7 +15,10 @@ mod tests {
         let mut hello_bytes = [0u8; drvproto::HELLO_PAYLOAD_WIRE_SIZE];
         let len = drvproto::encode_hello_payload_le(&hello, &mut hello_bytes).unwrap();
         assert_eq!(len, drvproto::HELLO_PAYLOAD_WIRE_SIZE);
-        assert_eq!(hello_bytes, [0x01, 0x00, 0x02, 0x00, 0x0A, 0x0B, 0x0C, 0x0D]);
+        assert_eq!(
+            hello_bytes,
+            [0x01, 0x00, 0x02, 0x00, 0x0A, 0x0B, 0x0C, 0x0D]
+        );
         let decoded_hello = drvproto::decode_hello_payload_le(&hello_bytes).unwrap();
         assert_eq!(decoded_hello.proto_major, 1);
         assert_eq!(decoded_hello.proto_minor, 2);
@@ -55,8 +58,8 @@ mod tests {
         assert_eq!(
             bind_bytes,
             [
-                0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0xDD, 0xCC, 0xBB, 0xAA,
-                0x04, 0x03, 0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x0D, 0x0C, 0x0B, 0x0A,
+                0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, 0xDD, 0xCC, 0xBB, 0xAA, 0x04, 0x03,
+                0x02, 0x01, 0x08, 0x07, 0x06, 0x05, 0x0D, 0x0C, 0x0B, 0x0A,
             ]
         );
         let decoded_bind = drvproto::decode_bind_payload_le(&bind_bytes).unwrap();
@@ -67,9 +70,16 @@ mod tests {
         assert_eq!(decoded_bind.format, 0x0A0B0C0D);
 
         let mut present_header = [0u8; drvproto::PRESENT_HEADER_WIRE_SIZE];
-        drvproto::encode_present_header_with_flags_le(2, drvproto::PRESENT_FLAG_FULLFRAME, &mut present_header)
-            .unwrap();
-        assert_eq!(present_header, [0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]);
+        drvproto::encode_present_header_with_flags_le(
+            2,
+            drvproto::PRESENT_FLAG_FULLFRAME,
+            &mut present_header,
+        )
+        .unwrap();
+        assert_eq!(
+            present_header,
+            [0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00]
+        );
         let decoded_header = drvproto::decode_present_header_le(&present_header).unwrap();
         assert_eq!(decoded_header.rect_count, 2);
         assert_eq!(decoded_header._pad, drvproto::PRESENT_FLAG_FULLFRAME);
@@ -97,12 +107,22 @@ mod tests {
         )
         .unwrap();
         assert_eq!(len, present_payload.len());
-        assert_eq!(present_payload[0..8], [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-        assert_eq!(present_payload[8..24], [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0]);
-        assert_eq!(present_payload[24..40], [5, 0, 0, 0, 6, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0]);
+        assert_eq!(
+            present_payload[0..8],
+            [0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]
+        );
+        assert_eq!(
+            present_payload[8..24],
+            [1, 0, 0, 0, 2, 0, 0, 0, 3, 0, 0, 0, 4, 0, 0, 0]
+        );
+        assert_eq!(
+            present_payload[24..40],
+            [5, 0, 0, 0, 6, 0, 0, 0, 7, 0, 0, 0, 8, 0, 0, 0]
+        );
 
         let mut msg = [0u8; 64];
-        let msg_len = drvproto::encode_message(&mut msg, drvproto::MSG_HELLO, &hello_bytes).unwrap();
+        let msg_len =
+            drvproto::encode_message(&mut msg, drvproto::MSG_HELLO, &hello_bytes).unwrap();
         assert_eq!(&msg[0..4], &drvproto::DRIVER_MAGIC.to_le_bytes());
         assert_eq!(&msg[4..6], &drvproto::DRIVER_VERSION.to_le_bytes());
         assert_eq!(&msg[6..8], &drvproto::MSG_HELLO.to_le_bytes());
@@ -121,7 +141,8 @@ mod tests {
         let mut hello_bytes = [0u8; drvproto::HELLO_PAYLOAD_WIRE_SIZE];
         drvproto::encode_hello_payload_le(&hello, &mut hello_bytes).unwrap();
         let mut msg = [0u8; 64];
-        let msg_len = drvproto::encode_message(&mut msg, drvproto::MSG_HELLO, &hello_bytes).unwrap();
+        let msg_len =
+            drvproto::encode_message(&mut msg, drvproto::MSG_HELLO, &hello_bytes).unwrap();
         let msg = &msg[..msg_len];
 
         let mut reader = FrameReader::<128>::new();
@@ -154,7 +175,8 @@ mod tests {
         let mut msg1 = [0u8; 64];
         let mut msg2 = [0u8; 64];
         let msg1_len = drvproto::encode_message(&mut msg1, drvproto::MSG_ACK, &[]).unwrap();
-        let msg2_len = drvproto::encode_message(&mut msg2, drvproto::MSG_ERR, &[0, 0, 0, 0]).unwrap();
+        let msg2_len =
+            drvproto::encode_message(&mut msg2, drvproto::MSG_ERR, &[0, 0, 0, 0]).unwrap();
 
         let mut buf = std::vec::Vec::new();
         buf.extend_from_slice(&msg1[..msg1_len]);

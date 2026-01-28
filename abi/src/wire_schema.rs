@@ -1,10 +1,10 @@
 //! Language-neutral schema description for Thing-OS Graphable types.
-//! 
+//!
 //! This module defines the `Schema` struct and `WireType` enum used to describe
 //! the layout of packed data structures. It provides the `schema_hash` function
 //! (using blake3) to generate a stable `KindId` from a schema definition.
 
-use crate::wire::{KindId};
+use crate::wire::KindId;
 
 /// Canonical schema description for a Graphable type.
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
@@ -21,7 +21,7 @@ pub struct Field {
 }
 
 /// The wire type of a field.
-/// 
+///
 /// This enum is designed to be `Copy` and `const`-constructible (no Boxes).
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
 pub enum WireType {
@@ -47,7 +47,7 @@ pub enum WireType {
     /// Nested struct (flat, packed)
     Struct(&'static Schema),
     /// Helper for "Bytes" which is Array(U8, N)
-    Bytes(usize), 
+    Bytes(usize),
 }
 
 impl WireType {
@@ -80,7 +80,7 @@ impl Schema {
 }
 
 /// Compute the stable hash of a Schema to generate a KindId.
-/// 
+///
 /// Rules:
 /// - Canonical encoding of fields in order.
 /// - Names utf-8 bytes.
@@ -91,7 +91,7 @@ pub fn schema_hash(schema: &Schema) -> KindId {
     // Mix name
     hasher.update(&(schema.name.len() as u64).to_le_bytes());
     hasher.update(schema.name.as_bytes());
-    
+
     // Mix fields
     hasher.update(&(schema.fields.len() as u64).to_le_bytes());
     for field in schema.fields {
@@ -110,23 +110,57 @@ pub fn schema_hash(schema: &Schema) -> KindId {
 
 fn hash_wire_type(hasher: &mut blake3::Hasher, ty: &WireType) {
     match ty {
-        WireType::U8 => { hasher.update(&[1]); }
-        WireType::U16 => { hasher.update(&[2]); }
-        WireType::U32 => { hasher.update(&[3]); }
-        WireType::U64 => { hasher.update(&[4]); }
-        WireType::U128 => { hasher.update(&[5]); }
-        WireType::I8 => { hasher.update(&[6]); }
-        WireType::I16 => { hasher.update(&[7]); }
-        WireType::I32 => { hasher.update(&[8]); }
-        WireType::I64 => { hasher.update(&[9]); }
-        WireType::I128 => { hasher.update(&[10]); }
-        WireType::F32 => { hasher.update(&[11]); }
-        WireType::F64 => { hasher.update(&[12]); }
-        WireType::Bool => { hasher.update(&[13]); }
-        WireType::ThingId => { hasher.update(&[14]); }
-        WireType::BlobId => { hasher.update(&[15]); }
-        WireType::SymbolId => { hasher.update(&[16]); }
-        WireType::KindId => { hasher.update(&[17]); }
+        WireType::U8 => {
+            hasher.update(&[1]);
+        }
+        WireType::U16 => {
+            hasher.update(&[2]);
+        }
+        WireType::U32 => {
+            hasher.update(&[3]);
+        }
+        WireType::U64 => {
+            hasher.update(&[4]);
+        }
+        WireType::U128 => {
+            hasher.update(&[5]);
+        }
+        WireType::I8 => {
+            hasher.update(&[6]);
+        }
+        WireType::I16 => {
+            hasher.update(&[7]);
+        }
+        WireType::I32 => {
+            hasher.update(&[8]);
+        }
+        WireType::I64 => {
+            hasher.update(&[9]);
+        }
+        WireType::I128 => {
+            hasher.update(&[10]);
+        }
+        WireType::F32 => {
+            hasher.update(&[11]);
+        }
+        WireType::F64 => {
+            hasher.update(&[12]);
+        }
+        WireType::Bool => {
+            hasher.update(&[13]);
+        }
+        WireType::ThingId => {
+            hasher.update(&[14]);
+        }
+        WireType::BlobId => {
+            hasher.update(&[15]);
+        }
+        WireType::SymbolId => {
+            hasher.update(&[16]);
+        }
+        WireType::KindId => {
+            hasher.update(&[17]);
+        }
         WireType::Array(inner, len) => {
             hasher.update(&[18]);
             hasher.update(&(*len as u64).to_le_bytes());

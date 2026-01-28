@@ -187,12 +187,7 @@ pub unsafe fn init() {
     unsafe {
         let base = core::ptr::addr_of_mut!(IDT.entries) as *mut IdtEntry;
         for i in 0..256 {
-            (*base.add(i)).set_handler(
-                handler,
-                crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
-                0,
-                0x8E,
-            );
+            (*base.add(i)).set_handler(handler, crate::arch::x86_64::gdt::KERNEL_CODE_SEL, 0, 0x8E);
         }
 
         // Exceptions
@@ -262,7 +257,7 @@ pub struct InterruptStackFrame {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_irq_handler(vector: u64) {
     let resolved = crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
-    
+
     // Send EOI to Local APIC early to avoid wedging during context switch
     crate::arch::x86_64::ioapic::send_eoi();
 

@@ -3,8 +3,8 @@ use abi::symbols::SymbolId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use core::sync::atomic::AtomicU64;
 use alloc::collections::VecDeque;
+use core::sync::atomic::AtomicU64;
 
 pub type ThingId = u64;
 
@@ -39,7 +39,7 @@ pub const MAX_SUMMARY_IDS: usize = 16;
 pub const MAX_SUMMARY_THINGS: usize = 8;
 
 /// Small fixed-capacity set for SymbolIds
-/// 
+///
 /// Tracks unique IDs without allocation. If capacity is exceeded,
 /// `overflowed` is set and the set cannot disprove membership.
 #[derive(Debug, Clone)]
@@ -79,7 +79,7 @@ impl SmallIdSet {
             self.overflowed = true;
         }
     }
-    
+
     /// Check if ID is in the set
     pub fn contains(&self, id: u32) -> bool {
         for i in 0..self.len as usize {
@@ -129,7 +129,7 @@ impl SmallThingSet {
             self.overflowed = true;
         }
     }
-    
+
     /// Check if ThingId is in the set
     pub fn contains(&self, id: u64) -> bool {
         for i in 0..self.len as usize {
@@ -142,7 +142,7 @@ impl SmallThingSet {
 }
 
 /// Compact summary of what's in a commit (for O(1) filter matching)
-/// 
+///
 /// Computed once at commit time from validated ops.
 /// Filter matching checks these sets rather than re-parsing batch bytes.
 #[derive(Debug, Clone, Default)]
@@ -160,23 +160,23 @@ pub const COMMIT_HISTORY_MAX_COMMITS: usize = 8192;
 pub const COMMIT_HISTORY_MAX_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
 
 /// Shared ring buffer of recent commits
-/// 
+///
 /// Accessed by all watches via cursor. Protected by the same lock
 /// used for graph writes (v0 simplicity).
 pub struct CommitHistory {
     /// Monotonically increasing next sequence number
     /// (The next commit pushed will have this seq)
     pub next_seq: u64,
-    
+
     /// Ring content in seq order
     ring: VecDeque<CommitRecord>,
-    
+
     /// Total bytes currently in ring
     bytes: usize,
-    
+
     /// Maximum number of commits to retain
     max_commits: usize,
-    
+
     /// Maximum bytes of commit data to retain
     max_bytes: usize,
 }
@@ -192,40 +192,40 @@ impl CommitHistory {
             max_bytes,
         }
     }
-    
+
     /// Create with default limits
     pub fn with_defaults() -> Self {
         Self::new(COMMIT_HISTORY_MAX_COMMITS, COMMIT_HISTORY_MAX_BYTES)
     }
-    
+
     /// Push a new commit, evicting oldest until within limits
-    /// 
+    ///
     /// The `seq` must equal `self.next_seq` - this is enforced for contiguity.
     pub fn push(&mut self, seq: u64, data: Vec<u8>, summary: CommitSummary) {
         debug_assert_eq!(seq, self.next_seq, "CommitHistory: seq must be contiguous");
-        
+
         let data_len = data.len();
-        
+
         // Evict from front until we have room for this commit
-        while !self.ring.is_empty() && 
-              (self.ring.len() >= self.max_commits || 
-               self.bytes + data_len > self.max_bytes) {
+        while !self.ring.is_empty()
+            && (self.ring.len() >= self.max_commits || self.bytes + data_len > self.max_bytes)
+        {
             if let Some(evicted) = self.ring.pop_front() {
                 self.bytes -= evicted.data.len();
             }
         }
-        
+
         // Push the new commit
         self.ring.push_back(CommitRecord { seq, data, summary });
         self.bytes += data_len;
         self.next_seq = seq + 1;
     }
-    
+
     /// Get commit data by sequence number
-    /// 
+    ///
     /// Returns None if seq is not in the ring (evicted or not yet committed).
     pub fn get(&self, seq: u64) -> Option<&[u8]> {
-        // The ring is contiguous: if we have oldest..newest, 
+        // The ring is contiguous: if we have oldest..newest,
         // the index is (seq - oldest)
         let oldest = self.oldest_seq()?;
         if seq < oldest {
@@ -234,17 +234,17 @@ impl CommitHistory {
         let idx = (seq - oldest) as usize;
         self.ring.get(idx).map(|r| r.data.as_slice())
     }
-    
+
     /// Oldest available sequence, if any
     pub fn oldest_seq(&self) -> Option<u64> {
         self.ring.front().map(|r| r.seq)
     }
-    
+
     /// Newest available sequence, if any  
     pub fn newest_seq(&self) -> Option<u64> {
         self.ring.back().map(|r| r.seq)
     }
-    
+
     /// Check if a sequence is available in the history
     pub fn contains(&self, seq: u64) -> bool {
         if let (Some(oldest), Some(newest)) = (self.oldest_seq(), self.newest_seq()) {
@@ -253,17 +253,17 @@ impl CommitHistory {
             false
         }
     }
-    
+
     /// Number of commits currently in history
     pub fn len(&self) -> usize {
         self.ring.len()
     }
-    
+
     /// Check if history is empty
     pub fn is_empty(&self) -> bool {
         self.ring.is_empty()
     }
-    
+
     /// Get full commit record by sequence number (for summary access)
     pub fn get_record(&self, seq: u64) -> Option<&CommitRecord> {
         let oldest = self.oldest_seq()?;
@@ -282,7 +282,7 @@ impl CommitHistory {
 use abi::root::{WATCH_F_KIND, WATCH_F_PREDICATE, WATCH_F_SUBJECT};
 
 /// Check if a commit matches a filter using its summary (O(1))
-/// 
+///
 /// Matching rules:
 /// - If filter flags == 0: match all
 /// - If a flag bit is set, the corresponding field must match
@@ -292,28 +292,28 @@ pub fn commit_matches(filter: &WatchFilter, summary: &CommitSummary) -> bool {
     if filter.matches_all() {
         return true;
     }
-    
+
     // Check PREDICATE filter
     if (filter.flags & WATCH_F_PREDICATE) != 0 {
         if !summary.predicates.overflowed && !summary.predicates.contains(filter.predicate_id) {
             return false;
         }
     }
-    
-    // Check SUBJECT filter  
+
+    // Check SUBJECT filter
     if (filter.flags & WATCH_F_SUBJECT) != 0 {
         if !summary.subjects.overflowed && !summary.subjects.contains(filter.subject_lo) {
             return false;
         }
     }
-    
+
     // Check KIND filter
     if (filter.flags & WATCH_F_KIND) != 0 {
         if !summary.kinds.overflowed && !summary.kinds.contains(filter.kind_id) {
             return false;
         }
     }
-    
+
     true
 }
 
@@ -343,10 +343,10 @@ impl WatchFilter {
 pub struct GlobalWatch {
     pub id: u64,
     pub spec_ptr: u64, // We store the pointer to user query for now
-    pub stream_handle: ResourceHandle, 
-    pub kind_filter: SymbolId, // "kind == Bytespace"
+    pub stream_handle: ResourceHandle,
+    pub kind_filter: SymbolId,  // "kind == Bytespace"
     pub missing_fact: SymbolId, // "missing fact(detector=...)"
-    
+
     // Cursor-based tracking (references shared CommitHistory)
     /// Next sequence number this watch expects to read
     pub cursor_seq: u64,

@@ -1,7 +1,7 @@
 //! Helper module for Root watch patterns.
 
-use abi::errors::Errno;
 use crate::syscall::root_watch_next;
+use abi::errors::Errno;
 
 /// Root watch handle type (syscall handle id).
 pub type HandleId = usize;
@@ -9,7 +9,7 @@ pub type HandleId = usize;
 /// Statistics returned by `watch_drain`.
 #[derive(Debug, Clone, Default)]
 pub struct DrainStats {
-/// Number of watch payloads successfully processed.
+    /// Number of watch payloads successfully processed.
     pub batches: usize,
     /// Number of overflow events encountered (and skipped).
     pub overflows: usize,
@@ -35,11 +35,7 @@ pub struct DrainStats {
 /// * `Ok(stats)` - Drain completed successfully (hit EAGAIN).
 /// * `Err(ENOSPC)` - The buffer was too small for a pending batch.
 /// * `Err(e)` - Other system error.
-pub fn watch_drain<F>(
-    handle: HandleId,
-    buf: &mut [u8],
-    mut handler: F,
-) -> Result<DrainStats, Errno>
+pub fn watch_drain<F>(handle: HandleId, buf: &mut [u8], mut handler: F) -> Result<DrainStats, Errno>
 where
     F: FnMut(u64, &[u8]),
 {

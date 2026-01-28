@@ -267,7 +267,7 @@ pub mod keys {
     pub const FONT_ATLAS_BYTESPACE: &str = "font.atlas.bytespace";
     pub const FONT_ATLAS_WIDTH: &str = "font.atlas.width";
     pub const FONT_ATLAS_HEIGHT: &str = "font.atlas.height";
-    pub const FONT_ATLAS_FORMAT: &str = "font.atlas.format";   // 0=A8, 1=RGBA8888
+    pub const FONT_ATLAS_FORMAT: &str = "font.atlas.format"; // 0=A8, 1=RGBA8888
     pub const FONT_ATLAS_VERSION: &str = "font.atlas.version"; // Monotonic
 
     // SVG Cache Properties (Blossom service)
@@ -355,8 +355,8 @@ pub mod kinds {
     pub const FONT_COVERAGE: &str = "font.Coverage";
     pub const FONT_INSTANCE: &str = "font.Instance";
     pub const FONT_GLYPH: &str = "font.Glyph";
-    pub const FONT_BLOB: &str = "font.Blob";         // Raw font file backing store
-    pub const FONT_ATLAS: &str = "font.Atlas";       // Glyph atlas for (face, size)
+    pub const FONT_BLOB: &str = "font.Blob"; // Raw font file backing store
+    pub const FONT_ATLAS: &str = "font.Atlas"; // Glyph atlas for (face, size)
     pub const FONT_IMPORT_REQUEST: &str = "font.ImportRequest";
     pub const FONT_GLYPH_REQUEST: &str = "font.GlyphRequest";
 
@@ -373,7 +373,7 @@ pub mod kinds {
     // SVG Cache Kinds (Blossom service)
     pub const SVG_ASSET: &str = "svg.Asset";
     pub const SVG_RASTER_VARIANT: &str = "svg.RasterVariant";
-    
+
     pub const SVC_INIT: &str = "svc.Init";
     pub const SVC_CAMBIUM: &str = "svc.Cambium";
     pub const TIME_CLOCK: &str = "time.Clock";
@@ -490,7 +490,7 @@ pub mod rels {
     pub const FONT_HAS_GLYPH: &str = "font.has_glyph";
     pub const FONT_HAS_INSTANCE: &str = "font.has_instance";
     pub const FONT_HAS_RESULT: &str = "font.has_result";
-    pub const FONT_HAS_BLOB: &str = "font.has_blob";   // Face -> Blob (raw file)
+    pub const FONT_HAS_BLOB: &str = "font.has_blob"; // Face -> Blob (raw file)
     pub const FONT_HAS_ATLAS: &str = "font.has_atlas"; // Face -> Atlas
     pub const FONT_FALLBACK_TO: &str = "font.fallback_to";
 

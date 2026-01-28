@@ -129,7 +129,10 @@ impl DrawListBuilder {
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
         debug_assert_eq!(bytes.len(), DRAWLIST_HEADER_BYTES);
-        Self { bytes, cmd_count: 0 }
+        Self {
+            bytes,
+            cmd_count: 0,
+        }
     }
 
     pub fn push_fill_rect(&mut self, x: i32, y: i32, w: i32, h: i32, color: u32) {
@@ -204,7 +207,8 @@ impl DrawListBuilder {
 
     fn push_cmd(&mut self, tag: DrawCmdTag, payload: &[u8]) {
         self.bytes.extend_from_slice(&tag.as_raw().to_le_bytes());
-        self.bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        self.bytes
+            .extend_from_slice(&(payload.len() as u32).to_le_bytes());
         self.bytes.extend_from_slice(payload);
         self.cmd_count += 1;
     }
@@ -250,8 +254,13 @@ impl<'a> DrawListReader<'a> {
                 self.remaining = 0;
                 return None;
             }
-            let raw_tag = u32::from_le_bytes(self.bytes[self.offset..self.offset + 4].try_into().ok()?);
-            let len = u32::from_le_bytes(self.bytes[self.offset + 4..self.offset + 8].try_into().ok()?);
+            let raw_tag =
+                u32::from_le_bytes(self.bytes[self.offset..self.offset + 4].try_into().ok()?);
+            let len = u32::from_le_bytes(
+                self.bytes[self.offset + 4..self.offset + 8]
+                    .try_into()
+                    .ok()?,
+            );
             self.offset += 8;
             let end = self.offset + len as usize;
             if end > self.bytes.len() {
@@ -344,7 +353,11 @@ pub fn decode_fill_path(payload: &[u8]) -> Option<DecodedFillPath> {
         return None;
     }
     let verbs = decode_path(&payload[12..12 + path_len])?;
-    Some(DecodedFillPath { fill_rule, color, verbs })
+    Some(DecodedFillPath {
+        fill_rule,
+        color,
+        verbs,
+    })
 }
 
 pub fn decode_line(payload: &[u8]) -> Option<(PointF, PointF, u32, f32)> {
@@ -377,7 +390,11 @@ pub fn decode_stroke_path(payload: &[u8]) -> Option<DecodedStrokePath> {
         return None;
     }
     let verbs = decode_path(&payload[12..12 + path_len])?;
-    Some(DecodedStrokePath { width, color, verbs })
+    Some(DecodedStrokePath {
+        width,
+        color,
+        verbs,
+    })
 }
 
 pub struct DecodedTextSpan {
@@ -400,8 +417,16 @@ pub fn decode_text_span(payload: &[u8]) -> Option<DecodedTextSpan> {
     if payload.len() != 20 + text_len {
         return None;
     }
-    let text = core::str::from_utf8(&payload[20..20 + text_len]).ok()?.into();
-    Some(DecodedTextSpan { x, y, size, color, text })
+    let text = core::str::from_utf8(&payload[20..20 + text_len])
+        .ok()?
+        .into();
+    Some(DecodedTextSpan {
+        x,
+        y,
+        size,
+        color,
+        text,
+    })
 }
 
 pub fn decode_draw_icon(payload: &[u8]) -> Option<(i32, i32, i32, i32, u32)> {

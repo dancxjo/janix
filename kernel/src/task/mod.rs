@@ -66,7 +66,7 @@ pub struct Task<R: BootRuntime> {
     pub simd: SimdState,
 
     pub stack_info: Option<StackInfo>,
-    
+
     pub mappings: Arc<Mutex<crate::memory::mappings::MappingList>>,
 
     /// Remaining time slice in ticks before preemption

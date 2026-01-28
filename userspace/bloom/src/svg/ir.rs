@@ -1,7 +1,7 @@
-use crate::geometry::{Rect, Color, Transform};
+use crate::geometry::{Color, Rect, Transform};
+pub use crate::isa::{FillRule, LineCap, LineJoin, Path2D, PathVerb as PathCommand, PointF};
 pub use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
-pub use crate::isa::{Path2D, PathVerb as PathCommand, PointF, FillRule, LineCap, LineJoin};
 
 #[derive(Debug, Clone)]
 pub struct SvgIrDocument {

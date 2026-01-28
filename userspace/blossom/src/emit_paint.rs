@@ -5,9 +5,9 @@ use alloc::vec::Vec;
 use abi::schema::keys;
 use abi::ui_paint::{ImageFit, PaintBuilder};
 use abi::ui_scene::NodeKind;
-use stem::thing::{ThingId, HandleId};
-use stem::thing::sys::{bytespace_info, bytespace_read, prop_get};
 use alloc::string::ToString;
+use stem::thing::sys::{bytespace_info, bytespace_read, prop_get};
+use stem::thing::{HandleId, ThingId};
 
 use crate::layout::{LayoutRect, WINDOW_BORDER, WINDOW_TITLE_HEIGHT};
 use crate::scene::{SceneGraph, SceneNode};
@@ -53,15 +53,26 @@ fn emit_node(
         w: base.w,
         h: base.h,
     };
-    
+
     // Use stem::info loosely for tracing node types
-    if matches!(node.kind, NodeKind::Scroll | NodeKind::Flex | NodeKind::Separator | NodeKind::Spacer) {
-         // stem::info!("BLOSSOM: emit_node kind={:?} rect={:?}", node.kind, rect);
+    if matches!(
+        node.kind,
+        NodeKind::Scroll | NodeKind::Flex | NodeKind::Separator | NodeKind::Spacer
+    ) {
+        // stem::info!("BLOSSOM: emit_node kind={:?} rect={:?}", node.kind, rect);
     }
 
     match node.kind {
         NodeKind::Window => {
-            draw_window_chrome(scene, node, rect, window_bg, title_override, is_focused, builder);
+            draw_window_chrome(
+                scene,
+                node,
+                rect,
+                window_bg,
+                title_override,
+                is_focused,
+                builder,
+            );
             let content = window_content_rect(node, rect);
             if content.w > 0 && content.h > 0 {
                 builder.push_clip(content.x, content.y, content.w, content.h);
@@ -97,24 +108,14 @@ fn emit_node(
                     }
                     abi::ui_scene::FontKeyKind::Thing => {
                         font_from_thing = read_font_name(meta.font_thing);
-                        font_from_thing
-                            .as_deref()
-                            .unwrap_or("NotoSans-Regular")
+                        font_from_thing.as_deref().unwrap_or("NotoSans-Regular")
                     }
                     _ => "NotoSans-Regular",
                 };
                 let size = if meta.size > 0 { meta.size as i32 } else { 16 };
                 let baseline = rect.y + size;
                 builder.draw_text_run(
-                    rect.x,
-                    rect.y,
-                    rect.w,
-                    rect.h,
-                    baseline,
-                    font,
-                    size,
-                    text,
-                    meta.color,
+                    rect.x, rect.y, rect.w, rect.h, baseline, font, size, text, meta.color,
                 );
             }
         }
@@ -223,7 +224,12 @@ fn read_font_name(id: u64) -> Option<alloc::string::String> {
     Some(text.trim_end_matches('\0').to_string())
 }
 
-fn draw_checkbox(scene: &SceneGraph, node: &SceneNode, rect: LayoutRect, builder: &mut PaintBuilder) {
+fn draw_checkbox(
+    scene: &SceneGraph,
+    node: &SceneNode,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
     let box_size = rect.h.min(16).max(0);
     let box_rect = LayoutRect {
         x: rect.x,
@@ -285,7 +291,13 @@ fn draw_window_chrome(
         w: (rect.w - border * 2).max(0),
         h: (rect.h - border * 2).max(0),
     };
-    builder.fill_rect(inner_rect.x, inner_rect.y, inner_rect.w, inner_rect.h, chrome_color);
+    builder.fill_rect(
+        inner_rect.x,
+        inner_rect.y,
+        inner_rect.w,
+        inner_rect.h,
+        chrome_color,
+    );
 
     let title_rect = LayoutRect {
         x: inner_rect.x,
@@ -304,7 +316,13 @@ fn draw_window_chrome(
                 gradient_end,
             );
         } else {
-            builder.fill_rect(title_rect.x, title_rect.y, title_rect.w, title_rect.h, title_color);
+            builder.fill_rect(
+                title_rect.x,
+                title_rect.y,
+                title_rect.w,
+                title_rect.h,
+                title_color,
+            );
         }
         let title = node
             .window_meta
@@ -356,7 +374,7 @@ mod tests {
     use super::*;
     use crate::scene::SceneGraph;
     use abi::ui_paint::{PaintOpTag, PaintReader};
-    use abi::ui_scene::{EdgeInsets, NodeKind, SizeKind, SizeSpec, TextMeta, StringRef};
+    use abi::ui_scene::{EdgeInsets, NodeKind, SizeKind, SizeSpec, StringRef, TextMeta};
 
     #[test]
     fn emit_text_op() {
@@ -370,15 +388,34 @@ mod tests {
             parent: None,
             children: Vec::new(),
             kind: NodeKind::Text,
-            width: SizeSpec { kind: SizeKind::Auto, value: 0 },
-            height: SizeSpec { kind: SizeKind::Auto, value: 0 },
-            flex_basis: SizeSpec { kind: SizeKind::Auto, value: 0 },
+            width: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
+            height: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
+            flex_basis: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
             min_width: None,
             min_height: None,
             max_width: None,
             max_height: None,
-            margin: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
-            padding: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
+            margin: EdgeInsets {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
+            padding: EdgeInsets {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
             flex_grow: 0.0,
             flex_shrink: 0.0,
             window_meta: None,
@@ -394,7 +431,12 @@ mod tests {
             checkbox_meta: None,
         });
 
-        let layout = vec![LayoutRect { x: 0, y: 0, w: 100, h: 20 }];
+        let layout = vec![LayoutRect {
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 20,
+        }];
         let bytes = emit_paint(&scene, &layout, 0, None, true);
         let mut reader = PaintReader::new(&bytes).expect("reader");
         let op = reader.next().expect("op");

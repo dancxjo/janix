@@ -1,17 +1,19 @@
 extern crate alloc;
 
+use crate::asset::{AssetBank, FontAsset};
+use abi::ids::HandleId;
+use abi::schema::{keys, kinds, rels};
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use alloc::vec;
-use abi::ids::HandleId;
-use abi::schema::{kinds, keys, rels};
-use crate::asset::{AssetBank, FontAsset};
-use spin::Mutex;
-use stem::thing::ThingId;
-use stem::thing::sys::{bytespace_info, bytespace_read, find, get_edges, intern, prop_get, prop_set};
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
+use spin::Mutex;
+use stem::thing::sys::{
+    bytespace_info, bytespace_read, find, get_edges, intern, prop_get, prop_set,
+};
+use stem::thing::ThingId;
 
 /// Font epoch counter - increments when font availability changes.
 /// Used by UiBuildKey to detect when text needs re-rendering.
@@ -27,7 +29,6 @@ fn increment_epoch() {
     FONT_EPOCH.fetch_add(1, Ordering::Relaxed);
 }
 
-
 #[derive(Clone, Copy, Debug)]
 pub struct FontStyle {
     pub weight: u16,
@@ -37,7 +38,11 @@ pub struct FontStyle {
 
 impl Default for FontStyle {
     fn default() -> Self {
-        Self { weight: 400, width: 5, slope: 0 }
+        Self {
+            weight: 400,
+            width: 5,
+            slope: 0,
+        }
     }
 }
 
@@ -185,11 +190,14 @@ impl FontGraph {
             let name = read_string_prop(file_id, keys::FONT_NAME)
                 .unwrap_or_else(|| "font.bin".to_string());
             if let Some(size_bytes) = size {
-                self.files.insert(file_id, FontFile {
-                    bytespace_id,
-                    size_bytes,
-                    name: Arc::from(name.as_str()),
-                });
+                self.files.insert(
+                    file_id,
+                    FontFile {
+                        bytespace_id,
+                        size_bytes,
+                        name: Arc::from(name.as_str()),
+                    },
+                );
             }
         }
 
@@ -197,10 +205,13 @@ impl FontGraph {
         for super_id in super_ids {
             let name = read_string_prop(super_id, keys::FONT_NAME)
                 .unwrap_or_else(|| "Superfamily".to_string());
-            self.superfamilies.insert(super_id, FontSuperfamily {
-                name: Arc::from(name.as_str()),
-                families: Vec::new(),
-            });
+            self.superfamilies.insert(
+                super_id,
+                FontSuperfamily {
+                    name: Arc::from(name.as_str()),
+                    families: Vec::new(),
+                },
+            );
         }
 
         let family_ids = collect_nodes(kinds::FONT_FAMILY);
@@ -209,11 +220,14 @@ impl FontGraph {
                 .unwrap_or_else(|| "Family".to_string());
             let lower = name.to_lowercase();
             self.family_name_index.insert(lower, family_id);
-            self.families.insert(family_id, FontFamily {
-                name: Arc::from(name.as_str()),
-                faces: Vec::new(),
-                superfamily_id: None,
-            });
+            self.families.insert(
+                family_id,
+                FontFamily {
+                    name: Arc::from(name.as_str()),
+                    faces: Vec::new(),
+                    superfamily_id: None,
+                },
+            );
         }
 
         for (super_id, superfamily) in self.superfamilies.iter_mut() {
@@ -237,15 +251,18 @@ impl FontGraph {
             let slope = prop_get(face_id, keys::FONT_SLOPE).ok().unwrap_or(0) as u8;
             let style = read_string_prop(face_id, keys::FONT_STYLE)
                 .unwrap_or_else(|| "Regular".to_string());
-            self.faces.insert(face_id, FontFace {
-                family_id: ThingId::default(),
-                file_id: ThingId::default(),
-                style: Arc::from(style.as_str()),
-                weight,
-                width,
-                slope,
-                coverage: Vec::new(),
-            });
+            self.faces.insert(
+                face_id,
+                FontFace {
+                    family_id: ThingId::default(),
+                    file_id: ThingId::default(),
+                    style: Arc::from(style.as_str()),
+                    weight,
+                    width,
+                    slope,
+                    coverage: Vec::new(),
+                },
+            );
         }
 
         for (family_id, family) in self.families.iter_mut() {
@@ -340,11 +357,7 @@ impl FontGraph {
         None
     }
 
-    pub fn select_face_for_family(
-        &self,
-        family_id: ThingId,
-        style: FontStyle,
-    ) -> Option<ThingId> {
+    pub fn select_face_for_family(&self, family_id: ThingId, style: FontStyle) -> Option<ThingId> {
         let family = self.families.get(&family_id)?;
         best_face_for_style(&family.faces, &self.faces, style)
     }
@@ -388,7 +401,9 @@ impl FontGraph {
                         }
                         if let Some(other) = self.families.get(other_family) {
                             candidates = rank_faces(&other.faces, &self.faces, style);
-                            if let Some(face_id) = first_face_covering(&candidates, &self.faces, codepoint) {
+                            if let Some(face_id) =
+                                first_face_covering(&candidates, &self.faces, codepoint)
+                            {
                                 return Some(face_id);
                             }
                         }
@@ -461,7 +476,12 @@ impl FontGraph {
         false
     }
 
-    pub fn find_glyph(&mut self, face_id: ThingId, px_size: u16, codepoint: u32) -> Option<ThingId> {
+    pub fn find_glyph(
+        &mut self,
+        face_id: ThingId,
+        px_size: u16,
+        codepoint: u32,
+    ) -> Option<ThingId> {
         let key = (face_id, px_size, codepoint);
         if let Some(id) = self.glyph_cache.get(&key) {
             return Some(*id);

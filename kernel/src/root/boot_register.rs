@@ -1,8 +1,8 @@
 use super::SymbolShell;
 use super::graph::ThingId;
 use super::{RootOp, enqueue};
-use crate::{BootModuleDesc, FramebufferInfo, PhysRange};
 use crate::device_registry::{DeviceEntry, REGISTRY};
+use crate::{BootModuleDesc, FramebufferInfo, PhysRange};
 use abi::schema::{confidence, keys, kinds, rels, source};
 
 #[derive(Debug)]
@@ -287,7 +287,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                 let bs = bytespace_create(size);
                 bytespace_write(bs, 0, virt, size);
                 runtime.unmap_phys_temp(virt, size as usize);
-                
+
                 link(acpi, rels::BACKED_BY, bs);
                 link(fw_boot, rels::PROVIDES_TABLE, acpi);
             } else {
@@ -328,10 +328,17 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                         set(dtb_node, keys::CONFIDENCE, conf_high);
                         link(fw_boot, rels::PROVIDES_TABLE, dtb_node);
                     } else {
-                        crate::kinfo!("ROOT: Warning: Failed to map full DTB sized {} at {:x}", size, dtb_phys);
+                        crate::kinfo!(
+                            "ROOT: Warning: Failed to map full DTB sized {} at {:x}",
+                            size,
+                            dtb_phys
+                        );
                     }
                 } else {
-                    crate::kinfo!("ROOT: Warning: DTB size {} is absurd, capping or skipping.", size);
+                    crate::kinfo!(
+                        "ROOT: Warning: DTB size {} is absurd, capping or skipping.",
+                        size
+                    );
                     let diag = create("diagnostic/error");
                     let msg = intern("DTB size invalid or too large");
                     set(diag, "message", msg);

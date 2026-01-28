@@ -5,7 +5,7 @@ extern crate alloc;
 extern crate stem;
 
 // Modules are now in lib.rs
-use blossom::{emit_paint, graph_ui, layout, scene, read_bytespace, read_string_prop};
+use blossom::{emit_paint, graph_ui, layout, read_bytespace, read_string_prop, scene};
 
 use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, ui_kind};
@@ -13,9 +13,8 @@ use abi::svg_protocol::{
     decode_request_tag, encode_error, RasterizeSvgRequest, RasterizeSvgResponse, SvgRequestTag,
     SvgSource, SvgStatus,
 };
-use stem::thing::{ThingId, HandleId};
-use abi::watch;
 use abi::types::{WatchMode, WatchSpec};
+use abi::watch;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
 use alloc::vec;
@@ -28,7 +27,7 @@ use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, prop_get,
     prop_set,
 };
-
+use stem::thing::{HandleId, ThingId};
 
 /// Cache entry for a rasterized SVG variant
 #[derive(Clone)]
@@ -298,7 +297,6 @@ impl UiPipeline {
         }
     }
 
-
     fn process_window(&mut self, window_id: ThingId) -> Result<(), abi::errors::Errno> {
         let mut sys_graph = graph_ui::SysGraph;
         if let Some(root_id) = graph_ui::find_root_ui(&sys_graph, &self.ui_symbols, window_id) {
@@ -341,8 +339,13 @@ impl UiPipeline {
 
         let root_rect = layout::LayoutRect { x: 0, y: 0, w, h };
         let rects = layout::layout_scene(&scene, root_rect);
-        let paint_bytes =
-            emit_paint::emit_paint(&scene, &rects, window_bg, title_override.as_deref(), is_focused);
+        let paint_bytes = emit_paint::emit_paint(
+            &scene,
+            &rects,
+            window_bg,
+            title_override.as_deref(),
+            is_focused,
+        );
         let paint_bs = bytespace_create(paint_bytes.len(), 0, 0)?;
         let _ = bytespace_write(paint_bs, 0, &paint_bytes);
         let _ = prop_set(window_id, keys::UI_PAINT_BYTESPACE, paint_bs.to_u64_lossy());

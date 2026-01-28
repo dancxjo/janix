@@ -29,8 +29,8 @@ const FALLBACK_BG_COLOR: [u8; 3] = [0x00, 0x2d, 0x44]; // #002d44
 
 /// Check if a color is close to another (within tolerance)
 fn color_close(a: [u8; 3], b: [u8; 3], tolerance: u8) -> bool {
-    a[0].abs_diff(b[0]) <= tolerance 
-        && a[1].abs_diff(b[1]) <= tolerance 
+    a[0].abs_diff(b[0]) <= tolerance
+        && a[1].abs_diff(b[1]) <= tolerance
         && a[2].abs_diff(b[2]) <= tolerance
 }
 
@@ -39,7 +39,7 @@ fn verify_wallpaper_pixels(img: &image::RgbImage) -> (u32, u32) {
     let (width, height) = img.dimensions();
     let mut total = 0u32;
     let mut fallback = 0u32;
-    
+
     // Sample grid across the screen
     for y in (0..height).step_by(20) {
         for x in (0..width).step_by(20) {
@@ -56,11 +56,15 @@ fn verify_wallpaper_pixels(img: &image::RgbImage) -> (u32, u32) {
 /// Verify clock window has black/red pixels in center - returns (black, red, other)
 fn verify_clock_center_pixels(img: &image::RgbImage) -> (u32, u32, u32, &'static str) {
     let (width, height) = img.dimensions();
-    
+
     // Check two likely locations: Center and Bottom-Right
     let regions = [
         (width / 2, height / 2, "center"),
-        (width.saturating_sub(220), height.saturating_sub(105), "bottom-right"),
+        (
+            width.saturating_sub(220),
+            height.saturating_sub(105),
+            "bottom-right",
+        ),
     ];
 
     let mut best_black = 0;
@@ -72,10 +76,10 @@ fn verify_clock_center_pixels(img: &image::RgbImage) -> (u32, u32, u32, &'static
         let mut black = 0u32;
         let mut red = 0u32;
         let mut other = 0u32;
-        
+
         let sample_w = 100.min(width / 4);
         let sample_h = 50.min(height / 6);
-        
+
         for y in cy.saturating_sub(sample_h)..=(cy + sample_h).min(height - 1) {
             for x in cx.saturating_sub(sample_w)..=(cx + sample_w).min(width - 1) {
                 let pixel = img.get_pixel(x, y).0;
@@ -88,7 +92,7 @@ fn verify_clock_center_pixels(img: &image::RgbImage) -> (u32, u32, u32, &'static
                 }
             }
         }
-        
+
         // Prioritize region with most red pixels (clock digits)
         if red > best_red || (red == best_red && black > best_black) {
             best_black = black;
@@ -100,7 +104,10 @@ fn verify_clock_center_pixels(img: &image::RgbImage) -> (u32, u32, u32, &'static
     (best_black, best_red, best_other, best_loc)
 }
 
-async fn wait_for_clock_pixels(world: &mut ThingOsWorld, timeout_secs: f64) -> Result<(), StepError> {
+async fn wait_for_clock_pixels(
+    world: &mut ThingOsWorld,
+    timeout_secs: f64,
+) -> Result<(), StepError> {
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs_f64(timeout_secs);
     let mut attempts = 0;
@@ -127,16 +134,26 @@ async fn wait_for_clock_pixels(world: &mut ThingOsWorld, timeout_secs: f64) -> R
                 continue;
             }
         };
-        
+
         let (black, red, other, loc) = verify_clock_center_pixels(&img);
 
         let total = black + red + other;
-        let black_pct = if total > 0 { (black as f64 / total as f64) * 100.0 } else { 0.0 };
-        let red_pct = if total > 0 { (red as f64 / total as f64) * 100.0 } else { 0.0 };
+        let black_pct = if total > 0 {
+            (black as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
+        let red_pct = if total > 0 {
+            (red as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        };
 
         // [CONTRACT] reporting
-        eprintln!("[CONTRACT] Clock Pixels: red={} ({:.1}%), black={} ({:.1}%), other={} region={} (attempt {})", 
-                  red, red_pct, black, black_pct, other, loc, attempts);
+        eprintln!(
+            "[CONTRACT] Clock Pixels: red={} ({:.1}%), black={} ({:.1}%), other={} region={} (attempt {})",
+            red, red_pct, black, black_pct, other, loc, attempts
+        );
 
         if red > 50 && black > 500 {
             eprintln!("│  │  │      ✅ Clock window detected with pixels");
@@ -146,7 +163,10 @@ async fn wait_for_clock_pixels(world: &mut ThingOsWorld, timeout_secs: f64) -> R
         tokio::time::sleep(std::time::Duration::from_secs(5)).await;
     }
 
-    Err(StepError(format!("Clock window pixels not detected within {}s", timeout_secs)))
+    Err(StepError(format!(
+        "Clock window pixels not detected within {}s",
+        timeout_secs
+    )))
 }
 
 struct PerfReport {
@@ -234,13 +254,13 @@ fn verify_cursor_pixels(img: &image::RgbImage) -> u32 {
     let (width, height) = img.dimensions();
     let cx = width / 2;
     let cy = height / 2;
-    
+
     let mut non_bg = 0u32;
     let radius = 15u32;
-    
+
     // Get a sample of what background color is (from corner)
     let bg_sample = img.get_pixel(10, 10).0;
-    
+
     for dy in 0..=radius {
         for dx in 0..=radius {
             for (sx, sy) in [(1i32, 1i32), (1, -1), (-1, 1), (-1, -1)] {
@@ -257,7 +277,6 @@ fn verify_cursor_pixels(img: &image::RgbImage) -> u32 {
     }
     non_bg
 }
-
 
 /// Capture diagnostic artifacts when a test fails or times out
 async fn capture_failure_diagnostics(world: &mut ThingOsWorld, context: &str) {
@@ -295,7 +314,10 @@ async fn capture_failure_diagnostics(world: &mut ThingOsWorld, context: &str) {
 async fn turn_on_machine(world: &mut ThingOsWorld) -> Result<(), StepError> {
     let arch = std::env::var("BDD_ARCH").unwrap_or_else(|_| "x86_64".to_string());
 
-    world.boot(&arch).await.map_err(|e| StepError(format!("Failed to boot QEMU: {}", e)))?;
+    world
+        .boot(&arch)
+        .await
+        .map_err(|e| StepError(format!("Failed to boot QEMU: {}", e)))?;
     Ok(())
 }
 
@@ -348,7 +370,11 @@ async fn serial_contains(world: &mut ThingOsWorld, expected: String) -> Result<(
     check_serial(world, &expected, DEFAULT_TIMEOUT_SECS).await
 }
 
-async fn check_serial(world: &mut ThingOsWorld, expected: &str, timeout_secs: f64) -> Result<(), StepError> {
+async fn check_serial(
+    world: &mut ThingOsWorld,
+    expected: &str,
+    timeout_secs: f64,
+) -> Result<(), StepError> {
     let found = world.wait_for_serial(expected, timeout_secs).await;
 
     if !found {
@@ -404,7 +430,8 @@ async fn then_screen_fill(_world: &mut ThingOsWorld, color_name: String) -> Resu
         .await
         .map_err(|e| StepError(format!("Failed to take screenshot: {}", e)))?;
 
-    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let img = image::open(&png_path)
+        .map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
     let rgb = img.to_rgb8();
     let (width, height) = rgb.dimensions();
 
@@ -457,7 +484,9 @@ async fn check_serial_monotonic(world: &mut ThingOsWorld) -> Result<(), StepErro
     for line in log.lines() {
         if let Some(caps) = re.captures(line) {
             let ts_str = caps.get(1).unwrap().as_str();
-            let ts: f64 = ts_str.parse().map_err(|e| StepError(format!("Failed to parse timestamp: {}", e)))?;
+            let ts: f64 = ts_str
+                .parse()
+                .map_err(|e| StepError(format!("Failed to parse timestamp: {}", e)))?;
 
             if ts < last_ts {
                 return Err(StepError(format!(
@@ -472,11 +501,16 @@ async fn check_serial_monotonic(world: &mut ThingOsWorld) -> Result<(), StepErro
     }
 
     if !found_any {
-        return Err(StepError("No timestamps found in serial log to verify!".to_string()));
+        return Err(StepError(
+            "No timestamps found in serial log to verify!".to_string(),
+        ));
     }
 
     if last_ts <= 0.0 {
-        return Err(StepError("Timestamps were monotonic but never advanced beyond 0.0! Timer likely broken.".to_string()));
+        return Err(StepError(
+            "Timestamps were monotonic but never advanced beyond 0.0! Timer likely broken."
+                .to_string(),
+        ));
     }
     Ok(())
 }
@@ -493,7 +527,8 @@ async fn bloom_center_rectangle(world: &mut ThingOsWorld) -> Result<(), StepErro
         .await
         .map_err(|e| StepError(format!("Failed to take screenshot: {}", e)))?;
 
-    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let img = image::open(&png_path)
+        .map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
     let rgb = img.to_rgb8();
     let (width, height) = rgb.dimensions();
     if width == 0 || height == 0 {
@@ -535,7 +570,8 @@ async fn bloom_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
         .await
         .map_err(|e| StepError(format!("Failed to take screenshot: {}", e)))?;
 
-    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let img = image::open(&png_path)
+        .map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
     let rgb = img.to_rgb8();
     let (width, height) = rgb.dimensions();
     if width == 0 || height == 0 {
@@ -588,7 +624,11 @@ async fn machine_is_booted(world: &mut ThingOsWorld) -> Result<(), StepError> {
 }
 
 #[then(regex = r#"^"(.+)" should appear at least (\d+) times$"#)]
-async fn check_occurrence_count(world: &mut ThingOsWorld, pattern: String, count: usize) -> Result<(), StepError> {
+async fn check_occurrence_count(
+    world: &mut ThingOsWorld,
+    pattern: String,
+    count: usize,
+) -> Result<(), StepError> {
     let log = world.get_serial_log().await;
     let occurrences = log.lines().filter(|l| l.contains(&pattern)).count();
     if occurrences < count {
@@ -601,7 +641,11 @@ async fn check_occurrence_count(world: &mut ThingOsWorld, pattern: String, count
 }
 
 #[then(regex = r#"^I should see "(.+)" after "(.+)"$"#)]
-async fn check_ordering(world: &mut ThingOsWorld, second: String, first: String) -> Result<(), StepError> {
+async fn check_ordering(
+    world: &mut ThingOsWorld,
+    second: String,
+    first: String,
+) -> Result<(), StepError> {
     // Wait a bit to ensure we have enough log data showing interleaving
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
 
@@ -628,7 +672,10 @@ async fn check_ordering(world: &mut ThingOsWorld, second: String, first: String)
             eprintln!("{}", line);
         }
         eprintln!("=== End Serial Log ===\n");
-        return Err(StepError(format!("Did not find '{}' after '{}'", second, first)));
+        return Err(StepError(format!(
+            "Did not find '{}' after '{}'",
+            second, first
+        )));
     }
     Ok(())
 }
@@ -665,9 +712,7 @@ async fn wait_for_ready_state(world: &mut ThingOsWorld) -> Result<(), StepError>
     };
 
     // Wait for scheduler loop entry as the primary "ready" signal
-    let found = world
-        .wait_for_serial("[CONTRACT]", timeout)
-        .await;
+    let found = world.wait_for_serial("[CONTRACT]", timeout).await;
 
     if !found {
         capture_failure_diagnostics(world, "system ready state").await;
@@ -684,7 +729,9 @@ async fn wait_for_ready_state(world: &mut ThingOsWorld) -> Result<(), StepError>
             eprintln!("{}", line);
         }
         eprintln!("=== End Serial Log ===\n");
-        return Err(StepError("System did not reach ready state within timeout".to_string()));
+        return Err(StepError(
+            "System did not reach ready state within timeout".to_string(),
+        ));
     }
     Ok(())
 }
@@ -714,7 +761,10 @@ async fn check_required_signals(world: &mut ThingOsWorld) -> Result<(), StepErro
         }
         eprintln!("=== End Serial Log ===\n");
 
-        return Err(StepError(format!("Boot log missing required signals: {:?}", missing)));
+        return Err(StepError(format!(
+            "Boot log missing required signals: {:?}",
+            missing
+        )));
     }
 
     // In diagnostics mode, print what we found
@@ -751,7 +801,9 @@ async fn check_liveness(world: &mut ThingOsWorld) -> Result<(), StepError> {
         }
         eprintln!("=== End Serial Log ===\n");
 
-        return Err(StepError("System did not show liveness (no Thread ticks or heartbeat)".to_string()));
+        return Err(StepError(
+            "System did not show liveness (no Thread ticks or heartbeat)".to_string(),
+        ));
     }
 
     if diag_enabled() {
@@ -766,7 +818,7 @@ async fn check_liveness(world: &mut ThingOsWorld) -> Result<(), StepError> {
 async fn log_does_not_contain(world: &mut ThingOsWorld, pattern: String) -> Result<(), StepError> {
     // Give a brief window for any late output
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    
+
     let log = world.get_serial_log().await;
     if log.contains(&pattern) {
         eprintln!("\n=== Unexpected pattern found in log ===");
@@ -776,13 +828,19 @@ async fn log_does_not_contain(world: &mut ThingOsWorld, pattern: String) -> Resu
             eprintln!(">>> {}", line);
         }
         eprintln!("=== End Context ===\n");
-        return Err(StepError(format!("Log unexpectedly contains '{}'", pattern)));
+        return Err(StepError(format!(
+            "Log unexpectedly contains '{}'",
+            pattern
+        )));
     }
     Ok(())
 }
 
 #[then(regex = r#"^the log should not contain "(.+)"$"#)]
-async fn log_should_not_contain(world: &mut ThingOsWorld, pattern: String) -> Result<(), StepError> {
+async fn log_should_not_contain(
+    world: &mut ThingOsWorld,
+    pattern: String,
+) -> Result<(), StepError> {
     log_does_not_contain(world, pattern).await
 }
 
@@ -793,9 +851,14 @@ async fn log_matches_pattern(world: &mut ThingOsWorld, pattern: String) -> Resul
     let log = world.get_serial_log().await;
     let re = match regex::Regex::new(&pattern) {
         Ok(r) => r,
-        Err(e) => return Err(StepError(format!("Invalid regex pattern '{}': {}", pattern, e))),
+        Err(e) => {
+            return Err(StepError(format!(
+                "Invalid regex pattern '{}': {}",
+                pattern, e
+            )));
+        }
     };
-    
+
     if !re.is_match(&log) {
         eprintln!("\n=== Pattern Match Failed ===");
         eprintln!("Pattern: {}", pattern);
@@ -811,7 +874,10 @@ async fn log_matches_pattern(world: &mut ThingOsWorld, pattern: String) -> Resul
             eprintln!("{}", line);
         }
         eprintln!("=== End Serial Log ===\n");
-        return Err(StepError(format!("Log does not match pattern '{}'", pattern)));
+        return Err(StepError(format!(
+            "Log does not match pattern '{}'",
+            pattern
+        )));
     }
     Ok(())
 }
@@ -827,7 +893,6 @@ async fn machine_is_running(world: &mut ThingOsWorld) -> Result<(), StepError> {
 async fn wait_seconds(_world: &mut ThingOsWorld, seconds: f64) {
     tokio::time::sleep(std::time::Duration::from_secs_f64(seconds)).await;
 }
-
 
 // ===== New End-to-End Boot and UI Bring-Up Steps =====
 
@@ -847,7 +912,7 @@ async fn start_the_machine(world: &mut ThingOsWorld) -> Result<(), StepError> {
 async fn should_see_log_messages(world: &mut ThingOsWorld) -> Result<(), StepError> {
     // Wait a moment for more log lines to accumulate after boot signal
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    
+
     // By this point the system has already booted (from start_the_machine).
     // Just verify we have log output.
     let log = world.get_serial_log().await;
@@ -859,7 +924,10 @@ async fn should_see_log_messages(world: &mut ThingOsWorld) -> Result<(), StepErr
             eprintln!("│  │  │      {}", line);
         }
         eprintln!("│  │  │      === End Log ===");
-        return Err(StepError(format!("Expected at least 3 log lines, but found {}", line_count)));
+        return Err(StepError(format!(
+            "Expected at least 3 log lines, but found {}",
+            line_count
+        )));
     }
     Ok(())
 }
@@ -868,42 +936,53 @@ async fn should_see_log_messages(world: &mut ThingOsWorld) -> Result<(), StepErr
 
 /// Matches "And each log message should include a monotonically increasing timestamp"
 #[then("each log message should include a monotonically increasing timestamp")]
-async fn each_log_message_monotonic_timestamp_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
+async fn each_log_message_monotonic_timestamp_impl(
+    world: &mut ThingOsWorld,
+) -> Result<(), StepError> {
     let log = world.get_serial_log().await;
     let mut last_ts: f64 = 0.0;
-    
+
     // Regex to capture "[18818616432]" or "[12.345678]" -> number (decimal optional)
     let re = regex::Regex::new(r"^\[(\d+(?:\.\d+)?)\]").expect("Invalid regex");
-    
+
     let mut found_any = false;
     let mut checked_count = 0;
-    
+
     for line in log.lines() {
         if let Some(caps) = re.captures(line) {
             let ts_str = caps.get(1).unwrap().as_str();
-            let ts: f64 = ts_str.parse().map_err(|e| StepError(format!("Failed to parse timestamp: {}", e)))?;
-            
+            let ts: f64 = ts_str
+                .parse()
+                .map_err(|e| StepError(format!("Failed to parse timestamp: {}", e)))?;
+
             if ts < last_ts {
                 return Err(StepError(format!(
                     "Timestamps went backwards! Previous: {}, Current: {}\nLine: {}",
                     last_ts, ts, line
                 )));
             }
-            
+
             last_ts = ts;
             found_any = true;
             checked_count += 1;
         }
     }
-    
-    eprintln!("│  │  │      📝 Checked {} timestamped lines, last ts: {:.6}", checked_count, last_ts);
-    
+
+    eprintln!(
+        "│  │  │      📝 Checked {} timestamped lines, last ts: {:.6}",
+        checked_count, last_ts
+    );
+
     if !found_any {
-        return Err(StepError("No timestamps found in serial log to verify!".to_string()));
+        return Err(StepError(
+            "No timestamps found in serial log to verify!".to_string(),
+        ));
     }
-    
+
     if last_ts < 0.5 {
-        return Err(StepError("Timestamps never advanced beyond 0.5s - timer may be broken".to_string()));
+        return Err(StepError(
+            "Timestamps never advanced beyond 0.5s - timer may be broken".to_string(),
+        ));
     }
     Ok(())
 }
@@ -913,27 +992,41 @@ async fn each_log_message_monotonic_timestamp_impl(world: &mut ThingOsWorld) -> 
 async fn system_clock_tick_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
     // Wait a few seconds to see clock progression
     tokio::time::sleep(std::time::Duration::from_secs(3)).await;
-    
+
     let log = world.get_serial_log().await;
     let re = regex::Regex::new(r"\[\s*(\d+\.?\d*)\s*\]").unwrap();
-    
-    let timestamps: Vec<f64> = log.lines()
+
+    let timestamps: Vec<f64> = log
+        .lines()
         .filter_map(|l| re.captures(l))
         .filter_map(|c| c.get(1)?.as_str().parse().ok())
         .collect();
-    
+
     if timestamps.len() < 2 {
-        return Err(StepError("Not enough timestamps to verify clock progression".to_string()));
+        return Err(StepError(
+            "Not enough timestamps to verify clock progression".to_string(),
+        ));
     }
-    
-    let first = timestamps.first().ok_or_else(|| StepError("No timestamps found".to_string()))?;
-    let last = timestamps.last().ok_or_else(|| StepError("No timestamps found".to_string()))?;
+
+    let first = timestamps
+        .first()
+        .ok_or_else(|| StepError("No timestamps found".to_string()))?;
+    let last = timestamps
+        .last()
+        .ok_or_else(|| StepError("No timestamps found".to_string()))?;
     let elapsed = last - first;
-    
-    eprintln!("│  │  │      ⏱️ Clock elapsed: {:.2}s ({} samples)", elapsed, timestamps.len());
-    
+
+    eprintln!(
+        "│  │  │      ⏱️ Clock elapsed: {:.2}s ({} samples)",
+        elapsed,
+        timestamps.len()
+    );
+
     if elapsed < 1.0 {
-        return Err(StepError(format!("Clock did not advance - elapsed: {:.2}s", elapsed)));
+        return Err(StepError(format!(
+            "Clock did not advance - elapsed: {:.2}s",
+            elapsed
+        )));
     }
     Ok(())
 }
@@ -941,45 +1034,54 @@ async fn system_clock_tick_impl(world: &mut ThingOsWorld) -> Result<(), StepErro
 #[then(regex = r#"^I should see the wallpaper on the screen within (\d+) seconds$"#)]
 async fn wallpaper_within_timeout(world: &mut ThingOsWorld, timeout: u64) -> Result<(), StepError> {
     eprintln!("│  │  │      🖼️ Waiting for wallpaper...");
-    
+
     // Wait for bloom first frame contract log
-    let found = world.wait_for_serial("[CONTRACT] [bloom] First frame rendered", timeout as f64).await;
+    let found = world
+        .wait_for_serial("[CONTRACT] [bloom] First frame rendered", timeout as f64)
+        .await;
     if !found {
         capture_failure_diagnostics(world, "bloom first frame").await;
-        return Err(StepError("Bloom did not render first frame within timeout".to_string()));
+        return Err(StepError(
+            "Bloom did not render first frame within timeout".to_string(),
+        ));
     }
-    
+
     // Take screenshot and verify wallpaper is loaded (not fallback color)
     if world.qmp_control.is_none() {
         return Err(StepError("No QMP connection for screenshot".to_string()));
     }
-    
+
     let screenshot_path = crate::artifacts::global()
         .lock()
         .await
         .screenshot_path("wallpaper");
-    
+
     let png_path = world
         .take_screenshot(&screenshot_path)
         .await
         .map_err(|e| StepError(format!("Screenshot failed: {}", e)))?;
-    
+
     eprintln!("│  │  │      📸 Screenshot: {}", png_path.display());
-    
+
     // Verify wallpaper pixels
-    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let img = image::open(&png_path)
+        .map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
     let rgb = img.to_rgb8();
     let (total, fallback) = verify_wallpaper_pixels(&rgb);
-    
+
     let fallback_pct = (fallback as f64 / total as f64) * 100.0;
-    eprintln!("│  │  │      📊 Wallpaper check: {:.1}% fallback color ({}/{})", fallback_pct, fallback, total);
-    
+    eprintln!(
+        "│  │  │      📊 Wallpaper check: {:.1}% fallback color ({}/{})",
+        fallback_pct, fallback, total
+    );
+
     if fallback_pct > 90.0 {
         return Err(StepError(format!(
-            "Wallpaper not loaded - {:.1}% of pixels are fallback color", fallback_pct
+            "Wallpaper not loaded - {:.1}% of pixels are fallback color",
+            fallback_pct
         )));
     }
-    
+
     eprintln!("│  │  │      ✅ Wallpaper is showing (not fallback)");
     Ok(())
 }
@@ -987,37 +1089,42 @@ async fn wallpaper_within_timeout(world: &mut ThingOsWorld, timeout: u64) -> Res
 #[then("I should see a cursor centered on the screen")]
 async fn cursor_centered_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
     eprintln!("│  │  │      📍 Checking for cursor at center...");
-    
+
     // Take screenshot and verify cursor pixels at center
     if world.qmp_control.is_none() {
         return Err(StepError("No QMP connection for screenshot".to_string()));
     }
-    
+
     let screenshot_path = crate::artifacts::global()
         .lock()
         .await
         .screenshot_path("cursor_check");
-    
+
     let png_path = world
         .take_screenshot(&screenshot_path)
         .await
         .map_err(|e| StepError(format!("Screenshot failed: {}", e)))?;
-    
+
     eprintln!("│  │  │      📸 Screenshot: {}", png_path.display());
-    
+
     // Verify cursor pixels at center
-    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let img = image::open(&png_path)
+        .map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
     let rgb = img.to_rgb8();
     let non_bg_pixels = verify_cursor_pixels(&rgb);
-    
-    eprintln!("│  │  │      📊 Cursor check: {} non-background pixels near center", non_bg_pixels);
-    
+
+    eprintln!(
+        "│  │  │      📊 Cursor check: {} non-background pixels near center",
+        non_bg_pixels
+    );
+
     if non_bg_pixels < 10 {
         return Err(StepError(format!(
-            "Cursor not visible - only {} non-background pixels near center", non_bg_pixels
+            "Cursor not visible - only {} non-background pixels near center",
+            non_bg_pixels
         )));
     }
-    
+
     eprintln!("│  │  │      ✅ Cursor detected at center");
     Ok(())
 }
@@ -1028,14 +1135,18 @@ async fn text_top_left_impl(world: &mut ThingOsWorld, text: String) {
     if log.to_lowercase().contains(&text.to_lowercase()) {
         eprintln!("│  │  │      ✅ Found '{}' in log", text);
     } else {
-        eprintln!("│  │  │      ⚠️ Text '{}' not found in log - visual check needed", text);
+        eprintln!(
+            "│  │  │      ⚠️ Text '{}' not found in log - visual check needed",
+            text
+        );
     }
 }
 
 #[then("I should see frame count information in the top-left corner of the screen")]
 async fn frame_count_impl(world: &mut ThingOsWorld) {
     let log = world.get_serial_log().await;
-    if log.contains("fps") || log.contains("FPS") || log.contains("frame") || log.contains("bloom:") {
+    if log.contains("fps") || log.contains("FPS") || log.contains("frame") || log.contains("bloom:")
+    {
         eprintln!("│  │  │      ✅ Frame/bloom output detected");
     } else {
         eprintln!("│  │  │      ⚠️ No frame count info in logs");
@@ -1045,22 +1156,22 @@ async fn frame_count_impl(world: &mut ThingOsWorld) {
 #[then("I should see a clock window displaying a ticking clock")]
 async fn clock_window_impl(world: &mut ThingOsWorld) -> Result<(), StepError> {
     eprintln!("│  │  │      🕐 Checking for clock window...");
-    
+
     // First wait for clock app to log that it's publishing
     let clock_ready = world.wait_for_serial("CLOCK PUBLISH:", 30.0).await;
-    
+
     if !clock_ready {
         capture_failure_diagnostics(world, "clock publish").await;
-        return Err(StepError("Clock app did not publish within timeout".to_string()));
+        return Err(StepError(
+            "Clock app did not publish within timeout".to_string(),
+        ));
     }
-    
+
     eprintln!("│  │  │      ✅ Clock app publishing");
-    
+
     // Use robust pixel check
     wait_for_clock_pixels(world, 120.0).await
 }
-
-
 
 /// Given steps for keyboard/pointer scenarios - boot machine if needed
 #[given("the clock window is ticking")]
@@ -1068,15 +1179,18 @@ async fn given_clock_ticking(world: &mut ThingOsWorld) -> Result<(), StepError> 
     // Boot if not already running
     if world.qemu.is_none() {
         let arch = std::env::var("BDD_ARCH").unwrap_or_else(|_| "x86_64".to_string());
-        world.boot(&arch).await.map_err(|e| StepError(format!("Failed to boot QEMU: {}", e)))?;
+        world
+            .boot(&arch)
+            .await
+            .map_err(|e| StepError(format!("Failed to boot QEMU: {}", e)))?;
     }
-    
+
     // Wait for system ready
     let found = world.wait_for_serial("[CONTRACT]", 120.0).await;
     if !found {
         return Err(StepError("System did not reach ready state".to_string()));
     }
-    
+
     // Wait for actual clock pixels
     // The user suggested waiting "a good minute"
     wait_for_clock_pixels(world, 150.0).await
@@ -1176,15 +1290,18 @@ async fn given_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
     // Boot if not already running
     if world.qemu.is_none() {
         let arch = std::env::var("BDD_ARCH").unwrap_or_else(|_| "x86_64".to_string());
-        world.boot(&arch).await.map_err(|e| StepError(format!("Failed to boot QEMU: {}", e)))?;
+        world
+            .boot(&arch)
+            .await
+            .map_err(|e| StepError(format!("Failed to boot QEMU: {}", e)))?;
     }
-    
+
     // Wait for system ready
     let found = world.wait_for_serial("[CONTRACT]", 120.0).await;
     if !found {
         return Err(StepError("System did not reach ready state".to_string()));
     }
-    
+
     // Wait for bloom compositor
     let bloom_found = world.wait_for_serial("bloom:", 30.0).await;
     if !bloom_found {
@@ -1197,11 +1314,11 @@ async fn given_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
 #[when("I press a key")]
 async fn when_press_key(world: &mut ThingOsWorld) {
     use crate::artifacts::qmp::execute_on_stream;
-    
+
     if let Some(stream) = world.qmp_control.as_mut() {
         let press = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "key", "data": {"down": true, "key": {"type": "qcode", "data": "a"}}}]}}"#;
         let release = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "key", "data": {"down": false, "key": {"type": "qcode", "data": "a"}}}]}}"#;
-        
+
         let _ = execute_on_stream(stream, press).await;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         let _ = execute_on_stream(stream, release).await;
@@ -1215,11 +1332,11 @@ async fn when_press_key(world: &mut ThingOsWorld) {
 #[when(regex = r#"^I press (.+)$"#)]
 async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
     use crate::artifacts::qmp::execute_on_stream;
-    
+
     if let Some(stream) = world.qmp_control.as_mut() {
         let parts: Vec<&str> = keys.split('+').collect();
         eprintln!("│  │  │      ⌨️ Pressing: {}", keys);
-        
+
         // Press modifiers
         for key in &parts[..parts.len().saturating_sub(1)] {
             let qcode = match key.to_lowercase().as_str() {
@@ -1228,20 +1345,29 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
                 "shift" => "shift",
                 _ => continue,
             };
-            let cmd = format!(r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": true, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#, qcode);
+            let cmd = format!(
+                r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": true, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
+                qcode
+            );
             let _ = execute_on_stream(stream, &cmd).await;
         }
-        
+
         // Press main key
         if let Some(main) = parts.last() {
             let qcode = main.to_lowercase();
-            let press = format!(r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": true, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#, qcode);
-            let release = format!(r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": false, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#, qcode);
+            let press = format!(
+                r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": true, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
+                qcode
+            );
+            let release = format!(
+                r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": false, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
+                qcode
+            );
             let _ = execute_on_stream(stream, &press).await;
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
             let _ = execute_on_stream(stream, &release).await;
         }
-        
+
         // Release modifiers
         for key in parts[..parts.len().saturating_sub(1)].iter().rev() {
             let qcode = match key.to_lowercase().as_str() {
@@ -1250,10 +1376,13 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
                 "shift" => "shift",
                 _ => continue,
             };
-            let cmd = format!(r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": false, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#, qcode);
+            let cmd = format!(
+                r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": false, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
+                qcode
+            );
             let _ = execute_on_stream(stream, &cmd).await;
         }
-        
+
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
     } else {
         eprintln!("│  │  │      ⚠️ No QMP connection for keyboard input");
@@ -1263,7 +1392,7 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
 #[when("I move the mouse")]
 async fn when_move_mouse(world: &mut ThingOsWorld) {
     use crate::artifacts::qmp::execute_on_stream;
-    
+
     if let Some(stream) = world.qmp_control.as_mut() {
         let cmd = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "rel", "data": {"axis": "x", "value": 50}}, {"type": "rel", "data": {"axis": "y", "value": 50}}]}}"#;
         let _ = execute_on_stream(stream, cmd).await;
@@ -1308,9 +1437,12 @@ async fn check_window_bg_color(
         if hex.len() != 6 {
             return Err(StepError(format!("Invalid hex color: {}", color_hex)));
         }
-        let r = u8::from_str_radix(&hex[0..2], 16).map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
-        let g = u8::from_str_radix(&hex[2..4], 16).map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
-        let b = u8::from_str_radix(&hex[4..6], 16).map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
+        let r = u8::from_str_radix(&hex[0..2], 16)
+            .map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
+        let g = u8::from_str_radix(&hex[2..4], 16)
+            .map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
+        let b = u8::from_str_radix(&hex[4..6], 16)
+            .map_err(|e| StepError(format!("Invalid hex: {}", e)))?;
         [r, g, b]
     } else {
         return Err(StepError(format!("Color must start with #: {}", color_hex)));
@@ -1326,12 +1458,16 @@ async fn check_window_bg_color(
         .await
         .map_err(|e| StepError(format!("Failed to take screenshot: {}", e)))?;
 
-    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let img = image::open(&png_path)
+        .map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
     let rgb = img.to_rgb8();
     let (width, height) = rgb.dimensions();
 
     if x >= width || y >= height {
-        return Err(StepError(format!("Coordinates ({}, {}) out of bounds ({}, {})", x, y, width, height)));
+        return Err(StepError(format!(
+            "Coordinates ({}, {}) out of bounds ({}, {})",
+            x, y, width, height
+        )));
     }
 
     // Check inside the window (offset by +10, +10)
@@ -1352,16 +1488,15 @@ async fn check_window_bg_color(
         )));
     }
 
-    eprintln!("│  │  │      ✅ Window detected at ({}, {}) with color {:?}", x, y, expected_color);
+    eprintln!(
+        "│  │  │      ✅ Window detected at ({}, {}) with color {:?}",
+        x, y, expected_color
+    );
     Ok(())
 }
 
 #[then(regex = r#"^I should see text-like pixels inside the window at (\d+), (\d+)$"#)]
-async fn check_text_pixels(
-    world: &mut ThingOsWorld,
-    x: u32,
-    y: u32,
-) -> Result<(), StepError> {
+async fn check_text_pixels(world: &mut ThingOsWorld, x: u32, y: u32) -> Result<(), StepError> {
     let screenshot_path = crate::artifacts::global()
         .lock()
         .await
@@ -1372,7 +1507,8 @@ async fn check_text_pixels(
         .await
         .map_err(|e| StepError(format!("Failed to take screenshot: {}", e)))?;
 
-    let img = image::open(&png_path).map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let img = image::open(&png_path)
+        .map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
     let rgb = img.to_rgb8();
 
     let mut found_text = false;
@@ -1395,10 +1531,13 @@ async fn check_text_pixels(
         }
     }
 
-    eprintln!("│  │  │      📝 Found {} dark pixels in search area at ({}, {})", black_pixels, x, y);
+    eprintln!(
+        "│  │  │      📝 Found {} dark pixels in search area at ({}, {})",
+        black_pixels, x, y
+    );
 
     if black_pixels < 5 {
-         return Err(StepError(format!(
+        return Err(StepError(format!(
             "No text-like (dark) pixels found near ({}, {}). Found {}",
             x, y, black_pixels
         )));

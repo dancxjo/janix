@@ -3,12 +3,14 @@ extern crate alloc;
 use abi::schema::keys;
 use abi::schema::kinds;
 
+use abi::ids::HandleId;
 use alloc::sync::Arc;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
-use abi::ids::HandleId;
+use stem::thing::sys::{
+    bytespace_create, bytespace_write, create_node, find, intern, prop_get, prop_set,
+};
 use stem::thing::ThingId;
-use stem::thing::sys::{bytespace_create, bytespace_write, create_node, find, intern, prop_get, prop_set};
 use stem::{info, thread, warn};
 
 use crate::frame::AssetGeneration;
@@ -154,11 +156,15 @@ impl FontAsset {
         let bs_val = stem::thing::sys::prop_get(glyph_id, keys::FONT_GLYPH_BITMAP).ok()?;
         let bs_id = ThingId::from_u64(bs_val);
         let size = stem::thing::sys::bytespace_info(bs_id).ok()?;
-        if size == 0 { return None; }
+        if size == 0 {
+            return None;
+        }
 
         let mut buf = alloc::vec![0u8; size];
         let bytes_read = stem::thing::sys::bytespace_read(bs_id, 0, &mut buf).ok()?;
-        if bytes_read != size { return None; }
+        if bytes_read != size {
+            return None;
+        }
 
         let bitmap_arc: Arc<[u8]> = Arc::from(buf.into_boxed_slice());
         Some((metrics, bitmap_arc))
@@ -254,8 +260,10 @@ static FONTS_PENDING: [PendingSlot<FontAsset>; 8] = [
 ];
 
 // Icons (Name -> DrawList content)
-static ICONS_READY: Mutex<BTreeMap<Arc<str>, Arc<Vec<crate::drawlist::DrawCmd>>>> = Mutex::new(BTreeMap::new());
-static ICONS_PENDING: Mutex<BTreeMap<Arc<str>, Arc<Vec<crate::drawlist::DrawCmd>>>> = Mutex::new(BTreeMap::new());
+static ICONS_READY: Mutex<BTreeMap<Arc<str>, Arc<Vec<crate::drawlist::DrawCmd>>>> =
+    Mutex::new(BTreeMap::new());
+static ICONS_PENDING: Mutex<BTreeMap<Arc<str>, Arc<Vec<crate::drawlist::DrawCmd>>>> =
+    Mutex::new(BTreeMap::new());
 
 // Global generation counter
 static ASSET_GENERATION: AtomicU64 = AtomicU64::new(0);
@@ -904,7 +912,8 @@ impl AssetBank {
             return None;
         }
 
-        let mut modules = [ThingId::default(); 64];
+        // Allow scanning all boot modules (sys_root_find caps at 4096 bytes => 256 ThingId entries).
+        let mut modules = [ThingId::default(); 256];
         let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
 
         for i in 0..count {
@@ -958,7 +967,11 @@ impl AssetBank {
         info!("[asset_bank] load_wallpaper_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
 
-        info!("[asset_bank] mapping bytespace {} ({} bytes)", id.to_u64_lossy(), size);
+        info!(
+            "[asset_bank] mapping bytespace {} ({} bytes)",
+            id.to_u64_lossy(),
+            size
+        );
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
         info!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
@@ -983,7 +996,6 @@ impl AssetBank {
         Self::load_cursor_immediate(path)
     }
 
-
     #[cfg(feature = "svg-cursors")]
     fn load_svg_cursor(slice: &[u8], path: &str) -> Option<CursorAsset> {
         let svg_content = match core::str::from_utf8(slice) {
@@ -995,30 +1007,32 @@ impl AssetBank {
         };
 
         info!("[asset_bank] parsing SVG cursor from {}", path);
-        
+
         // Rasterize SVG to 32x32 @ 1.0 scale (or scaled up? Windows uses 32x32 usually, large is 48)
         // Let's use 32x32 for now.
         // If we want high-dpi, we might want 64x64 or 96x96 and let the cursor asset handling know.
-        // But Image 
+        // But Image
         // High-DPI support can be added later via dynamic scaling.
         let scale = 2.0;
         let base_size = 32;
         let size = (base_size as f32 * scale) as i32;
-        
+
         let pixels_vec = crate::svg::render_to_buffer(svg_content, size, size, scale);
-        
-        
+
         // Convert Vec<u32> to Arc<[u32]>
         let pixels = Arc::from(pixels_vec.into_boxed_slice());
 
-        info!("[asset_bank] SUCCESS: SVG cursor rasterized {}x{}", size, size);
-        
+        info!(
+            "[asset_bank] SUCCESS: SVG cursor rasterized {}x{}",
+            size, size
+        );
+
         // Hotspot: default.svg config says (6,4) at 24px, scale to 32px is roughly 1.33x
         // However, if we assume 32px base, let's keep it proportionate.
         let hotspot_scale = scale;
         let hotspot_x = (6.0 * hotspot_scale) as u32;
         let hotspot_y = (4.0 * hotspot_scale) as u32;
-        
+
         Some(CursorAsset::Static(CursorFrame {
             image: Image {
                 width: size as u32,
@@ -1036,7 +1050,11 @@ impl AssetBank {
         info!("[asset_bank] load_cursor_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
 
-        info!("[asset_bank] mapping bytespace {} ({} bytes)", id.to_u64_lossy(), size);
+        info!(
+            "[asset_bank] mapping bytespace {} ({} bytes)",
+            id.to_u64_lossy(),
+            size
+        );
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
         info!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
@@ -1045,10 +1063,17 @@ impl AssetBank {
         #[cfg(feature = "svg-cursors")]
         {
             // SVG files start with "<?xml" or "<svg"
-            if size > 5 && (
-                (slice[0] == b'<' && slice[1] == b'?' && slice[2] == b'x' && slice[3] == b'm' && slice[4] == b'l') ||
-                (slice[0] == b'<' && slice[1] == b's' && slice[2] == b'v' && slice[3] == b'g')
-            ) {
+            if size > 5
+                && ((slice[0] == b'<'
+                    && slice[1] == b'?'
+                    && slice[2] == b'x'
+                    && slice[3] == b'm'
+                    && slice[4] == b'l')
+                    || (slice[0] == b'<'
+                        && slice[1] == b's'
+                        && slice[2] == b'v'
+                        && slice[3] == b'g'))
+            {
                 info!("[asset_bank] detected SVG format");
                 let result = Self::load_svg_cursor(slice, path);
                 let _ = stem::thing::sys::bytespace_unmap(id, ptr);
@@ -1134,11 +1159,11 @@ impl AssetBank {
         Self::load_font_immediate(id, size, display_name)
     }
 
-
     pub fn load_font_immediate(id: ThingId, size: usize, display_name: &str) -> Option<FontAsset> {
         info!(
             "[asset_bank] mapping font bytespace {} ({} bytes)",
-            id.to_u64_lossy(), size
+            id.to_u64_lossy(),
+            size
         );
         let ptr = match stem::thing::sys::bytespace_map(id) {
             Ok(p) => p,

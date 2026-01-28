@@ -3,8 +3,8 @@ extern crate alloc;
 use alloc::vec::Vec;
 
 use crate::errors::{Error, Result};
-use crate::thing::ThingId;
 use crate::thing::sys::{bytespace_create, bytespace_write, create_node, link, prop_get, prop_set};
+use crate::thing::ThingId;
 use abi::errors::Errno;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels, ui_kind};
@@ -43,7 +43,9 @@ impl GraphBackend for SysGraph {
     }
 
     fn bytespace_write(&mut self, id: ThingId, offset: usize, bytes: &[u8]) -> Result<()> {
-        bytespace_write(id, offset, bytes).map(|_| ()).map_err(Error::Errno)
+        bytespace_write(id, offset, bytes)
+            .map(|_| ())
+            .map_err(Error::Errno)
     }
 }
 
@@ -96,8 +98,10 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
         let label_node = self.text_node(label)?;
         self.parent_stack.pop();
         self.attach_child(Some(id), label_node)?;
-        self.graph.prop_set(id, keys::UI_BUTTON_LABEL, label_node.to_u64_lossy())?;
-        self.graph.prop_set(id, keys::UI_BUTTON_ACTION_ID, action_id)?;
+        self.graph
+            .prop_set(id, keys::UI_BUTTON_LABEL, label_node.to_u64_lossy())?;
+        self.graph
+            .prop_set(id, keys::UI_BUTTON_ACTION_ID, action_id)?;
         self.attach_child(self.parent_stack.last().copied(), id)?;
         Ok(id)
     }
@@ -111,10 +115,12 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
         let label_node = self.text_node(label)?;
         self.parent_stack.pop();
         self.attach_child(Some(id), label_node)?;
-        self.graph.prop_set(id, keys::UI_CHECKBOX_LABEL, label_node.to_u64_lossy())?;
+        self.graph
+            .prop_set(id, keys::UI_CHECKBOX_LABEL, label_node.to_u64_lossy())?;
         self.graph
             .prop_set(id, keys::UI_CHECKBOX_CHECKED, if checked { 1 } else { 0 })?;
-        self.graph.prop_set(id, keys::UI_CHECKBOX_VALUE_ID, value_id)?;
+        self.graph
+            .prop_set(id, keys::UI_CHECKBOX_VALUE_ID, value_id)?;
         self.graph
             .prop_set(id, keys::UI_CHECKBOX_INDETERMINATE, 0)?;
         self.attach_child(self.parent_stack.last().copied(), id)?;
@@ -183,10 +189,14 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
     }
 
     fn ensure_event_queue(&mut self) -> Result<()> {
-        let existing = self.graph.prop_get(self.window_id, keys::UI_EVENT_QUEUE).unwrap_or(0);
+        let existing = self
+            .graph
+            .prop_get(self.window_id, keys::UI_EVENT_QUEUE)
+            .unwrap_or(0);
         if existing == 0 {
             let bs_id = self.graph.bytespace_create(UI_EVENT_BYTES)?;
-            self.graph.prop_set(self.window_id, keys::UI_EVENT_QUEUE, bs_id.to_u64_lossy())?;
+            self.graph
+                .prop_set(self.window_id, keys::UI_EVENT_QUEUE, bs_id.to_u64_lossy())?;
             self.graph.prop_set(self.window_id, keys::UI_EVENT_GEN, 0)?;
         }
         Ok(())
@@ -198,9 +208,15 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
             self.graph.link(self.window_id, rels::ROOT_UI, root)?;
             self.graph.link(root, rels::CHILD_OF, self.window_id)?;
             self.graph.link(self.window_id, rels::HAS_CHILD, root)?;
-            let current = self.graph.prop_get(self.window_id, keys::UI_SCENE_GEN).unwrap_or(0);
-            self.graph
-                .prop_set(self.window_id, keys::UI_SCENE_GEN, current.saturating_add(1))?;
+            let current = self
+                .graph
+                .prop_get(self.window_id, keys::UI_SCENE_GEN)
+                .unwrap_or(0);
+            self.graph.prop_set(
+                self.window_id,
+                keys::UI_SCENE_GEN,
+                current.saturating_add(1),
+            )?;
             Ok(root)
         } else {
             Err(Error::Errno(Errno::EINVAL))
@@ -211,8 +227,8 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use alloc::collections::BTreeMap;
     use abi::types::Edge;
+    use alloc::collections::BTreeMap;
 
     #[derive(Default)]
     struct FakeGraph {
@@ -260,7 +276,11 @@ mod tests {
         }
 
         fn prop_get(&mut self, id: ThingId, key: &str) -> Result<u64> {
-            Ok(self.props.get(&(id.to_u64_lossy(), key)).copied().unwrap_or(0))
+            Ok(self
+                .props
+                .get(&(id.to_u64_lossy(), key))
+                .copied()
+                .unwrap_or(0))
         }
 
         fn bytespace_create(&mut self, _len: usize) -> Result<ThingId> {
@@ -316,11 +336,7 @@ mod tests {
                 })
                 .unwrap();
             let (_root, graph) = builder.finish_with_graph().unwrap();
-            graph
-                .props
-                .keys()
-                .map(|(id, _)| *id)
-                .collect()
+            graph.props.keys().map(|(id, _)| *id).collect()
         }
         assert_eq!(build_ids(), build_ids());
     }

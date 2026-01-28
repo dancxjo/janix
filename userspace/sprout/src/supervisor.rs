@@ -1,12 +1,12 @@
 use crate::registry::Registry;
 use crate::task::{ManagedTask, TaskKind};
+use abi::ids::HandleId;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use stem::info;
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use abi::ids::HandleId;
 
 pub struct Supervisor {
     tasks: Vec<ManagedTask>,
@@ -41,8 +41,7 @@ impl Supervisor {
 
         // 4. Loop
         info!("SPROUT: Entering supervisor loop.");
-        
-        
+
         loop {
             self.monitor();
             stem::yield_now();
@@ -64,9 +63,9 @@ impl Supervisor {
         info!("SPROUT: Found {} modules", count);
 
         for i in 0..count {
-             // Log name
-             let s = self.get_module_name(modules[i]);
-             info!("SPROUT: Module[{}] = '{}'", i, s);
+            // Log name
+            let s = self.get_module_name(modules[i]);
+            info!("SPROUT: Module[{}] = '{}'", i, s);
             if i >= modules.len() {
                 info!("SPROUT: Module index {} out of bounds!", i);
                 break;
@@ -96,7 +95,8 @@ impl Supervisor {
             } else if name.contains("/apps/")
                 || name.ends_with("/clock")
                 || name.ends_with("/idle")
-                || (cfg!(feature = "diagnostic-apps") && (name.ends_with("/threads_demo") || name.ends_with("/scheduler_verify")))
+                || (cfg!(feature = "diagnostic-apps")
+                    && (name.ends_with("/threads_demo") || name.ends_with("/scheduler_verify")))
             {
                 // Treat as App
                 info!("SPROUT: Discovered app: {}", name);
@@ -161,7 +161,7 @@ impl Supervisor {
 
     fn spawn_apps(&mut self) {
         info!("SPROUT: spawn_apps start. tasks len={}", self.tasks.len());
-        
+
         self.ensure_app("/clock");
         self.ensure_app("/clock");
         // self.ensure_app("/echo");  // Handled by pipelines.rs now
@@ -185,7 +185,7 @@ impl Supervisor {
         self.ensure_app("/cambium");
         self.ensure_app("/photosynthesis");
         // self.ensure_app("/scheduler_verify");
-        
+
         // Scheduler fairness verification apps (disabled after testing)
         // self.ensure_app("/scheduler_fairness");
         // self.ensure_app("/hogger");
@@ -201,18 +201,23 @@ impl Supervisor {
                     Ok(pid) => {
                         info!("SPROUT: App launched (PID={})", pid);
                         task.pid = Some(pid);
-                        
+
                         // Set priority based on app name
-                        let priority = if task.name.contains("scheduler_verify") || task.name.contains("threads") {
+                        let priority = if task.name.contains("scheduler_verify")
+                            || task.name.contains("threads")
+                        {
                             1 // Low - background tasks
                         } else if task.name.contains("bloom") || task.name.contains("bristle") {
                             3 // High - interactive UI only
                         } else {
                             2 // Normal - clock, ingestd, bindd, other apps
                         };
-                        
+
                         if let Err(e) = stem::thread::set_priority(pid, priority) {
-                            info!("SPROUT: Failed to set priority for '{}': {:?}", task.name, e);
+                            info!(
+                                "SPROUT: Failed to set priority for '{}': {:?}",
+                                task.name, e
+                            );
                         }
                     }
                     Err(e) => info!("SPROUT: Failed to launch app '{}': {:?}", task.name, e),
@@ -251,9 +256,7 @@ impl Supervisor {
                 // Check if already running?
                 // Add to managed tasks
 
-                let ctx = stem::abi::driver_ctx::DriverCtx {
-                    device_id: rtc_id,
-                };
+                let ctx = stem::abi::driver_ctx::DriverCtx { device_id: rtc_id };
                 let arg = ctx.to_raw();
 
                 match stem::syscall::spawn_process(driver_name, arg) {
@@ -269,7 +272,10 @@ impl Supervisor {
 
                         // Set driver priority to High (3)
                         if let Err(e) = stem::thread::set_priority(pid, 3) {
-                            info!("SPROUT: Failed to set priority for driver '{}': {:?}", driver_name, e);
+                            info!(
+                                "SPROUT: Failed to set priority for driver '{}': {:?}",
+                                driver_name, e
+                            );
                         }
                     }
                     Err(e) => info!("SPROUT: Failed to launch driver: {:?}", e),
@@ -307,9 +313,8 @@ impl Supervisor {
                                         &mut buf,
                                     ) {
                                         let rtc_id = buf[0];
-                                        let ctx = stem::abi::driver_ctx::DriverCtx {
-                                            device_id: rtc_id,
-                                        };
+                                        let ctx =
+                                            stem::abi::driver_ctx::DriverCtx { device_id: rtc_id };
                                         ctx.to_raw()
                                     } else {
                                         0

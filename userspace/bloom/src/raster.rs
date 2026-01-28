@@ -138,7 +138,11 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                     }
                 }
             }
-            LowLevelOp::FillLinearGradient { rect, color1, color2 } => {
+            LowLevelOp::FillLinearGradient {
+                rect,
+                color1,
+                color2,
+            } => {
                 crate::trace_counter!("raster.ops.fill", 1);
                 let tr = ctx.current_transform.transform_rect(*rect);
                 if let Some(cl) = ctx.current_clip.intersection(&tr) {
@@ -668,14 +672,34 @@ pub fn line(
 
         use crate::isa::{Path2D, PathVerb, PointF};
         let verbs = vec![
-            PathVerb::MoveTo(PointF { x: x0 + nx * w2, y: y0 + ny * w2 }),
-            PathVerb::LineTo(PointF { x: x1 + nx * w2, y: y1 + ny * w2 }),
-            PathVerb::LineTo(PointF { x: x1 - nx * w2, y: y1 - ny * w2 }),
-            PathVerb::LineTo(PointF { x: x0 - nx * w2, y: y0 - ny * w2 }),
+            PathVerb::MoveTo(PointF {
+                x: x0 + nx * w2,
+                y: y0 + ny * w2,
+            }),
+            PathVerb::LineTo(PointF {
+                x: x1 + nx * w2,
+                y: y1 + ny * w2,
+            }),
+            PathVerb::LineTo(PointF {
+                x: x1 - nx * w2,
+                y: y1 - ny * w2,
+            }),
+            PathVerb::LineTo(PointF {
+                x: x0 - nx * w2,
+                y: y0 - ny * w2,
+            }),
             PathVerb::Close,
         ];
         let path = Path2D { verbs };
-        fill_path(surface, &path, &Transform2D::identity(), xrgb, crate::isa::FillRule::NonZero, EdgeAA::Coverage8, clip);
+        fill_path(
+            surface,
+            &path,
+            &Transform2D::identity(),
+            xrgb,
+            crate::isa::FillRule::NonZero,
+            EdgeAA::Coverage8,
+            clip,
+        );
         return;
     }
 
@@ -1593,9 +1617,11 @@ fn fill_path_aa(
 
     let mut active_edges: Vec<Edge> = Vec::with_capacity(16);
     let mut edge_idx = 0;
-    
+
     // Calculate bounding box of all edges to narrow scan area
-    if edges.is_empty() { return; }
+    if edges.is_empty() {
+        return;
+    }
     let mut b_xmin = edges[0].x;
     let mut b_xmax = edges[0].x;
     let mut b_ymin = edges[0].y_min;
@@ -1606,12 +1632,12 @@ fn fill_path_aa(
         b_ymin = b_ymin.min(e.y_min);
         b_ymax = b_ymax.max(e.y_max);
     }
-    
+
     let path_clip_xmin = fixed_floor(b_xmin).max(clip_x_sub);
     let path_clip_xmax = (fixed_floor(b_xmax) + 1).min(clip_x_sub_max);
     let path_clip_ymin = b_ymin.max(y_min);
     let path_clip_ymax = b_ymax.min(y_max);
-    
+
     if path_clip_xmax <= path_clip_xmin || path_clip_ymax <= path_clip_ymin {
         return;
     }
@@ -1689,9 +1715,11 @@ fn fill_path_aa(
     }
 
     let p_start = (path_clip_ymin / SUPERSAMPLE_SCALE).max(clip.y());
-    let p_end = ((path_clip_ymax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.y() + clip.height());
+    let p_end = ((path_clip_ymax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE)
+        .min(clip.y() + clip.height());
     let px_start = (path_clip_xmin / SUPERSAMPLE_SCALE).max(clip.x());
-    let px_end = ((path_clip_xmax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.x() + clip.width());
+    let px_end =
+        ((path_clip_xmax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.x() + clip.width());
 
     for py in p_start..p_end {
         let iy = (py - clip.y()) as usize;

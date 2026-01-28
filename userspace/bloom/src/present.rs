@@ -12,10 +12,12 @@ use abi::display_driver_protocol::BindPayload;
 use abi::driver_frame::FrameReader;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::cmp::Ordering;
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 
 use crate::damage::Damage;
+use crate::damage_accumulator::DamageAccumulator;
 use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentStats};
 
 use crate::reclaimer;
@@ -59,20 +61,25 @@ fn caps_to_string(caps: u32) -> String {
     out
 }
 
+const MAX_LOCAL_DAMAGE_RECTS: usize = 256;
+const MAX_PRESENT_PAYLOAD_BYTES: usize =
+    drvproto::PRESENT_HEADER_WIRE_SIZE + drvproto::RECT_WIRE_SIZE * MAX_LOCAL_DAMAGE_RECTS;
+const MAX_PRESENT_MESSAGE_BYTES: usize = drvproto::HEADER_SIZE + MAX_PRESENT_PAYLOAD_BYTES;
+
 /// Presenter trait with transactional frame API
 pub trait Presenter {
     /// Acquire a frame slot, snapshotting current asset generation.
     /// Returns a token that must be consumed by present_frame().
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken;
-    
+
     /// Present a completed frame (consumes token).
     /// Returns statistics about the presentation.
     fn present_frame(&mut self, token: FrameToken) -> PresentStats;
-    
+
     /// Legacy present method (deprecated, use present_frame)
     #[allow(dead_code)]
     fn present(&mut self, damage: &Damage);
-    
+
     /// Pump the message queue for driver communication.
     fn pump(&mut self);
 }
@@ -83,22 +90,22 @@ impl Presenter for NullPresenter {
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         static FRAME_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
         let frame_id = FRAME_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
-        
+
         // Register in-flight frame for safe eviction
         reclaimer::register_in_flight(frame_id, asset_gen);
-        
+
         FrameToken::new(frame_id, asset_gen, spec)
     }
-    
+
     fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         let ops_count = token.ops.iter().count();
         let damage_rect_count = token.damage.rect_count();
         let frame_id = token.frame_id;
         let asset_gen = token.asset_gen;
-        
+
         // Complete in-flight frame
         reclaimer::complete_in_flight(frame_id);
-        
+
         PresentStats {
             frame_id,
             asset_gen,
@@ -107,7 +114,7 @@ impl Presenter for NullPresenter {
             fast_path_taken: token.damage.is_empty(),
         }
     }
-    
+
     fn present(&mut self, _damage: &Damage) {}
     fn pump(&mut self) {}
 }
@@ -148,7 +155,9 @@ impl DriverPresenter {
         let mut hello_bytes = [0u8; drvproto::HELLO_PAYLOAD_WIRE_SIZE];
         if let Some(len) = drvproto::encode_hello_payload_le(&hello, &mut hello_bytes) {
             let mut buf = [0u8; 128];
-            if let Some(total) = drvproto::encode_message(&mut buf, drvproto::MSG_HELLO, &hello_bytes[..len]) {
+            if let Some(total) =
+                drvproto::encode_message(&mut buf, drvproto::MSG_HELLO, &hello_bytes[..len])
+            {
                 let _ = port_send(self.req_write, &buf[..total]);
             }
         }
@@ -175,72 +184,122 @@ impl DriverPresenter {
         }
     }
 
-    fn send_present(&mut self, damage: &Damage) {
-        // Calculate payload size
-        // Header: 8 bytes
-        // Rects: 16 bytes each
-        // Max 8 rects => 128 bytes
-        // Total payload max: 136 bytes
-        let mut payload = [0u8; 136];
+    fn send_present(&mut self, damage: &Damage) -> usize {
+        let mut payload = [0u8; MAX_PRESENT_PAYLOAD_BYTES];
+        let mut buf = [0u8; MAX_PRESENT_MESSAGE_BYTES];
 
-        let rect_count = damage.rect_count() as u32;
-        let mut use_rects = true;
-        let mut flags = 0u32;
-        let mut fallback_reason: Option<&'static str> = None;
-        if let Some(negotiated) = &self.negotiation {
-            if (negotiated.caps & drvproto::CAP_DIRTY_RECTS != 0)
-                && rect_count <= negotiated.max_rects as u32
-            {
-                use_rects = true;
-            } else {
-                use_rects = false;
-                flags |= drvproto::PRESENT_FLAG_FULLFRAME;
-                if rect_count > negotiated.max_rects as u32 {
-                    fallback_reason = Some("rects exceed max_rects");
-                } else {
-                    fallback_reason = Some("driver lacks DIRTY_RECTS");
-                }
-            }
-        }
-
-        if !use_rects && !self.fallback_warned {
-            let reason = fallback_reason.unwrap_or("using full-frame present");
-            info!("display: {}, using full-frame present", reason);
-            self.fallback_warned = true;
-        }
-
-        // Send message
-        // Encode message buffer needs to be large enough for header + payload
-        // DriverHeader (12) + Payload (136) = 148
-        let mut buf = [0u8; 256];
-        let present_rect_count = if use_rects { rect_count } else { 0 };
-        let payload_len = if use_rects {
-            drvproto::encode_present_payload_with_flags_le(
-                present_rect_count,
-                flags,
-                damage.iter().map(|r| abi::display_driver_protocol::Rect {
-                    x: r.x.max(0) as u32,
-                    y: r.y.max(0) as u32,
-                    w: r.w.max(0) as u32,
-                    h: r.h.max(0) as u32,
-                }),
-                &mut payload,
-            )
-        } else {
-            drvproto::encode_present_payload_with_flags_le(
-                present_rect_count,
+        if damage.is_full {
+            let flags = drvproto::PRESENT_FLAG_FULLFRAME;
+            let reason = "full-frame damage";
+            self.log_fullframe_fallback(reason);
+            self.encode_and_send(
+                0,
                 flags,
                 core::iter::empty::<abi::display_driver_protocol::Rect>(),
                 &mut payload,
-            )
+                &mut buf,
+            );
+            return 0;
+        }
+
+        let mut accumulator = DamageAccumulator::<MAX_LOCAL_DAMAGE_RECTS>::new();
+        for rect in damage.iter() {
+            accumulator.add(rect);
+        }
+
+        let overflowed = accumulator.is_overflowed();
+        let rects = accumulator.as_mut_slice();
+        if rects.len() > 1 {
+            rects.sort_by(|a, b| {
+                let ord = a.y.cmp(&b.y);
+                if ord == Ordering::Equal {
+                    a.x.cmp(&b.x)
+                } else {
+                    ord
+                }
+            });
+        }
+
+        let rect_count = rects.len();
+        let mut flags = 0u32;
+        let mut fallback_reason: Option<&'static str> = None;
+        let use_rects = if let Some(negotiated) = &self.negotiation {
+            if (negotiated.caps & drvproto::CAP_DIRTY_RECTS != 0)
+                && rect_count <= negotiated.max_rects as usize
+                && !overflowed
+            {
+                true
+            } else {
+                flags |= drvproto::PRESENT_FLAG_FULLFRAME;
+                fallback_reason = Some(if overflowed {
+                    "damage overflow"
+                } else if rect_count > negotiated.max_rects as usize {
+                    "rects exceed max_rects"
+                } else {
+                    "driver lacks DIRTY_RECTS"
+                });
+                false
+            }
+        } else {
+            flags |= drvproto::PRESENT_FLAG_FULLFRAME;
+            fallback_reason = Some("no negotiation");
+            false
         };
 
-        if let Some(payload_len) = payload_len {
+        if !use_rects {
+            let reason = fallback_reason.unwrap_or("using full-frame present");
+            self.log_fullframe_fallback(reason);
+            self.encode_and_send(
+                0,
+                flags,
+                core::iter::empty::<abi::display_driver_protocol::Rect>(),
+                &mut payload,
+                &mut buf,
+            );
+            return 0;
+        }
+
+        let rect_count_u32 = rect_count as u32;
+        self.encode_and_send(
+            rect_count_u32,
+            flags,
+            rects.iter().map(|r| abi::display_driver_protocol::Rect {
+                x: r.x.max(0) as u32,
+                y: r.y.max(0) as u32,
+                w: r.w.max(0) as u32,
+                h: r.h.max(0) as u32,
+            }),
+            &mut payload,
+            &mut buf,
+        );
+        rect_count
+    }
+
+    fn encode_and_send<I>(
+        &mut self,
+        rect_count: u32,
+        flags: u32,
+        rects: I,
+        payload: &mut [u8],
+        buf: &mut [u8],
+    ) where
+        I: IntoIterator<Item = abi::display_driver_protocol::Rect>,
+    {
+        if let Some(payload_len) =
+            drvproto::encode_present_payload_with_flags_le(rect_count, flags, rects, payload)
+        {
             if let Some(len) =
-                drvproto::encode_message(&mut buf, drvproto::MSG_PRESENT, &payload[..payload_len])
+                drvproto::encode_message(buf, drvproto::MSG_PRESENT, &payload[..payload_len])
             {
                 let _ = port_send(self.req_write, &buf[..len]);
             }
+        }
+    }
+
+    fn log_fullframe_fallback(&mut self, reason: &str) {
+        if !self.fallback_warned {
+            info!("display: {}, using full-frame present", reason);
+            self.fallback_warned = true;
         }
     }
 
@@ -265,10 +324,7 @@ impl DriverPresenter {
         let caps_string = caps_to_string(negotiation.caps);
         info!(
             "display: negotiated proto {}.{} caps={} max_rects={}",
-            negotiation.proto_major,
-            negotiation.proto_minor,
-            caps_string,
-            negotiation.max_rects
+            negotiation.proto_major, negotiation.proto_minor, caps_string, negotiation.max_rects
         );
         self.negotiation = Some(negotiation);
         if let Some(bind) = self.pending_bind.take() {
@@ -347,16 +403,15 @@ impl DriverPresenter {
 impl Presenter for DriverPresenter {
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         self.frame_count += 1;
-        
+
         // Register in-flight frame for safe eviction
         reclaimer::register_in_flight(self.frame_count, asset_gen);
-        
+
         FrameToken::new(self.frame_count, asset_gen, spec)
     }
-    
+
     fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         let ops_count = token.ops.iter().count();
-        let damage_rect_count = token.damage.rect_count();
         let fast_path = token.damage.is_empty();
         let frame_id = token.frame_id;
         let asset_gen = token.asset_gen;
@@ -368,16 +423,16 @@ impl Presenter for DriverPresenter {
             let _evictions = reclaimer::eviction_count();
             let _in_flight = reclaimer::in_flight_count();
             let _min_gen = reclaimer::min_live_gen();
-            
+
             /*
             if token.damage.is_full {
-                info!("bloom: frame {} gen={} (full redraw) mem={}/{}b evictions={} in_flight={} min_gen={}", 
+                info!("bloom: frame {} gen={} (full redraw) mem={}/{}b evictions={} in_flight={} min_gen={}",
                     frame_id, asset_gen.0, mem_used, mem_budget, evictions, in_flight, min_gen.0);
             } else if damage_rect_count == 0 {
-                info!("bloom: frame {} gen={} (no damage - idle) mem={}/{}b", 
+                info!("bloom: frame {} gen={} (no damage - idle) mem={}/{}b",
                     frame_id, asset_gen.0, mem_used, mem_budget);
             } else {
-                info!("bloom: frame {} gen={} ({} damage rects) mem={}/{}b", 
+                info!("bloom: frame {} gen={} ({} damage rects) mem={}/{}b",
                     frame_id, asset_gen.0, damage_rect_count, mem_used, mem_budget);
             }
             */
@@ -387,9 +442,11 @@ impl Presenter for DriverPresenter {
         reclaimer::complete_in_flight(frame_id);
 
         // Fast-path: skip present if no damage
-        if !fast_path {
-            self.send_present(&token.damage);
-        }
+        let damage_rect_count = if fast_path {
+            0
+        } else {
+            self.send_present(&token.damage)
+        };
 
         PresentStats {
             frame_id,
@@ -438,7 +495,7 @@ impl PresenterImpl {
             PresenterImpl::Driver(inner) => inner.acquire_frame(spec, asset_gen),
         }
     }
-    
+
     pub fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         match self {
             PresenterImpl::Null(inner) => inner.present_frame(token),

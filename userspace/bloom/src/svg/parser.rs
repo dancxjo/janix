@@ -396,10 +396,12 @@ mod tests {
         "###;
         let mut parser = SvgParser::new();
         let cmds = parser.parse(xml);
-        assert!(cmds.iter().all(|cmd| !matches!(cmd, DrawCmd::FillRect { .. })));
-        assert!(cmds.iter().any(|cmd| {
-            matches!(cmd, DrawCmd::StrokePath { .. } | DrawCmd::StrokeRect { .. })
-        }));
+        assert!(cmds
+            .iter()
+            .all(|cmd| !matches!(cmd, DrawCmd::FillRect { .. })));
+        assert!(cmds
+            .iter()
+            .any(|cmd| { matches!(cmd, DrawCmd::StrokePath { .. } | DrawCmd::StrokeRect { .. }) }));
     }
 
     #[test]

@@ -4,18 +4,18 @@
 extern crate alloc;
 extern crate stem; // Forcing linkage of runtime features
 
-use stem::{info, warn};
-use stem::thing::{ThingId, HandleId};
-use stem::thing::sys::{bytespace_create, bytespace_write, find, prop_get, prop_set};
-use stem::syscall::{root_watch_open, root_watch_next, root_watch_close};
-use stem::thing::symbol::IntoSymbolRef;
-use abi::schema::{kinds, keys};
-use abi::types::{WatchSpec, WATCH_START_LATEST};
 use abi::root::RootWatchFilter;
+use abi::schema::{keys, kinds};
+use abi::types::{WatchSpec, WATCH_START_LATEST};
 use abi::watch::{self, DecodeError, ValueEncoding, WatchOp, MAX_WATCH_PAYLOAD_BYTES};
-use alloc::vec::Vec;
 use alloc::string::String;
+use alloc::vec::Vec;
 use core::time::Duration;
+use stem::syscall::{root_watch_close, root_watch_next, root_watch_open};
+use stem::thing::symbol::IntoSymbolRef;
+use stem::thing::sys::{bytespace_create, bytespace_write, find, prop_get, prop_set};
+use stem::thing::{HandleId, ThingId};
+use stem::{info, warn};
 
 // ============================================================================
 // Constants & Configuration
@@ -37,17 +37,17 @@ struct ActiveBinding {
     last_seen_seq: Option<u64>,
     /// Highest sequence ever processed (monotonic invariant)
     high_watermark: u64,
-    
+
     last_value_u64: Option<u64>,
     last_value_bytes: Option<Vec<u8>>,
-    
+
     key_filter: Option<u32>,
     to_key: u32,
-    
+
     has_pending: bool,
     pending_u64: Option<u64>,
     pending_bytes: Option<Vec<u8>>,
-    
+
     needs_resync: bool,
     last_resync_time_ms: u64,
 
@@ -71,7 +71,7 @@ impl ActiveBinding {
         } else {
             stem::thing::sys::intern(keys::UI_TEXT).unwrap_or(0)
         };
-        
+
         if let Ok(val) = prop_get(self.source, src_key) {
             if self.last_value_u64 == Some(val) {
                 return;
@@ -79,7 +79,12 @@ impl ActiveBinding {
             if prop_set(self.target, target_key, val).is_ok() {
                 self.last_value_u64 = Some(val);
                 self.last_value_bytes = None;
-                info!("[cambium] refresh: binding_src={} target={} val={}", self.source.to_u64_lossy(), self.target.to_u64_lossy(), val);
+                info!(
+                    "[cambium] refresh: binding_src={} target={} val={}",
+                    self.source.to_u64_lossy(),
+                    self.target.to_u64_lossy(),
+                    val
+                );
             }
         }
     }
@@ -107,7 +112,9 @@ impl ActiveBinding {
     }
 
     fn apply_pending(&mut self, _seq: u64) {
-        if !self.has_pending { return; }
+        if !self.has_pending {
+            return;
+        }
 
         let target_key = if self.to_key != 0 {
             self.to_key
@@ -130,9 +137,9 @@ impl ActiveBinding {
                 return;
             }
             if let Ok(text) = core::str::from_utf8(bytes) {
-               set_string_prop(self.target, target_key, text);
-               self.last_value_bytes = Some(bytes.clone());
-               self.last_value_u64 = None;
+                set_string_prop(self.target, target_key, text);
+                self.last_value_bytes = Some(bytes.clone());
+                self.last_value_u64 = None;
             }
         }
         self.has_pending = false;
@@ -151,7 +158,11 @@ fn hex_prefix(bytes: &[u8], max: usize) -> String {
 }
 
 fn log_unknown_shape_once(err: DecodeError, payload: &[u8]) {
-    warn!("cambium: decode error {:?} prefix={}", err, hex_prefix(payload, 8));
+    warn!(
+        "cambium: decode error {:?} prefix={}",
+        err,
+        hex_prefix(payload, 8)
+    );
 }
 
 fn set_string_prop<S: IntoSymbolRef + Copy>(id: ThingId, key_name: S, value: &str) {
@@ -179,17 +190,24 @@ fn drain_watch_payload(payload: &[u8], binding: &mut ActiveBinding) {
                 cursor += event_len;
 
                 let op = WatchOp::from_u8(header.op).unwrap_or(WatchOp::Upsert);
-                if op != WatchOp::Upsert { continue; }
+                if op != WatchOp::Upsert {
+                    continue;
+                }
 
                 let subject = header.subject.to_u64_lossy();
-                if subject == 0 || subject != binding.source.to_u64_lossy() { continue; }
+                if subject == 0 || subject != binding.source.to_u64_lossy() {
+                    continue;
+                }
 
                 let predicate = header.predicate.to_u32_lossy();
                 if let Some(filter) = binding.key_filter {
-                    if predicate != filter { continue; }
+                    if predicate != filter {
+                        continue;
+                    }
                 }
 
-                let encoding = ValueEncoding::from_u8(header.value_encoding).unwrap_or(ValueEncoding::Bytes);
+                let encoding =
+                    ValueEncoding::from_u8(header.value_encoding).unwrap_or(ValueEncoding::Bytes);
                 binding.events_buffered_this_tick += 1;
 
                 match encoding {
@@ -200,8 +218,12 @@ fn drain_watch_payload(payload: &[u8], binding: &mut ActiveBinding) {
                             }
                         }
                     }
-                    ValueEncoding::Utf8 => { binding.stage_bytes(value); }
-                    _ => { continue; }
+                    ValueEncoding::Utf8 => {
+                        binding.stage_bytes(value);
+                    }
+                    _ => {
+                        continue;
+                    }
                 }
             }
             Err(e) => {
@@ -226,17 +248,29 @@ fn main() -> ! {
                 let safe_count = core::cmp::min(count, binding_ids.len());
                 for i in 0..safe_count {
                     let b_id = binding_ids[i];
-                    let src_id = prop_get(b_id, keys::BINDING_SOURCE).map(ThingId::from_u64).unwrap_or(ThingId::default());
-                    let dst_id = prop_get(b_id, keys::BINDING_TARGET).map(ThingId::from_u64).unwrap_or(ThingId::default());
-                    let key_filter = prop_get(b_id, keys::BINDING_MAP).ok().and_then(|v| if v == 0 { None } else { Some(v as u32) });
+                    let src_id = prop_get(b_id, keys::BINDING_SOURCE)
+                        .map(ThingId::from_u64)
+                        .unwrap_or(ThingId::default());
+                    let dst_id = prop_get(b_id, keys::BINDING_TARGET)
+                        .map(ThingId::from_u64)
+                        .unwrap_or(ThingId::default());
+                    let key_filter = prop_get(b_id, keys::BINDING_MAP).ok().and_then(|v| {
+                        if v == 0 {
+                            None
+                        } else {
+                            Some(v as u32)
+                        }
+                    });
                     let to_key = prop_get(b_id, keys::BINDING_TO).unwrap_or(0) as u32;
 
-                    if src_id.to_u64_lossy() == 0 || dst_id.to_u64_lossy() == 0 { continue; }
+                    if src_id.to_u64_lossy() == 0 || dst_id.to_u64_lossy() == 0 {
+                        continue;
+                    }
 
                     let filter = RootWatchFilter::subject(src_id.to_u64_lossy());
                     let spec = WatchSpec {
-                        mode: 1, 
-                        start_seq: 0, 
+                        mode: 1,
+                        start_seq: 0,
                         filter_ptr: &filter as *const _ as u64,
                         filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
                         ..Default::default()
@@ -244,19 +278,37 @@ fn main() -> ! {
 
                     match root_watch_open(&spec) {
                         Ok(watch_id) => {
-                            info!("Opened watch {} for source {} (binding {})", watch_id, src_id.to_u64_lossy(), b_id.to_u64_lossy());
+                            info!(
+                                "Opened watch {} for source {} (binding {})",
+                                watch_id,
+                                src_id.to_u64_lossy(),
+                                b_id.to_u64_lossy()
+                            );
                             bindings.push(ActiveBinding {
-                                source: src_id, target: dst_id, watch_id,
+                                source: src_id,
+                                target: dst_id,
+                                watch_id,
                                 last_seen_seq: None,
                                 high_watermark: 0,
-                                last_value_u64: None, last_value_bytes: None,
-                                key_filter, to_key,
-                                has_pending: false, pending_u64: None, pending_bytes: None,
-                                needs_resync: false, last_resync_time_ms: 0,
-                                overflow_count: 0, overflows_suppressed: 0, resync_count: 0, drained_events_total: 0, events_buffered_this_tick: 0,
+                                last_value_u64: None,
+                                last_value_bytes: None,
+                                key_filter,
+                                to_key,
+                                has_pending: false,
+                                pending_u64: None,
+                                pending_bytes: None,
+                                needs_resync: false,
+                                last_resync_time_ms: 0,
+                                overflow_count: 0,
+                                overflows_suppressed: 0,
+                                resync_count: 0,
+                                drained_events_total: 0,
+                                events_buffered_this_tick: 0,
                             });
                         }
-                        Err(e) => { info!("Failed to watch source {}: {:?}", src_id.to_u64_lossy(), e); }
+                        Err(e) => {
+                            info!("Failed to watch source {}: {:?}", src_id.to_u64_lossy(), e);
+                        }
                     }
                 }
                 break;
@@ -267,14 +319,22 @@ fn main() -> ! {
 
     if bindings.is_empty() {
         info!("No bindings found. Exiting.");
-        loop { stem::sleep(Duration::from_secs(10)); }
+        loop {
+            stem::sleep(Duration::from_secs(10));
+        }
     }
 
-    info!("Entering event loop with {} bindings (buf size: {})", bindings.len(), MAX_WATCH_PAYLOAD_BYTES);
-    
+    info!(
+        "Entering event loop with {} bindings (buf size: {})",
+        bindings.len(),
+        MAX_WATCH_PAYLOAD_BYTES
+    );
+
     let mut payload_buf = Vec::with_capacity(MAX_WATCH_PAYLOAD_BYTES);
-    unsafe { payload_buf.set_len(MAX_WATCH_PAYLOAD_BYTES); }
-    
+    unsafe {
+        payload_buf.set_len(MAX_WATCH_PAYLOAD_BYTES);
+    }
+
     let mut last_stats_log_ms = stem::monotonic_ns() / 1_000_000;
 
     loop {
@@ -291,19 +351,26 @@ fn main() -> ! {
                     Ok(len) if len > 0 => {
                         drain_count += 1;
                         did_work = true;
-                        
+
                         // INVARIANT: Sequences must be monotonically increasing
                         if binding.high_watermark > 0 && seq <= binding.high_watermark {
-                            warn!("[cambium] NON-MONOTONIC seq={} <= hwm={}", seq, binding.high_watermark);
+                            warn!(
+                                "[cambium] NON-MONOTONIC seq={} <= hwm={}",
+                                seq, binding.high_watermark
+                            );
                         }
                         binding.high_watermark = seq;
                         binding.last_seen_seq = Some(seq);
-                        
+
                         drain_watch_payload(&payload_buf[..len], binding);
-                        binding.drained_events_total += 1; 
+                        binding.drained_events_total += 1;
                     }
-                    Ok(_) => { break; }
-                    Err(abi::errors::Errno::EAGAIN) => { break; }
+                    Ok(_) => {
+                        break;
+                    }
+                    Err(abi::errors::Errno::EAGAIN) => {
+                        break;
+                    }
                     Err(abi::errors::Errno::EOVERFLOW) => {
                         binding.mark_overflow();
                         break;
@@ -314,7 +381,7 @@ fn main() -> ! {
                     }
                 }
             }
-            
+
             let mut did_resync = false;
             if binding.needs_resync {
                 let now = stem::monotonic_ns() / 1_000_000;
@@ -322,7 +389,7 @@ fn main() -> ! {
                     binding.resync_count += 1;
                     binding.needs_resync = false;
                     binding.last_resync_time_ms = now;
-                    
+
                     // ORDERING INVARIANT: On overflow, clear ALL pending state
                     // to prevent partial replay of stale data
                     binding.has_pending = false;
@@ -339,22 +406,24 @@ fn main() -> ! {
 
                     let filter = RootWatchFilter::subject(binding.source.to_u64_lossy());
                     let spec = WatchSpec {
-                        mode: 1, 
+                        mode: 1,
                         start_seq,
                         filter_ptr: &filter as *const _ as u64,
                         filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
                         ..Default::default()
                     };
-                    
+
                     let old_id = binding.watch_id;
 
                     match root_watch_open(&spec) {
                         Ok(new_id) => {
                             binding.watch_id = new_id;
                             info!("Resync watch {} -> {}", old_id, new_id);
-                            binding.refresh_now(); 
+                            binding.refresh_now();
                         }
-                        Err(e) => { warn!("Failed resync: {:?}", e); }
+                        Err(e) => {
+                            warn!("Failed resync: {:?}", e);
+                        }
                     }
                     did_resync = true;
                 }
@@ -377,8 +446,10 @@ fn main() -> ! {
                 total_suppressed += b.overflows_suppressed;
                 total_resyncs += b.resync_count;
             }
-            info!("[cambium] stats: drained_calls={} overflows={} suppressed={} resyncs={}",
-                total_drained, total_overflows, total_suppressed, total_resyncs);
+            info!(
+                "[cambium] stats: drained_calls={} overflows={} suppressed={} resyncs={}",
+                total_drained, total_overflows, total_suppressed, total_resyncs
+            );
         }
 
         if !did_work {

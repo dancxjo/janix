@@ -3,16 +3,16 @@
 //! Mutation handlers (create_node, link, prop_set) now route through
 //! the canonical batch pipeline for consistent watch delivery.
 
+use crate::root::SymbolShell;
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
 use crate::root::symbols::Interner;
-use crate::root::SymbolShell;
 use abi::symbols::SymbolId;
 #[allow(unused_imports)]
 use core::sync::atomic::Ordering;
 
-use super::batch::{ValidatedOp, apply_ops_and_commit};
 use super::HandlerResult;
+use super::batch::{ValidatedOp, apply_ops_and_commit};
 
 /// Helper to resolve Shell to SymbolId
 pub fn resolve_shell(shell: SymbolShell, interner: &mut Interner) -> SymbolId {
@@ -46,13 +46,16 @@ pub fn handle_create_node(
     kind: SymbolShell,
 ) -> HandlerResult {
     let kid = resolve_shell(kind, interner);
-    
+
     // Build validated op
-    let ops = [ValidatedOp::CreateNode { kind: kid, out_idx: 0 }];
-    
+    let ops = [ValidatedOp::CreateNode {
+        kind: kid,
+        out_idx: 0,
+    }];
+
     // Apply through canonical commit path (watch payload is synthesized there)
     let result = apply_ops_and_commit(graph, &ops);
-    
+
     // Journal entry (kept separate for recovery purposes)
     if result.status == 0 && !result.created_ids.is_empty() {
         let id = result.created_ids[0];
@@ -97,30 +100,33 @@ pub fn handle_prop_set(
     value: u64,
 ) -> HandlerResult {
     let kid = resolve_shell(key, interner);
-    
+
     // Check if node exists
     if graph.get_node_mut(id).is_none() {
         return (-1, 0);
     }
-    
+
     // Build validated op
-    let ops = [ValidatedOp::SetProp { id, key: kid, value }];
-    
+    let ops = [ValidatedOp::SetProp {
+        id,
+        key: kid,
+        value,
+    }];
+
     // Apply through canonical commit path (watch payload is synthesized there)
     let result = apply_ops_and_commit(graph, &ops);
-    
+
     if result.status != 0 {
         return (result.status, 0);
     }
-    
+
     // Journal entry
     journal.append(JournalOp::UpdateProp {
         id,
         key: kid as u64,
         val: value,
     });
-    
-    
+
     (0, 0)
 }
 
@@ -135,13 +141,13 @@ pub fn handle_link(
     dst: u64,
 ) -> HandlerResult {
     let rid = resolve_shell(rel, interner);
-    
+
     // Build validated op
     let ops = [ValidatedOp::PutEdge { src, rel: rid, dst }];
-    
+
     // Apply through canonical commit path (watch payload is synthesized there)
     let result = apply_ops_and_commit(graph, &ops);
-    
+
     (result.status, 0)
 }
 
@@ -232,7 +238,7 @@ pub fn handle_props_get_many(
 ) -> HandlerResult {
     out.node_id = node_id;
     out.present_mask = 0;
-    
+
     if let Some(node) = graph.nodes.get(&node_id) {
         for (i, &key) in keys.iter().enumerate() {
             if i >= abi::types::BULK_PROPS_MAX_KEYS {

@@ -62,9 +62,15 @@ impl DriverSim {
                         reserved: 0,
                     };
                     let mut welcome_bytes = [0u8; drvproto::WELCOME_PAYLOAD_WIRE_SIZE];
-                    let len = drvproto::encode_welcome_payload_le(&welcome, &mut welcome_bytes).unwrap();
+                    let len =
+                        drvproto::encode_welcome_payload_le(&welcome, &mut welcome_bytes).unwrap();
                     let mut msg_buf = [0u8; 64];
-                    let msg_len = drvproto::encode_message(&mut msg_buf, drvproto::MSG_WELCOME, &welcome_bytes[..len]).unwrap();
+                    let msg_len = drvproto::encode_message(
+                        &mut msg_buf,
+                        drvproto::MSG_WELCOME,
+                        &welcome_bytes[..len],
+                    )
+                    .unwrap();
                     if self.cfg.split_writes && msg_len >= 3 {
                         let part = msg_len / 3;
                         let mut offset = 0;
@@ -80,9 +86,15 @@ impl DriverSim {
                 }
                 drvproto::MSG_BIND => {
                     let mut ack_buf = [0u8; 64];
-                    let ack_len = drvproto::encode_message(&mut ack_buf, drvproto::MSG_ACK, &[]).unwrap();
+                    let ack_len =
+                        drvproto::encode_message(&mut ack_buf, drvproto::MSG_ACK, &[]).unwrap();
                     if self.cfg.burst {
-                        let ack2_len = drvproto::encode_message(&mut ack_buf[ack_len..], drvproto::MSG_ACK, &[]).unwrap();
+                        let ack2_len = drvproto::encode_message(
+                            &mut ack_buf[ack_len..],
+                            drvproto::MSG_ACK,
+                            &[],
+                        )
+                        .unwrap();
                         link.driver_send(&ack_buf[..ack_len + ack2_len]);
                     } else {
                         link.driver_send(&ack_buf[..ack_len]);
@@ -93,7 +105,8 @@ impl DriverSim {
                         self.seen_present = Some(present);
                     }
                     let mut ack_buf = [0u8; 64];
-                    let ack_len = drvproto::encode_message(&mut ack_buf, drvproto::MSG_ACK, &[]).unwrap();
+                    let ack_len =
+                        drvproto::encode_message(&mut ack_buf, drvproto::MSG_ACK, &[]).unwrap();
                     link.driver_send(&ack_buf[..ack_len]);
                 }
                 _ => {}
@@ -126,7 +139,9 @@ impl BloomSim {
         let mut hello_bytes = [0u8; drvproto::HELLO_PAYLOAD_WIRE_SIZE];
         let len = drvproto::encode_hello_payload_le(&hello, &mut hello_bytes).unwrap();
         let mut msg_buf = [0u8; 64];
-        let msg_len = drvproto::encode_message(&mut msg_buf, drvproto::MSG_HELLO, &hello_bytes[..len]).unwrap();
+        let msg_len =
+            drvproto::encode_message(&mut msg_buf, drvproto::MSG_HELLO, &hello_bytes[..len])
+                .unwrap();
         link.client_send(&msg_buf[..msg_len]);
     }
 
@@ -156,18 +171,29 @@ impl BloomSim {
         let mut bind_bytes = [0u8; drvproto::BIND_PAYLOAD_WIRE_SIZE];
         let len = drvproto::encode_bind_payload_le(&bind, &mut bind_bytes).unwrap();
         let mut msg_buf = [0u8; 128];
-        let msg_len = drvproto::encode_message(&mut msg_buf, drvproto::MSG_BIND, &bind_bytes[..len]).unwrap();
+        let msg_len =
+            drvproto::encode_message(&mut msg_buf, drvproto::MSG_BIND, &bind_bytes[..len]).unwrap();
         link.client_send(&msg_buf[..msg_len]);
     }
 
     fn send_present(&self, link: &mut Link) {
         let (caps, max_rects) = self.negotiated.unwrap();
-        let use_rects = (caps & drvproto::CAP_DIRTY_RECTS != 0) && self.rect_count <= max_rects as u32;
-        let flags = if use_rects { 0 } else { drvproto::PRESENT_FLAG_FULLFRAME };
+        let use_rects =
+            (caps & drvproto::CAP_DIRTY_RECTS != 0) && self.rect_count <= max_rects as u32;
+        let flags = if use_rects {
+            0
+        } else {
+            drvproto::PRESENT_FLAG_FULLFRAME
+        };
         let present_rect_count = if use_rects { self.rect_count } else { 0 };
 
-        let rects = core::iter::repeat(drvproto::Rect { x: 0, y: 0, w: 1, h: 1 })
-            .take(present_rect_count as usize);
+        let rects = core::iter::repeat(drvproto::Rect {
+            x: 0,
+            y: 0,
+            w: 1,
+            h: 1,
+        })
+        .take(present_rect_count as usize);
         let mut payload = [0u8; 8 + 16 * 8];
         let payload_len = drvproto::encode_present_payload_with_flags_le(
             present_rect_count,
@@ -177,7 +203,9 @@ impl BloomSim {
         )
         .unwrap();
         let mut msg_buf = [0u8; 256];
-        let msg_len = drvproto::encode_message(&mut msg_buf, drvproto::MSG_PRESENT, &payload[..payload_len]).unwrap();
+        let msg_len =
+            drvproto::encode_message(&mut msg_buf, drvproto::MSG_PRESENT, &payload[..payload_len])
+                .unwrap();
         link.client_send(&msg_buf[..msg_len]);
     }
 }
@@ -223,6 +251,34 @@ fn negotiation_with_tiny_max_rects_falls_back() {
     let present = driver.seen_present.expect("present");
     assert_eq!(present.rect_count, 0);
     assert_ne!(present._pad & drvproto::PRESENT_FLAG_FULLFRAME, 0);
+}
+
+#[test]
+fn negotiation_falls_back_when_damage_exceeds_max_rects() {
+    let cfg = DriverConfig {
+        caps: drvproto::CAP_DIRTY_RECTS | drvproto::CAP_FULLFRAME,
+        max_rects: 8,
+        split_writes: false,
+        burst: false,
+    };
+    let (driver, _bloom, _link) = run_scenario(cfg, 9);
+    let present = driver.seen_present.expect("present");
+    assert_eq!(present.rect_count, 0);
+    assert_ne!(present._pad & drvproto::PRESENT_FLAG_FULLFRAME, 0);
+}
+
+#[test]
+fn negotiation_preserves_dirty_rects_when_capacity_allows() {
+    let cfg = DriverConfig {
+        caps: drvproto::CAP_DIRTY_RECTS | drvproto::CAP_FULLFRAME,
+        max_rects: 16,
+        split_writes: false,
+        burst: false,
+    };
+    let (driver, _bloom, _link) = run_scenario(cfg, 8);
+    let present = driver.seen_present.expect("present");
+    assert_eq!(present.rect_count, 8);
+    assert_eq!(present._pad & drvproto::PRESENT_FLAG_FULLFRAME, 0);
 }
 
 #[test]

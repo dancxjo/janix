@@ -141,16 +141,24 @@ impl RedirEntry {
             destination: dest_cpu,
         }
     }
-    
+
     /// Convert to 64-bit register value
     fn to_u64(&self) -> u64 {
         let mut val: u64 = 0;
         val |= self.vector as u64;
         val |= (self.delivery_mode as u64) << 8;
-        if self.dest_logical { val |= 1 << 11; }
-        if self.active_low { val |= 1 << 13; }
-        if self.level_triggered { val |= 1 << 15; }
-        if self.mask { val |= 1 << 16; }
+        if self.dest_logical {
+            val |= 1 << 11;
+        }
+        if self.active_low {
+            val |= 1 << 13;
+        }
+        if self.level_triggered {
+            val |= 1 << 15;
+        }
+        if self.mask {
+            val |= 1 << 16;
+        }
         val |= (self.destination as u64) << 56;
         val
     }
@@ -161,7 +169,7 @@ pub fn write_redir(pin: u8, entry: RedirEntry) {
     let reg_low = IOAPIC_REDTBL_BASE + (pin as u32 * 2);
     let reg_high = reg_low + 1;
     let val = entry.to_u64();
-    
+
     write_reg(reg_high, (val >> 32) as u32);
     write_reg(reg_low, val as u32);
 }
@@ -224,18 +232,20 @@ pub fn setup_lapic_timer(vector: u8, hz: u32) {
         while (ioport_read_u8(0x61) & 0x20) == 0 {
             core::hint::spin_loop();
             timeout -= 1;
-            if timeout == 0 { break; }
+            if timeout == 0 {
+                break;
+            }
         }
 
         let end_lapic = ptr::read_volatile((base + 0x390) as *const u32);
-        
+
         // Disable PIT Channel 2
         ioport_write_u8(0x61, port61 & !0x01);
 
         let delta = start_lapic.saturating_sub(end_lapic);
         let ticks_per_10ms = delta;
         let ticks_per_sec = ticks_per_10ms as u64 * 100;
-        
+
         let init_cnt = (ticks_per_sec / hz as u64) as u32;
 
         // 3. Set LVT Timer register: Periodic mode (bit 17) + Vector
@@ -244,8 +254,13 @@ pub fn setup_lapic_timer(vector: u8, hz: u32) {
 
         // 4. Set final initial count
         ptr::write_volatile((base + LAPIC_TIMER_INITCNT as u64) as *mut u32, init_cnt);
-        
-        kernel::kinfo!("LAPIC: calibrated timer ({} ticks/sec), init_cnt={} for {}Hz", ticks_per_sec, init_cnt, hz);
+
+        kernel::kinfo!(
+            "LAPIC: calibrated timer ({} ticks/sec), init_cnt={} for {}Hz",
+            ticks_per_sec,
+            init_cnt,
+            hz
+        );
     }
 }
 

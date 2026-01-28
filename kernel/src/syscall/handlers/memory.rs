@@ -1,7 +1,9 @@
 //! Memory and stack allocation syscalls
 
 use abi::errors::{Errno, SysResult};
-use abi::vm::{VmBacking, VmMapReq, VmMapResp, VmProt, VmUnmapReq, VmUnmapResp, VmRegionInfo, VmBackingKind};
+use abi::vm::{
+    VmBacking, VmBackingKind, VmMapReq, VmMapResp, VmProt, VmRegionInfo, VmUnmapReq, VmUnmapResp,
+};
 use core::sync::atomic::{AtomicU64, Ordering};
 
 const USER_VM_BASE: u64 = 0x1000_0000;
@@ -22,7 +24,8 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     validate_user_range(resp_ptr, resp_size, true)?;
 
     let mut req: VmMapReq = unsafe { core::mem::zeroed() };
-    let req_slice = unsafe { core::slice::from_raw_parts_mut(&mut req as *mut _ as *mut u8, req_size) };
+    let req_slice =
+        unsafe { core::slice::from_raw_parts_mut(&mut req as *mut _ as *mut u8, req_size) };
     unsafe {
         copyin(req_slice, req_ptr)?;
     }
@@ -87,7 +90,7 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     // Only register regions that are actually accessible (not guard-only)
     // Guard regions are virtual address reservations without actual page mappings
     let is_accessible = req.prot.contains(VmProt::READ) || req.prot.contains(VmProt::WRITE);
-    
+
     if is_accessible {
         // For FIXED mappings, we may be replacing part of an existing region
         // Remove the overlap first to avoid permission conflicts
@@ -96,14 +99,15 @@ pub fn sys_vm_map(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
                 let _ = crate::task::scheduler::remove_user_mappings_current(addr, len);
             }
         }
-        
+
         unsafe {
             crate::task::scheduler::add_user_mapping_current(region)?;
         }
     }
 
     let resp = VmMapResp { addr, len };
-    let resp_slice = unsafe { core::slice::from_raw_parts(&resp as *const _ as *const u8, resp_size) };
+    let resp_slice =
+        unsafe { core::slice::from_raw_parts(&resp as *const _ as *const u8, resp_size) };
     unsafe {
         copyout(resp_ptr, resp_slice)?;
     }
@@ -119,7 +123,8 @@ pub fn sys_vm_unmap(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     validate_user_range(resp_ptr, resp_size, true)?;
 
     let mut req: VmUnmapReq = unsafe { core::mem::zeroed() };
-    let req_slice = unsafe { core::slice::from_raw_parts_mut(&mut req as *mut _ as *mut u8, req_size) };
+    let req_slice =
+        unsafe { core::slice::from_raw_parts_mut(&mut req as *mut _ as *mut u8, req_size) };
     unsafe {
         copyin(req_slice, req_ptr)?;
     }
@@ -131,9 +136,8 @@ pub fn sys_vm_unmap(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     }
 
     // Update mappings
-    let removed_ranges = unsafe {
-        crate::task::scheduler::remove_user_mappings_current(req.addr, len)?
-    };
+    let removed_ranges =
+        unsafe { crate::task::scheduler::remove_user_mappings_current(req.addr, len)? };
 
     // Unmap pages
     for (start, end) in removed_ranges {
@@ -148,7 +152,8 @@ pub fn sys_vm_unmap(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     }
 
     let resp = VmUnmapResp { unmapped_len: len };
-    let resp_slice = unsafe { core::slice::from_raw_parts(&resp as *const _ as *const u8, resp_size) };
+    let resp_slice =
+        unsafe { core::slice::from_raw_parts(&resp as *const _ as *const u8, resp_size) };
     unsafe {
         copyout(resp_ptr, resp_slice)?;
     }

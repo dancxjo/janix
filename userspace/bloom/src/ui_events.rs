@@ -2,14 +2,14 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
 use abi::ui_event::UiEventWire;
-use abi::ids::HandleId;
-use stem::thing::{ThingId, ThingKind};
 use stem::thing::sys::{
     bytespace_create, bytespace_write, find, get_edges, get_kind, prop_get, prop_set,
 };
+use stem::thing::{ThingId, ThingKind};
 
 use crate::geometry::Rect;
 
@@ -71,7 +71,11 @@ fn window_at_point(x: i32, y: i32, screen_w: i32, screen_h: i32) -> Option<(Thin
         if rect.width() <= 0 || rect.height() <= 0 {
             continue;
         }
-        if x >= rect.x() && y >= rect.y() && x < rect.x() + rect.width() && y < rect.y() + rect.height() {
+        if x >= rect.x()
+            && y >= rect.y()
+            && x < rect.x() + rect.width()
+            && y < rect.y() + rect.height()
+        {
             let z = prop_get(*win, keys::UI_Z_INDEX).unwrap_or(0) as i32;
             if best.map(|(_, _, bz)| z >= bz).unwrap_or(true) {
                 best = Some((*win, rect, z));
@@ -214,10 +218,10 @@ struct RectI32 {
 mod tests {
     use super::*;
     use abi::ui_event::{UiEventKind, UiEventWire};
-    use stem::petals::graph::{GraphBackend, UiTreeBuilder};
-    use stem::errors::{Error, Result};
     use alloc::collections::BTreeMap;
     use alloc::string::String;
+    use stem::errors::{Error, Result};
+    use stem::petals::graph::{GraphBackend, UiTreeBuilder};
 
     #[derive(Default)]
     struct TestGraph {
@@ -270,7 +274,8 @@ mod tests {
         }
 
         fn prop_set(&mut self, id: ThingId, key: &str, value: u64) -> Result<()> {
-            self.props.insert((id.to_u64_lossy(), key.to_string()), value);
+            self.props
+                .insert((id.to_u64_lossy(), key.to_string()), value);
             Ok(())
         }
 
@@ -326,18 +331,22 @@ mod tests {
         graph
             .props
             .insert((checkbox_id.to_u64_lossy(), keys::UI_Y.to_string()), 0);
-        graph
-            .props
-            .insert((checkbox_id.to_u64_lossy(), keys::UI_WIDTH.to_string()), 100);
-        graph
-            .props
-            .insert((checkbox_id.to_u64_lossy(), keys::UI_HEIGHT.to_string()), 30);
-        graph
-            .props
-            .insert((window_id.to_u64_lossy(), keys::UI_EVENT_QUEUE.to_string()), 0);
-        graph
-            .props
-            .insert((window_id.to_u64_lossy(), keys::UI_SCENE_GEN.to_string()), 0);
+        graph.props.insert(
+            (checkbox_id.to_u64_lossy(), keys::UI_WIDTH.to_string()),
+            100,
+        );
+        graph.props.insert(
+            (checkbox_id.to_u64_lossy(), keys::UI_HEIGHT.to_string()),
+            30,
+        );
+        graph.props.insert(
+            (window_id.to_u64_lossy(), keys::UI_EVENT_QUEUE.to_string()),
+            0,
+        );
+        graph.props.insert(
+            (window_id.to_u64_lossy(), keys::UI_SCENE_GEN.to_string()),
+            0,
+        );
 
         let event = UiEventWire::new_toggled(checkbox_id.to_u64_lossy(), true, 7);
         let mut buf = [0u8; abi::ui_event::UI_EVENT_BYTES];

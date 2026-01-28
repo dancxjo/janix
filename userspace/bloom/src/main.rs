@@ -5,13 +5,17 @@ extern crate alloc;
 extern crate stem; // Force linkage
 
 mod asset;
+mod blossom_client;
 mod bmp;
 mod bristle;
 mod compositor;
 mod cursor;
 mod cursor_rasterizer;
 mod damage;
+mod damage_accumulator;
 mod drawlist;
+mod font_client;
+mod font_graph;
 mod frame;
 mod frame_loop;
 pub mod geometry;
@@ -19,6 +23,8 @@ mod isa;
 mod log_ratelimit;
 mod logging;
 mod lowered;
+mod paint_vm;
+pub mod painter_resources;
 pub mod perf;
 mod present;
 mod raster;
@@ -26,15 +32,10 @@ mod reclaimer;
 mod render_graph;
 mod render_state;
 mod surface;
-mod font_graph;
-mod font_client;
-mod ui;
 mod svg;
-mod blossom_client;
-mod window_manager;
-pub mod painter_resources;
-mod paint_vm;
+mod ui;
 mod ui_events;
+mod window_manager;
 
 pub use painter_resources::ASSETS;
 
@@ -46,15 +47,15 @@ use abi::display_driver_protocol::BindPayload;
 use abi::schema::{keys, kinds};
 use stem::syscall::PortHandle;
 
-use crate::compositor::CompositorTarget;
-use crate::frame::FrameBuilder;
-use crate::frame_loop::FrameLoop;
-use crate::present::{DriverPresenter, PresenterImpl};
+use crate::asset::AssetBank;
 use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
+use crate::compositor::CompositorTarget;
 use crate::cursor::CursorState;
 use crate::cursor_rasterizer::CursorRasterizer;
-use crate::asset::AssetBank;
+use crate::frame::FrameBuilder;
+use crate::frame_loop::FrameLoop;
 use crate::paint_vm::PaintPipeline;
+use crate::present::{DriverPresenter, PresenterImpl};
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
@@ -95,7 +96,11 @@ fn unpack_handle(arg: usize, index: u32) -> PortHandle {
     ((arg >> (index * 16)) & 0xFFFF) as PortHandle
 }
 
-fn window_rect_from_props(window_id: ThingId, screen_w: i32, screen_h: i32) -> crate::geometry::Rect {
+fn window_rect_from_props(
+    window_id: ThingId,
+    screen_w: i32,
+    screen_h: i32,
+) -> crate::geometry::Rect {
     let w = stem::thing::sys::prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
     let h = stem::thing::sys::prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
     if w <= 0 || h <= 0 {
@@ -103,8 +108,10 @@ fn window_rect_from_props(window_id: ThingId, screen_w: i32, screen_h: i32) -> c
     }
     let mut x = stem::thing::sys::prop_get(window_id, keys::UI_X).unwrap_or(0) as i32;
     let mut y = stem::thing::sys::prop_get(window_id, keys::UI_Y).unwrap_or(0) as i32;
-    let inset_right = stem::thing::sys::prop_get(window_id, keys::UI_INSET_RIGHT).unwrap_or(0) as i32;
-    let inset_bottom = stem::thing::sys::prop_get(window_id, keys::UI_INSET_BOTTOM).unwrap_or(0) as i32;
+    let inset_right =
+        stem::thing::sys::prop_get(window_id, keys::UI_INSET_RIGHT).unwrap_or(0) as i32;
+    let inset_bottom =
+        stem::thing::sys::prop_get(window_id, keys::UI_INSET_BOTTOM).unwrap_or(0) as i32;
     if inset_right > 0 {
         x = screen_w - inset_right - w;
     }
@@ -117,10 +124,10 @@ fn window_rect_from_props(window_id: ThingId, screen_w: i32, screen_h: i32) -> c
 fn tile_windows(screen_w: i32, screen_h: i32) {
     let mut windows = [ThingId::default(); 128];
     let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
-    
+
     let mut photosynthesis = None;
     let mut font_explorer = None;
-    
+
     for win in windows.iter().take(count) {
         let mut title_buf = [0u8; 128];
         if let Ok(val) = stem::thing::sys::prop_get(*win, keys::UI_TITLE) {
@@ -135,22 +142,26 @@ fn tile_windows(screen_w: i32, screen_h: i32) {
             }
         }
     }
-    
+
     // Tiling logic:
     // Photosynthesis: Left 1/2
     // Font Explorer: Upper Right 1/4
-    
+
     // UI_MANUAL_POSITION must be checked before tiling!
-    
+
     // Tiling logic:
     // Photosynthesis: Left 1/2
     // Font Explorer: Upper Right 1/4
-    
+
     // UI_MANUAL_POSITION must be checked before tiling!
-    
+
     if let Some(win) = photosynthesis {
         let manual = stem::thing::sys::prop_get(win, keys::UI_MANUAL_POSITION).unwrap_or(0);
-        stem::info!("[bloom] tile_windows: Photosynthesis id={:?} manual={}", win, manual);
+        stem::info!(
+            "[bloom] tile_windows: Photosynthesis id={:?} manual={}",
+            win,
+            manual
+        );
         if manual == 0 {
             let _ = stem::thing::sys::prop_set(win, keys::UI_X, 0);
             let _ = stem::thing::sys::prop_set(win, keys::UI_Y, 0);
@@ -159,13 +170,17 @@ fn tile_windows(screen_w: i32, screen_h: i32) {
             let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
             let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
         } else {
-             stem::info!("[bloom] tile_windows: SKIPPING Photosynthesis (manual override)");
+            stem::info!("[bloom] tile_windows: SKIPPING Photosynthesis (manual override)");
         }
     }
-    
+
     if let Some(win) = font_explorer {
         let manual = stem::thing::sys::prop_get(win, keys::UI_MANUAL_POSITION).unwrap_or(0);
-        stem::info!("[bloom] tile_windows: FontExplorer id={:?} manual={}", win, manual);
+        stem::info!(
+            "[bloom] tile_windows: FontExplorer id={:?} manual={}",
+            win,
+            manual
+        );
         if manual == 0 {
             let _ = stem::thing::sys::prop_set(win, keys::UI_X, (screen_w / 2) as u64);
             let _ = stem::thing::sys::prop_set(win, keys::UI_Y, 0);
@@ -174,17 +189,12 @@ fn tile_windows(screen_w: i32, screen_h: i32) {
             let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
             let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
         } else {
-             stem::info!("[bloom] tile_windows: SKIPPING FontExplorer (manual override)");
+            stem::info!("[bloom] tile_windows: SKIPPING FontExplorer (manual override)");
         }
     }
 }
 
-fn top_window_at_point(
-    x: i32,
-    y: i32,
-    screen_w: i32,
-    screen_h: i32,
-) -> Option<WindowHit> {
+fn top_window_at_point(x: i32, y: i32, screen_w: i32, screen_h: i32) -> Option<WindowHit> {
     let mut windows = [ThingId::default(); 128];
     let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
     let mut best: Option<WindowHit> = None;
@@ -196,7 +206,11 @@ fn top_window_at_point(
         if rect.width() <= 0 || rect.height() <= 0 {
             continue;
         }
-        if x < rect.x() || y < rect.y() || x >= rect.x() + rect.width() || y >= rect.y() + rect.height() {
+        if x < rect.x()
+            || y < rect.y()
+            || x >= rect.x() + rect.width()
+            || y >= rect.y() + rect.height()
+        {
             continue;
         }
         let z = stem::thing::sys::prop_get(*win, keys::UI_Z_INDEX).unwrap_or(0) as i32;
@@ -222,7 +236,11 @@ fn in_client_area(rect: crate::geometry::Rect, x: i32, y: i32) -> bool {
     x >= left && x < right && y >= top && y < bottom
 }
 
-fn clamp_window_rect(rect: crate::geometry::Rect, screen_w: i32, screen_h: i32) -> crate::geometry::Rect {
+fn clamp_window_rect(
+    rect: crate::geometry::Rect,
+    screen_w: i32,
+    screen_h: i32,
+) -> crate::geometry::Rect {
     let mut r = rect;
     let min_visible = BLOSSOM_TITLE_BAR_HEIGHT;
     if r.y() + min_visible < 0 {
@@ -253,7 +271,11 @@ fn raise_window(window_id: ThingId) {
             max_z = z;
         }
     }
-    let _ = stem::thing::sys::prop_set(window_id, keys::UI_Z_INDEX, (max_z as u64).saturating_add(1));
+    let _ = stem::thing::sys::prop_set(
+        window_id,
+        keys::UI_Z_INDEX,
+        (max_z as u64).saturating_add(1),
+    );
 }
 
 fn set_focus(focused_window: &mut Option<ThingId>, target: Option<ThingId>) {
@@ -312,13 +334,21 @@ fn cycle_windows_in_order(
     let target_idx = match current.and_then(|id| order.iter().position(|wid| *wid == id)) {
         Some(idx) => {
             if reverse {
-                if idx == 0 { order.len() - 1 } else { idx - 1 }
+                if idx == 0 {
+                    order.len() - 1
+                } else {
+                    idx - 1
+                }
             } else {
                 (idx + 1) % order.len()
             }
         }
         None => {
-            if reverse { order.len() - 1 } else { 0 }
+            if reverse {
+                order.len() - 1
+            } else {
+                0
+            }
         }
     };
     let target = order[target_idx];
@@ -400,13 +430,17 @@ fn main(arg: usize) -> ! {
 
     let _ = ui_root;
     let mut paint_pipeline = PaintPipeline::new();
-    
+
     // Spawn asset workers with diagnostic logging
     use stem::stack::{Stack, StackSpec};
-    let s_spec = StackSpec { reserve_bytes: 256 * 1024, ..StackSpec::default() };
-    
+    let s_spec = StackSpec {
+        reserve_bytes: 256 * 1024,
+        ..StackSpec::default()
+    };
+
     match Stack::alloc_growing_stack(s_spec) {
-        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::wallpaper_loader_entry) {
+        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::wallpaper_loader_entry)
+        {
             Ok(tid) => stem::info!("bloom: spawned wallpaper loader (tid={})", tid),
             Err(e) => stem::error!("bloom: FAILED to spawn wallpaper loader: {:?}", e),
         },
@@ -436,7 +470,7 @@ fn main(arg: usize) -> ! {
 
     let mut loop_ctrl = FrameLoop::new(60);
     let (screen_w, screen_h) = (target.width as i32, target.height as i32);
-    
+
     // Cursor state
     let bristle_evt_handle = bristle_evt as PortHandle;
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
@@ -463,8 +497,8 @@ fn main(arg: usize) -> ! {
     // Glyph Arrival Watch
     let glyph_watch_pred = stem::thing::sys::intern(kinds::FONT_GLYPH).unwrap_or(0);
     let glyph_watch = if glyph_watch_pred != 0 {
-        use abi::types::{WatchSpec, WatchMode};
         use abi::root::RootWatchFilter;
+        use abi::types::{WatchMode, WatchSpec};
         let filter = RootWatchFilter::predicate(glyph_watch_pred);
         let spec = WatchSpec {
             mode: WatchMode::StreamOnly as u32,
@@ -480,8 +514,8 @@ fn main(arg: usize) -> ! {
     // UI Window Watch - triggers dirty when windows are created/modified
     let ui_window_kind = stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0);
     let ui_window_watch = if ui_window_kind != 0 {
-        use abi::types::{WatchSpec, WatchMode};
         use abi::root::RootWatchFilter;
+        use abi::types::{WatchMode, WatchSpec};
         // Use kind() filter to watch for node creation, not predicate() which watches edges
         let filter = RootWatchFilter::kind(ui_window_kind);
         let spec = WatchSpec {
@@ -494,12 +528,12 @@ fn main(arg: usize) -> ! {
     } else {
         None
     };
-    
+
     // UI Paint Watch - triggers dirty when paint generation changes
     let ui_paint_gen_key = stem::thing::sys::intern(keys::UI_PAINT_GEN).unwrap_or(0);
     let ui_paint_watch = if ui_paint_gen_key != 0 {
-        use abi::types::{WatchSpec, WatchMode};
         use abi::root::RootWatchFilter;
+        use abi::types::{WatchMode, WatchSpec};
         let filter = RootWatchFilter::predicate(ui_paint_gen_key);
         let spec = WatchSpec {
             mode: WatchMode::StreamOnly as u32,
@@ -511,16 +545,21 @@ fn main(arg: usize) -> ! {
     } else {
         None
     };
-    
+
     // Track watch event counts for diagnostics
     let mut ui_watch_events_total: u64 = 0;
     let mut force_full_damage;
 
     // WAIT for critical assets (fonts) before showing anything
     let mut startup_frames = 0;
-    while startup_frames < 60 { // Up to 1s at 60Hz
+    while startup_frames < 60 {
+        // Up to 1s at 60Hz
         ASSETS.publish_pending();
-        if ASSETS.get_fonts().iter().any(|f| f.name.contains("NotoSans-Regular")) {
+        if ASSETS
+            .get_fonts()
+            .iter()
+            .any(|f| f.name.contains("NotoSans-Regular"))
+        {
             stem::info!("[bloom] NotoSans-Regular ready, starting UI loop");
             break;
         }
@@ -544,7 +583,7 @@ fn main(arg: usize) -> ! {
                 }
             }
         }
-        
+
         // 1. Check for UI window changes
         if let Some(uw) = ui_window_watch {
             let mut w_seq = 0u64;
@@ -560,12 +599,16 @@ fn main(arg: usize) -> ! {
             }
             if drained > 0 {
                 ui_watch_events_total += drained as u64;
-                stem::info!("[bloom] UI watch: drained {} events (total={})", drained, ui_watch_events_total);
+                stem::info!(
+                    "[bloom] UI watch: drained {} events (total={})",
+                    drained,
+                    ui_watch_events_total
+                );
                 force_full_damage = true;
                 tile_windows(screen_w, screen_h);
             }
         }
-        
+
         // 2. Check for UI_PAINT updates
         if let Some(pw) = ui_paint_watch {
             let mut p_seq = 0u64;
@@ -582,7 +625,7 @@ fn main(arg: usize) -> ! {
                 force_full_damage = true;
             }
         }
-        
+
         // Input processing with window management
         if bristle_evt_handle != 0 {
             prev_keys = pressed_keys.clone();
@@ -663,19 +706,24 @@ fn main(arg: usize) -> ! {
                         keys::UI_Y,
                         next_rect.y() as u64,
                     );
-                    
+
                     // User moved the window, prevent auto-tiling
                     let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_MANUAL_POSITION, 1);
-                    stem::info!("[bloom] drag: set UI_MANUAL_POSITION=1 for id={:?}", drag.window_id);
+                    stem::info!(
+                        "[bloom] drag: set UI_MANUAL_POSITION=1 for id={:?}",
+                        drag.window_id
+                    );
                 }
-
             } else {
-                let hovered = top_window_at_point(cursor.x, cursor.y, screen_w, screen_h).map(|h| h.id);
+                let hovered =
+                    top_window_at_point(cursor.x, cursor.y, screen_w, screen_h).map(|h| h.id);
                 set_focus(&mut focused_window, hovered);
             }
 
-            let alt_down = pressed_keys.contains(&Key::LeftAlt) || pressed_keys.contains(&Key::RightAlt);
-            let shift_down = pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
+            let alt_down =
+                pressed_keys.contains(&Key::LeftAlt) || pressed_keys.contains(&Key::RightAlt);
+            let shift_down =
+                pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
             let tab_pressed = pressed_keys.contains(&Key::Tab) && !prev_keys.contains(&Key::Tab);
             let alt_pressed = alt_down && !alt_prev_down;
             let alt_released = !alt_down && alt_prev_down;
@@ -708,7 +756,7 @@ fn main(arg: usize) -> ! {
 
         // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
-        
+
         let paint_result = if !modal_mode {
             // Render wallpaper first if available (tiled across the screen)
             if let Some(wp) = ASSETS.get_wallpaper() {
@@ -726,9 +774,11 @@ fn main(arg: usize) -> ! {
             // Modal Mode: Black screen, no windows
             list.clear(crate::geometry::Color::from_u32(0xFF000000));
             // Return empty paint result (no windows)
-            crate::paint_vm::PaintResult { damage: alloc::vec![] } 
+            crate::paint_vm::PaintResult {
+                damage: alloc::vec![],
+            }
         };
-        
+
         // Damage Tracking (cursor is now blended post-damage, does not affect window damage)
         let bounds = damage::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
@@ -740,31 +790,37 @@ fn main(arg: usize) -> ! {
             if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
                 let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
                 let cursor_changed = snapshot.gen != prev_cursor_gen;
-                
+
                 if cursor_moved || cursor_changed {
                     let (cw, ch) = (snapshot.image.width as i32, snapshot.image.height as i32);
-                    
+
                     // Old cursor rect (to erase)
                     let old_rect = damage::Rect::new(
                         prev_cursor_x - snapshot.hotspot_x,
                         prev_cursor_y - snapshot.hotspot_y,
-                        cw, ch
-                    ).expand(2).clip(bounds);
-                    
+                        cw,
+                        ch,
+                    )
+                    .expand(2)
+                    .clip(bounds);
+
                     // New cursor rect (to draw)
                     let new_rect = damage::Rect::new(
                         cursor.x - snapshot.hotspot_x,
                         cursor.y - snapshot.hotspot_y,
-                        cw, ch
-                    ).expand(2).clip(bounds);
-                    
+                        cw,
+                        ch,
+                    )
+                    .expand(2)
+                    .clip(bounds);
+
                     if !old_rect.is_empty() {
                         damage.add_rect(old_rect);
                     }
                     if !new_rect.is_empty() {
                         damage.add_rect(new_rect);
                     }
-                    
+
                     // Update previous state
                     prev_cursor_x = cursor.x;
                     prev_cursor_y = cursor.y;
@@ -794,21 +850,21 @@ fn main(arg: usize) -> ! {
             ASSETS.current_generation(),
         );
         let mut builder = FrameBuilder::new(token);
-        
+
         if damage.is_full {
-             builder.mark_full_damage();
+            builder.mark_full_damage();
         } else {
-             for rect in damage.iter() {
-                 builder.add_damage(rect);
-             }
+            for rect in damage.iter() {
+                builder.add_damage(rect);
+            }
         }
-        
+
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
             crate::trace_span!("bloom.loop.raster");
             raster::execute_with_damage(&mut surface, &list, &damage, false);
         }
-        
+
         // Cursor overlay: blend cached snapshot at cursor position (post-damage)
         // This ensures cursor movement does not trigger window repaints
         if let Some(asset) = ASSETS.get_cursor() {

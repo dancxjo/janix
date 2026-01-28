@@ -94,9 +94,7 @@ fn send_ack(handle: PortHandle, burst: bool) {
     let mut buf = [0u8; 64];
     if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_ACK, &[]) {
         if burst {
-            if let Some(len2) =
-                drvproto::encode_message(&mut buf[len..], drvproto::MSG_ACK, &[])
-            {
+            if let Some(len2) = drvproto::encode_message(&mut buf[len..], drvproto::MSG_ACK, &[]) {
                 let total = len + len2;
                 let _ = port_send(handle, &buf[..total]);
                 return;
@@ -166,11 +164,7 @@ fn main(arg: usize) -> ! {
                                 &welcome_bytes[..len],
                             );
                         } else {
-                            send_msg(
-                                drv_resp_write,
-                                drvproto::MSG_WELCOME,
-                                &welcome_bytes[..len],
-                            );
+                            send_msg(drv_resp_write, drvproto::MSG_WELCOME, &welcome_bytes[..len]);
                         }
                     }
                 }

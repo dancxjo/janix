@@ -47,17 +47,23 @@ fn main(arg: usize) -> ! {
     let drv_req_read = unpack_handle(arg, 0);
     let drv_resp_write = unpack_handle(arg, 1);
 
-    info!("display_virtio_gpu: starting (drv_req_r={}, drv_resp_w={})", drv_req_read, drv_resp_write);
+    info!(
+        "display_virtio_gpu: starting (drv_req_r={}, drv_resp_w={})",
+        drv_req_read, drv_resp_write
+    );
 
     // NOTE: VirtIO GPU driver is currently a stub.
     // Full implementation requires VirtIO PCI capability parsing
     // which is not yet implemented. For now, this just acks messages
     // but doesn't actually display anything.
-    
+
     if let Some(gpu_id) = find_gpu() {
         if let Ok(claim) = device_claim(gpu_id.0) {
             let _ = device_map_mmio(claim, 0);
-            info!("display_virtio_gpu: claimed gpu {} (stub driver - VirtIO not fully implemented)", gpu_id.0);
+            info!(
+                "display_virtio_gpu: claimed gpu {} (stub driver - VirtIO not fully implemented)",
+                gpu_id.0
+            );
         }
     }
 
@@ -78,8 +84,7 @@ fn main(arg: usize) -> ! {
                     let want_caps = drvproto::decode_hello_payload_le(payload)
                         .map(|hello| hello.want_caps)
                         .unwrap_or(0);
-                    let supported_caps =
-                        drvproto::CAP_DIRTY_RECTS | drvproto::CAP_FULLFRAME;
+                    let supported_caps = drvproto::CAP_DIRTY_RECTS | drvproto::CAP_FULLFRAME;
                     let welcome = drvproto::WelcomePayload {
                         proto_major: drvproto::PROTO_MAJOR,
                         proto_minor: drvproto::PROTO_MINOR,
@@ -106,7 +111,9 @@ fn main(arg: usize) -> ! {
                                 info!("display_virtio_gpu: bytespace_map failed: {:?}", e);
                                 let err = drvproto::ErrResp { code: 2 };
                                 let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                if let Some(len) =
+                                    drvproto::encode_err_resp_le(&err, &mut err_bytes)
+                                {
                                     send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
                                 }
                             }

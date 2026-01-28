@@ -1,7 +1,7 @@
+use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use abi::types::RootWatchEvent;
 use stem::syscall::PortHandle;
-use abi::ids::HandleId;
 use stem::thing::{sys as thingsys, ThingId};
 
 pub struct Symbols {
@@ -18,7 +18,7 @@ impl Symbols {
         let display_role = thingsys::intern("display_role").unwrap_or(0) as u64;
         let display_drv_req = thingsys::intern("display_drv_req").unwrap_or(0) as u64;
         let display_drv_resp = thingsys::intern("display_drv_resp").unwrap_or(0) as u64;
-        
+
         Self {
             display_compositor,
             display_role,
@@ -27,7 +27,6 @@ impl Symbols {
         }
     }
 }
-
 
 /// Display backend type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -87,11 +86,11 @@ impl CompositorTarget {
 
     pub fn discover_and_map(
         arg_ports: (PortHandle, PortHandle),
-        timeout_ms: u32
+        timeout_ms: u32,
     ) -> Result<Self, CompositorError> {
         let sym = Symbols::new();
-        let deadline = stem::time::now() + stem::time::Duration::from_millis(timeout_ms as u64); 
-        
+        let deadline = stem::time::now() + stem::time::Duration::from_millis(timeout_ms as u64);
+
         // Wait loop for discovery
         #[allow(unused_assignments)]
         let mut found_config: Option<(ThingId, u32, u32, u32, u32)> = None;
@@ -114,8 +113,10 @@ impl CompositorTarget {
                 }
                 Err(_) => {}
             }
-            if found_config.is_some() { break; }
-            
+            if found_config.is_some() {
+                break;
+            }
+
             if stem::time::now() > deadline {
                 break;
             }
@@ -150,7 +151,9 @@ impl CompositorTarget {
                         }
                     }
                 }
-                preferred.or(fallback).ok_or(CompositorError::DiscoveryTimeout)?
+                preferred
+                    .or(fallback)
+                    .ok_or(CompositorError::DiscoveryTimeout)?
             }
         };
 
@@ -182,7 +185,11 @@ impl CompositorTarget {
         // Size resolution
         let fallback_size = (height as usize).saturating_mul(stride as usize);
         let info_size = thingsys::bytespace_info(bs_id).unwrap_or(0);
-        let size = if info_size > 0 { info_size } else { fallback_size };
+        let size = if info_size > 0 {
+            info_size
+        } else {
+            fallback_size
+        };
 
         if size == 0 {
             crate::log!("error: resolved size is 0");
@@ -192,7 +199,11 @@ impl CompositorTarget {
         crate::log!(
             "mapped size={} (source={})",
             size,
-            if info_size > 0 { "bytespace_info" } else { "fallback" }
+            if info_size > 0 {
+                "bytespace_info"
+            } else {
+                "fallback"
+            }
         );
 
         // Mapping (updated to use new kernel allocator via syscall)

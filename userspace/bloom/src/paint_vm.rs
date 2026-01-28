@@ -4,15 +4,15 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use abi::ui_paint::{PaintOpTag, PaintReader};
 use abi::schema::{keys, kinds};
 use abi::types::HandleId;
-use stem::thing::ThingId;
+use abi::ui_paint::{PaintOpTag, PaintReader};
 use stem::thing::sys::{bytespace_info, bytespace_read, find, prop_get};
+use stem::thing::ThingId;
 
 use crate::damage;
 use crate::drawlist::{DrawCmd, DrawList};
-use crate::geometry::{Color, Rect, EdgeAA};
+use crate::geometry::{Color, EdgeAA, Rect};
 
 struct WindowPaintState {
     rect: Rect,
@@ -169,12 +169,7 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
                     list.commands().push(DrawCmd::Text {
                         text: text.text,
                         font: Some(text.font),
-                        rect: Rect::new(
-                            text.x + origin_x,
-                            text.y + origin_y,
-                            text.w,
-                            text.h,
-                        ),
+                        rect: Rect::new(text.x + origin_x, text.y + origin_y, text.w, text.h),
                         size: text.size as f32,
                         color: Color::from_u32(text.color),
                         font_debug: false,
@@ -187,7 +182,10 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
             PaintOpTag::StrokeLine => {
                 if let Some((x1, y1, x2, y2, width, color)) = decode_line(op.payload) {
                     list.commands().push(DrawCmd::Line {
-                        from: crate::isa::PointF::new((x1 + origin_x) as f32, (y1 + origin_y) as f32),
+                        from: crate::isa::PointF::new(
+                            (x1 + origin_x) as f32,
+                            (y1 + origin_y) as f32,
+                        ),
                         to: crate::isa::PointF::new((x2 + origin_x) as f32, (y2 + origin_y) as f32),
                         color: Color::from_u32(color),
                         width: width as f32,
@@ -205,7 +203,9 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
                 }
             }
             PaintOpTag::FillLinearGradient => {
-                if let Some((x, y, w, h, c1, c2)) = abi::ui_paint::decode_fill_linear_gradient(op.payload) {
+                if let Some((x, y, w, h, c1, c2)) =
+                    abi::ui_paint::decode_fill_linear_gradient(op.payload)
+                {
                     list.commands().push(DrawCmd::FillLinearGradient {
                         rect: Rect::new(x + origin_x, y + origin_y, w, h),
                         color1: Color::from_u32(c1),

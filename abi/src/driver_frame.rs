@@ -77,9 +77,8 @@ impl<const N: usize> FrameReader<N> {
             }
 
             if self.is_contiguous(total) {
-                let slice = unsafe {
-                    core::slice::from_raw_parts(self.buf.as_ptr().add(self.head), total)
-                };
+                let slice =
+                    unsafe { core::slice::from_raw_parts(self.buf.as_ptr().add(self.head), total) };
                 let (header, payload_len) = match drvproto::parse_message(slice) {
                     Some((header, payload)) => (header, payload.len()),
                     None => {
@@ -87,11 +86,8 @@ impl<const N: usize> FrameReader<N> {
                         continue;
                     }
                 };
-                let payload_ptr = unsafe {
-                    self.buf
-                        .as_ptr()
-                        .add(self.head + drvproto::HEADER_SIZE)
-                };
+                let payload_ptr =
+                    unsafe { self.buf.as_ptr().add(self.head + drvproto::HEADER_SIZE) };
                 let payload = unsafe { core::slice::from_raw_parts(payload_ptr, payload_len) };
                 self.advance_head(total);
                 return Some((header, payload));
@@ -104,11 +100,7 @@ impl<const N: usize> FrameReader<N> {
                         continue;
                     }
                 };
-                let payload_ptr = unsafe {
-                    self.scratch
-                        .as_ptr()
-                        .add(drvproto::HEADER_SIZE)
-                };
+                let payload_ptr = unsafe { self.scratch.as_ptr().add(drvproto::HEADER_SIZE) };
                 let payload = unsafe { core::slice::from_raw_parts(payload_ptr, payload_len) };
                 self.advance_head(total);
                 return Some((header, payload));

@@ -1,3 +1,3 @@
 pub mod icons;
 
-pub use icons::{ThingosIcon, TangoIcon};
+pub use icons::{TangoIcon, ThingosIcon};

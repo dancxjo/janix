@@ -3,16 +3,16 @@
 
 extern crate alloc;
 use abi::ids::HandleId;
-use abi::schema::{keys, kinds, rels};
 use abi::root::RootWatchFilter;
+use abi::schema::{keys, kinds, rels};
 use abi::types::{WatchMode, WatchSpec};
 use abi::watch;
 use alloc::string::String;
 use alloc::vec::Vec;
+use blossom::widgets::ThingosIcon;
 use core::time::Duration;
 use stem::info;
 use stem::petals::{Canvas, Color, FontKey, Line, Rect, Scene, Size, Styled, Text, Window};
-use blossom::widgets::ThingosIcon;
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
 
@@ -68,11 +68,11 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
     prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
 }
 
-mod pipes;
 mod graph_layout;
+mod pipes;
 
+use graph_layout::{compute_layout, LayoutEdge, LayoutNode, LayoutSettings};
 use pipes::{generate_layout, scan_system_graph};
-use graph_layout::{LayoutNode, LayoutEdge, LayoutSettings, compute_layout};
 
 #[stem::main]
 fn main() -> ! {
@@ -139,21 +139,27 @@ fn main() -> ! {
             let (nodes, edges) = scan_system_graph();
             if nodes != last_nodes || edges != last_edges {
                 // 1. Convert to Layout types
-                let mut layout_nodes: Vec<LayoutNode> = nodes.iter().map(|n| LayoutNode {
-                    id: n.id,
-                    x: n.x,
-                    y: n.y,
-                    w: 110.0,
-                    h: 30.0,
-                    fixed: n.fixed,
-                    rank: n.rank,
-                }).collect();
+                let mut layout_nodes: Vec<LayoutNode> = nodes
+                    .iter()
+                    .map(|n| LayoutNode {
+                        id: n.id,
+                        x: n.x,
+                        y: n.y,
+                        w: 110.0,
+                        h: 30.0,
+                        fixed: n.fixed,
+                        rank: n.rank,
+                    })
+                    .collect();
 
-                let layout_edges: Vec<LayoutEdge> = edges.iter().map(|e| LayoutEdge {
-                    from: e.from,
-                    to: e.to,
-                    weight: e.weight,
-                }).collect();
+                let layout_edges: Vec<LayoutEdge> = edges
+                    .iter()
+                    .map(|e| LayoutEdge {
+                        from: e.from,
+                        to: e.to,
+                        weight: e.weight,
+                    })
+                    .collect();
 
                 // 2. Compute Layout
                 let settings = LayoutSettings::default();
@@ -162,8 +168,10 @@ fn main() -> ! {
                 // 3. Persist back to graph (if changed significantly)
                 for ln in &layout_nodes {
                     let old = nodes.iter().find(|n| n.id == ln.id);
-                    let changed = old.map(|o| (o.x - ln.x).abs() > 1.0 || (o.y - ln.y).abs() > 1.0).unwrap_or(true);
-                    
+                    let changed = old
+                        .map(|o| (o.x - ln.x).abs() > 1.0 || (o.y - ln.y).abs() > 1.0)
+                        .unwrap_or(true);
+
                     if changed {
                         prop_set(ln.id, keys::UI_X, ln.x as i32 as u64).ok();
                         prop_set(ln.id, keys::UI_Y, ln.y as i32 as u64).ok();
@@ -200,14 +208,13 @@ fn build_graph_scene(
     edges: &[pipes::EdgeInfo],
     layout: &pipes::GraphLayout,
 ) -> Scene {
-    let mut canvas = Canvas::new()
-        .width(Size::Pct(100))
-        .height(Size::Pct(100));
+    let mut canvas = Canvas::new().width(Size::Pct(100)).height(Size::Pct(100));
 
     for edge in edges {
-        if let (Some(&(x1, y1)), Some(&(x2, y2))) =
-            (layout.positions.get(&edge.from), layout.positions.get(&edge.to))
-        {
+        if let (Some(&(x1, y1)), Some(&(x2, y2))) = (
+            layout.positions.get(&edge.from),
+            layout.positions.get(&edge.to),
+        ) {
             let (dx, dy) = (x2 - x1, y2 - y1);
             let dist = libm::sqrtf(dx * dx + dy * dy);
             if dist > 0.0 {

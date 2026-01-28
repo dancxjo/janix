@@ -1,7 +1,7 @@
+use crate::thing::sys::{bytespace_create, bytespace_write, create_node, link, prop_set};
 use crate::thing::ThingId;
-use crate::thing::sys::{create_node, prop_set, link, bytespace_create, bytespace_write};
 use abi::ids::HandleId;
-use abi::schema::{kinds, keys, rels};
+use abi::schema::{keys, kinds, rels};
 
 pub struct UiBuilder;
 
@@ -16,7 +16,7 @@ impl UiBuilder {
         let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
         link(win, rels::CHILD_OF, parent).expect("link window child_of");
         link(parent, rels::HAS_CHILD, win).expect("link window has_child");
-        
+
         Self::set_string_prop(win, keys::UI_TITLE, title);
         win
     }

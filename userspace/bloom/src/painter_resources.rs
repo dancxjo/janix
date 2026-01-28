@@ -1,13 +1,13 @@
-use stem::thing::{ThingId, HandleId};
-use stem::thing::sys::{bytespace_info, describe_thing, find, prop_get, bytespace_read};
-use abi::schema::{kinds, keys, rels};
-use abi::root::RootWatchFilter;
-use abi::types::{WatchMode, WatchSpec};
-use stem::{root_watch, syscall, info};
-use crate::font_graph;
 use crate::asset::AssetBank;
+use crate::font_graph;
+use abi::root::RootWatchFilter;
+use abi::schema::{keys, kinds, rels};
+use abi::types::{WatchMode, WatchSpec};
 use alloc::string::String;
 use alloc::string::ToString;
+use stem::thing::sys::{bytespace_info, bytespace_read, describe_thing, find, prop_get};
+use stem::thing::{HandleId, ThingId};
+use stem::{info, root_watch, syscall};
 
 pub static ASSETS: AssetBank = AssetBank::new();
 
@@ -196,13 +196,44 @@ pub extern "C" fn icon_loader_entry() -> ! {
 
     // Explicitly load known icons using robust suffix matching via AssetBank
     let icons = [
-        "bran.bran.svg", "dev.host.svg", "dev.input.svg", "dev.network.svg", "dev.output.svg", "dev.storage.svg",
-        "kind.bytespace.svg", "mem.heap.svg", "mem.page.svg", "mem.stack.svg",
-        "meta.alert.svg", "meta.annotation.svg", "meta.graph.svg", "meta.metric.svg", "meta.namespace.svg", "meta.trace.svg", "meta.version.svg",
-        "proc.job.svg", "proc.kernel.svg", "proc.task.svg", "proc.thread.svg",
-        "svc.cambium.svg", "svc.init.svg", "svc.photosynthesis.svg", "svc.scheduler.svg", "svc.service.svg", "svc.shutdown.svg", "svc.worker.svg",
-        "time.clock.svg", "time.deadline.svg", "time.interval.svg", "time.timer.svg",
-        "ui.bloom.svg", "ui.cursor.svg", "ui.root.svg", "ui.scene.svg", "ui.theme.svg", "ui.widget.svg",
+        "bran.bran.svg",
+        "dev.host.svg",
+        "dev.input.svg",
+        "dev.network.svg",
+        "dev.output.svg",
+        "dev.storage.svg",
+        "kind.bytespace.svg",
+        "mem.heap.svg",
+        "mem.page.svg",
+        "mem.stack.svg",
+        "meta.alert.svg",
+        "meta.annotation.svg",
+        "meta.graph.svg",
+        "meta.metric.svg",
+        "meta.namespace.svg",
+        "meta.trace.svg",
+        "meta.version.svg",
+        "proc.job.svg",
+        "proc.kernel.svg",
+        "proc.task.svg",
+        "proc.thread.svg",
+        "svc.cambium.svg",
+        "svc.init.svg",
+        "svc.photosynthesis.svg",
+        "svc.scheduler.svg",
+        "svc.service.svg",
+        "svc.shutdown.svg",
+        "svc.worker.svg",
+        "time.clock.svg",
+        "time.deadline.svg",
+        "time.interval.svg",
+        "time.timer.svg",
+        "ui.bloom.svg",
+        "ui.cursor.svg",
+        "ui.root.svg",
+        "ui.scene.svg",
+        "ui.theme.svg",
+        "ui.widget.svg",
     ];
 
     for filename in icons.iter() {
@@ -210,12 +241,12 @@ pub extern "C" fn icon_loader_entry() -> ! {
         let name = &filename[..filename.len() - 4];
         // Construct full path for loading (AssetBank matches suffix)
         let path = alloc::format!("/assets/icons/thingos/{}", filename);
-        
+
         info!("[bloom] loading icon: {} (path={})", name, path);
         if let Some(cmds) = AssetBank::load_icon_immediate(&path) {
             ASSETS.publish_icon(name, cmds);
         } else {
-             info!("[bloom] failed to load icon: {}", path);
+            info!("[bloom] failed to load icon: {}", path);
         }
     }
 

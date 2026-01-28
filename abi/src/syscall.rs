@@ -1,8 +1,8 @@
 //! ThingOS Syscall Constants
 //!
 //!
-pub mod conv;
 pub mod asm;
+pub mod conv;
 
 // ============================================================================
 // Block 0x00–0x0F: Process lifecycle + identity

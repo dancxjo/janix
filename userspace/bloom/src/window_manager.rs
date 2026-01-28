@@ -8,9 +8,9 @@
 
 use crate::damage::Rect;
 use crate::ui::constants::{
-    BORDER_THICKNESS, MIN_WINDOW_HEIGHT, MIN_WINDOW_WIDTH, RESIZE_CORNER_SIZE,
-    SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT,
-    MAXIMIZE_BUTTON_SIZE, MAXIMIZE_BUTTON_PADDING,
+    BORDER_THICKNESS, MAXIMIZE_BUTTON_PADDING, MAXIMIZE_BUTTON_SIZE, MIN_WINDOW_HEIGHT,
+    MIN_WINDOW_WIDTH, RESIZE_CORNER_SIZE, SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE,
+    TITLE_BAR_HEIGHT,
 };
 use alloc::vec::Vec;
 use stem::thing::ThingId;
@@ -64,19 +64,59 @@ pub struct ResizeAnchor {
 impl ResizeAnchor {
     pub fn from_edge(edge: Edge) -> Self {
         match edge {
-            Edge::North => Self { north: true, south: false, east: false, west: false },
-            Edge::South => Self { north: false, south: true, east: false, west: false },
-            Edge::East => Self { north: false, south: false, east: true, west: false },
-            Edge::West => Self { north: false, south: false, east: false, west: true },
+            Edge::North => Self {
+                north: true,
+                south: false,
+                east: false,
+                west: false,
+            },
+            Edge::South => Self {
+                north: false,
+                south: true,
+                east: false,
+                west: false,
+            },
+            Edge::East => Self {
+                north: false,
+                south: false,
+                east: true,
+                west: false,
+            },
+            Edge::West => Self {
+                north: false,
+                south: false,
+                east: false,
+                west: true,
+            },
         }
     }
 
     pub fn from_corner(corner: Corner) -> Self {
         match corner {
-            Corner::NorthEast => Self { north: true, south: false, east: true, west: false },
-            Corner::NorthWest => Self { north: true, south: false, east: false, west: true },
-            Corner::SouthEast => Self { north: false, south: true, east: true, west: false },
-            Corner::SouthWest => Self { north: false, south: true, east: false, west: true },
+            Corner::NorthEast => Self {
+                north: true,
+                south: false,
+                east: true,
+                west: false,
+            },
+            Corner::NorthWest => Self {
+                north: true,
+                south: false,
+                east: false,
+                west: true,
+            },
+            Corner::SouthEast => Self {
+                north: false,
+                south: true,
+                east: true,
+                west: false,
+            },
+            Corner::SouthWest => Self {
+                north: false,
+                south: true,
+                east: false,
+                west: true,
+            },
         }
     }
 }
@@ -116,7 +156,7 @@ impl WindowState {
 }
 
 /// Compute the client rect from a window rect and shaded state.
-/// 
+///
 /// Client rect is the area available for app content, excluding:
 /// - Border (BORDER_THICKNESS on all sides)
 /// - Title bar (TITLE_BAR_HEIGHT at top)
@@ -171,7 +211,7 @@ pub fn clamp_window_rect(rect: Rect, screen_w: i32, screen_h: i32) -> Rect {
 }
 
 /// Hit test a point against a single window.
-/// 
+///
 /// Coordinates are in screen space. Window must contain the point for
 /// any hit other than None.
 pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
@@ -231,16 +271,22 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
         // Shade button
         let shade_x = button_region_start;
         let shade_y = title_top + (title_bottom - title_top - SHADE_BUTTON_SIZE) / 2;
-        if local_x >= shade_x && local_x < shade_x + SHADE_BUTTON_SIZE &&
-           local_y >= shade_y && local_y < shade_y + SHADE_BUTTON_SIZE {
+        if local_x >= shade_x
+            && local_x < shade_x + SHADE_BUTTON_SIZE
+            && local_y >= shade_y
+            && local_y < shade_y + SHADE_BUTTON_SIZE
+        {
             return Hit::ButtonShade;
         }
 
         // Maximize button (left of shade)
         let maximize_x = shade_x - MAXIMIZE_BUTTON_PADDING - MAXIMIZE_BUTTON_SIZE;
         let maximize_y = shade_y;
-        if local_x >= maximize_x && local_x < maximize_x + MAXIMIZE_BUTTON_SIZE &&
-           local_y >= maximize_y && local_y < maximize_y + MAXIMIZE_BUTTON_SIZE {
+        if local_x >= maximize_x
+            && local_x < maximize_x + MAXIMIZE_BUTTON_SIZE
+            && local_y >= maximize_y
+            && local_y < maximize_y + MAXIMIZE_BUTTON_SIZE
+        {
             return Hit::ButtonMaximize;
         }
 
@@ -257,10 +303,14 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
 }
 
 /// Pick the topmost window at a screen coordinate.
-/// 
+///
 /// Windows should be provided in z-order (front to back).
 /// Returns the window ID and hit result for the first window hit.
-pub fn pick_window(screen_x: i32, screen_y: i32, windows: &[WindowState]) -> Option<(ThingId, Hit)> {
+pub fn pick_window(
+    screen_x: i32,
+    screen_y: i32,
+    windows: &[WindowState],
+) -> Option<(ThingId, Hit)> {
     for window in windows {
         let hit = hit_test(screen_x, screen_y, window);
         if hit != Hit::None {
@@ -271,12 +321,7 @@ pub fn pick_window(screen_x: i32, screen_y: i32, windows: &[WindowState]) -> Opt
 }
 
 /// Apply move delta to a window rect with clamping.
-pub fn apply_move_delta(
-    start_rect: Rect,
-    delta: (i32, i32),
-    screen_w: i32,
-    screen_h: i32,
-) -> Rect {
+pub fn apply_move_delta(start_rect: Rect, delta: (i32, i32), screen_w: i32, screen_h: i32) -> Rect {
     let new_rect = Rect::new(
         start_rect.x + delta.0,
         start_rect.y + delta.1,
@@ -356,7 +401,13 @@ impl WindowManager {
     }
 
     /// Begin a drag operation.
-    pub fn begin_drag(&mut self, wid: ThingId, kind: DragKind, mouse: (i32, i32), window_rect: Rect) {
+    pub fn begin_drag(
+        &mut self,
+        wid: ThingId,
+        kind: DragKind,
+        mouse: (i32, i32),
+        window_rect: Rect,
+    ) {
         self.drag = Some(Drag {
             wid,
             kind,
@@ -376,7 +427,9 @@ impl WindowManager {
         );
 
         let new_rect = match drag.kind {
-            DragKind::Move => apply_move_delta(drag.start_window_rect, delta, self.screen_w, self.screen_h),
+            DragKind::Move => {
+                apply_move_delta(drag.start_window_rect, delta, self.screen_w, self.screen_h)
+            }
             DragKind::Resize { anchor } => apply_resize_delta(
                 drag.start_window_rect,
                 anchor,
@@ -489,13 +542,25 @@ mod tests {
     fn hit_test_resize_corners() {
         let window = test_window();
         // NW corner
-        assert_eq!(hit_test(102, 102, &window), Hit::ResizeCorner(Corner::NorthWest));
+        assert_eq!(
+            hit_test(102, 102, &window),
+            Hit::ResizeCorner(Corner::NorthWest)
+        );
         // NE corner
-        assert_eq!(hit_test(498, 102, &window), Hit::ResizeCorner(Corner::NorthEast));
+        assert_eq!(
+            hit_test(498, 102, &window),
+            Hit::ResizeCorner(Corner::NorthEast)
+        );
         // SW corner
-        assert_eq!(hit_test(102, 398, &window), Hit::ResizeCorner(Corner::SouthWest));
+        assert_eq!(
+            hit_test(102, 398, &window),
+            Hit::ResizeCorner(Corner::SouthWest)
+        );
         // SE corner
-        assert_eq!(hit_test(498, 398, &window), Hit::ResizeCorner(Corner::SouthEast));
+        assert_eq!(
+            hit_test(498, 398, &window),
+            Hit::ResizeCorner(Corner::SouthEast)
+        );
     }
 
     #[test]

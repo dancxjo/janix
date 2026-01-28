@@ -11,13 +11,21 @@ pub fn run_selftest() {
     // 1. Before anchor: sys_time_now should return EAGAIN
     let ret = sys_time_now();
     match ret {
-        Err(Errno::EAGAIN) => crate::kinfo!("TIME ANCHORING TEST: Success - sys_time_now returned EAGAIN before anchor"),
+        Err(Errno::EAGAIN) => crate::kinfo!(
+            "TIME ANCHORING TEST: Success - sys_time_now returned EAGAIN before anchor"
+        ),
         Ok(t) => {
-            crate::kinfo!("TIME ANCHORING TEST: FAIL - sys_time_now returned {} but should have failed before anchor", t);
+            crate::kinfo!(
+                "TIME ANCHORING TEST: FAIL - sys_time_now returned {} but should have failed before anchor",
+                t
+            );
             return;
         }
         Err(e) => {
-            crate::kinfo!("TIME ANCHORING TEST: FAIL - sys_time_now returned unexpected error {:?}", e);
+            crate::kinfo!(
+                "TIME ANCHORING TEST: FAIL - sys_time_now returned unexpected error {:?}",
+                e
+            );
             return;
         }
     }
@@ -30,14 +38,23 @@ pub fn run_selftest() {
     let ret = sys_time_now();
     match ret {
         Ok(t) => {
-            crate::kinfo!("TIME ANCHORING TEST: Success - sys_time_now returned valid time after anchor: {}", t);
+            crate::kinfo!(
+                "TIME ANCHORING TEST: Success - sys_time_now returned valid time after anchor: {}",
+                t
+            );
             if t < 1700000000 {
-                 crate::kinfo!("TIME ANCHORING TEST: FAIL - returned time {} seems too small for 2024", t);
-                 return;
+                crate::kinfo!(
+                    "TIME ANCHORING TEST: FAIL - returned time {} seems too small for 2024",
+                    t
+                );
+                return;
             }
         }
         Err(e) => {
-            crate::kinfo!("TIME ANCHORING TEST: FAIL - sys_time_now failed after anchor with error {:?}", e);
+            crate::kinfo!(
+                "TIME ANCHORING TEST: FAIL - sys_time_now failed after anchor with error {:?}",
+                e
+            );
             return;
         }
     }

@@ -11,9 +11,9 @@ use crate::once_cell::OnceCell;
 fn test_once_cell_single_init() {
     let cell: OnceCell<i32> = OnceCell::new();
     assert!(!cell.is_initialized());
-    
+
     cell.set(42);
-    
+
     assert!(cell.is_initialized());
     assert_eq!(*cell.get(), 42);
 }

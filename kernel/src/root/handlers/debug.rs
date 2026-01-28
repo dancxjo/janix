@@ -1,12 +1,12 @@
 //! Debug and describe handlers.
 
+use crate::root::SymbolShell;
 use crate::root::graph::Graph;
 use crate::root::symbols::Interner;
-use crate::root::SymbolShell;
 use core::fmt::Write;
 
-use super::graph::resolve_shell;
 use super::HandlerResult;
+use super::graph::resolve_shell;
 
 /// Helper for formatting into user-provided buffers.
 pub struct FmtBuffer {
@@ -106,7 +106,7 @@ pub fn handle_dump_edges(
             pos: 0,
         };
         let mut count = 0;
-        
+
         // 1. Outgoing edges
         for (rel, dst) in &node.edges {
             if count > 0 {

@@ -3,14 +3,14 @@
 
 extern crate alloc;
 
+use abi::drawlist::{DrawListBuilder, FillRule, PathVerb, PointF};
+use abi::geometry::RectI32Wire;
+use abi::schema::{keys, kinds, rels};
 use alloc::vec::Vec;
 use core::time::Duration;
 use stem::info;
-use stem::thing::ThingId;
 use stem::thing::sys::{bytespace_create, bytespace_write, create_node, find, link, prop_set};
-use abi::schema::{kinds, keys, rels};
-use abi::drawlist::{DrawListBuilder, FillRule, PathVerb, PointF};
-use abi::geometry::RectI32Wire;
+use stem::thing::ThingId;
 
 fn wait_for_ui_root() -> ThingId {
     let mut ui_root = ThingId::default();

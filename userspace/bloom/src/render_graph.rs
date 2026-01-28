@@ -113,7 +113,12 @@ impl RenderGraphPipeline {
     ///
     /// This does not read or write the graph directly; callers can persist the
     /// hashes and optional payloads into graph nodes if desired.
-    pub fn render(&mut self, drawlist_bytes: &[u8], viewport: RectI32, clip: Option<RectI32>) -> Option<RenderFrame> {
+    pub fn render(
+        &mut self,
+        drawlist_bytes: &[u8],
+        viewport: RectI32,
+        clip: Option<RectI32>,
+    ) -> Option<RenderFrame> {
         let mut reader = DrawListReader::new(drawlist_bytes)?;
         let mut items = Vec::new();
         let mut cache_hits = 0u32;
@@ -123,19 +128,42 @@ impl RenderGraphPipeline {
                 DrawCmdTag::FillRect => {
                     let (x, y, w, h, color) = decode_fill_rect(cmd.payload)?;
                     let verbs = rect_path(x, y, w, h);
-                    let hashes = self.render_item(&verbs, FillRule::NonZero, color, viewport, clip, &mut cache_hits, &mut cache_misses);
+                    let hashes = self.render_item(
+                        &verbs,
+                        FillRule::NonZero,
+                        color,
+                        viewport,
+                        clip,
+                        &mut cache_hits,
+                        &mut cache_misses,
+                    );
                     items.push(hashes);
                 }
                 DrawCmdTag::FillPath => {
                     let decoded = decode_fill_path(cmd.payload)?;
-                    let hashes = self.render_item(&decoded.verbs, decoded.fill_rule, decoded.color, viewport, clip, &mut cache_hits, &mut cache_misses);
+                    let hashes = self.render_item(
+                        &decoded.verbs,
+                        decoded.fill_rule,
+                        decoded.color,
+                        viewport,
+                        clip,
+                        &mut cache_hits,
+                        &mut cache_misses,
+                    );
                     items.push(hashes);
                 }
-                DrawCmdTag::Line | DrawCmdTag::StrokePath | DrawCmdTag::TextSpan | DrawCmdTag::DrawIcon => {}
+                DrawCmdTag::Line
+                | DrawCmdTag::StrokePath
+                | DrawCmdTag::TextSpan
+                | DrawCmdTag::DrawIcon => {}
                 DrawCmdTag::Unknown(_) => {}
             }
         }
-        Some(RenderFrame { items, cache_hits, cache_misses })
+        Some(RenderFrame {
+            items,
+            cache_hits,
+            cache_misses,
+        })
     }
 
     fn render_item(
@@ -152,18 +180,31 @@ impl RenderGraphPipeline {
         let path_bounds = self.cache_path(path_hash, verbs, cache_hits, cache_misses);
 
         let flattened_hash = hash_flattened(self.schema_version, path_hash);
-        let flattened_bounds = self.cache_flattened(flattened_hash, path_bounds, cache_hits, cache_misses);
+        let flattened_bounds =
+            self.cache_flattened(flattened_hash, path_bounds, cache_hits, cache_misses);
 
         let edges_hash = hash_edges(self.schema_version, flattened_hash, fill_rule);
         let edges_bounds = self.cache_edges(edges_hash, flattened_bounds, cache_hits, cache_misses);
 
         let clip_rect = clip.unwrap_or(viewport);
         let coverage_hash = hash_coverage(self.schema_version, edges_hash, clip_rect, TILE_SIZE);
-        let coverage_bytes = self.cache_coverage(coverage_hash, edges_bounds, clip_rect, cache_hits, cache_misses);
+        let coverage_bytes = self.cache_coverage(
+            coverage_hash,
+            edges_bounds,
+            clip_rect,
+            cache_hits,
+            cache_misses,
+        );
 
         let paint_hash = hash_paint(self.schema_version, color);
         let raster_hash = hash_raster(self.schema_version, coverage_hash, paint_hash);
-        self.cache_raster(raster_hash, color, &coverage_bytes, cache_hits, cache_misses);
+        self.cache_raster(
+            raster_hash,
+            color,
+            &coverage_bytes,
+            cache_hits,
+            cache_misses,
+        );
 
         RenderHashes {
             path: path_hash,
@@ -174,7 +215,13 @@ impl RenderGraphPipeline {
         }
     }
 
-    fn cache_path(&mut self, hash: u64, verbs: &[PathVerb], cache_hits: &mut u32, cache_misses: &mut u32) -> RectF {
+    fn cache_path(
+        &mut self,
+        hash: u64,
+        verbs: &[PathVerb],
+        cache_hits: &mut u32,
+        cache_misses: &mut u32,
+    ) -> RectF {
         if let Some(bounds) = self.cache.paths.get(&hash) {
             *cache_hits += 1;
             return *bounds;
@@ -185,7 +232,13 @@ impl RenderGraphPipeline {
         bounds
     }
 
-    fn cache_flattened(&mut self, hash: u64, bounds: RectF, cache_hits: &mut u32, cache_misses: &mut u32) -> RectF {
+    fn cache_flattened(
+        &mut self,
+        hash: u64,
+        bounds: RectF,
+        cache_hits: &mut u32,
+        cache_misses: &mut u32,
+    ) -> RectF {
         if let Some(cached) = self.cache.flattened.get(&hash) {
             *cache_hits += 1;
             return *cached;
@@ -195,7 +248,13 @@ impl RenderGraphPipeline {
         bounds
     }
 
-    fn cache_edges(&mut self, hash: u64, bounds: RectF, cache_hits: &mut u32, cache_misses: &mut u32) -> RectF {
+    fn cache_edges(
+        &mut self,
+        hash: u64,
+        bounds: RectF,
+        cache_hits: &mut u32,
+        cache_misses: &mut u32,
+    ) -> RectF {
         if let Some(cached) = self.cache.edges.get(&hash) {
             *cache_hits += 1;
             return *cached;
@@ -284,7 +343,12 @@ fn compute_path_bounds(verbs: &[PathVerb]) -> RectF {
     if min_x == f32::INFINITY {
         RectF::new(0.0, 0.0, 0.0, 0.0)
     } else {
-        RectF::new(min_x, min_y, (max_x - min_x).max(0.0), (max_y - min_y).max(0.0))
+        RectF::new(
+            min_x,
+            min_y,
+            (max_x - min_x).max(0.0),
+            (max_y - min_y).max(0.0),
+        )
     }
 }
 
@@ -468,8 +532,12 @@ mod tests {
         let viewport = RectI32::new(0, 0, 64, 64);
         let clip_a = RectI32::new(0, 0, 32, 32);
         let clip_b = RectI32::new(32, 32, 32, 32);
-        let first = pipeline.render(&drawlist, viewport, Some(clip_a)).expect("frame");
-        let second = pipeline.render(&drawlist, viewport, Some(clip_b)).expect("frame");
+        let first = pipeline
+            .render(&drawlist, viewport, Some(clip_a))
+            .expect("frame");
+        let second = pipeline
+            .render(&drawlist, viewport, Some(clip_b))
+            .expect("frame");
         assert_eq!(first.items[0].edges, second.items[0].edges);
         assert_ne!(first.items[0].coverage, second.items[0].coverage);
     }

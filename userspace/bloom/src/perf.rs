@@ -248,8 +248,16 @@ fn print_compact_stats(frame: &PerfFrame, frame_no: u64) {
     let ops_text = frame.counters.get("raster.ops.text").copied().unwrap_or(0);
 
     let dirty_snap = frame.counters.get("dirty_nodes_snap").copied().unwrap_or(0);
-    let dirty_layout = frame.counters.get("dirty_nodes_layout").copied().unwrap_or(0);
-    let dirty_paint = frame.counters.get("dirty_nodes_paint").copied().unwrap_or(0);
+    let dirty_layout = frame
+        .counters
+        .get("dirty_nodes_layout")
+        .copied()
+        .unwrap_or(0);
+    let dirty_paint = frame
+        .counters
+        .get("dirty_nodes_paint")
+        .copied()
+        .unwrap_or(0);
     let damage_rects = frame
         .counters
         .get("damage_rect_count")

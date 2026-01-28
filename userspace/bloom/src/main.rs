@@ -428,6 +428,7 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
     let mut drag_state: Option<DragState> = None;
+    let mut modal_mode = false;
 
     // Window Manager disabled in paint pipeline (no legacy chrome/hit testing)
 
@@ -569,6 +570,14 @@ fn main(arg: usize) -> ! {
                     screen_h,
                 )
             }
+
+            // F1 Toggle
+            if pressed_keys.contains(&Key::F1) && !prev_keys.contains(&Key::F1) {
+                modal_mode = !modal_mode;
+                force_full_damage = true;
+                stem::info!("[bloom] F1 pressed, toggling modal mode to: {}", modal_mode);
+            }
+
             let current_buttons = cursor.buttons();
             let left_down = (current_buttons & 1) != 0;
             let left_prev = (prev_cursor_buttons & 1) != 0;
@@ -667,17 +676,24 @@ fn main(arg: usize) -> ! {
         // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
         
-        // Render wallpaper first if available (tiled across the screen)
-        if let Some(wp) = ASSETS.get_wallpaper() {
-            let dest = crate::geometry::Rect::new(0, 0, screen_w, screen_h);
-            list.blit_image_tiled(&wp, dest);
-        } else {
-            list.clear(crate::geometry::Color::from_u32(0xFF101018));
-        }
+        let paint_result = if !modal_mode {
+            // Render wallpaper first if available (tiled across the screen)
+            if let Some(wp) = ASSETS.get_wallpaper() {
+                let dest = crate::geometry::Rect::new(0, 0, screen_w, screen_h);
+                list.blit_image_tiled(&wp, dest);
+            } else {
+                list.clear(crate::geometry::Color::from_u32(0xFF101018));
+            }
 
-        let paint_result = {
-            crate::trace_span!("bloom.loop.paint_pipeline");
-            paint_pipeline.run(screen_w, screen_h, &mut list)
+            {
+                crate::trace_span!("bloom.loop.paint_pipeline");
+                paint_pipeline.run(screen_w, screen_h, &mut list)
+            }
+        } else {
+            // Modal Mode: Black screen, no windows
+            list.clear(crate::geometry::Color::from_u32(0xFF000000));
+            // Return empty paint result (no windows)
+            crate::paint_vm::PaintResult { damage: alloc::vec![] } 
         };
         
         // Damage Tracking (cursor is now blended post-damage, does not affect window damage)

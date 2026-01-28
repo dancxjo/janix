@@ -224,12 +224,12 @@ fn main() -> ! {
                 }
                 // Update clock:tick
                 if prop_set(clock_thing, keys::CLOCK_TICK, mono_ns).is_ok() {
-                    info!(
-                        "CLOCK PUBLISH: thing={} now_text='{}' tick={}",
-                        clock_thing.to_u64_lossy(),
-                        time_str,
-                        mono_ns
-                    );
+                    // info!(
+                    //     "CLOCK PUBLISH: thing={} now_text='{}' tick={}",
+                    //     clock_thing.to_u64_lossy(),
+                    //     time_str,
+                    //     mono_ns
+                    // );
                 }
             }
         }

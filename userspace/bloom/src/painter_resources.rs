@@ -194,44 +194,28 @@ pub extern "C" fn icon_loader_entry() -> ! {
     stem::sleep_ms(10);
     info!("[bloom] icon loader started");
 
-    // Scan for all .svg files in /assets/icons/thingos
-    let mut modules = [ThingId::default(); 128];
-    let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
-    for i in 0..count {
-        let mut buf = [0u8; 512];
-        let len = match describe_thing(modules[i], &mut buf) {
-            Ok(l) => l,
-            Err(_) => continue,
-        };
-        let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
-        let mod_name = if let Some(pos) = desc.find("name: \"") {
-            let rest = &desc[pos + 7..];
-            if let Some(end) = rest.find('"') {
-                &rest[..end]
-            } else {
-                continue;
-            }
-        } else {
-            continue;
-        };
+    // Explicitly load known icons using robust suffix matching via AssetBank
+    let icons = [
+        "bran.bran.svg", "dev.host.svg", "dev.input.svg", "dev.network.svg", "dev.output.svg", "dev.storage.svg",
+        "kind.bytespace.svg", "mem.heap.svg", "mem.page.svg", "mem.stack.svg",
+        "meta.alert.svg", "meta.annotation.svg", "meta.graph.svg", "meta.metric.svg", "meta.namespace.svg", "meta.trace.svg", "meta.version.svg",
+        "proc.job.svg", "proc.kernel.svg", "proc.task.svg", "proc.thread.svg",
+        "svc.cambium.svg", "svc.init.svg", "svc.photosynthesis.svg", "svc.scheduler.svg", "svc.service.svg", "svc.shutdown.svg", "svc.worker.svg",
+        "time.clock.svg", "time.deadline.svg", "time.interval.svg", "time.timer.svg",
+        "ui.bloom.svg", "ui.cursor.svg", "ui.root.svg", "ui.scene.svg", "ui.theme.svg", "ui.widget.svg",
+    ];
 
-        if mod_name.starts_with("assets/icons/thingos/") && mod_name.ends_with(".svg") {
-            // Strip path and extension to get the icon name
-            let name_raw = &mod_name[21..mod_name.len() - 4];
-            let name = name_raw.to_lowercase();
-            info!("[bloom] loading icon: {} from {}", name, mod_name);
-            if let Some(cmds) = AssetBank::load_icon_immediate(mod_name) {
-                ASSETS.publish_icon(&name, cmds);
-            }
-        } else if mod_name.starts_with("assets/icons/tango/scalable/") && mod_name.ends_with(".svg") {
-            // Strip "assets/icons/tango/scalable/" (28 chars) and ".svg"
-            let sub_path = &mod_name[28..mod_name.len() - 4];
-            let mut name = alloc::string::String::from("tango/");
-            name.push_str(sub_path);
-            info!("[bloom] loading tango icon: {} from {}", name, mod_name);
-            if let Some(cmds) = AssetBank::load_icon_immediate(mod_name) {
-                ASSETS.publish_icon(&name, cmds);
-            }
+    for filename in icons.iter() {
+        // Strip extension for name
+        let name = &filename[..filename.len() - 4];
+        // Construct full path for loading (AssetBank matches suffix)
+        let path = alloc::format!("assets/icons/thingos/{}", filename);
+        
+        info!("[bloom] loading icon: {} (path={})", name, path);
+        if let Some(cmds) = AssetBank::load_icon_immediate(&path) {
+            ASSETS.publish_icon(name, cmds);
+        } else {
+             info!("[bloom] failed to load icon: {}", path);
         }
     }
 

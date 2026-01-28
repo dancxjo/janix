@@ -124,6 +124,16 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             is_init: false,
             features: vec![],
         },
+        ProgramConfig {
+            name: "ata_disk",
+            is_init: false,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "iso_reader",
+            is_init: false,
+            features: vec![],
+        },
     ]
 }
 

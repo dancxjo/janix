@@ -36,6 +36,8 @@ members = [
     "userspace/fontd",
     "userspace/blossom",
     "userspace/drawlist_demo",
+    "userspace/iso9660",
+    "userspace/iso_reader",
     "tools/display_proto_tests",
 ]
 resolver = "2"

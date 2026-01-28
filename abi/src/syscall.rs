@@ -35,6 +35,8 @@ pub const SYS_TIME_ANCHOR: u32 = 0x22;
 pub const SYS_DEBUG_WRITE: u32 = 0x30;
 pub const SYS_LOG_WRITE: u32 = 0x31;
 pub const SYS_TRACE_READ: u32 = 0x32;
+/// Disable boot console (compositor takes over framebuffer)
+pub const SYS_CONSOLE_DISABLE: u32 = 0x33;
 
 // ============================================================================
 // Block 0x40–0x4F: Memory / stacks

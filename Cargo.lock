@@ -350,6 +350,7 @@ dependencies = [
  "embedded-graphics",
  "kernel",
  "limine",
+ "spin",
 ]
 
 [[package]]

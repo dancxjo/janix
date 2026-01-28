@@ -72,6 +72,7 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
 }
 
 mod graph_layout;
+mod input;
 mod pipes;
 
 use alloc::collections::BTreeMap;
@@ -140,6 +141,9 @@ fn main() -> ! {
     let mut dirty = true;
     let mut graph_watch = None;
 
+    // Input state for viewport control
+    let mut input_state = input::InputState::new();
+
     let filter = RootWatchFilter::all();
     let spec = WatchSpec {
         mode: WatchMode::StreamOnly as u32,
@@ -150,6 +154,11 @@ fn main() -> ! {
     graph_watch = stem::syscall::root_watch_open(&spec).ok();
 
     loop {
+        // Poll input from system graph and apply to viewport
+        if input::poll_and_apply(&mut viewport_controller, &mut input_state) {
+            dirty = true;
+        }
+
         if let Some(watch_id) = graph_watch {
             let mut seq = 0u64;
             let mut buf = [0u8; 2048];

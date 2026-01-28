@@ -574,6 +574,9 @@ fn main(arg: usize) -> ! {
         startup_frames += 1;
     }
 
+    // Signal that the compositor is taking over the framebuffer
+    stem::syscall::console_disable();
+
     loop {
         loop_ctrl.next();
         force_full_damage = false;

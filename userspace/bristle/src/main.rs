@@ -23,17 +23,19 @@ use stem::syscall::{port_create, spawn_process};
 use stem::thing::sys as thingsys;
 use thigmonasty::{KeyEdge, KeyboardState};
 
-/// Register Bristle in the Root graph
-fn register_in_graph() {
+/// Register Bristle in the Root graph and return the node ID
+fn register_in_graph() -> Option<stem::thing::ThingId> {
     match thingsys::create_node(abi::schema::hid::SVC_INPUT) {
         Ok(node_id) => {
             info!(
                 "bristle: registered in graph as svc.Input (id={})",
                 node_id.to_u64_lossy()
             );
+            Some(node_id)
         }
         Err(e) => {
             info!("bristle: failed to register in graph: {:?}", e);
+            None
         }
     }
 }
@@ -190,10 +192,11 @@ fn main(packed_handles: usize) -> ! {
         kbd_read, mouse_read, evt_write, evt_echo_write
     );
 
-    register_in_graph();
+    let bristle_node = register_in_graph();
 
     let mut kbd_state = KeyboardState::new();
     let mut mouse_state = MouseState::new();
+    let mut keyboard_gen: u64 = 0;
 
     #[cfg(feature = "diagnostic-apps")]
     let evt_mouse_write: PortHandle = {
@@ -267,6 +270,20 @@ fn main(packed_handles: usize) -> ! {
                             }
                             if sent {
                                 event_count += 1;
+                            }
+
+                            // Publish keyboard state to graph
+                            if let Some(node) = bristle_node {
+                                use abi::schema::keyboard as kb;
+                                let (key_code, mods_val, is_down) = match edge {
+                                    KeyEdge::Down { key, mods, .. } => (key as u16, mods.0 as u64, true),
+                                    KeyEdge::Up { key, mods } => (key as u16, mods.0 as u64, false),
+                                };
+                                keyboard_gen += 1;
+                                let _ = thingsys::prop_set(node, kb::KEYBOARD_MODS, mods_val);
+                                let _ = thingsys::prop_set(node, kb::KEYBOARD_LAST_KEY, key_code as u64);
+                                let _ = thingsys::prop_set(node, kb::KEYBOARD_KEY_EDGE, if is_down { 1 } else { 0 });
+                                let _ = thingsys::prop_set(node, kb::KEYBOARD_GEN, keyboard_gen);
                             }
                         }
                     }

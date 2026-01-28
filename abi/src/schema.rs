@@ -102,6 +102,8 @@ pub mod keys {
     pub const UI_RANK: &str = "ui.rank";
     pub const UI_FIXED: &str = "ui.fixed";
     pub const UI_MANUAL_POSITION: &str = "ui.manual_position";
+    /// Compositor has taken control of framebuffer (boot console should stop)
+    pub const UI_COMPOSITOR_ACTIVE: &str = "ui.compositor.active";
     pub const UI_BUTTON_LABEL: &str = "ui.button.label";
     pub const UI_BUTTON_ACTION_ID: &str = "ui.button.action_id";
     pub const UI_BUTTON_PRESSED: &str = "ui.button.pressed";
@@ -537,4 +539,16 @@ pub mod pointer {
     pub const POINTER_Y: &str = "pointer.y";
     pub const POINTER_BUTTONS: &str = "pointer.buttons";
     pub const POINTER: &str = "input.Pointer";
+}
+
+// Keyboard / Input properties
+pub mod keyboard {
+    /// Current modifier bitset (Mods.0 value)
+    pub const KEYBOARD_MODS: &str = "keyboard.mods";
+    /// Last key code (Key as u16)
+    pub const KEYBOARD_LAST_KEY: &str = "keyboard.last_key";
+    /// Last key edge: 0=up, 1=down
+    pub const KEYBOARD_KEY_EDGE: &str = "keyboard.key_edge";
+    /// Monotonic generation for key events (increments on each key event)
+    pub const KEYBOARD_GEN: &str = "keyboard.gen";
 }

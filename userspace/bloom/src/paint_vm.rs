@@ -2,6 +2,7 @@ extern crate alloc;
 
 use alloc::collections::BTreeMap;
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use abi::schema::{keys, kinds};
@@ -12,14 +13,21 @@ use stem::thing::ThingId;
 
 use crate::damage;
 use crate::drawlist::{DrawCmd, DrawList};
-use crate::geometry::{Color, EdgeAA, Rect};
+use crate::geometry::{Color, EdgeAA, Rect, Point}; // Added Point import if needed, already used in damage logic but good to align
+use crate::asset::Image;
+use crate::frame::AssetGeneration;
+use crate::surface::Surface;
+use crate::raster;
+use alloc::sync::Arc;
+use core::cmp::{max, min};
 
 struct WindowPaintState {
     rect: Rect,
     z: i32,
     paint_gen: u64,
     paint_bs: u64,
-    list: DrawList,
+    image: Option<Image>,
+    buffer: Vec<u32>,
 }
 
 pub struct PaintResult {
@@ -37,7 +45,7 @@ impl PaintPipeline {
         }
     }
 
-    pub fn run(&mut self, screen_w: i32, screen_h: i32, list: &mut DrawList) -> PaintResult {
+    pub fn process_updates(&mut self, screen_w: i32, screen_h: i32) -> PaintResult {
         let mut damage = Vec::new();
         let mut window_ids = [ThingId::default(); 128];
         let count = find(kinds::UI_WINDOW, &mut window_ids).unwrap_or(0);
@@ -59,7 +67,8 @@ impl PaintPipeline {
                 z: 0,
                 paint_gen: 0,
                 paint_bs: 0,
-                list: DrawList::new(),
+                image: None,
+                buffer: Vec::new(),
             });
 
             if entry.paint_gen != paint_gen || entry.paint_bs != paint_bs {
@@ -82,7 +91,47 @@ impl PaintPipeline {
                 entry.z = z;
                 entry.paint_gen = paint_gen;
                 entry.paint_bs = paint_bs;
-                entry.list = build_drawlist(paint_bs, rect);
+
+                // Rasterize window content into cached surface
+                let w = rect.width() as usize;
+                let h = rect.height() as usize;
+                let len = w * h;
+                
+                // Resize buffer if needed
+                if entry.buffer.len() != len {
+                    entry.buffer.resize(len, 0);
+                }
+                
+                // Execute drawlist into buffer
+                if w > 0 && h > 0 {
+                    // Create wrapper surface for the buffer
+                    // SAFETY: buffer is valid for len, valid dimensions
+                    let mut surface = unsafe { 
+                        Surface::new(entry.buffer.as_mut_ptr() as *mut u8, len * 4, w as u32, h as u32, w as u32 * 4) 
+                    };
+                    
+                    // Clear (using transparent black or window background logic - assuming transparent)
+                    // Windows usually clear themselves, but let's ensure a clean slate.
+                    for i in 0..len {
+                        entry.buffer[i] = 0; // Transparent
+                    }
+
+                    // Build and execute local drawlist
+                    let local_rect = Rect::new(0, 0, rect.width(), rect.height());
+                    let list = build_drawlist(paint_bs, local_rect);
+                    raster::execute(&mut surface, &list, false);
+                    
+                    // Update Cached Image
+                    entry.image = Some(Image {
+                        width: w as u32,
+                        height: h as u32,
+                        pixels: Arc::from(entry.buffer.clone().into_boxed_slice()),
+                        gen: AssetGeneration::ZERO,
+                    });
+                } else {
+                    entry.image = None;
+                }
+
                 damage.push(damage::Rect::new(
                     rect.x(),
                     rect.y(),
@@ -94,14 +143,243 @@ impl PaintPipeline {
 
         self.windows.retain(|id, _| active.contains(id));
 
-        // Draw in z-order
-        let mut ordered: Vec<&WindowPaintState> = self.windows.values().collect();
-        ordered.sort_by_key(|w| w.z);
-        for win in ordered {
-            win.list.append_to(list);
-        }
-
         PaintResult { damage }
+    }
+
+    /// Compose the scene into the framebuffer surface using occlusion culling.
+    pub fn compose(
+        &self,
+        surface: &mut Surface,
+        damage: &[damage::Rect],
+        wallpaper: Option<&Image>,
+        bg_color: Color,
+    ) {
+        let mut ordered: Vec<&WindowPaintState> = self.windows.values().collect();
+        // Sort by Z descending (top to bottom) for occlusion
+        ordered.sort_by_key(|w| -w.z);
+
+        crate::trace_span!("bloom.compose");
+
+        for damage_rect in damage {
+            let d_rect: Rect = Rect::new(damage_rect.x, damage_rect.y, damage_rect.w, damage_rect.h);
+            let mut remaining: Vec<Rect> = vec![d_rect];
+
+            for win in &ordered {
+                 if remaining.is_empty() { break; }
+                 
+                 let mut next_remaining = Vec::with_capacity(remaining.len() * 2);
+                 let w_rect = win.rect;
+
+                for r in remaining {
+                     let inter = Rect::intersection(&r, &w_rect);
+                     if let Some(vis) = inter {
+                         // This part of 'r' is covered by 'win'.
+                         // Blit 'win' portion to 'vis'.
+                         // Use intersection with valid image area (0,0,w,h) relative to window
+                         if let Some(img) = &win.image {
+                             if let Some(win_buffer) = &win.image.as_ref().map(|_| &win.buffer) {
+                                // Calculate src rect in window coordinates
+                                let src_x = vis.x() - w_rect.x();
+                                let src_y = vis.y() - w_rect.y();
+                                
+                                // Blit logic
+                                blit_rect(
+                                    surface,
+                                    vis,
+                                    win_buffer,
+                                    img.width as usize, // stride
+                                    Rect::new(src_x, src_y, vis.width(), vis.height())
+                                );
+                             }
+                         }
+                         
+                         // Subtract vis from r
+                         next_remaining.extend(subtract_rect(r, vis));
+                     } else {
+                         next_remaining.push(r);
+                     }
+                 }
+                 remaining = next_remaining;
+            }
+
+            // Fill background for remaining
+            for r in remaining {
+                if let Some(wp) = wallpaper {
+                    // Blit wallpaper tiled
+                    blit_wallpaper_tiled(surface, r, wp);
+                } else {
+                     fill_rect(surface, r, bg_color);
+                }
+            }
+        }
+    }
+}
+
+fn subtract_rect(base: Rect, cut: Rect) -> Vec<Rect> {
+    // assumes cut intersects base (guaranteed by caller logic usually, but intersection check handles subset)
+    // cut must be within base for this simple logic? No, cut is intersection(base, win), so cut IS within base.
+    
+    let mut out = Vec::with_capacity(4);
+    
+    // Top
+    if cut.y() > base.y() {
+        out.push(Rect::new(base.x(), base.y(), base.width(), cut.y() - base.y()));
+    }
+    // Bottom
+    if cut.y() + cut.height() < base.y() + base.height() {
+       let y1 = cut.y() + cut.height();
+       out.push(Rect::new(base.x(), y1, base.width(), (base.y() + base.height()) - y1));
+    }
+    
+    // Left (be careful with y range - middle strip)
+    let y0 = max(base.y(), cut.y());
+    let y1 = min(base.y() + base.height(), cut.y() + cut.height());
+    let h = y1 - y0;
+    
+    if h > 0 {
+        if cut.x() > base.x() {
+            out.push(Rect::new(base.x(), y0, cut.x() - base.x(), h));
+        }
+        if cut.x() + cut.width() < base.x() + base.width() {
+            let x1 = cut.x() + cut.width();
+            out.push(Rect::new(x1, y0, (base.x() + base.width()) - x1, h));
+        }
+    }
+    
+    out
+}
+
+fn blit_rect(dst: &mut Surface, dst_rect: Rect, src_pixels: &[u32], src_stride: usize, src_rect: Rect) {
+    // Simple copy/blend
+    // src_pixels are assumed to be 0xAARRGGBB
+    
+    let dw = dst.width();
+    let dh = dst.height();
+    
+    // Clip dst_rect to surface
+    let dx = dst_rect.x();
+    let dy = dst_rect.y();
+    let w = dst_rect.width();
+    let h = dst_rect.height();
+    
+    for iy in 0..h {
+        let sy = src_rect.y() + iy;
+        let d_y = dy + iy;
+        
+        if d_y < 0 || d_y >= dh { continue; }
+        
+        let mut d_off = (d_y as usize * dst.stride_bytes) + (dx as usize * 4);
+        let mut s_off = (sy as usize * src_stride) + (src_rect.x() as usize); 
+        // src_pixels is u32 slice, stride is u32 count
+        
+        for ix in 0..w {
+            let sx = src_rect.x() + ix;
+            let d_x = dx + ix;
+            
+            if d_x < 0 || d_x >= dw { 
+                 d_off += 4;
+                 s_off += 1;
+                 continue; 
+            }
+            
+            let src_px = src_pixels[s_off];
+            // Blend
+            let output = blend_pixel(src_px, unsafe { 
+                // Read current dst
+                let ptr = dst.ptr.add(d_off);
+                let b = *ptr;
+                let g = *ptr.add(1);
+                let r = *ptr.add(2);
+                // DST is BGRX (ignore alpha/assume 255)
+                Color::rgb(r, g, b).to_u32()
+            });
+            
+            unsafe {
+                 let bytes = output.to_le_bytes();
+                 core::ptr::copy_nonoverlapping(bytes.as_ptr(), dst.ptr.add(d_off), 4);
+            }
+            
+            d_off += 4;
+            s_off += 1;
+        }
+    }
+}
+
+fn blend_pixel(src: u32, dst: u32) -> u32 {
+    let sa = (src >> 24) & 0xFF;
+    if sa == 0 { return dst; }
+    if sa == 255 { return src; }
+    
+    let sr = (src >> 16) & 0xFF;
+    let sg = (src >> 8) & 0xFF;
+    let sb = src & 0xFF;
+    
+    let dr = (dst >> 16) & 0xFF;
+    let dg = (dst >> 8) & 0xFF;
+    let db = dst & 0xFF;
+    
+    // SrcOver
+    // out = src * α + dst * (1 - α)
+    let inv_a = 255 - sa;
+    
+    let r = (sr * sa + dr * inv_a) / 255;
+    let g = (sg * sa + dg * inv_a) / 255;
+    let b = (sb * sa + db * inv_a) / 255;
+    
+    (0xFF << 24) | (r << 16) | (g << 8) | b
+}
+
+fn fill_rect(dst: &mut Surface, rect: Rect, color: Color) {
+    let c = color.to_u32();
+    let dw = dst.width();
+    let dh = dst.height();
+    
+    let x0 = max(0, rect.x());
+    let y0 = max(0, rect.y());
+    let x1 = min(dw, rect.x() + rect.width());
+    let y1 = min(dh, rect.y() + rect.height());
+    
+    if x1 <= x0 || y1 <= y0 { return; }
+    
+    for y in y0..y1 {
+        for x in x0..x1 {
+            dst.put_px(x, y, c);
+        }
+    }
+}
+
+fn blit_wallpaper_tiled(dst: &mut Surface, rect: Rect, wp: &Image) {
+    // Similar to fill_rect logic but sampling wp
+    let dw = dst.width();
+    let dh = dst.height();
+    let ww = wp.width as i32;
+    let wh = wp.height as i32;
+    
+    if ww == 0 || wh == 0 { return; }
+    
+    let x0 = max(0, rect.x());
+    let y0 = max(0, rect.y());
+    let x1 = min(dw, rect.x() + rect.width());
+    let y1 = min(dh, rect.y() + rect.height());
+    
+    if x1 <= x0 || y1 <= y0 { return; }
+    
+    // WP pixels are likely packed u32 or u8? Image has `pixels: Arc<[u32]>`. Wait, Image struct in asset.rs: `pixels: Arc<Box<[u32]>>` ? 
+    // Let's check Image struct def. 
+    // asset.rs: `pub pixels: Arc<[u32]>` (lines not fully shown but likely u32 based on usage in raster).
+    // Actually, `asset::Image` usually stores u32 pixels. 
+    // I need to assume it is u32 slice.
+    
+    let pixels: &[u32] = unsafe { core::mem::transmute(&*wp.pixels) }; // Safety: Should already be castable or access methods?
+    // Wait, let's verify Image struct.
+    
+    for y in y0..y1 {
+        let wy = y % wh;
+        for x in x0..x1 {
+            let wx = x % ww;
+            let p = pixels[(wy * ww + wx) as usize];
+            dst.put_px(x, y, p); // WP usually opaque
+        }
     }
 }
 

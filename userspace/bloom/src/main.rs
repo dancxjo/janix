@@ -796,20 +796,13 @@ fn main(arg: usize) -> ! {
         let mut list = drawlist::DrawList::new();
 
         let paint_result = if !modal_mode {
-            // Render wallpaper first if available (tiled across the screen)
-            if let Some(wp) = ASSETS.get_wallpaper() {
-                let dest = crate::geometry::Rect::new(0, 0, screen_w, screen_h);
-                list.blit_image_tiled(&wp, dest);
-            } else {
-                list.clear(crate::geometry::Color::from_u32(0xFF101018));
-            }
-
             {
-                crate::trace_span!("bloom.loop.paint_pipeline");
-                paint_pipeline.run(screen_w, screen_h, &mut list)
+                crate::trace_span!("bloom.loop.paint_updates");
+                paint_pipeline.process_updates(screen_w, screen_h)
             }
         } else {
             // Modal Mode: Black screen, no windows
+            // We specifically add a Clear command to list to handle the black out.
             list.clear(crate::geometry::Color::from_u32(0xFF000000));
             // Return empty paint result (no windows)
             crate::paint_vm::PaintResult {
@@ -867,7 +860,7 @@ fn main(arg: usize) -> ! {
             }
         }
 
-        if force_full_damage && damage.is_empty() {
+        if force_full_damage {
             damage = damage::Damage::full(bounds);
         }
 
@@ -911,6 +904,16 @@ fn main(arg: usize) -> ! {
 
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
+            if !modal_mode {
+                let rects: alloc::vec::Vec<_> = damage.iter().collect();
+                paint_pipeline.compose(
+                    &mut surface,
+                    &rects,
+                    ASSETS.get_wallpaper().as_ref(),
+                    crate::geometry::Color::from_u32(0xFF101018),
+                );
+            }
+
             crate::trace_span!("bloom.loop.raster");
             raster::execute_with_damage(&mut surface, &list, &damage, false);
         }

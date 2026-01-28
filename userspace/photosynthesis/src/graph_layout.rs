@@ -33,8 +33,8 @@ pub struct LayoutSettings {
 impl Default for LayoutSettings {
     fn default() -> Self {
         Self {
-            rank_spacing: 120.0,
-            node_spacing: 150.0,
+            rank_spacing: 80.0,
+            node_spacing: 100.0,
             rank_padding: 20.0,
             damping: 0.5,
             max_iterations: 2,

@@ -74,12 +74,12 @@ mod pipes;
 use graph_layout::{LayoutEdge, LayoutNode, LayoutSettings, compute_layout};
 use pipes::{generate_layout, scan_system_graph};
 
-const TILE_WIDTH: i32 = 180;
-const TILE_HEIGHT: i32 = 240;
-const TILE_BORDER: i32 = 3;
-const TILE_RADIUS: i32 = 26;
-const ICON_SIZE: i32 = 96;
-const ICON_TOP_PADDING: i32 = 22;
+const TILE_WIDTH: i32 = 120;
+const TILE_HEIGHT: i32 = 160;
+const TILE_BORDER: i32 = 2;
+const TILE_RADIUS: i32 = 18;
+const ICON_SIZE: i32 = 64;
+const ICON_TOP_PADDING: i32 = 14;
 const TYPE_FONT_SIZE: i32 = 18;
 const ID_FONT_SIZE: i32 = 12;
 const TYPE_LINE_HEIGHT: i32 = 24;
@@ -189,7 +189,12 @@ fn main() -> ! {
                         .map(|o| (o.x - ln.x).abs() > 1.0 || (o.y - ln.y).abs() > 1.0)
                         .unwrap_or(true);
 
-                    if changed {
+                    // FIX: Don't move actual windows, they are managed by the window manager (bloom)
+                    let is_window = old
+                        .map(|o| o.kind_full == kinds::UI_WINDOW)
+                        .unwrap_or(false);
+
+                    if changed && !is_window {
                         prop_set(ln.id, keys::UI_X, ln.x as i32 as u64).ok();
                         prop_set(ln.id, keys::UI_Y, ln.y as i32 as u64).ok();
                         prop_set(ln.id, keys::UI_RANK, ln.rank as u64).ok();

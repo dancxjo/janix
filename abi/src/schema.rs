@@ -101,6 +101,7 @@ pub mod keys {
     pub const UI_FOCUSED: &str = "ui.focused";
     pub const UI_RANK: &str = "ui.rank";
     pub const UI_FIXED: &str = "ui.fixed";
+    pub const UI_MANUAL_POSITION: &str = "ui.manual_position";
     pub const UI_BUTTON_LABEL: &str = "ui.button.label";
     pub const UI_BUTTON_ACTION_ID: &str = "ui.button.action_id";
     pub const UI_BUTTON_PRESSED: &str = "ui.button.pressed";

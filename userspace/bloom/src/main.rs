@@ -140,22 +140,42 @@ fn tile_windows(screen_w: i32, screen_h: i32) {
     // Photosynthesis: Left 1/2
     // Font Explorer: Upper Right 1/4
     
+    // UI_MANUAL_POSITION must be checked before tiling!
+    
+    // Tiling logic:
+    // Photosynthesis: Left 1/2
+    // Font Explorer: Upper Right 1/4
+    
+    // UI_MANUAL_POSITION must be checked before tiling!
+    
     if let Some(win) = photosynthesis {
-        let _ = stem::thing::sys::prop_set(win, keys::UI_X, 0);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_Y, 0);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_WIDTH, (screen_w / 2) as u64);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_HEIGHT, screen_h as u64);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
+        let manual = stem::thing::sys::prop_get(win, keys::UI_MANUAL_POSITION).unwrap_or(0);
+        stem::info!("[bloom] tile_windows: Photosynthesis id={:?} manual={}", win, manual);
+        if manual == 0 {
+            let _ = stem::thing::sys::prop_set(win, keys::UI_X, 0);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_Y, 0);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_WIDTH, (screen_w / 2) as u64);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_HEIGHT, screen_h as u64);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
+        } else {
+             stem::info!("[bloom] tile_windows: SKIPPING Photosynthesis (manual override)");
+        }
     }
     
     if let Some(win) = font_explorer {
-        let _ = stem::thing::sys::prop_set(win, keys::UI_X, (screen_w / 2) as u64);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_Y, 0);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_WIDTH, (screen_w / 2) as u64);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_HEIGHT, (screen_h / 2) as u64);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
-        let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
+        let manual = stem::thing::sys::prop_get(win, keys::UI_MANUAL_POSITION).unwrap_or(0);
+        stem::info!("[bloom] tile_windows: FontExplorer id={:?} manual={}", win, manual);
+        if manual == 0 {
+            let _ = stem::thing::sys::prop_set(win, keys::UI_X, (screen_w / 2) as u64);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_Y, 0);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_WIDTH, (screen_w / 2) as u64);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_HEIGHT, (screen_h / 2) as u64);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_RIGHT, 0);
+            let _ = stem::thing::sys::prop_set(win, keys::UI_INSET_BOTTOM, 0);
+        } else {
+             stem::info!("[bloom] tile_windows: SKIPPING FontExplorer (manual override)");
+        }
     }
 }
 
@@ -635,7 +655,12 @@ fn main(arg: usize) -> ! {
                         keys::UI_Y,
                         next_rect.y() as u64,
                     );
+                    
+                    // User moved the window, prevent auto-tiling
+                    let _ = stem::thing::sys::prop_set(drag.window_id, keys::UI_MANUAL_POSITION, 1);
+                    stem::info!("[bloom] drag: set UI_MANUAL_POSITION=1 for id={:?}", drag.window_id);
                 }
+
             } else {
                 let hovered = top_window_at_point(cursor.x, cursor.y, screen_w, screen_h).map(|h| h.id);
                 set_focus(&mut focused_window, hovered);

@@ -48,7 +48,7 @@ fn search_for_icon(suffix: &str) -> Option<ThingId> {
 /// Print a single tick with both wall clock (if anchored) and monotonic time.
 fn print_tick(unix: u64, mono_ns: u64) {
     if unix == 0 {
-        info!("unix={} utc=<unanchored> mono_ns={}", unix, mono_ns);
+        // info!("unix={} utc=<unanchored> mono_ns={}", unix, mono_ns);
         return;
     }
 
@@ -68,17 +68,17 @@ fn print_tick(unix: u64, mono_ns: u64) {
         }
     };
 
-    info!(
-        "unix={} utc={:04}-{:02}-{:02} {:02}:{:02}:{:02} mono_ns={}",
-        unix,
-        dt.year(),
-        dt.month() as u8,
-        dt.day(),
-        dt.hour(),
-        dt.minute(),
-        dt.second(),
-        mono_ns
-    );
+    // trace!(
+    //     "unix={} utc={:04}-{:02}-{:02} {:02}:{:02}:{:02} mono_ns={}",
+    //     unix,
+    //     dt.year(),
+    //     dt.month() as u8,
+    //     dt.day(),
+    //     dt.hour(),
+    //     dt.minute(),
+    //     dt.second(),
+    //     mono_ns
+    // );
 }
 
 fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
@@ -114,21 +114,21 @@ fn build_scene(window_id: ThingId, time_text: &str) -> Scene {
 #[stem::main]
 fn main() -> ! {
     let cpu = stem::arch::whoami();
-    info!(
-        "whoami: cs=0x{:x} ss=0x{:x} cpl={} rsp=0x{:x} rip=0x{:x} rflags=0x{:x}",
-        cpu.cs, cpu.ss, cpu.cpl, cpu.rsp, cpu.rip, cpu.rflags
-    );
+    // info!(
+    //     "whoami: cs=0x{:x} ss=0x{:x} cpl={} rsp=0x{:x} rip=0x{:x} rflags=0x{:x}",
+    //     cpu.cs, cpu.ss, cpu.cpl, cpu.rsp, cpu.rip, cpu.rflags
+    // );
 
-    info!("starting clock publisher");
+    // info!("starting clock publisher");
 
     // 1. Create Clock Thing (Publisher State)
     let clock_thing = create_node(kinds::CLOCK).expect("create clock node");
-    info!("Clock thing created: {}", clock_thing.to_u64_lossy());
+    // info!("Clock thing created: {}", clock_thing.to_u64_lossy());
 
     let mut window_id: Option<ThingId> = None;
 
     // 2. Setup UI
-    info!("Waiting for UI Root (Compositor)...");
+    // info!("Waiting for UI Root (Compositor)...");
     let mut ui_root = ThingId::default();
     let mut i = 0;
     while i < 120 {
@@ -137,19 +137,19 @@ fn main() -> ! {
         match stem::thing::sys::find(kinds::UI_ROOT, &mut ui_roots) {
             Ok(count) if count > 0 => {
                 ui_root = ui_roots[0];
-                info!(
-                    "Found UI Root: {} (attempt {})",
-                    ui_root.to_u64_lossy(),
-                    i + 1
-                );
+                // info!(
+                //     "Found UI Root: {} (attempt {})",
+                //     ui_root.to_u64_lossy(),
+                //     i + 1
+                // );
                 break;
             }
             Ok(_) => {
                 if i % 10 == 0 {
-                    info!(
-                        "UI Root not found yet (attempt {}), still waiting...",
-                        i + 1
-                    );
+                    // info!(
+                    //     "UI Root not found yet (attempt {}), still waiting...",
+                    //     i + 1
+                    // );
                 }
             }
             Err(e) => {
@@ -185,10 +185,10 @@ fn main() -> ! {
 
         // Window Icon
         if let Some(icon_id) = search_for_icon("office-calendar.svg") {
-            info!("Found clock icon: {}", icon_id.to_u64_lossy());
+            // info!("Found clock icon: {}", icon_id.to_u64_lossy());
             prop_set(win, keys::UI_WINDOW_ICON, icon_id.to_u64_lossy()).ok();
         } else {
-            info!("Clock icon not found");
+            // info!("Clock icon not found");
         }
 
         // Initial scene publish
@@ -198,10 +198,10 @@ fn main() -> ! {
         }
     }
 
-    info!(
-        "CLOCK: Entering main loop, publishing to thing_id={}",
-        clock_thing.to_u64_lossy()
-    );
+    // info!(
+    //     "CLOCK: Entering main loop, publishing to thing_id={}",
+    //     clock_thing.to_u64_lossy()
+    // );
 
     loop {
         // 1. Get precise system time

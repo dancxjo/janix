@@ -42,6 +42,10 @@ pub struct WindowSnapshot {
     pub height: u32,
     pub z_index: i32,
     pub snapshot: Option<SnapshotMeta>,
+    /// Generation counter for geometry changes (x, y, width, height)
+    pub geometry_gen: u64,
+    /// Generation counter for paint/style changes
+    pub paint_gen: u64,
 }
 
 #[derive(Clone, Debug)]
@@ -56,6 +60,8 @@ pub struct SnapshotMeta {
     pub mode: u64,
     /// Whether the snapshot bytespace is frozen (immutable)
     pub frozen: bool,
+    /// Generation counter for asset changes (font, images, etc)
+    pub asset_gen: u64,
 }
 
 pub fn collect_windows(screen_w: i32, screen_h: i32) -> Vec<WindowSnapshot> {
@@ -92,6 +98,13 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
     let mode = prop_get(id, keys::UI_SNAPSHOT_MODE).unwrap_or(snapshot_mode::WRITE_ONCE);
     let frozen = prop_get(id, keys::UI_SNAPSHOT_FROZEN).unwrap_or(0) != 0;
     let dirty = prop_get(id, keys::UI_SNAPSHOT_DIRTY).unwrap_or(0);
+    
+    // Compute generation counters for damage tracking
+    // Geometry generation: changes when position or size changes
+    let geometry_gen = compute_geometry_generation(x, y, width, height);
+    
+    // Paint generation: changes when visual properties change (we use epoch for this)
+    let paint_gen = epoch;
 
     let snapshot = if bytespace.to_u64_lossy() != 0 && epoch > 0 {
         // Validate mode-specific invariants
@@ -107,11 +120,16 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
                     height,
                     z_index,
                     snapshot: None, // Skip dirty snapshot
+                    geometry_gen,
+                    paint_gen,
                 });
             }
         }
         // Note: For WRITE_ONCE mode, we trust the contract.
         // In debug builds, the kernel will assert on mutation attempts.
+
+        // Asset generation: use epoch as proxy for now
+        let asset_gen = epoch;
 
         Some(SnapshotMeta {
             bytespace,
@@ -122,6 +140,7 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
             epoch,
             mode,
             frozen,
+            asset_gen,
         })
     } else {
         None
@@ -135,7 +154,21 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
         height,
         z_index,
         snapshot,
+        geometry_gen,
+        paint_gen,
     })
+}
+
+/// Compute a deterministic generation number from geometry.
+/// This is a simple hash that changes whenever geometry changes.
+fn compute_geometry_generation(x: i32, y: i32, width: u32, height: u32) -> u64 {
+    // Simple hash combining position and size
+    let mut gen = 0u64;
+    gen = gen.wrapping_mul(31).wrapping_add(x as u64);
+    gen = gen.wrapping_mul(31).wrapping_add(y as u64);
+    gen = gen.wrapping_mul(31).wrapping_add(width as u64);
+    gen = gen.wrapping_mul(31).wrapping_add(height as u64);
+    gen
 }
 
 pub fn composite_windows(surface: &mut Surface, windows: &[WindowSnapshot]) {

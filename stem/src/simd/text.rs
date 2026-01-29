@@ -170,6 +170,8 @@ pub fn draw_glyph_run(
     clip: &Rect,
     color_premul: u32,
 ) {
+    crate::perf::counter("simd.text.glyph_run.count", 1);
+    
     for glyph in &run.glyphs {
         // Find placement for this glyph
         let placement = match run
@@ -235,65 +237,19 @@ pub fn draw_glyph_run(
             let dst_available = dst.len() - dst_row_offset;
             let mask_available = atlas_mask.len() - mask_row_offset;
             
-            // We need at least rect_w pixels, but the function asserts dst.len() >= dst_stride
-            // For the last row, we might not have dst_stride pixels left, but we only access rect_w
-            // So we need to either:
-            // 1. Pass a buffer with stride space (pad if needed), or
-            // 2. Skip the assertion-violating case
-            //
-            // For now, we'll only composite if we have enough space to satisfy the assertion
-            if dst_available >= dst_stride && mask_available >= atlas_stride {
+            // Ensure we have at least rect_w pixels for this row
+            if dst_available >= clipped.w as usize && mask_available >= clipped.w as usize {
+                // Always use SIMD compositor for consistency and performance
+                crate::perf::counter("simd.text.composite_masked.count", 1);
                 composite_solid_masked_over(
                     &mut dst[dst_row_offset..],
-                    dst_stride,
+                    dst_stride.max(clipped.w as usize), // Ensure stride >= rect_w
                     &atlas_mask[mask_row_offset..],
-                    atlas_stride,
+                    atlas_stride.max(clipped.w as usize), // Ensure stride >= rect_w
                     clipped.w as usize,
                     1, // Single row
                     color_premul,
                 );
-            } else if dst_available >= clipped.w as usize && mask_available >= clipped.w as usize {
-                // Last row case: manually composite since we can't satisfy the assertion
-                // but we have enough pixels for the actual operation
-                for x in 0..clipped.w as usize {
-                    let mask_val = atlas_mask[mask_row_offset + x];
-                    if mask_val == 0 {
-                        continue;
-                    }
-                    
-                    let dst_idx = dst_row_offset + x;
-                    if dst_idx >= dst.len() {
-                        break;
-                    }
-                    
-                    // Manual premultiplied blend (same as scalar impl)
-                    let ca = ((color_premul >> 24) & 0xFF) as u8;
-                    let cr = ((color_premul >> 16) & 0xFF) as u8;
-                    let cg = ((color_premul >> 8) & 0xFF) as u8;
-                    let cb = (color_premul & 0xFF) as u8;
-                    
-                    let sa = scale_ch(ca, mask_val);
-                    let sr = scale_ch(cr, mask_val);
-                    let sg = scale_ch(cg, mask_val);
-                    let sb = scale_ch(cb, mask_val);
-                    
-                    if sa == 255 {
-                        dst[dst_idx] = (sa << 24) | (sr << 16) | (sg << 8) | sb;
-                    } else if sa > 0 {
-                        let dv = dst[dst_idx];
-                        let da = (dv >> 24) & 0xFF;
-                        let dr = (dv >> 16) & 0xFF;
-                        let dg = (dv >> 8) & 0xFF;
-                        let db = dv & 0xFF;
-                        
-                        let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
-                        let out_r = blend_channel(sr, dr, sa);
-                        let out_g = blend_channel(sg, dg, sa);
-                        let out_b = blend_channel(sb, db, sa);
-                        
-                        dst[dst_idx] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
-                    }
-                }
             }
         }
     }

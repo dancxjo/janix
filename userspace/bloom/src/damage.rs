@@ -54,7 +54,6 @@ impl DamageCause {
     }
 
     /// Get a short color code for debug visualization
-    #[cfg(debug_assertions)]
     pub fn debug_color(&self) -> u32 {
         match self {
             DamageCause::GeometryChanged => 0xFF00FFFF, // Cyan
@@ -62,9 +61,9 @@ impl DamageCause {
             DamageCause::AssetUpdated => 0xFFFFFF00,    // Yellow
             DamageCause::CursorMoved => 0xFF00FF00,     // Green
             DamageCause::ForceFull => 0xFFFF0000,       // Red
-            DamageCause::ContentChanged => 0xFF0080FF,  // Orange
-            DamageCause::FontChanged => 0xFFFF8000,     // Light Blue
-            DamageCause::ThemeChanged => 0xFFFF80FF,    // Pink
+            DamageCause::ContentChanged => 0xFFFF8000,  // Orange
+            DamageCause::FontChanged => 0xFF87CEEB,     // Light Blue
+            DamageCause::ThemeChanged => 0xFFFFB6C1,    // Light Pink
             DamageCause::Unknown => 0xFF808080,         // Gray
         }
     }
@@ -632,6 +631,112 @@ mod tests {
         let d = t.end_frame();
         // Should have damaged both old and new (merged since they might touch)
         assert!(!d.is_empty());
+        
+        // Check that cursor move causes are recorded
+        let records: alloc::vec::Vec<_> = d.iter_records().collect();
+        assert!(records.iter().any(|r| r.cause == DamageCause::CursorMoved));
+    }
+    
+    #[test]
+    fn test_tracker_with_cause() {
+        let mut t = DamageTracker::new();
+        t.begin_frame(100, 100);
+
+        let rect = Rect::new(10, 10, 20, 20);
+        let source = Some(ThingId::from_u64(42));
+        t.note_bbox_with_cause(rect, DamageCause::GeometryChanged, source);
+
+        let d = t.end_frame();
+        let records: alloc::vec::Vec<_> = d.iter_records().collect();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].cause, DamageCause::GeometryChanged);
+        assert_eq!(records[0].source, source);
+    }
+    
+    #[test]
+    fn test_tracker_mark_full_with_cause() {
+        let mut t = DamageTracker::new();
+        t.begin_frame(100, 100);
+
+        let source = Some(ThingId::from_u64(99));
+        t.mark_full_with_cause(DamageCause::ForceFull, source);
+
+        let d = t.end_frame();
+        assert!(d.is_full);
+        let records: alloc::vec::Vec<_> = d.iter_records().collect();
+        assert_eq!(records.len(), 1);
+        assert_eq!(records[0].cause, DamageCause::ForceFull);
+        assert_eq!(records[0].source, source);
+    }
+    
+    #[test]
+    fn test_get_cause_accessor() {
+        let bounds = Rect::full(100, 100);
+        let mut d = Damage::empty(bounds);
+
+        d.add_rect_with_cause(Rect::new(0, 0, 10, 10), DamageCause::GeometryChanged, None);
+        d.add_rect_with_cause(Rect::new(50, 50, 10, 10), DamageCause::CursorMoved, None);
+
+        assert_eq!(d.get_cause(0), Some(DamageCause::GeometryChanged));
+        assert_eq!(d.get_cause(1), Some(DamageCause::CursorMoved));
+        assert_eq!(d.get_cause(2), None); // Out of bounds
+    }
+    
+    #[test]
+    fn test_get_source_accessor() {
+        let bounds = Rect::full(100, 100);
+        let mut d = Damage::empty(bounds);
+        
+        let source1 = Some(ThingId::from_u64(10));
+        let source2 = Some(ThingId::from_u64(20));
+
+        d.add_rect_with_cause(Rect::new(0, 0, 10, 10), DamageCause::GeometryChanged, source1);
+        d.add_rect_with_cause(Rect::new(50, 50, 10, 10), DamageCause::CursorMoved, source2);
+
+        assert_eq!(d.get_source(0), source1);
+        assert_eq!(d.get_source(1), source2);
+        assert_eq!(d.get_source(2), None); // Out of bounds
+    }
+    
+    #[cfg(debug_assertions)]
+    #[test]
+    fn test_damage_journal_recording() {
+        let mut journal = DamageJournal::new();
+        let bounds = Rect::full(100, 100);
+        
+        // Record first frame
+        let mut d1 = Damage::empty(bounds);
+        d1.add_rect_with_cause(Rect::new(0, 0, 10, 10), DamageCause::GeometryChanged, None);
+        journal.record_frame(&d1);
+        
+        // Record second frame
+        let mut d2 = Damage::empty(bounds);
+        d2.add_rect_with_cause(Rect::new(20, 20, 10, 10), DamageCause::CursorMoved, None);
+        journal.record_frame(&d2);
+        
+        let frames = journal.all_frames();
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].frame_id, 1);
+        assert_eq!(frames[1].frame_id, 2);
+    }
+    
+    #[cfg(debug_assertions)]
+    #[test]
+    fn test_damage_journal_sliding_window() {
+        let mut journal = DamageJournal::new();
+        let bounds = Rect::full(100, 100);
+        
+        // Record more than JOURNAL_MAX_FRAMES
+        for i in 0..70 {
+            let mut d = Damage::empty(bounds);
+            d.add_rect_with_cause(Rect::new(i, i, 10, 10), DamageCause::Unknown, None);
+            journal.record_frame(&d);
+        }
+        
+        let frames = journal.all_frames();
+        assert_eq!(frames.len(), 60); // Should be capped at JOURNAL_MAX_FRAMES
+        assert_eq!(frames[0].frame_id, 11); // First 10 frames should be dropped
+        assert_eq!(frames[59].frame_id, 70); // Last frame should be 70
     }
 
     #[test]

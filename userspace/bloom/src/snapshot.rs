@@ -289,3 +289,52 @@ fn fill_rect(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, rgba: u32) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_geometry_generation_changes_with_position() {
+        let gen1 = compute_geometry_generation(10, 20, 100, 100);
+        let gen2 = compute_geometry_generation(11, 20, 100, 100);
+        let gen3 = compute_geometry_generation(10, 21, 100, 100);
+        
+        assert_ne!(gen1, gen2, "Generation should change when x changes");
+        assert_ne!(gen1, gen3, "Generation should change when y changes");
+    }
+
+    #[test]
+    fn test_geometry_generation_changes_with_size() {
+        let gen1 = compute_geometry_generation(10, 20, 100, 100);
+        let gen2 = compute_geometry_generation(10, 20, 101, 100);
+        let gen3 = compute_geometry_generation(10, 20, 100, 101);
+        
+        assert_ne!(gen1, gen2, "Generation should change when width changes");
+        assert_ne!(gen1, gen3, "Generation should change when height changes");
+    }
+
+    #[test]
+    fn test_geometry_generation_stable() {
+        let gen1 = compute_geometry_generation(10, 20, 100, 100);
+        let gen2 = compute_geometry_generation(10, 20, 100, 100);
+        
+        assert_eq!(gen1, gen2, "Generation should be stable for same geometry");
+    }
+
+    #[test]
+    fn test_geometry_generation_negative_coords() {
+        let gen1 = compute_geometry_generation(-10, -20, 100, 100);
+        let gen2 = compute_geometry_generation(10, 20, 100, 100);
+        
+        assert_ne!(gen1, gen2, "Generation should handle negative coordinates");
+    }
+
+    #[test]
+    fn test_geometry_generation_zero_size() {
+        let gen1 = compute_geometry_generation(10, 20, 0, 0);
+        let gen2 = compute_geometry_generation(10, 20, 1, 1);
+        
+        assert_ne!(gen1, gen2, "Generation should handle zero dimensions");
+    }
+}

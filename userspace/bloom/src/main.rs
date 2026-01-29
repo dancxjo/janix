@@ -77,6 +77,43 @@ struct DragState {
     start_rect: crate::geometry::Rect,
 }
 
+fn log_simd_backend() {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    {
+        #[cfg(target_feature = "sse2")]
+        {
+            crate::log!("[bloom] SIMD backend: SSE2 (x86_64)");
+            crate::trace_event!("bloom.simd.backend", "SSE2");
+        }
+        #[cfg(not(target_feature = "sse2"))]
+        {
+            crate::log!("[bloom] SIMD backend: Scalar (x86_64, no SSE2)");
+            crate::trace_event!("bloom.simd.backend", "Scalar");
+        }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    {
+        #[cfg(target_feature = "neon")]
+        {
+            crate::log!("[bloom] SIMD backend: NEON (aarch64)");
+            crate::trace_event!("bloom.simd.backend", "NEON");
+        }
+        #[cfg(not(target_feature = "neon"))]
+        {
+            crate::log!("[bloom] SIMD backend: Scalar (aarch64, no NEON)");
+            crate::trace_event!("bloom.simd.backend", "Scalar");
+        }
+    }
+
+    #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
+    {
+        crate::log!("[bloom] SIMD backend: Scalar (other arch)");
+        crate::trace_event!("bloom.simd.backend", "Scalar");
+    }
+}
+
+
 fn clear_surface(surface: &mut surface::Surface, color: u32) {
     let w = surface.width();
     let h = surface.height();
@@ -301,6 +338,10 @@ fn cycle_windows_in_order(
 fn main(arg: usize) -> ! {
     logging::init();
     perf::init();
+
+    // Log SIMD backend selection for masked compositing
+    log_simd_backend();
+
     use stem::thing::sys::{bytespace_map, bytespace_unmap};
     let bs_id = ThingId::from_u64(arg as u64);
     let (mut arg_req, mut arg_resp, mut bristle_evt) = (0, 0, 0);

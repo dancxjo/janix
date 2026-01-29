@@ -286,6 +286,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "bench_blit"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "bit_field"
 version = "0.10.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"

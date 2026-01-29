@@ -1,7 +1,9 @@
 // Dispatch module for blit operations
 mod scalar;
 pub fn blit_rgba8888_over(dst: &mut [u32], src: &[u32]) {
+    let len = dst.len().min(src.len());
     crate::trace_counter!("raster.blit.rgba.count", 1);
+    crate::trace_counter!("raster.blit.rgba.pixels", len);
     stem::simd::blit_rgba8888_over(dst, src);
 }
 
@@ -34,9 +36,10 @@ pub fn blit_a8_tinted_over(dst: &mut [u32], mask: &[u8], color: u32, tint_a: u8)
         (ea << 24) | (er << 16) | (eg << 8) | eb
     };
 
+    let len = dst.len().min(mask.len());
     crate::trace_counter!("raster.blit.a8_masked.count", 1);
+    crate::trace_counter!("raster.blit.a8_masked.pixels", len);
 
     // Use the new SIMD masked composite (1 row at a time, contiguous)
-    let len = dst.len().min(mask.len());
     stem::simd::composite_solid_masked_over(dst, len, mask, len, len, 1, effective_color);
 }

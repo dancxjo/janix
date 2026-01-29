@@ -22,6 +22,8 @@ pub const KIND_FRAMEBUFFER: ThingKind = 0x14;
 pub const KIND_CONSOLE: ThingKind = 0x15;
 pub const KIND_BOOT_MODULE: ThingKind = 0x16;
 pub const KIND_SERVICE: ThingKind = 0x17;
+pub const KIND_ASSET: ThingKind = 0x18;
+pub const KIND_ASSET_REQUEST: ThingKind = 0x19;
 
 pub const REL_RUNS_ON: RelKey = 0x17;
 pub const REL_HAS_CPU: RelKey = 0x18;

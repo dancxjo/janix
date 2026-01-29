@@ -28,6 +28,9 @@ pub struct Image {
     pub pixels: Arc<[u32]>,
     /// Generation when this asset became ready
     pub gen: AssetGeneration,
+    pub name: Arc<str>,
+    #[serde(skip)]
+    pub id: Option<ThingId>,
 }
 
 impl Image {
@@ -80,6 +83,7 @@ pub struct FontAsset {
     pub name: Arc<str>,
     pub gen: AssetGeneration,
     pub glyph_cache: Arc<Mutex<BTreeMap<(u32, u16, usize), (fontdue::Metrics, Arc<[u8]>)>>>,
+    pub id: Option<ThingId>,
 }
 
 impl core::fmt::Debug for FontAsset {
@@ -234,6 +238,8 @@ impl<T> PendingSlot<T> {
 // Ready assets (visible to rendering)
 static WALLPAPER_READY: AssetSlot<Image> = AssetSlot::new();
 static CURSOR_READY: AssetSlot<CursorAsset> = AssetSlot::new();
+static IMAGES_READY_BY_ID: Mutex<BTreeMap<ThingId, Image>> = Mutex::new(BTreeMap::new());
+static FONTS_READY_BY_ID: Mutex<BTreeMap<ThingId, FontAsset>> = Mutex::new(BTreeMap::new());
 static FONTS_READY: [AssetSlot<FontAsset>; 8] = [
     AssetSlot::new(),
     AssetSlot::new(),
@@ -281,8 +287,16 @@ enum AssetLoadJob {
     Wallpaper {
         path: Arc<str>,
     },
+    WallpaperBs {
+        id: ThingId,
+        name: Arc<str>,
+    },
     Cursor {
         path: Arc<str>,
+    },
+    CursorBs {
+        id: ThingId,
+        name: Arc<str>,
     },
 }
 
@@ -320,8 +334,18 @@ extern "C" fn asset_worker_entry() -> ! {
                         AssetBank::new().publish_wallpaper(img);
                     }
                 }
+                AssetLoadJob::WallpaperBs { id, name } => {
+                    if let Some(img) = AssetBank::new().load_wallpaper_immediate_from_bs(id, &name) {
+                        AssetBank::new().publish_wallpaper(img);
+                    }
+                }
                 AssetLoadJob::Cursor { path } => {
                     if let Some(cursor) = AssetBank::load_cursor_immediate(&path) {
+                        AssetBank::new().publish_cursor(cursor);
+                    }
+                }
+                AssetLoadJob::CursorBs { id, name } => {
+                    if let Some(cursor) = AssetBank::load_cursor_immediate_from_bs(id, &name) {
                         AssetBank::new().publish_cursor(cursor);
                     }
                 }
@@ -348,6 +372,17 @@ pub enum AssetType {
 }
 
 pub struct AssetBank;
+
+const PREFERRED_WALLPAPERS: &[&str] = &["clouds.bmp", "linen.bmp", "leather.bmp"];
+
+fn is_preferred_wallpaper(name: &str) -> bool {
+    for &p in PREFERRED_WALLPAPERS {
+        if name.contains(p) {
+            return true;
+        }
+    }
+    false
+}
 
 impl AssetBank {
     pub const fn new() -> Self {
@@ -379,6 +414,19 @@ impl AssetBank {
     }
 
     pub fn enqueue_font_load(&self, id: ThingId, size: usize, display_name: &str) {
+        // Deduplicate: check if already in queue or ready
+        {
+            let queue = JOB_QUEUE.lock();
+            for job in queue.iter() {
+                if let AssetLoadJob::Font { id: jid, .. } = job {
+                    if *jid == id { return; }
+                }
+            }
+        }
+        if self.get_font_by_id(id).is_some() {
+            return;
+        }
+
         let mut queue = JOB_QUEUE.lock();
         let was_empty = queue.is_empty();
         queue.push_back(AssetLoadJob::Font {
@@ -402,12 +450,67 @@ impl AssetBank {
         }
     }
 
+    pub fn enqueue_wallpaper_load_bs(&self, id: ThingId, name: &str) {
+        // Deduplicate
+        {
+            let queue = JOB_QUEUE.lock();
+            for job in queue.iter() {
+                if let AssetLoadJob::WallpaperBs { id: jid, .. } = job {
+                    if *jid == id { return; }
+                }
+            }
+        }
+        if self.get_image_by_id(id).is_some() {
+            return;
+        }
+
+        let mut queue = JOB_QUEUE.lock();
+        let was_empty = queue.is_empty();
+        queue.push_back(AssetLoadJob::WallpaperBs {
+            id,
+            name: Arc::from(name),
+        });
+        if was_empty {
+            Self::spawn_worker();
+        }
+    }
+
     pub fn enqueue_cursor_load(&self, path: &str) {
         let mut queue = JOB_QUEUE.lock();
+        let was_empty = queue.is_empty();
         queue.push_back(AssetLoadJob::Cursor {
             path: Arc::from(path),
         });
-        Self::spawn_worker();
+        if was_empty {
+            Self::spawn_worker();
+        }
+    }
+
+    pub fn enqueue_cursor_load_bs(&self, id: ThingId, name: &str) {
+        // Deduplicate
+        {
+            let queue = JOB_QUEUE.lock();
+            for job in queue.iter() {
+                if let AssetLoadJob::CursorBs { id: jid, .. } = job {
+                    if *jid == id { return; }
+                }
+            }
+        }
+        // For cursor, we don't have an ID map yet, but we can check the current one
+        if let Some(curr) = self.get_cursor() {
+            // How to check if same id? CursorAsset doesn't store Id yet.
+            // For now, let's just check the queue.
+        }
+
+        let mut queue = JOB_QUEUE.lock();
+        let was_empty = queue.is_empty();
+        queue.push_back(AssetLoadJob::CursorBs {
+            id,
+            name: Arc::from(name),
+        });
+        if was_empty {
+            Self::spawn_worker();
+        }
     }
 
     pub fn enqueue_font_load_by_path(&self, path: &str) {
@@ -437,27 +540,45 @@ impl AssetBank {
         if WALLPAPER_PENDING.has_pending.load(Ordering::Acquire) {
             let pending = unsafe { (*WALLPAPER_PENDING.value.get()).take() };
             if let Some(mut img) = pending {
-                // Increment generation first
-                let new_gen = ASSET_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
-                img.gen = AssetGeneration(new_gen);
-
-                // Track memory
-                let bytes = img.decoded_bytes();
-                reclaimer::add_decoded_bytes(bytes);
-                WALLPAPER_READY
-                    .decoded_bytes
-                    .store(bytes, Ordering::Release);
-
-                info!(
-                    "[asset_bank] promoting wallpaper to gen={} ({}b)",
-                    new_gen, bytes
-                );
-
-                unsafe {
-                    *WALLPAPER_READY.value.get() = Some(img);
+                let mut should_replace = true;
+                if let Some(curr) = self.get_wallpaper() {
+                    // Only replace if current is not preferred OR if new one IS preferred
+                    if is_preferred_wallpaper(&curr.name) && !is_preferred_wallpaper(&img.name) {
+                        should_replace = false;
+                        info!(
+                            "[asset_bank] ignoring wallpaper '{}' because current is preferred",
+                            img.name
+                        );
+                    }
                 }
-                WALLPAPER_READY.ready.store(true, Ordering::Release);
-                promoted = true;
+
+                if should_replace {
+                    // Increment generation first
+                    let new_gen = ASSET_GENERATION.fetch_add(1, Ordering::AcqRel) + 1;
+                    img.gen = AssetGeneration(new_gen);
+
+                    // Track memory
+                    let bytes = img.decoded_bytes();
+                    reclaimer::add_decoded_bytes(bytes);
+                    WALLPAPER_READY
+                        .decoded_bytes
+                        .store(bytes, Ordering::Release);
+
+                    info!(
+                        "[asset_bank] promoting wallpaper '{}' to gen={} ({}b)",
+                        img.name, new_gen, bytes
+                    );
+
+                    unsafe {
+                        *WALLPAPER_READY.value.get() = Some(img.clone()); // Clone for IMAGES_READY_BY_ID
+                    }
+                    WALLPAPER_READY.ready.store(true, Ordering::Release);
+
+                    if let Some(id) = img.id {
+                        IMAGES_READY_BY_ID.lock().insert(id, img);
+                    }
+                    promoted = true;
+                }
             }
             WALLPAPER_PENDING
                 .has_pending
@@ -535,9 +656,13 @@ impl AssetBank {
                         font.name, new_gen, bytes, i
                     );
                     unsafe {
-                        *FONTS_READY[i].value.get() = Some(font);
+                        *FONTS_READY[i].value.get() = Some(font.clone());
                     }
                     FONTS_READY[i].ready.store(true, Ordering::Release);
+
+                    if let Some(fid) = font.id {
+                        FONTS_READY_BY_ID.lock().insert(fid, font);
+                    }
                     promoted = true;
                 }
                 FONTS_PENDING[i].has_pending.store(false, Ordering::Release);
@@ -587,11 +712,20 @@ impl AssetBank {
 
     /// Legacy: get wallpaper without generation check
     pub fn get_wallpaper(&self) -> Option<Image> {
-        if WALLPAPER_READY.ready.load(Ordering::Acquire) {
-            unsafe { (*WALLPAPER_READY.value.get()).clone() }
-        } else {
-            None
+        if !WALLPAPER_READY.ready.load(Ordering::Acquire) {
+            return None;
         }
+        unsafe { (*WALLPAPER_READY.value.get()).clone() }
+    }
+
+    pub fn get_image_by_id(&self, id: ThingId) -> Option<Image> {
+        let map = IMAGES_READY_BY_ID.lock();
+        map.get(&id).cloned()
+    }
+
+    pub fn get_font_by_id(&self, id: ThingId) -> Option<FontAsset> {
+        let map = FONTS_READY_BY_ID.lock();
+        map.get(&id).cloned()
     }
 
     /// Publish cursor to pending (called by loader thread)
@@ -636,8 +770,8 @@ impl AssetBank {
         }
     }
 
-    pub fn load_icon_immediate(path: &str) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
-        let (bs_id, size) = Self::probe_asset(path)?;
+    pub fn load_icon_immediate_from_bs(bs_id: ThingId) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
+        let size = stem::thing::sys::bytespace_info(bs_id).ok()?;
         let mut buf = alloc::vec![0u8; size];
         let bytes_read = stem::thing::sys::bytespace_read(bs_id, 0, &mut buf).ok()?;
         if bytes_read != size {
@@ -648,6 +782,120 @@ impl AssetBank {
         let mut parser = crate::svg::SvgParser::new();
         let cmds = parser.parse(xml);
         Some(Arc::new(cmds))
+    }
+
+    /// Load an icon from a boot module path (e.g., "assets/icons/thingos/foo.svg")
+    pub fn load_icon_immediate_from_path(path: &str) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
+        use stem::thing::sys::{find, describe_thing, prop_get, bytespace_info, bytespace_read};
+        use abi::schema::kinds;
+        
+        let mut modules = [ThingId::default(); 256];
+        let count = find(kinds::BOOT_MODULE, &mut modules).ok()?;
+        
+        for i in 0..count {
+            let mut buf = [0u8; 512];
+            let len = describe_thing(modules[i], &mut buf).ok()?;
+            let desc = core::str::from_utf8(&buf[..len]).ok()?;
+            
+            if let Some(pos) = desc.find("name: \"") {
+                let rest = &desc[pos + 7..];
+                if let Some(end) = rest.find('"') {
+                    let mod_name = &rest[..end];
+                    if mod_name == path || mod_name.ends_with(path) || path.ends_with(mod_name) {
+                        let bs_id = ThingId::from_u64(prop_get(modules[i], "bytespace").ok()?);
+                        return Self::load_icon_immediate_from_bs(bs_id);
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    pub fn load_wallpaper_immediate_from_bs(
+        &self,
+        id: ThingId,
+        display_name: &str,
+    ) -> Option<Image> {
+        let size = stem::thing::sys::bytespace_info(id).ok()?;
+        Self::load_wallpaper_immediate_from_bs_with_size(id, size, display_name)
+    }
+
+    pub fn load_wallpaper_immediate_from_bs_with_size(
+        id: ThingId,
+        size: usize,
+        display_name: &str,
+    ) -> Option<Image> {
+        info!(
+            "[asset_bank] mapping bytespace {} ({} bytes) for '{}'",
+            id.to_u64_lossy(),
+            size,
+            display_name
+        );
+        let ptr = stem::thing::sys::bytespace_map(id).ok()?;
+        let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
+
+        info!("[asset_bank] decoding BMP for '{}'...", display_name);
+        let res = crate::bmp::decode(slice).ok().map(|bmp| {
+            info!(
+                "[asset_bank] BMP decoded: {}x{} for '{}'",
+                bmp.width, bmp.height, display_name
+            );
+            Image {
+                width: bmp.width,
+                height: bmp.height,
+                pixels: Arc::from(bmp.pixels.as_slice()),
+                gen: AssetGeneration::ZERO, // Will be set on promotion
+                name: Arc::from(display_name),
+                id: Some(id),
+            }
+        });
+
+        let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+        res
+    }
+    pub fn load_cursor_immediate_from_bs(id: ThingId, name: &str) -> Option<CursorAsset> {
+        info!("[asset_bank] load_cursor_immediate_from_bs: {}", name);
+        let size = stem::thing::sys::bytespace_info(id).ok()?;
+        let ptr = stem::thing::sys::bytespace_map(id).ok()?;
+        let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
+
+        #[cfg(feature = "svg-cursors")]
+        {
+            if size > 5
+                && ((slice[0] == b'<'
+                    && slice[1] == b'?'
+                    && slice[2] == b'x'
+                    && slice[3] == b'm'
+                    && slice[4] == b'l')
+                    || (slice[0] == b'<'
+                        && slice[1] == b's'
+                        && slice[2] == b'v'
+                        && slice[3] == b'g'))
+            {
+                let result = Self::load_svg_cursor(slice, name);
+                let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+                return result;
+            }
+        }
+
+        let res = crate::bmp::decode(slice).ok().map(|bmp| {
+            CursorAsset::Static(CursorFrame {
+                image: Image {
+                    width: bmp.width,
+                    height: bmp.height,
+                    pixels: Arc::from(bmp.pixels.as_slice()),
+                    gen: AssetGeneration::ZERO,
+                    name: Arc::from(name),
+                    id: Some(id),
+                },
+                delay_ms: 0,
+                hotspot_x: 0,
+                hotspot_y: 0,
+            })
+        });
+
+        let _ = stem::thing::sys::bytespace_unmap(id, ptr);
+        res
     }
 
     /// Publish font to pending (called by loader thread)
@@ -719,20 +967,18 @@ impl AssetBank {
         fonts.sort_by_key(|f| {
             if f.name.contains("NotoSans-Regular") {
                 0
-            } else if f.name.contains("NotoSerif") {
+            } else if f.name.contains("NotoSans") {
                 1
-            } else if f.name.contains("NotoSansSymbol") {
+            } else if f.name.contains("NotoSerif") {
                 2
-            } else if f.name.contains("Hack") {
-                5
-            }
-            // Move Hack to the end
-            else if f.name.contains("DSEG") {
-                6
-            }
-            // Move DSEG even further
-            else {
+            } else if f.name.contains("NotoSansSymbol") {
                 3
+            } else if f.name.contains("Hack") {
+                10
+            } else if f.name.contains("DSEG") {
+                11
+            } else {
+                5
             }
         });
 
@@ -966,30 +1212,7 @@ impl AssetBank {
     pub fn load_wallpaper_immediate(&self, path: &str) -> Option<Image> {
         info!("[asset_bank] load_wallpaper_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
-
-        info!(
-            "[asset_bank] mapping bytespace {} ({} bytes)",
-            id.to_u64_lossy(),
-            size
-        );
-        let ptr = stem::thing::sys::bytespace_map(id).ok()?;
-        info!("[asset_bank] mapped to {:p}", ptr);
-        let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
-
-        info!("[asset_bank] decoding BMP...");
-        let res = crate::bmp::decode(slice).ok().map(|bmp| {
-            info!("[asset_bank] BMP decoded: {}x{}", bmp.width, bmp.height);
-            Image {
-                width: bmp.width,
-                height: bmp.height,
-                pixels: Arc::from(bmp.pixels.as_slice()),
-                gen: AssetGeneration::ZERO, // Will be set on promotion
-            }
-        });
-
-        let _ = stem::thing::sys::bytespace_unmap(id, ptr);
-        info!("[asset_bank] bytespace unmapped");
-        res
+        Self::load_wallpaper_immediate_from_bs_with_size(id, size, path)
     }
 
     pub fn load_cursor_from_graph(path: &str) -> Option<CursorAsset> {
@@ -1039,6 +1262,8 @@ impl AssetBank {
                 height: size as u32,
                 pixels,
                 gen: AssetGeneration::ZERO,
+                name: Arc::from(path),
+                id: None,
             },
             delay_ms: 0,
             hotspot_x,
@@ -1113,6 +1338,8 @@ impl AssetBank {
                                 height: dib.height,
                                 pixels: Arc::from(dib.pixels.as_slice()),
                                 gen: AssetGeneration::ZERO,
+                                name: Arc::from(path),
+                                id: Some(id),
                             },
                             delay_ms: 0,
                             hotspot_x: hx as u32,
@@ -1202,6 +1429,7 @@ impl AssetBank {
                     name,
                     gen: AssetGeneration::ZERO,
                     glyph_cache: Arc::new(Mutex::new(BTreeMap::new())),
+                    id: Some(id),
                 })
             }
             Err(e) => {

@@ -43,6 +43,7 @@ pub use painter_resources::ASSETS;
 use abi::hid::Key;
 use abi::ids::HandleId;
 use stem::thing::ThingId;
+use stem::thing::sys::{find, prop_get};
 
 use abi::display_driver_protocol::BindPayload;
 use abi::schema::{keys, kinds};
@@ -443,33 +444,11 @@ fn main(arg: usize) -> ! {
     };
 
     match Stack::alloc_growing_stack(s_spec) {
-        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::wallpaper_loader_entry)
-        {
-            Ok(tid) => stem::info!("bloom: spawned wallpaper loader (tid={})", tid),
-            Err(e) => stem::error!("bloom: FAILED to spawn wallpaper loader: {:?}", e),
+        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::asset_watcher_entry) {
+            Ok(tid) => stem::info!("bloom: spawned asset watcher (tid={})", tid),
+            Err(e) => stem::error!("bloom: FAILED to spawn asset watcher: {:?}", e),
         },
-        Err(e) => stem::error!("bloom: FAILED to alloc wallpaper stack: {:?}", e),
-    }
-    match Stack::alloc_growing_stack(s_spec) {
-        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::cursor_loader_entry) {
-            Ok(tid) => stem::info!("bloom: spawned cursor loader (tid={})", tid),
-            Err(e) => stem::error!("bloom: FAILED to spawn cursor loader: {:?}", e),
-        },
-        Err(e) => stem::error!("bloom: FAILED to alloc cursor stack: {:?}", e),
-    }
-    match Stack::alloc_growing_stack(s_spec) {
-        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::font_loader_entry) {
-            Ok(tid) => stem::info!("bloom: spawned font loader (tid={})", tid),
-            Err(e) => stem::error!("bloom: FAILED to spawn font loader: {:?}", e),
-        },
-        Err(e) => stem::error!("bloom: FAILED to alloc font stack: {:?}", e),
-    }
-    match Stack::alloc_growing_stack(s_spec) {
-        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::icon_loader_entry) {
-            Ok(tid) => stem::info!("bloom: spawned icon loader (tid={})", tid),
-            Err(e) => stem::error!("bloom: FAILED to spawn icon loader: {:?}", e),
-        },
-        Err(e) => stem::error!("bloom: FAILED to alloc icon stack: {:?}", e),
+        Err(e) => stem::error!("bloom: FAILED to alloc asset watcher stack: {:?}", e),
     }
 
     let mut loop_ctrl = FrameLoop::new(60);
@@ -830,53 +809,59 @@ fn main(arg: usize) -> ! {
             paint_pipeline.process_updates(screen_w, screen_h)
         };
 
-        // Damage Tracking (cursor is now blended post-damage, does not affect window damage)
+        // Damage Tracking (cursor fallback handling)
         let bounds = damage::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
         for rect in &paint_result.damage {
             damage.add_rect(*rect);
         }
-        // Cursor damage: add old + new cursor rectangles when cursor moved
-        if let Some(asset) = ASSETS.get_cursor() {
+
+        let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
+        let mut cursor_asset = ASSETS.get_cursor();
+        
+        // If no cursor asset but we have a reactive cursor assigned, try to get it
+        if cursor_asset.is_none() {
+            if let Ok(root_id) = find(kinds::UI_ROOT, &mut [ThingId::default(); 1]) {
+                if let Ok(cursor_id) = prop_get(ThingId::from_u64(root_id as u64), "ui.cursor") {
+                     // The watcher should have enqueued it, but we check here too
+                }
+            }
+        }
+
+        if let Some(asset) = cursor_asset {
             if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
-                let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
                 let cursor_changed = snapshot.gen != prev_cursor_gen;
 
                 if cursor_moved || cursor_changed {
                     let (cw, ch) = (snapshot.image.width as i32, snapshot.image.height as i32);
-
-                    // Old cursor rect (to erase)
-                    let old_rect = damage::Rect::new(
-                        prev_cursor_x - snapshot.hotspot_x,
-                        prev_cursor_y - snapshot.hotspot_y,
-                        cw,
-                        ch,
-                    )
-                    .expand(2)
-                    .clip(bounds);
-
-                    // New cursor rect (to draw)
-                    let new_rect = damage::Rect::new(
-                        cursor.x - snapshot.hotspot_x,
-                        cursor.y - snapshot.hotspot_y,
-                        cw,
-                        ch,
-                    )
-                    .expand(2)
-                    .clip(bounds);
-
-                    if !old_rect.is_empty() {
-                        damage.add_rect(old_rect);
-                    }
-                    if !new_rect.is_empty() {
-                        damage.add_rect(new_rect);
-                    }
-
-                    // Update previous state
+                    let old_rect = damage::Rect::new(prev_cursor_x - snapshot.hotspot_x, prev_cursor_y - snapshot.hotspot_y, cw, ch).expand(2).clip(bounds);
+                    let new_rect = damage::Rect::new(cursor.x - snapshot.hotspot_x, cursor.y - snapshot.hotspot_y, cw, ch).expand(2).clip(bounds);
+                    if !old_rect.is_empty() { damage.add_rect(old_rect); }
+                    if !new_rect.is_empty() { damage.add_rect(new_rect); }
                     prev_cursor_x = cursor.x;
                     prev_cursor_y = cursor.y;
                     prev_cursor_gen = snapshot.gen;
                 }
+            } else {
+                // Asset known but snapshot not ready: use crosshair damage
+                if cursor_moved {
+                    let old_rect = damage::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17).expand(2).clip(bounds);
+                    let new_rect = damage::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17).expand(2).clip(bounds);
+                    if !old_rect.is_empty() { damage.add_rect(old_rect); }
+                    if !new_rect.is_empty() { damage.add_rect(new_rect); }
+                    prev_cursor_x = cursor.x;
+                    prev_cursor_y = cursor.y;
+                }
+            }
+        } else {
+            // No asset: use crosshair damage
+            if cursor_moved {
+                let old_rect = damage::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17).expand(2).clip(bounds);
+                let new_rect = damage::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17).expand(2).clip(bounds);
+                if !old_rect.is_empty() { damage.add_rect(old_rect); }
+                if !new_rect.is_empty() { damage.add_rect(new_rect); }
+                prev_cursor_x = cursor.x;
+                prev_cursor_y = cursor.y;
             }
         }
 
@@ -921,14 +906,33 @@ fn main(arg: usize) -> ! {
             snapshot.overflowed(),
         );
         append_damage_overlay(&mut list, &overlay_state, &debug_flags, screen_w, screen_h);
-
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
             let rects: alloc::vec::Vec<_> = damage.iter().collect();
+
+            // Reactive wallpaper selection
+            let mut wallpaper = ASSETS.get_wallpaper();
+            if let Some(focused) = focused_window {
+                let mut wp_asset_id = prop_get(focused, "ui.wallpaper").unwrap_or(0);
+                
+                // If window doesn't have it, check its task parent
+                if wp_asset_id == 0 {
+                    if let Ok(task_id) = prop_get(focused, abi::schema::rels::RUNS_ON) {
+                        wp_asset_id = prop_get(ThingId::from_u64(task_id), "ui.wallpaper").unwrap_or(0);
+                    }
+                }
+
+                if wp_asset_id != 0 {
+                    if let Some(wp) = ASSETS.get_image_by_id(ThingId::from_u64(wp_asset_id)) {
+                        wallpaper = Some(wp);
+                    }
+                }
+            }
+
             paint_pipeline.compose(
                 &mut surface,
                 &rects,
-                ASSETS.get_wallpaper().as_ref(),
+                wallpaper.as_ref(),
                 crate::geometry::Color::from_u32(0xFF101018),
             );
 
@@ -936,14 +940,18 @@ fn main(arg: usize) -> ! {
             raster::execute_with_damage(&mut surface, &list, &damage, false);
         }
 
-        // Cursor overlay: blend cached snapshot at cursor position (post-damage)
-        // This ensures cursor movement does not trigger window repaints
-        if let Some(asset) = ASSETS.get_cursor() {
+        // Cursor overlay: blend cached snapshot or draw fallback
+        let cursor_drawn = if let Some(asset) = ASSETS.get_cursor() {
             if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
                 let cx = cursor.x - snapshot.hotspot_x;
                 let cy = cursor.y - snapshot.hotspot_y;
                 raster::blit_cursor_overlay(&mut surface, &snapshot.image, cx, cy);
-            }
+                true
+            } else { false }
+        } else { false };
+
+        if !cursor_drawn {
+            raster::draw_crosshair(&mut surface, cursor.x, cursor.y, 0xFFFFFFFF);
         }
 
         {

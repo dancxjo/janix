@@ -6,22 +6,17 @@
 #![no_std]
 #![no_main]
 
-mod mouse;
-mod normalizer;
-mod thigmonasty;
-
 use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType, Key,
     KeyEventPayload, Mods, PointerButtonPayload, PointerMovePayload,
 };
-use abi::ids::HandleId;
-use mouse::{MouseState, PointerEvent};
+use bristle::mouse::{MouseState, PointerEvent};
 use stem::info;
-use stem::syscall::{PortHandle, port_recv, port_send, port_wait};
+use stem::syscall::{port_recv, port_send, port_wait, PortHandle};
 #[cfg(feature = "diagnostic-apps")]
 use stem::syscall::{port_create, spawn_process};
 use stem::thing::sys as thingsys;
-use thigmonasty::{KeyEdge, KeyboardState};
+use bristle::thigmonasty::{KeyEdge, KeyboardState};
 
 /// Register Bristle in the Root graph and return the node ID
 fn register_in_graph() -> Option<stem::thing::ThingId> {

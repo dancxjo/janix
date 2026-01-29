@@ -15,7 +15,7 @@ pub struct ProgramConfig {
 /// Configuration for ISO builds.
 #[derive(Default)]
 pub struct IsoConfig<'a> {
-    /// Display resolution (e.g., "1920x768"). None = 1920x768.
+    /// Display resolution (e.g., "1920x1080"). None = 1920x1080.
     pub resolution: Option<&'a str>,
     /// Explicit ISO output path. None = use timestamped naming.
     pub iso_path: Option<&'a Path>,
@@ -143,7 +143,7 @@ fn generate_limine_config(
     assets: &[PathBuf],
     resolution: Option<&str>,
 ) -> String {
-    let res = resolution.unwrap_or("1920x768");
+    let res = resolution.unwrap_or("1920x1080");
     let mut conf = String::new();
     conf.push_str("timeout: 0\nquiet: yes\nverbose: no\nserial: yes\n\n");
     conf.push_str("/ThingOS\n");

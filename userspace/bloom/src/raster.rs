@@ -459,6 +459,30 @@ pub fn blit_cursor_overlay(surface: &mut Surface, cursor: &Image, x: i32, y: i32
         }
     }
 }
+
+/// Draw a simple crosshair cursor fallback (e.g. while asset is loading).
+pub fn draw_crosshair(surface: &mut Surface, x: i32, y: i32, color: u32) {
+    let size = 8;
+    let gap = 2;
+    // Horizontal
+    for dx in -size..=-gap {
+        if x + dx >= 0 && x + dx < surface.width() && y >= 0 && y < surface.height() {
+            surface.put_px(x + dx, y, color);
+        }
+        if x - dx >= 0 && x - dx < surface.width() && y >= 0 && y < surface.height() {
+            surface.put_px(x - dx, y, color);
+        }
+    }
+    // Vertical
+    for dy in -size..=-gap {
+        if x >= 0 && x < surface.width() && y + dy >= 0 && y + dy < surface.height() {
+            surface.put_px(x, y + dy, color);
+        }
+        if x >= 0 && x < surface.width() && y - dy >= 0 && y - dy < surface.height() {
+            surface.put_px(x, y - dy, color);
+        }
+    }
+}
 pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let a = ((color >> 24) & 0xFF) as u8;
     if a == 255 {

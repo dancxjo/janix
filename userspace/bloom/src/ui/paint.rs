@@ -661,6 +661,8 @@ impl PaintBuilder {
                     height: h,
                     pixels: Arc::from(pixels),
                     gen: crate::frame::AssetGeneration(0),
+                    name: Arc::from("text_raster"),
+                    id: None,
                 });
 
                 render_state.insert_raster(key, image.clone(), None);
@@ -764,6 +766,8 @@ impl PaintBuilder {
             height: h,
             pixels: Arc::from(pixels),
             gen: crate::frame::AssetGeneration(0),
+            name: Arc::from("svg_raster"),
+            id: None,
         });
 
         render_state.insert_raster(key, image.clone(), svg_source);

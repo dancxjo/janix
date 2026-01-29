@@ -280,6 +280,17 @@ pub mod keys {
     pub const SVG_RASTER_HEIGHT: &str = "svg.raster.height";
     pub const SVG_RASTER_STRIDE: &str = "svg.raster.stride";
     pub const SVG_RASTER_FORMAT: &str = "svg.raster.format";
+
+    // Asset System (unified)
+    pub const ASSET_KIND: &str = "asset.kind";
+    pub const ASSET_NAME: &str = "asset.name";
+    pub const ASSET_SOURCE: &str = "asset.source";
+    pub const ASSET_HASH: &str = "asset.hash";
+    pub const ASSET_BYTESPACE: &str = "asset.bytespace";
+    pub const ASSET_GENERATION: &str = "asset.generation";
+    pub const ASSET_ERROR: &str = "asset.error";
+    /// Boolean: 1 if asset successfully loaded and ready for use
+    pub const ASSET_READY: &str = "asset.ready";
 }
 
 pub mod kinds {
@@ -384,6 +395,9 @@ pub mod kinds {
     pub const UI_SCENE: &str = "ui.Scene";
     pub const UI_THEME: &str = "ui.Theme";
     pub const UI_WIDGET: &str = "ui.Widget";
+
+    pub const ASSET: &str = "Asset";
+    pub const ASSET_REQUEST: &str = "AssetRequest";
 }
 
 /// Snapshot semantics and constants for UI presentation surfaces.

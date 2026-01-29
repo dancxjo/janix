@@ -127,6 +127,8 @@ impl PaintPipeline {
                         height: h as u32,
                         pixels: Arc::from(entry.buffer.clone().into_boxed_slice()),
                         gen: AssetGeneration::ZERO,
+                        name: Arc::from("window_cache"),
+                        id: None,
                     });
                 } else {
                     entry.image = None;

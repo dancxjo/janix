@@ -97,6 +97,9 @@ fn list_fonts(kind_id: u32) -> Vec<FontEntry> {
 
 #[stem::main]
 fn main() -> ! {
+    // Initialize i18n system
+    stem::i18n::init();
+    
     let mut ui_crown = ThingId::default();
     let mut attempts = 0;
     while attempts < 120 {
@@ -119,8 +122,12 @@ fn main() -> ! {
         }
     }
 
-    const SAMPLE: &str = "Sphinx of black quartz, judge my vow. 0123456789 😀 ܐܠܦ ܒܝܬ ܣܘܪܝܝܐ  ́aáÁàÀâÂäÄãÃåÅæÆçÇèÈéÉêÊëËìÌíÍîÎïÏðÐñÑòÒóÓôÔöÖõÕøØœŒœŒßß" ; 
-    const PREFIX: &str = "Font";
+    // Localized text constants
+    use stem::i18n::LocalizedText;
+    const TITLE: LocalizedText = stem::t!("ui.fonts.title", "Font");
+    const EXPLORER: LocalizedText = stem::t!("ui.fonts.explorer", "Font Explorer");
+    const COUNT_LABEL: LocalizedText = stem::t!("ui.fonts.count", "Fonts");
+    const SAMPLE: LocalizedText = stem::t!("ui.fonts.sample", "Sphinx of black quartz, judge my vow. 0123456789 😀 ܐܠܦ ܒܝܬ ܣܘܪܝܝܐ  ́aáÁàÀâÂäÄãÃåÅæÆçÇèÈéÉêÊëËìÌíÍîÎïÏðÐñÑòÒóÓôÔöÖõÕøØœŒœŒßß");
 
     let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
     link(win, rels::CHILD_OF, ui_crown).expect("link window");
@@ -137,6 +144,7 @@ fn main() -> ! {
     let mut last_discovery = 0u64;
     let mut last_tick = stem::monotonic_ns();
     let mut font_watch = None;
+    let mut last_i18n_gen = 0u64;
 
     if font_kind != 0 {
         let filter = RootWatchFilter::kind(font_kind);
@@ -153,6 +161,14 @@ fn main() -> ! {
         let now = stem::monotonic_ns();
 
         let mut dirty = last_font_count == usize::MAX;
+        
+        // Check if locale changed
+        let current_i18n_gen = stem::i18n::generation();
+        if current_i18n_gen != last_i18n_gen {
+            dirty = true;
+            last_i18n_gen = current_i18n_gen;
+        }
+        
         if let Some(watch_id) = font_watch {
             let mut seq = 0u64;
             let mut buf = [0u8; 1024];
@@ -180,7 +196,7 @@ fn main() -> ! {
         }
 
         if fonts.len() != last_font_count {
-            let win_title = alloc::format!("{} Explorer", PREFIX);
+            let win_title = alloc::format!("{}", EXPLORER.get());
             set_string_prop(win, keys::UI_TITLE, &win_title);
             last_font_count = fonts.len();
         }
@@ -200,7 +216,7 @@ fn main() -> ! {
                 .gap(12)
                 .padding(6)
                 .push(
-                    Text::new(SAMPLE)
+                    Text::new(SAMPLE.get())
                         .font(FontKey::thing(entry.id).size(18))
                         .color(Color::rgb(20, 20, 20))
                         .nowrap()
@@ -228,10 +244,10 @@ fn main() -> ! {
             .flex_grow(1.0)
             .push(rows);
 
-        let header_text = alloc::format!("{}s ({})", PREFIX, fonts.len());
+        let header_text = alloc::format!("{} ({})", COUNT_LABEL.get(), fonts.len());
         let scene = Scene::new().window(
             Window::new(win)
-                .title(&alloc::format!("{} Explorer", PREFIX))
+                .title(EXPLORER.get())
                 .initial_size(900, 520)
                 .root(
                     Flex::column()

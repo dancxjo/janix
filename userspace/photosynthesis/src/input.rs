@@ -125,6 +125,13 @@ pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> b
 fn handle_key_down(key: Key, mods: Mods, ctrl: &mut PanZoomController) -> bool {
     let alt = mods.has_alt();
 
+    // F8: Cycle locale
+    if key == Key::F8 {
+        stem::i18n::cycle_locale();
+        stem::info!("Locale switched to: {:?}", stem::i18n::current_locale());
+        return true;
+    }
+
     // Alt+Equal (Plus): Zoom in
     if alt && key == Key::Equal {
         ctrl.handle_keyboard_zoom(true);

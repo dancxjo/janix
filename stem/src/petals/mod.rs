@@ -1,3 +1,38 @@
+//! # Petals - UI Intent Builder
+//!
+//! Petals provides a declarative builder API for constructing UI intent.
+//! Applications use Petals to describe **what** their UI should look like,
+//! without performing any layout calculations or paint operations.
+//!
+//! ## Architecture
+//!
+//! - **Apps** use Petals to build UI intent (Scene trees)
+//! - **Blossom** reads intent from the graph and performs layout/paint
+//! - **Bloom** composites the final rendered output
+//!
+//! See `docs/UI_INTENT_CONTRACT.md` for the full architectural contract.
+//!
+//! ## Example
+//!
+//! ```rust,ignore
+//! use stem::petals::{Scene, Window, Flex, Text, FontKey, Color};
+//!
+//! let scene = Scene::new().window(
+//!     Window::new(window_id)
+//!         .title("My App")
+//!         .root(
+//!             Flex::column()
+//!                 .gap(8)
+//!                 .padding(16)
+//!                 .push(Text::new("Hello, World!")
+//!                     .font(FontKey::new("NotoSans-Regular").size(16))
+//!                     .color(Color::rgb(0, 0, 0)))
+//!         )
+//! );
+//!
+//! stem::petals::publish_window(&scene)?;
+//! ```
+
 extern crate alloc;
 
 pub mod builder;

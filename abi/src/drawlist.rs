@@ -803,4 +803,100 @@ mod tests {
             Err(DrawListError::TrailingBytes)
         );
     }
+
+    #[test]
+    fn save_restore_round_trip() {
+        let mut builder = DrawListBuilder::new();
+        builder.push_save();
+        builder.push_restore();
+        let bytes = builder.finish();
+
+        let mut reader = DrawListReader::new(&bytes).expect("reader");
+        let cmd1 = reader.next().expect("save");
+        assert_eq!(cmd1.tag, DrawCmdTag::Save);
+        assert!(decode_save(cmd1.payload).is_some());
+
+        let cmd2 = reader.next().expect("restore");
+        assert_eq!(cmd2.tag, DrawCmdTag::Restore);
+        assert!(decode_restore(cmd2.payload).is_some());
+        assert!(reader.next().is_none());
+    }
+
+    #[test]
+    fn set_clip_rect_round_trip() {
+        let mut builder = DrawListBuilder::new();
+        builder.push_set_clip_rect(10, 20, 100, 200);
+        let bytes = builder.finish();
+
+        let mut reader = DrawListReader::new(&bytes).expect("reader");
+        let cmd = reader.next().expect("clip");
+        assert_eq!(cmd.tag, DrawCmdTag::SetClipRect);
+        let (x, y, w, h) = decode_set_clip_rect(cmd.payload).expect("decode");
+        assert_eq!((x, y, w, h), (10, 20, 100, 200));
+    }
+
+    #[test]
+    fn set_transform_round_trip() {
+        let mut builder = DrawListBuilder::new();
+        builder.push_set_transform(1.0, 0.0, 0.0, 1.0, 50.0, 100.0);
+        let bytes = builder.finish();
+
+        let mut reader = DrawListReader::new(&bytes).expect("reader");
+        let cmd = reader.next().expect("transform");
+        assert_eq!(cmd.tag, DrawCmdTag::SetTransform);
+        let t = decode_set_transform(cmd.payload).expect("decode");
+        assert_eq!(t.a, 1.0);
+        assert_eq!(t.b, 0.0);
+        assert_eq!(t.c, 0.0);
+        assert_eq!(t.d, 1.0);
+        assert_eq!(t.tx, 50.0);
+        assert_eq!(t.ty, 100.0);
+    }
+
+    #[test]
+    fn draw_image_rect_round_trip() {
+        let mut builder = DrawListBuilder::new();
+        let image_id = 0x1234567890ABCDEF1234567890ABCDEFu128;
+        builder.push_draw_image_rect(image_id, 0, 0, 100, 100, 10, 20, 80, 60);
+        let bytes = builder.finish();
+
+        let mut reader = DrawListReader::new(&bytes).expect("reader");
+        let cmd = reader.next().expect("image");
+        assert_eq!(cmd.tag, DrawCmdTag::DrawImageRect);
+        let img = decode_draw_image_rect(cmd.payload).expect("decode");
+        assert_eq!(img.image_id, image_id);
+        assert_eq!(img.src_x, 0);
+        assert_eq!(img.src_y, 0);
+        assert_eq!(img.src_w, 100);
+        assert_eq!(img.src_h, 100);
+        assert_eq!(img.dst_x, 10);
+        assert_eq!(img.dst_y, 20);
+        assert_eq!(img.dst_w, 80);
+        assert_eq!(img.dst_h, 60);
+    }
+
+    #[test]
+    fn complex_drawlist_with_new_commands() {
+        let mut builder = DrawListBuilder::new();
+        builder.push_save();
+        builder.push_set_clip_rect(0, 0, 200, 200);
+        builder.push_set_transform(0.8, 0.0, 0.0, 0.8, 20.0, 20.0);
+        builder.push_fill_rect(10, 10, 50, 50, 0xff00ff00);
+        builder.push_line(
+            PointF::new(0.0, 0.0),
+            PointF::new(100.0, 100.0),
+            0xffff0000,
+            2.0,
+        );
+        builder.push_restore();
+        let bytes = builder.finish();
+
+        assert!(DrawListReader::validate(&bytes).is_ok());
+        let mut reader = DrawListReader::new(&bytes).expect("reader");
+        let mut count = 0;
+        while reader.next().is_some() {
+            count += 1;
+        }
+        assert_eq!(count, 6);
+    }
 }

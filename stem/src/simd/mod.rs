@@ -8,6 +8,8 @@ mod x86;
 mod neon;
 mod scalar;
 
+pub mod text;
+
 /// Blend src over dst (premultiplied RGBA8888).
 pub fn blit_rgba8888_over(dst: &mut [u32], src: &[u32]) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]

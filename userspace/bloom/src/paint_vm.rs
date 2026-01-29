@@ -33,6 +33,7 @@ struct WindowPaintState {
     hidden: bool,
     paint_gen: u64,
     paint_bs: u64,
+    geometry_gen: u64,
     width: u32,
     height: u32,
     buffer: Vec<u32>,
@@ -77,16 +78,21 @@ impl PaintPipeline {
                 hidden: false,
                 paint_gen: 0,
                 paint_bs: 0,
+                geometry_gen: 0,
                 width: 0,
                 height: 0,
                 buffer: Vec::new(),
             });
 
+            // Track paint changes
             if entry.paint_gen != paint_gen || entry.paint_bs != paint_bs {
                 needs_rebuild = true;
             }
+            
+            // Track geometry changes and bump geometry_gen
             if entry.rect != rect || entry.z != z || entry.hidden != hidden {
                 needs_rebuild = true;
+                entry.geometry_gen = entry.geometry_gen.wrapping_add(1);
                 if entry.rect != rect || entry.hidden != hidden {
                     damage.push(Rect::new(
                         entry.rect.x(),

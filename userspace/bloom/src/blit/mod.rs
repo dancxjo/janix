@@ -66,8 +66,24 @@ pub fn blit_a8_tinted_over(dst: &mut [u32], mask: &[u8], color: u32, tint_a: u8)
 
     // Fast path: check for common span patterns (only worth it for small spans)
     if len <= 64 {
+        // Check for all-zero or all-255 masks in a single pass
+        let mut all_zero = true;
+        let mut all_255 = true;
+        
+        for &m in &mask[..len] {
+            if m != 0 {
+                all_zero = false;
+            }
+            if m != 255 {
+                all_255 = false;
+            }
+            // Early exit if neither condition can be true
+            if !all_zero && !all_255 {
+                break;
+            }
+        }
+        
         // Check if mask is all zeros (common for anti-aliased edges outside the glyph)
-        let all_zero = mask[..len].iter().all(|&m| m == 0);
         if all_zero {
             crate::trace_counter!("raster.blit.a8_masked.fast_all_zero", 1);
             crate::trace_counter!("raster.blit.a8_masked.fast_all_zero_pixels", len);
@@ -75,17 +91,14 @@ pub fn blit_a8_tinted_over(dst: &mut [u32], mask: &[u8], color: u32, tint_a: u8)
         }
 
         // Check if mask is all 255s with opaque color (common for solid text)
-        if tint_a == 255 {
+        if all_255 && tint_a == 255 {
             let color_alpha = ((color >> 24) & 0xFF) as u8;
             if color_alpha == 255 {
-                let all_255 = mask[..len].iter().all(|&m| m == 255);
-                if all_255 {
-                    crate::trace_counter!("raster.blit.a8_masked.fast_solid_opaque", 1);
-                    crate::trace_counter!("raster.blit.a8_masked.fast_solid_opaque_pixels", len);
-                    // Opaque solid fill - just copy the color
-                    dst[..len].fill(effective_color);
-                    return;
-                }
+                crate::trace_counter!("raster.blit.a8_masked.fast_solid_opaque", 1);
+                crate::trace_counter!("raster.blit.a8_masked.fast_solid_opaque_pixels", len);
+                // Opaque solid fill - just copy the color
+                dst[..len].fill(effective_color);
+                return;
             }
         }
     }

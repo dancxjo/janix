@@ -1034,6 +1034,9 @@ fn main(arg: usize) -> ! {
             // Store current damage for potential replay next frame
             if !damage.is_empty() {
                 overlay_state.last_frame_damage = Some(damage.bounding_box());
+            } else {
+                // Clear stale damage when frame is empty
+                overlay_state.last_frame_damage = None;
             }
         }
 
@@ -1164,12 +1167,9 @@ fn append_damage_overlay(
     // Show damage rects with cause-based coloring if enabled
     if flags.show_damage_causes {
         if let Some(damage) = damage_opt {
-            #[cfg(debug_assertions)]
-            {
-                for record in damage.iter_records() {
-                    let color = record.cause.debug_color();
-                    draw_rect_outline(list, record.rect, color);
-                }
+            for record in damage.iter_records() {
+                let color = record.cause.debug_color();
+                draw_rect_outline(list, record.rect, color);
             }
         }
     } else if flags.show_damage_rects {

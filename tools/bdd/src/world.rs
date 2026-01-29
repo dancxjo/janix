@@ -50,7 +50,8 @@ impl ThingOsWorld {
         let iso_path = PathBuf::from(&iso_name);
 
         // Get resolution from environment (default 1920x1080 for BDD tests)
-        let resolution = std::env::var("BDD_RESOLUTION").unwrap_or_else(|_| "1920x1080".to_string());
+        let resolution =
+            std::env::var("BDD_RESOLUTION").unwrap_or_else(|_| "1920x1080".to_string());
 
         // Build ISO using xtask command
         eprintln!(

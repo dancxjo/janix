@@ -397,7 +397,10 @@ pub fn atapi_read_sectors(
     // Set byte count limit (max transfer size)
     let byte_count = bytes_needed as u16;
     ata_outb(dev.io_base + ATA_REG_LBA_MID, (byte_count & 0xFF) as u8);
-    ata_outb(dev.io_base + ATA_REG_LBA_HI, ((byte_count >> 8) & 0xFF) as u8);
+    ata_outb(
+        dev.io_base + ATA_REG_LBA_HI,
+        ((byte_count >> 8) & 0xFF) as u8,
+    );
 
     // Send PACKET command
     ata_outb(dev.io_base + ATA_REG_COMMAND, ATA_CMD_PACKET);
@@ -418,9 +421,9 @@ pub fn atapi_read_sectors(
     let packet: [u16; 6] = [
         0x00A8, // READ(12) opcode = 0xA8, flags = 0
         ((lba32 >> 24) as u16) << 8 | ((lba32 >> 16) as u16 & 0xFF), // LBA high
-        ((lba32 >> 8) as u16 & 0xFF) << 8 | (lba32 as u16 & 0xFF),   // LBA low
+        ((lba32 >> 8) as u16 & 0xFF) << 8 | (lba32 as u16 & 0xFF), // LBA low
         ((count >> 24) as u16) << 8 | ((count >> 16) as u16 & 0xFF), // Transfer length high
-        ((count >> 8) as u16 & 0xFF) << 8 | (count as u16 & 0xFF),   // Transfer length low
+        ((count >> 8) as u16 & 0xFF) << 8 | (count as u16 & 0xFF), // Transfer length low
         0x0000, // Control
     ];
 
@@ -475,9 +478,7 @@ fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
     thingsys::prop_set(node_id, "io_base", dev.io_base as u64).ok();
     thingsys::prop_set(node_id, "is_slave", if dev.is_slave { 1u64 } else { 0u64 }).ok();
 
-    let model_str = core::str::from_utf8(&dev.model)
-        .unwrap_or("Unknown")
-        .trim();
+    let model_str = core::str::from_utf8(&dev.model).unwrap_or("Unknown").trim();
     info!(
         "ATA_DISK: Registered ATAPI {} ch={} drv={} model='{}'",
         dev.graph_id, channel, drive, model_str
@@ -603,7 +604,11 @@ fn main(_arg: usize) -> ! {
     }
 
     // Summary
-    info!("ATA_DISK: Found {} ATA disk(s), {} ATAPI device(s)", disks.len(), atapi_devs.len());
+    info!(
+        "ATA_DISK: Found {} ATA disk(s), {} ATAPI device(s)",
+        disks.len(),
+        atapi_devs.len()
+    );
 
     if !disks.is_empty() {
         info!("ATA_DISK: Demo - reading sector 0 from first ATA disk");
@@ -613,7 +618,10 @@ fn main(_arg: usize) -> ! {
     // Check ATAPI devices for ISO9660
     for dev in &atapi_devs {
         if check_iso9660(dev) {
-            info!("ATA_DISK: ATAPI device {} contains ISO9660 filesystem", dev.graph_id);
+            info!(
+                "ATA_DISK: ATAPI device {} contains ISO9660 filesystem",
+                dev.graph_id
+            );
         }
     }
 

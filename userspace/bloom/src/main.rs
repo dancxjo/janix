@@ -42,8 +42,8 @@ pub use painter_resources::ASSETS;
 
 use abi::hid::Key;
 use abi::ids::HandleId;
-use stem::thing::ThingId;
 use stem::thing::sys::{find, prop_get};
+use stem::thing::ThingId;
 
 use abi::display_driver_protocol::BindPayload;
 use abi::schema::{keys, kinds};
@@ -464,7 +464,8 @@ fn main(arg: usize) -> ! {
     let ui_dispatch = ui_events::UiEventDispatcher::new();
     let mut focused_window: Option<ThingId> = None;
     let mut alt_cycle_order: alloc::vec::Vec<ThingId> = alloc::vec::Vec::new();
-    let mut maximized_windows: alloc::collections::BTreeMap<ThingId, crate::geometry::Rect> = alloc::collections::BTreeMap::new();
+    let mut maximized_windows: alloc::collections::BTreeMap<ThingId, crate::geometry::Rect> =
+        alloc::collections::BTreeMap::new();
     let mut alt_cycle_max_z: i32 = 0;
     let mut alt_prev_down = false;
     let accel_cfg = MouseAccelConfig::default();
@@ -638,28 +639,56 @@ fn main(arg: usize) -> ! {
                 if let Some(focused) = focused_window {
                     if let Some(restore_rect) = maximized_windows.remove(&focused) {
                         // Restore
-                        stem::info!("[bloom] F11: Restoring window {:?} to {:?}", focused, restore_rect);
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_X, restore_rect.x() as u64);
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, restore_rect.y() as u64);
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_WIDTH, restore_rect.width() as u64);
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_HEIGHT, restore_rect.height() as u64);
+                        stem::info!(
+                            "[bloom] F11: Restoring window {:?} to {:?}",
+                            focused,
+                            restore_rect
+                        );
+                        let _ = stem::thing::sys::prop_set(
+                            focused,
+                            keys::UI_X,
+                            restore_rect.x() as u64,
+                        );
+                        let _ = stem::thing::sys::prop_set(
+                            focused,
+                            keys::UI_Y,
+                            restore_rect.y() as u64,
+                        );
+                        let _ = stem::thing::sys::prop_set(
+                            focused,
+                            keys::UI_WIDTH,
+                            restore_rect.width() as u64,
+                        );
+                        let _ = stem::thing::sys::prop_set(
+                            focused,
+                            keys::UI_HEIGHT,
+                            restore_rect.height() as u64,
+                        );
                         // Ensure manual position is set so tiling doesn't clobber it immediately
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
                     } else {
                         // Maximize
                         let x = stem::thing::sys::prop_get(focused, keys::UI_X).unwrap_or(0) as i32;
                         let y = stem::thing::sys::prop_get(focused, keys::UI_Y).unwrap_or(0) as i32;
-                        let w = stem::thing::sys::prop_get(focused, keys::UI_WIDTH).unwrap_or(0) as i32;
-                        let h = stem::thing::sys::prop_get(focused, keys::UI_HEIGHT).unwrap_or(0) as i32;
+                        let w =
+                            stem::thing::sys::prop_get(focused, keys::UI_WIDTH).unwrap_or(0) as i32;
+                        let h = stem::thing::sys::prop_get(focused, keys::UI_HEIGHT).unwrap_or(0)
+                            as i32;
                         let current_rect = crate::geometry::Rect::new(x, y, w, h);
-                        
+
                         maximized_windows.insert(focused, current_rect);
-                        stem::info!("[bloom] F11: Maximizing window {:?} (saved {:?})", focused, current_rect);
+                        stem::info!(
+                            "[bloom] F11: Maximizing window {:?} (saved {:?})",
+                            focused,
+                            current_rect
+                        );
 
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_X, 0);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, 0);
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_WIDTH, screen_w as u64);
-                        let _ = stem::thing::sys::prop_set(focused, keys::UI_HEIGHT, screen_h as u64);
+                        let _ =
+                            stem::thing::sys::prop_set(focused, keys::UI_WIDTH, screen_w as u64);
+                        let _ =
+                            stem::thing::sys::prop_set(focused, keys::UI_HEIGHT, screen_h as u64);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
                     }
                     force_full_damage = true;
@@ -818,12 +847,12 @@ fn main(arg: usize) -> ! {
 
         let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
         let mut cursor_asset = ASSETS.get_cursor();
-        
+
         // If no cursor asset but we have a reactive cursor assigned, try to get it
         if cursor_asset.is_none() {
             if let Ok(root_id) = find(kinds::UI_ROOT, &mut [ThingId::default(); 1]) {
                 if let Ok(cursor_id) = prop_get(ThingId::from_u64(root_id as u64), "ui.cursor") {
-                     // The watcher should have enqueued it, but we check here too
+                    // The watcher should have enqueued it, but we check here too
                 }
             }
         }
@@ -834,10 +863,28 @@ fn main(arg: usize) -> ! {
 
                 if cursor_moved || cursor_changed {
                     let (cw, ch) = (snapshot.image.width as i32, snapshot.image.height as i32);
-                    let old_rect = damage::Rect::new(prev_cursor_x - snapshot.hotspot_x, prev_cursor_y - snapshot.hotspot_y, cw, ch).expand(2).clip(bounds);
-                    let new_rect = damage::Rect::new(cursor.x - snapshot.hotspot_x, cursor.y - snapshot.hotspot_y, cw, ch).expand(2).clip(bounds);
-                    if !old_rect.is_empty() { damage.add_rect(old_rect); }
-                    if !new_rect.is_empty() { damage.add_rect(new_rect); }
+                    let old_rect = damage::Rect::new(
+                        prev_cursor_x - snapshot.hotspot_x,
+                        prev_cursor_y - snapshot.hotspot_y,
+                        cw,
+                        ch,
+                    )
+                    .expand(2)
+                    .clip(bounds);
+                    let new_rect = damage::Rect::new(
+                        cursor.x - snapshot.hotspot_x,
+                        cursor.y - snapshot.hotspot_y,
+                        cw,
+                        ch,
+                    )
+                    .expand(2)
+                    .clip(bounds);
+                    if !old_rect.is_empty() {
+                        damage.add_rect(old_rect);
+                    }
+                    if !new_rect.is_empty() {
+                        damage.add_rect(new_rect);
+                    }
                     prev_cursor_x = cursor.x;
                     prev_cursor_y = cursor.y;
                     prev_cursor_gen = snapshot.gen;
@@ -845,10 +892,18 @@ fn main(arg: usize) -> ! {
             } else {
                 // Asset known but snapshot not ready: use crosshair damage
                 if cursor_moved {
-                    let old_rect = damage::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17).expand(2).clip(bounds);
-                    let new_rect = damage::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17).expand(2).clip(bounds);
-                    if !old_rect.is_empty() { damage.add_rect(old_rect); }
-                    if !new_rect.is_empty() { damage.add_rect(new_rect); }
+                    let old_rect = damage::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
+                        .expand(2)
+                        .clip(bounds);
+                    let new_rect = damage::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
+                        .expand(2)
+                        .clip(bounds);
+                    if !old_rect.is_empty() {
+                        damage.add_rect(old_rect);
+                    }
+                    if !new_rect.is_empty() {
+                        damage.add_rect(new_rect);
+                    }
                     prev_cursor_x = cursor.x;
                     prev_cursor_y = cursor.y;
                 }
@@ -856,10 +911,18 @@ fn main(arg: usize) -> ! {
         } else {
             // No asset: use crosshair damage
             if cursor_moved {
-                let old_rect = damage::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17).expand(2).clip(bounds);
-                let new_rect = damage::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17).expand(2).clip(bounds);
-                if !old_rect.is_empty() { damage.add_rect(old_rect); }
-                if !new_rect.is_empty() { damage.add_rect(new_rect); }
+                let old_rect = damage::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
+                    .expand(2)
+                    .clip(bounds);
+                let new_rect = damage::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
+                    .expand(2)
+                    .clip(bounds);
+                if !old_rect.is_empty() {
+                    damage.add_rect(old_rect);
+                }
+                if !new_rect.is_empty() {
+                    damage.add_rect(new_rect);
+                }
                 prev_cursor_x = cursor.x;
                 prev_cursor_y = cursor.y;
             }
@@ -914,11 +977,12 @@ fn main(arg: usize) -> ! {
             let mut wallpaper = ASSETS.get_wallpaper();
             if let Some(focused) = focused_window {
                 let mut wp_asset_id = prop_get(focused, "ui.wallpaper").unwrap_or(0);
-                
+
                 // If window doesn't have it, check its task parent
                 if wp_asset_id == 0 {
                     if let Ok(task_id) = prop_get(focused, abi::schema::rels::RUNS_ON) {
-                        wp_asset_id = prop_get(ThingId::from_u64(task_id), "ui.wallpaper").unwrap_or(0);
+                        wp_asset_id =
+                            prop_get(ThingId::from_u64(task_id), "ui.wallpaper").unwrap_or(0);
                     }
                 }
 
@@ -947,8 +1011,12 @@ fn main(arg: usize) -> ! {
                 let cy = cursor.y - snapshot.hotspot_y;
                 raster::blit_cursor_overlay(&mut surface, &snapshot.image, cx, cy);
                 true
-            } else { false }
-        } else { false };
+            } else {
+                false
+            }
+        } else {
+            false
+        };
 
         if !cursor_drawn {
             raster::draw_crosshair(&mut surface, cursor.x, cursor.y, 0xFFFFFFFF);

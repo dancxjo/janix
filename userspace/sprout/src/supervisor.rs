@@ -1,14 +1,14 @@
 use crate::registry::Registry;
 use crate::task::{ManagedTask, TaskKind};
 use abi::ids::HandleId;
+use abi::kinds as abi_kinds;
+use abi::schema::keys;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use stem::info;
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use abi::schema::keys;
-use abi::kinds as abi_kinds;
 
 pub struct Supervisor {
     tasks: Vec<ManagedTask>,

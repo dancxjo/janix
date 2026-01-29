@@ -9,14 +9,14 @@ use abi::schema::{keys, kinds};
 use abi::types::{WatchMode, WatchSpec};
 use alloc::string::String;
 use alloc::vec::Vec;
+use sniff::sniff;
 use stem::thing::ThingId;
 use stem::thing::sys::{
-    bytespace_info, create_node, find, intern, link, prop_get, prop_set, describe_thing,
-    bytespace_map, bytespace_unmap,
+    bytespace_info, bytespace_map, bytespace_unmap, create_node, describe_thing, find, intern,
+    link, prop_get, prop_set,
 };
 use stem::{info, root_watch, syscall, warn};
 use ttf_parser::Face;
-use sniff::sniff;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
@@ -41,7 +41,9 @@ fn main(_arg: usize) -> ! {
 
     let preds = [boot_module_pred, asset_request_pred, proc_task_pred];
     for &pred in &preds {
-        if pred == 0 { continue; }
+        if pred == 0 {
+            continue;
+        }
         let filter = abi::root::RootWatchFilter::kind(pred as u32);
         let spec = WatchSpec {
             mode: WatchMode::StreamOnly as u32,
@@ -91,11 +93,11 @@ fn process_events(buf: &[u8]) {
     while cursor < buf.len() {
         if let Ok((header, value)) = abi::watch::decode_event(&buf[cursor..]) {
             cursor += abi::watch::WATCH_EVENT_HEADER_LEN + value.len();
-            
+
             if header.op == abi::watch::WatchOp::Upsert as u8 {
                 let subject = header.subject;
                 let kind = prop_get(subject, keys::KIND).unwrap_or(0);
-                
+
                 // BOOT_MODULE kind (we need to intern it to compare)
                 // Actually, the watch filter already limited it to these.
                 if let Ok(k_boot) = intern(kinds::BOOT_MODULE) {
@@ -104,7 +106,7 @@ fn process_events(buf: &[u8]) {
                         continue;
                     }
                 }
-                
+
                 if let Ok(k_req) = intern(kinds::ASSET_REQUEST) {
                     if kind == k_req as u64 {
                         fulfill_request(subject);
@@ -160,30 +162,50 @@ fn ingest_boot_module(mod_id: ThingId) {
 
     let slice = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
     let guess = sniff(slice);
-    
+
     let kind = if let Some(ref g) = guess {
-        if g.mime.starts_with("font/") || g.mime == "application/font-sfnt" || g.mime == "application/x-font-ttf" { "font" }
-        else if g.mime == "image/svg+xml" || g.mime == "text/xml" && mod_name.ends_with(".svg") { "svg" }
-        else if g.mime.starts_with("image/") { "image" }
-        else { "raw" }
+        if g.mime.starts_with("font/")
+            || g.mime == "application/font-sfnt"
+            || g.mime == "application/x-font-ttf"
+        {
+            "font"
+        } else if g.mime == "image/svg+xml" || g.mime == "text/xml" && mod_name.ends_with(".svg") {
+            "svg"
+        } else if g.mime.starts_with("image/") {
+            "image"
+        } else {
+            "raw"
+        }
     } else {
-        if mod_name.ends_with(".ttf") || mod_name.ends_with(".otf") { "font" }
-        else if mod_name.ends_with(".svg") { "svg" }
-        else if mod_name.ends_with(".bmp") || mod_name.ends_with(".png") { "image" }
-        else { "raw" }
+        if mod_name.ends_with(".ttf") || mod_name.ends_with(".otf") {
+            "font"
+        } else if mod_name.ends_with(".svg") {
+            "svg"
+        } else if mod_name.ends_with(".bmp") || mod_name.ends_with(".png") {
+            "image"
+        } else {
+            "raw"
+        }
     };
 
     let asset_id = publish_asset(mod_name, kind, bs_id, "boot");
     if mod_name.contains("fonts") || mod_name.ends_with(".ttf") {
-        info!("INGESTD: Font debug - name='{}' kind='{}' guess={:?} first4={:02x?}", 
-              mod_name, kind, guess.as_ref().map(|g| g.mime), &slice[..4.min(slice.len())]);
+        info!(
+            "INGESTD: Font debug - name='{}' kind='{}' guess={:?} first4={:02x?}",
+            mod_name,
+            kind,
+            guess.as_ref().map(|g| g.mime),
+            &slice[..4.min(slice.len())]
+        );
     }
     info!("INGESTD: Published asset '{}' ({})", mod_name, kind);
 
     // Metadata enrichment for fonts
     if kind == "font" && !slice.is_empty() {
         if let Ok(face) = Face::parse(slice, 0) {
-            let family = face.names().into_iter()
+            let family = face
+                .names()
+                .into_iter()
                 .find(|n| n.name_id == ttf_parser::name_id::FAMILY && n.is_unicode())
                 .and_then(|n| {
                     let mut buf = Vec::with_capacity(n.name.len() / 2);
@@ -196,10 +218,18 @@ fn ingest_boot_module(mod_id: ThingId) {
             if let Some(name) = family {
                 let _ = prop_set(asset_id, keys::FONT_NAME, intern(&name).unwrap_or(0) as u64);
             } else {
-                let _ = prop_set(asset_id, keys::FONT_NAME, intern(mod_name).unwrap_or(0) as u64);
+                let _ = prop_set(
+                    asset_id,
+                    keys::FONT_NAME,
+                    intern(mod_name).unwrap_or(0) as u64,
+                );
             }
         } else {
-            let _ = prop_set(asset_id, keys::FONT_NAME, intern(mod_name).unwrap_or(0) as u64);
+            let _ = prop_set(
+                asset_id,
+                keys::FONT_NAME,
+                intern(mod_name).unwrap_or(0) as u64,
+            );
         }
     }
 
@@ -214,8 +244,11 @@ fn seed_system_assets() {
             buf[0]
         }
         _ => {
-            if let Ok(id) = create_node(kinds::UI_ROOT) { id }
-            else { return; }
+            if let Ok(id) = create_node(kinds::UI_ROOT) {
+                id
+            } else {
+                return;
+            }
         }
     };
 
@@ -229,9 +262,13 @@ fn seed_system_assets() {
             let mut name_buf = [0u8; 256];
             if let Ok(len) = stem::thing::sys::describe_symbol(name_sym as u32, &mut name_buf) {
                 let name = core::str::from_utf8(&name_buf[..len]).unwrap_or("");
-                if name.contains("leather.bmp") { leather_id = asset_id; }
+                if name.contains("leather.bmp") {
+                    leather_id = asset_id;
+                }
                 if name.contains("pointer.svg") || name.contains("arrow.svg") {
-                    if cursor_id.to_u64_lossy() == 0 { cursor_id = asset_id; }
+                    if cursor_id.to_u64_lossy() == 0 {
+                        cursor_id = asset_id;
+                    }
                 }
             }
         }
@@ -273,7 +310,9 @@ fn seed_app_assets(app_id: ThingId) {
         }
     }
 
-    if linen_id.to_u64_lossy() == 0 { return; }
+    if linen_id.to_u64_lossy() == 0 {
+        return;
+    }
 
     let mut name_buf = [0u8; 128];
     if let Ok(len) = describe_thing(app_id, &mut name_buf) {
@@ -288,7 +327,9 @@ fn seed_app_assets(app_id: ThingId) {
 fn fulfill_request(req_id: ThingId) {
     // Basic request fulfillment based on name lookup in boot modules
     let name_sym = prop_get(req_id, keys::ASSET_NAME).unwrap_or(0);
-    if name_sym == 0 { return; }
+    if name_sym == 0 {
+        return;
+    }
 
     // Try to find a boot module with this name suffix
     let mut modules = [ThingId::default(); 128];
@@ -322,7 +363,9 @@ fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str) -> ThingI
     let kind_sym = intern(kind).unwrap_or(0) as u64;
     let src_sym = intern(source).unwrap_or(0) as u64;
 
-    if name_sym == 0 { return ThingId::default(); }
+    if name_sym == 0 {
+        return ThingId::default();
+    }
 
     let mut existing_id = ThingId::default();
     let mut assets = [ThingId::default(); 512];

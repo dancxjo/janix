@@ -335,7 +335,8 @@ extern "C" fn asset_worker_entry() -> ! {
                     }
                 }
                 AssetLoadJob::WallpaperBs { id, name } => {
-                    if let Some(img) = AssetBank::new().load_wallpaper_immediate_from_bs(id, &name) {
+                    if let Some(img) = AssetBank::new().load_wallpaper_immediate_from_bs(id, &name)
+                    {
                         AssetBank::new().publish_wallpaper(img);
                     }
                 }
@@ -419,7 +420,9 @@ impl AssetBank {
             let queue = JOB_QUEUE.lock();
             for job in queue.iter() {
                 if let AssetLoadJob::Font { id: jid, .. } = job {
-                    if *jid == id { return; }
+                    if *jid == id {
+                        return;
+                    }
                 }
             }
         }
@@ -456,7 +459,9 @@ impl AssetBank {
             let queue = JOB_QUEUE.lock();
             for job in queue.iter() {
                 if let AssetLoadJob::WallpaperBs { id: jid, .. } = job {
-                    if *jid == id { return; }
+                    if *jid == id {
+                        return;
+                    }
                 }
             }
         }
@@ -492,7 +497,9 @@ impl AssetBank {
             let queue = JOB_QUEUE.lock();
             for job in queue.iter() {
                 if let AssetLoadJob::CursorBs { id: jid, .. } = job {
-                    if *jid == id { return; }
+                    if *jid == id {
+                        return;
+                    }
                 }
             }
         }
@@ -770,7 +777,9 @@ impl AssetBank {
         }
     }
 
-    pub fn load_icon_immediate_from_bs(bs_id: ThingId) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
+    pub fn load_icon_immediate_from_bs(
+        bs_id: ThingId,
+    ) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
         let size = stem::thing::sys::bytespace_info(bs_id).ok()?;
         let mut buf = alloc::vec![0u8; size];
         let bytes_read = stem::thing::sys::bytespace_read(bs_id, 0, &mut buf).ok()?;
@@ -786,17 +795,17 @@ impl AssetBank {
 
     /// Load an icon from a boot module path (e.g., "assets/icons/thingos/foo.svg")
     pub fn load_icon_immediate_from_path(path: &str) -> Option<Arc<Vec<crate::drawlist::DrawCmd>>> {
-        use stem::thing::sys::{find, describe_thing, prop_get, bytespace_info, bytespace_read};
         use abi::schema::kinds;
-        
+        use stem::thing::sys::{bytespace_info, bytespace_read, describe_thing, find, prop_get};
+
         let mut modules = [ThingId::default(); 256];
         let count = find(kinds::BOOT_MODULE, &mut modules).ok()?;
-        
+
         for i in 0..count {
             let mut buf = [0u8; 512];
             let len = describe_thing(modules[i], &mut buf).ok()?;
             let desc = core::str::from_utf8(&buf[..len]).ok()?;
-            
+
             if let Some(pos) = desc.find("name: \"") {
                 let rest = &desc[pos + 7..];
                 if let Some(end) = rest.find('"') {

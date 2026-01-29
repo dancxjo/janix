@@ -121,7 +121,10 @@ impl BlockDevice for AtapiDevice {
         // Set byte count limit
         let byte_count = bytes_needed as u16;
         self.ata_outb(self.io_base + ATA_REG_LBA_MID, (byte_count & 0xFF) as u8);
-        self.ata_outb(self.io_base + ATA_REG_LBA_HI, ((byte_count >> 8) & 0xFF) as u8);
+        self.ata_outb(
+            self.io_base + ATA_REG_LBA_HI,
+            ((byte_count >> 8) & 0xFF) as u8,
+        );
 
         // Send PACKET command
         self.ata_outb(self.io_base + ATA_REG_COMMAND, ATA_CMD_PACKET);
@@ -279,11 +282,13 @@ fn publish_iso_file(
     thingsys::prop_set(node, keys::SOURCE, 10u64).map_err(|_| "set source failed")?; // 10 = ISO
 
     // Create bytespace and write data (0 = flags, 0 = format)
-    let bs = thingsys::bytespace_create(size as usize, 0, 0).map_err(|_| "bytespace_create failed")?;
+    let bs =
+        thingsys::bytespace_create(size as usize, 0, 0).map_err(|_| "bytespace_create failed")?;
     thingsys::bytespace_write(bs, 0, &data).map_err(|_| "bytespace_write failed")?;
 
     // Link bytespace (store ThingId, not u64)
-    thingsys::prop_set(node, keys::BYTESPACE, bs.to_u64_lossy()).map_err(|_| "set bytespace failed")?;
+    thingsys::prop_set(node, keys::BYTESPACE, bs.to_u64_lossy())
+        .map_err(|_| "set bytespace failed")?;
     thingsys::link(node, rels::BACKED_BY, bs).map_err(|_| "link backed_by failed")?;
 
     // Link to host
@@ -337,7 +342,9 @@ fn scan_and_publish(
                         Ok(node_id) => {
                             info!(
                                 "ISO_READER: Published '{}' ({} bytes) as node {}",
-                                path_with_slash, entry.size, node_id.to_u64_lossy()
+                                path_with_slash,
+                                entry.size,
+                                node_id.to_u64_lossy()
                             );
                             published += 1;
                             *index += 1;
@@ -431,7 +438,10 @@ fn main(_arg: usize) -> ! {
         &mut index,
     );
 
-    info!("ISO_READER: Published {} files from ISO to graph", published);
+    info!(
+        "ISO_READER: Published {} files from ISO to graph",
+        published
+    );
 
     // Service loop
     info!("ISO_READER: Entering service loop");

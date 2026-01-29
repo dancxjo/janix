@@ -10,7 +10,11 @@ pub enum ViewportIntent {
     PanByScreen { dx: f32, dy: f32 },
 
     /// Zoom about a screen-space anchor point.
-    ZoomAbout { screen_x: f32, screen_y: f32, factor: f32 },
+    ZoomAbout {
+        screen_x: f32,
+        screen_y: f32,
+        factor: f32,
+    },
 
     /// Begin a gesture (e.g., drag started).
     BeginGesture,

@@ -5,8 +5,8 @@
 use abi::hid::{Key, Mods};
 use abi::schema::{hid, keyboard as kb, pointer};
 use stem::petals::PanZoomController;
-use stem::thing::ThingId;
 use stem::thing::sys::{find, prop_get};
+use stem::thing::ThingId;
 
 /// Input state for tracking pointer position, drag, and keyboard.
 pub struct InputState {
@@ -57,10 +57,7 @@ impl InputState {
 /// Poll pointer and keyboard state from system graph and apply to viewport controller.
 ///
 /// Returns true if the viewport was updated (needs redraw).
-pub fn poll_and_apply(
-    ctrl: &mut PanZoomController,
-    state: &mut InputState,
-) -> bool {
+pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> bool {
     let mut updated = false;
 
     let bristle = match state.get_bristle() {

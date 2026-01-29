@@ -33,19 +33,17 @@ impl Default for LayoutSettings {
         Self {
             grid_w: 160.0, // Cell width
             grid_h: 120.0, // Cell height
-            rank_separation: 1.0, 
+            rank_separation: 1.0,
             node_separation: 1.0,
         }
     }
 }
 
-
-
 // Helper to establish a stable ordering for the spiral
 fn bfs_ordering(nodes: &[LayoutNode], edges: &[LayoutEdge]) -> Vec<usize> {
     let mut adj: BTreeMap<ThingId, Vec<ThingId>> = BTreeMap::new();
     let mut id_to_idx = BTreeMap::new();
-    
+
     for (i, node) in nodes.iter().enumerate() {
         id_to_idx.insert(node.id, i);
         adj.entry(node.id).or_default();
@@ -58,14 +56,14 @@ fn bfs_ordering(nodes: &[LayoutNode], edges: &[LayoutEdge]) -> Vec<usize> {
 
     // Find root: standard approach is 0-indegree, but for a general "center" of a cluster,
     // we might just pick the node with the most connections?
-    // Or just picking index 0 as fallback. 
+    // Or just picking index 0 as fallback.
     // The prompt says "center the root element".
     // Let's look for a node with no incoming edges (true root).
     let mut in_degrees = BTreeMap::new();
     for edge in edges {
         *in_degrees.entry(edge.to).or_insert(0) += 1;
     }
-    
+
     // Candidates with 0 in-degree
     let mut root_idx = 0;
     for (i, node) in nodes.iter().enumerate() {
@@ -88,7 +86,7 @@ fn bfs_ordering(nodes: &[LayoutNode], edges: &[LayoutEdge]) -> Vec<usize> {
             // Sort neighbors for deterministic behavior
             let mut neighbors = neighbors.clone();
             neighbors.sort();
-            
+
             for &v_id in &neighbors {
                 if !visited.contains_key(&v_id) {
                     visited.insert(v_id, true);
@@ -123,15 +121,15 @@ pub fn compute_layout(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: 
     // Formula:
     // r = c * sqrt(n)
     // theta = n * divergence_angle (Golden Angle is approx 2.39996 radians)
-    
+
     // Constants
     // Use grid_w as base stride.
-    let c = settings.grid_w * 1.2; 
-    
+    let c = settings.grid_w * 1.2;
+
     // We want the root at the visual center of the likely 800x600 window.
     let center_x = 400.0;
     let center_y = 300.0;
-    
+
     for (i, &node_idx) in order.iter().enumerate() {
         if i == 0 {
             nodes[node_idx].x = center_x;
@@ -143,7 +141,7 @@ pub fn compute_layout(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: 
         let n = i as f32;
         let theta = n * 2.3999632; // Golden angle in radians
         let r = c * libm::sqrtf(n);
-        
+
         nodes[node_idx].x = center_x + r * libm::cosf(theta);
         nodes[node_idx].y = center_y + r * libm::sinf(theta);
     }
@@ -164,8 +162,8 @@ pub fn route_edges(
         if let (Some(src), Some(tgt)) = (id_map.get(&edge.from), id_map.get(&edge.to)) {
             // Direct line from Center to Center (or port to port)
             // Existing painter uses center for nodes.
-            // Let's just give center points. 
-            // The drawing code might want to clip to the rect? 
+            // Let's just give center points.
+            // The drawing code might want to clip to the rect?
             // The current main.rs routing_algo_orthogonal calculated ports.
             // Let's calculate simple ports: center-to-center intersection?
             // Or just strict Center Center and let the painter handle occlusion (or just draw under).
@@ -174,10 +172,10 @@ pub fn route_edges(
             // HOWEVER, main.rs orthogonal routing calculated specific ports (bottom center -> top center).
             // For spiral, any angle is possible.
             // Let's return Center -> Center.
-            
+
             let p1 = (src.x, src.y);
             let p2 = (tgt.x, tgt.y);
-            
+
             routes.insert((edge.from, edge.to), alloc::vec![p1, p2]);
         }
     }
@@ -185,4 +183,3 @@ pub fn route_edges(
 }
 
 // Unused legacy functions removed (assign_ranks, routing_algo_orthogonal, grid_placement)
-

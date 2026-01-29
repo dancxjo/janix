@@ -6,8 +6,8 @@ use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use stem::thing::ThingId;
 use stem::thing::sys::{describe_thing, find};
+use stem::thing::ThingId;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodeInfo {

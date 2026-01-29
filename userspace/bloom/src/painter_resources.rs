@@ -23,10 +23,9 @@ pub extern "C" fn asset_watcher_entry() -> ! {
     if let Err(e) = stem::thread::spawn(icon_loader_entry) {
         info!("[bloom] failed to spawn icon loader: {:?}", e);
     }
-    
+
     font_loader_entry()
 }
-
 
 pub extern "C" fn wallpaper_loader_entry() -> ! {
     stem::sleep_ms(100);
@@ -36,8 +35,6 @@ pub extern "C" fn wallpaper_loader_entry() -> ! {
         stem::syscall::sleep_ms(10000);
     }
 }
-
-
 
 pub extern "C" fn font_loader_entry() -> ! {
     let mut modules = [ThingId::default(); 64];
@@ -201,8 +198,6 @@ pub extern "C" fn cursor_loader_entry() -> ! {
     }
 }
 
-
-
 pub extern "C" fn icon_loader_entry() -> ! {
     stem::sleep_ms(100);
     info!("[bloom] icon loader started");
@@ -263,5 +258,3 @@ pub extern "C" fn icon_loader_entry() -> ! {
         stem::syscall::sleep_ms(10000);
     }
 }
-
-

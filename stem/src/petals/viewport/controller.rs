@@ -55,7 +55,11 @@ impl PanZoomController {
                 self.viewport.pan_by_screen(dx, dy);
                 self.clamp_to_bounds();
             }
-            ViewportIntent::ZoomAbout { screen_x, screen_y, factor } => {
+            ViewportIntent::ZoomAbout {
+                screen_x,
+                screen_y,
+                factor,
+            } => {
                 self.viewport.zoom_about(screen_x, screen_y, factor);
                 self.clamp_zoom();
                 self.clamp_to_bounds();
@@ -67,7 +71,11 @@ impl PanZoomController {
 
     /// Zoom about a point, respecting constraints.
     pub fn zoom_about(&mut self, screen_x: f32, screen_y: f32, factor: f32) {
-        self.apply(ViewportIntent::ZoomAbout { screen_x, screen_y, factor });
+        self.apply(ViewportIntent::ZoomAbout {
+            screen_x,
+            screen_y,
+            factor,
+        });
     }
 
     /// Pan by screen pixels, respecting constraints.
@@ -139,10 +147,18 @@ impl PanZoomController {
         let mut dx = 0.0;
         let mut dy = 0.0;
 
-        if up { dy -= Self::ARROW_PAN_STEP; }
-        if down { dy += Self::ARROW_PAN_STEP; }
-        if left { dx -= Self::ARROW_PAN_STEP; }
-        if right { dx += Self::ARROW_PAN_STEP; }
+        if up {
+            dy -= Self::ARROW_PAN_STEP;
+        }
+        if down {
+            dy += Self::ARROW_PAN_STEP;
+        }
+        if left {
+            dx -= Self::ARROW_PAN_STEP;
+        }
+        if right {
+            dx += Self::ARROW_PAN_STEP;
+        }
 
         if dx != 0.0 || dy != 0.0 {
             self.pan_by_screen(dx, dy);
@@ -181,7 +197,6 @@ impl PanZoomController {
         let dy = if page_up { -page_step } else { page_step };
         self.pan_by_screen(0.0, dy);
     }
-
 
     /// Clamp zoom to constraints.
     fn clamp_zoom(&mut self) {
@@ -230,10 +245,8 @@ mod tests {
 
     #[test]
     fn drag_pans_viewport() {
-        let mut ctrl = PanZoomController::new(
-            Viewport::new(800.0, 600.0),
-            ViewportConstraints::default(),
-        );
+        let mut ctrl =
+            PanZoomController::new(Viewport::new(800.0, 600.0), ViewportConstraints::default());
 
         let original = ctrl.viewport.center_world;
         ctrl.begin_drag(100.0, 100.0);
@@ -247,10 +260,8 @@ mod tests {
 
     #[test]
     fn wheel_zooms() {
-        let mut ctrl = PanZoomController::new(
-            Viewport::new(800.0, 600.0),
-            ViewportConstraints::default(),
-        );
+        let mut ctrl =
+            PanZoomController::new(Viewport::new(800.0, 600.0), ViewportConstraints::default());
 
         let original_zoom = ctrl.viewport.zoom;
         ctrl.handle_wheel(400.0, 300.0, 1.0); // Zoom in

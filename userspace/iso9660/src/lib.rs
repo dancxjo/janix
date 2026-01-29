@@ -59,7 +59,7 @@ impl IsoFs {
     /// Returns `Some(IsoFs)` if a valid ISO9660 Primary Volume Descriptor is found.
     pub fn probe(dev: &dyn BlockDevice) -> Option<Self> {
         let mut buf = [0u8; 2048];
-        
+
         // Read PVD sector
         if dev.read_sectors(PVD_SECTOR, 1, &mut buf).is_err() {
             return None;
@@ -113,12 +113,15 @@ impl IsoFs {
     pub fn list_dir(&self, dev: &dyn BlockDevice, extent_lba: u32, size: u32) -> Vec<IsoDirEntry> {
         let mut entries = Vec::new();
         let sectors_needed = (size as u64 + ISO_SECTOR_SIZE - 1) / ISO_SECTOR_SIZE;
-        
+
         // Allocate buffer for directory data
         let buf_size = (sectors_needed * ISO_SECTOR_SIZE) as usize;
         let mut buf = alloc::vec![0u8; buf_size];
 
-        if dev.read_sectors(extent_lba as u64, sectors_needed, &mut buf).is_err() {
+        if dev
+            .read_sectors(extent_lba as u64, sectors_needed, &mut buf)
+            .is_err()
+        {
             return entries;
         }
 
@@ -128,7 +131,8 @@ impl IsoFs {
             let record_len = buf[offset] as usize;
             if record_len == 0 {
                 // Padding to next sector
-                let next_sector = ((offset / ISO_SECTOR_SIZE as usize) + 1) * ISO_SECTOR_SIZE as usize;
+                let next_sector =
+                    ((offset / ISO_SECTOR_SIZE as usize) + 1) * ISO_SECTOR_SIZE as usize;
                 if next_sector >= size as usize {
                     break;
                 }
@@ -157,7 +161,7 @@ impl IsoFs {
 
             if name_len > 0 && offset + 33 + name_len <= buf.len() {
                 let name_bytes = &buf[offset + 33..offset + 33 + name_len];
-                
+
                 // Skip . and .. entries
                 if name_bytes == [0x00] || name_bytes == [0x01] {
                     offset += record_len;
@@ -210,7 +214,9 @@ impl IsoFs {
 
             // ISO9660 is typically uppercase
             let part_upper = part.to_uppercase();
-            let entry = entries.iter().find(|e| e.name.to_uppercase() == part_upper)?;
+            let entry = entries
+                .iter()
+                .find(|e| e.name.to_uppercase() == part_upper)?;
 
             if is_last {
                 return Some(IsoFile {
@@ -277,9 +283,7 @@ impl IsoFile {
 
 /// Helper to convert volume ID to a trimmed string.
 pub fn volume_id_str(pvd: &PrimaryVolumeDescriptor) -> &str {
-    core::str::from_utf8(&pvd.volume_id)
-        .unwrap_or("")
-        .trim()
+    core::str::from_utf8(&pvd.volume_id).unwrap_or("").trim()
 }
 
 #[cfg(test)]

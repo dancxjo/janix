@@ -99,7 +99,8 @@ impl Viewport {
     /// Use this for zoom-to-cursor behavior.
     pub fn zoom_about(&mut self, screen_anchor_x: f32, screen_anchor_y: f32, factor: f32) {
         // Find the world point under the anchor before zoom
-        let (anchor_world_x, anchor_world_y) = self.screen_to_world(screen_anchor_x, screen_anchor_y);
+        let (anchor_world_x, anchor_world_y) =
+            self.screen_to_world(screen_anchor_x, screen_anchor_y);
 
         // Apply zoom
         self.zoom *= factor;

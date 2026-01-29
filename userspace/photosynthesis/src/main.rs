@@ -7,17 +7,18 @@ use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, rels};
 use abi::types::{WatchMode, WatchSpec};
 use abi::watch;
-use alloc::string::String;
+use alloc::format;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use blossom::widgets::ThingosIcon;
 use core::time::Duration;
 use stem::info;
 use stem::petals::{
-    Canvas, Color, FontKey, Line, PanZoomController, Rect, Scene, Size, Styled, Text,
-    Viewport, ViewportConstraints, Window,
+    Canvas, Color, FontKey, Line, PanZoomController, Rect, Scene, Size, Styled, Text, Viewport,
+    ViewportConstraints, Window,
 };
-use stem::thing::ThingId;
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
+use stem::thing::ThingId;
 
 fn find_svg_assets() -> Vec<(String, ThingId)> {
     let mut assets = Vec::new();
@@ -76,7 +77,7 @@ mod input;
 mod pipes;
 
 use alloc::collections::BTreeMap;
-use graph_layout::{LayoutEdge, LayoutNode, LayoutSettings, compute_layout, route_edges};
+use graph_layout::{compute_layout, route_edges, LayoutEdge, LayoutNode, LayoutSettings};
 use pipes::{generate_layout, scan_system_graph};
 
 const TILE_WIDTH: i32 = 120;
@@ -177,7 +178,11 @@ fn main() -> ! {
 
         let now = stem::monotonic_ns();
         if dirty && now.saturating_sub(last_scan) > 200_000_000 {
-            let (nodes, edges) = scan_system_graph();
+            let (mut nodes, edges) = scan_system_graph();
+            // Explicitly sort and deduplicate nodes by ID to ensure uniqueness
+            nodes.sort_by_key(|n| n.id.to_u64_lossy());
+            nodes.dedup_by_key(|n| n.id.to_u64_lossy());
+
             if nodes != last_nodes || edges != last_edges {
                 // 1. Convert to Layout types
                 let mut layout_nodes: Vec<LayoutNode> = nodes
@@ -205,7 +210,7 @@ fn main() -> ! {
                 // 2. Compute Layout
                 let settings = LayoutSettings::default();
                 compute_layout(&mut layout_nodes, &layout_edges, &settings);
-                
+
                 // 3. Compute Edge Routes
                 last_routes = route_edges(&layout_nodes, &layout_edges, &settings);
 
@@ -276,37 +281,39 @@ fn build_graph_scene(
 
     for edge in edges {
         if let Some(path) = routes.get(&(edge.from, edge.to)) {
-             if path.len() < 2 { continue; }
-             
-             // Draw segments (transformed)
-            for i in 0..path.len()-1 {
+            if path.len() < 2 {
+                continue;
+            }
+
+            // Draw segments (transformed)
+            for i in 0..path.len() - 1 {
                 let (x1, y1) = path[i];
-                let (x2, y2) = path[i+1];
+                let (x2, y2) = path[i + 1];
                 let (sx1, sy1) = to_screen(x1, y1);
                 let (sx2, sy2) = to_screen(x2, y2);
-                
+
                 canvas = canvas.push(
                     Line::new(sx1, sy1, sx2, sy2)
                         .width(2)
                         .color(Color::from_argb_u32(0xFF888888)),
                 );
             }
-             
-             // Draw Arrow at the end (transformed)
-            let (end_x, end_y) = path[path.len()-1];
-            let (prev_x, prev_y) = path[path.len()-2];
+
+            // Draw Arrow at the end (transformed)
+            let (end_x, end_y) = path[path.len() - 1];
+            let (prev_x, prev_y) = path[path.len() - 2];
             let (send_x, send_y) = to_screen(end_x, end_y);
-            
+
             let angle = libm::atan2f(end_y - prev_y, end_x - prev_x);
             let head_len = 8.0 * viewport.zoom;
             let a1 = angle + 3.14159 * 0.85;
             let a2 = angle - 3.14159 * 0.85;
-            
+
             let shx1 = send_x + (head_len * libm::cosf(a1)) as i32;
             let shy1 = send_y + (head_len * libm::sinf(a1)) as i32;
             let shx2 = send_x + (head_len * libm::cosf(a2)) as i32;
             let shy2 = send_y + (head_len * libm::sinf(a2)) as i32;
-            
+
             canvas = canvas
                 .push(
                     Line::new(send_x, send_y, shx1, shy1)
@@ -318,14 +325,14 @@ fn build_graph_scene(
                         .width(2)
                         .color(Color::from_argb_u32(0xFF888888)),
                 );
-            
+
             // Draw Label in Middle (Middle Segment, transformed)
             let mid_seg_idx = (path.len() - 1) / 2;
             let (aa, bb) = (path[mid_seg_idx], path[mid_seg_idx + 1]);
             let mid_x = (aa.0 + bb.0) / 2.0;
             let mid_y = (aa.1 + bb.1) / 2.0;
             let (smid_x, smid_y) = to_screen(mid_x, mid_y);
-            
+
             let label_w = (edge.rel.len() as i32 * 6).max(10);
             canvas = canvas.push_at(
                 Text::new(&edge.rel)
@@ -391,7 +398,7 @@ fn build_graph_scene(
             );
 
             let type_text = format_type_label(&node.kind_full, &node.name);
-            let id_text = format_id_label(&node.kind_full, &node.name);
+            let id_text = format_id_label(node.id);
 
             let type_width = (type_text.chars().count() as i32 * TYPE_CHAR_WIDTH).max(40);
             let type_left = scx - type_width / 2;
@@ -429,39 +436,14 @@ fn build_graph_scene(
     )
 }
 
-fn format_type_label(kind_full: &str, fallback: &str) -> String {
-    let source = if kind_full.is_empty() {
-        fallback
+fn format_type_label(kind_full: &str, _fallback: &str) -> String {
+    if kind_full.is_empty() {
+        String::from("UNKNOWN")
     } else {
-        kind_full
-    };
-    let segment = source
-        .rsplit('.')
-        .find(|seg| !seg.is_empty())
-        .unwrap_or(source);
-    let normalized = segment.replace('_', " ");
-    let label = normalized.trim();
-    if label.is_empty() {
-        if fallback.is_empty() {
-            String::from("UNKNOWN")
-        } else {
-            fallback.to_ascii_uppercase()
-        }
-    } else {
-        label.to_ascii_uppercase()
+        kind_full.to_string()
     }
 }
 
-fn format_id_label(kind_full: &str, fallback: &str) -> String {
-    let source = if kind_full.is_empty() {
-        fallback
-    } else {
-        kind_full
-    };
-    let label = source.trim();
-    if label.is_empty() {
-        String::from("UNKNOWN")
-    } else {
-        label.to_ascii_uppercase()
-    }
+fn format_id_label(id: ThingId) -> String {
+    format!("{:X}", id.to_u64_lossy())
 }

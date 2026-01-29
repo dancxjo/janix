@@ -185,15 +185,32 @@ pub fn handle_query(
     out_len: u64,
 ) -> HandlerResult {
     let max_rows = (out_len as usize) / core::mem::size_of::<abi::query::QueryRow>();
-    let mut krows = alloc::vec![abi::query::QueryRow::default(); max_rows];
+    // Use stack buffer for small queries (<= 32 rows, 1KB) to avoid allocation.
+    // This optimization is crucial for high-frequency small queries.
+    const STACK_CAP: usize = 32;
 
-    let res = crate::root::query::execute(graph, plan, &mut krows);
+    if max_rows <= STACK_CAP {
+        let mut stack_buf = [abi::query::QueryRow::default(); STACK_CAP];
+        execute_and_copy(graph, plan, &mut stack_buf[..max_rows], out_buffer)
+    } else {
+        let mut krows = alloc::vec![abi::query::QueryRow::default(); max_rows];
+        execute_and_copy(graph, plan, &mut krows, out_buffer)
+    }
+}
+
+fn execute_and_copy(
+    graph: &Graph,
+    plan: &[crate::root::query::PreparedStep],
+    buffer: &mut [abi::query::QueryRow],
+    out_buffer: u64,
+) -> HandlerResult {
+    let res = crate::root::query::execute(graph, plan, buffer);
 
     if let Ok(count) = res {
         unsafe {
             let dst = out_buffer as *mut abi::query::QueryRow;
             for i in 0..count {
-                *dst.add(i) = krows[i];
+                *dst.add(i) = buffer[i];
             }
         }
         (0, count as u64)
@@ -339,5 +356,65 @@ mod tests {
         );
         assert_eq!(status, 0);
         assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn test_handle_query_optimization() {
+        use crate::root::query::PreparedStep;
+        use abi::query::QueryRow;
+
+        let mut graph = Graph::new();
+        let mut interner = Interner::new();
+
+        let kind = interner.intern("TestKind");
+        let id1 = graph.alloc(kind);
+        let id2 = graph.alloc(kind);
+        let id3 = graph.alloc(kind);
+
+        // Simple plan: Scan(TestKind)
+        let plan = vec![PreparedStep {
+            op: 1, // Scan
+            symbol: kind,
+            arg1: 0,
+        }];
+
+        // 1. Test Stack Path (Small buffer)
+        // 3 items, buffer for 5 items.
+        let max_rows_stack = 5;
+        let mut buffer_stack = vec![0u8; max_rows_stack * core::mem::size_of::<QueryRow>()];
+        let buf_ptr = buffer_stack.as_mut_ptr() as u64;
+        let buf_len = buffer_stack.len() as u64;
+
+        let (status, count) = handle_query(&graph, &plan, buf_ptr, buf_len);
+        assert_eq!(status, 0);
+        assert_eq!(count, 3);
+
+        // Verify content
+        let rows = unsafe {
+            core::slice::from_raw_parts(buf_ptr as *const QueryRow, count as usize)
+        };
+        let mut ids: Vec<u64> = rows.iter().map(|r| r.id).collect();
+        ids.sort();
+        let mut expected = vec![id1, id2, id3];
+        expected.sort();
+        assert_eq!(ids, expected);
+
+        // 2. Test Heap Path (Large buffer)
+        // 3 items, buffer for 40 items (> 32).
+        let max_rows_heap = 40;
+        let mut buffer_heap = vec![0u8; max_rows_heap * core::mem::size_of::<QueryRow>()];
+        let buf_ptr_heap = buffer_heap.as_mut_ptr() as u64;
+        let buf_len_heap = buffer_heap.len() as u64;
+
+        let (status, count) = handle_query(&graph, &plan, buf_ptr_heap, buf_len_heap);
+        assert_eq!(status, 0);
+        assert_eq!(count, 3);
+
+        let rows = unsafe {
+            core::slice::from_raw_parts(buf_ptr_heap as *const QueryRow, count as usize)
+        };
+        let mut ids: Vec<u64> = rows.iter().map(|r| r.id).collect();
+        ids.sort();
+        assert_eq!(ids, expected);
     }
 }

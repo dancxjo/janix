@@ -516,6 +516,8 @@ fn main(arg: usize) -> ! {
     // Signal that the compositor is taking over the framebuffer
     stem::syscall::console_disable();
 
+    let mut first_frame_rendered = false;
+
     loop {
         loop_ctrl.next();
         invalidation_causes.clear();
@@ -1142,6 +1144,11 @@ fn main(arg: usize) -> ! {
             let token = builder.finish();
             presenter.present_frame(token);
             presenter.pump();
+
+            if !first_frame_rendered {
+                stem::info!("[CONTRACT] [bloom] First frame rendered");
+                first_frame_rendered = true;
+            }
         }
         loop_ctrl.sleep();
     }

@@ -10,6 +10,13 @@ fn scale_ch(c: u8, a: u8) -> u32 {
     (t + 1 + (t >> 8)) >> 8
 }
 
+#[inline(always)]
+fn blend_channel(s: u32, d: u32, sa: u32) -> u32 {
+    let inv = 255 - sa;
+    let t = s * sa + d * inv;
+    (t + 1 + (t >> 8)) >> 8
+}
+
 /// Apply the exact rounding formula: (t + 1 + (t >> 8)) >> 8 to 16-bit values.
 /// Input: t_lo and t_hi are __m128i with 8x u16 values each (products).
 /// Output: 8-bit results packed into a single __m128i (16 u8 values).
@@ -32,7 +39,13 @@ unsafe fn apply_div255_sse2(t_lo: __m128i, t_hi: __m128i) -> __m128i {
 }
 
 /// Modulate 4 RGBA pixels by a mask, returning modulated u8 channels.
-/// mask_vec should have 4 bytes (one per pixel) repeated in appropriate positions.
+/// 
+/// # Layout
+/// The mask_vec should contain mask values replicated across each pixel's 4 channels:
+/// - Bytes 0-3: First pixel's mask repeated 4 times (M0, M0, M0, M0)
+/// - Bytes 4-7: Second pixel's mask repeated 4 times (M1, M1, M1, M1)
+/// - Bytes 8-11: Third pixel's mask repeated 4 times (M2, M2, M2, M2)
+/// - Bytes 12-15: Fourth pixel's mask repeated 4 times (M3, M3, M3, M3)
 #[inline]
 #[target_feature(enable = "sse2")]
 unsafe fn modulate_by_mask_sse2(pixels: __m128i, mask_vec: __m128i) -> __m128i {
@@ -55,6 +68,25 @@ unsafe fn modulate_by_mask_sse2(pixels: __m128i, mask_vec: __m128i) -> __m128i {
 }
 
 /// Composite solid color with coverage mask (SSE2 backend).
+///
+/// Processes 4 pixels at a time using SSE2 for mask modulation, with scalar fallback
+/// for tail pixels and over blend operation.
+///
+/// Math contract (canonical - matches scalar exactly):
+/// - All inputs/outputs are premultiplied RGBA8888
+/// - Coverage mask modulates the color's alpha and RGB channels
+/// - Modulation uses: `result = (channel * mask + 1 + (channel * mask >> 8)) >> 8`
+///   This is a fast approximation of `(channel * mask) / 255` with exact rounding
+/// - After modulation, applies over operator: `dst = color' + dst * (1 - color_a')`
+/// - Over blend also uses `(t + 1 + (t >> 8)) >> 8` rounding
+/// - Mask values: 0 = no change, 255 = full color, intermediate = proportional blend
+///
+/// # Safety
+/// Caller must ensure:
+/// - `dst.len() >= dst_stride * rect_h`
+/// - `mask.len() >= mask_stride * rect_h`
+/// - `dst_stride >= rect_w` and `mask_stride >= rect_w`
+/// - SSE2 is available (function has `target_feature` annotation)
 #[target_feature(enable = "sse2")]
 pub unsafe fn composite_solid_masked_over_sse2(
     dst: &mut [u32],
@@ -131,12 +163,6 @@ pub unsafe fn composite_solid_masked_over_sse2(
                 let dg = (dv >> 8) & 0xFF;
                 let db = dv & 0xFF;
                 
-                let blend_channel = |s: u32, d: u32, sa: u32| -> u32 {
-                    let inv = 255 - sa;
-                    let t = s * sa + d * inv;
-                    (t + 1 + (t >> 8)) >> 8
-                };
-                
                 let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
                 let out_r = blend_channel(sr, dr, sa);
                 let out_g = blend_channel(sg, dg, sa);
@@ -170,12 +196,6 @@ pub unsafe fn composite_solid_masked_over_sse2(
                 let dg = (dv >> 8) & 0xFF;
                 let db = dv & 0xFF;
                 
-                let blend_channel = |s: u32, d: u32, sa: u32| -> u32 {
-                    let inv = 255 - sa;
-                    let t = s * sa + d * inv;
-                    (t + 1 + (t >> 8)) >> 8
-                };
-                
                 let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
                 let out_r = blend_channel(sr, dr, sa);
                 let out_g = blend_channel(sg, dg, sa);
@@ -190,6 +210,25 @@ pub unsafe fn composite_solid_masked_over_sse2(
 }
 
 /// Composite source pixels with coverage mask (SSE2 backend).
+///
+/// Processes 4 pixels at a time using SSE2 for mask modulation, with scalar fallback
+/// for tail pixels and over blend operation.
+///
+/// Math contract (canonical - matches scalar exactly):
+/// - All inputs/outputs are premultiplied RGBA8888
+/// - Mask modulates source alpha and RGB channels
+/// - Modulation uses: `result = (channel * mask + 1 + (channel * mask >> 8)) >> 8`
+///   This is a fast approximation of `(channel * mask) / 255` with exact rounding
+/// - After modulation, applies over operator: `dst = src' + dst * (1 - src_a')`
+/// - Over blend also uses `(t + 1 + (t >> 8)) >> 8` rounding
+///
+/// # Safety
+/// Caller must ensure:
+/// - `dst.len() >= dst_stride * rect_h`
+/// - `src.len() >= src_stride * rect_h`
+/// - `mask.len() >= mask_stride * rect_h`
+/// - `dst_stride >= rect_w`, `src_stride >= rect_w`, `mask_stride >= rect_w`
+/// - SSE2 is available (function has `target_feature` annotation)
 #[target_feature(enable = "sse2")]
 pub unsafe fn composite_src_masked_over_sse2(
     dst: &mut [u32],
@@ -265,12 +304,6 @@ pub unsafe fn composite_src_masked_over_sse2(
                 let dg = (dv >> 8) & 0xFF;
                 let db = dv & 0xFF;
                 
-                let blend_channel = |s: u32, d: u32, sa: u32| -> u32 {
-                    let inv = 255 - sa;
-                    let t = s * sa + d * inv;
-                    (t + 1 + (t >> 8)) >> 8
-                };
-                
                 let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
                 let out_r = blend_channel(sr, dr, sa);
                 let out_g = blend_channel(sg, dg, sa);
@@ -309,12 +342,6 @@ pub unsafe fn composite_src_masked_over_sse2(
                 let dr = (dv >> 16) & 0xFF;
                 let dg = (dv >> 8) & 0xFF;
                 let db = dv & 0xFF;
-                
-                let blend_channel = |s: u32, d: u32, sa: u32| -> u32 {
-                    let inv = 255 - sa;
-                    let t = s * sa + d * inv;
-                    (t + 1 + (t >> 8)) >> 8
-                };
                 
                 let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
                 let out_r = blend_channel(sr, dr, sa);

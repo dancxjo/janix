@@ -554,16 +554,41 @@ mod tests {
         let bounds = Rect::full(100, 100);
         let mut d = Damage::empty(bounds);
 
-        d.add_rect(Rect::new(0, 0, 10, 10));
+        d.add_rect_with_cause(Rect::new(0, 0, 10, 10), DamageCause::GeometryChanged, None);
         assert_eq!(d.rect_count(), 1);
 
         // Adjacent rect should merge
-        d.add_rect(Rect::new(10, 0, 10, 10));
+        d.add_rect_with_cause(Rect::new(10, 0, 10, 10), DamageCause::PaintChanged, None);
         assert_eq!(d.rect_count(), 1);
 
         // Separate rect should not merge
-        d.add_rect(Rect::new(50, 50, 10, 10));
+        d.add_rect_with_cause(Rect::new(50, 50, 10, 10), DamageCause::CursorMoved, None);
         assert_eq!(d.rect_count(), 2);
+    }
+    
+    #[test]
+    fn test_damage_causes_preserved() {
+        let bounds = Rect::full(100, 100);
+        let mut d = Damage::empty(bounds);
+
+        d.add_rect_with_cause(Rect::new(0, 0, 10, 10), DamageCause::GeometryChanged, None);
+        d.add_rect_with_cause(Rect::new(50, 50, 10, 10), DamageCause::CursorMoved, None);
+
+        let records: alloc::vec::Vec<_> = d.iter_records().collect();
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].cause, DamageCause::GeometryChanged);
+        assert_eq!(records[1].cause, DamageCause::CursorMoved);
+    }
+    
+    #[test]
+    fn test_damage_full_with_cause() {
+        let bounds = Rect::full(100, 100);
+        let d = Damage::full_with_cause(bounds, DamageCause::ForceFull, None);
+        
+        assert!(d.is_full);
+        assert_eq!(d.rect_count(), 1);
+        let records: alloc::vec::Vec<_> = d.iter_records().collect();
+        assert_eq!(records[0].cause, DamageCause::ForceFull);
     }
 
     #[test]

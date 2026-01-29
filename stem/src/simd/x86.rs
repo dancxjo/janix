@@ -10,6 +10,41 @@ fn scale_ch(c: u8, a: u8) -> u32 {
     (t + 1 + (t >> 8)) >> 8
 }
 
+/// Composite solid color with coverage mask (SSE2 backend).
+#[target_feature(enable = "sse2")]
+pub unsafe fn composite_solid_masked_over_sse2(
+    dst: &mut [u32],
+    dst_stride: usize,
+    mask: &[u8],
+    mask_stride: usize,
+    rect_w: usize,
+    rect_h: usize,
+    color_premul: u32,
+) {
+    // For now, fall back to scalar since pure SSE2 mask shuffling is complex
+    // A proper implementation would use SSSE3 pshufb or process pixel-by-pixel
+    crate::simd::scalar::composite_solid_masked_over_scalar(
+        dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+    );
+}
+
+/// Composite source pixels with coverage mask (SSE2 backend).
+#[target_feature(enable = "sse2")]
+pub unsafe fn composite_src_masked_over_sse2(
+    dst: &mut [u32],
+    dst_stride: usize,
+    src: &[u32],
+    src_stride: usize,
+    mask: &[u8],
+    mask_stride: usize,
+    rect_w: usize,
+    rect_h: usize,
+) {
+    crate::simd::scalar::composite_src_masked_over_scalar(
+        dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+    );
+}
+
 #[target_feature(enable = "sse2")]
 pub unsafe fn blit_rgba8888_over_sse2(dst: &mut [u32], src: &[u32]) {
     let len = dst.len().min(src.len());

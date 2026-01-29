@@ -27,5 +27,84 @@ pub fn blit_rgba8888_over(dst: &mut [u32], src: &[u32]) {
     scalar::blit_rgba8888_over_scalar(dst, src);
 }
 
+/// Composite solid color with coverage mask (premultiplied RGBA8888).
+///
+/// Applies an 8-bit coverage mask to a solid color and composites it over the destination.
+/// - `mask=0`: no change
+/// - `mask=255`: full color application
+/// - intermediate: proportional blend
+///
+/// Uses premultiplied alpha math with exact rounding to match scalar reference.
+pub fn composite_solid_masked_over(
+    dst: &mut [u32],
+    dst_stride: usize,
+    mask: &[u8],
+    mask_stride: usize,
+    rect_w: usize,
+    rect_h: usize,
+    color_premul: u32,
+) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_feature = "sse2")]
+    unsafe {
+        x86::composite_solid_masked_over_sse2(
+            dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+        );
+        return;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[cfg(target_feature = "neon")]
+    unsafe {
+        neon::composite_solid_masked_over_neon(
+            dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+        );
+        return;
+    }
+
+    scalar::composite_solid_masked_over_scalar(
+        dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+    );
+}
+
+/// Composite source pixels with coverage mask (premultiplied RGBA8888).
+///
+/// Applies an 8-bit coverage mask to source pixels and composites them over the destination.
+/// This is the canonical antialiased edge compositor.
+///
+/// Uses premultiplied alpha math with exact rounding to match scalar reference.
+pub fn composite_src_masked_over(
+    dst: &mut [u32],
+    dst_stride: usize,
+    src: &[u32],
+    src_stride: usize,
+    mask: &[u8],
+    mask_stride: usize,
+    rect_w: usize,
+    rect_h: usize,
+) {
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(target_feature = "sse2")]
+    unsafe {
+        x86::composite_src_masked_over_sse2(
+            dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+        );
+        return;
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    #[cfg(target_feature = "neon")]
+    unsafe {
+        neon::composite_src_masked_over_neon(
+            dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+        );
+        return;
+    }
+
+    scalar::composite_src_masked_over_scalar(
+        dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+    );
+}
+
 #[cfg(test)]
 mod tests;

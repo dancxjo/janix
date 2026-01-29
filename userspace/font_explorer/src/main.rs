@@ -124,7 +124,6 @@ fn main() -> ! {
 
     // Localized text constants
     use stem::i18n::LocalizedText;
-    const TITLE: LocalizedText = stem::t!("ui.fonts.title", "Font");
     const EXPLORER: LocalizedText = stem::t!("ui.fonts.explorer", "Font Explorer");
     const COUNT_LABEL: LocalizedText = stem::t!("ui.fonts.count", "Fonts");
     const SAMPLE: LocalizedText = stem::t!("ui.fonts.sample", "Sphinx of black quartz, judge my vow. 0123456789 😀 ܐܠܦ ܒܝܬ ܣܘܪܝܝܐ  ́aáÁàÀâÂäÄãÃåÅæÆçÇèÈéÉêÊëËìÌíÍîÎïÏðÐñÑòÒóÓôÔöÖõÕøØœŒœŒßß");

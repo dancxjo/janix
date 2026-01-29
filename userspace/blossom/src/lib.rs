@@ -2,7 +2,7 @@
 
 extern crate alloc;
 
-// INTERNAL MODULES - DO NOT IMPORT FROM EXTERNAL CRATES
+// INTERNAL MODULES - EXTERNAL CRATES MUST NOT IMPORT THESE
 // These modules contain layout and paint logic that apps must not access.
 // Apps should only use the Petals builder API from `stem::petals`.
 // These are public only for the blossom binary; external use is prohibited.

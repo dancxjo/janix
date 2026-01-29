@@ -14,17 +14,16 @@
 //! ## Usage
 //!
 //! ```ignore
-//! use stem::i18n::{t, TextKey, LocalizedText};
+//! use stem::i18n::LocalizedText;
 //!
-//! // Define a text key with fallback
-//! const WINDOW_TITLE: LocalizedText = t!("ui.fonts.title", "Font Explorer");
+//! // Define a text key with fallback using the t! macro
+//! const WINDOW_TITLE: LocalizedText = stem::t!("ui.fonts.title", "Font Explorer");
 //!
 //! // Get translated string for current locale
 //! let title = WINDOW_TITLE.get();
 //! ```
 
 use alloc::collections::BTreeMap;
-use alloc::string::String;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use spin::Mutex;
 
@@ -206,11 +205,15 @@ impl Translator {
 
     /// Set the current locale.
     pub fn set_locale(&self, locale: LocaleId) {
-        let index = match locale {
-            LocaleId::EN_US => 0,
-            LocaleId::LA => 1,
-            LocaleId::SYC => 2,
-            _ => 0,
+        let index = if locale.as_str() == LocaleId::EN_US.as_str() {
+            0
+        } else if locale.as_str() == LocaleId::LA.as_str() {
+            1
+        } else if locale.as_str() == LocaleId::SYC.as_str() {
+            2
+        } else {
+            // Unknown locale - default to EN_US
+            0
         };
         
         if self.current_locale.load(Ordering::Relaxed) != index {

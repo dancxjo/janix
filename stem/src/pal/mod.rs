@@ -1,0 +1,25 @@
+//! Platform Abstraction Layer (PAL)
+//!
+//! This module defines the explicit contract between Thing-OS applications
+//! and the underlying platform. All platform-specific functionality must
+//! go through this layer.
+//!
+//! # Design Principles
+//!
+//! - **Explicit over implicit**: Platform capabilities are explicitly surfaced
+//! - **Minimal and stable**: Only essential platform primitives are exposed
+//! - **Replaceable**: Implementations can be swapped without breaking consumers
+//! - **No std leakage**: This layer ensures `no_std` compliance
+//!
+//! # Platform Surface
+//!
+//! The PAL provides:
+//! - `log`: Logging primitives
+//! - `clock`: Time and monotonic clock access
+//! - `abort`: Panic and abort behavior
+//! - `alloc`: Memory allocator hooks
+
+pub mod log;
+pub mod clock;
+pub mod abort;
+pub mod alloc;

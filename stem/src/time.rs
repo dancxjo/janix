@@ -3,7 +3,7 @@
 //! All time in Thing-OS derives from a single monotonic timebase.
 //! Use `now()` to get the current `Instant`.
 
-use crate::syscall;
+use crate::pal;
 
 // Re-export the ABI types for convenience
 pub use abi::types::instant::{Duration, Instant};
@@ -14,19 +14,14 @@ pub use abi::types::instant::{Duration, Instant};
 /// The returned `Instant` is guaranteed to be monotonically increasing.
 #[inline]
 pub fn now() -> Instant {
-    Instant::from_nanos(syscall::monotonic_ns())
+    Instant::from_nanos(pal::clock::monotonic_ns())
 }
 
 /// Returns the current Unix time in nanoseconds.
 ///
 /// Returns 0 if the system clock is not yet anchored.
 pub fn now_unix_nanos() -> u64 {
-    unsafe {
-        match syscall::syscall6(abi::syscall::SYS_TIME_NOW, 0, 0, 0, 0, 0, 0) {
-            x if x >= 0 => x as u64,
-            _ => 0, // Error fallback (e.g., EAGAIN before anchoring)
-        }
-    }
+    pal::clock::unix_time_ns()
 }
 
 /// Returns the current Unix time in seconds.
@@ -41,23 +36,23 @@ pub fn now_unix_seconds() -> u64 {
 /// Prefer using `now()` which returns a type-safe `Instant`.
 #[inline]
 pub fn monotonic_ns() -> u64 {
-    syscall::monotonic_ns()
+    pal::clock::monotonic_ns()
 }
 
 /// Sleep for the specified duration.
 ///
 /// Accepts both `abi::types::instant::Duration` and `core::time::Duration`.
 pub fn sleep(duration: impl Into<Duration>) {
-    syscall::sleep_ns(duration.into().as_nanos());
+    pal::clock::sleep_ns(duration.into().as_nanos());
 }
 
 /// Sleep for the specified number of milliseconds.
 pub fn sleep_ms(ms: u64) {
-    syscall::sleep_ns(ms * 1_000_000);
+    pal::clock::sleep_ns(ms * 1_000_000);
 }
 
 /// Sleep for the specified number of nanoseconds.
 #[inline]
 pub fn sleep_ns(ns: u64) {
-    syscall::sleep_ns(ns);
+    pal::clock::sleep_ns(ns);
 }

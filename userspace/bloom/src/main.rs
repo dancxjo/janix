@@ -693,7 +693,9 @@ fn main(arg: usize) -> ! {
 
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_X, 0);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, 0);
-                    let _ =
+                        let _ =
+                            stem::thing::sys::prop_set(focused, keys::UI_WIDTH, screen_w as u64);
+                        let _ =
                             stem::thing::sys::prop_set(focused, keys::UI_HEIGHT, screen_h as u64);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
                     }

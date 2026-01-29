@@ -1,7 +1,9 @@
 use crate::graph_layout::{LayoutEdge, LayoutNode};
 use abi::drawlist::{DrawListBuilder, PointF};
+use abi::query::QueryRow;
 use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
+use stem::thing::query::RestrictedQuery;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -97,24 +99,27 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
         seen.insert(id, ());
 
         // Scan edges and discover new nodes
-        let mut buf = [abi::types::Edge::default(); 32];
-        if let Ok(count) = stem::thing::sys::get_edges(id, &mut buf) {
-            let count = core::cmp::min(count, buf.len());
-            for i in 0..count {
-                let edge = &buf[i];
-                let predicate_id = edge.predicate.to_u64_lossy() as u32;
+        let mut q_buf = [QueryRow::default(); 32];
+        let mut q = RestrictedQuery::new(&mut q_buf);
+
+        if let Ok(count) = q.get_edges(id, None, 32) {
+             for i in 0..count {
+                 let row = &q.buf[i];
+                 let predicate_id = row.kind_rel as u32;
+                 let target_id = ThingId::from_u64(row.val_dst);
+                 
                 let weight =
                     stem::thing::sys::prop_get(id, keys::EDGE_WEIGHT).unwrap_or(100) as f32 / 100.0;
                 edges.push(EdgeInfo {
                     from: id,
-                    to: edge.to,
+                    to: target_id,
                     rel: get_predicate_name(predicate_id),
                     weight,
                 });
-                if !seen.contains_key(&edge.to) && queue.len() < 512 {
-                    queue.push(edge.to);
+                if !seen.contains_key(&target_id) && queue.len() < 512 {
+                    queue.push(target_id);
                 }
-            }
+             }
         }
     }
 

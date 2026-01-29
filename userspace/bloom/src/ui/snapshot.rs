@@ -10,7 +10,7 @@ use stem::thing::ThingId;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiNodeKind {
     Unknown,
-    Root,
+    Crown,
     Window,
     Panel,
     Text,
@@ -28,8 +28,8 @@ impl UiNodeKind {
         if id == 0 {
             return Self::Unknown;
         }
-        if id == kinds.root {
-            Self::Root
+        if id == kinds.crown {
+            Self::Crown
         } else if id == kinds.window {
             Self::Window
         } else if id == kinds.panel {
@@ -58,7 +58,7 @@ impl UiNodeKind {
 
 #[derive(Clone)]
 pub struct KindIds {
-    pub root: u32,
+    pub crown: u32,
     pub window: u32,
     pub panel: u32,
     pub text: u32,
@@ -74,7 +74,7 @@ pub struct KindIds {
 impl KindIds {
     pub fn empty() -> Self {
         Self {
-            root: 0,
+            crown: 0,
             window: 0,
             panel: 0,
             text: 0,
@@ -91,7 +91,7 @@ impl KindIds {
         use abi::schema::kinds;
         crate::trace_span!("ui.init.intern_kinds");
         let kids = Self {
-            root: stem::thing::sys::intern(kinds::UI_ROOT).unwrap_or(0),
+            crown: stem::thing::sys::intern(kinds::UI_CROWN).unwrap_or(0),
             window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0),
             panel: stem::thing::sys::intern(kinds::UI_PANEL).unwrap_or(0),
             text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or(0),

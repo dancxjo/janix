@@ -42,7 +42,7 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
     let mut queue = Vec::new();
 
     // Initial seeds
-    let interesting_kinds = [kinds::UI_ROOT, kinds::UI_WINDOW, kinds::PROC_KERNEL];
+    let interesting_kinds = [kinds::UI_CROWN, kinds::UI_WINDOW, kinds::PROC_KERNEL];
 
     for &kind_name in &interesting_kinds {
         let mut ids = [ThingId::default(); 32];
@@ -63,7 +63,7 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
         }
 
         let mut buf = [0u8; 128];
-        let (name, kind_full, icon) = if let Ok(len) = describe_thing(id, &mut buf) {
+        let (mut name, kind_full, icon) = if let Ok(len) = describe_thing(id, &mut buf) {
             let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
             if desc.contains(":mem.Range")
                 || desc.contains(":Bytespace")
@@ -80,6 +80,19 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
                 String::from("unknown"),
             )
         };
+
+        // Try to fetch explicit "name" property (Interned string)
+        if let Ok(val) = stem::thing::sys::prop_get(id, keys::NAME) {
+            if val != 0 {
+                // Try to resolve as symbol first
+                let mut sym_buf = [0u8; 128];
+                if let Ok(len) = stem::thing::sys::describe_symbol(val as u32, &mut sym_buf) {
+                     if len > 0 {
+                         name = String::from(core::str::from_utf8(&sym_buf[..len]).unwrap_or("?"));
+                     }
+                }
+            }
+        }
 
         let x = stem::thing::sys::prop_get(id, keys::UI_X).unwrap_or(0) as f32;
         let y = stem::thing::sys::prop_get(id, keys::UI_Y).unwrap_or(0) as f32;

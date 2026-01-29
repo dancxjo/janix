@@ -77,16 +77,16 @@ impl<'a> Painter<'a> {
     /// For direct compositor blending, use `CursorRasterizer` instead.
     pub fn paint_cursor_snapshot(
         &mut self, 
-        ui_root: ThingId, 
+        UI_CROWN: ThingId, 
         cursor_rasterizer: &mut crate::cursor_rasterizer::CursorRasterizer,
     ) -> Result<(), abi::errors::Errno> {
-        let bs_id_u64 = stem::thing::sys::prop_get(ui_root, keys::UI_CURSOR_SNAPSHOT_BYTESPACE).unwrap_or(0);
+        let bs_id_u64 = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_BYTESPACE).unwrap_or(0);
         if bs_id_u64 == 0 { return Err(abi::errors::Errno::ENOENT); }
         
         let bs_id = ThingId::from_u64(bs_id_u64);
-        let w = stem::thing::sys::prop_get(ui_root, keys::UI_CURSOR_SNAPSHOT_WIDTH).unwrap_or(32);
-        let h = stem::thing::sys::prop_get(ui_root, keys::UI_CURSOR_SNAPSHOT_HEIGHT).unwrap_or(32);
-        let stride = stem::thing::sys::prop_get(ui_root, keys::UI_CURSOR_SNAPSHOT_STRIDE).unwrap_or(w * 4);
+        let w = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_WIDTH).unwrap_or(32);
+        let h = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_HEIGHT).unwrap_or(32);
+        let stride = stem::thing::sys::prop_get(UI_CROWN, keys::UI_CURSOR_SNAPSHOT_STRIDE).unwrap_or(w * 4);
 
         if let Ok(ptr) = stem::thing::sys::bytespace_map(bs_id) {
             let mut surf = unsafe { Surface::new(ptr as *mut u8, (stride * h) as usize, w as u32, h as u32, stride as u32) };

@@ -97,34 +97,34 @@ fn list_fonts(kind_id: u32) -> Vec<FontEntry> {
 
 #[stem::main]
 fn main() -> ! {
-    let mut ui_root = ThingId::default();
+    let mut ui_crown = ThingId::default();
     let mut attempts = 0;
     while attempts < 120 {
         let mut roots = [ThingId::default(); 1];
-        if find(kinds::UI_ROOT, &mut roots)
+        if find(kinds::UI_CROWN, &mut roots)
             .ok()
             .filter(|c| *c > 0)
             .is_some()
         {
-            ui_root = roots[0];
+            ui_crown = roots[0];
             break;
         }
         stem::sleep_ms(500);
         attempts += 1;
     }
 
-    if ui_root.to_u64_lossy() == 0 {
+    if ui_crown.to_u64_lossy() == 0 {
         loop {
             stem::sleep_ms(10000);
         }
     }
 
-    const SAMPLE: &str = "Sphinx of black quartz, judge my vow. 0123456789";
+    const SAMPLE: &str = "Sphinx of black quartz, judge my vow. 0123456789 😀 ܐܠܦ ܒܝܬ ܣܘܪܝܝܐ  ́aáÁàÀâÂäÄãÃåÅæÆçÇèÈéÉêÊëËìÌíÍîÎïÏðÐñÑòÒóÓôÔöÖõÕøØœŒœŒßß" ; 
     const PREFIX: &str = "Font";
 
     let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
-    link(win, rels::CHILD_OF, ui_root).expect("link window");
-    link(ui_root, rels::HAS_CHILD, win).expect("link window has_child");
+    link(win, rels::CHILD_OF, ui_crown).expect("link window");
+    link(ui_crown, rels::HAS_CHILD, win).expect("link window has_child");
     prop_set(win, keys::UI_BG_COLOR, 0xFFF5F5F0).ok();
     prop_set(win, keys::UI_WIDTH, 900).ok();
     prop_set(win, keys::UI_HEIGHT, 520).ok();

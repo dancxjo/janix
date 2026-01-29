@@ -102,21 +102,21 @@ fn main() -> ! {
     info!("Photosynthesis starting...");
 
     // 1. Wait for Bloom (UI Root)
-    let mut ui_root = ThingId::default();
-    while ui_root.to_u64_lossy() == 0 {
+    let mut ui_crown = ThingId::default();
+    while ui_crown.to_u64_lossy() == 0 {
         let mut roots = [ThingId::default(); 1];
-        if let Ok(1) = find(kinds::UI_ROOT, &mut roots) {
-            ui_root = roots[0];
+        if let Ok(1) = find(kinds::UI_CROWN, &mut roots) {
+            ui_crown = roots[0];
         } else {
             stem::sleep(Duration::from_millis(100));
         }
     }
-    info!("Found UI Root: {}", ui_root.to_u64_lossy());
+    info!("Found UI Root: {}", ui_crown.to_u64_lossy());
 
     // 2. Create Window
     let win = create_node(kinds::UI_WINDOW).expect("win");
-    link(win, rels::CHILD_OF, ui_root).expect("link");
-    link(ui_root, rels::HAS_CHILD, win).expect("has_child");
+    link(win, rels::CHILD_OF, ui_crown).expect("link");
+    link(ui_crown, rels::HAS_CHILD, win).expect("has_child");
 
     prop_set(win, keys::UI_BG_COLOR, 0xFFF5F5F0).ok(); // Off-white
     prop_set(win, keys::UI_WIDTH, 800).ok();
@@ -398,7 +398,7 @@ fn build_graph_scene(
             );
 
             let type_text = format_type_label(&node.kind_full, &node.name);
-            let id_text = format_id_label(node.id);
+            let id_text = node.kind_full.clone();
 
             let type_width = (type_text.chars().count() as i32 * TYPE_CHAR_WIDTH).max(40);
             let type_left = scx - type_width / 2;
@@ -436,7 +436,10 @@ fn build_graph_scene(
     )
 }
 
-fn format_type_label(kind_full: &str, _fallback: &str) -> String {
+fn format_type_label(kind_full: &str, name: &str) -> String {
+    if !name.is_empty() && name != "unknown" && !name.starts_with("unknown_") {
+        return name.to_string();
+    }
     if kind_full.is_empty() {
         String::from("UNKNOWN")
     } else {
@@ -444,6 +447,4 @@ fn format_type_label(kind_full: &str, _fallback: &str) -> String {
     }
 }
 
-fn format_id_label(id: ThingId) -> String {
-    format!("{:X}", id.to_u64_lossy())
-}
+

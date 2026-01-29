@@ -66,7 +66,7 @@ pub fn publish_window(scene: &Scene) -> Result<()> {
 
 pub fn publish_desktop(scene: &Scene) -> Result<()> {
     let mut roots = [ThingId::default(); 1];
-    let count = find(kinds::UI_ROOT, &mut roots).map_err(Error::Errno)?;
+    let count = find(kinds::UI_CROWN, &mut roots).map_err(Error::Errno)?;
     if count == 0 {
         return Err(Error::Errno(Errno::ENOENT));
     }

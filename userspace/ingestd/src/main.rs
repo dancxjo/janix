@@ -410,8 +410,7 @@ fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str, size: usi
         return ThingId::default();
     }
 
-    // First, check if an asset with the same hash already exists (deduplication)
-    let mut _existing_by_hash = ThingId::default();
+    // Check if an asset with the same name already exists
     let mut existing_by_name = ThingId::default();
     let mut assets = [ThingId::default(); 512];
     if let Ok(count) = find(kinds::ASSET, &mut assets) {
@@ -419,13 +418,10 @@ fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str, size: usi
             let existing_hash = prop_get(id, keys::ASSET_HASH).unwrap_or(0);
             let existing_name = prop_get(id, keys::ASSET_NAME).unwrap_or(0);
             
-            if existing_hash == hash && existing_hash != 0 {
-                _existing_by_hash = id;
-                // If same hash, we can reuse this asset node entirely
-                if existing_name == name_sym {
-                    info!("INGESTD: Asset '{}' unchanged (hash match)", name);
-                    return id;
-                }
+            // If same name and same hash, asset is unchanged
+            if existing_name == name_sym && existing_hash == hash && existing_hash != 0 {
+                info!("INGESTD: Asset '{}' unchanged (hash match)", name);
+                return id;
             }
             
             if existing_name == name_sym {
@@ -443,6 +439,7 @@ fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str, size: usi
             let _ = prop_set(existing_by_name, keys::ASSET_BYTESPACE, bs_id.to_u64_lossy());
             let _ = prop_set(existing_by_name, keys::ASSET_HASH, hash);
             let _ = prop_set(existing_by_name, keys::ASSET_SIZE, size as u64);
+            let _ = prop_set(existing_by_name, keys::ASSET_READY, 1);
             let generation = prop_get(existing_by_name, keys::ASSET_GENERATION).unwrap_or(0);
             let _ = prop_set(existing_by_name, keys::ASSET_GENERATION, generation + 1);
             info!("INGESTD: Updated asset '{}' (gen={}, hash={:016x})", name, generation + 1, hash);

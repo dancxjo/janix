@@ -2537,17 +2537,66 @@ fn fill_path_aa(
     let px_end =
         ((path_clip_xmax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.x() + clip.width());
 
+    // Convert color to premultiplied format for SIMD compositor
+    let color_premul = {
+        let pr = scale_ch(sr, sa);
+        let pg = scale_ch(sg, sa);
+        let pb = scale_ch(sb, sa);
+        (sa as u32) << 24 | pr << 16 | pg << 8 | pb
+    };
+
+    // Use SIMD masked compositor row by row
+    crate::trace_counter!("raster.fill_path_aa.simd.count", 1);
+    
     for py in p_start..p_end {
         let iy = (py - clip.y()) as usize;
-        for px in px_start..px_end {
-            let ix = (px - clip.x()) as usize;
-            let cov = coverage[iy * (clip_w as usize) + ix];
-            if cov == 0 {
-                continue;
-            }
-            let alpha = ((sa as u16 * cov as u16) / SUPERSAMPLE_SAMPLES as u16) as u8;
-            blend_pixel(surface, px, py, sr, sg, sb, alpha);
+        
+        // Scale coverage to create mask for this row
+        let row_start_idx = iy * (clip_w as usize) + (px_start - clip.x()) as usize;
+        let row_end_idx = iy * (clip_w as usize) + (px_end - clip.x()) as usize;
+        let row_width = (px_end - px_start) as usize;
+        
+        if row_end_idx > coverage.len() {
+            continue;
         }
+        
+        let row_coverage = &coverage[row_start_idx..row_end_idx];
+        let mut row_mask = vec![0u8; row_width];
+        
+        for (i, &cov) in row_coverage.iter().enumerate() {
+            // Scale coverage to 0-255 range
+            // This matches the original: alpha = (sa * cov) / SUPERSAMPLE_SAMPLES
+            row_mask[i] = ((cov as u16 * 255) / SUPERSAMPLE_SAMPLES as u16) as u8;
+        }
+        
+        // Get destination row pointer
+        let stride = (surface.stride_bytes >> 2) as usize;
+        let row_offset = py as usize * stride + px_start as usize;
+        
+        if row_offset >= stride * surface.height() as usize {
+            continue;
+        }
+        
+        let remaining = stride * surface.height() as usize - row_offset;
+        if remaining < stride {
+            continue;
+        }
+        
+        let dst_slice = unsafe {
+            let ptr = surface.ptr as *mut u32;
+            core::slice::from_raw_parts_mut(ptr.add(row_offset), remaining)
+        };
+        
+        // Call SIMD masked compositor
+        stem::simd::composite_solid_masked_over(
+            dst_slice,
+            stride,
+            &row_mask,
+            row_width,
+            row_width,
+            1,
+            color_premul,
+        );
     }
 }
 

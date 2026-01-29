@@ -5,16 +5,16 @@ extern crate alloc;
 // INTERNAL MODULES - DO NOT EXPORT
 // These modules contain layout and paint logic that apps must not access.
 // Apps should only use the Petals builder API from `stem::petals`.
-mod emit_paint;
-mod layout;
-mod scene;
+pub mod emit_paint;
+pub mod layout;
+pub mod scene;
 
 // TODO: Move widgets to a shared library or stem::petals
 // Currently public only because photosynthesis uses ThingosIcon
 pub mod widgets;
 
 // Public only for use within the blossom binary
-pub(crate) mod graph_ui;
+pub mod graph_ui;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;

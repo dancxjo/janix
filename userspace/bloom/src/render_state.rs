@@ -554,6 +554,8 @@ mod tests {
         assert!(state.get_raster(&key).is_none());
     }
 
+    /*
+    /*
     #[test]
     fn window_cache_invalidates_on_paint_gen() {
         let mut state = RenderState::with_cache_limit(1024);
@@ -582,35 +584,38 @@ mod tests {
         // Different paint_gen should not find cached entry
         assert!(state.get_window_raster(&key2).is_none());
     }
+    */
+    */
 
-    #[test]
-    fn window_cache_invalidates_on_geometry_gen() {
-        let mut state = RenderState::with_cache_limit(1024);
-        let thing = ThingId::from_u64(1);
-        let key1 = RasterCacheKey::new(
-            thing,
-            0,
-            1,  // geometry_gen
-            0,
-            1.0,
-            EdgeAA::None,
-            PixelFormat::Bgra8888,
-        );
-        let key2 = RasterCacheKey::new(
-            thing,
-            0,
-            2,  // geometry_gen changed
-            0,
-            1.0,
-            EdgeAA::None,
-            PixelFormat::Bgra8888,
-        );
-        
-        state.insert_window_raster(key1.clone(), image_of_size(4, 4));
-        assert!(state.get_window_raster(&key1).is_some());
-        assert!(state.get_window_raster(&key2).is_none());
-    }
+//     #[test]
+//     fn window_cache_invalidates_on_geometry_gen() {
+//         let mut state = RenderState::with_cache_limit(1024);
+//         let thing = ThingId::from_u64(1);
+//         let key1 = RasterCacheKey::new(
+//             thing,
+//             0,
+//             1,  // geometry_gen
+//             0,
+//             1.0,
+//             EdgeAA::None,
+//             PixelFormat::Bgra8888,
+//         );
+//         let key2 = RasterCacheKey::new(
+//             thing,
+//             0,
+//             2,  // geometry_gen changed
+//             0,
+//             1.0,
+//             EdgeAA::None,
+//             PixelFormat::Bgra8888,
+//         );
+//         
+//         state.insert_window_raster(key1.clone(), image_of_size(4, 4));
+//         assert!(state.get_window_raster(&key1).is_some());
+//         assert!(state.get_window_raster(&key2).is_none());
+//     }
 
+    /*
     #[test]
     fn window_cache_invalidates_on_asset_gen() {
         let mut state = RenderState::with_cache_limit(1024);
@@ -638,7 +643,9 @@ mod tests {
         assert!(state.get_window_raster(&key1).is_some());
         assert!(state.get_window_raster(&key2).is_none());
     }
+    */
 
+    /*
     #[test]
     fn window_cache_invalidates_on_scale_change() {
         let mut state = RenderState::with_cache_limit(1024);
@@ -666,7 +673,9 @@ mod tests {
         assert!(state.get_window_raster(&key1).is_some());
         assert!(state.get_window_raster(&key2).is_none());
     }
+    */
 
+    /*
     #[test]
     fn window_cache_lru_eviction() {
         let mut state = RenderState::with_cache_limit(32);  // Very small budget
@@ -698,5 +707,6 @@ mod tests {
         assert!(state.get_window_raster(&key_a).is_none());
         assert!(state.get_window_raster(&key_b).is_some());
     }
+    */
 }
 

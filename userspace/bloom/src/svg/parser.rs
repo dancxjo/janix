@@ -336,7 +336,7 @@ mod tests {
         let (cap, join, miter_limit, width) = found.expect("missing stroke path");
         assert_eq!(cap, LineCap::Round);
         assert_eq!(join, LineJoin::Bevel);
-        assert_eq!(width, 2);
+        assert_eq!(width, 2.0);
         assert!((miter_limit - 2.0).abs() < 0.01);
     }
 

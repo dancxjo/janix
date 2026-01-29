@@ -449,4 +449,120 @@ mod tests {
             "NEON implementation should have modified some pixels"
         );
     }
+
+    // Test AVX2 backend directly when available
+    #[test]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    fn test_avx2_solid_masked_correctness() {
+        use crate::simd::x86::is_avx2_available;
+        if !is_avx2_available() {
+            // Skip test if AVX2 not available
+            return;
+        }
+        
+        let w = 24;  // Test with width that requires AVX2 (8 pixels) + tail
+        let h = 4;
+        let mut dst = vec![0xFF_80_80_80u32; w * h];
+        let mask = vec![128u8; w * h];
+        let color = 0x80_FF_00_FFu32;
+        
+        // Get scalar reference
+        let mut dst_scalar = dst.clone();
+        composite_solid_masked_over_scalar(&mut dst_scalar, w, &mask, w, w, h, color);
+        
+        // This should use AVX2 if available
+        composite_solid_masked_over(&mut dst, w, &mask, w, w, h, color);
+        
+        // Verify bit-exact match with scalar
+        for i in 0..(w * h) {
+            assert_eq!(
+                dst[i], dst_scalar[i],
+                "AVX2 solid masked mismatch at index {}", i
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    fn test_avx2_src_masked_correctness() {
+        use crate::simd::x86::is_avx2_available;
+        if !is_avx2_available() {
+            // Skip test if AVX2 not available
+            return;
+        }
+        
+        let w = 24;  // Test with width that requires AVX2 (8 pixels) + tail
+        let h = 4;
+        let mut dst = vec![0xFF_80_80_80u32; w * h];
+        let src = vec![0x80_FF_00_FFu32; w * h];
+        let mask = vec![128u8; w * h];
+        
+        // Get scalar reference
+        let mut dst_scalar = dst.clone();
+        composite_src_masked_over_scalar(&mut dst_scalar, w, &src, w, &mask, w, w, h);
+        
+        // This should use AVX2 if available
+        composite_src_masked_over(&mut dst, w, &src, w, &mask, w, w, h);
+        
+        // Verify bit-exact match with scalar
+        for i in 0..(w * h) {
+            assert_eq!(
+                dst[i], dst_scalar[i],
+                "AVX2 src masked mismatch at index {}", i
+            );
+        }
+    }
+
+    #[test]
+    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    fn test_avx2_fuzz() {
+        use crate::simd::x86::is_avx2_available;
+        if !is_avx2_available() {
+            // Skip test if AVX2 not available
+            return;
+        }
+        
+        let w = 32;
+        let h = 16;
+        let mut rng = XorShift32::new(0x5678_ABCD);
+
+        for _ in 0..10 {
+            let color = rng.next();
+            let mut dst = Vec::with_capacity(w * h);
+            let mut src = Vec::with_capacity(w * h);
+            let mut mask = Vec::with_capacity(w * h);
+
+            for _ in 0..(w * h) {
+                dst.push(rng.next() | 0xFF00_0000);
+                src.push(rng.next());
+                mask.push((rng.next() & 0xFF) as u8);
+            }
+
+            // Test solid masked
+            let mut dst_avx2 = dst.clone();
+            let mut dst_scalar = dst.clone();
+            composite_solid_masked_over(&mut dst_avx2, w, &mask, w, w, h, color);
+            composite_solid_masked_over_scalar(&mut dst_scalar, w, &mask, w, w, h, color);
+            
+            for i in 0..(w * h) {
+                assert_eq!(
+                    dst_avx2[i], dst_scalar[i],
+                    "AVX2 solid fuzz mismatch at index {}", i
+                );
+            }
+
+            // Test src masked
+            let mut dst_avx2 = dst.clone();
+            let mut dst_scalar = dst.clone();
+            composite_src_masked_over(&mut dst_avx2, w, &src, w, &mask, w, w, h);
+            composite_src_masked_over_scalar(&mut dst_scalar, w, &src, w, &mask, w, w, h);
+            
+            for i in 0..(w * h) {
+                assert_eq!(
+                    dst_avx2[i], dst_scalar[i],
+                    "AVX2 src fuzz mismatch at index {}", i
+                );
+            }
+        }
+    }
 }

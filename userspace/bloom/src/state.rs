@@ -1,5 +1,7 @@
 use crate::geometry::Rect;
 use crate::snapshot::SnapshotInvalidation;
+#[cfg(debug_assertions)]
+use crate::damage::DamageJournal;
 use alloc::vec::Vec;
 
 pub const MAX_OVERLAY_RECTS: usize = 256;
@@ -10,6 +12,9 @@ pub struct DebugFlags {
     pub show_damage_rects: bool,
     pub show_raw_damage_rects: bool,
     pub show_damage_stats: bool,
+    pub show_damage_causes: bool,
+    pub force_full_damage: bool,
+    pub disable_damage_tracking: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,6 +37,8 @@ pub struct DamageOverlayState {
     pub mode: OverlayMode,
     pub reasons: Vec<SnapshotInvalidation>,
     pub overflowed: bool,
+    #[cfg(debug_assertions)]
+    pub journal: DamageJournal,
 }
 
 impl Default for DamageOverlayState {
@@ -44,6 +51,8 @@ impl Default for DamageOverlayState {
             mode: OverlayMode::DirtyRects,
             reasons: Vec::new(),
             overflowed: false,
+            #[cfg(debug_assertions)]
+            journal: DamageJournal::new(),
         }
     }
 }

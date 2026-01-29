@@ -1,14 +1,82 @@
 //! Damage tracking for efficient compositor redraws.
 //!
 //! This module provides:
+//! - `DamageCause`: Explicit reason for damage
 //! - `Rect`: A simple rectangle with geometry helpers
 //! - `Damage`: A collection of dirty rectangles (max 8, no allocation)
 //! - `DamageTracker`: Frame-by-frame damage accumulation
+//! - `DamageJournal`: Debug-only damage history tracking
 
 /// Maximum number of distinct damage rectangles before collapsing to full-frame.
 pub const MAX_RECTS: usize = 8;
 
 use crate::geometry::Rect;
+use crate::snapshot::SnapshotInvalidation;
+use alloc::vec::Vec;
+use stem::thing::ThingId;
+
+/// Explicit cause for damage invalidation.
+///
+/// Every damage rect should have at least one cause to make rendering
+/// decisions auditable and debuggable.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DamageCause {
+    /// Window or surface geometry changed (move, resize)
+    GeometryChanged,
+    /// Paint properties changed (color, style, etc)
+    PaintChanged,
+    /// Asset was updated (image, font, cursor)
+    AssetUpdated,
+    /// Cursor moved to a new position
+    CursorMoved,
+    /// Full redraw was explicitly requested
+    ForceFull,
+    /// Content of a window snapshot changed
+    ContentChanged,
+    /// Font rendering changed (font file, size, etc)
+    FontChanged,
+    /// Theme settings changed
+    ThemeChanged,
+    /// Cause is unknown or not specified
+    Unknown,
+}
+
+impl DamageCause {
+    /// Convert from SnapshotInvalidation to DamageCause
+    pub fn from_invalidation(inv: SnapshotInvalidation) -> Self {
+        match inv {
+            SnapshotInvalidation::GeometryChanged => DamageCause::GeometryChanged,
+            SnapshotInvalidation::ContentChanged => DamageCause::ContentChanged,
+            SnapshotInvalidation::FontChanged => DamageCause::FontChanged,
+            SnapshotInvalidation::ThemeChanged => DamageCause::ThemeChanged,
+            SnapshotInvalidation::Forced => DamageCause::ForceFull,
+        }
+    }
+
+    /// Get a short color code for debug visualization
+    #[cfg(debug_assertions)]
+    pub fn debug_color(&self) -> u32 {
+        match self {
+            DamageCause::GeometryChanged => 0xFF00FFFF, // Cyan
+            DamageCause::PaintChanged => 0xFFFF00FF,    // Magenta
+            DamageCause::AssetUpdated => 0xFFFFFF00,    // Yellow
+            DamageCause::CursorMoved => 0xFF00FF00,     // Green
+            DamageCause::ForceFull => 0xFFFF0000,       // Red
+            DamageCause::ContentChanged => 0xFF0080FF,  // Orange
+            DamageCause::FontChanged => 0xFFFF8000,     // Light Blue
+            DamageCause::ThemeChanged => 0xFFFF80FF,    // Pink
+            DamageCause::Unknown => 0xFF808080,         // Gray
+        }
+    }
+}
+
+/// A damage record with an associated cause.
+#[derive(Clone, Copy, Debug)]
+pub struct DamageRecord {
+    pub rect: Rect,
+    pub cause: DamageCause,
+    pub source: Option<ThingId>,
+}
 
 /// A collection of damage rectangles for a frame.
 ///
@@ -17,6 +85,8 @@ use crate::geometry::Rect;
 #[derive(Clone, Debug)]
 pub struct Damage {
     rects: [Rect; MAX_RECTS],
+    causes: [DamageCause; MAX_RECTS],
+    sources: [Option<ThingId>; MAX_RECTS],
     count: usize,
     bounds: Rect,
     /// True if the entire frame is damaged.
@@ -29,14 +99,21 @@ impl Damage {
     pub fn empty(bounds: Rect) -> Self {
         Self {
             rects: [Rect::default(); MAX_RECTS],
+            causes: [DamageCause::Unknown; MAX_RECTS],
+            sources: [None; MAX_RECTS],
             count: 0,
             bounds,
             is_full: false,
         }
     }
 
-    /// Create full-frame damage.
+    /// Create full-frame damage with a cause.
     pub fn full(bounds: Rect) -> Self {
+        Self::full_with_cause(bounds, DamageCause::ForceFull, None)
+    }
+
+    /// Create full-frame damage with an explicit cause.
+    pub fn full_with_cause(bounds: Rect, cause: DamageCause, source: Option<ThingId>) -> Self {
         Self {
             rects: [
                 bounds,
@@ -48,6 +125,9 @@ impl Damage {
                 Rect::default(),
                 Rect::default(),
             ],
+            causes: [cause, DamageCause::Unknown, DamageCause::Unknown, DamageCause::Unknown, 
+                     DamageCause::Unknown, DamageCause::Unknown, DamageCause::Unknown, DamageCause::Unknown],
+            sources: [source, None, None, None, None, None, None, None],
             count: 1,
             bounds,
             is_full: true,
@@ -71,6 +151,12 @@ impl Damage {
     /// Add a rectangle to the damage set.
     /// Clips to bounds, discards empty rects, merges overlapping/touching rects.
     pub fn add_rect(&mut self, r: Rect) {
+        self.add_rect_with_cause(r, DamageCause::Unknown, None);
+    }
+
+    /// Add a rectangle to the damage set with an explicit cause.
+    /// Clips to bounds, discards empty rects, merges overlapping/touching rects.
+    pub fn add_rect_with_cause(&mut self, r: Rect, cause: DamageCause, source: Option<ThingId>) {
         if self.is_full {
             return; // Already fully damaged
         }
@@ -83,7 +169,7 @@ impl Damage {
         // Threshold: if single rect > 25% of screen, collapse to full
         let screen_area = self.bounds.area();
         if clipped.area() * 4 > screen_area {
-            self.collapse_to_full();
+            self.collapse_to_full_with_cause(cause, source);
             return;
         }
 
@@ -91,6 +177,11 @@ impl Damage {
         for i in 0..self.count {
             if self.rects[i].touches_or_overlaps(clipped) {
                 self.rects[i] = self.rects[i].union(clipped);
+                // Keep the more specific cause (prefer non-Unknown)
+                if self.causes[i] == DamageCause::Unknown && cause != DamageCause::Unknown {
+                    self.causes[i] = cause;
+                    self.sources[i] = source;
+                }
                 // After merge, try to consolidate further
                 self.consolidate();
                 return;
@@ -100,10 +191,12 @@ impl Damage {
         // No merge possible, add as new rect
         if self.count < MAX_RECTS {
             self.rects[self.count] = clipped;
+            self.causes[self.count] = cause;
+            self.sources[self.count] = source;
             self.count += 1;
         } else {
             // Exceeded MAX_RECTS, collapse to full-frame
-            self.collapse_to_full();
+            self.collapse_to_full_with_cause(cause, source);
         }
     }
 
@@ -121,15 +214,22 @@ impl Damage {
                 for j in (i + 1)..self.count {
                     if self.rects[i].touches_or_overlaps(self.rects[j]) {
                         self.rects[i] = self.rects[i].union(self.rects[j]);
+                        // Keep the more specific cause
+                        if self.causes[i] == DamageCause::Unknown && self.causes[j] != DamageCause::Unknown {
+                            self.causes[i] = self.causes[j];
+                            self.sources[i] = self.sources[j];
+                        }
                         // Check if merged rect exceeds threshold (25% of screen)
                         if self.rects[i].area() * 4 > self.bounds.area() {
-                            self.collapse_to_full();
+                            self.collapse_to_full_with_cause(self.causes[i], self.sources[i]);
                             return;
                         }
                         // Remove j by swapping with last
                         self.count -= 1;
                         if j < self.count {
                             self.rects[j] = self.rects[self.count];
+                            self.causes[j] = self.causes[self.count];
+                            self.sources[j] = self.sources[self.count];
                         }
                         changed = true;
                         break 'outer;
@@ -141,7 +241,14 @@ impl Damage {
 
     /// Collapse all damage to a single full-frame rect.
     fn collapse_to_full(&mut self) {
+        self.collapse_to_full_with_cause(DamageCause::ForceFull, None);
+    }
+
+    /// Collapse all damage to a single full-frame rect with a cause.
+    fn collapse_to_full_with_cause(&mut self, cause: DamageCause, source: Option<ThingId>) {
         self.rects[0] = self.bounds;
+        self.causes[0] = cause;
+        self.sources[0] = source;
         self.count = 1;
         self.is_full = true;
     }
@@ -149,6 +256,33 @@ impl Damage {
     /// Iterate over the damage rectangles.
     pub fn iter(&self) -> impl Iterator<Item = Rect> + '_ {
         self.rects[..self.count].iter().copied()
+    }
+
+    /// Iterate over damage records (rect + cause + source).
+    pub fn iter_records(&self) -> impl Iterator<Item = DamageRecord> + '_ {
+        (0..self.count).map(move |i| DamageRecord {
+            rect: self.rects[i],
+            cause: self.causes[i],
+            source: self.sources[i],
+        })
+    }
+
+    /// Get the cause for a specific damage rect index.
+    pub fn get_cause(&self, index: usize) -> Option<DamageCause> {
+        if index < self.count {
+            Some(self.causes[index])
+        } else {
+            None
+        }
+    }
+
+    /// Get the source for a specific damage rect index.
+    pub fn get_source(&self, index: usize) -> Option<ThingId> {
+        if index < self.count {
+            self.sources[index]
+        } else {
+            None
+        }
     }
 
     /// Get the bounding box of all damage.
@@ -196,17 +330,27 @@ impl DamageTracker {
         self.damage.add_rect(rect);
     }
 
+    /// Note a bounding box with explicit cause and source.
+    pub fn note_bbox_with_cause(&mut self, rect: Rect, cause: DamageCause, source: Option<ThingId>) {
+        self.damage.add_rect_with_cause(rect, cause, source);
+    }
+
     /// Note cursor movement: damages both old and new cursor positions.
     pub fn note_cursor_move(&mut self, old_bbox: Rect, new_bbox: Rect) {
         // Damage the old position (needs to be redrawn to erase)
-        self.damage.add_rect(old_bbox);
+        self.damage.add_rect_with_cause(old_bbox, DamageCause::CursorMoved, None);
         // Damage the new position (needs to be drawn)
-        self.damage.add_rect(new_bbox);
+        self.damage.add_rect_with_cause(new_bbox, DamageCause::CursorMoved, None);
     }
 
     /// Mark the entire frame as damaged.
     pub fn mark_full(&mut self) {
         self.damage = Damage::full(self.bounds);
+    }
+
+    /// Mark the entire frame as damaged with an explicit cause.
+    pub fn mark_full_with_cause(&mut self, cause: DamageCause, source: Option<ThingId>) {
+        self.damage = Damage::full_with_cause(self.bounds, cause, source);
     }
 
     /// End the frame and return the accumulated damage.
@@ -216,6 +360,84 @@ impl DamageTracker {
 }
 
 impl Default for DamageTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ============================================================================
+// Damage Journal (Debug-Only)
+// ============================================================================
+
+/// Maximum number of frames to keep in the journal.
+const JOURNAL_MAX_FRAMES: usize = 60;
+
+/// A record of damage for a single frame.
+#[cfg(debug_assertions)]
+#[derive(Clone, Debug)]
+pub struct FrameDamageRecord {
+    pub frame_id: u64,
+    pub records: Vec<DamageRecord>,
+    pub is_full: bool,
+}
+
+/// Rolling damage history for debugging.
+///
+/// Only compiled in debug builds to avoid overhead in release.
+#[cfg(debug_assertions)]
+pub struct DamageJournal {
+    frames: Vec<FrameDamageRecord>,
+    next_frame_id: u64,
+}
+
+#[cfg(debug_assertions)]
+impl DamageJournal {
+    pub fn new() -> Self {
+        Self {
+            frames: Vec::new(),
+            next_frame_id: 1,
+        }
+    }
+
+    /// Record damage for a frame.
+    pub fn record_frame(&mut self, damage: &Damage) {
+        let records: Vec<DamageRecord> = damage.iter_records().collect();
+        
+        let record = FrameDamageRecord {
+            frame_id: self.next_frame_id,
+            records,
+            is_full: damage.is_full,
+        };
+
+        self.frames.push(record);
+
+        // Keep only the last JOURNAL_MAX_FRAMES
+        if self.frames.len() > JOURNAL_MAX_FRAMES {
+            self.frames.remove(0);
+        }
+
+        self.next_frame_id = self.next_frame_id.wrapping_add(1);
+    }
+
+    /// Get the last N frame records.
+    pub fn last_frames(&self, n: usize) -> &[FrameDamageRecord] {
+        let start = self.frames.len().saturating_sub(n);
+        &self.frames[start..]
+    }
+
+    /// Get all recorded frames.
+    pub fn all_frames(&self) -> &[FrameDamageRecord] {
+        &self.frames
+    }
+
+    /// Clear the journal.
+    pub fn clear(&mut self) {
+        self.frames.clear();
+    }
+}
+
+#[cfg(debug_assertions)]
+impl Default for DamageJournal {
     fn default() -> Self {
         Self::new()
     }

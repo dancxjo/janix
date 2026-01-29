@@ -10,6 +10,17 @@ pub fn blit_rgba8888_over(dst: &mut [u32], src: &[u32]) {
     stem::simd::blit_rgba8888_over(dst, src);
 }
 
+/// Blit an alpha mask with tinted color over destination.
+///
+/// Applies a coverage mask with a tinted solid color using the over operator.
+/// This function includes several fast-path optimizations:
+/// - Early exit when `tint_a == 0` (no contribution)
+/// - Skip pre-modulation when `tint_a == 255` (no tint adjustment needed)
+/// - For small spans (≤64 pixels):
+///   - Skip when mask is all zeros (no coverage)
+///   - Use solid fill when mask is all 255s with opaque color
+///
+/// Trace counters track optimization hits for performance analysis.
 pub fn blit_a8_tinted_over(dst: &mut [u32], mask: &[u8], color: u32, tint_a: u8) {
     if tint_a == 0 {
         crate::trace_counter!("raster.blit.a8_masked.early_exit_tint_zero", 1);

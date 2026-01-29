@@ -117,7 +117,7 @@ fn main(_arg: usize) -> ! {
 
 /// Initialize the Limine module ContentSource node.
 fn initialize_limine_content_source() -> ThingId {
-    // Check if ContentSource already exists
+    // Check if ContentSource already exists (buffer size: max 16 sources is sufficient for boot-time sources)
     let mut sources = [ThingId::default(); 16];
     if let Ok(count) = find(kinds::CONTENT_SOURCE, &mut sources) {
         for &source_id in &sources[..count] {
@@ -168,6 +168,7 @@ fn scan_boot_modules() {
 }
 
 fn process_events(buf: &[u8], _source_id: ThingId) {
+    // Note: _source_id reserved for future use when event filtering by source is needed
     let mut cursor = 0;
     while cursor < buf.len() {
         if let Ok((header, value)) = abi::watch::decode_event(&buf[cursor..]) {
@@ -281,6 +282,7 @@ fn ingest_boot_module(mod_id: ThingId) {
     let asset_id = publish_asset(mod_name, kind, bs_id, "boot", size, hash);
     
     // Also create a File node in the content graph for unified access
+    // Cache lookup: 16 sources is sufficient for boot-time sources (Limine, ISO, etc.)
     let mut sources = [ThingId::default(); 16];
     if let Ok(count) = find(kinds::CONTENT_SOURCE, &mut sources) {
         for &source_id in &sources[..count] {
@@ -301,7 +303,9 @@ fn ingest_boot_module(mod_id: ThingId) {
                             None
                         };
                         
-                        let _ = publish_content_file(source_id, mod_name, mod_name, bs_id, size, hash, mime);
+                        if publish_content_file(source_id, mod_name, bs_id, size, hash, mime).is_none() {
+                            info!("INGESTD: Failed to create File node for '{}'", mod_name);
+                        }
                         break;
                     }
                 }
@@ -545,7 +549,6 @@ fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str, size: usi
 /// This provides a unified file abstraction across all content sources.
 fn publish_content_file(
     source_id: ThingId,
-    _path: &str,
     name: &str,
     bs_id: ThingId,
     size: usize,
@@ -553,6 +556,7 @@ fn publish_content_file(
     mime: Option<&str>,
 ) -> Option<ThingId> {
     // Check if file already exists with same source and name
+    // Buffer size: 512 is reasonable for boot-time assets; larger systems may need pagination
     let mut files = [ThingId::default(); 512];
     if let Ok(count) = find(kinds::CONTENT_FILE, &mut files) {
         let name_sym = intern(name).unwrap_or(0) as u64;

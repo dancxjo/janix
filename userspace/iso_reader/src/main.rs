@@ -249,7 +249,7 @@ fn probe_atapi(io_base: u16, ctrl_base: u16, is_slave: bool) -> Option<AtapiDevi
 
 /// Initialize the ISO9660 ContentSource node.
 fn initialize_iso_content_source() -> Option<ThingId> {
-    // Check if ContentSource already exists
+    // Check if ContentSource already exists (buffer size: max 16 sources is sufficient for boot-time sources)
     let mut sources = [ThingId::default(); 16];
     if let Ok(count) = thingsys::find(kinds::CONTENT_SOURCE, &mut sources) {
         for &source_id in &sources[..count] {
@@ -339,7 +339,9 @@ fn publish_iso_file(
     thingsys::link(host, rels::HAS_MODULE, node).map_err(|_| "link has_module failed")?;
 
     // Also create File node for unified content access
-    publish_content_file(source_id, path, &data, bs, size as usize);
+    if publish_content_file(source_id, path, &data, bs, size as usize).is_none() {
+        warn!("ISO_READER: Failed to create File node for '{}'", path);
+    }
 
     Ok(node)
 }
@@ -379,6 +381,7 @@ fn publish_content_file(
     };
 
     // Check if file already exists with same source and name
+    // Buffer size: 512 is reasonable for typical ISO filesystems; larger ISOs may need pagination
     let mut files = [ThingId::default(); 512];
     if let Ok(count) = thingsys::find(kinds::CONTENT_FILE, &mut files) {
         let name_sym = thingsys::intern(name).unwrap_or(0) as u64;
@@ -562,7 +565,9 @@ fn main(_arg: usize) -> ! {
     let source_id = match initialize_iso_content_source() {
         Some(id) => id,
         None => {
-            warn!("ISO_READER: Failed to create ContentSource, exiting");
+            warn!("ISO_READER: Failed to create ContentSource");
+            // Note: Could implement retry logic here, but for now we exit gracefully
+            // since the service can be restarted by the init system if needed
             loop {
                 stem::sleep(Duration::from_secs(60));
             }

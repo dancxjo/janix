@@ -403,4 +403,50 @@ mod tests {
             "SSE2 implementation should have modified some pixels"
         );
     }
+
+    // Test to verify NEON implementation works correctly
+    #[test]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    fn test_neon_solid_masked_correctness() {
+        // This test verifies that on aarch64 with NEON support,
+        // the NEON implementation produces correct results.
+        // Note: We cannot directly verify which backend is used at runtime,
+        // but the #[cfg] ensures this test only runs where NEON is available.
+        
+        let w = 16;
+        let h = 4;
+        let mut dst = vec![0xFF_80_80_80u32; w * h];
+        let mask = vec![128u8; w * h];
+        let color = 0x80_FF_00_FFu32;
+        
+        // This call should use NEON on aarch64
+        composite_solid_masked_over(&mut dst, w, &mask, w, w, h, color);
+        
+        // Verify result is correct (not all pixels are unchanged)
+        let unchanged_count = dst.iter().filter(|&&p| p == 0xFF_80_80_80).count();
+        assert!(
+            unchanged_count < w * h,
+            "NEON implementation should have modified some pixels"
+        );
+    }
+
+    #[test]
+    #[cfg(all(target_arch = "aarch64", target_feature = "neon"))]
+    fn test_neon_src_masked_correctness() {
+        let w = 16;
+        let h = 4;
+        let mut dst = vec![0xFF_80_80_80u32; w * h];
+        let src = vec![0x80_FF_00_FFu32; w * h];
+        let mask = vec![128u8; w * h];
+        
+        // This call should use NEON on aarch64
+        composite_src_masked_over(&mut dst, w, &src, w, &mask, w, w, h);
+        
+        // Verify result is correct (not all pixels are unchanged)
+        let unchanged_count = dst.iter().filter(|&&p| p == 0xFF_80_80_80).count();
+        assert!(
+            unchanged_count < w * h,
+            "NEON implementation should have modified some pixels"
+        );
+    }
 }

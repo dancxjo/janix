@@ -1,6 +1,22 @@
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
+#[cfg(all(target_arch = "aarch64", debug_assertions))]
+use core::sync::atomic::{AtomicBool, Ordering};
+
+#[cfg(all(target_arch = "aarch64", debug_assertions))]
+static NEON_BACKEND_LOGGED: AtomicBool = AtomicBool::new(false);
+
+#[cfg(all(target_arch = "aarch64", debug_assertions))]
+fn log_backend_selection(_function_name: &str) {
+    if !NEON_BACKEND_LOGGED.swap(true, Ordering::Relaxed) {
+        // In a kernel environment, we might not have println!
+        // This is just for sanity checking in debug mode
+        #[cfg(feature = "std")]
+        println!("SIMD backend selected for {}: NEON", _function_name);
+    }
+}
+
 #[inline(always)]
 fn scale_ch(c: u8, a: u8) -> u32 {
     let t = c as u32 * a as u32;
@@ -101,6 +117,9 @@ pub unsafe fn composite_solid_masked_over_neon(
     rect_h: usize,
     color_premul: u32,
 ) {
+    #[cfg(debug_assertions)]
+    log_backend_selection("composite_solid_masked_over");
+    
     let ca = ((color_premul >> 24) & 0xFF) as u8;
     let cr = ((color_premul >> 16) & 0xFF) as u8;
     let cg = ((color_premul >> 8) & 0xFF) as u8;
@@ -248,6 +267,9 @@ pub unsafe fn composite_src_masked_over_neon(
     rect_w: usize,
     rect_h: usize,
 ) {
+    #[cfg(debug_assertions)]
+    log_backend_selection("composite_src_masked_over");
+    
     for y in 0..rect_h {
         let dst_row = &mut dst[y * dst_stride..];
         let src_row = &src[y * src_stride..];

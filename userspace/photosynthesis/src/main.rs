@@ -99,6 +99,9 @@ const ID_TEXT_COLOR: Color = Color::from_argb_u32(0xFF8A8A8C);
 
 #[stem::main]
 fn main() -> ! {
+    // Initialize i18n system
+    stem::i18n::init();
+    
     info!("Photosynthesis starting...");
 
     // 1. Wait for Bloom (UI Root)

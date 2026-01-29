@@ -37,6 +37,7 @@ mod state;
 mod surface;
 mod svg;
 mod text_cache;
+mod text_render;
 mod ui;
 mod ui_events;
 mod window_manager;

@@ -1,4 +1,4 @@
-use crate::geometry::{Color, Rect, Transform};
+use crate::geometry::{Color, RectF, Transform};
 pub use crate::isa::{FillRule, LineCap, LineJoin, Path2D, PathVerb as PathCommand, PointF};
 pub use alloc::vec::Vec;
 use serde::{Deserialize, Serialize};
@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 pub struct SvgIrDocument {
     pub width: Option<f32>,
     pub height: Option<f32>,
-    pub view_box: Option<Rect>,
+    pub view_box: Option<RectF>,
     pub ops: Vec<SvgOp>,
 }
 

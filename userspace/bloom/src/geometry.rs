@@ -43,9 +43,62 @@ impl Size {
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct SizeF {
+    pub width: f32,
+    pub height: f32,
+}
+
+impl SizeF {
+    pub const fn new(width: f32, height: f32) -> Self {
+        Self { width, height }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Rect {
     pub origin: Point,
     pub size: Size,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct RectF {
+    pub origin: PointF,
+    pub size: SizeF,
+}
+
+impl RectF {
+    pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
+        Self {
+            origin: PointF::new(x, y),
+            size: SizeF::new(width, height),
+        }
+    }
+
+    pub fn x(&self) -> f32 {
+        self.origin.x
+    }
+    pub fn y(&self) -> f32 {
+        self.origin.y
+    }
+    pub fn width(&self) -> f32 {
+        self.size.width
+    }
+    pub fn height(&self) -> f32 {
+        self.size.height
+    }
+
+    pub fn intersection(&self, other: &RectF) -> Option<RectF> {
+        let x0 = self.x().max(other.x());
+        let y0 = self.y().max(other.y());
+        let x1 = (self.x() + self.width()).min(other.x() + other.width());
+        let y1 = (self.y() + self.height()).min(other.y() + other.height());
+
+        if x1 > x0 && y1 > y0 {
+            Some(RectF::new(x0, y0, x1 - x0, y1 - y0))
+        } else {
+            None
+        }
+    }
 }
 
 impl Rect {

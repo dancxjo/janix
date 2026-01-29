@@ -1,0 +1,36 @@
+name: Platform Boundary Audit
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  audit:
+    name: Verify no_std compliance
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.x'
+        
+    - name: Install Rust toolchain
+      uses: dtolnay/rust-toolchain@nightly
+      
+    - name: Run platform boundary audit
+      run: python3 scripts/audit_platform_boundary.py
+      
+    - name: Verify PAL module exists
+      run: |
+        test -f stem/src/pal/mod.rs || exit 1
+        test -f stem/src/pal/log.rs || exit 1
+        test -f stem/src/pal/clock.rs || exit 1
+        test -f stem/src/pal/abort.rs || exit 1
+        test -f stem/src/pal/alloc.rs || exit 1
+        echo "✓ All PAL modules present"

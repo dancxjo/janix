@@ -15,6 +15,7 @@ pub struct DebugFlags {
     pub show_damage_causes: bool,
     pub force_full_damage: bool,
     pub disable_damage_tracking: bool,
+    pub replay_last_frame_damage: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -39,6 +40,8 @@ pub struct DamageOverlayState {
     pub overflowed: bool,
     #[cfg(debug_assertions)]
     pub journal: DamageJournal,
+    /// Last frame's damage for replay mode
+    pub last_frame_damage: Option<Rect>,
 }
 
 impl Default for DamageOverlayState {
@@ -53,6 +56,7 @@ impl Default for DamageOverlayState {
             overflowed: false,
             #[cfg(debug_assertions)]
             journal: DamageJournal::new(),
+            last_frame_damage: None,
         }
     }
 }

@@ -27,21 +27,6 @@ pub type SubpixelPos = i32;
 /// Number of subpixel phases we support (0, 0.25, 0.5, 0.75).
 pub const PHASE_COUNT: usize = 4;
 
-/// Helper for alpha scaling (same as scalar SIMD impl).
-#[inline(always)]
-fn scale_ch(c: u8, a: u8) -> u32 {
-    let t = c as u32 * a as u32;
-    (t + 1 + (t >> 8)) >> 8
-}
-
-/// Helper for channel blending (same as scalar SIMD impl).
-#[inline(always)]
-fn blend_channel(s: u32, d: u32, sa: u32) -> u32 {
-    let inv = 255 - sa;
-    let t = s * sa + d * inv;
-    (t + 1 + (t >> 8)) >> 8
-}
-
 /// Convert float position to Q24.8 fixed-point.
 #[inline]
 pub fn float_to_subpixel(f: f32) -> SubpixelPos {

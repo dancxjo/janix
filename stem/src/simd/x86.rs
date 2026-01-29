@@ -98,7 +98,7 @@ pub unsafe fn blit_rgba8888_over_sse2(dst: &mut [u32], src: &[u32]) {
             rgb_out.0[k] = (out_a << 24) | (rgb_out.0[k] & 0x00FF_FFFF);
         }
 
-        _mm_storeu_si128(dst_ptr, rgb_out.0.as_ptr() as *const __m128i);
+        _mm_storeu_si128(dst_ptr, core::mem::transmute(rgb_out.0));
         i += 4;
     }
 

@@ -17,6 +17,8 @@ use alloc::sync::Arc;
 pub mod types;
 pub mod transform;
 pub mod dump;
+pub mod svg_convert;
+pub mod shapes;
 
 pub use types::*;
 pub use transform::*;

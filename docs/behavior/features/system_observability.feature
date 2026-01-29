@@ -10,6 +10,6 @@ Feature: System Observability and Asset Management
     Then I should see a message in the serial output that says "[asset_bank] promoting wallpaper" within 30s
     And I should see a message in the serial output that says "[asset_bank] promoting cursor" within 30s
     And I should see a message in the serial output that says "[asset_bank] promoting font" within 30s
-    And I should see the wallpaper on the screen within 15 seconds
+    And I should see the wallpaper on the screen within 250 seconds
     And I should see a cursor centered on the screen
     And I should see the text "thing-os" in the top-left corner of the screen

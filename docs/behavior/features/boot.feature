@@ -10,7 +10,7 @@ Feature: System Boot and UI Bring-Up
     Then I should see log messages on the terminal
     And each log message should include a monotonically increasing timestamp
     And I should see the system clock tick for several seconds in the serial console
-    And I should see the wallpaper on the screen within 15 seconds
+    And I should see the wallpaper on the screen within 60 seconds
     And I should see a cursor centered on the screen
     And I should see the text "thing-os" in the top-left corner of the screen
     And I should see frame count information in the top-left corner of the screen

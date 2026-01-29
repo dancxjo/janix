@@ -33,7 +33,8 @@ struct WindowPaintState {
     hidden: bool,
     paint_gen: u64,
     paint_bs: u64,
-    image: Option<Image>,
+    width: u32,
+    height: u32,
     buffer: Vec<u32>,
 }
 
@@ -76,7 +77,8 @@ impl PaintPipeline {
                 hidden: false,
                 paint_gen: 0,
                 paint_bs: 0,
-                image: None,
+                width: 0,
+                height: 0,
                 buffer: Vec::new(),
             });
 
@@ -96,6 +98,7 @@ impl PaintPipeline {
             }
 
             if needs_rebuild {
+                crate::trace_span!("bloom.window_cache.rebuild");
                 entry.rect = rect;
                 entry.z = z;
                 entry.hidden = hidden;
@@ -106,6 +109,13 @@ impl PaintPipeline {
                 let w = rect.width() as usize;
                 let h = rect.height() as usize;
                 let len = w * h;
+
+                // Update cached dimensions
+                entry.width = w as u32;
+                entry.height = h as u32;
+
+                crate::trace_counter!("bloom.window_cache.rebuild.count", 1);
+                crate::trace_counter!("bloom.window_cache.pixels_written.total", len as u64);
 
                 // Resize buffer if needed
                 if entry.buffer.len() != len {
@@ -126,28 +136,14 @@ impl PaintPipeline {
                         )
                     };
 
-                    // Clear (using transparent black or window background logic - assuming transparent)
+                    // Clear (using transparent black)
                     // Windows usually clear themselves, but let's ensure a clean slate.
-                    for i in 0..len {
-                        entry.buffer[i] = 0; // Transparent
-                    }
+                    entry.buffer.fill(0);
 
                     // Build and execute local drawlist
                     let local_rect = Rect::new(0, 0, rect.width(), rect.height());
                     let list = build_drawlist(paint_bs, local_rect);
                     raster::execute(&mut surface, &list, false);
-
-                    // Update Cached Image
-                    entry.image = Some(Image {
-                        width: w as u32,
-                        height: h as u32,
-                        pixels: Arc::from(entry.buffer.clone().into_boxed_slice()),
-                        gen: AssetGeneration::ZERO,
-                        name: Arc::from("window_cache"),
-                        id: None,
-                    });
-                } else {
-                    entry.image = None;
                 }
 
                 damage.push(Rect::new(rect.x(), rect.y(), rect.width(), rect.height()));
@@ -240,21 +236,19 @@ impl PaintPipeline {
                         // This part of 'r' is covered by 'win'.
                         // Blit 'win' portion to 'vis'.
                         // Use intersection with valid image area (0,0,w,h) relative to window
-                        if let Some(img) = &win.image {
-                            if let Some(win_buffer) = &win.image.as_ref().map(|_| &win.buffer) {
-                                // Calculate src rect in window coordinates
-                                let src_x = vis.x() - w_rect.x();
-                                let src_y = vis.y() - w_rect.y();
+                        if win.width > 0 && win.height > 0 && !win.buffer.is_empty() {
+                            // Calculate src rect in window coordinates
+                            let src_x = vis.x() - w_rect.x();
+                            let src_y = vis.y() - w_rect.y();
 
-                                // Blit logic
-                                blit_rect(
-                                    surface,
-                                    vis,
-                                    win_buffer,
-                                    img.width as usize, // stride
-                                    Rect::new(src_x, src_y, vis.width(), vis.height()),
-                                );
-                            }
+                            // Blit logic
+                            blit_rect(
+                                surface,
+                                vis,
+                                &win.buffer,
+                                win.width as usize, // stride
+                                Rect::new(src_x, src_y, vis.width(), vis.height()),
+                            );
                         }
 
                         // Subtract vis from r

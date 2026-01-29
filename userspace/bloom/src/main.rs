@@ -27,6 +27,7 @@ mod paint_vm;
 pub mod painter_resources;
 pub mod perf;
 mod present;
+pub mod snapshot;
 mod raster;
 mod reclaimer;
 mod render_graph;
@@ -59,6 +60,7 @@ use crate::frame_loop::FrameLoop;
 use crate::paint_vm::PaintPipeline;
 use crate::present::{evaluate_present_strategy, DriverPresenter, PresenterImpl};
 use crate::state::{DamageOverlayState, DebugFlags, OverlayMode};
+use crate::snapshot::SnapshotInvalidation;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
@@ -535,7 +537,8 @@ fn main(arg: usize) -> ! {
 
     // Track watch event counts for diagnostics
     let mut ui_watch_events_total: u64 = 0;
-    let mut force_full_damage;
+    // Removed force_full_damage bool, using invalidation_causes vector
+    let mut invalidation_causes: alloc::vec::Vec<SnapshotInvalidation> = alloc::vec::Vec::with_capacity(16);
 
     // WAIT for critical assets (fonts) before showing anything
     let mut startup_frames = 0;
@@ -559,12 +562,12 @@ fn main(arg: usize) -> ! {
 
     loop {
         loop_ctrl.next();
-        force_full_damage = false;
+        invalidation_causes.clear();
         ASSETS.publish_pending();
 
         // Poll font client for IPC responses
         if crate::font_client::poll() {
-            force_full_damage = true;
+            invalidation_causes.push(SnapshotInvalidation::FontChanged);
         }
 
         // 0. Check for new glyphs in graph
@@ -574,7 +577,7 @@ fn main(arg: usize) -> ! {
             if let Ok(len) = stem::syscall::root_watch_next(gw, &mut g_seq, &mut g_buf) {
                 if len > 0 {
                     crate::font_graph::mark_dirty();
-                    force_full_damage = true;
+                    invalidation_causes.push(SnapshotInvalidation::FontChanged);
                 }
             }
         }
@@ -599,7 +602,7 @@ fn main(arg: usize) -> ! {
                     drained,
                     ui_watch_events_total
                 );
-                force_full_damage = true;
+                invalidation_causes.push(SnapshotInvalidation::GeometryChanged);
             }
         }
 
@@ -616,7 +619,7 @@ fn main(arg: usize) -> ! {
                 }
             }
             if drained > 0 {
-                force_full_damage = true;
+                invalidation_causes.push(SnapshotInvalidation::ContentChanged);
             }
         }
 
@@ -690,13 +693,11 @@ fn main(arg: usize) -> ! {
 
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_X, 0);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, 0);
-                        let _ =
-                            stem::thing::sys::prop_set(focused, keys::UI_WIDTH, screen_w as u64);
-                        let _ =
+                    let _ =
                             stem::thing::sys::prop_set(focused, keys::UI_HEIGHT, screen_h as u64);
                         let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
                     }
-                    force_full_damage = true;
+                    invalidation_causes.push(SnapshotInvalidation::Forced);
                 }
             }
 
@@ -726,7 +727,7 @@ fn main(arg: usize) -> ! {
 
             if pressed_keys.contains(&Key::F7) && !prev_keys.contains(&Key::F7) {
                 tile_windows(screen_w, screen_h);
-                force_full_damage = true;
+                invalidation_causes.push(SnapshotInvalidation::Forced);
                 stem::info!("[bloom] F7 pressed, auto-tiling windows");
             }
 
@@ -829,7 +830,7 @@ fn main(arg: usize) -> ! {
                     &mut alt_cycle_max_z,
                 ) {
                     focused_window = Some(next);
-                    force_full_damage = true;
+                    invalidation_causes.push(SnapshotInvalidation::Forced);
                 }
             }
             alt_prev_down = alt_down;
@@ -933,7 +934,10 @@ fn main(arg: usize) -> ! {
             }
         }
 
-        if force_full_damage {
+        if !invalidation_causes.is_empty() {
+             if debug_flags.show_damage_stats {
+                 stem::info!("[bloom] Full damage forced by: {:?}", invalidation_causes);
+             }
             damage = damage::Damage::full(bounds);
         }
 
@@ -970,7 +974,7 @@ fn main(arg: usize) -> ! {
             snapshot.rects(),
             snapshot.raw_rects(),
             strategy.mode,
-            strategy.reason,
+            &invalidation_causes,
             snapshot.overflowed(),
         );
         append_damage_overlay(&mut list, &overlay_state, &debug_flags, screen_w, screen_h);
@@ -1071,10 +1075,10 @@ fn append_damage_overlay(
             ""
         };
         let text = alloc::format!(
-            "DAMAGE: merged={} raw={} reason={}{}",
+            "DAMAGE: merged={} raw={} reason={:?}{}",
             overlay_state.present().len(),
             overlay_state.raw().len(),
-            overlay_state.reason,
+            overlay_state.reasons,
             suffix
         );
         let x = 8;

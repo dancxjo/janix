@@ -93,7 +93,7 @@ const ID_LINE_HEIGHT: i32 = 18;
 const TYPE_CHAR_WIDTH: i32 = 10;
 const ID_CHAR_WIDTH: i32 = 8;
 const TILE_BORDER_COLOR: Color = Color::from_argb_u32(0xFFE0E0E8);
-const TILE_FILL_COLOR: Color = Color::from_argb_u32(0xFFFFFFFF);
+const TILE_FILL_COLOR: Color = Color::from_argb_u32(0x88FFFFFF);
 const TYPE_TEXT_COLOR: Color = Color::from_argb_u32(0xFF383838);
 const ID_TEXT_COLOR: Color = Color::from_argb_u32(0xFF8A8A8C);
 

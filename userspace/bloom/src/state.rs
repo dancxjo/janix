@@ -1,4 +1,6 @@
 use crate::geometry::Rect;
+use crate::snapshot::SnapshotInvalidation;
+use alloc::vec::Vec;
 
 pub const MAX_OVERLAY_RECTS: usize = 256;
 pub const MAX_OVERLAY_RAW_RECTS: usize = 64;
@@ -28,7 +30,7 @@ pub struct DamageOverlayState {
     pub raw_rects: [Rect; MAX_OVERLAY_RAW_RECTS],
     pub raw_len: usize,
     pub mode: OverlayMode,
-    pub reason: &'static str,
+    pub reasons: Vec<SnapshotInvalidation>,
     pub overflowed: bool,
 }
 
@@ -40,7 +42,7 @@ impl Default for DamageOverlayState {
             raw_rects: [Rect::default(); MAX_OVERLAY_RAW_RECTS],
             raw_len: 0,
             mode: OverlayMode::DirtyRects,
-            reason: "",
+            reasons: Vec::new(),
             overflowed: false,
         }
     }
@@ -52,7 +54,7 @@ impl DamageOverlayState {
         present: &[Rect],
         raw: &[Rect],
         mode: OverlayMode,
-        reason: &'static str,
+        reasons: &[SnapshotInvalidation],
         overflowed: bool,
     ) {
         let present_len = present.len().min(MAX_OVERLAY_RECTS);
@@ -64,7 +66,8 @@ impl DamageOverlayState {
         self.raw_rects[..raw_len].copy_from_slice(&raw[..raw_len]);
 
         self.mode = mode;
-        self.reason = reason;
+        self.reasons.clear();
+        self.reasons.extend_from_slice(reasons);
         self.overflowed = overflowed;
     }
 

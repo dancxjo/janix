@@ -1,4 +1,5 @@
 // x86 SSE2/AVX2 backend
+// Provides runtime-dispatched SIMD implementations for x86/x86_64 architectures
 #[cfg(target_arch = "x86")]
 use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]

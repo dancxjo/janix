@@ -19,9 +19,12 @@ pub mod transform;
 pub mod dump;
 pub mod svg_convert;
 pub mod shapes;
+pub mod render;
 
 pub use types::*;
 pub use transform::*;
+pub use svg_convert::svg_to_vir;
+pub use render::vir_to_drawlist;
 
 /// A complete vector document ready for tessellation and rendering
 #[derive(Debug, Clone, Serialize, Deserialize)]

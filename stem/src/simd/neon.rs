@@ -1,6 +1,12 @@
 #[cfg(target_arch = "aarch64")]
 use core::arch::aarch64::*;
 
+#[inline(always)]
+fn scale_ch(c: u8, a: u8) -> u32 {
+    let t = c as u32 * a as u32;
+    (t + 1 + (t >> 8)) >> 8
+}
+
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 pub unsafe fn blit_rgba8888_over_neon(dst: &mut [u32], src: &[u32]) {
@@ -63,7 +69,27 @@ pub unsafe fn blit_rgba8888_over_neon(dst: &mut [u32], src: &[u32]) {
         let result = vcombine_u8(res_lo_u8, res_hi_u8);
         let result_u32 = vreinterpretq_u32_u8(result);
 
-        vst1q_u32(dst_ptr, result_u32);
+        // Fix alpha per-lane to match scalar semantics
+        let mut rgb_out: [u32; 4] = core::mem::transmute(result_u32);
+        let dst_in: [u32; 4] = core::mem::transmute(d);
+        let src_in: [u32; 4] = core::mem::transmute(s);
+        for k in 0..4 {
+            let s_px = src_in[k];
+            let sa = (s_px >> 24) & 0xFF;
+            if sa == 0 {
+                continue;
+            }
+            if sa == 255 {
+                rgb_out[k] = s_px;
+                continue;
+            }
+            let d_px = dst_in[k];
+            let da = (d_px >> 24) & 0xFF;
+            let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
+            rgb_out[k] = (out_a << 24) | (rgb_out[k] & 0x00FF_FFFF);
+        }
+
+        vst1q_u32(dst_ptr, core::mem::transmute(rgb_out));
         i += 4;
     }
 

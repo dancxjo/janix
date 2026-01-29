@@ -247,6 +247,49 @@ fn probe_atapi(io_base: u16, ctrl_base: u16, is_slave: bool) -> Option<AtapiDevi
     Some(dev)
 }
 
+/// Initialize the ISO9660 ContentSource node.
+fn initialize_iso_content_source() -> Option<ThingId> {
+    // Check if ContentSource already exists
+    let mut sources = [ThingId::default(); 16];
+    if let Ok(count) = thingsys::find(kinds::CONTENT_SOURCE, &mut sources) {
+        for &source_id in &sources[..count] {
+            let kind_sym = thingsys::prop_get(source_id, keys::CONTENT_SOURCE_KIND).unwrap_or(0);
+            if kind_sym != 0 {
+                let mut buf = [0u8; 64];
+                if let Ok(len) = thingsys::describe_symbol(kind_sym as u32, &mut buf) {
+                    let kind_str = core::str::from_utf8(&buf[..len]).unwrap_or("");
+                    if kind_str == "iso9660_disk" {
+                        info!("ISO_READER: Found existing ISO ContentSource");
+                        return Some(source_id);
+                    }
+                }
+            }
+        }
+    }
+
+    // Create new ContentSource for ISO9660
+    match thingsys::create_node(kinds::CONTENT_SOURCE) {
+        Ok(source_id) => {
+            let kind_sym = thingsys::intern("iso9660_disk").unwrap_or(0);
+            let name_sym = thingsys::intern("cdrom0").unwrap_or(0);
+            let state_sym = thingsys::intern("ready").unwrap_or(0);
+            
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_KIND, kind_sym as u64);
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_NAME, name_sym as u64);
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_PRIORITY, 50u64); // Lower priority than Limine (100)
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_STATE, state_sym as u64);
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_GEN, 1u64);
+            
+            info!("ISO_READER: Created ISO ContentSource node");
+            Some(source_id)
+        }
+        Err(_) => {
+            warn!("ISO_READER: Failed to create ContentSource");
+            None
+        }
+    }
+}
+
 /// Find the host node to attach ISO modules to.
 fn find_host_node() -> Option<ThingId> {
     let mut hosts = [ThingId::default(); 4];
@@ -256,16 +299,17 @@ fn find_host_node() -> Option<ThingId> {
     }
 }
 
-/// Publish a file from the ISO as a graph node (same schema as Limine modules).
+/// Publish a file from the ISO as both BOOT_MODULE (backward compat) and File node.
 fn publish_iso_file(
     host: ThingId,
+    source_id: ThingId,
     path: &str,
     data: Vec<u8>,
     index: usize,
 ) -> Result<ThingId, &'static str> {
     let size = data.len() as u64;
 
-    // Create module node
+    // Create module node (for backward compatibility with existing consumers)
     let node = thingsys::create_node(kinds::BOOT_MODULE).map_err(|_| "create_node failed")?;
 
     // Set name (intern string, store symbol ID)
@@ -294,7 +338,91 @@ fn publish_iso_file(
     // Link to host
     thingsys::link(host, rels::HAS_MODULE, node).map_err(|_| "link has_module failed")?;
 
+    // Also create File node for unified content access
+    publish_content_file(source_id, path, &data, bs, size as usize);
+
     Ok(node)
+}
+
+/// Create or update a File node for ISO content.
+fn publish_content_file(
+    source_id: ThingId,
+    path: &str,
+    data: &[u8],
+    bs_id: ThingId,
+    size: usize,
+) -> Option<ThingId> {
+    // Compute content hash
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let hash_bytes = hasher.finalize();
+    let hash = u64::from_le_bytes([
+        hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
+        hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+    ]);
+
+    // Extract file name from path
+    let name = path.rsplit('/').next().unwrap_or(path);
+
+    // Determine MIME type from extension
+    let mime = if name.ends_with(".svg") || name.ends_with(".SVG") {
+        Some("image/svg+xml")
+    } else if name.ends_with(".ttf") || name.ends_with(".TTF") || name.ends_with(".otf") || name.ends_with(".OTF") {
+        Some("application/font-sfnt")
+    } else if name.ends_with(".bmp") || name.ends_with(".BMP") {
+        Some("image/bmp")
+    } else if name.ends_with(".png") || name.ends_with(".PNG") {
+        Some("image/png")
+    } else {
+        None
+    };
+
+    // Check if file already exists with same source and name
+    let mut files = [ThingId::default(); 512];
+    if let Ok(count) = thingsys::find(kinds::CONTENT_FILE, &mut files) {
+        let name_sym = thingsys::intern(name).unwrap_or(0) as u64;
+        for &file_id in &files[..count] {
+            let existing_name = thingsys::prop_get(file_id, keys::FILE_NAME).unwrap_or(0);
+            let existing_source = thingsys::prop_get(file_id, keys::FILE_SOURCE).unwrap_or(0);
+            
+            if existing_name == name_sym && existing_source == source_id.to_u64_lossy() {
+                // Update existing file if hash changed
+                let old_hash = thingsys::prop_get(file_id, keys::FILE_HASH).unwrap_or(0);
+                if old_hash != hash {
+                    let _ = thingsys::prop_set(file_id, keys::FILE_BYTESPACE, bs_id.to_u64_lossy());
+                    let _ = thingsys::prop_set(file_id, keys::FILE_HASH, hash);
+                    let _ = thingsys::prop_set(file_id, keys::FILE_SIZE, size as u64);
+                }
+                return Some(file_id);
+            }
+        }
+    }
+
+    // Create new file node
+    match thingsys::create_node(kinds::CONTENT_FILE) {
+        Ok(file_id) => {
+            let name_sym = thingsys::intern(name).unwrap_or(0) as u64;
+            let _ = thingsys::prop_set(file_id, keys::FILE_NAME, name_sym);
+            let _ = thingsys::prop_set(file_id, keys::FILE_SIZE, size as u64);
+            let _ = thingsys::prop_set(file_id, keys::FILE_HASH, hash);
+            let _ = thingsys::prop_set(file_id, keys::FILE_BYTESPACE, bs_id.to_u64_lossy());
+            let _ = thingsys::prop_set(file_id, keys::FILE_SOURCE, source_id.to_u64_lossy());
+            
+            if let Some(mime_str) = mime {
+                if let Ok(mime_sym) = thingsys::intern(mime_str) {
+                    let _ = thingsys::prop_set(file_id, keys::FILE_MIME, mime_sym as u64);
+                }
+            }
+            
+            info!("ISO_READER: Created File node '{}' ({} bytes, hash={:016x})", name, size, hash);
+            Some(file_id)
+        }
+        Err(_) => {
+            warn!("ISO_READER: Failed to create File node for '{}'", name);
+            None
+        }
+    }
 }
 
 /// Recursively scan a directory and publish all files.
@@ -302,6 +430,7 @@ fn scan_and_publish(
     dev: &dyn BlockDevice,
     fs: &IsoFs,
     host: ThingId,
+    source_id: ThingId,
     dir_lba: u32,
     dir_size: u32,
     prefix: String,
@@ -323,6 +452,7 @@ fn scan_and_publish(
                 dev,
                 fs,
                 host,
+                source_id,
                 entry.extent_lba,
                 entry.size,
                 full_path,
@@ -338,7 +468,7 @@ fn scan_and_publish(
             match file.read_all(dev) {
                 Ok(data) => {
                     let path_with_slash = alloc::format!("/{}", full_path);
-                    match publish_iso_file(host, &path_with_slash, data, *index) {
+                    match publish_iso_file(host, source_id, &path_with_slash, data, *index) {
                         Ok(node_id) => {
                             info!(
                                 "ISO_READER: Published '{}' ({} bytes) as node {}",
@@ -427,11 +557,24 @@ fn main(_arg: usize) -> ! {
     };
 
     info!("ISO_READER: Scanning ISO root directory...");
+    
+    // Initialize ContentSource
+    let source_id = match initialize_iso_content_source() {
+        Some(id) => id,
+        None => {
+            warn!("ISO_READER: Failed to create ContentSource, exiting");
+            loop {
+                stem::sleep(Duration::from_secs(60));
+            }
+        }
+    };
+    
     let mut index = 1000; // Start at high index to avoid collision with Limine modules
     let published = scan_and_publish(
         &dev,
         &fs,
         host,
+        source_id,
         fs.pvd.root_dir_extent,
         fs.pvd.root_dir_size,
         String::new(),

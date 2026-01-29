@@ -81,8 +81,8 @@ pub fn ellipse_to_path(cx: f32, cy: f32, rx: f32, ry: f32) -> VirPath {
     let mut path = VirPath::new();
     
     // Use 4 cubic beziers to approximate a circle/ellipse
-    // The magic constant for circular arc approximation
-    let k = 0.5522847498; // (4/3) * tan(π/8)
+    // The magic constant for circular arc approximation: 4/3 * (√2 - 1)
+    let k = 0.5522847498;
     
     let kx = k * rx;
     let ky = k * ry;

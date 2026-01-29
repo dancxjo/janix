@@ -35,10 +35,10 @@ fn convert_element(element: &VirElement, config: &TessellateConfig, list: &mut D
                 continue; // Need at least 3 points for a polygon
             }
             
-            // Convert VirPoints to Points
+            // Convert VirPoints to Points with rounding for better accuracy
             let draw_points: Vec<Point> = points
                 .iter()
-                .map(|p| Point::new(p.x as i32, p.y as i32))
+                .map(|p| Point::new(libm::roundf(p.x) as i32, libm::roundf(p.y) as i32))
                 .collect();
             
             // For now, use a simple polygon fill
@@ -77,7 +77,7 @@ fn convert_element(element: &VirElement, config: &TessellateConfig, list: &mut D
             
             let draw_points: Vec<Point> = points
                 .iter()
-                .map(|p| Point::new(p.x as i32, p.y as i32))
+                .map(|p| Point::new(libm::roundf(p.x) as i32, libm::roundf(p.y) as i32))
                 .collect();
             
             let color = match stroke.paint {
@@ -97,7 +97,7 @@ fn convert_element(element: &VirElement, config: &TessellateConfig, list: &mut D
 }
 
 fn convert_color(c: &VirColor, opacity: f32) -> Color {
-    let alpha = ((c.a as f32) * opacity) as u8;
+    let alpha = ((c.a as f32) * opacity.min(1.0).max(0.0)).min(255.0) as u8;
     Color::new(c.r, c.g, c.b, alpha)
 }
 

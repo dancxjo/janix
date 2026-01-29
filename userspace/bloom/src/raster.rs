@@ -1336,6 +1336,169 @@ fn rasterize_text_atlas(
     true
 }
 
+/// SIMD-accelerated text rendering using stem::simd::text module.
+/// Returns true if rendering was successful, false to fallback to old path.
+fn rasterize_text_simd(
+    surface: &mut Surface,
+    text: &str,
+    x: f32,
+    y: f32,
+    size: f32,
+    color: u32,
+    clip: &Rect,
+    rf: Option<&str>,
+) -> bool {
+    use stem::simd::text::{
+        create_glyph_run, draw_glyph_run, float_to_subpixel, compute_phase, 
+        subpixel_frac, PositionedGlyph, Rect as TextRect,
+    };
+    use crate::text_render::convert_placements;
+
+    // Check if font client is available
+    if !font_client::is_available() {
+        return false;
+    }
+
+    // Get face_id from font graph
+    let face_id = font_graph::try_with_graph_if_ready(|graph| {
+        let stack = graph.resolve_stack(rf);
+        stack
+            .iter()
+            .find_map(|f| graph.select_face_for_family(*f, FontStyle::default()))
+    })
+    .flatten();
+
+    let face_id = match face_id {
+        Some(id) => id,
+        None => return false,
+    };
+
+    // Get metrics
+    let metrics = match font_client::get_metrics(face_id, size as u16) {
+        Some(m) => m,
+        None => return false,
+    };
+
+    // Collect glyph IDs and build positioned glyph list
+    let mut positioned_glyphs = Vec::new();
+    let mut pen_x_subpixel = float_to_subpixel(x);
+    let pen_y = (y + metrics.ascent as f32) as i32;
+
+    let glyph_ids: Vec<u32> = text
+        .chars()
+        .filter(|c| *c != '\n' && *c != '\r')
+        .map(|c| c as u32)
+        .collect();
+
+    if glyph_ids.is_empty() {
+        return true;
+    }
+
+    // Batch request all glyphs
+    let entries = font_client::ensure_glyphs(face_id, size as u16, &glyph_ids);
+    if entries.is_empty() {
+        return false; // No glyphs available yet
+    }
+
+    // Build placements from available glyphs
+    let mut placements = Vec::new();
+    for &glyph_id in &glyph_ids {
+        if let Some(g) = font_client::get_glyph(face_id, size as u16, glyph_id) {
+            let fontd_placement = abi::font_protocol::GlyphPlacement {
+                glyph_id,
+                x: g.x,
+                y: g.y,
+                w: g.w,
+                h: g.h,
+                bearing_x: g.bearing_x,
+                bearing_y: g.bearing_y,
+                advance: g.advance,
+            };
+            placements.push(fontd_placement);
+        }
+    }
+
+    // Build positioned glyphs
+    for ch in text.chars() {
+        if ch == '\n' || ch == '\r' {
+            continue;
+        }
+
+        let glyph_id = ch as u32;
+        if let Some(g) = font_client::get_glyph(face_id, size as u16, glyph_id) {
+            let frac = subpixel_frac(pen_x_subpixel);
+            let phase = compute_phase(frac);
+
+            positioned_glyphs.push(PositionedGlyph {
+                x_subpixel: pen_x_subpixel,
+                y: pen_y,
+                glyph_id,
+                phase,
+            });
+
+            pen_x_subpixel += float_to_subpixel(g.advance as f32);
+        } else {
+            // Skip missing glyphs
+            pen_x_subpixel += float_to_subpixel(size * 0.4);
+        }
+    }
+
+    if positioned_glyphs.is_empty() {
+        return true;
+    }
+
+    // Get atlas and render using SIMD path
+    font_client::with_atlas(face_id, size as u16, |atlas_mapping| {
+        // Ensure atlas is mapped
+        let atlas_ptr = match atlas_mapping.ensure_mapped() {
+            Some(p) => p,
+            None => return false,
+        };
+
+        // Get atlas as u8 slice
+        let atlas_size = (atlas_mapping.width * atlas_mapping.height) as usize;
+        let atlas_mask = unsafe { core::slice::from_raw_parts(atlas_ptr, atlas_size) };
+
+        // Convert placements
+        let converted_placements = convert_placements(&placements);
+
+        // Create glyph run
+        let run = create_glyph_run(
+            positioned_glyphs,
+            converted_placements,
+            atlas_mapping.width,
+            atlas_mapping.height,
+        );
+
+        // Get destination buffer
+        let dst_stride = (surface.stride_bytes >> 2) as usize;
+        let dst_size = dst_stride * surface.height() as usize;
+        let dst = unsafe {
+            core::slice::from_raw_parts_mut(surface.ptr as *mut u32, dst_size)
+        };
+
+        // Convert clip rect
+        let text_clip = TextRect::new(clip.x(), clip.y(), clip.width(), clip.height());
+
+        // Premultiply color if needed (assuming input is already premultiplied)
+        let color_premul = color;
+
+        // Draw using SIMD glyph rendering
+        draw_glyph_run(
+            dst,
+            dst_stride,
+            atlas_mask,
+            atlas_mapping.width as usize,
+            &run,
+            &text_clip,
+            color_premul,
+        );
+
+        true
+    })
+    .unwrap_or(false)
+}
+
 fn rasterize_text_locally(
     surface: &mut Surface,
     text: &str,
@@ -1348,6 +1511,13 @@ fn rasterize_text_locally(
     fd: bool,
 ) {
     let t_start = stem::monotonic_ns();
+
+    // Try SIMD path first if fontd is available
+    if rasterize_text_simd(surface, text, x, y, size, color, clip, rf) {
+        crate::trace_counter!("raster.text.simd_path", 1);
+        crate::trace_counter!("text.ns", stem::monotonic_ns().saturating_sub(t_start));
+        return;
+    }
 
     if !font_graph::has_fonts_ready() {
         rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);

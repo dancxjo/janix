@@ -8,9 +8,9 @@
 //! - `AssetGeneration`: Monotonically increasing asset version
 
 use crate::damage::Damage;
-use crate::geometry::Rect;
 use crate::damage_accumulator::{DamageAccumulator, MAX_LOCAL_DAMAGE_RECTS};
 use crate::drawlist::{DrawCmd, DrawList};
+use crate::geometry::Rect;
 use core::cmp::Ordering;
 
 use serde::{Deserialize, Serialize};

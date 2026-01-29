@@ -75,12 +75,7 @@ pub fn compile_graph_to_ir(
                     .filter_map(|s| s.parse().ok())
                     .collect();
                 if parts.len() == 4 {
-                    doc.view_box = Some(RectF::new(
-                        parts[0],
-                        parts[1],
-                        parts[2],
-                        parts[3],
-                    )); 
+                    doc.view_box = Some(RectF::new(parts[0], parts[1], parts[2], parts[3]));
                 }
             }
             _ => {}
@@ -379,7 +374,7 @@ mod tests {
             .expect("ingest");
 
         let ir = compile_graph_to_ir(&graph, res.document).expect("compile");
-        
+
         if let Some(vb) = ir.view_box {
             assert_eq!(vb.x(), 0.0);
             assert_eq!(vb.y(), 0.0);

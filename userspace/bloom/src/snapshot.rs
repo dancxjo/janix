@@ -4,10 +4,10 @@
 //! framebuffer. It never interprets model keys beyond window geometry and
 //! snapshot metadata.
 
+use abi::schema::{keys, kinds, snapshot_mode};
 use alloc::vec::Vec;
-use abi::schema::{kinds, keys, snapshot_mode};
 use stem::thing::sys::{bytespace_map, bytespace_unmap, find, prop_get};
-use stem::thing::{ThingId, HandleId};
+use stem::thing::{HandleId, ThingId};
 
 use crate::surface::Surface;
 use core::fmt;
@@ -148,8 +148,15 @@ pub fn composite_windows(surface: &mut Surface, windows: &[WindowSnapshot]) {
 }
 
 fn composite_snapshot(surface: &mut Surface, win: &WindowSnapshot, snapshot: &SnapshotMeta) {
-    let Ok(ptr) = bytespace_map(snapshot.bytespace) else { return; };
-    let src = unsafe { core::slice::from_raw_parts(ptr as *const u8, (snapshot.stride * snapshot.height) as usize) };
+    let Ok(ptr) = bytespace_map(snapshot.bytespace) else {
+        return;
+    };
+    let src = unsafe {
+        core::slice::from_raw_parts(
+            ptr as *const u8,
+            (snapshot.stride * snapshot.height) as usize,
+        )
+    };
     blit_rgba(
         surface,
         src,
@@ -163,12 +170,33 @@ fn composite_snapshot(surface: &mut Surface, win: &WindowSnapshot, snapshot: &Sn
 }
 
 fn draw_missing_snapshot(surface: &mut Surface, win: &WindowSnapshot) {
-    fill_rect(surface, win.x, win.y, win.width as i32, win.height as i32, 0xFF550000);
+    fill_rect(
+        surface,
+        win.x,
+        win.y,
+        win.width as i32,
+        win.height as i32,
+        0xFF550000,
+    );
     // Outline to make it obvious.
     fill_rect(surface, win.x, win.y, win.width as i32, 2, 0xFFFF0000);
-    fill_rect(surface, win.x, win.y + win.height as i32 - 2, win.width as i32, 2, 0xFFFF0000);
+    fill_rect(
+        surface,
+        win.x,
+        win.y + win.height as i32 - 2,
+        win.width as i32,
+        2,
+        0xFFFF0000,
+    );
     fill_rect(surface, win.x, win.y, 2, win.height as i32, 0xFFFF0000);
-    fill_rect(surface, win.x + win.width as i32 - 2, win.y, 2, win.height as i32, 0xFFFF0000);
+    fill_rect(
+        surface,
+        win.x + win.width as i32 - 2,
+        win.y,
+        2,
+        win.height as i32,
+        0xFFFF0000,
+    );
 }
 
 fn blit_rgba(

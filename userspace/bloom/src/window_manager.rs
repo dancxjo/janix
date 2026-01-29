@@ -218,7 +218,11 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
     let r = &window.rect;
 
     // Outside window entirely?
-    if screen_x < r.x() || screen_x >= r.x() + r.width() || screen_y < r.y() || screen_y >= r.y() + r.height() {
+    if screen_x < r.x()
+        || screen_x >= r.x() + r.width()
+        || screen_y < r.y()
+        || screen_y >= r.y() + r.height()
+    {
         return Hit::None;
     }
 
@@ -266,7 +270,8 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
         // Check buttons from right to left
         // Button layout: [title text] ... [maximize] [shade]
         let handle_width = 40; // From paint.rs
-        let button_region_start = r.width() - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE - handle_width - 8;
+        let button_region_start =
+            r.width() - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE - handle_width - 8;
 
         // Shade button
         let shade_x = button_region_start;

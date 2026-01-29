@@ -826,19 +826,19 @@ impl UiSnapshot {
         // Use stack buffer for query rows
         let mut q_buf = [QueryRow::default(); 64];
         let mut q = RestrictedQuery::new(&mut q_buf);
-        
+
         {
             crate::trace_span!("snap.refresh_node_edges");
             crate::trace_counter!("snap.syscalls.query", 1);
             // Use "has_child" directly to filter in kernel
             if let Ok(count) = q.get_edges(id, Some("has_child"), 64) {
-                 for i in 0..count {
-                     let row = &q.buf[i];
-                     let target_id = ThingId::from_u64(row.val_dst);
-                     if target_id != id {
-                         children.push(target_id);
-                     }
-                 }
+                for i in 0..count {
+                    let row = &q.buf[i];
+                    let target_id = ThingId::from_u64(row.val_dst);
+                    if target_id != id {
+                        children.push(target_id);
+                    }
+                }
             }
         }
         children

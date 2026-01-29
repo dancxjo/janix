@@ -7,8 +7,8 @@ use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
 use self::snapshot::{AssetCache, KindIds, NodeChange, UiKeys, UiSnapshot};
 use crate::asset::AssetBank;
-use crate::geometry::Rect;
 use crate::drawlist::DrawList;
+use crate::geometry::Rect;
 use crate::render_state::RenderState;
 use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT};
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -671,7 +671,8 @@ impl UiPipeline {
         best: &mut Option<(ThingId, i32)>,
     ) {
         if node.kind == snapshot::UiNodeKind::Window {
-            let btn_x = node.rect.x() + node.rect.width() - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
+            let btn_x =
+                node.rect.x() + node.rect.width() - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
             let btn_y = node.rect.y() + (TITLE_BAR_HEIGHT - SHADE_BUTTON_SIZE) / 2;
             let inside = x >= btn_x
                 && x <= btn_x + SHADE_BUTTON_SIZE
@@ -840,7 +841,12 @@ impl UiPipeline {
             match obj {
                 PaintObject::PushClip { rect } => {
                     list.commands().push(DrawCmd::PushClip {
-                        rect: crate::geometry::Rect::new(rect.x(), rect.y(), rect.width(), rect.height()),
+                        rect: crate::geometry::Rect::new(
+                            rect.x(),
+                            rect.y(),
+                            rect.width(),
+                            rect.height(),
+                        ),
                     });
                 }
                 PaintObject::PopClip => {

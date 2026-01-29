@@ -11,9 +11,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 use stem::thing::query::RestrictedQuery;
-use stem::thing::sys::{
-    bytespace_info, bytespace_read, find, intern, prop_get, prop_set,
-};
+use stem::thing::sys::{bytespace_info, bytespace_read, find, intern, prop_get, prop_set};
 use stem::thing::ThingId;
 
 /// Font epoch counter - increments when font availability changes.

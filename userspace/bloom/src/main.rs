@@ -27,11 +27,11 @@ mod paint_vm;
 pub mod painter_resources;
 pub mod perf;
 mod present;
-pub mod snapshot;
 mod raster;
 mod reclaimer;
 mod render_graph;
 mod render_state;
+pub mod snapshot;
 mod state;
 mod surface;
 mod svg;
@@ -57,22 +57,15 @@ use crate::cursor::CursorState;
 use crate::cursor_rasterizer::CursorRasterizer;
 use crate::frame::FrameBuilder;
 use crate::frame_loop::FrameLoop;
-use crate::paint_vm::PaintPipeline;
+use crate::paint_vm::{PaintPipeline, WindowHit};
 use crate::present::{evaluate_present_strategy, DriverPresenter, PresenterImpl};
-use crate::state::{DamageOverlayState, DebugFlags, OverlayMode};
 use crate::snapshot::SnapshotInvalidation;
+use crate::state::{DamageOverlayState, DebugFlags, OverlayMode};
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
 const BLOSSOM_BORDER: i32 = 2;
 const BLOSSOM_TITLE_BAR_HEIGHT: i32 = 24;
-
-#[derive(Clone, Copy)]
-struct WindowHit {
-    id: ThingId,
-    rect: crate::geometry::Rect,
-    z: i32,
-}
 
 #[derive(Clone, Copy)]
 struct DragState {
@@ -93,7 +86,14 @@ fn clear_surface(surface: &mut surface::Surface, color: u32) {
 
 fn clear_damage(surface: &mut surface::Surface, damage: &crate::damage::Damage, color: u32) {
     for rect in damage.iter() {
-        raster::fill_rect_copy(surface, rect.x(), rect.y(), rect.width(), rect.height(), color);
+        raster::fill_rect_copy(
+            surface,
+            rect.x(),
+            rect.y(),
+            rect.width(),
+            rect.height(),
+            color,
+        );
     }
 }
 
@@ -201,33 +201,6 @@ fn tile_windows(screen_w: i32, screen_h: i32) {
     }
 }
 
-fn top_window_at_point(x: i32, y: i32, screen_w: i32, screen_h: i32) -> Option<WindowHit> {
-    let mut windows = [ThingId::default(); 128];
-    let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
-    let mut best: Option<WindowHit> = None;
-    for win in windows.iter().take(count) {
-        if stem::thing::sys::prop_get(*win, keys::UI_HIDDEN).unwrap_or(0) != 0 {
-            continue;
-        }
-        let rect = window_rect_from_props(*win, screen_w, screen_h);
-        if rect.width() <= 0 || rect.height() <= 0 {
-            continue;
-        }
-        if x < rect.x()
-            || y < rect.y()
-            || x >= rect.x() + rect.width()
-            || y >= rect.y() + rect.height()
-        {
-            continue;
-        }
-        let z = stem::thing::sys::prop_get(*win, keys::UI_Z_INDEX).unwrap_or(0) as i32;
-        if best.map(|b| z >= b.z).unwrap_or(true) {
-            best = Some(WindowHit { id: *win, rect, z });
-        }
-    }
-    best
-}
-
 fn in_title_bar(rect: crate::geometry::Rect, _x: i32, y: i32) -> bool {
     let local_y = y - rect.y();
     let title_top = BLOSSOM_BORDER;
@@ -265,26 +238,6 @@ fn clamp_window_rect(
     r
 }
 
-fn raise_window(window_id: ThingId) {
-    let mut windows = [ThingId::default(); 128];
-    let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
-    let mut max_z = 0i32;
-    for win in windows.iter().take(count) {
-        if *win == window_id {
-            continue;
-        }
-        let z = stem::thing::sys::prop_get(*win, keys::UI_Z_INDEX).unwrap_or(0) as i32;
-        if z > max_z {
-            max_z = z;
-        }
-    }
-    let _ = stem::thing::sys::prop_set(
-        window_id,
-        keys::UI_Z_INDEX,
-        (max_z as u64).saturating_add(1),
-    );
-}
-
 fn set_focus(focused_window: &mut Option<ThingId>, target: Option<ThingId>) {
     if *focused_window == target {
         return;
@@ -296,36 +249,6 @@ fn set_focus(focused_window: &mut Option<ThingId>, target: Option<ThingId>) {
         let _ = stem::thing::sys::prop_set(next, keys::UI_FOCUSED, 1);
         *focused_window = Some(next);
     }
-}
-
-fn build_window_cycle_order() -> (alloc::vec::Vec<ThingId>, i32) {
-    let mut windows = [ThingId::default(); 128];
-    let count = stem::thing::sys::find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
-    if count == 0 {
-        return (alloc::vec::Vec::new(), 0);
-    }
-
-    let mut list: alloc::vec::Vec<(ThingId, i32)> = alloc::vec::Vec::new();
-    for id in windows.iter().take(count) {
-        if stem::thing::sys::prop_get(*id, keys::UI_HIDDEN).unwrap_or(0) != 0 {
-            continue;
-        }
-        let z = stem::thing::sys::prop_get(*id, keys::UI_Z_INDEX).unwrap_or(0) as i32;
-        list.push((*id, z));
-    }
-
-    if list.is_empty() {
-        return (alloc::vec::Vec::new(), 0);
-    }
-
-    list.sort_by(|(a_id, a_z), (b_id, b_z)| {
-        b_z.cmp(a_z)
-            .then(a_id.to_u64_lossy().cmp(&b_id.to_u64_lossy()))
-    });
-
-    let max_z = list.iter().map(|(_, z)| *z).max().unwrap_or(0);
-    let order = list.into_iter().map(|(id, _)| id).collect();
-    (order, max_z)
 }
 
 fn cycle_windows_in_order(
@@ -538,7 +461,8 @@ fn main(arg: usize) -> ! {
     // Track watch event counts for diagnostics
     let mut ui_watch_events_total: u64 = 0;
     // Removed force_full_damage bool, using invalidation_causes vector
-    let mut invalidation_causes: alloc::vec::Vec<SnapshotInvalidation> = alloc::vec::Vec::with_capacity(16);
+    let mut invalidation_causes: alloc::vec::Vec<SnapshotInvalidation> =
+        alloc::vec::Vec::with_capacity(16);
 
     // WAIT for critical assets (fonts) before showing anything
     let mut startup_frames = 0;
@@ -622,6 +546,9 @@ fn main(arg: usize) -> ! {
                 invalidation_causes.push(SnapshotInvalidation::ContentChanged);
             }
         }
+
+        // Cache window state BEFORE input processing to ensure hit-testing is fresh
+        let paint_res = paint_pipeline.process_updates(target.width as i32, target.height as i32);
 
         // Input processing with window management
         if bristle_evt_handle != 0 {
@@ -733,6 +660,41 @@ fn main(arg: usize) -> ! {
                 stem::info!("[bloom] F7 pressed, auto-tiling windows");
             }
 
+            // Alt-Tab Loading (use cached state)
+            let alt_down =
+                pressed_keys.contains(&Key::LeftAlt) || pressed_keys.contains(&Key::RightAlt);
+            if alt_down && !alt_prev_down {
+                crate::trace_counter!("bloom.win_cache.cycle.start", 1);
+                // rebuild order using cached state
+                let (order, max_z) = paint_pipeline.build_window_cycle_order();
+                alt_cycle_order = order;
+                alt_cycle_max_z = max_z;
+                crate::trace_counter!("bloom.win_cache.avoided_find", 1);
+                crate::trace_counter!(
+                    "bloom.win_cache.avoided_prop_get",
+                    alt_cycle_order.len() as u64
+                ); // approximated
+            }
+            if !alt_down && alt_prev_down {
+                alt_cycle_order.clear();
+            }
+            alt_prev_down = alt_down;
+            if alt_down
+                && !alt_cycle_order.is_empty()
+                && pressed_keys.contains(&Key::Tab)
+                && !prev_keys.contains(&Key::Tab)
+            {
+                if let Some(next) = cycle_windows_in_order(
+                    &alt_cycle_order,
+                    focused_window,
+                    shift_down,
+                    &mut alt_cycle_max_z,
+                ) {
+                    set_focus(&mut focused_window, Some(next));
+                    crate::trace_counter!("bloom.win_cache.cycle.next", 1);
+                }
+            }
+
             let current_buttons = cursor.buttons();
             let left_down = (current_buttons & 1) != 0;
             let left_prev = (prev_cursor_buttons & 1) != 0;
@@ -740,7 +702,9 @@ fn main(arg: usize) -> ! {
             let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
 
             if left_down && !left_prev {
-                if let Some(hit) = top_window_at_point(cursor.x, cursor.y, screen_w, screen_h) {
+                crate::trace_counter!("bloom.win_cache.hittest.count", 1);
+                if let Some(hit) = paint_pipeline.top_window_at_point(cursor.x, cursor.y) {
+                    crate::trace_counter!("bloom.win_cache.avoided_find", 1);
                     set_focus(&mut focused_window, Some(hit.id));
                     if in_title_bar(hit.rect, cursor.x, cursor.y) {
                         let inset_right =
@@ -753,10 +717,26 @@ fn main(arg: usize) -> ! {
                                 start_mouse: (cursor.x, cursor.y),
                                 start_rect: hit.rect,
                             });
-                            raise_window(hit.id);
+                            // Optimized raise: use cached max_z
+                            let max_z = paint_pipeline.max_z_excluding(hit.id);
+                            crate::trace_counter!("bloom.win_cache.raise.count", 1);
+                            crate::trace_counter!("bloom.win_cache.avoided_find", 1); // raise_window used to find
+                            let _ = stem::thing::sys::prop_set(
+                                hit.id,
+                                keys::UI_Z_INDEX,
+                                (max_z as u64).saturating_add(1),
+                            );
                         }
                     } else if in_client_area(hit.rect, cursor.x, cursor.y) {
-                        raise_window(hit.id);
+                        // Optimized raise
+                        let max_z = paint_pipeline.max_z_excluding(hit.id);
+                        crate::trace_counter!("bloom.win_cache.raise.count", 1);
+                        crate::trace_counter!("bloom.win_cache.avoided_find", 1);
+                        let _ = stem::thing::sys::prop_set(
+                            hit.id,
+                            keys::UI_Z_INDEX,
+                            (max_z as u64).saturating_add(1),
+                        );
                         ui_dispatch.dispatch_click(cursor.x, cursor.y, screen_w, screen_h);
                     }
                 } else {
@@ -801,55 +781,24 @@ fn main(arg: usize) -> ! {
                     );
                 }
             } else {
-                let hovered =
-                    top_window_at_point(cursor.x, cursor.y, screen_w, screen_h).map(|h| h.id);
+                let hovered = paint_pipeline
+                    .top_window_at_point(cursor.x, cursor.y)
+                    .map(|h| h.id);
                 set_focus(&mut focused_window, hovered);
             }
 
-            let alt_down =
-                pressed_keys.contains(&Key::LeftAlt) || pressed_keys.contains(&Key::RightAlt);
-            let tab_pressed = pressed_keys.contains(&Key::Tab) && !prev_keys.contains(&Key::Tab);
-            let alt_pressed = alt_down && !alt_prev_down;
-            let alt_released = !alt_down && alt_prev_down;
-            if alt_pressed {
-                let (order, max_z) = build_window_cycle_order();
-                alt_cycle_order = order;
-                alt_cycle_max_z = max_z;
-            }
-            if alt_released {
-                alt_cycle_order.clear();
-            }
-            if alt_down && tab_pressed {
-                if alt_cycle_order.is_empty() {
-                    let (order, max_z) = build_window_cycle_order();
-                    alt_cycle_order = order;
-                    alt_cycle_max_z = max_z;
-                }
-                if let Some(next) = cycle_windows_in_order(
-                    &alt_cycle_order,
-                    focused_window,
-                    shift_down,
-                    &mut alt_cycle_max_z,
-                ) {
-                    focused_window = Some(next);
-                    invalidation_causes.push(SnapshotInvalidation::Forced);
-                }
-            }
+            // Alt-Tab logic moved handled earlier (lines 656+)
+
             alt_prev_down = alt_down;
         }
 
         // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
 
-        let paint_result = {
-            crate::trace_span!("bloom.loop.paint_updates");
-            paint_pipeline.process_updates(screen_w, screen_h)
-        };
-
         // Damage Tracking (cursor fallback handling)
         let bounds = crate::geometry::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
-        for rect in &paint_result.damage {
+        for rect in &paint_res.damage {
             damage.add_rect(*rect);
         }
 
@@ -900,9 +849,10 @@ fn main(arg: usize) -> ! {
             } else {
                 // Asset known but snapshot not ready: use crosshair damage
                 if cursor_moved {
-                    let old_rect = crate::geometry::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
-                        .expand(2)
-                        .clip(bounds);
+                    let old_rect =
+                        crate::geometry::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
+                            .expand(2)
+                            .clip(bounds);
                     let new_rect = crate::geometry::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
                         .expand(2)
                         .clip(bounds);
@@ -919,9 +869,10 @@ fn main(arg: usize) -> ! {
         } else {
             // No asset: use crosshair damage
             if cursor_moved {
-                let old_rect = crate::geometry::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
-                    .expand(2)
-                    .clip(bounds);
+                let old_rect =
+                    crate::geometry::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
+                        .expand(2)
+                        .clip(bounds);
                 let new_rect = crate::geometry::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
                     .expand(2)
                     .clip(bounds);
@@ -937,9 +888,9 @@ fn main(arg: usize) -> ! {
         }
 
         if !invalidation_causes.is_empty() {
-             if debug_flags.show_damage_stats {
-                 stem::info!("[bloom] Full damage forced by: {:?}", invalidation_causes);
-             }
+            if debug_flags.show_damage_stats {
+                stem::info!("[bloom] Full damage forced by: {:?}", invalidation_causes);
+            }
             damage = damage::Damage::full(bounds);
         }
 

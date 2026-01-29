@@ -317,9 +317,8 @@ impl FontClient {
 
                 // Invalidate cached glyphs for this face/size
                 let prefix = GlyphKey::new(resp.req_face_id, resp.req_px_size, 0);
-                self.glyph_cache.retain(|k, _| {
-                    k.face_id != prefix.face_id || k.px_size != prefix.px_size
-                });
+                self.glyph_cache
+                    .retain(|k, _| k.face_id != prefix.face_id || k.px_size != prefix.px_size);
             }
 
             // Cache new placements and clear pending

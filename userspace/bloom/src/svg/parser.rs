@@ -121,12 +121,7 @@ impl SvgParser {
                         .filter_map(|s| s.parse().ok())
                         .collect();
                     if parts.len() == 4 {
-                        let vbr = RectF::new(
-                            parts[0],
-                            parts[1],
-                            parts[2],
-                            parts[3],
-                        );
+                        let vbr = RectF::new(parts[0], parts[1], parts[2], parts[3]);
                         self.view_box = Some(vbr);
                         self.apply_viewbox_transform(parts[0], parts[1], parts[2], parts[3]);
                     }

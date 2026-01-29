@@ -3,8 +3,8 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use crate::geometry::Rect;
 use crate::geometry::Color;
+use crate::geometry::Rect;
 use crate::render_state::{RasterKey, RenderState};
 use crate::ui::constants::{
     MAXIMIZE_BUTTON_PADDING, MAXIMIZE_BUTTON_SIZE, SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE,

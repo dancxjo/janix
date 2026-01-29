@@ -122,7 +122,6 @@ impl Rect {
         self.size.height
     }
 
-
     pub fn intersection(&self, other: &Rect) -> Option<Rect> {
         let x0 = self.x().max(other.x());
         let y0 = self.y().max(other.y());
@@ -237,6 +236,14 @@ impl Rect {
         } else {
             self.width() as i64 * self.height() as i64
         }
+    }
+
+    #[inline]
+    pub fn contains(&self, x: i32, y: i32) -> bool {
+        x >= self.x()
+            && x < self.x() + self.width()
+            && y >= self.y()
+            && y < self.y() + self.height()
     }
 }
 

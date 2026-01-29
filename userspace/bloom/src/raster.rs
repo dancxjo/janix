@@ -12,8 +12,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use fontdue::layout::GlyphRasterConfig;
 
-use stem::thing::{HandleId, ThingId};
 use alloc::collections::BTreeMap;
+use stem::thing::{HandleId, ThingId};
 
 struct MappedBytespace {
     ptr: *mut u8,
@@ -44,10 +44,13 @@ impl BytespaceMapCache {
                 crate::trace_counter!("raster.bytespace_map.ns_total", dt);
 
                 let len = (stride * height) as usize;
-                self.entries.insert(bs, MappedBytespace {
-                    ptr: ptr as *mut u8,
-                    len,
-                });
+                self.entries.insert(
+                    bs,
+                    MappedBytespace {
+                        ptr: ptr as *mut u8,
+                        len,
+                    },
+                );
                 Some(ptr as *mut u8)
             }
             Err(_) => None,

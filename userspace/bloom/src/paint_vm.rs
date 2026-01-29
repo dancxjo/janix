@@ -21,9 +21,16 @@ use crate::surface::Surface;
 use alloc::sync::Arc;
 use core::cmp::{max, min};
 
+pub struct WindowHit {
+    pub id: ThingId,
+    pub rect: Rect,
+    pub z: i32,
+}
+
 struct WindowPaintState {
     rect: Rect,
     z: i32,
+    hidden: bool,
     paint_gen: u64,
     paint_bs: u64,
     image: Option<Image>,
@@ -61,10 +68,12 @@ impl PaintPipeline {
             let paint_gen = prop_get(*id, keys::UI_PAINT_GEN).unwrap_or(0);
             let paint_bs = prop_get(*id, keys::UI_PAINT_BYTESPACE).unwrap_or(0);
             let z = prop_get(*id, keys::UI_Z_INDEX).unwrap_or(0) as i32;
+            let hidden = prop_get(*id, keys::UI_HIDDEN).unwrap_or(0) != 0;
             let mut needs_rebuild = false;
             let entry = self.windows.entry(*id).or_insert_with(|| WindowPaintState {
                 rect: Rect::new(0, 0, 0, 0),
                 z: 0,
+                hidden: false,
                 paint_gen: 0,
                 paint_bs: 0,
                 image: None,
@@ -74,9 +83,9 @@ impl PaintPipeline {
             if entry.paint_gen != paint_gen || entry.paint_bs != paint_bs {
                 needs_rebuild = true;
             }
-            if entry.rect != rect || entry.z != z {
+            if entry.rect != rect || entry.z != z || entry.hidden != hidden {
                 needs_rebuild = true;
-                if entry.rect != rect {
+                if entry.rect != rect || entry.hidden != hidden {
                     damage.push(Rect::new(
                         entry.rect.x(),
                         entry.rect.y(),
@@ -89,6 +98,7 @@ impl PaintPipeline {
             if needs_rebuild {
                 entry.rect = rect;
                 entry.z = z;
+                entry.hidden = hidden;
                 entry.paint_gen = paint_gen;
                 entry.paint_bs = paint_bs;
 
@@ -140,18 +150,56 @@ impl PaintPipeline {
                     entry.image = None;
                 }
 
-                damage.push(Rect::new(
-                    rect.x(),
-                    rect.y(),
-                    rect.width(),
-                    rect.height(),
-                ));
+                damage.push(Rect::new(rect.x(), rect.y(), rect.width(), rect.height()));
             }
         }
 
         self.windows.retain(|id, _| active.contains(id));
 
         PaintResult { damage }
+    }
+
+    pub fn top_window_at_point(&self, x: i32, y: i32) -> Option<WindowHit> {
+        self.windows
+            .iter()
+            .filter(|(_, state)| !state.hidden && state.rect.contains(x, y))
+            .max_by_key(|(_, state)| state.z)
+            .map(|(id, state)| WindowHit {
+                id: *id,
+                rect: state.rect,
+                z: state.z,
+            })
+    }
+
+    pub fn max_z_excluding(&self, exclude_id: ThingId) -> i32 {
+        self.windows
+            .iter()
+            .filter(|(id, _)| **id != exclude_id)
+            .map(|(_, state)| state.z)
+            .max()
+            .unwrap_or(0)
+    }
+
+    pub fn build_window_cycle_order(&self) -> (Vec<ThingId>, i32) {
+        let mut list: Vec<(ThingId, i32)> = self
+            .windows
+            .iter()
+            .filter(|(_, state)| !state.hidden)
+            .map(|(id, state)| (*id, state.z))
+            .collect();
+
+        if list.is_empty() {
+            return (Vec::new(), 0);
+        }
+
+        list.sort_by(|(a_id, a_z), (b_id, b_z)| {
+            b_z.cmp(a_z)
+                .then(a_id.to_u64_lossy().cmp(&b_id.to_u64_lossy()))
+        });
+
+        let max_z = list.iter().map(|(_, z)| *z).max().unwrap_or(0);
+        let order = list.into_iter().map(|(id, _)| id).collect();
+        (order, max_z)
     }
 
     /// Compose the scene into the framebuffer surface using occlusion culling.
@@ -162,15 +210,20 @@ impl PaintPipeline {
         wallpaper: Option<&Image>,
         bg_color: Color,
     ) {
-        let mut ordered: Vec<&WindowPaintState> = self.windows.values().collect();
+        let mut ordered: Vec<&WindowPaintState> =
+            self.windows.values().filter(|w| !w.hidden).collect();
         // Sort by Z descending (top to bottom) for occlusion
         ordered.sort_by_key(|w| -w.z);
 
         crate::trace_span!("bloom.compose");
 
         for damage_rect in damage {
-            let d_rect: Rect =
-                Rect::new(damage_rect.x(), damage_rect.y(), damage_rect.width(), damage_rect.height());
+            let d_rect: Rect = Rect::new(
+                damage_rect.x(),
+                damage_rect.y(),
+                damage_rect.width(),
+                damage_rect.height(),
+            );
             let mut remaining: Vec<Rect> = vec![d_rect];
 
             for win in &ordered {

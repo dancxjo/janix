@@ -4,19 +4,44 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
-// Runtime detection for AVX2
+use core::sync::atomic::{AtomicU8, Ordering};
+
+// Cached AVX2 availability: 0 = unknown, 1 = not available, 2 = available
+static AVX2_AVAILABLE: AtomicU8 = AtomicU8::new(0);
+
+// Runtime detection for AVX2 (cached)
 #[cfg(target_arch = "x86")]
 pub(crate) fn is_avx2_available() -> bool {
-    use core::arch::x86::__cpuid;
-    let cpuid = unsafe { __cpuid(7) };
-    (cpuid.ebx & (1 << 5)) != 0
+    let cached = AVX2_AVAILABLE.load(Ordering::Relaxed);
+    if cached != 0 {
+        return cached == 2;
+    }
+    
+    use core::arch::x86::__cpuid_count;
+    let available = unsafe {
+        let cpuid = __cpuid_count(7, 0);
+        (cpuid.ebx & (1 << 5)) != 0
+    };
+    
+    AVX2_AVAILABLE.store(if available { 2 } else { 1 }, Ordering::Relaxed);
+    available
 }
 
 #[cfg(target_arch = "x86_64")]
 pub(crate) fn is_avx2_available() -> bool {
-    use core::arch::x86_64::__cpuid;
-    let cpuid = __cpuid(7);
-    (cpuid.ebx & (1 << 5)) != 0
+    let cached = AVX2_AVAILABLE.load(Ordering::Relaxed);
+    if cached != 0 {
+        return cached == 2;
+    }
+    
+    use core::arch::x86_64::__cpuid_count;
+    let available = {
+        let cpuid = __cpuid_count(7, 0);
+        (cpuid.ebx & (1 << 5)) != 0
+    };
+    
+    AVX2_AVAILABLE.store(if available { 2 } else { 1 }, Ordering::Relaxed);
+    available
 }
 
 #[inline(always)]

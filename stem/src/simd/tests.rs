@@ -408,14 +408,10 @@ mod tests {
     #[test]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     fn test_avx2_solid_masked_correctness() {
-        // Only run if AVX2 is available
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            use crate::simd::x86::is_avx2_available;
-            if !is_avx2_available() {
-                // Skip test if AVX2 not available
-                return;
-            }
+        use crate::simd::x86::is_avx2_available;
+        if !is_avx2_available() {
+            // Skip test if AVX2 not available
+            return;
         }
         
         let w = 24;  // Test with width that requires AVX2 (8 pixels) + tail
@@ -443,14 +439,10 @@ mod tests {
     #[test]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     fn test_avx2_src_masked_correctness() {
-        // Only run if AVX2 is available
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            use crate::simd::x86::is_avx2_available;
-            if !is_avx2_available() {
-                // Skip test if AVX2 not available
-                return;
-            }
+        use crate::simd::x86::is_avx2_available;
+        if !is_avx2_available() {
+            // Skip test if AVX2 not available
+            return;
         }
         
         let w = 24;  // Test with width that requires AVX2 (8 pixels) + tail
@@ -478,14 +470,10 @@ mod tests {
     #[test]
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     fn test_avx2_fuzz() {
-        // Only run if AVX2 is available
-        #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-        {
-            use crate::simd::x86::is_avx2_available;
-            if !is_avx2_available() {
-                // Skip test if AVX2 not available
-                return;
-            }
+        use crate::simd::x86::is_avx2_available;
+        if !is_avx2_available() {
+            // Skip test if AVX2 not available
+            return;
         }
         
         let w = 32;

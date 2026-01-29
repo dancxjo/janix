@@ -235,3 +235,113 @@ pub fn handle_watch_close(graph: &mut Graph, id: u64) -> HandlerResult {
         (-1, 0)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::root::graph::CommitSummary;
+    use crate::root::{ReplyCell, RootMsg, RootOp};
+    use alloc::sync::Arc;
+    use alloc::vec;
+
+    #[test]
+    fn test_handle_watch_next_basic() {
+        let mut graph = Graph::new();
+        // Setup history with one commit (seq 1)
+        graph
+            .commit_history
+            .push(1, vec![10, 20, 30], CommitSummary::default());
+
+        // Setup watch manually
+        let watch_id = 100;
+        let stream_handle = stream::create(1);
+        let watch = GlobalWatch {
+            id: watch_id,
+            spec_ptr: 0,
+            stream_handle: ResourceHandle::Stream(stream_handle),
+            kind_filter: 0,
+            missing_fact: 0,
+            cursor_seq: 1, // Ready to read seq 1
+            overflowed: false,
+            filter: WatchFilter::default(),
+        };
+        graph.global_watches.insert(watch_id, watch);
+
+        // Setup buffer
+        let mut out_buf = [0u8; 16];
+        let out_ptr = out_buf.as_mut_ptr() as u64;
+        let out_len = out_buf.len() as u64;
+
+        // Setup Msg
+        let op = RootOp::WatchNext {
+            id: watch_id,
+            out_seq_ptr: 0, // unused in handler body for reply, only p0 stored
+            out_ptr,
+            out_len,
+        };
+        let reply = Arc::new(ReplyCell::new());
+        let msg = RootMsg {
+            op,
+            reply: reply.clone(),
+        };
+
+        // Call handler
+        let (status, written) = handle_watch_next(&mut graph, &msg, watch_id);
+
+        assert_eq!(status, 0);
+        assert_eq!(written, 3);
+        assert_eq!(out_buf[0..3], [10, 20, 30]);
+
+        // Check cursor updated to 2
+        let watch = graph
+            .global_watches
+            .get(&watch_id)
+            .expect("Watch missing");
+        assert_eq!(watch.cursor_seq, 2);
+    }
+
+    #[test]
+    fn test_handle_watch_next_no_data() {
+        let mut graph = Graph::new();
+        // Setup history with one commit (seq 1)
+        graph
+            .commit_history
+            .push(1, vec![10, 20, 30], CommitSummary::default());
+
+        // Setup watch that has already consumed seq 1 (cursor = 2)
+        let watch_id = 101;
+        let stream_handle = stream::create(1);
+        let watch = GlobalWatch {
+            id: watch_id,
+            spec_ptr: 0,
+            stream_handle: ResourceHandle::Stream(stream_handle),
+            kind_filter: 0,
+            missing_fact: 0,
+            cursor_seq: 2, // Expecting seq 2, but only 1 exists
+            overflowed: false,
+            filter: WatchFilter::default(),
+        };
+        graph.global_watches.insert(watch_id, watch);
+
+        let op = RootOp::WatchNext {
+            id: watch_id,
+            out_seq_ptr: 0,
+            out_ptr: 0,
+            out_len: 0,
+        };
+        let reply = Arc::new(ReplyCell::new());
+        let msg = RootMsg {
+            op,
+            reply: reply.clone(),
+        };
+
+        let (status, _written) = handle_watch_next(&mut graph, &msg, watch_id);
+
+        // Expect -11 (EAGAIN)
+        assert_eq!(status, -11);
+
+        // Cursor should remain 2
+        let watch = graph.global_watches.get(&watch_id).unwrap();
+        assert_eq!(watch.cursor_seq, 2);
+    }
+}

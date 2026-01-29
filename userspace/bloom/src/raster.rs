@@ -14,6 +14,7 @@ use alloc::sync::Arc;
 use fontdue::layout::GlyphRasterConfig;
 
 use alloc::collections::BTreeMap;
+
 use stem::thing::{HandleId, ThingId};
 use spin::Mutex;
 use crate::text_cache::{TextRasterCache, TextCacheKey, TextCacheEntry, hash_str};
@@ -160,35 +161,275 @@ pub fn execute_with_damage(
     execute_lowered_with_damage(surface, &lowered, damage, solid_text);
 }
 
+#[derive(Clone, Debug)]
+struct DrawState {
+    clip_stack: Vec<Rect>,
+    transform_stack: Vec<Transform2D>,
+    current_clip: Rect,
+    current_transform: Transform2D,
+}
+
+impl DrawState {
+    fn new(width: i32, height: i32) -> Self {
+        Self {
+            clip_stack: Vec::with_capacity(4),
+            transform_stack: Vec::with_capacity(4),
+            current_clip: Rect::new(0, 0, width, height),
+            current_transform: Transform2D::identity(),
+        }
+    }
+
+    fn push_clip(&mut self, rect: Rect) {
+        self.clip_stack.push(self.current_clip);
+        let tr = self.current_transform.transform_rect(rect);
+        if let Some(i) = self.current_clip.intersection(&tr) {
+            self.current_clip = i;
+        } else {
+            self.current_clip = Rect::new(0, 0, 0, 0);
+        }
+    }
+
+    fn pop_clip(&mut self) {
+        if let Some(p) = self.clip_stack.pop() {
+            self.current_clip = p;
+        }
+    }
+
+    fn push_transform(&mut self, t: Transform2D) {
+        self.transform_stack.push(self.current_transform);
+        self.current_transform = self.current_transform.combine(&t);
+    }
+
+    fn pop_transform(&mut self) {
+        if let Some(p) = self.transform_stack.pop() {
+            self.current_transform = p;
+        }
+    }
+}
+
+struct DrawOp<'a> {
+    state: Arc<DrawState>,
+    op: &'a LowLevelOp,
+    bounds: Option<Rect>,
+}
+
+struct OpBins {
+    bin_size: i32,
+    bins: BTreeMap<(i32, i32), Vec<usize>>,
+    global: Vec<usize>,
+}
+
+impl OpBins {
+    fn new(bin_size: i32) -> Self {
+        Self {
+            bin_size,
+            bins: BTreeMap::new(),
+            global: Vec::new(),
+        }
+    }
+
+    fn insert(&mut self, idx: usize, bounds: Option<Rect>) {
+        if let Some(rect) = bounds {
+            let x0 = rect.x() / self.bin_size;
+            let y0 = rect.y() / self.bin_size;
+            let x1 = (rect.x() + rect.width()) / self.bin_size;
+            let y1 = (rect.y() + rect.height()) / self.bin_size;
+
+            for y in y0..=y1 {
+                for x in x0..=x1 {
+                    self.bins.entry((x, y)).or_default().push(idx);
+                }
+            }
+        } else {
+            self.global.push(idx);
+        }
+    }
+
+    fn query(&self, rect: Rect) -> Vec<usize> {
+        let mut out = self.global.clone();
+
+        let x0 = rect.x() / self.bin_size;
+        let y0 = rect.y() / self.bin_size;
+        let x1 = (rect.x() + rect.width()) / self.bin_size;
+        let y1 = (rect.y() + rect.height()) / self.bin_size;
+
+        for y in y0..=y1 {
+            for x in x0..=x1 {
+                if let Some(v) = self.bins.get(&(x, y)) {
+                    out.extend_from_slice(v);
+                }
+            }
+        }
+
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+}
+
+fn get_op_local_bounds(op: &LowLevelOp) -> Option<Rect> {
+    match op {
+        LowLevelOp::FillRect { rect, .. } => Some(*rect),
+        LowLevelOp::FillLinearGradient { rect, .. } => Some(*rect),
+        LowLevelOp::BlitSnapshot { dst, .. } => Some(*dst),
+        LowLevelOp::BlitOpaque { dst, .. } => Some(*dst),
+        LowLevelOp::BlitAlpha { dst, .. } => Some(*dst),
+        LowLevelOp::StrokeRect { rect, width, .. } => {
+            Some(Rect::new(
+                rect.x() - width,
+                rect.y() - width,
+                rect.width() + width * 2,
+                rect.height() + width * 2,
+            ))
+        }
+        LowLevelOp::FillCircle { center, radius, .. } => Some(Rect::new(
+            center.x - radius,
+            center.y - radius,
+            radius * 2,
+            radius * 2,
+        )),
+        LowLevelOp::FillArc { center, radius, .. } => Some(Rect::new(
+            center.x - radius,
+            center.y - radius,
+            radius * 2,
+            radius * 2,
+        )),
+        LowLevelOp::Line {
+            from, to, width, ..
+        } => {
+            let w = libm::ceilf(*width) as i32;
+            let min_x = from.x.min(to.x) as i32 - w;
+            let min_y = from.y.min(to.y) as i32 - w;
+            let max_x = from.x.max(to.x) as i32 + w;
+            let max_y = from.y.max(to.y) as i32 + w;
+            Some(Rect::new(min_x, min_y, max_x - min_x, max_y - min_y))
+        }
+        // Conservative global for unknown/expensive bounds
+        _ => None,
+    }
+}
+
 pub fn execute_lowered_with_damage(
     surface: &mut Surface,
     lowered: &LoweredDraw,
     damage: &Damage,
     solid_text: bool,
 ) {
-    let mut dr = [DamageRect::default(); 8];
-    let mut count = 0;
-    for r in damage.iter() {
-        if count < 8 {
-            dr[count] = r;
-            count += 1;
+    let start_build = stem::monotonic_ns();
+
+    // 1. Build Index & Bake State
+    let mut state = Arc::new(DrawState::new(surface.width(), surface.height()));
+    let mut draw_ops = Vec::with_capacity(lowered.ops.len());
+    let mut bins = OpBins::new(128);
+
+    for op in lowered.ops.iter() {
+        match op {
+            LowLevelOp::PushClip { rect } => {
+                Arc::make_mut(&mut state).push_clip(*rect);
+            }
+            LowLevelOp::PopClip => {
+                Arc::make_mut(&mut state).pop_clip();
+            }
+            LowLevelOp::PushTransform { t } => {
+                Arc::make_mut(&mut state).push_transform(*t);
+            }
+            LowLevelOp::PopTransform => {
+                Arc::make_mut(&mut state).pop_transform();
+            }
+            LowLevelOp::Clear { .. } => {
+                // Clear is global-ish, usually clipped to current clip
+                draw_ops.push(DrawOp {
+                    state: state.clone(),
+                    op,
+                    bounds: None,
+                });
+                bins.insert(draw_ops.len() - 1, None);
+            }
+            _ => {
+                let local_bounds = get_op_local_bounds(op);
+                let bounds = if let Some(lb) = local_bounds {
+                    let tr = state.current_transform.transform_rect(lb);
+                    state.current_clip.intersection(&tr)
+                } else {
+                    None
+                };
+
+                // Skip if fully clipped out
+                if local_bounds.is_some() && bounds.is_none() {
+                    continue;
+                }
+
+                draw_ops.push(DrawOp {
+                    state: state.clone(),
+                    op,
+                    bounds,
+                });
+                bins.insert(draw_ops.len() - 1, bounds);
+            }
         }
     }
+
+    let dt_build = stem::monotonic_ns().saturating_sub(start_build);
+    crate::trace_counter!("raster.index_build_ns", dt_build);
+    crate::trace_counter!("raster.ops.total", lowered.ops.len() as u64);
+    crate::trace_counter!("raster.draw_ops.total", draw_ops.len() as u64);
+
     let mut cache = BytespaceMapCache::new();
-    for i in 0..count {
-        let d = dr[i];
-        crate::trace_span!("raster.rect.total");
+
+    // 2. Execute per damage
+    let mut total_executed = 0;
+    let mut damage_count = 0;
+
+    for rect in damage.iter() {
+        damage_count += 1;
+        let target_indices = bins.query(rect);
+
         let mut ctx = RasterContext::new(surface, &mut cache, solid_text);
-        ctx.current_clip = Rect::new(d.x(), d.y(), d.width(), d.height());
-        execute_lowered_on_context(&mut ctx, lowered);
+
+        for idx in target_indices {
+            let d_op = &draw_ops[idx];
+
+            if let Some(b) = d_op.bounds {
+                if b.intersection(&rect).is_none() {
+                    continue;
+                }
+            }
+
+            // Apply state directly
+            ctx.current_clip = d_op.state.current_clip;
+            ctx.current_transform = d_op.state.current_transform;
+
+            execute_single_op(&mut ctx, d_op.op);
+            total_executed += 1;
+        }
+    }
+
+    crate::trace_counter!("raster.damage.rects", damage_count as u64);
+    crate::trace_counter!("raster.damage.ops_executed_total", total_executed);
+    if damage_count > 0 {
+        crate::trace_counter!(
+            "raster.damage.ops_executed_avg",
+            total_executed / damage_count as u64
+        );
     }
 }
+
 
 fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
     let start = stem::monotonic_ns();
     crate::trace_span!("raster.execute");
     for op in lowered.ops.iter() {
-        match op {
+        execute_single_op(ctx, op);
+    }
+    crate::trace_counter!(
+        "raster.execute_ns",
+        stem::monotonic_ns().saturating_sub(start)
+    );
+}
+
+fn execute_single_op(ctx: &mut RasterContext, op: &LowLevelOp) {
+    match op {
+
             LowLevelOp::Clear { color } => {
                 crate::trace_counter!("raster.ops.clear", 1);
                 fill_rect_copy(
@@ -415,11 +656,8 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
             }
         }
     }
-    crate::trace_counter!(
-        "raster.execute_ns",
-        stem::monotonic_ns().saturating_sub(start)
-    );
-}
+
+
 
 #[inline(always)]
 fn scale_ch(c: u8, a: u8) -> u32 {

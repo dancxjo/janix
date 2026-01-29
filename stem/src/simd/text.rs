@@ -591,4 +591,78 @@ mod tests {
         );
         assert_eq!(dst, dst2, "Two renders should be identical");
     }
+
+    /// Example demonstrating how to use the SIMD glyph rendering API.
+    /// 
+    /// This test serves as both documentation and validation.
+    #[test]
+    fn example_render_hello() {
+        // Create a simple atlas with letter masks
+        let atlas_w = 128;
+        let atlas_h = 128;
+        let mut atlas = vec![0u8; (atlas_w * atlas_h) as usize];
+
+        // Simple 6x6 'H' glyph at (0,0)
+        let h_mask = [
+            255, 0, 0, 0, 0, 255,
+            255, 0, 0, 0, 0, 255,
+            255, 255, 255, 255, 255, 255,
+            255, 0, 0, 0, 0, 255,
+            255, 0, 0, 0, 0, 255,
+            255, 0, 0, 0, 0, 255,
+        ];
+        for y in 0..6 {
+            for x in 0..6 {
+                atlas[(y * atlas_w + x) as usize] = h_mask[(y * 6 + x) as usize];
+            }
+        }
+
+        // Create placement
+        let rect = Rect::new(0, 0, 6, 6);
+        let placement = GlyphPlacement {
+            glyph_id: b'H' as u32,
+            phase_rects: [rect; PHASE_COUNT],
+            bearing_x: 0,
+            bearing_y: 5,
+            advance: 7,
+        };
+
+        // Build glyph run: "H" at (10, 20) with 0.25px subpixel offset
+        let x_pos = float_to_subpixel(10.25);
+        let frac = subpixel_frac(x_pos);
+        let phase = compute_phase(frac); // Should be phase 1 (0.25 -> 64/256 -> phase 1)
+
+        let glyph = PositionedGlyph {
+            x_subpixel: x_pos,
+            y: 20,
+            glyph_id: b'H' as u32,
+            phase,
+        };
+
+        let run = create_glyph_run(vec![glyph], vec![placement], atlas_w, atlas_h);
+
+        // Render
+        let dst_w = 32;
+        let dst_h = 32;
+        let mut dst = vec![0u32; (dst_w * dst_h) as usize];
+        let clip = Rect::new(0, 0, dst_w as i32, dst_h as i32);
+
+        draw_glyph_run(
+            &mut dst,
+            dst_w as usize,
+            &atlas,
+            atlas_w as usize,
+            &run,
+            &clip,
+            0xFFFFFFFF, // White
+        );
+
+        // Verify some pixels were drawn
+        let rendered = dst.iter().filter(|&&p| p != 0).count();
+        assert!(rendered > 0, "Should have rendered some pixels");
+
+        // Verify phase was computed correctly
+        assert_eq!(phase, 1, "0.25 fractional position should select phase 1");
+    }
 }
+

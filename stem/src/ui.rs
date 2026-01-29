@@ -7,7 +7,7 @@ pub struct UiBuilder;
 
 impl UiBuilder {
     pub fn create_root() -> ThingId {
-        let id = create_node(kinds::UI_ROOT).expect("create UI_ROOT");
+        let id = create_node(kinds::UI_CROWN).expect("create UI_CROWN");
         crate::info!("UiBuilder: created root {}", id.to_u64_lossy());
         id
     }

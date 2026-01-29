@@ -32,7 +32,7 @@ pub mod kinds {
     // pub const RES_DMA: &str = "res.dma"; // Reserved for future
 
     // UI
-    pub const UI_ROOT: &str = "ui.Root";
+    pub const UI_CROWN: &str = "ui.Root";
     pub const UI_WINDOW: &str = "ui.Window";
     pub const UI_PANEL: &str = "ui.Panel";
     pub const UI_TEXT: &str = "ui.Text";

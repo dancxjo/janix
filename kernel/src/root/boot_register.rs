@@ -159,6 +159,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
 
     // 4. Root Service
     let root_svc = create(kinds::SVC_ROOT);
+    let root_name = intern("/");
+    set(root_svc, keys::NAME, root_name);
     link(kernel, rels::PROVIDES, root_svc);
 
     // 5. CPUs

@@ -361,14 +361,14 @@ fn ingest_boot_module(mod_id: ThingId) {
 }
 
 fn seed_system_assets() {
-    let root_ui = match find(kinds::UI_ROOT, &mut [ThingId::default(); 1]) {
+    let root_ui = match find(kinds::UI_CROWN, &mut [ThingId::default(); 1]) {
         Ok(1) => {
             let mut buf = [ThingId::default(); 1];
-            let _ = find(kinds::UI_ROOT, &mut buf);
+            let _ = find(kinds::UI_CROWN, &mut buf);
             buf[0]
         }
         _ => {
-            if let Ok(id) = create_node(kinds::UI_ROOT) {
+            if let Ok(id) = create_node(kinds::UI_CROWN) {
                 id
             } else {
                 return;

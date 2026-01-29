@@ -127,17 +127,17 @@ fn main() -> ! {
 
     // 2. Setup UI
     // info!("Waiting for UI Root (Compositor)...");
-    let mut ui_root = ThingId::default();
+    let mut ui_crown = ThingId::default();
     let mut i = 0;
     while i < 120 {
         // Wait up to 60 seconds for Bloom to start
-        let mut ui_roots = [ThingId::default(); 1];
-        match stem::thing::sys::find(kinds::UI_ROOT, &mut ui_roots) {
+        let mut ui_crowns = [ThingId::default(); 1];
+        match stem::thing::sys::find(kinds::UI_CROWN, &mut ui_crowns) {
             Ok(count) if count > 0 => {
-                ui_root = ui_roots[0];
+                ui_crown = ui_crowns[0];
                 // info!(
                 //     "Found UI Root: {} (attempt {})",
-                //     ui_root.to_u64_lossy(),
+                //     ui_crown.to_u64_lossy(),
                 //     i + 1
                 // );
                 break;
@@ -158,15 +158,15 @@ fn main() -> ! {
         i += 1;
     }
 
-    if ui_root.to_u64_lossy() == 0 {
+    if ui_crown.to_u64_lossy() == 0 {
         info!("ERROR: UI Root still not found after 60s, giving up on UI");
     }
 
-    if ui_root.to_u64_lossy() != 0 {
+    if ui_crown.to_u64_lossy() != 0 {
         // Create Window
         let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
-        link(win, rels::CHILD_OF, ui_root).expect("link window");
-        link(ui_root, rels::HAS_CHILD, win).expect("link window has_child");
+        link(win, rels::CHILD_OF, ui_crown).expect("link window");
+        link(ui_crown, rels::HAS_CHILD, win).expect("link window has_child");
         window_id = Some(win);
 
         // Window Style: Black Background (explicit override)

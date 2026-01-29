@@ -1,3 +1,38 @@
+//! # Petals - UI Intent Builder
+//!
+//! Petals provides a declarative builder API for constructing UI intent.
+//! Applications use Petals to describe **what** their UI should look like,
+//! without performing any layout calculations or paint operations.
+//!
+//! ## Architecture
+//!
+//! - **Apps** use Petals to build UI intent (Scene trees)
+//! - **Blossom** reads intent from the graph and performs layout/paint
+//! - **Bloom** composites the final rendered output
+//!
+//! See `docs/UI_INTENT_CONTRACT.md` for the full architectural contract.
+//!
+//! ## Example
+//!
+//! ```rust,ignore
+//! use stem::petals::{Scene, Window, Flex, Text, FontKey, Color};
+//!
+//! let scene = Scene::new().window(
+//!     Window::new(window_id)
+//!         .title("My App")
+//!         .root(
+//!             Flex::column()
+//!                 .gap(8)
+//!                 .padding(16)
+//!                 .push(Text::new("Hello, World!")
+//!                     .font(FontKey::new("NotoSans-Regular").size(16))
+//!                     .color(Color::rgb(0, 0, 0)))
+//!         )
+//! );
+//!
+//! stem::petals::publish_window(&scene)?;
+//! ```
+
 extern crate alloc;
 
 pub mod builder;
@@ -31,7 +66,7 @@ pub fn publish_window(scene: &Scene) -> Result<()> {
 
 pub fn publish_desktop(scene: &Scene) -> Result<()> {
     let mut roots = [ThingId::default(); 1];
-    let count = find(kinds::UI_ROOT, &mut roots).map_err(Error::Errno)?;
+    let count = find(kinds::UI_CROWN, &mut roots).map_err(Error::Errno)?;
     if count == 0 {
         return Err(Error::Errno(Errno::ENOENT));
     }

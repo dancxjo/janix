@@ -13,17 +13,17 @@ use stem::petals::DrawList;
 use stem::thing::sys::{bytespace_create, bytespace_write, create_node, find, link, prop_set};
 use stem::thing::ThingId;
 
-fn wait_for_ui_root() -> ThingId {
-    let mut ui_root = ThingId::default();
-    while ui_root.to_u64_lossy() == 0 {
+fn wait_for_ui_crown() -> ThingId {
+    let mut ui_crown = ThingId::default();
+    while ui_crown.to_u64_lossy() == 0 {
         let mut roots = [ThingId::default(); 1];
-        if let Ok(1) = find(kinds::UI_ROOT, &mut roots) {
-            ui_root = roots[0];
+        if let Ok(1) = find(kinds::UI_CROWN, &mut roots) {
+            ui_crown = roots[0];
         } else {
             stem::sleep(Duration::from_millis(100));
         }
     }
-    ui_root
+    ui_crown
 }
 
 fn write_rect_bytespace(rect: [i32; 4]) -> ThingId {
@@ -91,11 +91,11 @@ fn build_drawlist(color: u32, use_clip: bool, scale: f32) -> DrawListBuilder {
 #[stem::main]
 fn main() -> ! {
     info!("DrawList demo starting (with new commands)...");
-    let ui_root = wait_for_ui_root();
+    let ui_crown = wait_for_ui_crown();
 
     let win = create_node(kinds::UI_WINDOW).expect("window");
-    link(win, rels::CHILD_OF, ui_root).ok();
-    link(ui_root, rels::HAS_CHILD, win).ok();
+    link(win, rels::CHILD_OF, ui_crown).ok();
+    link(ui_crown, rels::HAS_CHILD, win).ok();
     set_string_prop(win, keys::UI_TITLE, "DrawList Demo (Enhanced)");
     prop_set(win, keys::UI_X, 100).ok();
     prop_set(win, keys::UI_Y, 100).ok();

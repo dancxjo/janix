@@ -401,7 +401,7 @@ pub mod kinds {
     pub const LOG_ENTRY: &str = "log.Entry";
 
     // UI Kinds
-    pub const UI_ROOT: &str = "ui.Root";
+    pub const UI_CROWN: &str = "ui.Crown";
     pub const UI_WINDOW: &str = "ui.Window";
     pub const UI_PANEL: &str = "ui.Panel";
     pub const UI_TEXT: &str = "ui.Text";

@@ -397,12 +397,12 @@ fn main(arg: usize) -> ! {
 
     // UI Root
     let mut roots = [ThingId::default(); 1];
-    let ui_root = match stem::thing::sys::find(abi::schema::kinds::UI_ROOT, &mut roots) {
+    let ui_crown = match stem::thing::sys::find(abi::schema::kinds::UI_CROWN, &mut roots) {
         Ok(count) if count > 0 => roots[0],
         _ => stem::ui::UiBuilder::create_root(),
     };
 
-    let _ = ui_root;
+    let _ = ui_crown;
     let mut paint_pipeline = PaintPipeline::new();
 
     // Spawn asset workers with diagnostic logging
@@ -508,22 +508,10 @@ fn main(arg: usize) -> ! {
     let mut invalidation_causes: alloc::vec::Vec<SnapshotInvalidation> =
         alloc::vec::Vec::with_capacity(16);
 
-    // WAIT for critical assets (fonts) before showing anything
-    let mut startup_frames = 0;
-    while startup_frames < 60 {
-        // Up to 1s at 60Hz
-        ASSETS.publish_pending();
-        if ASSETS
-            .get_fonts()
-            .iter()
-            .any(|f| f.name.contains("NotoSans-Regular"))
-        {
-            stem::info!("[bloom] NotoSans-Regular ready, starting UI loop");
-            break;
-        }
-        stem::sleep_ms(16);
-        startup_frames += 1;
-    }
+    // We purposefully do NOT wait for fonts here (e.g. NotoSans-Regular).
+    // The UI should just start drawing immediately, even if it means some text is missing
+    // or using fallback fonts for the first few frames.
+    stem::info!("[bloom] Starting UI loop immediately (not waiting for fonts)");
 
     // Signal that the compositor is taking over the framebuffer
     stem::syscall::console_disable();
@@ -851,7 +839,7 @@ fn main(arg: usize) -> ! {
 
         // If no cursor asset but we have a reactive cursor assigned, try to get it
         if cursor_asset.is_none() {
-            if let Ok(root_id) = find(kinds::UI_ROOT, &mut [ThingId::default(); 1]) {
+            if let Ok(root_id) = find(kinds::UI_CROWN, &mut [ThingId::default(); 1]) {
                 if let Ok(cursor_id) = prop_get(ThingId::from_u64(root_id as u64), "ui.cursor") {
                     // The watcher should have enqueued it, but we check here too
                 }

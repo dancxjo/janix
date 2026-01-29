@@ -15,7 +15,7 @@ impl ThingosIcon {
 
     pub fn for_kind(kind: &str) -> Icon {
         let name = match kind {
-            kinds::UI_ROOT => "ui.root",
+            kinds::UI_CROWN => "ui.root",
             kinds::UI_WINDOW => "ui.widget",
             kinds::PROC_KERNEL => "proc.kernel",
             // kinds::PROC_TASK not found, using string literal or fallback

@@ -1,6 +1,34 @@
 #![no_std]
 #![no_main]
 
+//! # Blossom - Layout and Paint Service
+//!
+//! Blossom is the UI layout and paint service for Thing-OS. It reads UI intent
+//! from the graph (written by applications via Petals) and produces paint commands
+//! for Bloom to render.
+//!
+//! ## Architecture
+//!
+//! 1. **Watch for changes**: Monitor `ui.scene_gen` and window properties
+//! 2. **Read UI intent**: Deserialize Scene graphs from `ui.scene_bytespace`
+//! 3. **Compute layout**: Calculate final rectangles using flexbox algorithm
+//! 4. **Generate paint**: Emit drawlist commands to `ui.paint_bytespace`
+//! 5. **Increment generation**: Bump `ui.paint_gen` to notify Bloom
+//!
+//! ## Responsibilities
+//!
+//! - Layout computation (rectangles, positions, text measurement)
+//! - Paint command generation (fills, strokes, text, images)
+//! - SVG rasterization caching (secondary responsibility)
+//!
+//! ## Not Responsible For
+//!
+//! - UI intent creation (that's the app's job via Petals)
+//! - Pixel rendering (that's Bloom's job)
+//! - Event handling (apps handle their own events)
+//!
+//! See `docs/UI_INTENT_CONTRACT.md` for the full architectural contract.
+
 extern crate alloc;
 extern crate stem;
 

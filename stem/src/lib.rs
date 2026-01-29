@@ -16,6 +16,8 @@ pub mod errors;
 pub mod heap;
 #[cfg(feature = "rt")]
 pub mod memory;
+/// Platform Abstraction Layer - explicit platform contract
+pub mod pal;
 #[cfg(feature = "panic-handler")]
 pub mod panic;
 pub mod pci;
@@ -48,7 +50,7 @@ macro_rules! println {
 }
 
 pub fn log(s: &str) {
-    let _ = syscall::log_write(s, 3);
+    pal::log::write(pal::log::Level::Info, format_args!("{}", s));
 }
 
 #[macro_export]

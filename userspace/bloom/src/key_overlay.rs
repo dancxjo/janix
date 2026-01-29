@@ -34,8 +34,8 @@ impl KeyOverlay {
         }
     }
 
-    pub fn setup(&mut self, ui_root: ThingId) {
-        let window = UiBuilder::create_window(ui_root, "Overlay");
+    pub fn setup(&mut self, UI_CROWN: ThingId) {
+        let window = UiBuilder::create_window(UI_CROWN, "Overlay");
         let text = UiBuilder::create_text(window, "");
         let perf = UiBuilder::create_text(window, "");
         

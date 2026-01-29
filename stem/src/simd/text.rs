@@ -222,17 +222,30 @@ pub fn draw_glyph_run(
             let dst_available = dst.len() - dst_row_offset;
             let mask_available = atlas_mask.len() - mask_row_offset;
             
-            // Ensure we have at least rect_w pixels for this row
-            if dst_available >= clipped.w as usize && mask_available >= clipped.w as usize {
-                // Always use SIMD compositor for consistency and performance
+            // Prefer SIMD compositor when we have enough buffer space for the assertion
+            if dst_available >= dst_stride && mask_available >= atlas_stride {
+                // Use SIMD compositor for optimal performance
                 crate::perf::counter("simd.text.composite_masked.count", 1);
                 composite_solid_masked_over(
                     &mut dst[dst_row_offset..],
-                    dst_stride.max(clipped.w as usize), // Ensure stride >= rect_w
+                    dst_stride,
                     &atlas_mask[mask_row_offset..],
-                    atlas_stride.max(clipped.w as usize), // Ensure stride >= rect_w
+                    atlas_stride,
                     clipped.w as usize,
                     1, // Single row
+                    color_premul,
+                );
+            } else if dst_available >= clipped.w as usize && mask_available >= clipped.w as usize {
+                // Fallback for edge cases (e.g., last row) where buffer is tight
+                // Use scalar path to avoid assertion failures
+                crate::perf::counter("simd.text.composite_masked_fallback.count", 1);
+                super::scalar::composite_solid_masked_over_scalar(
+                    &mut dst[dst_row_offset..],
+                    clipped.w as usize, // Use rect_w as stride for tight buffer
+                    &atlas_mask[mask_row_offset..],
+                    clipped.w as usize,
+                    clipped.w as usize,
+                    1,
                     color_premul,
                 );
             }

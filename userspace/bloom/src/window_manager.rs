@@ -6,6 +6,7 @@
 //! - Move/resize drag controller with pointer capture
 //! - Input routing to apps (client area only)
 
+use crate::damage::DamageCause;
 use crate::geometry::Rect;
 use crate::ui::constants::{
     BORDER_THICKNESS, MAXIMIZE_BUTTON_PADDING, MAXIMIZE_BUTTON_SIZE, MIN_WINDOW_HEIGHT,
@@ -390,8 +391,8 @@ pub struct WindowManager {
     /// Screen dimensions for clamping.
     pub screen_w: i32,
     pub screen_h: i32,
-    /// Damage rects from geometry changes (old_rect, new_rect).
-    pending_damage: Vec<Rect>,
+    /// Damage rects from geometry changes (old_rect, new_rect, cause).
+    pending_damage: Vec<(Rect, DamageCause, Option<ThingId>)>,
 }
 
 impl WindowManager {
@@ -446,8 +447,8 @@ impl WindowManager {
 
         if new_rect != current_rect {
             // Add damage for both old and new positions
-            self.pending_damage.push(current_rect);
-            self.pending_damage.push(new_rect);
+            self.pending_damage.push((current_rect, DamageCause::GeometryChanged, Some(drag.wid)));
+            self.pending_damage.push((new_rect, DamageCause::GeometryChanged, Some(drag.wid)));
             Some(new_rect)
         } else {
             None
@@ -470,14 +471,19 @@ impl WindowManager {
     }
 
     /// Take pending damage rects and clear the buffer.
-    pub fn take_damage(&mut self) -> Vec<Rect> {
+    pub fn take_damage(&mut self) -> Vec<(Rect, DamageCause, Option<ThingId>)> {
         core::mem::take(&mut self.pending_damage)
     }
 
     /// Add damage for a window move/resize/shade operation.
     pub fn add_damage(&mut self, old_rect: Rect, new_rect: Rect) {
-        self.pending_damage.push(old_rect);
-        self.pending_damage.push(new_rect);
+        self.add_damage_with_cause(old_rect, new_rect, DamageCause::GeometryChanged, None);
+    }
+
+    /// Add damage with an explicit cause.
+    pub fn add_damage_with_cause(&mut self, old_rect: Rect, new_rect: Rect, cause: DamageCause, source: Option<ThingId>) {
+        self.pending_damage.push((old_rect, cause, source));
+        self.pending_damage.push((new_rect, cause, source));
     }
 
     /// Toggle maximize state for a window.
@@ -486,7 +492,7 @@ impl WindowManager {
         if window.is_maximized {
             // Restore to pre-maximize rect
             let restored = window.pre_maximize_rect.unwrap_or(window.rect);
-            self.add_damage(window.rect, restored);
+            self.add_damage_with_cause(window.rect, restored, DamageCause::GeometryChanged, Some(window.id));
             window.is_maximized = false;
             window.pre_maximize_rect = None;
             restored
@@ -494,7 +500,7 @@ impl WindowManager {
             // Save current rect and maximize
             window.pre_maximize_rect = Some(window.rect);
             let maximized = Rect::new(0, 0, self.screen_w, self.screen_h);
-            self.add_damage(window.rect, maximized);
+            self.add_damage_with_cause(window.rect, maximized, DamageCause::GeometryChanged, Some(window.id));
             window.is_maximized = true;
             maximized
         }

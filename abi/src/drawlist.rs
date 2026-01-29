@@ -227,6 +227,18 @@ impl DrawListBuilder {
     }
 
     /// Set a rectangular clipping region.
+    /// 
+    /// **Important**: This command should be used within a Save/Restore pair
+    /// to ensure proper state management. The renderer will push a new clip
+    /// onto the clip stack, which must be balanced with a Restore.
+    /// 
+    /// # Example
+    /// ```
+    /// builder.push_save();
+    /// builder.push_set_clip_rect(0, 0, 100, 100);
+    /// // ... draw commands ...
+    /// builder.push_restore();
+    /// ```
     pub fn push_set_clip_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
         let mut payload = Vec::with_capacity(16);
         payload.extend_from_slice(&x.to_le_bytes());
@@ -238,6 +250,18 @@ impl DrawListBuilder {
 
     /// Set an affine 2D transform matrix [a, b, c, d, tx, ty].
     /// The transform maps points as: x' = a*x + c*y + tx, y' = b*x + d*y + ty
+    /// 
+    /// **Important**: This command should be used within a Save/Restore pair
+    /// to ensure proper state management. The renderer will push a new transform
+    /// onto the transform stack, which must be balanced with a Restore.
+    /// 
+    /// # Example
+    /// ```
+    /// builder.push_save();
+    /// builder.push_set_transform(2.0, 0.0, 0.0, 2.0, 0.0, 0.0); // 2x scale
+    /// // ... draw commands ...
+    /// builder.push_restore();
+    /// ```
     pub fn push_set_transform(&mut self, a: f32, b: f32, c: f32, d: f32, tx: f32, ty: f32) {
         let mut payload = Vec::with_capacity(24);
         payload.extend_from_slice(&a.to_le_bytes());

@@ -554,6 +554,7 @@ pub fn decode_native_drawlist(data: &[u8]) -> Vec<DrawCmd> {
             }
             DrawCmdTag::Restore => {
                 if decode_restore(raw_cmd.payload).is_some() {
+                    // Restore in LIFO order (opposite of Save)
                     cmds.push(DrawCmd::PopTransform);
                     cmds.push(DrawCmd::PopClip);
                 }

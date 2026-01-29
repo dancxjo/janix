@@ -17,7 +17,8 @@ pub static TRACE_ALLOC: core::sync::atomic::AtomicBool = core::sync::atomic::Ato
 pub fn init<R: BootRuntime>(_rt: &R) {
     let mut heap = kernel_heap().lock();
     // Reserve 32MB (8192 pages) for the global heap
-    let (base, size) = heap.reserve_region::<R>(8192)
+    let (base, size) = heap
+        .reserve_region::<R>(8192)
         .expect("Failed to reserve kernel heap region");
 
     unsafe {

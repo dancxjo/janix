@@ -2,10 +2,79 @@ use super::symbol::IntoSymbolRef;
 use crate::errors::{errno, Errno};
 use crate::syscall::syscall6;
 use crate::thing::ThingId;
+use abi::ids::HandleId;
 use abi::query::*;
 use abi::syscall::SYS_ROOT_QUERY;
-use abi::ids::HandleId;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+pub static QUERY_NODES_VISITED: AtomicUsize = AtomicUsize::new(0);
+pub static QUERY_EDGES_TRAVERSED: AtomicUsize = AtomicUsize::new(0);
+
+/// A zero-allocation query builder that uses a caller-provided buffer.
+pub struct RestrictedQuery<'a> {
+    pub buf: &'a mut [QueryRow],
+}
+
+impl<'a> RestrictedQuery<'a> {
+    pub fn new(buf: &'a mut [QueryRow]) -> Self {
+        Self { buf }
+    }
+
+    /// Run a rigid 1-hop query (Expand) from a source node.
+    /// Returns the number of edges found.
+    /// The results are written into `self.buf`.
+    pub fn get_edges(
+        &mut self,
+        src: ThingId,
+        rel: Option<&str>,
+        limit: usize,
+    ) -> Result<usize, Errno> {
+        QUERY_NODES_VISITED.fetch_add(1, Ordering::Relaxed);
+
+        let step1 = QueryStep {
+            op: QueryOpKind::Start as u64,
+            arg1: src.to_u64_lossy(),
+            arg2: 0,
+            symbol: "".to_wire(),
+        };
+
+        let wire_rel = if let Some(r) = rel {
+            r.to_wire()
+        } else {
+            "".to_wire()
+        };
+
+        let step2 = QueryStep {
+            op: QueryOpKind::Expand as u64,
+            arg1: 0,
+            arg2: 0,
+            symbol: wire_rel,
+        };
+
+        // We use the provided buffer.
+        // Clamp limit to buffer size.
+        let actual_limit = core::cmp::min(limit, self.buf.len());
+        let plan = [step1, step2];
+
+        let ret = unsafe {
+            syscall6(
+                SYS_ROOT_QUERY,
+                plan.as_ptr() as usize,
+                2,
+                self.buf.as_mut_ptr() as usize,
+                actual_limit,
+                0, // No offset support yet in this simple wrapper
+                0,
+            )
+        };
+
+        let count = errno(ret).map(|v| v as usize)?;
+        QUERY_EDGES_TRAVERSED.fetch_add(count, Ordering::Relaxed);
+
+        Ok(count)
+    }
+}
 
 pub fn query_nodes_by_kind(kind: &str, limit: usize, out: &mut [ThingId]) -> Result<usize, Errno> {
     let wire = kind.to_wire();

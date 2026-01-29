@@ -4,18 +4,15 @@
 extern crate alloc;
 extern crate stem;
 
-mod emit_paint;
-mod graph_ui;
-mod layout;
-mod scene;
+// Modules are now in lib.rs
+use blossom::{emit_paint, graph_ui, layout, read_bytespace, read_string_prop, scene};
 
 use abi::root::RootWatchFilter;
-use abi::schema::{keys, kinds};
+use abi::schema::{keys, kinds, ui_kind};
 use abi::svg_protocol::{
     decode_request_tag, encode_error, RasterizeSvgRequest, RasterizeSvgResponse, SvgRequestTag,
     SvgSource, SvgStatus,
 };
-use abi::types::HandleId;
 use abi::types::{WatchMode, WatchSpec};
 use abi::watch;
 use alloc::collections::BTreeMap;
@@ -30,7 +27,7 @@ use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, prop_get,
     prop_set,
 };
-use stem::thing::ThingId;
+use stem::thing::{HandleId, ThingId};
 
 /// Cache entry for a rasterized SVG variant
 #[derive(Clone)]
@@ -161,6 +158,7 @@ struct WindowState {
     last_h: i32,
     last_bg: u32,
     last_title_bs: u64,
+    last_focused: bool,
 }
 
 struct UiWatcher {
@@ -185,6 +183,7 @@ impl UiPipeline {
             keys::UI_HEIGHT,
             keys::UI_BG_COLOR,
             keys::UI_TITLE,
+            keys::UI_FOCUSED,
         ];
         for key in keys_to_watch {
             if let Ok(pred) = stem::thing::sys::intern(key) {
@@ -248,6 +247,7 @@ impl UiPipeline {
                 last_h: 0,
                 last_bg: 0,
                 last_title_bs: 0,
+                last_focused: false,
             });
             if gen != entry.last_gen || w != entry.last_w || h != entry.last_h {
                 dirty.insert(*window_id, true);
@@ -256,8 +256,17 @@ impl UiPipeline {
             if bg != entry.last_bg {
                 dirty.insert(*window_id, true);
             }
-            let title_bs = prop_get(*window_id, keys::UI_TITLE).unwrap_or(0);
-            if title_bs != entry.last_title_bs {
+            if let Ok(kind) = prop_get(*window_id, keys::UI_KIND) {
+                if kind == ui_kind::WINDOW {
+                    // This branch is likely for handling new windows or changes to window kind
+                    // For existing windows, we just mark them dirty if their kind changes.
+                    // The actual on_window_added logic would be in refresh_windows or similar.
+                    // For now, just marking dirty is sufficient for re-processing.
+                    dirty.insert(*window_id, true);
+                }
+            }
+            let focused = prop_get(*window_id, keys::UI_FOCUSED).unwrap_or(0) != 0;
+            if focused != entry.last_focused {
                 dirty.insert(*window_id, true);
             }
         }
@@ -283,6 +292,7 @@ impl UiPipeline {
                 last_h: 0,
                 last_bg: 0,
                 last_title_bs: 0,
+                last_focused: false,
             });
         }
     }
@@ -297,6 +307,7 @@ impl UiPipeline {
             return Ok(());
         }
         let window_bg = prop_get(window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32;
+        let is_focused = prop_get(window_id, keys::UI_FOCUSED).unwrap_or(0) != 0;
         let title_override = read_string_prop(window_id, keys::UI_TITLE);
         let bytes = read_bytespace(ThingId::from_u64(bs_id))?;
         let scene = match scene::SceneGraph::from_bytes(&bytes) {
@@ -328,8 +339,13 @@ impl UiPipeline {
 
         let root_rect = layout::LayoutRect { x: 0, y: 0, w, h };
         let rects = layout::layout_scene(&scene, root_rect);
-        let paint_bytes =
-            emit_paint::emit_paint(&scene, &rects, window_bg, title_override.as_deref());
+        let paint_bytes = emit_paint::emit_paint(
+            &scene,
+            &rects,
+            window_bg,
+            title_override.as_deref(),
+            is_focused,
+        );
         let paint_bs = bytespace_create(paint_bytes.len(), 0, 0)?;
         let _ = bytespace_write(paint_bs, 0, &paint_bytes);
         let _ = prop_set(window_id, keys::UI_PAINT_BYTESPACE, paint_bs.to_u64_lossy());
@@ -344,6 +360,7 @@ impl UiPipeline {
                 last_h: h,
                 last_bg: window_bg,
                 last_title_bs: prop_get(window_id, keys::UI_TITLE).unwrap_or(0),
+                last_focused: is_focused,
             },
         );
         Ok(())
@@ -361,6 +378,7 @@ impl UiPipeline {
         if w <= 0 || h <= 0 {
             return Ok(());
         }
+        let is_focused = prop_get(window_id, keys::UI_FOCUSED).unwrap_or(0) != 0;
 
         let tree = match graph_ui::build_tree(graph, &self.ui_symbols, root_id) {
             Some(tree) => tree,
@@ -369,7 +387,7 @@ impl UiPipeline {
         let root_rect = layout::LayoutRect { x: 0, y: 0, w, h };
         let rects = graph_ui::layout_tree(&tree, root_rect);
         graph_ui::write_bounds(graph, &tree, &rects);
-        let paint_bytes = graph_ui::emit_paint(&tree, &rects, window_bg);
+        let paint_bytes = graph_ui::emit_paint(&tree, &rects, window_bg, is_focused);
         let paint_bs = bytespace_create(paint_bytes.len(), 0, 0)?;
         let _ = bytespace_write(paint_bs, 0, &paint_bytes);
         let _ = prop_set(window_id, keys::UI_PAINT_BYTESPACE, paint_bs.to_u64_lossy());
@@ -384,41 +402,14 @@ impl UiPipeline {
                 last_h: h,
                 last_bg: window_bg,
                 last_title_bs: prop_get(window_id, keys::UI_TITLE).unwrap_or(0),
+                last_focused: is_focused,
             },
         );
         Ok(())
     }
 }
 
-fn read_string_prop(node: ThingId, key: &str) -> Option<String> {
-    let bs = prop_get(node, key).ok()?;
-    if bs == 0 {
-        return None;
-    }
-    let bytes = read_bytespace(ThingId::from_u64(bs)).ok()?;
-    core::str::from_utf8(&bytes)
-        .ok()
-        .map(|s| s.trim_end_matches('\0').to_string())
-}
-
-fn read_bytespace(bs_id: ThingId) -> Result<Vec<u8>, abi::errors::Errno> {
-    let size = bytespace_info(bs_id)?;
-    if size == 0 {
-        return Ok(Vec::new());
-    }
-    let mut out = Vec::with_capacity(size);
-    out.resize(size, 0);
-    let mut offset = 0usize;
-    while offset < size {
-        let end = core::cmp::min(offset + 4096, size);
-        let read = bytespace_read(bs_id, offset, &mut out[offset..end])?;
-        if read == 0 {
-            break;
-        }
-        offset = offset.saturating_add(read);
-    }
-    Ok(out)
-}
+// Utility functions moved to lib.rs
 
 fn handle_ipc_request(req: &[u8], resp: &mut [u8], state: &mut Blossom) -> Option<usize> {
     let tag = decode_request_tag(req)?;
@@ -451,17 +442,7 @@ fn handle_rasterize(
             if size == 0 {
                 return encode_error(SvgStatus::ErrInvalidSvg, resp);
             }
-            let mut bytes = vec![0u8; size];
-            let mut offset = 0usize;
-            while offset < size {
-                let end = core::cmp::min(offset + 4096, size);
-                let read = bytespace_read(bs_id, offset, &mut bytes[offset..end]).ok()?;
-                if read == 0 {
-                    break;
-                }
-                offset = offset.saturating_add(read);
-            }
-            bytes
+            read_bytespace(bs_id).ok()?
         }
         SvgSource::InlineBytes(bytes) => bytes,
     };

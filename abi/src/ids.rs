@@ -41,7 +41,11 @@ mod tests {
 
             // Verify the upper 8 bytes are zero (padding)
             // The layout is [handle_bytes(8) | 0...0]
-            assert_eq!(&thing_id.0[8..16], &[0u8; 8], "Upper bytes must be zero-padded");
+            assert_eq!(
+                &thing_id.0[8..16],
+                &[0u8; 8],
+                "Upper bytes must be zero-padded"
+            );
         }
     }
 
@@ -59,6 +63,10 @@ mod tests {
         let id = ThingId::new_debug_nonce();
         // A debug nonce should have non-zero upper bytes (it uses them for sequence)
         // This confirms it would be "lossy" or "cursed" if used as a handle.
-        assert_ne!(&id.0[8..16], &[0u8; 8], "Debug nonce must NOT be zero-padded (violations are documented)");
+        assert_ne!(
+            &id.0[8..16],
+            &[0u8; 8],
+            "Debug nonce must NOT be zero-padded (violations are documented)"
+        );
     }
 }

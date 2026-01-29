@@ -5,9 +5,9 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use crate::wire::ThingId;
 use crate::ids::HandleId;
+use crate::wire::ThingId;
+use alloc::vec::Vec;
 
 /// Source of SVG data for rasterization
 #[derive(Debug, Clone)]
@@ -98,94 +98,118 @@ impl RasterizeSvgRequest {
     /// For InlineBytes: source_data = len(4) + bytes(len)
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
         let mut pos = 0;
-        
+
         // Tag
-        if pos >= buf.len() { return None; }
+        if pos >= buf.len() {
+            return None;
+        }
         buf[pos] = SvgRequestTag::RasterizeSvg as u8;
         pos += 1;
-        
+
         // Source
         match &self.source {
             SvgSource::Bytespace(bs_id) => {
-                if pos >= buf.len() { return None; }
+                if pos >= buf.len() {
+                    return None;
+                }
                 buf[pos] = 0; // Bytespace type
                 pos += 1;
-                
-                if pos + 8 > buf.len() { return None; }
-                buf[pos..pos+8].copy_from_slice(&bs_id.to_u64_lossy().to_le_bytes());
+
+                if pos + 8 > buf.len() {
+                    return None;
+                }
+                buf[pos..pos + 8].copy_from_slice(&bs_id.to_u64_lossy().to_le_bytes());
                 pos += 8;
             }
             SvgSource::InlineBytes(bytes) => {
-                if pos >= buf.len() { return None; }
+                if pos >= buf.len() {
+                    return None;
+                }
                 buf[pos] = 1; // Inline type
                 pos += 1;
-                
-                if pos + 4 > buf.len() { return None; }
-                buf[pos..pos+4].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
+
+                if pos + 4 > buf.len() {
+                    return None;
+                }
+                buf[pos..pos + 4].copy_from_slice(&(bytes.len() as u32).to_le_bytes());
                 pos += 4;
-                
-                if pos + bytes.len() > buf.len() { return None; }
-                buf[pos..pos+bytes.len()].copy_from_slice(bytes);
+
+                if pos + bytes.len() > buf.len() {
+                    return None;
+                }
+                buf[pos..pos + bytes.len()].copy_from_slice(bytes);
                 pos += bytes.len();
             }
         }
-        
+
         // Width, Height, Format, Flags
-        if pos + 13 > buf.len() { return None; }
-        buf[pos..pos+4].copy_from_slice(&self.width.to_le_bytes());
+        if pos + 13 > buf.len() {
+            return None;
+        }
+        buf[pos..pos + 4].copy_from_slice(&self.width.to_le_bytes());
         pos += 4;
-        buf[pos..pos+4].copy_from_slice(&self.height.to_le_bytes());
+        buf[pos..pos + 4].copy_from_slice(&self.height.to_le_bytes());
         pos += 4;
         buf[pos] = self.pixel_format;
         pos += 1;
-        buf[pos..pos+4].copy_from_slice(&self.flags.to_le_bytes());
+        buf[pos..pos + 4].copy_from_slice(&self.flags.to_le_bytes());
         pos += 4;
-        
+
         Some(pos)
     }
-    
+
     /// Decode request from wire format (excluding tag byte)
     pub fn decode(buf: &[u8]) -> Option<Self> {
-        if buf.is_empty() { return None; }
-        
+        if buf.is_empty() {
+            return None;
+        }
+
         let mut pos = 0;
-        
+
         // Source type
         let source_type = buf[pos];
         pos += 1;
-        
+
         let source = match source_type {
             0 => {
                 // Bytespace
-                if pos + 8 > buf.len() { return None; }
-                let bs_id = u64::from_le_bytes(buf[pos..pos+8].try_into().ok()?);
+                if pos + 8 > buf.len() {
+                    return None;
+                }
+                let bs_id = u64::from_le_bytes(buf[pos..pos + 8].try_into().ok()?);
                 pos += 8;
                 SvgSource::Bytespace(ThingId::from_u64(bs_id))
             }
             1 => {
                 // Inline
-                if pos + 4 > buf.len() { return None; }
-                let len = u32::from_le_bytes(buf[pos..pos+4].try_into().ok()?) as usize;
+                if pos + 4 > buf.len() {
+                    return None;
+                }
+                let len = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?) as usize;
                 pos += 4;
-                
-                if pos + len > buf.len() { return None; }
-                let bytes = buf[pos..pos+len].to_vec();
+
+                if pos + len > buf.len() {
+                    return None;
+                }
+                let bytes = buf[pos..pos + len].to_vec();
                 pos += len;
                 SvgSource::InlineBytes(bytes)
             }
             _ => return None,
         };
-        
+
         // Width, Height, Format, Flags
-        if pos + 13 > buf.len() { return None; }
-        let width = u32::from_le_bytes(buf[pos..pos+4].try_into().ok()?);
+        if pos + 13 > buf.len() {
+            return None;
+        }
+        let width = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?);
         pos += 4;
-        let height = u32::from_le_bytes(buf[pos..pos+4].try_into().ok()?);
+        let height = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?);
         pos += 4;
         let pixel_format = buf[pos];
         pos += 1;
-        let flags = u32::from_le_bytes(buf[pos..pos+4].try_into().ok()?);
-        
+        let flags = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?);
+
         Some(Self {
             source,
             width,
@@ -201,47 +225,52 @@ impl RasterizeSvgResponse {
     /// Format: status(1) + bytespace(8) + width(4) + height(4) + stride(4) + format(1) + variant_hash(8)
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
         const SIZE: usize = 1 + 8 + 4 + 4 + 4 + 1 + 8;
-        if buf.len() < SIZE { return None; }
-        
+        if buf.len() < SIZE {
+            return None;
+        }
+
         let mut pos = 0;
         buf[pos] = self.status;
         pos += 1;
-        buf[pos..pos+8].copy_from_slice(&self.raster_bytespace.to_u64_lossy().to_le_bytes());
+        buf[pos..pos + 8].copy_from_slice(&self.raster_bytespace.to_u64_lossy().to_le_bytes());
         pos += 8;
-        buf[pos..pos+4].copy_from_slice(&self.width.to_le_bytes());
+        buf[pos..pos + 4].copy_from_slice(&self.width.to_le_bytes());
         pos += 4;
-        buf[pos..pos+4].copy_from_slice(&self.height.to_le_bytes());
+        buf[pos..pos + 4].copy_from_slice(&self.height.to_le_bytes());
         pos += 4;
-        buf[pos..pos+4].copy_from_slice(&self.stride_bytes.to_le_bytes());
+        buf[pos..pos + 4].copy_from_slice(&self.stride_bytes.to_le_bytes());
         pos += 4;
         buf[pos] = self.pixel_format;
         pos += 1;
-        buf[pos..pos+8].copy_from_slice(&self.variant_hash.to_le_bytes());
+        buf[pos..pos + 8].copy_from_slice(&self.variant_hash.to_le_bytes());
         pos += 8;
-        
+
         Some(pos)
     }
-    
+
     /// Decode response from wire format
     pub fn decode(buf: &[u8]) -> Option<Self> {
         const SIZE: usize = 1 + 8 + 4 + 4 + 4 + 1 + 8;
-        if buf.len() < SIZE { return None; }
-        
+        if buf.len() < SIZE {
+            return None;
+        }
+
         let mut pos = 0;
         let status = buf[pos];
         pos += 1;
-        let raster_bytespace = ThingId::from_u64(u64::from_le_bytes(buf[pos..pos+8].try_into().ok()?));
+        let raster_bytespace =
+            ThingId::from_u64(u64::from_le_bytes(buf[pos..pos + 8].try_into().ok()?));
         pos += 8;
-        let width = u32::from_le_bytes(buf[pos..pos+4].try_into().ok()?);
+        let width = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?);
         pos += 4;
-        let height = u32::from_le_bytes(buf[pos..pos+4].try_into().ok()?);
+        let height = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?);
         pos += 4;
-        let stride_bytes = u32::from_le_bytes(buf[pos..pos+4].try_into().ok()?);
+        let stride_bytes = u32::from_le_bytes(buf[pos..pos + 4].try_into().ok()?);
         pos += 4;
         let pixel_format = buf[pos];
         pos += 1;
-        let variant_hash = u64::from_le_bytes(buf[pos..pos+8].try_into().ok()?);
-        
+        let variant_hash = u64::from_le_bytes(buf[pos..pos + 8].try_into().ok()?);
+
         Some(Self {
             status,
             raster_bytespace,
@@ -256,7 +285,9 @@ impl RasterizeSvgResponse {
 
 /// Decode request tag from buffer
 pub fn decode_request_tag(buf: &[u8]) -> Option<SvgRequestTag> {
-    if buf.is_empty() { return None; }
+    if buf.is_empty() {
+        return None;
+    }
     match buf[0] {
         0 => Some(SvgRequestTag::Ping),
         1 => Some(SvgRequestTag::RasterizeSvg),
@@ -280,7 +311,9 @@ pub fn encode_error(status: SvgStatus, buf: &mut [u8]) -> Option<usize> {
 
 /// Encode a ping request
 pub fn encode_ping(buf: &mut [u8]) -> Option<usize> {
-    if buf.is_empty() { return None; }
+    if buf.is_empty() {
+        return None;
+    }
     buf[0] = SvgRequestTag::Ping as u8;
     Some(1)
 }

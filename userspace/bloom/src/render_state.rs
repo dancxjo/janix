@@ -166,7 +166,10 @@ impl RasterCache {
 
     fn attach_svg_dependency(&mut self, key: &RasterKey, svg_source: Option<u64>) {
         let Some(source) = svg_source else { return };
-        self.svg_dependents.entry(source).or_default().insert(key.clone());
+        self.svg_dependents
+            .entry(source)
+            .or_default()
+            .insert(key.clone());
     }
 
     fn detach_svg_dependency(&mut self, key: &RasterKey, svg_source: Option<u64>) {

@@ -6,4 +6,5 @@ edition = "2021"
 [dependencies]
 stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }
+blossom = { path = "../blossom" }
 libm = "0.2"

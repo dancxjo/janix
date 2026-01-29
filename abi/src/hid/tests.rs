@@ -105,22 +105,38 @@ fn mods_roundtrip_byte() {
 // KeyEventPayload tests
 #[test]
 fn key_event_payload_is_repeat() {
-    let payload = KeyEventPayload { key: 0x04, mods: 0, flags: 0 };
+    let payload = KeyEventPayload {
+        key: 0x04,
+        mods: 0,
+        flags: 0,
+    };
     assert!(!payload.is_repeat());
 
-    let payload_repeat = KeyEventPayload { key: 0x04, mods: 0, flags: 1 };
+    let payload_repeat = KeyEventPayload {
+        key: 0x04,
+        mods: 0,
+        flags: 1,
+    };
     assert!(payload_repeat.is_repeat());
 }
 
 #[test]
 fn key_event_payload_key() {
-    let payload = KeyEventPayload { key: 0x04, mods: 0, flags: 0 };
+    let payload = KeyEventPayload {
+        key: 0x04,
+        mods: 0,
+        flags: 0,
+    };
     assert_eq!(payload.key(), Key::A);
 }
 
 #[test]
 fn key_event_payload_mods() {
-    let payload = KeyEventPayload { key: 0x04, mods: Mods::SHIFT | Mods::CTRL, flags: 0 };
+    let payload = KeyEventPayload {
+        key: 0x04,
+        mods: Mods::SHIFT | Mods::CTRL,
+        flags: 0,
+    };
     let mods = payload.mods();
     assert!(mods.has_shift());
     assert!(mods.has_ctrl());
@@ -208,8 +224,8 @@ fn bristle_event_header_golden_bytes() {
     let bytes = header.to_bytes();
     let expected = [
         0x45, 0x44, 0x49, 0x48, // magic "HIDE" LE
-        0x00, 0x00,             // version
-        0x01, 0x00,             // event_type
+        0x00, 0x00, // version
+        0x01, 0x00, // event_type
         0x88, 0x77, 0x66, 0x55, 0x44, 0x33, 0x22, 0x11, // timestamp
         0x04, 0x00, 0x00, 0x00, // payload_len
     ];
@@ -273,7 +289,11 @@ fn bristle_event_header_versioning_policy() {
 
 #[test]
 fn payload_golden_bytes() {
-    let key_payload = KeyEventPayload { key: 0x04, mods: Mods::SHIFT | Mods::CTRL, flags: 1 };
+    let key_payload = KeyEventPayload {
+        key: 0x04,
+        mods: Mods::SHIFT | Mods::CTRL,
+        flags: 1,
+    };
     assert_eq!(key_payload.to_bytes(), [0x04, 0x00, 0x03, 0x01]);
     let parsed = KeyEventPayload::from_bytes(&key_payload.to_bytes());
     assert_eq!(parsed.key(), Key::A);
@@ -362,31 +382,92 @@ fn raw_input_envelope_length_bounds() {
 #[test]
 fn key_mapping_is_unique_and_named() {
     let known: &[(u16, Key)] = &[
-        (0x04, Key::A), (0x05, Key::B), (0x06, Key::C), (0x07, Key::D),
-        (0x08, Key::E), (0x09, Key::F), (0x0A, Key::G), (0x0B, Key::H),
-        (0x0C, Key::I), (0x0D, Key::J), (0x0E, Key::K), (0x0F, Key::L),
-        (0x10, Key::M), (0x11, Key::N), (0x12, Key::O), (0x13, Key::P),
-        (0x14, Key::Q), (0x15, Key::R), (0x16, Key::S), (0x17, Key::T),
-        (0x18, Key::U), (0x19, Key::V), (0x1A, Key::W), (0x1B, Key::X),
-        (0x1C, Key::Y), (0x1D, Key::Z),
-        (0x1E, Key::Num1), (0x1F, Key::Num2), (0x20, Key::Num3), (0x21, Key::Num4),
-        (0x22, Key::Num5), (0x23, Key::Num6), (0x24, Key::Num7), (0x25, Key::Num8),
-        (0x26, Key::Num9), (0x27, Key::Num0),
-        (0x28, Key::Enter), (0x29, Key::Escape), (0x2A, Key::Backspace), (0x2B, Key::Tab),
-        (0x2C, Key::Space), (0x2D, Key::Minus), (0x2E, Key::Equal), (0x2F, Key::LeftBracket),
-        (0x30, Key::RightBracket), (0x31, Key::Backslash), (0x33, Key::Semicolon),
-        (0x34, Key::Quote), (0x35, Key::Grave), (0x36, Key::Comma),
-        (0x37, Key::Period), (0x38, Key::Slash), (0x39, Key::CapsLock),
-        (0x3A, Key::F1), (0x3B, Key::F2), (0x3C, Key::F3), (0x3D, Key::F4),
-        (0x3E, Key::F5), (0x3F, Key::F6), (0x40, Key::F7), (0x41, Key::F8),
-        (0x42, Key::F9), (0x43, Key::F10), (0x44, Key::F11), (0x45, Key::F12),
-        (0x46, Key::PrintScreen), (0x47, Key::ScrollLock), (0x48, Key::Pause),
-        (0x49, Key::Insert), (0x4A, Key::Home), (0x4B, Key::PageUp),
-        (0x4C, Key::Delete), (0x4D, Key::End), (0x4E, Key::PageDown),
-        (0x4F, Key::Right), (0x50, Key::Left), (0x51, Key::Down), (0x52, Key::Up),
-        (0xE0, Key::LeftCtrl), (0xE1, Key::LeftShift), (0xE2, Key::LeftAlt),
-        (0xE3, Key::LeftMeta), (0xE4, Key::RightCtrl), (0xE5, Key::RightShift),
-        (0xE6, Key::RightAlt), (0xE7, Key::RightMeta),
+        (0x04, Key::A),
+        (0x05, Key::B),
+        (0x06, Key::C),
+        (0x07, Key::D),
+        (0x08, Key::E),
+        (0x09, Key::F),
+        (0x0A, Key::G),
+        (0x0B, Key::H),
+        (0x0C, Key::I),
+        (0x0D, Key::J),
+        (0x0E, Key::K),
+        (0x0F, Key::L),
+        (0x10, Key::M),
+        (0x11, Key::N),
+        (0x12, Key::O),
+        (0x13, Key::P),
+        (0x14, Key::Q),
+        (0x15, Key::R),
+        (0x16, Key::S),
+        (0x17, Key::T),
+        (0x18, Key::U),
+        (0x19, Key::V),
+        (0x1A, Key::W),
+        (0x1B, Key::X),
+        (0x1C, Key::Y),
+        (0x1D, Key::Z),
+        (0x1E, Key::Num1),
+        (0x1F, Key::Num2),
+        (0x20, Key::Num3),
+        (0x21, Key::Num4),
+        (0x22, Key::Num5),
+        (0x23, Key::Num6),
+        (0x24, Key::Num7),
+        (0x25, Key::Num8),
+        (0x26, Key::Num9),
+        (0x27, Key::Num0),
+        (0x28, Key::Enter),
+        (0x29, Key::Escape),
+        (0x2A, Key::Backspace),
+        (0x2B, Key::Tab),
+        (0x2C, Key::Space),
+        (0x2D, Key::Minus),
+        (0x2E, Key::Equal),
+        (0x2F, Key::LeftBracket),
+        (0x30, Key::RightBracket),
+        (0x31, Key::Backslash),
+        (0x33, Key::Semicolon),
+        (0x34, Key::Quote),
+        (0x35, Key::Grave),
+        (0x36, Key::Comma),
+        (0x37, Key::Period),
+        (0x38, Key::Slash),
+        (0x39, Key::CapsLock),
+        (0x3A, Key::F1),
+        (0x3B, Key::F2),
+        (0x3C, Key::F3),
+        (0x3D, Key::F4),
+        (0x3E, Key::F5),
+        (0x3F, Key::F6),
+        (0x40, Key::F7),
+        (0x41, Key::F8),
+        (0x42, Key::F9),
+        (0x43, Key::F10),
+        (0x44, Key::F11),
+        (0x45, Key::F12),
+        (0x46, Key::PrintScreen),
+        (0x47, Key::ScrollLock),
+        (0x48, Key::Pause),
+        (0x49, Key::Insert),
+        (0x4A, Key::Home),
+        (0x4B, Key::PageUp),
+        (0x4C, Key::Delete),
+        (0x4D, Key::End),
+        (0x4E, Key::PageDown),
+        (0x4F, Key::Right),
+        (0x50, Key::Left),
+        (0x51, Key::Down),
+        (0x52, Key::Up),
+        (0xE0, Key::LeftCtrl),
+        (0xE1, Key::LeftShift),
+        (0xE2, Key::LeftAlt),
+        (0xE3, Key::LeftMeta),
+        (0xE4, Key::RightCtrl),
+        (0xE5, Key::RightShift),
+        (0xE6, Key::RightAlt),
+        (0xE7, Key::RightMeta),
     ];
 
     for i in 0..known.len() {

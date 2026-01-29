@@ -7,13 +7,13 @@ use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
 use self::snapshot::{AssetCache, KindIds, NodeChange, UiKeys, UiSnapshot};
 use crate::asset::AssetBank;
-use crate::damage::Rect;
+use crate::geometry::Rect;
 use crate::drawlist::DrawList;
-use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT};
 use crate::render_state::RenderState;
+use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT};
 use alloc::collections::{BTreeMap, BTreeSet};
-use stem::thing::ThingId;
 use spin::Mutex;
+use stem::thing::ThingId;
 
 #[derive(Clone, Copy)]
 pub enum FullRefreshReason {
@@ -321,13 +321,17 @@ impl UiPipeline {
                 if !had_prev {
                     full_layout_reason = Some(FullRefreshReason::FirstFrame);
                 } else if self.dirty_full {
-                    full_layout_reason =
-                        Some(self.pending_full_reason.take().unwrap_or(FullRefreshReason::ResyncRequested));
+                    full_layout_reason = Some(
+                        self.pending_full_reason
+                            .take()
+                            .unwrap_or(FullRefreshReason::ResyncRequested),
+                    );
                 }
                 self.dirty_full = false;
                 self.dirty_nodes.clear();
                 full_snapshot = true;
-                snapshot = UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.asset_cache);
+                snapshot =
+                    UiSnapshot::capture_with_cache(root_id, &keys, &kinds, &mut self.asset_cache);
                 node_changes = snapshot
                     .nodes
                     .keys()
@@ -344,14 +348,15 @@ impl UiPipeline {
                 let dirty = core::mem::take(&mut self.dirty_nodes);
                 if !dirty.is_empty() {
                     crate::trace_event!("ui.run.path", "incremental_snap");
-                    node_changes = snapshot.update_dirty(&dirty, &keys, &kinds, &mut self.asset_cache);
+                    node_changes =
+                        snapshot.update_dirty(&dirty, &keys, &kinds, &mut self.asset_cache);
                     snapshot_changed = !node_changes.is_empty();
                     dirty_snap_count = pending_dirty_count;
 
                     // If graph topology changed, garbage collect unreachable nodes
                     // to prevent memory leaks.
                     if !dirty.edges.is_empty() {
-                         snapshot.prune();
+                        snapshot.prune();
                     }
                 } else {
                     crate::trace_event!("ui.run.path", "snap_reuse");
@@ -385,7 +390,7 @@ impl UiPipeline {
         if !force_full_layout {
             if let Some(layout) = self.last_layout.as_ref() {
                 if let Some(root) = layout.root.as_ref() {
-                    if root.rect.w != screen_w || root.rect.h != screen_h {
+                    if root.rect.width() != screen_w || root.rect.height() != screen_h {
                         force_full_layout = true;
                         full_layout_reason = Some(FullRefreshReason::CacheInvalidated);
                     }
@@ -440,18 +445,18 @@ impl UiPipeline {
         let mut subtree_layout_dirty = BTreeSet::new();
         if !force_full_layout {
             if let Some(root_id) = snapshot.root_id {
-                 let parent_map = build_parent_map(&snapshot, root_id);
-                 for &dirty_id in &layout_dirty_nodes {
-                     let mut current = dirty_id;
-                     subtree_layout_dirty.insert(current);
-                     while let Some(parent) = parent_map.get(&current) {
-                         if subtree_layout_dirty.contains(parent) {
-                             break;
-                         }
-                         subtree_layout_dirty.insert(*parent);
-                         current = *parent;
-                     }
-                 }
+                let parent_map = build_parent_map(&snapshot, root_id);
+                for &dirty_id in &layout_dirty_nodes {
+                    let mut current = dirty_id;
+                    subtree_layout_dirty.insert(current);
+                    while let Some(parent) = parent_map.get(&current) {
+                        if subtree_layout_dirty.contains(parent) {
+                            break;
+                        }
+                        subtree_layout_dirty.insert(*parent);
+                        current = *parent;
+                    }
+                }
             }
         }
 
@@ -468,10 +473,7 @@ impl UiPipeline {
                 crate::trace_event!("ui.full_layout_reason", reason.as_str());
                 crate::trace_counter!("ui.full_layout", 1);
                 if log_this_frame {
-                    crate::log!(
-                        "[bloom][ui] full_layout_reason={}",
-                        reason.as_str()
-                    );
+                    crate::log!("[bloom][ui] full_layout_reason={}", reason.as_str());
                 }
             }
         }
@@ -512,9 +514,8 @@ impl UiPipeline {
         }
 
         let mut dirty_subtrees = BTreeSet::new();
-        let mut paint_all = full_snapshot
-            || force_full_layout
-            || (self.dirty && node_changes.is_empty());
+        let mut paint_all =
+            full_snapshot || force_full_layout || (self.dirty && node_changes.is_empty());
         if !paint_all && !paint_dirty_nodes.is_empty() {
             if let Some(root_id) = snapshot.root_id {
                 if paint_dirty_nodes.contains(&root_id) {
@@ -522,9 +523,7 @@ impl UiPipeline {
                 } else {
                     let parent_map = build_parent_map(&snapshot, root_id);
                     for id in &paint_dirty_nodes {
-                        if let Some(subtree) =
-                            find_root_child_ancestor(*id, root_id, &parent_map)
-                        {
+                        if let Some(subtree) = find_root_child_ancestor(*id, root_id, &parent_map) {
                             dirty_subtrees.insert(subtree);
                         }
                     }
@@ -647,7 +646,11 @@ impl UiPipeline {
     }
 
     fn emit_cached_drawlists(&self, list: &mut DrawList) -> bool {
-        let root = match self.last_layout.as_ref().and_then(|layout| layout.root.as_ref()) {
+        let root = match self
+            .last_layout
+            .as_ref()
+            .and_then(|layout| layout.root.as_ref())
+        {
             Some(root) => root,
             None => return false,
         };
@@ -668,8 +671,8 @@ impl UiPipeline {
         best: &mut Option<(ThingId, i32)>,
     ) {
         if node.kind == snapshot::UiNodeKind::Window {
-            let btn_x = node.rect.x + node.rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
-            let btn_y = node.rect.y + (TITLE_BAR_HEIGHT - SHADE_BUTTON_SIZE) / 2;
+            let btn_x = node.rect.x() + node.rect.width() - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
+            let btn_y = node.rect.y() + (TITLE_BAR_HEIGHT - SHADE_BUTTON_SIZE) / 2;
             let inside = x >= btn_x
                 && x <= btn_x + SHADE_BUTTON_SIZE
                 && y >= btn_y
@@ -705,7 +708,7 @@ impl UiPipeline {
     }
 
     /// Get all windows for hit testing, in z-order (front to back).
-    /// 
+    ///
     /// Returns (id, rect, is_shaded, is_maximized) for each window.
     pub fn get_windows_for_hit_test(&self) -> alloc::vec::Vec<(ThingId, Rect, bool, bool)> {
         let layout = match self.last_layout.as_ref() {
@@ -727,7 +730,10 @@ impl UiPipeline {
         // Sort by z-index descending (front to back)
         windows.sort_by(|a, b| b.4.cmp(&a.4));
 
-        windows.into_iter().map(|(id, rect, shaded, maximized, _z)| (id, rect, shaded, maximized)).collect()
+        windows
+            .into_iter()
+            .map(|(id, rect, shaded, maximized, _z)| (id, rect, shaded, maximized))
+            .collect()
     }
 
     fn collect_windows(
@@ -756,7 +762,7 @@ impl UiPipeline {
     }
 
     /// Set a window's position and size in the graph.
-    /// 
+    ///
     /// This updates the UI_X, UI_Y, UI_WIDTH, UI_HEIGHT properties.
     pub fn set_window_rect(&mut self, window_id: ThingId, rect: Rect) -> bool {
         let keys = match self.cached_keys.as_ref() {
@@ -766,17 +772,17 @@ impl UiPipeline {
 
         let mut success = true;
         if keys.x != 0 {
-            success &= stem::thing::sys::prop_set(window_id, keys.x, rect.x as u64).is_ok();
+            success &= stem::thing::sys::prop_set(window_id, keys.x, rect.x() as u64).is_ok();
         }
         if keys.y != 0 {
-            success &= stem::thing::sys::prop_set(window_id, keys.y, rect.y as u64).is_ok();
+            success &= stem::thing::sys::prop_set(window_id, keys.y, rect.y() as u64).is_ok();
         }
         if keys.w != 0 {
-            success &= stem::thing::sys::prop_set(window_id, keys.w, rect.w as u64).is_ok();
+            success &= stem::thing::sys::prop_set(window_id, keys.w, rect.width() as u64).is_ok();
         }
         if keys.h != 0 {
             // Subtract title bar height for stored value
-            let stored_h = (rect.h - TITLE_BAR_HEIGHT).max(0) as u64;
+            let stored_h = (rect.height() - TITLE_BAR_HEIGHT).max(0) as u64;
             success &= stem::thing::sys::prop_set(window_id, keys.h, stored_h).is_ok();
         }
 
@@ -804,15 +810,20 @@ impl UiPipeline {
 
         // Find the max z-index of all windows
         let windows = self.get_windows_for_hit_test();
-        let max_z = windows.iter().filter(|(id, _, _, _)| *id != window_id).map(|(_, _, _, _)| {
-            // Read z-index from snapshot
-            if let Some(snapshot) = self.prev_snapshot.as_ref() {
-                if let Some(node) = snapshot.nodes.get(&window_id) {
-                    return node.props.get(&keys.z_index).copied().unwrap_or(0) as i32;
+        let max_z = windows
+            .iter()
+            .filter(|(id, _, _, _)| *id != window_id)
+            .map(|(_, _, _, _)| {
+                // Read z-index from snapshot
+                if let Some(snapshot) = self.prev_snapshot.as_ref() {
+                    if let Some(node) = snapshot.nodes.get(&window_id) {
+                        return node.props.get(&keys.z_index).copied().unwrap_or(0) as i32;
+                    }
                 }
-            }
-            0
-        }).max().unwrap_or(0);
+                0
+            })
+            .max()
+            .unwrap_or(0);
 
         let new_z = (max_z + 1) as u64;
         if stem::thing::sys::prop_set(window_id, keys.z_index, new_z).is_ok() {
@@ -829,7 +840,7 @@ impl UiPipeline {
             match obj {
                 PaintObject::PushClip { rect } => {
                     list.commands().push(DrawCmd::PushClip {
-                        rect: crate::geometry::Rect::new(rect.x, rect.y, rect.w, rect.h),
+                        rect: crate::geometry::Rect::new(rect.x(), rect.y(), rect.width(), rect.height()),
                     });
                 }
                 PaintObject::PopClip => {
@@ -842,16 +853,16 @@ impl UiPipeline {
                 } => {
                     if *radius > 0 {
                         list.rounded_rect(
-                            rect.x,
-                            rect.y,
-                            rect.w,
-                            rect.h,
+                            rect.x(),
+                            rect.y(),
+                            rect.width(),
+                            rect.height(),
                             *radius as i32,
                             *color,
                             crate::geometry::EdgeAA::None,
                         );
                     } else {
-                        list.rect(rect.x, rect.y, rect.w, rect.h, *color);
+                        list.rect(rect.x(), rect.y(), rect.width(), rect.height(), *color);
                     }
                 }
                 PaintObject::Text {
@@ -862,20 +873,28 @@ impl UiPipeline {
                     color,
                     font_debug,
                 } => {
-                    list.text_font_debug(text, Some(font), rect.x, rect.y, *size, *color, *font_debug);
+                    list.text_font_debug(
+                        text,
+                        Some(font),
+                        rect.x(),
+                        rect.y(),
+                        *size,
+                        *color,
+                        *font_debug,
+                    );
                 }
                 PaintObject::Image { rect: _ } => {
                     // TODO: Implement image lowering
                 }
                 PaintObject::Raster { rect, image } => {
-                     list.blit_image(image, rect.x, rect.y);
+                    list.blit_image(image, rect.x(), rect.y());
                 }
                 PaintObject::Commands { cmds, rect } => {
                     use crate::geometry::Transform;
 
                     // Translate local 0,0 SVG to node position
                     list.commands().push(DrawCmd::PushTransform {
-                        transform: Transform::translate(rect.x as f32, rect.y as f32),
+                        transform: Transform::translate(rect.x() as f32, rect.y() as f32),
                     });
 
                     // Append commands

@@ -1,5 +1,5 @@
-use crate::types::ThingId;
 use crate::ids::HandleId;
+use crate::types::ThingId;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

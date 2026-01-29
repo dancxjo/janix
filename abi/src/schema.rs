@@ -98,6 +98,12 @@ pub mod keys {
     pub const UI_KIND: &str = "ui.kind";
     pub const UI_VISIBLE: &str = "ui.visible";
     pub const UI_ENABLED: &str = "ui.enabled";
+    pub const UI_FOCUSED: &str = "ui.focused";
+    pub const UI_RANK: &str = "ui.rank";
+    pub const UI_FIXED: &str = "ui.fixed";
+    pub const UI_MANUAL_POSITION: &str = "ui.manual_position";
+    /// Compositor has taken control of framebuffer (boot console should stop)
+    pub const UI_COMPOSITOR_ACTIVE: &str = "ui.compositor.active";
     pub const UI_BUTTON_LABEL: &str = "ui.button.label";
     pub const UI_BUTTON_ACTION_ID: &str = "ui.button.action_id";
     pub const UI_BUTTON_PRESSED: &str = "ui.button.pressed";
@@ -154,6 +160,8 @@ pub mod keys {
     pub const BINDING_TARGET: &str = "binding.target";
     pub const BINDING_MAP: &str = "binding.map";
     pub const BINDING_TO: &str = "binding.to";
+    pub const EDGE_KIND: &str = "edge.kind";
+    pub const EDGE_WEIGHT: &str = "edge.weight";
 
     // UI Inline
     pub const UI_INLINE_MODE: &str = "ui.inline.mode";
@@ -261,7 +269,7 @@ pub mod keys {
     pub const FONT_ATLAS_BYTESPACE: &str = "font.atlas.bytespace";
     pub const FONT_ATLAS_WIDTH: &str = "font.atlas.width";
     pub const FONT_ATLAS_HEIGHT: &str = "font.atlas.height";
-    pub const FONT_ATLAS_FORMAT: &str = "font.atlas.format";   // 0=A8, 1=RGBA8888
+    pub const FONT_ATLAS_FORMAT: &str = "font.atlas.format"; // 0=A8, 1=RGBA8888
     pub const FONT_ATLAS_VERSION: &str = "font.atlas.version"; // Monotonic
 
     // SVG Cache Properties (Blossom service)
@@ -272,6 +280,17 @@ pub mod keys {
     pub const SVG_RASTER_HEIGHT: &str = "svg.raster.height";
     pub const SVG_RASTER_STRIDE: &str = "svg.raster.stride";
     pub const SVG_RASTER_FORMAT: &str = "svg.raster.format";
+
+    // Asset System (unified)
+    pub const ASSET_KIND: &str = "asset.kind";
+    pub const ASSET_NAME: &str = "asset.name";
+    pub const ASSET_SOURCE: &str = "asset.source";
+    pub const ASSET_HASH: &str = "asset.hash";
+    pub const ASSET_BYTESPACE: &str = "asset.bytespace";
+    pub const ASSET_GENERATION: &str = "asset.generation";
+    pub const ASSET_ERROR: &str = "asset.error";
+    /// Boolean: 1 if asset successfully loaded and ready for use
+    pub const ASSET_READY: &str = "asset.ready";
 }
 
 pub mod kinds {
@@ -289,6 +308,11 @@ pub mod kinds {
     pub const BOOT_MODULE: &str = "boot.Module";
     pub const DEV_CPU: &str = "dev.Cpu";
     pub const SVC_SCHEDULER: &str = "svc.Scheduler";
+    pub const PROC_TASK: &str = "proc.Task";
+    pub const PROC_THREAD: &str = "proc.Thread";
+    pub const MEM_PAGE: &str = "mem.Page";
+    pub const MEM_STACK: &str = "mem.Stack";
+    pub const MEM_HEAP: &str = "mem.Heap";
 
     // Render artifact kinds (renderer-owned derived nodes)
     pub const RENDER_CACHE_ROOT: &str = "render.CacheRoot";
@@ -318,6 +342,7 @@ pub mod kinds {
     pub const DEV_STORAGE_DISK: &str = "dev.storage.Disk";
     pub const DEV_STORAGE_PARTITION: &str = "dev.storage.Partition";
     pub const SVC_STORAGE: &str = "svc.Storage";
+    pub const LOG_ENTRY: &str = "log.Entry";
 
     // UI Kinds
     pub const UI_ROOT: &str = "ui.Root";
@@ -344,8 +369,8 @@ pub mod kinds {
     pub const FONT_COVERAGE: &str = "font.Coverage";
     pub const FONT_INSTANCE: &str = "font.Instance";
     pub const FONT_GLYPH: &str = "font.Glyph";
-    pub const FONT_BLOB: &str = "font.Blob";         // Raw font file backing store
-    pub const FONT_ATLAS: &str = "font.Atlas";       // Glyph atlas for (face, size)
+    pub const FONT_BLOB: &str = "font.Blob"; // Raw font file backing store
+    pub const FONT_ATLAS: &str = "font.Atlas"; // Glyph atlas for (face, size)
     pub const FONT_IMPORT_REQUEST: &str = "font.ImportRequest";
     pub const FONT_GLYPH_REQUEST: &str = "font.GlyphRequest";
 
@@ -362,6 +387,17 @@ pub mod kinds {
     // SVG Cache Kinds (Blossom service)
     pub const SVG_ASSET: &str = "svg.Asset";
     pub const SVG_RASTER_VARIANT: &str = "svg.RasterVariant";
+
+    pub const SVC_INIT: &str = "svc.Init";
+    pub const SVC_CAMBIUM: &str = "svc.Cambium";
+    pub const TIME_CLOCK: &str = "time.Clock";
+    pub const TIME_TIMER: &str = "time.Timer";
+    pub const UI_SCENE: &str = "ui.Scene";
+    pub const UI_THEME: &str = "ui.Theme";
+    pub const UI_WIDGET: &str = "ui.Widget";
+
+    pub const ASSET: &str = "Asset";
+    pub const ASSET_REQUEST: &str = "AssetRequest";
 }
 
 /// Snapshot semantics and constants for UI presentation surfaces.
@@ -430,6 +466,7 @@ pub mod ui_kind {
     pub const CHECKBOX: u64 = 2;
     pub const TEXT: u64 = 3;
     pub const COLUMN: u64 = 4;
+    pub const WINDOW: u64 = 5;
 }
 
 pub mod rels {
@@ -470,7 +507,7 @@ pub mod rels {
     pub const FONT_HAS_GLYPH: &str = "font.has_glyph";
     pub const FONT_HAS_INSTANCE: &str = "font.has_instance";
     pub const FONT_HAS_RESULT: &str = "font.has_result";
-    pub const FONT_HAS_BLOB: &str = "font.has_blob";   // Face -> Blob (raw file)
+    pub const FONT_HAS_BLOB: &str = "font.has_blob"; // Face -> Blob (raw file)
     pub const FONT_HAS_ATLAS: &str = "font.has_atlas"; // Face -> Atlas
     pub const FONT_FALLBACK_TO: &str = "font.fallback_to";
 
@@ -516,4 +553,16 @@ pub mod pointer {
     pub const POINTER_Y: &str = "pointer.y";
     pub const POINTER_BUTTONS: &str = "pointer.buttons";
     pub const POINTER: &str = "input.Pointer";
+}
+
+// Keyboard / Input properties
+pub mod keyboard {
+    /// Current modifier bitset (Mods.0 value)
+    pub const KEYBOARD_MODS: &str = "keyboard.mods";
+    /// Last key code (Key as u16)
+    pub const KEYBOARD_LAST_KEY: &str = "keyboard.last_key";
+    /// Last key edge: 0=up, 1=down
+    pub const KEYBOARD_KEY_EDGE: &str = "keyboard.key_edge";
+    /// Monotonic generation for key events (increments on each key event)
+    pub const KEYBOARD_GEN: &str = "keyboard.gen";
 }

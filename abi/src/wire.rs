@@ -1,5 +1,5 @@
 //! Wire-safe primitives and IDs for the Graphable contract.
-//! 
+//!
 //! This module defines the fundamental fixed-size IDs used in the Thing-OS
 //! data graph and the `WireSafe` trait used to enforce pointer-free,
 //! packed layouts for payload structs.
@@ -55,9 +55,13 @@ impl ThingId {
             // Uses a small ring buffer and a spinlock.
             static mut DEBUG_HISTORY: [ThingId; 1024] = [ThingId([0; 16]); 1024];
             static mut DEBUG_CURSOR: usize = 0;
-            static DEBUG_LOCK: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+            static DEBUG_LOCK: core::sync::atomic::AtomicBool =
+                core::sync::atomic::AtomicBool::new(false);
 
-            while DEBUG_LOCK.compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed).is_err() {
+            while DEBUG_LOCK
+                .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+                .is_err()
+            {
                 core::hint::spin_loop();
             }
 
@@ -95,7 +99,7 @@ impl PredicateId {
 
 impl SymbolId {
     /// Convert a BlobId to a SymbolId.
-    /// 
+    ///
     /// In this implementation, we simply hash the BlobId to get a SymbolId,
     /// or treating it as distinct type-safe handle.
     /// For now, since they are both 16 bytes, we can map 1:1 if we want,
@@ -114,9 +118,9 @@ impl SymbolId {
 }
 
 /// Marker trait for types that are safe to transmit over the wire (pointer-free, packed, fixed-size).
-/// 
+///
 /// # Safety
-/// 
+///
 /// Implementing this trait asserts that:
 /// 1. The type is `Copy` and `'static`.
 /// 2. The type contains NO pointers, references, `Box`, `Vec`, `String`, etc.
@@ -152,6 +156,6 @@ unsafe impl WireSafe for PredicateId {}
 unsafe impl<T: WireSafe, const N: usize> WireSafe for [T; N] {}
 
 /// Assert that a type is WireSafe at compile time.
-/// 
+///
 /// Used in impl blocks to enforce constraints.
 pub const fn assert_wire_safe<T: WireSafe>() {}

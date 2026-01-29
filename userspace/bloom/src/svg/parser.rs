@@ -3,7 +3,7 @@ use alloc::{vec, vec::Vec};
 use stem::xml::{parse_f32, parse_length_px, Attributes, Event, XmlReader};
 
 use crate::drawlist::DrawCmd;
-use crate::geometry::{Color, Rect, Transform};
+use crate::geometry::{Color, Rect, RectF, Transform};
 
 use super::state::{apply_opacity, stroke_width_to_i32, StrokeStyle, SvgState};
 
@@ -12,7 +12,7 @@ pub struct SvgParser {
     cmds: Vec<DrawCmd>,
     width: i32,
     height: i32,
-    view_box: Option<Rect>,
+    view_box: Option<RectF>,
     viewport: Option<(i32, i32)>,
 }
 
@@ -121,11 +121,11 @@ impl SvgParser {
                         .filter_map(|s| s.parse().ok())
                         .collect();
                     if parts.len() == 4 {
-                        let vbr = Rect::new(
-                            parts[0] as i32,
-                            parts[1] as i32,
-                            parts[2] as i32,
-                            parts[3] as i32,
+                        let vbr = RectF::new(
+                            parts[0],
+                            parts[1],
+                            parts[2],
+                            parts[3],
                         );
                         self.view_box = Some(vbr);
                         self.apply_viewbox_transform(parts[0], parts[1], parts[2], parts[3]);
@@ -396,10 +396,12 @@ mod tests {
         "###;
         let mut parser = SvgParser::new();
         let cmds = parser.parse(xml);
-        assert!(cmds.iter().all(|cmd| !matches!(cmd, DrawCmd::FillRect { .. })));
-        assert!(cmds.iter().any(|cmd| {
-            matches!(cmd, DrawCmd::StrokePath { .. } | DrawCmd::StrokeRect { .. })
-        }));
+        assert!(cmds
+            .iter()
+            .all(|cmd| !matches!(cmd, DrawCmd::FillRect { .. })));
+        assert!(cmds
+            .iter()
+            .any(|cmd| { matches!(cmd, DrawCmd::StrokePath { .. } | DrawCmd::StrokeRect { .. }) }));
     }
 
     #[test]

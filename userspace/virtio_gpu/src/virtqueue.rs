@@ -58,7 +58,7 @@ impl Virtqueue {
                 write_volatile(&raw mut (*desc).next, (i + 1) % size);
             }
         }
-        
+
         // Initialize avail ring
         let avail_offset = (size as usize) * core::mem::size_of::<VirtqDesc>();
         let avail_ptr = (virt_base + avail_offset as u64) as *mut VirtqAvail;
@@ -66,7 +66,7 @@ impl Virtqueue {
             write_volatile(&raw mut (*avail_ptr).flags, 0);
             write_volatile(&raw mut (*avail_ptr).idx, 0);
         }
-        
+
         // Initialize used ring (after avail ring)
         let used_offset = avail_offset + 6 + (size as usize) * 2;
         let used_ptr = (virt_base + used_offset as u64) as *mut VirtqUsed;
@@ -74,7 +74,7 @@ impl Virtqueue {
             write_volatile(&raw mut (*used_ptr).flags, 0);
             write_volatile(&raw mut (*used_ptr).idx, 0);
         }
-        
+
         Self {
             virt_base,
             phys_base,
@@ -84,24 +84,24 @@ impl Virtqueue {
             last_used_idx: 0,
         }
     }
-    
+
     /// Add a buffer chain to the virtqueue
     /// Returns descriptor index or None if queue is full
     pub fn add_buffer(&mut self, bufs: &[(u64, u32, bool)]) -> Option<u16> {
         if bufs.is_empty() || self.num_free < bufs.len() as u16 {
             return None;
         }
-        
+
         let desc_ptr = self.virt_base as *mut VirtqDesc;
         let head = self.free_head;
         let mut idx = head;
-        
+
         for (i, (addr, len, writable)) in bufs.iter().enumerate() {
             unsafe {
                 let desc = desc_ptr.add(idx as usize);
                 write_volatile(&raw mut (*desc).addr, *addr);
                 write_volatile(&raw mut (*desc).len, *len);
-                
+
                 let mut flags: u16 = 0;
                 if *writable {
                     flags |= crate::virtio::VIRTQ_DESC_F_WRITE;
@@ -110,14 +110,14 @@ impl Virtqueue {
                     flags |= crate::virtio::VIRTQ_DESC_F_NEXT;
                 }
                 write_volatile(&raw mut (*desc).flags, flags);
-                
+
                 idx = read_volatile(&raw const (*desc).next);
             }
         }
-        
+
         self.free_head = idx;
         self.num_free -= bufs.len() as u16;
-        
+
         // Add to avail ring
         let avail_offset = (self.size as usize) * core::mem::size_of::<VirtqDesc>();
         let avail_ptr = (self.virt_base + avail_offset as u64) as *mut VirtqAvail;
@@ -125,35 +125,36 @@ impl Virtqueue {
             let avail_idx = read_volatile(&raw const (*avail_ptr).idx);
             let ring_ptr = (avail_ptr as *mut u8).add(4) as *mut u16;
             write_volatile(ring_ptr.add((avail_idx % self.size) as usize), head);
-            
+
             // Memory barrier
             core::sync::atomic::fence(core::sync::atomic::Ordering::Release);
-            
+
             write_volatile(&raw mut (*avail_ptr).idx, avail_idx.wrapping_add(1));
         }
-        
+
         Some(head)
     }
-    
+
     /// Check for completed buffers
     pub fn poll_used(&mut self) -> Option<(u16, u32)> {
-        let used_offset = (self.size as usize) * core::mem::size_of::<VirtqDesc>() + 6 + (self.size as usize) * 2;
+        let used_offset =
+            (self.size as usize) * core::mem::size_of::<VirtqDesc>() + 6 + (self.size as usize) * 2;
         let used_ptr = (self.virt_base + used_offset as u64) as *mut VirtqUsed;
-        
+
         unsafe {
             let used_idx = read_volatile(&raw const (*used_ptr).idx);
             if self.last_used_idx == used_idx {
                 return None;
             }
-            
+
             let ring_ptr = (used_ptr as *mut u8).add(4) as *mut VirtqUsedElem;
             let elem = ring_ptr.add((self.last_used_idx % self.size) as usize);
             let id = read_volatile(&raw const (*elem).id);
             let len = read_volatile(&raw const (*elem).len);
-            
+
             self.last_used_idx = self.last_used_idx.wrapping_add(1);
             self.num_free += 1; // Simplified - should count chain length
-            
+
             Some((id as u16, len))
         }
     }

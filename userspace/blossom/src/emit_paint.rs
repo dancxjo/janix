@@ -2,8 +2,12 @@ extern crate alloc;
 
 use alloc::vec::Vec;
 
+use abi::schema::keys;
 use abi::ui_paint::{ImageFit, PaintBuilder};
 use abi::ui_scene::NodeKind;
+use alloc::string::ToString;
+use stem::thing::sys::{bytespace_info, bytespace_read, prop_get};
+use stem::thing::{HandleId, ThingId};
 
 use crate::layout::{LayoutRect, WINDOW_BORDER, WINDOW_TITLE_HEIGHT};
 use crate::scene::{SceneGraph, SceneNode};
@@ -13,6 +17,7 @@ pub fn emit_paint(
     layout: &[LayoutRect],
     window_bg: u32,
     title_override: Option<&str>,
+    is_focused: bool,
 ) -> Vec<u8> {
     let mut builder = PaintBuilder::new();
     emit_node(
@@ -21,6 +26,7 @@ pub fn emit_paint(
         layout,
         window_bg,
         title_override,
+        is_focused,
         0,
         0,
         &mut builder,
@@ -34,6 +40,7 @@ fn emit_node(
     layout: &[LayoutRect],
     window_bg: u32,
     title_override: Option<&str>,
+    is_focused: bool,
     offset_x: i32,
     offset_y: i32,
     builder: &mut PaintBuilder,
@@ -46,15 +53,26 @@ fn emit_node(
         w: base.w,
         h: base.h,
     };
-    
+
     // Use stem::info loosely for tracing node types
-    if matches!(node.kind, NodeKind::Scroll | NodeKind::Flex | NodeKind::Separator | NodeKind::Spacer) {
-         // stem::info!("BLOSSOM: emit_node kind={:?} rect={:?}", node.kind, rect);
+    if matches!(
+        node.kind,
+        NodeKind::Scroll | NodeKind::Flex | NodeKind::Separator | NodeKind::Spacer
+    ) {
+        // stem::info!("BLOSSOM: emit_node kind={:?} rect={:?}", node.kind, rect);
     }
 
     match node.kind {
         NodeKind::Window => {
-            draw_window_chrome(scene, node, rect, window_bg, title_override, builder);
+            draw_window_chrome(
+                scene,
+                node,
+                rect,
+                window_bg,
+                title_override,
+                is_focused,
+                builder,
+            );
             let content = window_content_rect(node, rect);
             if content.w > 0 && content.h > 0 {
                 builder.push_clip(content.x, content.y, content.w, content.h);
@@ -65,6 +83,7 @@ fn emit_node(
                         layout,
                         window_bg,
                         title_override,
+                        is_focused,
                         offset_x,
                         offset_y,
                         builder,
@@ -82,24 +101,21 @@ fn emit_node(
         NodeKind::Text => {
             if let Some(meta) = node.text_meta {
                 let text = scene.string(meta.text).unwrap_or("");
+                let font_from_thing;
                 let font = match meta.font_kind {
                     abi::ui_scene::FontKeyKind::Name => {
                         scene.string(meta.font_name).unwrap_or("NotoSans-Regular")
+                    }
+                    abi::ui_scene::FontKeyKind::Thing => {
+                        font_from_thing = read_font_name(meta.font_thing);
+                        font_from_thing.as_deref().unwrap_or("NotoSans-Regular")
                     }
                     _ => "NotoSans-Regular",
                 };
                 let size = if meta.size > 0 { meta.size as i32 } else { 16 };
                 let baseline = rect.y + size;
                 builder.draw_text_run(
-                    rect.x,
-                    rect.y,
-                    rect.w,
-                    rect.h,
-                    baseline,
-                    font,
-                    size,
-                    text,
-                    meta.color,
+                    rect.x, rect.y, rect.w, rect.h, baseline, font, size, text, meta.color,
                 );
             }
         }
@@ -134,6 +150,7 @@ fn emit_node(
                         layout,
                         window_bg,
                         title_override,
+                        is_focused,
                         offset_x,
                         child_offset_y,
                         builder,
@@ -180,6 +197,7 @@ fn emit_node(
             layout,
             window_bg,
             title_override,
+            is_focused,
             offset_x,
             offset_y,
             builder,
@@ -187,7 +205,31 @@ fn emit_node(
     }
 }
 
-fn draw_checkbox(scene: &SceneGraph, node: &SceneNode, rect: LayoutRect, builder: &mut PaintBuilder) {
+fn read_font_name(id: u64) -> Option<alloc::string::String> {
+    if id == 0 {
+        return None;
+    }
+    let bs = prop_get(ThingId::from_u64(id), keys::FONT_NAME).ok()?;
+    if bs == 0 {
+        return None;
+    }
+    let bs_id = ThingId::from_u64(bs);
+    let size = bytespace_info(bs_id).ok()?;
+    if size == 0 {
+        return Some(alloc::string::String::new());
+    }
+    let mut buf = alloc::vec![0u8; size];
+    let read = bytespace_read(bs_id, 0, &mut buf).ok()?;
+    let text = core::str::from_utf8(&buf[..read]).ok()?;
+    Some(text.trim_end_matches('\0').to_string())
+}
+
+fn draw_checkbox(
+    scene: &SceneGraph,
+    node: &SceneNode,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
     let box_size = rect.h.min(16).max(0);
     let box_rect = LayoutRect {
         x: rect.x,
@@ -228,6 +270,7 @@ fn draw_window_chrome(
     rect: LayoutRect,
     window_bg: u32,
     title_override: Option<&str>,
+    is_focused: bool,
     builder: &mut PaintBuilder,
 ) {
     let border = WINDOW_BORDER;
@@ -235,6 +278,10 @@ fn draw_window_chrome(
     let chrome_color = 0xFF1E1E22;
     let title_color = 0xFF2A2A30;
     let border_color = 0xFF0A0A0F;
+
+    // Windows 98 Gradient colors: Magenta to Boot Color
+    let gradient_start = 0xFFFF00FF;
+    let gradient_end = 0xFF2E7FD1; // Boot Screen Color
 
     builder.fill_rect(rect.x, rect.y, rect.w, rect.h, border_color);
 
@@ -244,7 +291,13 @@ fn draw_window_chrome(
         w: (rect.w - border * 2).max(0),
         h: (rect.h - border * 2).max(0),
     };
-    builder.fill_rect(inner_rect.x, inner_rect.y, inner_rect.w, inner_rect.h, chrome_color);
+    builder.fill_rect(
+        inner_rect.x,
+        inner_rect.y,
+        inner_rect.w,
+        inner_rect.h,
+        chrome_color,
+    );
 
     let title_rect = LayoutRect {
         x: inner_rect.x,
@@ -253,7 +306,24 @@ fn draw_window_chrome(
         h: title_h.min(inner_rect.h),
     };
     if title_rect.h > 0 {
-        builder.fill_rect(title_rect.x, title_rect.y, title_rect.w, title_rect.h, title_color);
+        if is_focused {
+            builder.fill_linear_gradient(
+                title_rect.x,
+                title_rect.y,
+                title_rect.w,
+                title_rect.h,
+                gradient_start,
+                gradient_end,
+            );
+        } else {
+            builder.fill_rect(
+                title_rect.x,
+                title_rect.y,
+                title_rect.w,
+                title_rect.h,
+                title_color,
+            );
+        }
         let title = node
             .window_meta
             .and_then(|meta| scene.string(meta.title))
@@ -304,7 +374,7 @@ mod tests {
     use super::*;
     use crate::scene::SceneGraph;
     use abi::ui_paint::{PaintOpTag, PaintReader};
-    use abi::ui_scene::{EdgeInsets, NodeKind, SizeKind, SizeSpec, TextMeta, StringRef};
+    use abi::ui_scene::{EdgeInsets, NodeKind, SizeKind, SizeSpec, StringRef, TextMeta};
 
     #[test]
     fn emit_text_op() {
@@ -318,15 +388,34 @@ mod tests {
             parent: None,
             children: Vec::new(),
             kind: NodeKind::Text,
-            width: SizeSpec { kind: SizeKind::Auto, value: 0 },
-            height: SizeSpec { kind: SizeKind::Auto, value: 0 },
-            flex_basis: SizeSpec { kind: SizeKind::Auto, value: 0 },
+            width: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
+            height: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
+            flex_basis: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
             min_width: None,
             min_height: None,
             max_width: None,
             max_height: None,
-            margin: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
-            padding: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
+            margin: EdgeInsets {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
+            padding: EdgeInsets {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
             flex_grow: 0.0,
             flex_shrink: 0.0,
             window_meta: None,
@@ -342,8 +431,13 @@ mod tests {
             checkbox_meta: None,
         });
 
-        let layout = vec![LayoutRect { x: 0, y: 0, w: 100, h: 20 }];
-        let bytes = emit_paint(&scene, &layout, 0, None);
+        let layout = vec![LayoutRect {
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 20,
+        }];
+        let bytes = emit_paint(&scene, &layout, 0, None, true);
         let mut reader = PaintReader::new(&bytes).expect("reader");
         let op = reader.next().expect("op");
         assert_eq!(op.tag, PaintOpTag::DrawTextRun);

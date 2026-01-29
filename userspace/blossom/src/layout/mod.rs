@@ -7,6 +7,8 @@ use abi::ui_scene::{AlignItems, FlexDirection, JustifyContent, NodeKind, SizeKin
 
 use crate::scene::{SceneGraph, SceneNode};
 
+pub mod graph;
+
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct LayoutRect {
     pub x: i32,
@@ -41,7 +43,16 @@ fn layout_node(scene: &SceneGraph, index: usize, rect: LayoutRect, out: &mut [La
     }
 
     if let Some(flex) = node.flex_meta {
-        layout_flex(scene, node, flex.direction, flex.align, flex.justify, flex.gap, content, out);
+        layout_flex(
+            scene,
+            node,
+            flex.direction,
+            flex.align,
+            flex.justify,
+            flex.gap,
+            content,
+            out,
+        );
     } else {
         for child in &node.children {
             let child_rect = child_rect_in_content(scene, &scene.nodes[*child], content);
@@ -117,11 +128,7 @@ fn layout_canvas(
 
 fn fallback_absolute_size(node: &SceneNode, container: i32, is_width: bool) -> i32 {
     match node.kind {
-        NodeKind::Text => node
-            .text_meta
-            .as_ref()
-            .map(|t| t.size as i32)
-            .unwrap_or(16),
+        NodeKind::Text => node.text_meta.as_ref().map(|t| t.size as i32).unwrap_or(16),
         NodeKind::Rect | NodeKind::Image => container,
         NodeKind::Icon => node.icon_meta.map(|m| m.size.max(0)).unwrap_or(24),
         NodeKind::Spacer => node.spacer_meta.map(|m| m.height_px as i32).unwrap_or(0),
@@ -163,13 +170,16 @@ fn layout_flex(
         let child = &scene.nodes[child_idx];
         let base = resolve_main_size(child, main, cross, is_row);
         bases.push(base);
-        total_fixed = total_fixed.saturating_add(base).saturating_add(main_margin(child, is_row));
+        total_fixed = total_fixed
+            .saturating_add(base)
+            .saturating_add(main_margin(child, is_row));
         total_grow += child.flex_grow;
         total_shrink += child.flex_shrink;
     }
 
     if !node.children.is_empty() {
-        total_fixed = total_fixed.saturating_add(gap.saturating_mul((node.children.len() - 1) as i32));
+        total_fixed =
+            total_fixed.saturating_add(gap.saturating_mul((node.children.len() - 1) as i32));
     }
 
     let mut remaining = main.saturating_sub(total_fixed);
@@ -224,13 +234,13 @@ fn layout_flex(
 
         let main_pos = cursor + main_lead;
         let cross_pos = match align {
-            AlignItems::Center => content_cross_start(content, is_row)
-                + (cross - child_cross) / 2
-                + cross_lead
-                - cross_trail,
-            AlignItems::End => content_cross_start(content, is_row)
-                + (cross - child_cross)
-                - cross_trail,
+            AlignItems::Center => {
+                content_cross_start(content, is_row) + (cross - child_cross) / 2 + cross_lead
+                    - cross_trail
+            }
+            AlignItems::End => {
+                content_cross_start(content, is_row) + (cross - child_cross) - cross_trail
+            }
             _ => content_cross_start(content, is_row) + cross_lead,
         };
 
@@ -265,10 +275,18 @@ fn resolve_main_size(node: &SceneNode, main: i32, cross: i32, is_row: bool) -> i
         .or_else(|| resolve_size_spec(basis_spec, main))
         .unwrap_or_else(|| fallback_main_size(node, main, cross, is_row));
 
-    if let Some(min) = if is_row { node.min_width } else { node.min_height } {
+    if let Some(min) = if is_row {
+        node.min_width
+    } else {
+        node.min_height
+    } {
         size = size.max(min);
     }
-    if let Some(max) = if is_row { node.max_width } else { node.max_height } {
+    if let Some(max) = if is_row {
+        node.max_width
+    } else {
+        node.max_height
+    } {
         size = size.min(max);
     }
     size.max(0)
@@ -278,10 +296,18 @@ fn resolve_cross_size(node: &SceneNode, cross: i32, align: AlignItems, is_row: b
     let size_spec = if is_row { node.height } else { node.width };
     let mut size = resolve_size_spec(size_spec, cross)
         .unwrap_or_else(|| fallback_cross_size(node, cross, align));
-    if let Some(min) = if is_row { node.min_height } else { node.min_width } {
+    if let Some(min) = if is_row {
+        node.min_height
+    } else {
+        node.min_width
+    } {
         size = size.max(min);
     }
-    if let Some(max) = if is_row { node.max_height } else { node.max_width } {
+    if let Some(max) = if is_row {
+        node.max_height
+    } else {
+        node.max_width
+    } {
         size = size.min(max);
     }
     size.max(0)
@@ -297,11 +323,7 @@ fn resolve_size_spec(spec: abi::ui_scene::SizeSpec, container: i32) -> Option<i3
 
 fn fallback_main_size(node: &SceneNode, main: i32, cross: i32, is_row: bool) -> i32 {
     match node.kind {
-        NodeKind::Text => node
-            .text_meta
-            .as_ref()
-            .map(|t| t.size as i32)
-            .unwrap_or(16),
+        NodeKind::Text => node.text_meta.as_ref().map(|t| t.size as i32).unwrap_or(16),
         NodeKind::Rect | NodeKind::Image => main,
         NodeKind::Icon => node.icon_meta.map(|m| m.size.max(0)).unwrap_or(24),
         NodeKind::Spacer => node.spacer_meta.map(|m| m.height_px as i32).unwrap_or(0),
@@ -387,14 +409,9 @@ fn content_rect(rect: LayoutRect, node: &SceneNode) -> LayoutRect {
         let w = rect
             .w
             .saturating_sub(WINDOW_BORDER * 2 + node.padding.left + node.padding.right);
-        let h = rect
-            .h
-            .saturating_sub(
-                WINDOW_BORDER * 2
-                    + WINDOW_TITLE_HEIGHT
-                    + node.padding.top
-                    + node.padding.bottom,
-            );
+        let h = rect.h.saturating_sub(
+            WINDOW_BORDER * 2 + WINDOW_TITLE_HEIGHT + node.padding.top + node.padding.bottom,
+        );
         return LayoutRect {
             x,
             y,
@@ -410,7 +427,11 @@ fn content_rect(rect: LayoutRect, node: &SceneNode) -> LayoutRect {
     }
 }
 
-fn child_rect_in_content(_scene: &SceneGraph, child: &SceneNode, content: LayoutRect) -> LayoutRect {
+fn child_rect_in_content(
+    _scene: &SceneGraph,
+    child: &SceneNode,
+    content: LayoutRect,
+) -> LayoutRect {
     let mut rect = LayoutRect {
         x: content.x + child.margin.left,
         y: content.y + child.margin.top,
@@ -439,11 +460,19 @@ fn clamp_rect(rect: LayoutRect) -> LayoutRect {
 }
 
 fn content_main_start(content: LayoutRect, is_row: bool) -> i32 {
-    if is_row { content.x } else { content.y }
+    if is_row {
+        content.x
+    } else {
+        content.y
+    }
 }
 
 fn content_cross_start(content: LayoutRect, is_row: bool) -> i32 {
-    if is_row { content.y } else { content.x }
+    if is_row {
+        content.y
+    } else {
+        content.x
+    }
 }
 
 #[cfg(test)]
@@ -466,15 +495,34 @@ mod tests {
             parent: None,
             children: vec![1],
             kind: NodeKind::Flex,
-            width: SizeSpec { kind: SizeKind::Auto, value: 0 },
-            height: SizeSpec { kind: SizeKind::Auto, value: 0 },
-            flex_basis: SizeSpec { kind: SizeKind::Auto, value: 0 },
+            width: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
+            height: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
+            flex_basis: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
             min_width: None,
             min_height: None,
             max_width: None,
             max_height: None,
-            margin: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
-            padding: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
+            margin: EdgeInsets {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
+            padding: EdgeInsets {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
             flex_grow: 0.0,
             flex_shrink: 0.0,
             window_meta: None,
@@ -494,15 +542,34 @@ mod tests {
             parent: Some(0),
             children: Vec::new(),
             kind: NodeKind::Text,
-            width: SizeSpec { kind: SizeKind::Auto, value: 0 },
-            height: SizeSpec { kind: SizeKind::Auto, value: 0 },
-            flex_basis: SizeSpec { kind: SizeKind::Auto, value: 0 },
+            width: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
+            height: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
+            flex_basis: SizeSpec {
+                kind: SizeKind::Auto,
+                value: 0,
+            },
             min_width: None,
             min_height: None,
             max_width: None,
             max_height: None,
-            margin: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
-            padding: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
+            margin: EdgeInsets {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
+            padding: EdgeInsets {
+                left: 0,
+                top: 0,
+                right: 0,
+                bottom: 0,
+            },
             flex_grow: 0.0,
             flex_shrink: 0.0,
             window_meta: None,
@@ -513,7 +580,15 @@ mod tests {
             checkbox_meta: None,
         });
 
-        let rects = layout_scene(&scene, LayoutRect { x: 0, y: 0, w: 200, h: 100 });
+        let rects = layout_scene(
+            &scene,
+            LayoutRect {
+                x: 0,
+                y: 0,
+                w: 200,
+                h: 100,
+            },
+        );
         assert_eq!(rects[0].w, 200);
         assert!(rects[1].y >= 0);
     }

@@ -6,9 +6,9 @@ mod device;
 mod logging;
 mod memory;
 mod port;
-pub mod stream;
 mod process;
 mod root_handlers;
+pub mod stream;
 mod time;
 mod trace;
 

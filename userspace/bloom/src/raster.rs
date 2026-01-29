@@ -1,9 +1,11 @@
 use crate::asset::Image;
-use crate::damage::{Damage, Rect as DamageRect};
+use crate::damage::Damage;
+use crate::geometry::Rect;
+type DamageRect = Rect;
 use crate::drawlist::DrawList;
 use crate::font_client;
 use crate::font_graph::{self, FontStyle};
-use crate::isa::{BlendMode, EdgeAA, FilterMode, Rect, Transform2D};
+use crate::isa::{BlendMode, Color, EdgeAA, FilterMode, Transform2D};
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use alloc::vec;
@@ -101,7 +103,7 @@ pub fn execute_lowered_with_damage(
         let d = dr[i];
         crate::trace_span!("raster.rect.total");
         let mut ctx = RasterContext::new(surface, solid_text);
-        ctx.current_clip = Rect::new(d.x, d.y, d.w, d.h);
+        ctx.current_clip = Rect::new(d.x(), d.y(), d.width(), d.height());
         execute_lowered_on_context(&mut ctx, lowered);
     }
 }
@@ -136,6 +138,17 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                     } else {
                         fill_rect_blend(ctx.surface, cl.x(), cl.y(), cl.width(), cl.height(), c);
                     }
+                }
+            }
+            LowLevelOp::FillLinearGradient {
+                rect,
+                color1,
+                color2,
+            } => {
+                crate::trace_counter!("raster.ops.fill", 1);
+                let tr = ctx.current_transform.transform_rect(*rect);
+                if let Some(cl) = ctx.current_clip.intersection(&tr) {
+                    fill_rect_linear_gradient(ctx.surface, &tr, &cl, *color1, *color2);
                 }
             }
             LowLevelOp::BlitSnapshot {
@@ -448,6 +461,30 @@ pub fn blit_cursor_overlay(surface: &mut Surface, cursor: &Image, x: i32, y: i32
         }
     }
 }
+
+/// Draw a simple crosshair cursor fallback (e.g. while asset is loading).
+pub fn draw_crosshair(surface: &mut Surface, x: i32, y: i32, color: u32) {
+    let size = 8;
+    let gap = 2;
+    // Horizontal
+    for dx in -size..=-gap {
+        if x + dx >= 0 && x + dx < surface.width() && y >= 0 && y < surface.height() {
+            surface.put_px(x + dx, y, color);
+        }
+        if x - dx >= 0 && x - dx < surface.width() && y >= 0 && y < surface.height() {
+            surface.put_px(x - dx, y, color);
+        }
+    }
+    // Vertical
+    for dy in -size..=-gap {
+        if x >= 0 && x < surface.width() && y + dy >= 0 && y + dy < surface.height() {
+            surface.put_px(x, y + dy, color);
+        }
+        if x >= 0 && x < surface.width() && y - dy >= 0 && y - dy < surface.height() {
+            surface.put_px(x, y - dy, color);
+        }
+    }
+}
 pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let a = ((color >> 24) & 0xFF) as u8;
     if a == 255 {
@@ -469,6 +506,48 @@ pub fn fill_rect_blend(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, co
     for yy in y0..y1 {
         for xx in x0..x1 {
             blend_pixel(surface, xx, yy, sr, sg, sb, a);
+        }
+    }
+}
+pub fn fill_rect_linear_gradient(
+    surface: &mut Surface,
+    rect: &Rect,
+    clip: &Rect,
+    color1: Color,
+    color2: Color,
+) {
+    let x0 = clip.x().max(0);
+    let y0 = clip.y().max(0);
+    let x1 = (clip.x() + clip.width()).min(surface.width());
+    let y1 = (clip.y() + clip.height()).min(surface.height());
+
+    let (r1, g1, b1, a1) = (color1.r, color1.g, color1.b, color1.a);
+    let (r2, g2, b2, a2) = (color2.r, color2.g, color2.b, color2.a);
+
+    let width = rect.width();
+    if width <= 0 {
+        return;
+    }
+
+    for yy in y0..y1 {
+        for xx in x0..x1 {
+            let t = (xx - rect.x()) as f32 / width as f32;
+            let t = t.clamp(0.0, 1.0);
+
+            let r = (r1 as f32 + (r2 as f32 - r1 as f32) * t) as u8;
+            let g = (g1 as f32 + (g2 as f32 - g1 as f32) * t) as u8;
+            let b = (b1 as f32 + (b2 as f32 - b1 as f32) * t) as u8;
+            let a = (a1 as f32 + (a2 as f32 - a1 as f32) * t) as u8;
+
+            if a == 255 {
+                surface.put_px(
+                    xx,
+                    yy,
+                    (255 << 24) | ((r as u32) << 16) | ((g as u32) << 8) | (b as u32),
+                );
+            } else if a > 0 {
+                blend_pixel(surface, xx, yy, r, g, b, a);
+            }
         }
     }
 }
@@ -619,14 +698,34 @@ pub fn line(
 
         use crate::isa::{Path2D, PathVerb, PointF};
         let verbs = vec![
-            PathVerb::MoveTo(PointF { x: x0 + nx * w2, y: y0 + ny * w2 }),
-            PathVerb::LineTo(PointF { x: x1 + nx * w2, y: y1 + ny * w2 }),
-            PathVerb::LineTo(PointF { x: x1 - nx * w2, y: y1 - ny * w2 }),
-            PathVerb::LineTo(PointF { x: x0 - nx * w2, y: y0 - ny * w2 }),
+            PathVerb::MoveTo(PointF {
+                x: x0 + nx * w2,
+                y: y0 + ny * w2,
+            }),
+            PathVerb::LineTo(PointF {
+                x: x1 + nx * w2,
+                y: y1 + ny * w2,
+            }),
+            PathVerb::LineTo(PointF {
+                x: x1 - nx * w2,
+                y: y1 - ny * w2,
+            }),
+            PathVerb::LineTo(PointF {
+                x: x0 - nx * w2,
+                y: y0 - ny * w2,
+            }),
             PathVerb::Close,
         ];
         let path = Path2D { verbs };
-        fill_path(surface, &path, &Transform2D::identity(), xrgb, crate::isa::FillRule::NonZero, EdgeAA::Coverage8, clip);
+        fill_path(
+            surface,
+            &path,
+            &Transform2D::identity(),
+            xrgb,
+            crate::isa::FillRule::NonZero,
+            EdgeAA::Coverage8,
+            clip,
+        );
         return;
     }
 
@@ -1090,9 +1189,25 @@ fn rasterize_text_fallback(
         return;
     }
     let font = if let Some(r) = rf {
-        fonts
-            .iter()
-            .find(|f| f.name.contains(r))
+        let needle = r.to_lowercase();
+        let needle_no_ext = needle
+            .strip_suffix(".ttf")
+            .or_else(|| needle.strip_suffix(".otf"))
+            .unwrap_or(&needle);
+        let mut match_font = fonts.iter().find(|f| {
+            let name = f.name.to_lowercase();
+            name.contains(&needle) || name.contains(needle_no_ext)
+        });
+        if match_font.is_none() {
+            let needle_norm = normalize_font_token(needle_no_ext);
+            if !needle_norm.is_empty() {
+                match_font = fonts.iter().find(|f| {
+                    let name_norm = normalize_font_token(&f.name);
+                    name_norm.contains(&needle_norm)
+                });
+            }
+        }
+        match_font
             .or_else(|| fonts.iter().find(|f| f.name.contains("NotoSans-Regular")))
             .unwrap_or(&fonts[0])
     } else {
@@ -1159,6 +1274,16 @@ fn rasterize_text_fallback(
     }
 }
 
+fn normalize_font_token(token: &str) -> alloc::string::String {
+    let mut out = alloc::string::String::with_capacity(token.len());
+    for ch in token.chars() {
+        if ch.is_ascii_alphanumeric() {
+            out.push(ch.to_ascii_lowercase());
+        }
+    }
+    out
+}
+
 // Fixed point 16.16
 type Fixed = i32;
 const FIXED_SHIFT: i32 = 16;
@@ -1209,6 +1334,24 @@ fn flatten_quad<F>(
     }
 }
 
+fn dist_sq_point_line_segment(p: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
+    let dx = b.0 - a.0;
+    let dy = b.1 - a.1;
+    let len_sq = dx * dx + dy * dy;
+    if len_sq == 0.0 {
+        let ddx = p.0 - a.0;
+        let ddy = p.1 - a.1;
+        return ddx * ddx + ddy * ddy;
+    }
+    let t = ((p.0 - a.0) * dx + (p.1 - a.1) * dy) / len_sq;
+    let t = t.clamp(0.0, 1.0);
+    let px = a.0 + t * dx;
+    let py = a.1 + t * dy;
+    let ddx = p.0 - px;
+    let ddy = p.1 - py;
+    ddx * ddx + ddy * ddy
+}
+
 fn flatten_cubic<F>(
     p0: (f32, f32),
     p1: (f32, f32),
@@ -1219,13 +1362,14 @@ fn flatten_cubic<F>(
 ) where
     F: FnMut((f32, f32), (f32, f32)),
 {
-    let mid_x = (p0.0 + p3.0) * 0.5;
-    let mid_y = (p0.1 + p3.1) * 0.5;
-    let dx1 = p1.0 - mid_x;
-    let dy1 = p1.1 - mid_y;
-    let dx2 = p2.0 - mid_x;
-    let dy2 = p2.1 - mid_y;
-    if dx1 * dx1 + dy1 * dy1 + dx2 * dx2 + dy2 * dy2 < flatness_sq * 2.0 {
+    // Distance from control points to the chord p0-p3
+    let d1_sq = dist_sq_point_line_segment(p1, p0, p3);
+    let d2_sq = dist_sq_point_line_segment(p2, p0, p3);
+
+    // We check against flatness_sq.
+    // Spec says strictly: if d < Tolerance, then flat.
+    // We use max distance of any control point.
+    if d1_sq.max(d2_sq) < flatness_sq {
         add_edge_fn(p0, p3);
     } else {
         let p01 = ((p0.0 + p1.0) * 0.5, (p0.1 + p1.1) * 0.5);
@@ -1262,7 +1406,14 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
         let dy = p_end.1 - p_start.1;
         let dx = p_end.0 - p_start.0;
         let slope = if dy != 0.0 {
-            float_to_fixed((dx / dy) * scale as f32)
+            // Slope is dx/dy.
+            // We want change in Scaled X per 1 unit of Scaled Y.
+            // d(ScaledX)/d(ScaledY) = (dx * scale) / (dy * scale) = dx/dy.
+            // Original code incorrectly multiplied by scale.
+            // We also clamp to prevent fixed-point overflow for horizontal-ish lines.
+            let s = dx / dy;
+            let clamped = s.clamp(-30000.0, 30000.0);
+            float_to_fixed(clamped)
         } else {
             0
         };
@@ -1284,7 +1435,12 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
 
     let scale_sq = (transform.a * transform.a + transform.b * transform.b)
         .max(transform.c * transform.c + transform.d * transform.d);
-    let flatness_sq = 0.25 / (scale_sq * scale as f32 * scale as f32).max(0.01);
+
+    // User requested target 0.25px or better.
+    // flatness_sq is error^2.
+    // If we want 0.22px error, sq is ~0.05.
+    // Old: 0.25 / scale_sq (0.5px error).
+    let flatness_sq = 0.05 / (scale_sq * scale as f32 * scale as f32).max(0.01);
 
     let mut current_p: Option<(f32, f32)> = None;
     let mut start_p: Option<(f32, f32)> = None;
@@ -1332,6 +1488,20 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
                     }
                 }
             }
+        }
+    }
+
+    // Instrumentation as requested
+    static mut LOG_COUNT: u64 = 0;
+    unsafe {
+        LOG_COUNT += 1;
+        if LOG_COUNT <= 5 || LOG_COUNT % 1000 == 0 {
+            stem::info!(
+                "[raster] build_edges: verbs={} flat_sq={} edges={}",
+                path.verbs.len(),
+                flatness_sq,
+                edges.len()
+            );
         }
     }
 
@@ -1518,9 +1688,11 @@ fn fill_path_aa(
 
     let mut active_edges: Vec<Edge> = Vec::with_capacity(16);
     let mut edge_idx = 0;
-    
+
     // Calculate bounding box of all edges to narrow scan area
-    if edges.is_empty() { return; }
+    if edges.is_empty() {
+        return;
+    }
     let mut b_xmin = edges[0].x;
     let mut b_xmax = edges[0].x;
     let mut b_ymin = edges[0].y_min;
@@ -1531,12 +1703,12 @@ fn fill_path_aa(
         b_ymin = b_ymin.min(e.y_min);
         b_ymax = b_ymax.max(e.y_max);
     }
-    
+
     let path_clip_xmin = fixed_floor(b_xmin).max(clip_x_sub);
     let path_clip_xmax = (fixed_floor(b_xmax) + 1).min(clip_x_sub_max);
     let path_clip_ymin = b_ymin.max(y_min);
     let path_clip_ymax = b_ymax.min(y_max);
-    
+
     if path_clip_xmax <= path_clip_xmin || path_clip_ymax <= path_clip_ymin {
         return;
     }
@@ -1614,9 +1786,11 @@ fn fill_path_aa(
     }
 
     let p_start = (path_clip_ymin / SUPERSAMPLE_SCALE).max(clip.y());
-    let p_end = ((path_clip_ymax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.y() + clip.height());
+    let p_end = ((path_clip_ymax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE)
+        .min(clip.y() + clip.height());
     let px_start = (path_clip_xmin / SUPERSAMPLE_SCALE).max(clip.x());
-    let px_end = ((path_clip_xmax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.x() + clip.width());
+    let px_end =
+        ((path_clip_xmax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.x() + clip.width());
 
     for py in p_start..p_end {
         let iy = (py - clip.y()) as usize;

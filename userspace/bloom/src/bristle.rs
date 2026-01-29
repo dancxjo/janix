@@ -2,8 +2,8 @@ use abi::hid::{
     BristleEventHeader, KeyEventPayload, PointerButtonPayload, PointerMovePayload,
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
-use stem::syscall::{port_recv, PortHandle};
 use alloc::vec::Vec;
+use stem::syscall::{port_recv, PortHandle};
 
 use crate::cursor::CursorState;
 
@@ -32,10 +32,10 @@ impl Default for MouseAccelConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            accel_strength: 1.2,      // Increased from 0.8 for more responsive acceleration
-            speed_scale: 200.0,       // Lowered from 500.0 for earlier acceleration onset
-            max_gain: Some(6.0),      // Increased from 4.0 for faster max speed
-            base_sensitivity: 2.0,    // 2x base multiplier for all movement
+            accel_strength: 1.2, // Increased from 0.8 for more responsive acceleration
+            speed_scale: 200.0,  // Lowered from 500.0 for earlier acceleration onset
+            max_gain: Some(6.0), // Increased from 4.0 for faster max speed
+            base_sensitivity: 2.0, // 2x base multiplier for all movement
         }
     }
 }
@@ -49,7 +49,7 @@ fn apply_mouse_accel(delta: (i16, i16), dt_s: f32, cfg: &MouseAccelConfig) -> (i
     // Always apply base sensitivity
     let dx = delta.0 as f32 * cfg.base_sensitivity;
     let dy = delta.1 as f32 * cfg.base_sensitivity;
-    
+
     if !cfg.enabled || dt_s <= 0.0 || cfg.speed_scale <= 0.0 {
         let ax = libm::roundf(dx) as i32;
         let ay = libm::roundf(dy) as i32;
@@ -191,7 +191,7 @@ pub fn poll_bristle(
 }
 
 /// Poll for pointer events and return them as structured events.
-/// 
+///
 /// Unlike `poll_bristle`, this does not mutate cursor state.
 /// The caller is responsible for applying movement and button state
 /// after processing events through the window manager.

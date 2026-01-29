@@ -10,9 +10,7 @@ pub type PortHandle = u32;
 /// Create a new port (returns packed read/write handles)
 /// Result: (write_handle << 16) | read_handle
 pub fn port_create(capacity: usize) -> Result<(PortHandle, PortHandle), Errno> {
-    let ret = unsafe {
-        raw_syscall6(SYS_PORT_CREATE, capacity, 0, 0, 0, 0, 0)
-    };
+    let ret = unsafe { raw_syscall6(SYS_PORT_CREATE, capacity, 0, 0, 0, 0, 0) };
     let val = abi::errors::errno(ret)?;
     let write_handle = ((val >> 16) & 0xFFFF) as PortHandle;
     let read_handle = (val & 0xFFFF) as PortHandle;
@@ -28,7 +26,9 @@ pub fn port_send(handle: PortHandle, data: &[u8]) -> Result<usize, Errno> {
             handle as usize,
             data.as_ptr() as usize,
             data.len(),
-            0, 0, 0,
+            0,
+            0,
+            0,
         )
     };
     abi::errors::errno(ret)
@@ -43,7 +43,9 @@ pub fn port_recv(handle: PortHandle, buf: &mut [u8]) -> Result<usize, Errno> {
             handle as usize,
             buf.as_mut_ptr() as usize,
             buf.len(),
-            0, 0, 0,
+            0,
+            0,
+            0,
         )
     };
     abi::errors::errno(ret)
@@ -51,9 +53,7 @@ pub fn port_recv(handle: PortHandle, buf: &mut [u8]) -> Result<usize, Errno> {
 
 /// Close a port handle
 pub fn port_close(handle: PortHandle) -> Result<(), Errno> {
-    let ret = unsafe {
-        raw_syscall6(SYS_PORT_CLOSE, handle as usize, 0, 0, 0, 0, 0)
-    };
+    let ret = unsafe { raw_syscall6(SYS_PORT_CLOSE, handle as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
 }
 
@@ -65,7 +65,10 @@ pub fn port_wait(handles: &[PortHandle]) -> Result<PortHandle, Errno> {
             SYS_PORT_WAIT,
             handles.as_ptr() as usize,
             handles.len(),
-            0, 0, 0, 0
+            0,
+            0,
+            0,
+            0,
         )
     };
     abi::errors::errno(ret).map(|v| v as PortHandle)

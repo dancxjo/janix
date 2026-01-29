@@ -9,8 +9,7 @@ fn main() {
     let pci_ids_path = manifest_dir.join("..").join("assets/pci/pci.ids");
     println!("cargo:rerun-if-changed={}", pci_ids_path.display());
 
-    let contents =
-        fs::read_to_string(&pci_ids_path).expect("failed to read assets/pci/pci.ids");
+    let contents = fs::read_to_string(&pci_ids_path).expect("failed to read assets/pci/pci.ids");
 
     let parsed = parse_pci_ids(&contents);
     let mode = Mode::from_env(env::var("PCI_IDS_MODE").ok());

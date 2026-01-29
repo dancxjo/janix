@@ -58,7 +58,9 @@ impl HandleTable {
         if idx >= MAX_HANDLES {
             return None;
         }
-        self.entries[idx].as_ref().filter(|e| e.mode == required_mode)
+        self.entries[idx]
+            .as_ref()
+            .filter(|e| e.mode == required_mode)
     }
 
     /// Get the entry for a handle without mode validation

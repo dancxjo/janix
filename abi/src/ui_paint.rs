@@ -17,6 +17,7 @@ pub enum PaintOpTag {
     BlitImage = 5,
     StrokeLine = 6,
     DrawIcon = 7,
+    FillLinearGradient = 8,
     Unknown(u32),
 }
 
@@ -30,6 +31,7 @@ impl PaintOpTag {
             5 => PaintOpTag::BlitImage,
             6 => PaintOpTag::StrokeLine,
             7 => PaintOpTag::DrawIcon,
+            8 => PaintOpTag::FillLinearGradient,
             _ => PaintOpTag::Unknown(raw),
         }
     }
@@ -43,6 +45,7 @@ impl PaintOpTag {
             PaintOpTag::BlitImage => 5,
             PaintOpTag::StrokeLine => 6,
             PaintOpTag::DrawIcon => 7,
+            PaintOpTag::FillLinearGradient => 8,
             PaintOpTag::Unknown(raw) => raw,
         }
     }
@@ -82,7 +85,10 @@ impl PaintBuilder {
         bytes.extend_from_slice(&0u32.to_le_bytes());
         bytes.extend_from_slice(&0u32.to_le_bytes());
         debug_assert_eq!(bytes.len(), UI_PAINT_HEADER_BYTES);
-        Self { bytes, cmd_count: 0 }
+        Self {
+            bytes,
+            cmd_count: 0,
+        }
     }
 
     pub fn push_clip(&mut self, x: i32, y: i32, w: i32, h: i32) {
@@ -137,15 +143,7 @@ impl PaintBuilder {
         self.push_cmd(PaintOpTag::DrawTextRun, &payload);
     }
 
-    pub fn blit_image(
-        &mut self,
-        x: i32,
-        y: i32,
-        w: i32,
-        h: i32,
-        fit: ImageFit,
-        image_key: &str,
-    ) {
+    pub fn blit_image(&mut self, x: i32, y: i32, w: i32, h: i32, fit: ImageFit, image_key: &str) {
         let mut payload = Vec::new();
         payload.extend_from_slice(&x.to_le_bytes());
         payload.extend_from_slice(&y.to_le_bytes());
@@ -159,15 +157,7 @@ impl PaintBuilder {
         self.push_cmd(PaintOpTag::BlitImage, &payload);
     }
 
-    pub fn stroke_line(
-        &mut self,
-        x1: i32,
-        y1: i32,
-        x2: i32,
-        y2: i32,
-        width: i32,
-        color: u32,
-    ) {
+    pub fn stroke_line(&mut self, x1: i32, y1: i32, x2: i32, y2: i32, width: i32, color: u32) {
         let mut payload = Vec::with_capacity(24);
         payload.extend_from_slice(&x1.to_le_bytes());
         payload.extend_from_slice(&y1.to_le_bytes());
@@ -190,6 +180,25 @@ impl PaintBuilder {
         self.push_cmd(PaintOpTag::DrawIcon, &payload);
     }
 
+    pub fn fill_linear_gradient(
+        &mut self,
+        x: i32,
+        y: i32,
+        w: i32,
+        h: i32,
+        color1: u32,
+        color2: u32,
+    ) {
+        let mut payload = Vec::with_capacity(24);
+        payload.extend_from_slice(&x.to_le_bytes());
+        payload.extend_from_slice(&y.to_le_bytes());
+        payload.extend_from_slice(&w.to_le_bytes());
+        payload.extend_from_slice(&h.to_le_bytes());
+        payload.extend_from_slice(&color1.to_le_bytes());
+        payload.extend_from_slice(&color2.to_le_bytes());
+        self.push_cmd(PaintOpTag::FillLinearGradient, &payload);
+    }
+
     pub fn finish(mut self) -> Vec<u8> {
         let cmd_count_bytes = self.cmd_count.to_le_bytes();
         self.bytes[UI_PAINT_CMD_COUNT_OFFSET..UI_PAINT_CMD_COUNT_OFFSET + 4]
@@ -199,7 +208,8 @@ impl PaintBuilder {
 
     fn push_cmd(&mut self, tag: PaintOpTag, payload: &[u8]) {
         self.bytes.extend_from_slice(&tag.as_raw().to_le_bytes());
-        self.bytes.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+        self.bytes
+            .extend_from_slice(&(payload.len() as u32).to_le_bytes());
         self.bytes.extend_from_slice(payload);
         self.cmd_count = self.cmd_count.saturating_add(1);
     }
@@ -250,7 +260,11 @@ impl<'a> Iterator for PaintReader<'a> {
             return None;
         }
         let tag_raw = u32::from_le_bytes(self.bytes[self.cursor..self.cursor + 4].try_into().ok()?);
-        let len = u32::from_le_bytes(self.bytes[self.cursor + 4..self.cursor + 8].try_into().ok()?);
+        let len = u32::from_le_bytes(
+            self.bytes[self.cursor + 4..self.cursor + 8]
+                .try_into()
+                .ok()?,
+        );
         let payload_start = self.cursor + 8;
         let payload_end = payload_start + len as usize;
         if payload_end > self.bytes.len() {
@@ -275,6 +289,19 @@ pub fn decode_fill_rect(payload: &[u8]) -> Option<(i32, i32, i32, i32, u32)> {
     let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
     let color = u32::from_le_bytes(payload[16..20].try_into().ok()?);
     Some((x, y, w, h, color))
+}
+
+pub fn decode_fill_linear_gradient(payload: &[u8]) -> Option<(i32, i32, i32, i32, u32, u32)> {
+    if payload.len() < 24 {
+        return None;
+    }
+    let x = i32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let y = i32::from_le_bytes(payload[4..8].try_into().ok()?);
+    let w = i32::from_le_bytes(payload[8..12].try_into().ok()?);
+    let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
+    let color1 = u32::from_le_bytes(payload[16..20].try_into().ok()?);
+    let color2 = u32::from_le_bytes(payload[20..24].try_into().ok()?);
+    Some((x, y, w, h, color1, color2))
 }
 
 #[cfg(test)]

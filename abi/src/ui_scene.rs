@@ -808,7 +808,8 @@ impl<'a> NodeView<'a> {
     }
 
     fn payload(&self) -> &'a [u8] {
-        &self.bytes[UI_SCENE_NODE_PAYLOAD_OFFSET..UI_SCENE_NODE_PAYLOAD_OFFSET + UI_SCENE_NODE_PAYLOAD_BYTES]
+        &self.bytes[UI_SCENE_NODE_PAYLOAD_OFFSET
+            ..UI_SCENE_NODE_PAYLOAD_OFFSET + UI_SCENE_NODE_PAYLOAD_BYTES]
     }
 }
 

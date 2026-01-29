@@ -14,3 +14,6 @@ mod state;
 
 pub use parser::SvgParser;
 pub use render::render_to_buffer;
+
+#[cfg(test)]
+mod tests;

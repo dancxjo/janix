@@ -1,4 +1,4 @@
-use abi::vm::{VmRegionInfo, VmProt};
+use abi::vm::{VmProt, VmRegionInfo};
 use alloc::vec::Vec;
 use core::cmp;
 
@@ -38,8 +38,8 @@ impl MappingList {
 
         // Check merge with previous
         if i > 0 {
-            if self.can_merge(&self.regions[i-1], &self.regions[i]) {
-                self.regions[i-1].end = self.regions[i].end;
+            if self.can_merge(&self.regions[i - 1], &self.regions[i]) {
+                self.regions[i - 1].end = self.regions[i].end;
                 self.regions.remove(i);
                 i -= 1; // Stay at merged index to check next
             }
@@ -47,9 +47,9 @@ impl MappingList {
 
         // Check merge with next
         if i + 1 < self.regions.len() {
-             if self.can_merge(&self.regions[i], &self.regions[i+1]) {
-                self.regions[i].end = self.regions[i+1].end;
-                self.regions.remove(i+1);
+            if self.can_merge(&self.regions[i], &self.regions[i + 1]) {
+                self.regions[i].end = self.regions[i + 1].end;
+                self.regions.remove(i + 1);
             }
         }
     }
@@ -202,8 +202,18 @@ mod tests {
     #[test]
     fn test_insert_merge() {
         let mut list = MappingList::new();
-        let r1 = VmRegionInfo { start: 0x1000, end: 0x2000, prot: VmProt::READ, ..Default::default() };
-        let r2 = VmRegionInfo { start: 0x2000, end: 0x3000, prot: VmProt::READ, ..Default::default() };
+        let r1 = VmRegionInfo {
+            start: 0x1000,
+            end: 0x2000,
+            prot: VmProt::READ,
+            ..Default::default()
+        };
+        let r2 = VmRegionInfo {
+            start: 0x2000,
+            end: 0x3000,
+            prot: VmProt::READ,
+            ..Default::default()
+        };
 
         list.insert(r1);
         list.insert(r2);
@@ -216,7 +226,12 @@ mod tests {
     #[test]
     fn test_remove_split() {
         let mut list = MappingList::new();
-        let r1 = VmRegionInfo { start: 0x1000, end: 0x4000, prot: VmProt::READ, ..Default::default() };
+        let r1 = VmRegionInfo {
+            start: 0x1000,
+            end: 0x4000,
+            prot: VmProt::READ,
+            ..Default::default()
+        };
         list.insert(r1);
 
         let removed = list.remove(0x2000, 0x1000);
@@ -234,8 +249,18 @@ mod tests {
     #[test]
     fn test_check() {
         let mut list = MappingList::new();
-        let r1 = VmRegionInfo { start: 0x1000, end: 0x2000, prot: VmProt::READ, ..Default::default() };
-        let r2 = VmRegionInfo { start: 0x2000, end: 0x3000, prot: VmProt::READ | VmProt::WRITE, ..Default::default() };
+        let r1 = VmRegionInfo {
+            start: 0x1000,
+            end: 0x2000,
+            prot: VmProt::READ,
+            ..Default::default()
+        };
+        let r2 = VmRegionInfo {
+            start: 0x2000,
+            end: 0x3000,
+            prot: VmProt::READ | VmProt::WRITE,
+            ..Default::default()
+        };
         list.insert(r1);
         list.insert(r2);
 

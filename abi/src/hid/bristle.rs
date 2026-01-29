@@ -1,4 +1,4 @@
-use super::{BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, EventType, HidParseError, Key, Mods};
+use super::{EventType, HidParseError, Key, Mods, BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION};
 
 // ============================================================================
 // Wire Format: Bristle Event (Bristle → Apps)
@@ -8,11 +8,11 @@ use super::{BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, EventType, HidParseError
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct BristleEventHeader {
-    pub magic: u32,         // BRISTLE_EVENT_MAGIC
-    pub version: u16,       // BRISTLE_EVENT_VERSION
-    pub event_type: u16,    // EventType discriminant
-    pub timestamp_ns: u64,  // Monotonic timestamp
-    pub payload_len: u32,   // Bytes following header
+    pub magic: u32,        // BRISTLE_EVENT_MAGIC
+    pub version: u16,      // BRISTLE_EVENT_VERSION
+    pub event_type: u16,   // EventType discriminant
+    pub timestamp_ns: u64, // Monotonic timestamp
+    pub payload_len: u32,  // Bytes following header
 }
 
 impl BristleEventHeader {
@@ -52,17 +52,23 @@ impl BristleEventHeader {
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct KeyEventPayload {
-    pub key: u16,    // Key enum value
-    pub mods: u8,    // Mods bitmask
-    pub flags: u8,   // bit0 = repeat
+    pub key: u16,  // Key enum value
+    pub mods: u8,  // Mods bitmask
+    pub flags: u8, // bit0 = repeat
 }
 
 impl KeyEventPayload {
     pub const SIZE: usize = core::mem::size_of::<Self>();
 
-    pub fn key(&self) -> Key { Key::from_raw(self.key) }
-    pub fn mods(&self) -> Mods { Mods(self.mods) }
-    pub fn is_repeat(&self) -> bool { self.flags & 1 != 0 }
+    pub fn key(&self) -> Key {
+        Key::from_raw(self.key)
+    }
+    pub fn mods(&self) -> Mods {
+        Mods(self.mods)
+    }
+    pub fn is_repeat(&self) -> bool {
+        self.flags & 1 != 0
+    }
 
     pub fn to_bytes(&self) -> [u8; Self::SIZE] {
         let mut buf = [0u8; Self::SIZE];

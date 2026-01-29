@@ -32,7 +32,7 @@ pub struct VirtioGpuCtrlHdr {
 }
 
 /// Display info for one scanout
-#[repr(C, packed)] 
+#[repr(C, packed)]
 pub struct VirtioGpuDisplayOne {
     pub r_x: u32,
     pub r_y: u32,

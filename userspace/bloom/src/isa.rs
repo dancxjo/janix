@@ -1,14 +1,14 @@
 use serde::{Deserialize, Serialize};
 
 // Re-export geometry types for use in the ISA
-pub use crate::geometry::{Color, Point, Rect, EdgeAA};
+pub use crate::geometry::{Color, EdgeAA, Point, Rect};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum BlendMode {
     #[default]
     SrcOver, // Alpha blending (A over B)
-    Src,     // Copy (replace target)
-    Add,     // Additive blending
+    Src, // Copy (replace target)
+    Add, // Additive blending
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -21,9 +21,12 @@ pub enum FilterMode {
 /// 2D Affine Transform
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Transform2D {
-    pub a: f32, pub b: f32,
-    pub c: f32, pub d: f32,
-    pub tx: f32, pub ty: f32,
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    pub d: f32,
+    pub tx: f32,
+    pub ty: f32,
 }
 
 impl Default for Transform2D {
@@ -35,25 +38,53 @@ impl Default for Transform2D {
 #[allow(dead_code)]
 impl Transform2D {
     pub const fn identity() -> Self {
-        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx: 0.0, ty: 0.0 }
+        Self {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx: 0.0,
+            ty: 0.0,
+        }
     }
 
     pub const fn translate(tx: f32, ty: f32) -> Self {
-        Self { a: 1.0, b: 0.0, c: 0.0, d: 1.0, tx, ty }
+        Self {
+            a: 1.0,
+            b: 0.0,
+            c: 0.0,
+            d: 1.0,
+            tx,
+            ty,
+        }
     }
-    
+
     pub fn scale(sx: f32, sy: f32) -> Self {
-        Self { a: sx, b: 0.0, c: 0.0, d: sy, tx: 0.0, ty: 0.0 }
+        Self {
+            a: sx,
+            b: 0.0,
+            c: 0.0,
+            d: sy,
+            tx: 0.0,
+            ty: 0.0,
+        }
     }
-    
+
     pub fn rotate(angle_rad: f32) -> Self {
         let c = libm::cosf(angle_rad);
         let s = libm::sinf(angle_rad);
-        Self { a: c, b: s, c: -s, d: c, tx: 0.0, ty: 0.0 }
+        Self {
+            a: c,
+            b: s,
+            c: -s,
+            d: c,
+            tx: 0.0,
+            ty: 0.0,
+        }
     }
 
     pub fn combine(&self, other: &Transform2D) -> Self {
-        // self * other (apply other then self?) 
+        // self * other (apply other then self?)
         // Usually multiply: result = self x other.
         // If current is T1, new is T2. transform(p) = T1(T2(p)) if T2 applied first.
         // User said "current transform stack to all geometry".
@@ -79,7 +110,7 @@ impl Transform2D {
             (self.b * x + self.d * y + self.ty) as i32,
         )
     }
-    
+
     pub fn transform_point_f(&self, x: f32, y: f32) -> (f32, f32) {
         (
             self.a * x + self.c * y + self.tx,
@@ -95,34 +126,51 @@ impl Transform2D {
         let y = r.y() as f32;
         let w = r.width() as f32;
         let h = r.height() as f32;
-        
+
         let (x1, y1) = self.transform_point_f(x, y);
         let (x2, y2) = self.transform_point_f(x + w, y);
         let (x3, y3) = self.transform_point_f(x, y + h);
         let (x4, y4) = self.transform_point_f(x + w, y + h);
-        
+
         let min_x = x1.min(x2).min(x3).min(x4);
         let max_x = x1.max(x2).max(x3).max(x4);
         let min_y = y1.min(y2).min(y3).min(y4);
         let max_y = y1.max(y2).max(y3).max(y4);
-        
-        Rect::new(min_x as i32, min_y as i32, (max_x - min_x) as i32, (max_y - min_y) as i32)
+
+        Rect::new(
+            min_x as i32,
+            min_y as i32,
+            (max_x - min_x) as i32,
+            (max_y - min_y) as i32,
+        )
     }
 }
 
 // Path Types
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum FillRule { NonZero, EvenOdd }
+pub enum FillRule {
+    NonZero,
+    EvenOdd,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum LineCap { Butt, Round, Square }
+pub enum LineCap {
+    Butt,
+    Round,
+    Square,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub enum LineJoin { Miter, Round, Bevel }
+pub enum LineJoin {
+    Miter,
+    Round,
+    Bevel,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct PointF {
-    pub x: f32, pub y: f32,
+    pub x: f32,
+    pub y: f32,
 }
 
 impl PointF {
@@ -135,7 +183,7 @@ impl PointF {
 pub enum PathVerb {
     MoveTo(PointF),
     LineTo(PointF),
-    QuadTo(PointF, PointF), // control, end
+    QuadTo(PointF, PointF),          // control, end
     CubicTo(PointF, PointF, PointF), // control1, control2, end
     Close,
 }
@@ -162,7 +210,10 @@ impl From<abi::drawlist::PointF> for PointF {
 
 impl From<Point> for PointF {
     fn from(p: Point) -> Self {
-        Self { x: p.x as f32, y: p.y as f32 }
+        Self {
+            x: p.x as f32,
+            y: p.y as f32,
+        }
     }
 }
 
@@ -172,9 +223,10 @@ impl From<abi::drawlist::PathVerb> for PathVerb {
             abi::drawlist::PathVerb::MoveTo(p) => Self::MoveTo(p.into()),
             abi::drawlist::PathVerb::LineTo(p) => Self::LineTo(p.into()),
             abi::drawlist::PathVerb::QuadTo(c, p) => Self::QuadTo(c.into(), p.into()),
-            abi::drawlist::PathVerb::CubicTo(c1, c2, p) => Self::CubicTo(c1.into(), c2.into(), p.into()),
+            abi::drawlist::PathVerb::CubicTo(c1, c2, p) => {
+                Self::CubicTo(c1.into(), c2.into(), p.into())
+            }
             abi::drawlist::PathVerb::Close => Self::Close,
         }
     }
 }
-

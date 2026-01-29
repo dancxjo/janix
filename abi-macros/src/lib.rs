@@ -1,17 +1,20 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, DeriveInput, Data, Fields, Type};
+use syn::{parse_macro_input, Data, DeriveInput, Fields, Type};
 
 #[proc_macro_derive(Graphable)]
 pub fn derive_graphable(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = input.ident;
-    
+
     // 1. Validate: struct only
     let data = match input.data {
         Data::Struct(d) => d,
-        _ => return syn::Error::new_spanned(name, "Graphable only supported on structs")
-            .to_compile_error().into(),
+        _ => {
+            return syn::Error::new_spanned(name, "Graphable only supported on structs")
+                .to_compile_error()
+                .into()
+        }
     };
 
     // 2. Validate: Must have #[repr(C, packed)]
@@ -25,8 +28,11 @@ pub fn derive_graphable(input: TokenStream) -> TokenStream {
     // 3. Process fields
     let fields = match data.fields {
         Fields::Named(f) => f.named,
-        _ => return syn::Error::new_spanned(name, "Graphable only supported on named structs")
-            .to_compile_error().into(),
+        _ => {
+            return syn::Error::new_spanned(name, "Graphable only supported on named structs")
+                .to_compile_error()
+                .into()
+        }
     };
 
     let mut schema_fields = Vec::new();
@@ -40,19 +46,36 @@ pub fn derive_graphable(input: TokenStream) -> TokenStream {
         if let Type::Path(tp) = &ty {
             if let Some(ident) = tp.path.get_ident() {
                 let s = ident.to_string();
-                if s == "String" || s == "Vec" || s == "Box" || s == "Rc" || s == "Arc" || s == "usize" || s == "isize" {
-                     return syn::Error::new_spanned(
-                        &ty, 
-                        format!("Type {} is forbidden in Graphable structs (no pointers/heap/usize)", s)
-                    ).to_compile_error().into();
+                if s == "String"
+                    || s == "Vec"
+                    || s == "Box"
+                    || s == "Rc"
+                    || s == "Arc"
+                    || s == "usize"
+                    || s == "isize"
+                {
+                    return syn::Error::new_spanned(
+                        &ty,
+                        format!(
+                            "Type {} is forbidden in Graphable structs (no pointers/heap/usize)",
+                            s
+                        ),
+                    )
+                    .to_compile_error()
+                    .into();
                 }
             }
         }
-        
+
         // Also check for raw pointers / references (Type::Ptr, Type::Reference)
         match &ty {
             Type::Ptr(_) | Type::Reference(_) => {
-                 return syn::Error::new_spanned(&ty, "Pointers and references forbidden in Graphable").to_compile_error().into();
+                return syn::Error::new_spanned(
+                    &ty,
+                    "Pointers and references forbidden in Graphable",
+                )
+                .to_compile_error()
+                .into();
             }
             _ => {}
         }
@@ -63,9 +86,9 @@ pub fn derive_graphable(input: TokenStream) -> TokenStream {
         // We can do this by matching known types or using a helper trait `HasWireType`.
         // User didn't specify a helper trait, but creating one makes this clean.
         // However, macro must generate `Field { name: "foo", ty: WireType::... }`.
-        
+
         let wire_type_expr = map_type_to_wire_type(&ty);
-        
+
         schema_fields.push(quote! {
             abi::wire_schema::Field {
                 name: #field_name_str,
@@ -116,15 +139,16 @@ fn map_type_to_wire_type(ty: &Type) -> proc_macro2::TokenStream {
                 "BlobId" => quote!(abi::wire_schema::WireType::BlobId),
                 "SymbolId" => quote!(abi::wire_schema::WireType::SymbolId),
                 "KindId" => quote!(abi::wire_schema::WireType::ThingId), // KindId is alias for ThingId layout basically? Or should have own? Wire schema has KindId.
-                "PredicateId" => quote!(abi::wire_schema::WireType::ThingId), // PredicateId maps to ThingId wire type layout-wise (16 bytes) usually, or we can add PredicateId to WireType if not there. 
-                // Wait, checking WireType definition... `KindId` exists. `PredicateId` is new, likely maps to ThingId or we add it. 
+                "PredicateId" => quote!(abi::wire_schema::WireType::ThingId), // PredicateId maps to ThingId wire type layout-wise (16 bytes) usually, or we can add PredicateId to WireType if not there.
+                // Wait, checking WireType definition... `KindId` exists. `PredicateId` is new, likely maps to ThingId or we add it.
                 // Previous graphable.rs mapped PredicateId to ThingId.
-                
-                _ => quote!(abi::wire_schema::WireType::Struct(<#ty as abi::graphable::Graphable>::SCHEMA)),
+                _ => {
+                    quote!(abi::wire_schema::WireType::Struct(<#ty as abi::graphable::Graphable>::SCHEMA))
+                }
             };
         }
     }
-    
+
     // Arrays [T; N]
     if let Type::Array(ta) = ty {
         let inner = map_type_to_wire_type(&ta.elem);

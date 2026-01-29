@@ -6,8 +6,8 @@
 //! - Generates repeat events
 //! - Emits KeyDown/KeyUp edges
 
-use abi::hid::{Key, Mods};
 use crate::normalizer::ps2_to_key;
+use abi::hid::{Key, Mods};
 
 /// Keyboard state tracker
 pub struct KeyboardState {
@@ -16,7 +16,7 @@ pub struct KeyboardState {
     /// E0 extended prefix pending
     e0_prefix: bool,
     /// Currently pressed keys (simple bitset for common keys)
-    pressed: [u64; 4],  // 256 bits
+    pressed: [u64; 4], // 256 bits
 }
 
 /// Edge event emitted by the keyboard state machine
@@ -50,37 +50,36 @@ impl KeyboardState {
 
         // Convert to normalized key
         let key = ps2_to_key(scancode, extended);
-        
-        // Update modifier state
+
+        // Update tracking bitset and determine if this is a repeat or new edge
+        let key_idx = key as u16 as usize;
+        let (word_idx, bit_mask) = (key_idx / 64, 1 << (key_idx % 64));
+
+        let mut was_pressed = false;
+        if word_idx < 4 {
+            was_pressed = (self.pressed[word_idx] & bit_mask) != 0;
+            if is_break {
+                self.pressed[word_idx] &= !bit_mask;
+            } else {
+                self.pressed[word_idx] |= bit_mask;
+            }
+        }
+
+        // Update modifier state (now with correct bitset)
         self.update_mods(key, !is_break);
 
-        // Check for repeat (key already pressed)
-        let key_idx = key as u16 as usize;
-        let word_idx = key_idx / 64;
-        let bit_idx = key_idx % 64;
-        
-        if word_idx < 4 {
-            let was_pressed = self.pressed[word_idx] & (1 << bit_idx) != 0;
-            
-            if is_break {
-                // Key released
-                self.pressed[word_idx] &= !(1 << bit_idx);
-                Some(KeyEdge::Up { key, mods: Mods(self.mods) })
-            } else if was_pressed {
-                // Key repeat
-                Some(KeyEdge::Down { key, mods: Mods(self.mods), repeat: true })
-            } else {
-                // Key pressed
-                self.pressed[word_idx] |= 1 << bit_idx;
-                Some(KeyEdge::Down { key, mods: Mods(self.mods), repeat: false })
-            }
+        // Emit edge event
+        if is_break {
+            Some(KeyEdge::Up {
+                key,
+                mods: Mods(self.mods),
+            })
         } else {
-            // Key index out of range, emit without tracking
-            if is_break {
-                Some(KeyEdge::Up { key, mods: Mods(self.mods) })
-            } else {
-                Some(KeyEdge::Down { key, mods: Mods(self.mods), repeat: false })
-            }
+            Some(KeyEdge::Down {
+                key,
+                mods: Mods(self.mods),
+                repeat: was_pressed,
+            })
         }
     }
 
@@ -91,7 +90,8 @@ impl KeyboardState {
                     self.mods |= Mods::SHIFT;
                 } else {
                     // Only clear if BOTH Shift keys are now released
-                    if !self.is_key_pressed(Key::LeftShift) && !self.is_key_pressed(Key::RightShift) {
+                    if !self.is_key_pressed(Key::LeftShift) && !self.is_key_pressed(Key::RightShift)
+                    {
                         self.mods &= !Mods::SHIFT;
                     }
                 }
@@ -110,11 +110,17 @@ impl KeyboardState {
                 // modifiers we often want both to act as ALT.
                 // Bristle currently maps RightAlt to ALTGR bit.
                 if key == Key::LeftAlt {
-                    if pressed { self.mods |= Mods::ALT; }
-                    else { self.mods &= !Mods::ALT; }
+                    if pressed {
+                        self.mods |= Mods::ALT;
+                    } else {
+                        self.mods &= !Mods::ALT;
+                    }
                 } else {
-                    if pressed { self.mods |= Mods::ALTGR; }
-                    else { self.mods &= !Mods::ALTGR; }
+                    if pressed {
+                        self.mods |= Mods::ALTGR;
+                    } else {
+                        self.mods &= !Mods::ALTGR;
+                    }
                 }
             }
             Key::LeftMeta | Key::RightMeta => {
@@ -144,5 +150,73 @@ impl KeyboardState {
     #[allow(dead_code)]
     pub fn mods(&self) -> Mods {
         Mods(self.mods)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use abi::hid::{Key, Mods};
+
+    #[test]
+    fn test_shift_modifier() {
+        let mut state = KeyboardState::new();
+
+        // Press LeftShift (0x2A)
+        let edge = state.process_ps2(0x2A).expect("Expected edge");
+        match edge {
+            KeyEdge::Down { key, mods, repeat } => {
+                assert_eq!(key, Key::LeftShift);
+                assert_eq!(mods.0, Mods::SHIFT);
+                assert!(!repeat);
+            }
+            _ => panic!("Expected KeyDown"),
+        }
+
+        // Release LeftShift (0x2A | 0x80 = 0xAA)
+        let edge = state.process_ps2(0xAA).expect("Expected edge");
+        match edge {
+            KeyEdge::Up { key, mods } => {
+                assert_eq!(key, Key::LeftShift);
+                assert_eq!(mods.0, 0); // Should be cleared now
+            }
+            _ => panic!("Expected KeyUp"),
+        }
+    }
+
+    #[test]
+    fn test_dual_shift() {
+        let mut state = KeyboardState::new();
+
+        // LShift down
+        state.process_ps2(0x2A);
+        assert_eq!(state.mods().0, Mods::SHIFT);
+
+        // RShift down
+        state.process_ps2(0x36);
+        assert_eq!(state.mods().0, Mods::SHIFT);
+
+        // LShift up
+        state.process_ps2(0xAA);
+        assert_eq!(state.mods().0, Mods::SHIFT); // Still shifted by RShift
+
+        // RShift up
+        state.process_ps2(0xB6);
+        assert_eq!(state.mods().0, 0); // Finally clear
+    }
+
+    #[test]
+    fn test_altgr() {
+        let mut state = KeyboardState::new();
+
+        // RAlt (E0 38)
+        state.process_ps2(0xE0);
+        state.process_ps2(0x38);
+        assert_eq!(state.mods().0, Mods::ALTGR);
+
+        // Release RAlt (E0 B8)
+        state.process_ps2(0xE0);
+        state.process_ps2(0xB8);
+        assert_eq!(state.mods().0, 0);
     }
 }

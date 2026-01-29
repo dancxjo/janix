@@ -1,12 +1,12 @@
 //! PS/2 Mouse Driver (Interrupt-driven)
-//! 
+//!
 //! Subscribes to IRQ12 via IOAPIC, reads mouse packets on interrupt, sends to Bristle.
 
 #![no_std]
 #![no_main]
 
 use stem::info;
-use stem::syscall::{ioport_read, ioport_write, irq_subscribe, irq_wait, port_send, PortHandle};
+use stem::syscall::{PortHandle, ioport_read, ioport_write, irq_subscribe, irq_wait, port_send};
 
 const PS2_DATA: usize = 0x60;
 const PS2_STATUS: usize = 0x64;
@@ -26,13 +26,12 @@ const MOUSE_VECTOR: u8 = 0x2C;
 
 fn wait_input_empty() {
     for _ in 0..10000 {
-        if ioport_read(PS2_STATUS, 1) & 0x02 == 0 { return; }
+        if ioport_read(PS2_STATUS, 1) & 0x02 == 0 {
+            return;
+        }
         stem::yield_now();
     }
 }
-
-
-
 
 fn flush_output_buffer() {
     // Drain up to 16 bytes of garbage
@@ -102,10 +101,10 @@ fn send_aux_byte(byte: u8) {
 
 fn init_mouse() {
     info!("ps2_mouse: enabling aux port");
-    
+
     // Clear any initial garbage
     flush_output_buffer();
-    
+
     // Enable aux port
     wait_input_empty();
     ioport_write(PS2_CMD, CMD_ENABLE_AUX as usize, 1);
@@ -114,31 +113,37 @@ fn init_mouse() {
     // Ensure IRQ12 is enabled (Bit 1) and Mouse Disabled (Bit 5) is CLEARED.
     // Bit 5: 1 = Mouse Disabled, 0 = Mouse Enabled.
     let cfg = read_controller_config();
-    
+
     // Force: Set Bit 1 (IRQ12), Clear Bit 5 (Mouse Disable)
     let new_cfg = (cfg | 0x02) & !0x20;
-    
+
     if new_cfg != cfg {
         write_controller_config(new_cfg);
-        info!("ps2_mouse: updated controller cfg 0x{:02x} -> 0x{:02x}", cfg, new_cfg);
+        info!(
+            "ps2_mouse: updated controller cfg 0x{:02x} -> 0x{:02x}",
+            cfg, new_cfg
+        );
     } else {
         info!("ps2_mouse: controller cfg already correct (0x{:02x})", cfg);
     }
-    
+
     // Enable mouse data reporting (0xF4)
     info!("ps2_mouse: sending enable command (0xF4)");
     send_aux_byte(MOUSE_ENABLE);
-    
+
     // Wait for ACK (0xFA)
     let ack = read_data_filtered(true, "enable ACK (0xFA)").unwrap_or(0);
     if ack == 0xFA {
         info!("ps2_mouse: enable ACK received (0xFA)");
     } else {
-        info!("ps2_mouse: enable failed? received 0x{:02x} instead of ACK", ack);
+        info!(
+            "ps2_mouse: enable failed? received 0x{:02x} instead of ACK",
+            ack
+        );
     }
-    
+
     stem::sleep_ms(100);
-    
+
     // Drain any lingering response bytes.
     for _ in 0..10 {
         if ioport_read(PS2_STATUS, 1) & STATUS_OUTPUT_FULL != 0 {
@@ -154,26 +159,31 @@ fn init_mouse() {
 #[stem::main]
 fn main(raw_write_handle: usize) -> ! {
     let handle = raw_write_handle as PortHandle;
-    
+
     info!("ps2_mouse: online (handle={})", handle);
-    
+
     init_mouse();
-    
+
     // Subscribe to mouse interrupt
     match irq_subscribe(MOUSE_VECTOR) {
-        Ok(()) => info!("ps2_mouse: subscribed to IRQ12 (vector 0x{:02x})", MOUSE_VECTOR),
+        Ok(()) => info!(
+            "ps2_mouse: subscribed to IRQ12 (vector 0x{:02x})",
+            MOUSE_VECTOR
+        ),
         Err(e) => {
-            info!("ps2_mouse: IRQ subscribe failed ({:?}), falling back to polling", e);
+            info!(
+                "ps2_mouse: IRQ subscribe failed ({:?}), falling back to polling",
+                e
+            );
             polling_loop(handle);
         }
     }
-    
+
     info!("ps2_mouse: entering interrupt-driven loop");
-    
+
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
 
-    
     loop {
         // Wait for mouse interrupt
         match irq_wait(MOUSE_VECTOR) {
@@ -192,25 +202,25 @@ fn main(raw_write_handle: usize) -> ! {
 fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
     for _ in 0..16 {
         let status = ioport_read(PS2_STATUS, 1);
-        
+
         if status & STATUS_OUTPUT_FULL == 0 {
             break;
         }
-        
+
         if status & STATUS_AUX_DATA != 0 {
             let byte = ioport_read(PS2_DATA, 1) as u8;
-            
+
             // First byte must have bit 3 set (sync)
             if *idx == 0 && (byte & 0x08) == 0 {
                 continue;
             }
-            
+
             packet[*idx] = byte;
             *idx += 1;
-            
+
             if *idx == 3 {
                 let _ = port_send(handle, packet);
-                
+
                 /*
                     info!("ps2_mouse: packet {} = [{:02x} {:02x} {:02x}]",
                           packets_sent, packet[0], packet[1], packet[2]);
@@ -227,27 +237,25 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
 /// Fallback polling loop
 fn polling_loop(handle: PortHandle) -> ! {
     info!("ps2_mouse: using polling mode");
-    
+
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
 
-    
     loop {
         let status = ioport_read(PS2_STATUS, 1);
-        
+
         if status & STATUS_OUTPUT_FULL != 0 {
             if status & STATUS_AUX_DATA != 0 {
                 let byte = ioport_read(PS2_DATA, 1) as u8;
-                
+
                 if idx == 0 && (byte & 0x08) == 0 {
                     continue;
                 }
-                
+
                 packet[idx] = byte;
                 idx += 1;
-                
-                if idx == 3 {
 
+                if idx == 3 {
                     let _ = port_send(handle, &packet);
                     idx = 0;
                 }

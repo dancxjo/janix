@@ -7,7 +7,9 @@ use stem::pci;
 // Wrappers for BootRuntime PCI access
 // 0xFFFFFFFF is returned on error to simulate "not present"
 pub(crate) unsafe fn pci_read_config(bus: u8, dev: u8, func: u8, offset: u8) -> u32 {
-    crate::runtime_base().pci_cfg_read32(bus, dev, func, offset).unwrap_or(0xFFFFFFFF)
+    crate::runtime_base()
+        .pci_cfg_read32(bus, dev, func, offset)
+        .unwrap_or(0xFFFFFFFF)
 }
 
 pub(crate) unsafe fn pci_write_config(bus: u8, dev: u8, func: u8, offset: u8, val: u32) {
@@ -66,7 +68,8 @@ pub fn enumerate_and_publish<FCreate, FSet, FLink, FIntern>(
 
     // Check if PCI legacy config is supported by attempting to read bus 0 dev 0
     // If it returns NotSupported, we skip enumeration.
-    if let Err(abi::errors::Errno::NotSupported) = crate::runtime_base().pci_cfg_read32(0, 0, 0, 0) {
+    if let Err(abi::errors::Errno::NotSupported) = crate::runtime_base().pci_cfg_read32(0, 0, 0, 0)
+    {
         crate::kinfo!("PCI: Legacy config space not supported on this platform. Skipping.");
         return;
     }
@@ -304,19 +307,14 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // Virtio GPU detection (vendor 0x1af4, class 0x03 display controller)
     if vendor_id == 0x1af4 && class_code == 0x03 {
-        crate::kinfo!("PCI: Found virtio display controller at {:02x}:{:02x}.{}", bus, dev, func);
-        register_virtio_gpu(
-            node,
+        crate::kinfo!(
+            "PCI: Found virtio display controller at {:02x}:{:02x}.{}",
             bus,
             dev,
-            func,
-            &bar_addrs,
-            &bar_sizes,
-            msi_cap,
-            msix_cap,
-            create,
-            set,
-            link,
+            func
+        );
+        register_virtio_gpu(
+            node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
     }
 
@@ -330,25 +328,27 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // LPC/ISA Bridge detection - class 0x06, subclass 0x01
     if class_code == 0x06 && subclass == 0x01 {
-        crate::kinfo!("PCI: Found LPC/ISA bridge at {:02x}:{:02x}.{}", bus, dev, func);
+        crate::kinfo!(
+            "PCI: Found LPC/ISA bridge at {:02x}:{:02x}.{}",
+            bus,
+            dev,
+            func
+        );
         publish_lpc_bridge(node, create, set, link, intern);
     }
 
     // AHCI SATA controller detection - class 0x01, subclass 0x06, prog_if 0x01
     if class_code == 0x01 && subclass == 0x06 && prog_if == 0x01 {
-        crate::kinfo!("PCI: Found AHCI SATA controller at {:02x}:{:02x}.{}", bus, dev, func);
-        register_ahci_controller(
-            node,
+        crate::kinfo!(
+            "PCI: Found AHCI SATA controller at {:02x}:{:02x}.{}",
             bus,
             dev,
-            func,
-            &bar_addrs,
-            &bar_sizes,
-            msi_cap,
-            msix_cap,
+            func
+        );
+        register_ahci_controller(
+            node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap,
         );
     }
-
 }
 
 /// Register virtio GPU in device registry for userspace claiming
@@ -365,20 +365,17 @@ fn register_virtio_gpu(
     set: &mut impl FnMut(u64, &str, u64),
     link: &mut impl FnMut(u64, &str, u64),
 ) {
-    use crate::device_registry::{DeviceEntry, MsiCapability, MsixCapability, PciLocation, REGISTRY};
+    use crate::device_registry::{
+        DeviceEntry, MsiCapability, MsixCapability, PciLocation, REGISTRY,
+    };
 
     let gpu_node = create(kinds::DEV_DISPLAY_GPU);
     set(gpu_node, keys::SOURCE, source::PCI as u64);
     set(gpu_node, keys::CONFIDENCE, confidence::HIGH as u64);
     link(graph_id, rels::IMPLEMENTS, gpu_node);
 
-    let entry = DeviceEntry::new_mmio(
-        kinds::DEV_DISPLAY_GPU,
-        gpu_node,
-        *bar_addrs,
-        *bar_sizes,
-    );
-    
+    let entry = DeviceEntry::new_mmio(kinds::DEV_DISPLAY_GPU, gpu_node, *bar_addrs, *bar_sizes);
+
     let mut reg = REGISTRY.lock();
     if let Some(idx) = reg.register(entry) {
         let msi_info = msi_cap.map(|offset| {
@@ -403,12 +400,16 @@ fn register_virtio_gpu(
 
         let location = PciLocation { bus, dev, func };
         reg.set_pci_info(idx, location, msi_info, msix_info);
-        crate::kinfo!("PCI: Registered virtio GPU (graph_id={}, idx={}) BAR0=0x{:x}", graph_id, idx, bar_addrs[0]);
+        crate::kinfo!(
+            "PCI: Registered virtio GPU (graph_id={}, idx={}) BAR0=0x{:x}",
+            graph_id,
+            idx,
+            bar_addrs[0]
+        );
     } else {
         crate::kinfo!("PCI: Failed to register virtio GPU - registry full");
     }
 }
-
 
 /// Register AHCI controller in device registry for userspace claiming
 fn register_ahci_controller(
@@ -421,17 +422,14 @@ fn register_ahci_controller(
     msi_cap: Option<u8>,
     msix_cap: Option<u8>,
 ) {
-    use crate::device_registry::{DeviceEntry, MsiCapability, MsixCapability, PciLocation, REGISTRY};
+    use crate::device_registry::{
+        DeviceEntry, MsiCapability, MsixCapability, PciLocation, REGISTRY,
+    };
 
     // AHCI uses BAR5 for ABAR (AHCI Base Address Register)
     // But our DeviceEntry stores all BARs anyway
-    let entry = DeviceEntry::new_mmio(
-        "dev.storage.Ahci",
-        graph_id,
-        *bar_addrs,
-        *bar_sizes,
-    );
-    
+    let entry = DeviceEntry::new_mmio("dev.storage.Ahci", graph_id, *bar_addrs, *bar_sizes);
+
     let mut reg = REGISTRY.lock();
     if let Some(idx) = reg.register(entry) {
         let msi_info = msi_cap.map(|offset| {
@@ -456,7 +454,12 @@ fn register_ahci_controller(
 
         let location = PciLocation { bus, dev, func };
         reg.set_pci_info(idx, location, msi_info, msix_info);
-        crate::kinfo!("PCI: Registered AHCI controller (graph_id={}, idx={}) BAR5=0x{:x}", graph_id, idx, bar_addrs[5]);
+        crate::kinfo!(
+            "PCI: Registered AHCI controller (graph_id={}, idx={}) BAR5=0x{:x}",
+            graph_id,
+            idx,
+            bar_addrs[5]
+        );
     } else {
         crate::kinfo!("PCI: Failed to register AHCI controller - registry full");
     }
@@ -504,9 +507,13 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
 
     // Register CMOS in device registry
     {
-        use crate::device_registry::{DeviceEntry, REGISTRY, CMOS_IOPORT_RANGES};
+        use crate::device_registry::{CMOS_IOPORT_RANGES, DeviceEntry, REGISTRY};
         let mut reg = REGISTRY.lock();
-        reg.register(DeviceEntry::new_legacy(kinds::DEV_RTC_CMOS, CMOS_IOPORT_RANGES, cmos_id));
+        reg.register(DeviceEntry::new_legacy(
+            kinds::DEV_RTC_CMOS,
+            CMOS_IOPORT_RANGES,
+            cmos_id,
+        ));
     }
 
     // Create PS/2 Controller device
@@ -524,9 +531,13 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
 
     // Register PS/2 in device registry
     {
-        use crate::device_registry::{DeviceEntry, REGISTRY, PS2_IOPORT_RANGES};
+        use crate::device_registry::{DeviceEntry, PS2_IOPORT_RANGES, REGISTRY};
         let mut reg = REGISTRY.lock();
-        reg.register(DeviceEntry::new_legacy(kinds::DEV_INPUT_PS2_CONTROLLER, PS2_IOPORT_RANGES, ps2_id));
+        reg.register(DeviceEntry::new_legacy(
+            kinds::DEV_INPUT_PS2_CONTROLLER,
+            PS2_IOPORT_RANGES,
+            ps2_id,
+        ));
     }
 
     crate::kinfo!("LPC: Created Legacy IO bus with CMOS and PS/2 controller");

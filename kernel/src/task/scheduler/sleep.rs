@@ -3,8 +3,8 @@
 use crate::BootRuntime;
 use crate::BootTasking;
 
-use super::types::{ScheduleReason, Scheduler};
 use super::SCHEDULER;
+use super::types::{ScheduleReason, Scheduler};
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]
 use super::log_context_switch;
@@ -46,7 +46,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         yield_now::<R>();
         return;
     }
-    
+
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
@@ -54,7 +54,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        
+
         // Get current task ID
         let current_id = match sched.current {
             Some(id) => id,
@@ -63,14 +63,14 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
                 return;
             }
         };
-        
+
         // Calculate wake time and add to sleep queue
         let wake_tick = super::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed) + ticks;
         sched.sleep_queue.push_back(super::types::SleepEntry {
             task_id: current_id,
             wake_tick,
         });
-        
+
         // Do NOT push current task to runq - it's now sleeping
         // Just call prepare_schedule to pick next task
         sched.prepare_schedule()
@@ -94,8 +94,6 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
 
     rt.irq_restore(_irq);
 }
-
-
 
 pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
     let rt = crate::runtime::<R>();

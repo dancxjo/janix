@@ -1,6 +1,6 @@
 use abi::errors::Errno;
-use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
 use abi::types::StackInfo;
+use abi::vm::{VmBacking, VmMapFlags, VmMapReq, VmProt};
 
 use crate::vm::vm_map;
 
@@ -127,7 +127,7 @@ impl Stack {
         let low_canary = self.committed_start as *mut u64;
         // High canary: near top of reserve region (before SP slot)
         let high_canary = (self.reserve_end as usize - 16) as *mut u64;
-        
+
         unsafe {
             core::ptr::write_volatile(low_canary, CANARY_PATTERN);
             core::ptr::write_volatile(high_canary, CANARY_PATTERN);
@@ -136,9 +136,7 @@ impl Stack {
 
     /// Check canary integrity, returns Err if corruption detected
     pub fn check_canaries(&self) -> Result<(), StackCorruption> {
-        let low = unsafe { 
-            core::ptr::read_volatile(self.committed_start as *const u64) 
-        };
+        let low = unsafe { core::ptr::read_volatile(self.committed_start as *const u64) };
         if low != CANARY_PATTERN {
             return Err(StackCorruption {
                 location: CanaryLocation::Low,
@@ -147,9 +145,8 @@ impl Stack {
             });
         }
 
-        let high = unsafe { 
-            core::ptr::read_volatile((self.reserve_end as usize - 16) as *const u64) 
-        };
+        let high =
+            unsafe { core::ptr::read_volatile((self.reserve_end as usize - 16) as *const u64) };
         if high != CANARY_PATTERN {
             return Err(StackCorruption {
                 location: CanaryLocation::High,
@@ -191,7 +188,11 @@ pub fn current_sp() -> usize {
     sp
 }
 
-#[cfg(not(any(target_arch = "x86_64", target_arch = "aarch64", target_arch = "riscv64")))]
+#[cfg(not(any(
+    target_arch = "x86_64",
+    target_arch = "aarch64",
+    target_arch = "riscv64"
+)))]
 #[inline(always)]
 pub fn current_sp() -> usize {
     0 // Fallback for unsupported architectures
@@ -238,7 +239,10 @@ mod tests {
 
     #[test]
     fn test_guard_page_placement() {
-        let spec = StackSpec { guard_pages: 2, ..StackSpec::default() };
+        let spec = StackSpec {
+            guard_pages: 2,
+            ..StackSpec::default()
+        };
         let guard_bytes = spec.guard_pages * 4096;
         assert_eq!(guard_bytes, 8192);
     }

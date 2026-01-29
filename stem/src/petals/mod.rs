@@ -3,6 +3,7 @@ extern crate alloc;
 pub mod builder;
 pub mod graph;
 pub mod pack;
+pub mod viewport;
 
 use alloc::vec::Vec;
 
@@ -12,10 +13,11 @@ pub use builder::{
     Styled, Text, TextWrap, Window,
 };
 pub use graph::{Petals, UiTreeBuilder};
+pub use viewport::{PanZoomController, Viewport, ViewportConstraints, ViewportIntent};
 
 use crate::errors::{Error, Result};
-use crate::thing::ThingId;
 use crate::thing::sys::{bytespace_create, bytespace_write, find, prop_get, prop_set};
+use crate::thing::ThingId;
 use abi::errors::Errno;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
@@ -91,7 +93,6 @@ mod tests {
             .insert((target, keys::UI_SCENE_GEN), current.saturating_add(1));
         Ok(())
     }
-
 
     #[test]
     fn publish_increments_gen_and_updates_bytespace() {

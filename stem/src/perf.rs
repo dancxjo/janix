@@ -9,7 +9,10 @@ pub trait PerfReporter: Send + Sync {
 static REPORTER: AtomicUsize = AtomicUsize::new(0);
 
 pub fn set_reporter(reporter: &'static dyn PerfReporter) {
-    REPORTER.store(reporter as *const dyn PerfReporter as *const () as usize, Ordering::SeqCst);
+    REPORTER.store(
+        reporter as *const dyn PerfReporter as *const () as usize,
+        Ordering::SeqCst,
+    );
 }
 
 #[inline(always)]

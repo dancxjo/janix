@@ -118,8 +118,8 @@ pub async fn take_screenshot_global(
 
     // Get absolute path for QEMU
     let ppm_path = output_path.with_extension("ppm");
-    let ppm_abs =
-        std::fs::canonicalize(output_path.parent().ok_or("Invalid output path")?)?.join(ppm_path.file_name().ok_or("Invalid PPM path")?);
+    let ppm_abs = std::fs::canonicalize(output_path.parent().ok_or("Invalid output path")?)?
+        .join(ppm_path.file_name().ok_or("Invalid PPM path")?);
 
     // Retry a few times if "device not ready" or similar transient errors occur
     let mut success = false;

@@ -672,6 +672,37 @@ fn blend_channel(s: u32, d: u32, sa: u32) -> u32 {
     (t + 1 + (t >> 8)) >> 8
 }
 
+/// Blend a single pixel using premultiplied alpha "over" composition.
+///
+/// # Remaining Uses
+/// 
+/// This function is still used in several specific cases that don't benefit from
+/// SIMD masked compositor conversion:
+///
+/// 1. **Geometric primitives with sparse coverage**: Circles, arcs, gradients where
+///    each pixel may have different computed alpha values and coverage patterns are
+///    not contiguous in memory.
+///
+/// 2. **Scaled/transformed image blitting**: Per-pixel sampling with coordinate
+///    transforms where source pixels aren't aligned with destination.
+///
+/// 3. **Small fill operations**: Rectangles, lines where the overhead of creating
+///    mask buffers would exceed the benefit of SIMD.
+///
+/// **Converted to SIMD masked compositor**:
+/// - Text rendering (glyph atlas blits)
+/// - Vector path fills with coverage arrays
+/// - Fallback fontdue glyph rasterization
+///
+/// # Parameters
+/// - `sr`, `sg`, `sb`: Source color channels (0-255)
+/// - `sa`: Source alpha (0-255, NOT premultiplied)
+///
+/// # Blend Formula
+/// ```text
+/// out_a = sa + da * (1 - sa/255)
+/// out_rgb = s * sa/255 + d * (1 - sa/255)
+/// ```
 fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa: u8) {
     if sa == 0 {
         return;

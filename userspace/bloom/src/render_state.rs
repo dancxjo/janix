@@ -97,7 +97,10 @@ pub struct RasterCacheKey {
 }
 
 impl RasterCacheKey {
-    /// Create a new cache key with the given parameters
+    /// Construct cache key with the given parameters.
+    ///
+    /// # Parameters
+    /// - `scale`: Scale factor in range [0.0, 65535.0]. Values outside this range will be clamped.
     pub fn new(
         thing: ThingId,
         paint_gen: u64,
@@ -107,12 +110,14 @@ impl RasterCacheKey {
         aa: EdgeAA,
         pixfmt: PixelFormat,
     ) -> Self {
+        // Clamp scale to valid range to avoid overflow
+        let clamped_scale = scale.max(0.0).min(65535.0);
         Self {
             thing,
             paint_gen,
             geometry_gen,
             asset_gen,
-            scale_q16: (scale * 65536.0) as u32,
+            scale_q16: (clamped_scale * 65536.0) as u32,
             aa,
             pixfmt,
         }
@@ -355,7 +360,6 @@ pub enum MissReason {
 struct WindowCacheEntry {
     image: Arc<Image>,
     bytes: usize,
-    last_key: RasterCacheKey,
 }
 
 /// Generation-based raster cache for window surfaces
@@ -418,7 +422,6 @@ impl WindowRasterCache {
             WindowCacheEntry {
                 image,
                 bytes,
-                last_key: key.clone(),
             },
         );
         self.total_bytes = self.total_bytes.saturating_add(bytes);
@@ -598,6 +601,34 @@ mod tests {
             0,
             2,  // geometry_gen changed
             0,
+            1.0,
+            EdgeAA::None,
+            PixelFormat::Bgra8888,
+        );
+        
+        state.insert_window_raster(key1.clone(), image_of_size(4, 4));
+        assert!(state.get_window_raster(&key1).is_some());
+        assert!(state.get_window_raster(&key2).is_none());
+    }
+
+    #[test]
+    fn window_cache_invalidates_on_asset_gen() {
+        let mut state = RenderState::with_cache_limit(1024);
+        let thing = ThingId::from_u64(1);
+        let key1 = RasterCacheKey::new(
+            thing,
+            0,
+            0,
+            1,  // asset_gen
+            1.0,
+            EdgeAA::None,
+            PixelFormat::Bgra8888,
+        );
+        let key2 = RasterCacheKey::new(
+            thing,
+            0,
+            0,
+            2,  // asset_gen changed
             1.0,
             EdgeAA::None,
             PixelFormat::Bgra8888,

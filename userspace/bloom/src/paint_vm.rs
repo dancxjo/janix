@@ -29,30 +29,8 @@ pub struct WindowHit {
 
 /// Internal window paint state with generation tracking.
 ///
-/// # Cache Key Construction
-///
-/// For proper generation-based caching, construct a `RasterCacheKey`:
-///
-/// ```rust,ignore
-/// use crate::render_state::RasterCacheKey;
-/// use abi::pixel::PixelFormat;
-///
-/// let cache_key = RasterCacheKey::new(
-///     window_id,           // ThingId
-///     state.paint_gen,     // Paint generation (drawlist changes)
-///     state.geometry_gen,  // Geometry generation (size/position/transform)
-///     state.asset_gen,     // Asset generation (fonts/icons/images)
-///     1.0,                 // Scale factor
-///     EdgeAA::None,        // Anti-aliasing mode
-///     PixelFormat::Bgra8888, // Pixel format
-/// );
-/// ```
-///
-/// This ensures that:
-/// - Paint changes invalidate the cache (paint_gen bump)
-/// - Geometry changes invalidate the cache (geometry_gen bump)
-/// - Asset changes invalidate the cache (asset_gen from AssetBank)
-/// - Render parameter changes invalidate the cache (scale/AA/format)
+/// This structure tracks the state needed to construct a cache key.
+/// The actual rasterized buffers are stored in `RenderState`'s `WindowRasterCache`.
 struct WindowPaintState {
     rect: Rect,
     z: i32,
@@ -61,9 +39,6 @@ struct WindowPaintState {
     paint_bs: u64,
     geometry_gen: u64,
     asset_gen: u64,
-    width: u32,
-    height: u32,
-    buffer: Vec<u32>,
 }
 
 pub struct PaintResult {
@@ -72,16 +47,24 @@ pub struct PaintResult {
 
 pub struct PaintPipeline {
     windows: BTreeMap<ThingId, WindowPaintState>,
+    render_state: crate::render_state::RenderState,
 }
 
 impl PaintPipeline {
     pub fn new() -> Self {
         Self {
             windows: BTreeMap::new(),
+            render_state: crate::render_state::RenderState::new(),
         }
     }
 
     pub fn process_updates(&mut self, screen_w: i32, screen_h: i32) -> PaintResult {
+        use abi::pixel::PixelFormat;
+        use crate::render_state::RasterCacheKey;
+        
+        // Get current asset generation
+        let current_asset_gen = crate::painter_resources::ASSETS.current_generation().0;
+        
         let mut damage = Vec::new();
         let mut window_ids = [ThingId::default(); 128];
         let count = find(kinds::UI_WINDOW, &mut window_ids).unwrap_or(0);
@@ -99,17 +82,15 @@ impl PaintPipeline {
             let z = prop_get(*id, keys::UI_Z_INDEX).unwrap_or(0) as i32;
             let hidden = prop_get(*id, keys::UI_HIDDEN).unwrap_or(0) != 0;
             let mut needs_rebuild = false;
+            
             let entry = self.windows.entry(*id).or_insert_with(|| WindowPaintState {
-                rect: Rect::new(0, 0, 0, 0),
-                z: 0,
-                hidden: false,
+                rect,
+                z,
+                hidden,
                 paint_gen: 0,
                 paint_bs: 0,
                 geometry_gen: 0,
                 asset_gen: 0,
-                width: 0,
-                height: 0,
-                buffer: Vec::new(),
             });
 
             // Track paint changes
@@ -117,10 +98,10 @@ impl PaintPipeline {
                 needs_rebuild = true;
             }
             
-            // Track geometry changes and bump geometry_gen
-            if entry.rect != rect || entry.z != z || entry.hidden != hidden {
+            // Track geometry changes and bump geometry_gen AFTER updating values
+            let geometry_changed = entry.rect != rect || entry.z != z || entry.hidden != hidden;
+            if geometry_changed {
                 needs_rebuild = true;
-                entry.geometry_gen = entry.geometry_gen.wrapping_add(1);
                 if entry.rect != rect || entry.hidden != hidden {
                     damage.push(Rect::new(
                         entry.rect.x(),
@@ -130,54 +111,81 @@ impl PaintPipeline {
                     ));
                 }
             }
+            
+            // Update state before bumping geometry_gen to avoid initial mismatch
+            entry.rect = rect;
+            entry.z = z;
+            entry.hidden = hidden;
+            entry.paint_gen = paint_gen;
+            entry.paint_bs = paint_bs;
+            entry.asset_gen = current_asset_gen;
+            
+            if geometry_changed {
+                entry.geometry_gen = entry.geometry_gen.wrapping_add(1);
+            }
 
             if needs_rebuild {
                 crate::trace_span!("bloom.window_cache.rebuild");
-                entry.rect = rect;
-                entry.z = z;
-                entry.hidden = hidden;
-                entry.paint_gen = paint_gen;
-                entry.paint_bs = paint_bs;
+                
+                // Construct cache key
+                let cache_key = RasterCacheKey::new(
+                    *id,
+                    entry.paint_gen,
+                    entry.geometry_gen,
+                    entry.asset_gen,
+                    1.0,  // TODO: Get from UI_SCALE_FACTOR property
+                    EdgeAA::None,
+                    PixelFormat::Bgra8888,
+                );
+                
+                // Try cache lookup
+                if let Some(_cached_image) = self.render_state.get_window_raster(&cache_key) {
+                    // Cache hit - nothing to do, image is already cached
+                    crate::trace_counter!("bloom.window_paint.cache_hit", 1);
+                } else {
+                    // Cache miss - need to rasterize
+                    crate::trace_counter!("bloom.window_paint.cache_miss", 1);
+                    
+                    let w = rect.width() as usize;
+                    let h = rect.height() as usize;
+                    let len = w * h;
 
-                // Rasterize window content into cached surface
-                let w = rect.width() as usize;
-                let h = rect.height() as usize;
-                let len = w * h;
+                    crate::trace_counter!("bloom.window_cache.rebuild.count", 1);
+                    crate::trace_counter!("bloom.window_cache.pixels_written.total", len as u64);
 
-                // Update cached dimensions
-                entry.width = w as u32;
-                entry.height = h as u32;
+                    // Execute drawlist into temporary buffer
+                    if w > 0 && h > 0 {
+                        let mut buffer = vec![0u32; len];
+                        
+                        // Create wrapper surface for the buffer
+                        // SAFETY: buffer is valid for len, valid dimensions
+                        let mut surface = unsafe {
+                            Surface::new(
+                                buffer.as_mut_ptr() as *mut u8,
+                                len * 4,
+                                w as u32,
+                                h as u32,
+                                w as u32 * 4,
+                            )
+                        };
 
-                crate::trace_counter!("bloom.window_cache.rebuild.count", 1);
-                crate::trace_counter!("bloom.window_cache.pixels_written.total", len as u64);
-
-                // Resize buffer if needed
-                if entry.buffer.len() != len {
-                    entry.buffer.resize(len, 0);
-                }
-
-                // Execute drawlist into buffer
-                if w > 0 && h > 0 {
-                    // Create wrapper surface for the buffer
-                    // SAFETY: buffer is valid for len, valid dimensions
-                    let mut surface = unsafe {
-                        Surface::new(
-                            entry.buffer.as_mut_ptr() as *mut u8,
-                            len * 4,
-                            w as u32,
-                            h as u32,
-                            w as u32 * 4,
-                        )
-                    };
-
-                    // Clear (using transparent black)
-                    // Windows usually clear themselves, but let's ensure a clean slate.
-                    entry.buffer.fill(0);
-
-                    // Build and execute local drawlist
-                    let local_rect = Rect::new(0, 0, rect.width(), rect.height());
-                    let list = build_drawlist(paint_bs, local_rect);
-                    raster::execute(&mut surface, &list, false);
+                        // Build and execute local drawlist
+                        let local_rect = Rect::new(0, 0, rect.width(), rect.height());
+                        let list = build_drawlist(paint_bs, local_rect);
+                        raster::execute(&mut surface, &list, false);
+                        
+                        // Insert into cache
+                        let image = Arc::new(Image {
+                            width: w as u32,
+                            height: h as u32,
+                            pixels: Arc::from(buffer.as_slice()),
+                            gen: AssetGeneration(current_asset_gen),
+                            name: Arc::from("window"),
+                            id: Some(*id),
+                        });
+                        
+                        self.render_state.insert_window_raster(cache_key, image);
+                    }
                 }
 
                 damage.push(Rect::new(rect.x(), rect.y(), rect.width(), rect.height()));
@@ -234,16 +242,29 @@ impl PaintPipeline {
 
     /// Compose the scene into the framebuffer surface using occlusion culling.
     pub fn compose(
-        &self,
+        &mut self,
         surface: &mut Surface,
         damage: &[Rect],
         wallpaper: Option<&Image>,
         bg_color: Color,
     ) {
-        let mut ordered: Vec<&WindowPaintState> =
-            self.windows.values().filter(|w| !w.hidden).collect();
+        use abi::pixel::PixelFormat;
+        use crate::render_state::RasterCacheKey;
+        
+        // Get current asset generation for cache lookups
+        let current_asset_gen = crate::painter_resources::ASSETS.current_generation().0;
+        
+        // Build list of (window_id, state_ref) for iteration
+        let window_list: Vec<(ThingId, &WindowPaintState)> = self
+            .windows
+            .iter()
+            .filter(|(_, w)| !w.hidden)
+            .map(|(id, state)| (*id, state))
+            .collect();
+        
         // Sort by Z descending (top to bottom) for occlusion
-        ordered.sort_by_key(|w| -w.z);
+        let mut ordered = window_list;
+        ordered.sort_by_key(|(_, w)| -w.z);
 
         crate::trace_span!("bloom.compose");
 
@@ -256,7 +277,7 @@ impl PaintPipeline {
             );
             let mut remaining: Vec<Rect> = vec![d_rect];
 
-            for win in &ordered {
+            for (win_id, win) in &ordered {
                 if remaining.is_empty() {
                     break;
                 }
@@ -268,21 +289,32 @@ impl PaintPipeline {
                     let inter = Rect::intersection(&r, &w_rect);
                     if let Some(vis) = inter {
                         // This part of 'r' is covered by 'win'.
-                        // Blit 'win' portion to 'vis'.
-                        // Use intersection with valid image area (0,0,w,h) relative to window
-                        if win.width > 0 && win.height > 0 && !win.buffer.is_empty() {
-                            // Calculate src rect in window coordinates
-                            let src_x = vis.x() - w_rect.x();
-                            let src_y = vis.y() - w_rect.y();
+                        // Fetch cached image and blit
+                        let cache_key = RasterCacheKey::new(
+                            *win_id,
+                            win.paint_gen,
+                            win.geometry_gen,
+                            current_asset_gen,
+                            1.0,
+                            EdgeAA::None,
+                            PixelFormat::Bgra8888,
+                        );
+                        
+                        if let Some(cached_image) = self.render_state.get_window_raster(&cache_key) {
+                            if cached_image.width > 0 && cached_image.height > 0 {
+                                // Calculate src rect in window coordinates
+                                let src_x = vis.x() - w_rect.x();
+                                let src_y = vis.y() - w_rect.y();
 
-                            // Blit logic
-                            blit_rect(
-                                surface,
-                                vis,
-                                &win.buffer,
-                                win.width as usize, // stride
-                                Rect::new(src_x, src_y, vis.width(), vis.height()),
-                            );
+                                // Blit logic
+                                blit_rect(
+                                    surface,
+                                    vis,
+                                    &cached_image.pixels,
+                                    cached_image.width as usize,
+                                    Rect::new(src_x, src_y, vis.width(), vis.height()),
+                                );
+                            }
                         }
 
                         // Subtract vis from r

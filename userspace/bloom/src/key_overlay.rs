@@ -2,7 +2,7 @@ use alloc::collections::BTreeSet;
 use alloc::string::String;
 use alloc::vec::Vec;
 use crate::drawlist::DrawList;
-use crate::damage::Rect;
+use crate::geometry::Rect;
 use crate::geometry::Color;
 use stem::ui::UiBuilder;
 use stem::thing::sys::prop_set;
@@ -101,8 +101,8 @@ impl KeyOverlay {
         // Always ensure layout is correct
         if let Some(root_id) = self.root_node {
             if let Some(rect) = self.compute_rect(screen_w, screen_h) {
-                UiBuilder::set_pos(root_id, rect.x, rect.y);
-                UiBuilder::set_size(root_id, rect.w, rect.h);
+                UiBuilder::set_pos(root_id, rect.x(), rect.y());
+                UiBuilder::set_size(root_id, rect.width(), rect.height());
                 
                 if let Some(txt_id) = self.text_node {
                      UiBuilder::set_pos(txt_id, 12, 6);

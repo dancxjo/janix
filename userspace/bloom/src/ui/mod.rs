@@ -7,7 +7,7 @@ use self::layout::{LayoutSolver, SymbolResolver};
 use self::paint::{PaintBuilder, PaintObject, PaintScene};
 use self::snapshot::{AssetCache, KindIds, NodeChange, UiKeys, UiSnapshot};
 use crate::asset::AssetBank;
-use crate::damage::Rect;
+use crate::geometry::Rect;
 use crate::drawlist::DrawList;
 use crate::render_state::RenderState;
 use crate::ui::constants::{SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT};
@@ -390,7 +390,7 @@ impl UiPipeline {
         if !force_full_layout {
             if let Some(layout) = self.last_layout.as_ref() {
                 if let Some(root) = layout.root.as_ref() {
-                    if root.rect.w != screen_w || root.rect.h != screen_h {
+                    if root.rect.width() != screen_w || root.rect.height() != screen_h {
                         force_full_layout = true;
                         full_layout_reason = Some(FullRefreshReason::CacheInvalidated);
                     }
@@ -671,8 +671,8 @@ impl UiPipeline {
         best: &mut Option<(ThingId, i32)>,
     ) {
         if node.kind == snapshot::UiNodeKind::Window {
-            let btn_x = node.rect.x + node.rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
-            let btn_y = node.rect.y + (TITLE_BAR_HEIGHT - SHADE_BUTTON_SIZE) / 2;
+            let btn_x = node.rect.x() + node.rect.width() - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE;
+            let btn_y = node.rect.y() + (TITLE_BAR_HEIGHT - SHADE_BUTTON_SIZE) / 2;
             let inside = x >= btn_x
                 && x <= btn_x + SHADE_BUTTON_SIZE
                 && y >= btn_y
@@ -772,17 +772,17 @@ impl UiPipeline {
 
         let mut success = true;
         if keys.x != 0 {
-            success &= stem::thing::sys::prop_set(window_id, keys.x, rect.x as u64).is_ok();
+            success &= stem::thing::sys::prop_set(window_id, keys.x, rect.x() as u64).is_ok();
         }
         if keys.y != 0 {
-            success &= stem::thing::sys::prop_set(window_id, keys.y, rect.y as u64).is_ok();
+            success &= stem::thing::sys::prop_set(window_id, keys.y, rect.y() as u64).is_ok();
         }
         if keys.w != 0 {
-            success &= stem::thing::sys::prop_set(window_id, keys.w, rect.w as u64).is_ok();
+            success &= stem::thing::sys::prop_set(window_id, keys.w, rect.width() as u64).is_ok();
         }
         if keys.h != 0 {
             // Subtract title bar height for stored value
-            let stored_h = (rect.h - TITLE_BAR_HEIGHT).max(0) as u64;
+            let stored_h = (rect.height() - TITLE_BAR_HEIGHT).max(0) as u64;
             success &= stem::thing::sys::prop_set(window_id, keys.h, stored_h).is_ok();
         }
 
@@ -840,7 +840,7 @@ impl UiPipeline {
             match obj {
                 PaintObject::PushClip { rect } => {
                     list.commands().push(DrawCmd::PushClip {
-                        rect: crate::geometry::Rect::new(rect.x, rect.y, rect.w, rect.h),
+                        rect: crate::geometry::Rect::new(rect.x(), rect.y(), rect.width(), rect.height()),
                     });
                 }
                 PaintObject::PopClip => {
@@ -853,16 +853,16 @@ impl UiPipeline {
                 } => {
                     if *radius > 0 {
                         list.rounded_rect(
-                            rect.x,
-                            rect.y,
-                            rect.w,
-                            rect.h,
+                            rect.x(),
+                            rect.y(),
+                            rect.width(),
+                            rect.height(),
                             *radius as i32,
                             *color,
                             crate::geometry::EdgeAA::None,
                         );
                     } else {
-                        list.rect(rect.x, rect.y, rect.w, rect.h, *color);
+                        list.rect(rect.x(), rect.y(), rect.width(), rect.height(), *color);
                     }
                 }
                 PaintObject::Text {
@@ -876,8 +876,8 @@ impl UiPipeline {
                     list.text_font_debug(
                         text,
                         Some(font),
-                        rect.x,
-                        rect.y,
+                        rect.x(),
+                        rect.y(),
                         *size,
                         *color,
                         *font_debug,
@@ -887,14 +887,14 @@ impl UiPipeline {
                     // TODO: Implement image lowering
                 }
                 PaintObject::Raster { rect, image } => {
-                    list.blit_image(image, rect.x, rect.y);
+                    list.blit_image(image, rect.x(), rect.y());
                 }
                 PaintObject::Commands { cmds, rect } => {
                     use crate::geometry::Transform;
 
                     // Translate local 0,0 SVG to node position
                     list.commands().push(DrawCmd::PushTransform {
-                        transform: Transform::translate(rect.x as f32, rect.y as f32),
+                        transform: Transform::translate(rect.x() as f32, rect.y() as f32),
                     });
 
                     // Append commands

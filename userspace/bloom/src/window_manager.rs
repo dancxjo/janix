@@ -6,7 +6,7 @@
 //! - Move/resize drag controller with pointer capture
 //! - Input routing to apps (client area only)
 
-use crate::damage::Rect;
+use crate::geometry::Rect;
 use crate::ui::constants::{
     BORDER_THICKNESS, MAXIMIZE_BUTTON_PADDING, MAXIMIZE_BUTTON_SIZE, MIN_WINDOW_HEIGHT,
     MIN_WINDOW_WIDTH, RESIZE_CORNER_SIZE, SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE,
@@ -164,8 +164,8 @@ pub fn compute_client_rect(window_rect: &Rect, is_shaded: bool) -> Rect {
     if is_shaded {
         // Shaded windows have no client area
         return Rect::new(
-            window_rect.x + BORDER_THICKNESS,
-            window_rect.y + TITLE_BAR_HEIGHT,
+            window_rect.x() + BORDER_THICKNESS,
+            window_rect.y() + TITLE_BAR_HEIGHT,
             0,
             0,
         );
@@ -173,10 +173,10 @@ pub fn compute_client_rect(window_rect: &Rect, is_shaded: bool) -> Rect {
 
     let content_inset = BORDER_THICKNESS * 2; // Two frame layers
     Rect::new(
-        window_rect.x + content_inset,
-        window_rect.y + content_inset + TITLE_BAR_HEIGHT - content_inset,
-        (window_rect.w - content_inset * 2).max(0),
-        (window_rect.h - TITLE_BAR_HEIGHT - content_inset).max(0),
+        window_rect.x() + content_inset,
+        window_rect.y() + content_inset + TITLE_BAR_HEIGHT - content_inset,
+        (window_rect.width() - content_inset * 2).max(0),
+        (window_rect.height() - TITLE_BAR_HEIGHT - content_inset).max(0),
     )
 }
 
@@ -185,26 +185,26 @@ pub fn clamp_window_rect(rect: Rect, screen_w: i32, screen_h: i32) -> Rect {
     let mut r = rect;
 
     // Enforce minimum size
-    if r.w < MIN_WINDOW_WIDTH {
-        r.w = MIN_WINDOW_WIDTH;
+    if r.width() < MIN_WINDOW_WIDTH {
+        r.size.width = MIN_WINDOW_WIDTH;
     }
-    if r.h < MIN_WINDOW_HEIGHT {
-        r.h = MIN_WINDOW_HEIGHT;
+    if r.height() < MIN_WINDOW_HEIGHT {
+        r.size.height = MIN_WINDOW_HEIGHT;
     }
 
     // Keep title bar reachable (at least partially on screen)
     let min_visible = TITLE_BAR_HEIGHT;
-    if r.y + min_visible < 0 {
-        r.y = -min_visible + 1;
+    if r.y() + min_visible < 0 {
+        r.origin.y = -min_visible + 1;
     }
-    if r.y > screen_h - min_visible {
-        r.y = screen_h - min_visible;
+    if r.y() > screen_h - min_visible {
+        r.origin.y = screen_h - min_visible;
     }
-    if r.x + r.w < min_visible {
-        r.x = min_visible - r.w;
+    if r.x() + r.width() < min_visible {
+        r.origin.x = min_visible - r.width();
     }
-    if r.x > screen_w - min_visible {
-        r.x = screen_w - min_visible;
+    if r.x() > screen_w - min_visible {
+        r.origin.x = screen_w - min_visible;
     }
 
     r
@@ -218,12 +218,12 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
     let r = &window.rect;
 
     // Outside window entirely?
-    if screen_x < r.x || screen_x >= r.x + r.w || screen_y < r.y || screen_y >= r.y + r.h {
+    if screen_x < r.x() || screen_x >= r.x() + r.width() || screen_y < r.y() || screen_y >= r.y() + r.height() {
         return Hit::None;
     }
 
-    let local_x = screen_x - r.x;
-    let local_y = screen_y - r.y;
+    let local_x = screen_x - r.x();
+    let local_y = screen_y - r.y();
 
     // Corner resize zones (check first, they overlap edges)
     let corner_size = RESIZE_CORNER_SIZE;
@@ -233,15 +233,15 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
         return Hit::ResizeCorner(Corner::NorthWest);
     }
     // NE corner
-    if local_x >= r.w - corner_size && local_y < corner_size {
+    if local_x >= r.width() - corner_size && local_y < corner_size {
         return Hit::ResizeCorner(Corner::NorthEast);
     }
     // SW corner
-    if local_x < corner_size && local_y >= r.h - corner_size {
+    if local_x < corner_size && local_y >= r.height() - corner_size {
         return Hit::ResizeCorner(Corner::SouthWest);
     }
     // SE corner
-    if local_x >= r.w - corner_size && local_y >= r.h - corner_size {
+    if local_x >= r.width() - corner_size && local_y >= r.height() - corner_size {
         return Hit::ResizeCorner(Corner::SouthEast);
     }
 
@@ -249,13 +249,13 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
     if local_y < BORDER_THICKNESS {
         return Hit::ResizeEdge(Edge::North);
     }
-    if local_y >= r.h - BORDER_THICKNESS {
+    if local_y >= r.height() - BORDER_THICKNESS {
         return Hit::ResizeEdge(Edge::South);
     }
     if local_x < BORDER_THICKNESS {
         return Hit::ResizeEdge(Edge::West);
     }
-    if local_x >= r.w - BORDER_THICKNESS {
+    if local_x >= r.width() - BORDER_THICKNESS {
         return Hit::ResizeEdge(Edge::East);
     }
 
@@ -266,7 +266,7 @@ pub fn hit_test(screen_x: i32, screen_y: i32, window: &WindowState) -> Hit {
         // Check buttons from right to left
         // Button layout: [title text] ... [maximize] [shade]
         let handle_width = 40; // From paint.rs
-        let button_region_start = r.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE - handle_width - 8;
+        let button_region_start = r.width() - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE - handle_width - 8;
 
         // Shade button
         let shade_x = button_region_start;
@@ -323,10 +323,10 @@ pub fn pick_window(
 /// Apply move delta to a window rect with clamping.
 pub fn apply_move_delta(start_rect: Rect, delta: (i32, i32), screen_w: i32, screen_h: i32) -> Rect {
     let new_rect = Rect::new(
-        start_rect.x + delta.0,
-        start_rect.y + delta.1,
-        start_rect.w,
-        start_rect.h,
+        start_rect.x() + delta.0,
+        start_rect.y() + delta.1,
+        start_rect.width(),
+        start_rect.height(),
     );
     clamp_window_rect(new_rect, screen_w, screen_h)
 }
@@ -339,10 +339,10 @@ pub fn apply_resize_delta(
     screen_w: i32,
     screen_h: i32,
 ) -> Rect {
-    let mut x = start_rect.x;
-    let mut y = start_rect.y;
-    let mut w = start_rect.w;
-    let mut h = start_rect.h;
+    let mut x = start_rect.x();
+    let mut y = start_rect.y();
+    let mut w = start_rect.width();
+    let mut h = start_rect.height();
 
     if anchor.west {
         let new_x = x + delta.0;
@@ -582,7 +582,7 @@ mod tests {
         // Move far left
         let result = apply_move_delta(start, (-500, 0), 800, 600);
         // Should clamp so title bar is still reachable
-        assert!(result.x + result.w >= TITLE_BAR_HEIGHT);
+        assert!(result.x() + result.width() >= TITLE_BAR_HEIGHT);
     }
 
     #[test]
@@ -591,7 +591,7 @@ mod tests {
         let anchor = ResizeAnchor::from_edge(Edge::West);
         // Try to shrink width below minimum
         let result = apply_resize_delta(start, anchor, (500, 0), 800, 600);
-        assert_eq!(result.w, MIN_WINDOW_WIDTH);
+        assert_eq!(result.width(), MIN_WINDOW_WIDTH);
     }
 
     #[test]
@@ -599,10 +599,10 @@ mod tests {
         let window_rect = Rect::new(100, 100, 400, 300);
         let client = compute_client_rect(&window_rect, false);
         // Client should be inset by borders and title bar
-        assert!(client.x > window_rect.x);
-        assert!(client.y > window_rect.y);
-        assert!(client.w < window_rect.w);
-        assert!(client.h < window_rect.h);
+        assert!(client.x() > window_rect.x());
+        assert!(client.y() > window_rect.y());
+        assert!(client.width() < window_rect.width());
+        assert!(client.height() < window_rect.height());
     }
 
     #[test]
@@ -610,8 +610,8 @@ mod tests {
         let window_rect = Rect::new(100, 100, 400, 300);
         let client = compute_client_rect(&window_rect, true);
         // Shaded window has no client area
-        assert_eq!(client.w, 0);
-        assert_eq!(client.h, 0);
+        assert_eq!(client.width(), 0);
+        assert_eq!(client.height(), 0);
     }
 
     #[test]

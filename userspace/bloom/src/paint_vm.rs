@@ -31,7 +31,7 @@ struct WindowPaintState {
 }
 
 pub struct PaintResult {
-    pub damage: Vec<damage::Rect>,
+    pub damage: Vec<Rect>,
 }
 
 pub struct PaintPipeline {
@@ -77,7 +77,7 @@ impl PaintPipeline {
             if entry.rect != rect || entry.z != z {
                 needs_rebuild = true;
                 if entry.rect != rect {
-                    damage.push(damage::Rect::new(
+                    damage.push(Rect::new(
                         entry.rect.x(),
                         entry.rect.y(),
                         entry.rect.width(),
@@ -140,7 +140,7 @@ impl PaintPipeline {
                     entry.image = None;
                 }
 
-                damage.push(damage::Rect::new(
+                damage.push(Rect::new(
                     rect.x(),
                     rect.y(),
                     rect.width(),
@@ -158,7 +158,7 @@ impl PaintPipeline {
     pub fn compose(
         &self,
         surface: &mut Surface,
-        damage: &[damage::Rect],
+        damage: &[Rect],
         wallpaper: Option<&Image>,
         bg_color: Color,
     ) {
@@ -170,7 +170,7 @@ impl PaintPipeline {
 
         for damage_rect in damage {
             let d_rect: Rect =
-                Rect::new(damage_rect.x, damage_rect.y, damage_rect.w, damage_rect.h);
+                Rect::new(damage_rect.x(), damage_rect.y(), damage_rect.width(), damage_rect.height());
             let mut remaining: Vec<Rect> = vec![d_rect];
 
             for win in &ordered {

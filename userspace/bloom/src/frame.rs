@@ -7,7 +7,8 @@
 //! - `PresentStats`: Statistics returned from presentation
 //! - `AssetGeneration`: Monotonically increasing asset version
 
-use crate::damage::{Damage, Rect};
+use crate::damage::Damage;
+use crate::geometry::Rect;
 use crate::damage_accumulator::{DamageAccumulator, MAX_LOCAL_DAMAGE_RECTS};
 use crate::drawlist::{DrawCmd, DrawList};
 use core::cmp::Ordering;
@@ -125,9 +126,9 @@ impl PresentDamageSnapshot {
         slices.copy_from_slice(acc.as_slice());
         if self.len > 1 {
             slices.sort_by(|a, b| {
-                let ord = a.y.cmp(&b.y);
+                let ord = a.y().cmp(&b.y());
                 if ord == Ordering::Equal {
-                    a.x.cmp(&b.x)
+                    a.x().cmp(&b.x())
                 } else {
                     ord
                 }

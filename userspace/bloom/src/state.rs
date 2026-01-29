@@ -1,4 +1,4 @@
-use crate::damage::Rect;
+use crate::geometry::Rect;
 
 pub const MAX_OVERLAY_RECTS: usize = 256;
 pub const MAX_OVERLAY_RAW_RECTS: usize = 64;

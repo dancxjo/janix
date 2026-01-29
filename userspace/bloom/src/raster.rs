@@ -1,9 +1,11 @@
 use crate::asset::Image;
-use crate::damage::{Damage, Rect as DamageRect};
+use crate::damage::Damage;
+use crate::geometry::Rect;
+type DamageRect = Rect;
 use crate::drawlist::DrawList;
 use crate::font_client;
 use crate::font_graph::{self, FontStyle};
-use crate::isa::{BlendMode, Color, EdgeAA, FilterMode, Rect, Transform2D};
+use crate::isa::{BlendMode, Color, EdgeAA, FilterMode, Transform2D};
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use alloc::vec;
@@ -101,7 +103,7 @@ pub fn execute_lowered_with_damage(
         let d = dr[i];
         crate::trace_span!("raster.rect.total");
         let mut ctx = RasterContext::new(surface, solid_text);
-        ctx.current_clip = Rect::new(d.x, d.y, d.w, d.h);
+        ctx.current_clip = Rect::new(d.x(), d.y(), d.width(), d.height());
         execute_lowered_on_context(&mut ctx, lowered);
     }
 }

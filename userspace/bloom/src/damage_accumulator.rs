@@ -1,4 +1,4 @@
-use crate::damage::Rect;
+use crate::geometry::Rect;
 
 pub const MAX_LOCAL_DAMAGE_RECTS: usize = 256;
 const MERGE_FUZZ_MARGIN: i32 = 2;

@@ -91,7 +91,7 @@ fn clear_surface(surface: &mut surface::Surface, color: u32) {
 
 fn clear_damage(surface: &mut surface::Surface, damage: &crate::damage::Damage, color: u32) {
     for rect in damage.iter() {
-        raster::fill_rect_copy(surface, rect.x, rect.y, rect.w, rect.h, color);
+        raster::fill_rect_copy(surface, rect.x(), rect.y(), rect.width(), rect.height(), color);
     }
 }
 
@@ -839,7 +839,7 @@ fn main(arg: usize) -> ! {
         };
 
         // Damage Tracking (cursor fallback handling)
-        let bounds = damage::Rect::full(screen_w, screen_h);
+        let bounds = crate::geometry::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
         for rect in &paint_result.damage {
             damage.add_rect(*rect);
@@ -863,7 +863,7 @@ fn main(arg: usize) -> ! {
 
                 if cursor_moved || cursor_changed {
                     let (cw, ch) = (snapshot.image.width as i32, snapshot.image.height as i32);
-                    let old_rect = damage::Rect::new(
+                    let old_rect = crate::geometry::Rect::new(
                         prev_cursor_x - snapshot.hotspot_x,
                         prev_cursor_y - snapshot.hotspot_y,
                         cw,
@@ -871,7 +871,7 @@ fn main(arg: usize) -> ! {
                     )
                     .expand(2)
                     .clip(bounds);
-                    let new_rect = damage::Rect::new(
+                    let new_rect = crate::geometry::Rect::new(
                         cursor.x - snapshot.hotspot_x,
                         cursor.y - snapshot.hotspot_y,
                         cw,
@@ -892,10 +892,10 @@ fn main(arg: usize) -> ! {
             } else {
                 // Asset known but snapshot not ready: use crosshair damage
                 if cursor_moved {
-                    let old_rect = damage::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
+                    let old_rect = crate::geometry::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
                         .expand(2)
                         .clip(bounds);
-                    let new_rect = damage::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
+                    let new_rect = crate::geometry::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
                         .expand(2)
                         .clip(bounds);
                     if !old_rect.is_empty() {
@@ -911,10 +911,10 @@ fn main(arg: usize) -> ! {
         } else {
             // No asset: use crosshair damage
             if cursor_moved {
-                let old_rect = damage::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
+                let old_rect = crate::geometry::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
                     .expand(2)
                     .clip(bounds);
-                let new_rect = damage::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
+                let new_rect = crate::geometry::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
                     .expand(2)
                     .clip(bounds);
                 if !old_rect.is_empty() {
@@ -1094,13 +1094,13 @@ fn append_damage_overlay(
     }
 }
 
-fn draw_rect_outline(list: &mut drawlist::DrawList, rect: crate::damage::Rect, color: u32) {
-    if rect.w <= 0 || rect.h <= 0 {
+fn draw_rect_outline(list: &mut drawlist::DrawList, rect: crate::geometry::Rect, color: u32) {
+    if rect.width() <= 0 || rect.height() <= 0 {
         return;
     }
     let c = crate::geometry::Color::from_u32(color);
-    list.rect(rect.x, rect.y, rect.w, 1, c);
-    list.rect(rect.x, rect.y + rect.h - 1, rect.w, 1, c);
-    list.rect(rect.x, rect.y, 1, rect.h, c);
-    list.rect(rect.x + rect.w - 1, rect.y, 1, rect.h, c);
+    list.rect(rect.x(), rect.y(), rect.width(), 1, c);
+    list.rect(rect.x(), rect.y() + rect.height() - 1, rect.width(), 1, c);
+    list.rect(rect.x(), rect.y(), 1, rect.height(), c);
+    list.rect(rect.x() + rect.width() - 1, rect.y(), 1, rect.height(), c);
 }

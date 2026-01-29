@@ -23,6 +23,7 @@ pub mod perf;
 pub mod petals;
 pub mod root_watch;
 pub mod rt;
+pub mod simd;
 pub mod stack;
 pub mod syscall;
 pub mod thread;

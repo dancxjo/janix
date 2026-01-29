@@ -98,7 +98,9 @@ mod tests {
 
         for &mask in &mask_values {
             for &alpha in &alpha_values {
-                let color = (alpha as u32) << 24 | 0x80_40_20; // premul color
+                // Note: color is not properly premultiplied in all cases (RGB > alpha)
+                // This tests robustness with malformed input
+                let color = (alpha as u32) << 24 | 0x80_40_20;
                 let mut dst = vec![0xFF_C0_80_40u32; 8];
                 let mask_buf = vec![mask; 8];
 

@@ -49,11 +49,18 @@ pub fn blit_rgba8888_over_scalar(dst: &mut [u32], src: &[u32]) {
 ///
 /// Math contract (canonical):
 /// - All inputs/outputs are premultiplied RGBA8888
-/// - Coverage mask modulates the color's alpha: `color_a' = (color_a * mask + 127) / 255`
-/// - RGB channels are modulated: `color_rgb' = (color_rgb * mask + 127) / 255`
-/// - Over operator: `dst = color' + dst * (1 - color_a')`
-/// - Rounding uses `(t + 1 + (t >> 8)) >> 8` for the over blend
+/// - Coverage mask modulates the color's alpha and RGB channels
+/// - Modulation uses: `result = (channel * mask * 1 + (channel * mask >> 8)) >> 8`
+///   This is a fast approximation of `(channel * mask) / 255` with exact rounding
+/// - After modulation, applies over operator: `dst = color' + dst * (1 - color_a')`
+/// - Over blend also uses `(t + 1 + (t >> 8)) >> 8` rounding
 /// - Mask values: 0 = no change, 255 = full color, intermediate = proportional blend
+///
+/// # Safety
+/// Caller must ensure:
+/// - `dst.len() >= dst_stride * rect_h`
+/// - `mask.len() >= mask_stride * rect_h`
+/// - `dst_stride >= rect_w` and `mask_stride >= rect_w`
 pub fn composite_solid_masked_over_scalar(
     dst: &mut [u32],
     dst_stride: usize,
@@ -63,6 +70,10 @@ pub fn composite_solid_masked_over_scalar(
     rect_h: usize,
     color_premul: u32,
 ) {
+    debug_assert!(dst.len() >= dst_stride * rect_h, "dst buffer too small");
+    debug_assert!(mask.len() >= mask_stride * rect_h, "mask buffer too small");
+    debug_assert!(dst_stride >= rect_w, "dst_stride < rect_w");
+    debug_assert!(mask_stride >= rect_w, "mask_stride < rect_w");
     let ca = ((color_premul >> 24) & 0xFF) as u8;
     let cr = ((color_premul >> 16) & 0xFF) as u8;
     let cg = ((color_premul >> 8) & 0xFF) as u8;
@@ -108,10 +119,18 @@ pub fn composite_solid_masked_over_scalar(
 ///
 /// Math contract (canonical):
 /// - All inputs/outputs are premultiplied RGBA8888
-/// - Mask modulates source alpha: `src_a' = (src_a * mask + 127) / 255`
-/// - Mask modulates source RGB: `src_rgb' = (src_rgb * mask + 127) / 255`
-/// - Over operator: `dst = src' + dst * (1 - src_a')`
-/// - Rounding uses `(t + 1 + (t >> 8)) >> 8` for the over blend
+/// - Mask modulates source alpha and RGB channels
+/// - Modulation uses: `result = (channel * mask * 1 + (channel * mask >> 8)) >> 8`
+///   This is a fast approximation of `(channel * mask) / 255` with exact rounding
+/// - After modulation, applies over operator: `dst = src' + dst * (1 - src_a')`
+/// - Over blend also uses `(t + 1 + (t >> 8)) >> 8` rounding
+///
+/// # Safety
+/// Caller must ensure:
+/// - `dst.len() >= dst_stride * rect_h`
+/// - `src.len() >= src_stride * rect_h`
+/// - `mask.len() >= mask_stride * rect_h`
+/// - `dst_stride >= rect_w`, `src_stride >= rect_w`, `mask_stride >= rect_w`
 pub fn composite_src_masked_over_scalar(
     dst: &mut [u32],
     dst_stride: usize,
@@ -122,6 +141,12 @@ pub fn composite_src_masked_over_scalar(
     rect_w: usize,
     rect_h: usize,
 ) {
+    debug_assert!(dst.len() >= dst_stride * rect_h, "dst buffer too small");
+    debug_assert!(src.len() >= src_stride * rect_h, "src buffer too small");
+    debug_assert!(mask.len() >= mask_stride * rect_h, "mask buffer too small");
+    debug_assert!(dst_stride >= rect_w, "dst_stride < rect_w");
+    debug_assert!(src_stride >= rect_w, "src_stride < rect_w");
+    debug_assert!(mask_stride >= rect_w, "mask_stride < rect_w");
     for y in 0..rect_h {
         let dst_row = &mut dst[y * dst_stride..];
         let src_row = &src[y * src_stride..];

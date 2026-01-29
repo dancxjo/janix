@@ -51,17 +51,21 @@ use ttf_parser::Face;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("INGESTD: Starting continuous asset watcher service (assetd)...");
+    info!("INGESTD: Starting unified content provider service...");
 
-    // 1. Initial scan of boot modules to seed canonical assets
+    // 1. Create ContentSource for Limine modules
+    info!("INGESTD: Initializing Limine module content source...");
+    let limine_source = initialize_limine_content_source();
+
+    // 2. Initial scan of boot modules to seed canonical assets
     info!("INGESTD: Performing initial boot module scan...");
     scan_boot_modules();
 
-    // 2. Seed system assets
+    // 3. Seed system assets
     info!("INGESTD: Seeding system assets (reactive)...");
     seed_system_assets();
 
-    // 3. Open watches for new boot modules and asset requests
+    // 4. Open watches for new boot modules and asset requests
     // This ensures continuous monitoring of asset sources
     let boot_module_pred = intern(kinds::BOOT_MODULE).unwrap_or(0);
     let asset_request_pred = intern(kinds::ASSET_REQUEST).unwrap_or(0);
@@ -99,7 +103,7 @@ fn main(_arg: usize) -> ! {
             match syscall::root_watch_next(watch_ids[i], &mut watch_seqs[i], &mut watch_bufs[i]) {
                 Ok(len) if len > 0 => {
                     any_activity = true;
-                    process_events(&watch_bufs[i][..len]);
+                    process_events(&watch_bufs[i][..len], limine_source);
                 }
                 _ => {}
             }
@@ -107,6 +111,49 @@ fn main(_arg: usize) -> ! {
 
         if !any_activity {
             stem::sleep_ms(100);
+        }
+    }
+}
+
+/// Initialize the Limine module ContentSource node.
+fn initialize_limine_content_source() -> ThingId {
+    // Check if ContentSource already exists
+    let mut sources = [ThingId::default(); 16];
+    if let Ok(count) = find(kinds::CONTENT_SOURCE, &mut sources) {
+        for &source_id in &sources[..count] {
+            let kind_sym = prop_get(source_id, keys::CONTENT_SOURCE_KIND).unwrap_or(0);
+            if kind_sym != 0 {
+                let mut buf = [0u8; 64];
+                if let Ok(len) = stem::thing::sys::describe_symbol(kind_sym as u32, &mut buf) {
+                    let kind_str = core::str::from_utf8(&buf[..len]).unwrap_or("");
+                    if kind_str == "limine_module" {
+                        info!("INGESTD: Found existing Limine ContentSource");
+                        return source_id;
+                    }
+                }
+            }
+        }
+    }
+
+    // Create new ContentSource for Limine modules
+    match create_node(kinds::CONTENT_SOURCE) {
+        Ok(source_id) => {
+            let kind_sym = intern("limine_module").unwrap_or(0);
+            let name_sym = intern("boot").unwrap_or(0);
+            let state_sym = intern("ready").unwrap_or(0);
+            
+            let _ = prop_set(source_id, keys::CONTENT_SOURCE_KIND, kind_sym as u64);
+            let _ = prop_set(source_id, keys::CONTENT_SOURCE_NAME, name_sym as u64);
+            let _ = prop_set(source_id, keys::CONTENT_SOURCE_PRIORITY, 100u64); // Default priority
+            let _ = prop_set(source_id, keys::CONTENT_SOURCE_STATE, state_sym as u64);
+            let _ = prop_set(source_id, keys::CONTENT_SOURCE_GEN, 1u64);
+            
+            info!("INGESTD: Created Limine ContentSource node");
+            source_id
+        }
+        Err(_) => {
+            info!("INGESTD: Failed to create ContentSource, using default");
+            ThingId::default()
         }
     }
 }
@@ -120,7 +167,7 @@ fn scan_boot_modules() {
     }
 }
 
-fn process_events(buf: &[u8]) {
+fn process_events(buf: &[u8], _source_id: ThingId) {
     let mut cursor = 0;
     while cursor < buf.len() {
         if let Ok((header, value)) = abi::watch::decode_event(&buf[cursor..]) {
@@ -232,6 +279,36 @@ fn ingest_boot_module(mod_id: ThingId) {
     };
 
     let asset_id = publish_asset(mod_name, kind, bs_id, "boot", size, hash);
+    
+    // Also create a File node in the content graph for unified access
+    let mut sources = [ThingId::default(); 16];
+    if let Ok(count) = find(kinds::CONTENT_SOURCE, &mut sources) {
+        for &source_id in &sources[..count] {
+            let kind_sym = prop_get(source_id, keys::CONTENT_SOURCE_KIND).unwrap_or(0);
+            if kind_sym != 0 {
+                let mut buf = [0u8; 64];
+                if let Ok(len) = stem::thing::sys::describe_symbol(kind_sym as u32, &mut buf) {
+                    let kind_str = core::str::from_utf8(&buf[..len]).unwrap_or("");
+                    if kind_str == "limine_module" {
+                        // Determine MIME type from kind and extension
+                        let mime = if kind == "font" {
+                            Some("application/font-sfnt")
+                        } else if kind == "svg" {
+                            Some("image/svg+xml")
+                        } else if kind == "image" {
+                            Some("image/bmp")
+                        } else {
+                            None
+                        };
+                        
+                        let _ = publish_content_file(source_id, mod_name, mod_name, bs_id, size, hash, mime);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+    
     if mod_name.contains("fonts") || mod_name.ends_with(".ttf") {
         info!(
             "INGESTD: Font debug - name='{}' kind='{}' guess={:?} first4={:02x?}",
@@ -460,6 +537,64 @@ fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str, size: usi
             asset_id
         } else {
             ThingId::default()
+        }
+    }
+}
+
+/// Create or update a File node in the content graph.
+/// This provides a unified file abstraction across all content sources.
+fn publish_content_file(
+    source_id: ThingId,
+    _path: &str,
+    name: &str,
+    bs_id: ThingId,
+    size: usize,
+    hash: u64,
+    mime: Option<&str>,
+) -> Option<ThingId> {
+    // Check if file already exists with same source and name
+    let mut files = [ThingId::default(); 512];
+    if let Ok(count) = find(kinds::CONTENT_FILE, &mut files) {
+        let name_sym = intern(name).unwrap_or(0) as u64;
+        for &file_id in &files[..count] {
+            let existing_name = prop_get(file_id, keys::FILE_NAME).unwrap_or(0);
+            let existing_source = prop_get(file_id, keys::FILE_SOURCE).unwrap_or(0);
+            
+            if existing_name == name_sym && existing_source == source_id.to_u64_lossy() {
+                // Update existing file
+                let old_hash = prop_get(file_id, keys::FILE_HASH).unwrap_or(0);
+                if old_hash != hash {
+                    let _ = prop_set(file_id, keys::FILE_BYTESPACE, bs_id.to_u64_lossy());
+                    let _ = prop_set(file_id, keys::FILE_HASH, hash);
+                    let _ = prop_set(file_id, keys::FILE_SIZE, size as u64);
+                }
+                return Some(file_id);
+            }
+        }
+    }
+
+    // Create new file node
+    match create_node(kinds::CONTENT_FILE) {
+        Ok(file_id) => {
+            let name_sym = intern(name).unwrap_or(0) as u64;
+            let _ = prop_set(file_id, keys::FILE_NAME, name_sym);
+            let _ = prop_set(file_id, keys::FILE_SIZE, size as u64);
+            let _ = prop_set(file_id, keys::FILE_HASH, hash);
+            let _ = prop_set(file_id, keys::FILE_BYTESPACE, bs_id.to_u64_lossy());
+            let _ = prop_set(file_id, keys::FILE_SOURCE, source_id.to_u64_lossy());
+            
+            if let Some(mime_str) = mime {
+                if let Ok(mime_sym) = intern(mime_str) {
+                    let _ = prop_set(file_id, keys::FILE_MIME, mime_sym as u64);
+                }
+            }
+            
+            info!("INGESTD: Created File node '{}' ({} bytes, hash={:016x})", name, size, hash);
+            Some(file_id)
+        }
+        Err(_) => {
+            info!("INGESTD: Failed to create File node for '{}'", name);
+            None
         }
     }
 }

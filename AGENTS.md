@@ -11,6 +11,7 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 - Run QEMU: `just run`
 - Run BDD tests: `just behave` (see `tools/bdd`)
 - Clean: `just clean`
+- Audit platform boundary: `python3 scripts/audit_platform_boundary.py`
 
 ## Top-level layout (what's what)
 - `abi/`: shared ABI types and syscalls between kernel/userspace.
@@ -31,6 +32,21 @@ This file is a quick map of the repository so agents (and humans) can orient fas
 - Syscall surface: `abi/src/syscall.rs`
 - User apps: `userspace/`
 - Build/config: `justfile`, `xtask/`, `targets/`
+
+## Platform Layer Contract ("stem is our std")
+
+**Thing-OS does not use Rust's `std`**. Instead:
+
+- Kernel and userspace use `core` + `alloc` + `stem`
+- Platform capabilities are explicit in `stem::pal` (Platform Abstraction Layer)
+- Build tools (`xtask`, `tools/*`) can use `std` (they run at compile-time only)
+
+**Key rules:**
+- All kernel/userspace crates MUST have `#![no_std]`
+- Platform primitives go in `stem::pal` (log, clock, abort, alloc)
+- Run `python3 scripts/audit_platform_boundary.py` to verify compliance
+
+**See `docs/platform.md` for the complete platform layer contract.**
 
 ## Notes
 - Workspace members are listed in `Cargo.toml`.

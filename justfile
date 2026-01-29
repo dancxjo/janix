@@ -17,6 +17,10 @@ default: iso
 check-ui-split:
     ./scripts/ci_check_ui_split.sh
 
+# Audit platform boundary (verify no_std compliance)
+audit-platform:
+    python3 scripts/audit_platform_boundary.py
+
 # Alias for iso
 build arch=karch:
     @just iso {{arch}}

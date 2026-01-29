@@ -1,5 +1,5 @@
 #[cfg(all(not(test), any(target_os = "none", target_os = "thingos")))]
-use crate::syscall::{debug_write, exit};
+use crate::pal;
 #[cfg(all(not(test), any(target_os = "none", target_os = "thingos")))]
 use core::panic::PanicInfo;
 
@@ -30,9 +30,8 @@ fn panic(info: &PanicInfo) -> ! {
         len: 0,
     };
     let _ = core::fmt::write(&mut writer, format_args!("STEM PANIC: {}\n", info));
-    let _ = debug_write(
+    pal::abort::debug_write_str(
         core::str::from_utf8(&writer.buf[..writer.len]).unwrap_or("STEM PANIC\n"),
-        writer.len,
     );
-    exit(101)
+    pal::abort::abort(101)
 }

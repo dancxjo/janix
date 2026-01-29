@@ -1,6 +1,24 @@
 #![no_std]
 #![no_main]
 
+//! # Font Explorer
+//!
+//! A system utility for browsing available fonts in Thing-OS.
+//!
+//! ## Architecture Compliance
+//!
+//! This application follows the UI Intent Contract (see `docs/UI_INTENT_CONTRACT.md`):
+//! - Uses Petals builder API to declare UI intent (Scene, Window, Flex, Text, etc.)
+//! - Publishes intent via `stem::petals::publish_window()`
+//! - Does NOT perform layout calculations or paint operations
+//! - Does NOT import from blossom::layout or blossom::emit_paint
+//!
+//! The app only:
+//! 1. Queries fonts from the graph
+//! 2. Builds a declarative UI tree using Petals
+//! 3. Publishes the tree to the graph
+//! 4. Lets Blossom handle all layout and painting
+
 extern crate alloc;
 
 use abi::root::RootWatchFilter;

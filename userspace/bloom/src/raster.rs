@@ -11,10 +11,62 @@ use crate::surface::Surface;
 use alloc::vec;
 use alloc::vec::Vec;
 use fontdue::layout::GlyphRasterConfig;
+
 use stem::thing::{HandleId, ThingId};
+use alloc::collections::BTreeMap;
+
+struct MappedBytespace {
+    ptr: *mut u8,
+    len: usize,
+}
+
+struct BytespaceMapCache {
+    entries: BTreeMap<ThingId, MappedBytespace>,
+}
+
+impl BytespaceMapCache {
+    fn new() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
+    fn get_or_map(&mut self, bs: ThingId, stride: u32, height: u32) -> Option<*mut u8> {
+        if let Some(entry) = self.entries.get(&bs) {
+            return Some(entry.ptr);
+        }
+
+        let start = stem::monotonic_ns();
+        match stem::thing::sys::bytespace_map(bs) {
+            Ok(ptr) => {
+                let dt = stem::monotonic_ns().saturating_sub(start);
+                crate::trace_counter!("raster.bytespace_map.count", 1);
+                crate::trace_counter!("raster.bytespace_map.ns_total", dt);
+
+                let len = (stride * height) as usize;
+                self.entries.insert(bs, MappedBytespace {
+                    ptr: ptr as *mut u8,
+                    len,
+                });
+                Some(ptr as *mut u8)
+            }
+            Err(_) => None,
+        }
+    }
+}
+
+impl Drop for BytespaceMapCache {
+    fn drop(&mut self) {
+        for (bs, entry) in self.entries.iter() {
+            let _ = stem::thing::sys::bytespace_unmap(*bs, entry.ptr);
+            crate::trace_counter!("raster.bytespace_unmap.count", 1);
+        }
+    }
+}
 
 struct RasterContext<'a> {
     surface: &'a mut Surface,
+    cache: &'a mut BytespaceMapCache,
     clip_stack: Vec<Rect>,
     transform_stack: Vec<Transform2D>,
     current_clip: Rect,
@@ -23,10 +75,11 @@ struct RasterContext<'a> {
 }
 
 impl<'a> RasterContext<'a> {
-    fn new(surface: &'a mut Surface, solid_text: bool) -> Self {
+    fn new(surface: &'a mut Surface, cache: &'a mut BytespaceMapCache, solid_text: bool) -> Self {
         let fr = Rect::new(0, 0, surface.width(), surface.height());
         Self {
             surface,
+            cache,
             clip_stack: Vec::with_capacity(4),
             transform_stack: Vec::with_capacity(4),
             current_clip: fr,
@@ -64,7 +117,9 @@ pub fn execute(surface: &mut Surface, list: &DrawList, solid_text: bool) {
         crate::trace_span!("raster.lower");
         lower(list)
     };
-    let mut ctx = RasterContext::new(surface, solid_text);
+
+    let mut cache = BytespaceMapCache::new();
+    let mut ctx = RasterContext::new(surface, &mut cache, solid_text);
     execute_lowered_on_context(&mut ctx, &lowered);
 }
 
@@ -99,10 +154,11 @@ pub fn execute_lowered_with_damage(
             count += 1;
         }
     }
+    let mut cache = BytespaceMapCache::new();
     for i in 0..count {
         let d = dr[i];
         crate::trace_span!("raster.rect.total");
-        let mut ctx = RasterContext::new(surface, solid_text);
+        let mut ctx = RasterContext::new(surface, &mut cache, solid_text);
         ctx.current_clip = Rect::new(d.x(), d.y(), d.width(), d.height());
         execute_lowered_on_context(&mut ctx, lowered);
     }
@@ -162,17 +218,12 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
                 crate::trace_counter!("raster.ops.blit_snap", 1);
                 let td = ctx.current_transform.transform_rect(*dst);
                 if let Some(cd) = ctx.current_clip.intersection(&td) {
-                    if let Ok(ptr) =
-                        stem::thing::sys::bytespace_map(stem::thing::ThingId::from_u64(*bs_id))
-                    {
+                    let bs = ThingId::from_u64(*bs_id);
+                    if let Some(ptr) = ctx.cache.get_or_map(bs, *stride, *height) {
                         let len = (*stride * *height) as usize;
                         let src_surf =
                             unsafe { Surface::new(ptr as *mut u8, len, *width, *height, *stride) };
                         blit_surface(ctx.surface, &src_surf, src, &td, &cd);
-                        let _ = stem::thing::sys::bytespace_unmap(
-                            stem::thing::ThingId::from_u64(*bs_id),
-                            ptr,
-                        );
                     }
                 }
             }

@@ -477,7 +477,7 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
     let mut drag_state: Option<DragState> = None;
-    let mut drag_state: Option<DragState> = None;
+
     let mut debug_flags = DebugFlags::default();
     let mut overlay_state = DamageOverlayState::default();
 

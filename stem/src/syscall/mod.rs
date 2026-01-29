@@ -189,6 +189,13 @@ pub fn trace_read(buf: &mut [abi::trace::TraceEvent]) -> Result<usize, Errno> {
     Ok(ret)
 }
 
+/// Disable the boot console (call when compositor takes over framebuffer)
+pub fn console_disable() {
+    unsafe {
+        raw_syscall6(SYS_CONSOLE_DISABLE, 0, 0, 0, 0, 0, 0);
+    }
+}
+
 // Device MMIO and DMA syscalls
 
 /// Claim a device from the device registry

@@ -24,7 +24,7 @@ members = [
     "userspace/ata_disk",
     "userspace/disk_probe",
     "userspace/ahci_disk",
-    "tools/pciids", "userspace/ingestd",
+    "tools/pciids",
     "userspace/cambium",
     "userspace/tick_printer",
     "userspace/hogger",
@@ -33,9 +33,13 @@ members = [
     "userspace/root_watch_tester",
     "userspace/scheduler_fairness",
     "userspace/photosynthesis",
+    "userspace/ingestd",
+    "userspace/cambium",
     "userspace/fontd",
     "userspace/blossom",
     "userspace/drawlist_demo",
+    "userspace/iso9660",
+    "userspace/iso_reader",
     "tools/display_proto_tests",
 ]
 resolver = "2"

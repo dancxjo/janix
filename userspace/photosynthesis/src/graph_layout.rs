@@ -1,6 +1,5 @@
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::vec::Vec;
-use core::cmp::Ordering;
 use stem::thing::ThingId;
 
 #[derive(Clone, Debug)]
@@ -23,30 +22,91 @@ pub struct LayoutEdge {
 
 #[derive(Clone, Debug)]
 pub struct LayoutSettings {
-    pub rank_spacing: f32,
-    pub node_spacing: f32,
-    pub rank_padding: f32,
-    pub damping: f32,
-    pub max_iterations: usize,
+    pub grid_w: f32,
+    pub grid_h: f32,
+    pub rank_separation: f32, // Vertical distance between ranks (grid units usually)
+    pub node_separation: f32, // Horizontal distance between nodes
 }
 
 impl Default for LayoutSettings {
     fn default() -> Self {
         Self {
-            rank_spacing: 120.0,
-            node_spacing: 150.0,
-            rank_padding: 20.0,
-            damping: 0.5,
-            max_iterations: 2,
+            grid_w: 160.0, // Cell width
+            grid_h: 120.0, // Cell height
+            rank_separation: 1.0,
+            node_separation: 1.0,
         }
     }
 }
 
-// Internal structures for graph traversal
-struct InternalNode {
-    neighbors_in: Vec<usize>,
-    neighbors_out: Vec<usize>,
-    connection_count: usize,
+// Helper to establish a stable ordering for the spiral
+fn bfs_ordering(nodes: &[LayoutNode], edges: &[LayoutEdge]) -> Vec<usize> {
+    let mut adj: BTreeMap<ThingId, Vec<ThingId>> = BTreeMap::new();
+    let mut id_to_idx = BTreeMap::new();
+
+    for (i, node) in nodes.iter().enumerate() {
+        id_to_idx.insert(node.id, i);
+        adj.entry(node.id).or_default();
+    }
+
+    for edge in edges {
+        adj.entry(edge.from).or_default().push(edge.to);
+        adj.entry(edge.to).or_default().push(edge.from); // Undirected for proximity
+    }
+
+    // Find root: standard approach is 0-indegree, but for a general "center" of a cluster,
+    // we might just pick the node with the most connections?
+    // Or just picking index 0 as fallback.
+    // The prompt says "center the root element".
+    // Let's look for a node with no incoming edges (true root).
+    let mut in_degrees = BTreeMap::new();
+    for edge in edges {
+        *in_degrees.entry(edge.to).or_insert(0) += 1;
+    }
+
+    // Candidates with 0 in-degree
+    let mut root_idx = 0;
+    for (i, node) in nodes.iter().enumerate() {
+        if *in_degrees.get(&node.id).unwrap_or(&0) == 0 {
+            root_idx = i;
+            break;
+        }
+    }
+
+    let mut visited = BTreeMap::new();
+    let mut queue = VecDeque::new();
+    let mut order = Vec::new();
+
+    visited.insert(nodes[root_idx].id, true);
+    queue.push_back(nodes[root_idx].id);
+    order.push(root_idx);
+
+    while let Some(u_id) = queue.pop_front() {
+        if let Some(neighbors) = adj.get(&u_id) {
+            // Sort neighbors for deterministic behavior
+            let mut neighbors = neighbors.clone();
+            neighbors.sort();
+
+            for &v_id in &neighbors {
+                if !visited.contains_key(&v_id) {
+                    visited.insert(v_id, true);
+                    if let Some(&idx) = id_to_idx.get(&v_id) {
+                        order.push(idx);
+                        queue.push_back(v_id);
+                    }
+                }
+            }
+        }
+    }
+
+    // Add any disconnected components
+    for i in 0..nodes.len() {
+        if !visited.contains_key(&nodes[i].id) {
+            order.push(i);
+        }
+    }
+
+    order
 }
 
 pub fn compute_layout(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: &LayoutSettings) {
@@ -54,272 +114,72 @@ pub fn compute_layout(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: 
         return;
     }
 
-    // 1. Build index map
-    let mut id_map = BTreeMap::new();
-    let mut internal_nodes = Vec::with_capacity(nodes.len());
+    // 1. Determine Order (BFS from Root)
+    let order = bfs_ordering(nodes, edges);
 
-    for (i, node) in nodes.iter().enumerate() {
-        id_map.insert(node.id, i);
-        internal_nodes.push(InternalNode {
-            neighbors_in: Vec::new(),
-            neighbors_out: Vec::new(),
-            connection_count: 0,
-        });
-    }
+    // 2. Spiral Placement
+    // Formula:
+    // r = c * sqrt(n)
+    // theta = n * divergence_angle (Golden Angle is approx 2.39996 radians)
 
-    // 2. Build graph topology
-    for edge in edges {
-        if let (Some(&src_idx), Some(&tgt_idx)) = (id_map.get(&edge.from), id_map.get(&edge.to)) {
-            internal_nodes[src_idx].neighbors_out.push(tgt_idx);
-            internal_nodes[src_idx].connection_count += 1;
+    // Constants
+    // Use grid_w as base stride.
+    let c = settings.grid_w * 1.2;
 
-            internal_nodes[tgt_idx].neighbors_in.push(src_idx);
-            internal_nodes[tgt_idx].connection_count += 1;
-        }
-    }
+    // We want the root at the visual center of the likely 800x600 window.
+    let center_x = 400.0;
+    let center_y = 300.0;
 
-    // 3. Assign Ranks (Phase 1)
-    assign_ranks(nodes, &internal_nodes);
-
-    // 4. Initial Placement
-    initial_placement(nodes, &internal_nodes, settings);
-
-    // 5. Collision Resolution (Phase 2)
-    resolve_collisions(nodes, settings);
-
-    // 6. Refinement (Phase 3)
-    for _ in 0..settings.max_iterations {
-        refine_edges(nodes, &internal_nodes, settings);
-        resolve_collisions(nodes, settings);
-    }
-}
-
-fn assign_ranks(nodes: &mut [LayoutNode], internal: &[InternalNode]) {
-    // Collect roots
-    let mut queue = VecDeque::new();
-
-    // Reset ranks for non-fixed nodes
-    for node in nodes.iter_mut() {
-        if !node.fixed {
-            node.rank = -1;
-        }
-    }
-
-    // Initialize queue with sources (in-degree 0) or explicit roots
-    for (i, internal_node) in internal.iter().enumerate() {
-        if internal_node.neighbors_in.is_empty() {
-            if nodes[i].rank == -1 {
-                nodes[i].rank = 0;
-            }
-            queue.push_back(i);
-        } else if nodes[i].rank == 0 {
-            // Forced root
-            queue.push_back(i);
-        }
-    }
-
-    // If queue is empty (cyclic graph with no roots), pick the first node
-    if queue.is_empty() && !nodes.is_empty() {
-        if nodes[0].rank == -1 {
-            nodes[0].rank = 0;
-        }
-        queue.push_back(0);
-    }
-
-    // Longest Path Layering
-    let max_passes = nodes.len() * 2;
-    let mut passes = 0;
-
-    let mut changed = true;
-    while changed && passes < max_passes {
-        changed = false;
-        passes += 1;
-
-        for i in 0..nodes.len() {
-            let u_rank = nodes[i].rank;
-            if u_rank == -1 {
-                continue;
-            }
-
-            for &v_idx in &internal[i].neighbors_out {
-                if nodes[v_idx].fixed {
-                    continue;
-                }
-
-                if nodes[v_idx].rank < u_rank + 1 {
-                    nodes[v_idx].rank = u_rank + 1;
-                    changed = true;
-                }
-            }
-        }
-    }
-
-    // Ensure everyone has a rank
-    for node in nodes.iter_mut() {
-        if node.rank == -1 {
-            node.rank = 0;
-        }
-    }
-}
-
-fn initial_placement(
-    nodes: &mut [LayoutNode],
-    internal: &[InternalNode],
-    settings: &LayoutSettings,
-) {
-    // Group by rank
-    let mut layers: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
-    for (i, node) in nodes.iter().enumerate() {
-        layers.entry(node.rank).or_default().push(i);
-    }
-
-    for (rank, indices) in &mut layers {
-        let rank_y = (*rank as f32) * settings.rank_spacing + 50.0;
-
-        // Sort indices based on connection count / stability
-        indices.sort_by(|&a, &b| {
-            let nc_a = internal[a].connection_count;
-            let nc_b = internal[b].connection_count;
-            let res = nc_b.cmp(&nc_a); // descending
-            if res != Ordering::Equal {
-                return res;
-            }
-            nodes[a].id.cmp(&nodes[b].id) // stable tie-breaker
-        });
-
-        let mut current_x = 50.0;
-        for &idx in indices.iter() {
-            let node = &mut nodes[idx];
-            if !node.fixed {
-                node.y = rank_y;
-                node.x = current_x;
-                current_x += node.w + settings.node_spacing;
-            } else {
-                if node.x + node.w > current_x {
-                    current_x = node.x + node.w + settings.node_spacing;
-                }
-            }
-        }
-    }
-}
-
-fn resolve_collisions(nodes: &mut [LayoutNode], settings: &LayoutSettings) {
-    let mut layers: BTreeMap<i32, Vec<usize>> = BTreeMap::new();
-    for (i, node) in nodes.iter().enumerate() {
-        layers.entry(node.rank).or_default().push(i);
-    }
-
-    for (_, indices) in &mut layers {
-        // Sort by X
-        indices.sort_by(|&a, &b| {
-            nodes[a]
-                .x
-                .partial_cmp(&nodes[b].x)
-                .unwrap_or(Ordering::Equal)
-        });
-
-        // Sweep left-to-right
-        for i in 1..indices.len() {
-            let left_idx = indices[i - 1];
-            let curr_idx = indices[i];
-
-            let left_right_edge = nodes[left_idx].x + nodes[left_idx].w + settings.rank_padding;
-
-            if nodes[curr_idx].x < left_right_edge {
-                if !nodes[curr_idx].fixed {
-                    nodes[curr_idx].x = left_right_edge;
-                }
-            }
-        }
-    }
-}
-
-fn refine_edges(nodes: &mut [LayoutNode], internal: &[InternalNode], settings: &LayoutSettings) {
-    let max_move = 50.0;
-
-    let mut moves = Vec::with_capacity(nodes.len());
-
-    for (i, node) in nodes.iter().enumerate() {
-        if node.fixed {
-            moves.push(0.0);
+    for (i, &node_idx) in order.iter().enumerate() {
+        if i == 0 {
+            nodes[node_idx].x = center_x;
+            nodes[node_idx].y = center_y;
             continue;
         }
 
-        let mut sum_x = 0.0;
-        let mut count = 0;
+        // Using Vogel's model for phyllotaxis
+        let n = i as f32;
+        let theta = n * 2.3999632; // Golden angle in radians
+        let r = c * libm::sqrtf(n);
 
-        // Incoming neighbors
-        for &n_in in &internal[i].neighbors_in {
-            sum_x += nodes[n_in].x + (nodes[n_in].w / 2.0);
-            count += 1;
-        }
-
-        // Outgoing neighbors
-        for &n_out in &internal[i].neighbors_out {
-            sum_x += nodes[n_out].x + (nodes[n_out].w / 2.0);
-            count += 1;
-        }
-
-        if count > 0 {
-            let target_center = sum_x / (count as f32);
-            let current_center = node.x + (node.w / 2.0);
-            let delta = target_center - current_center;
-
-            let move_amt = delta * settings.damping;
-            moves.push(move_amt.clamp(-max_move, max_move));
-        } else {
-            moves.push(0.0);
-        }
-    }
-
-    // Apply moves
-    for (i, move_amt) in moves.iter().enumerate() {
-        if *move_amt != 0.0 {
-            nodes[i].x += *move_amt;
-        }
+        nodes[node_idx].x = center_x + r * libm::cosf(theta);
+        nodes[node_idx].y = center_y + r * libm::sinf(theta);
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use abi::types::HandleId;
-
-    #[test]
-    fn test_collision_resolution() {
-        let mut nodes = vec![
-            LayoutNode {
-                id: ThingId::from_u64(1),
-                x: 100.0,
-                y: 100.0,
-                w: 100.0,
-                h: 30.0,
-                fixed: false,
-                rank: 0,
-            },
-            LayoutNode {
-                id: ThingId::from_u64(2),
-                x: 110.0,
-                y: 100.0,
-                w: 100.0,
-                h: 30.0,
-                fixed: false,
-                rank: 0,
-            },
-        ];
-        let settings = LayoutSettings::default();
-        resolve_collisions(&mut nodes, &settings);
-
-        // Expected behavior: node 2 pushed to right of node 1 + padding
-        let n1_right = nodes[0].x + nodes[0].w;
-        // With x=100, w=100, right=200.
-        // n2 starts at 110.
-        // Should be pushed to 200 + 20 = 220.
-
-        assert!(
-            nodes[1].x >= 220.0,
-            "Node 2 was not pushed enough, x={}",
-            nodes[1].x
-        );
+pub fn route_edges(
+    nodes: &[LayoutNode],
+    edges: &[LayoutEdge],
+    _settings: &LayoutSettings,
+) -> BTreeMap<(ThingId, ThingId), Vec<(f32, f32)>> {
+    let mut routes = BTreeMap::new();
+    let mut id_map = BTreeMap::new();
+    for node in nodes {
+        id_map.insert(node.id, node);
     }
+
+    for edge in edges {
+        if let (Some(src), Some(tgt)) = (id_map.get(&edge.from), id_map.get(&edge.to)) {
+            // Direct line from Center to Center (or port to port)
+            // Existing painter uses center for nodes.
+            // Let's just give center points.
+            // The drawing code might want to clip to the rect?
+            // The current main.rs routing_algo_orthogonal calculated ports.
+            // Let's calculate simple ports: center-to-center intersection?
+            // Or just strict Center Center and let the painter handle occlusion (or just draw under).
+            // But main.rs draws arrowheads.
+            // Let's assume Center -> Center is fine for now, main.rs might just draw it.
+            // HOWEVER, main.rs orthogonal routing calculated specific ports (bottom center -> top center).
+            // For spiral, any angle is possible.
+            // Let's return Center -> Center.
+
+            let p1 = (src.x, src.y);
+            let p2 = (tgt.x, tgt.y);
+
+            routes.insert((edge.from, edge.to), alloc::vec![p1, p2]);
+        }
+    }
+    routes
 }
+
+// Unused legacy functions removed (assign_ranks, routing_algo_orthogonal, grid_placement)

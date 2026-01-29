@@ -11,19 +11,26 @@ use stem::{info, root_watch, syscall};
 
 pub static ASSETS: AssetBank = AssetBank::new();
 
-pub extern "C" fn wallpaper_loader_entry() -> ! {
-    stem::sleep_ms(50);
-    let candidates = [
-        "/assets/wallpapers/clouds.bmp",
-        "wallpapers/clouds.bmp",
-        "clouds.bmp",
-    ];
-    for path in candidates.iter() {
-        if ASSETS.probe_asset_exists(path) {
-            ASSETS.enqueue_wallpaper_load(path);
-            break;
-        }
+// Alias for main.rs compatibility - spawns all loaders then becomes font loader
+pub extern "C" fn asset_watcher_entry() -> ! {
+    info!("[bloom] asset_watcher_entry: spawning sub-loaders");
+    if let Err(e) = stem::thread::spawn(wallpaper_loader_entry) {
+        info!("[bloom] failed to spawn wallpaper loader: {:?}", e);
     }
+    if let Err(e) = stem::thread::spawn(cursor_loader_entry) {
+        info!("[bloom] failed to spawn cursor loader: {:?}", e);
+    }
+    if let Err(e) = stem::thread::spawn(icon_loader_entry) {
+        info!("[bloom] failed to spawn icon loader: {:?}", e);
+    }
+
+    font_loader_entry()
+}
+
+pub extern "C" fn wallpaper_loader_entry() -> ! {
+    stem::sleep_ms(100);
+    info!("[bloom] wallpaper loader: loading leather.bmp");
+    ASSETS.enqueue_wallpaper_load("leather.bmp");
     loop {
         stem::syscall::sleep_ms(10000);
     }
@@ -183,7 +190,8 @@ pub extern "C" fn font_loader_entry() -> ! {
 }
 
 pub extern "C" fn cursor_loader_entry() -> ! {
-    stem::sleep_ms(20);
+    stem::sleep_ms(100);
+    info!("[bloom] cursor loader: loading default cursor");
     ASSETS.enqueue_cursor_load("/assets/cursors/future/default.svg");
     loop {
         stem::syscall::sleep_ms(10000);
@@ -191,12 +199,14 @@ pub extern "C" fn cursor_loader_entry() -> ! {
 }
 
 pub extern "C" fn icon_loader_entry() -> ! {
-    stem::sleep_ms(10);
+    stem::sleep_ms(100);
     info!("[bloom] icon loader started");
 
-    // Explicitly load known icons using robust suffix matching via AssetBank
+    // Explicitly load known icons
     let icons = [
         "bran.bran.svg",
+        "dev.bus.platform.svg",
+        "dev.cpu.svg",
         "dev.host.svg",
         "dev.input.svg",
         "dev.network.svg",
@@ -237,16 +247,10 @@ pub extern "C" fn icon_loader_entry() -> ! {
     ];
 
     for filename in icons.iter() {
-        // Strip extension for name
         let name = &filename[..filename.len() - 4];
-        // Construct full path for loading (AssetBank matches suffix)
         let path = alloc::format!("/assets/icons/thingos/{}", filename);
-
-        info!("[bloom] loading icon: {} (path={})", name, path);
-        if let Some(cmds) = AssetBank::load_icon_immediate(&path) {
+        if let Some(cmds) = AssetBank::load_icon_immediate_from_path(&path) {
             ASSETS.publish_icon(name, cmds);
-        } else {
-            info!("[bloom] failed to load icon: {}", path);
         }
     }
 

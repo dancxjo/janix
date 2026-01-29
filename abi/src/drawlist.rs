@@ -282,7 +282,6 @@ impl<'a> DrawListReader<'a> {
     /// Validate that the drawlist stream is well-formed and matches cmd_count.
     pub fn validate(bytes: &'a [u8]) -> Result<(), DrawListError> {
         let mut reader = DrawListReader::new(bytes).ok_or(DrawListError::InvalidHeader)?;
-        let mut scanned = 0u32;
         while reader.remaining > 0 {
             if reader.offset + 8 > reader.bytes.len() {
                 return Err(DrawListError::TruncatedCommand);
@@ -302,7 +301,6 @@ impl<'a> DrawListReader<'a> {
             }
             reader.offset = end;
             reader.remaining -= 1;
-            scanned += 1;
         }
         if reader.offset == reader.bytes.len() {
             Ok(())

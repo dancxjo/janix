@@ -36,7 +36,7 @@ pub struct ThingOsWorld {
 
 impl ThingOsWorld {
     /// Boot the OS in QEMU for the given architecture.
-    /// This builds a unique ISO with 1920x768 resolution for this scenario.
+    /// This builds a unique ISO with 1920x1080 resolution for this scenario.
     pub async fn boot(&mut self, arch: &str) -> Result<(), Box<dyn std::error::Error>> {
         self.arch = arch.to_string();
 
@@ -49,8 +49,9 @@ impl ThingOsWorld {
         let iso_name = format!("thing-os-bdd-{}-{}-{}.iso", arch, pid, nanos);
         let iso_path = PathBuf::from(&iso_name);
 
-        // Get resolution from environment (default 1920x768 for BDD tests)
-        let resolution = std::env::var("BDD_RESOLUTION").unwrap_or_else(|_| "1920x768".to_string());
+        // Get resolution from environment (default 1920x1080 for BDD tests)
+        let resolution =
+            std::env::var("BDD_RESOLUTION").unwrap_or_else(|_| "1920x1080".to_string());
 
         // Build ISO using xtask command
         eprintln!(

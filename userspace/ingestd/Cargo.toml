@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-stem = { path = "../../stem" }
+stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }
-infer = { version = "0.15", default-features = false }
 log = "0.4.17"
+infer = { version = "0.15", default-features = false }
 ttf-parser = { version = "0.25", default-features = false, features = ["no-std-float"] }

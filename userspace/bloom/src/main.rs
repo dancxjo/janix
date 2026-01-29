@@ -662,6 +662,18 @@ fn main(arg: usize) -> ! {
                 }
             }
 
+            // ----------------------------------------------------------------
+            // Debug Damage Tracking Keyboard Shortcuts
+            // ----------------------------------------------------------------
+            // F9: Toggle damage rect overlay (Shift+F9 for raw rects)
+            // F8: Toggle damage cause color-coded overlay
+            // F7: Auto-tile windows (existing feature)
+            // F6: Toggle damage statistics display
+            // F5: Toggle force full damage (always redraw entire frame)
+            // F4: Toggle disable damage tracking (always full redraw)
+            // F3: Toggle replay last frame damage (diagnostic tool)
+            // ----------------------------------------------------------------
+
             if pressed_keys.contains(&Key::F9) && !prev_keys.contains(&Key::F9) {
                 if shift_down {
                     debug_flags.show_raw_damage_rects = !debug_flags.show_raw_damage_rects;
@@ -684,6 +696,71 @@ fn main(arg: usize) -> ! {
                         }
                     );
                 }
+            }
+
+            // F8: Toggle damage cause visualization
+            if pressed_keys.contains(&Key::F8) && !prev_keys.contains(&Key::F8) {
+                debug_flags.show_damage_causes = !debug_flags.show_damage_causes;
+                stem::info!(
+                    "[bloom] debug: damage cause overlay {}",
+                    if debug_flags.show_damage_causes {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
+                );
+            }
+
+            // F6: Toggle damage stats
+            if pressed_keys.contains(&Key::F6) && !prev_keys.contains(&Key::F6) {
+                debug_flags.show_damage_stats = !debug_flags.show_damage_stats;
+                stem::info!(
+                    "[bloom] debug: damage stats {}",
+                    if debug_flags.show_damage_stats {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
+                );
+            }
+
+            // F5: Toggle force full damage
+            if pressed_keys.contains(&Key::F5) && !prev_keys.contains(&Key::F5) {
+                debug_flags.force_full_damage = !debug_flags.force_full_damage;
+                stem::info!(
+                    "[bloom] debug: force full damage {}",
+                    if debug_flags.force_full_damage {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
+                );
+            }
+
+            // F4: Toggle disable damage tracking
+            if pressed_keys.contains(&Key::F4) && !prev_keys.contains(&Key::F4) {
+                debug_flags.disable_damage_tracking = !debug_flags.disable_damage_tracking;
+                stem::info!(
+                    "[bloom] debug: disable damage tracking {}",
+                    if debug_flags.disable_damage_tracking {
+                        "ON (always full redraw)"
+                    } else {
+                        "OFF"
+                    }
+                );
+            }
+
+            // F3: Toggle replay last frame damage
+            if pressed_keys.contains(&Key::F3) && !prev_keys.contains(&Key::F3) {
+                debug_flags.replay_last_frame_damage = !debug_flags.replay_last_frame_damage;
+                stem::info!(
+                    "[bloom] debug: replay last frame damage {}",
+                    if debug_flags.replay_last_frame_damage {
+                        "ON"
+                    } else {
+                        "OFF"
+                    }
+                );
             }
 
             if pressed_keys.contains(&Key::F7) && !prev_keys.contains(&Key::F7) {
@@ -830,8 +907,10 @@ fn main(arg: usize) -> ! {
         // Damage Tracking (cursor fallback handling)
         let bounds = crate::geometry::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
+        
+        // Add damage from paint pipeline with appropriate causes
         for rect in &paint_res.damage {
-            damage.add_rect(*rect);
+            damage.add_rect_with_cause(*rect, damage::DamageCause::ContentChanged, None);
         }
 
         let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
@@ -868,11 +947,18 @@ fn main(arg: usize) -> ! {
                     )
                     .expand(2)
                     .clip(bounds);
+                    
+                    let cause = if cursor_changed {
+                        damage::DamageCause::AssetUpdated
+                    } else {
+                        damage::DamageCause::CursorMoved
+                    };
+                    
                     if !old_rect.is_empty() {
-                        damage.add_rect(old_rect);
+                        damage.add_rect_with_cause(old_rect, cause, None);
                     }
                     if !new_rect.is_empty() {
-                        damage.add_rect(new_rect);
+                        damage.add_rect_with_cause(new_rect, cause, None);
                     }
                     prev_cursor_x = cursor.x;
                     prev_cursor_y = cursor.y;
@@ -889,10 +975,10 @@ fn main(arg: usize) -> ! {
                         .expand(2)
                         .clip(bounds);
                     if !old_rect.is_empty() {
-                        damage.add_rect(old_rect);
+                        damage.add_rect_with_cause(old_rect, damage::DamageCause::CursorMoved, None);
                     }
                     if !new_rect.is_empty() {
-                        damage.add_rect(new_rect);
+                        damage.add_rect_with_cause(new_rect, damage::DamageCause::CursorMoved, None);
                     }
                     prev_cursor_x = cursor.x;
                     prev_cursor_y = cursor.y;
@@ -909,10 +995,10 @@ fn main(arg: usize) -> ! {
                     .expand(2)
                     .clip(bounds);
                 if !old_rect.is_empty() {
-                    damage.add_rect(old_rect);
+                    damage.add_rect_with_cause(old_rect, damage::DamageCause::CursorMoved, None);
                 }
                 if !new_rect.is_empty() {
-                    damage.add_rect(new_rect);
+                    damage.add_rect_with_cause(new_rect, damage::DamageCause::CursorMoved, None);
                 }
                 prev_cursor_x = cursor.x;
                 prev_cursor_y = cursor.y;
@@ -923,7 +1009,35 @@ fn main(arg: usize) -> ! {
             if debug_flags.show_damage_stats {
                 stem::info!("[bloom] Full damage forced by: {:?}", invalidation_causes);
             }
-            damage = damage::Damage::full(bounds);
+            // Use the first invalidation cause for the damage tracking
+            let cause = damage::DamageCause::from_invalidation(invalidation_causes[0]);
+            damage = damage::Damage::full_with_cause(bounds, cause, None);
+        }
+
+        // Apply debug flags for deterministic damage modes
+        if debug_flags.force_full_damage {
+            damage = damage::Damage::full_with_cause(bounds, damage::DamageCause::ForceFull, None);
+        }
+        
+        if debug_flags.disable_damage_tracking {
+            // Disable damage tracking means always render full frame
+            damage = damage::Damage::full_with_cause(bounds, damage::DamageCause::ForceFull, None);
+        }
+
+        // Replay last frame damage if enabled
+        if debug_flags.replay_last_frame_damage {
+            if let Some(last_damage) = overlay_state.last_frame_damage {
+                damage = damage::Damage::empty(bounds);
+                damage.add_rect_with_cause(last_damage, damage::DamageCause::ForceFull, None);
+            }
+        } else {
+            // Store current damage for potential replay next frame
+            if !damage.is_empty() {
+                overlay_state.last_frame_damage = Some(damage.bounding_box());
+            } else {
+                // Clear stale damage when frame is empty
+                overlay_state.last_frame_damage = None;
+            }
         }
 
         {
@@ -962,7 +1076,14 @@ fn main(arg: usize) -> ! {
             &invalidation_causes,
             snapshot.overflowed(),
         );
-        append_damage_overlay(&mut list, &overlay_state, &debug_flags, screen_w, screen_h);
+        
+        // Record damage in journal (debug builds only)
+        #[cfg(debug_assertions)]
+        {
+            overlay_state.journal.record_frame(&damage);
+        }
+        
+        append_damage_overlay(&mut list, &overlay_state, &debug_flags, Some(&damage), screen_w, screen_h);
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
             let rects: alloc::vec::Vec<_> = damage.iter().collect();
@@ -1030,10 +1151,11 @@ fn append_damage_overlay(
     list: &mut drawlist::DrawList,
     overlay_state: &DamageOverlayState,
     flags: &DebugFlags,
+    damage_opt: Option<&damage::Damage>,
     screen_w: i32,
     _screen_h: i32,
 ) {
-    if !flags.show_damage_rects && !flags.show_raw_damage_rects && !flags.show_damage_stats {
+    if !flags.show_damage_rects && !flags.show_raw_damage_rects && !flags.show_damage_stats && !flags.show_damage_causes {
         return;
     }
 
@@ -1042,11 +1164,20 @@ fn append_damage_overlay(
     const TEXT_BOX_COLOR: u32 = 0x88000000;
     const TEXT_COLOR: u32 = 0xFFFFFFFF;
 
-    if flags.show_damage_rects {
+    // Show damage rects with cause-based coloring if enabled
+    if flags.show_damage_causes {
+        if let Some(damage) = damage_opt {
+            for record in damage.iter_records() {
+                let color = record.cause.debug_color();
+                draw_rect_outline(list, record.rect, color);
+            }
+        }
+    } else if flags.show_damage_rects {
         for rect in overlay_state.present() {
             draw_rect_outline(list, *rect, MERGED_COLOR);
         }
     }
+    
     if flags.show_raw_damage_rects {
         for rect in overlay_state.raw() {
             draw_rect_outline(list, *rect, RAW_COLOR);

@@ -7,7 +7,7 @@
 ///
 /// All formats describe byte order in memory (LSB first on LE systems).
 #[repr(u8)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum PixelFormat {
     /// Unknown or unsupported format.
     Unknown = 0,

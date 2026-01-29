@@ -1,6 +1,37 @@
 #![no_std]
 #![no_main]
 
+//! # Asset Watcher Service (assetd / ingestd)
+//!
+//! This service makes assets continuous graph citizens by:
+//!
+//! 1. **Continuous Discovery**: Watches BOOT_MODULE nodes for new assets
+//! 2. **Content Hashing**: Computes SHA-256 hash of asset content for deduplication
+//! 3. **Graph Materialization**: Creates canonical Asset nodes in the graph
+//! 4. **Change Detection**: Updates assets when content changes, increments generation
+//! 5. **Deduplication**: Identifies identical assets by content hash
+//!
+//! ## Asset Node Properties
+//!
+//! Each asset in the graph has:
+//! - `asset.name`: Stable logical name
+//! - `asset.kind`: Type (font, svg, image, cursor, raw)
+//! - `asset.hash`: SHA-256 content hash (first 8 bytes as u64)
+//! - `asset.size`: Size in bytes
+//! - `asset.bytespace`: Reference to asset content
+//! - `asset.generation`: Increments on content change
+//! - `asset.source`: Where asset came from (e.g., "boot")
+//! - `asset.ready`: Boolean indicating asset is ready for use
+//!
+//! ## Philosophy
+//!
+//! Assets are not boot-shaped artifacts but living Things. When an asset:
+//! - appears → graph node created
+//! - changes → generation incremented, consumers notified
+//! - disappears → node can be marked stale (future enhancement)
+//!
+//! The graph is the truth, continuously updated.
+
 extern crate alloc;
 mod sniff;
 

@@ -2031,6 +2031,15 @@ fn rasterize_text_fallback(
             (px + m.xmin as f32) as i32,
             py as i32 - m.height as i32 - m.ymin,
         );
+        
+        // Prepare premultiplied color once per glyph (not per row)
+        let color_premul = {
+            let pr = scale_ch(sr, sa);
+            let pg = scale_ch(sg, sa);
+            let pb = scale_ch(sb, sa);
+            (sa as u32) << 24 | pr << 16 | pg << 8 | pb
+        };
+        
         for r in 0..m.height {
             let cy = gy + r as i32;
             if cy < clip.y() || cy >= clip.y() + clip.height() {
@@ -2055,14 +2064,6 @@ fn rasterize_text_fallback(
             }
             let mask_row = &b[mask_row_start..mask_row_end];
             
-            // Prepare premultiplied color
-            let color_premul = {
-                let pr = scale_ch(sr, sa);
-                let pg = scale_ch(sg, sa);
-                let pb = scale_ch(sb, sa);
-                (sa as u32) << 24 | pr << 16 | pg << 8 | pb
-            };
-            
             // Get destination row
             let stride = (surface.stride_bytes >> 2) as usize;
             let row_offset = cy as usize * stride + cx_start as usize;
@@ -2072,8 +2073,8 @@ fn rasterize_text_fallback(
             }
             
             let remaining = stride * surface.height() as usize - row_offset;
-            if remaining < stride {
-                continue;
+            if remaining < row_width {
+                continue; // Skip if not enough pixels for this row
             }
             
             let dst_slice = unsafe {
@@ -2082,12 +2083,13 @@ fn rasterize_text_fallback(
             };
             
             // Call SIMD masked compositor
+            // Note: mask_stride is m.width, not row_width, but we're using a pre-sliced mask_row
             crate::trace_counter!("raster.text_fallback.simd.count", 1);
             stem::simd::composite_solid_masked_over(
                 dst_slice,
                 stride,
                 mask_row,
-                row_width,
+                row_width, // mask_stride = row_width since we pre-sliced the mask
                 row_width,
                 1,
                 color_premul,
@@ -2615,7 +2617,7 @@ fn fill_path_aa(
     let px_end =
         ((path_clip_xmax + SUPERSAMPLE_SCALE - 1) / SUPERSAMPLE_SCALE).min(clip.x() + clip.width());
 
-    // Convert color to premultiplied format for SIMD compositor
+    // Convert color to premultiplied format for SIMD compositor (once, outside loop)
     let color_premul = {
         let pr = scale_ch(sr, sa);
         let pg = scale_ch(sg, sa);
@@ -2625,6 +2627,10 @@ fn fill_path_aa(
 
     // Use SIMD masked compositor row by row
     crate::trace_counter!("raster.fill_path_aa.simd.count", 1);
+    
+    // Allocate row mask buffer once (reuse for each row)
+    let max_row_width = (px_end - px_start) as usize;
+    let mut row_mask = vec![0u8; max_row_width];
     
     for py in p_start..p_end {
         let iy = (py - clip.y()) as usize;
@@ -2639,11 +2645,10 @@ fn fill_path_aa(
         }
         
         let row_coverage = &coverage[row_start_idx..row_end_idx];
-        let mut row_mask = vec![0u8; row_width];
         
         for (i, &cov) in row_coverage.iter().enumerate() {
-            // Scale coverage to 0-255 range
-            // This matches the original: alpha = (sa * cov) / SUPERSAMPLE_SAMPLES
+            // Scale coverage to 0-255 range for mask
+            // Note: Source alpha is already in color_premul, so we only scale coverage here
             row_mask[i] = ((cov as u16 * 255) / SUPERSAMPLE_SAMPLES as u16) as u8;
         }
         
@@ -2656,8 +2661,8 @@ fn fill_path_aa(
         }
         
         let remaining = stride * surface.height() as usize - row_offset;
-        if remaining < stride {
-            continue;
+        if remaining < row_width {
+            continue; // Skip if not enough pixels for this row
         }
         
         let dst_slice = unsafe {
@@ -2669,7 +2674,7 @@ fn fill_path_aa(
         stem::simd::composite_solid_masked_over(
             dst_slice,
             stride,
-            &row_mask,
+            &row_mask[..row_width],
             row_width,
             row_width,
             1,

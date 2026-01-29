@@ -562,6 +562,11 @@ fn main(arg: usize) -> ! {
         force_full_damage = false;
         ASSETS.publish_pending();
 
+        // Poll font client for IPC responses
+        if crate::font_client::poll() {
+            force_full_damage = true;
+        }
+
         // 0. Check for new glyphs in graph
         if let Some(gw) = glyph_watch {
             let mut g_seq = 0u64;

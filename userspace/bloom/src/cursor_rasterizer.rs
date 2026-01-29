@@ -215,6 +215,7 @@ mod tests {
     use super::*;
     use crate::asset::CursorFrame;
     use alloc::sync::Arc;
+    use alloc::vec::Vec;
 
     fn make_test_asset() -> CursorAsset {
         let pixels: Vec<u32> = (0..16 * 16).map(|_| 0xFFFFFFFF).collect();

@@ -1,5 +1,6 @@
 extern crate alloc;
 
+use alloc::string::ToString;
 use alloc::vec::Vec;
 
 use abi::ids::HandleId;
@@ -290,7 +291,7 @@ mod tests {
         fn bytespace_create(&mut self, len: usize) -> Result<ThingId> {
             let id = ThingId::from_u64(self.next_id);
             self.next_id += 1;
-            self.bytespaces.insert(id.to_u64_lossy(), vec![0u8; len]);
+            self.bytespaces.insert(id.to_u64_lossy(), alloc::vec![0u8; len]);
             Ok(id)
         }
 

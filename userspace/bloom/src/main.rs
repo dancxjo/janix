@@ -7,6 +7,7 @@ extern crate stem; // Force linkage
 mod asset;
 mod blossom_client;
 mod bmp;
+mod blit;
 mod bristle;
 mod compositor;
 mod cursor;

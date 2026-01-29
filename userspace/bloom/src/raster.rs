@@ -662,17 +662,14 @@ fn execute_single_op(ctx: &mut RasterContext, op: &LowLevelOp) {
 #[inline(always)]
 fn scale_ch(c: u8, a: u8) -> u32 {
     let t = c as u32 * a as u32;
-    (t + (t >> 8) + 1) >> 8
+    (t + 1 + (t >> 8)) >> 8
 }
+
 #[inline(always)]
-fn blend_ch(s: u8, d: u8, sa: u8) -> u8 {
-    if sa == 255 {
-        return s;
-    }
-    if sa == 0 {
-        return d;
-    }
-    (scale_ch(s, sa) + scale_ch(d, 255 - sa)) as u8
+fn blend_channel(s: u32, d: u32, sa: u32) -> u32 {
+    let inv = 255 - sa;
+    let t = s * sa + d * inv;
+    (t + 1 + (t >> 8)) >> 8
 }
 
 fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa: u8) {
@@ -683,34 +680,34 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa
     let ptr = surface.ptr as *mut u32;
     unsafe {
         let dp = ptr.add(offset);
-        let dv = *dp;
         if sa == 255 {
-            *dp = ((sa as u32) << 24) | ((sr as u32) << 16) | ((sg as u32) << 8) | sb as u32;
+            *dp = (255 << 24) | ((sr as u32) << 16) | ((sg as u32) << 8) | sb as u32;
             return;
         }
-        let da = ((dv >> 24) & 0xFF) as u8;
-        let (dr, dg, db) = (
-            ((dv >> 16) & 0xFF) as u8,
-            ((dv >> 8) & 0xFF) as u8,
-            (dv & 0xFF) as u8,
-        );
-        // Alpha blend: out_a = sa + da * (255 - sa)
-        // This is strictly 'src over' assuming un-premultiplied color blending approx
-        let out_a = sa as u32 + ((da as u32 * (255 - sa as u32)) >> 8);
-        // Correct color blending requires weighing by alpha, but for now we stick to simple channel blending
-        // which matches the existing logic but adds Alpha write.
-        // Actually existing logic `blend_ch` interpolates channels based on SA. This is correct for SrcOver if Dst is opaque.
-        // If Dst is transparent, we need to respect that.
-        // But for cursor (dst=0), simple blend_ch(s, 0, sa) = scale_ch(s, sa).
-        // This is premultiplied color result?
-        // Let's just write the blended rgb and the computed alpha.
+        
+        // Read dst
+        let dv = *dp;
+        let da = (dv >> 24) & 0xFF; // dst alpha
+        let dr = (dv >> 16) & 0xFF;
+        let dg = (dv >> 8) & 0xFF;
+        let db = dv & 0xFF;
 
-        *dp = (out_a << 24)
-            | ((blend_ch(sr, dr, sa) as u32) << 16)
-            | ((blend_ch(sg, dg, sa) as u32) << 8)
-            | (blend_ch(sb, db, sa) as u32);
+        let sa = sa as u32;
+        
+        // Output alpha = sa + da * (1 - sa)
+        let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
+        
+        // Premultiplied blend approximation for color channels
+        // This assumes src is effectively "painted" onto dst.
+        let out_r = blend_channel(sr as u32, dr, sa);
+        let out_g = blend_channel(sg as u32, dg, sa);
+        let out_b = blend_channel(sb as u32, db, sa);
+
+        *dp = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
     }
 }
+
+// Local blit functions removed in favor of crate::blit::*
 
 pub fn fill_rect_copy(surface: &mut Surface, x: i32, y: i32, w: i32, h: i32, color: u32) {
     let x0 = x.max(0);
@@ -1083,6 +1080,41 @@ fn blit_opaque(
         src.width() as f32 / fd.width() as f32,
         src.height() as f32 / fd.height() as f32,
     );
+     // 1:1 Fast path for opaque blit
+    if (sx_f - 1.0).abs() < 0.001 && (sy_f - 1.0).abs() < 0.001 {
+         let src_x_base = src.x() + (cd.x() - fd.x());
+         let src_y_base = src.y() + (cd.y() - fd.y());
+         
+         let width = cd.width() as usize;
+         let height = cd.height() as usize;
+         let dst_stride = (surface.stride_bytes >> 2) as usize;
+         let img_stride = image.width as usize; // Image is packed
+         
+         unsafe {
+             let dst_base = surface.ptr as *mut u32;
+             let src_base = image.pixels.as_ptr(); // Arc<[u32]> -> *const u32
+             
+             for i in 0..height {
+                 let dy = (cd.y() as usize) + i;
+                 let sy = (src_y_base as usize) + i;
+                 let dx = cd.x() as usize;
+                 let sx = src_x_base as usize;
+                 
+                 if dy >= surface.height() as usize || sy >= image.height as usize { continue; }
+                 if dx + width > surface.width() as usize || sx + width > image.width as usize { continue; }
+                 
+                 let dst_offset = dy * dst_stride + dx;
+                 let src_offset = sy * img_stride + sx; // Image stride = width
+                 
+                 // Direct copy for opaque
+                 let dst_ptr = dst_base.add(dst_offset);
+                 let src_ptr = src_base.add(src_offset);
+                 core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, width);
+             }
+         }
+         return;
+    }
+
     for dy in cd.y()..cd.y() + cd.height() {
         for dx in cd.x()..cd.x() + cd.width() {
             let (sx, sy) = (
@@ -1114,6 +1146,43 @@ fn blit_alpha(
         src.width() as f32 / fd.width() as f32,
         src.height() as f32 / fd.height() as f32,
     );
+
+    // 1:1 Fast path for alpha blit
+    // Only if BlendMode is SrcOver and no extra constant alpha (CAV=255)
+    if (sx_f - 1.0).abs() < 0.001 && (sy_f - 1.0).abs() < 0.001 && blend == BlendMode::SrcOver && cav == 255 {
+         let src_x_base = src.x() + (cd.x() - fd.x());
+         let src_y_base = src.y() + (cd.y() - fd.y());
+         
+         let width = cd.width() as usize;
+         let height = cd.height() as usize;
+         let dst_stride = (surface.stride_bytes >> 2) as usize;
+         let img_stride = image.width as usize;
+         
+         unsafe {
+             let dst_base = surface.ptr as *mut u32;
+             let src_base = image.pixels.as_ptr();
+             
+             for i in 0..height {
+                 let dy = (cd.y() as usize) + i;
+                 let sy = (src_y_base as usize) + i;
+                 let dx = cd.x() as usize;
+                 let sx = src_x_base as usize;
+                 
+                 if dy >= surface.height() as usize || sy >= image.height as usize { continue; }
+                 if dx + width > surface.width() as usize || sx + width > image.width as usize { continue; }
+                 
+                 let dst_offset = dy * dst_stride + dx;
+                 let src_offset = sy * img_stride + sx;
+                 
+                 let dst_slice = core::slice::from_raw_parts_mut(dst_base.add(dst_offset), width);
+                 let src_slice = core::slice::from_raw_parts(src_base.add(src_offset), width);
+                 
+                 crate::blit::blit_rgba8888_over(dst_slice, src_slice);
+             }
+         }
+         return;
+    }
+
     for dy in cd.y()..cd.y() + cd.height() {
         for dx in cd.x()..cd.x() + cd.width() {
             let (sx, sy) = (
@@ -1579,21 +1648,26 @@ fn blit_text_entry(
     let alpha = &entry.alpha;
     
     // Iterate common rect
-    for dy in common.y()..(common.y() + common.height()) {
-        let src_y = (dy - y_start) as usize;
-        let row_offset = src_y * w;
-        
-        for dx in common.x()..(common.x() + common.width()) {
-            let src_x = (dx - x_start) as usize;
-            let a_val = alpha[row_offset + src_x];
+    crate::trace_counter!("raster.blit.a8.tinted", 1);
+    let dst_stride = (surface.stride_bytes >> 2) as usize;
+    unsafe {
+        let dst_base = surface.ptr as *mut u32;
+        let w_usize = common.width() as usize;
+
+        // Iterate common rect rows
+        for dy in common.y()..(common.y() + common.height()) {
+            let src_y = (dy - y_start) as usize;
+            let row_offset = src_y * w;
             
-            if a_val > 0 {
-                 let blended_a = scale_ch(a_val, sa) as u8;
-                 blend_pixel(surface, dx, dy, sr, sg, sb, blended_a);
-            }
+            // Dst offset
+            let dst_offset = (dy as usize) * dst_stride + (common.x() as usize);
+            
+            let dst_slice = core::slice::from_raw_parts_mut(dst_base.add(dst_offset), w_usize);
+            let src_slice = &alpha[row_offset .. row_offset + w_usize];
+            
+            crate::blit::blit_a8_tinted_over(dst_slice, src_slice, color, sa);
         }
-    }
-}
+    }}
 
 
 fn blit_surface(
@@ -1607,6 +1681,45 @@ fn blit_surface(
         src_rect.width() as f32 / fd.width() as f32,
         src_rect.height() as f32 / fd.height() as f32,
     );
+    
+    // Check for 1:1 fast path
+    if (sx_f - 1.0).abs() < 0.001 && (sy_f - 1.0).abs() < 0.001 {
+        crate::trace_counter!("raster.blit.rgba.fast", 1);
+        
+        let src_x_base = src_rect.x() + (cd.x() - fd.x());
+        let src_y_base = src_rect.y() + (cd.y() - fd.y());
+        
+        let width = cd.width() as usize;
+        let height = cd.height() as usize;
+        
+        let dst_stride = (dst_surface.stride_bytes >> 2) as usize;
+        let src_stride = (src_surface.stride_bytes >> 2) as usize;
+        
+        unsafe {
+            let dst_base = dst_surface.ptr as *mut u32;
+            let src_base = src_surface.ptr as *const u32;
+            
+            for i in 0..height {
+                let dy = (cd.y() as usize) + i;
+                let sy = (src_y_base as usize) + i;
+                let dx = cd.x() as usize;
+                let sx = src_x_base as usize;
+                
+                if dy >= dst_surface.height() as usize || sy >= src_surface.height() as usize { continue; }
+                if dx + width > dst_surface.width() as usize || sx + width > src_surface.width() as usize { continue; }
+                
+                let dst_offset = dy * dst_stride + dx;
+                let src_offset = sy * src_stride + sx;
+                
+                let dst_slice = core::slice::from_raw_parts_mut(dst_base.add(dst_offset), width);
+                let src_slice = core::slice::from_raw_parts(src_base.add(src_offset), width);
+                
+                crate::blit::blit_rgba8888_over(dst_slice, src_slice);
+            }
+        }
+        return;
+    }
+
     for dy in cd.y()..cd.y() + cd.height() {
         for dx in cd.x()..cd.x() + cd.width() {
             let (sx, sy) = (
@@ -2416,6 +2529,99 @@ mod tests {
         let surface =
             unsafe { Surface::zeroed(buffer.as_mut_ptr(), buffer.len(), width, height, width * 4) };
         (surface, buffer)
+    }
+
+    #[test]
+    fn test_blit_rgba_1to1() {
+        let (mut dst, mut dst_buf) = make_surface(4, 4);
+        let (mut src, mut src_buf) = make_surface(4, 4);
+
+        // Fill src with pattern
+        let src_u32 = unsafe { core::slice::from_raw_parts_mut(src_buf.as_mut_ptr() as *mut u32, 16) };
+        src_u32[0] = 0x00_000000; // (0,0) Transparent
+        src_u32[1] = 0xFF_FF0000; // (1,0) Red Opaque
+        src_u32[2] = 0x80_0000FF; // (2,0) Blue Half
+        src_u32[3] = 0xFF_00FF00; // (3,0) Green Opaque
+
+        // Fill dst with White
+        let dst_u32 = unsafe { core::slice::from_raw_parts_mut(dst_buf.as_mut_ptr() as *mut u32, 16) };
+        for i in 0..16 { dst_u32[i] = 0xFF_FFFFFF; }
+
+        let src_rect = Rect::new(0, 0, 4, 1);
+        let dst_rect = Rect::new(0, 0, 4, 1);
+        let clip = Rect::new(0, 0, 4, 1);
+
+        super::blit_surface(&mut dst, &src, &src_rect, &dst_rect, &clip);
+
+        let dst_result = unsafe { core::slice::from_raw_parts(dst.ptr as *const u32, 16) };
+
+        // (0,0): Transparent src -> Keep White
+        assert_eq!(dst_result[0], 0xFF_FFFFFF, "0,0 transparent src failed");
+        // (1,0): Opaque Red -> Red
+        assert_eq!(dst_result[1], 0xFF_FF0000, "1,0 opaque src failed");
+        
+        // (2,0): 50% Blue over White
+        // out_a = sa + da*(1-sa) = 128 + 255*(127/255) approx 255
+        // Color channels: (src*sa + dst*(255-sa))/255
+        // B: (255*128 + 255*127)/255 = 255
+        // G: (0*128 + 255*127)/255 = 127
+        // R: (0*128 + 255*127)/255 = 127
+        // Expected: 0xFF_7F7FFF (approx)
+        let val = dst_result[2];
+        let r = (val >> 16) & 0xFF;
+        let g = (val >> 8) & 0xFF;
+        let b = val & 0xFF;
+        assert!((r as i32 - 127).abs() <= 2, "Red blend mismatch: {}", r);
+        assert!((g as i32 - 127).abs() <= 2, "Green blend mismatch: {}", g);
+        assert!((b as i32 - 255).abs() <= 2, "Blue blend mismatch: {}", b);
+
+        // (3,0): Green
+        assert_eq!(dst_result[3], 0xFF_00FF00, "3,0 opaque green failed");
+    }
+
+    #[test]
+    fn test_blit_a8_tinted_ref() {
+        let (mut dst, mut dst_buf) = make_surface(4, 4);
+        
+        let mut image_pixels = vec![0u32; 16];
+        image_pixels[0] = 0x00_000000; // Alpha 0
+        image_pixels[1] = 0xFF_000000; // Alpha 255
+        image_pixels[2] = 0x80_000000; // Alpha 128
+        let image = Image {
+            width: 4,
+            height: 4,
+            pixels: Arc::from(image_pixels.into_boxed_slice()),
+            gen: crate::frame::AssetGeneration::ZERO,
+            name: Arc::from("test"),
+            id: None,
+        };
+
+        // Fill dst with White
+        let dst_u32 = unsafe { core::slice::from_raw_parts_mut(dst_buf.as_mut_ptr() as *mut u32, 16) };
+        for i in 0..16 { dst_u32[i] = 0xFF_FFFFFF; }
+
+        let src_rect = Rect::new(0, 0, 4, 1);
+        let dst_rect = Rect::new(0, 0, 4, 1);
+        let clip = Rect::new(0, 0, 4, 1);
+        
+        // Use blit_alpha which respects alpha.
+        super::blit_alpha(&mut dst, &image, &src_rect, &dst_rect, &clip, crate::isa::FilterMode::Nearest, crate::isa::BlendMode::SrcOver, None);
+        
+        let dst_result = unsafe { core::slice::from_raw_parts(dst.ptr as *const u32, 16) };
+        
+        assert_eq!(dst_result[0], 0xFF_FFFFFF);
+        // Image color 0 is Black 0x000000. Alpha 255.
+        // Result should be Black.
+        assert_eq!(dst_result[1], 0xFF_000000, "Should be opaque black");
+        
+        // Alpha 128 (0x80). Color Black (0x000000).
+        // Over White (0xFFFFFF).
+        // Out = (0*128 + 255*127)/255 = 127 = 0x7F
+        // Alpha = 255
+        // Expect 0xFF7F7F7F
+        let val = dst_result[2];
+        let r = (val >> 16) & 0xFF;
+        assert!((r as i32 - 127).abs() <= 2, "Blend mismatch: {}", r);
     }
 
     #[test]

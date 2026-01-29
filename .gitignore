@@ -20,3 +20,4 @@ iso_root/
 
 # Bran binaries
 /bran/bin-*
+assets/pci/pci.ids

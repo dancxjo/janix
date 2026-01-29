@@ -10,6 +10,50 @@ fn scale_ch(c: u8, a: u8) -> u32 {
     (t + 1 + (t >> 8)) >> 8
 }
 
+/// Apply the exact rounding formula: (t + 1 + (t >> 8)) >> 8 to 16-bit values.
+/// Input: t_lo and t_hi are __m128i with 8x u16 values each (products).
+/// Output: 8-bit results packed into a single __m128i (16 u8 values).
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn apply_div255_sse2(t_lo: __m128i, t_hi: __m128i) -> __m128i {
+    let one = _mm_set1_epi16(1);
+    
+    // Apply (t + 1 + (t >> 8)) >> 8 to both halves
+    let t_shr_lo = _mm_srli_epi16(t_lo, 8);
+    let t_shr_hi = _mm_srli_epi16(t_hi, 8);
+    
+    let sum_lo = _mm_add_epi16(_mm_add_epi16(t_lo, one), t_shr_lo);
+    let sum_hi = _mm_add_epi16(_mm_add_epi16(t_hi, one), t_shr_hi);
+    
+    let res_lo = _mm_srli_epi16(sum_lo, 8);
+    let res_hi = _mm_srli_epi16(sum_hi, 8);
+    
+    _mm_packus_epi16(res_lo, res_hi)
+}
+
+/// Modulate 4 RGBA pixels by a mask, returning modulated u8 channels.
+/// mask_vec should have 4 bytes (one per pixel) repeated in appropriate positions.
+#[inline]
+#[target_feature(enable = "sse2")]
+unsafe fn modulate_by_mask_sse2(pixels: __m128i, mask_vec: __m128i) -> __m128i {
+    let zero = _mm_setzero_si128();
+    
+    // Unpack pixels to 16-bit
+    let px_lo = _mm_unpacklo_epi8(pixels, zero);
+    let px_hi = _mm_unpackhi_epi8(pixels, zero);
+    
+    // Unpack mask to 16-bit
+    let m_lo = _mm_unpacklo_epi8(mask_vec, zero);
+    let m_hi = _mm_unpackhi_epi8(mask_vec, zero);
+    
+    // Multiply channel * mask
+    let t_lo = _mm_mullo_epi16(px_lo, m_lo);
+    let t_hi = _mm_mullo_epi16(px_hi, m_hi);
+    
+    // Apply exact rounding: (t + 1 + (t >> 8)) >> 8
+    apply_div255_sse2(t_lo, t_hi)
+}
+
 /// Composite solid color with coverage mask (SSE2 backend).
 #[target_feature(enable = "sse2")]
 pub unsafe fn composite_solid_masked_over_sse2(
@@ -21,11 +65,128 @@ pub unsafe fn composite_solid_masked_over_sse2(
     rect_h: usize,
     color_premul: u32,
 ) {
-    // For now, fall back to scalar since pure SSE2 mask shuffling is complex
-    // A proper implementation would use SSSE3 pshufb or process pixel-by-pixel
-    crate::simd::scalar::composite_solid_masked_over_scalar(
-        dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
-    );
+    let ca = ((color_premul >> 24) & 0xFF) as u8;
+    let cr = ((color_premul >> 16) & 0xFF) as u8;
+    let cg = ((color_premul >> 8) & 0xFF) as u8;
+    let cb = (color_premul & 0xFF) as u8;
+    
+    // Broadcast color to 4 pixels
+    let color_px = _mm_set1_epi32(color_premul as i32);
+    
+    for y in 0..rect_h {
+        let dst_row = &mut dst[y * dst_stride..];
+        let mask_row = &mask[y * mask_stride..];
+        
+        let mut x = 0;
+        
+        // Process 4 pixels at a time
+        while x + 4 <= rect_w {
+            // Load 4 mask values
+            let m0 = mask_row[x] as u32;
+            let m1 = mask_row[x + 1] as u32;
+            let m2 = mask_row[x + 2] as u32;
+            let m3 = mask_row[x + 3] as u32;
+            
+            // Check if all masks are zero (early out)
+            if (m0 | m1 | m2 | m3) == 0 {
+                x += 4;
+                continue;
+            }
+            
+            // Pack masks into an __m128i: each mask byte repeated 4 times for RGBA
+            let mask_vec = _mm_set_epi8(
+                m3 as i8, m3 as i8, m3 as i8, m3 as i8,
+                m2 as i8, m2 as i8, m2 as i8, m2 as i8,
+                m1 as i8, m1 as i8, m1 as i8, m1 as i8,
+                m0 as i8, m0 as i8, m0 as i8, m0 as i8,
+            );
+            
+            // Modulate color by mask
+            let src_modulated = modulate_by_mask_sse2(color_px, mask_vec);
+            
+            // Extract modulated pixels to array for scalar processing
+            let mut src_array: [u32; 4] = [0; 4];
+            _mm_storeu_si128(src_array.as_mut_ptr() as *mut __m128i, src_modulated);
+            
+            for i in 0..4 {
+                let src_px = src_array[i];
+                let sa = (src_px >> 24) & 0xFF;
+                
+                if sa == 0 {
+                    continue;
+                }
+                
+                if sa == 255 {
+                    dst_row[x + i] = src_px;
+                    continue;
+                }
+                
+                let sr = (src_px >> 16) & 0xFF;
+                let sg = (src_px >> 8) & 0xFF;
+                let sb = src_px & 0xFF;
+                
+                let dv = dst_row[x + i];
+                let da = (dv >> 24) & 0xFF;
+                let dr = (dv >> 16) & 0xFF;
+                let dg = (dv >> 8) & 0xFF;
+                let db = dv & 0xFF;
+                
+                let blend_channel = |s: u32, d: u32, sa: u32| -> u32 {
+                    let inv = 255 - sa;
+                    let t = s * sa + d * inv;
+                    (t + 1 + (t >> 8)) >> 8
+                };
+                
+                let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
+                let out_r = blend_channel(sr, dr, sa);
+                let out_g = blend_channel(sg, dg, sa);
+                let out_b = blend_channel(sb, db, sa);
+                
+                dst_row[x + i] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
+            }
+            
+            x += 4;
+        }
+        
+        // Handle remaining pixels with scalar
+        while x < rect_w {
+            let m = mask_row[x];
+            if m == 0 {
+                x += 1;
+                continue;
+            }
+            
+            let sa = scale_ch(ca, m);
+            let sr = scale_ch(cr, m);
+            let sg = scale_ch(cg, m);
+            let sb = scale_ch(cb, m);
+            
+            if sa == 255 {
+                dst_row[x] = (sa << 24) | (sr << 16) | (sg << 8) | sb;
+            } else if sa > 0 {
+                let dv = dst_row[x];
+                let da = (dv >> 24) & 0xFF;
+                let dr = (dv >> 16) & 0xFF;
+                let dg = (dv >> 8) & 0xFF;
+                let db = dv & 0xFF;
+                
+                let blend_channel = |s: u32, d: u32, sa: u32| -> u32 {
+                    let inv = 255 - sa;
+                    let t = s * sa + d * inv;
+                    (t + 1 + (t >> 8)) >> 8
+                };
+                
+                let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
+                let out_r = blend_channel(sr, dr, sa);
+                let out_g = blend_channel(sg, dg, sa);
+                let out_b = blend_channel(sb, db, sa);
+                
+                dst_row[x] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
+            }
+            
+            x += 1;
+        }
+    }
 }
 
 /// Composite source pixels with coverage mask (SSE2 backend).
@@ -40,9 +201,132 @@ pub unsafe fn composite_src_masked_over_sse2(
     rect_w: usize,
     rect_h: usize,
 ) {
-    crate::simd::scalar::composite_src_masked_over_scalar(
-        dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
-    );
+    for y in 0..rect_h {
+        let dst_row = &mut dst[y * dst_stride..];
+        let src_row = &src[y * src_stride..];
+        let mask_row = &mask[y * mask_stride..];
+        
+        let mut x = 0;
+        
+        // Process 4 pixels at a time
+        while x + 4 <= rect_w {
+            // Load 4 mask values
+            let m0 = mask_row[x] as u32;
+            let m1 = mask_row[x + 1] as u32;
+            let m2 = mask_row[x + 2] as u32;
+            let m3 = mask_row[x + 3] as u32;
+            
+            // Check if all masks are zero (early out)
+            if (m0 | m1 | m2 | m3) == 0 {
+                x += 4;
+                continue;
+            }
+            
+            // Load 4 source pixels
+            let src_ptr = src_row.as_ptr().add(x) as *const __m128i;
+            let src_pixels = _mm_loadu_si128(src_ptr);
+            
+            // Pack masks into an __m128i: each mask byte repeated 4 times for RGBA
+            let mask_vec = _mm_set_epi8(
+                m3 as i8, m3 as i8, m3 as i8, m3 as i8,
+                m2 as i8, m2 as i8, m2 as i8, m2 as i8,
+                m1 as i8, m1 as i8, m1 as i8, m1 as i8,
+                m0 as i8, m0 as i8, m0 as i8, m0 as i8,
+            );
+            
+            // Modulate source by mask
+            let src_modulated = modulate_by_mask_sse2(src_pixels, mask_vec);
+            
+            // For now, fall back to scalar per-pixel for the over blend
+            // This ensures bit-exact results
+            let mut src_array: [u32; 4] = [0; 4];
+            _mm_storeu_si128(src_array.as_mut_ptr() as *mut __m128i, src_modulated);
+            
+            for i in 0..4 {
+                let src_px = src_array[i];
+                let sa = (src_px >> 24) & 0xFF;
+                
+                if sa == 0 {
+                    continue;
+                }
+                
+                if sa == 255 {
+                    dst_row[x + i] = src_px;
+                    continue;
+                }
+                
+                let sr = (src_px >> 16) & 0xFF;
+                let sg = (src_px >> 8) & 0xFF;
+                let sb = src_px & 0xFF;
+                
+                let dv = dst_row[x + i];
+                let da = (dv >> 24) & 0xFF;
+                let dr = (dv >> 16) & 0xFF;
+                let dg = (dv >> 8) & 0xFF;
+                let db = dv & 0xFF;
+                
+                let blend_channel = |s: u32, d: u32, sa: u32| -> u32 {
+                    let inv = 255 - sa;
+                    let t = s * sa + d * inv;
+                    (t + 1 + (t >> 8)) >> 8
+                };
+                
+                let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
+                let out_r = blend_channel(sr, dr, sa);
+                let out_g = blend_channel(sg, dg, sa);
+                let out_b = blend_channel(sb, db, sa);
+                
+                dst_row[x + i] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
+            }
+            
+            x += 4;
+        }
+        
+        // Handle remaining pixels with scalar
+        while x < rect_w {
+            let m = mask_row[x];
+            if m == 0 {
+                x += 1;
+                continue;
+            }
+            
+            let s = src_row[x];
+            let sa_orig = ((s >> 24) & 0xFF) as u8;
+            let sr_orig = ((s >> 16) & 0xFF) as u8;
+            let sg_orig = ((s >> 8) & 0xFF) as u8;
+            let sb_orig = (s & 0xFF) as u8;
+            
+            let sa = scale_ch(sa_orig, m);
+            let sr = scale_ch(sr_orig, m);
+            let sg = scale_ch(sg_orig, m);
+            let sb = scale_ch(sb_orig, m);
+            
+            if sa == 255 {
+                dst_row[x] = (sa << 24) | (sr << 16) | (sg << 8) | sb;
+            } else if sa > 0 {
+                let dv = dst_row[x];
+                let da = (dv >> 24) & 0xFF;
+                let dr = (dv >> 16) & 0xFF;
+                let dg = (dv >> 8) & 0xFF;
+                let db = dv & 0xFF;
+                
+                let blend_channel = |s: u32, d: u32, sa: u32| -> u32 {
+                    let inv = 255 - sa;
+                    let t = s * sa + d * inv;
+                    (t + 1 + (t >> 8)) >> 8
+                };
+                
+                let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
+                let out_r = blend_channel(sr, dr, sa);
+                let out_g = blend_channel(sg, dg, sa);
+                let out_b = blend_channel(sb, db, sa);
+                
+                dst_row[x] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
+            }
+            
+            x += 1;
+        }
+    }
 }
 
 #[target_feature(enable = "sse2")]

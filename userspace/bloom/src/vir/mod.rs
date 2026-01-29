@@ -20,6 +20,10 @@ pub mod dump;
 pub mod svg_convert;
 pub mod shapes;
 pub mod render;
+pub mod examples;
+
+#[cfg(test)]
+mod tests;
 
 pub use types::*;
 pub use transform::*;

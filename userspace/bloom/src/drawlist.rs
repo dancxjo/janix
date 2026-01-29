@@ -461,8 +461,9 @@ pub struct Stroke {
 
 pub fn decode_native_drawlist(data: &[u8]) -> Vec<DrawCmd> {
     use abi::drawlist::{
-        decode_fill_path, decode_fill_rect, decode_line, decode_stroke_path, decode_text_span,
-        DrawCmdTag, DrawListReader,
+        decode_draw_image_rect, decode_fill_path, decode_fill_rect, decode_line, decode_restore,
+        decode_save, decode_set_clip_rect, decode_set_transform, decode_stroke_path,
+        decode_text_span, DrawCmdTag, DrawListReader,
     };
 
     let mut reader = match DrawListReader::new(data) {
@@ -538,6 +539,52 @@ pub fn decode_native_drawlist(data: &[u8]) -> Vec<DrawCmd> {
                         icon_name_id: icon_id,
                         dest: Rect::new(x, y, w, h),
                     });
+                }
+            }
+            DrawCmdTag::Save => {
+                if decode_save(raw_cmd.payload).is_some() {
+                    // Save translates to both PushClip and PushTransform with identity
+                    cmds.push(DrawCmd::PushClip {
+                        rect: Rect::new(0, 0, i32::MAX, i32::MAX),
+                    });
+                    cmds.push(DrawCmd::PushTransform {
+                        transform: Transform::identity(),
+                    });
+                }
+            }
+            DrawCmdTag::Restore => {
+                if decode_restore(raw_cmd.payload).is_some() {
+                    cmds.push(DrawCmd::PopTransform);
+                    cmds.push(DrawCmd::PopClip);
+                }
+            }
+            DrawCmdTag::SetClipRect => {
+                if let Some((x, y, w, h)) = decode_set_clip_rect(raw_cmd.payload) {
+                    cmds.push(DrawCmd::PushClip {
+                        rect: Rect::new(x, y, w, h),
+                    });
+                }
+            }
+            DrawCmdTag::SetTransform => {
+                if let Some(t) = decode_set_transform(raw_cmd.payload) {
+                    cmds.push(DrawCmd::PushTransform {
+                        transform: Transform {
+                            m11: t.a,
+                            m12: t.b,
+                            m21: t.c,
+                            m22: t.d,
+                            dx: t.tx,
+                            dy: t.ty,
+                        },
+                    });
+                }
+            }
+            DrawCmdTag::DrawImageRect => {
+                if let Some(img) = decode_draw_image_rect(raw_cmd.payload) {
+                    // For now, we skip image rendering as we need ThingId -> Image mapping
+                    // This will be implemented when the asset system is wired up
+                    // TODO: Map img.image_id (u128) to crate::asset::Image
+                    let _ = img; // Suppress unused warning
                 }
             }
             DrawCmdTag::Unknown(8) => {

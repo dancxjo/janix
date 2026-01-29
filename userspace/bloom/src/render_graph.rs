@@ -155,7 +155,12 @@ impl RenderGraphPipeline {
                 DrawCmdTag::Line
                 | DrawCmdTag::StrokePath
                 | DrawCmdTag::TextSpan
-                | DrawCmdTag::DrawIcon => {}
+                | DrawCmdTag::DrawIcon
+                | DrawCmdTag::Save
+                | DrawCmdTag::Restore
+                | DrawCmdTag::SetClipRect
+                | DrawCmdTag::SetTransform
+                | DrawCmdTag::DrawImageRect => {}
                 DrawCmdTag::Unknown(_) => {}
             }
         }

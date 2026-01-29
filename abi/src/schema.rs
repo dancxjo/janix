@@ -118,6 +118,12 @@ pub mod keys {
     pub const UI_DRAWLIST_BYTESPACE: &str = "ui.drawlist.bytespace";
     /// Monotonic generation for drawlist updates.
     pub const UI_DRAWLIST_GEN: &str = "ui.drawlist.gen";
+    /// Optional: ThingId owner (window/surface/widget subtree).
+    pub const UI_DRAWLIST_OWNER: &str = "ui.drawlist.owner";
+    /// Optional: Bounding rectangle bytespace (RectI32Wire).
+    pub const UI_DRAWLIST_BOUNDS: &str = "ui.drawlist.bounds";
+    /// Optional: Debug name string bytespace.
+    pub const UI_DRAWLIST_DEBUG_NAME: &str = "ui.drawlist.debug_name";
     /// Bytespace id containing packed Petals ui scene.
     pub const UI_SCENE_BYTESPACE: &str = "ui.scene.bytespace";
     /// Monotonic generation for scene updates.
@@ -361,6 +367,8 @@ pub mod kinds {
     pub const UI_BUTTON: &str = "ui.Button";
     pub const UI_CHECKBOX: &str = "ui.Checkbox";
     pub const UI_COLUMN: &str = "ui.Container.Column";
+    /// Graph-native drawlist (stable identity, packed ops in bytespace).
+    pub const UI_DRAWLIST: &str = "ui.DrawList";
 
     // Font Graph Kinds
     pub const FONT_SUPERFAMILY: &str = "font.Superfamily";

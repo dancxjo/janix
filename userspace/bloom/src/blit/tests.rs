@@ -96,28 +96,13 @@ mod tests {
         }
     }
 
-    // Helper function to compute reference output for a8 tinted blit
-    fn blit_a8_tinted_over_reference(dst: &mut [u32], mask: &[u8], color: u32, tint_a: u8) {
-        let len = dst.len().min(mask.len());
-        stem::simd::scalar::composite_solid_masked_over_scalar(
-            dst, len, mask, len, len, 1, color
-        );
-        
-        // If tint_a != 255, we need to pre-modulate the color
-        if tint_a != 255 && tint_a != 0 {
-            // This is a simplified reference - the real function pre-modulates
-            // For the test, we'll just call the optimized version and compare against
-            // a direct call to the SIMD implementation with pre-modulated color
-        }
-    }
-
     #[test]
     fn test_a8_tinted_all_zero_mask() {
-        let len = 50;
+        let len = 32; // Small span to trigger fast path
         let color = 0xFFFF0000; // Opaque red
         let tint_a = 255;
         
-        let mut dst = vec![0xFF000000; len];
+        let mut dst = vec![0xFFFFFFFF; len];
         let dst_orig = dst.clone();
         let mask = vec![0u8; len]; // All zeros
         
@@ -129,7 +114,7 @@ mod tests {
 
     #[test]
     fn test_a8_tinted_all_255_mask_opaque() {
-        let len = 50;
+        let len = 32; // Small span to trigger fast path
         let color = 0xFFFF0000; // Opaque red
         let tint_a = 255;
         
@@ -276,5 +261,22 @@ mod tests {
         for &pixel in &dst {
             assert_eq!(pixel, color, "Small span all-255 should use fast path and fill with color");
         }
+    }
+
+    #[test]
+    fn test_a8_tinted_large_span_all_zero() {
+        // Test that large spans don't use the fast path
+        let len = 128; // > 64, so no fast path
+        let color = 0xFFFF0000;
+        let tint_a = 255;
+        
+        let mut dst = vec![0xFFFFFFFF; len];
+        let dst_orig = dst.clone();
+        let mask = vec![0u8; len];
+        
+        blit_a8_tinted_over(&mut dst, &mask, color, tint_a);
+        
+        // Should still be unchanged (SIMD handles zero mask correctly)
+        assert_eq!(dst, dst_orig, "Large span all-zero should still produce correct output");
     }
 }

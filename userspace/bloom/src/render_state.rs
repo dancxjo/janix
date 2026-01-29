@@ -1,3 +1,68 @@
+//! Raster cache state with generation-based invalidation.
+//!
+//! # Design
+//!
+//! This module implements a generation-based raster caching system that ensures:
+//! - **Correctness**: No stale frames when content/geometry/assets/params change
+//! - **Determinism**: Same updates produce same cache behavior
+//! - **Auditability**: Clear reasons for cache hits/misses
+//!
+//! ## Cache Key Structure
+//!
+//! `RasterCacheKey` contains:
+//! - **Thing identity**: `ThingId` (window/surface node)
+//! - **Truth generations**:
+//!   - `paint_gen`: Bumped when drawlist content changes
+//!   - `geometry_gen`: Bumped when size/position/transform changes
+//!   - `asset_gen`: Bumped when referenced assets change
+//! - **Render parameters**:
+//!   - `scale_q16`: Scale factor in Q16.16 fixed point
+//!   - `aa`: Anti-aliasing mode
+//!   - `pixfmt`: Pixel format
+//!
+//! ## Invalidation Rules
+//!
+//! A cached raster is valid if and only if its cache key matches the current state.
+//! Any field change invalidates the cache:
+//! - Paint change → paint_gen bumps → new key → cache miss
+//! - Geometry change → geometry_gen bumps → new key → cache miss
+//! - Asset change → asset_gen bumps → new key → cache miss
+//! - Param change → different params → new key → cache miss
+//!
+//! ## Usage
+//!
+//! ```rust,ignore
+//! use render_state::{RenderState, RasterCacheKey};
+//! use abi::pixel::PixelFormat;
+//! use geometry::EdgeAA;
+//!
+//! let mut state = RenderState::new();
+//!
+//! // Construct cache key
+//! let key = RasterCacheKey::new(
+//!     window_id,
+//!     paint_gen,
+//!     geometry_gen,
+//!     asset_gen,
+//!     1.0,  // scale
+//!     EdgeAA::None,
+//!     PixelFormat::Bgra8888,
+//! );
+//!
+//! // Try cache lookup
+//! if let Some(cached) = state.get_window_raster(&key) {
+//!     // Cache hit - use cached raster
+//! } else {
+//!     // Cache miss - rasterize and insert
+//!     let raster = rasterize_window(window);
+//!     state.insert_window_raster(key, raster);
+//! }
+//!
+//! // Check statistics
+//! let stats = state.window_cache_stats();
+//! println!("Hits: {}, Misses: {}", stats.hits, stats.misses);
+//! ```
+
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 

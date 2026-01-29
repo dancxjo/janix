@@ -27,6 +27,32 @@ pub struct WindowHit {
     pub z: i32,
 }
 
+/// Internal window paint state with generation tracking.
+///
+/// # Cache Key Construction
+///
+/// For proper generation-based caching, construct a `RasterCacheKey`:
+///
+/// ```rust,ignore
+/// use crate::render_state::RasterCacheKey;
+/// use abi::pixel::PixelFormat;
+///
+/// let cache_key = RasterCacheKey::new(
+///     window_id,           // ThingId
+///     state.paint_gen,     // Paint generation (drawlist changes)
+///     state.geometry_gen,  // Geometry generation (size/position/transform)
+///     state.asset_gen,     // Asset generation (fonts/icons/images)
+///     1.0,                 // Scale factor
+///     EdgeAA::None,        // Anti-aliasing mode
+///     PixelFormat::Bgra8888, // Pixel format
+/// );
+/// ```
+///
+/// This ensures that:
+/// - Paint changes invalidate the cache (paint_gen bump)
+/// - Geometry changes invalidate the cache (geometry_gen bump)
+/// - Asset changes invalidate the cache (asset_gen from AssetBank)
+/// - Render parameter changes invalidate the cache (scale/AA/format)
 struct WindowPaintState {
     rect: Rect,
     z: i32,
@@ -34,6 +60,7 @@ struct WindowPaintState {
     paint_gen: u64,
     paint_bs: u64,
     geometry_gen: u64,
+    asset_gen: u64,
     width: u32,
     height: u32,
     buffer: Vec<u32>,
@@ -79,6 +106,7 @@ impl PaintPipeline {
                 paint_gen: 0,
                 paint_bs: 0,
                 geometry_gen: 0,
+                asset_gen: 0,
                 width: 0,
                 height: 0,
                 buffer: Vec::new(),

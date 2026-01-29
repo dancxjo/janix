@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use crate::simd::blit_rgba8888_over;
+    use crate::simd::{
+        blit_rgba8888_over, composite_solid_masked_over, composite_src_masked_over,
+    };
     use crate::simd::scalar::{
         blit_rgba8888_over_scalar, composite_solid_masked_over_scalar,
         composite_src_masked_over_scalar,
@@ -289,6 +291,68 @@ mod tests {
             for x in w..dst_stride {
                 assert_eq!(dst[y * dst_stride + x], 0xFF_80_80_80, "untouched at ({},{})", x, y);
             }
+        }
+    }
+
+    // Tests for SIMD dispatch layer (compare to scalar reference)
+    #[test]
+    fn test_solid_masked_simd_correctness() {
+        let w = 32;
+        let h = 8;
+        let mut rng = XorShift32::new(0x5555_AAAA);
+
+        let color = rng.next();
+        let mut dst = vec![0u32; w * h];
+        let mut mask = vec![0u8; w * h];
+
+        for i in 0..(w * h) {
+            dst[i] = rng.next() | 0xFF00_0000;
+            mask[i] = (rng.next() & 0xFF) as u8;
+        }
+
+        let mut dst_scalar = dst.clone();
+        composite_solid_masked_over_scalar(&mut dst_scalar, w, &mask, w, w, h, color);
+
+        let mut dst_simd = dst.clone();
+        composite_solid_masked_over(&mut dst_simd, w, &mask, w, w, h, color);
+
+        for i in 0..(w * h) {
+            assert_eq!(
+                dst_scalar[i], dst_simd[i],
+                "solid masked SIMD mismatch at idx {}",
+                i
+            );
+        }
+    }
+
+    #[test]
+    fn test_src_masked_simd_correctness() {
+        let w = 32;
+        let h = 8;
+        let mut rng = XorShift32::new(0xAAAA_5555);
+
+        let mut src = vec![0u32; w * h];
+        let mut dst = vec![0u32; w * h];
+        let mut mask = vec![0u8; w * h];
+
+        for i in 0..(w * h) {
+            src[i] = rng.next();
+            dst[i] = rng.next() | 0xFF00_0000;
+            mask[i] = (rng.next() & 0xFF) as u8;
+        }
+
+        let mut dst_scalar = dst.clone();
+        composite_src_masked_over_scalar(&mut dst_scalar, w, &src, w, &mask, w, w, h);
+
+        let mut dst_simd = dst.clone();
+        composite_src_masked_over(&mut dst_simd, w, &src, w, &mask, w, w, h);
+
+        for i in 0..(w * h) {
+            assert_eq!(
+                dst_scalar[i], dst_simd[i],
+                "src masked SIMD mismatch at idx {}",
+                i
+            );
         }
     }
 }

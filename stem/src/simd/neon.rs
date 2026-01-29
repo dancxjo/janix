@@ -7,6 +7,42 @@ fn scale_ch(c: u8, a: u8) -> u32 {
     (t + 1 + (t >> 8)) >> 8
 }
 
+/// Composite solid color with coverage mask (NEON backend).
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+pub unsafe fn composite_solid_masked_over_neon(
+    dst: &mut [u32],
+    dst_stride: usize,
+    mask: &[u8],
+    mask_stride: usize,
+    rect_w: usize,
+    rect_h: usize,
+    color_premul: u32,
+) {
+    // For now, fall back to scalar; a full NEON impl would process 4 pixels at a time
+    crate::simd::scalar::composite_solid_masked_over_scalar(
+        dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+    );
+}
+
+/// Composite source pixels with coverage mask (NEON backend).
+#[cfg(target_arch = "aarch64")]
+#[target_feature(enable = "neon")]
+pub unsafe fn composite_src_masked_over_neon(
+    dst: &mut [u32],
+    dst_stride: usize,
+    src: &[u32],
+    src_stride: usize,
+    mask: &[u8],
+    mask_stride: usize,
+    rect_w: usize,
+    rect_h: usize,
+) {
+    crate::simd::scalar::composite_src_masked_over_scalar(
+        dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+    );
+}
+
 #[cfg(target_arch = "aarch64")]
 #[target_feature(enable = "neon")]
 pub unsafe fn blit_rgba8888_over_neon(dst: &mut [u32], src: &[u32]) {

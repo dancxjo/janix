@@ -47,12 +47,25 @@ pub fn composite_solid_masked_over(
     color_premul: u32,
 ) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[cfg(target_feature = "sse2")]
-    unsafe {
-        x86::composite_solid_masked_over_sse2(
-            dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
-        );
-        return;
+    {
+        // Prefer AVX2 if available at runtime
+        if x86::is_avx2_available() {
+            unsafe {
+                x86::composite_solid_masked_over_avx2(
+                    dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+                );
+                return;
+            }
+        }
+        
+        // Fall back to SSE2 if available
+        #[cfg(target_feature = "sse2")]
+        unsafe {
+            x86::composite_solid_masked_over_sse2(
+                dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+            );
+            return;
+        }
     }
 
     #[cfg(target_arch = "aarch64")]
@@ -86,12 +99,25 @@ pub fn composite_src_masked_over(
     rect_h: usize,
 ) {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
-    #[cfg(target_feature = "sse2")]
-    unsafe {
-        x86::composite_src_masked_over_sse2(
-            dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
-        );
-        return;
+    {
+        // Prefer AVX2 if available at runtime
+        if x86::is_avx2_available() {
+            unsafe {
+                x86::composite_src_masked_over_avx2(
+                    dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+                );
+                return;
+            }
+        }
+        
+        // Fall back to SSE2 if available
+        #[cfg(target_feature = "sse2")]
+        unsafe {
+            x86::composite_src_masked_over_sse2(
+                dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+            );
+            return;
+        }
     }
 
     #[cfg(target_arch = "aarch64")]

@@ -111,7 +111,7 @@ mod tests {
         let tessellated = tessellate_fill(&path, &transform, &config);
 
         // Check that vertices are scaled
-        assert!(tessellated.vertices.len() > 0);
+        assert!(!tessellated.vertices.is_empty());
         
         // The second point should be at (20, 0) after 2x scale
         if tessellated.vertices.len() > 1 {

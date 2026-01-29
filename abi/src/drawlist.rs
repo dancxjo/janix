@@ -28,6 +28,8 @@ use alloc::vec::Vec;
 /// use abi::drawlist::{DrawListBuilder, FillRule, PathVerb, PointF};
 ///
 /// let mut builder = DrawListBuilder::new();
+/// builder.push_save();
+/// builder.push_set_clip_rect(0, 0, 100, 100);
 /// builder.push_fill_rect(10, 10, 20, 30, 0xff00ff00);
 /// let path = vec![
 ///     PathVerb::MoveTo(PointF::new(0.0, 0.0)),
@@ -36,6 +38,7 @@ use alloc::vec::Vec;
 ///     PathVerb::Close,
 /// ];
 /// builder.push_fill_path(&path, FillRule::NonZero, 0xffff0000);
+/// builder.push_restore();
 /// let bytes = builder.finish();
 /// assert!(bytes.len() > 16);
 /// ```
@@ -58,6 +61,11 @@ pub enum DrawCmdTag {
     StrokePath = 4,
     TextSpan = 5,
     DrawIcon = 6,
+    Save = 7,
+    Restore = 8,
+    SetClipRect = 9,
+    SetTransform = 10,
+    DrawImageRect = 11,
     Unknown(u32),
 }
 
@@ -70,6 +78,11 @@ impl DrawCmdTag {
             4 => DrawCmdTag::StrokePath,
             5 => DrawCmdTag::TextSpan,
             6 => DrawCmdTag::DrawIcon,
+            7 => DrawCmdTag::Save,
+            8 => DrawCmdTag::Restore,
+            9 => DrawCmdTag::SetClipRect,
+            10 => DrawCmdTag::SetTransform,
+            11 => DrawCmdTag::DrawImageRect,
             _ => DrawCmdTag::Unknown(raw),
         }
     }
@@ -82,6 +95,11 @@ impl DrawCmdTag {
             DrawCmdTag::StrokePath => 4,
             DrawCmdTag::TextSpan => 5,
             DrawCmdTag::DrawIcon => 6,
+            DrawCmdTag::Save => 7,
+            DrawCmdTag::Restore => 8,
+            DrawCmdTag::SetClipRect => 9,
+            DrawCmdTag::SetTransform => 10,
+            DrawCmdTag::DrawImageRect => 11,
             DrawCmdTag::Unknown(raw) => raw,
         }
     }
@@ -196,6 +214,66 @@ impl DrawListBuilder {
         payload.extend_from_slice(&h.to_le_bytes());
         payload.extend_from_slice(&icon_id.to_le_bytes());
         self.push_cmd(DrawCmdTag::DrawIcon, &payload);
+    }
+
+    /// Save the current graphics state (transform, clip).
+    pub fn push_save(&mut self) {
+        self.push_cmd(DrawCmdTag::Save, &[]);
+    }
+
+    /// Restore the previously saved graphics state.
+    pub fn push_restore(&mut self) {
+        self.push_cmd(DrawCmdTag::Restore, &[]);
+    }
+
+    /// Set a rectangular clipping region.
+    pub fn push_set_clip_rect(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        let mut payload = Vec::with_capacity(16);
+        payload.extend_from_slice(&x.to_le_bytes());
+        payload.extend_from_slice(&y.to_le_bytes());
+        payload.extend_from_slice(&w.to_le_bytes());
+        payload.extend_from_slice(&h.to_le_bytes());
+        self.push_cmd(DrawCmdTag::SetClipRect, &payload);
+    }
+
+    /// Set an affine 2D transform matrix [a, b, c, d, tx, ty].
+    /// The transform maps points as: x' = a*x + c*y + tx, y' = b*x + d*y + ty
+    pub fn push_set_transform(&mut self, a: f32, b: f32, c: f32, d: f32, tx: f32, ty: f32) {
+        let mut payload = Vec::with_capacity(24);
+        payload.extend_from_slice(&a.to_le_bytes());
+        payload.extend_from_slice(&b.to_le_bytes());
+        payload.extend_from_slice(&c.to_le_bytes());
+        payload.extend_from_slice(&d.to_le_bytes());
+        payload.extend_from_slice(&tx.to_le_bytes());
+        payload.extend_from_slice(&ty.to_le_bytes());
+        self.push_cmd(DrawCmdTag::SetTransform, &payload);
+    }
+
+    /// Draw an image from a graph ThingId into a destination rectangle.
+    /// image_id: ThingId (as u128) of the image asset.
+    pub fn push_draw_image_rect(
+        &mut self,
+        image_id: u128,
+        src_x: i32,
+        src_y: i32,
+        src_w: i32,
+        src_h: i32,
+        dst_x: i32,
+        dst_y: i32,
+        dst_w: i32,
+        dst_h: i32,
+    ) {
+        let mut payload = Vec::with_capacity(48);
+        payload.extend_from_slice(&image_id.to_le_bytes());
+        payload.extend_from_slice(&src_x.to_le_bytes());
+        payload.extend_from_slice(&src_y.to_le_bytes());
+        payload.extend_from_slice(&src_w.to_le_bytes());
+        payload.extend_from_slice(&src_h.to_le_bytes());
+        payload.extend_from_slice(&dst_x.to_le_bytes());
+        payload.extend_from_slice(&dst_y.to_le_bytes());
+        payload.extend_from_slice(&dst_w.to_le_bytes());
+        payload.extend_from_slice(&dst_h.to_le_bytes());
+        self.push_cmd(DrawCmdTag::DrawImageRect, &payload);
     }
 
     pub fn finish(mut self) -> Vec<u8> {
@@ -437,6 +515,101 @@ pub fn decode_draw_icon(payload: &[u8]) -> Option<(i32, i32, i32, i32, u32)> {
     let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
     let icon_id = u32::from_le_bytes(payload[16..20].try_into().ok()?);
     Some((x, y, w, h, icon_id))
+}
+
+/// Decode Save command (no payload).
+pub fn decode_save(payload: &[u8]) -> Option<()> {
+    if payload.is_empty() {
+        Some(())
+    } else {
+        None
+    }
+}
+
+/// Decode Restore command (no payload).
+pub fn decode_restore(payload: &[u8]) -> Option<()> {
+    if payload.is_empty() {
+        Some(())
+    } else {
+        None
+    }
+}
+
+/// Decode SetClipRect command.
+pub fn decode_set_clip_rect(payload: &[u8]) -> Option<(i32, i32, i32, i32)> {
+    if payload.len() != 16 {
+        return None;
+    }
+    let x = i32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let y = i32::from_le_bytes(payload[4..8].try_into().ok()?);
+    let w = i32::from_le_bytes(payload[8..12].try_into().ok()?);
+    let h = i32::from_le_bytes(payload[12..16].try_into().ok()?);
+    Some((x, y, w, h))
+}
+
+/// Affine 2D transform matrix.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Transform2D {
+    pub a: f32,
+    pub b: f32,
+    pub c: f32,
+    pub d: f32,
+    pub tx: f32,
+    pub ty: f32,
+}
+
+/// Decode SetTransform command.
+pub fn decode_set_transform(payload: &[u8]) -> Option<Transform2D> {
+    if payload.len() != 24 {
+        return None;
+    }
+    let a = f32::from_le_bytes(payload[0..4].try_into().ok()?);
+    let b = f32::from_le_bytes(payload[4..8].try_into().ok()?);
+    let c = f32::from_le_bytes(payload[8..12].try_into().ok()?);
+    let d = f32::from_le_bytes(payload[12..16].try_into().ok()?);
+    let tx = f32::from_le_bytes(payload[16..20].try_into().ok()?);
+    let ty = f32::from_le_bytes(payload[20..24].try_into().ok()?);
+    Some(Transform2D { a, b, c, d, tx, ty })
+}
+
+/// Decoded DrawImageRect command.
+pub struct DecodedDrawImageRect {
+    pub image_id: u128,
+    pub src_x: i32,
+    pub src_y: i32,
+    pub src_w: i32,
+    pub src_h: i32,
+    pub dst_x: i32,
+    pub dst_y: i32,
+    pub dst_w: i32,
+    pub dst_h: i32,
+}
+
+/// Decode DrawImageRect command.
+pub fn decode_draw_image_rect(payload: &[u8]) -> Option<DecodedDrawImageRect> {
+    if payload.len() != 48 {
+        return None;
+    }
+    let image_id = u128::from_le_bytes(payload[0..16].try_into().ok()?);
+    let src_x = i32::from_le_bytes(payload[16..20].try_into().ok()?);
+    let src_y = i32::from_le_bytes(payload[20..24].try_into().ok()?);
+    let src_w = i32::from_le_bytes(payload[24..28].try_into().ok()?);
+    let src_h = i32::from_le_bytes(payload[28..32].try_into().ok()?);
+    let dst_x = i32::from_le_bytes(payload[32..36].try_into().ok()?);
+    let dst_y = i32::from_le_bytes(payload[36..40].try_into().ok()?);
+    let dst_w = i32::from_le_bytes(payload[40..44].try_into().ok()?);
+    let dst_h = i32::from_le_bytes(payload[44..48].try_into().ok()?);
+    Some(DecodedDrawImageRect {
+        image_id,
+        src_x,
+        src_y,
+        src_w,
+        src_h,
+        dst_x,
+        dst_y,
+        dst_w,
+        dst_h,
+    })
 }
 
 fn encode_path(verbs: &[PathVerb]) -> Vec<u8> {

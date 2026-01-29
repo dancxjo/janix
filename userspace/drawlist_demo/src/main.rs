@@ -9,6 +9,7 @@ use abi::schema::{keys, kinds, rels};
 use alloc::vec::Vec;
 use core::time::Duration;
 use stem::info;
+use stem::petals::DrawList;
 use stem::thing::sys::{bytespace_create, bytespace_write, create_node, find, link, prop_set};
 use stem::thing::ThingId;
 
@@ -43,9 +44,29 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
     prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
 }
 
-fn build_drawlist(color: u32) -> Vec<u8> {
+fn build_drawlist(color: u32, use_clip: bool, scale: f32) -> DrawListBuilder {
     let mut builder = DrawListBuilder::new();
+
+    // Demonstrate Save/Restore with clipping
+    builder.push_save();
+
+    if use_clip {
+        // Demonstrate SetClipRect
+        builder.push_set_clip_rect(10, 10, 300, 180);
+    }
+
+    // Demonstrate SetTransform (simple scale around center)
+    if scale != 1.0 {
+        let cx = 180.0;
+        let cy = 110.0;
+        // Translate to origin, scale, translate back
+        builder.push_set_transform(scale, 0.0, 0.0, scale, cx - cx * scale, cy - cy * scale);
+    }
+
+    // Draw background rectangle
     builder.push_fill_rect(20, 20, 120, 80, color);
+
+    // Draw a triangle path
     let path = [
         PathVerb::MoveTo(PointF::new(200.0, 30.0)),
         PathVerb::LineTo(PointF::new(280.0, 140.0)),
@@ -53,18 +74,29 @@ fn build_drawlist(color: u32) -> Vec<u8> {
         PathVerb::Close,
     ];
     builder.push_fill_path(&path, FillRule::NonZero, 0xff3366ff);
-    builder.finish()
+
+    // Draw a line
+    builder.push_line(
+        PointF::new(10.0, 10.0),
+        PointF::new(350.0, 10.0),
+        0xff00ff00,
+        2.0,
+    );
+
+    builder.push_restore();
+
+    builder
 }
 
 #[stem::main]
 fn main() -> ! {
-    info!("DrawList demo starting...");
+    info!("DrawList demo starting (with new commands)...");
     let ui_root = wait_for_ui_root();
 
     let win = create_node(kinds::UI_WINDOW).expect("window");
     link(win, rels::CHILD_OF, ui_root).ok();
     link(ui_root, rels::HAS_CHILD, win).ok();
-    set_string_prop(win, keys::UI_TITLE, "DrawList Demo");
+    set_string_prop(win, keys::UI_TITLE, "DrawList Demo (Enhanced)");
     prop_set(win, keys::UI_X, 100).ok();
     prop_set(win, keys::UI_Y, 100).ok();
     prop_set(win, keys::UI_WIDTH, 360).ok();
@@ -73,26 +105,30 @@ fn main() -> ! {
     let viewport_bs = write_rect_bytespace([0, 0, 360, 220]);
     prop_set(win, keys::UI_VIEWPORT_BYTESPACE, viewport_bs.to_u64_lossy()).ok();
 
-    let drawlist_bytes = build_drawlist(0xff22aa66);
-    let mut drawlist_len = drawlist_bytes.len();
-    let mut drawlist_bs = bytespace_create(drawlist_bytes.len(), 0, 0).expect("drawlist bytespace");
-    bytespace_write(drawlist_bs, 0, &drawlist_bytes).ok();
-    prop_set(win, keys::UI_DRAWLIST_BYTESPACE, drawlist_bs.to_u64_lossy()).ok();
+    // Use the new DrawList helper
+    let mut dl = DrawList::new(win);
+    dl.set_debug_name("main_drawlist").ok();
+    dl.set_bounds(0, 0, 360, 220).ok();
 
-    let mut gen: u64 = 1;
-    prop_set(win, keys::UI_DRAWLIST_GEN, gen).ok();
+    // Initial publish
+    let builder = build_drawlist(0xff22aa66, false, 1.0);
+    dl.publish(builder).expect("initial publish");
 
+    let mut frame = 0u32;
     loop {
         stem::sleep(Duration::from_millis(750));
-        gen += 1;
-        let color = if gen % 2 == 0 { 0xff22aa66 } else { 0xffaa2244 };
-        let drawlist_bytes = build_drawlist(color);
-        if drawlist_bytes.len() != drawlist_len {
-            drawlist_bs = bytespace_create(drawlist_bytes.len(), 0, 0).expect("drawlist bytespace");
-            drawlist_len = drawlist_bytes.len();
-            prop_set(win, keys::UI_DRAWLIST_BYTESPACE, drawlist_bs.to_u64_lossy()).ok();
+        frame += 1;
+
+        // Cycle through different states to demonstrate features
+        let color = if frame % 4 < 2 { 0xff22aa66 } else { 0xffaa2244 };
+        let use_clip = (frame / 2) % 2 == 0;
+        let scale = if frame % 8 < 4 { 1.0 } else { 0.8 };
+
+        let builder = build_drawlist(color, use_clip, scale);
+        dl.publish(builder).expect("publish");
+
+        if frame % 4 == 0 {
+            info!("Frame {}: color cycle, clip={}, scale={}", frame, use_clip, scale);
         }
-        bytespace_write(drawlist_bs, 0, &drawlist_bytes).ok();
-        prop_set(win, keys::UI_DRAWLIST_GEN, gen).ok();
     }
 }

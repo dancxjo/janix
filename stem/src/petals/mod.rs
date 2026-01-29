@@ -1,6 +1,7 @@
 extern crate alloc;
 
 pub mod builder;
+pub mod drawlist;
 pub mod graph;
 pub mod pack;
 pub mod viewport;
@@ -12,6 +13,7 @@ pub use builder::{
     ImageFit, JustifyContent, Line, Rect, Scene, Scroll, ScrollAxis, Separator, Size, Spacer,
     Styled, Text, TextWrap, Window,
 };
+pub use drawlist::DrawList;
 pub use graph::{Petals, UiTreeBuilder};
 pub use viewport::{PanZoomController, Viewport, ViewportConstraints, ViewportIntent};
 

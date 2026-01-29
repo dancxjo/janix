@@ -91,7 +91,7 @@ fn log_simd_backend() {
             crate::trace_event!("bloom.simd.backend", "Scalar");
         }
     }
-    
+
     #[cfg(target_arch = "aarch64")]
     {
         #[cfg(target_feature = "neon")]
@@ -105,7 +105,7 @@ fn log_simd_backend() {
             crate::trace_event!("bloom.simd.backend", "Scalar");
         }
     }
-    
+
     #[cfg(not(any(target_arch = "x86", target_arch = "x86_64", target_arch = "aarch64")))]
     {
         crate::log!("[bloom] SIMD backend: Scalar (other arch)");
@@ -338,10 +338,10 @@ fn cycle_windows_in_order(
 fn main(arg: usize) -> ! {
     logging::init();
     perf::init();
-    
+
     // Log SIMD backend selection for masked compositing
     log_simd_backend();
-    
+
     use stem::thing::sys::{bytespace_map, bytespace_unmap};
     let bs_id = ThingId::from_u64(arg as u64);
     let (mut arg_req, mut arg_resp, mut bristle_evt) = (0, 0, 0);

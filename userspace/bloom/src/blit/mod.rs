@@ -1,5 +1,5 @@
 // Dispatch module for blit operations
-                                                              
+mod scalar;
 pub fn blit_rgba8888_over(dst: &mut [u32], src: &[u32]) {
     crate::trace_counter!("raster.blit.backend.count", 1);
     stem::simd::blit_rgba8888_over(dst, src);

@@ -2001,19 +2001,66 @@ fn rasterize_text_fallback(
             py as i32 - m.height as i32 - m.ymin,
         );
         for r in 0..m.height {
-            for c in 0..m.width {
-                let (cx, cy) = (gx + c as i32, gy + r as i32);
-                if cx >= clip.x()
-                    && cx < clip.x() + clip.width()
-                    && cy >= clip.y()
-                    && cy < clip.y() + clip.height()
-                {
-                    let a = b[r * (m.width as usize) + c];
-                    if a > 0 {
-                        blend_pixel(surface, cx, cy, sr, sg, sb, scale_ch(a, sa) as u8);
-                    }
-                }
+            let cy = gy + r as i32;
+            if cy < clip.y() || cy >= clip.y() + clip.height() {
+                continue;
             }
+            
+            // Calculate clipped row range
+            let cx_start = gx.max(clip.x());
+            let cx_end = (gx + m.width as i32).min(clip.x() + clip.width());
+            if cx_start >= cx_end {
+                continue;
+            }
+            
+            let row_width = (cx_end - cx_start) as usize;
+            let src_offset = (cx_start - gx) as usize;
+            
+            // Get mask row from glyph bitmap
+            let mask_row_start = r * (m.width as usize) + src_offset;
+            let mask_row_end = mask_row_start + row_width;
+            if mask_row_end > b.len() {
+                continue;
+            }
+            let mask_row = &b[mask_row_start..mask_row_end];
+            
+            // Prepare premultiplied color
+            let color_premul = {
+                let pr = scale_ch(sr, sa);
+                let pg = scale_ch(sg, sa);
+                let pb = scale_ch(sb, sa);
+                (sa as u32) << 24 | pr << 16 | pg << 8 | pb
+            };
+            
+            // Get destination row
+            let stride = (surface.stride_bytes >> 2) as usize;
+            let row_offset = cy as usize * stride + cx_start as usize;
+            
+            if row_offset >= stride * surface.height() as usize {
+                continue;
+            }
+            
+            let remaining = stride * surface.height() as usize - row_offset;
+            if remaining < stride {
+                continue;
+            }
+            
+            let dst_slice = unsafe {
+                let ptr = surface.ptr as *mut u32;
+                core::slice::from_raw_parts_mut(ptr.add(row_offset), remaining)
+            };
+            
+            // Call SIMD masked compositor
+            crate::trace_counter!("raster.text_fallback.simd.count", 1);
+            stem::simd::composite_solid_masked_over(
+                dst_slice,
+                stride,
+                mask_row,
+                row_width,
+                row_width,
+                1,
+                color_premul,
+            );
         }
         px += m.advance_width;
     }

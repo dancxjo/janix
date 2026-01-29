@@ -2,7 +2,7 @@
 //! Provides scalar reference and architecture backends with identical math.
 //! The scalar implementation is the canonical truth; SIMD backends must match it exactly.
 
-#[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
 mod x86;
 #[cfg(target_arch = "aarch64")]
 mod neon;
@@ -12,7 +12,7 @@ pub mod text;
 
 /// Blend src over dst (premultiplied RGBA8888).
 pub fn blit_rgba8888_over(dst: &mut [u32], src: &[u32]) {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
     #[cfg(target_feature = "sse2")]
     unsafe {
         x86::blit_rgba8888_over_sse2(dst, src);
@@ -46,7 +46,7 @@ pub fn composite_solid_masked_over(
     rect_h: usize,
     color_premul: u32,
 ) {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
     {
         // Prefer AVX2 if available at runtime
         if x86::is_avx2_available() {
@@ -98,7 +98,7 @@ pub fn composite_src_masked_over(
     rect_w: usize,
     rect_h: usize,
 ) {
-    #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
+    #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
     {
         // Prefer AVX2 if available at runtime
         if x86::is_avx2_available() {

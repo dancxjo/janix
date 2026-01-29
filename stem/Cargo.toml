@@ -16,8 +16,9 @@ xml-no-std = "0.8"
 pciids = { path = "../tools/pciids" }
 
 [features]
-default = ["global-alloc", "panic-handler"]
+default = ["global-alloc", "panic-handler", "simd"]
 rt = ["stem-macros"]
 alloc = []
 global-alloc = []
 panic-handler = []
+simd = []

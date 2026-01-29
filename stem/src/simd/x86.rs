@@ -63,7 +63,7 @@ fn blend_channel(s: u32, d: u32, sa: u32) -> u32 {
 /// Output: 8-bit results packed into a single __m128i (16 u8 values).
 #[inline]
 #[target_feature(enable = "sse2")]
-unsafe fn apply_div255_sse2(t_lo: __m128i, t_hi: __m128i) -> __m128i {
+unsafe fn apply_div255_sse2(t_lo: __m128i, t_hi: __m128i, out: &mut __m128i) {
     let one = _mm_set1_epi16(1);
     
     // Apply (t + 1 + (t >> 8)) >> 8 to both halves
@@ -76,7 +76,7 @@ unsafe fn apply_div255_sse2(t_lo: __m128i, t_hi: __m128i) -> __m128i {
     let res_lo = _mm_srli_epi16(sum_lo, 8);
     let res_hi = _mm_srli_epi16(sum_hi, 8);
     
-    _mm_packus_epi16(res_lo, res_hi)
+    *out = _mm_packus_epi16(res_lo, res_hi);
 }
 
 /// Modulate 4 RGBA pixels by a mask, returning modulated u8 channels.
@@ -89,7 +89,7 @@ unsafe fn apply_div255_sse2(t_lo: __m128i, t_hi: __m128i) -> __m128i {
 /// - Bytes 12-15: Fourth pixel's mask repeated 4 times (M3, M3, M3, M3)
 #[inline]
 #[target_feature(enable = "sse2")]
-unsafe fn modulate_by_mask_sse2(pixels: __m128i, mask_vec: __m128i) -> __m128i {
+unsafe fn modulate_by_mask_sse2(pixels: __m128i, mask_vec: __m128i, out: &mut __m128i) {
     let zero = _mm_setzero_si128();
     
     // Unpack pixels to 16-bit
@@ -105,7 +105,7 @@ unsafe fn modulate_by_mask_sse2(pixels: __m128i, mask_vec: __m128i) -> __m128i {
     let t_hi = _mm_mullo_epi16(px_hi, m_hi);
     
     // Apply exact rounding: (t + 1 + (t >> 8)) >> 8
-    apply_div255_sse2(t_lo, t_hi)
+    apply_div255_sse2(t_lo, t_hi, out);
 }
 
 /// Composite solid color with coverage mask (SSE2 backend).
@@ -175,7 +175,8 @@ pub unsafe fn composite_solid_masked_over_sse2(
             );
             
             // Modulate color by mask
-            let src_modulated = modulate_by_mask_sse2(color_px, mask_vec);
+            let mut src_modulated = _mm_setzero_si128();
+            modulate_by_mask_sse2(color_px, mask_vec, &mut src_modulated);
             
             // Extract modulated pixels to array for scalar processing
             let mut src_array: [u32; 4] = [0; 4];
@@ -315,7 +316,8 @@ pub unsafe fn composite_src_masked_over_sse2(
             );
             
             // Modulate source by mask
-            let src_modulated = modulate_by_mask_sse2(src_pixels, mask_vec);
+            let mut src_modulated = _mm_setzero_si128();
+            modulate_by_mask_sse2(src_pixels, mask_vec, &mut src_modulated);
             
             // For now, fall back to scalar per-pixel for the over blend
             // This ensures bit-exact results
@@ -503,7 +505,7 @@ pub unsafe fn blit_rgba8888_over_sse2(dst: &mut [u32], src: &[u32]) {
 /// Output: 8-bit results packed into a single __m256i (32 u8 values).
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn apply_div255_avx2(t_lo: __m256i, t_hi: __m256i) -> __m256i {
+unsafe fn apply_div255_avx2(t_lo: __m256i, t_hi: __m256i, out: &mut __m256i) {
     let one = _mm256_set1_epi16(1);
     
     // Apply (t + 1 + (t >> 8)) >> 8 to both halves
@@ -516,7 +518,7 @@ unsafe fn apply_div255_avx2(t_lo: __m256i, t_hi: __m256i) -> __m256i {
     let res_lo = _mm256_srli_epi16(sum_lo, 8);
     let res_hi = _mm256_srli_epi16(sum_hi, 8);
     
-    _mm256_packus_epi16(res_lo, res_hi)
+    *out = _mm256_packus_epi16(res_lo, res_hi);
 }
 
 /// Modulate 8 RGBA pixels by a mask, returning modulated u8 channels (AVX2 version).
@@ -526,7 +528,7 @@ unsafe fn apply_div255_avx2(t_lo: __m256i, t_hi: __m256i) -> __m256i {
 /// - Each 4-byte group contains one mask repeated 4 times (M, M, M, M)
 #[inline]
 #[target_feature(enable = "avx2")]
-unsafe fn modulate_by_mask_avx2(pixels: __m256i, mask_vec: __m256i) -> __m256i {
+unsafe fn modulate_by_mask_avx2(pixels: __m256i, mask_vec: __m256i, out: &mut __m256i) {
     let zero = _mm256_setzero_si256();
     
     // Unpack pixels to 16-bit
@@ -542,7 +544,7 @@ unsafe fn modulate_by_mask_avx2(pixels: __m256i, mask_vec: __m256i) -> __m256i {
     let t_hi = _mm256_mullo_epi16(px_hi, m_hi);
     
     // Apply exact rounding: (t + 1 + (t >> 8)) >> 8
-    apply_div255_avx2(t_lo, t_hi)
+    apply_div255_avx2(t_lo, t_hi, out);
 }
 
 /// Composite solid color with coverage mask (AVX2 backend).
@@ -616,7 +618,8 @@ pub unsafe fn composite_solid_masked_over_avx2(
             );
             
             // Modulate color by mask
-            let src_modulated = modulate_by_mask_avx2(color_px, mask_vec);
+            let mut src_modulated = _mm256_setzero_si256();
+            modulate_by_mask_avx2(color_px, mask_vec, &mut src_modulated);
             
             // Extract modulated pixels to array for scalar processing
             let mut src_array: [u32; 8] = [0; 8];
@@ -761,7 +764,8 @@ pub unsafe fn composite_src_masked_over_avx2(
             );
             
             // Modulate source by mask
-            let src_modulated = modulate_by_mask_avx2(src_pixels, mask_vec);
+            let mut src_modulated = _mm256_setzero_si256();
+            modulate_by_mask_avx2(src_pixels, mask_vec, &mut src_modulated);
             
             // For now, fall back to scalar per-pixel for the over blend
             // This ensures bit-exact results

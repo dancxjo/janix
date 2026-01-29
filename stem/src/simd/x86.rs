@@ -4,6 +4,12 @@ use core::arch::x86::*;
 #[cfg(target_arch = "x86_64")]
 use core::arch::x86_64::*;
 
+#[inline(always)]
+fn scale_ch(c: u8, a: u8) -> u32 {
+    let t = c as u32 * a as u32;
+    (t + 1 + (t >> 8)) >> 8
+}
+
 #[target_feature(enable = "sse2")]
 pub unsafe fn blit_rgba8888_over_sse2(dst: &mut [u32], src: &[u32]) {
     let len = dst.len().min(src.len());
@@ -67,7 +73,32 @@ pub unsafe fn blit_rgba8888_over_sse2(dst: &mut [u32], src: &[u32]) {
         let res_hi = _mm_srli_epi16(t_hi, 8);
 
         let result = _mm_packus_epi16(res_lo, res_hi);
-        _mm_storeu_si128(dst_ptr, result);
+
+        #[repr(align(16))]
+        struct Buf([u32; 4]);
+        let mut rgb_out = Buf([0; 4]);
+        let mut dst_in = Buf([0; 4]);
+        _mm_storeu_si128(rgb_out.0.as_mut_ptr() as *mut __m128i, result);
+        _mm_storeu_si128(dst_in.0.as_mut_ptr() as *mut __m128i, d);
+        let src_ptr_u32 = src.as_ptr().add(i);
+
+        for k in 0..4 {
+            let s_px = *src_ptr_u32.add(k);
+            let sa = (s_px >> 24) & 0xFF;
+            if sa == 0 {
+                continue;
+            }
+            if sa == 255 {
+                rgb_out.0[k] = s_px;
+                continue;
+            }
+            let d_px = dst_in.0[k];
+            let da = (d_px >> 24) & 0xFF;
+            let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
+            rgb_out.0[k] = (out_a << 24) | (rgb_out.0[k] & 0x00FF_FFFF);
+        }
+
+        _mm_storeu_si128(dst_ptr, rgb_out.0.as_ptr() as *const __m128i);
         i += 4;
     }
 

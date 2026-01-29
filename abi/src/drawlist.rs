@@ -234,6 +234,8 @@ impl DrawListBuilder {
     /// 
     /// # Example
     /// ```
+    /// # use abi::drawlist::DrawListBuilder;
+    /// # let mut builder = DrawListBuilder::new();
     /// builder.push_save();
     /// builder.push_set_clip_rect(0, 0, 100, 100);
     /// // ... draw commands ...
@@ -257,6 +259,8 @@ impl DrawListBuilder {
     /// 
     /// # Example
     /// ```
+    /// # use abi::drawlist::DrawListBuilder;
+    /// # let mut builder = DrawListBuilder::new();
     /// builder.push_save();
     /// builder.push_set_transform(2.0, 0.0, 0.0, 2.0, 0.0, 0.0); // 2x scale
     /// // ... draw commands ...

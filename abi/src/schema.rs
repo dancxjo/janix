@@ -286,6 +286,7 @@ pub mod keys {
     pub const ASSET_NAME: &str = "asset.name";
     pub const ASSET_SOURCE: &str = "asset.source";
     pub const ASSET_HASH: &str = "asset.hash";
+    pub const ASSET_SIZE: &str = "asset.size";
     pub const ASSET_BYTESPACE: &str = "asset.bytespace";
     pub const ASSET_GENERATION: &str = "asset.generation";
     pub const ASSET_ERROR: &str = "asset.error";

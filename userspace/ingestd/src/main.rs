@@ -7,20 +7,20 @@ mod sniff;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use abi::types::{WatchMode, WatchSpec};
-use alloc::string::String;
 use alloc::vec::Vec;
+use sha2::{Digest, Sha256};
 use sniff::sniff;
 use stem::thing::ThingId;
 use stem::thing::sys::{
     bytespace_info, bytespace_map, bytespace_unmap, create_node, describe_thing, find, intern,
-    link, prop_get, prop_set,
+    prop_get, prop_set,
 };
-use stem::{info, root_watch, syscall, warn};
+use stem::{info, syscall};
 use ttf_parser::Face;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("INGESTD: Starting continuous asset watcher...");
+    info!("INGESTD: Starting continuous asset watcher service (assetd)...");
 
     // 1. Initial scan of boot modules to seed canonical assets
     info!("INGESTD: Performing initial boot module scan...");
@@ -30,7 +30,8 @@ fn main(_arg: usize) -> ! {
     info!("INGESTD: Seeding system assets (reactive)...");
     seed_system_assets();
 
-    // 2. Open watches for new boot modules and asset requests
+    // 3. Open watches for new boot modules and asset requests
+    // This ensures continuous monitoring of asset sources
     let boot_module_pred = intern(kinds::BOOT_MODULE).unwrap_or(0);
     let asset_request_pred = intern(kinds::ASSET_REQUEST).unwrap_or(0);
     let proc_task_pred = intern(kinds::PROC_TASK).unwrap_or(0);
@@ -59,7 +60,7 @@ fn main(_arg: usize) -> ! {
         }
     }
 
-    info!("INGESTD: Watcher loop active.");
+    info!("INGESTD: Continuous asset watcher loop active. Watching for asset changes...");
 
     loop {
         let mut any_activity = false;
@@ -161,6 +162,17 @@ fn ingest_boot_module(mod_id: ThingId) {
     };
 
     let slice = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
+    
+    // Compute content hash
+    let mut hasher = Sha256::new();
+    hasher.update(slice);
+    let hash_bytes = hasher.finalize();
+    // Convert first 8 bytes to u64 for storage
+    let hash = u64::from_le_bytes([
+        hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
+        hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+    ]);
+    
     let guess = sniff(slice);
 
     let kind = if let Some(ref g) = guess {
@@ -188,7 +200,7 @@ fn ingest_boot_module(mod_id: ThingId) {
         }
     };
 
-    let asset_id = publish_asset(mod_name, kind, bs_id, "boot");
+    let asset_id = publish_asset(mod_name, kind, bs_id, "boot", size, hash);
     if mod_name.contains("fonts") || mod_name.ends_with(".ttf") {
         info!(
             "INGESTD: Font debug - name='{}' kind='{}' guess={:?} first4={:02x?}",
@@ -198,7 +210,7 @@ fn ingest_boot_module(mod_id: ThingId) {
             &slice[..4.min(slice.len())]
         );
     }
-    info!("INGESTD: Published asset '{}' ({})", mod_name, kind);
+    info!("INGESTD: Published asset '{}' ({}, {} bytes, hash={:016x})", mod_name, kind, size, hash);
 
     // Metadata enrichment for fonts
     if kind == "font" && !slice.is_empty() {
@@ -358,7 +370,7 @@ fn fulfill_request(req_id: ThingId) {
     }
 }
 
-fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str) -> ThingId {
+fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str, size: usize, hash: u64) -> ThingId {
     let name_sym = intern(name).unwrap_or(0) as u64;
     let kind_sym = intern(kind).unwrap_or(0) as u64;
     let src_sym = intern(source).unwrap_or(0) as u64;
@@ -367,37 +379,56 @@ fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str) -> ThingI
         return ThingId::default();
     }
 
-    let mut existing_id = ThingId::default();
+    // First, check if an asset with the same hash already exists (deduplication)
+    let mut _existing_by_hash = ThingId::default();
+    let mut existing_by_name = ThingId::default();
     let mut assets = [ThingId::default(); 512];
     if let Ok(count) = find(kinds::ASSET, &mut assets) {
         for &id in &assets[..count] {
-            let n = prop_get(id, keys::ASSET_NAME).unwrap_or(0);
-            if n == name_sym {
-                existing_id = id;
-                break;
+            let existing_hash = prop_get(id, keys::ASSET_HASH).unwrap_or(0);
+            let existing_name = prop_get(id, keys::ASSET_NAME).unwrap_or(0);
+            
+            if existing_hash == hash && existing_hash != 0 {
+                _existing_by_hash = id;
+                // If same hash, we can reuse this asset node entirely
+                if existing_name == name_sym {
+                    info!("INGESTD: Asset '{}' unchanged (hash match)", name);
+                    return id;
+                }
+            }
+            
+            if existing_name == name_sym {
+                existing_by_name = id;
             }
         }
     }
 
-    if existing_id.to_u64_lossy() != 0 {
-        // Idempotent update
-        let old_bs = prop_get(existing_id, keys::ASSET_BYTESPACE).unwrap_or(0);
-        if old_bs != bs_id.to_u64_lossy() {
-            let _ = prop_set(existing_id, keys::ASSET_BYTESPACE, bs_id.to_u64_lossy());
-            let generation = prop_get(existing_id, keys::ASSET_GENERATION).unwrap_or(0);
-            let _ = prop_set(existing_id, keys::ASSET_GENERATION, generation + 1);
-            info!("INGESTD: Updated asset '{}' (gen={})", name, generation + 1);
+    if existing_by_name.to_u64_lossy() != 0 {
+        // Update existing asset with same name
+        let old_bs = prop_get(existing_by_name, keys::ASSET_BYTESPACE).unwrap_or(0);
+        let old_hash = prop_get(existing_by_name, keys::ASSET_HASH).unwrap_or(0);
+        
+        if old_bs != bs_id.to_u64_lossy() || old_hash != hash {
+            let _ = prop_set(existing_by_name, keys::ASSET_BYTESPACE, bs_id.to_u64_lossy());
+            let _ = prop_set(existing_by_name, keys::ASSET_HASH, hash);
+            let _ = prop_set(existing_by_name, keys::ASSET_SIZE, size as u64);
+            let generation = prop_get(existing_by_name, keys::ASSET_GENERATION).unwrap_or(0);
+            let _ = prop_set(existing_by_name, keys::ASSET_GENERATION, generation + 1);
+            info!("INGESTD: Updated asset '{}' (gen={}, hash={:016x})", name, generation + 1, hash);
         }
-        existing_id
+        existing_by_name
     } else {
-        // Initial publication
+        // Initial publication - create new asset node
         if let Ok(asset_id) = create_node(kinds::ASSET) {
             let _ = prop_set(asset_id, keys::ASSET_NAME, name_sym);
             let _ = prop_set(asset_id, keys::ASSET_KIND, kind_sym);
             let _ = prop_set(asset_id, keys::ASSET_SOURCE, src_sym);
             let _ = prop_set(asset_id, keys::ASSET_BYTESPACE, bs_id.to_u64_lossy());
+            let _ = prop_set(asset_id, keys::ASSET_HASH, hash);
+            let _ = prop_set(asset_id, keys::ASSET_SIZE, size as u64);
             let _ = prop_set(asset_id, keys::ASSET_GENERATION, 1);
-            info!("INGESTD: Published asset '{}'", name);
+            let _ = prop_set(asset_id, keys::ASSET_READY, 1);
+            info!("INGESTD: Published new asset '{}' (hash={:016x})", name, hash);
             asset_id
         } else {
             ThingId::default()

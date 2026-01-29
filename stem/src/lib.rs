@@ -50,7 +50,7 @@ macro_rules! println {
 }
 
 pub fn log(s: &str) {
-    let _ = syscall::log_write(s, 3);
+    pal::log::write(pal::log::Level::Info, format_args!("{}", s));
 }
 
 #[macro_export]

@@ -15,7 +15,7 @@ use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use spin::Mutex;
-use stem::syscall::{port_recv, port_send, PortHandle};
+use stem::syscall::{monotonic_ns, port_recv, port_send, PortHandle};
 use stem::thing::sys::{bytespace_map, bytespace_unmap, find, prop_get};
 use stem::thing::ThingId;
 
@@ -148,8 +148,8 @@ pub struct FontClient {
     atlas_mappings: BTreeMap<AtlasKey, AtlasMapping>,
     /// Metrics cache per (face, size)
     metrics_cache: BTreeMap<AtlasKey, FaceMetrics>,
-    /// Pending glyph requests (batched)
-    pending_requests: Vec<(ThingId, u16, Vec<u32>)>,
+    /// Pending glyph requests (timestamp of request)
+    pending_requests: BTreeMap<GlyphKey, u64>,
 }
 
 impl FontClient {
@@ -160,7 +160,7 @@ impl FontClient {
             glyph_cache: BTreeMap::new(),
             atlas_mappings: BTreeMap::new(),
             metrics_cache: BTreeMap::new(),
-            pending_requests: Vec::new(),
+            pending_requests: BTreeMap::new(),
         }
     }
 
@@ -210,8 +210,8 @@ impl FontClient {
         self.atlas_mappings.get_mut(&key)
     }
 
-    /// Ensure glyphs are available (batch request to fontd)
-    /// Returns placements for all requested glyphs that are now available
+    /// Ensure glyphs are available (send request if needed, don't wait)
+    /// Returns currently matched cache entries. DOES NOT BLOCK.
     pub fn ensure_glyphs(
         &mut self,
         face_id: ThingId,
@@ -225,12 +225,24 @@ impl FontClient {
         // Partition into cached and missing
         let mut results = Vec::new();
         let mut missing = Vec::new();
+        let now = monotonic_ns();
 
         for &gid in glyph_ids {
             if let Some(entry) = self.get_glyph(face_id, px_size, gid) {
                 results.push(*entry);
             } else {
-                missing.push(gid);
+                // Check if already pending (and not timed out - e.g. 500ms)
+                let key = GlyphKey::new(face_id, px_size, gid);
+                let is_pending = self
+                    .pending_requests
+                    .get(&key)
+                    .map(|ts| now - ts < 500_000_000)
+                    .unwrap_or(false);
+
+                if !is_pending {
+                    missing.push(gid);
+                    self.pending_requests.insert(key, now);
+                }
             }
         }
 
@@ -242,75 +254,86 @@ impl FontClient {
         let req = EnsureGlyphs {
             face_id,
             px_size,
-            glyph_ids: missing.clone(),
+            glyph_ids: missing,
         };
 
         let mut req_buf = [0u8; 2048];
-        let Some(req_len) = req.encode(&mut req_buf) else {
-            return results;
-        };
-
-        if port_send(self.req_port, &req_buf[..req_len]).is_err() {
-            return results;
-        }
-
-        // Wait for response (blocking for now - TODO: make async)
-        let mut resp_buf = [0u8; 16384];
-        let resp_len = match port_recv(self.resp_port, &mut resp_buf) {
-            Ok(len) if len > 0 => len,
-            _ => return results,
-        };
-
-        // Decode response
-        let Some(tag) = decode_response_tag(&resp_buf[..resp_len]) else {
-            return results;
-        };
-
-        if tag != FontResponseTag::EnsureGlyphsResp {
-            return results;
-        }
-
-        let Some(resp) = EnsureGlyphsResp::decode(&resp_buf[1..resp_len]) else {
-            return results;
-        };
-
-        // Update atlas mapping
-        let atlas_key = AtlasKey::new(face_id, px_size);
-        let mapping = self.atlas_mappings.entry(atlas_key).or_insert_with(|| {
-            AtlasMapping::new(
-                resp.atlas_bytespace,
-                resp.atlas_version,
-                resp.atlas_width,
-                resp.atlas_height,
-            )
-        });
-
-        // Check for version change
-        if mapping.version != resp.atlas_version {
-            // Unmap old atlas
-            mapping.unmap();
-            mapping.bytespace_id = resp.atlas_bytespace;
-            mapping.version = resp.atlas_version;
-            mapping.width = resp.atlas_width;
-            mapping.height = resp.atlas_height;
-
-            // Invalidate cached glyphs for this face/size
-            let prefix = GlyphKey::new(face_id, px_size, 0);
-            self.glyph_cache
-                .retain(|k, _| k.face_id != prefix.face_id || k.px_size != prefix.px_size);
-        }
-
-        // Cache new placements
-        for p in &resp.placements {
-            let key = GlyphKey::new(face_id, px_size, p.glyph_id);
-            let mut entry = GlyphEntry::from(p);
-            entry.atlas_bytespace = resp.atlas_bytespace;
-            entry.atlas_version = resp.atlas_version;
-            self.glyph_cache.insert(key, entry);
-            results.push(entry);
+        if let Some(req_len) = req.encode(&mut req_buf) {
+            let _ = port_send(self.req_port, &req_buf[..req_len]);
         }
 
         results
+    }
+
+    /// Poll for responses from fontd
+    /// Returns true if any state was updated (caller should damage/redraw)
+    pub fn poll(&mut self) -> bool {
+        if !self.is_connected() {
+            return false;
+        }
+
+        let mut updated = false;
+        let mut resp_buf = [0u8; 16384];
+
+        // Drain up to 10 messages per poll to avoid starving the loop
+        for _ in 0..10 {
+            let resp_len = match port_recv(self.resp_port, &mut resp_buf) {
+                Ok(len) if len > 0 => len,
+                _ => break,
+            };
+
+            // Decode response
+            let Some(tag) = decode_response_tag(&resp_buf[..resp_len]) else {
+                continue;
+            };
+
+            if tag != FontResponseTag::EnsureGlyphsResp {
+                continue;
+            }
+
+            let Some(resp) = EnsureGlyphsResp::decode(&resp_buf[1..resp_len]) else {
+                continue;
+            };
+
+            // Update atlas mapping
+            let atlas_key = AtlasKey::new(resp.req_face_id, resp.req_px_size);
+            let mapping = self.atlas_mappings.entry(atlas_key).or_insert_with(|| {
+                AtlasMapping::new(
+                    resp.atlas_bytespace,
+                    resp.atlas_version,
+                    resp.atlas_width,
+                    resp.atlas_height,
+                )
+            });
+
+            // Check for version change
+            if mapping.version != resp.atlas_version {
+                // Unmap old atlas
+                mapping.unmap();
+                mapping.bytespace_id = resp.atlas_bytespace;
+                mapping.version = resp.atlas_version;
+                mapping.width = resp.atlas_width;
+                mapping.height = resp.atlas_height;
+
+                // Invalidate cached glyphs for this face/size
+                let prefix = GlyphKey::new(resp.req_face_id, resp.req_px_size, 0);
+                self.glyph_cache.retain(|k, _| {
+                    k.face_id != prefix.face_id || k.px_size != prefix.px_size
+                });
+            }
+
+            // Cache new placements and clear pending
+            for p in &resp.placements {
+                let key = GlyphKey::new(resp.req_face_id, resp.req_px_size, p.glyph_id);
+                let mut entry = GlyphEntry::from(p);
+                entry.atlas_bytespace = resp.atlas_bytespace;
+                entry.atlas_version = resp.atlas_version;
+                self.glyph_cache.insert(key, entry);
+                self.pending_requests.remove(&key);
+                updated = true;
+            }
+        }
+        updated
     }
 
     /// Get face metrics (cached)
@@ -406,4 +429,10 @@ where
     let mapping = client.get_atlas_mapping(face_id, px_size)?;
     mapping.ensure_mapped()?;
     Some(f(mapping))
+}
+
+/// Poll global font client for updates
+pub fn poll() -> bool {
+    let mut guard = FONT_CLIENT.lock();
+    guard.as_mut().map(|c| c.poll()).unwrap_or(false)
 }

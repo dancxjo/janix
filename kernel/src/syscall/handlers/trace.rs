@@ -3,6 +3,7 @@ use crate::trace::irq_ring;
 use abi::errors::{Errno, SysResult};
 use abi::trace::TraceEvent;
 use alloc::vec;
+use core::sync::atomic::{AtomicPtr, Ordering};
 
 pub fn sys_trace_read(ptr: usize, len: usize) -> SysResult<usize> {
     if len > 8192 {
@@ -30,4 +31,22 @@ pub fn sys_trace_read(ptr: usize, len: usize) -> SysResult<usize> {
     }
 
     Ok(count)
+}
+
+/// Registered boot console disable function (set by bran at init)
+static CONSOLE_DISABLE_FN: AtomicPtr<()> = AtomicPtr::new(core::ptr::null_mut());
+
+/// Register a console disable callback (called by bran at boot)
+pub fn register_console_disable(f: fn()) {
+    CONSOLE_DISABLE_FN.store(f as *mut (), Ordering::Release);
+}
+
+/// Disable the boot console (compositor takes over framebuffer)
+pub fn sys_console_disable() -> SysResult<usize> {
+    let ptr = CONSOLE_DISABLE_FN.load(Ordering::Acquire);
+    if !ptr.is_null() {
+        let f: fn() = unsafe { core::mem::transmute(ptr) };
+        f();
+    }
+    Ok(0)
 }

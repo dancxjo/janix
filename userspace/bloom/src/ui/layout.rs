@@ -1,5 +1,5 @@
 use crate::asset::AssetBank;
-use crate::damage::Rect;
+use crate::geometry::Rect;
 use crate::font_graph::{self, FontStyle};
 use crate::ui::constants::TITLE_BAR_HEIGHT;
 use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot, UiSnapshot};
@@ -148,7 +148,7 @@ impl LayoutSolver {
         if dirty_windows.is_empty() {
             if let Some(prev) = prev_layout {
                 if let Some(prev_root) = prev.root.as_ref() {
-                    if prev_root.rect.w == screen_w && prev_root.rect.h == screen_h {
+                    if prev_root.rect.width() == screen_w && prev_root.rect.height() == screen_h {
                         crate::trace_event!("ui.layout.path", "reuse_full");
                         return prev.clone();
                     }
@@ -286,8 +286,8 @@ impl LayoutSolver {
         let mut h = Self::get_prop(child_node, keys::UI_HEIGHT, symbols) as i32;
         let fill_parent = Self::get_prop(child_node, keys::UI_FILL_PARENT, symbols) != 0;
         if fill_parent {
-            w = layout.rect.w;
-            h = layout.rect.h;
+            w = layout.rect.width();
+            h = layout.rect.height();
         }
 
         if is_window {
@@ -356,24 +356,24 @@ impl LayoutSolver {
         if parent_is_window {
             y = y.saturating_add(title_bar_h);
             if fill_parent {
-                h = (layout.rect.h - title_bar_h).max(0);
+                h = (layout.rect.height() - title_bar_h).max(0);
             }
         }
 
         let inset_right = Self::get_prop(child_node, keys::UI_INSET_RIGHT, symbols) as i32;
         let inset_bottom = Self::get_prop(child_node, keys::UI_INSET_BOTTOM, symbols) as i32;
         if inset_right > 0 {
-            x = layout.rect.w - inset_right - w;
+            x = layout.rect.width() - inset_right - w;
         }
         if inset_bottom > 0 {
-            y = layout.rect.h - inset_bottom - h;
+            y = layout.rect.height() - inset_bottom - h;
         }
 
         if center_x {
-            x = (layout.rect.w - w) / 2;
+            x = (layout.rect.width() - w) / 2;
         }
         if center_y {
-            y = (layout.rect.h - h) / 2;
+            y = (layout.rect.height() - h) / 2;
         }
         if parent_is_viewport {
             x = x.saturating_sub(parent_scroll.0);
@@ -381,8 +381,8 @@ impl LayoutSolver {
         }
 
         let z = Self::get_prop(child_node, keys::UI_Z_INDEX, symbols) as i32;
-        let absolute_x = layout.rect.x + x;
-        let absolute_y = layout.rect.y + y;
+        let absolute_x = layout.rect.x() + x;
+        let absolute_y = layout.rect.y() + y;
         let absolute_rect = Rect::new(absolute_x, absolute_y, w, h);
 
         let mut child_layout = LayoutNode {
@@ -404,15 +404,15 @@ impl LayoutSolver {
                 // The inputs are: child props (invariant since !dirty) and child size (w, h).
                 // If w and h calculated above match prev.rect.w and prev.rect.h,
                 // then the internal layout of the child should be identical.
-                if prev.rect.w == w && prev.rect.h == h {
+                if prev.rect.width() == w && prev.rect.height() == h {
                     // Reuse!
                     crate::trace_counter!("ui.layout.subtree_reuse", 1);
                     child_layout.children = prev.children.clone();
 
                     // If position changed, we must translate all descendants
-                    if prev.rect.x != absolute_x || prev.rect.y != absolute_y {
-                        let dx = absolute_x - prev.rect.x;
-                        let dy = absolute_y - prev.rect.y;
+                    if prev.rect.x() != absolute_x || prev.rect.y() != absolute_y {
+                        let dx = absolute_x - prev.rect.x();
+                        let dy = absolute_y - prev.rect.y();
                         Self::translate_subtree(&mut child_layout.children, dx, dy);
                     }
 
@@ -438,8 +438,8 @@ impl LayoutSolver {
 
     fn translate_subtree(nodes: &mut [LayoutNode], dx: i32, dy: i32) {
         for node in nodes.iter_mut() {
-            node.rect.x += dx;
-            node.rect.y += dy;
+            node.rect.origin.x += dx;
+            node.rect.origin.y += dy;
             if !node.children.is_empty() {
                 Self::translate_subtree(&mut node.children, dx, dy);
             }
@@ -750,7 +750,7 @@ mod tests {
         let assets = AssetBank::new();
         let resolver = MockSymbolResolver::new();
 
-        // Screen 1920x768.
+        // Screen 1920x1080.
         // Child 100x50 centered should be at x=350, y=275
         let mut solver = LayoutSolver::new();
         let tree = solver.solve(&snapshot, 800, 600, &assets, &resolver);
@@ -760,9 +760,9 @@ mod tests {
         assert_eq!(root.children.len(), 1);
 
         let child = &root.children[0];
-        assert_eq!(child.rect.x, 350);
-        assert_eq!(child.rect.y, 255);
-        assert_eq!(child.rect.w, 100);
-        assert_eq!(child.rect.h, 90);
+        assert_eq!(child.rect.x(), 350);
+        assert_eq!(child.rect.y(), 255);
+        assert_eq!(child.rect.width(), 100);
+        assert_eq!(child.rect.height(), 90);
     }
 }

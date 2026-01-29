@@ -1,6 +1,8 @@
 # Thing-OS
 
 A graph-based operating system kernel built with Rust and the Limine bootloader.
+<img width="1920" height="1080" alt="Screenshot" src="https://github.com/user-attachments/assets/e6e879ea-389a-4757-86dd-85c2cdb6190c" />
+
 
 ## Quick Start
 

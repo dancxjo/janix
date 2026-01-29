@@ -31,3 +31,26 @@ pub unsafe extern "C" fn memcmp(s1: *const u8, s2: *const u8, n: usize) -> i32 {
     }
     0
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn memmove(dest: *mut u8, src: *const u8, n: usize) -> *mut u8 {
+    if dest == src as *mut u8 {
+        return dest;
+    }
+    if (dest as usize) < (src as usize) {
+        // Forward copy (like memcpy)
+        let mut i = 0;
+        while i < n {
+            *dest.add(i) = *src.add(i);
+            i += 1;
+        }
+    } else {
+        // Backward copy
+        let mut i = n;
+        while i > 0 {
+            i -= 1;
+            *dest.add(i) = *src.add(i);
+        }
+    }
+    dest
+}

@@ -6,7 +6,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::geometry::{Color, Rect, Transform};
+use crate::geometry::{Color, Rect, RectF, Transform};
 use crate::svg::ir::{
     FillRule, LineCap, LineJoin, Paint, Path2D, PathCommand, SvgIrDocument, SvgOp,
 };
@@ -75,12 +75,12 @@ pub fn compile_graph_to_ir(
                     .filter_map(|s| s.parse().ok())
                     .collect();
                 if parts.len() == 4 {
-                    doc.view_box = Some(Rect::new(
-                        parts[0] as i32,
-                        parts[1] as i32,
-                        parts[2] as i32,
-                        parts[3] as i32,
-                    )); // TODO: Rect is i32, viewbox is float usually. IR uses Rect (i32).
+                    doc.view_box = Some(RectF::new(
+                        parts[0],
+                        parts[1],
+                        parts[2],
+                        parts[3],
+                    )); 
                 }
             }
             _ => {}
@@ -368,6 +368,25 @@ mod tests {
                 assert_eq!(transform.m11, 2.0); // Wait, scale logic in parse helper needs verify
             }
             _ => panic!("Wrong op"),
+        }
+    }
+
+    #[test]
+    fn test_compile_float_viewbox() {
+        let xml = r#"<svg viewBox="0 0 24.5 24.5"><rect width="24.5" height="24.5" /></svg>"#;
+        let mut graph = TestGraph::new();
+        let res = ingest_xml_to_graph(xml.as_bytes(), XmlIngestOptions::default(), &mut graph)
+            .expect("ingest");
+
+        let ir = compile_graph_to_ir(&graph, res.document).expect("compile");
+        
+        if let Some(vb) = ir.view_box {
+            assert_eq!(vb.x(), 0.0);
+            assert_eq!(vb.y(), 0.0);
+            assert_eq!(vb.width(), 24.5);
+            assert_eq!(vb.height(), 24.5);
+        } else {
+            panic!("Missing viewBox");
         }
     }
 }

@@ -1,6 +1,8 @@
 use crate::registry::Registry;
 use crate::task::{ManagedTask, TaskKind};
 use abi::ids::HandleId;
+use abi::kinds as abi_kinds;
+use abi::schema::keys;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
@@ -203,6 +205,11 @@ impl Supervisor {
                         info!("SPROUT: App launched (PID={})", pid);
                         task.pid = Some(pid);
 
+                        // If it's ingestd, seed initial requests immediately after launch
+                        if task.name.contains("ingestd") {
+                            seed_asset_requests();
+                        }
+
                         // Set priority based on app name
                         let priority = if task.name.contains("scheduler_verify")
                             || task.name.contains("threads")
@@ -350,6 +357,29 @@ impl Supervisor {
                     }
                 }
             }
+        }
+    }
+}
+
+fn seed_asset_requests() {
+    info!("SPROUT: Seeding initial asset requests...");
+
+    let requests = [
+        ("NotoSans-Regular.ttf", "font"),
+        ("NotoSansSymbol2-Regular.ttf", "font"),
+        ("clouds.bmp", "image"),
+        ("default.svg", "cursor"),
+    ];
+
+    for (name, kind) in requests {
+        if let Ok(req_id) = thingsys::create_node(abi_kinds::KIND_ASSET_REQUEST) {
+            if let Ok(name_sym) = thingsys::intern(name) {
+                let _ = thingsys::prop_set(req_id, keys::ASSET_NAME, name_sym as u64);
+            }
+            if let Ok(kind_sym) = thingsys::intern(kind) {
+                let _ = thingsys::prop_set(req_id, keys::ASSET_KIND, kind_sym as u64);
+            }
+            let _ = thingsys::prop_set(req_id, keys::ASSET_SOURCE, 0); // optional source hint
         }
     }
 }

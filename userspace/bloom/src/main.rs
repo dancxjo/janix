@@ -27,6 +27,7 @@ mod paint_vm;
 pub mod painter_resources;
 pub mod perf;
 mod present;
+pub mod snapshot;
 mod raster;
 mod reclaimer;
 mod render_graph;
@@ -42,6 +43,7 @@ pub use painter_resources::ASSETS;
 
 use abi::hid::Key;
 use abi::ids::HandleId;
+use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 
 use abi::display_driver_protocol::BindPayload;
@@ -58,6 +60,7 @@ use crate::frame_loop::FrameLoop;
 use crate::paint_vm::PaintPipeline;
 use crate::present::{evaluate_present_strategy, DriverPresenter, PresenterImpl};
 use crate::state::{DamageOverlayState, DebugFlags, OverlayMode};
+use crate::snapshot::SnapshotInvalidation;
 use alloc::collections::BTreeSet;
 use alloc::sync::Arc;
 
@@ -90,7 +93,7 @@ fn clear_surface(surface: &mut surface::Surface, color: u32) {
 
 fn clear_damage(surface: &mut surface::Surface, damage: &crate::damage::Damage, color: u32) {
     for rect in damage.iter() {
-        raster::fill_rect_copy(surface, rect.x, rect.y, rect.w, rect.h, color);
+        raster::fill_rect_copy(surface, rect.x(), rect.y(), rect.width(), rect.height(), color);
     }
 }
 
@@ -443,33 +446,11 @@ fn main(arg: usize) -> ! {
     };
 
     match Stack::alloc_growing_stack(s_spec) {
-        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::wallpaper_loader_entry)
-        {
-            Ok(tid) => stem::info!("bloom: spawned wallpaper loader (tid={})", tid),
-            Err(e) => stem::error!("bloom: FAILED to spawn wallpaper loader: {:?}", e),
+        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::asset_watcher_entry) {
+            Ok(tid) => stem::info!("bloom: spawned asset watcher (tid={})", tid),
+            Err(e) => stem::error!("bloom: FAILED to spawn asset watcher: {:?}", e),
         },
-        Err(e) => stem::error!("bloom: FAILED to alloc wallpaper stack: {:?}", e),
-    }
-    match Stack::alloc_growing_stack(s_spec) {
-        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::cursor_loader_entry) {
-            Ok(tid) => stem::info!("bloom: spawned cursor loader (tid={})", tid),
-            Err(e) => stem::error!("bloom: FAILED to spawn cursor loader: {:?}", e),
-        },
-        Err(e) => stem::error!("bloom: FAILED to alloc cursor stack: {:?}", e),
-    }
-    match Stack::alloc_growing_stack(s_spec) {
-        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::font_loader_entry) {
-            Ok(tid) => stem::info!("bloom: spawned font loader (tid={})", tid),
-            Err(e) => stem::error!("bloom: FAILED to spawn font loader: {:?}", e),
-        },
-        Err(e) => stem::error!("bloom: FAILED to alloc font stack: {:?}", e),
-    }
-    match Stack::alloc_growing_stack(s_spec) {
-        Ok(stack) => match stem::thread::spawn_on(stack, painter_resources::icon_loader_entry) {
-            Ok(tid) => stem::info!("bloom: spawned icon loader (tid={})", tid),
-            Err(e) => stem::error!("bloom: FAILED to spawn icon loader: {:?}", e),
-        },
-        Err(e) => stem::error!("bloom: FAILED to alloc icon stack: {:?}", e),
+        Err(e) => stem::error!("bloom: FAILED to alloc asset watcher stack: {:?}", e),
     }
 
     let mut loop_ctrl = FrameLoop::new(60);
@@ -485,6 +466,8 @@ fn main(arg: usize) -> ! {
     let ui_dispatch = ui_events::UiEventDispatcher::new();
     let mut focused_window: Option<ThingId> = None;
     let mut alt_cycle_order: alloc::vec::Vec<ThingId> = alloc::vec::Vec::new();
+    let mut maximized_windows: alloc::collections::BTreeMap<ThingId, crate::geometry::Rect> =
+        alloc::collections::BTreeMap::new();
     let mut alt_cycle_max_z: i32 = 0;
     let mut alt_prev_down = false;
     let accel_cfg = MouseAccelConfig::default();
@@ -494,7 +477,7 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
     let mut drag_state: Option<DragState> = None;
-    let mut modal_mode = false;
+    let mut drag_state: Option<DragState> = None;
     let mut debug_flags = DebugFlags::default();
     let mut overlay_state = DamageOverlayState::default();
 
@@ -554,7 +537,8 @@ fn main(arg: usize) -> ! {
 
     // Track watch event counts for diagnostics
     let mut ui_watch_events_total: u64 = 0;
-    let mut force_full_damage;
+    // Removed force_full_damage bool, using invalidation_causes vector
+    let mut invalidation_causes: alloc::vec::Vec<SnapshotInvalidation> = alloc::vec::Vec::with_capacity(16);
 
     // WAIT for critical assets (fonts) before showing anything
     let mut startup_frames = 0;
@@ -573,10 +557,18 @@ fn main(arg: usize) -> ! {
         startup_frames += 1;
     }
 
+    // Signal that the compositor is taking over the framebuffer
+    stem::syscall::console_disable();
+
     loop {
         loop_ctrl.next();
-        force_full_damage = false;
+        invalidation_causes.clear();
         ASSETS.publish_pending();
+
+        // Poll font client for IPC responses
+        if crate::font_client::poll() {
+            invalidation_causes.push(SnapshotInvalidation::FontChanged);
+        }
 
         // 0. Check for new glyphs in graph
         if let Some(gw) = glyph_watch {
@@ -585,7 +577,7 @@ fn main(arg: usize) -> ! {
             if let Ok(len) = stem::syscall::root_watch_next(gw, &mut g_seq, &mut g_buf) {
                 if len > 0 {
                     crate::font_graph::mark_dirty();
-                    force_full_damage = true;
+                    invalidation_causes.push(SnapshotInvalidation::FontChanged);
                 }
             }
         }
@@ -610,7 +602,7 @@ fn main(arg: usize) -> ! {
                     drained,
                     ui_watch_events_total
                 );
-                force_full_damage = true;
+                invalidation_causes.push(SnapshotInvalidation::GeometryChanged);
             }
         }
 
@@ -627,7 +619,7 @@ fn main(arg: usize) -> ! {
                 }
             }
             if drained > 0 {
-                force_full_damage = true;
+                invalidation_causes.push(SnapshotInvalidation::ContentChanged);
             }
         }
 
@@ -650,11 +642,65 @@ fn main(arg: usize) -> ! {
             let shift_down =
                 pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
 
-            // F1 Toggle
-            if pressed_keys.contains(&Key::F1) && !prev_keys.contains(&Key::F1) {
-                modal_mode = !modal_mode;
-                force_full_damage = true;
-                stem::info!("[bloom] F1 pressed, toggling modal mode to: {}", modal_mode);
+            // F11 Toggle: Maximize/Restore focused window
+            if pressed_keys.contains(&Key::F11) && !prev_keys.contains(&Key::F11) {
+                if let Some(focused) = focused_window {
+                    if let Some(restore_rect) = maximized_windows.remove(&focused) {
+                        // Restore
+                        stem::info!(
+                            "[bloom] F11: Restoring window {:?} to {:?}",
+                            focused,
+                            restore_rect
+                        );
+                        let _ = stem::thing::sys::prop_set(
+                            focused,
+                            keys::UI_X,
+                            restore_rect.x() as u64,
+                        );
+                        let _ = stem::thing::sys::prop_set(
+                            focused,
+                            keys::UI_Y,
+                            restore_rect.y() as u64,
+                        );
+                        let _ = stem::thing::sys::prop_set(
+                            focused,
+                            keys::UI_WIDTH,
+                            restore_rect.width() as u64,
+                        );
+                        let _ = stem::thing::sys::prop_set(
+                            focused,
+                            keys::UI_HEIGHT,
+                            restore_rect.height() as u64,
+                        );
+                        // Ensure manual position is set so tiling doesn't clobber it immediately
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
+                    } else {
+                        // Maximize
+                        let x = stem::thing::sys::prop_get(focused, keys::UI_X).unwrap_or(0) as i32;
+                        let y = stem::thing::sys::prop_get(focused, keys::UI_Y).unwrap_or(0) as i32;
+                        let w =
+                            stem::thing::sys::prop_get(focused, keys::UI_WIDTH).unwrap_or(0) as i32;
+                        let h = stem::thing::sys::prop_get(focused, keys::UI_HEIGHT).unwrap_or(0)
+                            as i32;
+                        let current_rect = crate::geometry::Rect::new(x, y, w, h);
+
+                        maximized_windows.insert(focused, current_rect);
+                        stem::info!(
+                            "[bloom] F11: Maximizing window {:?} (saved {:?})",
+                            focused,
+                            current_rect
+                        );
+
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_X, 0);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_Y, 0);
+                        let _ =
+                            stem::thing::sys::prop_set(focused, keys::UI_WIDTH, screen_w as u64);
+                        let _ =
+                            stem::thing::sys::prop_set(focused, keys::UI_HEIGHT, screen_h as u64);
+                        let _ = stem::thing::sys::prop_set(focused, keys::UI_MANUAL_POSITION, 1);
+                    }
+                    invalidation_causes.push(SnapshotInvalidation::Forced);
+                }
             }
 
             if pressed_keys.contains(&Key::F9) && !prev_keys.contains(&Key::F9) {
@@ -683,7 +729,7 @@ fn main(arg: usize) -> ! {
 
             if pressed_keys.contains(&Key::F7) && !prev_keys.contains(&Key::F7) {
                 tile_windows(screen_w, screen_h);
-                force_full_damage = true;
+                invalidation_causes.push(SnapshotInvalidation::Forced);
                 stem::info!("[bloom] F7 pressed, auto-tiling windows");
             }
 
@@ -786,7 +832,7 @@ fn main(arg: usize) -> ! {
                     &mut alt_cycle_max_z,
                 ) {
                     focused_window = Some(next);
-                    force_full_damage = true;
+                    invalidation_causes.push(SnapshotInvalidation::Forced);
                 }
             }
             alt_prev_down = alt_down;
@@ -795,38 +841,37 @@ fn main(arg: usize) -> ! {
         // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
 
-        let paint_result = if !modal_mode {
-            {
-                crate::trace_span!("bloom.loop.paint_updates");
-                paint_pipeline.process_updates(screen_w, screen_h)
-            }
-        } else {
-            // Modal Mode: Black screen, no windows
-            // We specifically add a Clear command to list to handle the black out.
-            list.clear(crate::geometry::Color::from_u32(0xFF000000));
-            // Return empty paint result (no windows)
-            crate::paint_vm::PaintResult {
-                damage: alloc::vec![],
-            }
+        let paint_result = {
+            crate::trace_span!("bloom.loop.paint_updates");
+            paint_pipeline.process_updates(screen_w, screen_h)
         };
 
-        // Damage Tracking (cursor is now blended post-damage, does not affect window damage)
-        let bounds = damage::Rect::full(screen_w, screen_h);
+        // Damage Tracking (cursor fallback handling)
+        let bounds = crate::geometry::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
         for rect in &paint_result.damage {
             damage.add_rect(*rect);
         }
-        // Cursor damage: add old + new cursor rectangles when cursor moved
-        if let Some(asset) = ASSETS.get_cursor() {
+
+        let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
+        let mut cursor_asset = ASSETS.get_cursor();
+
+        // If no cursor asset but we have a reactive cursor assigned, try to get it
+        if cursor_asset.is_none() {
+            if let Ok(root_id) = find(kinds::UI_ROOT, &mut [ThingId::default(); 1]) {
+                if let Ok(cursor_id) = prop_get(ThingId::from_u64(root_id as u64), "ui.cursor") {
+                    // The watcher should have enqueued it, but we check here too
+                }
+            }
+        }
+
+        if let Some(asset) = cursor_asset {
             if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
-                let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
                 let cursor_changed = snapshot.gen != prev_cursor_gen;
 
                 if cursor_moved || cursor_changed {
                     let (cw, ch) = (snapshot.image.width as i32, snapshot.image.height as i32);
-
-                    // Old cursor rect (to erase)
-                    let old_rect = damage::Rect::new(
+                    let old_rect = crate::geometry::Rect::new(
                         prev_cursor_x - snapshot.hotspot_x,
                         prev_cursor_y - snapshot.hotspot_y,
                         cw,
@@ -834,9 +879,7 @@ fn main(arg: usize) -> ! {
                     )
                     .expand(2)
                     .clip(bounds);
-
-                    // New cursor rect (to draw)
-                    let new_rect = damage::Rect::new(
+                    let new_rect = crate::geometry::Rect::new(
                         cursor.x - snapshot.hotspot_x,
                         cursor.y - snapshot.hotspot_y,
                         cw,
@@ -844,23 +887,59 @@ fn main(arg: usize) -> ! {
                     )
                     .expand(2)
                     .clip(bounds);
-
                     if !old_rect.is_empty() {
                         damage.add_rect(old_rect);
                     }
                     if !new_rect.is_empty() {
                         damage.add_rect(new_rect);
                     }
-
-                    // Update previous state
                     prev_cursor_x = cursor.x;
                     prev_cursor_y = cursor.y;
                     prev_cursor_gen = snapshot.gen;
                 }
+            } else {
+                // Asset known but snapshot not ready: use crosshair damage
+                if cursor_moved {
+                    let old_rect = crate::geometry::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
+                        .expand(2)
+                        .clip(bounds);
+                    let new_rect = crate::geometry::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
+                        .expand(2)
+                        .clip(bounds);
+                    if !old_rect.is_empty() {
+                        damage.add_rect(old_rect);
+                    }
+                    if !new_rect.is_empty() {
+                        damage.add_rect(new_rect);
+                    }
+                    prev_cursor_x = cursor.x;
+                    prev_cursor_y = cursor.y;
+                }
+            }
+        } else {
+            // No asset: use crosshair damage
+            if cursor_moved {
+                let old_rect = crate::geometry::Rect::new(prev_cursor_x - 8, prev_cursor_y - 8, 17, 17)
+                    .expand(2)
+                    .clip(bounds);
+                let new_rect = crate::geometry::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17)
+                    .expand(2)
+                    .clip(bounds);
+                if !old_rect.is_empty() {
+                    damage.add_rect(old_rect);
+                }
+                if !new_rect.is_empty() {
+                    damage.add_rect(new_rect);
+                }
+                prev_cursor_x = cursor.x;
+                prev_cursor_y = cursor.y;
             }
         }
 
-        if force_full_damage {
+        if !invalidation_causes.is_empty() {
+             if debug_flags.show_damage_stats {
+                 stem::info!("[bloom] Full damage forced by: {:?}", invalidation_causes);
+             }
             damage = damage::Damage::full(bounds);
         }
 
@@ -897,35 +976,61 @@ fn main(arg: usize) -> ! {
             snapshot.rects(),
             snapshot.raw_rects(),
             strategy.mode,
-            strategy.reason,
+            &invalidation_causes,
             snapshot.overflowed(),
         );
         append_damage_overlay(&mut list, &overlay_state, &debug_flags, screen_w, screen_h);
-
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
-            if !modal_mode {
-                let rects: alloc::vec::Vec<_> = damage.iter().collect();
-                paint_pipeline.compose(
-                    &mut surface,
-                    &rects,
-                    ASSETS.get_wallpaper().as_ref(),
-                    crate::geometry::Color::from_u32(0xFF101018),
-                );
+            let rects: alloc::vec::Vec<_> = damage.iter().collect();
+
+            // Reactive wallpaper selection
+            let mut wallpaper = ASSETS.get_wallpaper();
+            if let Some(focused) = focused_window {
+                let mut wp_asset_id = prop_get(focused, "ui.wallpaper").unwrap_or(0);
+
+                // If window doesn't have it, check its task parent
+                if wp_asset_id == 0 {
+                    if let Ok(task_id) = prop_get(focused, abi::schema::rels::RUNS_ON) {
+                        wp_asset_id =
+                            prop_get(ThingId::from_u64(task_id), "ui.wallpaper").unwrap_or(0);
+                    }
+                }
+
+                if wp_asset_id != 0 {
+                    if let Some(wp) = ASSETS.get_image_by_id(ThingId::from_u64(wp_asset_id)) {
+                        wallpaper = Some(wp);
+                    }
+                }
             }
+
+            paint_pipeline.compose(
+                &mut surface,
+                &rects,
+                wallpaper.as_ref(),
+                crate::geometry::Color::from_u32(0xFF101018),
+            );
 
             crate::trace_span!("bloom.loop.raster");
             raster::execute_with_damage(&mut surface, &list, &damage, false);
         }
 
-        // Cursor overlay: blend cached snapshot at cursor position (post-damage)
-        // This ensures cursor movement does not trigger window repaints
-        if let Some(asset) = ASSETS.get_cursor() {
+        // Cursor overlay: blend cached snapshot or draw fallback
+        let cursor_drawn = if let Some(asset) = ASSETS.get_cursor() {
             if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
                 let cx = cursor.x - snapshot.hotspot_x;
                 let cy = cursor.y - snapshot.hotspot_y;
                 raster::blit_cursor_overlay(&mut surface, &snapshot.image, cx, cy);
+                true
+            } else {
+                false
             }
+        } else {
+            false
+        };
+
+        if !cursor_drawn {
+            raster::draw_crosshair(&mut surface, cursor.x, cursor.y, 0xFFFFFFFF);
         }
 
         {
@@ -972,10 +1077,10 @@ fn append_damage_overlay(
             ""
         };
         let text = alloc::format!(
-            "DAMAGE: merged={} raw={} reason={}{}",
+            "DAMAGE: merged={} raw={} reason={:?}{}",
             overlay_state.present().len(),
             overlay_state.raw().len(),
-            overlay_state.reason,
+            overlay_state.reasons,
             suffix
         );
         let x = 8;
@@ -1000,13 +1105,13 @@ fn append_damage_overlay(
     }
 }
 
-fn draw_rect_outline(list: &mut drawlist::DrawList, rect: crate::damage::Rect, color: u32) {
-    if rect.w <= 0 || rect.h <= 0 {
+fn draw_rect_outline(list: &mut drawlist::DrawList, rect: crate::geometry::Rect, color: u32) {
+    if rect.width() <= 0 || rect.height() <= 0 {
         return;
     }
     let c = crate::geometry::Color::from_u32(color);
-    list.rect(rect.x, rect.y, rect.w, 1, c);
-    list.rect(rect.x, rect.y + rect.h - 1, rect.w, 1, c);
-    list.rect(rect.x, rect.y, 1, rect.h, c);
-    list.rect(rect.x + rect.w - 1, rect.y, 1, rect.h, c);
+    list.rect(rect.x(), rect.y(), rect.width(), 1, c);
+    list.rect(rect.x(), rect.y() + rect.height() - 1, rect.width(), 1, c);
+    list.rect(rect.x(), rect.y(), 1, rect.height(), c);
+    list.rect(rect.x() + rect.width() - 1, rect.y(), 1, rect.height(), c);
 }

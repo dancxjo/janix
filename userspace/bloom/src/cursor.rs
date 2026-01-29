@@ -7,7 +7,7 @@
 //! Cursor rasterization and caching is handled by the `cursor_rasterizer` module.
 //! The compositor blends the cached cursor snapshot at the final stage.
 
-use crate::damage::Rect;
+use crate::geometry::Rect;
 
 /// Pure logical cursor state.
 ///

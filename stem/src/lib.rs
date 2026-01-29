@@ -8,6 +8,7 @@ pub use stem_macros::main;
 
 pub mod arch;
 pub mod bitset;
+pub mod block;
 pub mod console;
 pub mod device;
 pub mod errors;

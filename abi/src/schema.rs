@@ -15,6 +15,25 @@ pub mod confidence {
     pub const HIGH: u8 = 2;
 }
 
+/// Content source kind constants
+pub mod content_source_kind {
+    /// Limine boot modules
+    pub const LIMINE_MODULE: &str = "limine_module";
+    /// ISO9660 filesystem on disk
+    pub const ISO9660_DISK: &str = "iso9660_disk";
+}
+
+/// Content source state constants
+pub mod content_source_state {
+    /// Source is ready and serving content
+    pub const READY: &str = "ready";
+    /// Source encountered an error
+    pub const ERROR: &str = "error";
+    /// Source is initializing
+    pub const INITIALIZING: &str = "initializing";
+}
+
+
 pub mod keys {
     pub const SOURCE: &str = "source";
     pub const CONFIDENCE: &str = "confidence";
@@ -298,6 +317,36 @@ pub mod keys {
     pub const ASSET_ERROR: &str = "asset.error";
     /// Boolean: 1 if asset successfully loaded and ready for use
     pub const ASSET_READY: &str = "asset.ready";
+
+    // Content Provider System (unified content sources)
+    /// Content source kind: "limine_module", "iso9660_disk", etc.
+    pub const CONTENT_SOURCE_KIND: &str = "content.source.kind";
+    /// Content source name (e.g., "boot", "cdrom0")
+    pub const CONTENT_SOURCE_NAME: &str = "content.source.name";
+    /// Content source priority for overlay resolution (higher wins)
+    pub const CONTENT_SOURCE_PRIORITY: &str = "content.source.priority";
+    /// Content source state: "ready", "error", "initializing"
+    pub const CONTENT_SOURCE_STATE: &str = "content.source.state";
+    /// Content source generation (bumps on refresh/remount)
+    pub const CONTENT_SOURCE_GEN: &str = "content.source.gen";
+    
+    // File/Directory Properties
+    /// File name (leaf name, not full path)
+    pub const FILE_NAME: &str = "file.name";
+    /// File size in bytes
+    pub const FILE_SIZE: &str = "file.size";
+    /// File content hash (SHA-256 first 8 bytes as u64)
+    pub const FILE_HASH: &str = "file.hash";
+    /// File MIME type (optional)
+    pub const FILE_MIME: &str = "file.mime";
+    /// File bytespace ID for content
+    pub const FILE_BYTESPACE: &str = "file.bytespace";
+    /// File source (ThingId of ContentSource)
+    pub const FILE_SOURCE: &str = "file.source";
+    /// Directory name (leaf name)
+    pub const DIR_NAME: &str = "dir.name";
+    /// Directory full path (optional, for quick lookups)
+    pub const DIR_PATH: &str = "dir.path";
 }
 
 pub mod kinds {
@@ -407,6 +456,14 @@ pub mod kinds {
 
     pub const ASSET: &str = "Asset";
     pub const ASSET_REQUEST: &str = "AssetRequest";
+
+    // Content Provider System
+    /// A content source that provides files/directories (Limine modules, ISO, etc.)
+    pub const CONTENT_SOURCE: &str = "content.Source";
+    /// A directory in the content graph
+    pub const CONTENT_DIR: &str = "content.Directory";
+    /// A file in the content graph
+    pub const CONTENT_FILE: &str = "content.File";
 }
 
 /// Snapshot semantics and constants for UI presentation surfaces.
@@ -527,6 +584,14 @@ pub mod rels {
     // SVG Cache Relationships (Blossom service)
     pub const SVG_VARIANT_OF: &str = "svg.variant_of";
     pub const SVG_HAS_PIXELS: &str = "svg.has_pixels";
+
+    // Content Provider Relationships
+    /// Content source contains a directory or file
+    pub const CONTENT_CONTAINS: &str = "content.contains";
+    /// File/directory located at parent directory
+    pub const CONTENT_LOCATED_AT: &str = "content.located_at";
+    /// Content provided by source
+    pub const CONTENT_PROVIDED_BY: &str = "content.provided_by";
 }
 
 // Virtio GPU additions

@@ -44,7 +44,9 @@ impl ArchRuntime for RISCV64Runtime {
     }
 
     fn wait_for_interrupt(&self) {
-        unsafe { core::arch::asm!("wfi"); }
+        unsafe {
+            core::arch::asm!("wfi");
+        }
     }
 
     fn mono_ticks(&self) -> u64 {

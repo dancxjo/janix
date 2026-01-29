@@ -70,7 +70,7 @@ where
                     collector.on_scenario_end(false, &serial);
                     self.in_scenario = false;
                 }
-                
+
                 let collector = artifacts::global().lock().await;
                 let (passed, failed) = collector.count_scenarios();
                 eprintln!("\n══════════════════════════════════════════════════════════════════");

@@ -8,31 +8,144 @@
 // - `present_frame()`: Present a completed frame (consumes token)
 
 use abi::display_driver_protocol as drvproto;
-use abi::display_driver_protocol::{BindPayload, ErrResp, RegisterPayload};
+use abi::display_driver_protocol::BindPayload;
+use abi::driver_frame::FrameReader;
+use alloc::string::String;
+use alloc::vec::Vec;
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
 
 use crate::damage::Damage;
-use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentStats};
-
+use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentDamageSnapshot, PresentStats};
 use crate::reclaimer;
+use crate::state::OverlayMode;
+
+#[derive(Clone, Copy, Debug)]
+struct DriverNegotiation {
+    proto_major: u16,
+    proto_minor: u16,
+    caps: u32,
+    max_rects: u16,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct DisplayNegotiation {
+    pub caps: u32,
+    pub max_rects: u16,
+}
+
+pub(crate) struct PresentStrategy {
+    pub use_rects: bool,
+    pub flags: u32,
+    pub reason: &'static str,
+    pub mode: OverlayMode,
+}
+
+pub(crate) fn evaluate_present_strategy(
+    negotiation: Option<DisplayNegotiation>,
+    snapshot: &PresentDamageSnapshot,
+) -> PresentStrategy {
+    if snapshot.is_full() {
+        return PresentStrategy {
+            use_rects: false,
+            flags: drvproto::PRESENT_FLAG_FULLFRAME,
+            reason: "full-frame damage",
+            mode: OverlayMode::Fullframe,
+        };
+    }
+
+    if let Some(neg) = negotiation {
+        let rect_count = snapshot.len();
+        if (neg.caps & drvproto::CAP_DIRTY_RECTS != 0)
+            && rect_count <= neg.max_rects as usize
+            && !snapshot.overflowed()
+        {
+            PresentStrategy {
+                use_rects: true,
+                flags: 0,
+                reason: "DIRTY_RECTS",
+                mode: OverlayMode::DirtyRects,
+            }
+        } else {
+            let reason = if snapshot.overflowed() {
+                "damage overflow"
+            } else if rect_count > neg.max_rects as usize {
+                "rects exceed max_rects"
+            } else {
+                "driver lacks DIRTY_RECTS"
+            };
+            PresentStrategy {
+                use_rects: false,
+                flags: drvproto::PRESENT_FLAG_FULLFRAME,
+                reason,
+                mode: OverlayMode::Fullframe,
+            }
+        }
+    } else {
+        PresentStrategy {
+            use_rects: false,
+            flags: drvproto::PRESENT_FLAG_FULLFRAME,
+            reason: "no negotiation",
+            mode: OverlayMode::Fullframe,
+        }
+    }
+}
+
+fn caps_to_string(caps: u32) -> String {
+    let mut out = String::new();
+    let mut first = true;
+    let mut push = |name: &str, out: &mut String, first: &mut bool| {
+        if !*first {
+            out.push('|');
+        }
+        out.push_str(name);
+        *first = false;
+    };
+
+    if caps & drvproto::CAP_DIRTY_RECTS != 0 {
+        push("DIRTY_RECTS", &mut out, &mut first);
+    }
+    if caps & drvproto::CAP_FULLFRAME != 0 {
+        push("FULLFRAME", &mut out, &mut first);
+    }
+    if caps & drvproto::CAP_MULTI_DISPLAY != 0 {
+        push("MULTI_DISPLAY", &mut out, &mut first);
+    }
+    if caps & drvproto::CAP_FENCE != 0 {
+        push("FENCE", &mut out, &mut first);
+    }
+
+    if out.is_empty() {
+        out.push_str("NONE");
+    }
+
+    out
+}
+
+const MAX_LOCAL_DAMAGE_RECTS: usize = 256;
+const MAX_PRESENT_PAYLOAD_BYTES: usize =
+    drvproto::PRESENT_HEADER_WIRE_SIZE + drvproto::RECT_WIRE_SIZE * MAX_LOCAL_DAMAGE_RECTS;
+const MAX_PRESENT_MESSAGE_BYTES: usize = drvproto::HEADER_SIZE + MAX_PRESENT_PAYLOAD_BYTES;
 
 /// Presenter trait with transactional frame API
 pub trait Presenter {
     /// Acquire a frame slot, snapshotting current asset generation.
     /// Returns a token that must be consumed by present_frame().
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken;
-    
+
     /// Present a completed frame (consumes token).
     /// Returns statistics about the presentation.
     fn present_frame(&mut self, token: FrameToken) -> PresentStats;
-    
+
     /// Legacy present method (deprecated, use present_frame)
     #[allow(dead_code)]
     fn present(&mut self, damage: &Damage);
-    
+
     /// Pump the message queue for driver communication.
     fn pump(&mut self);
+
+    /// Get negotiated display capabilities (if available).
+    fn negotiation_info(&self) -> Option<DisplayNegotiation>;
 }
 
 pub struct NullPresenter;
@@ -41,22 +154,22 @@ impl Presenter for NullPresenter {
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         static FRAME_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
         let frame_id = FRAME_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
-        
+
         // Register in-flight frame for safe eviction
         reclaimer::register_in_flight(frame_id, asset_gen);
-        
+
         FrameToken::new(frame_id, asset_gen, spec)
     }
-    
+
     fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         let ops_count = token.ops.iter().count();
         let damage_rect_count = token.damage.rect_count();
         let frame_id = token.frame_id;
         let asset_gen = token.asset_gen;
-        
+
         // Complete in-flight frame
         reclaimer::complete_in_flight(frame_id);
-        
+
         PresentStats {
             frame_id,
             asset_gen,
@@ -65,18 +178,24 @@ impl Presenter for NullPresenter {
             fast_path_taken: token.damage.is_empty(),
         }
     }
-    
+
     fn present(&mut self, _damage: &Damage) {}
     fn pump(&mut self) {}
+
+    fn negotiation_info(&self) -> Option<DisplayNegotiation> {
+        None
+    }
 }
 
 pub struct DriverPresenter {
     req_write: PortHandle,
     resp_read: PortHandle,
-    rx_buf: [u8; 1024],
-    rx_len: usize,
-    registered: bool,
+    frames: FrameReader<4096>,
     awaiting_bind_ack: bool,
+    negotiation: Option<DriverNegotiation>,
+    pending_bind: Option<BindPayload>,
+    fallback_warned: bool,
+    unknown_msg_logged: bool,
     frame_count: u64,
 }
 
@@ -85,22 +204,38 @@ impl DriverPresenter {
         Self {
             req_write,
             resp_read,
-            rx_buf: [0u8; 1024],
-            rx_len: 0,
-            registered: false,
+            frames: FrameReader::new(),
             awaiting_bind_ack: false,
+            negotiation: None,
+            pending_bind: None,
+            fallback_warned: false,
+            unknown_msg_logged: false,
             frame_count: 0,
         }
     }
 
+    pub fn start_handshake(&mut self) {
+        let hello = drvproto::HelloPayload {
+            proto_major: drvproto::PROTO_MAJOR,
+            proto_minor: drvproto::PROTO_MINOR,
+            want_caps: drvproto::CAP_DIRTY_RECTS | drvproto::CAP_FULLFRAME,
+        };
+        let mut hello_bytes = [0u8; drvproto::HELLO_PAYLOAD_WIRE_SIZE];
+        if let Some(len) = drvproto::encode_hello_payload_le(&hello, &mut hello_bytes) {
+            let mut buf = [0u8; 128];
+            if let Some(total) =
+                drvproto::encode_message(&mut buf, drvproto::MSG_HELLO, &hello_bytes[..len])
+            {
+                let _ = port_send(self.req_write, &buf[..total]);
+            }
+        }
+    }
 
-    pub fn send_bind(&mut self, payload: &BindPayload) {
-        let mut bytes = [0u8; core::mem::size_of::<BindPayload>()];
-        bytes[0..8].copy_from_slice(&payload.bytespace_id.to_le_bytes());
-        bytes[8..12].copy_from_slice(&payload.width.to_le_bytes());
-        bytes[12..16].copy_from_slice(&payload.height.to_le_bytes());
-        bytes[16..20].copy_from_slice(&payload.stride.to_le_bytes());
-        bytes[20..24].copy_from_slice(&payload.format.to_le_bytes());
+    fn send_bind_now(&mut self, payload: &BindPayload) {
+        let mut bytes = [0u8; drvproto::BIND_PAYLOAD_WIRE_SIZE];
+        if drvproto::encode_bind_payload_le(payload, &mut bytes).is_none() {
+            return;
+        }
 
         let mut buf = [0u8; 128];
         if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_BIND, &bytes) {
@@ -109,49 +244,73 @@ impl DriverPresenter {
         }
     }
 
-    fn send_present(&mut self, damage: &Damage) {
-        // Calculate payload size
-        // Header: 8 bytes
-        // Rects: 16 bytes each
-        // Max 8 rects => 128 bytes
-        // Total payload max: 136 bytes
-        let mut payload = [0u8; 136];
-        
+    pub fn send_bind(&mut self, payload: &BindPayload) {
+        if self.negotiation.is_some() {
+            self.send_bind_now(payload);
+        } else {
+            self.pending_bind = Some(*payload);
+        }
+    }
 
-        let mut offset = 8; // Skip header for now
+    fn send_present(&mut self, snapshot: &PresentDamageSnapshot) -> usize {
+        let mut payload = [0u8; MAX_PRESENT_PAYLOAD_BYTES];
+        let mut buf = [0u8; MAX_PRESENT_MESSAGE_BYTES];
+        let strategy = evaluate_present_strategy(self.negotiation_info(), snapshot);
 
-        // Always send explicit damage rectangles
-        // (Even for Damage::full, which contains a single rect covering the bounds)
-        let rect_count = damage.rect_count() as u32;
-
-        for r in damage.iter() {
-            let abi_rect = abi::display_driver_protocol::Rect {
-                x: r.x.max(0) as u32,
-                y: r.y.max(0) as u32,
-                w: r.w.max(0) as u32,
-                h: r.h.max(0) as u32,
-            };
-            let r_bytes: [u8; 16] = unsafe { core::mem::transmute(abi_rect) };
-            payload[offset..offset+16].copy_from_slice(&r_bytes);
-            offset += 16;
+        if !strategy.use_rects {
+            self.log_fullframe_fallback(strategy.reason);
+            self.encode_and_send(
+                0,
+                strategy.flags,
+                core::iter::empty::<abi::display_driver_protocol::Rect>(),
+                &mut payload,
+                &mut buf,
+            );
+            return 0;
         }
 
-        // Write header
-        let header = abi::display_driver_protocol::PresentHeader {
+        let rects = snapshot.rects();
+        let rect_count = rects.len() as u32;
+        self.encode_and_send(
             rect_count,
-            _pad: 0,
-        };
-        let h_bytes: [u8; 8] = unsafe { core::mem::transmute(header) };
-        payload[0..8].copy_from_slice(&h_bytes);
+            strategy.flags,
+            rects.iter().map(|r| abi::display_driver_protocol::Rect {
+                x: r.x().max(0) as u32,
+                y: r.y().max(0) as u32,
+                w: r.width().max(0) as u32,
+                h: r.height().max(0) as u32,
+            }),
+            &mut payload,
+            &mut buf,
+        );
+        rect_count as usize
+    }
 
-        // Send message
-        // Encode message buffer needs to be large enough for header + payload
-        // DriverHeader (12) + Payload (136) = 148
-        let mut buf = [0u8; 256];
-        let payload_len = 8 + (rect_count as usize * 16);
-        
-        if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_PRESENT, &payload[..payload_len]) {
-            let _ = port_send(self.req_write, &buf[..len]);
+    fn encode_and_send<I>(
+        &mut self,
+        rect_count: u32,
+        flags: u32,
+        rects: I,
+        payload: &mut [u8],
+        buf: &mut [u8],
+    ) where
+        I: IntoIterator<Item = abi::display_driver_protocol::Rect>,
+    {
+        if let Some(payload_len) =
+            drvproto::encode_present_payload_with_flags_le(rect_count, flags, rects, payload)
+        {
+            if let Some(len) =
+                drvproto::encode_message(buf, drvproto::MSG_PRESENT, &payload[..payload_len])
+            {
+                let _ = port_send(self.req_write, &buf[..len]);
+            }
+        }
+    }
+
+    fn log_fullframe_fallback(&mut self, reason: &str) {
+        if !self.fallback_warned {
+            info!("display: {}, using full-frame present", reason);
+            self.fallback_warned = true;
         }
     }
 
@@ -162,38 +321,59 @@ impl DriverPresenter {
                 Ok(n) => n,
                 Err(_) => break,
             };
-            let remaining = self.rx_buf.len().saturating_sub(self.rx_len);
-            let to_copy = n.min(remaining);
-            if to_copy > 0 {
-                self.rx_buf[self.rx_len..self.rx_len + to_copy]
-                    .copy_from_slice(&temp[..to_copy]);
-                self.rx_len += to_copy;
-            } else {
-                self.rx_len = 0;
+            if n == 0 {
                 break;
             }
+            self.frames.push(&temp[..n]);
         }
     }
 
-    fn handle_message(&mut self, msg_type: u16, payload_ptr: *const u8, payload_len: usize) {
+    fn apply_negotiation(&mut self, negotiation: DriverNegotiation) {
+        if self.negotiation.is_some() {
+            return;
+        }
+        let caps_string = caps_to_string(negotiation.caps);
+        info!(
+            "display: negotiated proto {}.{} caps={} max_rects={}",
+            negotiation.proto_major, negotiation.proto_minor, caps_string, negotiation.max_rects
+        );
+        self.negotiation = Some(negotiation);
+        if let Some(bind) = self.pending_bind.take() {
+            self.send_bind_now(&bind);
+        }
+    }
+
+    fn handle_message(&mut self, msg_type: u16, payload: &[u8]) {
         match msg_type {
+            drvproto::MSG_WELCOME => {
+                if let Some(welcome) = drvproto::decode_welcome_payload_le(payload) {
+                    self.apply_negotiation(DriverNegotiation {
+                        proto_major: welcome.proto_major,
+                        proto_minor: welcome.proto_minor,
+                        caps: welcome.have_caps,
+                        max_rects: welcome.max_rects,
+                    });
+                } else {
+                    info!("display: WELCOME payload too small");
+                }
+            }
             drvproto::MSG_REGISTER => {
-                if payload_len >= core::mem::size_of::<RegisterPayload>() {
-                    let reg: RegisterPayload = unsafe {
-                        core::ptr::read_unaligned(payload_ptr as *const RegisterPayload)
-                    };
-                    let driver_kind =
-                        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(reg.driver_kind)) };
-                    let caps =
-                        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(reg.caps)) };
+                if let Some(reg) = drvproto::decode_register_payload_le(payload) {
+                    let driver_kind = reg.driver_kind;
+                    let caps = reg.caps;
                     info!(
                         "bloom: driver REGISTER (kind={} caps=0x{:x})",
                         driver_kind, caps
                     );
+                    self.apply_negotiation(DriverNegotiation {
+                        proto_major: drvproto::PROTO_MAJOR,
+                        proto_minor: drvproto::PROTO_MINOR,
+                        caps,
+                        max_rects: crate::damage::MAX_RECTS as u16,
+                    });
                 } else {
                     info!("bloom: driver REGISTER (payload too small)");
                 }
-                self.registered = true;
             }
             drvproto::MSG_ACK => {
                 if self.awaiting_bind_ack {
@@ -203,14 +383,9 @@ impl DriverPresenter {
                 // Silently accept PRESENT ACKs (high frequency)
             }
             drvproto::MSG_ERR => {
-                let code = if payload_len >= core::mem::size_of::<ErrResp>() {
-                    let err: ErrResp = unsafe {
-                        core::ptr::read_unaligned(payload_ptr as *const ErrResp)
-                    };
-                    unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(err.code)) }
-                } else {
-                    0
-                };
+                let code = drvproto::decode_err_resp_le(payload)
+                    .map(|err| err.code)
+                    .unwrap_or(0);
                 if self.awaiting_bind_ack {
                     info!("bloom: driver BIND ERR code={}", code);
                     self.awaiting_bind_ack = false;
@@ -218,65 +393,36 @@ impl DriverPresenter {
                     info!("bloom: driver PRESENT ERR code={}", code);
                 }
             }
-            _ => {}
+            _ => {
+                if !self.unknown_msg_logged {
+                    info!("display: ignoring unknown driver msg {}", msg_type);
+                    self.unknown_msg_logged = true;
+                }
+            }
         }
     }
 
     fn process_rx(&mut self) {
-        loop {
-            if self.rx_len < drvproto::HEADER_SIZE {
-                break;
-            }
-
-            let magic = u32::from_le_bytes(self.rx_buf[0..4].try_into().unwrap());
-            let version = u16::from_le_bytes(self.rx_buf[4..6].try_into().unwrap());
-            if magic != drvproto::DRIVER_MAGIC || version != drvproto::DRIVER_VERSION {
-                self.shift_rx(1);
-                continue;
-            }
-            let msg_type = u16::from_le_bytes(self.rx_buf[6..8].try_into().unwrap());
-            let payload_len = u32::from_le_bytes(self.rx_buf[8..12].try_into().unwrap()) as usize;
-            let total = drvproto::HEADER_SIZE + payload_len;
-            if total > self.rx_buf.len() {
-                self.rx_len = 0;
-                break;
-            }
-            if self.rx_len < total {
-                break;
-            }
-
-            let payload_ptr = unsafe { self.rx_buf.as_ptr().add(drvproto::HEADER_SIZE) };
-            self.handle_message(msg_type, payload_ptr, payload_len);
-            self.shift_rx(total);
+        while let Some((header, payload)) = self.frames.next_message() {
+            let msg_type = header.msg_type;
+            let payload_copy: Vec<u8> = payload.to_vec();
+            self.handle_message(msg_type, &payload_copy);
         }
-    }
-
-    fn shift_rx(&mut self, count: usize) {
-        if count >= self.rx_len {
-            self.rx_len = 0;
-            return;
-        }
-        let remaining = self.rx_len - count;
-        for i in 0..remaining {
-            self.rx_buf[i] = self.rx_buf[count + i];
-        }
-        self.rx_len = remaining;
     }
 }
 
 impl Presenter for DriverPresenter {
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         self.frame_count += 1;
-        
+
         // Register in-flight frame for safe eviction
         reclaimer::register_in_flight(self.frame_count, asset_gen);
-        
+
         FrameToken::new(self.frame_count, asset_gen, spec)
     }
-    
+
     fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         let ops_count = token.ops.iter().count();
-        let damage_rect_count = token.damage.rect_count();
         let fast_path = token.damage.is_empty();
         let frame_id = token.frame_id;
         let asset_gen = token.asset_gen;
@@ -288,16 +434,16 @@ impl Presenter for DriverPresenter {
             let _evictions = reclaimer::eviction_count();
             let _in_flight = reclaimer::in_flight_count();
             let _min_gen = reclaimer::min_live_gen();
-            
+
             /*
             if token.damage.is_full {
-                info!("bloom: frame {} gen={} (full redraw) mem={}/{}b evictions={} in_flight={} min_gen={}", 
+                info!("bloom: frame {} gen={} (full redraw) mem={}/{}b evictions={} in_flight={} min_gen={}",
                     frame_id, asset_gen.0, mem_used, mem_budget, evictions, in_flight, min_gen.0);
             } else if damage_rect_count == 0 {
-                info!("bloom: frame {} gen={} (no damage - idle) mem={}/{}b", 
+                info!("bloom: frame {} gen={} (no damage - idle) mem={}/{}b",
                     frame_id, asset_gen.0, mem_used, mem_budget);
             } else {
-                info!("bloom: frame {} gen={} ({} damage rects) mem={}/{}b", 
+                info!("bloom: frame {} gen={} ({} damage rects) mem={}/{}b",
                     frame_id, asset_gen.0, damage_rect_count, mem_used, mem_budget);
             }
             */
@@ -307,9 +453,11 @@ impl Presenter for DriverPresenter {
         reclaimer::complete_in_flight(frame_id);
 
         // Fast-path: skip present if no damage
-        if !fast_path {
-            self.send_present(&token.damage);
-        }
+        let damage_rect_count = if fast_path {
+            0
+        } else {
+            self.send_present(&token.present_damage)
+        };
 
         PresentStats {
             frame_id,
@@ -337,12 +485,21 @@ impl Presenter for DriverPresenter {
         }
         */
 
-        self.send_present(damage);
+        let mut snapshot = PresentDamageSnapshot::new();
+        snapshot.update_from_damage(damage);
+        self.send_present(&snapshot);
     }
 
     fn pump(&mut self) {
         self.pump_port();
         self.process_rx();
+    }
+
+    fn negotiation_info(&self) -> Option<DisplayNegotiation> {
+        self.negotiation.as_ref().map(|n| DisplayNegotiation {
+            caps: n.caps,
+            max_rects: n.max_rects,
+        })
     }
 }
 
@@ -358,7 +515,7 @@ impl PresenterImpl {
             PresenterImpl::Driver(inner) => inner.acquire_frame(spec, asset_gen),
         }
     }
-    
+
     pub fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         match self {
             PresenterImpl::Null(inner) => inner.present_frame(token),
@@ -378,6 +535,13 @@ impl PresenterImpl {
         match self {
             PresenterImpl::Null(inner) => inner.pump(),
             PresenterImpl::Driver(inner) => inner.pump(),
+        }
+    }
+
+    pub fn negotiation_info(&self) -> Option<DisplayNegotiation> {
+        match self {
+            PresenterImpl::Null(inner) => inner.negotiation_info(),
+            PresenterImpl::Driver(inner) => inner.negotiation_info(),
         }
     }
 }

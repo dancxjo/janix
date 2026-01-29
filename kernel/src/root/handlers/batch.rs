@@ -4,18 +4,18 @@
 //! Both multi-op batches (SYS_ROOT_APPLY_BATCH) and single-op syscalls
 //! (CREATE_NODE, LINK, PROP_SET) route through `apply_ops_and_commit()`.
 
-use crate::root::graph::{Graph, ThingId, CommitSummary};
+use crate::root::graph::{CommitSummary, Graph, ThingId};
 use crate::root::handlers::HandlerResult;
-use abi::root::{
-    BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, OP_SET_PROP,
-    REF_ABSOLUTE, REF_LOCAL, MAX_BATCH_BYTES, MAX_BATCH_OPS, MAX_LOCAL_REFS,
-};
 use crate::root::handlers::watch_payload::{encode_watch_payload, track_watch_encode_reject};
-use abi::symbols::SymbolId;
-use core::sync::atomic::{AtomicU64, Ordering};
-use alloc::vec::Vec;
 use crate::root::symbols::Interner;
+use abi::root::{
+    BATCH_MAGIC, BATCH_VERSION, MAX_BATCH_BYTES, MAX_BATCH_OPS, MAX_LOCAL_REFS, OP_CREATE_NODE,
+    OP_PUT_EDGE, OP_SET_PROP, REF_ABSOLUTE, REF_LOCAL,
+};
+use abi::symbols::SymbolId;
 use alloc::string::String;
+use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 // ============================================================================
 // Instrumentation Counters
@@ -46,10 +46,10 @@ static ROOT_COMMIT_LOG_COUNTER: AtomicU64 = AtomicU64::new(0);
 // ============================================================================
 
 /// Reusable scratch buffer for batch parsing and validation.
-/// 
+///
 /// Avoids repeated allocations by reusing capacity across ApplyBatch calls.
 /// Each root service instance owns one of these.
-/// 
+///
 /// Note: locals arrays are boxed to avoid stack overflow (9KB total).
 pub struct RootBatchScratch {
     /// Validated ops staging area (capacity preserved across calls)
@@ -72,10 +72,10 @@ impl RootBatchScratch {
             locals_init: alloc::boxed::Box::new([false; MAX_LOCAL_REFS]),
         }
     }
-    
+
     /// Reset scratch for next batch (preserves allocation capacity).
     pub fn reset(&mut self) {
-        self.ops.clear();  // Keeps capacity
+        self.ops.clear(); // Keeps capacity
         self.locals_init.fill(false);
         // locals array can be left as-is since locals_init guards access
     }
@@ -88,9 +88,17 @@ pub enum ValidatedOp {
     /// Create a new node with the given kind.
     CreateNode { kind: SymbolId, out_idx: usize },
     /// Create an edge between two nodes.
-    PutEdge { src: ThingId, rel: SymbolId, dst: ThingId },
+    PutEdge {
+        src: ThingId,
+        rel: SymbolId,
+        dst: ThingId,
+    },
     /// Set a property on a node.
-    SetProp { id: ThingId, key: SymbolId, value: u64 },
+    SetProp {
+        id: ThingId,
+        key: SymbolId,
+        value: u64,
+    },
 }
 
 /// Result from applying operations.
@@ -112,13 +120,10 @@ pub struct ApplyResult {
 /// * `ops` - Pre-validated operations to apply
 /// # Returns
 /// * `ApplyResult` with status, seq, and created IDs
-pub fn apply_ops_and_commit(
-    graph: &mut Graph,
-    ops: &[ValidatedOp],
-) -> ApplyResult {
+pub fn apply_ops_and_commit(graph: &mut Graph, ops: &[ValidatedOp]) -> ApplyResult {
     let mut local_refs: Vec<ThingId> = Vec::with_capacity(16);
     let mut created_ids: Vec<ThingId> = Vec::new();
-    
+
     // Compute summary from validated ops (O(1) filtering at read time)
     let mut summary = CommitSummary::default();
 
@@ -172,7 +177,9 @@ pub fn apply_ops_and_commit(
     };
 
     // Push to shared commit history with summary for O(1) filter matching
-    graph.commit_history.push(new_seq, watch_payload_bytes, summary);
+    graph
+        .commit_history
+        .push(new_seq, watch_payload_bytes, summary);
 
     // Diagnostic logging: throttle commit logs when watches are active
     if cfg!(debug_assertions) && !graph.global_watches.is_empty() {
@@ -223,7 +230,7 @@ fn read_u32(data: &[u8], cursor: &mut usize) -> Result<u32, i32> {
 }
 
 /// Safely read a 16-byte ID and resolve it to a u64 handle.
-/// 
+///
 /// Enforces the "u64-handle bridge": the upper 8 bytes MUST be zero.
 /// Returns the lower 8 bytes as a u64.
 fn read_u64_id(data: &[u8], cursor: &mut usize) -> Result<u64, i32> {
@@ -233,22 +240,37 @@ fn read_u64_id(data: &[u8], cursor: &mut usize) -> Result<u64, i32> {
 
     let mut id_bytes = [0u8; 16];
     id_bytes.copy_from_slice(&data[*cursor..*cursor + 16]);
-    
+
     let lo = u64::from_le_bytes([
-        id_bytes[0], id_bytes[1], id_bytes[2], id_bytes[3],
-        id_bytes[4], id_bytes[5], id_bytes[6], id_bytes[7],
+        id_bytes[0],
+        id_bytes[1],
+        id_bytes[2],
+        id_bytes[3],
+        id_bytes[4],
+        id_bytes[5],
+        id_bytes[6],
+        id_bytes[7],
     ]);
     let hi = u64::from_le_bytes([
-        id_bytes[8], id_bytes[9], id_bytes[10], id_bytes[11],
-        id_bytes[12], id_bytes[13], id_bytes[14], id_bytes[15],
+        id_bytes[8],
+        id_bytes[9],
+        id_bytes[10],
+        id_bytes[11],
+        id_bytes[12],
+        id_bytes[13],
+        id_bytes[14],
+        id_bytes[15],
     ]);
 
     if hi != 0 {
         // ID Duality Violation: User tried to pass a true 128-bit ID
         // where only u64 handles are currently supported by the kernel.
-        static LOGGED_VIOLATION: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+        static LOGGED_VIOLATION: core::sync::atomic::AtomicBool =
+            core::sync::atomic::AtomicBool::new(false);
         if !LOGGED_VIOLATION.swap(true, Ordering::Relaxed) {
-           crate::kwarn!("Root: 16-byte ID duality violation (upper 8 bytes non-zero). Kernel only supports u64-bridge handles.");
+            crate::kwarn!(
+                "Root: 16-byte ID duality violation (upper 8 bytes non-zero). Kernel only supports u64-bridge handles."
+            );
         }
         return Err(-22); // EINVAL
     }
@@ -276,7 +298,7 @@ use crate::root::graph::WatchFilter;
 use abi::root::{WATCH_F_KIND, WATCH_F_PREDICATE, WATCH_F_SUBJECT};
 
 /// Check if a batch contains at least one op matching the filter.
-/// 
+///
 /// This function scans the batch without allocating, checking each operation
 /// against the filter criteria. It returns early on first match.
 ///
@@ -288,7 +310,7 @@ pub fn batch_matches_filter(
     batch: &[u8],
     filter: &WatchFilter,
     interner: &mut Interner,
-    graph: &Graph
+    graph: &Graph,
 ) -> Result<bool, i32> {
     let mut cursor = 0usize;
 
@@ -296,7 +318,7 @@ pub fn batch_matches_filter(
     let magic = read_u32(batch, &mut cursor)?;
     let version = read_u16(batch, &mut cursor)?;
     let op_count = read_u16(batch, &mut cursor)?;
-    
+
     if magic != BATCH_MAGIC || version != BATCH_VERSION {
         return Err(-22);
     }
@@ -307,14 +329,14 @@ pub fn batch_matches_filter(
     }
 
     let mut local_kinds = [None; MAX_LOCAL_REFS];
-    
+
     for _ in 0..op_count {
         if cursor >= batch.len() {
             return Err(-22);
         }
         let tag = batch[cursor];
         cursor += 1;
-        
+
         match tag {
             OP_CREATE_NODE => {
                 let kind_bytes = read_16(batch, &mut cursor)?;
@@ -326,7 +348,7 @@ pub fn batch_matches_filter(
                 if out_idx < MAX_LOCAL_REFS {
                     local_kinds[out_idx] = Some(kind);
                 }
-                
+
                 if (filter.flags & WATCH_F_KIND) != 0 {
                     if kind == filter.kind_id {
                         return Ok(true);
@@ -335,34 +357,42 @@ pub fn batch_matches_filter(
             }
             OP_PUT_EDGE => {
                 // subject: ThingRef, predicate: 16 bytes, object: ThingRef, flags: 4 bytes
-                
+
                 // Parse subject ThingRef
-                if cursor >= batch.len() { return Err(-22); }
+                if cursor >= batch.len() {
+                    return Err(-22);
+                }
                 let ref_kind = batch[cursor];
                 cursor += 1;
-                
+
                 let subject_val = match ref_kind {
                     REF_ABSOLUTE => read_u64_id(batch, &mut cursor)?,
                     REF_LOCAL => read_u16(batch, &mut cursor)? as u64,
                     _ => return Err(-22),
                 };
-                
+
                 // Predicate: 16 bytes (hash)
                 let pred_bytes = read_16(batch, &mut cursor)?;
-                
+
                 // Object ThingRef
-                if cursor >= batch.len() { return Err(-22); }
+                if cursor >= batch.len() {
+                    return Err(-22);
+                }
                 let obj_ref_kind = batch[cursor];
                 cursor += 1;
                 match obj_ref_kind {
-                    REF_ABSOLUTE => { let _ = read_u64_id(batch, &mut cursor)?; }
-                    REF_LOCAL => { let _ = read_u16(batch, &mut cursor)?; }
+                    REF_ABSOLUTE => {
+                        let _ = read_u64_id(batch, &mut cursor)?;
+                    }
+                    REF_LOCAL => {
+                        let _ = read_u16(batch, &mut cursor)?;
+                    }
                     _ => return Err(-22),
                 }
-                
+
                 // Flags: 4 bytes
                 let _flags = read_u32(batch, &mut cursor)?;
-                
+
                 // Match logic
                 let mut matches = true;
 
@@ -372,7 +402,7 @@ pub fn batch_matches_filter(
                         matches = false;
                     }
                 }
-                
+
                 // Check PREDICATE filter
                 if matches && (filter.flags & WATCH_F_PREDICATE) != 0 {
                     let pred_str = bytes_to_hex(&pred_bytes);
@@ -405,39 +435,49 @@ pub fn batch_matches_filter(
             }
             OP_SET_PROP => {
                 // subject: ThingRef, key: 16 bytes, value: 8 bytes
-                if cursor >= batch.len() { return Err(-22); }
+                if cursor >= batch.len() {
+                    return Err(-22);
+                }
                 let ref_kind = batch[cursor];
                 cursor += 1;
-                
+
                 let subject_id = match ref_kind {
                     REF_ABSOLUTE => read_u64_id(batch, &mut cursor)?,
                     REF_LOCAL => {
-                        // SET_PROP on local ref is allowed, but filter matching 
+                        // SET_PROP on local ref is allowed, but filter matching
                         // against subject_lo only works for absolute IDs in current ABI.
                         let _idx = read_u16(batch, &mut cursor)?;
                         0 // Not an absolute ID
                     }
                     _ => return Err(-22),
                 };
-                
+
                 // Key (16 bytes)
                 let key_bytes = read_16(batch, &mut cursor)?;
-                
+
                 // Value (8 bytes)
-                if cursor + 8 > batch.len() { return Err(-22); }
+                if cursor + 8 > batch.len() {
+                    return Err(-22);
+                }
                 let _value = u64::from_le_bytes([
-                    batch[cursor], batch[cursor+1], batch[cursor+2], batch[cursor+3],
-                    batch[cursor+4], batch[cursor+5], batch[cursor+6], batch[cursor+7]
+                    batch[cursor],
+                    batch[cursor + 1],
+                    batch[cursor + 2],
+                    batch[cursor + 3],
+                    batch[cursor + 4],
+                    batch[cursor + 5],
+                    batch[cursor + 6],
+                    batch[cursor + 7],
                 ]);
                 cursor += 8;
-                
+
                 // Check SUBJECT filter
                 if (filter.flags & WATCH_F_SUBJECT) != 0 {
                     if ref_kind == REF_ABSOLUTE && subject_id == filter.subject_lo {
                         return Ok(true);
                     }
                 }
-                
+
                 // Check PREDICATE filter (match key against predicate_id)
                 if (filter.flags & WATCH_F_PREDICATE) != 0 {
                     let key_str = bytes_to_hex(&key_bytes);
@@ -450,7 +490,7 @@ pub fn batch_matches_filter(
             _ => return Err(-22), // Unknown op tag
         }
     }
-    
+
     // No ops matched the filter
     Ok(false)
 }
@@ -470,15 +510,17 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
 }
 
 /// Parse a ThingRef from the batch buffer using scratch locals.
-/// 
+///
 /// Returns the resolved ThingId or an error code:
 /// - `-22` (EINVAL) for invalid format or uninitialized local ref
 fn parse_ref_scratch(
-    cursor: &mut usize, 
-    data: &[u8], 
-    scratch: &RootBatchScratch
+    cursor: &mut usize,
+    data: &[u8],
+    scratch: &RootBatchScratch,
 ) -> Result<ThingId, i32> {
-    if *cursor >= data.len() { return Err(-22); }
+    if *cursor >= data.len() {
+        return Err(-22);
+    }
     let kind = data[*cursor];
     *cursor += 1;
     match kind {
@@ -494,12 +536,12 @@ fn parse_ref_scratch(
             }
             Ok(scratch.locals[idx])
         }
-        _ => Err(-22)
+        _ => Err(-22),
     }
 }
 
 /// Parse batch bytes into validated operations using scratch buffer.
-/// 
+///
 /// # Errors
 /// - `-7` (E2BIG): batch too large or too many ops
 /// - `-22` (EINVAL): malformed format, invalid refs
@@ -512,7 +554,7 @@ fn parse_batch_scratch(
     if batch.len() > MAX_BATCH_BYTES {
         return Err(-7); // E2BIG
     }
-    
+
     let mut cursor = 0usize;
 
     // Parse header
@@ -523,7 +565,7 @@ fn parse_batch_scratch(
     if magic != BATCH_MAGIC || version != BATCH_VERSION {
         return Err(-22); // EINVAL
     }
-    
+
     // Cap validation: op count
     if op_count > MAX_BATCH_OPS {
         return Err(-7); // E2BIG
@@ -535,7 +577,9 @@ fn parse_batch_scratch(
     }
 
     for _ in 0..op_count {
-        if cursor >= batch.len() { return Err(-22); }
+        if cursor >= batch.len() {
+            return Err(-22);
+        }
         let tag = batch[cursor];
         cursor += 1;
 
@@ -546,14 +590,14 @@ fn parse_batch_scratch(
                 let kind = interner.intern(&kind_str);
 
                 let out_idx = read_u16(batch, &mut cursor)? as usize;
-                
+
                 // Validate out_ref within bounds
                 if out_idx >= MAX_LOCAL_REFS {
                     return Err(-22); // EINVAL: out_ref too large
                 }
 
                 scratch.ops.push(ValidatedOp::CreateNode { kind, out_idx });
-                
+
                 // Mark local ref as initialized (placeholder value, filled at apply time)
                 scratch.locals[out_idx] = 0;
                 scratch.locals_init[out_idx] = true;
@@ -573,16 +617,26 @@ fn parse_batch_scratch(
                 let key_str = bytes_to_hex(&key_bytes);
                 let key = interner.intern(&key_str);
 
-                if cursor + 8 > batch.len() { return Err(-22); }
+                if cursor + 8 > batch.len() {
+                    return Err(-22);
+                }
                 let value = u64::from_le_bytes([
-                    batch[cursor], batch[cursor+1], batch[cursor+2], batch[cursor+3],
-                    batch[cursor+4], batch[cursor+5], batch[cursor+6], batch[cursor+7]
+                    batch[cursor],
+                    batch[cursor + 1],
+                    batch[cursor + 2],
+                    batch[cursor + 3],
+                    batch[cursor + 4],
+                    batch[cursor + 5],
+                    batch[cursor + 6],
+                    batch[cursor + 7],
                 ]);
                 cursor += 8;
 
                 scratch.ops.push(ValidatedOp::SetProp { id, key, value });
             }
-            _ => { return Err(-22); } // Unknown op tag
+            _ => {
+                return Err(-22);
+            } // Unknown op tag
         }
     }
 
@@ -600,18 +654,18 @@ pub fn handle_apply_batch_with_scratch(
 ) -> HandlerResult {
     // Increment call counter
     BATCH_CALLS.fetch_add(1, Ordering::Relaxed);
-    
+
     // Track capacity before parsing for reallocation detection
     let old_cap = scratch.ops.capacity();
-    
+
     // Reset scratch for this batch
     scratch.reset();
-    
+
     // Parse batch into scratch.ops (validation happens here)
     if let Err(code) = parse_batch_scratch(batch, interner, scratch) {
         return (code, 0);
     }
-    
+
     // Track ops and detect reallocations
     BATCH_OPS_TOTAL.fetch_add(scratch.ops.len() as u64, Ordering::Relaxed);
     if scratch.ops.capacity() != old_cap {
@@ -620,15 +674,15 @@ pub fn handle_apply_batch_with_scratch(
 
     // Apply through canonical commit path
     let result = apply_ops_and_commit(graph, &scratch.ops);
-    
+
     (result.status, result.seq)
 }
 
 /// Handle SYS_ROOT_APPLY_BATCH (legacy interface without scratch - allocates each call)
 ///
 /// Parses the batch, validates operations, and commits through the canonical path.
-/// 
-/// NOTE: This allocates a new scratch each call. For zero-alloc hot path, 
+///
+/// NOTE: This allocates a new scratch each call. For zero-alloc hot path,
 /// use `handle_apply_batch_with_scratch` instead.
 pub fn handle_apply_batch(
     graph: &mut Graph,
@@ -644,7 +698,9 @@ mod tests {
     use super::*;
     use crate::root::graph::WatchFilter;
     use crate::root::symbols::Interner;
-    use abi::root::{OP_CREATE_NODE, OP_PUT_EDGE, REF_LOCAL, WATCH_F_KIND, BATCH_MAGIC, BATCH_VERSION};
+    use abi::root::{
+        BATCH_MAGIC, BATCH_VERSION, OP_CREATE_NODE, OP_PUT_EDGE, REF_LOCAL, WATCH_F_KIND,
+    };
 
     #[test]
     fn test_batch_matches_filter_behavior() {
@@ -665,7 +721,7 @@ mod tests {
         let hex_to_bytes = |s: &str| -> [u8; 16] {
             let mut b = [0u8; 16];
             for i in 0..16 {
-                b[i] = u8::from_str_radix(&s[i*2..i*2+2], 16).unwrap();
+                b[i] = u8::from_str_radix(&s[i * 2..i * 2 + 2], 16).unwrap();
             }
             b
         };
@@ -682,7 +738,8 @@ mod tests {
         batch_b.extend_from_slice(&kind_b_bytes);
         batch_b.extend_from_slice(&0u16.to_le_bytes());
 
-        let result = batch_matches_filter(&batch_b, &filter, &mut interner, &graph).expect("parse failed");
+        let result =
+            batch_matches_filter(&batch_b, &filter, &mut interner, &graph).expect("parse failed");
         assert!(!result, "Should NOT match kind B when filtering for kind A");
 
         // 2. Test Match (CreateNode Kind A)
@@ -694,7 +751,8 @@ mod tests {
         batch_a.extend_from_slice(&kind_a_bytes);
         batch_a.extend_from_slice(&0u16.to_le_bytes());
 
-        let result = batch_matches_filter(&batch_a, &filter, &mut interner, &graph).expect("parse failed");
+        let result =
+            batch_matches_filter(&batch_a, &filter, &mut interner, &graph).expect("parse failed");
         assert!(result, "Should match kind A when filtering for kind A");
 
         // 3. Test Edge Creation with Local Ref kind lookup
@@ -719,7 +777,8 @@ mod tests {
         batch_edge_match.extend_from_slice(&0u16.to_le_bytes());
         batch_edge_match.extend_from_slice(&0u32.to_le_bytes()); // flags
 
-        let result = batch_matches_filter(&batch_edge_match, &filter, &mut interner, &graph).expect("parse failed");
+        let result = batch_matches_filter(&batch_edge_match, &filter, &mut interner, &graph)
+            .expect("parse failed");
         assert!(result, "Should match Edge from Kind A (local ref)");
 
         // 4. Test Edge Creation Mismatch
@@ -742,7 +801,8 @@ mod tests {
         batch_edge_mismatch.extend_from_slice(&0u16.to_le_bytes());
         batch_edge_mismatch.extend_from_slice(&0u32.to_le_bytes());
 
-        let result = batch_matches_filter(&batch_edge_mismatch, &filter, &mut interner, &graph).expect("parse failed");
+        let result = batch_matches_filter(&batch_edge_mismatch, &filter, &mut interner, &graph)
+            .expect("parse failed");
         assert!(!result, "Should NOT match Edge from Kind B (local ref)");
     }
 
@@ -754,15 +814,24 @@ mod tests {
 
         // 1. Too short for header
         let small = [0u8; 4];
-        assert_eq!(parse_batch_scratch(&small, &mut interner, &mut scratch), Err(-22));
-        assert_eq!(batch_matches_filter(&small, &WatchFilter::default(), &mut interner, &graph), Err(-22));
+        assert_eq!(
+            parse_batch_scratch(&small, &mut interner, &mut scratch),
+            Err(-22)
+        );
+        assert_eq!(
+            batch_matches_filter(&small, &WatchFilter::default(), &mut interner, &graph),
+            Err(-22)
+        );
 
         // 2. Correct header but magic mismatch
         let mut bad_magic = alloc::vec::Vec::new();
         bad_magic.extend_from_slice(&0u32.to_le_bytes()); // Not BATCH_MAGIC
         bad_magic.extend_from_slice(&BATCH_VERSION.to_le_bytes());
         bad_magic.extend_from_slice(&1u16.to_le_bytes());
-        assert_eq!(parse_batch_scratch(&bad_magic, &mut interner, &mut scratch), Err(-22));
+        assert_eq!(
+            parse_batch_scratch(&bad_magic, &mut interner, &mut scratch),
+            Err(-22)
+        );
 
         // 3. Truncated Op (CreateNode)
         let mut truncated_op = alloc::vec::Vec::new();
@@ -771,12 +840,18 @@ mod tests {
         truncated_op.extend_from_slice(&1u16.to_le_bytes());
         truncated_op.push(OP_CREATE_NODE);
         truncated_op.extend_from_slice(&[0u8; 10]); // Truncated kind_id (should be 16)
-        assert_eq!(parse_batch_scratch(&truncated_op, &mut interner, &mut scratch), Err(-22));
-        
+        assert_eq!(
+            parse_batch_scratch(&truncated_op, &mut interner, &mut scratch),
+            Err(-22)
+        );
+
         // Use a filter that forces op parsing
         let mut filter_kind = WatchFilter::default();
         filter_kind.flags = abi::root::WATCH_F_KIND;
-        assert_eq!(batch_matches_filter(&truncated_op, &filter_kind, &mut interner, &graph), Err(-22));
+        assert_eq!(
+            batch_matches_filter(&truncated_op, &filter_kind, &mut interner, &graph),
+            Err(-22)
+        );
 
         // 4. Unknown Op Tag
         let mut unknown_tag = alloc::vec::Vec::new();
@@ -784,8 +859,14 @@ mod tests {
         unknown_tag.extend_from_slice(&BATCH_VERSION.to_le_bytes());
         unknown_tag.extend_from_slice(&1u16.to_le_bytes());
         unknown_tag.push(0xFF); // Invalid tag
-        assert_eq!(parse_batch_scratch(&unknown_tag, &mut interner, &mut scratch), Err(-22));
-        assert_eq!(batch_matches_filter(&unknown_tag, &filter_kind, &mut interner, &graph), Err(-22));
+        assert_eq!(
+            parse_batch_scratch(&unknown_tag, &mut interner, &mut scratch),
+            Err(-22)
+        );
+        assert_eq!(
+            batch_matches_filter(&unknown_tag, &filter_kind, &mut interner, &graph),
+            Err(-22)
+        );
 
         // 5. Local Ref before init
         let mut uninit_ref = alloc::vec::Vec::new();
@@ -795,7 +876,10 @@ mod tests {
         uninit_ref.push(OP_PUT_EDGE);
         uninit_ref.push(REF_LOCAL);
         uninit_ref.extend_from_slice(&0u16.to_le_bytes()); // Index 0 not initialized
-        assert_eq!(parse_batch_scratch(&uninit_ref, &mut interner, &mut scratch), Err(-22));
+        assert_eq!(
+            parse_batch_scratch(&uninit_ref, &mut interner, &mut scratch),
+            Err(-22)
+        );
 
         // 6. ID Duality Violation (non-zero upper bytes)
         let mut bad_id = alloc::vec::Vec::new();
@@ -806,11 +890,17 @@ mod tests {
         bad_id.push(REF_ABSOLUTE);
         bad_id.extend_from_slice(&1u64.to_le_bytes()); // low 8
         bad_id.extend_from_slice(&1u64.to_le_bytes()); // upper 8 (VIOLATION)
-        assert_eq!(parse_batch_scratch(&bad_id, &mut interner, &mut scratch), Err(-22));
-        
+        assert_eq!(
+            parse_batch_scratch(&bad_id, &mut interner, &mut scratch),
+            Err(-22)
+        );
+
         let mut filter = WatchFilter::default();
         filter.flags = abi::root::WATCH_F_SUBJECT;
         filter.subject_lo = 1;
-        assert_eq!(batch_matches_filter(&bad_id, &filter, &mut interner, &graph), Err(-22));
+        assert_eq!(
+            batch_matches_filter(&bad_id, &filter, &mut interner, &graph),
+            Err(-22)
+        );
     }
 }

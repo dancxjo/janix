@@ -38,6 +38,10 @@ pub mod kinds {
     pub const UI_TEXT: &str = "ui.Text";
     pub const UI_IMAGE: &str = "ui.Image";
     pub const UI_OVERLAY: &str = "ui.Overlay";
+    pub const UI_NODE: &str = "ui.Node";
+    pub const UI_BUTTON: &str = "ui.Button";
+    pub const UI_CHECKBOX: &str = "ui.Checkbox";
+    pub const UI_COLUMN: &str = "ui.Container.Column";
 
     // Font Graph
     pub const FONT_SUPERFAMILY: &str = "font.Superfamily";
@@ -65,6 +69,7 @@ pub mod rels {
     pub const CHILD_OF: &str = "CHILD_OF";
     pub const CLIP_TO: &str = "CLIP_TO";
     pub const ROOT_UI: &str = "ROOT_UI";
+    pub const HAS_CHILD: &str = "HAS_CHILD";
 
     // Font Graph
     pub const FONT_CONTAINS: &str = "font.contains";
@@ -122,6 +127,18 @@ pub mod props {
     pub const UI_TITLE: &str = "ui.title";
     pub const UI_HIDDEN: &str = "ui.hidden";
     pub const UI_Z_INDEX: &str = "ui.z_index";
+    pub const UI_KIND: &str = "ui.kind";
+    pub const UI_VISIBLE: &str = "ui.visible";
+    pub const UI_ENABLED: &str = "ui.enabled";
+    pub const UI_BUTTON_LABEL: &str = "ui.button.label";
+    pub const UI_BUTTON_ACTION_ID: &str = "ui.button.action_id";
+    pub const UI_BUTTON_PRESSED: &str = "ui.button.pressed";
+    pub const UI_CHECKBOX_LABEL: &str = "ui.checkbox.label";
+    pub const UI_CHECKBOX_CHECKED: &str = "ui.checkbox.checked";
+    pub const UI_CHECKBOX_INDETERMINATE: &str = "ui.checkbox.indeterminate";
+    pub const UI_CHECKBOX_VALUE_ID: &str = "ui.checkbox.value_id";
+    pub const UI_EVENT_QUEUE: &str = "ui.event.queue";
+    pub const UI_EVENT_GEN: &str = "ui.event.gen";
 
     // Font Graph Properties
     pub const FONT_NAME: &str = "font.name";

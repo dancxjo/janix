@@ -1,7 +1,7 @@
 use alloc::string::String;
 use alloc::vec::Vec;
-pub mod model;
 pub mod ingest;
+pub mod model;
 
 use xml_no_std::reader::{EventReader, XmlEvent};
 
@@ -17,8 +17,6 @@ impl<'a> XmlReader<'a> {
     }
 }
 
-
-
 #[derive(Debug, Clone)]
 pub enum Event {
     StartElement {
@@ -33,7 +31,7 @@ pub enum Event {
 
 #[derive(Debug, Clone)]
 pub struct Attributes {
-    inner: Vec<(String, String)>, 
+    inner: Vec<(String, String)>,
 }
 
 impl Attributes {
@@ -62,15 +60,22 @@ impl<'a> Iterator for XmlReader<'a> {
     fn next(&mut self) -> Option<Self::Item> {
         loop {
             match self.parser.next() {
-                Ok(XmlEvent::StartElement { name, attributes, .. }) => {
-                    let attrs = attributes.into_iter().map(|a| (a.name.local_name, a.value)).collect();
+                Ok(XmlEvent::StartElement {
+                    name, attributes, ..
+                }) => {
+                    let attrs = attributes
+                        .into_iter()
+                        .map(|a| (a.name.local_name, a.value))
+                        .collect();
                     return Some(Ok(Event::StartElement {
-                        name: name.local_name, 
+                        name: name.local_name,
                         attributes: Attributes { inner: attrs },
                     }));
                 }
                 Ok(XmlEvent::EndElement { name }) => {
-                    return Some(Ok(Event::EndElement { name: name.local_name }));
+                    return Some(Ok(Event::EndElement {
+                        name: name.local_name,
+                    }));
                 }
                 Ok(XmlEvent::Characters(data)) => {
                     return Some(Ok(Event::Text(data)));
@@ -114,9 +119,24 @@ pub struct Color {
 }
 
 impl Color {
-    pub const BLACK: Color = Color { r: 0, g: 0, b: 0, a: 255 };
-    pub const WHITE: Color = Color { r: 255, g: 255, b: 255, a: 255 };
-    pub const TRANSPARENT: Color = Color { r: 0, g: 0, b: 0, a: 0 };
+    pub const BLACK: Color = Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 255,
+    };
+    pub const WHITE: Color = Color {
+        r: 255,
+        g: 255,
+        b: 255,
+        a: 255,
+    };
+    pub const TRANSPARENT: Color = Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    };
 }
 
 pub fn parse_color(s: &str) -> Option<Color> {
@@ -175,16 +195,16 @@ pub fn parse_transform(mut s: &str) -> Vec<TransformCmd> {
     while let Some(idx) = s.find('(') {
         let name = s[..idx].trim();
         s = &s[idx + 1..];
-        
+
         // Find matching ')'
         let end = match s.find(')') {
             Some(i) => i,
             None => break, // Malformed
         };
-        
+
         let args_str = &s[..end];
         s = &s[end + 1..];
-        
+
         // Split args by comma or whitespace
         let args: Vec<f32> = args_str
             .split(|c| c == ',' || c == ' ' || c == '\t' || c == '\n')
@@ -209,12 +229,55 @@ pub fn parse_transform(mut s: &str) -> Vec<TransformCmd> {
             }
             "rotate" => {
                 if !args.is_empty() {
-                    cmds.push(TransformCmd::Rotate(args[0]));
+                    if args.len() >= 3 {
+                        cmds.push(TransformCmd::Translate(args[1], args[2]));
+                        cmds.push(TransformCmd::Rotate(args[0]));
+                        cmds.push(TransformCmd::Translate(-args[1], -args[2]));
+                    } else {
+                        cmds.push(TransformCmd::Rotate(args[0]));
+                    }
                 }
             }
             _ => {} // Ignore unknown transforms
         }
     }
-    
+
     cmds
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_rotate_with_pivot() {
+        let input = "rotate(90, 10, 20)";
+        let cmds = parse_transform(input);
+        
+        assert_eq!(cmds.len(), 3);
+        
+        match &cmds[0] {
+            TransformCmd::Translate(x, y) => {
+                assert_eq!(*x, 10.0);
+                assert_eq!(*y, 20.0);
+            }
+            _ => panic!("Expected Translate first"),
+        }
+        
+        match &cmds[1] {
+            TransformCmd::Rotate(a) => {
+                assert_eq!(*a, 90.0);
+            }
+            _ => panic!("Expected Rotate second"),
+        }
+        
+        match &cmds[2] {
+            TransformCmd::Translate(x, y) => {
+                assert_eq!(*x, -10.0);
+                assert_eq!(*y, -20.0);
+            }
+            _ => panic!("Expected Translate back third"),
+        }
+    }
+}
+

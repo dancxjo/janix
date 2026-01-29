@@ -1,8 +1,8 @@
-use alloc::vec::Vec;
-use alloc::string::String;
-use crate::drawlist::{DrawList, DrawCmd, Insets};
 use crate::asset::Image;
-use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA};
+use crate::drawlist::{DrawCmd, DrawList, Insets};
+use crate::isa::{BlendMode, Color, EdgeAA, FilterMode, Point, PointF, Rect, Transform2D};
+use alloc::string::String;
+use alloc::vec::Vec;
 
 // Low Level Operations - Portable Render ISA
 // This is the strict contract that the presenter must execute.
@@ -10,20 +10,55 @@ use crate::isa::{BlendMode, FilterMode, Transform2D, Color, Rect, Point, EdgeAA}
 #[allow(dead_code)]
 pub enum LowLevelOp {
     // Control & State
-    Clear { color: Color },
-    PushClip { rect: Rect },
+    Clear {
+        color: Color,
+    },
+    PushClip {
+        rect: Rect,
+    },
     PopClip,
-    PushTransform { t: Transform2D },
+    PushTransform {
+        t: Transform2D,
+    },
     PopTransform,
-    
+
     // Geometry primitives
-    FillRect { rect: Rect, color: Color, aa: EdgeAA },
-    StrokeRect { rect: Rect, color: Color, width: i32 },
+    FillRect {
+        rect: Rect,
+        color: Color,
+        aa: EdgeAA,
+    },
+    StrokeRect {
+        rect: Rect,
+        color: Color,
+        width: i32,
+    },
     #[allow(dead_code)]
-    Line { from: Point, to: Point, color: Color, width: i32 },
-    FillCircle { center: Point, radius: i32, color: Color },
-    FillArc { center: Point, radius: i32, start_angle: f32, end_angle: f32, color: Color, aa: EdgeAA },
-    
+    Line {
+        from: PointF,
+        to: PointF,
+        color: Color,
+        width: f32,
+    },
+    FillCircle {
+        center: Point,
+        radius: i32,
+        color: Color,
+    },
+    FillArc {
+        center: Point,
+        radius: i32,
+        start_angle: f32,
+        end_angle: f32,
+        color: Color,
+        aa: EdgeAA,
+    },
+    FillLinearGradient {
+        rect: Rect,
+        color1: Color,
+        color2: Color,
+    },
+
     // Image Operations
     BlitSnapshot {
         bs_id: u64,
@@ -34,31 +69,31 @@ pub enum LowLevelOp {
         dst: Rect,
     },
 
-    /// Blit opaque image with explicit scaling. 
+    /// Blit opaque image with explicit scaling.
     /// If src.size != dst.size, must scale according to filter.
-    BlitOpaque { 
-        image: Image, 
-        src: Rect, 
-        dst: Rect, 
+    BlitOpaque {
+        image: Image,
+        src: Rect,
+        dst: Rect,
         filter: FilterMode,
     },
-    
+
     /// Blit with alpha blending and optional constant alpha modulation.
     /// src over blending is mandatory.
     /// const_alpha optionally modulates the source alpha (and color).
-    BlitAlpha { 
-        image: Image, 
-        src: Rect, 
-        dst: Rect, 
+    BlitAlpha {
+        image: Image,
+        src: Rect,
+        dst: Rect,
         filter: FilterMode,
-        blend: BlendMode, 
+        blend: BlendMode,
         const_alpha: Option<u8>,
     },
 
     // Modern Text & Vector
     TextSpan {
         text: String,
-        pos: Point,
+        pos: PointF,
         size: f32,
         color: Color,
         font_name: Option<String>,
@@ -98,323 +133,455 @@ impl LoweredDraw {
 /// 3. Asserting variants for rasterizer safety.
 pub fn lower(list: &DrawList) -> LoweredDraw {
     let mut out = LoweredDraw::new();
-    
     for cmd in list.iter() {
-        match cmd {
-            // Frame control (pass-through for now, or map to ISA state)
-            DrawCmd::BeginFrame { .. } => {},
-            DrawCmd::EndFrame => {},
-            DrawCmd::PushClip { rect } => out.ops.push(LowLevelOp::PushClip { rect: *rect }),
-            DrawCmd::PopClip => out.ops.push(LowLevelOp::PopClip),
-            DrawCmd::PushTransform { transform: t } => {
-                // Map DrawCmd geometry::Transform to ISA Transform2D
-                // geometry: m11, m12, m21, m22, dx, dy
-                // isa: a, b, c, d, tx, ty (a=m11, c=m12, b=m21, d=m22)
-                let isa_t = Transform2D { 
-                    a: t.m11, b: t.m21, 
-                    c: t.m12, d: t.m22, 
-                    tx: t.dx, ty: t.dy 
-                };
-                out.ops.push(LowLevelOp::PushTransform { t: isa_t });
-            },
-            DrawCmd::PopTransform => out.ops.push(LowLevelOp::PopTransform),
-            
-            // Primitives
-            DrawCmd::Clear { color } => out.ops.push(LowLevelOp::Clear { color: *color }),
-            DrawCmd::FillRect { rect, color, aa } => out.ops.push(LowLevelOp::FillRect { rect: *rect, color: *color, aa: *aa }),
-            DrawCmd::FillRoundRect { rect, radius, color, aa } => {
-                let r = *radius;
-                if r <= 0 {
-                    out.ops.push(LowLevelOp::FillRect { rect: *rect, color: *color, aa: *aa });
-                } else {
-                    // Decompose into 3 rectangles and 4 arcs to avoid overlaps
-                    let x = rect.x();
-                    let y = rect.y();
-                    let w = rect.width();
-                    let h = rect.height();
-                    let r = r.min(w / 2).min(h / 2);
-                    
-                    // 1. Central full-height strip
-                    out.ops.push(LowLevelOp::FillRect { 
-                        rect: Rect::new(x + r, y, w - 2*r, h), 
-                        color: *color, 
-                        aa: *aa 
-                    });
-                    
-                    // 2. Left strip
-                    out.ops.push(LowLevelOp::FillRect { 
-                        rect: Rect::new(x, y + r, r, h - 2*r), 
-                        color: *color, 
-                        aa: *aa 
-                    });
-                    
-                    // 3. Right strip
-                    out.ops.push(LowLevelOp::FillRect { 
-                        rect: Rect::new(x + w - r, y + r, r, h - 2*r), 
-                        color: *color, 
-                        aa: *aa 
-                    });
-                    
-                    // 4. Corners (Arcs)
-                    // TL
-                    out.ops.push(LowLevelOp::FillArc { 
-                        center: Point::new(x + r, y + r), 
-                        radius: r, 
-                        start_angle: 180.0, 
-                        end_angle: 270.0, 
-                        color: *color,
-                        aa: *aa
-                    });
-                    // TR
-                    out.ops.push(LowLevelOp::FillArc { 
-                        center: Point::new(x + w - r, y + r), 
-                        radius: r, 
-                        start_angle: 270.0, 
-                        end_angle: 360.0, 
-                        color: *color,
-                        aa: *aa
-                    });
-                    // BL
-                    out.ops.push(LowLevelOp::FillArc { 
-                        center: Point::new(x + r, y + h - r), 
-                        radius: r, 
-                        start_angle: 90.0, 
-                        end_angle: 180.0, 
-                        color: *color,
-                        aa: *aa
-                    });
-                    // BR
-                    out.ops.push(LowLevelOp::FillArc { 
-                        center: Point::new(x + w - r, y + h - r), 
-                        radius: r, 
-                        start_angle: 0.0, 
-                        end_angle: 90.0, 
-                        color: *color,
-                        aa: *aa
-                    });
-                }
-            },
-            DrawCmd::StrokeRect { rect, color, width } => out.ops.push(LowLevelOp::StrokeRect { rect: *rect, color: *color, width: *width }),
-            DrawCmd::FillCircle { center, radius, color } => out.ops.push(LowLevelOp::FillCircle { center: *center, radius: *radius, color: *color }),
-            DrawCmd::FillArc { center, radius, start_angle, end_angle, color, aa } => {
-                out.ops.push(LowLevelOp::FillArc { 
-                    center: *center, 
-                    radius: *radius, 
-                    start_angle: *start_angle, 
-                    end_angle: *end_angle, 
-                    color: *color,
-                    aa: *aa
-                });
-            },
-            DrawCmd::Line { from, to, color, width } => out.ops.push(LowLevelOp::Line { from: *from, to: *to, color: *color, width: *width }),
+        lower_cmd(cmd, &mut out);
+    }
+    out
+}
 
-            // Images
-            DrawCmd::DrawSnapshot { bs_id, width, height, stride, dest } => {
-                let src = Rect::new(0, 0, *width as i32, *height as i32);
-                out.ops.push(LowLevelOp::BlitSnapshot {
-                    bs_id: *bs_id,
-                    width: *width,
-                    height: *height,
-                    stride: *stride,
-                    src,
-                    dst: *dest,
+fn lower_cmd(cmd: &DrawCmd, out: &mut LoweredDraw) {
+    match cmd {
+        // Frame control (pass-through for now, or map to ISA state)
+        DrawCmd::BeginFrame { .. } => {}
+        DrawCmd::EndFrame => {}
+        DrawCmd::PushClip { rect } => out.ops.push(LowLevelOp::PushClip { rect: *rect }),
+        DrawCmd::PopClip => out.ops.push(LowLevelOp::PopClip),
+        DrawCmd::PushTransform { transform: t } => {
+            // Map DrawCmd geometry::Transform to ISA Transform2D
+            // geometry: m11, m12, m21, m22, dx, dy
+            // isa: a, b, c, d, tx, ty (a=m11, c=m12, b=m21, d=m22)
+            let isa_t = Transform2D {
+                a: t.m11,
+                b: t.m21,
+                c: t.m12,
+                d: t.m22,
+                tx: t.dx,
+                ty: t.dy,
+            };
+            out.ops.push(LowLevelOp::PushTransform { t: isa_t });
+        }
+        DrawCmd::PopTransform => out.ops.push(LowLevelOp::PopTransform),
+
+        // Primitives
+        DrawCmd::Clear { color } => out.ops.push(LowLevelOp::Clear { color: *color }),
+        DrawCmd::FillRect { rect, color, aa } => out.ops.push(LowLevelOp::FillRect {
+            rect: *rect,
+            color: *color,
+            aa: *aa,
+        }),
+        DrawCmd::FillRoundRect {
+            rect,
+            radius,
+            color,
+            aa,
+        } => {
+            let r = *radius;
+            if r <= 0 {
+                out.ops.push(LowLevelOp::FillRect {
+                    rect: *rect,
+                    color: *color,
+                    aa: *aa,
                 });
-            },
-            DrawCmd::DrawImage { image, dest } => {
-                // 1:1 blit, Opaque (unless image has alpha? DrawCmd doesn't specify Opaque vs Alpha variant strictly yet)
-                // For safety, use BlitAlpha for generic images if they might have alpha, or BlitOpaque if we know.
-                // Bloom assets often have alpha. Let's assume BlitAlpha for generic DrawImage for now.
-                // Actually, existing impl used Blit for Opaque/Simple. Let's use BlitAlpha with SrcOver to be safe/general.
-                let src = Rect::new(0, 0, image.width as i32, image.height as i32);
-                
-                // DrawImage in DrawCmd now takes a DEST rect (which implies scaling if different size?)
-                // Or is it just position and size? Usually DrawImage(dest) implies fill dest.
-                // But previous behavior was DrawImage(pos).
-                // If it is dest, we use it directly.
-                out.ops.push(LowLevelOp::BlitAlpha {
-                    image: image.clone(),
-                    src,
-                    dst: *dest,
-                    filter: FilterMode::Nearest,
-                    blend: BlendMode::SrcOver,
-                    const_alpha: None,
+            } else {
+                // Decompose into 3 rectangles and 4 arcs to avoid overlaps
+                let x = rect.x();
+                let y = rect.y();
+                let w = rect.width();
+                let h = rect.height();
+                let r = r.min(w / 2).min(h / 2);
+
+                // 1. Central full-height strip
+                out.ops.push(LowLevelOp::FillRect {
+                    rect: Rect::new(x + r, y, w - 2 * r, h),
+                    color: *color,
+                    aa: *aa,
                 });
-            },
-            DrawCmd::DrawImageRegion { image, src, dest } => {
-                out.ops.push(LowLevelOp::BlitAlpha {
-                    image: image.clone(),
-                    src: *src,
-                    dst: *dest,
-                    filter: FilterMode::Nearest,
-                    blend: BlendMode::SrcOver,
-                    const_alpha: None, // No extra modulation by default
+
+                // 2. Left strip
+                out.ops.push(LowLevelOp::FillRect {
+                    rect: Rect::new(x, y + r, r, h - 2 * r),
+                    color: *color,
+                    aa: *aa,
                 });
-            },
-            // Tiled image: repeat across destination rect
-            DrawCmd::DrawImageTiled { image, dest } => {
-                let iw = image.width as i32;
-                let ih = image.height as i32;
-                if iw > 0 && ih > 0 {
-                    let dx0 = dest.x();
-                    let dy0 = dest.y();
-                    let dx1 = dest.x() + dest.width();
-                    let dy1 = dest.y() + dest.height();
-                    
-                    // Tile horizontally and vertically
-                    let mut y = dy0;
-                    while y < dy1 {
-                        let mut x = dx0;
-                        while x < dx1 {
-                            // Calculate the visible portion of this tile
-                            let tile_w = iw.min(dx1 - x);
-                            let tile_h = ih.min(dy1 - y);
-                            
-                            let tile_src = Rect::new(0, 0, tile_w, tile_h);
-                            let tile_dst = Rect::new(x, y, tile_w, tile_h);
-                            
-                            out.ops.push(LowLevelOp::BlitAlpha {
-                                image: image.clone(),
-                                src: tile_src,
-                                dst: tile_dst,
-                                filter: FilterMode::Nearest,
-                                blend: BlendMode::SrcOver,
-                                const_alpha: None,
-                            });
-                            
-                            x += iw;
-                        }
-                        y += ih;
+
+                // 3. Right strip
+                out.ops.push(LowLevelOp::FillRect {
+                    rect: Rect::new(x + w - r, y + r, r, h - 2 * r),
+                    color: *color,
+                    aa: *aa,
+                });
+
+                // 4. Corners (Arcs)
+                // TL
+                out.ops.push(LowLevelOp::FillArc {
+                    center: Point::new(x + r, y + r),
+                    radius: r,
+                    start_angle: 180.0,
+                    end_angle: 270.0,
+                    color: *color,
+                    aa: *aa,
+                });
+                // TR
+                out.ops.push(LowLevelOp::FillArc {
+                    center: Point::new(x + w - r, y + r),
+                    radius: r,
+                    start_angle: 270.0,
+                    end_angle: 360.0,
+                    color: *color,
+                    aa: *aa,
+                });
+                // BL
+                out.ops.push(LowLevelOp::FillArc {
+                    center: Point::new(x + r, y + h - r),
+                    radius: r,
+                    start_angle: 90.0,
+                    end_angle: 180.0,
+                    color: *color,
+                    aa: *aa,
+                });
+                // BR
+                out.ops.push(LowLevelOp::FillArc {
+                    center: Point::new(x + w - r, y + h - r),
+                    radius: r,
+                    start_angle: 0.0,
+                    end_angle: 90.0,
+                    color: *color,
+                    aa: *aa,
+                });
+            }
+        }
+        DrawCmd::StrokeRect { rect, color, width } => out.ops.push(LowLevelOp::StrokeRect {
+            rect: *rect,
+            color: *color,
+            width: *width,
+        }),
+        DrawCmd::FillCircle {
+            center,
+            radius,
+            color,
+        } => out.ops.push(LowLevelOp::FillCircle {
+            center: *center,
+            radius: *radius,
+            color: *color,
+        }),
+        DrawCmd::FillArc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+            color,
+            aa,
+        } => {
+            out.ops.push(LowLevelOp::FillArc {
+                center: *center,
+                radius: *radius,
+                start_angle: *start_angle,
+                end_angle: *end_angle,
+                color: *color,
+                aa: *aa,
+            });
+        }
+        DrawCmd::FillLinearGradient {
+            rect,
+            color1,
+            color2,
+        } => {
+            out.ops.push(LowLevelOp::FillLinearGradient {
+                rect: *rect,
+                color1: *color1,
+                color2: *color2,
+            });
+        }
+        DrawCmd::Line {
+            from,
+            to,
+            color,
+            width,
+        } => out.ops.push(LowLevelOp::Line {
+            from: *from,
+            to: *to,
+            color: *color,
+            width: *width,
+        }),
+
+        // Images
+        DrawCmd::DrawSnapshot {
+            bs_id,
+            width,
+            height,
+            stride,
+            dest,
+        } => {
+            let src = Rect::new(0, 0, *width as i32, *height as i32);
+            out.ops.push(LowLevelOp::BlitSnapshot {
+                bs_id: *bs_id,
+                width: *width,
+                height: *height,
+                stride: *stride,
+                src,
+                dst: *dest,
+            });
+        }
+        DrawCmd::DrawImage { image, dest } => {
+            // 1:1 blit, Opaque (unless image has alpha? DrawCmd doesn't specify Opaque vs Alpha variant strictly yet)
+            // For safety, use BlitAlpha for generic images if they might have alpha, or BlitOpaque if we know.
+            // Bloom assets often have alpha. Let's assume BlitAlpha for generic DrawImage for now.
+            // Actually, existing impl used Blit for Opaque/Simple. Let's use BlitAlpha with SrcOver to be safe/general.
+            let src = Rect::new(0, 0, image.width as i32, image.height as i32);
+
+            // DrawImage in DrawCmd now takes a DEST rect (which implies scaling if different size?)
+            // Or is it just position and size? Usually DrawImage(dest) implies fill dest.
+            // But previous behavior was DrawImage(pos).
+            // If it is dest, we use it directly.
+            out.ops.push(LowLevelOp::BlitAlpha {
+                image: image.clone(),
+                src,
+                dst: *dest,
+                filter: FilterMode::Nearest,
+                blend: BlendMode::SrcOver,
+                const_alpha: None,
+            });
+        }
+        DrawCmd::DrawImageRegion { image, src, dest } => {
+            out.ops.push(LowLevelOp::BlitAlpha {
+                image: image.clone(),
+                src: *src,
+                dst: *dest,
+                filter: FilterMode::Nearest,
+                blend: BlendMode::SrcOver,
+                const_alpha: None, // No extra modulation by default
+            });
+        }
+        // Tiled image: repeat across destination rect
+        DrawCmd::DrawImageTiled { image, dest } => {
+            let iw = image.width as i32;
+            let ih = image.height as i32;
+            if iw > 0 && ih > 0 {
+                let dx0 = dest.x();
+                let dy0 = dest.y();
+                let dx1 = dest.x() + dest.width();
+                let dy1 = dest.y() + dest.height();
+
+                // Tile horizontally and vertically
+                let mut y = dy0;
+                while y < dy1 {
+                    let mut x = dx0;
+                    while x < dx1 {
+                        // Calculate the visible portion of this tile
+                        let tile_w = iw.min(dx1 - x);
+                        let tile_h = ih.min(dy1 - y);
+
+                        let tile_src = Rect::new(0, 0, tile_w, tile_h);
+                        let tile_dst = Rect::new(x, y, tile_w, tile_h);
+
+                        out.ops.push(LowLevelOp::BlitAlpha {
+                            image: image.clone(),
+                            src: tile_src,
+                            dst: tile_dst,
+                            filter: FilterMode::Nearest,
+                            blend: BlendMode::SrcOver,
+                            const_alpha: None,
+                        });
+
+                        x += iw;
                     }
+                    y += ih;
                 }
             }
-            
-            // Complex Decompositions
-            DrawCmd::DrawNineSlice { image, dest, margins } => {
-                lower_nine_slice(&mut out, image, dest, margins);
-            }
-            DrawCmd::Cursor { frame, position } => {
-                // Windows 2000 style 3-layer shadow
-                let cx = position.x - frame.hotspot_x as i32;
-                let cy = position.y - frame.hotspot_y as i32;
-                let w = frame.image.width as i32;
-                let h = frame.image.height as i32;
-                let src = Rect::new(0, 0, w, h);
+        }
 
-                // Layer 1: Tight
-                out.ops.push(LowLevelOp::BlitAlpha {
-                    image: frame.image.clone(),
-                    src,
-                    dst: Rect::new(cx + 1, cy + 1, w, h),
-                    filter: FilterMode::Nearest,
-                    blend: BlendMode::SrcOver,
-                    const_alpha: Some(48), // ~19%
-                });
+        // Complex Decompositions
+        DrawCmd::DrawNineSlice {
+            image,
+            dest,
+            margins,
+        } => {
+            lower_nine_slice(out, image, dest, margins);
+        }
+        DrawCmd::Cursor { frame, position } => {
+            // Windows 2000 style 3-layer shadow
+            let cx = position.x - frame.hotspot_x as i32;
+            let cy = position.y - frame.hotspot_y as i32;
+            let w = frame.image.width as i32;
+            let h = frame.image.height as i32;
+            let src = Rect::new(0, 0, w, h);
 
-                // Layer 2: Medium
-                out.ops.push(LowLevelOp::BlitAlpha {
-                    image: frame.image.clone(),
-                    src,
-                    dst: Rect::new(cx + 2, cy + 2, w, h),
-                    filter: FilterMode::Nearest,
-                    blend: BlendMode::SrcOver,
-                    const_alpha: Some(48), // ~19%
-                });
+            // Layer 1: Tight
+            out.ops.push(LowLevelOp::BlitAlpha {
+                image: frame.image.clone(),
+                src,
+                dst: Rect::new(cx + 1, cy + 1, w, h),
+                filter: FilterMode::Nearest,
+                blend: BlendMode::SrcOver,
+                const_alpha: Some(48), // ~19%
+            });
 
-                // Layer 3: Fuzzy falloff
-                out.ops.push(LowLevelOp::BlitAlpha {
-                    image: frame.image.clone(),
-                    src,
-                    dst: Rect::new(cx + 3, cy + 3, w, h),
-                    filter: FilterMode::Nearest,
-                    blend: BlendMode::SrcOver,
-                    const_alpha: Some(24), // ~9%
-                });
+            // Layer 2: Medium
+            out.ops.push(LowLevelOp::BlitAlpha {
+                image: frame.image.clone(),
+                src,
+                dst: Rect::new(cx + 2, cy + 2, w, h),
+                filter: FilterMode::Nearest,
+                blend: BlendMode::SrcOver,
+                const_alpha: Some(48), // ~19%
+            });
 
-                // Main cursor
-                let cursor_x = position.x - frame.hotspot_x as i32;
-                let cursor_y = position.y - frame.hotspot_y as i32;
-                let dst_main = Rect::new(cursor_x, cursor_y, w, h);
-                
-                out.ops.push(LowLevelOp::BlitAlpha {
-                    image: frame.image.clone(),
-                    src,
-                    dst: dst_main,
-                    filter: FilterMode::Nearest,
-                    blend: BlendMode::SrcOver,
-                    const_alpha: None,
-                });
-            }
-            
-            DrawCmd::Text { text, font, rect, size, color, font_debug } => {
-                out.ops.push(LowLevelOp::TextSpan {
-                    text: text.clone(),
-                    pos: Point::new(rect.x(), rect.y()),
-                    size: *size,
+            // Layer 3: Fuzzy falloff
+            out.ops.push(LowLevelOp::BlitAlpha {
+                image: frame.image.clone(),
+                src,
+                dst: Rect::new(cx + 3, cy + 3, w, h),
+                filter: FilterMode::Nearest,
+                blend: BlendMode::SrcOver,
+                const_alpha: Some(24), // ~9%
+            });
+
+            // Main cursor
+            let cursor_x = position.x - frame.hotspot_x as i32;
+            let cursor_y = position.y - frame.hotspot_y as i32;
+            let dst_main = Rect::new(cursor_x, cursor_y, w, h);
+
+            out.ops.push(LowLevelOp::BlitAlpha {
+                image: frame.image.clone(),
+                src,
+                dst: dst_main,
+                filter: FilterMode::Nearest,
+                blend: BlendMode::SrcOver,
+                const_alpha: None,
+            });
+        }
+
+        DrawCmd::Text {
+            text,
+            font,
+            rect,
+            size,
+            color,
+            font_debug,
+        } => {
+            out.ops.push(LowLevelOp::TextSpan {
+                text: text.clone(),
+                pos: PointF::new(rect.x() as f32, rect.y() as f32),
+                size: *size,
+                color: *color,
+                font_name: font.clone(),
+                font_debug: *font_debug,
+            });
+        }
+
+        DrawCmd::Path {
+            path,
+            color,
+            fill_rule,
+            stroke,
+        } => {
+            if let Some(s) = stroke {
+                out.ops.push(LowLevelOp::StrokePath {
+                    path: path.clone(),
                     color: *color,
-                    font_name: font.clone(),
-                    font_debug: *font_debug,
+                    width: s.width,
+                    cap: s.cap,
+                    join: s.join,
+                    miter_limit: s.miter_limit,
+                    aa: EdgeAA::Coverage8,
                 });
-            }
-
-            DrawCmd::Path { path, color, fill_rule, stroke } => {
-                if let Some(s) = stroke {
-                    out.ops.push(LowLevelOp::StrokePath {
-                        path: path.clone(),
-                        color: *color,
-                        width: s.width,
-                        cap: s.cap,
-                        join: s.join,
-                        miter_limit: s.miter_limit,
-                        aa: EdgeAA::Coverage8,
-                    });
-                } else {
-                    out.ops.push(LowLevelOp::FillPath {
-                        path: path.clone(),
-                        color: *color,
-                        fill_rule: *fill_rule,
-                        aa: EdgeAA::Coverage8,
-                    });
-                }
-            }
-
-            // FillPath and StrokePath are emitted directly by the SVG parser
-            DrawCmd::FillPath { path, color, fill_rule, aa } => {
+            } else {
                 out.ops.push(LowLevelOp::FillPath {
                     path: path.clone(),
                     color: *color,
                     fill_rule: *fill_rule,
-                    aa: *aa,
+                    aa: EdgeAA::Coverage8,
                 });
             }
-            DrawCmd::StrokePath { path, color, width, cap, join, miter_limit, aa } => {
-                out.ops.push(LowLevelOp::StrokePath {
-                    path: path.clone(),
-                    color: *color,
-                    width: *width as f32,
-                    cap: *cap,
-                    join: *join,
-                    miter_limit: *miter_limit,
-                    aa: *aa,
-                });
-            }
-            
-            // Ignored/Unimplemented for v0
-            _ => { /* Warn or ignore */ }
         }
+
+        // FillPath and StrokePath are emitted directly by the SVG parser
+        DrawCmd::FillPath {
+            path,
+            color,
+            fill_rule,
+            aa,
+        } => {
+            out.ops.push(LowLevelOp::FillPath {
+                path: path.clone(),
+                color: *color,
+                fill_rule: *fill_rule,
+                aa: *aa,
+            });
+        }
+        DrawCmd::StrokePath {
+            path,
+            color,
+            width,
+            cap,
+            join,
+            miter_limit,
+            aa,
+        } => {
+            out.ops.push(LowLevelOp::StrokePath {
+                path: path.clone(),
+                color: *color,
+                width: *width,
+                cap: *cap,
+                join: *join,
+                miter_limit: *miter_limit,
+                aa: *aa,
+            });
+        }
+
+        DrawCmd::Icon { icon_name_id, dest } => {
+            let mut name_buf = [0u8; 128];
+            if let Ok(len) = stem::thing::sys::describe_symbol(*icon_name_id, &mut name_buf) {
+                let name_raw = core::str::from_utf8(&name_buf[..len]).unwrap_or("");
+                let name = name_raw.to_lowercase();
+                if !name.is_empty() {
+                    if let Some(cmds) = crate::painter_resources::ASSETS.get_icon(&name) {
+                        // Push Transform to dest position and scale
+                        // Assume standard 64x64 source for icons.
+                        let scale_x = dest.width() as f32 / 64.0;
+                        let scale_y = dest.height() as f32 / 64.0;
+                        let t = Transform2D {
+                            a: scale_x,
+                            b: 0.0,
+                            c: 0.0,
+                            d: scale_y,
+                            tx: dest.x() as f32,
+                            ty: dest.y() as f32,
+                        };
+                        out.ops.push(LowLevelOp::PushTransform { t: t });
+
+                        for icon_cmd in cmds.iter() {
+                            lower_cmd(icon_cmd, out);
+                        }
+
+                        out.ops.push(LowLevelOp::PopTransform);
+                        return;
+                    }
+                }
+            }
+            // Fallback: draw a blue rect if icon not found
+            out.ops.push(LowLevelOp::FillRect {
+                rect: *dest,
+                color: Color::from_u32(0xFF44AAFF),
+                aa: EdgeAA::None,
+            });
+        }
+
+        // Ignored/Unimplemented for v0
+        _ => { /* Warn or ignore */ }
     }
-    out
 }
 
 fn lower_nine_slice(out: &mut LoweredDraw, image: &Image, dst: &Rect, insets: &Insets) {
     let iw = image.width as i32;
     let ih = image.height as i32;
-    
+
     // Calculate source coords
     let sx0 = 0;
     let sx1 = insets.left;
     let sx2 = iw - insets.right;
     let sx3 = iw;
-    
+
     let sy0 = 0;
     let sy1 = insets.top;
     let sy2 = ih - insets.bottom;
@@ -425,7 +592,7 @@ fn lower_nine_slice(out: &mut LoweredDraw, image: &Image, dst: &Rect, insets: &I
     let dx1 = dst.x() + insets.left;
     let dx2 = dst.x() + dst.width() - insets.right;
     let dx3 = dst.x() + dst.width();
-    
+
     let dy0 = dst.y();
     let dy1 = dst.y() + insets.top;
     let dy2 = dst.y() + dst.height() - insets.bottom;
@@ -434,23 +601,23 @@ fn lower_nine_slice(out: &mut LoweredDraw, image: &Image, dst: &Rect, insets: &I
     // Source coordinates arrays
     let src_xs = [sx0, sx1, sx2, sx3];
     let src_ys = [sy0, sy1, sy2, sy3];
-    
+
     // Dest coordinates arrays
     let dst_xs = [dx0, dx1, dx2, dx3];
     let dst_ys = [dy0, dy1, dy2, dy3];
 
     for r in 0..3 {
         for c in 0..3 {
-            let sw = src_xs[c+1] - src_xs[c];
-            let sh = src_ys[r+1] - src_ys[r];
-            let dw = dst_xs[c+1] - dst_xs[c];
-            let dh = dst_ys[r+1] - dst_ys[r];
+            let sw = src_xs[c + 1] - src_xs[c];
+            let sh = src_ys[r + 1] - src_ys[r];
+            let dw = dst_xs[c + 1] - dst_xs[c];
+            let dh = dst_ys[r + 1] - dst_ys[r];
 
             // Only draw if the slice has area
             if sw > 0 && sh > 0 && dw > 0 && dh > 0 {
                 let src = Rect::new(src_xs[c], src_ys[r], sw, sh);
                 let dst = Rect::new(dst_xs[c], dst_ys[r], dw, dh);
-                
+
                 // Use Opaque if we are sure, or Alpha if the UI texture has transparency.
                 // Assuming UI assets might be transparent corners, stick to BlitAlpha for correctness mostly.
                 // If performance issues arise, we can check image properties or DrawCmd hints.

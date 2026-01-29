@@ -1,38 +1,74 @@
+use abi::ids::HandleId;
+use abi::query::QueryRow;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
-use alloc::vec::Vec;
+use alloc::{vec, vec::Vec};
+use stem::thing::query::RestrictedQuery;
 use stem::thing::sys::get_kind;
 use stem::thing::ThingId;
-use abi::ids::HandleId;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiNodeKind {
-    Unknown, Root, Window, Panel, Text, TextRun, Image, Overlay, Inline, Viewport, Tile, Chrome,
+    Unknown,
+    Root,
+    Window,
+    Panel,
+    Text,
+    TextRun,
+    Image,
+    Overlay,
+    Inline,
+    Viewport,
+    Tile,
+    Chrome,
 }
 
 impl UiNodeKind {
     pub fn from_symbol(id: u32, kinds: &KindIds) -> Self {
-        if id == 0 { return Self::Unknown; }
-        if id == kinds.root { Self::Root }
-        else if id == kinds.window { Self::Window }
-        else if id == kinds.panel { Self::Panel }
-        else if id == kinds.text { Self::Text }
-        else if id == kinds.text_run { Self::TextRun }
-        else if id == kinds.image { Self::Image }
-        else if id == kinds.overlay { Self::Overlay }
-        else if id == kinds.inline { Self::Inline }
-        else if id == kinds.viewport { Self::Viewport }
-        else if id == kinds.tile { Self::Tile }
-        else if id == kinds.chrome { Self::Chrome }
-        else { Self::Unknown }
+        if id == 0 {
+            return Self::Unknown;
+        }
+        if id == kinds.root {
+            Self::Root
+        } else if id == kinds.window {
+            Self::Window
+        } else if id == kinds.panel {
+            Self::Panel
+        } else if id == kinds.text {
+            Self::Text
+        } else if id == kinds.text_run {
+            Self::TextRun
+        } else if id == kinds.image {
+            Self::Image
+        } else if id == kinds.overlay {
+            Self::Overlay
+        } else if id == kinds.inline {
+            Self::Inline
+        } else if id == kinds.viewport {
+            Self::Viewport
+        } else if id == kinds.tile {
+            Self::Tile
+        } else if id == kinds.chrome {
+            Self::Chrome
+        } else {
+            Self::Unknown
+        }
     }
 }
 
 #[derive(Clone)]
 pub struct KindIds {
-    pub root: u32, pub window: u32, pub panel: u32,
-    pub text: u32, pub text_run: u32, pub image: u32, pub overlay: u32,
-    pub inline: u32, pub viewport: u32, pub tile: u32, pub chrome: u32,
+    pub root: u32,
+    pub window: u32,
+    pub panel: u32,
+    pub text: u32,
+    pub text_run: u32,
+    pub image: u32,
+    pub overlay: u32,
+    pub inline: u32,
+    pub viewport: u32,
+    pub tile: u32,
+    pub chrome: u32,
 }
 
 impl KindIds {
@@ -74,32 +110,77 @@ impl KindIds {
 
 #[derive(Clone)]
 pub struct UiKeys {
-    pub x: u32, pub y: u32, pub w: u32, pub h: u32,
-    pub color: u32, pub text: u32, pub font: u32,
-    pub font_size: u32, pub font_stack: u32, pub font_debug: u32,
-    pub radius: u32, pub title: u32, pub hidden: u32,
-    pub z_index: u32, pub center_x: u32, pub center_y: u32,
-    pub fill_parent: u32, pub bg_color: u32, pub fg_color: u32,
-    pub has_child: u32, pub inset_right: u32, pub inset_bottom: u32,
-    pub inline_mode: u32, pub svg_bytes: u32,
+    pub x: u32,
+    pub y: u32,
+    pub w: u32,
+    pub h: u32,
+    pub color: u32,
+    pub text: u32,
+    pub font: u32,
+    pub font_size: u32,
+    pub font_stack: u32,
+    pub font_debug: u32,
+    pub radius: u32,
+    pub title: u32,
+    pub hidden: u32,
+    pub z_index: u32,
+    pub center_x: u32,
+    pub center_y: u32,
+    pub fill_parent: u32,
+    pub bg_color: u32,
+    pub fg_color: u32,
+    pub has_child: u32,
+    pub inset_right: u32,
+    pub inset_bottom: u32,
+    pub inline_mode: u32,
+    pub svg_bytes: u32,
     pub window_icon: u32,
     pub window_shaded: u32,
-    pub scroll_x: u32, pub scroll_y: u32, pub clip: u32,
-    pub tile_asset: u32, pub tile_state: u32,
+    pub scroll_x: u32,
+    pub scroll_y: u32,
+    pub clip: u32,
+    pub tile_asset: u32,
+    pub tile_state: u32,
+    pub drawlist_bytespace: u32,
+    pub drawlist_gen: u32,
 }
 
 impl UiKeys {
     pub fn empty() -> Self {
         Self {
-            x: 0, y: 0, w: 0, h: 0, color: 0, text: 0, font: 0,
-            font_size: 0, font_stack: 0, font_debug: 0, radius: 0,
-            title: 0, hidden: 0, z_index: 0, center_x: 0, center_y: 0,
-            fill_parent: 0, bg_color: 0, fg_color: 0, has_child: 0,
-            inset_right: 0, inset_bottom: 0, inline_mode: 0, svg_bytes: 0,
+            x: 0,
+            y: 0,
+            w: 0,
+            h: 0,
+            color: 0,
+            text: 0,
+            font: 0,
+            font_size: 0,
+            font_stack: 0,
+            font_debug: 0,
+            radius: 0,
+            title: 0,
+            hidden: 0,
+            z_index: 0,
+            center_x: 0,
+            center_y: 0,
+            fill_parent: 0,
+            bg_color: 0,
+            fg_color: 0,
+            has_child: 0,
+            inset_right: 0,
+            inset_bottom: 0,
+            inline_mode: 0,
+            svg_bytes: 0,
             window_icon: 0,
             window_shaded: 0,
-            scroll_x: 0, scroll_y: 0, clip: 0,
-            tile_asset: 0, tile_state: 0,
+            scroll_x: 0,
+            scroll_y: 0,
+            clip: 0,
+            tile_asset: 0,
+            tile_state: 0,
+            drawlist_bytespace: 0,
+            drawlist_gen: 0,
         }
     }
     pub fn intern() -> Self {
@@ -137,29 +218,82 @@ impl UiKeys {
             clip: stem::thing::sys::intern(keys::UI_CLIP).unwrap_or(0),
             tile_asset: stem::thing::sys::intern(keys::UI_TILE_ASSET).unwrap_or(0),
             tile_state: stem::thing::sys::intern(keys::UI_TILE_STATE).unwrap_or(0),
+            drawlist_bytespace: stem::thing::sys::intern(keys::UI_DRAWLIST_BYTESPACE).unwrap_or(0),
+            drawlist_gen: stem::thing::sys::intern(keys::UI_DRAWLIST_GEN).unwrap_or(0),
         };
-        crate::trace_counter!("ui.init.syscalls.intern_keys", 31);
+        crate::trace_counter!("ui.init.syscalls.intern_keys", 33);
         k
     }
-    pub fn numeric_keys(&self) -> [u32; 26] {
-        [self.x, self.y, self.w, self.h, self.color, self.radius,
-         self.hidden, self.z_index, self.center_x, self.center_y,
-         self.fill_parent, self.bg_color, self.fg_color, 
-         self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
-         self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded,
-         self.scroll_x, self.scroll_y, self.clip, self.tile_asset, self.tile_state]
+    pub fn numeric_keys(&self) -> [u32; 28] {
+        [
+            self.x,
+            self.y,
+            self.w,
+            self.h,
+            self.color,
+            self.radius,
+            self.hidden,
+            self.z_index,
+            self.center_x,
+            self.center_y,
+            self.fill_parent,
+            self.bg_color,
+            self.fg_color,
+            self.inset_right,
+            self.inset_bottom,
+            self.font_size,
+            self.font_debug,
+            self.inline_mode,
+            self.svg_bytes,
+            self.window_icon,
+            self.window_shaded,
+            self.scroll_x,
+            self.scroll_y,
+            self.clip,
+            self.tile_asset,
+            self.tile_state,
+            self.drawlist_bytespace,
+            self.drawlist_gen,
+        ]
     }
     pub fn string_keys(&self) -> [u32; 4] {
         [self.text, self.font, self.font_stack, self.title]
     }
-    pub fn all_keys(&self) -> [u32; 30] {
-        [self.x, self.y, self.w, self.h, self.color, self.radius,
-         self.hidden, self.z_index, self.center_x, self.center_y,
-         self.fill_parent, self.bg_color, self.fg_color, 
-         self.inset_right, self.inset_bottom, self.font_size, self.font_debug,
-         self.inline_mode, self.svg_bytes, self.window_icon, self.window_shaded,
-         self.scroll_x, self.scroll_y, self.clip, self.tile_asset, self.tile_state,
-         self.text, self.font, self.font_stack, self.title]
+    pub fn all_keys(&self) -> [u32; 32] {
+        [
+            self.x,
+            self.y,
+            self.w,
+            self.h,
+            self.color,
+            self.radius,
+            self.hidden,
+            self.z_index,
+            self.center_x,
+            self.center_y,
+            self.fill_parent,
+            self.bg_color,
+            self.fg_color,
+            self.inset_right,
+            self.inset_bottom,
+            self.font_size,
+            self.font_debug,
+            self.inline_mode,
+            self.svg_bytes,
+            self.window_icon,
+            self.window_shaded,
+            self.scroll_x,
+            self.scroll_y,
+            self.clip,
+            self.tile_asset,
+            self.tile_state,
+            self.text,
+            self.font,
+            self.font_stack,
+            self.title,
+            self.drawlist_bytespace,
+            self.drawlist_gen,
+        ]
     }
 }
 
@@ -171,19 +305,45 @@ pub struct UiNodeSnapshot {
     pub strings: BTreeMap<u32, String>,
     pub children: Vec<ThingId>,
     pub svg_content: Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+    pub svg_source: Option<ThingId>,
+    pub svg_hash: Option<u64>,
     pub window_icon_content: Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+    pub window_icon_source: Option<ThingId>,
+    pub window_icon_hash: Option<u64>,
+    pub drawlist_content: Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+    pub drawlist_source: Option<ThingId>,
+    pub drawlist_hash: Option<u64>,
 }
 
 /// Cached asset entry: bytespace_id -> decoded content
 #[derive(Clone, Default)]
 pub struct AssetCache {
     strings: BTreeMap<u64, String>,
-    svgs: BTreeMap<u64, alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+    svgs: BTreeMap<u64, SvgAsset>,
+    drawlists: BTreeMap<u64, DrawListAsset>,
+}
+
+#[derive(Clone)]
+pub struct DrawListAsset {
+    pub cmds: alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>,
+    pub hash: u64,
+}
+
+#[derive(Clone)]
+pub struct SvgAsset {
+    pub cmds: alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>,
+    pub xml_hash: u64,
 }
 
 impl AssetCache {
-    pub fn new() -> Self { Self { strings: BTreeMap::new(), svgs: BTreeMap::new() } }
-    
+    pub fn new() -> Self {
+        Self {
+            strings: BTreeMap::new(),
+            svgs: BTreeMap::new(),
+            drawlists: BTreeMap::new(),
+        }
+    }
+
     /// Get cached string or read from bytespace and cache it
     pub fn get_or_read_string(&mut self, bs_id: ThingId) -> Option<String> {
         let id = bs_id.to_u64_lossy();
@@ -197,46 +357,94 @@ impl AssetCache {
         Some(s)
     }
 
-    pub fn get_or_parse_svg(&mut self, bs_id: ThingId) -> Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>> {
+    pub fn get_or_parse_svg(&mut self, bs_id: ThingId) -> Option<SvgAsset> {
         let id = bs_id.to_u64_lossy();
         if let Some(cmds) = self.svgs.get(&id) {
             return Some(cmds.clone());
         }
-        
+
         // Parse
         let xml = Self::read_string_raw(bs_id)?;
+        let xml_hash = hash_bytes(xml.as_bytes());
         let mut parser = crate::svg::SvgParser::new();
         // SVG icons are usually small, parsing is fast enough to do on-demand if cached.
         let cmds = parser.parse(&xml);
         let arc_cmds = alloc::sync::Arc::new(cmds);
-        
-        self.svgs.insert(id, arc_cmds.clone());
-        Some(arc_cmds)
+        let asset = SvgAsset {
+            cmds: arc_cmds,
+            xml_hash,
+        };
+
+        self.svgs.insert(id, asset.clone());
+        Some(asset)
     }
-    
+
+    pub fn get_or_parse_drawlist(&mut self, bs_id: ThingId, gen: u64) -> Option<DrawListAsset> {
+        let id = bs_id.to_u64_lossy();
+        if let Some(asset) = self.drawlists.get(&id) {
+            if asset.hash == gen {
+                return Some(asset.clone());
+            }
+        }
+
+        // Read and decode
+        let data = Self::read_bytes_raw(bs_id)?;
+        let cmds = crate::drawlist::decode_native_drawlist(&data);
+        let asset = DrawListAsset {
+            cmds: alloc::sync::Arc::new(cmds),
+            hash: gen,
+        };
+
+        self.drawlists.insert(id, asset.clone());
+        Some(asset)
+    }
+
+    fn read_bytes_raw(bs_id: ThingId) -> Option<Vec<u8>> {
+        use stem::thing::sys::{bytespace_info, bytespace_read};
+        let size = bytespace_info(bs_id).ok()?;
+        let mut buf = vec![0u8; size];
+        bytespace_read(bs_id, 0, &mut buf).ok()?;
+        Some(buf)
+    }
+
     fn read_string_raw(bs_id: ThingId) -> Option<String> {
         use stem::thing::sys::{bytespace_info, bytespace_read};
         crate::trace_counter!("snap.syscalls.read_string", 2);
         let size = bytespace_info(bs_id).ok()?;
-        if size == 0 { return Some(String::new()); }
+        if size == 0 {
+            return Some(String::new());
+        }
         let mut buf = alloc::vec![0u8; size];
         let len = bytespace_read(bs_id, 0, &mut buf).ok()?;
-        Some(String::from(core::str::from_utf8(&buf[..len]).unwrap_or("")))
+        Some(String::from(
+            core::str::from_utf8(&buf[..len]).unwrap_or(""),
+        ))
     }
-    
+
     /// Invalidate a specific bytespace entry (when we know it changed)
     pub fn invalidate(&mut self, bs_id: u64) {
         self.strings.remove(&bs_id);
         self.svgs.remove(&bs_id);
     }
-    
+
     /// Clear entire cache (e.g., on watch notification that strings changed)
     pub fn clear(&mut self) {
         self.strings.clear();
         self.svgs.clear();
     }
-    
-    pub fn len(&self) -> usize { self.strings.len() + self.svgs.len() }
+
+    pub fn len(&self) -> usize {
+        self.strings.len() + self.svgs.len()
+    }
+}
+
+fn hash_bytes(bytes: &[u8]) -> u64 {
+    let mut hash = 0xcbf29ce484222325u64;
+    for &b in bytes {
+        hash ^= b as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
+    }
+    hash
 }
 
 #[derive(Clone)]
@@ -272,7 +480,10 @@ impl NodeChange {
 
 impl UiSnapshot {
     pub fn new() -> Self {
-        Self { root_id: None, nodes: BTreeMap::new() }
+        Self {
+            root_id: None,
+            nodes: BTreeMap::new(),
+        }
     }
 
     /// Full capture from scratch
@@ -280,9 +491,14 @@ impl UiSnapshot {
         let mut cache = AssetCache::new();
         Self::capture_with_cache(root_id, keys, kinds, &mut cache)
     }
-    
+
     /// Capture with asset cache (Phase C optimization)
-    pub fn capture_with_cache(root_id: ThingId, keys: &UiKeys, kinds: &KindIds, cache: &mut AssetCache) -> Self {
+    pub fn capture_with_cache(
+        root_id: ThingId,
+        keys: &UiKeys,
+        kinds: &KindIds,
+        cache: &mut AssetCache,
+    ) -> Self {
         let mut snapshot = Self::new();
         snapshot.root_id = Some(root_id);
         {
@@ -311,11 +527,13 @@ impl UiSnapshot {
         let mut reachable = BTreeSet::new();
         let mut stack = Vec::new();
         stack.push(root);
-        
+
         while let Some(current) = stack.pop() {
-            if reachable.contains(&current) { continue; }
+            if reachable.contains(&current) {
+                continue;
+            }
             reachable.insert(current);
-            
+
             if let Some(node) = self.nodes.get(&current) {
                 for child in &node.children {
                     stack.push(*child);
@@ -327,14 +545,18 @@ impl UiSnapshot {
         let before_count = self.nodes.len();
         self.nodes.retain(|id, _| reachable.contains(id));
         let removed = before_count.saturating_sub(self.nodes.len());
-        
+
         if removed > 0 {
-            crate::log!("[bloom][snap] Pruned {} unreachable nodes ({} -> {})", 
-                removed, before_count, self.nodes.len());
+            crate::log!(
+                "[bloom][snap] Pruned {} unreachable nodes ({} -> {})",
+                removed,
+                before_count,
+                self.nodes.len()
+            );
         }
         crate::trace_counter!("ui.snap.pruned_nodes", removed);
     }
-    
+
     /// Incremental update: refresh only dirty nodes (props/edges).
     pub fn update_dirty(
         &mut self,
@@ -367,8 +589,10 @@ impl UiSnapshot {
     }
 
     fn traverse(&mut self, id: ThingId, kind_ids: &KindIds, keys: &UiKeys, cache: &mut AssetCache) {
-        if self.nodes.contains_key(&id) { return; }
-        
+        if self.nodes.contains_key(&id) {
+            return;
+        }
+
         let kind_sym = {
             crate::trace_span!("ui.snap.get_kind");
             crate::trace_counter!("snap.syscalls.get_kind", 1);
@@ -381,19 +605,56 @@ impl UiSnapshot {
                     crate::trace_counter!("ui.snap.text_nodes", 1);
                 }
                 k
-            },
+            }
             None => return,
         };
 
         let children = self.fetch_children(id, keys);
-        let (props, strings, svg_content, window_icon_content) =
-            self.fetch_properties(id, keys, cache);
-        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children: children.clone(), svg_content, window_icon_content });
-        for child in children { self.traverse(child, kind_ids, keys, cache); }
+        let (
+            props,
+            strings,
+            svg_content,
+            svg_source,
+            svg_hash,
+            window_icon_content,
+            window_icon_source,
+            window_icon_hash,
+            drawlist_content,
+            drawlist_source,
+            drawlist_hash,
+        ) = self.fetch_properties(id, keys, cache);
+        self.nodes.insert(
+            id,
+            UiNodeSnapshot {
+                id,
+                kind,
+                props,
+                strings,
+                children: children.clone(),
+                svg_content,
+                svg_source,
+                svg_hash,
+                window_icon_content,
+                window_icon_source,
+                window_icon_hash,
+                drawlist_content,
+                drawlist_source,
+                drawlist_hash,
+            },
+        );
+        for child in children {
+            self.traverse(child, kind_ids, keys, cache);
+        }
     }
-    
+
     /// Traverse a single node without recursing (for incremental updates)
-    fn traverse_single(&mut self, id: ThingId, kind_ids: &KindIds, keys: &UiKeys, cache: &mut AssetCache) {
+    fn traverse_single(
+        &mut self,
+        id: ThingId,
+        kind_ids: &KindIds,
+        keys: &UiKeys,
+        cache: &mut AssetCache,
+    ) {
         let kind_sym = {
             crate::trace_counter!("snap.syscalls.get_kind", 1);
             get_kind(id).ok()
@@ -404,9 +665,38 @@ impl UiSnapshot {
         };
 
         let children = self.fetch_children(id, keys);
-        let (props, strings, svg_content, window_icon_content) =
-            self.fetch_properties(id, keys, cache);
-        self.nodes.insert(id, UiNodeSnapshot { id, kind, props, strings, children, svg_content, window_icon_content });
+        let (
+            props,
+            strings,
+            svg_content,
+            svg_source,
+            svg_hash,
+            window_icon_content,
+            window_icon_source,
+            window_icon_hash,
+            drawlist_content,
+            drawlist_source,
+            drawlist_hash,
+        ) = self.fetch_properties(id, keys, cache);
+        self.nodes.insert(
+            id,
+            UiNodeSnapshot {
+                id,
+                kind,
+                props,
+                strings,
+                children,
+                svg_content,
+                svg_source,
+                svg_hash,
+                window_icon_content,
+                window_icon_source,
+                window_icon_hash,
+                drawlist_content,
+                drawlist_source,
+                drawlist_hash,
+            },
+        );
     }
 
     fn refresh_node_props(
@@ -416,8 +706,20 @@ impl UiSnapshot {
         kinds: &KindIds,
         cache: &mut AssetCache,
     ) -> Option<NodeChange> {
-        let (props, strings, svg_content, window_icon_content) =
-            self.fetch_properties(id, keys, cache);
+        let (
+            props,
+            strings,
+            svg_content,
+            svg_source,
+            svg_hash,
+            window_icon_content,
+            window_icon_source,
+            window_icon_hash,
+            drawlist_content,
+            drawlist_source,
+            drawlist_hash,
+        ) = self.fetch_properties(id, keys, cache);
+
         if let Some(node) = self.nodes.get_mut(&id) {
             let mut change = NodeChange::new(id);
             let mut any_changed = false;
@@ -430,19 +732,42 @@ impl UiSnapshot {
                 if Self::measure_keys_changed(&node.props, &props, &node.strings, &strings, keys) {
                     change.measure_dirty = true;
                 }
+                node.props = props;
             }
-
             if node.strings != strings {
-                any_changed = true;
-                if Self::measure_keys_changed(&node.props, &props, &node.strings, &strings, keys) {
-                    change.measure_dirty = true;
+                if !any_changed {
+                    if Self::measure_keys_changed(
+                        &node.props,
+                        &node.props,
+                        &node.strings,
+                        &strings,
+                        keys,
+                    ) {
+                        change.measure_dirty = true;
+                    }
+                    any_changed = true;
                 }
+                node.strings = strings;
+            }
+            if node.svg_hash != svg_hash {
+                any_changed = true;
+                node.svg_content = svg_content;
+                node.svg_source = svg_source;
+                node.svg_hash = svg_hash;
+            }
+            if node.window_icon_hash != window_icon_hash {
+                any_changed = true;
+                node.window_icon_content = window_icon_content;
+                node.window_icon_source = window_icon_source;
+                node.window_icon_hash = window_icon_hash;
+            }
+            if node.drawlist_hash != drawlist_hash {
+                any_changed = true;
+                node.drawlist_content = drawlist_content;
+                node.drawlist_source = drawlist_source;
+                node.drawlist_hash = drawlist_hash;
             }
 
-            node.props = props;
-            node.strings = strings;
-            node.svg_content = svg_content;
-            node.window_icon_content = window_icon_content;
             if any_changed {
                 change.paint_dirty = true;
                 return Some(change);
@@ -496,40 +821,63 @@ impl UiSnapshot {
         }
     }
 
-    fn fetch_children(&self, id: ThingId, keys: &UiKeys) -> Vec<ThingId> {
+    fn fetch_children(&self, id: ThingId, _keys: &UiKeys) -> Vec<ThingId> {
         let mut children = Vec::new();
-        let mut edges_buf = [abi::types::Edge::default(); 64];
+        // Use stack buffer for query rows
+        let mut q_buf = [QueryRow::default(); 64];
+        let mut q = RestrictedQuery::new(&mut q_buf);
+        
         {
             crate::trace_span!("snap.refresh_node_edges");
-            crate::trace_counter!("snap.syscalls.get_edges", 1);
-            if let Ok(count) = stem::thing::sys::get_edges(id, &mut edges_buf) {
-                for edge in &edges_buf[..count] {
-                    let rel_u64 = edge.predicate.to_u64_lossy();
-                    let target_u64 = edge.to.to_u64_lossy();
-                    if rel_u64 == keys.has_child as u64 && target_u64 != id.to_u64_lossy() {
-                        children.push(edge.to);
-                    }
-                }
+            crate::trace_counter!("snap.syscalls.query", 1);
+            // Use "has_child" directly to filter in kernel
+            if let Ok(count) = q.get_edges(id, Some("has_child"), 64) {
+                 for i in 0..count {
+                     let row = &q.buf[i];
+                     let target_id = ThingId::from_u64(row.val_dst);
+                     if target_id != id {
+                         children.push(target_id);
+                     }
+                 }
             }
         }
         children
     }
-    
+
     fn fetch_properties(
-        &self, 
-        id: ThingId, 
-        keys: &UiKeys, 
-        cache: &mut AssetCache
-    ) -> (BTreeMap<u32, u64>, BTreeMap<u32, String>, Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>, Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>) {
+        &self,
+        id: ThingId,
+        keys: &UiKeys,
+        cache: &mut AssetCache,
+    ) -> (
+        BTreeMap<u32, u64>,
+        BTreeMap<u32, String>,
+        Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        Option<ThingId>,
+        Option<u64>,
+        Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        Option<ThingId>,
+        Option<u64>,
+        Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        Option<ThingId>,
+        Option<u64>,
+    ) {
         crate::trace_span!("snap.refresh_node_props");
         let mut props = BTreeMap::new();
         let mut strings = BTreeMap::new();
         let mut svg_content = None;
+        let mut svg_source = None;
+        let mut svg_hash = None;
         let mut window_icon_content = None;
+        let mut window_icon_source = None;
+        let mut window_icon_hash = None;
+        let mut drawlist_content = None;
+        let mut drawlist_source = None;
+        let mut drawlist_hash = None;
 
         let all_keys = keys.all_keys();
         let valid_keys: Vec<u32> = all_keys.iter().copied().filter(|&k| k != 0).collect();
-        
+
         let bulk_result = {
             crate::trace_span!("ui.snap.prop_get");
             crate::trace_counter!("snap.syscalls.prop_get", 1);
@@ -551,20 +899,59 @@ impl UiSnapshot {
                                 }
                             }
                         } else if key == keys.svg_bytes {
-                             if val != 0 {
-                                 props.insert(key, val); // Keep raw prop too
-                                 svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
-                             }
+                            if val != 0 {
+                                props.insert(key, val); // Keep raw prop too
+                                let bs_id = ThingId::from_u64(val);
+                                if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                                    svg_content = Some(asset.cmds);
+                                    svg_source = Some(bs_id);
+                                    svg_hash = Some(asset.xml_hash);
+                                }
+                            }
                         } else if key == keys.window_icon {
-                             if val != 0 {
-                                 props.insert(key, val);
-                                 window_icon_content = cache.get_or_parse_svg(ThingId::from_u64(val));
-                             }
+                            if val != 0 {
+                                props.insert(key, val);
+                                let bs_id = ThingId::from_u64(val);
+                                if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                                    window_icon_content = Some(asset.cmds);
+                                    window_icon_source = Some(bs_id);
+                                    window_icon_hash = Some(asset.xml_hash);
+                                }
+                            }
                         } else if key == keys.tile_asset {
-                             if val != 0 {
-                                 props.insert(key, val);
-                                 svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
-                             }
+                            if val != 0 {
+                                props.insert(key, val);
+                                let bs_id = ThingId::from_u64(val);
+                                if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                                    svg_content = Some(asset.cmds);
+                                    svg_source = Some(bs_id);
+                                    svg_hash = Some(asset.xml_hash);
+                                }
+                            }
+                        } else if key == keys.drawlist_bytespace {
+                            if val != 0 {
+                                props.insert(key, val);
+                                let bs_id = ThingId::from_u64(val);
+                                let gen = bulk_result
+                                    .as_ref()
+                                    .ok()
+                                    .and_then(|r| {
+                                        let idx = valid_keys
+                                            .iter()
+                                            .position(|&k| k == keys.drawlist_gen)?;
+                                        if r.present_mask & (1 << idx) != 0 {
+                                            Some(r.values[idx])
+                                        } else {
+                                            None
+                                        }
+                                    })
+                                    .unwrap_or(0);
+                                if let Some(asset) = cache.get_or_parse_drawlist(bs_id, gen) {
+                                    drawlist_content = Some(asset.cmds);
+                                    drawlist_source = Some(bs_id);
+                                    drawlist_hash = Some(asset.hash);
+                                }
+                            }
                         } else {
                             props.insert(key, val);
                         }
@@ -573,40 +960,102 @@ impl UiSnapshot {
             }
             Err(_) => {
                 crate::trace_counter!("ui.snap.bulk_fallback", 1);
-                self.fetch_fallback(id, keys, &mut props, &mut strings, &mut svg_content, &mut window_icon_content, cache);
+                self.fetch_fallback(
+                    id,
+                    keys,
+                    &mut props,
+                    &mut strings,
+                    &mut svg_content,
+                    &mut svg_source,
+                    &mut svg_hash,
+                    &mut window_icon_content,
+                    &mut window_icon_source,
+                    &mut window_icon_hash,
+                    &mut drawlist_content,
+                    &mut drawlist_source,
+                    &mut drawlist_hash,
+                    cache,
+                );
             }
         }
-        (props, strings, svg_content, window_icon_content)
+        (
+            props,
+            strings,
+            svg_content,
+            svg_source,
+            svg_hash,
+            window_icon_content,
+            window_icon_source,
+            window_icon_hash,
+            drawlist_content,
+            drawlist_source,
+            drawlist_hash,
+        )
     }
-    
+
     fn fetch_fallback(
-        &self, 
-        id: ThingId, 
-        keys: &UiKeys, 
-        props: &mut BTreeMap<u32, u64>, 
-        strings: &mut BTreeMap<u32, String>, 
+        &self,
+        id: ThingId,
+        keys: &UiKeys,
+        props: &mut BTreeMap<u32, u64>,
+        strings: &mut BTreeMap<u32, String>,
         svg_content: &mut Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        svg_source: &mut Option<ThingId>,
+        svg_hash: &mut Option<u64>,
         window_icon_content: &mut Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
-        cache: &mut AssetCache
+        window_icon_source: &mut Option<ThingId>,
+        window_icon_hash: &mut Option<u64>,
+        drawlist_content: &mut Option<alloc::sync::Arc<Vec<crate::drawlist::DrawCmd>>>,
+        drawlist_source: &mut Option<ThingId>,
+        drawlist_hash: &mut Option<u64>,
+        cache: &mut AssetCache,
     ) {
         for &p in &keys.numeric_keys() {
-            if p == 0 { continue; }
+            if p == 0 {
+                continue;
+            }
             crate::trace_counter!("snap.syscalls.prop_get", 1);
-            if let Ok(val) = stem::thing::sys::prop_get(id, p) { 
-                props.insert(p, val); 
+            if let Ok(val) = stem::thing::sys::prop_get(id, p) {
+                props.insert(p, val);
                 if p == keys.svg_bytes && val != 0 {
-                    *svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                    let bs_id = ThingId::from_u64(val);
+                    if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                        *svg_content = Some(asset.cmds);
+                        *svg_source = Some(bs_id);
+                        *svg_hash = Some(asset.xml_hash);
+                    }
                 }
                 if p == keys.window_icon && val != 0 {
-                    *window_icon_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                    let bs_id = ThingId::from_u64(val);
+                    if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                        *window_icon_content = Some(asset.cmds);
+                        *window_icon_source = Some(bs_id);
+                        *window_icon_hash = Some(asset.xml_hash);
+                    }
                 }
                 if p == keys.tile_asset && val != 0 {
-                    *svg_content = cache.get_or_parse_svg(ThingId::from_u64(val));
+                    let bs_id = ThingId::from_u64(val);
+                    if let Some(asset) = cache.get_or_parse_svg(bs_id) {
+                        *svg_content = Some(asset.cmds);
+                        *svg_source = Some(bs_id);
+                        *svg_hash = Some(asset.xml_hash);
+                    }
+                }
+                if p == keys.drawlist_bytespace && val != 0 {
+                    let bs_id = ThingId::from_u64(val);
+                    let gen = stem::thing::sys::prop_get(id, keys.drawlist_gen).unwrap_or(0);
+                    if let Some(asset) = cache.get_or_parse_drawlist(bs_id, gen) {
+                        *drawlist_content = Some(asset.cmds);
+                        *drawlist_source = Some(bs_id);
+                        *drawlist_hash = Some(asset.hash);
+                    }
                 }
             }
         }
         for &p in &keys.string_keys() {
-            if p == 0 { continue; }
+            if p == 0 {
+                continue;
+            }
             crate::trace_counter!("snap.syscalls.prop_get", 1);
             if let Ok(val) = stem::thing::sys::prop_get(id, p) {
                 if val != 0 {
@@ -622,11 +1071,17 @@ impl UiSnapshot {
         let mut changed = Vec::new();
         for (id, node) in &self.nodes {
             if let Some(prev_node) = prev.nodes.get(id) {
-                if !self.nodes_equal(node, prev_node) { changed.push(*id); }
-            } else { changed.push(*id); }
+                if !self.nodes_equal(node, prev_node) {
+                    changed.push(*id);
+                }
+            } else {
+                changed.push(*id);
+            }
         }
         for id in prev.nodes.keys() {
-            if !self.nodes.contains_key(id) { changed.push(*id); }
+            if !self.nodes.contains_key(id) {
+                changed.push(*id);
+            }
         }
         changed
     }
@@ -656,12 +1111,20 @@ impl UiSnapshot {
 
     /// Count of window nodes in the snapshot
     pub fn window_count(&self) -> usize {
-        self.nodes.values().filter(|n| n.kind == UiNodeKind::Window).count()
+        self.nodes
+            .values()
+            .filter(|n| n.kind == UiNodeKind::Window)
+            .count()
     }
 
-
     fn nodes_equal(&self, a: &UiNodeSnapshot, b: &UiNodeSnapshot) -> bool {
-        a.kind == b.kind && a.props == b.props && a.strings == b.strings && a.children == b.children
+        a.kind == b.kind
+            && a.props == b.props
+            && a.strings == b.strings
+            && a.children == b.children
+            && a.svg_hash == b.svg_hash
+            && a.window_icon_hash == b.window_icon_hash
+            && a.drawlist_hash == b.drawlist_hash
     }
 
     fn layout_keys_changed(
@@ -682,9 +1145,11 @@ impl UiSnapshot {
             keys.z_index,
             keys.window_shaded,
         ];
-        layout_keys.iter().copied().filter(|k| *k != 0).any(|k| {
-            old.get(&k).unwrap_or(&0) != new.get(&k).unwrap_or(&0)
-        })
+        layout_keys
+            .iter()
+            .copied()
+            .filter(|k| *k != 0)
+            .any(|k| old.get(&k).unwrap_or(&0) != new.get(&k).unwrap_or(&0))
     }
 
     fn measure_keys_changed(
@@ -700,14 +1165,10 @@ impl UiSnapshot {
         let font_stack_key = keys.font_stack;
         let size_key = keys.font_size;
 
-        if text_key != 0
-            && old_strings.get(&text_key) != new_strings.get(&text_key)
-        {
+        if text_key != 0 && old_strings.get(&text_key) != new_strings.get(&text_key) {
             changed = true;
         }
-        if font_key != 0
-            && old_strings.get(&font_key) != new_strings.get(&font_key)
-        {
+        if font_key != 0 && old_strings.get(&font_key) != new_strings.get(&font_key) {
             changed = true;
         }
         if font_stack_key != 0

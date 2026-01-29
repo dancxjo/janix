@@ -5,12 +5,12 @@
 
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
-use alloc::vec::Vec;
-use stem::thing::ThingId;
-use stem::thing::sys::{bytespace_create, bytespace_write};
 use abi::font_protocol::GlyphPlacement;
 use abi::ids::HandleId;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
+use stem::thing::sys::{bytespace_create, bytespace_write};
+use stem::thing::ThingId;
 
 /// Initial atlas size
 const INITIAL_ATLAS_SIZE: u32 = 256;
@@ -113,7 +113,7 @@ impl Atlas {
         let width = INITIAL_ATLAS_SIZE;
         let height = INITIAL_ATLAS_SIZE;
         let pixels = alloc::vec![0u8; (width * height) as usize];
-        
+
         Self {
             bytespace_id: ThingId::default(),
             width,
@@ -166,7 +166,7 @@ impl Atlas {
             let src_end = src_start + bitmap_w as usize;
             let dst_y = y + row;
             let dst_start = (dst_y * self.width + x) as usize;
-            
+
             if src_end <= bitmap.len() && dst_start + bitmap_w as usize <= self.pixels.len() {
                 self.pixels[dst_start..dst_start + bitmap_w as usize]
                     .copy_from_slice(&bitmap[src_start..src_end]);
@@ -191,7 +191,7 @@ impl Atlas {
     fn grow(&mut self) -> bool {
         let new_width = (self.width * 2).min(MAX_ATLAS_SIZE);
         let new_height = (self.height * 2).min(MAX_ATLAS_SIZE);
-        
+
         if new_width == self.width && new_height == self.height {
             return false; // Can't grow anymore
         }
@@ -211,19 +211,19 @@ impl Atlas {
         self.pixels = new_pixels;
         self.version += 1;
         self.packer.reset(new_width, new_height);
-        
+
         // Repack all existing glyphs (their positions don't change since we copy)
         // Just update the packer state to skip used area
         // For simplicity, we rebuild the packer from scratch
         // This is inefficient but correct - glyphs stay in same positions
-        
+
         true
     }
 
     /// Commit atlas to bytespace
     pub fn commit(&mut self) -> bool {
         let size = self.pixels.len();
-        
+
         // Create or resize bytespace
         match bytespace_create(size, 0, 0) {
             Ok(bs_id) => {

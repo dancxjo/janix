@@ -1,9 +1,9 @@
+use super::SCHEDULER;
+use super::types::Scheduler;
 use crate::BootRuntime;
 use abi::errors::Errno;
 use abi::vm::VmRegionInfo;
 use alloc::vec::Vec;
-use super::SCHEDULER;
-use super::types::Scheduler;
 
 pub fn add_user_mapping<R: BootRuntime>(region: VmRegionInfo) -> Result<(), Errno> {
     let rt = crate::runtime::<R>();
@@ -32,7 +32,10 @@ pub fn add_user_mapping<R: BootRuntime>(region: VmRegionInfo) -> Result<(), Errn
     res
 }
 
-pub fn remove_user_mappings<R: BootRuntime>(addr: usize, len: usize) -> Result<Vec<(usize, usize)>, Errno> {
+pub fn remove_user_mappings<R: BootRuntime>(
+    addr: usize,
+    len: usize,
+) -> Result<Vec<(usize, usize)>, Errno> {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();

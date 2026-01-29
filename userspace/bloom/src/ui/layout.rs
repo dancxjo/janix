@@ -1,13 +1,13 @@
-use alloc::vec::Vec;
+use crate::asset::AssetBank;
+use crate::geometry::Rect;
+use crate::font_graph::{self, FontStyle};
+use crate::ui::constants::TITLE_BAR_HEIGHT;
+use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot, UiSnapshot};
+use abi::schema::keys;
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
+use alloc::vec::Vec;
 use stem::thing::ThingId;
-use crate::damage::Rect;
-use crate::ui::constants::TITLE_BAR_HEIGHT;
-use crate::ui::snapshot::{UiSnapshot, UiNodeSnapshot, UiNodeKind};
-use abi::schema::keys;
-use crate::asset::AssetBank;
-use crate::font_graph::{self, FontStyle};
 
 #[derive(Debug, Clone)]
 pub struct LayoutNode {
@@ -74,7 +74,14 @@ impl LayoutSolver {
         }
     }
 
-    pub fn solve(&mut self, snapshot: &UiSnapshot, screen_w: i32, screen_h: i32, assets: &AssetBank, symbols: &impl SymbolResolver) -> LayoutTree {
+    pub fn solve(
+        &mut self,
+        snapshot: &UiSnapshot,
+        screen_w: i32,
+        screen_h: i32,
+        assets: &AssetBank,
+        symbols: &impl SymbolResolver,
+    ) -> LayoutTree {
         crate::trace_span!("ui.layout.solve");
         let root_id = match snapshot.root_id {
             Some(id) => id,
@@ -101,16 +108,18 @@ impl LayoutSolver {
                 snapshot,
                 root_node,
                 &mut root_layout,
-                assets, 
+                assets,
                 symbols,
                 &mut self.measure_cache,
-                None, // prev_layout
+                None,             // prev_layout
                 &BTreeSet::new(), // dirty
                 &BTreeSet::new(), // subtree
             );
         }
 
-        LayoutTree { root: Some(root_layout) }
+        LayoutTree {
+            root: Some(root_layout),
+        }
     }
 
     pub fn solve_partial(
@@ -139,7 +148,7 @@ impl LayoutSolver {
         if dirty_windows.is_empty() {
             if let Some(prev) = prev_layout {
                 if let Some(prev_root) = prev.root.as_ref() {
-                    if prev_root.rect.w == screen_w && prev_root.rect.h == screen_h {
+                    if prev_root.rect.width() == screen_w && prev_root.rect.height() == screen_h {
                         crate::trace_event!("ui.layout.path", "reuse_full");
                         return prev.clone();
                     }
@@ -160,32 +169,34 @@ impl LayoutSolver {
         {
             crate::trace_span!("ui.layout.tree_flow");
             // For the root's direct children (windows/panels), we can rely on dirty_windows set
-            // OR use the generic recursion if consistent. 
-            // The existing optimization for dirty_windows is valid but let's unify it 
+            // OR use the generic recursion if consistent.
+            // The existing optimization for dirty_windows is valid but let's unify it
             // or keep it but use the new recursion for the "dirty" windows.
             // Actually, let's just delegate to layout_children which handles all recursion.
             Self::layout_children(
-                snapshot, 
-                root_node, 
-                &mut root_layout, 
-                assets, 
-                symbols, 
+                snapshot,
+                root_node,
+                &mut root_layout,
+                assets,
+                symbols,
                 &mut self.measure_cache,
                 prev_root,
                 layout_dirty,
-                subtree_dirty
+                subtree_dirty,
             );
         }
 
-        LayoutTree { root: Some(root_layout) }
+        LayoutTree {
+            root: Some(root_layout),
+        }
     }
 
     #[allow(clippy::too_many_arguments)]
     fn layout_children(
-        snapshot: &UiSnapshot, 
-        node: &UiNodeSnapshot, 
-        layout: &mut LayoutNode, 
-        assets: &AssetBank, 
+        snapshot: &UiSnapshot,
+        node: &UiNodeSnapshot,
+        layout: &mut LayoutNode,
+        assets: &AssetBank,
         symbols: &impl SymbolResolver,
         cache: &mut BTreeMap<(String, String, u32), (f32, f32)>,
         prev_node: Option<&LayoutNode>,
@@ -193,7 +204,8 @@ impl LayoutSolver {
         subtree_dirty: &BTreeSet<ThingId>,
     ) {
         let parent_is_window = node.kind == UiNodeKind::Window;
-        let parent_shaded = parent_is_window && Self::get_prop(node, keys::UI_WINDOW_SHADED, symbols) != 0;
+        let parent_shaded =
+            parent_is_window && Self::get_prop(node, keys::UI_WINDOW_SHADED, symbols) != 0;
         let parent_scroll = if node.kind == UiNodeKind::Viewport {
             (
                 Self::get_prop(node, keys::UI_SCROLL_X, symbols) as i32,
@@ -261,7 +273,7 @@ impl LayoutSolver {
         // We calculate new position/size. If they match the old position/size (relative to old parent), we can reuse subtree.
         // Wait, we can't know new pos/size without running the layout logic below.
         // So we run the calc below (cheap math), and THEN decide whether to recurse or reuse.
-        
+
         let parent_is_window = layout.kind == UiNodeKind::Window;
         let parent_is_viewport = layout.kind == UiNodeKind::Viewport;
         let title_bar_h = TITLE_BAR_HEIGHT;
@@ -274,8 +286,8 @@ impl LayoutSolver {
         let mut h = Self::get_prop(child_node, keys::UI_HEIGHT, symbols) as i32;
         let fill_parent = Self::get_prop(child_node, keys::UI_FILL_PARENT, symbols) != 0;
         if fill_parent {
-            w = layout.rect.w;
-            h = layout.rect.h;
+            w = layout.rect.width();
+            h = layout.rect.height();
         }
 
         if is_window {
@@ -344,24 +356,24 @@ impl LayoutSolver {
         if parent_is_window {
             y = y.saturating_add(title_bar_h);
             if fill_parent {
-                h = (layout.rect.h - title_bar_h).max(0);
+                h = (layout.rect.height() - title_bar_h).max(0);
             }
         }
 
         let inset_right = Self::get_prop(child_node, keys::UI_INSET_RIGHT, symbols) as i32;
         let inset_bottom = Self::get_prop(child_node, keys::UI_INSET_BOTTOM, symbols) as i32;
         if inset_right > 0 {
-            x = layout.rect.w - inset_right - w;
+            x = layout.rect.width() - inset_right - w;
         }
         if inset_bottom > 0 {
-            y = layout.rect.h - inset_bottom - h;
+            y = layout.rect.height() - inset_bottom - h;
         }
 
         if center_x {
-            x = (layout.rect.w - w) / 2;
+            x = (layout.rect.width() - w) / 2;
         }
         if center_y {
-            y = (layout.rect.h - h) / 2;
+            y = (layout.rect.height() - h) / 2;
         }
         if parent_is_viewport {
             x = x.saturating_sub(parent_scroll.0);
@@ -369,8 +381,8 @@ impl LayoutSolver {
         }
 
         let z = Self::get_prop(child_node, keys::UI_Z_INDEX, symbols) as i32;
-        let absolute_x = layout.rect.x + x;
-        let absolute_y = layout.rect.y + y;
+        let absolute_x = layout.rect.x() + x;
+        let absolute_y = layout.rect.y() + y;
         let absolute_rect = Rect::new(absolute_x, absolute_y, w, h);
 
         let mut child_layout = LayoutNode {
@@ -384,41 +396,41 @@ impl LayoutSolver {
         // REUSE LOGIC
         // If clean and size matches, reuse subtree!
         let is_clean = !layout_dirty.contains(&child_id) && !subtree_dirty.contains(&child_id);
-        
+
         if is_clean {
             if let Some(prev) = prev_child {
                 // Determine if we can reuse the previous subtree.
                 // We must ensure the *inputs* to the subtree layout are invariant.
                 // The inputs are: child props (invariant since !dirty) and child size (w, h).
-                // If w and h calculated above match prev.rect.w and prev.rect.h, 
+                // If w and h calculated above match prev.rect.w and prev.rect.h,
                 // then the internal layout of the child should be identical.
-                if prev.rect.w == w && prev.rect.h == h {
-                     // Reuse!
-                     crate::trace_counter!("ui.layout.subtree_reuse", 1);
-                     child_layout.children = prev.children.clone();
-                     
-                     // If position changed, we must translate all descendants
-                     if prev.rect.x != absolute_x || prev.rect.y != absolute_y {
-                         let dx = absolute_x - prev.rect.x;
-                         let dy = absolute_y - prev.rect.y;
-                         Self::translate_subtree(&mut child_layout.children, dx, dy);
-                     }
-                     
-                     return child_layout;
+                if prev.rect.width() == w && prev.rect.height() == h {
+                    // Reuse!
+                    crate::trace_counter!("ui.layout.subtree_reuse", 1);
+                    child_layout.children = prev.children.clone();
+
+                    // If position changed, we must translate all descendants
+                    if prev.rect.x() != absolute_x || prev.rect.y() != absolute_y {
+                        let dx = absolute_x - prev.rect.x();
+                        let dy = absolute_y - prev.rect.y();
+                        Self::translate_subtree(&mut child_layout.children, dx, dy);
+                    }
+
+                    return child_layout;
                 }
             }
         }
 
         Self::layout_children(
-            snapshot, 
-            child_node, 
-            &mut child_layout, 
-            assets, 
-            symbols, 
+            snapshot,
+            child_node,
+            &mut child_layout,
+            assets,
+            symbols,
             cache,
             prev_child,
             layout_dirty,
-            subtree_dirty
+            subtree_dirty,
         );
 
         child_layout
@@ -426,19 +438,24 @@ impl LayoutSolver {
 
     fn translate_subtree(nodes: &mut [LayoutNode], dx: i32, dy: i32) {
         for node in nodes.iter_mut() {
-            node.rect.x += dx;
-            node.rect.y += dy;
+            node.rect.origin.x += dx;
+            node.rect.origin.y += dy;
             if !node.children.is_empty() {
                 Self::translate_subtree(&mut node.children, dx, dy);
             }
         }
     }
 
-    fn measure_text(text: &str, font_name: &str, size: f32, assets: &AssetBank) -> Option<(f32, f32)> {
+    fn measure_text(
+        text: &str,
+        font_name: &str,
+        size: f32,
+        assets: &AssetBank,
+    ) -> Option<(f32, f32)> {
         crate::trace_span!("ui.layout.measure_text");
         let now_ms = crate::log_ratelimit::now_ms();
         let _log_enabled = crate::log_ratelimit::log_every(1000, now_ms);
-        
+
         let mut graph_result = None;
 
         font_graph::with_graph(|graph| {
@@ -497,7 +514,9 @@ impl LayoutSolver {
             return None;
         }
 
-        let font = fonts.iter().find(|f| f.name.contains(font_name))
+        let font = fonts
+            .iter()
+            .find(|f| f.name.contains(font_name))
             .or_else(|| fonts.iter().find(|f| f.name.contains("NotoSans-Regular")))
             .unwrap_or(&fonts[0]);
 
@@ -584,11 +603,15 @@ impl LayoutSolver {
             return None;
         }
 
-        let font = fonts.iter().find(|f| f.name.contains(font_name))
+        let font = fonts
+            .iter()
+            .find(|f| f.name.contains(font_name))
             .or_else(|| fonts.iter().find(|f| f.name.contains("NotoSans-Regular")))
             .unwrap_or(&fonts[0]);
 
-        let line_height = font.font.horizontal_line_metrics(size)
+        let line_height = font
+            .font
+            .horizontal_line_metrics(size)
             .map(|m| m.new_line_size)
             .unwrap_or(size * 1.2);
         let colon_width = font.font.metrics(':', size).advance_width;
@@ -630,7 +653,11 @@ impl LayoutSolver {
         0
     }
 
-    fn get_str_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> Option<String> {
+    fn get_str_prop(
+        node: &UiNodeSnapshot,
+        key: &str,
+        symbols: &impl SymbolResolver,
+    ) -> Option<String> {
         if let Some(id) = symbols.resolve(key) {
             return node.strings.get(&id).cloned();
         }
@@ -641,11 +668,11 @@ impl LayoutSolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ui::snapshot::{UiNodeSnapshot, UiNodeKind};
-    use alloc::collections::BTreeMap;
-    use alloc::vec;
+    use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot};
     use abi::schema::keys;
+    use alloc::collections::BTreeMap;
     use alloc::string::ToString;
+    use alloc::vec;
 
     struct MockSymbolResolver {
         map: BTreeMap<String, u32>,
@@ -684,40 +711,46 @@ mod tests {
         let root_id = make_id(1);
         let child_id = make_id(2);
         snapshot.root_id = Some(root_id);
-        
+
         // Root node
         let root_props = BTreeMap::new();
-        snapshot.nodes.insert(root_id, UiNodeSnapshot {
-            id: root_id,
-            kind: UiNodeKind::Root,
-            props: root_props,
-            strings: BTreeMap::new(),
-            children: vec![child_id],
-            svg_content: None,
-            window_icon_content: None,
-        });
+        snapshot.nodes.insert(
+            root_id,
+            UiNodeSnapshot {
+                id: root_id,
+                kind: UiNodeKind::Root,
+                props: root_props,
+                strings: BTreeMap::new(),
+                children: vec![child_id],
+                svg_content: None,
+                window_icon_content: None,
+            },
+        );
 
         // Child node: 100x50, centered
         let mut child_props = BTreeMap::new();
         child_props.insert(3, 100); // UI_WIDTH
-        child_props.insert(4, 50);  // UI_HEIGHT
-        child_props.insert(5, 1);   // UI_CENTER_X
-        child_props.insert(6, 1);   // UI_CENTER_Y
+        child_props.insert(4, 50); // UI_HEIGHT
+        child_props.insert(5, 1); // UI_CENTER_X
+        child_props.insert(6, 1); // UI_CENTER_Y
 
-        snapshot.nodes.insert(child_id, UiNodeSnapshot {
-            id: child_id,
-            kind: UiNodeKind::Window, // or whatever
-            props: child_props,
-            strings: BTreeMap::new(),
-            children: vec![],
-            svg_content: None,
-            window_icon_content: None,
-        });
+        snapshot.nodes.insert(
+            child_id,
+            UiNodeSnapshot {
+                id: child_id,
+                kind: UiNodeKind::Window, // or whatever
+                props: child_props,
+                strings: BTreeMap::new(),
+                children: vec![],
+                svg_content: None,
+                window_icon_content: None,
+            },
+        );
 
         let assets = AssetBank::new();
         let resolver = MockSymbolResolver::new();
 
-        // Screen 1280x720.
+        // Screen 1920x1080.
         // Child 100x50 centered should be at x=350, y=275
         let mut solver = LayoutSolver::new();
         let tree = solver.solve(&snapshot, 800, 600, &assets, &resolver);
@@ -727,9 +760,9 @@ mod tests {
         assert_eq!(root.children.len(), 1);
 
         let child = &root.children[0];
-        assert_eq!(child.rect.x, 350);
-        assert_eq!(child.rect.y, 255);
-        assert_eq!(child.rect.w, 100);
-        assert_eq!(child.rect.h, 90);
+        assert_eq!(child.rect.x(), 350);
+        assert_eq!(child.rect.y(), 255);
+        assert_eq!(child.rect.width(), 100);
+        assert_eq!(child.rect.height(), 90);
     }
 }

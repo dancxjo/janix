@@ -33,20 +33,32 @@ mod tests {
     #[test]
     fn test_sorting_and_coalescing() {
         let input = vec![
-            PhysRange { start: 100, end: 200, kind: PhysRangeKind::Usable },
-            PhysRange { start: 0, end: 100, kind: PhysRangeKind::Usable },
-            PhysRange { start: 200, end: 300, kind: PhysRangeKind::Reserved },
+            PhysRange {
+                start: 100,
+                end: 200,
+                kind: PhysRangeKind::Usable,
+            },
+            PhysRange {
+                start: 0,
+                end: 100,
+                kind: PhysRangeKind::Usable,
+            },
+            PhysRange {
+                start: 200,
+                end: 300,
+                kind: PhysRangeKind::Reserved,
+            },
         ];
         let normalized = normalize(input);
-        
+
         // Sorted: [0, 100) Usable, [100, 200) Usable, [200, 300) Reserved
         // Coalesced Usable: [0, 200) Usable, [200, 300) Reserved
-        
+
         assert_eq!(normalized.len(), 2);
         assert_eq!(normalized[0].start, 0);
         assert_eq!(normalized[0].end, 200);
         assert_eq!(normalized[0].kind, PhysRangeKind::Usable);
-        
+
         assert_eq!(normalized[1].start, 200);
         assert_eq!(normalized[1].end, 300);
         assert_eq!(normalized[1].kind, PhysRangeKind::Reserved);

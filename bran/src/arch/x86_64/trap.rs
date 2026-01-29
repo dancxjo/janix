@@ -50,7 +50,7 @@ mod tests {
 
         assert_eq!(frame.cs, 0x2B, "User CS should be 0x2B");
         assert_eq!(frame.ss, 0x23, "User SS should be 0x23");
-        
+
         // Assert RPL=3 (bits 0 and 1)
         assert_eq!(frame.cs & 3, 3, "User CS must have RPL=3");
         assert_eq!(frame.ss & 3, 3, "User SS must have RPL=3");

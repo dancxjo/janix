@@ -78,9 +78,15 @@ pub fn load_module<R: BootRuntime>(
 
             // Record mapping
             let mut prot = VmProt::USER;
-            if perms.read { prot |= VmProt::READ; }
-            if perms.write { prot |= VmProt::WRITE; }
-            if perms.exec { prot |= VmProt::EXEC; }
+            if perms.read {
+                prot |= VmProt::READ;
+            }
+            if perms.write {
+                prot |= VmProt::WRITE;
+            }
+            if perms.exec {
+                prot |= VmProt::EXEC;
+            }
 
             regions.push(VmRegionInfo {
                 start: seg_start as usize,
@@ -121,7 +127,7 @@ pub fn load_module<R: BootRuntime>(
                 }
 
                 let hhdm_virt = phys + rt.phys_to_virt_offset();
-                
+
                 if !reuse_page {
                     unsafe {
                         core::ptr::write_bytes(hhdm_virt as *mut u8, 0, page_size as usize);
@@ -133,7 +139,7 @@ pub fn load_module<R: BootRuntime>(
                 let file_end = seg_vaddr.saturating_add(ph.filesz);
                 let copy_start = max(virt, file_start);
                 let copy_end = min(page_end, file_end);
-                
+
                 if copy_start < copy_end {
                     let src_off = ph.offset.saturating_add(copy_start - seg_vaddr);
                     let len = (copy_end - copy_start) as usize;
@@ -158,7 +164,7 @@ pub fn load_module<R: BootRuntime>(
                 last_virt_page = virt;
                 last_phys_page = phys;
                 last_perms = page_perms;
-                
+
                 virt += page_size;
             }
         }
@@ -260,7 +266,7 @@ pub fn load_module<R: BootRuntime>(
             arg0: 0,
         },
         stack_info,
-        regions
+        regions,
     ))
 }
 
@@ -427,7 +433,7 @@ mod tests {
         // RX + X -> RX (normalize)
         let res = merge_perms(rx, x).expect("RX + X failed");
         assert!(res.read && !res.write && res.exec);
-        
+
         // R + R -> R
         let res = merge_perms(r, r).expect("R + R failed");
         assert!(res.read && !res.write && !res.exec);

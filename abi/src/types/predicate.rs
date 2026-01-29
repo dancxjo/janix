@@ -1,4 +1,4 @@
-use crate::{Graphable, SymbolId, PredicateId};
+use crate::{Graphable, PredicateId, SymbolId};
 
 #[derive(Graphable, Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(C, packed)]

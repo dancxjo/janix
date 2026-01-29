@@ -187,12 +187,7 @@ pub unsafe fn init() {
     unsafe {
         let base = core::ptr::addr_of_mut!(IDT.entries) as *mut IdtEntry;
         for i in 0..256 {
-            (*base.add(i)).set_handler(
-                handler,
-                crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
-                0,
-                0x8E,
-            );
+            (*base.add(i)).set_handler(handler, crate::arch::x86_64::gdt::KERNEL_CODE_SEL, 0, 0x8E);
         }
 
         // Exceptions
@@ -262,9 +257,15 @@ pub struct InterruptStackFrame {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_irq_handler(vector: u64) {
     let resolved = crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
-    
+
     // Send EOI to Local APIC early to avoid wedging during context switch
     crate::arch::x86_64::ioapic::send_eoi();
+
+    // Legacy PIC EOI if needed (vectors 0x20-0x2F or 0xF0-0xFF depending on remap)
+    // Even if "disabled", spurious IRQ7/15 or misconfigured hardware might fire.
+    if (resolved >= 0x20 && resolved <= 0x2F) || (resolved >= 0xF0) {
+        crate::arch::x86_64::pic::send_eoi(resolved);
+    }
 
     // IRQ_TIMER_VECTOR is our preemption heartbeat
     if resolved == IRQ_TIMER_VECTOR {
@@ -275,7 +276,7 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
 }
 
 #[unsafe(no_mangle)]
-pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) -> ! {
+pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) {
     let cr2: u64;
     unsafe {
         core::arch::asm!("mov {}, cr2", out(reg) cr2);
@@ -288,6 +289,8 @@ pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) -> ! {
             }
             kernel_handle_page_fault(frame.rip, cr2, frame.error_code);
         }
+        // If we handled it (e.g. stack growth), return to user mode
+        return;
     }
 
     panic!(

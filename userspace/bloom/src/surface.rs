@@ -206,14 +206,18 @@ mod tests {
     #[test]
     fn surface_zeroed_is_transparent() {
         let mut buf = vec![0xFFu8; 100 * 100 * 4]; // Start with opaque white
-        let surface = unsafe { 
-            Surface::zeroed(buf.as_mut_ptr(), buf.len(), 100, 100, 400) 
-        };
-        
+        let surface = unsafe { Surface::zeroed(buf.as_mut_ptr(), buf.len(), 100, 100, 400) };
+
         // All pixels should be transparent black (0x00000000)
         for y in 0..100i32 {
             for x in 0..100i32 {
-                assert_eq!(surface.get_px(x, y), 0, "pixel at ({}, {}) not transparent", x, y);
+                assert_eq!(
+                    surface.get_px(x, y),
+                    0,
+                    "pixel at ({}, {}) not transparent",
+                    x,
+                    y
+                );
             }
         }
     }
@@ -221,17 +225,15 @@ mod tests {
     #[test]
     fn surface_clear_resets_to_transparent() {
         let mut buf = vec![0xFFu8; 10 * 10 * 4];
-        let mut surface = unsafe { 
-            Surface::new(buf.as_mut_ptr(), buf.len(), 10, 10, 40) 
-        };
-        
+        let mut surface = unsafe { Surface::new(buf.as_mut_ptr(), buf.len(), 10, 10, 40) };
+
         // Write some pixels
         surface.put_px(0, 0, 0xFFFF0000);
         surface.put_px(5, 5, 0xFF00FF00);
-        
+
         // Clear
         surface.clear();
-        
+
         // All should be transparent
         assert_eq!(surface.get_px(0, 0), 0);
         assert_eq!(surface.get_px(5, 5), 0);
@@ -240,14 +242,11 @@ mod tests {
     #[test]
     fn surface_poisoned_has_poison_pattern() {
         let mut buf = vec![0u8; 10 * 10 * 4];
-        let _surface = unsafe { 
-            Surface::poisoned(buf.as_mut_ptr(), buf.len(), 10, 10, 40) 
-        };
-        
+        let _surface = unsafe { Surface::poisoned(buf.as_mut_ptr(), buf.len(), 10, 10, 40) };
+
         // Memory should be filled with 0xCD bytes
         for byte in &buf {
             assert_eq!(*byte, 0xCD, "byte should be 0xCD poison pattern");
         }
     }
 }
-

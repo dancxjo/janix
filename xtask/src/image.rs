@@ -15,7 +15,7 @@ pub struct ProgramConfig {
 /// Configuration for ISO builds.
 #[derive(Default)]
 pub struct IsoConfig<'a> {
-    /// Display resolution (e.g., "1280x720"). None = 1280x720.
+    /// Display resolution (e.g., "1920x1080"). None = 1920x1080.
     pub resolution: Option<&'a str>,
     /// Explicit ISO output path. None = use timestamped naming.
     pub iso_path: Option<&'a Path>,
@@ -89,6 +89,11 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "blossom",
+            is_init: false,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "ingestd",
             is_init: false,
             features: vec![],
@@ -119,6 +124,16 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             is_init: false,
             features: vec![],
         },
+        ProgramConfig {
+            name: "ata_disk",
+            is_init: false,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "iso_reader",
+            is_init: false,
+            features: vec![],
+        },
     ]
 }
 
@@ -128,7 +143,7 @@ fn generate_limine_config(
     assets: &[PathBuf],
     resolution: Option<&str>,
 ) -> String {
-    let res = resolution.unwrap_or("1280x720");
+    let res = resolution.unwrap_or("1920x1080");
     let mut conf = String::new();
     conf.push_str("timeout: 0\nquiet: yes\nverbose: no\nserial: yes\n\n");
     conf.push_str("/ThingOS\n");

@@ -1,4 +1,3 @@
-
 pub fn run_selftest() {
     crate::kinfo!("ROOT SELFTEST: Starting...");
 

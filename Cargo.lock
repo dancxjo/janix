@@ -12,6 +12,7 @@ checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
 name = "abi"
 version = "0.1.0"
 dependencies = [
+ "abi",
  "abi-macros",
  "blake3",
  "serde",
@@ -349,6 +350,7 @@ dependencies = [
  "embedded-graphics",
  "kernel",
  "limine",
+ "spin",
 ]
 
 [[package]]
@@ -702,6 +704,21 @@ version = "0.1.0"
 dependencies = [
  "abi",
  "stem",
+]
+
+[[package]]
+name = "display_fake"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
+name = "display_proto_tests"
+version = "0.1.0"
+dependencies = [
+ "abi",
 ]
 
 [[package]]
@@ -1296,6 +1313,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
+name = "iso9660"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
+name = "iso_reader"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "iso9660",
+ "stem",
+]
+
+[[package]]
 name = "itertools"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1678,6 +1712,8 @@ name = "photosynthesis"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "blossom",
+ "libm",
  "stem",
 ]
 

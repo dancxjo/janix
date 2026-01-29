@@ -10,6 +10,28 @@ use stem::thing::sys::{bytespace_map, bytespace_unmap, find, prop_get};
 use stem::thing::{ThingId, HandleId};
 
 use crate::surface::Surface;
+use core::fmt;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SnapshotInvalidation {
+    GeometryChanged,
+    ContentChanged,
+    FontChanged,
+    ThemeChanged,
+    Forced,
+}
+
+impl fmt::Display for SnapshotInvalidation {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::GeometryChanged => write!(f, "GeometryChanged"),
+            Self::ContentChanged => write!(f, "ContentChanged"),
+            Self::FontChanged => write!(f, "FontChanged"),
+            Self::ThemeChanged => write!(f, "ThemeChanged"),
+            Self::Forced => write!(f, "Forced"),
+        }
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct WindowSnapshot {

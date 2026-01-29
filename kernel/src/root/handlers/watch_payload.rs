@@ -1,12 +1,12 @@
 //! Watch payload encoding for commit outputs.
 
-use alloc::vec::Vec;
-use abi::root::{WATCH_F_KIND, WATCH_F_PREDICATE, WATCH_F_SUBJECT};
-use abi::watch::{self, DecodeError, ValueEncoding, WatchEvent, WatchOp};
-use abi::wire::{PredicateId, ThingId as WireThingId};
-use abi::symbols::SymbolId;
 use crate::root::graph::ThingId;
 use crate::root::graph::WatchFilter;
+use abi::root::{WATCH_F_KIND, WATCH_F_PREDICATE, WATCH_F_SUBJECT};
+use abi::symbols::SymbolId;
+use abi::watch::{self, DecodeError, ValueEncoding, WatchEvent, WatchOp};
+use abi::wire::{PredicateId, ThingId as WireThingId};
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -121,8 +121,7 @@ pub fn encode_watch_payload(
 
 pub fn track_watch_encode_reject(reason: WatchEncodeRejectReason) {
     use super::batch::{
-        WATCH_ENCODE_REJECT_INVALID_TOTAL,
-        WATCH_ENCODE_REJECT_MISSING_REF_TOTAL,
+        WATCH_ENCODE_REJECT_INVALID_TOTAL, WATCH_ENCODE_REJECT_MISSING_REF_TOTAL,
         WATCH_ENCODE_REJECT_TOO_LARGE_TOTAL,
     };
 
@@ -184,10 +183,7 @@ fn event_matches_filter(
     true
 }
 
-pub fn filter_watch_payload(
-    payload: &[u8],
-    filter: &WatchFilter,
-) -> Result<Vec<u8>, DecodeError> {
+pub fn filter_watch_payload(payload: &[u8], filter: &WatchFilter) -> Result<Vec<u8>, DecodeError> {
     let mut cursor = 0usize;
     let mut out = Vec::new();
     let mut coalesce: Vec<CoalesceEntry> = Vec::new();

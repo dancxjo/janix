@@ -5,9 +5,9 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
-use crate::wire::ThingId;
 use crate::ids::HandleId;
+use crate::wire::ThingId;
+use alloc::vec::Vec;
 
 /// Atlas pixel format
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +52,7 @@ pub struct FaceMetrics {
 pub struct EnsureGlyphs {
     pub face_id: ThingId,
     pub px_size: u16,
-    pub glyph_ids: Vec<u32>,  // Codepoints
+    pub glyph_ids: Vec<u32>, // Codepoints
 }
 
 /// Single glyph placement in atlas
@@ -60,25 +60,27 @@ pub struct EnsureGlyphs {
 #[repr(C)]
 pub struct GlyphPlacement {
     pub glyph_id: u32,
-    pub x: u16,           // Atlas rect position
+    pub x: u16, // Atlas rect position
     pub y: u16,
-    pub w: u16,           // Atlas rect size
+    pub w: u16, // Atlas rect size
     pub h: u16,
-    pub bearing_x: i16,   // X offset from origin
-    pub bearing_y: i16,   // Y offset from baseline
-    pub advance: i16,     // Horizontal advance
+    pub bearing_x: i16, // X offset from origin
+    pub bearing_y: i16, // Y offset from baseline
+    pub advance: i16,   // Horizontal advance
 }
 
 /// Response to EnsureGlyphs - placements + atlas info
 #[derive(Debug, Clone)]
 pub struct EnsureGlyphsResp {
+    pub req_face_id: ThingId,
+    pub req_px_size: u16,
     pub atlas_bytespace: ThingId,
     pub atlas_width: u32,
     pub atlas_height: u32,
     pub atlas_format: AtlasFormat,
-    pub atlas_version: u64,        // Monotonic per (face, size)
+    pub atlas_version: u64, // Monotonic per (face, size)
     pub placements: Vec<GlyphPlacement>,
-    pub missing: Vec<u32>,         // Glyphs that couldn't be produced
+    pub missing: Vec<u32>, // Glyphs that couldn't be produced
 }
 
 /// Font protocol errors
@@ -117,7 +119,9 @@ pub enum FontResponseTag {
 
 impl GetFaceMetrics {
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
-        if buf.len() < 1 + 8 + 2 { return None; }
+        if buf.len() < 1 + 8 + 2 {
+            return None;
+        }
         buf[0] = FontRequestTag::GetFaceMetrics as u8;
         buf[1..9].copy_from_slice(&self.face_id.to_u64_lossy().to_le_bytes());
         buf[9..11].copy_from_slice(&self.px_size.to_le_bytes());
@@ -125,7 +129,9 @@ impl GetFaceMetrics {
     }
 
     pub fn decode(buf: &[u8]) -> Option<Self> {
-        if buf.len() < 10 { return None; }
+        if buf.len() < 10 {
+            return None;
+        }
         let face_id = ThingId::from_u64(u64::from_le_bytes(buf[0..8].try_into().ok()?));
         let px_size = u16::from_le_bytes(buf[8..10].try_into().ok()?);
         Some(Self { face_id, px_size })
@@ -134,7 +140,9 @@ impl GetFaceMetrics {
 
 impl FaceMetrics {
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
-        if buf.len() < 1 + 8 { return None; }
+        if buf.len() < 1 + 8 {
+            return None;
+        }
         buf[0] = FontResponseTag::FaceMetrics as u8;
         buf[1..3].copy_from_slice(&self.ascent.to_le_bytes());
         buf[3..5].copy_from_slice(&self.descent.to_le_bytes());
@@ -144,7 +152,9 @@ impl FaceMetrics {
     }
 
     pub fn decode(buf: &[u8]) -> Option<Self> {
-        if buf.len() < 8 { return None; }
+        if buf.len() < 8 {
+            return None;
+        }
         Some(Self {
             ascent: i16::from_le_bytes(buf[0..2].try_into().ok()?),
             descent: i16::from_le_bytes(buf[2..4].try_into().ok()?),
@@ -160,43 +170,55 @@ impl EnsureGlyphs {
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
         let count = self.glyph_ids.len();
         let needed = 1 + 8 + 2 + 4 + count * 4;
-        if buf.len() < needed { return None; }
-        
+        if buf.len() < needed {
+            return None;
+        }
+
         buf[0] = FontRequestTag::EnsureGlyphs as u8;
         buf[1..9].copy_from_slice(&self.face_id.to_u64_lossy().to_le_bytes());
         buf[9..11].copy_from_slice(&self.px_size.to_le_bytes());
         buf[11..15].copy_from_slice(&(count as u32).to_le_bytes());
-        
+
         let mut offset = 15;
         for gid in &self.glyph_ids {
-            buf[offset..offset+4].copy_from_slice(&gid.to_le_bytes());
+            buf[offset..offset + 4].copy_from_slice(&gid.to_le_bytes());
             offset += 4;
         }
         Some(offset)
     }
 
     pub fn decode(buf: &[u8]) -> Option<Self> {
-        if buf.len() < 14 { return None; }
+        if buf.len() < 14 {
+            return None;
+        }
         let face_id = ThingId::from_u64(u64::from_le_bytes(buf[0..8].try_into().ok()?));
         let px_size = u16::from_le_bytes(buf[8..10].try_into().ok()?);
         let count = u32::from_le_bytes(buf[10..14].try_into().ok()?) as usize;
-        
-        if buf.len() < 14 + count * 4 { return None; }
+
+        if buf.len() < 14 + count * 4 {
+            return None;
+        }
         let mut glyph_ids = Vec::with_capacity(count);
         let mut offset = 14;
         for _ in 0..count {
-            glyph_ids.push(u32::from_le_bytes(buf[offset..offset+4].try_into().ok()?));
+            glyph_ids.push(u32::from_le_bytes(buf[offset..offset + 4].try_into().ok()?));
             offset += 4;
         }
-        Some(Self { face_id, px_size, glyph_ids })
+        Some(Self {
+            face_id,
+            px_size,
+            glyph_ids,
+        })
     }
 }
 
 impl GlyphPlacement {
-    pub const WIRE_SIZE: usize = 4 + 2*4 + 2*3; // glyph_id + x,y,w,h + bearing_x,bearing_y,advance
-    
+    pub const WIRE_SIZE: usize = 4 + 2 * 4 + 2 * 3; // glyph_id + x,y,w,h + bearing_x,bearing_y,advance
+
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
-        if buf.len() < Self::WIRE_SIZE { return None; }
+        if buf.len() < Self::WIRE_SIZE {
+            return None;
+        }
         buf[0..4].copy_from_slice(&self.glyph_id.to_le_bytes());
         buf[4..6].copy_from_slice(&self.x.to_le_bytes());
         buf[6..8].copy_from_slice(&self.y.to_le_bytes());
@@ -209,7 +231,9 @@ impl GlyphPlacement {
     }
 
     pub fn decode(buf: &[u8]) -> Option<Self> {
-        if buf.len() < Self::WIRE_SIZE { return None; }
+        if buf.len() < Self::WIRE_SIZE {
+            return None;
+        }
         Some(Self {
             glyph_id: u32::from_le_bytes(buf[0..4].try_into().ok()?),
             x: u16::from_le_bytes(buf[4..6].try_into().ok()?),
@@ -225,67 +249,82 @@ impl GlyphPlacement {
 
 impl EnsureGlyphsResp {
     /// Encode EnsureGlyphsResp
-    /// Format: tag(1) + atlas_bs(8) + w(4) + h(4) + fmt(1) + ver(8) + 
-    ///         placements_count(4) + placements(n*18) + missing_count(4) + missing(m*4)
+    /// Format: tag(1) + req_face(8) + req_px(2) + atlas_bs(8) + w(4) + h(4) + fmt(1) + ver(8) + ...
     pub fn encode(&self, buf: &mut [u8]) -> Option<usize> {
         let place_count = self.placements.len();
         let miss_count = self.missing.len();
-        let needed = 1 + 8 + 4 + 4 + 1 + 8 + 4 + place_count * 18 + 4 + miss_count * 4;
-        if buf.len() < needed { return None; }
-        
+        let needed = 1 + 8 + 2 + 8 + 4 + 4 + 1 + 8 + 4 + place_count * 18 + 4 + miss_count * 4;
+        if buf.len() < needed {
+            return None;
+        }
+
         buf[0] = FontResponseTag::EnsureGlyphsResp as u8;
-        buf[1..9].copy_from_slice(&self.atlas_bytespace.to_u64_lossy().to_le_bytes());
-        buf[9..13].copy_from_slice(&self.atlas_width.to_le_bytes());
-        buf[13..17].copy_from_slice(&self.atlas_height.to_le_bytes());
-        buf[17] = self.atlas_format as u8;
-        buf[18..26].copy_from_slice(&self.atlas_version.to_le_bytes());
-        buf[26..30].copy_from_slice(&(place_count as u32).to_le_bytes());
-        
-        let mut offset = 30;
+        buf[1..9].copy_from_slice(&self.req_face_id.to_u64_lossy().to_le_bytes());
+        buf[9..11].copy_from_slice(&self.req_px_size.to_le_bytes());
+        buf[11..19].copy_from_slice(&self.atlas_bytespace.to_u64_lossy().to_le_bytes());
+        buf[19..23].copy_from_slice(&self.atlas_width.to_le_bytes());
+        buf[23..27].copy_from_slice(&self.atlas_height.to_le_bytes());
+        buf[27] = self.atlas_format as u8;
+        buf[28..36].copy_from_slice(&self.atlas_version.to_le_bytes());
+        buf[36..40].copy_from_slice(&(place_count as u32).to_le_bytes());
+
+        let mut offset = 40;
         for p in &self.placements {
             p.encode(&mut buf[offset..])?;
             offset += 18;
         }
-        
-        buf[offset..offset+4].copy_from_slice(&(miss_count as u32).to_le_bytes());
+
+        buf[offset..offset + 4].copy_from_slice(&(miss_count as u32).to_le_bytes());
         offset += 4;
         for m in &self.missing {
-            buf[offset..offset+4].copy_from_slice(&m.to_le_bytes());
+            buf[offset..offset + 4].copy_from_slice(&m.to_le_bytes());
             offset += 4;
         }
-        
+
         Some(offset)
     }
 
     pub fn decode(buf: &[u8]) -> Option<Self> {
-        if buf.len() < 30 { return None; }
-        let atlas_bytespace = ThingId::from_u64(u64::from_le_bytes(buf[0..8].try_into().ok()?));
-        let atlas_width = u32::from_le_bytes(buf[8..12].try_into().ok()?);
-        let atlas_height = u32::from_le_bytes(buf[12..16].try_into().ok()?);
-        let atlas_format = AtlasFormat::from(buf[16]);
-        let atlas_version = u64::from_le_bytes(buf[17..25].try_into().ok()?);
-        let place_count = u32::from_le_bytes(buf[25..29].try_into().ok()?) as usize;
-        
-        let mut offset = 29;
+        if buf.len() < 40 {
+            return None;
+        }
+        let req_face_id = ThingId::from_u64(u64::from_le_bytes(buf[0..8].try_into().ok()?));
+        let req_px_size = u16::from_le_bytes(buf[8..10].try_into().ok()?);
+        let atlas_bytespace = ThingId::from_u64(u64::from_le_bytes(buf[10..18].try_into().ok()?));
+        let atlas_width = u32::from_le_bytes(buf[18..22].try_into().ok()?);
+        let atlas_height = u32::from_le_bytes(buf[22..26].try_into().ok()?);
+        let atlas_format = AtlasFormat::from(buf[26]);
+        let atlas_version = u64::from_le_bytes(buf[27..35].try_into().ok()?);
+        let place_count = u32::from_le_bytes(buf[35..39].try_into().ok()?) as usize;
+
+        let mut offset = 39;
         let mut placements = Vec::with_capacity(place_count);
         for _ in 0..place_count {
-            if offset + 18 > buf.len() { return None; }
+            if offset + 18 > buf.len() {
+                return None;
+            }
             placements.push(GlyphPlacement::decode(&buf[offset..])?);
             offset += 18;
         }
-        
-        if offset + 4 > buf.len() { return None; }
-        let miss_count = u32::from_le_bytes(buf[offset..offset+4].try_into().ok()?) as usize;
+
+        if offset + 4 > buf.len() {
+            return None;
+        }
+        let miss_count = u32::from_le_bytes(buf[offset..offset + 4].try_into().ok()?) as usize;
         offset += 4;
-        
+
         let mut missing = Vec::with_capacity(miss_count);
         for _ in 0..miss_count {
-            if offset + 4 > buf.len() { return None; }
-            missing.push(u32::from_le_bytes(buf[offset..offset+4].try_into().ok()?));
+            if offset + 4 > buf.len() {
+                return None;
+            }
+            missing.push(u32::from_le_bytes(buf[offset..offset + 4].try_into().ok()?));
             offset += 4;
         }
-        
+
         Some(Self {
+            req_face_id,
+            req_px_size,
             atlas_bytespace,
             atlas_width,
             atlas_height,
@@ -299,21 +338,27 @@ impl EnsureGlyphsResp {
 
 /// Encode a Ping request
 pub fn encode_ping(buf: &mut [u8]) -> Option<usize> {
-    if buf.is_empty() { return None; }
+    if buf.is_empty() {
+        return None;
+    }
     buf[0] = FontRequestTag::Ping as u8;
     Some(1)
 }
 
 /// Encode a Pong response
 pub fn encode_pong(buf: &mut [u8]) -> Option<usize> {
-    if buf.is_empty() { return None; }
+    if buf.is_empty() {
+        return None;
+    }
     buf[0] = FontResponseTag::Pong as u8;
     Some(1)
 }
 
 /// Encode an error response
 pub fn encode_error(err: FontError, buf: &mut [u8]) -> Option<usize> {
-    if buf.len() < 2 { return None; }
+    if buf.len() < 2 {
+        return None;
+    }
     buf[0] = FontResponseTag::Error as u8;
     buf[1] = err as u8;
     Some(2)
@@ -321,7 +366,9 @@ pub fn encode_error(err: FontError, buf: &mut [u8]) -> Option<usize> {
 
 /// Decode request tag from buffer
 pub fn decode_request_tag(buf: &[u8]) -> Option<FontRequestTag> {
-    if buf.is_empty() { return None; }
+    if buf.is_empty() {
+        return None;
+    }
     match buf[0] {
         0 => Some(FontRequestTag::Ping),
         1 => Some(FontRequestTag::GetFaceMetrics),
@@ -332,7 +379,9 @@ pub fn decode_request_tag(buf: &[u8]) -> Option<FontRequestTag> {
 
 /// Decode response tag from buffer
 pub fn decode_response_tag(buf: &[u8]) -> Option<FontResponseTag> {
-    if buf.is_empty() { return None; }
+    if buf.is_empty() {
+        return None;
+    }
     match buf[0] {
         0 => Some(FontResponseTag::Pong),
         1 => Some(FontResponseTag::FaceMetrics),

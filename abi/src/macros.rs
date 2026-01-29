@@ -1,7 +1,7 @@
 //! Declarative macros for creating Things.
 
 /// Create a Thing<T> from a struct literal.
-/// 
+///
 /// Example:
 /// ```ignore
 /// let w = thing!(Window { x: 10, y: 20, ... });
@@ -14,7 +14,7 @@ macro_rules! thing {
 }
 
 /// Create a Thing<Edge>.
-/// 
+///
 /// Example:
 /// ```ignore
 /// let e = edge!(from, pred, to, flags);

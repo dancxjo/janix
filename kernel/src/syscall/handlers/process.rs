@@ -1,9 +1,9 @@
 //! Process lifecycle and task management syscalls
 
-use crate::syscall::validate::validate_user_range;
 use super::copyin;
-use abi::errors::{Errno, SysResult};
+use crate::syscall::validate::validate_user_range;
 use crate::task::StartupArg;
+use abi::errors::{Errno, SysResult};
 
 pub fn sys_exit(code: i32) -> SysResult<usize> {
     crate::kprintln!("SYSCALL EXIT: code={}", code);
@@ -108,7 +108,7 @@ pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
 pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
     loop {
         let status_opt = unsafe { crate::task::scheduler::task_status_current(tid as u64) };
-        
+
         match status_opt {
             Some((state, exit_code)) => {
                 if state == crate::task::TaskState::Dead {

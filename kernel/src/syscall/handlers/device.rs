@@ -1,10 +1,11 @@
 //! Device capability syscalls
 
-use crate::syscall::validate::validate_user_range;
 use super::{copyin, copyout};
+use crate::syscall::validate::validate_user_range;
 use abi::device::{
-    DeviceCall, DeviceKind, PciEnableMsiRequest, PciEnableMsiResponse, PCI_IRQ_MODE_MSI,
-    PCI_IRQ_MODE_MSIX, PCI_OP_ENABLE_MSI, DEVICE_IRQ_SUBSCRIBE_DEVICE, DEVICE_IRQ_SUBSCRIBE_VECTOR,
+    DEVICE_IRQ_SUBSCRIBE_DEVICE, DEVICE_IRQ_SUBSCRIBE_VECTOR, DeviceCall, DeviceKind,
+    PCI_IRQ_MODE_MSI, PCI_IRQ_MODE_MSIX, PCI_OP_ENABLE_MSI, PciEnableMsiRequest,
+    PciEnableMsiResponse,
 };
 use abi::errors::{Errno, SysResult};
 
@@ -25,21 +26,26 @@ pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
 
 pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
     use crate::device_registry::REGISTRY;
-    
+
     let task_id = unsafe { crate::task::scheduler::current_tid_current() };
-    
+
     let mut reg = REGISTRY.lock();
-    
+
     if let Some(device_idx) = reg.find_by_graph_id(graph_id as u64) {
         if let Some(claim_handle) = reg.claim(device_idx, task_id) {
-            crate::kinfo!("DEVICE: task {} claimed device {} (handle {})", task_id, graph_id, claim_handle);
+            crate::kinfo!(
+                "DEVICE: task {} claimed device {} (handle {})",
+                task_id,
+                graph_id,
+                claim_handle
+            );
             return Ok(claim_handle);
         } else {
             crate::kinfo!("DEVICE: device {} already claimed", graph_id);
             return Err(Errno::EBUSY);
         }
     }
-    
+
     crate::kinfo!("DEVICE: device {} not found in registry", graph_id);
     Err(Errno::ENODEV)
 }
@@ -47,53 +53,64 @@ pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
 /// Map a device MMIO BAR into the task's address space
 pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<usize> {
     use crate::device_registry::REGISTRY;
-    
+
     if bar_index > 5 {
         return Err(Errno::EINVAL);
     }
-    
+
     let task_id = unsafe { crate::task::scheduler::current_tid_current() };
     let mut reg = REGISTRY.lock();
-    
+
     if !reg.verify_claim(claim_handle, task_id) {
-        crate::kinfo!("DEVICE: map_mmio failed - claim {} not owned by task {}", claim_handle, task_id);
+        crate::kinfo!(
+            "DEVICE: map_mmio failed - claim {} not owned by task {}",
+            claim_handle,
+            task_id
+        );
         return Err(Errno::EPERM);
     }
-    
-    let (phys_addr, size) = reg.get_bar_info(claim_handle, bar_index)
+
+    let (phys_addr, size) = reg
+        .get_bar_info(claim_handle, bar_index)
         .ok_or(Errno::ENODEV)?;
-    
+
     if phys_addr == 0 || size == 0 {
         crate::kinfo!("DEVICE: BAR{} not present", bar_index);
         return Err(Errno::ENODEV);
     }
-    
+
     let page_count = (size + 4095) / 4096;
     let user_va = crate::memory::alloc_user_va((page_count * 4096) as usize);
-    
+
     // Map pages
     for i in 0..page_count {
         let phys = phys_addr as u64 + (i * 4096) as u64;
         let virt = user_va + (i * 4096) as u64;
         unsafe {
             crate::memory::map_user_page_with_perms(
-                virt, 
-                phys, 
+                virt,
+                phys,
                 crate::MapPerms {
                     user: true,
                     read: true,
                     write: true,
                     exec: false,
-                }
-            ).map_err(|_| Errno::ENOMEM)?;
+                },
+            )
+            .map_err(|_| Errno::ENOMEM)?;
         }
     }
-    
+
     reg.set_bar_mapping(claim_handle, bar_index, user_va);
-    
-    crate::kinfo!("DEVICE: Mapped BAR{} phys=0x{:x} size=0x{:x} -> virt=0x{:x}", 
-        bar_index, phys_addr, size, user_va);
-    
+
+    crate::kinfo!(
+        "DEVICE: Mapped BAR{} phys=0x{:x} size=0x{:x} -> virt=0x{:x}",
+        bar_index,
+        phys_addr,
+        size,
+        user_va
+    );
+
     Ok(user_va as usize)
 }
 
@@ -118,7 +135,8 @@ pub fn sys_device_irq_subscribe(arg0: usize, arg1: usize, mode: usize) -> SysRes
                 if !reg.verify_claim(claim_handle, task_id) {
                     return Err(Errno::EPERM);
                 }
-                reg.get_irq_vector(claim_handle, irq_index).ok_or(Errno::ENODEV)?
+                reg.get_irq_vector(claim_handle, irq_index)
+                    .ok_or(Errno::ENODEV)?
             };
             crate::irq::subscribe(vector).map_err(|_| Errno::EBUSY)?;
             crate::kinfo!(
@@ -157,7 +175,8 @@ pub fn sys_device_irq_wait(arg0: usize, arg1: usize, mode: usize) -> SysResult<u
                 if !reg.verify_claim(claim_handle, task_id) {
                     return Err(Errno::EPERM);
                 }
-                reg.get_irq_vector(claim_handle, irq_index).ok_or(Errno::ENODEV)?
+                reg.get_irq_vector(claim_handle, irq_index)
+                    .ok_or(Errno::ENODEV)?
             };
             vector
         }
@@ -192,7 +211,9 @@ fn sys_pci_call(call: &DeviceCall) -> SysResult<usize> {
                     core::mem::size_of::<PciEnableMsiRequest>(),
                 )
             };
-            unsafe { copyin(in_slice, call.in_ptr as usize)?; }
+            unsafe {
+                copyin(in_slice, call.in_ptr as usize)?;
+            }
 
             let res = crate::irq::msi::enable_for_claim(
                 req.claim_handle as usize,
@@ -216,7 +237,9 @@ fn sys_pci_call(call: &DeviceCall) -> SysResult<usize> {
                     core::mem::size_of::<PciEnableMsiResponse>(),
                 )
             };
-            unsafe { copyout(call.out_ptr as usize, out_slice)?; }
+            unsafe {
+                copyout(call.out_ptr as usize, out_slice)?;
+            }
             Ok(0)
         }
         _ => Err(Errno::NotSupported),
@@ -227,22 +250,22 @@ fn sys_pci_call(call: &DeviceCall) -> SysResult<usize> {
 pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult<usize> {
     use crate::device_registry::REGISTRY;
     use crate::memory::FRAME_ALLOCATOR;
-    
+
     if page_count == 0 || page_count > 256 {
         return Err(Errno::EINVAL);
     }
-    
+
     let task_id = unsafe { crate::task::scheduler::current_tid_current() };
-    
+
     {
         let reg = REGISTRY.lock();
         if !reg.verify_claim(claim_handle, task_id) {
             return Err(Errno::EPERM);
         }
     }
-    
+
     let mut phys_base = 0u64;
-    
+
     FRAME_ALLOCATOR.with_lock(|alloc| {
         if let Some((phys,)) = alloc.alloc() {
             phys_base = phys;
@@ -251,33 +274,33 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
             }
         }
     });
-    
+
     if phys_base == 0 {
         crate::kinfo!("DEVICE: DMA alloc failed - no memory");
         return Err(Errno::ENOMEM);
     }
-    
-    let hhdm_offset = crate::boot_info::get()
-        .map(|i| i.hhdm_offset)
-        .unwrap_or(0);
+
+    let hhdm_offset = crate::boot_info::get().map(|i| i.hhdm_offset).unwrap_or(0);
     let virt_addr = phys_base + hhdm_offset;
-    
+
     {
         let mut reg = REGISTRY.lock();
         reg.alloc_dma_slot(claim_handle, phys_base, virt_addr, page_count);
     }
-    
-    crate::kinfo!("DEVICE: DMA alloc {} pages phys=0x{:x} virt=0x{:x}", 
-        page_count, phys_base, virt_addr);
-    
+
+    crate::kinfo!(
+        "DEVICE: DMA alloc {} pages phys=0x{:x} virt=0x{:x}",
+        page_count,
+        phys_base,
+        virt_addr
+    );
+
     Ok(virt_addr as usize)
 }
 
 /// Get physical address of a DMA allocation
 pub fn sys_device_dma_phys(virt_addr: usize) -> SysResult<usize> {
-    let hhdm_offset = crate::boot_info::get()
-        .map(|i| i.hhdm_offset)
-        .unwrap_or(0);
+    let hhdm_offset = crate::boot_info::get().map(|i| i.hhdm_offset).unwrap_or(0);
     if (virt_addr as u64) < hhdm_offset {
         return Err(Errno::EINVAL);
     }

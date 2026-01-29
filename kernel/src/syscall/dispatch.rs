@@ -28,7 +28,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_VM_ADVISE => handlers::sys_vm_advise(args[0]),
         SYS_VM_QUERY => handlers::sys_vm_query(args[0], args[1]),
         SYS_TASK_WAIT => handlers::sys_task_wait(args[0]),
-        
+
         SYS_PORT_CREATE => handlers::sys_port_create(args[0]),
         SYS_PORT_SEND => handlers::sys_port_send(args[0], args[1], args[2]),
         SYS_PORT_RECV => handlers::sys_port_recv(args[0], args[1], args[2]),
@@ -36,6 +36,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_PORT_WAIT => handlers::sys_port_wait(args[0], args[1]),
 
         SYS_TRACE_READ => handlers::sys_trace_read(args[0], args[1]),
+        SYS_CONSOLE_DISABLE => handlers::sys_console_disable(),
 
         SYS_STREAM_LISTEN => handlers::stream::sys_stream_listen(args[0], args[1]),
         SYS_STREAM_OPEN => handlers::stream::sys_stream_open(args[0]),
@@ -67,6 +68,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ROOT_STREAM_POLL => handlers::sys_root_stream_poll(args[0], args[1], args[2]),
         SYS_ROOT_PROP_SET => handlers::sys_root_prop_set(args[0], args[1], args[2]),
         SYS_ROOT_DESCRIBE_THING => handlers::sys_root_describe_thing(args[0], args[1], args[2]),
+        SYS_ROOT_DESCRIBE_SYMBOL => handlers::sys_root_describe_symbol(args[0], args[1], args[2]),
         SYS_ROOT_DESCRIBE_EDGE => {
             handlers::sys_root_describe_edge(args[0], args[1], args[2], args[3], args[4])
         }
@@ -81,12 +83,12 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ROOT_DUMP_GRAPH => handlers::sys_root_dump_graph(args[0]),
 
         SYS_ROOT_WATCH_OPEN => handlers::sys_root_watch_open(args[0]),
-        SYS_ROOT_WATCH_NEXT => {
-            handlers::sys_root_watch_next(args[0], args[1], args[2], args[3])
-        }
+        SYS_ROOT_WATCH_NEXT => handlers::sys_root_watch_next(args[0], args[1], args[2], args[3]),
         SYS_ROOT_WATCH_CLOSE => handlers::sys_root_watch_close(args[0]),
         SYS_ROOT_APPLY_BATCH => handlers::sys_root_apply_batch(args[0], args[1]),
-        SYS_ROOT_PROPS_GET_MANY => handlers::sys_root_props_get_many(args[0], args[1], args[2], args[3]),
+        SYS_ROOT_PROPS_GET_MANY => {
+            handlers::sys_root_props_get_many(args[0], args[1], args[2], args[3])
+        }
 
         _ => {
             crate::kprintln!("SYSCALL: Unknown syscall #{}", syscall_id);

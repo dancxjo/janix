@@ -3,14 +3,20 @@
 
 extern crate alloc;
 
+use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
+use abi::types::{WatchMode, WatchSpec};
+use abi::watch;
 use alloc::string::String;
 use alloc::vec::Vec;
+use stem::petals::{
+    AlignItems, Color, Flex, FontKey, Scene, Scroll, Separator, Styled, Text, Window,
+};
 use stem::thing::ThingId;
 use stem::thing::sys::{
-    bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, link,
-    prop_get, prop_set,
+    bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, intern,
+    link, prop_get, prop_set,
 };
 
 fn set_string_prop(id: ThingId, key: &str, value: &str) {
@@ -45,33 +51,30 @@ fn read_bytespace_string(id: ThingId) -> Option<String> {
     Some(text.into())
 }
 
-fn select_font_stack() -> Vec<String> {
-    let mut names = Vec::new();
-    let mut families = [ThingId::default(); 128];
-    let count = find(kinds::FONT_FAMILY, &mut families).unwrap_or(0);
+#[derive(Clone, Debug)]
+struct FontEntry {
+    id: ThingId,
+    name: String,
+}
+
+fn list_fonts(kind_id: u32) -> Vec<FontEntry> {
+    let mut entries = Vec::new();
+    let mut families = [ThingId::default(); 256];
+    let count = find(kind_id, &mut families).unwrap_or(0);
     for id in families.iter().take(count) {
         if let Some(name) = read_string_prop(*id, keys::FONT_NAME) {
-            names.push(name);
+            entries.push(FontEntry { id: *id, name });
+        } else {
+            // Fallback for nodes without names yet, so counting still works
+            entries.push(FontEntry {
+                id: *id,
+                name: alloc::format!("Unnamed ({:?})", id),
+            });
         }
     }
-
-    let mut stack = Vec::new();
-    let preferred = ["Noto Sans", "Noto Sans Symbols", "Noto Sans Symbols 2"];
-    for name in preferred {
-        if names.iter().any(|n| n == name) {
-            stack.push(name.into());
-        }
-    }
-    if stack.is_empty() && !names.is_empty() {
-        names.sort();
-        for name in names.into_iter().take(3) {
-            stack.push(name);
-        }
-    }
-    if stack.is_empty() {
-        stack.push("Noto Sans".into());
-    }
-    stack
+    entries.sort_by(|a, b| a.name.cmp(&b.name));
+    entries.dedup_by(|a, b| a.name == b.name);
+    entries
 }
 
 #[stem::main]
@@ -98,9 +101,8 @@ fn main() -> ! {
         }
     }
 
-    let stack = select_font_stack();
-    let stack_label = stack.join(" -> ");
-    let style_label = "Weight 400 / Width 5 / Slope 0";
+    const SAMPLE: &str = "Sphinx of black quartz, judge my vow. 0123456789";
+    const PREFIX: &str = "Font";
 
     let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
     link(win, rels::CHILD_OF, ui_root).expect("link window");
@@ -108,52 +110,126 @@ fn main() -> ! {
     prop_set(win, keys::UI_BG_COLOR, 0xFFF5F5F0).ok();
     prop_set(win, keys::UI_WIDTH, 900).ok();
     prop_set(win, keys::UI_HEIGHT, 520).ok();
-    // Position at top-left with margin (to avoid overlap with clock at bottom-right)
     prop_set(win, keys::UI_X, 50).ok();
     prop_set(win, keys::UI_Y, 50).ok();
-    set_string_prop(win, keys::UI_TITLE, "Font Explorer");
 
-    let viewport = create_node(kinds::UI_VIEWPORT).expect("create UI_VIEWPORT");
-    link(viewport, rels::CHILD_OF, win).expect("link viewport");
-    link(win, rels::HAS_CHILD, viewport).expect("link window has_child");
-    prop_set(viewport, keys::UI_WIDTH, 900).ok();
-    prop_set(viewport, keys::UI_HEIGHT, 520).ok();
-    prop_set(viewport, keys::UI_CLIP, 1).ok();
+    let font_kind = intern(kinds::FONT_FAMILY).unwrap_or(0);
+    let mut fonts: Vec<FontEntry> = Vec::new();
+    let mut last_font_count = usize::MAX;
+    let mut last_discovery = 0u64;
+    let mut last_tick = stem::monotonic_ns();
+    let mut font_watch = None;
 
-    let stack_text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
-    link(stack_text, rels::CHILD_OF, viewport).expect("link stack text");
-    link(viewport, rels::HAS_CHILD, stack_text).expect("link viewport has_child");
-    prop_set(stack_text, keys::UI_X, 18).ok();
-    prop_set(stack_text, keys::UI_Y, 18).ok();
-    prop_set(stack_text, keys::UI_FONT_SIZE, 20).ok();
-    prop_set(stack_text, keys::UI_FG_COLOR, 0xFF000000).ok();
-    set_string_prop(stack_text, keys::UI_TEXT, &stack_label);
-    set_string_prop(stack_text, keys::UI_FONT_STACK, &stack_label);
-
-    let style_text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
-    link(style_text, rels::CHILD_OF, viewport).expect("link style text");
-    link(viewport, rels::HAS_CHILD, style_text).expect("link viewport has_child");
-    prop_set(style_text, keys::UI_X, 18).ok();
-    prop_set(style_text, keys::UI_Y, 50).ok();
-    prop_set(style_text, keys::UI_FONT_SIZE, 14).ok();
-    prop_set(style_text, keys::UI_FG_COLOR, 0xFF000000).ok();
-    set_string_prop(style_text, keys::UI_TEXT, style_label);
-    set_string_prop(style_text, keys::UI_FONT_STACK, &stack_label);
-
-    let demo_text = "Hello World\nα β γ ∑ ∞\n⚙︎ ☺︎ 🛠";
-
-    let main_text = create_node(kinds::UI_TEXT_RUN).expect("create UI_TEXT_RUN");
-    link(main_text, rels::CHILD_OF, viewport).expect("link main text");
-    link(viewport, rels::HAS_CHILD, main_text).expect("link viewport has_child");
-    prop_set(main_text, keys::UI_X, 24).ok();
-    prop_set(main_text, keys::UI_Y, 120).ok();
-    prop_set(main_text, keys::UI_FONT_SIZE, 40).ok();
-    prop_set(main_text, keys::UI_FG_COLOR, 0xFF000000).ok();
-    prop_set(main_text, keys::UI_FONT_DEBUG, 1).ok();
-    set_string_prop(main_text, keys::UI_TEXT, demo_text);
-    set_string_prop(main_text, keys::UI_FONT_STACK, &stack_label);
+    if font_kind != 0 {
+        let filter = RootWatchFilter::kind(font_kind);
+        let spec = WatchSpec {
+            mode: WatchMode::StreamOnly as u32,
+            filter_ptr: &filter as *const _ as u64,
+            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+            ..Default::default()
+        };
+        font_watch = stem::syscall::root_watch_open(&spec).ok();
+    }
 
     loop {
-        stem::sleep_ms(1000);
+        let now = stem::monotonic_ns();
+
+        let mut dirty = last_font_count == usize::MAX;
+        if let Some(watch_id) = font_watch {
+            let mut seq = 0u64;
+            let mut buf = [0u8; 1024];
+            let mut drained = 0u32;
+            while let Ok(len) = stem::syscall::root_watch_next(watch_id, &mut seq, &mut buf) {
+                if len > 0 {
+                    drained += 1;
+                } else {
+                    break;
+                }
+            }
+            if drained > 0 {
+                dirty = true;
+            }
+        }
+
+        // Fallback periodic discovery in case of watch overflow/miss.
+        if now.saturating_sub(last_discovery) > 2_000_000_000 {
+            dirty = true;
+        }
+
+        if dirty {
+            last_discovery = now;
+            fonts = list_fonts(font_kind);
+        }
+
+        if fonts.len() != last_font_count {
+            let win_title = alloc::format!("{} Explorer", PREFIX);
+            set_string_prop(win, keys::UI_TITLE, &win_title);
+            last_font_count = fonts.len();
+        }
+
+        let row_hint = 28u16;
+        let row_height = row_hint as i32;
+        let content_min = (row_hint as i32).saturating_mul(fonts.len() as i32);
+        let scroll_y = 0i32;
+        last_tick = now;
+
+        let mut rows = Flex::column().gap(0);
+        for (i, entry) in fonts.iter().enumerate() {
+            let row = Flex::row()
+                .width(stem::petals::Size::Pct(100))
+                .height(stem::petals::Size::Px(row_height))
+                .align_items(AlignItems::Center)
+                .gap(12)
+                .padding(6)
+                .push(
+                    Text::new(SAMPLE)
+                        .font(FontKey::thing(entry.id).size(18))
+                        .color(Color::rgb(20, 20, 20))
+                        .nowrap()
+                        .ellipsis(true)
+                        .flex_grow(1.0),
+                )
+                .push(
+                    Text::new(&entry.name)
+                        .font(FontKey::new("NotoSans-Regular").size(12))
+                        .color(Color::rgb(60, 60, 60))
+                        .width(stem::petals::Size::Px(180)),
+                );
+            rows = rows.push(row);
+            if i + 1 < fonts.len() {
+                rows = rows.push(Separator::new(1, Color::from_argb_u32(0xFFE0E0E0)));
+            }
+        }
+
+        let scroll = Scroll::vertical()
+            .scroll_y(scroll_y)
+            .content_min_height(content_min)
+            .estimated_row_height(row_hint)
+            .total_rows(fonts.len() as u32)
+            .clip(true)
+            .flex_grow(1.0)
+            .push(rows);
+
+        let header_text = alloc::format!("{}s ({})", PREFIX, fonts.len());
+        let scene = Scene::new().window(
+            Window::new(win)
+                .title(&alloc::format!("{} Explorer", PREFIX))
+                .initial_size(900, 520)
+                .root(
+                    Flex::column()
+                        .gap(8)
+                        .padding(16)
+                        .push(
+                            Text::new(&header_text)
+                                .font(FontKey::new("NotoSans-Regular").size(20))
+                                .color(Color::rgb(0, 0, 0)),
+                        )
+                        .push(scroll),
+                ),
+        );
+
+        let _ = stem::petals::publish_window(&scene);
+
+        stem::sleep_ms(33); // ~30 FPS
     }
 }

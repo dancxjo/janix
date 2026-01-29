@@ -7,9 +7,9 @@
 //! These stubs return -ENOSYS to signal callers to migrate.
 
 use super::HandlerResult;
+use crate::root::RootMsg;
 use crate::root::graph::Graph;
 use crate::root::symbols::Interner;
-use crate::root::RootMsg;
 
 /// REMOVED: Use root_watch_open instead.
 pub fn handle_watch_subscribe(
@@ -20,17 +20,14 @@ pub fn handle_watch_subscribe(
 ) -> HandlerResult {
     crate::kwarn!(
         "ENOSYS: watch_subscribe(target={}, mask={}). Use root_watch_open.",
-        target_id, mask
+        target_id,
+        mask
     );
     (-38, 0) // -ENOSYS
 }
 
 /// REMOVED: Use root_watch_next instead.
-pub fn handle_stream_poll(
-    _graph: &mut Graph,
-    _msg: &RootMsg,
-    stream_id: u64,
-) -> HandlerResult {
+pub fn handle_stream_poll(_graph: &mut Graph, _msg: &RootMsg, stream_id: u64) -> HandlerResult {
     crate::kwarn!(
         "ENOSYS: stream_poll(stream={}). Use root_watch_next.",
         stream_id

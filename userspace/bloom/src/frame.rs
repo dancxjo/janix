@@ -7,8 +7,11 @@
 //! - `PresentStats`: Statistics returned from presentation
 //! - `AssetGeneration`: Monotonically increasing asset version
 
-use crate::damage::{Damage, Rect};
+use crate::damage::Damage;
+use crate::geometry::Rect;
+use crate::damage_accumulator::{DamageAccumulator, MAX_LOCAL_DAMAGE_RECTS};
 use crate::drawlist::{DrawCmd, DrawList};
+use core::cmp::Ordering;
 
 use serde::{Deserialize, Serialize};
 
@@ -20,7 +23,7 @@ pub struct AssetGeneration(pub u64);
 #[allow(dead_code)]
 impl AssetGeneration {
     pub const ZERO: Self = Self(0);
-    
+
     pub fn next(self) -> Self {
         Self(self.0.saturating_add(1))
     }
@@ -38,7 +41,11 @@ pub struct FrameSpec {
 #[allow(dead_code)]
 impl FrameSpec {
     pub fn new(width: u32, height: u32, format: u32) -> Self {
-        Self { width, height, format }
+        Self {
+            width,
+            height,
+            format,
+        }
     }
 }
 
@@ -54,7 +61,7 @@ pub struct PresentStats {
 }
 
 /// Token granting exclusive ownership of a frame slot.
-/// 
+///
 /// # Invariants
 /// - Cannot be cloned (exclusive ownership)
 /// - Must be consumed by `present_frame()` or dropped
@@ -65,6 +72,90 @@ pub struct FrameToken {
     pub(crate) spec: FrameSpec,
     pub(crate) damage: Damage,
     pub(crate) ops: DrawList,
+    pub(crate) present_damage: PresentDamageSnapshot,
+}
+
+const MAX_RAW_PRESENT_RECTS: usize = 32;
+
+#[derive(Clone, Debug)]
+pub struct PresentDamageSnapshot {
+    rects: [Rect; MAX_LOCAL_DAMAGE_RECTS],
+    len: usize,
+    overflowed: bool,
+    raw_rects: [Rect; MAX_RAW_PRESENT_RECTS],
+    raw_len: usize,
+    full: bool,
+}
+
+impl PresentDamageSnapshot {
+    pub const fn new() -> Self {
+        Self {
+            rects: [Rect::new(0, 0, 0, 0); MAX_LOCAL_DAMAGE_RECTS],
+            len: 0,
+            overflowed: false,
+            raw_rects: [Rect::new(0, 0, 0, 0); MAX_RAW_PRESENT_RECTS],
+            raw_len: 0,
+            full: false,
+        }
+    }
+
+    pub fn update_from_damage(&mut self, damage: &Damage) {
+        self.full = damage.is_full;
+        self.raw_len = 0;
+        for rect in damage.iter() {
+            if self.raw_len == MAX_RAW_PRESENT_RECTS {
+                break;
+            }
+            self.raw_rects[self.raw_len] = rect;
+            self.raw_len += 1;
+        }
+
+        if self.full {
+            self.len = 0;
+            self.overflowed = false;
+            return;
+        }
+
+        let mut acc = DamageAccumulator::<MAX_LOCAL_DAMAGE_RECTS>::new();
+        for rect in damage.iter() {
+            acc.add(rect);
+        }
+
+        self.len = acc.len();
+        let slices = &mut self.rects[..self.len];
+        slices.copy_from_slice(acc.as_slice());
+        if self.len > 1 {
+            slices.sort_by(|a, b| {
+                let ord = a.y().cmp(&b.y());
+                if ord == Ordering::Equal {
+                    a.x().cmp(&b.x())
+                } else {
+                    ord
+                }
+            });
+        }
+        self.overflowed = acc.is_overflowed();
+    }
+
+    pub fn rects(&self) -> &[Rect] {
+        &self.rects[..self.len]
+    }
+
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    pub fn raw_rects(&self) -> &[Rect] {
+        &self.raw_rects[..self.raw_len]
+    }
+
+    pub fn overflowed(&self) -> bool {
+        self.overflowed
+    }
+
+    pub fn is_full(&self) -> bool {
+        self.full
+    }
 }
 
 #[allow(dead_code)]
@@ -78,6 +169,7 @@ impl FrameToken {
             spec,
             damage: Damage::empty(bounds),
             ops: DrawList::new(),
+            present_damage: PresentDamageSnapshot::new(),
         }
     }
 
@@ -120,7 +212,10 @@ pub struct FrameBuilder {
 impl FrameBuilder {
     /// Create a new builder from a token.
     pub fn new(token: FrameToken) -> Self {
-        Self { token, finished: false }
+        Self {
+            token,
+            finished: false,
+        }
     }
 
     /// Push a draw command to the frame's op list.
@@ -141,11 +236,21 @@ impl FrameBuilder {
     #[inline]
     pub fn mark_full_damage(&mut self) {
         debug_assert!(!self.finished, "Cannot mark damage after finish()");
-        let bounds = Rect::full(
-            self.token.spec.width as i32,
-            self.token.spec.height as i32,
-        );
+        let bounds = Rect::full(self.token.spec.width as i32, self.token.spec.height as i32);
         self.token.damage = Damage::full(bounds);
+    }
+
+    /// Prepare the present snapshot (runs the accumulator + sorting) before presenting.
+    pub fn prepare_present_damage(&mut self) {
+        self.token
+            .present_damage
+            .update_from_damage(&self.token.damage);
+    }
+
+    /// Access the cached present snapshot.
+    #[inline]
+    pub fn present_damage(&self) -> &PresentDamageSnapshot {
+        &self.token.present_damage
     }
 
     /// Get the asset generation snapshot (read-only).
@@ -192,7 +297,7 @@ mod tests {
         let g0 = AssetGeneration(0);
         let g1 = AssetGeneration(1);
         let g2 = AssetGeneration(2);
-        
+
         assert!(g0 < g1);
         assert!(g1 < g2);
         assert!(g0 <= g0);
@@ -203,7 +308,7 @@ mod tests {
     fn test_frame_token_creation() {
         let spec = FrameSpec::new(800, 600, 0);
         let token = FrameToken::new(1, AssetGeneration(5), spec);
-        
+
         assert_eq!(token.frame_id(), 1);
         assert_eq!(token.asset_generation(), AssetGeneration(5));
     }
@@ -212,10 +317,10 @@ mod tests {
     fn test_builder_lifecycle() {
         let spec = FrameSpec::new(100, 100, 0);
         let token = FrameToken::new(1, AssetGeneration(0), spec);
-        
+
         let mut builder = FrameBuilder::new(token);
         builder.add_damage(Rect::new(10, 10, 20, 20));
-        
+
         // Should be able to finish
         let token = builder.finish();
         assert_eq!(token.frame_id(), 1);

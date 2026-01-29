@@ -18,9 +18,8 @@ use crate::errors::Errno;
 use crate::wire::{PredicateId, ThingId};
 
 /// Predicate used for CreateNode events.
-pub const WATCH_PRED_KIND: PredicateId = PredicateId([
-    b'k', b'i', b'n', b'd', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-]);
+pub const WATCH_PRED_KIND: PredicateId =
+    PredicateId([b'k', b'i', b'n', b'd', 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]);
 
 /// Current watch event version.
 pub const WATCH_EVENT_VERSION: u8 = 1;
@@ -133,12 +132,18 @@ pub fn validate_event(event: &WatchEvent<'_>) -> Result<(), EncodeError> {
     match event.value_encoding {
         ValueEncoding::None => {
             if !event.value.is_empty() {
-                return Err(EncodeError::BadLength { expected: 0, got: event.value.len() });
+                return Err(EncodeError::BadLength {
+                    expected: 0,
+                    got: event.value.len(),
+                });
             }
         }
         ValueEncoding::U64LE | ValueEncoding::I64LE => {
             if event.value.len() != 8 {
-                return Err(EncodeError::BadLength { expected: 8, got: event.value.len() });
+                return Err(EncodeError::BadLength {
+                    expected: 8,
+                    got: event.value.len(),
+                });
             }
         }
         ValueEncoding::Utf8 => {
@@ -204,7 +209,8 @@ pub fn decode_event(bytes: &[u8]) -> Result<(WatchEventHeader, &[u8]), DecodeErr
 
     let value_len = u32::from_le_bytes(bytes[36..40].try_into().unwrap()) as usize;
     let encoding_raw = bytes[40];
-    let encoding = ValueEncoding::from_u8(encoding_raw).ok_or(DecodeError::UnknownEncoding(encoding_raw))?;
+    let encoding =
+        ValueEncoding::from_u8(encoding_raw).ok_or(DecodeError::UnknownEncoding(encoding_raw))?;
 
     let total_len = encoded_len(value_len);
     if bytes.len() < total_len {
@@ -219,12 +225,18 @@ pub fn decode_event(bytes: &[u8]) -> Result<(WatchEventHeader, &[u8]), DecodeErr
     match encoding {
         ValueEncoding::None => {
             if value_len != 0 {
-                return Err(DecodeError::BadLength { expected: 0, got: value_len });
+                return Err(DecodeError::BadLength {
+                    expected: 0,
+                    got: value_len,
+                });
             }
         }
         ValueEncoding::U64LE | ValueEncoding::I64LE => {
             if value_len != 8 {
-                return Err(DecodeError::BadLength { expected: 8, got: value_len });
+                return Err(DecodeError::BadLength {
+                    expected: 8,
+                    got: value_len,
+                });
             }
         }
         ValueEncoding::Utf8 => {
@@ -375,7 +387,13 @@ mod tests {
         buf[36..40].copy_from_slice(&(4u32).to_le_bytes());
         buf[40] = ValueEncoding::U64LE as u8;
         let err = decode_event(&buf).unwrap_err();
-        assert_eq!(err, DecodeError::BadLength { expected: 8, got: 4 });
+        assert_eq!(
+            err,
+            DecodeError::BadLength {
+                expected: 8,
+                got: 4
+            }
+        );
     }
 
     #[test]

@@ -4,20 +4,20 @@
 //! Each watch maintains only a cursor_seq, not a copy of commit data.
 //! Watches may filter commits by subject/predicate/kind using O(1) summary matching.
 
-use crate::root::graph::{Graph, GlobalWatch, WatchFilter, WATCH_SCAN_LIMIT, commit_matches};
-use crate::root::handlers::watch_payload::filter_watch_payload;
-use crate::root::resources::{stream, ResourceHandle};
-use crate::root::symbols::Interner;
-use crate::root::query::PreparedStep;
 use super::HandlerResult;
+use crate::root::graph::{GlobalWatch, Graph, WATCH_SCAN_LIMIT, WatchFilter, commit_matches};
+use crate::root::handlers::watch_payload::filter_watch_payload;
+use crate::root::query::PreparedStep;
+use crate::root::resources::{ResourceHandle, stream};
+use crate::root::symbols::Interner;
 use core::sync::atomic::Ordering;
 
 /// Opens a new watch with optional filtering.
-/// 
+///
 /// # Arguments
 /// * `start_seq` - If 0, subscribe from "now" (next commit). Otherwise resume from that seq.
 /// * `filter` - Watch filter (flags=0 means match all commits)
-/// 
+///
 /// # Returns
 /// (0, watch_id) on success
 pub fn handle_watch_open(
@@ -28,12 +28,11 @@ pub fn handle_watch_open(
     query: alloc::vec::Vec<PreparedStep>,
     filter: WatchFilter,
 ) -> HandlerResult {
-
     // 1. Create Stream
     let stream_handle = stream::create(512); // Buffer size
     let kid = interner.intern("stream.watch");
     let stream_id = graph.alloc(kid);
-    
+
     // Attach resource to stream node
     if let Some(node) = graph.get_node_mut(stream_id) {
         node.resource = Some(ResourceHandle::Stream(stream_handle.clone()));
@@ -41,12 +40,13 @@ pub fn handle_watch_open(
 
     // 2. Parse Query to determine filter
     // Extract kind from query's first Scan step, fallback to bytespace
-    let bs_kind = query.iter()
+    let bs_kind = query
+        .iter()
         .find(|s| s.op == abi::query::QueryOpKind::Scan as u64)
         .map(|s| s.symbol)
         .unwrap_or_else(|| interner.intern("thing.bytespace"));
     let fact_rel = interner.intern("has_fact");
-    
+
     // 3. Determine cursor position
     // WATCH CONTRACT:
     // - start_seq == 0: from oldest available (replay history)
@@ -64,15 +64,15 @@ pub fn handle_watch_open(
         id: stream_id,
         spec_ptr: 0, // Unused
         stream_handle: ResourceHandle::Stream(stream_handle),
-        kind_filter: bs_kind, 
+        kind_filter: bs_kind,
         missing_fact: fact_rel,
         cursor_seq,
         overflowed: false,
         filter,
     };
-    
+
     graph.global_watches.insert(stream_id, watch);
-    
+
     // Return the stream handle as the watch ID
     (0, stream_id)
 }
@@ -96,14 +96,18 @@ pub fn handle_watch_open(
 /// - `-22`: -EINVAL, invalid handle
 /// - `-28`: -ENOSPC, buffer too small (no consume)
 /// - `-75`: -EOVERFLOW, missed commits (cleared, resync)
-pub fn handle_watch_next(
-    graph: &mut Graph,
-    msg: &crate::root::RootMsg,
-    id: u64,
-) -> HandlerResult {
+pub fn handle_watch_next(graph: &mut Graph, msg: &crate::root::RootMsg, id: u64) -> HandlerResult {
     // Extract syscall parameters
-    let out_ptr = if let crate::root::RootOp::WatchNext { out_ptr, .. } = msg.op { out_ptr } else { 0 };
-    let out_len = if let crate::root::RootOp::WatchNext { out_len, .. } = msg.op { out_len } else { 0 };
+    let out_ptr = if let crate::root::RootOp::WatchNext { out_ptr, .. } = msg.op {
+        out_ptr
+    } else {
+        0
+    };
+    let out_len = if let crate::root::RootOp::WatchNext { out_len, .. } = msg.op {
+        out_len
+    } else {
+        0
+    };
 
     // 1. Validate handle and extract initial state
     let (mut cursor, filter, _was_overflowed) = {
@@ -111,28 +115,28 @@ pub fn handle_watch_next(
             Some(w) => w,
             None => return (-9, 0), // -EBADF: bad/stale watch descriptor
         };
-        
+
         // Check overflow flag (sticky until reported)
         if watch.overflowed {
             watch.overflowed = false;
             return (-75, 0); // -EOVERFLOW
         }
-        
+
         (watch.cursor_seq, watch.filter.clone(), false)
     };
-    
+
     // 2. Check history bounds
     let oldest = graph.commit_history.oldest_seq();
     let newest = graph.commit_history.newest_seq();
-    
+
     // Empty history: nothing to read
     if oldest.is_none() {
         return (-11, 0); // -EAGAIN
     }
-    
+
     let oldest = oldest.unwrap();
     let newest = newest.unwrap();
-    
+
     // Cursor behind oldest: watch missed commits (overflow)
     if cursor < oldest {
         if let Some(watch) = graph.global_watches.get_mut(&id) {
@@ -140,7 +144,7 @@ pub fn handle_watch_next(
         }
         return (-75, 0); // -EOVERFLOW (do not consume data this call)
     }
-    
+
     // 3. Bounded scan for matching commit
     let mut scanned = 0usize;
 
@@ -153,7 +157,7 @@ pub fn handle_watch_next(
             }
             return (-11, 0); // -EAGAIN
         }
-        
+
         // Get commit record (includes summary for O(1) matching)
         let record = match graph.commit_history.get_record(cursor) {
             Some(r) => r,
@@ -164,7 +168,7 @@ pub fn handle_watch_next(
                 continue;
             }
         };
-        
+
         // Check if commit matches filter using summary (O(1))
         if !commit_matches(&filter, &record.summary) {
             // No match, skip to next
@@ -224,10 +228,7 @@ pub fn handle_watch_next(
     (-11, 0) // -EAGAIN (caller will retry)
 }
 
-pub fn handle_watch_close(
-    graph: &mut Graph,
-    id: u64,
-) -> HandlerResult {
+pub fn handle_watch_close(graph: &mut Graph, id: u64) -> HandlerResult {
     if graph.global_watches.remove(&id).is_some() {
         (0, 0)
     } else {

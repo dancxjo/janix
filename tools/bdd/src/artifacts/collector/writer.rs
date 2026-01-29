@@ -26,11 +26,11 @@ pub fn generate_arch_readme(collector: &ArtifactCollector) -> std::io::Result<Pa
     for feature in &collector.features {
         let passed_scenarios = feature.scenarios.iter().filter(|s| s.passed).count();
         let total_scenarios = feature.scenarios.len();
-        
+
         // Feature passes if all scenarios pass AND there's at least one scenario
         let passed = total_scenarios > 0 && passed_scenarios == total_scenarios;
         let icon = if passed { "✅" } else { "❌" };
-        
+
         let rel_path = ArtifactCollector::slugify(&feature.name); // Using simple slugify for link
         let link = format!("[{}]({}/README.md)", feature.name, rel_path);
 
@@ -74,16 +74,16 @@ pub fn write_feature_readme(
             .count();
         let total_steps = scenario.steps.len();
         let icon = if scenario.passed { "✅" } else { "❌" };
-        
+
         let rel_path = ArtifactCollector::slugify(&scenario.name);
-        
+
         writeln!(
             file,
             "| {} | {}/{} | {} | [View Details]({}/README.md) |",
             scenario.name, passed_steps, total_steps, icon, rel_path
         )?;
     }
-    
+
     Ok(())
 }
 

@@ -14,10 +14,18 @@ impl Mods {
     pub const META: u8 = 1 << 3;
     pub const ALTGR: u8 = 1 << 4;
 
-    pub fn has_shift(self) -> bool { self.0 & Self::SHIFT != 0 }
-    pub fn has_ctrl(self) -> bool { self.0 & Self::CTRL != 0 }
-    pub fn has_alt(self) -> bool { self.0 & Self::ALT != 0 }
-    pub fn has_meta(self) -> bool { self.0 & Self::META != 0 }
+    pub fn has_shift(self) -> bool {
+        self.0 & Self::SHIFT != 0
+    }
+    pub fn has_ctrl(self) -> bool {
+        self.0 & Self::CTRL != 0
+    }
+    pub fn has_alt(self) -> bool {
+        self.0 & Self::ALT != 0
+    }
+    pub fn has_meta(self) -> bool {
+        self.0 & Self::META != 0
+    }
 }
 
 /// Lock state bitmask (toggle state)

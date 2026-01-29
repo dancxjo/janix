@@ -1,7 +1,7 @@
+use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use abi::types::RootWatchEvent;
 use stem::syscall::PortHandle;
-use abi::ids::HandleId;
 use stem::thing::{sys as thingsys, ThingId};
 
 pub struct Symbols {
@@ -18,7 +18,7 @@ impl Symbols {
         let display_role = thingsys::intern("display_role").unwrap_or(0) as u64;
         let display_drv_req = thingsys::intern("display_drv_req").unwrap_or(0) as u64;
         let display_drv_resp = thingsys::intern("display_drv_resp").unwrap_or(0) as u64;
-        
+
         Self {
             display_compositor,
             display_role,
@@ -27,7 +27,6 @@ impl Symbols {
         }
     }
 }
-
 
 /// Display backend type
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,13 +67,30 @@ pub enum CompositorError {
 }
 
 impl CompositorTarget {
-    pub fn discover_and_map(
+    pub fn map_from_bytespace(
+        bs_id: ThingId,
         arg_ports: (PortHandle, PortHandle),
-        timeout_ms: u32
     ) -> Result<Self, CompositorError> {
         let sym = Symbols::new();
-        let deadline = stem::time::now() + stem::time::Duration::from_millis(timeout_ms as u64); 
-        
+        let width = thingsys::prop_get(bs_id, keys::WIDTH).unwrap_or(0) as u32;
+        let height = thingsys::prop_get(bs_id, keys::HEIGHT).unwrap_or(0) as u32;
+        let stride = thingsys::prop_get(bs_id, keys::STRIDE).unwrap_or(0) as u32;
+        let format = thingsys::prop_get(bs_id, keys::FORMAT).unwrap_or(0) as u32;
+
+        if width == 0 || height == 0 || stride == 0 {
+            return Err(CompositorError::InvalidSize);
+        }
+
+        Self::build_from_config(&sym, bs_id, width, height, stride, format, arg_ports)
+    }
+
+    pub fn discover_and_map(
+        arg_ports: (PortHandle, PortHandle),
+        timeout_ms: u32,
+    ) -> Result<Self, CompositorError> {
+        let sym = Symbols::new();
+        let deadline = stem::time::now() + stem::time::Duration::from_millis(timeout_ms as u64);
+
         // Wait loop for discovery
         #[allow(unused_assignments)]
         let mut found_config: Option<(ThingId, u32, u32, u32, u32)> = None;
@@ -97,17 +113,70 @@ impl CompositorTarget {
                 }
                 Err(_) => {}
             }
-            if found_config.is_some() { break; }
-            
+            if found_config.is_some() {
+                break;
+            }
+
             if stem::time::now() > deadline {
                 break;
             }
             stem::sleep_ms(50);
         }
 
-        let (bs_id, width, height, stride, format) = found_config.ok_or(CompositorError::DiscoveryTimeout)?;
+        let (bs_id, width, height, stride, format) = match found_config {
+            Some(config) => config,
+            None => {
+                // Fallback: find any bytespace that looks like a display target.
+                let mut fallback: Option<(ThingId, u32, u32, u32, u32)> = None;
+                let mut preferred: Option<(ThingId, u32, u32, u32, u32)> = None;
+                let mut buf = [ThingId::default(); 128];
+                if let Ok(count) = thingsys::find(kinds::BYTESPACE, &mut buf) {
+                    for id in buf.iter().take(count) {
+                        let w = thingsys::prop_get(*id, keys::WIDTH).unwrap_or(0) as u32;
+                        let h = thingsys::prop_get(*id, keys::HEIGHT).unwrap_or(0) as u32;
+                        let s = thingsys::prop_get(*id, keys::STRIDE).unwrap_or(0) as u32;
+                        let f = thingsys::prop_get(*id, keys::FORMAT).unwrap_or(0) as u32;
+                        if w == 0 || h == 0 || s == 0 {
+                            continue;
+                        }
+                        if preferred.is_none() {
+                            let backend = thingsys::prop_get(*id, "display_backend").unwrap_or(0);
+                            if backend != 0 {
+                                preferred = Some((*id, w, h, s, f));
+                                continue;
+                            }
+                        }
+                        if fallback.is_none() {
+                            fallback = Some((*id, w, h, s, f));
+                        }
+                    }
+                }
+                preferred
+                    .or(fallback)
+                    .ok_or(CompositorError::DiscoveryTimeout)?
+            }
+        };
 
-        crate::log!("compositor bytespace {} ({}x{} stride={} format={})", bs_id.to_u64_lossy(), width, height, stride, format);
+        Self::build_from_config(&sym, bs_id, width, height, stride, format, arg_ports)
+    }
+
+    fn build_from_config(
+        sym: &Symbols,
+        bs_id: ThingId,
+        width: u32,
+        height: u32,
+        stride: u32,
+        format: u32,
+        arg_ports: (PortHandle, PortHandle),
+    ) -> Result<Self, CompositorError> {
+        crate::log!(
+            "compositor bytespace {} ({}x{} stride={} format={})",
+            bs_id.to_u64_lossy(),
+            width,
+            height,
+            stride,
+            format
+        );
 
         // Detect backend from property set by Sprout
         let backend = detect_backend(bs_id);
@@ -116,18 +185,28 @@ impl CompositorTarget {
         // Size resolution
         let fallback_size = (height as usize).saturating_mul(stride as usize);
         let info_size = thingsys::bytespace_info(bs_id).unwrap_or(0);
-        let size = if info_size > 0 { info_size } else { fallback_size };
+        let size = if info_size > 0 {
+            info_size
+        } else {
+            fallback_size
+        };
 
         if size == 0 {
             crate::log!("error: resolved size is 0");
             return Err(CompositorError::InvalidSize);
         }
 
-        crate::log!("mapped size={} (source={})", size, if info_size > 0 { "bytespace_info" } else { "fallback" });
+        crate::log!(
+            "mapped size={} (source={})",
+            size,
+            if info_size > 0 {
+                "bytespace_info"
+            } else {
+                "fallback"
+            }
+        );
 
         // Mapping (updated to use new kernel allocator via syscall)
-        // Wait, main.rs calls bytespace_map logic manually in the old code.
-        // `thingsys::bytespace_map(bs_id)` calls the syscall SYS_BYTESPACE_MAP.
         let ptr = match thingsys::bytespace_map(bs_id) {
             Ok(p) => p,
             Err(_) => return Err(CompositorError::MappingFailed),
@@ -139,11 +218,11 @@ impl CompositorTarget {
 
         // Port resolution
         let (mut req, mut resp) = arg_ports;
-        
+
         // If not provided in args, check properties
         if req == 0 || resp == 0 {
-             req = thingsys::prop_get(bs_id, "display_drv_req").unwrap_or(0) as PortHandle;
-             resp = thingsys::prop_get(bs_id, "display_drv_resp").unwrap_or(0) as PortHandle;
+            req = thingsys::prop_get(bs_id, "display_drv_req").unwrap_or(0) as PortHandle;
+            resp = thingsys::prop_get(bs_id, "display_drv_resp").unwrap_or(0) as PortHandle;
         }
 
         // If still 0, wait with timeout
@@ -152,14 +231,21 @@ impl CompositorTarget {
             let watch = thingsys::watch_subscribe(bs_id, 0).ok();
             if let Some(w) = watch {
                 let mut evt = RootWatchEvent::default();
-                for _ in 0..20 { // 20 * 50ms = 1s wait max
-                     if thingsys::stream_poll(w, &mut evt).unwrap_or(0) > 0 {
-                        if evt.key == sym.display_drv_req { req = evt.value as PortHandle; }
-                        if evt.key == sym.display_drv_resp { resp = evt.value as PortHandle; }
-                        if req != 0 && resp != 0 { break; }
-                     } else {
-                         stem::sleep_ms(50);
-                     }
+                for _ in 0..20 {
+                    // 20 * 50ms = 1s wait max
+                    if thingsys::stream_poll(w, &mut evt).unwrap_or(0) > 0 {
+                        if evt.key == sym.display_drv_req {
+                            req = evt.value as PortHandle;
+                        }
+                        if evt.key == sym.display_drv_resp {
+                            resp = evt.value as PortHandle;
+                        }
+                        if req != 0 && resp != 0 {
+                            break;
+                        }
+                    } else {
+                        stem::sleep_ms(50);
+                    }
                 }
             }
         }

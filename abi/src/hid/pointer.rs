@@ -6,8 +6,8 @@
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct PointerMovePayload {
-    pub dx: i16,    // Relative X movement
-    pub dy: i16,    // Relative Y movement
+    pub dx: i16, // Relative X movement
+    pub dy: i16, // Relative Y movement
 }
 
 impl PointerMovePayload {
@@ -32,7 +32,7 @@ impl PointerMovePayload {
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct PointerButtonPayload {
-    pub button: u8,     // 0=left, 1=right, 2=middle
+    pub button: u8, // 0=left, 1=right, 2=middle
     pub _pad: u8,
 }
 
@@ -44,7 +44,10 @@ impl PointerButtonPayload {
     }
 
     pub fn from_bytes(bytes: &[u8; Self::SIZE]) -> Self {
-        Self { button: bytes[0], _pad: bytes[1] }
+        Self {
+            button: bytes[0],
+            _pad: bytes[1],
+        }
     }
 }
 
@@ -52,8 +55,8 @@ impl PointerButtonPayload {
 #[repr(C, packed)]
 #[derive(Clone, Copy)]
 pub struct ScrollPayload {
-    pub dx: i16,    // Horizontal scroll
-    pub dy: i16,    // Vertical scroll
+    pub dx: i16, // Horizontal scroll
+    pub dy: i16, // Vertical scroll
 }
 
 impl ScrollPayload {

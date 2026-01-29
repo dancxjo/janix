@@ -58,8 +58,7 @@ pub fn sys_time_now() -> SysResult<usize> {
     let freq = rt.mono_freq_hz();
     let mono_ns = (ticks as u128 * 1_000_000_000) / (freq as u128);
     let sys_ns = crate::time::get_system_time_ns(mono_ns as u64);
-    let sys_sec = sys_ns / 1_000_000_000;
-    Ok(sys_sec as usize)
+    Ok(sys_ns as usize)
 }
 
 pub fn sys_time_anchor(unix_secs: u64) -> SysResult<usize> {

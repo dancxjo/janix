@@ -1,8 +1,8 @@
 //! ThingOS Syscall Constants
 //!
 //!
-pub mod conv;
 pub mod asm;
+pub mod conv;
 
 // ============================================================================
 // Block 0x00–0x0F: Process lifecycle + identity
@@ -35,6 +35,8 @@ pub const SYS_TIME_ANCHOR: u32 = 0x22;
 pub const SYS_DEBUG_WRITE: u32 = 0x30;
 pub const SYS_LOG_WRITE: u32 = 0x31;
 pub const SYS_TRACE_READ: u32 = 0x32;
+/// Disable boot console (compositor takes over framebuffer)
+pub const SYS_CONSOLE_DISABLE: u32 = 0x33;
 
 // ============================================================================
 // Block 0x40–0x4F: Memory / stacks
@@ -110,6 +112,7 @@ pub const SYS_ROOT_QUERY: u32 = 0x151;
 // 0x158-0x15F: Debug/Describe
 pub const SYS_ROOT_DESCRIBE_THING: u32 = 0x158;
 pub const SYS_ROOT_DESCRIBE_EDGE: u32 = 0x159;
+pub const SYS_ROOT_DESCRIBE_SYMBOL: u32 = 0x15D; // Added
 pub const SYS_ROOT_DUMP_EDGES: u32 = 0x15A;
 pub const SYS_ROOT_DUMP_GRAPH: u32 = 0x15B;
 pub const SYS_ROOT_GET_EDGES: u32 = 0x15C;

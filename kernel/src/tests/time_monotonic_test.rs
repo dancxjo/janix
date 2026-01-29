@@ -8,14 +8,16 @@ pub fn run_selftest() {
     // Test 1: Verify monotonicity over 1000 samples
     let mut last = 0u64;
     for i in 0..1000 {
-        let now = crate::syscall::handlers::sys_time_monotonic_ns()
-            .expect("monotonic_ns should succeed");
+        let now =
+            crate::syscall::handlers::sys_time_monotonic_ns().expect("monotonic_ns should succeed");
         let now = now as u64;
-        
+
         if now < last {
             crate::kinfo!(
                 "TIME MONOTONIC TEST: FAIL - time went backward at sample {}: {} -> {}",
-                i, last, now
+                i,
+                last,
+                now
             );
             return;
         }
@@ -30,7 +32,9 @@ pub fn run_selftest() {
         if now < last_trace {
             crate::kinfo!(
                 "TIME MONOTONIC TEST: FAIL - trace::now() went backward at sample {}: {} -> {}",
-                i, last_trace, now
+                i,
+                last_trace,
+                now
             );
             return;
         }
@@ -42,14 +46,14 @@ pub fn run_selftest() {
     let trace_now = crate::trace::now();
     let syscall_now = crate::syscall::handlers::sys_time_monotonic_ns()
         .expect("monotonic_ns should succeed") as u64;
-    
+
     // They should be very close (within 1ms tolerance)
     let diff = if syscall_now > trace_now {
         syscall_now - trace_now
     } else {
         trace_now - syscall_now
     };
-    
+
     if diff > 1_000_000 {
         crate::kinfo!(
             "TIME MONOTONIC TEST: WARN - trace::now() and syscall differ by {}ns",

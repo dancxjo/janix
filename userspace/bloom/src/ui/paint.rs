@@ -3,12 +3,12 @@ use alloc::string::String;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 
-use crate::damage::Rect;
+use crate::geometry::Rect;
 use crate::geometry::Color;
 use crate::render_state::{RasterKey, RenderState};
 use crate::ui::constants::{
-    SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE, TITLE_BAR_HEIGHT, TITLE_BAR_ICON_SIZE,
-    TITLE_BAR_PADDING, MAXIMIZE_BUTTON_SIZE, MAXIMIZE_BUTTON_PADDING,
+    MAXIMIZE_BUTTON_PADDING, MAXIMIZE_BUTTON_SIZE, SHADE_BUTTON_PADDING, SHADE_BUTTON_SIZE,
+    TITLE_BAR_HEIGHT, TITLE_BAR_ICON_SIZE, TITLE_BAR_PADDING,
 };
 use crate::ui::layout::{LayoutNode, LayoutTree, SymbolResolver};
 use crate::ui::snapshot::{UiNodeKind, UiNodeSnapshot, UiSnapshot};
@@ -180,10 +180,10 @@ impl PaintBuilder {
 
             // 2. Inner white frame (inset by FRAME_WIDTH)
             let inner_rect = Rect::new(
-                layout.rect.x + FRAME_WIDTH,
-                layout.rect.y + FRAME_WIDTH,
-                layout.rect.w - FRAME_WIDTH * 2,
-                layout.rect.h - FRAME_WIDTH * 2,
+                layout.rect.x() + FRAME_WIDTH,
+                layout.rect.y() + FRAME_WIDTH,
+                layout.rect.width() - FRAME_WIDTH * 2,
+                layout.rect.height() - FRAME_WIDTH * 2,
             );
             objects.push(PaintObject::Rect {
                 rect: inner_rect.clone(),
@@ -198,27 +198,35 @@ impl PaintBuilder {
             } // Default off-white if not set
 
             let content_rect = Rect::new(
-                layout.rect.x + FRAME_WIDTH * 2,
-                layout.rect.y + FRAME_WIDTH * 2,
-                layout.rect.w - FRAME_WIDTH * 4,
-                layout.rect.h - FRAME_WIDTH * 4,
+                layout.rect.x() + FRAME_WIDTH * 2,
+                layout.rect.y() + FRAME_WIDTH * 2,
+                layout.rect.width() - FRAME_WIDTH * 4,
+                layout.rect.height() - FRAME_WIDTH * 4,
             );
             objects.push(PaintObject::Rect {
-                rect: content_rect,
+                rect: content_rect.clone(),
                 color: Color::from_u32(bg_color as u32),
                 radius: Self::get_prop(node, keys::UI_RADIUS, symbols) as u32,
             });
 
+            // Native DrawList content (drawn over background, but under title bar)
+            if let Some(cmds) = &node.drawlist_content {
+                objects.push(PaintObject::Commands {
+                    cmds: cmds.clone(),
+                    rect: content_rect.clone(),
+                });
+            }
+
             // 4. Title Bar logic
             let title_h = TITLE_BAR_HEIGHT;
             let is_shaded = Self::get_prop(node, keys::UI_WINDOW_SHADED, symbols) != 0;
-            if layout.rect.h >= title_h {
+            if layout.rect.height() >= title_h {
                 let icon_size = TITLE_BAR_ICON_SIZE;
                 let icon_padding = TITLE_BAR_PADDING;
                 let bar_rect = Rect::new(
-                    layout.rect.x + FRAME_WIDTH * 2,
-                    layout.rect.y + FRAME_WIDTH * 2,
-                    layout.rect.w - FRAME_WIDTH * 4,
+                    layout.rect.x() + FRAME_WIDTH * 2,
+                    layout.rect.y() + FRAME_WIDTH * 2,
+                    layout.rect.width() - FRAME_WIDTH * 4,
                     title_h - FRAME_WIDTH * 2,
                 );
                 let is_active = active_window.map(|id| id == layout.id).unwrap_or(false);
@@ -236,10 +244,11 @@ impl PaintBuilder {
                 let handle_line_count = 6;
                 let handle_width = 40;
                 let handle_spacing = 3;
-                let handle_start_y = bar_rect.y + (bar_rect.h - (handle_line_count * handle_spacing)) / 2;
+                let handle_start_y =
+                    bar_rect.y() + (bar_rect.height() - (handle_line_count * handle_spacing)) / 2;
 
                 // Left drag handle
-                let left_handle_x = bar_rect.x + 4;
+                let left_handle_x = bar_rect.x() + 4;
                 for i in 0..handle_line_count {
                     let line_y = handle_start_y + i * handle_spacing;
                     // White line
@@ -257,7 +266,7 @@ impl PaintBuilder {
                 }
 
                 // Right drag handle (mirror of left)
-                let right_handle_x = bar_rect.x + bar_rect.w - handle_width - 4;
+                let right_handle_x = bar_rect.x() + bar_rect.width() - handle_width - 4;
                 for i in 0..handle_line_count {
                     let line_y = handle_start_y + i * handle_spacing;
                     // White line
@@ -276,8 +285,8 @@ impl PaintBuilder {
 
                 // Icon Background (inset for frame)
                 let icon_bg_rect = Rect::new(
-                    bar_rect.x + icon_padding + handle_width + 8,
-                    layout.rect.y + FRAME_WIDTH * 2 + icon_padding,
+                    bar_rect.x() + icon_padding + handle_width + 8,
+                    layout.rect.y() + FRAME_WIDTH * 2 + icon_padding,
                     icon_size,
                     icon_size,
                 );
@@ -289,17 +298,18 @@ impl PaintBuilder {
 
                 // Icon
                 let icon_rect = Rect::new(
-                    bar_rect.x + icon_padding + handle_width + 8,
-                    layout.rect.y + FRAME_WIDTH * 2 + icon_padding,
+                    bar_rect.x() + icon_padding + handle_width + 8,
+                    layout.rect.y() + FRAME_WIDTH * 2 + icon_padding,
                     icon_size,
                     icon_size,
                 );
                 if let Some(icon_cmds) = &node.window_icon_content {
                     if let Some(raster) = Self::rasterize_svg(
                         icon_cmds,
+                        node.window_icon_source.map(|id| id.to_u64_lossy()),
+                        node.window_icon_hash,
                         &icon_rect,
                         render_state,
-                        node.id.to_u64_lossy(),
                         "paint.icon.hit",
                         "paint.icon.miss",
                     ) {
@@ -315,9 +325,12 @@ impl PaintBuilder {
                 let text_offset_x = handle_width + 8 + icon_size + (icon_padding * 2);
 
                 // Shade button with Windows 3.1 styling (rightmost)
-                let shade_x =
-                    bar_rect.x + bar_rect.w - SHADE_BUTTON_PADDING - SHADE_BUTTON_SIZE - handle_width - 8;
-                let shade_y = bar_rect.y + (bar_rect.h - SHADE_BUTTON_SIZE) / 2;
+                let shade_x = bar_rect.x() + bar_rect.width()
+                    - SHADE_BUTTON_PADDING
+                    - SHADE_BUTTON_SIZE
+                    - handle_width
+                    - 8;
+                let shade_y = bar_rect.y() + (bar_rect.height() - SHADE_BUTTON_SIZE) / 2;
 
                 // Maximize button (left of shade button)
                 let maximize_x = shade_x - MAXIMIZE_BUTTON_PADDING - MAXIMIZE_BUTTON_SIZE;
@@ -325,13 +338,23 @@ impl PaintBuilder {
 
                 // Maximize button outer black border
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(maximize_x - 1, maximize_y - 1, MAXIMIZE_BUTTON_SIZE + 2, MAXIMIZE_BUTTON_SIZE + 2),
+                    rect: Rect::new(
+                        maximize_x - 1,
+                        maximize_y - 1,
+                        MAXIMIZE_BUTTON_SIZE + 2,
+                        MAXIMIZE_BUTTON_SIZE + 2,
+                    ),
                     color: Color::from_u32(FRAME_OUTER),
                     radius: 0,
                 });
                 // Maximize button grey fill
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(maximize_x, maximize_y, MAXIMIZE_BUTTON_SIZE, MAXIMIZE_BUTTON_SIZE),
+                    rect: Rect::new(
+                        maximize_x,
+                        maximize_y,
+                        MAXIMIZE_BUTTON_SIZE,
+                        MAXIMIZE_BUTTON_SIZE,
+                    ),
                     color: Color::from_u32(0xFFC0C0C0), // Windows 3.1 button grey
                     radius: 0,
                 });
@@ -348,12 +371,22 @@ impl PaintBuilder {
                 });
                 // Maximize button 3D shadow (bottom-right grey)
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(maximize_x + 1, maximize_y + MAXIMIZE_BUTTON_SIZE - 1, MAXIMIZE_BUTTON_SIZE - 1, 1),
+                    rect: Rect::new(
+                        maximize_x + 1,
+                        maximize_y + MAXIMIZE_BUTTON_SIZE - 1,
+                        MAXIMIZE_BUTTON_SIZE - 1,
+                        1,
+                    ),
                     color: Color::from_u32(0xFF808080),
                     radius: 0,
                 });
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(maximize_x + MAXIMIZE_BUTTON_SIZE - 1, maximize_y + 1, 1, MAXIMIZE_BUTTON_SIZE - 1),
+                    rect: Rect::new(
+                        maximize_x + MAXIMIZE_BUTTON_SIZE - 1,
+                        maximize_y + 1,
+                        1,
+                        MAXIMIZE_BUTTON_SIZE - 1,
+                    ),
                     color: Color::from_u32(0xFF808080),
                     radius: 0,
                 });
@@ -386,7 +419,12 @@ impl PaintBuilder {
 
                 // Shade button outer black border
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(shade_x - 1, shade_y - 1, SHADE_BUTTON_SIZE + 2, SHADE_BUTTON_SIZE + 2),
+                    rect: Rect::new(
+                        shade_x - 1,
+                        shade_y - 1,
+                        SHADE_BUTTON_SIZE + 2,
+                        SHADE_BUTTON_SIZE + 2,
+                    ),
                     color: Color::from_u32(FRAME_OUTER),
                     radius: 0,
                 });
@@ -409,12 +447,22 @@ impl PaintBuilder {
                 });
                 // Button 3D shadow (bottom-right black)
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(shade_x + 1, shade_y + SHADE_BUTTON_SIZE - 1, SHADE_BUTTON_SIZE - 1, 1),
+                    rect: Rect::new(
+                        shade_x + 1,
+                        shade_y + SHADE_BUTTON_SIZE - 1,
+                        SHADE_BUTTON_SIZE - 1,
+                        1,
+                    ),
                     color: Color::from_u32(0xFF808080),
                     radius: 0,
                 });
                 objects.push(PaintObject::Rect {
-                    rect: Rect::new(shade_x + SHADE_BUTTON_SIZE - 1, shade_y + 1, 1, SHADE_BUTTON_SIZE - 1),
+                    rect: Rect::new(
+                        shade_x + SHADE_BUTTON_SIZE - 1,
+                        shade_y + 1,
+                        1,
+                        SHADE_BUTTON_SIZE - 1,
+                    ),
                     color: Color::from_u32(0xFF808080),
                     radius: 0,
                 });
@@ -442,12 +490,14 @@ impl PaintBuilder {
                 // Title Text - vertically centered in title bar
                 let title = Self::get_str_prop(node, keys::UI_TITLE, symbols);
                 if let Some(t) = title {
-                    let text_w = (maximize_x - MAXIMIZE_BUTTON_PADDING - (bar_rect.x + text_offset_x)).max(0);
+                    let text_w =
+                        (maximize_x - MAXIMIZE_BUTTON_PADDING - (bar_rect.x() + text_offset_x))
+                            .max(0);
                     let font_size: f32 = 14.0;
-                    let text_y = bar_rect.y + (bar_rect.h - font_size as i32) / 2;
+                    let text_y = bar_rect.y() + (bar_rect.height() - font_size as i32) / 2;
                     objects.push(PaintObject::Text {
                         rect: Rect::new(
-                            bar_rect.x + text_offset_x,
+                            bar_rect.x() + text_offset_x,
                             text_y,
                             text_w,
                             font_size as i32,
@@ -469,9 +519,10 @@ impl PaintBuilder {
             if let Some(cmds) = &node.svg_content {
                 if let Some(raster) = Self::rasterize_svg(
                     cmds,
+                    node.svg_source.map(|id| id.to_u64_lossy()),
+                    node.svg_hash,
                     &layout.rect,
                     render_state,
-                    node.id.to_u64_lossy(),
                     "paint.tile.hit",
                     "paint.tile.miss",
                 ) {
@@ -494,9 +545,10 @@ impl PaintBuilder {
                 if let Some(cmds) = &node.svg_content {
                     if let Some(raster) = Self::rasterize_svg(
                         cmds,
+                        node.svg_source.map(|id| id.to_u64_lossy()),
+                        node.svg_hash,
                         &layout.rect,
                         render_state,
-                        node.id.to_u64_lossy(),
                         "paint.svg.hit",
                         "paint.svg.miss",
                     ) {
@@ -550,8 +602,8 @@ impl PaintBuilder {
             let color = Color::from_u32(color_val as u32);
 
             // Phase 1: Raster Cache for Text
-            let w = layout.rect.w as u32;
-            let h = layout.rect.h as u32;
+            let w = layout.rect.width() as u32;
+            let h = layout.rect.height() as u32;
 
             // Simple DJB2-ish hash for text content and properties
             let mut hasher = 5381u64;
@@ -569,12 +621,11 @@ impl PaintBuilder {
 
             if w > 0 && h > 0 {
                 let key = RasterKey::Text {
-                    node_id: node.id.to_u64_lossy(),
                     w,
                     h,
                     content_hash: hasher,
                 };
-                if let Some(image) = render_state.raster_cache.get(&key) {
+                if let Some(image) = render_state.get_raster(&key) {
                     crate::perf::add_counter("paint.text.hit", 1);
                     objects.push(PaintObject::Raster {
                         rect: layout.rect.clone(),
@@ -610,9 +661,11 @@ impl PaintBuilder {
                     height: h,
                     pixels: Arc::from(pixels),
                     gen: crate::frame::AssetGeneration(0),
+                    name: Arc::from("text_raster"),
+                    id: None,
                 });
 
-                render_state.raster_cache.insert(key, image.clone());
+                render_state.insert_raster(key, image.clone(), None);
                 objects.push(PaintObject::Raster {
                     rect: layout.rect.clone(),
                     image,
@@ -647,6 +700,14 @@ impl PaintBuilder {
             });
             return;
         }
+
+        // Native DrawList content (for non-Window nodes)
+        if let Some(cmds) = &node.drawlist_content {
+            objects.push(PaintObject::Commands {
+                cmds: cmds.clone(),
+                rect: layout.rect.clone(),
+            });
+        }
     }
 
     fn get_prop(node: &UiNodeSnapshot, key: &str, symbols: &impl SymbolResolver) -> u64 {
@@ -658,27 +719,28 @@ impl PaintBuilder {
 
     fn rasterize_svg(
         cmds: &alloc::sync::Arc<alloc::vec::Vec<crate::drawlist::DrawCmd>>,
+        svg_source: Option<u64>,
+        svg_hash: Option<u64>,
         rect: &Rect,
         render_state: &mut RenderState,
-        node_id: u64,
         hit_counter: &'static str,
         miss_counter: &'static str,
     ) -> Option<PaintObject> {
-        let w = rect.w as u32;
-        let h = rect.h as u32;
+        let w = rect.width() as u32;
+        let h = rect.height() as u32;
         if w == 0 || h == 0 {
             return None;
         }
 
-        let content_hash = cmds.as_ptr() as *const () as u64;
+        let content_hash = svg_hash.unwrap_or_else(|| cmds.as_ptr() as *const () as u64);
         let key = RasterKey::Svg {
-            node_id,
+            source_id: svg_source.unwrap_or(0),
             w,
             h,
             content_hash,
         };
 
-        if let Some(image) = render_state.raster_cache.get(&key) {
+        if let Some(image) = render_state.get_raster(&key) {
             crate::perf::add_counter(hit_counter, 1);
             return Some(PaintObject::Raster {
                 rect: rect.clone(),
@@ -692,13 +754,7 @@ impl PaintBuilder {
         let mut pixels = alloc::vec![0u32; len / 4];
 
         let mut surf = unsafe {
-            crate::surface::Surface::new(
-                pixels.as_mut_ptr() as *mut u8,
-                len,
-                w,
-                h,
-                stride as u32,
-            )
+            crate::surface::Surface::new(pixels.as_mut_ptr() as *mut u8, len, w, h, stride as u32)
         };
 
         let mut list = crate::drawlist::DrawList::new();
@@ -710,9 +766,11 @@ impl PaintBuilder {
             height: h,
             pixels: Arc::from(pixels),
             gen: crate::frame::AssetGeneration(0),
+            name: Arc::from("svg_raster"),
+            id: None,
         });
 
-        render_state.raster_cache.insert(key, image.clone());
+        render_state.insert_raster(key, image.clone(), svg_source);
         Some(PaintObject::Raster {
             rect: rect.clone(),
             image,

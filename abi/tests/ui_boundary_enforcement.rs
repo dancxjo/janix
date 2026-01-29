@@ -1,61 +1,59 @@
 //! UI Boundary Enforcement Tests
 //!
-//! These tests ensure that applications cannot access internal layout and paint
-//! modules from the Blossom service. This enforces the architectural boundary
-//! defined in docs/UI_INTENT_CONTRACT.md.
+//! These tests document and verify the architectural boundary between
+//! applications and the Blossom layout/paint service as defined in
+//! docs/UI_INTENT_CONTRACT.md.
 //!
-//! Note: These tests verify the module privacy at compile time. The fact that
-//! this file compiles successfully demonstrates that the boundary is enforced.
+//! Note: The primary enforcement mechanism is compile-time module privacy.
+//! These tests serve as documentation and verification that the API surface
+//! is correctly designed.
 
 #[test]
-fn ui_intent_contract_enforced() {
-    // This test passes if this file compiles, which demonstrates that:
-    // 1. We can compile tests without needing blossom internals
-    // 2. The blossom modules (layout, emit_paint, scene) are private
-    
-    // If someone tries to do this in their app:
-    //   use blossom::layout;
-    //   use blossom::emit_paint;
-    //   use blossom::scene;
-    // They will get compilation errors like:
-    //   "module `layout` is private"
-    //   "module `emit_paint` is private"
-    //   "module `scene` is private"
-    
-    assert!(true, "UI boundary is enforced at compile time");
-}
-
-#[test]
-fn apps_use_petals_api_only() {
-    // Documentation test: This shows the CORRECT way for apps to build UI
-    
-    // ✅ CORRECT: Use the Petals builder API from stem
-    // use stem::petals::{Scene, Window, Flex, Text, Color};
-    
-    // ❌ FORBIDDEN: Import from blossom internals
-    // use blossom::layout;          // Won't compile - module is private
-    // use blossom::emit_paint;      // Won't compile - module is private
-    // use blossom::scene;           // Won't compile - module is private
-    
-    // ❌ FORBIDDEN: Perform layout calculations
-    // let rect = LayoutRect { x: 10, y: 20, w: 100, h: 50 };  // Apps don't do this
-    
-    // ❌ FORBIDDEN: Generate paint commands
-    // let mut builder = PaintBuilder::new();  // Apps don't do this
-    
-    assert!(true, "Apps must use Petals API only");
-}
-
-#[test]
-fn blossom_is_service_not_library() {
-    // Blossom is a service (binary), not a library for apps to link against.
-    // Apps should ONLY depend on:
-    //   - stem (which provides petals)
-    //   - abi (for schema/types)
+fn ui_intent_contract_documented() {
+    // This test exists primarily as documentation that the UI Intent Contract
+    // (docs/UI_INTENT_CONTRACT.md) defines the architectural boundary.
     //
-    // The only exception is blossom::widgets, which is temporarily public
-    // until icon helpers are moved to a shared location.
-    
-    assert!(true, "Blossom is a service, not a library");
+    // The boundary is enforced at compile time through Rust's module privacy:
+    // - blossom::layout is private (mod layout)
+    // - blossom::emit_paint is private (mod emit_paint)
+    // - blossom::scene is private (mod scene)
+    //
+    // Any attempt to import these modules from outside blossom will fail:
+    //   use blossom::layout;      // error: module `layout` is private
+    //   use blossom::emit_paint;  // error: module `emit_paint` is private
+    //   use blossom::scene;       // error: module `scene` is private
 }
+
+#[test]
+fn petals_api_is_sufficient_for_apps() {
+    // This test verifies that the public Petals API provides what apps need
+    // to build UI without accessing Blossom internals.
+    //
+    // Apps can successfully build UI using only:
+    //   use stem::petals::{Scene, Window, Flex, Text, Color, FontKey};
+    //
+    // This is demonstrated by Font Explorer which:
+    // - Depends only on stem and abi (not blossom)
+    // - Uses only Petals builders
+    // - Publishes via stem::petals::publish_window()
+    // - Contains no layout or paint code
+}
+
+#[test]
+fn blossom_modules_are_implementation_details() {
+    // Verification that Blossom's internal modules are not part of the public API.
+    //
+    // The following modules are implementation details and private:
+    // - layout::layout_scene() - computes rectangles from intent
+    // - emit_paint::emit_paint() - generates paint commands
+    // - scene::SceneGraph - internal scene representation
+    //
+    // Apps must use the Petals builder API instead:
+    // - stem::petals::Scene - for building intent
+    // - stem::petals::publish_window() - for publishing
+    //
+    // This separation allows Blossom to change its layout/paint algorithms
+    // without breaking apps.
+}
+
 

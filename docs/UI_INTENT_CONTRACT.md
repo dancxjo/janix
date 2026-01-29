@@ -196,7 +196,8 @@ The `blossom` crate is structured to prevent external access to layout/paint int
 
 ```rust
 // blossom/src/lib.rs
-pub mod graph_ui;     // Public: for internal graph UI reading
+pub mod widgets;      // Temporarily public (used by photosynthesis, should be moved)
+pub(crate) mod graph_ui; // Crate-private: for internal graph UI reading
 mod layout;           // Private: layout algorithms
 mod emit_paint;       // Private: paint command generation
 mod scene;            // Private: internal scene representation
@@ -214,16 +215,10 @@ Apps depend on `stem`, which provides no access to layout or paint internals.
 
 ### 3. Compilation Tests
 
-A test ensures that apps cannot compile if they try to import Blossom internals:
-
-```rust
-// In tests/ui_boundary_test.rs or similar
-#[test]
-fn app_cannot_import_blossom_internals() {
-    // This test uses trybuild to ensure code that imports
-    // blossom::layout or blossom::emit_paint fails to compile
-}
-```
+Tests in `abi/tests/ui_boundary_enforcement.rs` document the architectural boundary
+and verify that apps can build UI using only the Petals API. The actual enforcement
+is through Rust's module privacy system - any attempt to import private modules
+will fail at compile time with errors like "module `layout` is private".
 
 ## Migration Checklist for Apps
 

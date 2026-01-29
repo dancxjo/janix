@@ -1,9 +1,11 @@
 use crate::asset::Image;
-use crate::damage::{Damage, Rect as DamageRect};
+use crate::damage::Damage;
+use crate::geometry::Rect;
+type DamageRect = Rect;
 use crate::drawlist::DrawList;
 use crate::font_client;
 use crate::font_graph::{self, FontStyle};
-use crate::isa::{BlendMode, Color, EdgeAA, FilterMode, Rect, Transform2D};
+use crate::isa::{BlendMode, Color, EdgeAA, FilterMode, Transform2D};
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use alloc::vec;
@@ -101,7 +103,7 @@ pub fn execute_lowered_with_damage(
         let d = dr[i];
         crate::trace_span!("raster.rect.total");
         let mut ctx = RasterContext::new(surface, solid_text);
-        ctx.current_clip = Rect::new(d.x, d.y, d.w, d.h);
+        ctx.current_clip = Rect::new(d.x(), d.y(), d.width(), d.height());
         execute_lowered_on_context(&mut ctx, lowered);
     }
 }
@@ -456,6 +458,30 @@ pub fn blit_cursor_overlay(surface: &mut Surface, cursor: &Image, x: i32, y: i32
                     sa,
                 );
             }
+        }
+    }
+}
+
+/// Draw a simple crosshair cursor fallback (e.g. while asset is loading).
+pub fn draw_crosshair(surface: &mut Surface, x: i32, y: i32, color: u32) {
+    let size = 8;
+    let gap = 2;
+    // Horizontal
+    for dx in -size..=-gap {
+        if x + dx >= 0 && x + dx < surface.width() && y >= 0 && y < surface.height() {
+            surface.put_px(x + dx, y, color);
+        }
+        if x - dx >= 0 && x - dx < surface.width() && y >= 0 && y < surface.height() {
+            surface.put_px(x - dx, y, color);
+        }
+    }
+    // Vertical
+    for dy in -size..=-gap {
+        if x >= 0 && x < surface.width() && y + dy >= 0 && y + dy < surface.height() {
+            surface.put_px(x, y + dy, color);
+        }
+        if x >= 0 && x < surface.width() && y - dy >= 0 && y - dy < surface.height() {
+            surface.put_px(x, y - dy, color);
         }
     }
 }
@@ -1339,7 +1365,7 @@ fn flatten_cubic<F>(
     // Distance from control points to the chord p0-p3
     let d1_sq = dist_sq_point_line_segment(p1, p0, p3);
     let d2_sq = dist_sq_point_line_segment(p2, p0, p3);
-    
+
     // We check against flatness_sq.
     // Spec says strictly: if d < Tolerance, then flat.
     // We use max distance of any control point.
@@ -1380,13 +1406,13 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
         let dy = p_end.1 - p_start.1;
         let dx = p_end.0 - p_start.0;
         let slope = if dy != 0.0 {
-            // Slope is dx/dy. 
+            // Slope is dx/dy.
             // We want change in Scaled X per 1 unit of Scaled Y.
             // d(ScaledX)/d(ScaledY) = (dx * scale) / (dy * scale) = dx/dy.
             // Original code incorrectly multiplied by scale.
             // We also clamp to prevent fixed-point overflow for horizontal-ish lines.
             let s = dx / dy;
-            let clamped = s.clamp(-30000.0, 30000.0); 
+            let clamped = s.clamp(-30000.0, 30000.0);
             float_to_fixed(clamped)
         } else {
             0
@@ -1409,9 +1435,9 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
 
     let scale_sq = (transform.a * transform.a + transform.b * transform.b)
         .max(transform.c * transform.c + transform.d * transform.d);
-    
+
     // User requested target 0.25px or better.
-    // flatness_sq is error^2. 
+    // flatness_sq is error^2.
     // If we want 0.22px error, sq is ~0.05.
     // Old: 0.25 / scale_sq (0.5px error).
     let flatness_sq = 0.05 / (scale_sq * scale as f32 * scale as f32).max(0.01);
@@ -1464,13 +1490,18 @@ fn build_edges(path: &crate::isa::Path2D, transform: &Transform2D, scale: i32) -
             }
         }
     }
-    
+
     // Instrumentation as requested
     static mut LOG_COUNT: u64 = 0;
     unsafe {
         LOG_COUNT += 1;
         if LOG_COUNT <= 5 || LOG_COUNT % 1000 == 0 {
-             stem::info!("[raster] build_edges: verbs={} flat_sq={} edges={}", path.verbs.len(), flatness_sq, edges.len());
+            stem::info!(
+                "[raster] build_edges: verbs={} flat_sq={} edges={}",
+                path.verbs.len(),
+                flatness_sq,
+                edges.len()
+            );
         }
     }
 

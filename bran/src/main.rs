@@ -2,6 +2,7 @@
 #![no_main]
 
 mod arch;
+pub mod console;
 mod framebuffer;
 mod mem;
 mod requests;
@@ -40,8 +41,11 @@ unsafe extern "C" fn kmain() -> ! {
 fn indicate_progress() {
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
-            let mut display = Framebuffer::new(&framebuffer);
-            display.clear(0x00_2E_7F_D1);
+            let display = Framebuffer::new(&framebuffer);
+            // Initialize framebuffer console for boot logging
+            console::init(&display);
+            // Register console disable callback for when compositor takes over
+            kernel::syscall::handlers::register_console_disable(console::disable);
         }
     }
 }

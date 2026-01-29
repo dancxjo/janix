@@ -10,8 +10,9 @@ use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
+use stem::thing::query::RestrictedQuery;
 use stem::thing::sys::{
-    bytespace_info, bytespace_read, find, get_edges, intern, prop_get, prop_set,
+    bytespace_info, bytespace_read, find, intern, prop_get, prop_set,
 };
 use stem::thing::ThingId;
 
@@ -231,14 +232,15 @@ impl FontGraph {
         }
 
         for (super_id, superfamily) in self.superfamilies.iter_mut() {
-            let mut edges = [abi::types::Edge::default(); 128];
-            if let Ok(count) = get_edges(*super_id, &mut edges) {
-                for edge in edges.iter().take(count) {
-                    if edge.predicate.to_u64_lossy() == symbols.contains {
-                        if let Some(family) = self.families.get_mut(&edge.to) {
-                            family.superfamily_id = Some(*super_id);
-                            superfamily.families.push(edge.to);
-                        }
+            let mut q_buf = [abi::query::QueryRow::default(); 128];
+            let mut q = RestrictedQuery::new(&mut q_buf);
+            if let Ok(count) = q.get_edges(*super_id, Some(rels::FONT_CONTAINS), 128) {
+                for i in 0..count {
+                    let row = &q.buf[i];
+                    let target = ThingId::from_u64(row.val_dst);
+                    if let Some(family) = self.families.get_mut(&target) {
+                        family.superfamily_id = Some(*super_id);
+                        superfamily.families.push(target);
                     }
                 }
             }
@@ -266,30 +268,37 @@ impl FontGraph {
         }
 
         for (family_id, family) in self.families.iter_mut() {
-            let mut edges = [abi::types::Edge::default(); 128];
-            if let Ok(count) = get_edges(*family_id, &mut edges) {
-                for edge in edges.iter().take(count) {
-                    if edge.predicate.to_u64_lossy() == symbols.contains {
-                        if let Some(face) = self.faces.get_mut(&edge.to) {
-                            face.family_id = *family_id;
-                            family.faces.push(edge.to);
-                        }
+            let mut q_buf = [abi::query::QueryRow::default(); 128];
+            let mut q = RestrictedQuery::new(&mut q_buf);
+            if let Ok(count) = q.get_edges(*family_id, Some(rels::FONT_CONTAINS), 128) {
+                for i in 0..count {
+                    let row = &q.buf[i];
+                    let target = ThingId::from_u64(row.val_dst);
+                    if let Some(face) = self.faces.get_mut(&target) {
+                        face.family_id = *family_id;
+                        family.faces.push(target);
                     }
                 }
             }
         }
 
         for (face_id, face) in self.faces.iter_mut() {
-            let mut edges = [abi::types::Edge::default(); 128];
-            if let Ok(count) = get_edges(*face_id, &mut edges) {
-                for edge in edges.iter().take(count) {
-                    let pred = edge.predicate.to_u64_lossy();
+            let mut q_buf = [abi::query::QueryRow::default(); 128];
+            let mut q = RestrictedQuery::new(&mut q_buf);
+            // We need two types of edges: contains (file) and covers (coverage).
+            // Query all edges and filter by ID.
+            if let Ok(count) = q.get_edges(*face_id, None, 128) {
+                for i in 0..count {
+                    let row = &q.buf[i];
+                    let pred = row.kind_rel;
+                    let target = ThingId::from_u64(row.val_dst);
+
                     if pred == symbols.contains {
-                        if self.files.contains_key(&edge.to) {
-                            face.file_id = edge.to;
+                        if self.files.contains_key(&target) {
+                            face.file_id = target;
                         }
                     } else if pred == symbols.covers {
-                        if let Some(ranges) = read_coverage(edge.to) {
+                        if let Some(ranges) = read_coverage(target) {
                             face.coverage = ranges;
                         }
                     }
@@ -488,19 +497,19 @@ impl FontGraph {
         }
 
         // Check the graph for existing glyph
-        let mut edges = [abi::types::Edge::default(); 64];
-        if let Ok(count) = get_edges(face_id, &mut edges) {
-            let has_glyph_rel = intern(rels::FONT_HAS_GLYPH).unwrap_or(0) as u64;
-            for edge in edges.iter().take(count) {
-                if edge.predicate.to_u64_lossy() == has_glyph_rel {
-                    // Check if this glyph matches px_size and codepoint
-                    let gid = edge.to;
-                    let g_cp = prop_get(gid, keys::FONT_GLYPH_CODEPOINT).unwrap_or(0) as u32;
-                    let g_px = prop_get(gid, keys::FONT_GLYPH_PX_SIZE).unwrap_or(0) as u16;
-                    if g_cp == codepoint && g_px == px_size {
-                        self.glyph_cache.insert(key, gid);
-                        return Some(gid);
-                    }
+        let mut q_buf = [abi::query::QueryRow::default(); 64];
+        let mut q = RestrictedQuery::new(&mut q_buf);
+        // We know the relation is FONT_HAS_GLYPH
+        if let Ok(count) = q.get_edges(face_id, Some(rels::FONT_HAS_GLYPH), 64) {
+            for i in 0..count {
+                let row = &q.buf[i];
+                // Restricted query filters by relation, so we assume all results are HAS_GLYPH
+                let gid = ThingId::from_u64(row.val_dst);
+                let g_cp = prop_get(gid, keys::FONT_GLYPH_CODEPOINT).unwrap_or(0) as u32;
+                let g_px = prop_get(gid, keys::FONT_GLYPH_PX_SIZE).unwrap_or(0) as u16;
+                if g_cp == codepoint && g_px == px_size {
+                    self.glyph_cache.insert(key, gid);
+                    return Some(gid);
                 }
             }
         }

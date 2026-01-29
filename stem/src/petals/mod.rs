@@ -3,6 +3,7 @@ extern crate alloc;
 pub mod builder;
 pub mod graph;
 pub mod pack;
+pub mod viewport;
 
 use alloc::vec::Vec;
 
@@ -12,6 +13,7 @@ pub use builder::{
     Styled, Text, TextWrap, Window,
 };
 pub use graph::{Petals, UiTreeBuilder};
+pub use viewport::{PanZoomController, Viewport, ViewportConstraints, ViewportIntent};
 
 use crate::errors::{Error, Result};
 use crate::thing::sys::{bytespace_create, bytespace_write, find, prop_get, prop_set};

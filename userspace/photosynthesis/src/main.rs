@@ -7,14 +7,18 @@ use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, rels};
 use abi::types::{WatchMode, WatchSpec};
 use abi::watch;
-use alloc::string::String;
+use alloc::format;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use blossom::widgets::ThingosIcon;
 use core::time::Duration;
 use stem::info;
-use stem::petals::{Canvas, Color, FontKey, Line, Rect, Scene, Size, Styled, Text, Window};
-use stem::thing::ThingId;
+use stem::petals::{
+    Canvas, Color, FontKey, Line, PanZoomController, Rect, Scene, Size, Styled, Text, Viewport,
+    ViewportConstraints, Window,
+};
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
+use stem::thing::ThingId;
 
 fn find_svg_assets() -> Vec<(String, ThingId)> {
     let mut assets = Vec::new();
@@ -69,10 +73,11 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
 }
 
 mod graph_layout;
+mod input;
 mod pipes;
 
 use alloc::collections::BTreeMap;
-use graph_layout::{LayoutEdge, LayoutNode, LayoutSettings, compute_layout, route_edges};
+use graph_layout::{compute_layout, route_edges, LayoutEdge, LayoutNode, LayoutSettings};
 use pipes::{generate_layout, scan_system_graph};
 
 const TILE_WIDTH: i32 = 120;
@@ -88,7 +93,7 @@ const ID_LINE_HEIGHT: i32 = 18;
 const TYPE_CHAR_WIDTH: i32 = 10;
 const ID_CHAR_WIDTH: i32 = 8;
 const TILE_BORDER_COLOR: Color = Color::from_argb_u32(0xFFE0E0E8);
-const TILE_FILL_COLOR: Color = Color::from_argb_u32(0xFFFFFFFF);
+const TILE_FILL_COLOR: Color = Color::from_argb_u32(0x88FFFFFF);
 const TYPE_TEXT_COLOR: Color = Color::from_argb_u32(0xFF383838);
 const ID_TEXT_COLOR: Color = Color::from_argb_u32(0xFF8A8A8C);
 
@@ -120,12 +125,25 @@ fn main() -> ! {
     prop_set(win, keys::UI_Y, 100).ok();
     set_string_prop(win, keys::UI_TITLE, "Photosynthesis (System Graph)");
 
+    // Initialize viewport controller for pan/zoom
+    let mut viewport_controller = PanZoomController::new(
+        Viewport::new(800.0, 600.0),
+        ViewportConstraints {
+            min_zoom: 0.1,
+            max_zoom: 5.0,
+            bounds: None, // Infinite canvas for now
+        },
+    );
+
     let mut last_nodes = Vec::new();
     let mut last_edges = Vec::new();
     let mut last_routes = BTreeMap::new();
     let mut last_scan = stem::monotonic_ns();
     let mut dirty = true;
     let mut graph_watch = None;
+
+    // Input state for viewport control
+    let mut input_state = input::InputState::new();
 
     let filter = RootWatchFilter::all();
     let spec = WatchSpec {
@@ -137,6 +155,11 @@ fn main() -> ! {
     graph_watch = stem::syscall::root_watch_open(&spec).ok();
 
     loop {
+        // Poll input from system graph and apply to viewport
+        if input::poll_and_apply(&mut viewport_controller, &mut input_state) {
+            dirty = true;
+        }
+
         if let Some(watch_id) = graph_watch {
             let mut seq = 0u64;
             let mut buf = [0u8; 2048];
@@ -155,7 +178,11 @@ fn main() -> ! {
 
         let now = stem::monotonic_ns();
         if dirty && now.saturating_sub(last_scan) > 200_000_000 {
-            let (nodes, edges) = scan_system_graph();
+            let (mut nodes, edges) = scan_system_graph();
+            // Explicitly sort and deduplicate nodes by ID to ensure uniqueness
+            nodes.sort_by_key(|n| n.id.to_u64_lossy());
+            nodes.dedup_by_key(|n| n.id.to_u64_lossy());
+
             if nodes != last_nodes || edges != last_edges {
                 // 1. Convert to Layout types
                 let mut layout_nodes: Vec<LayoutNode> = nodes
@@ -183,7 +210,7 @@ fn main() -> ! {
                 // 2. Compute Layout
                 let settings = LayoutSettings::default();
                 compute_layout(&mut layout_nodes, &layout_edges, &settings);
-                
+
                 // 3. Compute Edge Routes
                 last_routes = route_edges(&layout_nodes, &layout_edges, &settings);
 
@@ -216,7 +243,14 @@ fn main() -> ! {
                 }
 
                 let layout = generate_layout(&final_nodes);
-                let scene = build_graph_scene(win, &final_nodes, &edges, &layout, &last_routes);
+                let scene = build_graph_scene(
+                    win,
+                    &final_nodes,
+                    &edges,
+                    &layout,
+                    &last_routes,
+                    &viewport_controller.viewport,
+                );
                 let _ = stem::petals::publish_window(&scene);
                 last_nodes = final_nodes;
                 last_edges = edges;
@@ -235,57 +269,70 @@ fn build_graph_scene(
     edges: &[pipes::EdgeInfo],
     layout: &pipes::GraphLayout,
     routes: &BTreeMap<(ThingId, ThingId), Vec<(f32, f32)>>,
+    viewport: &Viewport,
 ) -> Scene {
     let mut canvas = Canvas::new().width(Size::Pct(100)).height(Size::Pct(100));
 
+    // Helper closure to transform world coords to screen coords
+    let to_screen = |wx: f32, wy: f32| -> (i32, i32) {
+        let (sx, sy) = viewport.world_to_screen(wx, wy);
+        (sx as i32, sy as i32)
+    };
+
     for edge in edges {
         if let Some(path) = routes.get(&(edge.from, edge.to)) {
-             if path.len() < 2 { continue; }
-             
-             // Draw segments
-            for i in 0..path.len()-1 {
+            if path.len() < 2 {
+                continue;
+            }
+
+            // Draw segments (transformed)
+            for i in 0..path.len() - 1 {
                 let (x1, y1) = path[i];
-                let (x2, y2) = path[i+1];
-                
+                let (x2, y2) = path[i + 1];
+                let (sx1, sy1) = to_screen(x1, y1);
+                let (sx2, sy2) = to_screen(x2, y2);
+
                 canvas = canvas.push(
-                    Line::new(x1 as i32, y1 as i32, x2 as i32, y2 as i32)
+                    Line::new(sx1, sy1, sx2, sy2)
                         .width(2)
                         .color(Color::from_argb_u32(0xFF888888)),
                 );
             }
-             
-             // Draw Arrow at the end
-            let (end_x, end_y) = path[path.len()-1];
-            let (prev_x, prev_y) = path[path.len()-2];
-            
+
+            // Draw Arrow at the end (transformed)
+            let (end_x, end_y) = path[path.len() - 1];
+            let (prev_x, prev_y) = path[path.len() - 2];
+            let (send_x, send_y) = to_screen(end_x, end_y);
+
             let angle = libm::atan2f(end_y - prev_y, end_x - prev_x);
-            let head_len = 8.0;
+            let head_len = 8.0 * viewport.zoom;
             let a1 = angle + 3.14159 * 0.85;
             let a2 = angle - 3.14159 * 0.85;
-            
-            let hx1 = (end_x + head_len * libm::cosf(a1));
-            let hy1 = (end_y + head_len * libm::sinf(a1));
-            let hx2 = (end_x + head_len * libm::cosf(a2));
-            let hy2 = (end_y + head_len * libm::sinf(a2));
-            
+
+            let shx1 = send_x + (head_len * libm::cosf(a1)) as i32;
+            let shy1 = send_y + (head_len * libm::sinf(a1)) as i32;
+            let shx2 = send_x + (head_len * libm::cosf(a2)) as i32;
+            let shy2 = send_y + (head_len * libm::sinf(a2)) as i32;
+
             canvas = canvas
                 .push(
-                    Line::new(end_x as i32, end_y as i32, hx1 as i32, hy1 as i32)
+                    Line::new(send_x, send_y, shx1, shy1)
                         .width(2)
                         .color(Color::from_argb_u32(0xFF888888)),
                 )
                 .push(
-                    Line::new(end_x as i32, end_y as i32, hx2 as i32, hy2 as i32)
+                    Line::new(send_x, send_y, shx2, shy2)
                         .width(2)
                         .color(Color::from_argb_u32(0xFF888888)),
                 );
-            
-            // Draw Label in Middle (Middle Segment)
+
+            // Draw Label in Middle (Middle Segment, transformed)
             let mid_seg_idx = (path.len() - 1) / 2;
             let (aa, bb) = (path[mid_seg_idx], path[mid_seg_idx + 1]);
             let mid_x = (aa.0 + bb.0) / 2.0;
             let mid_y = (aa.1 + bb.1) / 2.0;
-            
+            let (smid_x, smid_y) = to_screen(mid_x, mid_y);
+
             let label_w = (edge.rel.len() as i32 * 6).max(10);
             canvas = canvas.push_at(
                 Text::new(&edge.rel)
@@ -293,8 +340,8 @@ fn build_graph_scene(
                     .color(Color::from_argb_u32(0xFF666666))
                     .width(Size::Px(label_w))
                     .height(Size::Px(10)),
-                mid_x as i32,
-                mid_y as i32,
+                smid_x,
+                smid_y,
             );
         } else {
             // Fallback (Direct Line)
@@ -307,10 +354,13 @@ fn build_graph_scene(
         }
     }
 
+    // Draw nodes (transformed)
     for node in nodes {
         if let Some(&(x, y)) = layout.positions.get(&node.id) {
-            let left = x as i32 - TILE_WIDTH / 2;
-            let top = y as i32 - TILE_HEIGHT / 2;
+            // Transform center point to screen space
+            let (scx, scy) = to_screen(x, y);
+            let left = scx - TILE_WIDTH / 2;
+            let top = scy - TILE_HEIGHT / 2;
 
             canvas = canvas.push_at(
                 Rect::new()
@@ -336,7 +386,7 @@ fn build_graph_scene(
                 inner_top,
             );
 
-            let icon_x = x as i32 - ICON_SIZE / 2;
+            let icon_x = scx - ICON_SIZE / 2;
             let icon_y = top + ICON_TOP_PADDING;
             canvas = canvas.push_at(
                 ThingosIcon::new(&node.icon)
@@ -348,10 +398,10 @@ fn build_graph_scene(
             );
 
             let type_text = format_type_label(&node.kind_full, &node.name);
-            let id_text = format_id_label(&node.kind_full, &node.name);
+            let id_text = format_id_label(node.id);
 
             let type_width = (type_text.chars().count() as i32 * TYPE_CHAR_WIDTH).max(40);
-            let type_left = x as i32 - type_width / 2;
+            let type_left = scx - type_width / 2;
             let type_y = icon_y + ICON_SIZE + 12;
             canvas = canvas.push_at(
                 Text::new(&type_text)
@@ -364,7 +414,7 @@ fn build_graph_scene(
             );
 
             let id_width = (id_text.chars().count() as i32 * ID_CHAR_WIDTH).max(30);
-            let id_left = x as i32 - id_width / 2;
+            let id_left = scx - id_width / 2;
             let id_y = type_y + TYPE_LINE_HEIGHT;
             canvas = canvas.push_at(
                 Text::new(&id_text)
@@ -386,39 +436,14 @@ fn build_graph_scene(
     )
 }
 
-fn format_type_label(kind_full: &str, fallback: &str) -> String {
-    let source = if kind_full.is_empty() {
-        fallback
+fn format_type_label(kind_full: &str, _fallback: &str) -> String {
+    if kind_full.is_empty() {
+        String::from("UNKNOWN")
     } else {
-        kind_full
-    };
-    let segment = source
-        .rsplit('.')
-        .find(|seg| !seg.is_empty())
-        .unwrap_or(source);
-    let normalized = segment.replace('_', " ");
-    let label = normalized.trim();
-    if label.is_empty() {
-        if fallback.is_empty() {
-            String::from("UNKNOWN")
-        } else {
-            fallback.to_ascii_uppercase()
-        }
-    } else {
-        label.to_ascii_uppercase()
+        kind_full.to_string()
     }
 }
 
-fn format_id_label(kind_full: &str, fallback: &str) -> String {
-    let source = if kind_full.is_empty() {
-        fallback
-    } else {
-        kind_full
-    };
-    let label = source.trim();
-    if label.is_empty() {
-        String::from("UNKNOWN")
-    } else {
-        label.to_ascii_uppercase()
-    }
+fn format_id_label(id: ThingId) -> String {
+    format!("{:X}", id.to_u64_lossy())
 }

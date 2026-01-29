@@ -8,7 +8,7 @@ width, height = img.size
 print(f"Dimensions: {width}x{height}")
 
 # Center of the expected clock window region
-# Window is at bottom right. For 1920x768:
+# Window is at bottom right. For 1920x1080:
 # width.saturating_sub(220) = 1060
 # height.saturating_sub(105) = 615
 cx, cy = 1060, 615

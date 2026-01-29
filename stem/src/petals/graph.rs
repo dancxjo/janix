@@ -228,12 +228,13 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
 mod tests {
     use super::*;
     use abi::types::Edge;
+    use alloc::string::String;
     use alloc::collections::BTreeMap;
 
     #[derive(Default)]
     struct FakeGraph {
         next_id: u64,
-        props: BTreeMap<(u64, &'static str), u64>,
+        props: BTreeMap<(u64, String), u64>,
         edges: Vec<Edge>,
     }
 
@@ -271,14 +272,14 @@ mod tests {
         }
 
         fn prop_set(&mut self, id: ThingId, key: &str, value: u64) -> Result<()> {
-            self.props.insert((id.to_u64_lossy(), key), value);
+            self.props.insert((id.to_u64_lossy(), String::from(key)), value);
             Ok(())
         }
 
         fn prop_get(&mut self, id: ThingId, key: &str) -> Result<u64> {
             Ok(self
                 .props
-                .get(&(id.to_u64_lossy(), key))
+                .get(&(id.to_u64_lossy(), String::from(key)))
                 .copied()
                 .unwrap_or(0))
         }

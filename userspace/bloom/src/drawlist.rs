@@ -11,8 +11,8 @@ use crate::isa::PointF;
 // Re-export damage::Rect for legacy compatibility where needed,
 // but we prefer geometry::Rect for new commands.
 // Usage: crate::drawlist::DamageRect
-#[allow(unused_imports)]
-pub use crate::damage::Rect as DamageRect;
+// Re-export geometry::Rect as DamageRect for now, or just usage
+pub type DamageRect = crate::geometry::Rect;
 
 /// Insets for nine-slice rendering
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

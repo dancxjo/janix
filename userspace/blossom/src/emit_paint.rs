@@ -279,8 +279,8 @@ fn draw_window_chrome(
     let title_color = 0xFF2A2A30;
     let border_color = 0xFF0A0A0F;
 
-    // Windows 98 Gradient colors: Navy to Boot Color
-    let gradient_start = 0xFF000080;
+    // Windows 98 Gradient colors: Magenta to Boot Color
+    let gradient_start = 0xFFFF00FF;
     let gradient_end = 0xFF2E7FD1; // Boot Screen Color
 
     builder.fill_rect(rect.x, rect.y, rect.w, rect.h, border_color);

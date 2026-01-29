@@ -221,6 +221,7 @@ mod tests {
         let pixels: Vec<u32> = (0..16 * 16).map(|_| 0xFFFFFFFF).collect();
         CursorAsset::Static(CursorFrame {
             image: Image {
+                id: None,
                 width: 16,
                 height: 16,
                 pixels: Arc::from(pixels.into_boxed_slice()),

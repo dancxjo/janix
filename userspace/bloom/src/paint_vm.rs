@@ -31,14 +31,14 @@ pub struct WindowHit {
 ///
 /// This structure tracks the state needed to construct a cache key.
 /// The actual rasterized buffers are stored in `RenderState`'s `WindowRasterCache`.
-struct WindowPaintState {
-    rect: Rect,
-    z: i32,
-    hidden: bool,
-    paint_gen: u64,
-    paint_bs: u64,
-    geometry_gen: u64,
-    asset_gen: u64,
+pub(crate) struct WindowPaintState {
+    pub(crate) rect: Rect,
+    pub(crate) z: i32,
+    pub(crate) hidden: bool,
+    pub(crate) paint_gen: u64,
+    pub(crate) paint_bs: u64,
+    pub(crate) geometry_gen: u64,
+    pub(crate) asset_gen: u64,
 }
 
 pub struct PaintResult {
@@ -201,12 +201,23 @@ impl PaintPipeline {
         self.windows
             .iter()
             .filter(|(_, state)| !state.hidden && state.rect.contains(x, y))
-            .max_by_key(|(_, state)| state.z)
+            .max_by(|(id_a, state_a), (id_b, state_b)| {
+                state_a
+                    .z
+                    .cmp(&state_b.z)
+                    // Tie-breaker: Lower ID is "on top" (matches compose() stable sort)
+                    .then_with(|| id_b.cmp(id_a))
+            })
             .map(|(id, state)| WindowHit {
                 id: *id,
                 rect: state.rect,
                 z: state.z,
             })
+    }
+
+    #[cfg(test)]
+    pub fn test_windows(&mut self) -> &mut BTreeMap<ThingId, WindowPaintState> {
+        &mut self.windows
     }
 
     pub fn max_z_excluding(&self, exclude_id: ThingId) -> i32 {
@@ -765,4 +776,88 @@ fn read_bytespace(bs_id: ThingId) -> Result<Vec<u8>, abi::errors::Errno> {
         offset = offset.saturating_add(read);
     }
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::geometry::Rect;
+    use stem::thing::ThingId;
+
+    fn make_id(n: u8) -> ThingId {
+        let mut b = [0u8; 16];
+        b[0] = n;
+        ThingId(b)
+    }
+
+    #[test]
+    fn test_top_window_z_priority() {
+        let mut pipeline = PaintPipeline::new();
+        let windows = pipeline.test_windows();
+
+        // Window A: Z=5
+        let id_a = make_id(1);
+        windows.insert(id_a, WindowPaintState {
+            rect: Rect::new(0, 0, 100, 100),
+            z: 5,
+            hidden: false,
+            paint_gen: 0,
+            paint_bs: 0,
+            geometry_gen: 0,
+            asset_gen: 0,
+        });
+
+        // Window B: Z=10 (On Top)
+        let id_b = make_id(2);
+        windows.insert(id_b, WindowPaintState {
+            rect: Rect::new(0, 0, 100, 100),
+            z: 10,
+            hidden: false,
+            paint_gen: 0,
+            paint_bs: 0,
+            geometry_gen: 0,
+            asset_gen: 0,
+        });
+
+        let hit = pipeline.top_window_at_point(50, 50).expect("Should hit");
+        assert_eq!(hit.id, id_b, "Higher Z should win");
+    }
+
+    #[test]
+    fn test_top_window_tie_breaker() {
+        let mut pipeline = PaintPipeline::new();
+        let windows = pipeline.test_windows();
+
+        // Window A: ID=1, Z=0
+        let id_a = make_id(1);
+        windows.insert(id_a, WindowPaintState {
+            rect: Rect::new(0, 0, 100, 100),
+            z: 0,
+            hidden: false,
+            paint_gen: 0,
+            paint_bs: 0,
+            geometry_gen: 0,
+            asset_gen: 0,
+        });
+
+        // Window B: ID=2, Z=0
+        let id_b = make_id(2);
+        windows.insert(id_b, WindowPaintState {
+            rect: Rect::new(0, 0, 100, 100),
+            z: 0,
+            hidden: false,
+            paint_gen: 0,
+            paint_bs: 0,
+            geometry_gen: 0,
+            asset_gen: 0,
+        });
+
+        // In compose(), stable sort by Z descending (stable) followed by iterating keys (ascending).
+        // Since key 1 < key 2, key 1 comes first.
+        // First one wins occlusion.
+        // So we expect ID 1.
+
+        let hit = pipeline.top_window_at_point(50, 50).expect("Should hit");
+        assert_eq!(hit.id, id_a, "Lower ID should win ties (matching render order)");
+    }
 }

@@ -723,7 +723,14 @@ mod tests {
                 strings: BTreeMap::new(),
                 children: vec![child_id],
                 svg_content: None,
+                svg_source: None,
+                svg_hash: None,
                 window_icon_content: None,
+                window_icon_source: None,
+                window_icon_hash: None,
+                drawlist_content: None,
+                drawlist_source: None,
+                drawlist_hash: None,
             },
         );
 
@@ -743,7 +750,14 @@ mod tests {
                 strings: BTreeMap::new(),
                 children: vec![],
                 svg_content: None,
+                svg_source: None,
+                svg_hash: None,
                 window_icon_content: None,
+                window_icon_source: None,
+                window_icon_hash: None,
+                drawlist_content: None,
+                drawlist_source: None,
+                drawlist_hash: None,
             },
         );
 

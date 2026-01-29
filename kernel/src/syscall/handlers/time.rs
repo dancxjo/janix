@@ -50,9 +50,9 @@ pub fn sys_time_monotonic_ns() -> SysResult<usize> {
 }
 
 pub fn sys_time_now() -> SysResult<usize> {
-    if !crate::time::is_anchored() {
-        return Err(abi::errors::Errno::EAGAIN);
-    }
+    // Return system time (monotonic + offset).
+    // If not anchored yet, offset is 0, so this returns monotonic time relative to boot.
+    // We no longer return EAGAIN; callers should check sys.TimeState in the graph if they need wall-clock certainty.
     let rt = crate::runtime_base();
     let ticks = rt.mono_ticks();
     let freq = rt.mono_freq_hz();

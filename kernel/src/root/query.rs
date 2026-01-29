@@ -64,8 +64,8 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                 // Expand
                 let dir = step.arg1;
                 let rel = step.symbol;
-                // Arbitrary expansion limit to prevent explosions
-                let limit = 256;
+                // Increase arbitrary expansion limit to prevent explosions but allow more data
+                let limit = 16384;
                 let mut count = 0;
 
                 for row in current_rows {
@@ -76,7 +76,7 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                         if dir == 0 {
                             // Out
                             for (r, dst) in &node.edges {
-                                if *r == rel {
+                                if rel == 0 || *r == rel {
                                     next_rows.push(QueryRow {
                                         id: row.id,
                                         kind_rel: *r as u64,
@@ -91,7 +91,7 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                             // Slow scan for incoming
                             for (nid, n) in &graph.nodes {
                                 for (r, dst) in &n.edges {
-                                    if *dst == row.id && *r == rel {
+                                    if *dst == row.id && (rel == 0 || *r == rel) {
                                         next_rows.push(QueryRow {
                                             id: *nid,
                                             kind_rel: *r as u64,
@@ -217,5 +217,24 @@ mod tests {
 
         assert!(found_p1, "Did not find P1 liked Post1");
         assert!(found_p2, "Did not find P2 liked Post2");
+
+        // Scenario 4: Scan(Person) -> Expand(Wildcard, Out)
+        // P2 has Authored(Post1) and Liked(Post2).
+        // P1 has Liked(Post1).
+        // Should find 3 edges.
+        let plan4 = vec![
+            PreparedStep {
+                op: 1,
+                symbol: kind_person,
+                arg1: 0,
+            },
+            PreparedStep {
+                op: 3,
+                symbol: 0,
+                arg1: 0,
+            },
+        ];
+        let count = execute(&graph, &plan4, &mut out).expect("Plan 4 failed");
+        assert_eq!(count, 3);
     }
 }

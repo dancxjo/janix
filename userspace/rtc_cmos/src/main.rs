@@ -153,6 +153,19 @@ fn main(arg: usize) -> ! {
     stem::syscall::time_anchor(unix_secs);
     info!("System clock anchored");
 
+    // Update Kernel TimeState to Anchored (1)
+    let mut kernel_ids = [stem::thing::ThingId::default(); 1];
+    if let Ok(1) = thingsys::find(stem::abi::schema::kinds::PROC_KERNEL, &mut kernel_ids) {
+        let kernel = kernel_ids[0];
+        if let Err(e) = thingsys::prop_set(kernel, "sys.TimeState", 1) {
+            warn!("RTC: Failed to set sys.TimeState: {:?}", e);
+        } else {
+            info!("RTC: Set sys.TimeState = 1 (Anchored)");
+        }
+    } else {
+        warn!("RTC: Failed to find kernel node to update TimeState");
+    }
+
     // Create time.source node in the graph
     let src = match thingsys::create_node("time.Source") {
         Ok(id) => id,

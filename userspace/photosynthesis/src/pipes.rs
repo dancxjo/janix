@@ -99,10 +99,10 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
         seen.insert(id, ());
 
         // Scan edges and discover new nodes
-        let mut q_buf = [QueryRow::default(); 32];
+        let mut q_buf = [QueryRow::default(); 128];
         let mut q = RestrictedQuery::new(&mut q_buf);
 
-        if let Ok(count) = q.get_edges(id, None, 32) {
+        if let Ok(count) = q.get_edges(id, None, 128) {
              for i in 0..count {
                  let row = &q.buf[i];
                  let predicate_id = row.kind_rel as u32;

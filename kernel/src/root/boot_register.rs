@@ -153,6 +153,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     // 3. Kernel
     let kernel = create(kinds::PROC_KERNEL);
     set(kernel, "version", 1);
+    // Initialize TimeState: 0 = Unanchored, 1 = Anchored
+    set(kernel, "sys.TimeState", 0);
     link(kernel, rels::RUNS_ON, host);
 
     // 4. Root Service

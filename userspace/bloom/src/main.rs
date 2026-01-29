@@ -35,6 +35,7 @@ pub mod snapshot;
 mod state;
 mod surface;
 mod svg;
+mod text_cache;
 mod ui;
 mod ui_events;
 mod window_manager;

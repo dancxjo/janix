@@ -10,10 +10,27 @@ use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
 use alloc::vec;
 use alloc::vec::Vec;
+use alloc::sync::Arc;
 use fontdue::layout::GlyphRasterConfig;
 
 use alloc::collections::BTreeMap;
 use stem::thing::{HandleId, ThingId};
+use spin::Mutex;
+use crate::text_cache::{TextRasterCache, TextCacheKey, TextCacheEntry, hash_str};
+
+static TEXT_CACHE: Mutex<Option<TextRasterCache>> = Mutex::new(None);
+
+fn with_text_cache<F, R>(f: F) -> R
+where
+    F: FnOnce(&mut TextRasterCache) -> R,
+{
+    let mut guard = TEXT_CACHE.lock();
+    if guard.is_none() {
+        *guard = Some(TextRasterCache::new());
+    }
+    f(guard.as_mut().unwrap())
+}
+
 
 struct MappedBytespace {
     ptr: *mut u8,
@@ -1024,19 +1041,19 @@ fn rasterize_text_locally(
     fd: bool,
 ) {
     let t_start = stem::monotonic_ns();
-    let mut stats = (0u64, 0u64, 0u64, 0u64);
+
     if !font_graph::has_fonts_ready() {
         rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
         return;
     }
-    let mut handled = false;
+
     if let Some(r) = rf {
         if !font_graph::try_with_graph_if_ready(|g| g.has_font(r)).unwrap_or(false) {
             rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
             return;
         }
     }
-    let (mut r_ns_t, mut b_ns_t) = (0u64, 0u64);
+
     font_graph::with_graph(|graph| {
         let stack = graph.resolve_stack(rf);
         if stack.is_empty() {
@@ -1044,13 +1061,38 @@ fn rasterize_text_locally(
         }
         let primary_face_id = stack
             .iter()
-            .find_map(|f| graph.select_face_for_family(*f, FontStyle::default()));
-        let primary_font = match primary_face_id.and_then(|id| graph.font_for_face(id)) {
-            Some(f) => f,
-            None => return,
+            .find_map(|f| graph.select_face_for_family(*f, FontStyle::default()))
+            .unwrap_or(ThingId::default());
+
+        // Cache Key
+        let key = TextCacheKey {
+            face_id: primary_face_id.to_u64_lossy(),
+            px: size as u16,
+            flags: if fd { 1 } else { 0 },
+            text_hash: hash_str(text),
+            text_len: text.len() as u16,
         };
-        handled = true;
-        let met = match primary_font.font.horizontal_line_metrics(size) {
+
+        // Try Cache
+        let hit = with_text_cache(|c: &mut TextRasterCache| {
+            if let Some(entry) = c.get(&key, t_start) {
+                crate::trace_counter!("raster.text.cache_hit.count", 1);
+                blit_text_entry(surface, entry, x, y, color, clip);
+                true
+            } else {
+                false
+            }
+        });
+
+        if hit {
+            return;
+        }
+
+        crate::trace_counter!("raster.text.cache_miss.count", 1);
+
+        // Rasterize
+        let start_rast = stem::monotonic_ns();
+        let met = match graph.font_for_face(primary_face_id).and_then(|f| f.font.horizontal_line_metrics(size)) {
             Some(m) => m,
             None => fontdue::LineMetrics {
                 ascent: size * 0.8f32,
@@ -1059,134 +1101,262 @@ fn rasterize_text_locally(
                 new_line_size: size * 1.2f32,
             },
         };
-        let (mut pen_x, mut pen_y) = (x, y + met.ascent);
-        for ch in text.chars() {
-            if ch == '\n' {
-                pen_x = x;
-                pen_y += libm::fmaxf(met.new_line_size, size * 1.1f32);
-                continue;
-            }
-            if ch == '\r' {
-                continue;
-            }
 
-            let res = graph
-                .resolve_face_for_glyph(&stack, FontStyle::default(), ch as u32)
-                .or_else(|| primary_face_id.and_then(|id| graph.resolved_face_by_id(id)));
+        if let Some(entry) = rasterize_text_to_a8(graph, text, &stack, size, &met, primary_face_id) {
+            let dt = stem::monotonic_ns().saturating_sub(start_rast);
+            crate::trace_counter!("raster.text.rasterize.ns_total", dt);
 
-            let r = match res {
-                Some(r) => r,
-                None => {
-                    pen_x += size * 0.4f32;
-                    continue;
-                }
-            };
-
-            let f = match graph.font_for_face(r.face_id) {
-                Some(f) => f,
-                None => {
-                    pen_x += size * 0.4f32;
-                    continue;
-                }
-            };
-
-            // 1. Try local cache first
-            let config = GlyphRasterConfig {
-                glyph_index: f.font.lookup_glyph_index(ch),
-                px: size,
-                font_hash: f.font.file_hash(),
-            };
-            let key = (config.px.to_bits(), config.glyph_index, config.font_hash);
-
-            let mut cached_result = None;
-            {
-                let cache = f.glyph_cache.lock();
-                if let Some(cached) = cache.get(&key) {
-                    cached_result = Some(cached.clone());
-                }
-            }
-
-            // 2. Try graph if not in local cache
-            if cached_result.is_none() {
-                if let Some(gid) = graph.find_glyph(r.face_id, size as u16, ch as u32) {
-                    if let Some(res) = f.get_glyph_from_graph(gid) {
-                        let mut cache = f.glyph_cache.lock();
-                        cache.insert(key, res.clone());
-                        cached_result = Some(res);
-                    }
-                }
-            }
-
-            if let Some((m, b)) = cached_result {
-                // Draw REAL glyph
-                let r_start = stem::monotonic_ns();
-                stats.0 += 1;
-                let (gx, gy) = (
-                    (pen_x + m.xmin as f32) as i32,
-                    pen_y as i32 - m.height as i32 - m.ymin,
-                );
-                let (sr, sg, sb, sa) = (
-                    ((color >> 16) & 0xFF) as u8,
-                    ((color >> 8) & 0xFF) as u8,
-                    (color & 0xFF) as u8,
-                    ((color >> 24) & 0xFF) as u8,
-                );
-                for r in 0..m.height {
-                    for c in 0..m.width {
-                        let (cx, cy) = (gx + c as i32, gy + r as i32);
-                        if cx >= clip.x()
-                            && cx < clip.x() + clip.width()
-                            && cy >= clip.y()
-                            && cy < clip.y() + clip.height()
-                        {
-                            let a = b[r * (m.width as usize) + c];
-                            if a > 0 {
-                                blend_pixel(surface, cx, cy, sr, sg, sb, scale_ch(a, sa) as u8);
-                                stats.1 += 1;
-                            }
-                        }
-                    }
-                }
-                pen_x += m.advance_width;
-                r_ns_t += stem::monotonic_ns().saturating_sub(r_start);
-            } else {
-                // 3. Request if still MISSING and draw placeholder
-                graph.request_glyph(r.face_id, size as u16, ch as u32);
-
-                let pw = (size * 0.4) as i32;
-                let ph = (size * 0.8) as i32;
-                let px = pen_x as i32;
-                let py = (pen_y - size * 0.8) as i32;
-
-                // Draw a simple box placeholder
-                fill_rect_blend(surface, px, py, pw, ph, (color & 0x7FFFFFFF) | 0x40000000);
-                pen_x += size * 0.5f32;
-            }
+            with_text_cache(|c: &mut TextRasterCache| {
+                c.evict_if_needed(2 * 1024 * 1024, t_start);
+                let current_bytes = c.byte_count();
+                let added_bytes = entry.alpha.len();
+                let e = c.insert(key, entry);
+                crate::trace_counter!("raster.text.cache_bytes.current", (current_bytes + added_bytes) as u64);
+                blit_text_entry(surface, e, x, y, color, clip);
+            });
+        } else {
+             // Fallback if rasterization failed (e.g. no fonts)
+             rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
         }
     });
-    if !handled {
-        rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
-    }
-    // Diagnostic: log text rasterization stats for debugging rendering issues
-    static mut LOG_COUNT: u64 = 0;
-    unsafe {
-        LOG_COUNT += 1;
-        if LOG_COUNT <= 10 || LOG_COUNT % 500 == 0 {
-            stem::info!(
-                "[raster] text glyphs={} pixels={} handled={} text_chars={}",
-                stats.0,
-                stats.1,
-                handled,
-                text.len()
-            );
-        }
-    }
-    crate::trace_counter!("text.glyphs", stats.0);
-    crate::trace_counter!("text.pixels", stats.1);
-    crate::trace_counter!("text.raster_ns", r_ns_t);
-    crate::trace_counter!("text.blit_ns", b_ns_t);
+
     crate::trace_counter!("text.ns", stem::monotonic_ns().saturating_sub(t_start));
 }
+
+fn rasterize_text_to_a8(
+    graph: &mut font_graph::FontGraph,
+    text: &str,
+    stack: &[ThingId],
+    size: f32,
+    met: &fontdue::LineMetrics,
+    primary_face_id: ThingId,
+) -> Option<TextCacheEntry> {
+    // Pass 1: Measure bounds
+    let mut min_x = i32::MAX;
+    let mut min_y = i32::MAX;
+    let mut max_x = i32::MIN;
+    let mut max_y = i32::MIN;
+
+    let mut pen_x = 0.0f32;
+    let mut pen_y = met.ascent;
+
+    let mut glyphs = Vec::with_capacity(text.len());
+
+    for ch in text.chars() {
+        if ch == '\n' {
+            pen_x = 0.0;
+            pen_y += libm::fmaxf(met.new_line_size, size * 1.1f32);
+            continue;
+        }
+        if ch == '\r' {
+            continue;
+        }
+
+        let res = graph
+            .resolve_face_for_glyph(stack, FontStyle::default(), ch as u32)
+            .or_else(|| graph.resolved_face_by_id(primary_face_id));
+
+        let r = match res {
+            Some(r) => r,
+            None => {
+                pen_x += size * 0.4f32;
+                continue;
+            }
+        };
+
+        let f = match graph.font_for_face(r.face_id) {
+            Some(f) => f,
+            None => {
+                pen_x += size * 0.4f32;
+                continue;
+            }
+        };
+
+        let config = GlyphRasterConfig {
+            glyph_index: f.font.lookup_glyph_index(ch),
+            px: size,
+            font_hash: f.font.file_hash(),
+        };
+        let key = (config.px.to_bits(), config.glyph_index, config.font_hash);
+
+        // Try local cache or graph
+        let mut cached_result = None;
+        {
+             let cache = f.glyph_cache.lock();
+             if let Some(cached) = cache.get(&key) {
+                 cached_result = Some(cached.clone());
+             }
+        }
+        if cached_result.is_none() {
+            if let Some(gid) = graph.find_glyph(r.face_id, size as u16, ch as u32) {
+                if let Some(res) = f.get_glyph_from_graph(gid) {
+                    let mut cache = f.glyph_cache.lock();
+                    cache.insert(key, res.clone());
+                    cached_result = Some(res);
+                }
+            }
+        }
+        
+        // If still missing, request and skip for now (or placeholder?)
+        // The original code draws placeholder immediately. 
+        // Here we can emit a placeholder rect?
+        if cached_result.is_none() {
+             graph.request_glyph(r.face_id, size as u16, ch as u32);
+             return None; 
+        }
+
+        if let Some((m, _)) = cached_result {
+             // (m, b)
+             let gx = (pen_x + m.xmin as f32) as i32;
+             let gy = pen_y as i32 - m.height as i32 - m.ymin;
+             
+             if m.width > 0 && m.height > 0 {
+                 min_x = min_x.min(gx);
+                 min_y = min_y.min(gy);
+                 max_x = max_x.max(gx + m.width as i32);
+                 max_y = max_y.max(gy + m.height as i32);
+             }
+             
+             glyphs.push((gx, gy, r.face_id, key, m)); // Store m (metrics) and key to retrieve bitmap later to save memory? 
+             // Or just store the bitmap?
+             // `cached_result` has `(Metrics, Vec<u8>)`.
+             // `glyphs` needs the bitmap.
+        }
+        
+        pen_x += match cached_result {
+            Some((m, _)) => m.advance_width,
+            None => size * 0.4,
+        };
+    }
+    
+    // Check if we have anything
+    if glyphs.is_empty() {
+        return Some(TextCacheEntry {
+            w: 0,
+            h: 0,
+            offset_x: 0,
+            offset_y: 0,
+            alpha: Vec::new(),
+            last_used_ns: 0,
+        });
+    }
+
+    if min_x > max_x || min_y > max_y {
+         // Should not happen if glyphs not empty and have dim
+         return None;
+    }
+
+    // Allocate A8 buffer
+    let w = (max_x - min_x) as usize;
+    let h = (max_y - min_y) as usize;
+    if w == 0 || h == 0 {
+         return Some(TextCacheEntry { w:0, h:0, offset_x:0, offset_y:0, alpha:Vec::new(), last_used_ns:0 });
+    }
+    
+    let mut alpha = vec![0u8; w * h];
+    
+    // Pass 2: Blit glyphs into alpha
+    // We need to retrieve the bitmap again or have stored it.
+    // Iterating `text` again is wasteful.
+    // We stored `key` and `face_id` in `glyphs`. And `m`.
+    // We need `b`. We can re-fetch from local cache (fast).
+    
+    for (gx, gy, face_id, key, m) in glyphs {
+         // Re-fetch bitmap
+         let f = graph.font_for_face(face_id)?; // Should match
+         // Local cache lookup
+         let mut bitmap: Option<Arc<[u8]>> = None;
+         {
+             let cache = f.glyph_cache.lock();
+             if let Some((_, b)) = cache.get(&key) {
+                 bitmap = Some(b.clone());
+             }
+         }
+         
+         if let Some(b) = bitmap {
+             let dst_ox = gx - min_x;
+             let dst_oy = gy - min_y;
+             
+             for r in 0..m.height {
+                 let dy = dst_oy + r as i32;
+                 if dy < 0 || dy >= h as i32 { continue; }
+                 for c in 0..m.width {
+                     let dx = dst_ox + c as i32;
+                     if dx < 0 || dx >= w as i32 { continue; }
+                     
+                     let src_val = b[r * (m.width as usize) + c];
+                     if src_val > 0 {
+                         let dst_idx = (dy as usize) * w + (dx as usize);
+                         // Accumulate alpha? Or Max?
+                         // Font rendering usually uses max or add-saturated.
+                         // Simple max is often good enough for avoiding double-darkening overlap.
+                         alpha[dst_idx] = alpha[dst_idx].max(src_val);
+                     }
+                 }
+             }
+         }
+    }
+
+    Some(TextCacheEntry {
+        w: w as u16,
+        h: h as u16,
+        offset_x: min_x as i16,
+        offset_y: min_y as i16,
+        alpha,
+        last_used_ns: 0,
+    })
+}
+
+fn blit_text_entry(
+    surface: &mut Surface,
+    entry: &TextCacheEntry,
+    x: f32,
+    y: f32,
+    color: u32,
+    clip: &Rect,
+) {
+    if entry.w == 0 || entry.h == 0 {
+        return;
+    }
+    
+    let (sa, sr, sg, sb) = (
+        ((color >> 24) & 0xFF) as u8,
+        ((color >> 16) & 0xFF) as u8,
+        ((color >> 8) & 0xFF) as u8,
+        (color & 0xFF) as u8,
+    );
+    if sa == 0 { return; }
+
+    let x_start = (x as i32) + (entry.offset_x as i32);
+    let y_start = (y as i32) + (entry.offset_y as i32);
+    
+    // Intersection with clip
+    let rect = Rect::new(x_start, y_start, entry.w as i32, entry.h as i32);
+    let common = match rect.intersection(clip) {
+        Some(c) => c,
+        None => return,
+    };
+    
+    let w = entry.w as usize; 
+    let alpha = &entry.alpha;
+    
+    // Iterate common rect
+    for dy in common.y()..(common.y() + common.height()) {
+        let src_y = (dy - y_start) as usize;
+        let row_offset = src_y * w;
+        
+        for dx in common.x()..(common.x() + common.width()) {
+            let src_x = (dx - x_start) as usize;
+            let a_val = alpha[row_offset + src_x];
+            
+            if a_val > 0 {
+                 let blended_a = scale_ch(a_val, sa) as u8;
+                 blend_pixel(surface, dx, dy, sr, sg, sb, blended_a);
+            }
+        }
+    }
+}
+
 
 fn blit_surface(
     dst_surface: &mut Surface,

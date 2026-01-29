@@ -21,6 +21,10 @@ pub fn blit_rgba8888_over(dst: &mut [u32], src: &[u32]) {
 ///   - Use solid fill when mask is all 255s with opaque color
 ///
 /// Trace counters track optimization hits for performance analysis.
+///
+/// Note: This function processes one row at a time. For multi-row batching,
+/// callers could be refactored to call the underlying SIMD function directly
+/// with rect_h > 1, but that would require API changes.
 pub fn blit_a8_tinted_over(dst: &mut [u32], mask: &[u8], color: u32, tint_a: u8) {
     if tint_a == 0 {
         crate::trace_counter!("raster.blit.a8_masked.early_exit_tint_zero", 1);

@@ -207,17 +207,265 @@ fn main(arg: usize) -> ! {
     // =========================================================================
     if gpu.has_3d_feature() {
         info!("display_virtio_gpu: Virgl 3D supported - running bring-up test...");
-        let test_ctx_id = 255u32; // Use a high context ID for testing
+        let test_ctx_id = 1u32;
+        let render_target_id = 100u32;
         
+        // Step 1: Create virgl context
         match gpu.create_context(test_ctx_id, b"virgl_test") {
             Ok(()) => {
-                info!("display_virtio_gpu: [VIRGL OK] Context created successfully!");
-                // Destroy the test context - we'll use real contexts later
-                let _ = gpu.destroy_context(test_ctx_id);
-                info!("display_virtio_gpu: [VIRGL OK] Context destroyed. Bring-up test passed!");
+                info!("display_virtio_gpu: [VIRGL 1/5] Context created");
             }
             Err(e) => {
                 info!("display_virtio_gpu: [VIRGL FAIL] Context creation failed: {}", e);
+                // Continue with 2D fallback
+            }
+        }
+        
+        // Step 2: Create 3D render target resource
+        let (w, h, _, _) = get_display_dimensions();
+        let target_type = 2;   // PIPE_TEXTURE_2D
+        let format = 2;        // PIPE_FORMAT_B8G8R8X8_UNORM
+        let bind = 2;          // PIPE_BIND_RENDER_TARGET
+        
+        if let Err(e) = gpu.create_resource_3d(render_target_id, target_type, format, bind, w, h, 1) {
+            info!("display_virtio_gpu: [VIRGL FAIL] create_resource_3d failed: {}", e);
+        } else {
+            info!("display_virtio_gpu: [VIRGL 2/5] 3D resource created {}x{}", w, h);
+        }
+        
+        // Step 3: Attach resource to context
+        if let Err(e) = gpu.ctx_attach_resource(test_ctx_id, render_target_id) {
+            info!("display_virtio_gpu: [VIRGL FAIL] ctx_attach_resource failed: {}", e);
+        } else {
+            info!("display_virtio_gpu: [VIRGL 3/5] Resource attached to context");
+        }
+        
+        // Step 4: Build and submit CLEAR command
+        // Virgl command format: cmd_header(cmd, obj_type, payload_len), then payload words
+        // CLEAR command: buffers, r, g, b, a, depth_lo, depth_hi, stencil
+        let mut cmds: [u32; 32] = [0; 32];
+        let mut idx = 0;
+        
+        // Create surface object for render target (handle=1)
+        let surface_handle = 1u32;
+        cmds[idx] = (1 & 0xff) | ((8 & 0xff) << 8) | ((5 & 0xffff) << 16); // CREATE_OBJECT=1, SURFACE=8, len=5
+        idx += 1;
+        cmds[idx] = surface_handle;  // handle
+        idx += 1;
+        cmds[idx] = render_target_id; // resource handle
+        idx += 1;
+        cmds[idx] = format;           // format
+        idx += 1;
+        cmds[idx] = 0;                // first_element
+        idx += 1;
+        cmds[idx] = 0;                // last_element
+        idx += 1;
+        
+        // Set framebuffer state (nr_cbufs=1, zsurf=0, cbuf[0]=surface_handle)
+        cmds[idx] = (5 & 0xff) | ((0 & 0xff) << 8) | ((3 & 0xffff) << 16); // SET_FRAMEBUFFER_STATE=5, len=3
+        idx += 1;
+        cmds[idx] = 1;               // nr_cbufs
+        idx += 1;
+        cmds[idx] = 0;               // zsurf_handle (no depth buffer)
+        idx += 1;
+        cmds[idx] = surface_handle;  // cbuf[0]
+        idx += 1;
+        
+        // Set viewport state for full screen
+        let scale_x = (w as f32) / 2.0;
+        let scale_y = -(h as f32) / 2.0;
+        let translate_x = (w as f32) / 2.0;
+        let translate_y = (h as f32) / 2.0;
+        cmds[idx] = (4 & 0xff) | ((0 & 0xff) << 8) | ((7 & 0xffff) << 16); // SET_VIEWPORT_STATE=4, len=7
+        idx += 1;
+        cmds[idx] = 0;  // start_slot
+        idx += 1;
+        cmds[idx] = scale_x.to_bits();
+        idx += 1;
+        cmds[idx] = scale_y.to_bits();
+        idx += 1;
+        cmds[idx] = 0.5f32.to_bits();  // scale_z
+        idx += 1;
+        cmds[idx] = translate_x.to_bits();
+        idx += 1;
+        cmds[idx] = translate_y.to_bits();
+        idx += 1;
+        cmds[idx] = 0.5f32.to_bits();  // translate_z
+        idx += 1;
+        
+        // CLEAR command (clear to cyan color)
+        let depth: f64 = 1.0;
+        let depth_bits = depth.to_bits();
+        cmds[idx] = (7 & 0xff) | ((0 & 0xff) << 8) | ((8 & 0xffff) << 16); // CLEAR=7, len=8
+        idx += 1;
+        cmds[idx] = 4;  // buffers = PIPE_CLEAR_COLOR
+        idx += 1;
+        cmds[idx] = 0.0f32.to_bits();   // r
+        idx += 1;
+        cmds[idx] = 0.8f32.to_bits();   // g (cyan)
+        idx += 1;
+        cmds[idx] = 0.8f32.to_bits();   // b (cyan)
+        idx += 1;
+        cmds[idx] = 1.0f32.to_bits();   // a
+        idx += 1;
+        cmds[idx] = depth_bits as u32;       // depth_lo
+        idx += 1;
+        cmds[idx] = (depth_bits >> 32) as u32; // depth_hi
+        idx += 1;
+        cmds[idx] = 0;  // stencil
+        idx += 1;
+        
+        // Convert to bytes for submit_3d
+        let cmd_bytes = unsafe {
+            core::slice::from_raw_parts(
+                cmds.as_ptr() as *const u8,
+                idx * 4,
+            )
+        };
+        
+        match gpu.submit_3d(test_ctx_id, cmd_bytes) {
+            Ok(()) => info!("display_virtio_gpu: [VIRGL 4/5] CLEAR command submitted ({} bytes)", idx * 4),
+            Err(e) => info!("display_virtio_gpu: [VIRGL FAIL] submit_3d failed: {}", e),
+        }
+        
+        // Step 5: Set scanout to show the 3D render target and flush
+        if let Err(e) = gpu.set_scanout(render_target_id, w, h) {
+            info!("display_virtio_gpu: [VIRGL FAIL] set_scanout failed: {}", e);
+        } else {
+            info!("display_virtio_gpu: [VIRGL 5/5] Scanout set to 3D render target");
+        }
+        
+         // Flush to display
+        let rect = virtio_gpu::Rect { x: 0, y: 0, w: w, h: h };
+        if let Err(e) = gpu.flush_resource(render_target_id, rect) {
+            info!("display_virtio_gpu: [VIRGL FAIL] flush_resource failed: {}", e);
+        } else {
+            info!("display_virtio_gpu: [VIRGL OK] Virgl clear test complete! Screen should be cyan.");
+        }
+
+        // =====================================================================
+        // TEXTURE UPLOAD TEST: Test CPU→GPU texture transfer
+        // =====================================================================
+        info!("display_virtio_gpu: [TEXTURE] Starting texture upload test...");
+        
+        let texture_id = 101u32;
+        let tex_w = 100u32;
+        let tex_h = 100u32;
+        let tex_stride = tex_w * 4; // BGRA32
+        let tex_size = (tex_h * tex_stride) as usize;
+        
+        // Create a 3D texture resource (SAMPLER bind for textures)
+        let tex_target = 2;   // PIPE_TEXTURE_2D
+        let tex_format = 2;   // PIPE_FORMAT_B8G8R8X8_UNORM
+        let tex_bind = 8;     // PIPE_BIND_SAMPLER_VIEW
+        
+        if let Err(e) = gpu.create_resource_3d(texture_id, tex_target, tex_format, tex_bind, tex_w, tex_h, 1) {
+            info!("display_virtio_gpu: [TEXTURE FAIL] create_resource_3d failed: {}", e);
+        } else {
+            info!("display_virtio_gpu: [TEXTURE 1/4] Texture resource created {}x{}", tex_w, tex_h);
+            
+            // Attach texture to context
+            if let Err(e) = gpu.ctx_attach_resource(test_ctx_id, texture_id) {
+                info!("display_virtio_gpu: [TEXTURE FAIL] ctx_attach_resource failed: {}", e);
+            } else {
+                info!("display_virtio_gpu: [TEXTURE 2/4] Texture attached to context");
+            }
+            
+            // Allocate DMA memory for texture data
+            use stem::syscall::{device_alloc_dma, device_dma_phys};
+            let pages = (tex_size + 4095) / 4096;
+            match device_alloc_dma(gpu.claim_handle(), pages) {
+                Ok(tex_virt) => {
+                    match device_dma_phys(tex_virt) {
+                        Ok(tex_phys) => {
+                            // Fill texture with a magenta color (B=255, G=0, R=255)
+                            let ptr = tex_virt as *mut u32;
+                            for i in 0..(tex_w * tex_h) as usize {
+                                unsafe { core::ptr::write_volatile(ptr.add(i), 0x00FF00FF) }; // BGRA magenta
+                            }
+                            info!("display_virtio_gpu: [TEXTURE 2.5/4] Texture data filled (magenta)");
+                            
+                            // Attach backing memory
+                            if let Err(e) = gpu.attach_backing_3d(texture_id, tex_phys, tex_size) {
+                                info!("display_virtio_gpu: [TEXTURE FAIL] attach_backing_3d failed: {}", e);
+                            } else {
+                                info!("display_virtio_gpu: [TEXTURE 3/4] Backing memory attached");
+                                
+                                // Transfer texture data to GPU
+                                if let Err(e) = gpu.transfer_to_host_3d(test_ctx_id, texture_id, tex_w, tex_h, 0, tex_stride) {
+                                    info!("display_virtio_gpu: [TEXTURE FAIL] transfer_to_host_3d failed: {}", e);
+                                } else {
+                                    info!("display_virtio_gpu: [TEXTURE 4/4] Texture data uploaded to GPU!");
+                                    info!("display_virtio_gpu: [TEXTURE OK] Texture upload test complete!");
+                                    
+                                    // =========================================
+                                    // BLIT TEST: Copy texture to render target
+                                    // =========================================
+                                    info!("display_virtio_gpu: [BLIT] Testing texture-to-framebuffer BLIT...");
+                                    
+                                    // Build BLIT command manually (21 dwords as per virgl protocol)
+                                    let mut blit_cmds: [u32; 32] = [0; 32];
+                                    let mut idx = 0;
+                                    
+                                    // BLIT command header: cmd=16, obj_type=0, len=21
+                                    blit_cmds[idx] = (16 & 0xff) | ((0 & 0xff) << 8) | ((21 & 0xffff) << 16);
+                                    idx += 1;
+                                    
+                                    // s0: mask=0xf (RGBA), filter=0 (NEAREST), no scissor
+                                    blit_cmds[idx] = 0xf;
+                                    idx += 1;
+                                    
+                                    // Destination box (x=100, y=100, w=100, h=100)
+                                    blit_cmds[idx] = 100; idx += 1;  // dst.box.x
+                                    blit_cmds[idx] = 100; idx += 1;  // dst.box.y
+                                    blit_cmds[idx] = 0;   idx += 1;  // dst.box.z
+                                    blit_cmds[idx] = tex_w; idx += 1; // dst.box.width
+                                    blit_cmds[idx] = tex_h; idx += 1; // dst.box.height
+                                    blit_cmds[idx] = 1;   idx += 1;  // dst.box.depth
+                                    
+                                    // Source box (full texture)
+                                    blit_cmds[idx] = 0;   idx += 1;  // src.box.x
+                                    blit_cmds[idx] = 0;   idx += 1;  // src.box.y
+                                    blit_cmds[idx] = 0;   idx += 1;  // src.box.z
+                                    blit_cmds[idx] = tex_w; idx += 1; // src.box.width
+                                    blit_cmds[idx] = tex_h; idx += 1; // src.box.height
+                                    blit_cmds[idx] = 1;   idx += 1;  // src.box.depth
+                                    
+                                    // Destination resource (render target)
+                                    blit_cmds[idx] = render_target_id; idx += 1; // dst.resource
+                                    blit_cmds[idx] = 0;   idx += 1;  // dst.level
+                                    blit_cmds[idx] = 2;   idx += 1;  // dst.format (BGRA)
+                                    
+                                    // Source resource (texture)
+                                    blit_cmds[idx] = texture_id; idx += 1; // src.resource
+                                    blit_cmds[idx] = 0;   idx += 1;  // src.level
+                                    blit_cmds[idx] = 2;   idx += 1;  // src.format (BGRA)
+                                    
+                                    // Sample0 mask
+                                    blit_cmds[idx] = 0;   idx += 1;
+                                    
+                                    let blit_bytes = unsafe {
+                                        core::slice::from_raw_parts(
+                                            blit_cmds.as_ptr() as *const u8,
+                                            idx * 4,
+                                        )
+                                    };
+                                    
+                                    match gpu.submit_3d(test_ctx_id, blit_bytes) {
+                                        Ok(()) => info!("display_virtio_gpu: [BLIT OK] Texture blitted to (100,100)! Magenta square should appear."),
+                                        Err(e) => info!("display_virtio_gpu: [BLIT FAIL] submit_3d failed: {}", e),
+                                    }
+                                    
+                                    // Flush to display
+                                    let blit_rect = virtio_gpu::Rect { x: 0, y: 0, w: w, h: h };
+                                    let _ = gpu.flush_resource(render_target_id, blit_rect);
+                                }
+                            }
+                        }
+                        Err(e) => info!("display_virtio_gpu: [TEXTURE FAIL] dma_phys failed: {:?}", e),
+                    }
+                }
+                Err(e) => info!("display_virtio_gpu: [TEXTURE FAIL] alloc_dma failed: {:?}", e),
             }
         }
     } else {
@@ -509,6 +757,34 @@ fn main(arg: usize) -> ! {
                         }
                     }
                     send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
+                }
+                drvproto::MSG_SUBMIT_3D => {
+                    // Parse Submit3d header
+                    if let Some(hdr) = drvproto::decode_submit_3d_header_le(payload) {
+                        let cmd_buf = &payload[drvproto::SUBMIT_3D_HEADER_WIRE_SIZE..];
+                        if cmd_buf.len() >= hdr.cmd_len as usize {
+                            // Submit the virgl commands to the GPU
+                            match gpu.submit_3d(hdr.ctx_id, &cmd_buf[..hdr.cmd_len as usize]) {
+                                Ok(()) => {
+                                    send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
+                                }
+                                Err(_e) => {
+                                    let err = drvproto::ErrResp { code: 3 };
+                                    let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                    if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                        send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                    }
+                                }
+                            }
+                        } else {
+                            // Buffer too short
+                            let err = drvproto::ErrResp { code: 2 };
+                            let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                            if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                            }
+                        }
+                    }
                 }
                 _ => {}
             }

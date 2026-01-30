@@ -642,6 +642,90 @@ impl VirtioGpu {
         self.send_cmd(cmd_bytes, core::mem::size_of::<VirtioGpuCtrlHdr>())
     }
 
+    /// Attach backing memory to a 3D resource
+    pub fn attach_backing_3d(
+        &mut self,
+        resource_id: u32,
+        phys_addr: u64,
+        size: usize,
+    ) -> Result<(), &'static str> {
+        // Same structure as 2D attach_backing
+        #[repr(C, packed)]
+        struct AttachCmd3d {
+            hdr: VirtioGpuResourceAttachBacking,
+            entry: VirtioGpuMemEntry,
+        }
+
+        let cmd = AttachCmd3d {
+            hdr: VirtioGpuResourceAttachBacking {
+                hdr: VirtioGpuCtrlHdr {
+                    type_: VIRTIO_GPU_CMD_RESOURCE_ATTACH_BACKING,
+                    flags: 0,
+                    fence_id: 0,
+                    ctx_id: 0,
+                    padding: 0,
+                },
+                resource_id,
+                nr_entries: 1,
+            },
+            entry: VirtioGpuMemEntry {
+                addr: phys_addr,
+                length: size as u32,
+                padding: 0,
+            },
+        };
+
+        let cmd_bytes = unsafe {
+            core::slice::from_raw_parts(
+                &cmd as *const _ as *const u8,
+                core::mem::size_of::<AttachCmd3d>(),
+            )
+        };
+
+        self.send_cmd(cmd_bytes, core::mem::size_of::<VirtioGpuCtrlHdr>())
+    }
+
+    /// Transfer texture data from backing memory to 3D resource (texture upload)
+    pub fn transfer_to_host_3d(
+        &mut self,
+        ctx_id: u32,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+        offset: u64,
+        stride: u32,
+    ) -> Result<(), &'static str> {
+        let cmd = VirtioGpuTransferToHost3d {
+            hdr: VirtioGpuCtrlHdr {
+                type_: VIRTIO_GPU_CMD_TRANSFER_TO_HOST_3D,
+                flags: 0,
+                fence_id: 0,
+                ctx_id,
+                padding: 0,
+            },
+            box_x: 0,
+            box_y: 0,
+            box_z: 0,
+            box_w: width,
+            box_h: height,
+            box_d: 1,
+            offset,
+            resource_id,
+            level: 0,
+            stride,
+            layer_stride: 0,
+        };
+
+        let cmd_bytes = unsafe {
+            core::slice::from_raw_parts(
+                &cmd as *const _ as *const u8,
+                core::mem::size_of::<VirtioGpuTransferToHost3d>(),
+            )
+        };
+
+        self.send_cmd(cmd_bytes, core::mem::size_of::<VirtioGpuCtrlHdr>())
+    }
+
     // === Internal methods ===
 
     fn setup_controlq(&mut self) -> Result<(), &'static str> {

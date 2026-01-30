@@ -251,6 +251,63 @@ impl PaintPipeline {
         (order, max_z)
     }
 
+    /// Build a list of GPU quads for all visible windows.
+    /// 
+    /// Returns a tuple of (quads, texture_info) where texture_info contains
+    /// the window ID and rasterized image data needed to upload textures.
+    /// 
+    /// The caller is responsible for:
+    /// 1. Creating GPU textures for each window
+    /// 2. Uploading the rasterized window content to those textures
+    /// 3. Passing the returned quads to GpuCompositor::render_quads()
+    #[cfg(feature = "gpu")]
+    pub fn build_gpu_quads(&self) -> Vec<crate::gpu_compositor::Quad> {
+        use crate::gpu_compositor::{Quad, Rect as GpuRect};
+        
+        let mut quads: Vec<Quad> = self
+            .windows
+            .iter()
+            .filter(|(_, w)| !w.hidden && w.rect.width() > 0 && w.rect.height() > 0)
+            .map(|(id, w)| {
+                // Use window ID as texture ID (lower 32 bits)
+                // The caller must ensure textures are registered with matching IDs
+                let texture_id = id.to_u64_lossy() as u32;
+                
+                Quad {
+                    texture_id,
+                    dst_rect: GpuRect {
+                        x: w.rect.x(),
+                        y: w.rect.y(),
+                        w: w.rect.width() as u32,
+                        h: w.rect.height() as u32,
+                    },
+                    src_rect: None, // Full texture
+                    opacity: 1.0,
+                    z: w.z as u32,
+                }
+            })
+            .collect();
+        
+        // Sort by z (ascending = back to front for painter's algorithm)
+        quads.sort_by_key(|q| q.z);
+        
+        quads
+    }
+    
+    /// Get window raster info for GPU texture upload.
+    /// 
+    /// Returns an iterator of (window_id, rect, generation, cached_image_ref).
+    /// Use this to determine which window textures need uploading.
+    #[cfg(feature = "gpu")]
+    pub fn windows_for_gpu_upload(&self) -> impl Iterator<Item = (ThingId, Rect, u64, u64)> + '_ {
+        // Returns (window_id, rect, paint_gen, geometry_gen) for texture upload decisions
+        self.windows.iter()
+            .filter(|(_, w)| !w.hidden && w.rect.width() > 0 && w.rect.height() > 0)
+            .map(move |(id, w)| {
+                (*id, w.rect, w.paint_gen, w.geometry_gen)
+            })
+    }
+
     /// Compose the scene into the framebuffer surface using occlusion culling.
     pub fn compose(
         &mut self,

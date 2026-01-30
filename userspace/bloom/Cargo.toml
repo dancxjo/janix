@@ -4,10 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = ["svg-cursors"]
+default = ["svg-cursors", "gpu"]
 svg-cursors = []
 svg-demo = ["svg-cursors"]
 surface-poison = []
+gpu = []  # Enable GPU-accelerated composition via virgl
 
 [dependencies]
 stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }

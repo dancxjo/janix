@@ -19,6 +19,7 @@ pub const MSG_OFFER_FRAMEBUFFER: u16 = 9;
 pub const MSG_ACCEPT_FRAMEBUFFER: u16 = 10;
 pub const MSG_ACQUIRE: u16 = 11;
 pub const MSG_ACQUIRED: u16 = 12;
+pub const MSG_SUBMIT_3D: u16 = 13;  // Virgl 3D command submission
 
 pub const PROTO_MAJOR: u16 = 1;
 pub const PROTO_MINOR: u16 = 0;
@@ -27,6 +28,7 @@ pub const CAP_DIRTY_RECTS: u32 = 1 << 0;
 pub const CAP_FULLFRAME: u32 = 1 << 1;
 pub const CAP_MULTI_DISPLAY: u32 = 1 << 2;
 pub const CAP_FENCE: u32 = 1 << 3;
+pub const CAP_3D: u32 = 1 << 4;  // Virgl 3D support (driver has submit_3d capability)
 
 pub const PRESENT_FLAG_FULLFRAME: u32 = 1 << 0;
 
@@ -133,6 +135,17 @@ pub struct AcquiredPayload {
     pub _pad: u32,
 }
 
+/// Header for 3D command submission (MSG_SUBMIT_3D).
+/// The actual virgl command buffer follows this header.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct Submit3dHeader {
+    /// Virgl context ID
+    pub ctx_id: u32,
+    /// Length of command buffer in bytes (follows this header)
+    pub cmd_len: u32,
+}
+
 pub const HEADER_SIZE: usize = size_of::<DriverHeader>();
 pub const REGISTER_PAYLOAD_WIRE_SIZE: usize = 8;
 pub const HELLO_PAYLOAD_WIRE_SIZE: usize = 8;
@@ -144,6 +157,7 @@ pub const ERR_RESP_WIRE_SIZE: usize = 4;
 pub const OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 24; // 8 + 4 + 4 + 4 + 4
 pub const ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 8; // 4 + 4
 pub const ACQUIRED_PAYLOAD_WIRE_SIZE: usize = 32; // 8 + 4 + 4 + 4 + 4 + 4 + 4
+pub const SUBMIT_3D_HEADER_WIRE_SIZE: usize = 8;  // 4 + 4 (ctx_id + cmd_len)
 
 pub fn encode_message(buf: &mut [u8], msg_type: u16, payload: &[u8]) -> Option<usize> {
     let total = HEADER_SIZE + payload.len();
@@ -489,5 +503,29 @@ pub fn decode_acquired_payload_le(buf: &[u8]) -> Option<AcquiredPayload> {
         format: u32::from_le_bytes(buf[20..24].try_into().ok()?),
         buffer_age: u32::from_le_bytes(buf[24..28].try_into().ok()?),
         _pad: u32::from_le_bytes(buf[28..32].try_into().ok()?),
+    })
+}
+
+/// Encode Submit3dHeader for virgl 3D command submission.
+/// The virgl command buffer should be appended after this header.
+pub fn encode_submit_3d_header_le(
+    header: &Submit3dHeader,
+    out: &mut [u8],
+) -> Option<usize> {
+    if out.len() < SUBMIT_3D_HEADER_WIRE_SIZE {
+        return None;
+    }
+    out[0..4].copy_from_slice(&header.ctx_id.to_le_bytes());
+    out[4..8].copy_from_slice(&header.cmd_len.to_le_bytes());
+    Some(SUBMIT_3D_HEADER_WIRE_SIZE)
+}
+
+pub fn decode_submit_3d_header_le(buf: &[u8]) -> Option<Submit3dHeader> {
+    if buf.len() < SUBMIT_3D_HEADER_WIRE_SIZE {
+        return None;
+    }
+    Some(Submit3dHeader {
+        ctx_id: u32::from_le_bytes(buf[0..4].try_into().ok()?),
+        cmd_len: u32::from_le_bytes(buf[4..8].try_into().ok()?),
     })
 }

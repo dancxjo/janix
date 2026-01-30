@@ -20,6 +20,7 @@ mod font_graph;
 mod frame;
 mod frame_loop;
 pub mod geometry;
+mod gpu_compositor;
 mod isa;
 mod log_ratelimit;
 mod logging;
@@ -65,7 +66,7 @@ use crate::frame_loop::FrameLoop;
 use crate::paint_vm::{PaintPipeline, WindowHit};
 use crate::present::{evaluate_present_strategy, DriverPresenter, Presenter, PresenterImpl};
 use crate::snapshot::SnapshotInvalidation;
-use crate::state::{DamageOverlayState, DebugFlags, OverlayMode};
+use crate::state::{CompositionMode, DamageOverlayState, DebugFlags, OverlayMode};
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 
@@ -523,6 +524,18 @@ fn main(arg: usize) -> ! {
     let mut debug_flags = DebugFlags::default();
     let mut overlay_state = DamageOverlayState::default();
     let mut cursor_metrics = CursorMetrics::default();
+
+    // Composition mode: CPU (default) or GPU (virgl-accelerated)
+    #[cfg(feature = "gpu")]
+    let composition_mode = if target.backend == crate::compositor::DisplayBackend::VirtioGpu {
+        stem::info!("bloom: VirtioGpu detected - enabling GPU composition mode");
+        CompositionMode::Gpu
+    } else {
+        stem::info!("bloom: No VirtioGpu - using CPU composition mode");
+        CompositionMode::Cpu
+    };
+    #[cfg(not(feature = "gpu"))]
+    let composition_mode = CompositionMode::Cpu;
 
     // Window Manager disabled in paint pipeline (no legacy chrome/hit testing)
 
@@ -1283,6 +1296,19 @@ fn main(arg: usize) -> ! {
 
             crate::trace_span!("bloom.loop.raster");
             raster::execute_with_damage(&mut surface, &list, &damage, false);
+
+            // GPU composition path (when enabled)
+            // This builds the quad list for future 3D submission
+            #[cfg(feature = "gpu")]
+            if composition_mode == CompositionMode::Gpu {
+                let quads = paint_pipeline.build_gpu_quads();
+                if !quads.is_empty() {
+                    // TODO: Submit quads via GpuCompositor::render_quads()
+                    // This requires extending the driver presenter to support 3D command submission
+                    // For now, the CPU path above still renders the frame
+                    crate::trace_counter!("bloom.gpu.quads", quads.len() as u64);
+                }
+            }
         }
 
         // ============================================================================

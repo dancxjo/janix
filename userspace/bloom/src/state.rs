@@ -30,6 +30,31 @@ impl Default for OverlayMode {
     }
 }
 
+/// Composition mode: CPU software rendering or GPU-accelerated via virgl
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CompositionMode {
+    /// Traditional CPU-based software composition
+    Cpu,
+    /// GPU-accelerated composition via virgl 3D BLIT commands
+    Gpu,
+}
+
+impl Default for CompositionMode {
+    fn default() -> Self {
+        // Default to CPU mode for stability; GPU mode enabled when virgl is detected
+        CompositionMode::Cpu
+    }
+}
+
+impl CompositionMode {
+    pub fn name(&self) -> &'static str {
+        match self {
+            CompositionMode::Cpu => "CPU",
+            CompositionMode::Gpu => "GPU",
+        }
+    }
+}
+
 pub struct DamageOverlayState {
     pub present_rects: [Rect; MAX_OVERLAY_RECTS],
     pub present_len: usize,

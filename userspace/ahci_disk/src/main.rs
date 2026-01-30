@@ -684,6 +684,12 @@ fn scan_and_publish(
         let full_path = if prefix.is_empty() { entry.name.clone() } else { format!("{}/{}", prefix, entry.name) };
 
         if entry.is_directory {
+            // Skip the tango icons directory - too many files
+            let path_lower = full_path.to_lowercase();
+            if path_lower.contains("icons/tango") || path_lower.contains("icons\\tango") {
+                continue;
+            }
+            
             stats.dirs_visited += 1;
             published += scan_and_publish(
                 dev,
@@ -798,6 +804,69 @@ fn register_atapi_disk(port: &mut AhciPort) {
     thingsys::prop_set(node_id, "port", port.port_num as u64).ok();
     
     info!("AHCI: Registered CDROM {} port={}", port.graph_id, port.port_num);
+}
+
+/// Scan the entire ISO and publish files to the graph for ingestd.
+/// Uses lazy loading for most files (metadata-only), eager loading for hot-set.
+fn scan_whole_disk(dev: &dyn BlockDevice) {
+    info!("AHCI: Scanning entire ISO disk...");
+    
+    let fs = match IsoFs::probe(dev) {
+        Some(f) => f,
+        None => {
+            warn!("AHCI: Failed to read ISO filesystem");
+            return;
+        }
+    };
+    
+    // Find host node for linking
+    let host = match find_host_node() {
+        Some(h) => h,
+        None => {
+            warn!("AHCI: No dev.Host node found");
+            return;
+        }
+    };
+    
+    // Initialize content source
+    let source_id = match initialize_iso_content_source() {
+        Some(s) => s,
+        None => {
+            warn!("AHCI: Failed to create content source");
+            return;
+        }
+    };
+    
+    let mut publish_index = PublishIndex::new();
+    let mut stats = ScanStats::default();
+    stats.time_scan_start_ns = get_monotonic_ns();
+    let mut index = 0;
+    
+    // Scan entire disk starting from root
+    let published = scan_and_publish(
+        dev,
+        &fs,
+        host,
+        source_id,
+        fs.pvd.root_dir_extent,
+        fs.pvd.root_dir_size,
+        String::new(), // Start from root prefix
+        &mut index,
+        &mut publish_index,
+        &mut stats,
+    );
+    
+    let elapsed_ns = get_monotonic_ns().saturating_sub(stats.time_scan_start_ns);
+    let elapsed_ms = elapsed_ns / 1_000_000;
+    
+    info!(
+        "AHCI: Disk scan complete - {} files, {} dirs visited, {} published ({} hot-set) in {}ms",
+        stats.files_visited,
+        stats.dirs_visited,
+        published,
+        stats.content_materialized,
+        elapsed_ms
+    );
 }
 
 #[stem::main]
@@ -922,6 +991,15 @@ fn main(_arg: usize) -> ! {
                 mmio_write32(pb, PORT_IS, 0xFFFFFFFF);
                 mmio_write32(pb, PORT_SERR, 0xFFFFFFFF);
                 start_port(mapped_base, port_num);
+
+                // Scan boot folder and publish files to graph
+                let atapi_dev = AhciAtapiDevice {
+                    mmio_base: mapped_base,
+                    port: port_num,
+                    dma_virt,
+                    dma_phys,
+                };
+                scan_whole_disk(&atapi_dev);
 
                 stop_port(mapped_base, port_num);
                 continue;

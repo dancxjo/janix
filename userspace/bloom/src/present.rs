@@ -407,6 +407,42 @@ impl DriverPresenter {
             self.handle_message(msg_type, &payload_copy);
         }
     }
+
+    /// Submit virgl 3D commands to the GPU driver.
+    /// The command buffer is a byte slice containing virgl command stream.
+    #[cfg(feature = "gpu")]
+    pub fn send_submit_3d(&mut self, ctx_id: u32, cmd_buf: &[u8]) {
+        // Allocate buffer for header + command data
+        let total_payload = drvproto::SUBMIT_3D_HEADER_WIRE_SIZE + cmd_buf.len();
+        let total_msg = drvproto::HEADER_SIZE + total_payload;
+        
+        // Use Vec for variable-size buffer
+        let mut buf = alloc::vec![0u8; total_msg];
+        let mut payload = alloc::vec![0u8; total_payload];
+        
+        // Encode Submit3d header
+        let header = drvproto::Submit3dHeader {
+            ctx_id,
+            cmd_len: cmd_buf.len() as u32,
+        };
+        if drvproto::encode_submit_3d_header_le(&header, &mut payload).is_none() {
+            return;
+        }
+        
+        // Copy command buffer after header
+        payload[drvproto::SUBMIT_3D_HEADER_WIRE_SIZE..].copy_from_slice(cmd_buf);
+        
+        // Encode and send message
+        if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_SUBMIT_3D, &payload) {
+            let _ = port_send(self.req_write, &buf[..len]);
+        }
+    }
+
+    /// Check if 3D commands are supported by the driver.
+    #[cfg(feature = "gpu")]
+    pub fn has_3d_cap(&self) -> bool {
+        self.negotiation.map(|n| n.caps & drvproto::CAP_3D != 0).unwrap_or(false)
+    }
 }
 
 impl Presenter for DriverPresenter {

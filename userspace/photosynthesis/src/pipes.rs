@@ -127,7 +127,7 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
 
         if let Ok(count) = q.get_edges(id, None, 128) {
             if count > 0 {
-                stem::info!("[photo] Node {:X} has {} edges", id.to_u64_lossy(), count);
+                // stem::info!("[photo] Node {:X} has {} edges", id.to_u64_lossy(), count);
             }
              for i in 0..count {
                  let row = &q.buf[i];

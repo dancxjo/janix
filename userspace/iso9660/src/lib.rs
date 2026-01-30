@@ -202,10 +202,11 @@ impl IsoFs {
 
         let entries = self.parse_dir_entries(dev, extent_lba, size);
         
-        // Cache the parsed entries
-        self.dir_cache.borrow_mut().insert(key, DirIndex { entries: entries.clone() });
+        // Cache the parsed entries and return a clone from the cache
+        self.dir_cache.borrow_mut().insert(key, DirIndex { entries });
         
-        entries
+        // Return a clone of the cached entries
+        self.dir_cache.borrow().get(&key).unwrap().entries.clone()
     }
 
     /// Parse directory entries from an extent (internal implementation).
@@ -218,11 +219,6 @@ impl IsoFs {
         let mut entries = Vec::new();
         let sectors_needed = (size as u64 + ISO_SECTOR_SIZE - 1) / ISO_SECTOR_SIZE;
 
-        #[cfg(feature = "perf")]
-        {
-            self.perf.borrow_mut().bytes_read += sectors_needed * ISO_SECTOR_SIZE;
-        }
-
         // Allocate buffer for directory data
         let buf_size = (sectors_needed * ISO_SECTOR_SIZE) as usize;
         let mut buf = alloc::vec![0u8; buf_size];
@@ -232,6 +228,12 @@ impl IsoFs {
             .is_err()
         {
             return entries;
+        }
+
+        // Track bytes read only after successful read
+        #[cfg(feature = "perf")]
+        {
+            self.perf.borrow_mut().bytes_read += sectors_needed * ISO_SECTOR_SIZE;
         }
 
         // Parse directory records
@@ -453,5 +455,27 @@ pub fn volume_id_str(pvd: &PrimaryVolumeDescriptor) -> &str {
 
 #[cfg(test)]
 mod tests {
-    // Host-side tests would go here
+    use super::*;
+
+    #[test]
+    fn test_ascii_eq_ignore_case() {
+        // Basic case-insensitive comparison
+        assert!(IsoFs::ascii_eq_ignore_case("HELLO", "hello"));
+        assert!(IsoFs::ascii_eq_ignore_case("hello", "HELLO"));
+        assert!(IsoFs::ascii_eq_ignore_case("MixedCase", "mixedcase"));
+
+        // Version suffix handling
+        assert!(IsoFs::ascii_eq_ignore_case("FILE.TXT;1", "file.txt"));
+        assert!(IsoFs::ascii_eq_ignore_case("FILE.TXT", "file.txt;1"));
+        // Version suffixes are completely stripped, so any version matches
+        assert!(IsoFs::ascii_eq_ignore_case("README;1", "readme;2"));
+
+        // Different strings
+        assert!(!IsoFs::ascii_eq_ignore_case("hello", "world"));
+        assert!(!IsoFs::ascii_eq_ignore_case("FILE", "FILES"));
+
+        // Empty strings
+        assert!(IsoFs::ascii_eq_ignore_case("", ""));
+        assert!(!IsoFs::ascii_eq_ignore_case("", "hello"));
+    }
 }

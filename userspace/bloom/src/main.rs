@@ -1235,6 +1235,19 @@ fn main(arg: usize) -> ! {
         }
         
         append_damage_overlay(&mut list, &overlay_state, &debug_flags, Some(&damage), screen_w, screen_h);
+        
+        // Cursor-only fast path: skip window composition if only cursor moved
+        if is_cursor_only_frame {
+            // For cursor-only frames, we only need to:
+            // 1. Repair the old cursor position (already in framebuffer from last frame)
+            // 2. Draw cursor at new position
+            // The background/windows don't need recomposition since they haven't changed
+            
+            // Note: This optimization requires the framebuffer to be preserved between frames
+            // Currently, we always recompose, so we skip this optimization for now
+            // TODO: Implement true cursor-only fast path when we have a stable backbuffer
+        }
+        
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
             let rects: alloc::vec::Vec<_> = damage.iter().collect();
@@ -1270,6 +1283,22 @@ fn main(arg: usize) -> ! {
             raster::execute_with_damage(&mut surface, &list, &damage, false);
         }
 
+        // ============================================================================
+        // CURSOR OVERLAY - "Butter Smooth" Late-Latched Composition
+        // ============================================================================
+        //
+        // The cursor is rendered AFTER all window composition and rasterization.
+        // This ensures cursor updates are decoupled from heavy scene redraws:
+        //
+        // 1. Cursor rasterization is cached (only happens on shape/asset changes)
+        // 2. Cursor movement only costs 2 tiny damage rects (old + new position)
+        // 3. Cursor is blitted from cache, no SVG/text rasterization involved
+        // 4. Cursor damage never triggers full-frame invalidation
+        //
+        // This architecture ensures the cursor feels "butter smooth" even when
+        // the UI is busy with expensive repaints.
+        // ============================================================================
+        
         // Cursor overlay: blend cached snapshot or draw fallback
         let cursor_drawn = if let Some(asset) = ASSETS.get_cursor() {
             let (snapshot_opt, _rasterized) = cursor_rasterizer.get_snapshot(&asset);

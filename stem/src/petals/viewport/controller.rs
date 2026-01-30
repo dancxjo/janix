@@ -1,6 +1,6 @@
 //! Pan/zoom controller state machine.
 
-use super::{Viewport, ViewportIntent};
+use super::{inertia::InertiaState, Viewport, ViewportIntent};
 
 /// Constraints for viewport zoom and panning.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -36,6 +36,8 @@ pub struct PanZoomController {
     pub constraints: ViewportConstraints,
     /// Drag state: Some((last_x, last_y)) if dragging.
     drag_anchor: Option<(f32, f32)>,
+    /// Inertia state for smooth scrolling.
+    pub inertia: InertiaState,
 }
 
 impl PanZoomController {
@@ -45,6 +47,7 @@ impl PanZoomController {
             viewport,
             constraints,
             drag_anchor: None,
+            inertia: InertiaState::default(),
         }
     }
 
@@ -125,10 +128,31 @@ impl PanZoomController {
         self.zoom_about(screen_x, screen_y, factor);
     }
 
-    /// Tick for inertia (placeholder for future smooth scrolling).
-    pub fn tick(&mut self, _dt_seconds: f32) -> bool {
-        // MVP: no inertia, return false (no update needed)
-        false
+    /// Tick for inertia and smooth scrolling.
+    ///
+    /// Call this every frame to apply inertia physics.
+    /// Returns true if the viewport was updated (needs redraw).
+    pub fn tick(&mut self, dt_seconds: f32) -> bool {
+        let (pan_dx, pan_dy, zoom_factor, updated) = self.inertia.tick(dt_seconds);
+
+        if updated {
+            // Apply pan
+            if pan_dx.abs() > 0.01 || pan_dy.abs() > 0.01 {
+                self.viewport.pan_by_screen(pan_dx, pan_dy);
+                self.clamp_to_bounds();
+            }
+
+            // Apply zoom (about screen center for inertia zoom)
+            if (zoom_factor - 1.0).abs() > 0.001 {
+                let center_x = self.viewport.screen_size.0 / 2.0;
+                let center_y = self.viewport.screen_size.1 / 2.0;
+                self.viewport.zoom_about(center_x, center_y, zoom_factor);
+                self.clamp_zoom();
+                self.clamp_to_bounds();
+            }
+        }
+
+        updated
     }
 
     // ─────────────────────────────────────────────────────────────────────────

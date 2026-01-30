@@ -23,11 +23,17 @@
 //! let world_pos = controller.viewport.screen_to_world(click_x, click_y);
 //! ```
 
+pub mod cache;
 mod controller;
+pub mod inertia;
 mod intent;
+pub mod snap;
 
+pub use cache::{QuantizationSettings, RasterHandle, ViewportRenderBridge};
 pub use controller::{PanZoomController, ViewportConstraints};
+pub use inertia::InertiaState;
 pub use intent::ViewportIntent;
+pub use snap::{snap_pan, snap_zoom, PanSnapPolicy, SnapSettings, ZoomSnapPolicy};
 
 /// Camera transform representing zoom level and pan position.
 ///

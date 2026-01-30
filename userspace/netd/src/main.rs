@@ -28,8 +28,6 @@ use virtio_net::VirtioNetDriver;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    // Very first log - if this doesn't appear, stem runtime failed
-    stem::error!("NETD: *** ENTRY POINT REACHED ***");
     info!("NETD: Starting network service (arg=0x{:x})...", _arg);
 
     // Initialize VirtIO-NET driver using find_and_claim

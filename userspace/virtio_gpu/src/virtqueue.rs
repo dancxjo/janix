@@ -153,7 +153,26 @@ impl Virtqueue {
             let len = read_volatile(&raw const (*elem).len);
 
             self.last_used_idx = self.last_used_idx.wrapping_add(1);
-            self.num_free += 1; // Simplified - should count chain length
+
+            // Count chain length by following NEXT flags
+            let desc_ptr = self.virt_base as *mut VirtqDesc;
+            let mut count = 1u16;
+            let mut cur = id as u16;
+            loop {
+                let flags = read_volatile(&raw const (*desc_ptr.add(cur as usize)).flags);
+                if (flags & crate::virtio::VIRTQ_DESC_F_NEXT) == 0 {
+                    break;
+                }
+                let next = read_volatile(&raw const (*desc_ptr.add(cur as usize)).next);
+                cur = next;
+                count += 1;
+            }
+
+            // Return descriptors to free list by linking the last descriptor
+            // in the chain to the current free_head
+            write_volatile(&raw mut (*desc_ptr.add(cur as usize)).next, self.free_head);
+            self.free_head = id as u16;
+            self.num_free += count;
 
             Some((id as u16, len))
         }

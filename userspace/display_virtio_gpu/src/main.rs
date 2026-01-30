@@ -616,7 +616,7 @@ fn main(arg: usize) -> ! {
                             // Calculate buffer age
                             let buffer_age = frame_pool.buffer_age(handle.index, present_queue.current_sequence());
                             
-                            info!(
+                            stem::debug!(
                                 "display_virtio_gpu: acquired frame idx={} res={} age={}",
                                 handle.index, frame.resource_id, buffer_age
                             );
@@ -642,7 +642,7 @@ fn main(arg: usize) -> ! {
                     } else {
                         // No frames available - all are in-flight
                         // Complete oldest to make room
-                        info!("display_virtio_gpu: all frames in-flight, completing oldest");
+                        stem::debug!("display_virtio_gpu: all frames in-flight, completing oldest");
                         if present_queue.pending_count() > 0 {
                             present_queue.complete_oldest(&mut frame_pool);
                         }
@@ -651,7 +651,7 @@ fn main(arg: usize) -> ! {
                             if let Some(frame) = frame_pool.get_frame(&handle) {
                                 let buffer_age = frame_pool.buffer_age(handle.index, present_queue.current_sequence());
                                 
-                                info!(
+                                stem::debug!(
                                     "display_virtio_gpu: acquired frame (retry) idx={} res={} age={}",
                                     handle.index, frame.resource_id, buffer_age
                                 );
@@ -672,6 +672,14 @@ fn main(arg: usize) -> ! {
                                 if let Some(len) = drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes) {
                                     send_msg(drv_resp_write, drvproto::MSG_ACQUIRED, &acq_bytes[..len]);
                                 }
+                            }
+                        } else {
+                            // Still no frames available - send error
+                            info!("display_virtio_gpu: failed to acquire frame after retry");
+                            let err = drvproto::ErrResp { code: 10 }; // Out of buffers
+                            let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                            if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
                             }
                         }
                     }
@@ -703,10 +711,17 @@ fn main(arg: usize) -> ! {
                         let rects_payload = &payload[drvproto::PRESENT_HEADER_WIRE_SIZE..];
                         
                         // Get the frame resource
-                        let resource_id = if let Some(frame) = frame_pool.get_frame(&handle) {
-                            frame.resource_id
-                        } else {
-                            continue;
+                        let resource_id = match frame_pool.get_frame(&handle) {
+                            Some(frame) => frame.resource_id,
+                            None => {
+                                // Frame lookup failed - send error
+                                let err = drvproto::ErrResp { code: 11 }; // Invalid frame
+                                let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                    send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                }
+                                continue;
+                            }
                         };
                         
                         // Handle full-frame present (rect_count==0 or FULLFRAME flag)
@@ -796,7 +811,7 @@ fn main(arg: usize) -> ! {
                         // FLIP SCANOUT and ENQUEUE PRESENT
                         // ============================================================
                         // Flip the hardware scanout to this resource
-                        // Only set scanout if it's a new resource
+                        // Only set scanout if it's a new resource or after mode change
                         let needs_scanout = surface.current_resource != Some(resource_id);
                         if needs_scanout {
                             let _ = gpu.set_scanout(resource_id, disp_width, disp_height);
@@ -810,7 +825,7 @@ fn main(arg: usize) -> ! {
                         // Enqueue the frame in the present queue (marks it in-flight)
                         let seq = present_queue.enqueue_present(&mut frame_pool, handle);
                         
-                        info!(
+                        stem::debug!(
                             "display_virtio_gpu: present seq={} res={} rects={} pending={}",
                             seq, resource_id, present.rect_count, present_queue.pending_count()
                         );
@@ -819,7 +834,7 @@ fn main(arg: usize) -> ! {
                         // to simulate fence completion (in a real impl, this would be driven by GPU IRQ)
                         if present_queue.pending_count() > 1 {
                             if let Some(completed_idx) = present_queue.complete_oldest(&mut frame_pool) {
-                                info!(
+                                stem::debug!(
                                     "display_virtio_gpu: completed frame idx={} (conservative)",
                                     completed_idx
                                 );

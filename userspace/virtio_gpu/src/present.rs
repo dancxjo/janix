@@ -160,7 +160,11 @@ pub struct FramePool {
 
 impl FramePool {
     /// Create a new frame pool with the given frames
+    ///
+    /// # Panics
+    /// Panics if the frames vector is empty (at least one frame is required)
     pub fn new(frames: Vec<FrameResource>) -> Self {
+        assert!(!frames.is_empty(), "FramePool requires at least one frame");
         Self {
             frames,
             next_acquire_idx: 0,
@@ -253,7 +257,11 @@ impl PresentQueue {
     ///
     /// `max_in_flight`: Maximum number of frames that can be in-flight simultaneously.
     /// Set to 2 for conservative double-buffering behavior without fences.
+    ///
+    /// # Panics
+    /// Panics if max_in_flight is 0 (at least 1 in-flight frame must be allowed)
     pub fn new(max_in_flight: usize) -> Self {
+        assert!(max_in_flight > 0, "PresentQueue requires max_in_flight >= 1");
         Self {
             pending: Vec::new(),
             next_sequence: 1,
@@ -446,5 +454,82 @@ mod tests {
 
         // After 5 presents, age is 5 for present_seq=6
         assert_eq!(pool.buffer_age(0, 6), 5);
+    }
+
+    #[test]
+    fn display_surface_mode_change() {
+        let mut surface = DisplaySurface::new(0, 1024, 768, 1);
+        surface.current_resource = Some(42);
+
+        // Verify initial state
+        assert_eq!(surface.width, 1024);
+        assert_eq!(surface.height, 768);
+        assert_eq!(surface.current_resource, Some(42));
+
+        // Update mode
+        surface.update_mode(1920, 1080);
+
+        // Mode change should update dimensions and clear current_resource
+        assert_eq!(surface.width, 1920);
+        assert_eq!(surface.height, 1080);
+        assert_eq!(surface.current_resource, None);
+    }
+
+    #[test]
+    fn present_queue_drain() {
+        let frames = vec![
+            FrameResource::new(1, 0x1000, 0, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(2, 0x2000, 0, 4096, 100, 100, 400, 1, 0),
+        ];
+
+        let mut pool = FramePool::new(frames);
+        let mut queue = PresentQueue::new(2);
+
+        // Present two frames
+        let h1 = pool.acquire_frame().unwrap();
+        queue.enqueue_present(&mut pool, h1);
+        let h2 = pool.acquire_frame().unwrap();
+        queue.enqueue_present(&mut pool, h2);
+
+        assert_eq!(queue.pending_count(), 2);
+
+        // Drain all
+        queue.drain(&mut pool);
+
+        // All frames should be released and queue empty
+        assert_eq!(queue.pending_count(), 0);
+        assert!(pool.get_frame(&FrameHandle { index: 0 }).unwrap().is_free());
+        assert!(pool.get_frame(&FrameHandle { index: 1 }).unwrap().is_free());
+    }
+
+    #[test]
+    fn frame_pool_find_by_resource() {
+        let frames = vec![
+            FrameResource::new(10, 0x1000, 0, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(20, 0x2000, 0, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(30, 0x3000, 0, 4096, 100, 100, 400, 1, 0),
+        ];
+
+        let pool = FramePool::new(frames);
+
+        // Find existing resources
+        assert_eq!(pool.find_frame_by_resource(10), Some(0));
+        assert_eq!(pool.find_frame_by_resource(20), Some(1));
+        assert_eq!(pool.find_frame_by_resource(30), Some(2));
+
+        // Non-existent resource
+        assert_eq!(pool.find_frame_by_resource(99), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "FramePool requires at least one frame")]
+    fn frame_pool_requires_frames() {
+        let _pool = FramePool::new(vec![]);
+    }
+
+    #[test]
+    #[should_panic(expected = "PresentQueue requires max_in_flight >= 1")]
+    fn present_queue_requires_nonzero_limit() {
+        let _queue = PresentQueue::new(0);
     }
 }

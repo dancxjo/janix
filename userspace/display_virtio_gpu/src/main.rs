@@ -249,7 +249,9 @@ fn main(arg: usize) -> ! {
                             };
                             let _ = gpu.present_rect(full_rect);
                         } else {
-                            // Handle dirty rects
+                            // Batch all transfers first, then all flushes
+                            // This prevents intermediate states from being visible
+                            let mut rects_to_flush = alloc::vec::Vec::new();
                             let rect_size = drvproto::RECT_WIRE_SIZE;
                             for i in 0..present.rect_count as usize {
                                 let off = i * rect_size;
@@ -265,8 +267,13 @@ fn main(arg: usize) -> ! {
                                         w: rect.w,
                                         h: rect.h,
                                     };
-                                    let _ = gpu.present_rect(gpu_rect);
+                                    let _ = gpu.transfer_to_host(gpu_rect);
+                                    rects_to_flush.push(gpu_rect);
                                 }
+                            }
+                            // Now flush all rects
+                            for rect in rects_to_flush {
+                                let _ = gpu.flush_resource(rect);
                             }
                         }
                     }

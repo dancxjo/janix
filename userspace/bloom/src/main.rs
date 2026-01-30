@@ -38,8 +38,10 @@ mod surface;
 mod svg;
 mod text_cache;
 mod text_render;
+mod tessellate;
 mod ui;
 mod ui_events;
+mod vir;
 mod window_manager;
 
 pub use painter_resources::ASSETS;

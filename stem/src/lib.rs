@@ -14,6 +14,7 @@ pub mod device;
 pub mod errors;
 #[cfg(feature = "global-alloc")]
 pub mod heap;
+pub mod i18n;
 #[cfg(feature = "rt")]
 pub mod memory;
 /// Platform Abstraction Layer - explicit platform contract

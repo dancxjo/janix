@@ -96,12 +96,13 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
-        ProgramConfig {
-            name: "display_virtio_gpu",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
+        // TEMPORARILY DISABLED: virtio_gpu
+        // ProgramConfig {
+        //     name: "display_virtio_gpu",
+        //     is_init: false,
+        //     boot_module: true,
+        //     features: vec![],
+        // },
         ProgramConfig {
             name: "fontd",
             is_init: false,

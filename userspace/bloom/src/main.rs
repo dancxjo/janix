@@ -1073,6 +1073,16 @@ fn main(arg: usize) -> ! {
         builder.prepare_present_damage();
         let snapshot = builder.present_damage();
         let strategy = evaluate_present_strategy(presenter.negotiation_info(), snapshot);
+        
+        // Use consolidated rects for BOTH rasterization and GPU present
+        // This ensures we draw exactly what we tell the GPU to transfer
+        // IMPORTANT: Don't use add_rect() as it would re-consolidate the already-consolidated rects
+        let damage = if snapshot.is_full() {
+            damage::Damage::full(bounds)
+        } else {
+            damage::Damage::from_rects(bounds, snapshot.rects())
+        };
+        
         overlay_state.update(
             snapshot.rects(),
             snapshot.raw_rects(),

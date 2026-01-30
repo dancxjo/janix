@@ -395,8 +395,11 @@ pub fn execute_lowered_with_damage(
                 }
             }
 
-            // Apply state directly
-            ctx.current_clip = d_op.state.current_clip;
+            // Intersect op's clip with damage rect to prevent overdraw
+            ctx.current_clip = match d_op.state.current_clip.intersection(&rect) {
+                Some(clipped) => clipped,
+                None => continue, // Skip if no intersection
+            };
             ctx.current_transform = d_op.state.current_transform;
 
             execute_single_op(&mut ctx, d_op.op);

@@ -106,6 +106,18 @@ impl Damage {
         }
     }
 
+    /// Create damage from a slice of rects WITHOUT consolidation.
+    /// Use this when rects are already consolidated and should not be merged.
+    pub fn from_rects(bounds: Rect, rects_slice: &[Rect]) -> Self {
+        let mut d = Self::empty(bounds);
+        let count = rects_slice.len().min(MAX_RECTS);
+        for i in 0..count {
+            d.rects[i] = rects_slice[i];
+        }
+        d.count = count;
+        d
+    }
+
     /// Create full-frame damage with a cause.
     pub fn full(bounds: Rect) -> Self {
         Self::full_with_cause(bounds, DamageCause::ForceFull, None)

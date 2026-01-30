@@ -54,9 +54,7 @@ pub fn run_dhcp(
                     let gateway = config.router.unwrap_or(Ipv4Address::UNSPECIFIED);
                     let dns = config
                         .dns_servers
-                        .iter()
-                        .flatten()
-                        .next()
+                        .first()
                         .copied()
                         .unwrap_or(Ipv4Address::UNSPECIFIED);
 

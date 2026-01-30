@@ -65,6 +65,26 @@ pub mod keys {
     /// Stable sibling/attribute ordering (u32, monotonic within parent)
     pub const XML_ORDER: &str = "xml.order";
 
+    // HTML Properties (reuses XML properties + additions)
+    /// Child ordering in HTML document (u32, monotonic within parent)
+    pub const HTML_ORDER: &str = "html.order";
+    /// HTML element tag name (interned)
+    pub const HTML_TAG: &str = "html.tag";
+
+    // CSS Properties
+    /// CSS property name (e.g., "color", "margin")
+    pub const CSS_PROPERTY: &str = "css.property";
+    /// CSS property value (e.g., "red", "10px")
+    pub const CSS_VALUE: &str = "css.value";
+    /// Raw CSS selector text
+    pub const CSS_SELECTOR_TEXT: &str = "css.selector_text";
+    /// CSS rule order within stylesheet
+    pub const CSS_ORDER: &str = "css.order";
+    /// CSS at-rule name (e.g., "media", "keyframes")
+    pub const CSS_AT_RULE: &str = "css.at_rule";
+    /// CSS at-rule prelude/condition text
+    pub const CSS_PRELUDE: &str = "css.prelude";
+
     // Legacy mapping (to be deprecated or mapped)
     pub const KIND: &str = "kind";
 
@@ -478,6 +498,20 @@ pub mod kinds {
     pub const XML_ELEMENT: &str = "xml.Element";
     pub const XML_ATTRIBUTE: &str = "xml.Attribute";
     pub const XML_TEXT: &str = "xml.Text";
+
+    // HTML Graph Kinds
+    pub const HTML_DOCUMENT: &str = "html.Document";
+    pub const HTML_ELEMENT: &str = "html.Element";
+    pub const HTML_ATTRIBUTE: &str = "html.Attribute";
+    pub const HTML_TEXT: &str = "html.Text";
+    pub const HTML_COMMENT: &str = "html.Comment";
+
+    // CSS Graph Kinds
+    pub const CSS_STYLESHEET: &str = "css.Stylesheet";
+    pub const CSS_RULE: &str = "css.Rule";
+    pub const CSS_SELECTOR: &str = "css.Selector";
+    pub const CSS_DECLARATION: &str = "css.Declaration";
+    pub const CSS_AT_RULE: &str = "css.AtRule";
 
     // SVG Cache Kinds (Blossom service)
     pub const SVG_ASSET: &str = "svg.Asset";

@@ -35,6 +35,8 @@ pub mod ui;
 pub mod utils;
 pub mod vm;
 pub mod xml;
+pub mod html;
+pub mod css;
 
 // Re-export time types for convenience
 pub use time::{Duration, Instant};

@@ -1284,6 +1284,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "htmlparser"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48ce8546b993eaf241d69ded33b1be6d205dd9857ec879d9d18bd05d3676e144"
+
+[[package]]
 name = "humantime"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2455,6 +2461,7 @@ name = "stem"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "htmlparser",
  "libm",
  "linked_list_allocator",
  "pciids",

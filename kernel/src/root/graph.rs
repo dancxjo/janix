@@ -365,6 +365,8 @@ pub struct Graph {
     pub next_id: ThingId,
     pub root_seq: AtomicU64,
     pub kind_index: BTreeMap<SymbolId, Vec<ThingId>>,
+    /// Reverse index for efficient incoming edge queries (Dst -> [(Rel, Src)])
+    pub reverse_index: BTreeMap<ThingId, Vec<(SymbolId, ThingId)>>,
     pub global_watches: BTreeMap<u64, GlobalWatch>,
     /// Shared commit history ring buffer
     pub commit_history: CommitHistory,
@@ -377,6 +379,7 @@ impl Graph {
             next_id: 1,
             root_seq: AtomicU64::new(0),
             kind_index: BTreeMap::new(),
+            reverse_index: BTreeMap::new(),
             global_watches: BTreeMap::new(),
             commit_history: CommitHistory::with_defaults(),
         }
@@ -417,6 +420,7 @@ impl Graph {
         if let Some(node) = self.nodes.get_mut(&src) {
             node.edges.push((rel, dst));
         }
+        self.reverse_index.entry(dst).or_default().push((rel, src));
     }
 }
 

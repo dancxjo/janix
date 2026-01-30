@@ -241,8 +241,33 @@ mod tests {
     use super::*;
     use crate::root::graph::CommitSummary;
     use crate::root::{ReplyCell, RootMsg, RootOp};
+    use abi::watch::{self, ValueEncoding, WatchEvent, WatchOp};
+    use abi::wire::ThingId as WireThingId;
     use alloc::sync::Arc;
     use alloc::vec;
+    use alloc::vec::Vec;
+
+    fn create_kind_event(subject: u64, kind: u32) -> Vec<u8> {
+        let mut subj_bytes = [0u8; 16];
+        subj_bytes[0..8].copy_from_slice(&subject.to_le_bytes());
+        let subject = WireThingId(subj_bytes);
+
+        let predicate = watch::WATCH_PRED_KIND;
+        let value = kind.to_le_bytes();
+
+        let event = WatchEvent {
+            op: WatchOp::Upsert,
+            flags: 0,
+            subject,
+            predicate,
+            value_encoding: ValueEncoding::Bytes,
+            value: &value,
+        };
+
+        let mut buf = vec![0u8; watch::encoded_len(value.len())];
+        watch::encode_event(&mut buf, &event).expect("encode failed");
+        buf
+    }
 
     #[test]
     fn test_handle_watch_next_basic() {
@@ -343,5 +368,124 @@ mod tests {
         // Cursor should remain 2
         let watch = graph.global_watches.get(&watch_id).unwrap();
         assert_eq!(watch.cursor_seq, 2);
+    }
+
+    #[test]
+    fn test_handle_watch_next_filtering() {
+        let mut graph = Graph::new();
+        let mut summary_match = CommitSummary::default();
+        summary_match.kinds.insert(100);
+
+        let mut summary_no_match = CommitSummary::default();
+        summary_no_match.kinds.insert(200);
+
+        // Seq 1: No match
+        graph
+            .commit_history
+            .push(1, vec![1], summary_no_match.clone());
+        // Seq 2: No match
+        graph
+            .commit_history
+            .push(2, vec![2], summary_no_match.clone());
+        // Seq 3: Match!
+        let event_data = create_kind_event(3, 100);
+        graph
+            .commit_history
+            .push(3, event_data.clone(), summary_match.clone());
+        // Seq 4: No match
+        graph
+            .commit_history
+            .push(4, vec![4], summary_no_match.clone());
+
+        let watch_id = 999;
+        let mut filter = WatchFilter::default();
+        filter.flags = abi::root::WATCH_F_KIND;
+        filter.kind_id = 100;
+
+        let stream_handle = stream::create(1);
+        let watch = GlobalWatch {
+            id: watch_id,
+            spec_ptr: 0,
+            stream_handle: ResourceHandle::Stream(stream_handle),
+            kind_filter: 0,
+            missing_fact: 0,
+            cursor_seq: 1,
+            overflowed: false,
+            filter,
+        };
+        graph.global_watches.insert(watch_id, watch);
+
+        let mut out_buf = [0u8; 64];
+        let out_ptr = out_buf.as_mut_ptr() as u64;
+        let op = RootOp::WatchNext {
+            id: watch_id,
+            out_seq_ptr: 0,
+            out_ptr,
+            out_len: out_buf.len() as u64,
+        };
+        let reply = Arc::new(ReplyCell::new());
+        let msg = RootMsg {
+            op,
+            reply: reply.clone(),
+        };
+
+        let (status, written) = handle_watch_next(&mut graph, &msg, watch_id);
+
+        assert_eq!(status, 0);
+        assert_eq!(written, event_data.len() as u64);
+        assert_eq!(out_buf[0..event_data.len()], event_data[..]);
+
+        let watch = graph.global_watches.get(&watch_id).unwrap();
+        assert_eq!(watch.cursor_seq, 4);
+        assert_eq!(reply.p0.load(Ordering::Relaxed), 3);
+    }
+
+    #[test]
+    fn test_handle_watch_next_scan_limit() {
+        let mut graph = Graph::new();
+        let mut summary_no_match = CommitSummary::default();
+        summary_no_match.kinds.insert(200);
+
+        // Push 70 non-matching commits (limit is 64)
+        for i in 1..=70 {
+            graph
+                .commit_history
+                .push(i, vec![i as u8], summary_no_match.clone());
+        }
+
+        let watch_id = 888;
+        let mut filter = WatchFilter::default();
+        filter.flags = abi::root::WATCH_F_KIND;
+        filter.kind_id = 100;
+
+        let stream_handle = stream::create(1);
+        let watch = GlobalWatch {
+            id: watch_id,
+            spec_ptr: 0,
+            stream_handle: ResourceHandle::Stream(stream_handle),
+            kind_filter: 0,
+            missing_fact: 0,
+            cursor_seq: 1,
+            overflowed: false,
+            filter,
+        };
+        graph.global_watches.insert(watch_id, watch);
+
+        let op = RootOp::WatchNext {
+            id: watch_id,
+            out_seq_ptr: 0,
+            out_ptr: 0,
+            out_len: 0,
+        };
+        let reply = Arc::new(ReplyCell::new());
+        let msg = RootMsg { op, reply };
+
+        let (status, _written) = handle_watch_next(&mut graph, &msg, watch_id);
+
+        assert_eq!(status, -11); // EAGAIN
+
+        let watch = graph.global_watches.get(&watch_id).unwrap();
+        // Should have scanned 64 items, starting from 1 -> ends at 65
+        assert_eq!(watch.cursor_seq, 1 + 64);
     }
 }

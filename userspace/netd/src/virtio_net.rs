@@ -47,8 +47,8 @@ pub const VIRTIO_NET_F_MRG_RXBUF: u32 = 1 << 15;
 const QUEUE_SIZE: u16 = 64;
 const RX_BUFFER_SIZE: usize = 2048;
 const TX_BUFFER_SIZE: usize = 2048;
-const NET_HEADER_SIZE: usize = 12; // Without num_buffers
-const NET_HEADER_SIZE_MRG: usize = 14; // With num_buffers
+const NET_HEADER_SIZE: usize = 10; // Without num_buffers (no MRG_RXBUF feature)
+const NET_HEADER_SIZE_MRG: usize = 12; // With num_buffers (requires MRG_RXBUF)
 
 /// VirtIO-NET device driver
 pub struct VirtioNetDriver {
@@ -202,6 +202,15 @@ impl VirtioNetDriver {
     /// Poll for received frames
     pub fn poll_rx(&mut self) -> Option<&[u8]> {
         let rxq = self.device.queue_mut(0)?;
+        
+        // Debug: log every 1000 polls to see if RX is being checked
+        static mut POLL_COUNT: u64 = 0;
+        unsafe {
+            POLL_COUNT += 1;
+            if POLL_COUNT % 1000 == 0 {
+                info!("VirtIO-NET: RX poll #{} (rx_active={})", POLL_COUNT, self.rx_active);
+            }
+        }
         
         if let Some((desc_id, len)) = rxq.poll_used() {
             info!("VirtIO-NET: RX frame! desc={} len={}", desc_id, len);

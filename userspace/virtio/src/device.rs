@@ -187,7 +187,9 @@ impl VirtioDevice {
         self.write_common(VIRTIO_COMMON_QUEUE_AVAIL_LO, (avail_phys & 0xFFFFFFFF) as u32);
         self.write_common(VIRTIO_COMMON_QUEUE_AVAIL_HI, (avail_phys >> 32) as u32);
 
-        let used_offset = avail_offset + 6 + (size as u64) * 2;
+        // Used ring must be 4-byte aligned (VirtIO 1.0 spec)
+        let used_unaligned = avail_offset + 6 + (size as u64) * 2;
+        let used_offset = (used_unaligned + 3) & !3; // Align up to 4 bytes
         let used_phys = vq_phys + used_offset;
         self.write_common(VIRTIO_COMMON_QUEUE_USED_LO, (used_phys & 0xFFFFFFFF) as u32);
         self.write_common(VIRTIO_COMMON_QUEUE_USED_HI, (used_phys >> 32) as u32);

@@ -544,15 +544,6 @@ fn ingest_content_source(source_id: ThingId, index: &mut AssetIndex) {
         return; // Immutable source already scanned
     }
     
-    // Get tree provider port handle
-    let port_handle = match prop_get(source_id, "tree_provider_port") {
-        Ok(handle) => handle as PortHandle,
-        Err(_) => {
-            warn!("INGESTD: CONTENT_SOURCE has no tree_provider_port");
-            return;
-        }
-    };
-    
     // Get source kind for logging
     let kind_sym = prop_get(source_id, keys::CONTENT_SOURCE_KIND).unwrap_or(0);
     let mut kind_buf = [0u8; 64];
@@ -560,6 +551,17 @@ fn ingest_content_source(source_id: ThingId, index: &mut AssetIndex) {
         core::str::from_utf8(&kind_buf[..len]).unwrap_or("unknown")
     } else {
         "unknown"
+    };
+    
+    // Get tree provider port handle
+    let port_handle = match prop_get(source_id, "tree_provider_port") {
+        Ok(handle) => handle as PortHandle,
+        Err(_) => {
+            // Some content sources (like Limine modules) don't use tree providers
+            // They expose files directly via other mechanisms (e.g., BOOT_MODULE nodes)
+            info!("INGESTD: CONTENT_SOURCE (kind={}) has no tree_provider_port, skipping tree scan", source_kind);
+            return;
+        }
     };
     
     info!("INGESTD: Scanning tree provider source (kind={}, port={})", source_kind, port_handle);

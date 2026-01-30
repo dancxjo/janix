@@ -133,3 +133,11 @@ pub const SYS_ROOT_STREAM_POLL: u32 = 0x169;
 pub const SYS_ROOT_WATCH_OPEN: u32 = 0x16A;
 pub const SYS_ROOT_WATCH_NEXT: u32 = 0x16B;
 pub const SYS_ROOT_WATCH_CLOSE: u32 = 0x16C;
+
+// ============================================================================
+// Block 0x1A0–0x1AF: Network
+// ============================================================================
+pub const SYS_NIC_MAC: u32 = 0x1A0;
+pub const SYS_NIC_LINK_UP: u32 = 0x1A1;
+pub const SYS_NIC_POLL_RX: u32 = 0x1A2;
+pub const SYS_NIC_TX: u32 = 0x1A3;

@@ -5,6 +5,7 @@
 mod device;
 mod logging;
 mod memory;
+mod net;
 mod port;
 mod process;
 mod root_handlers;
@@ -16,6 +17,7 @@ mod trace;
 pub use device::*;
 pub use logging::*;
 pub use memory::*;
+pub use net::*;
 pub use port::*;
 pub use process::*;
 pub use root_handlers::*;

@@ -23,6 +23,7 @@ pub mod schema;
 pub mod symbols;
 pub mod syscall;
 pub mod trace;
+pub mod tree_provider;
 pub mod types;
 pub mod ui_event;
 pub mod ui_paint;

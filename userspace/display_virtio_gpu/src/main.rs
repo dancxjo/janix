@@ -242,7 +242,7 @@ fn main(arg: usize) -> ! {
             info!("display_virtio_gpu: create_resource_2d failed: {}", e);
             loop { stem::yield_now(); }
         }
-        if let Err(e) = gpu.attach_backing(res_id, phys, disp_size) {
+        if let Err(e) = gpu.attach_backing(res_id, phys, disp_size, disp_stride) {
             info!("display_virtio_gpu: attach_backing failed: {}", e);
             loop { stem::yield_now(); }
         }

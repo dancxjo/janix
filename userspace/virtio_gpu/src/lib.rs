@@ -46,6 +46,7 @@ pub struct VirtioGpu {
     framebuffer: u64, // Virtual address of framebuffer (for standalone mode)
     fb_phys: u64,     // Physical address
     fb_size: usize,   // Size in bytes
+    fb_stride: u32,   // Stride in bytes for offset calculation
 
     // Command buffer for sending commands
     cmd_buf: u64,      // Virtual address
@@ -106,6 +107,7 @@ impl VirtioGpu {
             framebuffer: 0,
             fb_phys: 0,
             fb_size: 0,
+            fb_stride: 0,
             cmd_buf,
             cmd_buf_phys,
             external_backing: false,
@@ -205,9 +207,11 @@ impl VirtioGpu {
         resource_id: u32,
         phys_addr: u64,
         size: usize,
+        stride: u32,
     ) -> Result<(), &'static str> {
         self.fb_phys = phys_addr;
         self.fb_size = size;
+        self.fb_stride = stride;
         self.external_backing = true;
 
         // Need to send header + 1 memory entry
@@ -281,6 +285,11 @@ impl VirtioGpu {
 
     /// Transfer a rectangle from backing memory to host
     pub fn transfer_to_host(&mut self, resource_id: u32, rect: Rect) -> Result<(), &'static str> {
+        // Calculate byte offset into backing memory for this rectangle
+        // Format is BGRA32 (4 bytes per pixel)
+        const BPP: u32 = 4;
+        let offset = (rect.y as u64) * (self.fb_stride as u64) + (rect.x as u64) * (BPP as u64);
+        
         let cmd = VirtioGpuTransferToHost2d {
             hdr: VirtioGpuCtrlHdr {
                 type_: VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D,
@@ -293,7 +302,7 @@ impl VirtioGpu {
             r_y: rect.y,
             r_width: rect.w,
             r_height: rect.h,
-            offset: 0,
+            offset,
             resource_id,
             padding: 0,
         };

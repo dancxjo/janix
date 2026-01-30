@@ -7,6 +7,7 @@ pub mod ipc;
 pub mod irq;
 pub mod logging;
 pub mod memory;
+pub mod net;
 pub mod once_cell;
 pub mod root;
 pub mod simd;
@@ -15,6 +16,7 @@ pub mod task;
 pub mod tests;
 pub mod time;
 pub mod trace;
+pub mod virtio;
 
 use crate::task::StartupArg;
 use abi::errors::Errno;

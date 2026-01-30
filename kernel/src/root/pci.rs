@@ -3,6 +3,7 @@
 use abi::schema::{confidence, keys, kinds, rels, source};
 use alloc::format;
 use stem::pci;
+use crate::net::Nic;
 
 // Wrappers for BootRuntime PCI access
 // 0xFFFFFFFF is returned on error to simulate "not present"
@@ -294,6 +295,18 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         }
     }
 
+    // Log BARs for debugging
+    for i in 0..6 {
+        if bar_addrs[i] != 0 {
+            crate::kinfo!(
+                "PCI:   BAR{}: phys=0x{:x} size=0x{:x}",
+                i,
+                bar_addrs[i],
+                bar_sizes[i]
+            );
+        }
+    }
+
     // PCI capabilities: MSI/MSI-X
     let msi_cap = find_capability(bus, dev, func, 0x05);
     let msix_cap = find_capability(bus, dev, func, 0x11);
@@ -347,6 +360,20 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         );
         register_ahci_controller(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap,
+        );
+    }
+
+    // Virtio network device detection (vendor 0x1af4, class 0x02 network controller)
+    // Device IDs: 0x1000 (transitional), 0x1041 (modern)
+    if vendor_id == 0x1af4 && class_code == 0x02 {
+        crate::kinfo!(
+            "PCI: Found virtio network controller at {:02x}:{:02x}.{}",
+            bus,
+            dev,
+            func
+        );
+        register_virtio_net(
+            node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
     }
 }
@@ -620,4 +647,191 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
     }
 
     crate::kinfo!("LPC: Created Legacy IO bus with CMOS and PS/2 controller");
+}
+
+/// Helper struct to hold parsed VirtIO capabilities
+struct ParsedVirtioCaps {
+    common_cfg: Option<crate::virtio::pci::VirtioCapability>,
+    notify_cfg: Option<crate::virtio::pci::VirtioCapability>,
+    isr_cfg: Option<crate::virtio::pci::VirtioCapability>,
+    device_cfg: Option<crate::virtio::pci::VirtioCapability>,
+}
+
+/// Parse VirtIO PCI capabilities and return them
+fn get_virtio_capabilities(bus: u8, dev: u8, func: u8) -> ParsedVirtioCaps {
+    use crate::virtio::pci::VirtioCapability;
+    
+    let mut caps = ParsedVirtioCaps {
+        common_cfg: None,
+        notify_cfg: None,
+        isr_cfg: None,
+        device_cfg: None,
+    };
+    
+    // Check for capabilities list
+    let status = unsafe { pci_read_config(bus, dev, func, 0x04) };
+    let status_bits = ((status >> 16) & 0xFFFF) as u16;
+    if (status_bits & 0x10) == 0 {
+        return caps;
+    }
+
+    let mut cap_ptr = pci_read_config_u8(bus, dev, func, 0x34) & 0xFC;
+    let mut limit = 0;
+    
+    while cap_ptr != 0 && limit < 48 {
+        let cap_id = pci_read_config_u8(bus, dev, func, cap_ptr);
+        
+        // Vendor-specific capability (VirtIO uses this)
+        if cap_id == 0x09 {
+            let cfg_type = pci_read_config_u8(bus, dev, func, cap_ptr + 3);
+            let bar = pci_read_config_u8(bus, dev, func, cap_ptr + 4);
+            let offset = unsafe { pci_read_config(bus, dev, func, cap_ptr + 8) };
+            let length = unsafe { pci_read_config(bus, dev, func, cap_ptr + 12) };
+            
+            let mut cap = VirtioCapability {
+                cap_type: cfg_type,
+                bar,
+                offset,
+                length,
+                notify_off_multiplier: 0,
+            };
+            
+            match cfg_type {
+                VIRTIO_PCI_CAP_COMMON_CFG => {
+                    caps.common_cfg = Some(cap);
+                }
+                VIRTIO_PCI_CAP_NOTIFY_CFG => {
+                    cap.notify_off_multiplier = unsafe { pci_read_config(bus, dev, func, cap_ptr + 16) };
+                    caps.notify_cfg = Some(cap);
+                }
+                VIRTIO_PCI_CAP_ISR_CFG => {
+                    caps.isr_cfg = Some(cap);
+                }
+                VIRTIO_PCI_CAP_DEVICE_CFG => {
+                    caps.device_cfg = Some(cap);
+                }
+                _ => {}
+            }
+        }
+        
+        cap_ptr = pci_read_config_u8(bus, dev, func, cap_ptr + 1) & 0xFC;
+        limit += 1;
+    }
+    
+    caps
+}
+
+/// Register virtio network controller in device registry for userspace claiming
+fn register_virtio_net(
+    graph_id: u64,
+    bus: u8,
+    dev: u8,
+    func: u8,
+    bar_addrs: &[u64; 6],
+    bar_sizes: &[u64; 6],
+    msi_cap: Option<u8>,
+    msix_cap: Option<u8>,
+    create: &mut impl FnMut(&str) -> u64,
+    set: &mut impl FnMut(u64, &str, u64),
+    link: &mut impl FnMut(u64, &str, u64),
+) {
+    use crate::device_registry::{
+        DeviceEntry, MsiCapability, MsixCapability, PciLocation, REGISTRY,
+    };
+
+    let net_node = create(kinds::DEV_NET_NIC);
+    set(net_node, keys::SOURCE, source::PCI as u64);
+    set(net_node, keys::CONFIDENCE, confidence::HIGH as u64);
+    link(graph_id, rels::IMPLEMENTS, net_node);
+
+    // Parse VirtIO PCI capabilities and publish as graph properties
+    parse_virtio_capabilities(bus, dev, func, net_node, set);
+
+    let entry = DeviceEntry::new_mmio(kinds::DEV_NET_NIC, net_node, *bar_addrs, *bar_sizes);
+
+    let mut reg = REGISTRY.lock();
+    if let Some(idx) = reg.register(entry) {
+        let msi_info = msi_cap.map(|offset| {
+            let msg_ctrl = pci_read_config_u16(bus, dev, func, offset + 0x2);
+            MsiCapability {
+                offset,
+                is_64bit: (msg_ctrl & (1 << 7)) != 0,
+                has_mask: (msg_ctrl & (1 << 8)) != 0,
+            }
+        });
+
+        let msix_info = msix_cap.map(|offset| {
+            let table = unsafe { pci_read_config(bus, dev, func, offset + 0x4) };
+            let table_bar = (table & 0x7) as u8;
+            let table_offset = table & 0xFFFF_FFF8;
+            MsixCapability {
+                offset,
+                table_bar,
+                table_offset,
+            }
+        });
+
+        let location = PciLocation { bus, dev, func };
+        reg.set_pci_info(idx, location, msi_info, msix_info);
+        crate::kinfo!(
+            "PCI: Registered virtio network (graph_id={}, idx={}) BAR0=0x{:x}",
+            graph_id,
+            idx,
+            bar_addrs[0]
+        );
+    } else {
+        crate::kinfo!("PCI: Failed to register virtio network - registry full");
+        return;
+    }
+    drop(reg); // Release registry lock
+    
+    // Now try to initialize the driver in-kernel
+    let boot_info = match crate::boot_info::get() {
+        Some(info) => info,
+        None => {
+            crate::kinfo!("VirtIO-Net: Cannot get boot info");
+            return;
+        }
+    };
+    let hhdm_offset = boot_info.hhdm_offset;
+    
+    // Parse capabilities
+    let caps = get_virtio_capabilities(bus, dev, func);
+    
+    // Find the primary BAR (BAR0 for most virtio devices)
+    let bar_phys = bar_addrs[0];
+    if bar_phys == 0 {
+        crate::kinfo!("VirtIO-Net: No BAR0, cannot initialize");
+        return;
+    }
+    
+    // Create PCI device abstraction
+    use crate::virtio::pci::VirtioPciDevice;
+    let pci_dev = VirtioPciDevice::new(
+        bar_phys,
+        hhdm_offset,
+        caps.common_cfg,
+        caps.notify_cfg,
+        caps.isr_cfg,
+        caps.device_cfg,
+    );
+    
+    // Initialize the driver
+    match crate::net::virtio_net::VirtioNetDevice::new(pci_dev, hhdm_offset) {
+        Ok(net_dev) => {
+            crate::kinfo!("VirtIO-Net: Driver initialized successfully!");
+            // Store MAC address in graph
+            let mac = net_dev.mac();
+            let mac_u64 = (mac[0] as u64) | ((mac[1] as u64) << 8) | ((mac[2] as u64) << 16)
+                | ((mac[3] as u64) << 24) | ((mac[4] as u64) << 32) | ((mac[5] as u64) << 40);
+            set(net_node, keys::MAC_ADDRESS, mac_u64);
+            set(net_node, keys::LINK_STATUS, if net_dev.link_up() { 1 } else { 0 });
+            
+            // Initialize as primary NIC
+            crate::net::init_primary_nic(net_dev);
+        }
+        Err(e) => {
+            crate::kinfo!("VirtIO-Net: Failed to initialize driver: {}", e);
+        }
+    }
 }

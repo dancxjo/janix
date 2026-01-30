@@ -113,6 +113,15 @@ pub mod keys {
     pub const ATA_CHANNEL: &str = "ata_channel";
     pub const ATA_DRIVE: &str = "ata_drive";
 
+    // Network
+    pub const MAC_ADDRESS: &str = "mac_address";
+    pub const LINK_STATUS: &str = "link_status";
+    pub const MTU: &str = "mtu";
+    pub const RX_PACKETS: &str = "rx_packets";
+    pub const TX_PACKETS: &str = "tx_packets";
+    pub const RX_BYTES: &str = "rx_bytes";
+    pub const TX_BYTES: &str = "tx_bytes";
+
     // UI Properties
     pub const UI_X: &str = "ui.x";
     pub const UI_Y: &str = "ui.y";
@@ -420,6 +429,8 @@ pub mod kinds {
     // Virtio GPU
     pub const DEV_DISPLAY_GPU: &str = "dev.display.Gpu";
     pub const DEV_DISPLAY_SCANOUT: &str = "dev.display.Scanout";
+    // Network
+    pub const DEV_NET_NIC: &str = "dev.net.Nic";
     // Storage
     pub const DEV_STORAGE_DISK: &str = "dev.storage.Disk";
     pub const DEV_STORAGE_PARTITION: &str = "dev.storage.Partition";

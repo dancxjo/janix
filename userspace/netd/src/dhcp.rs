@@ -9,6 +9,7 @@ use smoltcp::wire::Ipv4Address;
 use crate::smol_device::ThingNicDevice;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 pub enum DhcpError {
     Timeout,
     Failed,

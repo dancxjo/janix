@@ -20,8 +20,8 @@ mod smol_device;
 
 use alloc::format;
 use smol_device::ThingNicDevice;
-use smoltcp::iface::{Config, Interface, SocketSet};
-use smoltcp::wire::{EthernetAddress, IpCidr, Ipv4Address};
+use smoltcp::iface::{Config, Interface};
+use smoltcp::wire::EthernetAddress;
 use stem::{info, warn};
 
 #[stem::main]

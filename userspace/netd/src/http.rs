@@ -62,6 +62,7 @@ pub fn http_get(
     let mut response_data = Vec::new();
     let mut headers_complete = false;
     let mut status_code = 0u16;
+    #[allow(unused_assignments)]
     let mut content_length: Option<usize> = None;
     let mut chunked = false;
 

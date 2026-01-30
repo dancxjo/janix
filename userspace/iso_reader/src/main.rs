@@ -8,6 +8,7 @@
 
 extern crate alloc;
 
+use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::time::Duration;
@@ -60,6 +61,72 @@ const ATAPI_SIG_HI: u8 = 0xEB;
 const ATA_SR_BSY: u8 = 0x80;
 const ATA_SR_DRQ: u8 = 0x08;
 const ATA_SR_ERR: u8 = 0x01;
+
+// -----------------------------------------------------------------------------
+// Performance Tracking & Indexing
+// -----------------------------------------------------------------------------
+
+/// Performance counters for ISO scanning
+#[derive(Default)]
+struct ScanStats {
+    files_visited: usize,
+    dirs_visited: usize,
+    metadata_published: usize,
+    content_materialized: usize,
+    bytes_read: u64,
+    time_scan_start_ns: u64,
+    time_metadata_ns: u64,
+    time_materialization_ns: u64,
+}
+
+/// Index key for published files to avoid O(files²) behavior
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct FileKey {
+    source_id: u64, // ThingId as u64
+    name_sym: u64,  // Interned string ID
+}
+
+/// In-memory index of published files
+struct PublishIndex {
+    by_key: BTreeMap<FileKey, ThingId>,
+}
+
+impl PublishIndex {
+    fn new() -> Self {
+        Self {
+            by_key: BTreeMap::new(),
+        }
+    }
+
+    fn insert(&mut self, key: FileKey, thing_id: ThingId) {
+        self.by_key.insert(key, thing_id);
+    }
+
+    fn get(&self, key: &FileKey) -> Option<ThingId> {
+        self.by_key.get(key).copied()
+    }
+}
+
+/// File metadata for lazy materialization
+struct FileMetadata {
+    extent_lba: u32,
+    size: u32,
+    path: String,
+}
+
+/// Get current monotonic time in nanoseconds (best effort)
+fn get_monotonic_ns() -> u64 {
+    // Try to read monotonic clock from graph if available
+    // Otherwise return 0 (timing will show as 0 but won't crash)
+    let mut clocks = [ThingId::default(); 4];
+    if let Ok(count) = thingsys::find("dev.time.Clock", &mut clocks) {
+        if count > 0 {
+            let mono_ns = thingsys::prop_get(clocks[0], "monotonic_ns").unwrap_or(0);
+            return mono_ns;
+        }
+    }
+    0
+}
 
 /// ATAPI device that implements BlockDevice.
 struct AtapiDevice {
@@ -300,14 +367,17 @@ fn find_host_node() -> Option<ThingId> {
 }
 
 /// Publish a file from the ISO as both BOOT_MODULE (backward compat) and File node.
+/// Supports lazy materialization - if data is None, only metadata is published.
 fn publish_iso_file(
     host: ThingId,
     source_id: ThingId,
     path: &str,
-    data: Vec<u8>,
+    data: Option<Vec<u8>>,
     index: usize,
+    publish_index: &mut PublishIndex,
+    stats: &mut ScanStats,
 ) -> Result<ThingId, &'static str> {
-    let size = data.len() as u64;
+    let size = data.as_ref().map(|d| d.len() as u64).unwrap_or(0);
 
     // Create module node (for backward compatibility with existing consumers)
     let node = thingsys::create_node(kinds::BOOT_MODULE).map_err(|_| "create_node failed")?;
@@ -325,100 +395,139 @@ fn publish_iso_file(
     // Set source to a distinct value for ISO files
     thingsys::prop_set(node, keys::SOURCE, 10u64).map_err(|_| "set source failed")?; // 10 = ISO
 
-    // Create bytespace and write data (0 = flags, 0 = format)
-    let bs =
-        thingsys::bytespace_create(size as usize, 0, 0).map_err(|_| "bytespace_create failed")?;
-    thingsys::bytespace_write(bs, 0, &data).map_err(|_| "bytespace_write failed")?;
-
-    // Link bytespace (store ThingId, not u64)
-    thingsys::prop_set(node, keys::BYTESPACE, bs.to_u64_lossy())
-        .map_err(|_| "set bytespace failed")?;
-    thingsys::link(node, rels::BACKED_BY, bs).map_err(|_| "link backed_by failed")?;
-
-    // Link to host
-    thingsys::link(host, rels::HAS_MODULE, node).map_err(|_| "link has_module failed")?;
-
-    // Also create File node for unified content access
-    if publish_content_file(source_id, path, &data, bs, size as usize).is_none() {
-        warn!("ISO_READER: Failed to create File node for '{}'", path);
-    }
-
-    Ok(node)
-}
-
-/// Create or update a File node for ISO content.
-fn publish_content_file(
-    source_id: ThingId,
-    path: &str,
-    data: &[u8],
-    bs_id: ThingId,
-    size: usize,
-) -> Option<ThingId> {
-    // Compute content hash
-    use sha2::{Digest, Sha256};
-    let mut hasher = Sha256::new();
-    hasher.update(data);
-    let hash_bytes = hasher.finalize();
-    let hash = u64::from_le_bytes([
-        hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
-        hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
-    ]);
-
-    // Extract file name from path
-    let name = path.rsplit('/').next().unwrap_or(path);
-
-    // Determine MIME type from extension
-    let mime = if name.ends_with(".svg") || name.ends_with(".SVG") {
-        Some("image/svg+xml")
-    } else if name.ends_with(".ttf") || name.ends_with(".TTF") || name.ends_with(".otf") || name.ends_with(".OTF") {
-        Some("application/font-sfnt")
-    } else if name.ends_with(".bmp") || name.ends_with(".BMP") {
-        Some("image/bmp")
-    } else if name.ends_with(".png") || name.ends_with(".PNG") {
-        Some("image/png")
+    // Create bytespace and write data only if we have content
+    let bs = if let Some(ref data_vec) = data {
+        let bytespace = thingsys::bytespace_create(size as usize, 0, 0)
+            .map_err(|_| "bytespace_create failed")?;
+        thingsys::bytespace_write(bytespace, 0, data_vec)
+            .map_err(|_| "bytespace_write failed")?;
+        
+        stats.bytes_read += size;
+        
+        thingsys::prop_set(node, keys::BYTESPACE, bytespace.to_u64_lossy()).ok();
+        thingsys::link(node, rels::BACKED_BY, bytespace).ok();
+        Some(bytespace)
     } else {
         None
     };
 
-    // Check if file already exists with same source and name
-    // Buffer size: 512 is reasonable for typical ISO filesystems; larger ISOs may need pagination
-    let mut files = [ThingId::default(); 512];
-    if let Ok(count) = thingsys::find(kinds::CONTENT_FILE, &mut files) {
-        let name_sym = thingsys::intern(name).unwrap_or(0) as u64;
-        for &file_id in &files[..count] {
-            let existing_name = thingsys::prop_get(file_id, keys::FILE_NAME).unwrap_or(0);
-            let existing_source = thingsys::prop_get(file_id, keys::FILE_SOURCE).unwrap_or(0);
-            
-            if existing_name == name_sym && existing_source == source_id.to_u64_lossy() {
-                // Update existing file if hash changed
-                let old_hash = thingsys::prop_get(file_id, keys::FILE_HASH).unwrap_or(0);
-                if old_hash != hash {
-                    let _ = thingsys::prop_set(file_id, keys::FILE_BYTESPACE, bs_id.to_u64_lossy());
-                    let _ = thingsys::prop_set(file_id, keys::FILE_HASH, hash);
-                    let _ = thingsys::prop_set(file_id, keys::FILE_SIZE, size as u64);
+    // Link to host
+    thingsys::link(host, rels::HAS_MODULE, node).ok();
+
+    // Extract file name from path
+    let name = path.rsplit('/').next().unwrap_or(path);
+    let mime = get_mime_type(name);
+
+    // Also create/update File node for unified content access
+    publish_content_file_indexed(
+        source_id,
+        name,
+        data.as_deref(),
+        bs,
+        size as usize,
+        mime,
+        publish_index,
+        stats,
+    );
+
+    Ok(node)
+}
+
+/// Determine MIME type from file extension
+fn get_mime_type(name: &str) -> Option<&'static str> {
+    let name_lower = name.to_lowercase();
+    if name_lower.ends_with(".svg") {
+        Some("image/svg+xml")
+    } else if name_lower.ends_with(".ttf") || name_lower.ends_with(".otf") {
+        Some("application/font-sfnt")
+    } else if name_lower.ends_with(".bmp") {
+        Some("image/bmp")
+    } else if name_lower.ends_with(".png") {
+        Some("image/png")
+    } else {
+        None
+    }
+}
+
+/// Create or update a File node for ISO content (using index to avoid O(files²))
+fn publish_content_file_indexed(
+    source_id: ThingId,
+    name: &str,
+    data: Option<&[u8]>, // None for metadata-only publish
+    bs_id: Option<ThingId>, // None for metadata-only publish
+    size: usize,
+    mime: Option<&str>,
+    index: &mut PublishIndex,
+    stats: &mut ScanStats,
+) -> Option<ThingId> {
+    let name_sym = thingsys::intern(name).unwrap_or(0) as u64;
+    let key = FileKey {
+        source_id: source_id.to_u64_lossy(),
+        name_sym,
+    };
+
+    // Check index first (O(log n) instead of O(n) linear scan)
+    if let Some(existing_id) = index.get(&key) {
+        // File already exists, update if needed
+        if let Some(data_bytes) = data {
+            // Compute hash for update check
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(data_bytes);
+            let hash_bytes = hasher.finalize();
+            let hash = u64::from_le_bytes([
+                hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
+                hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+            ]);
+
+            let old_hash = thingsys::prop_get(existing_id, keys::FILE_HASH).unwrap_or(0);
+            if old_hash != hash {
+                if let Some(bs) = bs_id {
+                    let _ = thingsys::prop_set(existing_id, keys::FILE_BYTESPACE, bs.to_u64_lossy());
                 }
-                return Some(file_id);
+                let _ = thingsys::prop_set(existing_id, keys::FILE_HASH, hash);
+                let _ = thingsys::prop_set(existing_id, keys::FILE_SIZE, size as u64);
+                stats.content_materialized += 1;
             }
         }
+        return Some(existing_id);
     }
 
     // Create new file node
     match thingsys::create_node(kinds::CONTENT_FILE) {
         Ok(file_id) => {
-            let name_sym = thingsys::intern(name).unwrap_or(0) as u64;
             let _ = thingsys::prop_set(file_id, keys::FILE_NAME, name_sym);
             let _ = thingsys::prop_set(file_id, keys::FILE_SIZE, size as u64);
-            let _ = thingsys::prop_set(file_id, keys::FILE_HASH, hash);
-            let _ = thingsys::prop_set(file_id, keys::FILE_BYTESPACE, bs_id.to_u64_lossy());
             let _ = thingsys::prop_set(file_id, keys::FILE_SOURCE, source_id.to_u64_lossy());
-            
+
+            // Set hash and bytespace only if we have content
+            if let Some(data_bytes) = data {
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(data_bytes);
+                let hash_bytes = hasher.finalize();
+                let hash = u64::from_le_bytes([
+                    hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
+                    hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+                ]);
+                let _ = thingsys::prop_set(file_id, keys::FILE_HASH, hash);
+                
+                if let Some(bs) = bs_id {
+                    let _ = thingsys::prop_set(file_id, keys::FILE_BYTESPACE, bs.to_u64_lossy());
+                }
+                stats.content_materialized += 1;
+            }
+
             if let Some(mime_str) = mime {
                 if let Ok(mime_sym) = thingsys::intern(mime_str) {
                     let _ = thingsys::prop_set(file_id, keys::FILE_MIME, mime_sym as u64);
                 }
             }
-            
-            info!("ISO_READER: Created File node '{}' ({} bytes, hash={:016x})", name, size, hash);
+
+            // Add to index
+            index.insert(key, file_id);
+            stats.metadata_published += 1;
+
             Some(file_id)
         }
         Err(_) => {
@@ -428,7 +537,20 @@ fn publish_content_file(
     }
 }
 
-/// Recursively scan a directory and publish all files.
+/// Hot-set: files that should be loaded eagerly at boot for responsive UI
+fn is_in_hot_set(path: &str) -> bool {
+    let path_lower = path.to_lowercase();
+    // Load fonts, cursors, and critical UI assets eagerly
+    path_lower.contains("/cursor") ||
+    path_lower.ends_with(".ttf") ||
+    path_lower.ends_with(".otf") ||
+    path_lower.contains("/font") ||
+    path_lower == "/boot.svg" // Boot logo if present
+}
+
+/// Recursively scan a directory and publish files.
+/// Uses lazy loading: only metadata is published by default, content is loaded on-demand
+/// or for files in the hot-set.
 fn scan_and_publish(
     dev: &dyn BlockDevice,
     fs: &IsoFs,
@@ -438,6 +560,8 @@ fn scan_and_publish(
     dir_size: u32,
     prefix: String,
     index: &mut usize,
+    publish_index: &mut PublishIndex,
+    stats: &mut ScanStats,
 ) -> usize {
     let mut published = 0;
     let entries = fs.list_dir(dev, dir_lba, dir_size);
@@ -450,6 +574,7 @@ fn scan_and_publish(
         };
 
         if entry.is_directory {
+            stats.dirs_visited += 1;
             // Recurse into subdirectory
             published += scan_and_publish(
                 dev,
@@ -460,35 +585,69 @@ fn scan_and_publish(
                 entry.size,
                 full_path,
                 index,
+                publish_index,
+                stats,
             );
         } else {
-            // Read and publish file
+            stats.files_visited += 1;
+            let path_with_slash = alloc::format!("/{}", full_path);
+            
+            // Check if this file should be in the hot-set (loaded eagerly)
+            let in_hot_set = is_in_hot_set(&path_with_slash);
+            
             let file = iso9660::IsoFile {
                 extent_lba: entry.extent_lba,
                 size: entry.size,
             };
 
-            match file.read_all(dev) {
-                Ok(data) => {
-                    let path_with_slash = alloc::format!("/{}", full_path);
-                    match publish_iso_file(host, source_id, &path_with_slash, data, *index) {
-                        Ok(node_id) => {
-                            info!(
-                                "ISO_READER: Published '{}' ({} bytes) as node {}",
-                                path_with_slash,
-                                entry.size,
-                                node_id.to_u64_lossy()
-                            );
-                            published += 1;
-                            *index += 1;
-                        }
-                        Err(e) => {
-                            warn!("ISO_READER: Failed to publish '{}': {}", full_path, e);
+            if in_hot_set {
+                // Hot-set: read content immediately
+                match file.read_all(dev) {
+                    Ok(data) => {
+                        match publish_iso_file(
+                            host,
+                            source_id,
+                            &path_with_slash,
+                            Some(data),
+                            *index,
+                            publish_index,
+                            stats,
+                        ) {
+                            Ok(_) => {
+                                info!(
+                                    "ISO_READER: Published (hot-set) '{}' ({} bytes)",
+                                    path_with_slash, entry.size
+                                );
+                                published += 1;
+                                *index += 1;
+                            }
+                            Err(e) => {
+                                warn!("ISO_READER: Failed to publish '{}': {}", full_path, e);
+                            }
                         }
                     }
+                    Err(e) => {
+                        warn!("ISO_READER: Failed to read '{}': {:?}", full_path, e);
+                    }
                 }
-                Err(e) => {
-                    warn!("ISO_READER: Failed to read '{}': {:?}", full_path, e);
+            } else {
+                // Metadata-only: don't read file content yet
+                match publish_iso_file(
+                    host,
+                    source_id,
+                    &path_with_slash,
+                    None, // No data = metadata only
+                    *index,
+                    publish_index,
+                    stats,
+                ) {
+                    Ok(_) => {
+                        published += 1;
+                        *index += 1;
+                    }
+                    Err(e) => {
+                        warn!("ISO_READER: Failed to publish metadata for '{}': {}", full_path, e);
+                    }
                 }
             }
         }
@@ -574,7 +733,14 @@ fn main(_arg: usize) -> ! {
         }
     };
     
+    // Initialize performance tracking and index
+    let mut stats = ScanStats::default();
+    let mut publish_index = PublishIndex::new();
+    stats.time_scan_start_ns = get_monotonic_ns();
+    
     let mut index = 1000; // Start at high index to avoid collision with Limine modules
+    
+    let start_metadata = get_monotonic_ns();
     let published = scan_and_publish(
         &dev,
         &fs,
@@ -584,10 +750,32 @@ fn main(_arg: usize) -> ! {
         fs.pvd.root_dir_size,
         String::new(),
         &mut index,
+        &mut publish_index,
+        &mut stats,
     );
+    let end_metadata = get_monotonic_ns();
+    stats.time_metadata_ns = end_metadata.saturating_sub(start_metadata);
 
+    // Print performance summary
+    let total_time_ns = end_metadata.saturating_sub(stats.time_scan_start_ns);
+    let total_time_ms = total_time_ns / 1_000_000;
+    let metadata_time_ms = stats.time_metadata_ns / 1_000_000;
+    let bytes_read_kb = stats.bytes_read / 1024;
+    
     info!(
-        "ISO_READER: Published {} files from ISO to graph",
+        "ISO_READER: Scan complete - {} files, {} dirs in {} ms",
+        stats.files_visited, stats.dirs_visited, total_time_ms
+    );
+    info!(
+        "ISO_READER: Metadata: {} nodes published in {} ms",
+        stats.metadata_published, metadata_time_ms
+    );
+    info!(
+        "ISO_READER: Content: {} files materialized, {} KB read",
+        stats.content_materialized, bytes_read_kb
+    );
+    info!(
+        "ISO_READER: Published {} total entries from ISO to graph",
         published
     );
 

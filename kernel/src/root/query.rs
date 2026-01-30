@@ -102,12 +102,12 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                             }
                         } else {
                             // In
-                            // Slow scan for incoming
-                            for (nid, n) in &graph.nodes {
-                                for (r, dst) in &n.edges {
-                                    if *dst == row.id && (rel == 0 || *r == rel) {
+                            // Fast lookup using reverse index
+                            if let Some(incoming) = graph.reverse_index.get(&row.id) {
+                                for (r, src) in incoming {
+                                    if rel == 0 || *r == rel {
                                         next_rows.push(QueryRow {
-                                            id: *nid,
+                                            id: *src,
                                             kind_rel: *r as u64,
                                             val_dst: row.id,
                                             extra: 0,
@@ -250,5 +250,51 @@ mod tests {
         ];
         let count = execute(&graph, &plan4, &mut out).expect("Plan 4 failed");
         assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn test_query_reverse_index_optimization() {
+        let mut graph = Graph::new();
+        let kind_a = 1;
+        let kind_b = 2;
+        let rel_x = 10;
+
+        let a1 = graph.alloc(kind_a);
+        let a2 = graph.alloc(kind_a);
+        let b1 = graph.alloc(kind_b);
+
+        // a1 -> x -> b1
+        // a2 -> x -> b1
+        graph.link(a1, rel_x, b1);
+        graph.link(a2, rel_x, b1);
+
+        // Plan: Scan(B) -> Expand(X, In)
+        // Should find a1, a2
+        let plan = vec![
+            PreparedStep {
+                op: 1,
+                symbol: kind_b,
+                arg1: 0,
+            },
+            PreparedStep {
+                op: 3,
+                symbol: rel_x,
+                arg1: 1,
+            }, // In
+        ];
+
+        let mut out = [QueryRow::default(); 10];
+        let count = execute(&graph, &plan, &mut out).expect("Plan failed");
+
+        assert_eq!(count, 2);
+
+        let r0 = &out[0];
+        let r1 = &out[1];
+
+        let ids = vec![r0.id, r1.id];
+        assert!(ids.contains(&a1));
+        assert!(ids.contains(&a2));
+        assert_eq!(r0.val_dst, b1);
+        assert_eq!(r1.val_dst, b1);
     }
 }

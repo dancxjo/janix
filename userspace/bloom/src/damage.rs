@@ -8,7 +8,8 @@
 //! - `DamageJournal`: Debug-only damage history tracking
 
 /// Maximum number of distinct damage rectangles before collapsing to full-frame.
-pub const MAX_RECTS: usize = 8;
+/// Increased from 8 to allow more granular damage tracking before driver-level merging.
+pub const MAX_RECTS: usize = 32;
 
 use crate::geometry::Rect;
 use crate::snapshot::SnapshotInvalidation;
@@ -125,20 +126,16 @@ impl Damage {
 
     /// Create full-frame damage with an explicit cause.
     pub fn full_with_cause(bounds: Rect, cause: DamageCause, source: Option<ThingId>) -> Self {
+        let mut rects = [Rect::default(); MAX_RECTS];
+        rects[0] = bounds;
+        let mut causes = [DamageCause::Unknown; MAX_RECTS];
+        causes[0] = cause;
+        let mut sources = [None; MAX_RECTS];
+        sources[0] = source;
         Self {
-            rects: [
-                bounds,
-                Rect::default(),
-                Rect::default(),
-                Rect::default(),
-                Rect::default(),
-                Rect::default(),
-                Rect::default(),
-                Rect::default(),
-            ],
-            causes: [cause, DamageCause::Unknown, DamageCause::Unknown, DamageCause::Unknown, 
-                     DamageCause::Unknown, DamageCause::Unknown, DamageCause::Unknown, DamageCause::Unknown],
-            sources: [source, None, None, None, None, None, None, None],
+            rects,
+            causes,
+            sources,
             count: 1,
             bounds,
             is_full: true,

@@ -1,9 +1,11 @@
 //! Virtio constants and register offsets
 #![allow(dead_code)]
 
-// Virtio PCI common configuration offsets
-pub const VIRTIO_COMMON_DEVICE_FEATURE: u32 = 0x00;
-pub const VIRTIO_COMMON_DRIVER_FEATURE: u32 = 0x08;
+// Virtio PCI common configuration offsets (VirtIO 1.0+ spec)
+pub const VIRTIO_COMMON_DEVICE_FEATURE_SELECT: u32 = 0x00;
+pub const VIRTIO_COMMON_DEVICE_FEATURE: u32 = 0x04;
+pub const VIRTIO_COMMON_DRIVER_FEATURE_SELECT: u32 = 0x08;
+pub const VIRTIO_COMMON_DRIVER_FEATURE: u32 = 0x0C;
 pub const VIRTIO_COMMON_MSIX_CONFIG: u32 = 0x10;
 pub const VIRTIO_COMMON_NUM_QUEUES: u32 = 0x12;
 pub const VIRTIO_COMMON_STATUS: u32 = 0x14;
@@ -32,6 +34,15 @@ pub const VIRTIO_STATUS_FAILED: u32 = 128;
 
 // Feature bits
 pub const VIRTIO_F_VERSION_1: u64 = 1 << 32;
+
+// VirtIO GPU feature bits
+pub const VIRTIO_GPU_F_VIRGL: u32 = 0;     // 3D virgl rendering support
+pub const VIRTIO_GPU_F_EDID: u32 = 1;      // EDID support
+pub const VIRTIO_GPU_F_RESOURCE_UUID: u32 = 2; // Resource UUID support
+pub const VIRTIO_GPU_F_RESOURCE_BLOB: u32 = 3; // Resource blob support
+pub const VIRTIO_GPU_F_CONTEXT_INIT: u32 = 4;  // Context initialization support
+
+// Note: Feature selector and feature data offsets defined above (0x00-0x0C)
 
 // Virtio desc flags
 pub const VIRTQ_DESC_F_NEXT: u16 = 1;

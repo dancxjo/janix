@@ -19,7 +19,8 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path) -> Result<
 
     match arch {
         "x86_64" => {
-            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga  -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log")
+            // virtio-vga-gl enables virgl 3D acceleration on virtio-vga
+            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga-gl -display gtk,gl=on -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log")
                 .args(&qemu_args)
                 .run()?;
         }
@@ -52,9 +53,10 @@ pub fn run_bios(sh: &Shell, qemu_flags: &str, iso_path: &Path) -> Result<()> {
     let qemu_args: Vec<&str> = qemu_flags.split_whitespace().collect();
 
     println!("Running in QEMU BIOS mode...");
+    // virtio-vga-gl enables virgl 3D acceleration
     cmd!(
         sh,
-        "qemu-system-x86_64 -M q35 -device virtio-vga  -serial stdio -cdrom {iso} -boot d"
+        "qemu-system-x86_64 -M q35 -device virtio-vga-gl -display gtk,gl=on -serial stdio -cdrom {iso} -boot d"
     )
     .args(&qemu_args)
     .run()?;
@@ -74,7 +76,8 @@ pub fn run_hdd(sh: &Shell, arch: &str, qemu_flags: &str, hdd_path: &Path) -> Res
 
     match arch {
         "x86_64" => {
-            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga  -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}")
+            // virtio-vga-gl enables virgl 3D acceleration
+            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga-gl -display gtk,gl=on -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd}")
                 .args(&qemu_args)
                 .run()?;
         }

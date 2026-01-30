@@ -54,6 +54,10 @@ pub struct VirtioGpu {
 
     // Track if using external bytespace (display driver mode)
     external_backing: bool,
+
+    // Virgl 3D support
+    virgl_supported: bool,
+    next_resource_id: u32,
 }
 
 impl VirtioGpu {
@@ -111,6 +115,8 @@ impl VirtioGpu {
             cmd_buf,
             cmd_buf_phys,
             external_backing: false,
+            virgl_supported: false,
+            next_resource_id: 1,
         })
     }
 
@@ -132,29 +138,40 @@ impl VirtioGpu {
             status | virtio::VIRTIO_STATUS_DRIVER,
         );
 
-        // 4. Read and negotiate features
-        let _features = self.read_common(virtio::VIRTIO_COMMON_DEVICE_FEATURE);
+        // 4. Read device features (feature bank 0 for GPU-specific features)
+        self.write_common(virtio::VIRTIO_COMMON_DEVICE_FEATURE_SELECT, 0);
+        let device_features = self.read_common(virtio::VIRTIO_COMMON_DEVICE_FEATURE);
 
-        // Accept basic features
-        self.write_common(virtio::VIRTIO_COMMON_DRIVER_FEATURE, 0);
+        // Check for virgl 3D support
+        self.virgl_supported = (device_features & (1 << virtio::VIRTIO_GPU_F_VIRGL)) != 0;
+        stem::info!("virtio_gpu: device features=0x{:08x} virgl={}", device_features, self.virgl_supported);
 
-        // 5. Set FEATURES_OK
+        // 5. Write driver features - request virgl if available
+        self.write_common(virtio::VIRTIO_COMMON_DRIVER_FEATURE_SELECT, 0);
+        let driver_features = if self.virgl_supported {
+            1 << virtio::VIRTIO_GPU_F_VIRGL
+        } else {
+            0
+        };
+        self.write_common(virtio::VIRTIO_COMMON_DRIVER_FEATURE, driver_features);
+
+        // 6. Set FEATURES_OK
         let status = self.read_common(virtio::VIRTIO_COMMON_STATUS);
         self.write_common(
             virtio::VIRTIO_COMMON_STATUS,
             status | virtio::VIRTIO_STATUS_FEATURES_OK,
         );
 
-        // 6. Verify FEATURES_OK
+        // 7. Verify FEATURES_OK
         let status = self.read_common(virtio::VIRTIO_COMMON_STATUS);
         if (status & virtio::VIRTIO_STATUS_FEATURES_OK) == 0 {
             return Err("Features not accepted");
         }
 
-        // 7. Setup virtqueues
+        // 8. Setup virtqueues
         self.setup_controlq()?;
 
-        // 8. Set DRIVER_OK
+        // 9. Set DRIVER_OK
         let status = self.read_common(virtio::VIRTIO_COMMON_STATUS);
         self.write_common(
             virtio::VIRTIO_COMMON_STATUS,
@@ -398,6 +415,231 @@ impl VirtioGpu {
         }
 
         self.flush_resource(resource_id, clamped)
+    }
+
+    // =========================================================================
+    // Virgl 3D methods
+    // =========================================================================
+
+    /// Check if 3D (virgl) rendering is supported
+    pub fn has_3d_feature(&self) -> bool {
+        self.virgl_supported
+    }
+
+    /// Allocate a new unique resource ID
+    pub fn alloc_resource_id(&mut self) -> u32 {
+        let id = self.next_resource_id;
+        self.next_resource_id += 1;
+        id
+    }
+
+    /// Create a 3D rendering context
+    pub fn create_context(&mut self, ctx_id: u32, debug_name: &[u8]) -> Result<(), &'static str> {
+        if !self.virgl_supported {
+            return Err("Virgl not supported");
+        }
+
+        let mut name_buf = [0u8; 64];
+        let copy_len = debug_name.len().min(64);
+        name_buf[..copy_len].copy_from_slice(&debug_name[..copy_len]);
+
+        let cmd = VirtioGpuCtxCreate {
+            hdr: VirtioGpuCtrlHdr {
+                type_: VIRTIO_GPU_CMD_CTX_CREATE,
+                flags: 0,
+                fence_id: 0,
+                ctx_id,
+                padding: 0,
+            },
+            nlen: copy_len as u32,
+            context_init: 0, // Use default capset
+            debug_name: name_buf,
+        };
+
+        let cmd_bytes = unsafe {
+            core::slice::from_raw_parts(
+                &cmd as *const _ as *const u8,
+                core::mem::size_of::<VirtioGpuCtxCreate>(),
+            )
+        };
+
+        self.send_cmd(cmd_bytes, core::mem::size_of::<VirtioGpuCtrlHdr>())
+    }
+
+    /// Destroy a 3D rendering context
+    pub fn destroy_context(&mut self, ctx_id: u32) -> Result<(), &'static str> {
+        let cmd = VirtioGpuCtxDestroy {
+            hdr: VirtioGpuCtrlHdr {
+                type_: VIRTIO_GPU_CMD_CTX_DESTROY,
+                flags: 0,
+                fence_id: 0,
+                ctx_id,
+                padding: 0,
+            },
+        };
+
+        let cmd_bytes = unsafe {
+            core::slice::from_raw_parts(
+                &cmd as *const _ as *const u8,
+                core::mem::size_of::<VirtioGpuCtxDestroy>(),
+            )
+        };
+
+        self.send_cmd(cmd_bytes, core::mem::size_of::<VirtioGpuCtrlHdr>())
+    }
+
+    /// Attach a resource to a 3D context
+    pub fn ctx_attach_resource(&mut self, ctx_id: u32, resource_id: u32) -> Result<(), &'static str> {
+        let cmd = VirtioGpuCtxResource {
+            hdr: VirtioGpuCtrlHdr {
+                type_: VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE,
+                flags: 0,
+                fence_id: 0,
+                ctx_id,
+                padding: 0,
+            },
+            resource_id,
+            padding: 0,
+        };
+
+        let cmd_bytes = unsafe {
+            core::slice::from_raw_parts(
+                &cmd as *const _ as *const u8,
+                core::mem::size_of::<VirtioGpuCtxResource>(),
+            )
+        };
+
+        self.send_cmd(cmd_bytes, core::mem::size_of::<VirtioGpuCtrlHdr>())
+    }
+
+    /// Submit a virgl command buffer for 3D execution
+    pub fn submit_3d(&mut self, ctx_id: u32, commands: &[u8]) -> Result<(), &'static str> {
+        if !self.virgl_supported {
+            return Err("Virgl not supported");
+        }
+
+        // Build command header + command data in cmd_buf
+        let header = VirtioGpuCmdSubmit3d {
+            hdr: VirtioGpuCtrlHdr {
+                type_: VIRTIO_GPU_CMD_SUBMIT_3D,
+                flags: 0,
+                fence_id: 0,
+                ctx_id,
+                padding: 0,
+            },
+            size: commands.len() as u32,
+            padding: 0,
+        };
+
+        let header_size = core::mem::size_of::<VirtioGpuCmdSubmit3d>();
+        let total_size = header_size + commands.len();
+        
+        // Copy header and command data to DMA buffer
+        let cmd_ptr = self.cmd_buf as *mut u8;
+        unsafe {
+            // Write header
+            let header_bytes = core::slice::from_raw_parts(
+                &header as *const _ as *const u8,
+                header_size,
+            );
+            for (i, byte) in header_bytes.iter().enumerate() {
+                core::ptr::write_volatile(cmd_ptr.add(i), *byte);
+            }
+            // Write command payload
+            for (i, byte) in commands.iter().enumerate() {
+                core::ptr::write_volatile(cmd_ptr.add(header_size + i), *byte);
+            }
+        }
+
+        // Response offset
+        let resp_offset = ((total_size + 15) / 16) * 16;
+        let resp_phys = self.cmd_buf_phys + resp_offset as u64;
+        let resp_size = core::mem::size_of::<VirtioGpuCtrlHdr>();
+
+        // Send via virtqueue
+        {
+            let vq = self.controlq.as_mut().ok_or("No controlq")?;
+            let bufs = [
+                (self.cmd_buf_phys, total_size as u32, false),
+                (resp_phys, resp_size as u32, true),
+            ];
+            vq.add_buffer(&bufs).ok_or("Queue full")?;
+        }
+
+        self.notify_queue(0);
+
+        // Wait for response
+        for _ in 0..1000 {
+            let completed = {
+                let vq = self.controlq.as_mut().ok_or("No controlq")?;
+                vq.poll_used().is_some()
+            };
+
+            if completed {
+                let resp_ptr = (self.cmd_buf + resp_offset as u64) as *const u8;
+                let resp_type = unsafe {
+                    let type_bytes: [u8; 4] = [
+                        *resp_ptr,
+                        *resp_ptr.add(1),
+                        *resp_ptr.add(2),
+                        *resp_ptr.add(3),
+                    ];
+                    u32::from_le_bytes(type_bytes)
+                };
+
+                if resp_type >= VIRTIO_GPU_RESP_OK_NODATA {
+                    return Ok(());
+                } else {
+                    return Err("Submit 3D command failed");
+                }
+            }
+            core::hint::spin_loop();
+        }
+
+        Err("Submit 3D command timeout")
+    }
+
+    /// Create a 3D resource (texture, render target, etc.)
+    pub fn create_resource_3d(
+        &mut self,
+        resource_id: u32,
+        target: u32,
+        format: u32,
+        bind: u32,
+        width: u32,
+        height: u32,
+        depth: u32,
+    ) -> Result<(), &'static str> {
+        let cmd = VirtioGpuResourceCreate3d {
+            hdr: VirtioGpuCtrlHdr {
+                type_: VIRTIO_GPU_CMD_RESOURCE_CREATE_3D,
+                flags: 0,
+                fence_id: 0,
+                ctx_id: 0,
+                padding: 0,
+            },
+            resource_id,
+            target,
+            format,
+            bind,
+            width,
+            height,
+            depth,
+            array_size: 1,
+            last_level: 0,
+            nr_samples: 0,
+            flags: 0,
+            padding: 0,
+        };
+
+        let cmd_bytes = unsafe {
+            core::slice::from_raw_parts(
+                &cmd as *const _ as *const u8,
+                core::mem::size_of::<VirtioGpuResourceCreate3d>(),
+            )
+        };
+
+        self.send_cmd(cmd_bytes, core::mem::size_of::<VirtioGpuCtrlHdr>())
     }
 
     // === Internal methods ===

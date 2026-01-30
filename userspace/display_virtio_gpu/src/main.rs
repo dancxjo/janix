@@ -203,6 +203,28 @@ fn main(arg: usize) -> ! {
     info!("display_virtio_gpu: GPU initialized successfully");
 
     // =========================================================================
+    // VIRGL 3D BRING-UP TEST: Verify 3D command path works
+    // =========================================================================
+    if gpu.has_3d_feature() {
+        info!("display_virtio_gpu: Virgl 3D supported - running bring-up test...");
+        let test_ctx_id = 255u32; // Use a high context ID for testing
+        
+        match gpu.create_context(test_ctx_id, b"virgl_test") {
+            Ok(()) => {
+                info!("display_virtio_gpu: [VIRGL OK] Context created successfully!");
+                // Destroy the test context - we'll use real contexts later
+                let _ = gpu.destroy_context(test_ctx_id);
+                info!("display_virtio_gpu: [VIRGL OK] Context destroyed. Bring-up test passed!");
+            }
+            Err(e) => {
+                info!("display_virtio_gpu: [VIRGL FAIL] Context creation failed: {}", e);
+            }
+        }
+    } else {
+        info!("display_virtio_gpu: Virgl 3D not supported, using 2D only");
+    }
+
+    // =========================================================================
     // SWAPCHAIN SETUP: Create multiple GPU resources and bytespaces
     // =========================================================================
     let (disp_width, disp_height, disp_stride, disp_format) = get_display_dimensions();

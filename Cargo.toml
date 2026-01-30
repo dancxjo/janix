@@ -39,6 +39,8 @@ members = [
     "userspace/fontd",
     "userspace/blossom",
     "userspace/drawlist_demo",
+    "userspace/drawlist_validate",
+    "userspace/virgl_demo",
     "userspace/iso9660",
     "userspace/iso_reader",
     "tools/display_proto_tests",

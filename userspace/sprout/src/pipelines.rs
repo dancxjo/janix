@@ -27,13 +27,10 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     let mut display_device: Option<ThingId> = None;
     let mut backend_name: &'static str = "unknown";
 
-    // TEMPORARILY DISABLED: VirtIO GPU (force bootfb fallback)
     // Check for VirtIO GPU first (preferred for accelerated display)
     let mut gpu_buf = [ThingId::default(); 1];
-    let _ = gpu_buf; // suppress warning
-    if false /* DISABLED: let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) */ {
-        #[allow(unreachable_code)]
-        if false /* count > 0 */ {
+    if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
+        if count > 0 {
             display_device = Some(gpu_buf[0]);
             
             // Read native resolution from boot framebuffer if available

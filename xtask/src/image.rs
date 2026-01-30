@@ -96,13 +96,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
-        // TEMPORARILY DISABLED: virtio_gpu
-        // ProgramConfig {
-        //     name: "display_virtio_gpu",
-        //     is_init: false,
-        //     boot_module: true,
-        //     features: vec![],
-        // },
+        ProgramConfig {
+            name: "display_virtio_gpu",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
         ProgramConfig {
             name: "fontd",
             is_init: false,
@@ -154,6 +153,13 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "ahci_disk",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        // Virgl 3D demo (testing virgl bring-up)
+        ProgramConfig {
+            name: "virgl_demo",
             is_init: false,
             boot_module: true,
             features: vec![],

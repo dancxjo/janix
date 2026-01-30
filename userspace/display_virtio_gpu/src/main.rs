@@ -82,6 +82,16 @@ struct PresentStats {
     using_swapchain: bool,
 }
 
+/// Entry in the texture registry mapping client IDs to GPU resource IDs
+struct TextureEntry {
+    resource_id: u32,
+    width: u32,
+    height: u32,
+}
+
+/// Next resource ID for texture allocation
+static NEXT_TEXTURE_RESOURCE_ID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1000);
+
 impl PresentStats {
     const fn new(swapchain: bool) -> Self {
         Self {
@@ -561,6 +571,9 @@ fn main(arg: usize) -> ! {
     let mut stats = PresentStats::new(true);
     const STATS_LOG_INTERVAL: u32 = 120;
 
+    // Texture registry for 3D textures (client_id → TextureEntry)
+    let mut texture_registry: alloc::collections::BTreeMap<u64, TextureEntry> = alloc::collections::BTreeMap::new();
+
     loop {
         if let Ok(n) = port_recv(drv_req_read, &mut buf) {
             if n > 0 {
@@ -778,6 +791,136 @@ fn main(arg: usize) -> ! {
                             }
                         } else {
                             // Buffer too short
+                            let err = drvproto::ErrResp { code: 2 };
+                            let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                            if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                            }
+                        }
+                    }
+                }
+                drvproto::MSG_CREATE_TEXTURE_3D => {
+                    // Create a GPU texture resource
+                    if let Some(hdr) = drvproto::decode_create_texture_3d_header_le(payload) {
+                        let resource_id = NEXT_TEXTURE_RESOURCE_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+                        
+                        // Create 3D resource via VirtIO GPU
+                        // target=0 (PIPE_TEXTURE_2D), format=2 (B8G8R8X8), bind=2 (RENDER_TARGET) | 8 (SAMPLER)
+                        let tex_target = 0; // PIPE_TEXTURE_2D
+                        let tex_format = hdr.format; // Usually 2 for BGRA
+                        let tex_bind = 2 | 8; // RENDER_TARGET | SAMPLER_VIEW
+                        
+                        let result = gpu.create_resource_3d(
+                            resource_id,
+                            tex_target,
+                            tex_format,
+                            tex_bind,
+                            hdr.width,
+                            hdr.height,
+                            1, // depth
+                        );
+                        
+                        let status = if result.is_ok() {
+                            // Attach resource to virgl context
+                            let ctx_id = 1; // Main virgl context
+                            if gpu.ctx_attach_resource(ctx_id, resource_id).is_ok() {
+                                texture_registry.insert(hdr.client_id, TextureEntry {
+                                    resource_id,
+                                    width: hdr.width,
+                                    height: hdr.height,
+                                });
+                                0 // Success
+                            } else {
+                                2 // Attach failed
+                            }
+                        } else {
+                            1 // Create failed
+                        };
+                        
+                        // Send response
+                        let resp = drvproto::TextureCreatedResponse {
+                            client_id: hdr.client_id,
+                            resource_id,
+                            status,
+                        };
+                        let mut resp_bytes = [0u8; drvproto::TEXTURE_CREATED_RESPONSE_WIRE_SIZE];
+                        if let Some(len) = drvproto::encode_texture_created_response_le(&resp, &mut resp_bytes) {
+                            send_msg(drv_resp_write, drvproto::MSG_TEXTURE_CREATED, &resp_bytes[..len]);
+                        }
+                    }
+                }
+                drvproto::MSG_UPLOAD_TEXTURE_3D => {
+                    // Upload pixel data to an existing texture
+                    if let Some(hdr) = drvproto::decode_upload_texture_3d_header_le(payload) {
+                        let pixel_data = &payload[drvproto::UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE..];
+                        
+                        if pixel_data.len() >= hdr.data_len as usize {
+                            let data_slice = &pixel_data[..hdr.data_len as usize];
+                            
+                            // Allocate DMA-accessible memory for texture data
+                            match thingsys::bytespace_create(hdr.data_len as usize, 0, 0) {
+                                Ok(bs_id) => {
+                                    // Map the bytespace to get a writable pointer
+                                    match thingsys::bytespace_map(bs_id) {
+                                        Ok(ptr) => {
+                                            // Copy pixel data to DMA buffer
+                                            unsafe {
+                                                core::ptr::copy_nonoverlapping(
+                                                    data_slice.as_ptr(),
+                                                    ptr as *mut u8,
+                                                    hdr.data_len as usize,
+                                                );
+                                            }
+                                            
+                                            // Get physical address for attach_backing_3d
+                                            match thingsys::bytespace_phys(bs_id) {
+                                                Ok(phys_addr) => {
+                                                    // Attach backing and transfer
+                                                    if gpu.attach_backing_3d(hdr.resource_id, phys_addr, hdr.data_len as usize).is_ok() {
+                                                        if gpu.transfer_to_host_3d(1, hdr.resource_id, hdr.width, hdr.height, hdr.x as u64, hdr.stride).is_ok() {
+                                                            send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
+                                                        } else {
+                                                            let err = drvproto::ErrResp { code: 4 };
+                                                            let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                                            if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                                            }
+                                                        }
+                                                    } else {
+                                                        let err = drvproto::ErrResp { code: 5 };
+                                                        let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                                        if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                                            send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                                        }
+                                                    }
+                                                }
+                                                Err(_) => {
+                                                    let err = drvproto::ErrResp { code: 6 };
+                                                    let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                                    if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                                        send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        Err(_) => {
+                                            let err = drvproto::ErrResp { code: 7 };
+                                            let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                            if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                            }
+                                        }
+                                    }
+                                }
+                                Err(_) => {
+                                    let err = drvproto::ErrResp { code: 8 };
+                                    let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                    if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                        send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                    }
+                                }
+                            }
+                        } else {
                             let err = drvproto::ErrResp { code: 2 };
                             let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
                             if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {

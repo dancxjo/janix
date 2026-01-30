@@ -482,10 +482,10 @@ pub mod kinds {
     // Content Provider System
     /// A content source that provides files/directories (Limine modules, ISO, etc.)
     pub const CONTENT_SOURCE: &str = "content.Source";
-    /// A directory in the content graph
-    pub const CONTENT_DIR: &str = "content.Directory";
-    /// A file in the content graph
-    pub const CONTENT_FILE: &str = "content.File";
+    /// A directory in the filesystem graph
+    pub const CONTENT_DIR: &str = "fs.Directory";
+    /// A file in the filesystem graph
+    pub const CONTENT_FILE: &str = "fs.File";
 }
 
 /// Snapshot semantics and constants for UI presentation surfaces.

@@ -126,7 +126,7 @@ fn main() -> ! {
     use stem::i18n::LocalizedText;
     const EXPLORER: LocalizedText = stem::t!("ui.fonts.explorer", "Font Explorer");
     const COUNT_LABEL: LocalizedText = stem::t!("ui.fonts.count", "Fonts");
-    const SAMPLE: LocalizedText = stem::t!("ui.fonts.sample", "Sphinx of black quartz, judge my vow. 0123456789 😀 ܐܠܦ ܒܝܬ ܣܘܪܝܝܐ  ́aáÁàÀâÂäÄãÃåÅæÆçÇèÈéÉêÊëËìÌíÍîÎïÏðÐñÑòÒóÓôÔöÖõÕøØœŒœŒßß");
+    const SAMPLE: LocalizedText = stem::t!("ui.fonts.sample", "Sphinx of black quartz, judge my vow. 0123456789 😀 ܐܠܦ ܒܝܬÕøØœ");
 
     let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
     link(win, rels::CHILD_OF, ui_crown).expect("link window");

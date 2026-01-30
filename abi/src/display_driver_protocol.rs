@@ -20,6 +20,10 @@ pub const MSG_ACCEPT_FRAMEBUFFER: u16 = 10;
 pub const MSG_ACQUIRE: u16 = 11;
 pub const MSG_ACQUIRED: u16 = 12;
 pub const MSG_SUBMIT_3D: u16 = 13;  // Virgl 3D command submission
+pub const MSG_CREATE_TEXTURE_3D: u16 = 14;  // Create GPU texture
+pub const MSG_UPLOAD_TEXTURE_3D: u16 = 15;  // Upload pixel data to texture
+pub const MSG_DESTROY_TEXTURE_3D: u16 = 16;  // Destroy GPU texture
+pub const MSG_TEXTURE_CREATED: u16 = 17;  // Response with texture resource ID
 
 pub const PROTO_MAJOR: u16 = 1;
 pub const PROTO_MINOR: u16 = 0;
@@ -146,6 +150,57 @@ pub struct Submit3dHeader {
     pub cmd_len: u32,
 }
 
+/// Header for creating a GPU texture (MSG_CREATE_TEXTURE_3D).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct CreateTexture3dHeader {
+    /// Client-specified texture ID (for tracking)
+    pub client_id: u64,
+    /// Texture width in pixels
+    pub width: u32,
+    /// Texture height in pixels
+    pub height: u32,
+    /// Pixel format (e.g. BGRA8888 = 2)
+    pub format: u32,
+    /// Padding for alignment
+    pub _pad: u32,
+}
+
+/// Header for uploading texture data (MSG_UPLOAD_TEXTURE_3D).
+/// The pixel data follows this header.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct UploadTexture3dHeader {
+    /// Texture resource ID (from driver)
+    pub resource_id: u32,
+    /// Width of upload region
+    pub width: u32,
+    /// Height of upload region
+    pub height: u32,
+    /// Stride of pixel data in bytes
+    pub stride: u32,
+    /// X offset in texture
+    pub x: u32,
+    /// Y offset in texture
+    pub y: u32,
+    /// Length of pixel data in bytes (follows header)
+    pub data_len: u32,
+    /// Padding for alignment
+    pub _pad: u32,
+}
+
+/// Response for texture creation (MSG_TEXTURE_CREATED).
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct TextureCreatedResponse {
+    /// Client-specified texture ID (echoed back)
+    pub client_id: u64,
+    /// Driver-allocated resource ID
+    pub resource_id: u32,
+    /// Status (0 = success)
+    pub status: u32,
+}
+
 pub const HEADER_SIZE: usize = size_of::<DriverHeader>();
 pub const REGISTER_PAYLOAD_WIRE_SIZE: usize = 8;
 pub const HELLO_PAYLOAD_WIRE_SIZE: usize = 8;
@@ -158,6 +213,9 @@ pub const OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 24; // 8 + 4 + 4 + 4 + 4
 pub const ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 8; // 4 + 4
 pub const ACQUIRED_PAYLOAD_WIRE_SIZE: usize = 32; // 8 + 4 + 4 + 4 + 4 + 4 + 4
 pub const SUBMIT_3D_HEADER_WIRE_SIZE: usize = 8;  // 4 + 4 (ctx_id + cmd_len)
+pub const CREATE_TEXTURE_3D_HEADER_WIRE_SIZE: usize = 24;  // 8 + 4 + 4 + 4 + 4
+pub const UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE: usize = 32;  // 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4
+pub const TEXTURE_CREATED_RESPONSE_WIRE_SIZE: usize = 16;  // 8 + 4 + 4
 
 pub fn encode_message(buf: &mut [u8], msg_type: u16, payload: &[u8]) -> Option<usize> {
     let total = HEADER_SIZE + payload.len();
@@ -527,5 +585,94 @@ pub fn decode_submit_3d_header_le(buf: &[u8]) -> Option<Submit3dHeader> {
     Some(Submit3dHeader {
         ctx_id: u32::from_le_bytes(buf[0..4].try_into().ok()?),
         cmd_len: u32::from_le_bytes(buf[4..8].try_into().ok()?),
+    })
+}
+
+/// Encode CreateTexture3dHeader for texture creation.
+pub fn encode_create_texture_3d_header_le(
+    header: &CreateTexture3dHeader,
+    out: &mut [u8],
+) -> Option<usize> {
+    if out.len() < CREATE_TEXTURE_3D_HEADER_WIRE_SIZE {
+        return None;
+    }
+    out[0..8].copy_from_slice(&header.client_id.to_le_bytes());
+    out[8..12].copy_from_slice(&header.width.to_le_bytes());
+    out[12..16].copy_from_slice(&header.height.to_le_bytes());
+    out[16..20].copy_from_slice(&header.format.to_le_bytes());
+    out[20..24].copy_from_slice(&0u32.to_le_bytes());
+    Some(CREATE_TEXTURE_3D_HEADER_WIRE_SIZE)
+}
+
+pub fn decode_create_texture_3d_header_le(buf: &[u8]) -> Option<CreateTexture3dHeader> {
+    if buf.len() < CREATE_TEXTURE_3D_HEADER_WIRE_SIZE {
+        return None;
+    }
+    Some(CreateTexture3dHeader {
+        client_id: u64::from_le_bytes(buf[0..8].try_into().ok()?),
+        width: u32::from_le_bytes(buf[8..12].try_into().ok()?),
+        height: u32::from_le_bytes(buf[12..16].try_into().ok()?),
+        format: u32::from_le_bytes(buf[16..20].try_into().ok()?),
+        _pad: 0,
+    })
+}
+
+/// Encode UploadTexture3dHeader for texture data upload.
+pub fn encode_upload_texture_3d_header_le(
+    header: &UploadTexture3dHeader,
+    out: &mut [u8],
+) -> Option<usize> {
+    if out.len() < UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE {
+        return None;
+    }
+    out[0..4].copy_from_slice(&header.resource_id.to_le_bytes());
+    out[4..8].copy_from_slice(&header.width.to_le_bytes());
+    out[8..12].copy_from_slice(&header.height.to_le_bytes());
+    out[12..16].copy_from_slice(&header.stride.to_le_bytes());
+    out[16..20].copy_from_slice(&header.x.to_le_bytes());
+    out[20..24].copy_from_slice(&header.y.to_le_bytes());
+    out[24..28].copy_from_slice(&header.data_len.to_le_bytes());
+    out[28..32].copy_from_slice(&0u32.to_le_bytes());
+    Some(UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE)
+}
+
+pub fn decode_upload_texture_3d_header_le(buf: &[u8]) -> Option<UploadTexture3dHeader> {
+    if buf.len() < UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE {
+        return None;
+    }
+    Some(UploadTexture3dHeader {
+        resource_id: u32::from_le_bytes(buf[0..4].try_into().ok()?),
+        width: u32::from_le_bytes(buf[4..8].try_into().ok()?),
+        height: u32::from_le_bytes(buf[8..12].try_into().ok()?),
+        stride: u32::from_le_bytes(buf[12..16].try_into().ok()?),
+        x: u32::from_le_bytes(buf[16..20].try_into().ok()?),
+        y: u32::from_le_bytes(buf[20..24].try_into().ok()?),
+        data_len: u32::from_le_bytes(buf[24..28].try_into().ok()?),
+        _pad: 0,
+    })
+}
+
+/// Encode TextureCreatedResponse.
+pub fn encode_texture_created_response_le(
+    response: &TextureCreatedResponse,
+    out: &mut [u8],
+) -> Option<usize> {
+    if out.len() < TEXTURE_CREATED_RESPONSE_WIRE_SIZE {
+        return None;
+    }
+    out[0..8].copy_from_slice(&response.client_id.to_le_bytes());
+    out[8..12].copy_from_slice(&response.resource_id.to_le_bytes());
+    out[12..16].copy_from_slice(&response.status.to_le_bytes());
+    Some(TEXTURE_CREATED_RESPONSE_WIRE_SIZE)
+}
+
+pub fn decode_texture_created_response_le(buf: &[u8]) -> Option<TextureCreatedResponse> {
+    if buf.len() < TEXTURE_CREATED_RESPONSE_WIRE_SIZE {
+        return None;
+    }
+    Some(TextureCreatedResponse {
+        client_id: u64::from_le_bytes(buf[0..8].try_into().ok()?),
+        resource_id: u32::from_le_bytes(buf[8..12].try_into().ok()?),
+        status: u32::from_le_bytes(buf[12..16].try_into().ok()?),
     })
 }

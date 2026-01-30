@@ -114,6 +114,9 @@ fn main() -> ! {
     // Open watches for font import/glyph requests (legacy compatibility)
     let glyph_watch = open_watch(kinds::FONT_GLYPH_REQUEST);
     let import_watch = open_watch(kinds::FONT_IMPORT_REQUEST);
+    // Watch for new font assets (auto-import path)
+    let asset_watch = open_watch(kinds::ASSET);
+    info!("FONTD: Opened ASSET watch (handle={}) for kind '{}'", asset_watch, kinds::ASSET);
 
     info!("FONTD: Service ready");
 
@@ -133,6 +136,16 @@ fn main() -> ! {
             if len > 0 {
                 process_import_events(&watch_buf[..len], &mut state);
             }
+        }
+        // Process new font assets (auto-import path)
+        match syscall::root_watch_next(asset_watch, &mut seq_out, &mut watch_buf) {
+            Ok(len) if len > 0 => {
+                info!("FONTD: Received {} bytes from ASSET watch", len);
+                process_asset_events(&watch_buf[..len], &mut state);
+            },
+            Ok(0) => { /* No events, continue */ },
+            Err(e) => { /* EAGAIN or error, continue */ },
+            _ => {}
         }
 
         // Process IPC requests (new atlas-based path)
@@ -155,7 +168,7 @@ fn main() -> ! {
 
 fn open_watch(kind: &str) -> usize {
     let pred = intern(kind).unwrap_or(0);
-    let filter = RootWatchFilter::predicate(pred);
+    let filter = RootWatchFilter::kind(pred as u32);
     let spec = WatchSpec {
         mode: WatchMode::QueryThenStream as u32,
         filter_ptr: &filter as *const _ as u64,
@@ -382,6 +395,92 @@ fn process_import_events(payload: &[u8], state: &mut FontD) {
             break;
         }
     }
+}
+
+/// Process asset watch events and auto-import fonts.
+fn process_asset_events(payload: &[u8], state: &mut FontD) {
+    let font_kind_sym = intern("font").unwrap_or(0) as u64;
+    if font_kind_sym == 0 {
+        return;
+    }
+    
+    let mut cursor = 0usize;
+    let mut event_count = 0usize;
+    let mut font_count = 0usize;
+    
+    while cursor < payload.len() {
+        if let Ok((header, value)) = watch::decode_event(&payload[cursor..]) {
+            cursor += watch::WATCH_EVENT_HEADER_LEN + value.len();
+            event_count += 1;
+            
+            if WatchOp::from_u8(header.op) == Some(WatchOp::Upsert) {
+                // Check if this asset is a font
+                let asset_kind = prop_get(header.subject, keys::ASSET_KIND).unwrap_or(0);
+                if asset_kind == font_kind_sym {
+                    font_count += 1;
+                    // Get the bytespace for this font asset
+                    let bs_val = prop_get(header.subject, keys::ASSET_BYTESPACE).unwrap_or(0);
+                    if bs_val != 0 {
+                        handle_font_asset_import(header.subject, ThingId::from_u64(bs_val), state);
+                    }
+                }
+            }
+        } else {
+            break;
+        }
+    }
+    
+    if event_count > 0 {
+        info!("FONTD: Processed {} ASSET events ({} fonts)", event_count, font_count);
+    }
+}
+
+/// Directly import a font from an asset's bytespace (auto-import path).
+fn handle_font_asset_import(asset_id: ThingId, bs_id: ThingId, _state: &mut FontD) {
+    info!("FONTD: Auto-importing font asset {:?}", asset_id);
+    
+    let size = match bytespace_info(bs_id) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    let ptr = match bytespace_map(bs_id) {
+        Ok(p) => p,
+        Err(_) => return,
+    };
+    let data = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
+
+    let face = match Face::parse(data, 0) {
+        Ok(f) => f,
+        Err(_) => {
+            let _ = bytespace_unmap(bs_id, ptr);
+            return;
+        }
+    };
+
+    let family_name = extract_name(&face, name_id::TYPOGRAPHIC_FAMILY, name_id::FAMILY)
+        .unwrap_or_else(|| "Unknown".into());
+    let style_name = extract_name(&face, name_id::TYPOGRAPHIC_SUBFAMILY, name_id::SUBFAMILY)
+        .unwrap_or_else(|| "Regular".into());
+
+    let family_key = intern(&family_name).unwrap_or(0) as u64;
+    let family_id =
+        get_or_create_node_by_prop(kinds::FONT_FAMILY, keys::FONT_FAMILY_KEY, family_key);
+    let _ = prop_set(family_id, keys::FONT_FAMILY_KEY, family_key);
+    set_prop_bytespace_str(family_id, keys::FONT_NAME, &family_name);
+
+    let face_id = create_node(kinds::FONT_FACE).unwrap_or_else(|_| ThingId::default());
+    let _ = prop_set(face_id, keys::FONT_WEIGHT, face.weight().to_number() as u64);
+    let _ = prop_set(face_id, keys::FONT_WIDTH, face.width().to_number() as u64);
+    set_prop_bytespace_str(face_id, keys::FONT_STYLE, &style_name);
+
+    let _ = link(family_id, rels::FONT_HAS_FACE, face_id);
+    let _ = link(face_id, rels::FONT_HAS_ASSET, bs_id);
+
+    let _ = bytespace_unmap(bs_id, ptr);
+    info!(
+        "FONTD: Auto-imported font '{}' style '{}' from asset {:?}",
+        family_name, style_name, asset_id
+    );
 }
 
 fn handle_import_request(req_id: ThingId, _state: &mut FontD) {

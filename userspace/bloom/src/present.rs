@@ -443,6 +443,81 @@ impl DriverPresenter {
     pub fn has_3d_cap(&self) -> bool {
         self.negotiation.map(|n| n.caps & drvproto::CAP_3D != 0).unwrap_or(false)
     }
+
+    /// Request the driver to create a GPU texture.
+    /// Returns the resource_id from MSG_TEXTURE_CREATED response synchronously.
+    #[cfg(feature = "gpu")]
+    pub fn send_create_texture_3d(&mut self, client_id: u64, width: u32, height: u32, format: u32) -> Option<u32> {
+        let header = drvproto::CreateTexture3dHeader {
+            client_id,
+            width,
+            height,
+            format,
+            _pad: 0,
+        };
+        
+        let mut payload = [0u8; drvproto::CREATE_TEXTURE_3D_HEADER_WIRE_SIZE];
+        if drvproto::encode_create_texture_3d_header_le(&header, &mut payload).is_none() {
+            return None;
+        }
+        
+        let total_msg = drvproto::HEADER_SIZE + payload.len();
+        let mut buf = alloc::vec![0u8; total_msg];
+        if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_CREATE_TEXTURE_3D, &payload) {
+            let _ = port_send(self.req_write, &buf[..len]);
+        }
+        
+        // Wait for MSG_TEXTURE_CREATED response
+        loop {
+            self.pump_port();
+            while let Some((hdr, payload_data)) = self.frames.next_message() {
+                if hdr.msg_type == drvproto::MSG_TEXTURE_CREATED {
+                    if let Some(resp) = drvproto::decode_texture_created_response_le(payload_data) {
+                        if resp.client_id == client_id && resp.status == 0 {
+                            return Some(resp.resource_id);
+                        } else {
+                            return None; // Error
+                        }
+                    }
+                } else {
+                    let payload_copy = payload_data.to_vec();
+                    self.handle_message(hdr.msg_type, &payload_copy);
+                }
+            }
+            stem::yield_now();
+        }
+    }
+
+    /// Upload pixel data to an existing GPU texture.
+    #[cfg(feature = "gpu")]
+    pub fn send_upload_texture_3d(&mut self, resource_id: u32, width: u32, height: u32, stride: u32, data: &[u8]) {
+        let header = drvproto::UploadTexture3dHeader {
+            resource_id,
+            width,
+            height,
+            stride,
+            x: 0,
+            y: 0,
+            data_len: data.len() as u32,
+            _pad: 0,
+        };
+        
+        let total_payload = drvproto::UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE + data.len();
+        let total_msg = drvproto::HEADER_SIZE + total_payload;
+        
+        let mut payload = alloc::vec![0u8; total_payload];
+        if drvproto::encode_upload_texture_3d_header_le(&header, &mut payload).is_none() {
+            return;
+        }
+        payload[drvproto::UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE..].copy_from_slice(data);
+        
+        let mut buf = alloc::vec![0u8; total_msg];
+        if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_UPLOAD_TEXTURE_3D, &payload) {
+            let _ = port_send(self.req_write, &buf[..len]);
+        }
+        
+        // Don't wait for ACK to avoid latency - texture upload is fire-and-forget
+    }
 }
 
 impl Presenter for DriverPresenter {

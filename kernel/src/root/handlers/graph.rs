@@ -76,7 +76,17 @@ pub fn handle_prop_get(
     key: SymbolShell,
 ) -> HandlerResult {
     let kid = resolve_shell(key, interner);
+    
+    // Intern the special "kind" key to check for virtual property
+    let kind_key = interner.intern("kind");
+    
     if let Some(node) = graph.get_node_mut(id) {
+        // Virtual "kind" property: return node.kind field
+        if kid == kind_key {
+            return (0, node.kind as u64);
+        }
+        
+        // Regular property lookup
         if let Some(val) = node.props.get(&kid) {
             (0, *val)
         } else {

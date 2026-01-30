@@ -132,6 +132,10 @@ pub mod keys {
     pub const LBA48: &str = "lba48";
     pub const ATA_CHANNEL: &str = "ata_channel";
     pub const ATA_DRIVE: &str = "ata_drive";
+    pub const MODEL: &str = "model";
+    pub const SERIAL: &str = "serial";
+    pub const READ_PORT_HANDLE: &str = "read_port_handle";
+    pub const WRITE_PORT_HANDLE: &str = "write_port_handle";
 
     // Network
     pub const MAC_ADDRESS: &str = "mac_address";
@@ -454,6 +458,7 @@ pub mod kinds {
     // Storage
     pub const DEV_STORAGE_DISK: &str = "dev.storage.Disk";
     pub const DEV_STORAGE_PARTITION: &str = "dev.storage.Partition";
+    pub const DEV_STORAGE_BLOCK_DEVICE: &str = "dev.storage.BlockDevice";
     pub const SVC_STORAGE: &str = "svc.Storage";
     pub const LOG_ENTRY: &str = "log.Entry";
 

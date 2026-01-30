@@ -41,8 +41,52 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
     let mut seen = BTreeMap::new();
     let mut queue = Vec::new();
 
-    // Initial seeds
-    let interesting_kinds = [kinds::UI_CROWN, kinds::UI_WINDOW, kinds::PROC_KERNEL];
+    // Initial seeds - comprehensive list of all discoverable system entities
+    // NOTE: mem.Range, Bytespace, and log.Entry are filtered out during scan
+    let interesting_kinds = [
+        // Core system
+        kinds::SVC_ROOT,
+        kinds::PROC_KERNEL,
+        kinds::SVC_SCHEDULER,
+        kinds::SVC_INIT,
+        kinds::SVC_CAMBIUM,
+        // UI
+        kinds::UI_CROWN,
+        kinds::UI_WINDOW,
+        kinds::UI_PANEL,
+        kinds::UI_SCENE,
+        // Hardware/Devices
+        kinds::DEV_HOST,
+        kinds::DEV_CPU,
+        kinds::DEV_BUS_PCI,
+        kinds::DEV_PCI_FUNCTION,
+        kinds::DEV_DISPLAY_FRAMEBUFFER,
+        kinds::DEV_DISPLAY_GPU,
+        kinds::DEV_STORAGE_DISK,
+        kinds::DEV_INPUT_PS2_CONTROLLER,
+        kinds::DEV_RTC_CMOS,
+        // Boot
+        kinds::BOOT_MODULE,
+        kinds::FW_BOOT,
+        kinds::FW_TABLE_ACPI,
+        // Content
+        kinds::CONTENT_SOURCE,
+        kinds::CONTENT_DIR,
+        kinds::CONTENT_FILE,
+        // Storage/Time
+        kinds::SVC_STORAGE,
+        kinds::SVC_TIME_SYSTEM_CLOCK,
+        kinds::TIME_CLOCK,
+        // Fonts
+        kinds::FONT_FAMILY,
+        kinds::FONT_FACE,
+        // Assets
+        kinds::ASSET,
+        kinds::ASSET_REQUEST,
+        // Tasks/Threads
+        kinds::PROC_TASK,
+        kinds::PROC_THREAD,
+    ];
 
     for &kind_name in &interesting_kinds {
         let mut ids = [ThingId::default(); 32];
@@ -116,10 +160,16 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
         let mut q = RestrictedQuery::new(&mut q_buf);
 
         if let Ok(count) = q.get_edges(id, None, 128) {
+            if count > 0 {
+                stem::info!("[photo] Node {:X} has {} edges", id.to_u64_lossy(), count);
+            }
              for i in 0..count {
                  let row = &q.buf[i];
                  let predicate_id = row.kind_rel as u32;
                  let target_id = ThingId::from_u64(row.val_dst);
+                 
+                 stem::info!("[photo]   Edge: {:X} --[pred={}]--> {:X}", 
+                     id.to_u64_lossy(), predicate_id, target_id.to_u64_lossy());
                  
                 let weight =
                     stem::thing::sys::prop_get(id, keys::EDGE_WEIGHT).unwrap_or(100) as f32 / 100.0;
@@ -136,7 +186,16 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
         }
     }
 
-    (nodes, edges)
+    stem::info!("[photo] Scan complete: {} nodes, {} raw edges", nodes.len(), edges.len());
+
+    // Filter edges to only include those where both endpoints are in the nodes list
+    let node_ids: BTreeMap<ThingId, ()> = nodes.iter().map(|n| (n.id, ())).collect();
+    let filtered_edges: Vec<EdgeInfo> = edges
+        .into_iter()
+        .filter(|e| node_ids.contains_key(&e.from) && node_ids.contains_key(&e.to))
+        .collect();
+
+    (nodes, filtered_edges)
 }
 
 fn extract_info(desc: &str, id: ThingId) -> (String, String, String) {

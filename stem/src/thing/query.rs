@@ -42,7 +42,9 @@ impl<'a> RestrictedQuery<'a> {
         let wire_rel = if let Some(r) = rel {
             r.to_wire()
         } else {
-            "".to_wire()
+            // Use symbol ID 0 for wildcard edge matching
+            // (empty string would get interned to a non-zero ID, breaking wildcards)
+            (0u32).to_wire()
         };
 
         let step2 = QueryStep {
@@ -132,11 +134,12 @@ pub fn query_edges(
     };
 
     // Step 2: Expand
-    let wire_rel = if let Some(r) = rel {
-        r.to_wire()
-    } else {
-        "".to_wire()
-    }; // Rel="" means any? Executor logic needs check.
+        let wire_rel = if let Some(r) = rel {
+            r.to_wire()
+        } else {
+            // Use symbol ID 0 for wildcard edge matching
+            (0u32).to_wire()
+        }; // Rel="" means any? Executor logic needs check.
        // Currently executor checks `if *r == rel`. If rel is "" and interned ID is 0, we match 0.
        // But edges have valid symbol Ids > 0.
        // So current executor logic doesn't support "Any".

@@ -1061,7 +1061,7 @@ fn main(arg: usize) -> ! {
                     .clip(bounds);
                     
                     let cause = if cursor_changed {
-                        damage::DamageCause::AssetUpdated
+                        damage::DamageCause::CursorShapeChanged
                     } else {
                         damage::DamageCause::CursorMoved
                     };
@@ -1164,11 +1164,13 @@ fn main(arg: usize) -> ! {
             // damage calculation trace (already mostly done but wrapping ensures consistency)
         }
 
-        // Detect cursor-only frames: damage is only from cursor movement
+        // Detect cursor-only frames: damage is only from cursor movement or shape changes
         let is_cursor_only_frame = if !damage.is_empty() && !damage.is_full {
             let mut all_cursor_damage = true;
             for record in damage.iter_records() {
-                if record.cause != damage::DamageCause::CursorMoved {
+                // Accept both cursor movement and cursor shape changes
+                if record.cause != damage::DamageCause::CursorMoved 
+                    && record.cause != damage::DamageCause::CursorShapeChanged {
                     all_cursor_damage = false;
                     break;
                 }

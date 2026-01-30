@@ -2,6 +2,34 @@
 //!
 //! Minimal, read-only ISO9660 parser for reading files from CD-ROM boot media.
 //! Supports Level 1/2 interchange without Rock Ridge or Joliet extensions.
+//!
+//! ## Performance Optimizations
+//!
+//! This implementation includes several optimizations to eliminate pathological
+//! slowness during asset lookup:
+//!
+//! ### Directory Caching
+//! - Each directory extent is parsed once and cached in a `BTreeMap`
+//! - Cache key: `(extent_lba, data_length)` uniquely identifies a directory
+//! - Subsequent lookups in the same directory reuse cached parsed entries
+//! - No eviction policy (ISOs are immutable, cache lifetime = mount lifetime)
+//!
+//! ### Allocation-Free Filename Matching
+//! - Path resolution uses `ascii_eq_ignore_case()` for case-insensitive comparison
+//! - Eliminates `to_uppercase()` allocations in the hot path
+//! - Properly handles ISO9660 version suffixes (e.g., `;1`)
+//!
+//! ### Performance Instrumentation (optional)
+//! - Enable with `--features perf` to track:
+//!   - `dir_parses`: Number of directory extents parsed from disk
+//!   - `cache_hits`: Number of cache reuses
+//!   - `path_resolution_steps`: Number of path segments traversed
+//!   - `bytes_read`: Total bytes read during directory operations
+//!
+//! ## Expected Performance Impact
+//! - O(N × M) → O(N) complexity for path lookups (N = segments, M = entries)
+//! - Order-of-magnitude improvement in asset scan time
+//! - Zero heap allocations during filename matching
 
 #![no_std]
 

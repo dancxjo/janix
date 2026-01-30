@@ -456,4 +456,179 @@ pub fn route_edges(
     routes
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_no_overlapping_nodes() {
+        let mut nodes = Vec::new();
+        let mut edges = Vec::new();
+
+        // Create a simple graph with 5 nodes
+        for i in 0..5 {
+            nodes.push(LayoutNode {
+                id: ThingId::from_u64(i as u64 + 1),
+                x: 0.0,
+                y: 0.0,
+                w: 120.0,
+                h: 160.0,
+                vx: 0.0,
+                vy: 0.0,
+                fixed: false,
+                pinned: false,
+                rank: 0,
+                gen: 0,
+            });
+        }
+
+        // Create edges in a chain
+        for i in 0..4 {
+            edges.push(LayoutEdge {
+                from: ThingId::from_u64(i as u64 + 1),
+                to: ThingId::from_u64(i as u64 + 2),
+                weight: 1.0,
+            });
+        }
+
+        let settings = LayoutSettings::default();
+        compute_layout(&mut nodes, &edges, &settings);
+
+        // Check that no nodes overlap
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                let n1 = &nodes[i];
+                let n2 = &nodes[j];
+
+                let dx = (n1.x - n2.x).abs();
+                let dy = (n1.y - n2.y).abs();
+                let min_dx = (n1.w + n2.w) / 2.0 + settings.min_distance;
+                let min_dy = (n1.h + n2.h) / 2.0 + settings.min_distance;
+
+                // Assert no overlap
+                assert!(
+                    dx >= min_dx || dy >= min_dy,
+                    "Nodes {} and {} overlap: dx={}, dy={}, min_dx={}, min_dy={}",
+                    n1.id.to_u64_lossy(),
+                    n2.id.to_u64_lossy(),
+                    dx,
+                    dy,
+                    min_dx,
+                    min_dy
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_pinned_nodes_stay_fixed() {
+        let mut nodes = vec![
+            LayoutNode {
+                id: ThingId::from_u64(1),
+                x: 100.0,
+                y: 100.0,
+                w: 120.0,
+                h: 160.0,
+                vx: 0.0,
+                vy: 0.0,
+                fixed: false,
+                pinned: true, // This node is pinned
+                rank: 0,
+                gen: 0,
+            },
+            LayoutNode {
+                id: ThingId::from_u64(2),
+                x: 0.0,
+                y: 0.0,
+                w: 120.0,
+                h: 160.0,
+                vx: 0.0,
+                vy: 0.0,
+                fixed: false,
+                pinned: false,
+                rank: 0,
+                gen: 0,
+            },
+        ];
+
+        let edges = vec![LayoutEdge {
+            from: ThingId::from_u64(1),
+            to: ThingId::from_u64(2),
+            weight: 1.0,
+        }];
+
+        let settings = LayoutSettings::default();
+        let orig_x = nodes[0].x;
+        let orig_y = nodes[0].y;
+
+        compute_layout(&mut nodes, &edges, &settings);
+
+        // Pinned node should not have moved
+        assert_eq!(nodes[0].x, orig_x, "Pinned node X position changed");
+        assert_eq!(nodes[0].y, orig_y, "Pinned node Y position changed");
+        
+        // Pinned node should have zero velocity
+        assert_eq!(nodes[0].vx, 0.0, "Pinned node has non-zero X velocity");
+        assert_eq!(nodes[0].vy, 0.0, "Pinned node has non-zero Y velocity");
+    }
+
+    #[test]
+    fn test_edge_routing() {
+        let nodes = vec![
+            LayoutNode {
+                id: ThingId::from_u64(1),
+                x: 0.0,
+                y: 0.0,
+                w: 120.0,
+                h: 160.0,
+                vx: 0.0,
+                vy: 0.0,
+                fixed: false,
+                pinned: false,
+                rank: 0,
+                gen: 0,
+            },
+            LayoutNode {
+                id: ThingId::from_u64(2),
+                x: 200.0,
+                y: 0.0,
+                w: 120.0,
+                h: 160.0,
+                vx: 0.0,
+                vy: 0.0,
+                fixed: false,
+                pinned: false,
+                rank: 0,
+                gen: 0,
+            },
+        ];
+
+        let edges = vec![LayoutEdge {
+            from: ThingId::from_u64(1),
+            to: ThingId::from_u64(2),
+            weight: 1.0,
+        }];
+
+        let settings = LayoutSettings::default();
+        let routes = route_edges(&nodes, &edges, &settings);
+
+        // Should have one route
+        assert_eq!(routes.len(), 1);
+
+        let route = routes
+            .get(&(ThingId::from_u64(1), ThingId::from_u64(2)))
+            .unwrap();
+
+        // Route should have exactly 2 points (start and end)
+        assert_eq!(route.len(), 2);
+
+        // Start point should be on the edge of node 1, not at center
+        assert!(route[0].0 != 0.0 || route[0].1 != 0.0);
+        
+        // End point should be on the edge of node 2, not at center
+        assert!(route[1].0 != 200.0 || route[1].1 != 0.0);
+    }
+}
+
+
 // Unused legacy functions removed (assign_ranks, routing_algo_orthogonal, grid_placement)

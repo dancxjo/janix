@@ -182,6 +182,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
+        ProgramConfig {
+            name: "iso_cat",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
     ]
 }
 

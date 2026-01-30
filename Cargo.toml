@@ -45,6 +45,7 @@ members = [
     "userspace/iso9660",
     "userspace/iso9660d",
     "userspace/iso_reader",
+    "userspace/iso_cat",
     "tools/display_proto_tests",
     "userspace/netd",
 ]

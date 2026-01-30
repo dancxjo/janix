@@ -1459,6 +1459,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "iso_cat"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "iso_reader"
 version = "0.1.0"
 dependencies = [

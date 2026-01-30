@@ -7,8 +7,8 @@
 // - `acquire_frame()`: Acquire a frame slot with asset generation snapshot
 // - `present_frame()`: Present a completed frame (consumes token)
 
-use abi::display_driver_protocol as drvproto;
-use abi::display_driver_protocol::BindPayload;
+use abi::display_driver_protocol::{self as drvproto, BindPayload, OfferFramebufferPayload};
+use abi::ThingId;
 use abi::driver_frame::FrameReader;
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -144,6 +144,10 @@ pub trait Presenter {
     /// Pump the message queue for driver communication.
     fn pump(&mut self);
 
+    /// Acquire a buffer for the next frame.
+    /// Returns (bytespace_id, width, height, stride, format, buffer_age).
+    fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32);
+
     /// Get negotiated display capabilities (if available).
     fn negotiation_info(&self) -> Option<DisplayNegotiation>;
 }
@@ -151,36 +155,20 @@ pub trait Presenter {
 pub struct NullPresenter;
 
 impl Presenter for NullPresenter {
-    fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
-        static FRAME_COUNTER: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-        let frame_id = FRAME_COUNTER.fetch_add(1, core::sync::atomic::Ordering::Relaxed) + 1;
-
-        // Register in-flight frame for safe eviction
-        reclaimer::register_in_flight(frame_id, asset_gen);
-
-        FrameToken::new(frame_id, asset_gen, spec)
+    fn acquire_frame(&mut self, _spec: FrameSpec, _asset_gen: AssetGeneration) -> FrameToken {
+        unimplemented!("NullPresenter doesn't support transactional frames yet")
     }
 
-    fn present_frame(&mut self, token: FrameToken) -> PresentStats {
-        let ops_count = token.ops.iter().count();
-        let damage_rect_count = token.damage.rect_count();
-        let frame_id = token.frame_id;
-        let asset_gen = token.asset_gen;
-
-        // Complete in-flight frame
-        reclaimer::complete_in_flight(frame_id);
-
-        PresentStats {
-            frame_id,
-            asset_gen,
-            ops_count,
-            damage_rect_count,
-            fast_path_taken: token.damage.is_empty(),
-        }
+    fn present_frame(&mut self, _token: FrameToken) -> PresentStats {
+        unimplemented!("NullPresenter doesn't support transactional frames yet")
     }
 
     fn present(&mut self, _damage: &Damage) {}
     fn pump(&mut self) {}
+
+    fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
+        (ThingId::default(), 0, 0, 0, 0, 0)
+    }
 
     fn negotiation_info(&self) -> Option<DisplayNegotiation> {
         None
@@ -197,10 +185,8 @@ pub struct DriverPresenter {
     fallback_warned: bool,
     unknown_msg_logged: bool,
     frame_count: u64,
-    /// Offered framebuffer from driver for zero-copy rendering
-    offered_fb: Option<drvproto::OfferFramebufferPayload>,
-    /// Whether we accepted the offered framebuffer
-    accepted_fb: bool,
+    /// Damage history for buffer age expansion (last 4 frames)
+    damage_history: Vec<Vec<crate::geometry::Rect>>,
 }
 
 impl DriverPresenter {
@@ -215,8 +201,7 @@ impl DriverPresenter {
             fallback_warned: false,
             unknown_msg_logged: false,
             frame_count: 0,
-            offered_fb: None,
-            accepted_fb: false,
+            damage_history: Vec::new(),
         }
     }
 
@@ -258,37 +243,8 @@ impl DriverPresenter {
         }
     }
 
-    /// Check if driver has offered a framebuffer for zero-copy rendering.
-    pub fn has_offered_fb(&self) -> bool {
-        self.offered_fb.is_some()
-    }
-
-    /// Accept the offered framebuffer and send MSG_ACCEPT_FRAMEBUFFER.
-    /// Returns the offer details if available.
-    pub fn accept_offered_framebuffer(&mut self) -> Option<drvproto::OfferFramebufferPayload> {
-        if let Some(offer) = self.offered_fb.take() {
-            let accept = drvproto::AcceptFramebufferPayload {
-                accepted: 1,
-                _pad: 0,
-            };
-            let mut accept_bytes = [0u8; drvproto::ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE];
-            if let Some(len) = drvproto::encode_accept_framebuffer_payload_le(&accept, &mut accept_bytes) {
-                let mut buf = [0u8; 64];
-                if let Some(total) = drvproto::encode_message(&mut buf, drvproto::MSG_ACCEPT_FRAMEBUFFER, &accept_bytes[..len]) {
-                    let _ = port_send(self.req_write, &buf[..total]);
-                }
-            }
-            self.accepted_fb = true;
-            info!("bloom: accepting zero-copy framebuffer bytespace {}", offer.bytespace_id);
-            Some(offer)
-        } else {
-            None
-        }
-    }
-
-    /// Check if we accepted the driver-provided framebuffer.
     pub fn is_zero_copy(&self) -> bool {
-        self.accepted_fb
+        true // Now always zero-copy via swapchain
     }
 
     fn send_present(&mut self, snapshot: &PresentDamageSnapshot) -> usize {
@@ -432,16 +388,8 @@ impl DriverPresenter {
                     info!("bloom: driver PRESENT ERR code={}", code);
                 }
             }
-            drvproto::MSG_OFFER_FRAMEBUFFER => {
-                if let Some(offer) = drvproto::decode_offer_framebuffer_payload_le(payload) {
-                    info!(
-                        "bloom: driver offered framebuffer bytespace {} ({}x{})",
-                        offer.bytespace_id, offer.width, offer.height
-                    );
-                    self.offered_fb = Some(offer);
-                } else {
-                    info!("bloom: MSG_OFFER_FRAMEBUFFER payload decode failed");
-                }
+            drvproto::MSG_ACQUIRED => {
+                // Handled in acquire_buffer sync loop
             }
             _ => {
                 if !self.unknown_msg_logged {
@@ -464,57 +412,32 @@ impl DriverPresenter {
 impl Presenter for DriverPresenter {
     fn acquire_frame(&mut self, spec: FrameSpec, asset_gen: AssetGeneration) -> FrameToken {
         self.frame_count += 1;
-
-        // Register in-flight frame for safe eviction
         reclaimer::register_in_flight(self.frame_count, asset_gen);
-
         FrameToken::new(self.frame_count, asset_gen, spec)
     }
 
     fn present_frame(&mut self, token: FrameToken) -> PresentStats {
         let ops_count = token.ops.iter().count();
-        let fast_path = token.damage.is_empty();
         let frame_id = token.frame_id;
         let asset_gen = token.asset_gen;
 
-        // Log damage stats periodically (every 120 frames = ~2 seconds at 60fps)
-        if frame_id % 120 == 0 {
-            let _mem_used = reclaimer::decoded_bytes();
-            let _mem_budget = reclaimer::memory_budget();
-            let _evictions = reclaimer::eviction_count();
-            let _in_flight = reclaimer::in_flight_count();
-            let _min_gen = reclaimer::min_live_gen();
-
-            /*
-            if token.damage.is_full {
-                info!("bloom: frame {} gen={} (full redraw) mem={}/{}b evictions={} in_flight={} min_gen={}",
-                    frame_id, asset_gen.0, mem_used, mem_budget, evictions, in_flight, min_gen.0);
-            } else if damage_rect_count == 0 {
-                info!("bloom: frame {} gen={} (no damage - idle) mem={}/{}b",
-                    frame_id, asset_gen.0, mem_used, mem_budget);
-            } else {
-                info!("bloom: frame {} gen={} ({} damage rects) mem={}/{}b",
-                    frame_id, asset_gen.0, damage_rect_count, mem_used, mem_budget);
-            }
-            */
+        // Record damage in history for future buffer expansion
+        let current_damage: Vec<crate::geometry::Rect> = token.present_damage.rects().to_vec();
+        self.damage_history.insert(0, current_damage);
+        if self.damage_history.len() > 4 {
+            self.damage_history.pop();
         }
 
-        // Complete in-flight frame before present
         reclaimer::complete_in_flight(frame_id);
 
-        // Fast-path: skip present if no damage
-        let damage_rect_count = if fast_path {
-            0
-        } else {
-            self.send_present(&token.present_damage)
-        };
+        let damage_rect_count = self.send_present(&token.present_damage);
 
         PresentStats {
             frame_id,
             asset_gen,
             ops_count,
             damage_rect_count,
-            fast_path_taken: fast_path,
+            fast_path_taken: token.damage.is_empty(),
         }
     }
 
@@ -550,6 +473,42 @@ impl Presenter for DriverPresenter {
             caps: n.caps,
             max_rects: n.max_rects,
         })
+    }
+
+    fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
+        let mut buf = [0u8; 128];
+        if let Some(total) = drvproto::encode_message(&mut buf, drvproto::MSG_ACQUIRE, &[]) {
+            let _ = port_send(self.req_write, &buf[..total]);
+        }
+
+        // Synchronous wait for ACQUIRED
+        loop {
+            self.pump_port();
+            while let Some((header, payload)) = self.frames.next_message() {
+                let msg_type = header.msg_type;
+                if msg_type == drvproto::MSG_ACQUIRED {
+                    if let Some(acq) = drvproto::decode_acquired_payload_le(payload) {
+                        return (
+                            ThingId({
+                                let mut b = [0u8; 16];
+                                b[0..8].copy_from_slice(&acq.bytespace_id.to_le_bytes());
+                                b
+                            }),
+                            acq.width,
+                            acq.height,
+                            acq.stride,
+                            acq.format,
+                            acq.buffer_age,
+                        );
+                    }
+                } else {
+                    // Copy payload to break borrow from self.frames
+                    let payload_vec = payload.to_vec();
+                    self.handle_message(msg_type, &payload_vec);
+                }
+            }
+            stem::yield_now();
+        }
     }
 }
 
@@ -588,10 +547,36 @@ impl PresenterImpl {
         }
     }
 
+    pub fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
+        match self {
+            PresenterImpl::Null(inner) => inner.acquire_buffer(),
+            PresenterImpl::Driver(inner) => inner.acquire_buffer(),
+        }
+    }
+
     pub fn negotiation_info(&self) -> Option<DisplayNegotiation> {
         match self {
             PresenterImpl::Null(inner) => inner.negotiation_info(),
             PresenterImpl::Driver(inner) => inner.negotiation_info(),
+        }
+    }
+}
+
+impl DriverPresenter {
+    /// Expand damage based on buffer age
+    pub fn expand_damage(&self, damage: &mut Damage, age: u32) {
+        if age <= 1 {
+            return;
+        }
+
+        // age=2 means we need to union with damage from 1 frame ago
+        // age=3 means we need to union with damage from 1 and 2 frames ago
+        // etc.
+        let to_union = (age as usize).saturating_sub(1);
+        for i in 0..to_union.min(self.damage_history.len()) {
+            for &rect in &self.damage_history[i] {
+                damage.add_rect(rect);
+            }
         }
     }
 }

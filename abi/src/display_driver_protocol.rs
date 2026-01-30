@@ -17,6 +17,8 @@ pub const MSG_WELCOME: u16 = 7;
 pub const MSG_CAPS: u16 = 8;
 pub const MSG_OFFER_FRAMEBUFFER: u16 = 9;
 pub const MSG_ACCEPT_FRAMEBUFFER: u16 = 10;
+pub const MSG_ACQUIRE: u16 = 11;
+pub const MSG_ACQUIRED: u16 = 12;
 
 pub const PROTO_MAJOR: u16 = 1;
 pub const PROTO_MINOR: u16 = 0;
@@ -119,6 +121,18 @@ pub struct AcceptFramebufferPayload {
     pub _pad: u32,
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct AcquiredPayload {
+    pub bytespace_id: u64,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: u32,
+    pub buffer_age: u32,
+    pub _pad: u32,
+}
+
 pub const HEADER_SIZE: usize = size_of::<DriverHeader>();
 pub const REGISTER_PAYLOAD_WIRE_SIZE: usize = 8;
 pub const HELLO_PAYLOAD_WIRE_SIZE: usize = 8;
@@ -129,6 +143,7 @@ pub const PRESENT_HEADER_WIRE_SIZE: usize = 8;
 pub const ERR_RESP_WIRE_SIZE: usize = 4;
 pub const OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 24; // 8 + 4 + 4 + 4 + 4
 pub const ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 8; // 4 + 4
+pub const ACQUIRED_PAYLOAD_WIRE_SIZE: usize = 32; // 8 + 4 + 4 + 4 + 4 + 4 + 4
 
 pub fn encode_message(buf: &mut [u8], msg_type: u16, payload: &[u8]) -> Option<usize> {
     let total = HEADER_SIZE + payload.len();
@@ -445,5 +460,34 @@ pub fn decode_accept_framebuffer_payload_le(buf: &[u8]) -> Option<AcceptFramebuf
     Some(AcceptFramebufferPayload {
         accepted: u32::from_le_bytes(buf[0..4].try_into().ok()?),
         _pad: u32::from_le_bytes(buf[4..8].try_into().ok()?),
+    })
+}
+
+pub fn encode_acquired_payload_le(payload: &AcquiredPayload, out: &mut [u8]) -> Option<usize> {
+    if out.len() < ACQUIRED_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    out[0..8].copy_from_slice(&payload.bytespace_id.to_le_bytes());
+    out[8..12].copy_from_slice(&payload.width.to_le_bytes());
+    out[12..16].copy_from_slice(&payload.height.to_le_bytes());
+    out[16..20].copy_from_slice(&payload.stride.to_le_bytes());
+    out[20..24].copy_from_slice(&payload.format.to_le_bytes());
+    out[24..28].copy_from_slice(&payload.buffer_age.to_le_bytes());
+    out[28..32].copy_from_slice(&payload._pad.to_le_bytes());
+    Some(ACQUIRED_PAYLOAD_WIRE_SIZE)
+}
+
+pub fn decode_acquired_payload_le(buf: &[u8]) -> Option<AcquiredPayload> {
+    if buf.len() < ACQUIRED_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    Some(AcquiredPayload {
+        bytespace_id: u64::from_le_bytes(buf[0..8].try_into().ok()?),
+        width: u32::from_le_bytes(buf[8..12].try_into().ok()?),
+        height: u32::from_le_bytes(buf[12..16].try_into().ok()?),
+        stride: u32::from_le_bytes(buf[16..20].try_into().ok()?),
+        format: u32::from_le_bytes(buf[20..24].try_into().ok()?),
+        buffer_age: u32::from_le_bytes(buf[24..28].try_into().ok()?),
+        _pad: u32::from_le_bytes(buf[28..32].try_into().ok()?),
     })
 }

@@ -65,6 +65,13 @@ fn rect_clamp_to_bounds(r: Rect, w: u32, h: u32) -> Rect {
 // Instrumentation counters for verification
 // ============================================================================
 
+struct Buffer {
+    bs_id: ThingId,
+    res_id: u32,
+    phys: u64,
+    last_present_seq: u64,
+}
+
 struct PresentStats {
     frame_count: u32,
     total_rects_in: u32,
@@ -72,11 +79,11 @@ struct PresentStats {
     total_flushes: u32,
     union_flush_count: u32,
     per_rect_flush_count: u32,
-    using_zero_copy: bool,
+    using_swapchain: bool,
 }
 
 impl PresentStats {
-    const fn new(zero_copy: bool) -> Self {
+    const fn new(swapchain: bool) -> Self {
         Self {
             frame_count: 0,
             total_rects_in: 0,
@@ -84,25 +91,25 @@ impl PresentStats {
             total_flushes: 0,
             union_flush_count: 0,
             per_rect_flush_count: 0,
-            using_zero_copy: zero_copy,
+            using_swapchain: swapchain,
         }
     }
     
     fn log_and_reset(&mut self) {
         if self.frame_count > 0 {
             info!(
-                "display_virtio_gpu stats: frames={}, rects_in={}, transfers={}, flushes={}, union_flush={}, per_rect_flush={}, zero_copy={}",
+                "display_virtio_gpu stats: frames={}, rects_in={}, transfers={}, flushes={}, union_flush={}, per_rect_flush={}, swapchain={}",
                 self.frame_count,
                 self.total_rects_in,
                 self.total_transfers,
                 self.total_flushes,
                 self.union_flush_count,
                 self.per_rect_flush_count,
-                self.using_zero_copy
+                self.using_swapchain
             );
         }
-        let zc = self.using_zero_copy;
-        *self = Self::new(zc);
+        let sc = self.using_swapchain;
+        *self = Self::new(sc);
     }
 }
 
@@ -196,62 +203,66 @@ fn main(arg: usize) -> ! {
     info!("display_virtio_gpu: GPU initialized successfully");
 
     // =========================================================================
-    // ZERO-COPY SCANOUT SETUP: Create GPU resource and bytespace at startup
+    // SWAPCHAIN SETUP: Create multiple GPU resources and bytespaces
     // =========================================================================
     let (disp_width, disp_height, disp_stride, disp_format) = get_display_dimensions();
     let disp_size = (disp_height as usize) * (disp_stride as usize);
     
     info!(
-        "display_virtio_gpu: creating scanout {}x{} stride={} format={}",
+        "display_virtio_gpu: creating swapchain 1x {}x{} stride={} format={}",
         disp_width, disp_height, disp_stride, disp_format
     );
     
-    // Create bytespace for GPU backing memory (zero-copy target)
-    let scanout_bs_id = match thingsys::bytespace_create(disp_size, 0, disp_format as u64) {
-        Ok(id) => id,
-        Err(e) => {
-            info!("display_virtio_gpu: bytespace_create failed: {:?}", e);
+    // Single buffer for now - multi-buffer requires cross-process bytespace access
+    let swapchain_count = 1;
+    let mut swapchain_buffers = alloc::vec::Vec::new();
+    for i in 0..swapchain_count {
+        let bs_id = match thingsys::bytespace_create(disp_size, 0, disp_format as u64) {
+            Ok(id) => id,
+            Err(e) => {
+                info!("display_virtio_gpu: bytespace_create failed: {:?}", e);
+                loop { stem::yield_now(); }
+            }
+        };
+        
+        let phys = match thingsys::bytespace_phys(bs_id) {
+            Ok(phys) => phys,
+            Err(e) => {
+                info!("display_virtio_gpu: bytespace_phys failed: {:?}", e);
+                loop { stem::yield_now(); }
+            }
+        };
+
+        // Explicitly map it locally so it stays pinned/resident
+        let _ = thingsys::bytespace_map(bs_id);
+
+        let res_id = (i + 1) as u32;
+        gpu.set_dimensions(disp_width, disp_height);
+        if let Err(e) = gpu.create_resource_2d(res_id) {
+            info!("display_virtio_gpu: create_resource_2d failed: {}", e);
             loop { stem::yield_now(); }
         }
-    };
-    
-    let scanout_ptr = match thingsys::bytespace_map(scanout_bs_id) {
-        Ok(ptr) => ptr,
-        Err(e) => {
-            info!("display_virtio_gpu: bytespace_map failed: {:?}", e);
+        if let Err(e) = gpu.attach_backing(res_id, phys, disp_size) {
+            info!("display_virtio_gpu: attach_backing failed: {}", e);
             loop { stem::yield_now(); }
         }
-    };
-    
-    let scanout_phys = match thingsys::bytespace_phys(scanout_bs_id) {
-        Ok(phys) => phys,
-        Err(e) => {
-            info!("display_virtio_gpu: bytespace_phys failed: {:?}", e);
-            loop { stem::yield_now(); }
-        }
-    };
-    
-    // Set up GPU resource with this backing
-    gpu.set_dimensions(disp_width, disp_height);
-    
-    if let Err(e) = gpu.create_resource_2d() {
-        info!("display_virtio_gpu: create_resource_2d failed: {}", e);
-        loop { stem::yield_now(); }
+
+        swapchain_buffers.push(Buffer {
+            bs_id,
+            res_id,
+            phys,
+            last_present_seq: 0,
+        });
     }
-    
-    if let Err(e) = gpu.attach_backing(scanout_phys, disp_size) {
-        info!("display_virtio_gpu: attach_backing failed: {}", e);
-        loop { stem::yield_now(); }
-    }
-    
-    if let Err(e) = gpu.set_scanout(disp_width, disp_height) {
+
+    // Set initial scanout to first buffer
+    if let Err(e) = gpu.set_scanout(swapchain_buffers[0].res_id, disp_width, disp_height) {
         info!("display_virtio_gpu: set_scanout failed: {}", e);
         loop { stem::yield_now(); }
     }
     
     info!(
-        "display_virtio_gpu: scanout bytespace {} ready (ptr={:?}, phys={:#x})",
-        scanout_bs_id.to_u64_lossy(), scanout_ptr, scanout_phys
+        "display_virtio_gpu: swapchain ready (3 buffers)"
     );
     
     // Send MSG_REGISTER
@@ -271,16 +282,13 @@ fn main(arg: usize) -> ! {
     let mut buf = [0u8; 512];
     let mut frames = FrameReader::<4096>::new();
     
-    // Zero-copy mode state
-    let mut zero_copy_accepted = false;
-    let mut bound_bytespace: Option<ThingId> = None;
-    let mut src_width = disp_width;
-    let mut src_height = disp_height;
+    let mut current_bs_id: Option<ThingId> = None;
+    let mut current_res_id: u32 = 1;
+    let mut next_buffer_idx = 0;
+    let mut present_seq: u64 = 0;
+    let mut last_presented_idx: Option<usize> = None;
     
-    // Track if we offered the framebuffer (to avoid re-offering)
-    let mut offered_fb = false;
-    
-    let mut stats = PresentStats::new(false); // Will switch to true once accepted
+    let mut stats = PresentStats::new(true);
     const STATS_LOG_INTERVAL: u32 = 120;
 
     loop {
@@ -310,73 +318,56 @@ fn main(arg: usize) -> ! {
                     {
                         send_msg(drv_resp_write, drvproto::MSG_WELCOME, &welcome_bytes[..len]);
                     }
-                    
-                    // Offer our pre-created framebuffer for zero-copy rendering
-                    if !offered_fb {
-                        let offer = drvproto::OfferFramebufferPayload {
-                            bytespace_id: scanout_bs_id.to_u64_lossy(),
-                            width: disp_width,
-                            height: disp_height,
-                            stride: disp_stride,
-                            format: disp_format,
-                        };
-                        let mut offer_bytes = [0u8; drvproto::OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE];
-                        if let Some(len) = drvproto::encode_offer_framebuffer_payload_le(&offer, &mut offer_bytes) {
-                            send_msg(drv_resp_write, drvproto::MSG_OFFER_FRAMEBUFFER, &offer_bytes[..len]);
-                            info!(
-                                "display_virtio_gpu: offering framebuffer bytespace {} ({}x{})",
-                                scanout_bs_id.to_u64_lossy(), disp_width, disp_height
-                            );
-                            offered_fb = true;
-                        }
-                    }
                 }
-                drvproto::MSG_ACCEPT_FRAMEBUFFER => {
-                    if let Some(accept) = drvproto::decode_accept_framebuffer_payload_le(payload) {
-                        if accept.accepted != 0 {
-                            zero_copy_accepted = true;
-                            bound_bytespace = Some(scanout_bs_id);
-                            stats.using_zero_copy = true;
-                            info!("display_virtio_gpu: zero-copy framebuffer ACCEPTED");
+                drvproto::MSG_ACQUIRE => {
+                    let mut buffer_age = 0;
+                    let idx = next_buffer_idx;
+                    
+                    if let Some(last_idx) = last_presented_idx {
+                        let age = present_seq.saturating_sub(swapchain_buffers[idx].last_present_seq);
+                        buffer_age = if swapchain_buffers[idx].last_present_seq == 0 {
+                            0 // Never presented
                         } else {
-                            info!("display_virtio_gpu: zero-copy framebuffer REJECTED");
-                        }
+                            age as u32
+                        };
+                    }
+
+                    next_buffer_idx = (next_buffer_idx + 1) % swapchain_buffers.len();
+                    
+                    let acquired = drvproto::AcquiredPayload {
+                        bytespace_id: swapchain_buffers[idx].bs_id.to_u64_lossy(),
+                        width: disp_width,
+                        height: disp_height,
+                        stride: disp_stride,
+                        format: disp_format,
+                        buffer_age,
+                        _pad: 0,
+                    };
+                    
+                    current_bs_id = Some(swapchain_buffers[idx].bs_id);
+                    current_res_id = swapchain_buffers[idx].res_id;
+                    
+                    let mut acq_bytes = [0u8; drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE];
+                    if let Some(len) = drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes) {
+                        send_msg(drv_resp_write, drvproto::MSG_ACQUIRED, &acq_bytes[..len]);
                     }
                 }
                 drvproto::MSG_BIND => {
-                    // MSG_BIND is a fallback path when zero-copy wasn't accepted.
-                    // The GPU resource is already created at startup with our scanout bytespace.
-                    // If Bloom sends BIND with a DIFFERENT bytespace, we note that we're not
-                    // in zero-copy mode. The GPU resource backing remains our pre-allocated
-                    // bytespace - Bloom would need to copy into it (or we'd need more complex
-                    // resource management which we don't implement here).
-                    
+                    // MSG_BIND legacy fallback
                     if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
-                        let bs_id = ThingId::from_u64(bind.bytespace_id);
-                        
-                        if bs_id == scanout_bs_id {
-                            // Bloom is binding our offered bytespace - zero-copy confirmed
-                            zero_copy_accepted = true;
-                            stats.using_zero_copy = true;
-                            info!("display_virtio_gpu: bound to our zero-copy bytespace");
-                        } else {
-                            // Bloom is using a different bytespace (fallback mode)
-                            // We don't support re-attaching backing, so just note the dimensions
-                            info!(
-                                "display_virtio_gpu: fallback bind (different bytespace {})",
-                                bind.bytespace_id
-                            );
-                            stats.using_zero_copy = false;
-                        }
-                        
-                        bound_bytespace = Some(bs_id);
-                        src_width = bind.width;
-                        src_height = bind.height;
+                        let bs_id = ThingId({
+                            let mut b = [0u8; 16];
+                            b[0..8].copy_from_slice(&bind.bytespace_id.to_le_bytes());
+                            b
+                        });
+                        current_bs_id = Some(bs_id);
+                        // In legacy mode, we just stay on the first buffer's resource
+                        current_res_id = swapchain_buffers[0].res_id;
                         send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
                     }
                 }
                 drvproto::MSG_PRESENT => {
-                    if bound_bytespace.is_none() {
+                    if current_bs_id.is_none() {
                         let err = drvproto::ErrResp { code: 1 };
                         let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
                         if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
@@ -395,10 +386,10 @@ fn main(arg: usize) -> ! {
                             let full_rect = Rect {
                                 x: 0,
                                 y: 0,
-                                w: src_width,
-                                h: src_height,
+                                w: disp_width,
+                                h: disp_height,
                             };
-                            let _ = gpu.present_rect(full_rect);
+                            let _ = gpu.present_rect(current_res_id, full_rect);
                             stats.frame_count += 1;
                             stats.total_transfers += 1;
                             stats.total_flushes += 1;
@@ -426,7 +417,7 @@ fn main(arg: usize) -> ! {
                                         h: rect.h,
                                     };
                                     // Clamp to screen bounds and skip empty rects
-                                    let clamped = rect_clamp_to_bounds(gpu_rect, src_width, src_height);
+                                    let clamped = rect_clamp_to_bounds(gpu_rect, disp_width, disp_height);
                                     if !rect_is_empty(clamped) {
                                         valid_rects.push(clamped);
                                     }
@@ -438,7 +429,7 @@ fn main(arg: usize) -> ! {
                             if !valid_rects.is_empty() {
                                 // Phase 2: Transfer all rects (bandwidth follows true damage)
                                 for &rect in &valid_rects {
-                                    let _ = gpu.transfer_to_host(rect);
+                                    let _ = gpu.transfer_to_host(current_res_id, rect);
                                 }
                                 stats.total_transfers += valid_rects.len() as u32;
                                 
@@ -457,13 +448,13 @@ fn main(arg: usize) -> ! {
                                 if valid_rects.len() > 1 && union_area > sum_area * 2 {
                                     // Distant rects case: per-rect flush
                                     for &rect in &valid_rects {
-                                        let _ = gpu.flush_resource(rect);
+                                        let _ = gpu.flush_resource(current_res_id, rect);
                                     }
                                     stats.total_flushes += valid_rects.len() as u32;
                                     stats.per_rect_flush_count += 1;
                                 } else {
                                     // Common case: single union flush
-                                    let _ = gpu.flush_resource(union_rect);
+                                    let _ = gpu.flush_resource(current_res_id, union_rect);
                                     stats.total_flushes += 1;
                                     stats.union_flush_count += 1;
                                 }
@@ -471,6 +462,25 @@ fn main(arg: usize) -> ! {
                             stats.frame_count += 1;
                         }
                         
+                        // ============================================================
+                        // FLIP SCANOUT
+                        // ============================================================
+                        // Now that transfers and flushes for THIS resource are done,
+                        // flip the hardware scanout to this resource ID.
+                        let _ = gpu.set_scanout(current_res_id, disp_width, disp_height);
+                        
+                        // Update sequence and age bookkeeping
+                        present_seq += 1;
+                        let mut presented_idx = 0;
+                        for (i, buf) in swapchain_buffers.iter_mut().enumerate() {
+                            if buf.res_id == current_res_id {
+                                buf.last_present_seq = present_seq;
+                                presented_idx = i;
+                                break;
+                            }
+                        }
+                        last_presented_idx = Some(presented_idx);
+
                         // Rate-limited stats logging
                         if stats.frame_count >= STATS_LOG_INTERVAL {
                             stats.log_and_reset();

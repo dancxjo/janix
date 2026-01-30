@@ -66,7 +66,7 @@ use crate::paint_vm::{PaintPipeline, WindowHit};
 use crate::present::{evaluate_present_strategy, DriverPresenter, Presenter, PresenterImpl};
 use crate::snapshot::SnapshotInvalidation;
 use crate::state::{DamageOverlayState, DebugFlags, OverlayMode};
-use alloc::collections::BTreeSet;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::sync::Arc;
 
 const BLOSSOM_BORDER: i32 = 2;
@@ -376,13 +376,10 @@ fn main(arg: usize) -> ! {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
         d.start_handshake();
         
-        // Pump a few times to receive MSG_WELCOME and potential MSG_OFFER_FRAMEBUFFER
-        for _ in 0..10 {
+        // Pump a few times to receive MSG_WELCOME
+        for _ in 0..5 {
             d.pump();
-            if d.has_offered_fb() {
-                break;
-            }
-            stem::sleep_ms(5);
+            stem::sleep_ms(2);
         }
         
         PresenterImpl::Driver(d)
@@ -390,47 +387,23 @@ fn main(arg: usize) -> ! {
         PresenterImpl::Null(present::NullPresenter)
     };
 
+    // Buffer mapping cache for swapchain - maps bytespace IDs to their virtual addresses
+    let mut buffer_cache: BTreeMap<ThingId, *mut u8> = BTreeMap::new();
+
     // Check if driver offered a zero-copy framebuffer
-    let (final_ptr, final_size, final_width, final_height, final_stride, final_bs_id, using_zero_copy) = 
-        if let PresenterImpl::Driver(ref mut d) = &mut presenter {
-            if let Some(offer) = d.accept_offered_framebuffer() {
-                // Driver provided a framebuffer - map it for zero-copy rendering
-                let offer_bs_id = ThingId::from_u64(offer.bytespace_id);
-                match stem::thing::sys::bytespace_map(offer_bs_id) {
-                    Ok(ptr) => {
-                        let size = (offer.height * offer.stride) as usize;
-                        log!("bloom: using zero-copy framebuffer (bytespace {})", offer.bytespace_id);
-                        (ptr, size, offer.width, offer.height, offer.stride, offer_bs_id, true)
-                    }
-                    Err(e) => {
-                        log!("bloom: zero-copy bytespace map failed: {:?}, falling back", e);
-                        // Fall back to Sprout-provided bytespace
-                        d.send_bind(&BindPayload {
-                            bytespace_id: target.bs_id.to_u64_lossy(),
-                            width: target.width,
-                            height: target.height,
-                            stride: target.stride_bytes,
-                            format: target.format,
-                        });
-                        (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false)
-                    }
-                }
-            } else {
-                // No offer received, use MSG_BIND with Sprout's bytespace
-                log!("bloom: no zero-copy offer, binding sprout bytespace");
-                d.send_bind(&BindPayload {
-                    bytespace_id: target.bs_id.to_u64_lossy(),
-                    width: target.width,
-                    height: target.height,
-                    stride: target.stride_bytes,
-                    format: target.format,
-                });
-                (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false)
-            }
-        } else {
-            // NullPresenter - use Sprout's bytespace
-            (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false)
-        };
+    let (final_ptr, final_size, mut final_width, mut final_height, mut final_stride, mut final_bs_id, using_zero_copy, mut final_age) = 
+    match presenter {
+        PresenterImpl::Null(_) => {
+            (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false, 0u32)
+        }
+        PresenterImpl::Driver(_) => {
+            let (bs_id, w, h, s, _f, age) = presenter.acquire_buffer();
+            let ptr = stem::thing::sys::bytespace_map(bs_id).unwrap();
+            buffer_cache.insert(bs_id, ptr);
+            let size = (h * s) as usize;
+            (ptr, size, w, h, s, bs_id, true, age)
+        }
+    };
     
     let _ = (final_bs_id, using_zero_copy); // Suppress unused warnings for now
 
@@ -568,10 +541,25 @@ fn main(arg: usize) -> ! {
 
     let mut first_frame_rendered = false;
 
+    let mut current_bs_id = final_bs_id;
+    let mut current_age = final_age;
+
     loop {
         loop_ctrl.next();
         invalidation_causes.clear();
         ASSETS.publish_pending();
+
+        // 0. Update surface if buffer changed
+        if let PresenterImpl::Driver(ref mut d) = presenter {
+             if current_bs_id != final_bs_id {
+                 // Remap surface for new buffer
+                 let (bs_id, w, h, s, _f, age) = (final_bs_id, final_width, final_height, final_stride, 0, current_age);
+                 let ptr = stem::thing::sys::bytespace_map(bs_id).unwrap();
+                 let size = (h * s) as usize;
+                 surface = unsafe { surface::Surface::new(ptr, size, w, h, s) };
+                 current_bs_id = bs_id;
+             }
+        }
 
         // Poll font client for IPC responses
         if crate::font_client::poll() {
@@ -965,6 +953,10 @@ fn main(arg: usize) -> ! {
             damage.add_rect_with_cause(*rect, damage::DamageCause::ContentChanged, None);
         }
 
+        if let PresenterImpl::Driver(ref mut d) = presenter {
+            d.expand_damage(&mut damage, current_age);
+        }
+
         let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
         let mut cursor_asset = ASSETS.get_cursor();
 
@@ -1204,6 +1196,32 @@ fn main(arg: usize) -> ! {
             let token = builder.finish();
             presenter.present_frame(token);
             presenter.pump();
+
+            // Acquire NEXT buffer for the next frame
+            if let PresenterImpl::Driver(_) = presenter {
+                let (next_bs_id, next_w, next_h, next_s, _f, next_age) = presenter.acquire_buffer();
+                
+                // Use cached pointer or map if new
+                let next_ptr = if let Some(&ptr) = buffer_cache.get(&next_bs_id) {
+                    ptr
+                } else {
+                    let ptr = stem::thing::sys::bytespace_map(next_bs_id).unwrap();
+                    buffer_cache.insert(next_bs_id, ptr);
+                    ptr
+                };
+                let next_size = (next_h * next_s) as usize;
+                
+                // Update surface to point to the new buffer
+                unsafe {
+                    surface.update_buffer(next_ptr, next_size, next_w, next_h, next_s);
+                }
+                
+                final_bs_id = next_bs_id;
+                final_width = next_w;
+                final_height = next_h;
+                final_stride = next_s;
+                current_age = next_age;
+            }
 
             if !first_frame_rendered {
                 stem::info!("[CONTRACT] [bloom] First frame rendered");

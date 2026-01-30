@@ -43,7 +43,6 @@ pub struct VirtioGpu {
     display_height: u32,
 
     // Resource tracking
-    resource_id: u32,
     framebuffer: u64, // Virtual address of framebuffer (for standalone mode)
     fb_phys: u64,     // Physical address
     fb_size: usize,   // Size in bytes
@@ -104,7 +103,6 @@ impl VirtioGpu {
             controlq: None,
             display_width: 1024,
             display_height: 768,
-            resource_id: 1,
             framebuffer: 0,
             fb_phys: 0,
             fb_size: 0,
@@ -176,7 +174,7 @@ impl VirtioGpu {
     }
 
     /// Create a 2D resource with current dimensions
-    pub fn create_resource_2d(&mut self) -> Result<(), &'static str> {
+    pub fn create_resource_2d(&mut self, resource_id: u32) -> Result<(), &'static str> {
         let cmd = VirtioGpuResourceCreate2d {
             hdr: VirtioGpuCtrlHdr {
                 type_: VIRTIO_GPU_CMD_RESOURCE_CREATE_2D,
@@ -185,7 +183,7 @@ impl VirtioGpu {
                 ctx_id: 0,
                 padding: 0,
             },
-            resource_id: self.resource_id,
+            resource_id,
             format: VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM, // XRGB8888
             width: self.display_width,
             height: self.display_height,
@@ -202,7 +200,12 @@ impl VirtioGpu {
     }
 
     /// Attach backing memory to the resource
-    pub fn attach_backing(&mut self, phys_addr: u64, size: usize) -> Result<(), &'static str> {
+    pub fn attach_backing(
+        &mut self,
+        resource_id: u32,
+        phys_addr: u64,
+        size: usize,
+    ) -> Result<(), &'static str> {
         self.fb_phys = phys_addr;
         self.fb_size = size;
         self.external_backing = true;
@@ -224,7 +227,7 @@ impl VirtioGpu {
                 ctx_id: 0,
                 padding: 0,
             },
-            resource_id: self.resource_id,
+            resource_id,
             nr_entries: 1,
             entry: VirtioGpuMemEntry {
                 addr: phys_addr,
@@ -244,7 +247,12 @@ impl VirtioGpu {
     }
 
     /// Set the scanout to use the resource
-    pub fn set_scanout(&mut self, width: u32, height: u32) -> Result<(), &'static str> {
+    pub fn set_scanout(
+        &mut self,
+        resource_id: u32,
+        width: u32,
+        height: u32,
+    ) -> Result<(), &'static str> {
         let cmd = VirtioGpuSetScanout {
             hdr: VirtioGpuCtrlHdr {
                 type_: VIRTIO_GPU_CMD_SET_SCANOUT,
@@ -258,7 +266,7 @@ impl VirtioGpu {
             r_width: width,
             r_height: height,
             scanout_id: 0,
-            resource_id: self.resource_id,
+            resource_id,
         };
 
         let cmd_bytes = unsafe {
@@ -272,7 +280,7 @@ impl VirtioGpu {
     }
 
     /// Transfer a rectangle from backing memory to host
-    pub fn transfer_to_host(&mut self, rect: Rect) -> Result<(), &'static str> {
+    pub fn transfer_to_host(&mut self, resource_id: u32, rect: Rect) -> Result<(), &'static str> {
         let cmd = VirtioGpuTransferToHost2d {
             hdr: VirtioGpuCtrlHdr {
                 type_: VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D,
@@ -286,7 +294,7 @@ impl VirtioGpu {
             r_width: rect.w,
             r_height: rect.h,
             offset: 0,
-            resource_id: self.resource_id,
+            resource_id,
             padding: 0,
         };
 
@@ -301,7 +309,7 @@ impl VirtioGpu {
     }
 
     /// Flush a rectangle to display
-    pub fn flush_resource(&mut self, rect: Rect) -> Result<(), &'static str> {
+    pub fn flush_resource(&mut self, resource_id: u32, rect: Rect) -> Result<(), &'static str> {
         let cmd = VirtioGpuResourceFlush {
             hdr: VirtioGpuCtrlHdr {
                 type_: VIRTIO_GPU_CMD_RESOURCE_FLUSH,
@@ -314,7 +322,7 @@ impl VirtioGpu {
             r_y: rect.y,
             r_width: rect.w,
             r_height: rect.h,
-            resource_id: self.resource_id,
+            resource_id,
             padding: 0,
         };
 
@@ -329,9 +337,9 @@ impl VirtioGpu {
     }
 
     /// Transfer and flush a rectangle (convenience method)
-    pub fn present_rect(&mut self, rect: Rect) -> Result<(), &'static str> {
-        self.transfer_to_host(rect)?;
-        self.flush_resource(rect)
+    pub fn present_rect(&mut self, resource_id: u32, rect: Rect) -> Result<(), &'static str> {
+        self.transfer_to_host(resource_id, rect)?;
+        self.flush_resource(resource_id, rect)
     }
 
     /// Flush the union of multiple rectangles as a single operation.
@@ -340,6 +348,7 @@ impl VirtioGpu {
     /// and issues a single flush command. Returns Ok(()) even if rects is empty.
     pub fn flush_union(
         &mut self,
+        resource_id: u32,
         rects: &[Rect],
         bounds: (u32, u32),
     ) -> Result<(), &'static str> {
@@ -379,7 +388,7 @@ impl VirtioGpu {
             return Ok(());
         }
 
-        self.flush_resource(clamped)
+        self.flush_resource(resource_id, clamped)
     }
 
     // === Internal methods ===

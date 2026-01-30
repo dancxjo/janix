@@ -146,6 +146,30 @@ impl Surface {
         }
     }
 
+    /// Update the backing buffer of this surface.
+    ///
+    /// Used for swapchain buffer rotation where we reuse the Surface struct
+    /// but point it to a different buffer.
+    ///
+    /// # Safety
+    ///
+    /// - `ptr` must point to valid, writable memory of at least `size` bytes.
+    /// - The new memory must remain valid for the lifetime of the Surface.
+    pub unsafe fn update_buffer(
+        &mut self,
+        ptr: *mut u8,
+        size: usize,
+        width: u32,
+        height: u32,
+        stride_bytes: u32,
+    ) {
+        self.ptr = ptr;
+        self.len = size;
+        self.width = width as i32;
+        self.height = height as i32;
+        self.stride_bytes = stride_bytes as usize;
+    }
+
     pub fn width(&self) -> i32 {
         self.width
     }

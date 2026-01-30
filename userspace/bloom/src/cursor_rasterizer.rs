@@ -54,11 +54,13 @@ impl CursorRasterizer {
         }
     }
 
-    /// Update cache if asset changed; return current snapshot.
+    /// Update cache if asset changed; return current snapshot and whether rasterization occurred.
     ///
     /// This method is idempotent: calling it multiple times with the same
     /// asset generation returns the cached snapshot without re-rasterizing.
-    pub fn get_snapshot(&mut self, asset: &CursorAsset) -> Option<&CursorSnapshot> {
+    ///
+    /// Returns (snapshot, rasterized) where rasterized is true if a new snapshot was created.
+    pub fn get_snapshot(&mut self, asset: &CursorAsset) -> (Option<&CursorSnapshot>, bool) {
         let asset_gen = asset.generation();
 
         // Only rasterize if asset changed or no snapshot exists
@@ -69,9 +71,10 @@ impl CursorRasterizer {
             );
             self.snapshot = Some(self.rasterize_cursor(asset));
             self.source_gen = asset_gen;
+            (self.snapshot.as_ref(), true)
+        } else {
+            (self.snapshot.as_ref(), false)
         }
-
-        self.snapshot.as_ref()
     }
 
     /// Check if we have a cached snapshot without triggering rasterization.
@@ -240,12 +243,16 @@ mod tests {
         let mut rasterizer = CursorRasterizer::new();
 
         // First call creates snapshot
-        let snap1 = rasterizer.get_snapshot(&asset).unwrap();
+        let (snap1, rasterized1) = rasterizer.get_snapshot(&asset);
+        let snap1 = snap1.unwrap();
         let gen1 = snap1.gen;
+        assert!(rasterized1, "first call should rasterize");
 
         // Second call returns cached snapshot (same generation)
-        let snap2 = rasterizer.get_snapshot(&asset).unwrap();
+        let (snap2, rasterized2) = rasterizer.get_snapshot(&asset);
+        let snap2 = snap2.unwrap();
         let gen2 = snap2.gen;
+        assert!(!rasterized2, "second call should use cache");
 
         assert_eq!(gen1, gen2, "snapshot should be reused");
     }
@@ -255,7 +262,8 @@ mod tests {
         let asset = make_test_asset();
         let mut rasterizer = CursorRasterizer::new();
 
-        let snap = rasterizer.get_snapshot(&asset).unwrap();
+        let (snap, _) = rasterizer.get_snapshot(&asset);
+        let snap = snap.unwrap();
 
         // Snapshot should be 3px larger than original (for shadow)
         assert_eq!(snap.image.width, 16 + 3);

@@ -79,6 +79,58 @@ struct DragState {
     start_rect: crate::geometry::Rect,
 }
 
+/// Tracks cursor performance metrics to ensure "butter smooth" behavior.
+#[derive(Default)]
+struct CursorMetrics {
+    /// Total number of cursor movements
+    cursor_moves: u64,
+    /// Total number of cursor rasterizations (should be ~0 during movement)
+    cursor_rasterizations: u64,
+    /// Number of frames where only cursor moved (fast path eligible)
+    frames_cursor_only: u64,
+    /// Total damage rects from cursor (should be ~2 per move)
+    damage_rects_from_cursor: u64,
+    /// Last frame when metrics were logged
+    last_log_frame: u64,
+}
+
+impl CursorMetrics {
+    /// Log metrics periodically (every ~120 frames)
+    fn maybe_log(&mut self, frame: u64) {
+        if frame > 0 && frame % 120 == 0 && frame != self.last_log_frame {
+            stem::info!(
+                "[cursor metrics] frame={} moves={} rasterizations={} cursor_only_frames={} damage_rects={}",
+                frame,
+                self.cursor_moves,
+                self.cursor_rasterizations,
+                self.frames_cursor_only,
+                self.damage_rects_from_cursor
+            );
+            self.last_log_frame = frame;
+        }
+    }
+
+    /// Record a cursor movement
+    fn record_move(&mut self) {
+        self.cursor_moves += 1;
+    }
+
+    /// Record a cursor rasterization
+    fn record_rasterization(&mut self) {
+        self.cursor_rasterizations += 1;
+    }
+
+    /// Record a cursor-only frame (fast path)
+    fn record_cursor_only_frame(&mut self) {
+        self.frames_cursor_only += 1;
+    }
+
+    /// Record damage rects attributed to cursor
+    fn record_cursor_damage_rects(&mut self, count: u64) {
+        self.damage_rects_from_cursor += count;
+    }
+}
+
 fn log_simd_backend() {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -470,6 +522,7 @@ fn main(arg: usize) -> ! {
 
     let mut debug_flags = DebugFlags::default();
     let mut overlay_state = DamageOverlayState::default();
+    let mut cursor_metrics = CursorMetrics::default();
 
     // Window Manager disabled in paint pipeline (no legacy chrome/hit testing)
 
@@ -960,6 +1013,11 @@ fn main(arg: usize) -> ! {
         let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
         let mut cursor_asset = ASSETS.get_cursor();
 
+        // Track cursor movement
+        if cursor_moved {
+            cursor_metrics.record_move();
+        }
+
         // If no cursor asset but we have a reactive cursor assigned, try to get it
         if cursor_asset.is_none() {
             if let Ok(root_id) = find(kinds::UI_CROWN, &mut [ThingId::default(); 1]) {
@@ -969,8 +1027,18 @@ fn main(arg: usize) -> ! {
             }
         }
 
+        // Count cursor damage rects before processing
+        let cursor_damage_start = damage.rect_count();
+
         if let Some(asset) = cursor_asset {
-            if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
+            let (snapshot_opt, rasterized) = cursor_rasterizer.get_snapshot(&asset);
+            
+            // Track rasterization
+            if rasterized {
+                cursor_metrics.record_rasterization();
+            }
+
+            if let Some(snapshot) = snapshot_opt {
                 let cursor_changed = snapshot.gen != prev_cursor_gen;
 
                 if cursor_moved || cursor_changed {
@@ -993,7 +1061,7 @@ fn main(arg: usize) -> ! {
                     .clip(bounds);
                     
                     let cause = if cursor_changed {
-                        damage::DamageCause::AssetUpdated
+                        damage::DamageCause::CursorShapeChanged
                     } else {
                         damage::DamageCause::CursorMoved
                     };
@@ -1049,6 +1117,13 @@ fn main(arg: usize) -> ! {
             }
         }
 
+        // Track cursor damage rects added
+        let cursor_damage_end = damage.rect_count();
+        let cursor_damage_added = cursor_damage_end.saturating_sub(cursor_damage_start);
+        if cursor_damage_added > 0 {
+            cursor_metrics.record_cursor_damage_rects(cursor_damage_added as u64);
+        }
+
         if !invalidation_causes.is_empty() {
             if debug_flags.show_damage_stats {
                 stem::info!("[bloom] Full damage forced by: {:?}", invalidation_causes);
@@ -1088,6 +1163,30 @@ fn main(arg: usize) -> ! {
             crate::trace_span!("bloom.loop.damage");
             // damage calculation trace (already mostly done but wrapping ensures consistency)
         }
+
+        // Detect cursor-only frames: damage is only from cursor movement or shape changes
+        let is_cursor_only_frame = if !damage.is_empty() && !damage.is_full {
+            let mut all_cursor_damage = true;
+            for record in damage.iter_records() {
+                // Accept both cursor movement and cursor shape changes
+                if record.cause != damage::DamageCause::CursorMoved 
+                    && record.cause != damage::DamageCause::CursorShapeChanged {
+                    all_cursor_damage = false;
+                    break;
+                }
+            }
+            all_cursor_damage
+        } else {
+            false
+        };
+
+        if is_cursor_only_frame {
+            cursor_metrics.record_cursor_only_frame();
+        }
+
+        // Periodic cursor metrics logging
+        let frame_num = loop_ctrl.frame_number();
+        cursor_metrics.maybe_log(frame_num);
 
         if damage.is_empty() {
             presenter.pump();
@@ -1138,6 +1237,19 @@ fn main(arg: usize) -> ! {
         }
         
         append_damage_overlay(&mut list, &overlay_state, &debug_flags, Some(&damage), screen_w, screen_h);
+        
+        // Cursor-only fast path: skip window composition if only cursor moved
+        if is_cursor_only_frame {
+            // For cursor-only frames, we only need to:
+            // 1. Repair the old cursor position (already in framebuffer from last frame)
+            // 2. Draw cursor at new position
+            // The background/windows don't need recomposition since they haven't changed
+            
+            // Note: This optimization requires the framebuffer to be preserved between frames
+            // Currently, we always recompose, so we skip this optimization for now
+            // TODO: Implement true cursor-only fast path when we have a stable backbuffer
+        }
+        
         // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
         {
             let rects: alloc::vec::Vec<_> = damage.iter().collect();
@@ -1173,9 +1285,28 @@ fn main(arg: usize) -> ! {
             raster::execute_with_damage(&mut surface, &list, &damage, false);
         }
 
+        // ============================================================================
+        // CURSOR OVERLAY - "Butter Smooth" Late-Latched Composition
+        // ============================================================================
+        //
+        // The cursor is rendered AFTER all window composition and rasterization.
+        // This ensures cursor updates are decoupled from heavy scene redraws:
+        //
+        // 1. Cursor rasterization is cached (only happens on shape/asset changes)
+        // 2. Cursor movement only costs 2 tiny damage rects (old + new position)
+        // 3. Cursor is blitted from cache, no SVG/text rasterization involved
+        // 4. Cursor damage never triggers full-frame invalidation
+        //
+        // This architecture ensures the cursor feels "butter smooth" even when
+        // the UI is busy with expensive repaints.
+        // ============================================================================
+        
         // Cursor overlay: blend cached snapshot or draw fallback
         let cursor_drawn = if let Some(asset) = ASSETS.get_cursor() {
-            if let Some(snapshot) = cursor_rasterizer.get_snapshot(&asset) {
+            let (snapshot_opt, _rasterized) = cursor_rasterizer.get_snapshot(&asset);
+            // Note: rasterization tracking already done in damage section above
+            
+            if let Some(snapshot) = snapshot_opt {
                 let cx = cursor.x - snapshot.hotspot_x;
                 let cy = cursor.y - snapshot.hotspot_y;
                 raster::blit_cursor_overlay(&mut surface, &snapshot.image, cx, cy);

@@ -30,6 +30,8 @@ pub enum DamageCause {
     AssetUpdated,
     /// Cursor moved to a new position
     CursorMoved,
+    /// Cursor shape/asset changed
+    CursorShapeChanged,
     /// Full redraw was explicitly requested
     ForceFull,
     /// Content of a window snapshot changed
@@ -61,6 +63,7 @@ impl DamageCause {
             DamageCause::PaintChanged => 0xFFFF00FF,    // Magenta
             DamageCause::AssetUpdated => 0xFFFFFF00,    // Yellow
             DamageCause::CursorMoved => 0xFF00FF00,     // Green
+            DamageCause::CursorShapeChanged => 0xFF90EE90, // Light Green
             DamageCause::ForceFull => 0xFFFF0000,       // Red
             DamageCause::ContentChanged => 0xFFFF8000,  // Orange
             DamageCause::FontChanged => 0xFF87CEEB,     // Light Blue

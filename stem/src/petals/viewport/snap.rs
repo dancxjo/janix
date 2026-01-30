@@ -2,6 +2,8 @@
 //!
 //! Provides optional grid and zoom snapping for viewports.
 
+use libm::{log2f, logf, powf, roundf};
+
 /// Zoom snap policy.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ZoomSnapPolicy {
@@ -49,12 +51,12 @@ pub fn snap_zoom(zoom: f32, policy: ZoomSnapPolicy, threshold: f32) -> f32 {
     match policy {
         ZoomSnapPolicy::None => zoom,
         ZoomSnapPolicy::PowersOfTwo => {
-            let log2 = zoom.log2();
-            let nearest = log2.round();
+            let log2 = log2f(zoom);
+            let nearest = roundf(log2);
             let distance = (log2 - nearest).abs();
 
             if distance <= threshold {
-                2.0_f32.powf(nearest)
+                powf(2.0, nearest)
             } else {
                 zoom
             }
@@ -70,7 +72,7 @@ pub fn snap_zoom(zoom: f32, policy: ZoomSnapPolicy, threshold: f32) -> f32 {
             let mut best_distance = f32::INFINITY;
 
             for &ratio in NICE_RATIOS {
-                let distance = ((zoom / ratio).ln()).abs();
+                let distance = logf(zoom / ratio).abs();
                 if distance < best_distance {
                     best = ratio;
                     best_distance = distance;
@@ -78,7 +80,7 @@ pub fn snap_zoom(zoom: f32, policy: ZoomSnapPolicy, threshold: f32) -> f32 {
             }
 
             // Only snap if within threshold
-            let log_distance = (zoom / best).ln().abs();
+            let log_distance = logf(zoom / best).abs();
             if log_distance <= threshold {
                 best
             } else {
@@ -94,7 +96,7 @@ pub fn snap_pan(pos: (f32, f32), policy: PanSnapPolicy, threshold: f32) -> (f32,
         PanSnapPolicy::None => pos,
         PanSnapPolicy::Grid { cell_size } => {
             let snap_coord = |v: f32| -> f32 {
-                let nearest = (v / cell_size).round() * cell_size;
+                let nearest = roundf(v / cell_size) * cell_size;
                 let distance = (v - nearest).abs();
 
                 if distance <= cell_size * threshold {

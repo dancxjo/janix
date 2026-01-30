@@ -2,6 +2,8 @@
 //!
 //! Provides smooth deceleration for pan and zoom gestures.
 
+use libm::{exp2f, powf};
+
 /// Kinetic state for smooth pan/zoom deceleration.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct InertiaState {
@@ -62,7 +64,7 @@ impl InertiaState {
 
         // Apply zoom velocity
         let zoom_factor = if self.zoom_velocity.abs() > self.zoom_stop_threshold {
-            let factor = (self.zoom_velocity * dt_seconds).exp2();
+            let factor = exp2f(self.zoom_velocity * dt_seconds);
             updated = true;
             factor
         } else {
@@ -70,10 +72,10 @@ impl InertiaState {
         };
 
         // Apply friction
-        let friction_factor = (1.0 - self.pan_friction).powf(dt_seconds);
+        let friction_factor = powf(1.0 - self.pan_friction, dt_seconds);
         self.pan_velocity.0 *= friction_factor;
         self.pan_velocity.1 *= friction_factor;
-        self.zoom_velocity *= (1.0 - self.zoom_friction).powf(dt_seconds);
+        self.zoom_velocity *= powf(1.0 - self.zoom_friction, dt_seconds);
 
         // Stop if below threshold
         if self.pan_velocity.0.abs() < self.pan_stop_threshold {

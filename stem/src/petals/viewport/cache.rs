@@ -6,6 +6,7 @@
 use super::Viewport;
 use alloc::string::String;
 use core::fmt;
+use libm::{log2f, sqrtf};
 
 /// Handle to a cached raster image.
 ///
@@ -116,7 +117,7 @@ impl ViewportRenderBridge {
 
         // Check zoom change (log scale)
         let zoom_ratio = self.target_viewport.zoom / self.last_rasterized.zoom;
-        let zoom_change_log2 = zoom_ratio.log2().abs();
+        let zoom_change_log2 = log2f(zoom_ratio).abs();
 
         if zoom_change_log2 >= self.quantization.zoom_threshold_log2 {
             return true;
@@ -125,7 +126,7 @@ impl ViewportRenderBridge {
         // Check pan distance (world space)
         let dx = self.target_viewport.center_world.0 - self.last_rasterized.center_world.0;
         let dy = self.target_viewport.center_world.1 - self.last_rasterized.center_world.1;
-        let pan_distance = (dx * dx + dy * dy).sqrt();
+        let pan_distance = sqrtf(dx * dx + dy * dy);
 
         if pan_distance >= self.quantization.pan_threshold_world {
             return true;

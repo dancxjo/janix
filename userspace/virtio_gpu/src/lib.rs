@@ -59,14 +59,37 @@ pub struct VirtioGpu {
 impl VirtioGpu {
     /// Create a new VirtioGpu driver instance
     pub fn new(device_id: u64) -> Result<Self, Errno> {
+        use abi::ids::HandleId;
+        use abi::schema::keys;
         use stem::syscall::{device_alloc_dma, device_claim, device_dma_phys, device_map_mmio};
+        use stem::thing::ThingId;
+        use stem::thing::sys as thingsys;
 
         let claim_handle = device_claim(device_id)?;
+        let gpu_node = ThingId::from_u64(device_id);
 
-        // Try BAR2 first (virtio-vga config), fall back to BAR0
-        let config_bar = match device_map_mmio(claim_handle, 2) {
-            Ok(addr) => addr,
-            Err(_) => device_map_mmio(claim_handle, 0)?,
+        // Read VirtIO capability offsets from graph properties (set by kernel PCI enumeration)
+        let common_bar = thingsys::prop_get(gpu_node, keys::VIRTIO_COMMON_BAR).unwrap_or(0) as usize;
+        let common_offset = thingsys::prop_get(gpu_node, keys::VIRTIO_COMMON_OFFSET).unwrap_or(0);
+        let notify_bar = thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_BAR).unwrap_or(0) as usize;
+        let notify_offset = thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_OFFSET).unwrap_or(0);
+        let notify_multiplier = thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_MULTIPLIER).unwrap_or(4) as u32;
+
+        stem::info!(
+            "virtio_gpu: caps from graph - common BAR{} off=0x{:x}, notify BAR{} off=0x{:x} mult={}",
+            common_bar, common_offset, notify_bar, notify_offset, notify_multiplier
+        );
+
+        // Map the BAR containing common config
+        let common_bar_base = device_map_mmio(claim_handle, common_bar)?;
+        let common_cfg = common_bar_base + common_offset;
+
+        // Map notify BAR (may be same as common BAR)  
+        let notify_cfg = if notify_bar == common_bar {
+            common_bar_base + notify_offset
+        } else {
+            let notify_bar_base = device_map_mmio(claim_handle, notify_bar)?;
+            notify_bar_base + notify_offset
         };
 
         // Allocate command buffer (1 page for commands + responses)
@@ -75,9 +98,9 @@ impl VirtioGpu {
 
         Ok(Self {
             claim_handle,
-            common_cfg: config_bar,
-            notify_cfg: config_bar + 0x1000,
-            notify_off_multiplier: 4,
+            common_cfg,
+            notify_cfg,
+            notify_off_multiplier: notify_multiplier,
             controlq: None,
             display_width: 1024,
             display_height: 768,

@@ -264,6 +264,7 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
         }
     }
 
+    // Allocate contiguous physical frames for DMA
     let mut phys_base = 0u64;
 
     FRAME_ALLOCATOR.with_lock(|alloc| {
@@ -280,22 +281,41 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
         return Err(Errno::ENOMEM);
     }
 
-    let hhdm_offset = crate::boot_info::get().map(|i| i.hhdm_offset).unwrap_or(0);
-    let virt_addr = phys_base + hhdm_offset;
+    // Allocate userspace virtual address and map the DMA pages there
+    let user_va = crate::memory::alloc_user_va(page_count * 4096);
 
+    for i in 0..page_count {
+        let phys = phys_base + (i * 4096) as u64;
+        let virt = user_va + (i * 4096) as u64;
+        unsafe {
+            crate::memory::map_user_page_with_perms(
+                virt,
+                phys,
+                crate::MapPerms {
+                    user: true,
+                    read: true,
+                    write: true,
+                    exec: false,
+                },
+            )
+            .map_err(|_| Errno::ENOMEM)?;
+        }
+    }
+
+    // Track the DMA allocation for later phys lookups
     {
         let mut reg = REGISTRY.lock();
-        reg.alloc_dma_slot(claim_handle, phys_base, virt_addr, page_count);
+        reg.alloc_dma_slot(claim_handle, phys_base, user_va, page_count);
     }
 
     crate::kinfo!(
-        "DEVICE: DMA alloc {} pages phys=0x{:x} virt=0x{:x}",
+        "DEVICE: DMA alloc {} pages phys=0x{:x} -> user_va=0x{:x}",
         page_count,
         phys_base,
-        virt_addr
+        user_va
     );
 
-    Ok(virt_addr as usize)
+    Ok(user_va as usize)
 }
 
 /// Get physical address of a DMA allocation

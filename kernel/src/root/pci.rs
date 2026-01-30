@@ -374,6 +374,9 @@ fn register_virtio_gpu(
     set(gpu_node, keys::CONFIDENCE, confidence::HIGH as u64);
     link(graph_id, rels::IMPLEMENTS, gpu_node);
 
+    // Parse VirtIO PCI capabilities and publish as graph properties
+    parse_virtio_capabilities(bus, dev, func, gpu_node, set);
+
     let entry = DeviceEntry::new_mmio(kinds::DEV_DISPLAY_GPU, gpu_node, *bar_addrs, *bar_sizes);
 
     let mut reg = REGISTRY.lock();
@@ -408,6 +411,82 @@ fn register_virtio_gpu(
         );
     } else {
         crate::kinfo!("PCI: Failed to register virtio GPU - registry full");
+    }
+}
+
+// VirtIO PCI capability types (vendor-specific cap, 0x09)
+const VIRTIO_PCI_CAP_COMMON_CFG: u8 = 1;
+const VIRTIO_PCI_CAP_NOTIFY_CFG: u8 = 2;
+const VIRTIO_PCI_CAP_ISR_CFG: u8 = 3;
+const VIRTIO_PCI_CAP_DEVICE_CFG: u8 = 4;
+
+/// Parse VirtIO PCI capabilities and publish offsets as graph properties
+fn parse_virtio_capabilities(
+    bus: u8,
+    dev: u8, 
+    func: u8,
+    gpu_node: u64,
+    set: &mut impl FnMut(u64, &str, u64),
+) {
+    // Traverse PCI capability list looking for vendor-specific (0x09)
+    let status = unsafe { pci_read_config(bus, dev, func, 0x04) };
+    let status_bits = ((status >> 16) & 0xFFFF) as u16;
+    if (status_bits & 0x10) == 0 {
+        crate::kinfo!("PCI: VirtIO device has no capabilities list");
+        return;
+    }
+
+    let mut cap_ptr = pci_read_config_u8(bus, dev, func, 0x34) & 0xFC;
+    let mut limit = 0;
+    
+    while cap_ptr != 0 && limit < 48 {
+        let cap_id = pci_read_config_u8(bus, dev, func, cap_ptr);
+        
+        // Vendor-specific capability (VirtIO uses this)
+        if cap_id == 0x09 {
+            // VirtIO PCI capability structure:
+            // +0: cap_vndr (0x09)
+            // +1: cap_next
+            // +2: cap_len
+            // +3: cfg_type (1=common, 2=notify, 3=isr, 4=device, 5=pci)
+            // +4: bar
+            // +5-7: padding
+            // +8-11: offset (u32)
+            // +12-15: length (u32)
+            // For notify cap:
+            // +16-19: notify_off_multiplier (u32)
+            
+            let cfg_type = pci_read_config_u8(bus, dev, func, cap_ptr + 3);
+            let bar = pci_read_config_u8(bus, dev, func, cap_ptr + 4);
+            let offset = unsafe { pci_read_config(bus, dev, func, cap_ptr + 8) };
+            
+            match cfg_type {
+                VIRTIO_PCI_CAP_COMMON_CFG => {
+                    set(gpu_node, keys::VIRTIO_COMMON_BAR, bar as u64);
+                    set(gpu_node, keys::VIRTIO_COMMON_OFFSET, offset as u64);
+                    crate::kinfo!("PCI: VirtIO common_cfg BAR{} offset=0x{:x}", bar, offset);
+                }
+                VIRTIO_PCI_CAP_NOTIFY_CFG => {
+                    let multiplier = unsafe { pci_read_config(bus, dev, func, cap_ptr + 16) };
+                    set(gpu_node, keys::VIRTIO_NOTIFY_BAR, bar as u64);
+                    set(gpu_node, keys::VIRTIO_NOTIFY_OFFSET, offset as u64);
+                    set(gpu_node, keys::VIRTIO_NOTIFY_MULTIPLIER, multiplier as u64);
+                    crate::kinfo!("PCI: VirtIO notify_cfg BAR{} offset=0x{:x} mult={}", bar, offset, multiplier);
+                }
+                VIRTIO_PCI_CAP_ISR_CFG => {
+                    set(gpu_node, keys::VIRTIO_ISR_BAR, bar as u64);
+                    set(gpu_node, keys::VIRTIO_ISR_OFFSET, offset as u64);
+                }
+                VIRTIO_PCI_CAP_DEVICE_CFG => {
+                    set(gpu_node, keys::VIRTIO_DEVICE_BAR, bar as u64);
+                    set(gpu_node, keys::VIRTIO_DEVICE_OFFSET, offset as u64);
+                }
+                _ => {} // Ignore other types (5=PCI_CFG)
+            }
+        }
+        
+        cap_ptr = pci_read_config_u8(bus, dev, func, cap_ptr + 1) & 0xFC;
+        limit += 1;
     }
 }
 

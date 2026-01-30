@@ -92,6 +92,18 @@ pub mod keys {
     pub const VECTOR: &str = "vector";
     pub const MSI_CAPABLE: &str = "msi_capable";
     pub const MSIX_CAPABLE: &str = "msix_capable";
+    
+    // VirtIO PCI Capability Offsets
+    pub const VIRTIO_COMMON_BAR: &str = "virtio.common_bar";
+    pub const VIRTIO_COMMON_OFFSET: &str = "virtio.common_offset";
+    pub const VIRTIO_NOTIFY_BAR: &str = "virtio.notify_bar";
+    pub const VIRTIO_NOTIFY_OFFSET: &str = "virtio.notify_offset";
+    pub const VIRTIO_NOTIFY_MULTIPLIER: &str = "virtio.notify_multiplier";
+    pub const VIRTIO_ISR_BAR: &str = "virtio.isr_bar";
+    pub const VIRTIO_ISR_OFFSET: &str = "virtio.isr_offset";
+    pub const VIRTIO_DEVICE_BAR: &str = "virtio.device_bar";
+    pub const VIRTIO_DEVICE_OFFSET: &str = "virtio.device_offset";
+    
     // Storage
     pub const SECTOR_SIZE: &str = "sector_size";
     pub const SECTOR_COUNT: &str = "sector_count";

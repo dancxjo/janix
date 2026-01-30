@@ -27,38 +27,50 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     let mut display_device: Option<ThingId> = None;
     let mut backend_name: &'static str = "unknown";
 
-    // NOTE: VirtIO GPU is not fully implemented (needs PCI capability parsing).
-    // Prefer BootFB which works reliably until VirtIO-GPU driver is complete.
-
-    // Check for BootFB first (preferred - works reliably)
-    let mut fb_buf = [ThingId::default(); 1];
-    if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
+    // Check for VirtIO GPU first (preferred for accelerated display)
+    let mut gpu_buf = [ThingId::default(); 1];
+    if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
         if count > 0 {
-            let fb = fb_buf[0];
-            display_device = Some(fb);
-            display_width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(0) as u32;
-            display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(0) as u32;
-            display_stride = thingsys::prop_get(fb, keys::STRIDE).unwrap_or(0) as u32;
-            display_format = thingsys::prop_get(fb, keys::FORMAT).unwrap_or(0) as u32;
-            driver_name = Some("/display_bootfb");
-            backend_name = "BootFB";
-            info!("SPROUT: Using boot framebuffer");
+            display_device = Some(gpu_buf[0]);
+            
+            // Read native resolution from boot framebuffer if available
+            let mut fb_buf = [ThingId::default(); 1];
+            if let Ok(fb_count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
+                if fb_count > 0 {
+                    let fb = fb_buf[0];
+                    display_width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(1024) as u32;
+                    display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(768) as u32;
+                }
+            }
+            
+            // Fall back to reasonable default if no bootfb
+            if display_width == 0 || display_height == 0 {
+                display_width = 1024;
+                display_height = 768;
+            }
+            
+            display_stride = display_width * 4;
+            display_format = 1;
+            driver_name = Some("/display_virtio_gpu");
+            backend_name = "VirtIO-GPU";
+            info!("SPROUT: Using VirtIO GPU at {}x{}", display_width, display_height);
         }
     }
 
-    // Fallback to VirtIO GPU if no BootFB found (stub - not fully implemented)
+    // Fallback to BootFB if no VirtIO GPU found
     if driver_name.is_none() {
-        let mut gpu_buf = [ThingId::default(); 1];
-        if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
+        let mut fb_buf = [ThingId::default(); 1];
+        if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
             if count > 0 {
-                display_device = Some(gpu_buf[0]);
-                display_width = 1024;
-                display_height = 768;
-                display_stride = display_width * 4;
-                display_format = 1;
-                driver_name = Some("/display_virtio_gpu");
-                backend_name = "VirtIO-GPU";
-                info!("SPROUT: Using VirtIO GPU (stub - not fully implemented)");
+                let fb = fb_buf[0];
+                display_device = Some(fb);
+                display_width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(0) as u32;
+                display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(0) as u32;
+                display_stride = thingsys::prop_get(fb, keys::STRIDE).unwrap_or(0) as u32;
+                display_format = thingsys::prop_get(fb, keys::FORMAT).unwrap_or(0) as u32;
+                driver_name = Some("/display_bootfb");
+                backend_name = "BootFB";
+                info!("SPROUT: Using boot framebuffer (fallback)");
             }
         }
     }

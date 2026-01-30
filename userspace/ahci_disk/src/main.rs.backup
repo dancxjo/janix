@@ -23,7 +23,7 @@ use stem::block::{BlockDevice, BlockError};
 use stem::syscall::port::{port_create, port_recv, port_send, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use stem::{error, info};
+use stem::{error, info, warn};
 
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]
@@ -94,9 +94,6 @@ struct AhciPort {
     serial: [u8; 20],
     graph_id: ThingId,
     read_port_handle: Option<PortHandle>,
-    mmio_base: u64,
-    dma_virt: u64,
-    dma_phys: u64,
 }
 
 // Memory Layout in DMA Buffer (1 page = 4096 bytes)
@@ -375,103 +372,482 @@ impl BlockDevice for AhciAtapiDevice {
 // ISO Logic (Ported from iso_reader)
 // -----------------------------------------------------------------------------
 
+// -----------------------------------------------------------------------------
+// Performance Tracking & Indexing
+// -----------------------------------------------------------------------------
 
-// -----------------------------------------------------------------------------
-// Block Device Registration
-// -----------------------------------------------------------------------------
+/// Performance counters for ISO scanning
+#[derive(Default)]
+struct ScanStats {
+    files_visited: usize,
+    dirs_visited: usize,
+    metadata_published: usize,
+    content_materialized: usize,
+    bytes_read: u64,
+    time_scan_start_ns: u64,
+    time_metadata_ns: u64,
+    time_materialization_ns: u64,
+}
+
+/// Index key for published files to avoid O(files²) behavior
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct FileKey {
+    source_id: u64, // ThingId as u64
+    name_sym: u64,  // Interned string ID
+}
+
+/// In-memory index of published files
+struct PublishIndex {
+    by_key: BTreeMap<FileKey, ThingId>,
+}
+
+impl PublishIndex {
+    fn new() -> Self {
+        Self {
+            by_key: BTreeMap::new(),
+        }
+    }
+
+    fn insert(&mut self, key: FileKey, thing_id: ThingId) {
+        self.by_key.insert(key, thing_id);
+    }
+
+    fn get(&self, key: &FileKey) -> Option<ThingId> {
+        self.by_key.get(key).copied()
+    }
+}
+
+/// File metadata for lazy materialization
+struct FileMetadata {
+    extent_lba: u32,
+    size: u32,
+    path: String,
+}
+
+/// Get current monotonic time in nanoseconds (best effort)
+fn get_monotonic_ns() -> u64 {
+    // Try to read monotonic clock from graph if available
+    // Otherwise return 0 (timing will show as 0 but won't crash)
+    let mut clocks = [ThingId::default(); 4];
+    if let Ok(count) = thingsys::find("dev.time.Clock", &mut clocks) {
+        if count > 0 {
+            let mono_ns = thingsys::prop_get(clocks[0], "monotonic_ns").unwrap_or(0);
+            return mono_ns;
+        }
+    }
+    0
+}
+
+/// Determine MIME type from file extension
+fn get_mime_type(name: &str) -> Option<&'static str> {
+    let name_lower = name.to_lowercase();
+    if name_lower.ends_with(".svg") {
+        Some("image/svg+xml")
+    } else if name_lower.ends_with(".ttf") || name_lower.ends_with(".otf") {
+        Some("application/font-sfnt")
+    } else if name_lower.ends_with(".bmp") {
+        Some("image/bmp")
+    } else if name_lower.ends_with(".png") {
+        Some("image/png")
+    } else {
+        None
+    }
+}
+
+fn initialize_iso_content_source() -> Option<ThingId> {
+    let mut sources = [ThingId::default(); 16];
+    if let Ok(count) = thingsys::find(kinds::CONTENT_SOURCE, &mut sources) {
+        for &source_id in &sources[..count] {
+            let kind_sym = thingsys::prop_get(source_id, keys::CONTENT_SOURCE_KIND).unwrap_or(0);
+            if kind_sym != 0 {
+                let mut buf = [0u8; 64];
+                if let Ok(len) = thingsys::describe_symbol(kind_sym as u32, &mut buf) {
+                    if core::str::from_utf8(&buf[..len]).unwrap_or("") == "iso9660_disk" {
+                        return Some(source_id);
+                    }
+                }
+            }
+        }
+    }
+
+    match thingsys::create_node(kinds::CONTENT_SOURCE) {
+        Ok(source_id) => {
+            let kind_sym = thingsys::intern("iso9660_disk").unwrap_or(0);
+            let name_sym = thingsys::intern("cdrom0").unwrap_or(0);
+            let state_sym = thingsys::intern("ready").unwrap_or(0);
+            
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_KIND, kind_sym as u64);
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_NAME, name_sym as u64);
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_PRIORITY, 50u64);
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_STATE, state_sym as u64);
+            let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_GEN, 1u64);
+            
+            info!("AHCI: Created ISO ContentSource node");
+            Some(source_id)
+        }
+        Err(_) => None,
+    }
+}
+
+fn find_host_node() -> Option<ThingId> {
+    let mut hosts = [ThingId::default(); 4];
+    match thingsys::find("dev.Host", &mut hosts) {
+        Ok(count) if count > 0 => Some(hosts[0]),
+        _ => None,
+    }
+}
+
+/// Create or update a File node for ISO content (using index to avoid O(files²))
+fn publish_content_file_indexed(
+    source_id: ThingId,
+    name: &str,
+    data: Option<&[u8]>, // None for metadata-only publish
+    bs_id: Option<ThingId>, // None for metadata-only publish
+    size: usize,
+    mime: Option<&str>,
+    index: &mut PublishIndex,
+    stats: &mut ScanStats,
+) -> Option<ThingId> {
+    let name_sym = thingsys::intern(name).unwrap_or(0) as u64;
+    let key = FileKey {
+        source_id: source_id.to_u64_lossy(),
+        name_sym,
+    };
+
+    // Check index first (O(log n) instead of O(n) linear scan)
+    if let Some(existing_id) = index.get(&key) {
+        // File already exists, update if needed
+        if let Some(data_bytes) = data {
+            // Compute hash for update check
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(data_bytes);
+            let hash_bytes = hasher.finalize();
+            let hash = u64::from_le_bytes([
+                hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
+                hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+            ]);
+
+            let old_hash = thingsys::prop_get(existing_id, keys::FILE_HASH).unwrap_or(0);
+            if old_hash != hash {
+                if let Some(bs) = bs_id {
+                    let _ = thingsys::prop_set(existing_id, keys::FILE_BYTESPACE, bs.to_u64_lossy());
+                }
+                let _ = thingsys::prop_set(existing_id, keys::FILE_HASH, hash);
+                let _ = thingsys::prop_set(existing_id, keys::FILE_SIZE, size as u64);
+                stats.content_materialized += 1;
+            }
+        }
+        return Some(existing_id);
+    }
+
+    // Create new file node
+    match thingsys::create_node(kinds::CONTENT_FILE) {
+        Ok(file_id) => {
+            let _ = thingsys::prop_set(file_id, keys::FILE_NAME, name_sym);
+            let _ = thingsys::prop_set(file_id, keys::FILE_SIZE, size as u64);
+            let _ = thingsys::prop_set(file_id, keys::FILE_SOURCE, source_id.to_u64_lossy());
+
+            // Set hash and bytespace only if we have content
+            if let Some(data_bytes) = data {
+                use sha2::{Digest, Sha256};
+                let mut hasher = Sha256::new();
+                hasher.update(data_bytes);
+                let hash_bytes = hasher.finalize();
+                let hash = u64::from_le_bytes([
+                    hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
+                    hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+                ]);
+                let _ = thingsys::prop_set(file_id, keys::FILE_HASH, hash);
+                
+                if let Some(bs) = bs_id {
+                    let _ = thingsys::prop_set(file_id, keys::FILE_BYTESPACE, bs.to_u64_lossy());
+                }
+                stats.content_materialized += 1;
+            }
+
+            if let Some(mime_str) = mime {
+                if let Ok(mime_sym) = thingsys::intern(mime_str) {
+                    let _ = thingsys::prop_set(file_id, keys::FILE_MIME, mime_sym as u64);
+                }
+            }
+
+            // Add to index
+            index.insert(key, file_id);
+            stats.metadata_published += 1;
+
+            Some(file_id)
+        }
+        Err(_) => {
+            warn!("AHCI: Failed to create File node for '{}'", name);
+            None
+        }
+    }
+}
+
+/// Publish a file from the ISO as a CONTENT_FILE node.
+/// BOOT_MODULE nodes are only for Limine boot modules - disk files use CONTENT_FILE.
+/// Supports lazy materialization - if data is None, only metadata is published.
+fn publish_iso_file(
+    _host: ThingId, // No longer used - was for linking BOOT_MODULE to host
+    source_id: ThingId,
+    path: &str,
+    data: Option<Vec<u8>>,
+    _index: usize, // No longer used - was for BOOT_MODULE indexing
+    publish_index: &mut PublishIndex,
+    stats: &mut ScanStats,
+) -> Result<ThingId, &'static str> {
+    let size = data.as_ref().map(|d| d.len()).unwrap_or(0);
+
+    // Create bytespace and write data only if we have content
+    let bs = if let Some(ref data_vec) = data {
+        let bytespace = thingsys::bytespace_create(size, 0, 0)
+            .map_err(|_| "bytespace_create failed")?;
+        thingsys::bytespace_write(bytespace, 0, data_vec)
+            .map_err(|_| "bytespace_write failed")?;
+        
+        stats.bytes_read += size as u64;
+        Some(bytespace)
+    } else {
+        None
+    };
+
+    // Extract just the filename for MIME type detection
+    let name_for_mime = path.rsplit('/').next().unwrap_or(path);
+    let mime = get_mime_type(name_for_mime);
+
+    // Create CONTENT_FILE node (the unified file abstraction)
+    // Use the full path as the name for consistency with ingestd
+    let file_id = publish_content_file_indexed(
+        source_id,
+        path,
+        data.as_deref(),
+        bs,
+        size,
+        mime,
+        publish_index,
+        stats,
+    ).ok_or("failed to create content file")?;
+
+    Ok(file_id)
+}
+
+
+/// Hot-set: files that should be loaded eagerly at boot for responsive UI
+fn is_in_hot_set(path: &str) -> bool {
+    let path_lower = path.to_lowercase();
+    // Load fonts, cursors, and critical UI assets eagerly
+    path_lower.contains("/cursor") ||
+    path_lower.ends_with(".ttf") ||
+    path_lower.ends_with(".otf") ||
+    path_lower.contains("/font") ||
+    path_lower == "/boot.svg" // Boot logo if present
+}
+
+/// Recursively scan a directory and publish files.
+/// Uses lazy loading: only metadata is published by default, content is loaded on-demand
+/// or for files in the hot-set.
+fn scan_and_publish(
+    dev: &dyn BlockDevice,
+    fs: &IsoFs,
+    host: ThingId,
+    source_id: ThingId,
+    dir_lba: u32,
+    dir_size: u32,
+    prefix: String,
+    index: &mut usize,
+    publish_index: &mut PublishIndex,
+    stats: &mut ScanStats,
+) -> usize {
+    let mut published = 0;
+    let entries = fs.list_dir(dev, dir_lba, dir_size);
+
+    for entry in entries {
+        let full_path = if prefix.is_empty() { entry.name.clone() } else { format!("{}/{}", prefix, entry.name) };
+
+        if entry.is_directory {
+            // Skip the tango icons directory - too many files
+            let path_lower = full_path.to_lowercase();
+            if path_lower.contains("icons/tango") || path_lower.contains("icons\\tango") {
+                continue;
+            }
+            
+            stats.dirs_visited += 1;
+            published += scan_and_publish(
+                dev,
+                fs,
+                host,
+                source_id,
+                entry.extent_lba,
+                entry.size,
+                full_path,
+                index,
+                publish_index,
+                stats,
+            );
+        } else {
+            stats.files_visited += 1;
+            let path_with_slash = format!("/{}", full_path);
+            
+            // Check if this file should be in the hot-set (loaded eagerly)
+            let in_hot_set = is_in_hot_set(&path_with_slash);
+            
+            let file = iso9660::IsoFile {
+                extent_lba: entry.extent_lba,
+                size: entry.size,
+            };
+
+            if in_hot_set {
+                // Hot-set: read content immediately
+                match file.read_all(dev) {
+                    Ok(data) => {
+                        match publish_iso_file(
+                            host,
+                            source_id,
+                            &path_with_slash,
+                            Some(data),
+                            *index,
+                            publish_index,
+                            stats,
+                        ) {
+                            Ok(_) => {
+                                info!("AHCI: Published (hot-set) '{}' ({} bytes)", path_with_slash, entry.size);
+                                published += 1;
+                                *index += 1;
+                            }
+                            Err(e) => warn!("AHCI: Failed to publish '{}': {}", full_path, e),
+                        }
+                    }
+                    Err(e) => warn!("AHCI: Failed to read '{}': {:?}", full_path, e),
+                }
+            } else {
+                // Metadata-only: don't read file content yet
+                match publish_iso_file(
+                    host,
+                    source_id,
+                    &path_with_slash,
+                    None, // No data = metadata only
+                    *index,
+                    publish_index,
+                    stats,
+                ) {
+                    Ok(_) => {
+                        published += 1;
+                        *index += 1;
+                    }
+                    Err(e) => {
+                        warn!("AHCI: Failed to publish metadata for '{}': {}", full_path, e);
+                    }
+                }
+            }
+        }
+    }
+    published
+}
 
 fn register_disk(port: &mut AhciPort) {
-    use stem::abi::schema::keys;
-    
-    let disk_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
+    let disk_id = match thingsys::create_node("dev.storage.Disk") {
         Ok(id) => id,
         Err(e) => {
-            error!("AHCI: Failed to create block device node: {:?}", e);
+            error!("AHCI: Failed to create disk node: {:?}", e);
             return;
         }
     };
-    
-    port.graph_id = disk_id;
-    
-    // Create RPC port for block device service (4KB buffer)
-    let (write_handle, read_handle) = match port_create(4096) {
-        Ok(handles) => handles,
-        Err(e) => {
-            error!("AHCI: Failed to create port: {:?}", e);
-            return;
-        }
-    };
-    port.read_port_handle = Some(read_handle);
-    
-    // Set block device properties
-    thingsys::prop_set(disk_id, keys::SECTOR_SIZE, port.sector_size as u64).ok();
-    thingsys::prop_set(disk_id, keys::SECTOR_COUNT, port.sector_count).ok();
+    port.graph_id = disk_id.to_u64_lossy();
+    thingsys::prop_set(disk_id, "sector_size", 512u64).ok();
+    thingsys::prop_set(disk_id, "sector_count", port.sector_count).ok();
     thingsys::prop_set(
         disk_id,
-        keys::LBA48,
+        "lba48",
         if port.supports_lba48 { 1u64 } else { 0u64 },
-    ).ok();
-    
-    // Convert model to string and set
+    )
+    .ok();
+    thingsys::prop_set(disk_id, "interface", 1u64).ok();
     let model_str = core::str::from_utf8(&port.model)
         .unwrap_or("Unknown")
         .trim();
-    if let Ok(model_sym) = thingsys::intern(model_str) {
-        thingsys::prop_set(disk_id, keys::MODEL, model_sym as u64).ok();
-    }
-    
-    // Set read port handle (store write handle so clients can send to it)
-    thingsys::prop_set(disk_id, keys::READ_PORT_HANDLE, write_handle as u64).ok();
-    
     info!(
-        "AHCI: Registered block device {} port={} sectors={} lba48={} model='{}' rpc_port={}",
-        disk_id.to_u64_lossy(), port.port_num, port.sector_count, port.supports_lba48, model_str, write_handle
+        "AHCI: Registered disk {} port={} sectors={} lba48={} model='{}'",
+        port.graph_id, port.port_num, port.sector_count, port.supports_lba48, model_str
     );
 }
 
 fn register_atapi_disk(port: &mut AhciPort) {
-    use stem::abi::schema::keys;
-    
-    let node_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
+    let node_id = match thingsys::create_node("dev.storage.Cdrom") {
         Ok(id) => id,
         Err(e) => {
-            error!("AHCI: Failed to create block device node: {:?}", e);
+            error!("AHCI: Failed to create CDROM node: {:?}", e);
+            return;
+        }
+    };
+    port.graph_id = node_id.to_u64_lossy();
+    thingsys::prop_set(node_id, "sector_size", 2048u64).ok();
+    thingsys::prop_set(node_id, "interface", 2u64).ok(); // 2 = ATAPI/SATA
+    thingsys::prop_set(node_id, "port", port.port_num as u64).ok();
+    
+    info!("AHCI: Registered CDROM {} port={}", port.graph_id, port.port_num);
+}
+
+/// Scan the entire ISO and publish files to the graph for ingestd.
+/// Uses lazy loading for most files (metadata-only), eager loading for hot-set.
+fn scan_whole_disk(dev: &dyn BlockDevice) {
+    info!("AHCI: Scanning entire ISO disk...");
+    
+    let fs = match IsoFs::probe(dev) {
+        Some(f) => f,
+        None => {
+            warn!("AHCI: Failed to read ISO filesystem");
             return;
         }
     };
     
-    port.graph_id = node_id;
-    
-    // Create RPC port for block device service (4KB buffer)
-    let (write_handle, read_handle) = match port_create(4096) {
-        Ok(handles) => handles,
-        Err(e) => {
-            error!("AHCI: Failed to create port: {:?}", e);
+    // Find host node for linking
+    let host = match find_host_node() {
+        Some(h) => h,
+        None => {
+            warn!("AHCI: No dev.Host node found");
             return;
         }
     };
-    port.read_port_handle = Some(read_handle);
     
-    // Set block device properties
-    thingsys::prop_set(node_id, keys::SECTOR_SIZE, 2048u64).ok();
-    if port.sector_count > 0 {
-        thingsys::prop_set(node_id, keys::SECTOR_COUNT, port.sector_count).ok();
-    }
+    // Initialize content source
+    let source_id = match initialize_iso_content_source() {
+        Some(s) => s,
+        None => {
+            warn!("AHCI: Failed to create content source");
+            return;
+        }
+    };
     
-    // Convert model to string and set
-    let model_str = core::str::from_utf8(&port.model)
-        .unwrap_or("ATAPI Device")
-        .trim();
-    if let Ok(model_sym) = thingsys::intern(model_str) {
-        thingsys::prop_set(node_id, keys::MODEL, model_sym as u64).ok();
-    }
+    let mut publish_index = PublishIndex::new();
+    let mut stats = ScanStats::default();
+    stats.time_scan_start_ns = get_monotonic_ns();
+    let mut index = 0;
     
-    // Set read port handle (store write handle so clients can send to it)
-    thingsys::prop_set(node_id, keys::READ_PORT_HANDLE, write_handle as u64).ok();
+    // Scan entire disk starting from root
+    let published = scan_and_publish(
+        dev,
+        &fs,
+        host,
+        source_id,
+        fs.pvd.root_dir_extent,
+        fs.pvd.root_dir_size,
+        String::new(), // Start from root prefix
+        &mut index,
+        &mut publish_index,
+        &mut stats,
+    );
+    
+    let elapsed_ns = get_monotonic_ns().saturating_sub(stats.time_scan_start_ns);
+    let elapsed_ms = elapsed_ns / 1_000_000;
     
     info!(
-        "AHCI: Registered ATAPI block device {} port={} model='{}' rpc_port={}",
-        node_id.to_u64_lossy(), port.port_num, model_str, write_handle
+        "AHCI: Disk scan complete - {} files, {} dirs visited, {} published ({} hot-set) in {}ms",
+        stats.files_visited,
+        stats.dirs_visited,
+        published,
+        stats.content_materialized,
+        elapsed_ms
     );
 }
 
@@ -576,7 +952,18 @@ fn main(_arg: usize) -> ! {
             SATA_SIG_ATAPI => {
                 info!("AHCI: Port {} - SATAPI drive (sig=0x{:x})", port_num, sig);
                 
-                // Setup Port
+                // Register SATAPI device
+                let mut port_info = AhciPort {
+                    port_num,
+                    sector_count: 0,
+                    supports_lba48: false,
+                    model: [0u8; 40],
+                    graph_id: 0,
+                };
+                register_atapi_disk(&mut port_info);
+                ports.push(port_info);
+
+                // Setup Port for Scanning
                 stop_port(mapped_base, port_num);
                 let pb = port_base(mapped_base, port_num);
                 mmio_write32(pb, PORT_CLB, clb as u32);
@@ -587,22 +974,14 @@ fn main(_arg: usize) -> ! {
                 mmio_write32(pb, PORT_SERR, 0xFFFFFFFF);
                 start_port(mapped_base, port_num);
 
-                // Register SATAPI device
-                let mut port_info = AhciPort {
-                    port_num,
-                    sector_count: 0,
-                    sector_size: 2048,
-                    supports_lba48: false,
-                    model: [0u8; 40],
-                    serial: [0u8; 20],
-                    graph_id: ThingId::default(),
-                    read_port_handle: None,
+                // Scan boot folder and publish files to graph
+                let atapi_dev = AhciAtapiDevice {
                     mmio_base: mapped_base,
+                    port: port_num,
                     dma_virt,
                     dma_phys,
                 };
-                register_atapi_disk(&mut port_info);
-                ports.push(port_info);
+                scan_whole_disk(&atapi_dev);
 
                 stop_port(mapped_base, port_num);
                 continue;
@@ -643,15 +1022,9 @@ fn main(_arg: usize) -> ! {
         let mut port_info = AhciPort {
             port_num,
             sector_count: 0, // Unknown - would need IDENTIFY
-            sector_size: 512,
             supports_lba48: false,
             model: [0u8; 40],
-            serial: [0u8; 20],
-            graph_id: ThingId::default(),
-            read_port_handle: None,
-            mmio_base: mapped_base,
-            dma_virt,
-            dma_phys,
+            graph_id: 0,
         };
         register_disk(&mut port_info);
         ports.push(port_info);
@@ -665,188 +1038,8 @@ fn main(_arg: usize) -> ! {
         info!("AHCI: Found {} SATA disk(s)", ports.len());
     }
 
-    info!("AHCI: Entering RPC service loop");
-    
-    // Collect all port handles for waiting on requests
-    let handles: Vec<PortHandle> = ports.iter()
-        .filter_map(|p| p.read_port_handle)
-        .collect();
-    
-    if handles.is_empty() {
-        info!("AHCI: No active ports to service");
-        loop {
-            stem::sleep(Duration::from_secs(60));
-        }
-    }
-    
-    // Main service loop
+    info!("AHCI: Entering service loop");
     loop {
-        // Wait for a request on any port (blocking)
-        let ready_handle = match stem::syscall::port::port_wait(&handles) {
-            Ok(h) => h,
-            Err(e) => {
-                error!("AHCI: port_wait failed: {:?}", e);
-                stem::sleep(Duration::from_millis(100));
-                continue;
-            }
-        };
-        
-        // Find the port that has data
-        for port in &mut ports {
-            if port.read_port_handle == Some(ready_handle) {
-                let mut buf = [0u8; 4096];
-                
-                match port_recv(ready_handle, &mut buf) {
-                    Ok(len) if len > 0 => {
-                        handle_block_device_request(port, &buf[..len], ready_handle);
-                    }
-                    Ok(_) => {} // No data
-                    Err(e) => {
-                        error!("AHCI: port_recv failed: {:?}", e);
-                    }
-                }
-                break;
-            }
-        }
-    }
-}
-
-/// Handle a block device RPC request
-fn handle_block_device_request(port: &AhciPort, request_data: &[u8], port_handle: PortHandle) {
-    if request_data.is_empty() {
-        send_error_response(port_handle, BlockDeviceError::InvalidParam);
-        return;
-    }
-    
-    let request_type = request_data[0];
-    
-    match request_type {
-        0 => handle_identify(port, port_handle),
-        1 => handle_read(port, &request_data[1..], port_handle),
-        2 => send_error_response(port_handle, BlockDeviceError::NotSupported), // Write not supported
-        3 => send_error_response(port_handle, BlockDeviceError::NotSupported), // Flush not supported
-        _ => send_error_response(port_handle, BlockDeviceError::InvalidParam),
-    }
-}
-
-/// Handle Identify request
-fn handle_identify(port: &AhciPort, port_handle: PortHandle) {
-    let response = IdentifyResponse {
-        sector_size: port.sector_size,
-        sector_count: port.sector_count,
-        model: port.model,
-        serial: port.serial,
-        flags: if port.supports_lba48 { device_flags::LBA48 } else { 0 },
-    };
-    
-    let mut response_buf = [0u8; core::mem::size_of::<IdentifyResponse>() + 1];
-    response_buf[0] = BlockDeviceResponse::Ok as u8;
-    
-    unsafe {
-        core::ptr::copy_nonoverlapping(
-            &response as *const _ as *const u8,
-            response_buf[1..].as_mut_ptr(),
-            core::mem::size_of::<IdentifyResponse>(),
-        );
-    }
-    
-    if let Err(e) = port_send(port_handle, &response_buf) {
-        error!("AHCI: Failed to send Identify response: {:?}", e);
-    }
-}
-
-/// Handle Read request
-fn handle_read(port: &AhciPort, request_data: &[u8], port_handle: PortHandle) {
-    if request_data.len() < core::mem::size_of::<ReadRequest>() {
-        send_error_response(port_handle, BlockDeviceError::InvalidParam);
-        return;
-    }
-    
-    let req: ReadRequest = unsafe {
-        core::ptr::read_unaligned(request_data.as_ptr() as *const ReadRequest)
-    };
-    
-    // Validate request
-    if req.sector_count == 0 || req.sector_count > 256 {
-        send_error_response(port_handle, BlockDeviceError::InvalidParam);
-        return;
-    }
-    
-    if port.sector_count > 0 && req.lba.saturating_add(req.sector_count as u64) > port.sector_count {
-        send_error_response(port_handle, BlockDeviceError::OutOfRange);
-        return;
-    }
-    
-    // Create block device wrapper for reading
-    if port.sector_size == 2048 {
-        // ATAPI device
-        let atapi_dev = AhciAtapiDevice {
-            mmio_base: port.mmio_base,
-            port: port.port_num,
-            dma_virt: port.dma_virt,
-            dma_phys: port.dma_phys,
-        };
-        
-        // Read the data
-        let bytes_to_read = (req.sector_count as usize) * 2048;
-        let mut data = Vec::with_capacity(bytes_to_read);
-        data.resize(bytes_to_read, 0);
-        
-        match atapi_dev.read_sectors(req.lba, req.sector_count as u64, &mut data) {
-            Ok(_) => send_read_response(port_handle, &data),
-            Err(_) => send_error_response(port_handle, BlockDeviceError::IoError),
-        }
-    } else {
-        // ATA device - not fully implemented due to DMA limitations
-        // For now, return error
-        send_error_response(port_handle, BlockDeviceError::NotSupported);
-    }
-}
-
-/// Send a Read success response
-fn send_read_response(port_handle: PortHandle, data: &[u8]) {
-    let header = ReadResponse {
-        data_len: data.len() as u32,
-    };
-    
-    let response_size = 1 + core::mem::size_of::<ReadResponse>() + data.len();
-    let mut response_buf = Vec::with_capacity(response_size);
-    response_buf.push(BlockDeviceResponse::Ok as u8);
-    
-    unsafe {
-        let header_bytes = core::slice::from_raw_parts(
-            &header as *const _ as *const u8,
-            core::mem::size_of::<ReadResponse>(),
-        );
-        response_buf.extend_from_slice(header_bytes);
-    }
-    
-    response_buf.extend_from_slice(data);
-    
-    if let Err(e) = port_send(port_handle, &response_buf) {
-        error!("AHCI: Failed to send Read response: {:?}", e);
-    }
-}
-
-/// Send an error response
-fn send_error_response(port_handle: PortHandle, error_code: BlockDeviceError) {
-    let error_resp = ErrorResponse {
-        error_code: error_code as u8,
-        _reserved: [0; 3],
-    };
-    
-    let mut response_buf = [0u8; 1 + core::mem::size_of::<ErrorResponse>()];
-    response_buf[0] = BlockDeviceResponse::Error as u8;
-    
-    unsafe {
-        core::ptr::copy_nonoverlapping(
-            &error_resp as *const _ as *const u8,
-            response_buf[1..].as_mut_ptr(),
-            core::mem::size_of::<ErrorResponse>(),
-        );
-    }
-    
-    if let Err(e) = port_send(port_handle, &response_buf) {
-        error!("AHCI: Failed to send Error response: {:?}", e);
+        stem::sleep(Duration::from_secs(60));
     }
 }

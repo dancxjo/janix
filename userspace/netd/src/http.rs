@@ -8,7 +8,7 @@ use smoltcp::socket::tcp::{self, Socket as TcpSocket, SocketBuffer};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
-use crate::smol_device::ThingNicDevice;
+use crate::smol_device::VirtioNicDevice;
 
 #[derive(Debug)]
 pub enum HttpError {
@@ -25,7 +25,7 @@ pub struct HttpResponse {
 
 pub fn http_get(
     iface: &mut Interface,
-    device: &mut ThingNicDevice,
+    device: &mut VirtioNicDevice<'_>,
     ip: Ipv4Address,
     host: &str,
     path: &str,
@@ -48,7 +48,7 @@ pub fn http_get(
 
     stem::info!("HTTP: Connecting to {}:80 (from port {})", ip, local_port);
 
-    let start = ThingNicDevice::now();
+    let start = VirtioNicDevice::now();
     let timeout = start + Duration::from_secs(30);
 
     // Connect
@@ -67,7 +67,7 @@ pub fn http_get(
     let mut chunked = false;
 
     loop {
-        let now = ThingNicDevice::now();
+        let now = VirtioNicDevice::now();
         if now > timeout {
             return Err(HttpError::Timeout);
         }

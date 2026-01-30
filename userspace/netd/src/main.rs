@@ -4,7 +4,7 @@
 //! # Network Service (netd)
 //!
 //! Provides networking capabilities using smoltcp TCP/IP stack.
-//! - Connects to virtio-net NIC via syscalls
+//! - Uses userspace VirtIO-NET driver directly
 //! - Runs DHCP to acquire IP address
 //! - Performs DNS lookups
 //! - HTTP client for fetching web content
@@ -17,26 +17,37 @@ mod dns;
 mod graph_sink;
 mod http;
 mod smol_device;
+mod virtio_net;
 
 use alloc::format;
-use smol_device::ThingNicDevice;
+use smol_device::VirtioNicDevice;
 use smoltcp::iface::{Config, Interface};
 use smoltcp::wire::EthernetAddress;
 use stem::{info, warn};
+use virtio_net::VirtioNetDriver;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
     info!("NETD: Starting network service...");
 
-    // Get MAC address from NIC
-    let mut mac_buf = [0u8; 6];
-    if let Err(_) = stem::pal::net::nic_mac(&mut mac_buf) {
-        warn!("NETD: Failed to get MAC address, no NIC available");
-        loop {
-            stem::time::sleep_ms(1000);
+    // Initialize VirtIO-NET driver using find_and_claim
+    info!("NETD: Initializing VirtIO-NET driver...");
+    
+    let mut driver = match VirtioNetDriver::find_and_claim() {
+        Ok(d) => {
+            info!("NETD: VirtIO-NET driver initialized successfully");
+            d
         }
-    }
+        Err(e) => {
+            warn!("NETD: Failed to initialize VirtIO-NET driver: {:?}", e);
+            loop {
+                stem::time::sleep_ms(1000);
+            }
+        }
+    };
 
+    // Get MAC address from driver
+    let mac_buf = driver.mac();
     info!(
         "NETD: MAC address: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
         mac_buf[0], mac_buf[1], mac_buf[2], mac_buf[3], mac_buf[4], mac_buf[5]
@@ -45,21 +56,19 @@ fn main(_arg: usize) -> ! {
     // Wait for link up
     info!("NETD: Waiting for link...");
     loop {
-        if let Ok(link) = stem::pal::net::nic_link_up() {
-            if link {
-                info!("NETD: Link is up");
-                break;
-            }
+        if driver.link_up() {
+            info!("NETD: Link is up");
+            break;
         }
         stem::time::sleep_ms(100);
     }
 
     // Create smoltcp interface
     let mac_addr = EthernetAddress(mac_buf);
-    let mut device = ThingNicDevice::new();
+    let mut device = VirtioNicDevice::new(&mut driver);
     
     let config = Config::new(mac_addr.into());
-    let mut iface = Interface::new(config, &mut device, ThingNicDevice::now());
+    let mut iface = Interface::new(config, &mut device, VirtioNicDevice::now());
     
     // Start DHCP
     info!("NETD: Starting DHCP...");

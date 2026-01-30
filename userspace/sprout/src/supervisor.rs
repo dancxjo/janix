@@ -41,6 +41,9 @@ impl Supervisor {
         // 3.5. Setup keyboard pipeline
         crate::pipelines::setup_input_pipeline(&mut self.tasks, display_handles);
 
+        // 3.6. Setup network pipeline
+        crate::pipelines::setup_network_pipeline(&mut self.tasks);
+
         // 4. Loop
         info!("SPROUT: Entering supervisor loop.");
 

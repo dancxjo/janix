@@ -376,3 +376,39 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
 
     info!("SPROUT: Input pipeline ready (keyboard + mouse)");
 }
+
+/// Set up network pipeline - find NIC devices and spawn netd
+pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: Setting up network pipeline...");
+
+    // Check for VirtIO NIC device
+    let mut nic_buf = [ThingId::default(); 1];
+    if let Ok(count) = thingsys::find(kinds::DEV_NET_NIC, &mut nic_buf) {
+        if count > 0 {
+            let nic = nic_buf[0];
+            info!("SPROUT: Found NIC device {:?}", nic);
+
+            // Spawn netd - it will claim and initialize the NIC itself
+            match stem::syscall::spawn_process("/netd", nic.to_u64_lossy() as usize) {
+                Ok(pid) => {
+                    info!("SPROUT: Spawned netd (PID={})", pid);
+                    let _ = stem::thread::set_priority(pid, 1);
+                    tasks.push(ManagedTask {
+                        name: "/netd".to_string(),
+                        kind: TaskKind::Driver("dev.net".to_string()),
+                        module_path: "/netd".to_string(),
+                        pid: Some(pid),
+                        restarts: 0,
+                    });
+                }
+                Err(e) => {
+                    warn!("SPROUT: Failed to spawn netd: {:?}", e);
+                }
+            }
+        } else {
+            info!("SPROUT: No NIC device found, skipping network pipeline");
+        }
+    } else {
+        info!("SPROUT: No NIC device found, skipping network pipeline");
+    }
+}

@@ -1,11 +1,12 @@
 [package]
 name = "netd"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
-stem = { path = "../../stem", features = ["rt"] }
+stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
 abi = { path = "../../abi" }
+virtio = { path = "../virtio" }
 smoltcp = { version = "0.11", default-features = false, features = [
     "proto-ipv4",
     "proto-dhcpv4",
@@ -13,5 +14,5 @@ smoltcp = { version = "0.11", default-features = false, features = [
     "socket-tcp",
     "socket-dhcpv4",
     "medium-ethernet",
+    "alloc",
 ] }
-

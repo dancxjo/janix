@@ -1,12 +1,12 @@
 //! DHCPv4 client using smoltcp
 
-use alloc::vec::Vec;
 use smoltcp::iface::Interface;
+use smoltcp::phy::Device;
 use smoltcp::socket::dhcpv4::{Socket as Dhcpv4Socket, Event};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::Ipv4Address;
 
-use crate::smol_device::ThingNicDevice;
+use crate::smol_device::VirtioNicDevice;
 
 #[derive(Debug)]
 #[allow(dead_code)]
@@ -23,7 +23,7 @@ pub struct DhcpConfig {
 
 pub fn run_dhcp(
     iface: &mut Interface,
-    device: &mut ThingNicDevice,
+    device: &mut VirtioNicDevice<'_>,
 ) -> Result<DhcpConfig, DhcpError> {
     let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
@@ -33,11 +33,11 @@ pub fn run_dhcp(
 
     stem::info!("DHCP: Starting discovery...");
 
-    let start = ThingNicDevice::now();
+    let start = VirtioNicDevice::now();
     let timeout = start + Duration::from_secs(30);
 
     loop {
-        let now = ThingNicDevice::now();
+        let now = VirtioNicDevice::now();
         if now > timeout {
             return Err(DhcpError::Timeout);
         }

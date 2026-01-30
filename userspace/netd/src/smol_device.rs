@@ -1,16 +1,21 @@
-//! smoltcp Device trait implementation for Thing-OS NIC
+//! smoltcp Device trait implementation for VirtIO-NET
+//!
+//! Uses the userspace VirtioNetDriver for packet TX/RX
 
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
+use crate::virtio_net::VirtioNetDriver;
 
-pub struct ThingNicDevice {
+pub struct VirtioNicDevice<'a> {
+    driver: &'a mut VirtioNetDriver,
     rx_buffer: [u8; 2048],
     rx_len: usize,
 }
 
-impl ThingNicDevice {
-    pub fn new() -> Self {
+impl<'a> VirtioNicDevice<'a> {
+    pub fn new(driver: &'a mut VirtioNetDriver) -> Self {
         Self {
+            driver,
             rx_buffer: [0u8; 2048],
             rx_len: 0,
         }
@@ -21,28 +26,35 @@ impl ThingNicDevice {
     }
 }
 
-impl Device for ThingNicDevice {
-    type RxToken<'a> = RxToken<'a>;
-    type TxToken<'a> = TxToken;
+impl<'a> Device for VirtioNicDevice<'a> {
+    type RxToken<'b> = RxToken<'b> where Self: 'b;
+    type TxToken<'b> = TxToken<'b> where Self: 'b;
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
-        // Poll for RX frame
-        match stem::pal::net::nic_poll_rx(&mut self.rx_buffer) {
-            Ok(len) if len > 0 => {
-                self.rx_len = len;
-                Some((
-                    RxToken {
-                        buffer: &self.rx_buffer[..len],
-                    },
-                    TxToken,
-                ))
-            }
-            _ => None,
+        // Poll for RX frame from VirtIO driver
+        if let Some(data) = self.driver.poll_rx() {
+            // Copy to local buffer
+            let len = data.len().min(self.rx_buffer.len());
+            self.rx_buffer[..len].copy_from_slice(&data[..len]);
+            self.rx_len = len;
+            
+            Some((
+                RxToken {
+                    buffer: &self.rx_buffer[..self.rx_len],
+                },
+                TxToken {
+                    driver: self.driver,
+                },
+            ))
+        } else {
+            None
         }
     }
 
     fn transmit(&mut self, _timestamp: Instant) -> Option<Self::TxToken<'_>> {
-        Some(TxToken)
+        Some(TxToken {
+            driver: self.driver,
+        })
     }
 
     fn capabilities(&self) -> DeviceCapabilities {
@@ -70,16 +82,18 @@ impl<'a> phy::RxToken for RxToken<'a> {
     }
 }
 
-pub struct TxToken;
+pub struct TxToken<'a> {
+    driver: &'a mut VirtioNetDriver,
+}
 
-impl phy::TxToken for TxToken {
+impl<'a> phy::TxToken for TxToken<'a> {
     fn consume<R, F>(self, len: usize, f: F) -> R
     where
         F: FnOnce(&mut [u8]) -> R,
     {
         let mut buffer = [0u8; 2048];
         let result = f(&mut buffer[..len]);
-        let _ = stem::pal::net::nic_tx(&buffer[..len]);
+        let _ = self.driver.tx(&buffer[..len]);
         result
     }
 }

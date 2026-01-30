@@ -8,12 +8,17 @@
 
 extern crate alloc;
 
+use alloc::vec;
 use alloc::vec::Vec;
 use core::time::Duration;
+use stem::abi::block_device_protocol::*;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
+use stem::abi::schema::kinds;
+use stem::syscall::port::{port_create, port_recv, port_send, port_wait, PortHandle};
 use stem::syscall::{ioport_read, ioport_write};
 use stem::thing::sys as thingsys;
-use stem::{error, info, warn};
+use stem::thing::ThingId;
+use stem::{error, info};
 
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]
@@ -62,21 +67,28 @@ const ATA_SR_DRQ: u8 = 0x08;
 const ATA_SR_ERR: u8 = 0x01;
 
 struct AtaDisk {
-    graph_id: u64,
+    graph_id: ThingId,
     io_base: u16,
     is_slave: bool,
     sector_count: u64,
+    sector_size: u32,
     supports_lba48: bool,
     model: [u8; 40],
+    serial: [u8; 20],
+    read_port_handle: Option<PortHandle>,
 }
 
 /// ATAPI (CD-ROM) device
 struct AtapiDevice {
-    graph_id: u64,
+    graph_id: ThingId,
     io_base: u16,
     ctrl_base: u16,
     is_slave: bool,
+    sector_size: u32,
+    sector_count: u64,
     model: [u8; 40],
+    serial: [u8; 20],
+    read_port_handle: Option<PortHandle>,
 }
 
 fn ata_inb(port: u16) -> u8 {
@@ -182,12 +194,15 @@ fn identify_drive(io_base: u16, ctrl_base: u16, is_slave: bool) -> Option<AtaDis
     }
 
     Some(AtaDisk {
-        graph_id: 0,
+        graph_id: ThingId::default(),
         io_base,
         is_slave,
         sector_count,
+        sector_size: 512,
         supports_lba48,
         model,
+        serial: [0u8; 20],
+        read_port_handle: None,
     })
 }
 
@@ -260,7 +275,9 @@ fn read_sectors(
 }
 
 fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
-    let disk_id = match thingsys::create_node("dev.storage.Disk") {
+    use stem::abi::schema::keys;
+    
+    let disk_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
         Ok(id) => id,
         Err(e) => {
             error!("ATA_DISK: Failed to create node: {:?}", e);
@@ -268,23 +285,41 @@ fn register_disk(disk: &mut AtaDisk, channel: &str, drive: &str) {
         }
     };
 
-    disk.graph_id = disk_id.to_u64_lossy();
-    thingsys::prop_set(disk_id, "sector_size", 512u64).ok();
-    thingsys::prop_set(disk_id, "sector_count", disk.sector_count).ok();
+    disk.graph_id = disk_id;
+    
+    // Create RPC port for block device service (4KB buffer)
+    let (write_handle, read_handle) = match port_create(4096) {
+        Ok(handles) => handles,
+        Err(e) => {
+            error!("ATA_DISK: Failed to create port: {:?}", e);
+            return;
+        }
+    };
+    disk.read_port_handle = Some(read_handle);
+    
+    // Set block device properties
+    thingsys::prop_set(disk_id, keys::SECTOR_SIZE, disk.sector_size as u64).ok();
+    thingsys::prop_set(disk_id, keys::SECTOR_COUNT, disk.sector_count).ok();
     thingsys::prop_set(
         disk_id,
-        "lba48",
+        keys::LBA48,
         if disk.supports_lba48 { 1u64 } else { 0u64 },
-    )
-    .ok();
-    thingsys::prop_set(disk_id, "interface", 0u64).ok(); // 0 = ATA
-
+    ).ok();
+    
+    // Convert model to string and set
     let model_str = core::str::from_utf8(&disk.model)
         .unwrap_or("Unknown")
         .trim();
+    if let Ok(model_sym) = thingsys::intern(model_str) {
+        thingsys::prop_set(disk_id, keys::MODEL, model_sym as u64).ok();
+    }
+    
+    // Publish write handle for clients to send requests to
+    thingsys::prop_set(disk_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
+    
     info!(
-        "ATA_DISK: Registered disk {} ch={} drv={} sectors={} lba48={} model='{}'",
-        disk.graph_id, channel, drive, disk.sector_count, disk.supports_lba48, model_str
+        "ATA_DISK: Registered disk {} ch={} drv={} sectors={} lba48={} model='{}' rpc_port={}",
+        disk_id.to_u64_lossy(), channel, drive, disk.sector_count, disk.supports_lba48, model_str, write_handle
     );
 }
 
@@ -357,11 +392,15 @@ fn identify_atapi(io_base: u16, ctrl_base: u16, is_slave: bool) -> Option<AtapiD
     }
 
     Some(AtapiDevice {
-        graph_id: 0,
+        graph_id: ThingId::default(),
         io_base,
         ctrl_base,
         is_slave,
+        sector_size: 2048,
+        sector_count: 0,
         model,
+        serial: [0u8; 20],
+        read_port_handle: None,
     })
 }
 
@@ -464,7 +503,9 @@ fn ata_outw(port: u16, val: u16) {
 }
 
 fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
-    let node_id = match thingsys::create_node("dev.storage.Cdrom") {
+    use stem::abi::schema::keys;
+    
+    let node_id = match thingsys::create_node(kinds::DEV_STORAGE_BLOCK_DEVICE) {
         Ok(id) => id,
         Err(e) => {
             error!("ATA_DISK: Failed to create ATAPI node: {:?}", e);
@@ -472,84 +513,39 @@ fn register_atapi(dev: &mut AtapiDevice, channel: &str, drive: &str) {
         }
     };
 
-    dev.graph_id = node_id.to_u64_lossy();
-    thingsys::prop_set(node_id, "sector_size", ATAPI_SECTOR_SIZE).ok();
-    thingsys::prop_set(node_id, "interface", 2u64).ok(); // 2 = ATAPI
-    thingsys::prop_set(node_id, "io_base", dev.io_base as u64).ok();
-    thingsys::prop_set(node_id, "is_slave", if dev.is_slave { 1u64 } else { 0u64 }).ok();
-
-    let model_str = core::str::from_utf8(&dev.model).unwrap_or("Unknown").trim();
+    dev.graph_id = node_id;
+    
+    // Create RPC port for block device service (4KB buffer)
+    let (write_handle, read_handle) = match port_create(4096) {
+        Ok(handles) => handles,
+        Err(e) => {
+            error!("ATA_DISK: Failed to create port: {:?}", e);
+            return;
+        }
+    };
+    dev.read_port_handle = Some(read_handle);
+    
+    // Set block device properties
+    thingsys::prop_set(node_id, keys::SECTOR_SIZE, dev.sector_size as u64).ok();
+    if dev.sector_count > 0 {
+        thingsys::prop_set(node_id, keys::SECTOR_COUNT, dev.sector_count).ok();
+    }
+    
+    // Convert model to string and set
+    let model_str = core::str::from_utf8(&dev.model)
+        .unwrap_or("ATAPI Device")
+        .trim();
+    if let Ok(model_sym) = thingsys::intern(model_str) {
+        thingsys::prop_set(node_id, keys::MODEL, model_sym as u64).ok();
+    }
+    
+    // Publish write handle for clients to send requests to
+    thingsys::prop_set(node_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
+    
     info!(
-        "ATA_DISK: Registered ATAPI {} ch={} drv={} model='{}'",
-        dev.graph_id, channel, drive, model_str
+        "ATA_DISK: Registered ATAPI {} ch={} drv={} model='{}' rpc_port={}",
+        node_id.to_u64_lossy(), channel, drive, model_str, write_handle
     );
-}
-
-/// Check if an ATAPI device contains an ISO9660 filesystem
-fn check_iso9660(dev: &AtapiDevice) -> bool {
-    let mut buf = [0u8; 2048];
-    // Read sector 16 (Primary Volume Descriptor location)
-    match atapi_read_sectors(dev, 16, 1, &mut buf) {
-        Ok(_) => {
-            // Check for "CD001" signature at offset 1
-            if &buf[1..6] == b"CD001" {
-                info!("ATA_DISK: ISO9660 PVD found on ATAPI device");
-                return true;
-            }
-        }
-        Err(e) => {
-            warn!("ATA_DISK: Failed to read PVD: {}", e);
-        }
-    }
-    false
-}
-
-fn hexdump_sector(data: &[u8], max_bytes: usize) {
-    let len = data.len().min(max_bytes);
-    let mut line = [0u8; 64];
-    let mut pos = 0;
-
-    for (i, byte) in data[..len].iter().enumerate() {
-        if i > 0 && i % 16 == 0 {
-            if let Ok(s) = core::str::from_utf8(&line[..pos]) {
-                info!("ATA_DISK: {}", s);
-            }
-            pos = 0;
-        }
-        let hi = (*byte >> 4) & 0xF;
-        let lo = *byte & 0xF;
-        let hex_chars = b"0123456789ABCDEF";
-        if pos + 3 < line.len() {
-            line[pos] = hex_chars[hi as usize];
-            line[pos + 1] = hex_chars[lo as usize];
-            line[pos + 2] = b' ';
-            pos += 3;
-        }
-    }
-    if pos > 0 {
-        if let Ok(s) = core::str::from_utf8(&line[..pos]) {
-            info!("ATA_DISK: {}", s);
-        }
-    }
-}
-
-fn demo_read_sector0(disk: &AtaDisk) {
-    let mut buf = [0u8; 512];
-    match read_sectors(disk, 0, 1, &mut buf) {
-        Ok(bytes) => {
-            info!("ATA_DISK: Read sector 0 ({} bytes)", bytes);
-            hexdump_sector(&buf, 64);
-            if buf[510] == 0x55 && buf[511] == 0xAA {
-                info!("ATA_DISK: MBR signature detected (0x55AA)");
-            }
-            if buf[0x1C2] == 0xEE {
-                info!("ATA_DISK: GPT protective MBR detected (type 0xEE)");
-            }
-        }
-        Err(e) => {
-            warn!("ATA_DISK: Failed to read sector 0: {}", e);
-        }
-    }
 }
 
 #[stem::main]
@@ -610,25 +606,275 @@ fn main(_arg: usize) -> ! {
         atapi_devs.len()
     );
 
-    if !disks.is_empty() {
-        info!("ATA_DISK: Demo - reading sector 0 from first ATA disk");
-        demo_read_sector0(&disks[0]);
-    }
-
-    // Check ATAPI devices for ISO9660
-    for dev in &atapi_devs {
-        if check_iso9660(dev) {
-            info!(
-                "ATA_DISK: ATAPI device {} contains ISO9660 filesystem",
-                dev.graph_id
-            );
+    info!("ATA_DISK: Entering RPC service loop");
+    
+    // Collect all port handles for waiting on requests
+    let mut handles: Vec<PortHandle> = Vec::new();
+    for disk in &disks {
+        if let Some(h) = disk.read_port_handle {
+            handles.push(h);
         }
     }
-
-    info!("ATA_DISK: Entering service loop");
-
-    // Keep alive so disk Things remain in graph
+    for dev in &atapi_devs {
+        if let Some(h) = dev.read_port_handle {
+            handles.push(h);
+        }
+    }
+    
+    if handles.is_empty() {
+        info!("ATA_DISK: No active devices to service");
+        loop {
+            stem::sleep(Duration::from_secs(60));
+        }
+    }
+    
+    // Main service loop
     loop {
-        stem::sleep(Duration::from_secs(60));
+        // Wait for a request on any port (blocking)
+        let ready_handle = match port_wait(&handles) {
+            Ok(h) => h,
+            Err(e) => {
+                error!("ATA_DISK: port_wait failed: {:?}", e);
+                stem::sleep(Duration::from_millis(100));
+                continue;
+            }
+        };
+        
+        // Find the device that has data
+        let mut found = false;
+        for disk in &disks {
+            if disk.read_port_handle == Some(ready_handle) {
+                let mut buf = [0u8; 4096];
+                match port_recv(ready_handle, &mut buf) {
+                    Ok(len) if len > 0 => {
+                        handle_ata_request(disk, &buf[..len], ready_handle);
+                    }
+                    Ok(_) => {} // No data
+                    Err(e) => {
+                        error!("ATA_DISK: port_recv failed: {:?}", e);
+                    }
+                }
+                found = true;
+                break;
+            }
+        }
+        
+        if !found {
+            for dev in &atapi_devs {
+                if dev.read_port_handle == Some(ready_handle) {
+                    let mut buf = [0u8; 4096];
+                    match port_recv(ready_handle, &mut buf) {
+                        Ok(len) if len > 0 => {
+                            handle_atapi_request(dev, &buf[..len], ready_handle);
+                        }
+                        Ok(_) => {} // No data
+                        Err(e) => {
+                            error!("ATA_DISK: port_recv failed: {:?}", e);
+                        }
+                    }
+                    break;
+                }
+            }
+        }
+    }
+}
+
+/// Handle a block device RPC request for ATA disk
+fn handle_ata_request(disk: &AtaDisk, request_data: &[u8], port_handle: PortHandle) {
+    if request_data.is_empty() {
+        send_error_response(port_handle, BlockDeviceError::InvalidParam);
+        return;
+    }
+    
+    let request_type = request_data[0];
+    
+    match request_type {
+        0 => handle_ata_identify(disk, port_handle),
+        1 => handle_ata_read(disk, &request_data[1..], port_handle),
+        2 => send_error_response(port_handle, BlockDeviceError::NotSupported), // Write not supported
+        3 => send_error_response(port_handle, BlockDeviceError::NotSupported), // Flush not supported
+        _ => send_error_response(port_handle, BlockDeviceError::InvalidParam),
+    }
+}
+
+/// Handle Identify request for ATA disk
+fn handle_ata_identify(disk: &AtaDisk, port_handle: PortHandle) {
+    let response = IdentifyResponse {
+        sector_size: disk.sector_size,
+        sector_count: disk.sector_count,
+        model: disk.model,
+        serial: disk.serial,
+        flags: if disk.supports_lba48 { device_flags::LBA48 } else { 0 },
+    };
+    
+    let mut response_buf = [0u8; core::mem::size_of::<IdentifyResponse>() + 1];
+    response_buf[0] = BlockDeviceResponse::Ok as u8;
+    
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            &response as *const _ as *const u8,
+            response_buf[1..].as_mut_ptr(),
+            core::mem::size_of::<IdentifyResponse>(),
+        );
+    }
+    
+    if let Err(e) = port_send(port_handle, &response_buf) {
+        error!("ATA_DISK: Failed to send Identify response: {:?}", e);
+    }
+}
+
+/// Handle Read request for ATA disk
+fn handle_ata_read(disk: &AtaDisk, request_data: &[u8], port_handle: PortHandle) {
+    if request_data.len() < core::mem::size_of::<ReadRequest>() {
+        send_error_response(port_handle, BlockDeviceError::InvalidParam);
+        return;
+    }
+    
+    let req: ReadRequest = unsafe {
+        core::ptr::read_unaligned(request_data.as_ptr() as *const ReadRequest)
+    };
+    
+    // Validate sector count (max 7 sectors of 512 bytes to fit in 4KB port buffer)
+    if req.sector_count == 0 || req.sector_count > 7 {
+        send_error_response(port_handle, BlockDeviceError::InvalidParam);
+        return;
+    }
+    
+    if disk.sector_count > 0 && req.lba.saturating_add(req.sector_count as u64) > disk.sector_count {
+        send_error_response(port_handle, BlockDeviceError::OutOfRange);
+        return;
+    }
+    
+    // Read the data
+    let bytes_to_read = (req.sector_count as usize) * 512;
+    let mut data = vec![0u8; bytes_to_read];
+    
+    match read_sectors(disk, req.lba, req.sector_count as u16, &mut data) {
+        Ok(_) => send_read_response(port_handle, &data),
+        Err(_) => send_error_response(port_handle, BlockDeviceError::IoError),
+    }
+}
+
+/// Handle a block device RPC request for ATAPI device
+fn handle_atapi_request(dev: &AtapiDevice, request_data: &[u8], port_handle: PortHandle) {
+    if request_data.is_empty() {
+        send_error_response(port_handle, BlockDeviceError::InvalidParam);
+        return;
+    }
+    
+    let request_type = request_data[0];
+    
+    match request_type {
+        0 => handle_atapi_identify(dev, port_handle),
+        1 => handle_atapi_read(dev, &request_data[1..], port_handle),
+        2 => send_error_response(port_handle, BlockDeviceError::NotSupported), // Write not supported
+        3 => send_error_response(port_handle, BlockDeviceError::NotSupported), // Flush not supported
+        _ => send_error_response(port_handle, BlockDeviceError::InvalidParam),
+    }
+}
+
+/// Handle Identify request for ATAPI device
+fn handle_atapi_identify(dev: &AtapiDevice, port_handle: PortHandle) {
+    let response = IdentifyResponse {
+        sector_size: dev.sector_size,
+        sector_count: dev.sector_count,
+        model: dev.model,
+        serial: dev.serial,
+        flags: 0,
+    };
+    
+    let mut response_buf = [0u8; core::mem::size_of::<IdentifyResponse>() + 1];
+    response_buf[0] = BlockDeviceResponse::Ok as u8;
+    
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            &response as *const _ as *const u8,
+            response_buf[1..].as_mut_ptr(),
+            core::mem::size_of::<IdentifyResponse>(),
+        );
+    }
+    
+    if let Err(e) = port_send(port_handle, &response_buf) {
+        error!("ATA_DISK: Failed to send Identify response: {:?}", e);
+    }
+}
+
+/// Handle Read request for ATAPI device
+fn handle_atapi_read(dev: &AtapiDevice, request_data: &[u8], port_handle: PortHandle) {
+    if request_data.len() < core::mem::size_of::<ReadRequest>() {
+        send_error_response(port_handle, BlockDeviceError::InvalidParam);
+        return;
+    }
+    
+    let req: ReadRequest = unsafe {
+        core::ptr::read_unaligned(request_data.as_ptr() as *const ReadRequest)
+    };
+    
+    // Validate sector count (max 1 sector of 2048 bytes to fit in 4KB port buffer)
+    if req.sector_count == 0 || req.sector_count > 1 {
+        send_error_response(port_handle, BlockDeviceError::InvalidParam);
+        return;
+    }
+    
+    if dev.sector_count > 0 && req.lba.saturating_add(req.sector_count as u64) > dev.sector_count {
+        send_error_response(port_handle, BlockDeviceError::OutOfRange);
+        return;
+    }
+    
+    // Read the data
+    let bytes_to_read = (req.sector_count as usize) * 2048;
+    let mut data = vec![0u8; bytes_to_read];
+    
+    match atapi_read_sectors(dev, req.lba, req.sector_count, &mut data) {
+        Ok(_) => send_read_response(port_handle, &data),
+        Err(_) => send_error_response(port_handle, BlockDeviceError::IoError),
+    }
+}
+
+/// Send a Read success response
+fn send_read_response(port_handle: PortHandle, data: &[u8]) {
+    let header = ReadResponse {
+        data_len: data.len() as u32,
+    };
+    
+    let response_size = 1 + core::mem::size_of::<ReadResponse>() + data.len();
+    let mut response_buf = vec![0u8; response_size];
+    response_buf[0] = BlockDeviceResponse::Ok as u8;
+    
+    unsafe {
+        let header_bytes = core::slice::from_raw_parts(
+            &header as *const _ as *const u8,
+            core::mem::size_of::<ReadResponse>(),
+        );
+        response_buf[1..1+core::mem::size_of::<ReadResponse>()].copy_from_slice(header_bytes);
+    }
+    
+    response_buf[1+core::mem::size_of::<ReadResponse>()..].copy_from_slice(data);
+    
+    if let Err(e) = port_send(port_handle, &response_buf) {
+        error!("ATA_DISK: Failed to send Read response: {:?}", e);
+    }
+}
+
+/// Send an error response
+fn send_error_response(port_handle: PortHandle, error_code: BlockDeviceError) {
+    let error_resp = ErrorResponse {
+        error_code: error_code as u8,
+        _reserved: [0; 3],
+    };
+    
+    let mut response_buf = [0u8; 1 + core::mem::size_of::<ErrorResponse>()];
+    response_buf[0] = BlockDeviceResponse::Error as u8;
+    
+    unsafe {
+        core::ptr::copy_nonoverlapping(
+            &error_resp as *const _ as *const u8,
+            response_buf[1..].as_mut_ptr(),
+            core::mem::size_of::<ErrorResponse>(),
+        );
+    }
+    
+    if let Err(e) = port_send(port_handle, &response_buf) {
+        error!("ATA_DISK: Failed to send Error response: {:?}", e);
     }
 }

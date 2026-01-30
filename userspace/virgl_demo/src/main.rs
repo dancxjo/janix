@@ -322,10 +322,11 @@ fn demo_3d_clear(gpu: &mut VirtioGpu) -> ! {
 
         // Log command details on first frame for diagnostics
         if frame == 0 {
+            let cmd_words = cmds.finish();
             info!("virgl_demo: Submitting virgl command stream:");
             info!("  - ctx_id={}, resource_id={}, format={}", ctx_id, rt_resource_id, format);
-            info!("  - command count={} words ({} bytes)", cmds.finish().len(), cmds.as_bytes().len());
-            info!("  - First 8 command words: {:08x?}", &cmds.finish()[..8.min(cmds.finish().len())]);
+            info!("  - command count={} words ({} bytes)", cmd_words.len(), cmds.as_bytes().len());
+            info!("  - First 8 command words: {:08x?}", &cmd_words[..8.min(cmd_words.len())]);
         }
 
         // Submit command stream
@@ -336,10 +337,13 @@ fn demo_3d_clear(gpu: &mut VirtioGpu) -> ! {
                 }
             }
             Err(e) => {
+                let cmd_words = cmds.finish();
                 info!("virgl_demo: FAIL - submit_3d returned error: {}", e);
                 info!("virgl_demo: Command buffer details:");
                 info!("  - ctx_id={}, resource_id={}, format={}", ctx_id, rt_resource_id, format);
-                info!("  - command words: {:08x?}", cmds.finish());
+                // Limit output to first 32 words to avoid spam
+                let words_to_show = 32.min(cmd_words.len());
+                info!("  - First {} command words: {:08x?}", words_to_show, &cmd_words[..words_to_show]);
                 loop { stem::sleep(Duration::from_secs(1)); }
             }
         }

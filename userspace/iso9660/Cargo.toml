@@ -3,6 +3,10 @@ name = "iso9660"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+# Performance instrumentation and counters
+perf = []
+
 [dependencies]
 stem = { path = "../../stem" }
 abi = { path = "../../abi" }

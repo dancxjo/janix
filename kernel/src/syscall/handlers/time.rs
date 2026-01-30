@@ -50,9 +50,12 @@ pub fn sys_time_monotonic_ns() -> SysResult<usize> {
 }
 
 pub fn sys_time_now() -> SysResult<usize> {
-    // Return system time (monotonic + offset).
-    // If not anchored yet, offset is 0, so this returns monotonic time relative to boot.
-    // We no longer return EAGAIN; callers should check sys.TimeState in the graph if they need wall-clock certainty.
+    // Return system time (wall-clock time).
+    // If not anchored yet, return EAGAIN - callers must wait for RTC anchoring.
+    // For early timing, use sys_time_monotonic_ns instead.
+    if !crate::time::is_anchored() {
+        return Err(abi::errors::Errno::EAGAIN);
+    }
     let rt = crate::runtime_base();
     let ticks = rt.mono_ticks();
     let freq = rt.mono_freq_hz();

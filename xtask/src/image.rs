@@ -126,6 +126,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: false,
             features: vec![],
         },
+        ProgramConfig {
+            name: "netd",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
         // Scheduler fairness test apps
         ProgramConfig {
             name: "scheduler_fairness",

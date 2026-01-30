@@ -38,10 +38,63 @@ mod sniff;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use abi::types::{WatchMode, WatchSpec};
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicBool, Ordering};
 use sha2::{Digest, Sha256};
 use sniff::sniff;
 use stem::thing::ThingId;
+
+/// Flag to track whether initial Limine boot module scan is complete.
+/// Limine modules are immutable, so we skip reprocessing after initial scan.
+static LIMINE_SCAN_COMPLETE: AtomicBool = AtomicBool::new(false);
+
+/// Index key for tracked assets to avoid O(n²) lookup.
+/// Keyed by path only - the canonical identity is the file path, not the source.
+/// This ensures assets from Limine boot modules and ahci_disk are deduplicated correctly.
+#[derive(Clone, Eq, PartialEq, Ord, PartialOrd)]
+struct AssetKey {
+    name_sym: u64, // Interned asset path - the canonical identifier
+}
+
+/// Result of checking deduplication index
+enum DedupeResult {
+    Unchanged(ThingId), // Same hash - skip entirely
+    Updated(ThingId),   // Different hash - update in place
+    New,                // First time seeing this asset
+}
+
+/// Result of publishing an asset
+enum PublishResult {
+    Created(ThingId),
+    Updated(ThingId),
+    Unchanged(ThingId),
+}
+
+/// In-memory index of processed assets for O(log n) deduplication
+struct AssetIndex {
+    by_key: BTreeMap<AssetKey, (ThingId, u64)>, // (asset_id, hash)
+}
+
+impl AssetIndex {
+    fn new() -> Self {
+        Self {
+            by_key: BTreeMap::new(),
+        }
+    }
+
+    fn check(&self, key: &AssetKey, hash: u64) -> DedupeResult {
+        match self.by_key.get(key) {
+            Some((id, existing_hash)) if *existing_hash == hash => DedupeResult::Unchanged(*id),
+            Some((id, _)) => DedupeResult::Updated(*id),
+            None => DedupeResult::New,
+        }
+    }
+
+    fn insert(&mut self, key: AssetKey, id: ThingId, hash: u64) {
+        self.by_key.insert(key, (id, hash));
+    }
+}
 use stem::thing::sys::{
     bytespace_info, bytespace_map, bytespace_unmap, create_node, describe_thing, find, intern,
     prop_get, prop_set,
@@ -54,13 +107,20 @@ use ttf_parser::Face;
 fn main(_arg: usize) -> ! {
     info!("INGESTD: Starting unified content provider service...");
 
+    // Create deduplication index for O(log n) asset lookups
+    let mut asset_index = AssetIndex::new();
+
     // 1. Create ContentSource for Limine modules
     info!("INGESTD: Initializing Limine module content source...");
     let limine_source = initialize_limine_content_source();
 
     // 2. Initial scan of boot modules to seed canonical assets
     info!("INGESTD: Performing initial boot module scan...");
-    scan_boot_modules();
+    scan_boot_modules(&mut asset_index);
+    
+    // Mark Limine as complete - these modules are immutable
+    LIMINE_SCAN_COMPLETE.store(true, Ordering::Release);
+    info!("INGESTD: Limine boot module scan complete (indexed {} assets)", asset_index.by_key.len());
 
     // 3. Seed system assets
     info!("INGESTD: Seeding system assets (reactive)...");
@@ -105,7 +165,7 @@ fn main(_arg: usize) -> ! {
             match syscall::root_watch_next(watch_ids[i], &mut watch_seqs[i], &mut watch_bufs[i]) {
                 Ok(len) if len > 0 => {
                     any_activity = true;
-                    process_events(&watch_bufs[i][..len], limine_source);
+                    process_events(&watch_bufs[i][..len], limine_source, &mut asset_index);
                 }
                 _ => {}
             }
@@ -160,16 +220,16 @@ fn initialize_limine_content_source() -> ThingId {
     }
 }
 
-fn scan_boot_modules() {
+fn scan_boot_modules(index: &mut AssetIndex) {
     let mut modules = [ThingId::default(); 128];
     if let Ok(count) = find(kinds::BOOT_MODULE, &mut modules) {
         for &mod_id in &modules[..count] {
-            ingest_boot_module(mod_id);
+            ingest_boot_module(mod_id, index);
         }
     }
 }
 
-fn process_events(buf: &[u8], _source_id: ThingId) {
+fn process_events(buf: &[u8], _source_id: ThingId, index: &mut AssetIndex) {
     // Note: _source_id reserved for future use when event filtering by source is needed
     let mut cursor = 0;
     while cursor < buf.len() {
@@ -180,25 +240,28 @@ fn process_events(buf: &[u8], _source_id: ThingId) {
                 let subject = header.subject;
                 let kind = prop_get(subject, keys::KIND).unwrap_or(0);
 
-                // BOOT_MODULE kind (we need to intern it to compare)
-                // Actually, the watch filter already limited it to these.
+                // BOOT_MODULE kind - skip after initial scan (Limine is immutable)
                 if let Ok(k_boot) = intern(kinds::BOOT_MODULE) {
                     if kind == k_boot as u64 {
-                        ingest_boot_module(subject);
+                        // Limine modules are immutable - skip after initial scan
+                        if LIMINE_SCAN_COMPLETE.load(Ordering::Acquire) {
+                            continue;
+                        }
+                        ingest_boot_module(subject, index);
                         continue;
                     }
                 }
 
                 if let Ok(k_file) = intern(kinds::CONTENT_FILE) {
                     if kind == k_file as u64 {
-                        ingest_content_file(subject);
+                        ingest_content_file(subject, index);
                         continue;
                     }
                 }
 
                 if let Ok(k_req) = intern(kinds::ASSET_REQUEST) {
                     if kind == k_req as u64 {
-                        fulfill_request(subject);
+                        fulfill_request(subject, index);
                         continue;
                     }
                 }
@@ -216,7 +279,7 @@ fn process_events(buf: &[u8], _source_id: ThingId) {
     }
 }
 
-fn ingest_content_file(file_id: ThingId) {
+fn ingest_content_file(file_id: ThingId, index: &mut AssetIndex) {
     let name_sym = match prop_get(file_id, keys::FILE_NAME) {
         Ok(s) => s,
         Err(_) => return,
@@ -237,6 +300,13 @@ fn ingest_content_file(file_id: ThingId) {
 
     let size = prop_get(file_id, keys::FILE_SIZE).unwrap_or(0) as usize;
     let hash = prop_get(file_id, keys::FILE_HASH).unwrap_or(0);
+    
+    // Quick index check before any content sniffing - avoid I/O for unchanged files
+    let key = AssetKey { name_sym };
+    if let DedupeResult::Unchanged(_) = index.check(&key, hash) {
+        return; // Already processed with same hash - skip entirely
+    }
+    
     let mime_sym = prop_get(file_id, keys::FILE_MIME).unwrap_or(0);
     
     // Map to sniff/validate
@@ -273,10 +343,26 @@ fn ingest_content_file(file_id: ThingId) {
          }
     };
 
-    let asset_id = publish_asset(file_name, kind, bs_id, "disk", size, hash);
-    info!("INGESTD: Ingested file '{}' from disk ({}, {} bytes)", file_name, kind, size);
+    let result = publish_asset(file_name, kind, bs_id, "disk", size, hash, index);
+    
+    // Conditional logging based on result
+    let asset_id = match result {
+        PublishResult::Created(id) => {
+            info!("INGESTD: Ingested file '{}' from disk ({}, {} bytes)", file_name, kind, size);
+            id
+        }
+        PublishResult::Updated(id) => {
+            info!("INGESTD: Updated file '{}' from disk (hash changed)", file_name);
+            id
+        }
+        PublishResult::Unchanged(id) => {
+            // Silent - no logging for unchanged assets
+            let _ = bytespace_unmap(bs_id, ptr);
+            return;
+        }
+    };
 
-    // Metadata enrichment for fonts (duplicate logic, could refactor)
+    // Metadata enrichment for fonts (only for new/updated assets)
     if kind == "font" && !slice.is_empty() {
         if let Ok(face) = Face::parse(slice, 0) {
             let family = face
@@ -304,7 +390,7 @@ fn ingest_content_file(file_id: ThingId) {
     let _ = bytespace_unmap(bs_id, ptr);
 }
 
-fn ingest_boot_module(mod_id: ThingId) {
+fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {
     let mut buf = [0u8; 512];
     let len = match describe_thing(mod_id, &mut buf) {
         Ok(l) => l,
@@ -376,7 +462,24 @@ fn ingest_boot_module(mod_id: ThingId) {
         }
     };
 
-    let asset_id = publish_asset(mod_name, kind, bs_id, "boot", size, hash);
+    let result = publish_asset(mod_name, kind, bs_id, "boot", size, hash, index);
+    
+    // Conditional logging based on result
+    let asset_id = match result {
+        PublishResult::Created(id) => {
+            info!("INGESTD: Published new asset '{}' ({}, {} bytes, hash={:016x})", mod_name, kind, size, hash);
+            id
+        }
+        PublishResult::Updated(id) => {
+            info!("INGESTD: Updated asset '{}' (hash={:016x})", mod_name, hash);
+            id
+        }
+        PublishResult::Unchanged(_) => {
+            // Silent - no logging for unchanged assets
+            let _ = bytespace_unmap(bs_id, ptr);
+            return;
+        }
+    };
     
     // Also create a File node in the content graph for unified access
     // Cache lookup: 16 sources is sufficient for boot-time sources (Limine, ISO, etc.)
@@ -410,6 +513,7 @@ fn ingest_boot_module(mod_id: ThingId) {
         }
     }
     
+    // Font debug logging (only for new assets)
     if mod_name.contains("fonts") || mod_name.ends_with(".ttf") {
         info!(
             "INGESTD: Font debug - name='{}' kind='{}' guess={:?} first4={:02x?}",
@@ -419,7 +523,6 @@ fn ingest_boot_module(mod_id: ThingId) {
             &slice[..4.min(slice.len())]
         );
     }
-    info!("INGESTD: Published asset '{}' ({}, {} bytes, hash={:016x})", mod_name, kind, size, hash);
 
     // Parse and import SVG as XML tree
     if kind == "svg" && !slice.is_empty() {
@@ -550,7 +653,7 @@ fn seed_app_assets(app_id: ThingId) {
     }
 }
 
-fn fulfill_request(req_id: ThingId) {
+fn fulfill_request(req_id: ThingId, index: &mut AssetIndex) {
     // Basic request fulfillment based on name lookup in boot modules
     let name_sym = prop_get(req_id, keys::ASSET_NAME).unwrap_or(0);
     if name_sym == 0 {
@@ -573,7 +676,7 @@ fn fulfill_request(req_id: ThingId) {
                         // This is a bit weak but fits the current graph model.
                         if let Ok(m_sym) = intern(mod_name) {
                             if m_sym as u64 == name_sym {
-                                ingest_boot_module(mod_id);
+                                ingest_boot_module(mod_id, index);
                                 return;
                             }
                         }
@@ -584,66 +687,61 @@ fn fulfill_request(req_id: ThingId) {
     }
 }
 
-fn publish_asset(name: &str, kind: &str, bs_id: ThingId, source: &str, size: usize, hash: u64) -> ThingId {
+fn publish_asset(
+    name: &str,
+    kind: &str,
+    bs_id: ThingId,
+    source: &str,
+    size: usize,
+    hash: u64,
+    index: &mut AssetIndex,
+) -> PublishResult {
     let name_sym = intern(name).unwrap_or(0) as u64;
     let kind_sym = intern(kind).unwrap_or(0) as u64;
     let src_sym = intern(source).unwrap_or(0) as u64;
 
     if name_sym == 0 {
-        return ThingId::default();
+        return PublishResult::Unchanged(ThingId::default());
     }
 
-    // Check if an asset with the same name already exists
-    let mut existing_by_name = ThingId::default();
-    let mut assets = [ThingId::default(); 512];
-    if let Ok(count) = find(kinds::ASSET, &mut assets) {
-        for &id in &assets[..count] {
-            let existing_hash = prop_get(id, keys::ASSET_HASH).unwrap_or(0);
-            let existing_name = prop_get(id, keys::ASSET_NAME).unwrap_or(0);
-            
-            // If same name and same hash, asset is unchanged
-            if existing_name == name_sym && existing_hash == hash && existing_hash != 0 {
-                info!("INGESTD: Asset '{}' unchanged (hash match)", name);
-                return id;
-            }
-            
-            if existing_name == name_sym {
-                existing_by_name = id;
-            }
+    let key = AssetKey { name_sym };
+
+    // Check index first for O(log n) deduplication
+    match index.check(&key, hash) {
+        DedupeResult::Unchanged(id) => {
+            // Same hash - skip entirely, no graph writes, no logging
+            return PublishResult::Unchanged(id);
+        }
+        DedupeResult::Updated(id) => {
+            // Different hash - update existing node
+            let _ = prop_set(id, keys::ASSET_BYTESPACE, bs_id.to_u64_lossy());
+            let _ = prop_set(id, keys::ASSET_HASH, hash);
+            let _ = prop_set(id, keys::ASSET_SIZE, size as u64);
+            let _ = prop_set(id, keys::ASSET_READY, 1);
+            let generation = prop_get(id, keys::ASSET_GENERATION).unwrap_or(0);
+            let _ = prop_set(id, keys::ASSET_GENERATION, generation + 1);
+            index.insert(key, id, hash);
+            return PublishResult::Updated(id);
+        }
+        DedupeResult::New => {
+            // First time seeing this asset - create new node
         }
     }
 
-    if existing_by_name.to_u64_lossy() != 0 {
-        // Update existing asset with same name
-        let old_bs = prop_get(existing_by_name, keys::ASSET_BYTESPACE).unwrap_or(0);
-        let old_hash = prop_get(existing_by_name, keys::ASSET_HASH).unwrap_or(0);
-        
-        if old_bs != bs_id.to_u64_lossy() || old_hash != hash {
-            let _ = prop_set(existing_by_name, keys::ASSET_BYTESPACE, bs_id.to_u64_lossy());
-            let _ = prop_set(existing_by_name, keys::ASSET_HASH, hash);
-            let _ = prop_set(existing_by_name, keys::ASSET_SIZE, size as u64);
-            let _ = prop_set(existing_by_name, keys::ASSET_READY, 1);
-            let generation = prop_get(existing_by_name, keys::ASSET_GENERATION).unwrap_or(0);
-            let _ = prop_set(existing_by_name, keys::ASSET_GENERATION, generation + 1);
-            info!("INGESTD: Updated asset '{}' (gen={}, hash={:016x})", name, generation + 1, hash);
-        }
-        existing_by_name
+    // Create new asset node
+    if let Ok(asset_id) = create_node(kinds::ASSET) {
+        let _ = prop_set(asset_id, keys::ASSET_NAME, name_sym);
+        let _ = prop_set(asset_id, keys::ASSET_KIND, kind_sym);
+        let _ = prop_set(asset_id, keys::ASSET_SOURCE, src_sym);
+        let _ = prop_set(asset_id, keys::ASSET_BYTESPACE, bs_id.to_u64_lossy());
+        let _ = prop_set(asset_id, keys::ASSET_HASH, hash);
+        let _ = prop_set(asset_id, keys::ASSET_SIZE, size as u64);
+        let _ = prop_set(asset_id, keys::ASSET_GENERATION, 1);
+        let _ = prop_set(asset_id, keys::ASSET_READY, 1);
+        index.insert(key, asset_id, hash);
+        PublishResult::Created(asset_id)
     } else {
-        // Initial publication - create new asset node
-        if let Ok(asset_id) = create_node(kinds::ASSET) {
-            let _ = prop_set(asset_id, keys::ASSET_NAME, name_sym);
-            let _ = prop_set(asset_id, keys::ASSET_KIND, kind_sym);
-            let _ = prop_set(asset_id, keys::ASSET_SOURCE, src_sym);
-            let _ = prop_set(asset_id, keys::ASSET_BYTESPACE, bs_id.to_u64_lossy());
-            let _ = prop_set(asset_id, keys::ASSET_HASH, hash);
-            let _ = prop_set(asset_id, keys::ASSET_SIZE, size as u64);
-            let _ = prop_set(asset_id, keys::ASSET_GENERATION, 1);
-            let _ = prop_set(asset_id, keys::ASSET_READY, 1);
-            info!("INGESTD: Published new asset '{}' (hash={:016x})", name, hash);
-            asset_id
-        } else {
-            ThingId::default()
-        }
+        PublishResult::Unchanged(ThingId::default())
     }
 }
 

@@ -154,7 +154,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "ahci_disk",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         // Virgl 3D demo (testing virgl bring-up)

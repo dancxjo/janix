@@ -49,9 +49,12 @@ pub fn store_fetch_result(
     // Try XML import
     if status_code >= 200 && status_code < 300 {
         match try_xml_import(node_id, body) {
-            Ok(xml_root) => {
-                prop_set(node_id, PROP_RESOURCE_XML_DOCUMENT, xml_root.into()).ok();
-                info!("GRAPH: XML import succeeded, root {:?}", xml_root);
+            Ok(result) => {
+                // Store the XML root node ID (ThingId is 16 bytes)
+                let xml_bytes = result.root_element.0;
+                let xml_hash = hash_bytes(&xml_bytes);
+                prop_set(node_id, PROP_RESOURCE_XML_DOCUMENT, xml_hash as u64).ok();
+                info!("GRAPH: XML import succeeded, root {:?}", result.root_element);
             }
             Err(e) => {
                 warn!("GRAPH: XML import failed: {:?}, trying sanitizer", e);
@@ -59,10 +62,12 @@ pub fn store_fetch_result(
                 // Try sanitizing HTML
                 let sanitized = sanitize_html(body);
                 match try_xml_import(node_id, &sanitized) {
-                    Ok(xml_root) => {
+                    Ok(result) => {
                         prop_set(node_id, PROP_RESOURCE_XML_SANITIZED, 1).ok();
-                        prop_set(node_id, PROP_RESOURCE_XML_DOCUMENT, xml_root.into()).ok();
-                        info!("GRAPH: XML import succeeded after sanitization, root {:?}", xml_root);
+                        let xml_bytes = result.root_element.0;
+                        let xml_hash = hash_bytes(&xml_bytes);
+                        prop_set(node_id, PROP_RESOURCE_XML_DOCUMENT, xml_hash as u64).ok();
+                        info!("GRAPH: XML import succeeded after sanitization, root {:?}", result.root_element);
                     }
                     Err(e2) => {
                         warn!("GRAPH: XML import failed even after sanitization: {:?}", e2);
@@ -77,16 +82,14 @@ pub fn store_fetch_result(
     Ok(node_id)
 }
 
-fn try_xml_import(parent: ThingId, xml_data: &[u8]) -> Result<ThingId, GraphError> {
-    let xml_str = core::str::from_utf8(xml_data).map_err(|_| GraphError::XmlParseFailed)?;
-
-    let apply = SysGraphApply;
+fn try_xml_import(parent: ThingId, xml_data: &[u8]) -> Result<stem::xml::ingest::XmlIngestResult, GraphError> {
+    let mut apply = SysGraphApply;
     let options = XmlIngestOptions {
-        parent_node: Some(parent),
+        attach_under: Some(parent),
         ..Default::default()
     };
 
-    ingest_xml_to_graph(xml_str, &apply, &options).map_err(|_| GraphError::XmlParseFailed)
+    ingest_xml_to_graph(xml_data, options, &mut apply).map_err(|_| GraphError::XmlParseFailed)
 }
 
 fn sanitize_html(html: &[u8]) -> Vec<u8> {
@@ -154,6 +157,14 @@ fn sanitize_html(html: &[u8]) -> Vec<u8> {
 fn hash_string(s: &str) -> u32 {
     let mut hash: u32 = 5381;
     for byte in s.bytes() {
+        hash = hash.wrapping_mul(33).wrapping_add(byte as u32);
+    }
+    hash
+}
+
+fn hash_bytes(bytes: &[u8]) -> u32 {
+    let mut hash: u32 = 5381;
+    for &byte in bytes {
         hash = hash.wrapping_mul(33).wrapping_add(byte as u32);
     }
     hash

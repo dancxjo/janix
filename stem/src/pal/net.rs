@@ -3,7 +3,7 @@
 //! Provides access to the primary NIC via syscalls.
 
 use crate::syscall;
-use abi::errors::SysResult;
+use abi::errors::{errno, SysResult};
 
 /// Get the MAC address of the primary NIC.
 pub fn nic_mac(out: &mut [u8; 6]) -> SysResult<()> {
@@ -19,11 +19,7 @@ pub fn nic_mac(out: &mut [u8; 6]) -> SysResult<()> {
         )
     };
     
-    if result >= 0 {
-        Ok(())
-    } else {
-        Err(abi::errors::from_syscall_result(result))
-    }
+    errno(result).map(|_| ())
 }
 
 /// Check if the link is up.
@@ -32,11 +28,7 @@ pub fn nic_link_up() -> SysResult<bool> {
         syscall::syscall6(abi::syscall::SYS_NIC_LINK_UP, 0, 0, 0, 0, 0, 0)
     };
     
-    if result >= 0 {
-        Ok(result != 0)
-    } else {
-        Err(abi::errors::from_syscall_result(result))
-    }
+    errno(result).map(|v| v != 0)
 }
 
 /// Poll for a received frame.
@@ -55,11 +47,7 @@ pub fn nic_poll_rx(buffer: &mut [u8]) -> SysResult<usize> {
         )
     };
     
-    if result >= 0 {
-        Ok(result as usize)
-    } else {
-        Err(abi::errors::from_syscall_result(result))
-    }
+    errno(result)
 }
 
 /// Transmit a frame.
@@ -76,9 +64,5 @@ pub fn nic_tx(frame: &[u8]) -> SysResult<()> {
         )
     };
     
-    if result >= 0 {
-        Ok(())
-    } else {
-        Err(abi::errors::from_syscall_result(result))
-    }
+    errno(result).map(|_| ())
 }

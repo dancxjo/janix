@@ -2,9 +2,9 @@
 
 use alloc::string::String;
 use alloc::vec::Vec;
-use alloc::{format, vec};
+use alloc::format;
 use smoltcp::iface::Interface;
-use smoltcp::socket::{tcp, AnySocket};
+use smoltcp::socket::tcp::{self, Socket as TcpSocket, SocketBuffer};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
@@ -30,17 +30,20 @@ pub fn http_get(
     host: &str,
     path: &str,
 ) -> Result<HttpResponse, HttpError> {
-    let mut sockets_storage = Vec::new();
-    let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
-
-    let tcp_rx_buffer = tcp::SocketBuffer::new(vec![0; 8192]);
-    let tcp_tx_buffer = tcp::SocketBuffer::new(vec![0; 2048]);
-    let mut tcp_socket = tcp::Socket::new(tcp_rx_buffer, tcp_tx_buffer);
+    let mut rx_data = [0u8; 8192];
+    let mut tx_data = [0u8; 2048];
+    
+    let tcp_rx_buffer = SocketBuffer::new(&mut rx_data[..]);
+    let tcp_tx_buffer = SocketBuffer::new(&mut tx_data[..]);
+    let mut tcp_socket = TcpSocket::new(tcp_rx_buffer, tcp_tx_buffer);
 
     let local_port = 49152 + (stem::time::monotonic_ns() % 16384) as u16;
     tcp_socket.set_timeout(Some(Duration::from_secs(10)));
 
+    let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
+    let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
     let tcp_handle = socket_set.add(tcp_socket);
+    
     let endpoint = IpEndpoint::new(IpAddress::Ipv4(ip), 80);
 
     stem::info!("HTTP: Connecting to {}:80 (from port {})", ip, local_port);
@@ -49,7 +52,7 @@ pub fn http_get(
     let timeout = start + Duration::from_secs(30);
 
     // Connect
-    let socket = socket_set.get_mut::<tcp::Socket>(tcp_handle);
+    let socket = socket_set.get_mut::<TcpSocket>(tcp_handle);
     socket
         .connect(iface.context(), endpoint, local_port)
         .map_err(|_| HttpError::ConnectionFailed)?;
@@ -70,7 +73,7 @@ pub fn http_get(
 
         iface.poll(now, device, &mut socket_set);
 
-        let socket = socket_set.get_mut::<tcp::Socket>(tcp_handle);
+        let socket = socket_set.get_mut::<TcpSocket>(tcp_handle);
 
         if !connected && socket.may_send() {
             connected = true;

@@ -2,7 +2,7 @@
 
 use alloc::vec::Vec;
 use smoltcp::iface::Interface;
-use smoltcp::socket::{udp, AnySocket};
+use smoltcp::socket::udp::{self, Socket as UdpSocket, PacketMetadata};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
@@ -21,12 +21,17 @@ pub fn lookup_a(
     dns_server: Ipv4Address,
     name: &str,
 ) -> Result<Ipv4Address, DnsError> {
-    let mut sockets_storage = Vec::new();
+    let mut rx_meta = [PacketMetadata::EMPTY; 4];
+    let mut rx_data = [0u8; 2048];
+    let mut tx_meta = [PacketMetadata::EMPTY; 4];
+    let mut tx_data = [0u8; 2048];
+    
+    let udp_rx_buffer = udp::PacketBuffer::new(&mut rx_meta[..], &mut rx_data[..]);
+    let udp_tx_buffer = udp::PacketBuffer::new(&mut tx_meta[..], &mut tx_data[..]);
+    let udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
+    
+    let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
-
-    let udp_rx_buffer = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 4], vec![0; 2048]);
-    let udp_tx_buffer = udp::PacketBuffer::new(vec![udp::PacketMetadata::EMPTY; 4], vec![0; 2048]);
-    let udp_socket = udp::Socket::new(udp_rx_buffer, udp_tx_buffer);
     let udp_handle = socket_set.add(udp_socket);
 
     // Build DNS query
@@ -48,7 +53,7 @@ pub fn lookup_a(
 
         iface.poll(now, device, &mut socket_set);
 
-        let socket = socket_set.get_mut::<udp::Socket>(udp_handle);
+        let socket = socket_set.get_mut::<UdpSocket>(udp_handle);
 
         if !sent && socket.can_send() {
             socket.send_slice(&query, endpoint).ok();

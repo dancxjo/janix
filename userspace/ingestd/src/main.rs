@@ -70,12 +70,13 @@ fn main(_arg: usize) -> ! {
     let boot_module_pred = intern(kinds::BOOT_MODULE).unwrap_or(0);
     let asset_request_pred = intern(kinds::ASSET_REQUEST).unwrap_or(0);
     let proc_task_pred = intern(kinds::PROC_TASK).unwrap_or(0);
+    let content_file_pred = intern(kinds::CONTENT_FILE).unwrap_or(0);
 
     let mut watch_ids = Vec::new();
     let mut watch_bufs = Vec::new();
     let mut watch_seqs = Vec::new();
 
-    let preds = [boot_module_pred, asset_request_pred, proc_task_pred];
+    let preds = [boot_module_pred, asset_request_pred, proc_task_pred, content_file_pred];
     for &pred in &preds {
         if pred == 0 {
             continue;
@@ -187,6 +188,13 @@ fn process_events(buf: &[u8], _source_id: ThingId) {
                     }
                 }
 
+                if let Ok(k_file) = intern(kinds::CONTENT_FILE) {
+                    if kind == k_file as u64 {
+                        ingest_content_file(subject);
+                        continue;
+                    }
+                }
+
                 if let Ok(k_req) = intern(kinds::ASSET_REQUEST) {
                     if kind == k_req as u64 {
                         fulfill_request(subject);
@@ -205,6 +213,88 @@ fn process_events(buf: &[u8], _source_id: ThingId) {
             break;
         }
     }
+}
+
+fn ingest_content_file(file_id: ThingId) {
+    let name_sym = match prop_get(file_id, keys::FILE_NAME) {
+        Ok(s) => s,
+        Err(_) => return,
+    };
+    
+    let mut buf = [0u8; 256];
+    let len = match stem::thing::sys::describe_symbol(name_sym as u32, &mut buf) {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let file_name = core::str::from_utf8(&buf[..len]).unwrap_or("");
+    if file_name.is_empty() { return; }
+
+    let bs_id = match prop_get(file_id, keys::FILE_BYTESPACE) {
+        Ok(id) => ThingId::from_u64(id),
+        Err(_) => return, // No content yet
+    };
+
+    let size = prop_get(file_id, keys::FILE_SIZE).unwrap_or(0) as usize;
+    let hash = prop_get(file_id, keys::FILE_HASH).unwrap_or(0);
+    let mime_sym = prop_get(file_id, keys::FILE_MIME).unwrap_or(0);
+    
+    // Map to sniff/validate
+    let ptr = match bytespace_map(bs_id) {
+        Ok(ptr) => ptr,
+        Err(_) => return,
+    };
+    let slice = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
+    
+    // Sniff or use MIME
+    let kind = if mime_sym != 0 {
+         let mut mbuf = [0u8; 128];
+         if let Ok(mlen) = stem::thing::sys::describe_symbol(mime_sym as u32, &mut mbuf) {
+             let m = core::str::from_utf8(&mbuf[..mlen]).unwrap_or("");
+             if m.starts_with("font") || m == "application/font-sfnt" { "font" }
+             else if m == "image/svg+xml" { "svg" }
+             else if m.starts_with("image") { "image" }
+             else { "raw" }
+         } else {
+             "raw"
+         }
+    } else {
+         let guess = sniff(slice);
+         if let Some(ref g) = guess {
+            if g.mime.starts_with("font/") || g.mime == "application/font-sfnt" { "font" }
+            else if g.mime == "image/svg+xml" { "svg" }
+            else if g.mime.starts_with("image/") { "image" }
+            else { "raw" }
+         } else {
+             if file_name.ends_with(".ttf") || file_name.ends_with(".otf") { "font" }
+             else if file_name.ends_with(".svg") { "svg" }
+             else if file_name.ends_with(".bmp") || file_name.ends_with(".png") { "image" }
+             else { "raw" }
+         }
+    };
+
+    let asset_id = publish_asset(file_name, kind, bs_id, "disk", size, hash);
+    info!("INGESTD: Ingested file '{}' from disk ({}, {} bytes)", file_name, kind, size);
+
+    // Metadata enrichment for fonts (duplicate logic, could refactor)
+    if kind == "font" && !slice.is_empty() {
+        if let Ok(face) = Face::parse(slice, 0) {
+            let family = face
+                .names()
+                .into_iter()
+                .find(|n| n.name_id == ttf_parser::name_id::FAMILY && n.is_unicode())
+                .and_then(|n| {
+                    let mut buf = Vec::with_capacity(n.name.len() / 2);
+                    for chunk in n.name.chunks_exact(2) {
+                        buf.push(u16::from_be_bytes([chunk[0], chunk[1]]));
+                    }
+                    alloc::string::String::from_utf16(&buf).ok()
+                });
+            if let Some(name) = family {
+                let _ = prop_set(asset_id, keys::FONT_NAME, intern(&name).unwrap_or(0) as u64);
+            }
+        }
+    }
+    let _ = bytespace_unmap(bs_id, ptr);
 }
 
 fn ingest_boot_module(mod_id: ThingId) {

@@ -45,13 +45,13 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "clock",
             is_init: false,
-            boot_module: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "font_explorer",
             is_init: false,
-            boot_module: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
@@ -93,7 +93,13 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "display_bootfb",
             is_init: false,
-            boot_module: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "display_virtio_gpu",
+            is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
@@ -142,13 +148,13 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "photosynthesis",
             is_init: false,
-            boot_module: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "ahci_disk",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
@@ -190,7 +196,8 @@ fn generate_limine_config(
 
         // Allowed assets
         let allowed = clean_path.ends_with("NotoSans-Regular.ttf")
-            || clean_path.ends_with("future/default.svg");
+            || clean_path.ends_with("future/default.svg")
+            || clean_path.ends_with("wallpapers/leather.bmp");
 
         if allowed {
             conf.push_str(&format!("    module_path: boot():/{}\n", clean_path));

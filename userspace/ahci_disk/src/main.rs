@@ -457,6 +457,8 @@ fn publish_content_file(source_id: ThingId, path: &str, data: &[u8], bs_id: Thin
     match thingsys::create_node(kinds::CONTENT_FILE) {
         Ok(file_id) => {
             let name_sym = thingsys::intern(name).unwrap_or(0) as u64;
+            let kind_sym = thingsys::intern(kinds::CONTENT_FILE).unwrap_or(0) as u64;
+            let _ = thingsys::prop_set(file_id, keys::KIND, kind_sym);
             let _ = thingsys::prop_set(file_id, keys::FILE_NAME, name_sym);
             let _ = thingsys::prop_set(file_id, keys::FILE_SIZE, size as u64);
             let _ = thingsys::prop_set(file_id, keys::FILE_HASH, hash);
@@ -478,6 +480,8 @@ fn publish_iso_file(host: ThingId, source_id: ThingId, path: &str, data: Vec<u8>
     let size = data.len() as u64;
     let node = thingsys::create_node(kinds::BOOT_MODULE).map_err(|_| "create_node failed")?;
     let name_id = thingsys::intern(path).map_err(|_| "intern name failed")?;
+    let kind_id = thingsys::intern(kinds::BOOT_MODULE).map_err(|_| "intern kind failed")?;
+    thingsys::prop_set(node, keys::KIND, kind_id as u64).ok();
     thingsys::prop_set(node, keys::NAME, name_id as u64).ok();
     thingsys::prop_set(node, keys::SIZE_BYTES, size).ok();
     thingsys::prop_set(node, "index", index as u64).ok();

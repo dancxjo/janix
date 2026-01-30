@@ -18,9 +18,11 @@
 //! - `clock`: Time and monotonic clock access
 //! - `abort`: Panic and abort behavior
 //! - `alloc`: Memory allocator hooks
+//! - `net`: Network device access
 
 pub mod log;
 pub mod clock;
 pub mod abort;
 #[cfg(feature = "global-alloc")]
 pub mod alloc;
+pub mod net;

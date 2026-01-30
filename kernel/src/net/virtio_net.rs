@@ -281,18 +281,27 @@ impl Nic for VirtioNetDevice {
             return Err(TxError::FrameTooLarge);
         }
         
+        const HEADER_SIZE: usize = core::mem::size_of::<VirtioNetHeader>();
+        let total_size = HEADER_SIZE + bytes.len();
+        
         // Allocate descriptor
         let desc_idx = self.tx_queue.add_buffer(
             self.tx_buffer_phys,
-            bytes.len() as u32,
+            total_size as u32,
             false, // Read (device reads from this buffer)
         ).ok_or(TxError::QueueFull)?;
         
-        // Copy frame to TX buffer
+        // Write virtio header (all zeros for basic mode)
+        let header = VirtioNetHeader::zeroed();
+        unsafe {
+            core::ptr::write(self.tx_buffer_virt as *mut VirtioNetHeader, header);
+        }
+        
+        // Copy frame after header
         unsafe {
             core::ptr::copy_nonoverlapping(
                 bytes.as_ptr(),
-                self.tx_buffer_virt as *mut u8,
+                (self.tx_buffer_virt + HEADER_SIZE as u64) as *mut u8,
                 bytes.len(),
             );
         }
@@ -303,6 +312,13 @@ impl Nic for VirtioNetDevice {
         
         self.stats.tx_packets += 1;
         self.stats.tx_bytes += bytes.len() as u64;
+        
+        // Reclaim TX descriptor immediately (simple synchronous mode)
+        // In a real implementation, we'd do this in an interrupt handler
+        core::hint::spin_loop();
+        if let Some((reclaim_idx, _)) = self.tx_queue.get_used() {
+            self.tx_queue.reclaim(reclaim_idx);
+        }
         
         Ok(())
     }

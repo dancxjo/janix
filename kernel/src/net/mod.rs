@@ -4,6 +4,9 @@
 
 pub mod virtio_net;
 
+use spin::Mutex;
+use crate::once_cell::OnceCell;
+
 /// Network interface card (NIC) trait
 pub trait Nic {
     /// Get the MAC address
@@ -61,5 +64,23 @@ impl EthernetFrame {
     
     pub fn as_slice(&self) -> &[u8] {
         &self.data[..self.len]
+    }
+}
+
+/// Global primary NIC (if initialized)
+static PRIMARY_NIC: OnceCell<Mutex<Option<virtio_net::VirtioNetDevice>>> = OnceCell::new();
+
+/// Initialize the primary NIC
+pub fn init_primary_nic(nic: virtio_net::VirtioNetDevice) {
+    PRIMARY_NIC.set(Mutex::new(Some(nic)));
+    crate::kinfo!("NET: Primary NIC initialized");
+}
+
+/// Get a reference to the primary NIC (returns None if not initialized yet)
+pub fn primary_nic() -> Option<&'static Mutex<Option<virtio_net::VirtioNetDevice>>> {
+    if PRIMARY_NIC.is_initialized() {
+        Some(PRIMARY_NIC.get())
+    } else {
+        None
     }
 }

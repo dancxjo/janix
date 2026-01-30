@@ -413,6 +413,47 @@ async fn check_rect_color(
     Ok(())
 }
 
+// ===== First Run Experience Steps =====
+
+#[then("I should see the desktop wallpaper")]
+async fn see_desktop_wallpaper(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    wallpaper_within_timeout(world, 60).await
+}
+
+#[then(regex = r#"^I should see the "Font Explorer" application$"#)]
+async fn see_font_explorer(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    let timeout = std::time::Duration::from_secs(60);
+    let start = std::time::Instant::now();
+
+    loop {
+        // Font Explorer is at 50, 50 with size 900x520 and color 0xFFF5F5F0 (#F5F5F0)
+        match check_window_bg_color(world, 50, 50, "#F5F5F0".to_string()).await {
+            Ok(_) => break,
+            Err(e) => {
+                if start.elapsed() > timeout {
+                    return Err(StepError(format!(
+                        "Timed out waiting for Font Explorer window: {}",
+                        e
+                    )));
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            }
+        }
+    }
+    // And check for some text pixels inside
+    check_text_pixels(world, 70, 70).await
+}
+
+#[then(regex = r#"^I should see the "Clock" application$"#)]
+async fn see_clock_app(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    wait_for_clock_pixels(world, 30.0).await
+}
+
+#[then(regex = r#"^the "Clock" application should be ticking$"#)]
+async fn clock_app_ticking(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    wait_for_clock_ticks(world, 3, 30.0).await
+}
+
 #[given("the machine is started")]
 async fn machine_is_started(world: &mut ThingOsWorld) -> Result<(), StepError> {
     turn_on_machine(world).await

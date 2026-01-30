@@ -186,13 +186,14 @@ The boot assumptions prohibition ensures that Thing-OS remains true to its core 
 
 ```
 abi/src/lib.rs                          +1 line   (add service_contract module)
-abi/src/service_contract.rs             +281 lines (new: contract schema)
+abi/src/service_contract.rs             +265 lines (new: contract schema)
 abi/src/schema.rs                       +23 lines (add constants)
 userspace/ingestd/src/main.rs           +41 lines (add contract + validation)
-docs/SERVICE_CONTRACT.md                +403 lines (new: documentation)
+docs/SERVICE_CONTRACT.md                +272 lines (new: documentation)
+SERVICE_CONTRACT_IMPLEMENTATION.md      +230 lines (new: summary)
 ```
 
-**Total**: ~750 lines of new code, documentation, and tests.
+**Total**: ~830 lines of new code, documentation, and tests.
 
 ## Next Steps
 

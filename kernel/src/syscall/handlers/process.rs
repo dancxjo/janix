@@ -79,8 +79,13 @@ pub fn sys_spawn_process(name_ptr: usize, name_len: usize, arg: usize) -> SysRes
     let name = core::str::from_utf8(&buf[..name_len]).map_err(|_| Errno::EINVAL)?;
     let tid = unsafe { crate::task::scheduler::spawn_process_current(name, StartupArg::Raw(arg)) };
     if let Some(tid) = tid {
+        // Log after spawn for debugging - scheduler lock is released now
+        if name.contains("netd") {
+            crate::kinfo!("sys_spawn_process: spawned '{}' as tid={}", name, tid);
+        }
         Ok(tid as usize)
     } else {
+        crate::kinfo!("sys_spawn_process: FAILED to spawn '{}'", name);
         Err(Errno::ENOENT)
     }
 }

@@ -172,7 +172,7 @@ impl Supervisor {
         self.ensure_app("/fontd");
         self.ensure_app("/blossom");
         self.ensure_app("/cambium");
-        self.ensure_app("/netd");
+        // netd is spawned by setup_network_pipeline, not here
         
         // Storage
         self.ensure_app("/ahci_disk");

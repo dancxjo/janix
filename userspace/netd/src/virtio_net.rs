@@ -116,9 +116,11 @@ impl VirtioNetDriver {
         
         // Setup RX queue (queue 0)
         device.setup_queue(0, QUEUE_SIZE).map_err(|_| Errno::ENOMEM)?;
+        info!("VirtIO-NET: RX queue 0 setup (size={})", QUEUE_SIZE);
         
         // Setup TX queue (queue 1)
         device.setup_queue(1, QUEUE_SIZE).map_err(|_| Errno::ENOMEM)?;
+        info!("VirtIO-NET: TX queue 1 setup (size={})", QUEUE_SIZE);
         
         // Allocate RX buffers
         let claim_handle = device.claim_handle();
@@ -131,13 +133,12 @@ impl VirtioNetDriver {
             rx_buffers_virt[i] = buf_virt;
             rx_buffers_phys[i] = buf_phys;
         }
+        info!("VirtIO-NET: Allocated {} RX buffers", QUEUE_SIZE);
         
         // Allocate TX buffer
         let tx_buffer_virt = device_alloc_dma(claim_handle, 1).map_err(|_| Errno::ENOMEM)?;
         let tx_buffer_phys = device_dma_phys(tx_buffer_virt).map_err(|_| Errno::EFAULT)?;
-        
-        // Mark device ready
-        device.driver_ok();
+        info!("VirtIO-NET: Allocated TX buffer");
         
         let mut driver = Self {
             device,
@@ -151,8 +152,17 @@ impl VirtioNetDriver {
             last_rx: None,
         };
         
-        // Fill RX queue with buffers
+        // Fill RX queue with buffers BEFORE setting DRIVER_OK
+        // This is critical: device won't receive until buffers are posted
         driver.refill_rx_queue();
+        info!("VirtIO-NET: RX queue filled with {} buffers", driver.rx_active);
+        
+        // NOW mark device ready - it will start receiving
+        driver.device.driver_ok();
+        info!("VirtIO-NET: DRIVER_OK set, device is live");
+        
+        // Kick RX queue again to be sure device notices our buffers
+        driver.device.notify_queue(0);
         
         info!("VirtIO-NET: Driver initialized successfully");
         Ok(driver)
@@ -184,11 +194,18 @@ impl VirtioNetDriver {
         self.link_up
     }
     
+    /// Log debug stats for diagnosis
+    pub fn log_stats(&self, label: &str) {
+        info!("VirtIO-NET [{}]: rx_active={}", label, self.rx_active);
+    }
+    
     /// Poll for received frames
     pub fn poll_rx(&mut self) -> Option<&[u8]> {
         let rxq = self.device.queue_mut(0)?;
         
         if let Some((desc_id, len)) = rxq.poll_used() {
+            info!("VirtIO-NET: RX frame! desc={} len={}", desc_id, len);
+            
             let buf_virt = self.rx_buffers_virt[desc_id as usize];
             
             // Skip virtio-net header
@@ -219,6 +236,8 @@ impl VirtioNetDriver {
             return Err("Frame too large");
         }
         
+        info!("VirtIO-NET: TX {} bytes", data.len());
+        
         // Write header
         let header = VirtioNetHeader::zeroed();
         let header_ptr = self.tx_buffer_virt as *mut VirtioNetHeader;
@@ -245,15 +264,17 @@ impl VirtioNetDriver {
         self.device.notify_queue(1);
         
         // Wait for completion
-        for _ in 0..1000 {
+        for i in 0..1000 {
             if let Some(txq) = self.device.queue_mut(1) {
                 if txq.poll_used().is_some() {
+                    info!("VirtIO-NET: TX complete after {} spins", i);
                     return Ok(());
                 }
             }
             core::hint::spin_loop();
         }
         
+        warn!("VirtIO-NET: TX timeout!");
         Err("TX timeout")
     }
 }

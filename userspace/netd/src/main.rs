@@ -28,10 +28,12 @@ use virtio_net::VirtioNetDriver;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("NETD: Starting network service...");
+    // Very first log - if this doesn't appear, stem runtime failed
+    stem::error!("NETD: *** ENTRY POINT REACHED ***");
+    info!("NETD: Starting network service (arg=0x{:x})...", _arg);
 
     // Initialize VirtIO-NET driver using find_and_claim
-    info!("NETD: Initializing VirtIO-NET driver...");
+    info!("NETD: Calling VirtioNetDriver::find_and_claim()...");
     
     let mut driver = match VirtioNetDriver::find_and_claim() {
         Ok(d) => {
@@ -39,7 +41,7 @@ fn main(_arg: usize) -> ! {
             d
         }
         Err(e) => {
-            warn!("NETD: Failed to initialize VirtIO-NET driver: {:?}", e);
+            stem::error!("NETD: *** DRIVER INIT FAILED: {:?} ***", e);
             loop {
                 stem::time::sleep_ms(1000);
             }

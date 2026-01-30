@@ -48,7 +48,10 @@ pub struct VirtioDevice {
 impl VirtioDevice {
     /// Create a new VirtioDevice by claiming and mapping a device node
     pub fn new(device_id: u64) -> Result<Self, Errno> {
+        stem::info!("VirtIO: device::new(0x{:x}) - claiming...", device_id);
         let claim_handle = device_claim(device_id)?;
+        stem::info!("VirtIO: claimed, handle={}", claim_handle);
+        
         let node = ThingId::from_u64(device_id);
 
         // Read VirtIO capability offsets from graph properties
@@ -58,21 +61,28 @@ impl VirtioDevice {
         let notify_offset = thingsys::prop_get(node, keys::VIRTIO_NOTIFY_OFFSET).unwrap_or(0);
         let notify_multiplier = thingsys::prop_get(node, keys::VIRTIO_NOTIFY_MULTIPLIER).unwrap_or(4) as u32;
         
+        stem::info!("VirtIO: common_bar={} common_off=0x{:x} notify_bar={} notify_off=0x{:x} mult={}",
+            common_bar, common_offset, notify_bar, notify_offset, notify_multiplier);
+        
         // Device config is optional
         let device_bar = thingsys::prop_get(node, keys::VIRTIO_DEVICE_BAR).ok();
         let device_offset = thingsys::prop_get(node, keys::VIRTIO_DEVICE_OFFSET).ok();
 
         // Map the BAR containing common config
+        stem::info!("VirtIO: mapping common BAR{}...", common_bar);
         let common_bar_base = device_map_mmio(claim_handle, common_bar)?;
         let common_cfg = common_bar_base + common_offset;
+        stem::info!("VirtIO: common_cfg at 0x{:x}", common_cfg);
 
         // Map notify BAR (may be same as common BAR)
         let notify_cfg = if notify_bar == common_bar {
             common_bar_base + notify_offset
         } else {
+            stem::info!("VirtIO: mapping notify BAR{}...", notify_bar);
             let notify_bar_base = device_map_mmio(claim_handle, notify_bar)?;
             notify_bar_base + notify_offset
         };
+        stem::info!("VirtIO: notify_cfg at 0x{:x}", notify_cfg);
         
         // Map device config BAR if available
         let device_cfg = match (device_bar, device_offset) {
@@ -89,18 +99,22 @@ impl VirtioDevice {
             }
             _ => None,
         };
+        stem::info!("VirtIO: device_cfg = {:?}", device_cfg);
 
         // Allocate command buffer (1 page for commands + responses)
+        stem::info!("VirtIO: allocating DMA command buffer...");
         let cmd_buf = device_alloc_dma(claim_handle, 1).map_err(|_| Errno::ENOMEM)?;
         let cmd_buf_phys = device_dma_phys(cmd_buf).map_err(|_| Errno::EFAULT)?;
+        stem::info!("VirtIO: cmd_buf virt=0x{:x} phys=0x{:x}", cmd_buf, cmd_buf_phys);
 
+        stem::info!("VirtIO: device::new complete");
         Ok(Self {
             claim_handle,
             common_cfg,
             notify_cfg,
             device_cfg,
             notify_off_multiplier: notify_multiplier,
-            queues: [const { None }; 8],
+            queues: [None, None, None, None, None, None, None, None],
             num_queues: 0,
             cmd_buf,
             cmd_buf_phys,

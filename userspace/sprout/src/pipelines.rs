@@ -392,7 +392,7 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
             match stem::syscall::spawn_process("/netd", nic.to_u64_lossy() as usize) {
                 Ok(pid) => {
                     info!("SPROUT: Spawned netd (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 1);
+                    let _ = stem::thread::set_priority(pid, 2); // Normal priority
                     tasks.push(ManagedTask {
                         name: "/netd".to_string(),
                         kind: TaskKind::Driver("dev.net".to_string()),

@@ -2329,6 +2329,7 @@ name = "stem"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "libm",
  "linked_list_allocator",
  "pciids",
  "spin",

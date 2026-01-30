@@ -1,6 +1,6 @@
 //! Pan/zoom controller state machine.
 
-use super::{Viewport, ViewportIntent};
+use super::{inertia::InertiaState, Viewport, ViewportIntent};
 
 /// Constraints for viewport zoom and panning.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -34,8 +34,14 @@ pub struct PanZoomController {
     pub viewport: Viewport,
     /// Zoom and pan constraints.
     pub constraints: ViewportConstraints,
-    /// Drag state: Some((last_x, last_y)) if dragging.
-    drag_anchor: Option<(f32, f32)>,
+    /// Drag state: Some((last_x, last_y, last_time_ns)) if dragging.
+    drag_anchor: Option<(f32, f32, u64)>,
+    /// Inertia state for smooth scrolling.
+    pub inertia: InertiaState,
+    /// Previous drag positions for velocity calculation (up to 3 samples).
+    drag_history: [(f32, f32, u64); 3],
+    /// Number of valid drag history entries.
+    drag_history_len: usize,
 }
 
 impl PanZoomController {
@@ -45,6 +51,9 @@ impl PanZoomController {
             viewport,
             constraints,
             drag_anchor: None,
+            inertia: InertiaState::default(),
+            drag_history: [(0.0, 0.0, 0); 3],
+            drag_history_len: 0,
         }
     }
 
@@ -84,17 +93,37 @@ impl PanZoomController {
     }
 
     /// Begin a drag gesture at the given screen position.
-    pub fn begin_drag(&mut self, screen_x: f32, screen_y: f32) {
-        self.drag_anchor = Some((screen_x, screen_y));
+    ///
+    /// `timestamp_ns` is the current time in nanoseconds for velocity tracking.
+    pub fn begin_drag(&mut self, screen_x: f32, screen_y: f32, timestamp_ns: u64) {
+        self.drag_anchor = Some((screen_x, screen_y, timestamp_ns));
+        self.drag_history_len = 0;
+        self.inertia.stop(); // Stop any ongoing inertia
     }
 
     /// Update drag with new position, returning true if dragging.
-    pub fn update_drag(&mut self, screen_x: f32, screen_y: f32) -> bool {
-        if let Some((last_x, last_y)) = self.drag_anchor {
+    ///
+    /// `timestamp_ns` is the current time in nanoseconds for velocity tracking.
+    pub fn update_drag(&mut self, screen_x: f32, screen_y: f32, timestamp_ns: u64) -> bool {
+        if let Some((last_x, last_y, _)) = self.drag_anchor {
             let dx = screen_x - last_x;
             let dy = screen_y - last_y;
             self.pan_by_screen(dx, dy);
-            self.drag_anchor = Some((screen_x, screen_y));
+            
+            // Update drag anchor
+            self.drag_anchor = Some((screen_x, screen_y, timestamp_ns));
+            
+            // Track position history for velocity calculation
+            if self.drag_history_len < 3 {
+                self.drag_history[self.drag_history_len] = (screen_x, screen_y, timestamp_ns);
+                self.drag_history_len += 1;
+            } else {
+                // Shift history and add new sample
+                self.drag_history[0] = self.drag_history[1];
+                self.drag_history[1] = self.drag_history[2];
+                self.drag_history[2] = (screen_x, screen_y, timestamp_ns);
+            }
+            
             true
         } else {
             false
@@ -102,8 +131,35 @@ impl PanZoomController {
     }
 
     /// End the current drag gesture.
+    ///
+    /// Calculates velocity from drag history and applies it to inertia for kinetic scrolling.
     pub fn end_drag(&mut self) {
+        if self.drag_anchor.is_none() {
+            return;
+        }
+        
+        // Calculate velocity from drag history
+        if self.drag_history_len >= 2 {
+            // Use the last two samples for velocity
+            let (x1, y1, t1) = self.drag_history[self.drag_history_len - 2];
+            let (x2, y2, t2) = self.drag_history[self.drag_history_len - 1];
+            
+            let dt_ns = t2.saturating_sub(t1);
+            if dt_ns > 0 {
+                let dt_sec = dt_ns as f32 / 1_000_000_000.0;
+                let vx = (x2 - x1) / dt_sec;
+                let vy = (y2 - y1) / dt_sec;
+                
+                // Apply velocity impulse for kinetic scrolling
+                // Only if velocity is significant and dt is reasonable (not too long)
+                if dt_sec < 0.1 && (vx.abs() > 10.0 || vy.abs() > 10.0) {
+                    self.inertia.apply_pan_impulse(vx, vy);
+                }
+            }
+        }
+        
         self.drag_anchor = None;
+        self.drag_history_len = 0;
     }
 
     /// Returns true if currently dragging.
@@ -125,10 +181,31 @@ impl PanZoomController {
         self.zoom_about(screen_x, screen_y, factor);
     }
 
-    /// Tick for inertia (placeholder for future smooth scrolling).
-    pub fn tick(&mut self, _dt_seconds: f32) -> bool {
-        // MVP: no inertia, return false (no update needed)
-        false
+    /// Tick for inertia and smooth scrolling.
+    ///
+    /// Call this every frame to apply inertia physics.
+    /// Returns true if the viewport was updated (needs redraw).
+    pub fn tick(&mut self, dt_seconds: f32) -> bool {
+        let (pan_dx, pan_dy, zoom_factor, updated) = self.inertia.tick(dt_seconds);
+
+        if updated {
+            // Apply pan
+            if pan_dx.abs() > 0.01 || pan_dy.abs() > 0.01 {
+                self.viewport.pan_by_screen(pan_dx, pan_dy);
+                self.clamp_to_bounds();
+            }
+
+            // Apply zoom (about screen center for inertia zoom)
+            if (zoom_factor - 1.0).abs() > 0.001 {
+                let center_x = self.viewport.screen_size.0 / 2.0;
+                let center_y = self.viewport.screen_size.1 / 2.0;
+                self.viewport.zoom_about(center_x, center_y, zoom_factor);
+                self.clamp_zoom();
+                self.clamp_to_bounds();
+            }
+        }
+
+        updated
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -249,8 +326,8 @@ mod tests {
             PanZoomController::new(Viewport::new(800.0, 600.0), ViewportConstraints::default());
 
         let original = ctrl.viewport.center_world;
-        ctrl.begin_drag(100.0, 100.0);
-        ctrl.update_drag(150.0, 120.0); // Drag right 50px, down 20px
+        ctrl.begin_drag(100.0, 100.0, 0);
+        ctrl.update_drag(150.0, 120.0, 16_666_667); // Drag right 50px, down 20px at 60fps
         ctrl.end_drag();
 
         // View panned right, so center moved left
@@ -290,5 +367,29 @@ mod tests {
             ctrl.handle_wheel(400.0, 300.0, 2.0);
         }
         assert!(ctrl.viewport.zoom <= 2.0);
+    }
+
+    #[test]
+    fn drag_with_velocity_creates_inertia() {
+        let mut ctrl =
+            PanZoomController::new(Viewport::new(800.0, 600.0), ViewportConstraints::default());
+
+        // Simulate a fast drag
+        ctrl.begin_drag(100.0, 100.0, 0);
+        ctrl.update_drag(150.0, 100.0, 16_666_667);  // 60fps, moved 50px right
+        ctrl.update_drag(200.0, 100.0, 33_333_334);  // Another frame, another 50px
+        
+        let before_end = ctrl.viewport.center_world;
+        ctrl.end_drag();
+        
+        // Should have applied velocity impulse
+        assert!(ctrl.inertia.pan_velocity.0.abs() > 0.0 || ctrl.inertia.pan_velocity.1.abs() > 0.0);
+        
+        // Tick should continue moving
+        let updated = ctrl.tick(1.0 / 60.0);
+        assert!(updated);
+        
+        // Position should have changed due to inertia
+        assert!(ctrl.viewport.center_world.0 != before_end.0 || ctrl.viewport.center_world.1 != before_end.1);
     }
 }

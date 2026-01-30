@@ -110,7 +110,7 @@ fn main(_arg: usize) -> ! {
 
     // HTTP GET
     info!("NETD: Fetching http://csszengarden.com/...");
-    let response = match http::http_get(&mut iface, &mut device, target_ip, "csszengarden.com", "/") {
+    let response = match http::http_get(&mut iface, &mut device, dhcp_config.dns, target_ip, "csszengarden.com", "/") {
         Ok(resp) => {
             info!(
                 "NETD: HTTP {} - {} bytes",

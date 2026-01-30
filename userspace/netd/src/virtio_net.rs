@@ -122,23 +122,32 @@ impl VirtioNetDriver {
         device.setup_queue(1, QUEUE_SIZE).map_err(|_| Errno::ENOMEM)?;
         info!("VirtIO-NET: TX queue 1 setup (size={})", QUEUE_SIZE);
         
-        // Allocate RX buffers
+        // Allocate RX buffers in bulk (32 pages = 128KB for 64 x 2KB buffers)
+        // This dramatically reduces syscall overhead compared to 64 separate allocations
         let claim_handle = device.claim_handle();
         let mut rx_buffers_virt = [0u64; QUEUE_SIZE as usize];
         let mut rx_buffers_phys = [0u64; QUEUE_SIZE as usize];
         
-        for i in 0..QUEUE_SIZE as usize {
-            let buf_virt = device_alloc_dma(claim_handle, 1).map_err(|_| Errno::ENOMEM)?;
-            let buf_phys = device_dma_phys(buf_virt).map_err(|_| Errno::EFAULT)?;
-            rx_buffers_virt[i] = buf_virt;
-            rx_buffers_phys[i] = buf_phys;
-        }
-        info!("VirtIO-NET: Allocated {} RX buffers", QUEUE_SIZE);
+        // Calculate pages needed: 64 buffers * 2KB = 128KB = 32 pages (4KB each)
+        // Each page holds 2 buffers (4KB / 2KB = 2)
+        const BUFFERS_PER_PAGE: usize = 4096 / RX_BUFFER_SIZE;  // 2
+        const RX_PAGES_NEEDED: usize = (QUEUE_SIZE as usize + BUFFERS_PER_PAGE - 1) / BUFFERS_PER_PAGE;  // 32
         
-        // Allocate TX buffer
+        let rx_pool_virt = device_alloc_dma(claim_handle, RX_PAGES_NEEDED).map_err(|_| Errno::ENOMEM)?;
+        let rx_pool_phys = device_dma_phys(rx_pool_virt).map_err(|_| Errno::EFAULT)?;
+        info!("VirtIO-NET: Allocated RX pool ({} pages, {} buffers)", RX_PAGES_NEEDED, QUEUE_SIZE);
+        
+        // Sub-allocate individual buffers from the pool
+        for i in 0..QUEUE_SIZE as usize {
+            let offset = (i * RX_BUFFER_SIZE) as u64;
+            rx_buffers_virt[i] = rx_pool_virt + offset;
+            rx_buffers_phys[i] = rx_pool_phys + offset;
+        }
+        
+        // Allocate TX buffer (single page is fine for 1 buffer)
         let tx_buffer_virt = device_alloc_dma(claim_handle, 1).map_err(|_| Errno::ENOMEM)?;
         let tx_buffer_phys = device_dma_phys(tx_buffer_virt).map_err(|_| Errno::EFAULT)?;
-        info!("VirtIO-NET: Allocated TX buffer");
+        info!("VirtIO-NET: Allocated TX buffer (1 page)");
         
         let mut driver = Self {
             device,
@@ -267,15 +276,22 @@ impl VirtioNetDriver {
         // Notify device
         self.device.notify_queue(1);
         
-        // Wait for completion
+        // Wait for completion with yield-based backoff
+        // Spin briefly (10 iterations), then yield to scheduler
         for i in 0..1000 {
             if let Some(txq) = self.device.queue_mut(1) {
                 if txq.poll_used().is_some() {
-                    info!("VirtIO-NET: TX complete after {} spins", i);
+                    if i > 10 {
+                        info!("VirtIO-NET: TX complete after {} iterations (yielded)", i);
+                    }
                     return Ok(());
                 }
             }
-            core::hint::spin_loop();
+            if i < 10 {
+                core::hint::spin_loop();
+            } else {
+                stem::yield_now();  // Yield to scheduler instead of burning CPU
+            }
         }
         
         warn!("VirtIO-NET: TX timeout!");

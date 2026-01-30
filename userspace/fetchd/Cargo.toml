@@ -1,5 +1,5 @@
 [package]
-name = "netd"
+name = "fetchd"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,11 +8,8 @@ stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"]
 abi = { path = "../../abi" }
 smoltcp = { version = "0.11", default-features = false, features = [
     "proto-ipv4",
-    "proto-dhcpv4",
     "socket-udp",
     "socket-tcp",
-    "socket-dhcpv4",
     "medium-ethernet",
     "alloc",
 ] }
-

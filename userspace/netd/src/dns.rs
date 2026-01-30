@@ -6,7 +6,7 @@ use smoltcp::socket::udp::{self, Socket as UdpSocket, PacketMetadata};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
-use crate::smol_device::VirtioNicDevice;
+use crate::ipc_device::IpcNicDevice;
 
 #[derive(Debug)]
 pub enum DnsError {
@@ -17,7 +17,7 @@ pub enum DnsError {
 
 pub fn lookup_a(
     iface: &mut Interface,
-    device: &mut VirtioNicDevice<'_>,
+    device: &mut IpcNicDevice,
     dns_server: Ipv4Address,
     name: &str,
 ) -> Result<Ipv4Address, DnsError> {
@@ -49,14 +49,14 @@ pub fn lookup_a(
 
     stem::info!("DNS: Querying {} for {}", dns_server, name);
 
-    let start = VirtioNicDevice::now();
+    let start = IpcNicDevice::now();
     let timeout = start + Duration::from_secs(5);
 
     let mut sent = false;
     let mut poll_count = 0u32;
 
     loop {
-        let now = VirtioNicDevice::now();
+        let now = IpcNicDevice::now();
         if now > timeout {
             stem::info!("DNS: Timeout after {} polls", poll_count);
             return Err(DnsError::Timeout);

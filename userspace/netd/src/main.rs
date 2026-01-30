@@ -4,71 +4,58 @@
 //! # Network Service (netd)
 //!
 //! Provides networking capabilities using smoltcp TCP/IP stack.
-//! - Uses userspace VirtIO-NET driver directly
+//! - Connects to virtio_netd for frame I/O via IPC
 //! - Runs DHCP to acquire IP address
-//! - Performs DNS lookups
-//! - HTTP client for fetching web content
-//! - Stores results in the graph with XML parsing
+//! - Provides DNS resolver
+//! - Exposes socket API for applications
 
 extern crate alloc;
 
 mod dhcp;
 mod dns;
-mod graph_sink;
-mod http;
-mod smol_device;
-mod virtio_net;
+mod driver_protocol;
+mod ipc_device;
 
 use alloc::format;
-use smol_device::VirtioNicDevice;
+use abi::schema::keys;
+use ipc_device::IpcNicDevice;
 use smoltcp::iface::{Config, Interface};
 use smoltcp::wire::EthernetAddress;
-use stem::{info, warn};
-use virtio_net::VirtioNetDriver;
+use stem::syscall::port::{port_recv, port_send, PortHandle};
+use stem::thing::sys as thingsys;
+use stem::thing::ThingId;
+use stem::{info, warn, error};
+
+/// Graph kind for the network driver service (published by virtio_netd)
+const KIND_NET_DRIVER: &str = "svc.net.Driver";
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("NETD: Starting network service (arg=0x{:x})...", _arg);
+    info!("NETD: Starting network stack service...");
 
-    // Initialize VirtIO-NET driver using find_and_claim
-    info!("NETD: Calling VirtioNetDriver::find_and_claim()...");
-    
-    let mut driver = match VirtioNetDriver::find_and_claim() {
-        Ok(d) => {
-            info!("NETD: VirtIO-NET driver initialized successfully");
-            d
-        }
-        Err(e) => {
-            stem::error!("NETD: *** DRIVER INIT FAILED: {:?} ***", e);
-            loop {
-                stem::time::sleep_ms(1000);
+    // Wait for virtio_netd to be ready
+    info!("NETD: Looking for virtio_netd driver service...");
+    let (tx_port, rx_port, mac) = loop {
+        match find_driver_service() {
+            Some(result) => break result,
+            None => {
+                stem::time::sleep_ms(100);
             }
         }
     };
-
-    // Get MAC address from driver
-    let mac_buf = driver.mac();
+    
     info!(
-        "NETD: MAC address: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
-        mac_buf[0], mac_buf[1], mac_buf[2], mac_buf[3], mac_buf[4], mac_buf[5]
+        "NETD: Connected to driver - MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
+        mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
 
-    // Wait for link up
-    info!("NETD: Waiting for link...");
-    loop {
-        if driver.link_up() {
-            info!("NETD: Link is up");
-            break;
-        }
-        stem::time::sleep_ms(100);
-    }
-
-    // Create smoltcp interface
-    let mac_addr = EthernetAddress(mac_buf);
-    let mut device = VirtioNicDevice::new(&mut driver);
+    // Create IPC-backed smoltcp device
+    let mut device = IpcNicDevice::new(tx_port, rx_port, mac);
     
+    // Create smoltcp interface
+    let mac_addr = EthernetAddress(mac);
     let config = Config::new(mac_addr.into());
-    let mut iface = Interface::new(config, &mut device, VirtioNicDevice::now());
+    let mut iface = Interface::new(config, &mut device, IpcNicDevice::now());
     
     // Start DHCP
     info!("NETD: Starting DHCP...");
@@ -88,59 +75,87 @@ fn main(_arg: usize) -> ! {
         }
     };
 
-    // DNS lookup for csszengarden.com
-    info!("NETD: Resolving csszengarden.com...");
-    let target_ip = match dns::lookup_a(
-        &mut iface,
-        &mut device,
-        dhcp_config.dns,
-        "csszengarden.com",
-    ) {
-        Ok(ip) => {
-            info!("NETD: Resolved csszengarden.com to {}", ip);
-            ip
-        }
-        Err(e) => {
-            warn!("NETD: DNS lookup failed: {:?}", e);
-            loop {
-                stem::time::sleep_ms(1000);
-            }
-        }
-    };
-
-    // HTTP GET
-    info!("NETD: Fetching http://csszengarden.com/...");
-    let response = match http::http_get(&mut iface, &mut device, dhcp_config.dns, target_ip, "csszengarden.com", "/") {
-        Ok(resp) => {
-            info!(
-                "NETD: HTTP {} - {} bytes",
-                resp.status_code,
-                resp.body.len()
-            );
-            resp
-        }
-        Err(e) => {
-            warn!("NETD: HTTP GET failed: {:?}", e);
-            loop {
-                stem::time::sleep_ms(1000);
-            }
-        }
-    };
-
-    // Store in graph
-    info!("NETD: Storing result in graph...");
-    let url = format!("http://csszengarden.com/");
-    match graph_sink::store_fetch_result(&url, response.status_code, &response.body) {
-        Ok(node_id) => {
-            info!("NETD: Stored result at node {:?}", node_id);
-        }
-        Err(e) => {
-            warn!("NETD: Failed to store in graph: {:?}", e);
-        }
+    // Publish network configuration to graph
+    if let Ok(net_id) = thingsys::create_node("svc.net.Stack") {
+        // Pack IP address into u64
+        let ip_packed = {
+            let octets = dhcp_config.ip.as_bytes();
+            (octets[0] as u64) |
+            ((octets[1] as u64) << 8) |
+            ((octets[2] as u64) << 16) |
+            ((octets[3] as u64) << 24)
+        };
+        thingsys::prop_set(net_id, "net.ip", ip_packed).ok();
+        
+        let gw_packed = {
+            let octets = dhcp_config.gateway.as_bytes();
+            (octets[0] as u64) |
+            ((octets[1] as u64) << 8) |
+            ((octets[2] as u64) << 16) |
+            ((octets[3] as u64) << 24)
+        };
+        thingsys::prop_set(net_id, "net.gateway", gw_packed).ok();
+        
+        let dns_packed = {
+            let octets = dhcp_config.dns.as_bytes();
+            (octets[0] as u64) |
+            ((octets[1] as u64) << 8) |
+            ((octets[2] as u64) << 16) |
+            ((octets[3] as u64) << 24)
+        };
+        thingsys::prop_set(net_id, "net.dns", dns_packed).ok();
+        
+        info!("NETD: Published network configuration to graph");
     }
 
-    info!("NETD: Network fetch complete, entering idle loop");
+    info!("NETD: Network stack ready, entering service loop");
+    
+    // Main service loop - for now just keep interface alive
+    // TODO: Implement socket API for applications
     loop {
-        stem::time::sleep_ms(1000);
+        let now = IpcNicDevice::now();
+        
+        // Poll the interface to process any pending packets
+        // Note: We need to create an empty socket set for poll
+        let mut sockets_storage: [smoltcp::iface::SocketStorage; 0] = [];
+        let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
+        iface.poll(now, &mut device, &mut socket_set);
+        
+        stem::time::sleep_ms(10);
     }
+}
+
+/// Find the virtio_netd driver service and get port handles + MAC address
+fn find_driver_service() -> Option<(PortHandle, PortHandle, [u8; 6])> {
+    // Look for svc.net.Driver node
+    let mut buf = [ThingId::default(); 1];
+    let count = thingsys::find(KIND_NET_DRIVER, &mut buf).ok()?;
+    
+    if count == 0 {
+        return None;
+    }
+    
+    let driver_id = buf[0];
+    info!("NETD: Found driver service node {:?}", driver_id);
+    
+    // Get TX port handle (we write to this)
+    let tx_port = thingsys::prop_get(driver_id, keys::WRITE_PORT_HANDLE).ok()? as PortHandle;
+    
+    // Get RX port handle (we read from this)
+    let rx_port = thingsys::prop_get(driver_id, "net.rx_port").ok()? as PortHandle;
+    
+    // Get MAC address (packed in u64)
+    let mac_packed = thingsys::prop_get(driver_id, "net.mac").ok()?;
+    let mac = [
+        (mac_packed & 0xFF) as u8,
+        ((mac_packed >> 8) & 0xFF) as u8,
+        ((mac_packed >> 16) & 0xFF) as u8,
+        ((mac_packed >> 24) & 0xFF) as u8,
+        ((mac_packed >> 32) & 0xFF) as u8,
+        ((mac_packed >> 40) & 0xFF) as u8,
+    ];
+    
+    info!("NETD: Driver TX port={}, RX port={}", tx_port, rx_port);
+    
+    Some((tx_port, rx_port, mac))
 }

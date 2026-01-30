@@ -966,6 +966,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "784a4df722dc6267a04af36895398f59d21d07dce47232adf31ec0ff2fa45e67"
 
 [[package]]
+name = "fetchd"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "smoltcp",
+ "stem",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1714,7 +1723,6 @@ dependencies = [
  "abi",
  "smoltcp",
  "stem",
- "virtio",
 ]
 
 [[package]]
@@ -2835,6 +2843,15 @@ dependencies = [
  "abi",
  "stem",
  "stem-macros",
+]
+
+[[package]]
+name = "virtio_netd"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+ "virtio",
 ]
 
 [[package]]

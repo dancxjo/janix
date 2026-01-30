@@ -47,7 +47,9 @@ members = [
     "userspace/iso_reader",
     "userspace/iso_cat",
     "tools/display_proto_tests",
+    "userspace/virtio_netd",
     "userspace/netd",
+    "userspace/fetchd",
 ]
 resolver = "2"
 

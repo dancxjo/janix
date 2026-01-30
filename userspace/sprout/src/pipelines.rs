@@ -377,7 +377,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     info!("SPROUT: Input pipeline ready (keyboard + mouse)");
 }
 
-/// Set up network pipeline - find NIC devices and spawn netd
+/// Set up network pipeline - spawn virtio_netd (driver) then netd (stack)
 pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Setting up network pipeline...");
 
@@ -388,14 +388,33 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
             let nic = nic_buf[0];
             info!("SPROUT: Found NIC device {:?}", nic);
 
-            // Spawn netd - it will claim and initialize the NIC itself
-            match stem::syscall::spawn_process("/netd", nic.to_u64_lossy() as usize) {
+            // Spawn virtio_netd first - the hardware driver that owns the NIC
+            match stem::syscall::spawn_process("/virtio_netd", nic.to_u64_lossy() as usize) {
+                Ok(pid) => {
+                    info!("SPROUT: Spawned virtio_netd (PID={})", pid);
+                    let _ = stem::thread::set_priority(pid, 2); // Normal priority
+                    tasks.push(ManagedTask {
+                        name: "/virtio_netd".to_string(),
+                        kind: TaskKind::Driver("dev.net.virtio".to_string()),
+                        module_path: "/virtio_netd".to_string(),
+                        pid: Some(pid),
+                        restarts: 0,
+                    });
+                }
+                Err(e) => {
+                    warn!("SPROUT: Failed to spawn virtio_netd: {:?}", e);
+                    return; // Can't run netd without the driver
+                }
+            }
+
+            // Spawn netd - the network stack that talks to virtio_netd via IPC
+            match stem::syscall::spawn_process("/netd", 0) {
                 Ok(pid) => {
                     info!("SPROUT: Spawned netd (PID={})", pid);
                     let _ = stem::thread::set_priority(pid, 2); // Normal priority
                     tasks.push(ManagedTask {
                         name: "/netd".to_string(),
-                        kind: TaskKind::Driver("dev.net".to_string()),
+                        kind: TaskKind::Service("svc.net".to_string()),
                         module_path: "/netd".to_string(),
                         pid: Some(pid),
                         restarts: 0,

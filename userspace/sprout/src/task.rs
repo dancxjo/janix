@@ -3,6 +3,7 @@ use alloc::string::String;
 #[derive(Debug, PartialEq)]
 pub enum TaskKind {
     Driver(String), // Device Kind
+    Service(String), // Service Kind
     App,
 }
 

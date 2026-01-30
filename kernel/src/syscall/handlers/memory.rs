@@ -6,7 +6,9 @@ use abi::vm::{
 };
 use core::sync::atomic::{AtomicU64, Ordering};
 
-const USER_VM_BASE: u64 = 0x1000_0000;
+/// Base address for anonymous VM mappings (stacks, etc).
+/// Uses high user VA space to avoid collision with bytespace mappings at 0x1000_0000.
+const USER_VM_BASE: u64 = 0x4000_0000_0000; // 64TB mark
 static NEXT_USER_MAP: AtomicU64 = AtomicU64::new(USER_VM_BASE);
 
 pub fn sys_alloc_stack(pages: usize) -> SysResult<usize> {

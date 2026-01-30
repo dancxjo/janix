@@ -28,9 +28,9 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     let mut backend_name: &'static str = "unknown";
 
     // NOTE: VirtIO GPU is not fully implemented (needs PCI capability parsing).
-    // For now, prefer BootFB which works reliably.
+    // Prefer BootFB which works reliably until VirtIO-GPU driver is complete.
 
-    // Check for boot framebuffer first (reliable)
+    // Check for BootFB first (preferred - works reliably)
     let mut fb_buf = [ThingId::default(); 1];
     if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
         if count > 0 {
@@ -46,7 +46,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         }
     }
 
-    // If no BootFB, try VirtIO GPU (stub implementation)
+    // Fallback to VirtIO GPU if no BootFB found (stub - not fully implemented)
     if driver_name.is_none() {
         let mut gpu_buf = [ThingId::default(); 1];
         if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {

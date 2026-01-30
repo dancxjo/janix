@@ -505,7 +505,7 @@ impl PaintBuilder {
                         text: t,
                         font: "NotoSans-Regular.ttf".into(),
                         size: font_size,
-                        color: Color::from_u32(0xFFFFFFFF),
+                        color: Color::from_u32(0xFF000000), // Black text for active window
                         font_debug: false,
                     });
                 }

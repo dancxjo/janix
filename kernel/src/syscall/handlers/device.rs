@@ -302,6 +302,11 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
 pub fn sys_device_dma_phys(virt_addr: usize) -> SysResult<usize> {
     let hhdm_offset = crate::boot_info::get().map(|i| i.hhdm_offset).unwrap_or(0);
     if (virt_addr as u64) < hhdm_offset {
+        // Try translating referencing current user page table
+        if let Some(phys) = crate::memory::translate_user_page(virt_addr as u64) {
+            return Ok(phys as usize);
+        }
+
         return Err(Errno::EINVAL);
     }
     let phys = (virt_addr as u64) - hhdm_offset;

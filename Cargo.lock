@@ -50,6 +50,8 @@ name = "ahci_disk"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "iso9660",
+ "sha2",
  "stem",
 ]
 

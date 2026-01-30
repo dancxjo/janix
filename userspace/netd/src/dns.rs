@@ -6,7 +6,7 @@ use smoltcp::socket::udp::{self, Socket as UdpSocket, PacketMetadata};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
-use crate::smol_device::ThingNicDevice;
+use crate::smol_device::VirtioNicDevice;
 
 #[derive(Debug)]
 pub enum DnsError {
@@ -17,7 +17,7 @@ pub enum DnsError {
 
 pub fn lookup_a(
     iface: &mut Interface,
-    device: &mut ThingNicDevice,
+    device: &mut VirtioNicDevice<'_>,
     dns_server: Ipv4Address,
     name: &str,
 ) -> Result<Ipv4Address, DnsError> {
@@ -28,7 +28,16 @@ pub fn lookup_a(
     
     let udp_rx_buffer = udp::PacketBuffer::new(&mut rx_meta[..], &mut rx_data[..]);
     let udp_tx_buffer = udp::PacketBuffer::new(&mut tx_meta[..], &mut tx_data[..]);
-    let udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
+    let mut udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
+    
+    // Bind the socket to a local ephemeral port - this is REQUIRED for smoltcp UDP sockets
+    // to receive responses. Without binding, the socket has port=0 and won't match incoming packets.
+    let local_port = 49152u16; // Ephemeral port in the private range
+    if let Err(e) = udp_socket.bind(local_port) {
+        stem::warn!("DNS: Failed to bind socket to port {}: {:?}", local_port, e);
+        return Err(DnsError::Timeout);
+    }
+    stem::info!("DNS: Socket bound to local port {}", local_port);
     
     let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
@@ -40,25 +49,28 @@ pub fn lookup_a(
 
     stem::info!("DNS: Querying {} for {}", dns_server, name);
 
-    let start = ThingNicDevice::now();
+    let start = VirtioNicDevice::now();
     let timeout = start + Duration::from_secs(5);
 
     let mut sent = false;
+    let mut poll_count = 0u32;
 
     loop {
-        let now = ThingNicDevice::now();
+        let now = VirtioNicDevice::now();
         if now > timeout {
+            stem::info!("DNS: Timeout after {} polls", poll_count);
             return Err(DnsError::Timeout);
         }
 
         iface.poll(now, device, &mut socket_set);
+        poll_count += 1;
 
         let socket = socket_set.get_mut::<UdpSocket>(udp_handle);
 
         if !sent && socket.can_send() {
             socket.send_slice(&query, endpoint).ok();
             sent = true;
-            stem::info!("DNS: Query sent");
+            stem::info!("DNS: Query sent to {}:53 (txid=0x1234, {} bytes)", dns_server, query.len());
         }
 
         if socket.can_recv() {

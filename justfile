@@ -39,6 +39,21 @@ hdd arch=karch:
 run arch=karch:
     RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
 
+# Start HTTPS proxy for guest (runs on port 8080)
+# Guest accesses via: http://10.0.2.2:8080/?url=https://example.com/
+proxy port="8080":
+    python3 scripts/https_proxy.py {{port}}
+
+# Run QEMU with proxy (starts proxy in background, then QEMU)
+run-with-proxy arch=karch port="8080":
+    #!/usr/bin/env bash
+    echo "Starting HTTPS proxy on port {{port}}..."
+    python3 scripts/https_proxy.py {{port}} &
+    PROXY_PID=$!
+    trap "kill $PROXY_PID 2>/dev/null" EXIT
+    echo "Proxy PID: $PROXY_PID"
+    RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
+
 # Run HDD with QEMU
 run-hdd arch=karch:
     cargo xtask run-hdd --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"

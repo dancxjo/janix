@@ -773,65 +773,30 @@ fn register_virtio_net(
 
         let location = PciLocation { bus, dev, func };
         reg.set_pci_info(idx, location, msi_info, msix_info);
+        
+        // Find which BAR has the VirtIO config (from common_cfg capability)
+        let caps = get_virtio_capabilities(bus, dev, func);
+        let config_bar = if let Some(ref common) = caps.common_cfg {
+            common.bar as usize
+        } else {
+            0
+        };
+        
         crate::kinfo!(
-            "PCI: Registered virtio network (graph_id={}, idx={}) BAR0=0x{:x}",
+            "PCI: Registered virtio network (graph_id={}, idx={}) BAR{}=0x{:x}",
             graph_id,
             idx,
-            bar_addrs[0]
+            config_bar,
+            bar_addrs[config_bar]
         );
     } else {
         crate::kinfo!("PCI: Failed to register virtio network - registry full");
         return;
     }
-    drop(reg); // Release registry lock
+    drop(reg);
     
-    // Now try to initialize the driver in-kernel
-    let boot_info = match crate::boot_info::get() {
-        Some(info) => info,
-        None => {
-            crate::kinfo!("VirtIO-Net: Cannot get boot info");
-            return;
-        }
-    };
-    let hhdm_offset = boot_info.hhdm_offset;
-    
-    // Parse capabilities
-    let caps = get_virtio_capabilities(bus, dev, func);
-    
-    // Find the primary BAR (BAR0 for most virtio devices)
-    let bar_phys = bar_addrs[0];
-    if bar_phys == 0 {
-        crate::kinfo!("VirtIO-Net: No BAR0, cannot initialize");
-        return;
-    }
-    
-    // Create PCI device abstraction
-    use crate::virtio::pci::VirtioPciDevice;
-    let pci_dev = VirtioPciDevice::new(
-        bar_phys,
-        hhdm_offset,
-        caps.common_cfg,
-        caps.notify_cfg,
-        caps.isr_cfg,
-        caps.device_cfg,
-    );
-    
-    // Initialize the driver
-    match crate::net::virtio_net::VirtioNetDevice::new(pci_dev, hhdm_offset) {
-        Ok(net_dev) => {
-            crate::kinfo!("VirtIO-Net: Driver initialized successfully!");
-            // Store MAC address in graph
-            let mac = net_dev.mac();
-            let mac_u64 = (mac[0] as u64) | ((mac[1] as u64) << 8) | ((mac[2] as u64) << 16)
-                | ((mac[3] as u64) << 24) | ((mac[4] as u64) << 32) | ((mac[5] as u64) << 40);
-            set(net_node, keys::MAC_ADDRESS, mac_u64);
-            set(net_node, keys::LINK_STATUS, if net_dev.link_up() { 1 } else { 0 });
-            
-            // Initialize as primary NIC
-            crate::net::init_primary_nic(net_dev);
-        }
-        Err(e) => {
-            crate::kinfo!("VirtIO-Net: Failed to initialize driver: {}", e);
-        }
-    }
+    // VirtIO-NET is now handled by userspace netd driver
+    // The device is registered and properties are published via parse_virtio_capabilities
+    // Userspace netd will claim the device and do feature negotiation directly
+    crate::kinfo!("VirtIO-Net: Device registered for userspace driver");
 }

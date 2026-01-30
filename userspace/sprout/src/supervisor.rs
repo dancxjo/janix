@@ -41,6 +41,9 @@ impl Supervisor {
         // 3.5. Setup keyboard pipeline
         crate::pipelines::setup_input_pipeline(&mut self.tasks, display_handles);
 
+        // 3.6. Setup network pipeline
+        crate::pipelines::setup_network_pipeline(&mut self.tasks);
+
         // 4. Loop
         info!("SPROUT: Entering supervisor loop.");
 
@@ -169,7 +172,7 @@ impl Supervisor {
         self.ensure_app("/fontd");
         self.ensure_app("/blossom");
         self.ensure_app("/cambium");
-        self.ensure_app("/netd");
+        // netd is spawned by setup_network_pipeline, not here
         
         // Storage
         self.ensure_app("/ahci_disk");

@@ -123,7 +123,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "cambium",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         // Scheduler fairness test apps
@@ -160,7 +160,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "iso_reader",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
     ]

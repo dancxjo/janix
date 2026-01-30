@@ -174,10 +174,10 @@ impl Supervisor {
         self.ensure_app("/ahci_disk");
         self.ensure_app("/iso_reader");
 
-        // User Apps (Disabled per user request)
+        // User Apps
+        self.ensure_app("/font_explorer");
+        self.ensure_app("/photosynthesis");
         // self.ensure_app("/clock");
-        // self.ensure_app("/font_explorer");
-        // self.ensure_app("/photosynthesis");
         // self.ensure_app("/drawlist_demo");
 
         // #[cfg(feature = "diagnostic-apps")]

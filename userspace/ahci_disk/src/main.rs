@@ -694,26 +694,6 @@ fn main(_arg: usize) -> ! {
                 mmio_write32(pb, PORT_SERR, 0xFFFFFFFF);
                 start_port(mapped_base, port_num);
 
-                // Scan ISO
-                let atapi_dev = AhciAtapiDevice {
-                    mmio_base: mapped_base,
-                    port: port_num,
-                    dma_virt,
-                    dma_phys,
-                };
-
-                if let Some(fs) = IsoFs::probe(&atapi_dev) {
-                    info!("AHCI: Found ISO9660 filesystem");
-                    if let Some(host) = find_host_node() {
-                        if let Some(src) = initialize_iso_content_source() {
-                            let mut idx = 2000;
-                            scan_and_publish(&atapi_dev, &fs, host, src, fs.pvd.root_dir_extent, fs.pvd.root_dir_size, String::new(), &mut idx);
-                        }
-                    }
-                } else {
-                    info!("AHCI: No ISO9660 filesystem found.");
-                }
-
                 stop_port(mapped_base, port_num);
                 continue;
             }

@@ -143,7 +143,7 @@ fn main() -> ! {
         },
     );
 
-    let mut last_nodes = Vec::new();
+    let mut last_nodes: Vec<pipes::NodeInfo> = Vec::new();
     let mut last_edges = Vec::new();
     let mut last_routes = BTreeMap::new();
     let mut last_scan = stem::monotonic_ns();

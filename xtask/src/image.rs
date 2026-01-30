@@ -148,7 +148,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "photosynthesis",
             is_init: false,
-            boot_module: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {

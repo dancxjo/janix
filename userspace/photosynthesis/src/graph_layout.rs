@@ -141,28 +141,39 @@ fn initial_placement(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: &
         neighbors.entry(edge.to).or_default().push(edge.from);
     }
     
-    for node in nodes.iter_mut() {
+    // Build id-to-index map for neighbor lookups
+    let mut id_to_idx: BTreeMap<ThingId, usize> = BTreeMap::new();
+    for (i, node) in nodes.iter().enumerate() {
+        id_to_idx.insert(node.id, i);
+    }
+    
+    // Compute BFS ordering once upfront
+    let order = bfs_ordering(nodes, edges);
+    
+    for i in 0..nodes.len() {
         // Skip nodes that already have positions (preserve existing layout)
-        if node.x != 0.0 || node.y != 0.0 {
+        if nodes[i].x != 0.0 || nodes[i].y != 0.0 {
             continue;
         }
         
         // Skip pinned nodes (they stay where they are)
-        if node.pinned {
+        if nodes[i].pinned {
             continue;
         }
         
+        let node_id = nodes[i].id;
+        
         // For new nodes, place near neighbors if they exist
-        if let Some(nbrs) = neighbors.get(&node.id) {
+        if let Some(nbrs) = neighbors.get(&node_id) {
             let mut sum_x = 0.0;
             let mut sum_y = 0.0;
             let mut count = 0;
             
             for nbr_id in nbrs {
-                if let Some(nbr) = nodes.iter().find(|n| n.id == *nbr_id) {
-                    if nbr.x != 0.0 || nbr.y != 0.0 {
-                        sum_x += nbr.x;
-                        sum_y += nbr.y;
+                if let Some(&nbr_idx) = id_to_idx.get(nbr_id) {
+                    if nodes[nbr_idx].x != 0.0 || nodes[nbr_idx].y != 0.0 {
+                        sum_x += nodes[nbr_idx].x;
+                        sum_y += nodes[nbr_idx].y;
                         count += 1;
                     }
                 }
@@ -170,25 +181,24 @@ fn initial_placement(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: &
             
             if count > 0 {
                 // Place near average of neighbors with small random offset
-                node.x = sum_x / count as f32 + (node.id.to_u64_lossy() as f32 % 50.0 - 25.0);
-                node.y = sum_y / count as f32 + ((node.id.to_u64_lossy() >> 8) as f32 % 50.0 - 25.0);
+                nodes[i].x = sum_x / count as f32 + (node_id.to_u64_lossy() as f32 % 50.0 - 25.0);
+                nodes[i].y = sum_y / count as f32 + ((node_id.to_u64_lossy() >> 8) as f32 % 50.0 - 25.0);
                 continue;
             }
         }
         
         // Fallback: spiral placement for isolated nodes
-        let order = bfs_ordering(nodes, edges);
-        let idx = order.iter().position(|&i| nodes[i].id == node.id).unwrap_or(0);
+        let idx = order.iter().position(|&ord_idx| nodes[ord_idx].id == node_id).unwrap_or(0);
         
         if idx == 0 {
-            node.x = center_x;
-            node.y = center_y;
+            nodes[i].x = center_x;
+            nodes[i].y = center_y;
         } else {
             let n = idx as f32;
             let theta = n * 2.3999632; // Golden angle
             let r = settings.grid_w * 1.2 * libm::sqrtf(n);
-            node.x = center_x + r * libm::cosf(theta);
-            node.y = center_y + r * libm::sinf(theta);
+            nodes[i].x = center_x + r * libm::cosf(theta);
+            nodes[i].y = center_y + r * libm::sinf(theta);
         }
     }
 }

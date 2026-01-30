@@ -139,14 +139,10 @@ fn main() -> ! {
             }
         }
         // Process new font assets (auto-import path)
-        match syscall::root_watch_next(asset_watch, &mut seq_out, &mut watch_buf) {
-            Ok(len) if len > 0 => {
-                info!("FONTD: Received {} bytes from ASSET watch", len);
+        if let Ok(len) = syscall::root_watch_next(asset_watch, &mut seq_out, &mut watch_buf) {
+            if len > 0 {
                 process_asset_events(&watch_buf[..len], &mut state);
-            },
-            Ok(0) => { /* No events, continue */ },
-            Err(e) => { /* EAGAIN or error, continue */ },
-            _ => {}
+            }
         }
 
         // Process IPC requests (new atlas-based path)

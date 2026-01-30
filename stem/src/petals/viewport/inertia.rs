@@ -28,8 +28,8 @@ impl Default for InertiaState {
         Self {
             pan_velocity: (0.0, 0.0),
             zoom_velocity: 0.0,
-            pan_friction: 0.92,      // 8% friction per second
-            zoom_friction: 0.88,     // 12% friction per second
+            pan_friction: 0.92,      // Velocity reduced to 8% per second
+            zoom_friction: 0.88,     // Velocity reduced to 12% per second
             pan_stop_threshold: 1.0, // Stop below 1 px/s
             zoom_stop_threshold: 0.01,
         }

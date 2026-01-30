@@ -2,7 +2,7 @@
 //!
 //! Provides optional grid and zoom snapping for viewports.
 
-use libm::{log2f, logf, powf, roundf};
+use libm::{log2f, powf, roundf};
 
 /// Zoom snap policy.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -72,15 +72,16 @@ pub fn snap_zoom(zoom: f32, policy: ZoomSnapPolicy, threshold: f32) -> f32 {
             let mut best_distance = f32::INFINITY;
 
             for &ratio in NICE_RATIOS {
-                let distance = logf(zoom / ratio).abs();
+                // Use log2 for consistent distance metric
+                let distance = log2f(zoom / ratio).abs();
                 if distance < best_distance {
                     best = ratio;
                     best_distance = distance;
                 }
             }
 
-            // Only snap if within threshold
-            let log_distance = logf(zoom / best).abs();
+            // Only snap if within threshold (in log2 space)
+            let log_distance = log2f(zoom / best).abs();
             if log_distance <= threshold {
                 best
             } else {

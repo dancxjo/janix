@@ -37,15 +37,17 @@ let mut controller = PanZoomController::new(
 // Mouse wheel zoom
 controller.handle_wheel(mouse_x, mouse_y, wheel_delta);
 
-// Drag panning
+// Drag panning with timestamps for kinetic scrolling
+let current_ns = stem::monotonic_ns();  // or your time source
+
 if pointer_down {
-    controller.begin_drag(pointer_x, pointer_y);
+    controller.begin_drag(pointer_x, pointer_y, current_ns);
 }
 if pointer_moved && controller.is_dragging() {
-    controller.update_drag(pointer_x, pointer_y);
+    controller.update_drag(pointer_x, pointer_y, current_ns);
 }
 if pointer_up {
-    controller.end_drag();
+    controller.end_drag();  // Applies velocity for kinetic scrolling
 }
 
 // Keyboard navigation
@@ -195,11 +197,13 @@ impl GraphViewer {
     }
 
     fn handle_pointer_down(&mut self, x: f32, y: f32) {
-        self.controller.begin_drag(x, y);
+        let timestamp = stem::monotonic_ns();
+        self.controller.begin_drag(x, y, timestamp);
     }
 
     fn handle_pointer_move(&mut self, x: f32, y: f32) {
-        if self.controller.update_drag(x, y) {
+        let timestamp = stem::monotonic_ns();
+        if self.controller.update_drag(x, y, timestamp) {
             // Dragging - viewport updated
         } else {
             // Hovering - check hit test
@@ -324,9 +328,9 @@ impl SvgEditor {
 - `new(viewport, constraints)`: Create controller
 - `tick(dt) -> bool`: Apply inertia, returns true if updated
 - `handle_wheel(x, y, delta)`: Mouse wheel input
-- `begin_drag(x, y)`: Start drag gesture
-- `update_drag(x, y) -> bool`: Update drag, returns true if dragging
-- `end_drag()`: End drag gesture
+- `begin_drag(x, y, timestamp_ns)`: Start drag gesture with timestamp
+- `update_drag(x, y, timestamp_ns) -> bool`: Update drag with timestamp, returns true if dragging
+- `end_drag()`: End drag gesture, applies velocity for kinetic scrolling
 - `handle_arrow_key(up, down, left, right)`: Keyboard pan
 - `handle_keyboard_zoom(zoom_in)`: Keyboard zoom
 - `handle_home()`: Reset view
@@ -365,7 +369,11 @@ impl SvgEditor {
 ```rust
 const DRAG_THRESHOLD_PX: f32 = 5.0;
 
-let drag_distance = ((current_x - start_x).powi(2) + (current_y - start_y).powi(2)).sqrt();
+let drag_distance = {
+    let dx = current_x - start_x;
+    let dy = current_y - start_y;
+    libm::sqrtf(dx * dx + dy * dy)
+};
 let is_click = drag_distance < DRAG_THRESHOLD_PX;
 
 if pointer_up {

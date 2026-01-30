@@ -169,6 +169,7 @@ impl Supervisor {
         self.ensure_app("/fontd");
         self.ensure_app("/blossom");
         self.ensure_app("/cambium");
+        self.ensure_app("/netd");
         
         // Storage
         self.ensure_app("/ahci_disk");

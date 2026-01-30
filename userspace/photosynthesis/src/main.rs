@@ -97,6 +97,11 @@ const TILE_FILL_COLOR: Color = Color::from_argb_u32(0x88FFFFFF);
 const TYPE_TEXT_COLOR: Color = Color::from_argb_u32(0xFF383838);
 const ID_TEXT_COLOR: Color = Color::from_argb_u32(0xFF8A8A8C);
 
+// Debug visualization colors
+const DEBUG_COLLISION_BOX_COLOR: Color = Color::from_argb_u32(0x80FF0000);
+const DEBUG_VELOCITY_COLOR: Color = Color::from_argb_u32(0xFF00FF00);
+const DEBUG_PIN_INDICATOR_COLOR: Color = Color::from_argb_u32(0xFFFFAA00);
+
 #[stem::main]
 fn main() -> ! {
     // Initialize i18n system
@@ -144,6 +149,7 @@ fn main() -> ! {
     let mut last_scan = stem::monotonic_ns();
     let mut dirty = true;
     let mut graph_watch = None;
+    let mut debug_mode = false; // Toggle with 'D' key
 
     // Input state for viewport control
     let mut input_state = input::InputState::new();
@@ -159,8 +165,39 @@ fn main() -> ! {
 
     loop {
         // Poll input from system graph and apply to viewport
-        if input::poll_and_apply(&mut viewport_controller, &mut input_state) {
+        let (viewport_updated, click_event, toggle_debug_flag) = input::poll_and_apply(&mut viewport_controller, &mut input_state);
+        if viewport_updated {
             dirty = true;
+        }
+        
+        if toggle_debug_flag {
+            debug_mode = !debug_mode;
+            info!("Debug mode: {}", debug_mode);
+            dirty = true;
+        }
+        
+        // Handle node pinning/unpinning on click
+        if let Some(click) = click_event {
+            // Convert screen coords to world coords
+            let (world_x, world_y) = viewport_controller.viewport.screen_to_world(click.x as f32, click.y as f32);
+            
+            // Check if click hit any node
+            for node in &last_nodes {
+                let half_w = TILE_WIDTH as f32 / 2.0;
+                let half_h = TILE_HEIGHT as f32 / 2.0;
+                
+                if world_x >= node.x - half_w && world_x <= node.x + half_w &&
+                   world_y >= node.y - half_h && world_y <= node.y + half_h {
+                    // Toggle pin state
+                    let currently_pinned = stem::thing::sys::prop_get(node.id, keys::LAYOUT_PIN).unwrap_or(0) != 0;
+                    let new_pin_state = if currently_pinned { 0 } else { 1 };
+                    stem::thing::sys::prop_set(node.id, keys::LAYOUT_PIN, new_pin_state).ok();
+                    
+                    info!("Node {} pin state: {}", node.id.to_u64_lossy(), !currently_pinned);
+                    dirty = true;
+                    break;
+                }
+            }
         }
 
         if let Some(watch_id) = graph_watch {
@@ -283,6 +320,8 @@ fn main() -> ! {
                     &layout,
                     &last_routes,
                     &viewport_controller.viewport,
+                    &layout_nodes,
+                    debug_mode,
                 );
                 let _ = stem::petals::publish_window(&scene);
                 last_nodes = final_nodes;
@@ -303,6 +342,8 @@ fn build_graph_scene(
     layout: &pipes::GraphLayout,
     routes: &BTreeMap<(ThingId, ThingId), Vec<(f32, f32)>>,
     viewport: &Viewport,
+    layout_nodes: &[LayoutNode],
+    debug_mode: bool,
 ) -> Scene {
     let mut canvas = Canvas::new().width(Size::Pct(100)).height(Size::Pct(100));
 
@@ -458,6 +499,49 @@ fn build_graph_scene(
                 id_left,
                 id_y,
             );
+            
+            // Debug visualization
+            if debug_mode {
+                // Find corresponding layout node for velocity and pin state
+                if let Some(ln) = layout_nodes.iter().find(|l| l.id == node.id) {
+                    // Draw collision box
+                    let box_left = scx - (ln.w / 2.0) as i32;
+                    let box_top = scy - (ln.h / 2.0) as i32;
+                    canvas = canvas.push_at(
+                        Rect::new()
+                            .color(DEBUG_COLLISION_BOX_COLOR)
+                            .width(Size::Px(ln.w as i32))
+                            .height(Size::Px(ln.h as i32)),
+                        box_left,
+                        box_top,
+                    );
+                    
+                    // Draw velocity vector
+                    let vel_mag = libm::sqrtf(ln.vx * ln.vx + ln.vy * ln.vy);
+                    if vel_mag > 0.1 {
+                        let vel_scale = 10.0;
+                        let (end_x, end_y) = to_screen(x + ln.vx * vel_scale, y + ln.vy * vel_scale);
+                        canvas = canvas.push(
+                            Line::new(scx, scy, end_x, end_y)
+                                .width(2)
+                                .color(DEBUG_VELOCITY_COLOR),
+                        );
+                    }
+                    
+                    // Draw pin indicator
+                    if ln.pinned {
+                        canvas = canvas.push_at(
+                            Rect::new()
+                                .color(DEBUG_PIN_INDICATOR_COLOR)
+                                .radius(4)
+                                .width(Size::Px(8))
+                                .height(Size::Px(8)),
+                            scx - 4,
+                            top - 12,
+                        );
+                    }
+                }
+            }
         }
     }
 

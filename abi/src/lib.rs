@@ -2,6 +2,7 @@
 extern crate alloc;
 extern crate self as abi;
 
+pub mod block_device_protocol;
 pub mod debug;
 pub mod device;
 pub mod display_driver_protocol;
@@ -22,6 +23,7 @@ pub mod schema;
 pub mod symbols;
 pub mod syscall;
 pub mod trace;
+pub mod tree_provider;
 pub mod types;
 pub mod ui_event;
 pub mod ui_paint;

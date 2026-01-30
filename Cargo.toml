@@ -43,7 +43,9 @@ members = [
     "userspace/drawlist_validate",
     "userspace/virgl_demo",
     "userspace/iso9660",
+    "userspace/iso9660d",
     "userspace/iso_reader",
+    "userspace/iso_cat",
     "tools/display_proto_tests",
     "userspace/netd",
 ]

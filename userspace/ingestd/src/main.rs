@@ -5,7 +5,7 @@
 //!
 //! This service makes assets continuous graph citizens by:
 //!
-//! 1. **Continuous Discovery**: Watches BOOT_MODULE nodes for new assets
+//! 1. **Continuous Discovery**: Watches BOOT_MODULE and CONTENT_SOURCE nodes for new assets
 //! 2. **Content Hashing**: Computes SHA-256 hash of asset content for deduplication
 //! 3. **Graph Materialization**: Creates canonical Asset nodes in the graph
 //! 4. **Change Detection**: Updates assets when content changes, increments generation
@@ -20,7 +20,7 @@
 //! - `asset.size`: Size in bytes
 //! - `asset.bytespace`: Reference to asset content
 //! - `asset.generation`: Increments on content change
-//! - `asset.source`: Where asset came from (e.g., "boot")
+//! - `asset.source`: Where asset came from (e.g., "boot", "iso9660")
 //! - `asset.ready`: Boolean indicating asset is ready for use
 //!
 //! ## Philosophy
@@ -35,14 +35,19 @@
 extern crate alloc;
 mod sniff;
 
+use alloc::format;
+use alloc::vec;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
+use abi::tree_provider::*;
 use abi::types::{WatchMode, WatchSpec};
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::string::String;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 use sha2::{Digest, Sha256};
 use sniff::sniff;
+use stem::syscall::port::{port_recv, port_send, PortHandle};
 use stem::thing::ThingId;
 
 /// Flag to track whether initial Limine boot module scan is complete.
@@ -74,12 +79,14 @@ enum PublishResult {
 /// In-memory index of processed assets for O(log n) deduplication
 struct AssetIndex {
     by_key: BTreeMap<AssetKey, (ThingId, u64)>, // (asset_id, hash)
+    scanned_sources: BTreeSet<u64>, // Track scanned tree provider sources
 }
 
 impl AssetIndex {
     fn new() -> Self {
         Self {
             by_key: BTreeMap::new(),
+            scanned_sources: BTreeSet::new(),
         }
     }
 
@@ -94,13 +101,144 @@ impl AssetIndex {
     fn insert(&mut self, key: AssetKey, id: ThingId, hash: u64) {
         self.by_key.insert(key, (id, hash));
     }
+
+    fn mark_source_scanned(&mut self, source_id: u64) {
+        self.scanned_sources.insert(source_id);
+    }
+
+    fn is_source_scanned(&self, source_id: u64) -> bool {
+        self.scanned_sources.contains(&source_id)
+    }
 }
+
+/// Tree Provider Client Helpers
+/// These functions implement the client side of the tree provider RPC protocol
+
+fn send_tree_request(port: PortHandle, request_type: u8, payload: &[u8]) -> Result<Vec<u8>, &'static str> {
+    // Build request message: [request_type, payload...]
+    let mut msg = Vec::with_capacity(1 + payload.len());
+    msg.push(request_type);
+    msg.extend_from_slice(payload);
+    
+    // Send request
+    port_send(port, &msg).map_err(|_| "port_send failed")?;
+    
+    // Receive response
+    let mut response = vec![0u8; 8192];
+    let len = port_recv(port, &mut response).map_err(|_| "port_recv failed")?;
+    response.truncate(len);
+    
+    if response.is_empty() {
+        return Err("empty response");
+    }
+    
+    // Check response type
+    match response[0] {
+        0 => Ok(response[1..].to_vec()), // TreeProviderResponse::Ok
+        1 => Err("tree provider error"), // TreeProviderResponse::Error
+        _ => Err("invalid response type"),
+    }
+}
+
+fn get_root_node(port: PortHandle) -> Result<u64, &'static str> {
+    let response = send_tree_request(port, TreeProviderRequest::Root as u8, &[])?;
+    
+    if response.len() < 8 {
+        return Err("truncated root response");
+    }
+    
+    let root_resp = unsafe { &*(response.as_ptr() as *const RootResponse) };
+    Ok(root_resp.node_id)
+}
+
+fn list_children(port: PortHandle, node_id: u64) -> Result<Vec<(u64, NodeKind, String, u64)>, &'static str> {
+    let req = ListRequest { node_id };
+    let req_bytes = unsafe {
+        core::slice::from_raw_parts(&req as *const _ as *const u8, core::mem::size_of::<ListRequest>())
+    };
+    
+    let response = send_tree_request(port, TreeProviderRequest::List as u8, req_bytes)?;
+    
+    if response.len() < core::mem::size_of::<ListResponseHeader>() {
+        return Err("truncated list response");
+    }
+    
+    let header = unsafe { &*(response.as_ptr() as *const ListResponseHeader) };
+    let count = header.count as usize;
+    
+    let mut children = Vec::new();
+    let mut offset = core::mem::size_of::<ListResponseHeader>();
+    
+    for _ in 0..count {
+        if offset + core::mem::size_of::<ChildEntry>() > response.len() {
+            break;
+        }
+        
+        let entry = unsafe { &*((response.as_ptr().add(offset)) as *const ChildEntry) };
+        offset += core::mem::size_of::<ChildEntry>();
+        
+        let name_len = entry.name_len as usize;
+        if offset + name_len > response.len() {
+            break;
+        }
+        
+        let name_bytes = &response[offset..offset + name_len];
+        let name = String::from_utf8_lossy(name_bytes).into_owned();
+        offset += name_len;
+        
+        let kind = match entry.kind {
+            0 => NodeKind::Directory,
+            1 => NodeKind::File,
+            2 => NodeKind::Symlink,
+            _ => NodeKind::Other,
+        };
+        
+        children.push((entry.node_id, kind, name, entry.size));
+    }
+    
+    Ok(children)
+}
+
+fn read_file_data(port: PortHandle, node_id: u64, offset: u64, length: u32) -> Result<Vec<u8>, &'static str> {
+    let req = ReadRequest { node_id, offset, length };
+    let req_bytes = unsafe {
+        core::slice::from_raw_parts(&req as *const _ as *const u8, core::mem::size_of::<ReadRequest>())
+    };
+    
+    let response = send_tree_request(port, TreeProviderRequest::Read as u8, req_bytes)?;
+    
+    if response.len() < core::mem::size_of::<ReadResponse>() {
+        return Err("truncated read response");
+    }
+    
+    let read_resp = unsafe { &*(response.as_ptr() as *const ReadResponse) };
+    let data_len = read_resp.data_len as usize;
+    
+    if response.len() < core::mem::size_of::<ReadResponse>() + data_len {
+        return Err("truncated read data");
+    }
+    
+    let data = response[core::mem::size_of::<ReadResponse>()..core::mem::size_of::<ReadResponse>() + data_len].to_vec();
+    Ok(data)
+}
+
+/// Determine if a file path should be eagerly materialized (hot-set policy)
+fn is_in_hot_set(path: &str) -> bool {
+    let path_lower = path.to_lowercase();
+    // Load fonts, cursors, and critical UI assets eagerly
+    path_lower.contains("/cursor") ||
+    path_lower.ends_with(".ttf") ||
+    path_lower.ends_with(".otf") ||
+    path_lower.contains("/font") ||
+    path_lower == "/boot.svg" // Boot logo if present
+}
+
 use stem::thing::sys::{
     bytespace_info, bytespace_map, bytespace_unmap, create_node, describe_thing, find, intern,
     prop_get, prop_set,
 };
 use stem::xml::ingest::{ingest_xml_to_graph, SysGraphApply, XmlIngestOptions};
-use stem::{info, syscall};
+use stem::{info, warn, syscall};
 use ttf_parser::Face;
 
 #[stem::main]
@@ -126,9 +264,10 @@ fn main(_arg: usize) -> ! {
     info!("INGESTD: Seeding system assets (reactive)...");
     seed_system_assets();
 
-    // 4. Open watches for new boot modules and asset requests
+    // 4. Open watches for new boot modules, content sources, and asset requests
     // This ensures continuous monitoring of asset sources
     let boot_module_pred = intern(kinds::BOOT_MODULE).unwrap_or(0);
+    let content_source_pred = intern(kinds::CONTENT_SOURCE).unwrap_or(0);
     let asset_request_pred = intern(kinds::ASSET_REQUEST).unwrap_or(0);
     let proc_task_pred = intern(kinds::PROC_TASK).unwrap_or(0);
     let content_file_pred = intern(kinds::CONTENT_FILE).unwrap_or(0);
@@ -137,7 +276,7 @@ fn main(_arg: usize) -> ! {
     let mut watch_bufs = Vec::new();
     let mut watch_seqs = Vec::new();
 
-    let preds = [boot_module_pred, asset_request_pred, proc_task_pred, content_file_pred];
+    let preds = [boot_module_pred, content_source_pred, asset_request_pred, proc_task_pred, content_file_pred];
     for &pred in &preds {
         if pred == 0 {
             continue;
@@ -252,6 +391,14 @@ fn process_events(buf: &[u8], _source_id: ThingId, index: &mut AssetIndex) {
                     }
                 }
 
+                // CONTENT_SOURCE kind - new tree provider sources (e.g., ISO9660)
+                if let Ok(k_source) = intern(kinds::CONTENT_SOURCE) {
+                    if kind == k_source as u64 {
+                        ingest_content_source(subject, index);
+                        continue;
+                    }
+                }
+
                 if let Ok(k_file) = intern(kinds::CONTENT_FILE) {
                     if kind == k_file as u64 {
                         ingest_content_file(subject, index);
@@ -355,7 +502,7 @@ fn ingest_content_file(file_id: ThingId, index: &mut AssetIndex) {
             info!("INGESTD: Updated file '{}' from disk (hash changed)", file_name);
             id
         }
-        PublishResult::Unchanged(id) => {
+        PublishResult::Unchanged(_id) => {
             // Silent - no logging for unchanged assets
             let _ = bytespace_unmap(bs_id, ptr);
             return;
@@ -388,6 +535,235 @@ fn ingest_content_file(file_id: ThingId, index: &mut AssetIndex) {
     }
     
     let _ = bytespace_unmap(bs_id, ptr);
+}
+
+fn ingest_content_source(source_id: ThingId, index: &mut AssetIndex) {
+    // Check if we've already scanned this source
+    let source_u64 = source_id.to_u64_lossy();
+    if index.is_source_scanned(source_u64) {
+        return; // Immutable source already scanned
+    }
+    
+    // Get tree provider port handle
+    let port_handle = match prop_get(source_id, "tree_provider_port") {
+        Ok(handle) => handle as PortHandle,
+        Err(_) => {
+            warn!("INGESTD: CONTENT_SOURCE has no tree_provider_port");
+            return;
+        }
+    };
+    
+    // Get source kind for logging
+    let kind_sym = prop_get(source_id, keys::CONTENT_SOURCE_KIND).unwrap_or(0);
+    let mut kind_buf = [0u8; 64];
+    let source_kind = if let Ok(len) = stem::thing::sys::describe_symbol(kind_sym as u32, &mut kind_buf) {
+        core::str::from_utf8(&kind_buf[..len]).unwrap_or("unknown")
+    } else {
+        "unknown"
+    };
+    
+    info!("INGESTD: Scanning tree provider source (kind={}, port={})", source_kind, port_handle);
+    
+    // Scan the tree provider
+    match scan_tree_provider(port_handle, source_id, source_kind, index) {
+        Ok(count) => {
+            info!("INGESTD: Tree provider scan complete ({} files ingested)", count);
+            // Mark as scanned
+            index.mark_source_scanned(source_u64);
+        }
+        Err(e) => {
+            warn!("INGESTD: Tree provider scan failed: {}", e);
+        }
+    }
+}
+
+fn scan_tree_provider(
+    port: PortHandle,
+    source_id: ThingId,
+    source_kind: &str,
+    index: &mut AssetIndex,
+) -> Result<usize, &'static str> {
+    // Get root node
+    let root_id = get_root_node(port)?;
+    
+    let mut file_count = 0;
+    scan_tree_recursive(port, root_id, String::new(), source_id, source_kind, index, &mut file_count)?;
+    
+    Ok(file_count)
+}
+
+fn scan_tree_recursive(
+    port: PortHandle,
+    node_id: u64,
+    path_prefix: String,
+    source_id: ThingId,
+    source_kind: &str,
+    index: &mut AssetIndex,
+    file_count: &mut usize,
+) -> Result<(), &'static str> {
+    let children = list_children(port, node_id)?;
+    
+    for (child_id, kind, name, size) in children {
+        // Build full path
+        let full_path = if path_prefix.is_empty() {
+            format!("/{}", name)
+        } else {
+            format!("{}/{}", path_prefix, name)
+        };
+        
+        match kind {
+            NodeKind::Directory => {
+                // Recurse into subdirectory
+                scan_tree_recursive(port, child_id, full_path, source_id, source_kind, index, file_count)?;
+            }
+            NodeKind::File => {
+                // Process file
+                ingest_tree_file(port, child_id, &full_path, size, source_id, source_kind, index)?;
+                *file_count += 1;
+            }
+            _ => {
+                // Skip symlinks and other node types
+            }
+        }
+    }
+    
+    Ok(())
+}
+
+fn ingest_tree_file(
+    port: PortHandle,
+    node_id: u64,
+    path: &str,
+    size: u64,
+    _source_id: ThingId,
+    source_kind: &str,
+    index: &mut AssetIndex,
+) -> Result<(), &'static str> {
+    // Check hot-set policy
+    let in_hot_set = is_in_hot_set(path);
+    
+    if !in_hot_set && size > MAX_READ_SIZE as u64 {
+        // Skip large files outside hot-set (publish metadata only in future)
+        return Ok(());
+    }
+    
+    // Read file data (in chunks if needed)
+    let mut data = Vec::new();
+    let mut offset = 0u64;
+    
+    while offset < size {
+        let to_read = ((size - offset) as usize).min(MAX_READ_SIZE);
+        let chunk = read_file_data(port, node_id, offset, to_read as u32)?;
+        data.extend_from_slice(&chunk);
+        offset += chunk.len() as u64;
+        
+        if chunk.len() < to_read {
+            break; // EOF
+        }
+    }
+    
+    // Compute content hash
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    let hash_bytes = hasher.finalize();
+    let hash = u64::from_le_bytes([
+        hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
+        hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+    ]);
+    
+    // Check if we've already ingested this file with same hash
+    let name_sym = intern(path).unwrap_or(0) as u64;
+    let key = AssetKey { name_sym };
+    if let DedupeResult::Unchanged(_) = index.check(&key, hash) {
+        return Ok(()); // Already have this exact file
+    }
+    
+    // Sniff asset kind
+    let guess = sniff(&data);
+    let kind = if let Some(ref g) = guess {
+        if g.mime.starts_with("font/") || g.mime == "application/font-sfnt" {
+            "font"
+        } else if g.mime == "image/svg+xml" {
+            "svg"
+        } else if g.mime.starts_with("image/") {
+            "image"
+        } else {
+            "raw"
+        }
+    } else {
+        if path.ends_with(".ttf") || path.ends_with(".otf") {
+            "font"
+        } else if path.ends_with(".svg") {
+            "svg"
+        } else if path.ends_with(".bmp") || path.ends_with(".png") {
+            "image"
+        } else {
+            "raw"
+        }
+    };
+    
+    // Create bytespace for the file data
+    let bs_id = match stem::thing::sys::bytespace_create(data.len(), 0, 0) {
+        Ok(id) => id,
+        Err(_) => return Err("bytespace_create failed"),
+    };
+    
+    // Map and copy data
+    let ptr = match bytespace_map(bs_id) {
+        Ok(ptr) => ptr,
+        Err(_) => return Err("bytespace_map failed"),
+    };
+    
+    unsafe {
+        core::ptr::copy_nonoverlapping(data.as_ptr(), ptr as *mut u8, data.len());
+    }
+    
+    // Publish asset
+    let result = publish_asset(path, kind, bs_id, source_kind, data.len(), hash, index);
+    
+    let asset_id = match result {
+        PublishResult::Created(id) => {
+            info!("INGESTD: Ingested '{}' from {} ({}, {} bytes)", path, source_kind, kind, data.len());
+            id
+        }
+        PublishResult::Updated(id) => {
+            info!("INGESTD: Updated '{}' from {} (hash changed)", path, source_kind);
+            id
+        }
+        PublishResult::Unchanged(_) => {
+            let _ = bytespace_unmap(bs_id, ptr);
+            return Ok(());
+        }
+    };
+    
+    // Metadata enrichment for fonts
+    if kind == "font" && !data.is_empty() {
+        if let Ok(face) = Face::parse(&data, 0) {
+            let family = face
+                .names()
+                .into_iter()
+                .find(|n| n.name_id == ttf_parser::name_id::FAMILY && n.is_unicode())
+                .and_then(|n| {
+                    let mut buf = Vec::with_capacity(n.name.len() / 2);
+                    for chunk in n.name.chunks_exact(2) {
+                        buf.push(u16::from_be_bytes([chunk[0], chunk[1]]));
+                    }
+                    alloc::string::String::from_utf16(&buf).ok()
+                });
+            if let Some(name) = family {
+                let _ = prop_set(asset_id, keys::FONT_NAME, intern(&name).unwrap_or(0) as u64);
+            }
+        }
+    }
+    
+    // Parse and import SVG as XML tree
+    if kind == "svg" && !data.is_empty() {
+        ingest_svg_xml(asset_id, &data, path);
+    }
+    
+    let _ = bytespace_unmap(bs_id, ptr);
+    
+    Ok(())
 }
 
 fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {

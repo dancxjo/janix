@@ -50,8 +50,6 @@ name = "ahci_disk"
 version = "0.1.0"
 dependencies = [
  "abi",
- "iso9660",
- "sha2",
  "stem",
 ]
 
@@ -1445,6 +1443,23 @@ checksum = "a6cb138bb79a146c1bd460005623e142ef0181e3d0219cb493e02f7d08a35695"
 
 [[package]]
 name = "iso9660"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
+name = "iso9660d"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "iso9660",
+ "stem",
+]
+
+[[package]]
+name = "iso_cat"
 version = "0.1.0"
 dependencies = [
  "abi",

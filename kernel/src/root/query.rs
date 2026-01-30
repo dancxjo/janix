@@ -17,28 +17,42 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
 
     let mut current_rows: Vec<QueryRow> = Vec::new();
 
-    // Step 0: Source (Scan)
+    // Step 0: Source (Scan or Start)
     let step0 = &plan[0];
-    if step0.op != 1 {
-        return Err(());
-    } // Must be Scan
+    
+    if step0.op == 1 {
+        // Scan: initialize with all nodes of a given kind
+        let kind_sym = step0.symbol;
+        let limit = if step0.arg1 == 0 {
+            64
+        } else {
+            step0.arg1 as usize
+        };
 
-    let kind_sym = step0.symbol;
-    let limit = if step0.arg1 == 0 {
-        64
-    } else {
-        step0.arg1 as usize
-    };
-
-    if let Some(ids) = graph.kind_index.get(&kind_sym) {
-        for id in ids.iter().take(limit) {
+        if let Some(ids) = graph.kind_index.get(&kind_sym) {
+            for id in ids.iter().take(limit) {
+                current_rows.push(QueryRow {
+                    id: *id,
+                    kind_rel: kind_sym as u64,
+                    val_dst: 0,
+                    extra: 0,
+                });
+            }
+        }
+    } else if step0.op == 4 {
+        // Start: initialize with a specific node ID
+        let node_id = step0.arg1;
+        if graph.nodes.contains_key(&node_id) {
+            let kind = graph.nodes.get(&node_id).map(|n| n.kind).unwrap_or(0);
             current_rows.push(QueryRow {
-                id: *id,
-                kind_rel: kind_sym as u64,
+                id: node_id,
+                kind_rel: kind as u64,
                 val_dst: 0,
                 extra: 0,
             });
         }
+    } else {
+        return Err(()); // Must be Scan or Start
     }
 
     // Pipeline

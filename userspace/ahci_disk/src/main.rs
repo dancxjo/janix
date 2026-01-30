@@ -584,72 +584,53 @@ fn publish_content_file_indexed(
     }
 }
 
-/// Publish a file from the ISO as both BOOT_MODULE (backward compat) and File node.
+/// Publish a file from the ISO as a CONTENT_FILE node.
+/// BOOT_MODULE nodes are only for Limine boot modules - disk files use CONTENT_FILE.
 /// Supports lazy materialization - if data is None, only metadata is published.
 fn publish_iso_file(
-    host: ThingId,
+    _host: ThingId, // No longer used - was for linking BOOT_MODULE to host
     source_id: ThingId,
     path: &str,
     data: Option<Vec<u8>>,
-    index: usize,
+    _index: usize, // No longer used - was for BOOT_MODULE indexing
     publish_index: &mut PublishIndex,
     stats: &mut ScanStats,
 ) -> Result<ThingId, &'static str> {
-    let size = data.as_ref().map(|d| d.len() as u64).unwrap_or(0);
-
-    // Create module node (for backward compatibility with existing consumers)
-    let node = thingsys::create_node(kinds::BOOT_MODULE).map_err(|_| "create_node failed")?;
-
-    // Set name (intern string, store symbol ID)
-    let name_id = thingsys::intern(path).map_err(|_| "intern name failed")?;
-    thingsys::prop_set(node, keys::NAME, name_id as u64).map_err(|_| "set name failed")?;
-
-    // Set size
-    thingsys::prop_set(node, keys::SIZE_BYTES, size).map_err(|_| "set size failed")?;
-
-    // Set index
-    thingsys::prop_set(node, "index", index as u64).map_err(|_| "set index failed")?;
-
-    // Set source to a distinct value for ISO files
-    thingsys::prop_set(node, keys::SOURCE, 10u64).map_err(|_| "set source failed")?; // 10 = ISO
+    let size = data.as_ref().map(|d| d.len()).unwrap_or(0);
 
     // Create bytespace and write data only if we have content
     let bs = if let Some(ref data_vec) = data {
-        let bytespace = thingsys::bytespace_create(size as usize, 0, 0)
+        let bytespace = thingsys::bytespace_create(size, 0, 0)
             .map_err(|_| "bytespace_create failed")?;
         thingsys::bytespace_write(bytespace, 0, data_vec)
             .map_err(|_| "bytespace_write failed")?;
         
-        stats.bytes_read += size;
-        
-        thingsys::prop_set(node, keys::BYTESPACE, bytespace.to_u64_lossy()).ok();
-        thingsys::link(node, rels::BACKED_BY, bytespace).ok();
+        stats.bytes_read += size as u64;
         Some(bytespace)
     } else {
         None
     };
 
-    // Link to host
-    thingsys::link(host, rels::HAS_MODULE, node).ok();
+    // Extract just the filename for MIME type detection
+    let name_for_mime = path.rsplit('/').next().unwrap_or(path);
+    let mime = get_mime_type(name_for_mime);
 
-    // Extract file name from path
-    let name = path.rsplit('/').next().unwrap_or(path);
-    let mime = get_mime_type(name);
-
-    // Also create/update File node for unified content access
-    publish_content_file_indexed(
+    // Create CONTENT_FILE node (the unified file abstraction)
+    // Use the full path as the name for consistency with ingestd
+    let file_id = publish_content_file_indexed(
         source_id,
-        name,
+        path,
         data.as_deref(),
         bs,
-        size as usize,
+        size,
         mime,
         publish_index,
         stats,
-    );
+    ).ok_or("failed to create content file")?;
 
-    Ok(node)
+    Ok(file_id)
 }
+
 
 /// Hot-set: files that should be loaded eagerly at boot for responsive UI
 fn is_in_hot_set(path: &str) -> bool {

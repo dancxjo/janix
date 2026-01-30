@@ -645,19 +645,21 @@ fn publish_content_file(
     hash: u64,
     mime: Option<&str>,
 ) -> Option<ThingId> {
-    // Check if file already exists with same source and name
+    // Check if file already exists by NAME (regardless of source)
+    // This prevents duplicates when both ahci_disk and ingestd publish the same file
     // Buffer size: 512 is reasonable for boot-time assets; larger systems may need pagination
     let mut files = [ThingId::default(); 512];
     if let Ok(count) = find(kinds::CONTENT_FILE, &mut files) {
         let name_sym = intern(name).unwrap_or(0) as u64;
         for &file_id in &files[..count] {
             let existing_name = prop_get(file_id, keys::FILE_NAME).unwrap_or(0);
-            let existing_source = prop_get(file_id, keys::FILE_SOURCE).unwrap_or(0);
             
-            if existing_name == name_sym && existing_source == source_id.to_u64_lossy() {
-                // Update existing file
+            // If file with same name already exists (from any source), skip creation
+            // This prevents race between ahci_disk (iso9660_disk source) and ingestd (limine_module source)
+            if existing_name == name_sym {
+                // File exists - update bytespace/hash if changed, but don't create duplicate
                 let old_hash = prop_get(file_id, keys::FILE_HASH).unwrap_or(0);
-                if old_hash != hash {
+                if old_hash != hash && hash != 0 {
                     let _ = prop_set(file_id, keys::FILE_BYTESPACE, bs_id.to_u64_lossy());
                     let _ = prop_set(file_id, keys::FILE_HASH, hash);
                     let _ = prop_set(file_id, keys::FILE_SIZE, size as u64);
@@ -666,6 +668,7 @@ fn publish_content_file(
             }
         }
     }
+
 
     // Create new file node
     match create_node(kinds::CONTENT_FILE) {

@@ -1553,19 +1553,26 @@ fn rasterize_text_locally(
         return;
     }
 
-    if !font_graph::has_fonts_ready() {
-        rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
-        return;
-    }
-
-    if let Some(r) = rf {
-        if !font_graph::try_with_graph_if_ready(|g| g.has_font(r)).unwrap_or(false) {
+    // Always ensure the font graph is refreshed before making rendering decisions.
+    // This is critical: when the graph is dirty (e.g., after new fonts are added),
+    // we must refresh it first so that newly-added fonts can be resolved correctly.
+    // Previously, we would check has_fonts_ready() and fall back immediately if dirty,
+    // causing new fonts to render with the fallback font until the next frame.
+    font_graph::with_graph(|graph| {
+        // Now check if fonts are available after refresh
+        if !graph.has_fonts() {
             rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
             return;
         }
-    }
 
-    font_graph::with_graph(|graph| {
+        // Check if the requested font exists in the freshly-refreshed graph
+        if let Some(r) = rf {
+            if !graph.has_font(r) {
+                rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
+                return;
+            }
+        }
+
         let stack = graph.resolve_stack(rf);
         if stack.is_empty() {
             return;

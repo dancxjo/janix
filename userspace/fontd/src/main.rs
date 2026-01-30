@@ -19,7 +19,8 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use fontdue::{Font, FontSettings};
-use log::{debug, error, info, warn};
+use log::{debug, error, warn};
+use stem::info;
 use stem::syscall;
 use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_map, bytespace_unmap, bytespace_write, create_node,

@@ -24,5 +24,6 @@ pub mod props {
         SOURCE, // Reuse source
         TAG,
         TEXT,
+        XML_ORDER,
     };
 }

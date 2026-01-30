@@ -46,6 +46,7 @@ use stem::thing::sys::{
     bytespace_info, bytespace_map, bytespace_unmap, create_node, describe_thing, find, intern,
     prop_get, prop_set,
 };
+use stem::xml::ingest::{ingest_xml_to_graph, SysGraphApply, XmlIngestOptions};
 use stem::{info, syscall};
 use ttf_parser::Face;
 
@@ -294,6 +295,12 @@ fn ingest_content_file(file_id: ThingId) {
             }
         }
     }
+    
+    // Parse and import SVG as XML tree
+    if kind == "svg" && !slice.is_empty() {
+        ingest_svg_xml(asset_id, slice, file_name);
+    }
+    
     let _ = bytespace_unmap(bs_id, ptr);
 }
 
@@ -413,6 +420,11 @@ fn ingest_boot_module(mod_id: ThingId) {
         );
     }
     info!("INGESTD: Published asset '{}' ({}, {} bytes, hash={:016x})", mod_name, kind, size, hash);
+
+    // Parse and import SVG as XML tree
+    if kind == "svg" && !slice.is_empty() {
+        ingest_svg_xml(asset_id, slice, mod_name);
+    }
 
     // Metadata enrichment for fonts
     if kind == "font" && !slice.is_empty() {
@@ -692,6 +704,39 @@ fn publish_content_file(
         Err(_) => {
             info!("INGESTD: Failed to create File node for '{}'", name);
             None
+        }
+    }
+}
+
+/// Parse SVG content as XML and import the tree into the graph.
+///
+/// Creates an XML document tree under the asset node and links them
+/// via the ASSET_XML_DOCUMENT property.
+fn ingest_svg_xml(asset_id: ThingId, bytes: &[u8], name: &str) {
+    let opts = XmlIngestOptions {
+        source_name: name,
+        attach_under: Some(asset_id),
+        keep_whitespace_text: false,
+        max_depth: 64,
+        max_nodes: 4096,
+    };
+
+    let mut graph = SysGraphApply;
+    match ingest_xml_to_graph(bytes, opts, &mut graph) {
+        Ok(result) => {
+            // Link asset to its XML document
+            let _ = prop_set(
+                asset_id,
+                keys::ASSET_XML_DOCUMENT,
+                result.document.to_u64_lossy(),
+            );
+            info!(
+                "INGESTD: Parsed SVG '{}' as XML tree ({} elements, {} attrs)",
+                name, result.element_count, result.attribute_count
+            );
+        }
+        Err(e) => {
+            info!("INGESTD: Failed to parse SVG '{}' as XML: {:?}", name, e);
         }
     }
 }

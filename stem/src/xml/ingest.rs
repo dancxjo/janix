@@ -85,6 +85,10 @@ pub fn ingest_xml_to_graph(
     let mut stack: Vec<ThingId> = Vec::with_capacity(32);
     let mut result = XmlIngestResult::default();
 
+    // Track child order per nesting level (index into stack = nesting depth)
+    // Each entry is the next child order to assign at that level
+    let mut child_order_stack: Vec<u32> = Vec::with_capacity(32);
+
     // Create Document Node
     let doc_id = graph.create_node(kinds::DOCUMENT)?;
 
@@ -117,15 +121,23 @@ pub fn ingest_xml_to_graph(
                 let tag_sym = graph.intern(&name)?;
                 graph.set_prop(elem_id, props::TAG, tag_sym)?;
 
-                // Link to parent or document
+                // Link to parent or document, and set XML_ORDER
                 if let Some(parent) = stack.last() {
                     graph.link(*parent, rels::HAS_CHILD, elem_id)?;
+                    // Set order and increment parent's child counter
+                    if let Some(order) = child_order_stack.last_mut() {
+                        graph.set_prop(elem_id, props::XML_ORDER, *order as u64)?;
+                        *order += 1;
+                    }
                 } else {
                     graph.link(doc_id, rels::HAS_ROOT, elem_id)?;
+                    // Root element gets order 0
+                    graph.set_prop(elem_id, props::XML_ORDER, 0)?;
                     result.root_element = elem_id;
                 }
 
-                // Attributes
+                // Attributes with ordering
+                let mut attr_order: u32 = 0;
                 for (k, v) in attributes {
                     // Uses IntoIterator
                     nodes_created += 1;
@@ -140,14 +152,19 @@ pub fn ingest_xml_to_graph(
 
                     graph.set_prop(attr_id, props::ATTR_NAME, name_sym)?;
                     graph.set_prop(attr_id, props::ATTR_VALUE, val_sym)?;
+                    graph.set_prop(attr_id, props::XML_ORDER, attr_order as u64)?;
 
                     graph.link(elem_id, rels::HAS_ATTR, attr_id)?;
+                    attr_order += 1;
                 }
 
+                // Push this element onto stack and start counting its children
                 stack.push(elem_id);
+                child_order_stack.push(0);
             }
             Some(Ok(Event::EndElement { .. })) => {
                 stack.pop();
+                child_order_stack.pop();
             }
             Some(Ok(Event::Text(text))) => {
                 // Fixed variant
@@ -167,6 +184,11 @@ pub fn ingest_xml_to_graph(
 
                 if let Some(parent) = stack.last() {
                     graph.link(*parent, rels::HAS_CHILD, text_id)?;
+                    // Set order for text node and increment parent's child counter
+                    if let Some(order) = child_order_stack.last_mut() {
+                        graph.set_prop(text_id, props::XML_ORDER, *order as u64)?;
+                        *order += 1;
+                    }
                 }
             }
             Some(Err(_)) => return Err(XmlIngestError::ParseError),
@@ -285,5 +307,146 @@ mod tests {
         let _err = ingest_xml_to_graph(xml.as_bytes(), opts, &mut graph)
             .err()
             .expect("should fail");
+    }
+
+    #[test]
+    fn test_minimal_svg() {
+        let xml = r#"<svg/>"#;
+        let mut graph = MockGraph::new();
+        let res = ingest_xml_to_graph(xml.as_bytes(), XmlIngestOptions::default(), &mut graph)
+            .expect("ingest failed");
+
+        // Exactly one document
+        assert_eq!(res.document.to_u64_lossy(), 1);
+        
+        // Exactly one root element
+        assert_eq!(res.element_count, 1);
+        assert_eq!(res.root_element.to_u64_lossy(), 2);
+        
+        // Root element has XML_ORDER = 0
+        assert_eq!(
+            graph.props.get(&(res.root_element, "xml.order".to_string())),
+            Some(&"0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_nested_elements_ordering() {
+        let xml = r#"<svg><g><path d="M0 0"/></g></svg>"#;
+        let mut graph = MockGraph::new();
+        let res = ingest_xml_to_graph(xml.as_bytes(), XmlIngestOptions::default(), &mut graph)
+            .expect("ingest failed");
+
+        // 3 elements: svg, g, path
+        assert_eq!(res.element_count, 3);
+        
+        // Find g element (should be child of svg with order 0)
+        // Nodes: 1=doc, 2=svg, 3=svg.attr(d), wait no - svg has no attrs here
+        // Actually: 1=doc, 2=svg, 3=g, 4=path, 5=path.attr(d)
+        let g_id = ThingId::from_u64(3);
+        let path_id = ThingId::from_u64(4);
+        
+        // g has order 0 (first child of svg)
+        assert_eq!(
+            graph.props.get(&(g_id, "xml.order".to_string())),
+            Some(&"0".to_string())
+        );
+        
+        // path has order 0 (first child of g)
+        assert_eq!(
+            graph.props.get(&(path_id, "xml.order".to_string())),
+            Some(&"0".to_string())
+        );
+        
+        // Verify HAS_CHILD edges exist
+        assert!(graph.edges.iter().any(|(s, r, d)| 
+            s.to_u64_lossy() == 2 && r == "HAS_CHILD" && d.to_u64_lossy() == 3
+        ));
+        assert!(graph.edges.iter().any(|(s, r, d)| 
+            s.to_u64_lossy() == 3 && r == "HAS_CHILD" && d.to_u64_lossy() == 4
+        ));
+    }
+
+    #[test]
+    fn test_text_and_whitespace() {
+        let xml = r#"<a>Hello <b>world</b></a>"#;
+        let mut graph = MockGraph::new();
+        let opts = XmlIngestOptions {
+            keep_whitespace_text: false, // Default, but explicit
+            ..XmlIngestOptions::default()
+        };
+        let res = ingest_xml_to_graph(xml.as_bytes(), opts, &mut graph)
+            .expect("ingest failed");
+
+        // 2 elements: a, b
+        assert_eq!(res.element_count, 2);
+        
+        // 2 text nodes: "Hello " and "world"
+        assert_eq!(res.text_count, 2);
+        
+        // Nodes: 1=doc, 2=a, 3="Hello " text, 4=b, 5="world" text
+        let text1_id = ThingId::from_u64(3);
+        let b_id = ThingId::from_u64(4);
+        let text2_id = ThingId::from_u64(5);
+        
+        // "Hello " text has order 0 (first child of a)
+        assert_eq!(
+            graph.props.get(&(text1_id, "xml.order".to_string())),
+            Some(&"0".to_string())
+        );
+        
+        // b element has order 1 (second child of a)
+        assert_eq!(
+            graph.props.get(&(b_id, "xml.order".to_string())),
+            Some(&"1".to_string())
+        );
+        
+        // "world" text has order 0 (first child of b)
+        assert_eq!(
+            graph.props.get(&(text2_id, "xml.order".to_string())),
+            Some(&"0".to_string())
+        );
+    }
+
+    #[test]
+    fn test_attribute_ordering() {
+        let xml = r#"<x a="1" b="2" c="3"/>"#;
+        let mut graph = MockGraph::new();
+        let res = ingest_xml_to_graph(xml.as_bytes(), XmlIngestOptions::default(), &mut graph)
+            .expect("ingest failed");
+
+        // 1 element, 3 attributes
+        assert_eq!(res.element_count, 1);
+        assert_eq!(res.attribute_count, 3);
+        
+        // Nodes: 1=doc, 2=x, 3=attr(a), 4=attr(b), 5=attr(c)
+        let attr_a = ThingId::from_u64(3);
+        let attr_b = ThingId::from_u64(4);
+        let attr_c = ThingId::from_u64(5);
+        
+        // Attributes have XML_ORDER 0, 1, 2 in encounter order
+        assert_eq!(
+            graph.props.get(&(attr_a, "xml.order".to_string())),
+            Some(&"0".to_string())
+        );
+        assert_eq!(
+            graph.props.get(&(attr_b, "xml.order".to_string())),
+            Some(&"1".to_string())
+        );
+        assert_eq!(
+            graph.props.get(&(attr_c, "xml.order".to_string())),
+            Some(&"2".to_string())
+        );
+        
+        // Verify HAS_ATTR edges
+        assert!(graph.edges.iter().any(|(s, r, d)| 
+            s.to_u64_lossy() == 2 && r == "HAS_ATTR" && d.to_u64_lossy() == 3
+        ));
+        assert!(graph.edges.iter().any(|(s, r, d)| 
+            s.to_u64_lossy() == 2 && r == "HAS_ATTR" && d.to_u64_lossy() == 4
+        ));
+        assert!(graph.edges.iter().any(|(s, r, d)| 
+            s.to_u64_lossy() == 2 && r == "HAS_ATTR" && d.to_u64_lossy() == 5
+        ));
     }
 }

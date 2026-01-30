@@ -62,6 +62,8 @@ pub mod keys {
     pub const TEXT: &str = "text";
     pub const ATTR_NAME: &str = "attr_name";
     pub const ATTR_VALUE: &str = "attr_value";
+    /// Stable sibling/attribute ordering (u32, monotonic within parent)
+    pub const XML_ORDER: &str = "xml.order";
 
     // Legacy mapping (to be deprecated or mapped)
     pub const KIND: &str = "kind";
@@ -339,6 +341,8 @@ pub mod keys {
     pub const ASSET_ERROR: &str = "asset.error";
     /// Boolean: 1 if asset successfully loaded and ready for use
     pub const ASSET_READY: &str = "asset.ready";
+    /// ThingId of the XML_DOCUMENT node for parsed assets (SVG, XML, HTML)
+    pub const ASSET_XML_DOCUMENT: &str = "asset.xml_document";
 
     // Content Provider System (unified content sources)
     /// Content source kind: "limine_module", "iso9660_disk", etc.

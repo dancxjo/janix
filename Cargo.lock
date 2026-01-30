@@ -1450,6 +1450,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "iso9660d"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "iso9660",
+ "stem",
+]
+
+[[package]]
 name = "iso_reader"
 version = "0.1.0"
 dependencies = [

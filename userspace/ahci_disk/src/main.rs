@@ -71,6 +71,15 @@ const PORT_CMD_FR: u32 = 1 << 14;
 const PORT_CMD_CR: u32 = 1 << 15;
 const PORT_CMD_ATAPI: u32 = 1 << 24;
 
+// Port buffer size for RPC communication
+const PORT_BUFFER_SIZE: usize = 4096;
+// Maximum sectors per read to fit in port buffer
+// Response format: 1 byte (response type) + 4 bytes (ReadResponse) + sector data
+// For 512-byte sectors: (4096 - 5) / 512 = 7 sectors max
+// For 2048-byte sectors: (4096 - 5) / 2048 = 1 sector max
+const MAX_SECTORS_PER_READ_512: u32 = 7;
+const MAX_SECTORS_PER_READ_2048: u32 = 1;
+
 const SSTS_DET_MASK: u32 = 0x0F;
 const SSTS_DET_PRESENT: u32 = 0x03;
 const SSTS_IPM_MASK: u32 = 0x0F00;
@@ -394,7 +403,7 @@ fn register_disk(port: &mut AhciPort) {
     port.graph_id = disk_id;
     
     // Create RPC port for block device service (4KB buffer)
-    let (write_handle, read_handle) = match port_create(4096) {
+    let (write_handle, read_handle) = match port_create(PORT_BUFFER_SIZE) {
         Ok(handles) => handles,
         Err(e) => {
             error!("AHCI: Failed to create port: {:?}", e);
@@ -420,8 +429,8 @@ fn register_disk(port: &mut AhciPort) {
         thingsys::prop_set(disk_id, keys::MODEL, model_sym as u64).ok();
     }
     
-    // Set read port handle (store write handle so clients can send to it)
-    thingsys::prop_set(disk_id, keys::READ_PORT_HANDLE, write_handle as u64).ok();
+    // Publish write handle for clients to send requests to
+    thingsys::prop_set(disk_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
     
     info!(
         "AHCI: Registered block device {} port={} sectors={} lba48={} model='{}' rpc_port={}",
@@ -443,7 +452,7 @@ fn register_atapi_disk(port: &mut AhciPort) {
     port.graph_id = node_id;
     
     // Create RPC port for block device service (4KB buffer)
-    let (write_handle, read_handle) = match port_create(4096) {
+    let (write_handle, read_handle) = match port_create(PORT_BUFFER_SIZE) {
         Ok(handles) => handles,
         Err(e) => {
             error!("AHCI: Failed to create port: {:?}", e);
@@ -466,8 +475,8 @@ fn register_atapi_disk(port: &mut AhciPort) {
         thingsys::prop_set(node_id, keys::MODEL, model_sym as u64).ok();
     }
     
-    // Set read port handle (store write handle so clients can send to it)
-    thingsys::prop_set(node_id, keys::READ_PORT_HANDLE, write_handle as u64).ok();
+    // Publish write handle for clients to send requests to
+    thingsys::prop_set(node_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
     
     info!(
         "AHCI: Registered ATAPI block device {} port={} model='{}' rpc_port={}",
@@ -766,8 +775,14 @@ fn handle_read(port: &AhciPort, request_data: &[u8], port_handle: PortHandle) {
         core::ptr::read_unaligned(request_data.as_ptr() as *const ReadRequest)
     };
     
-    // Validate request
-    if req.sector_count == 0 || req.sector_count > 256 {
+    // Validate sector count based on sector size to ensure response fits in port buffer
+    let max_sectors = if port.sector_size == 2048 {
+        MAX_SECTORS_PER_READ_2048
+    } else {
+        MAX_SECTORS_PER_READ_512
+    };
+    
+    if req.sector_count == 0 || req.sector_count > max_sectors {
         send_error_response(port_handle, BlockDeviceError::InvalidParam);
         return;
     }

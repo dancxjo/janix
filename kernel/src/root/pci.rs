@@ -294,6 +294,18 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         }
     }
 
+    // Log BARs for debugging
+    for i in 0..6 {
+        if bar_addrs[i] != 0 {
+            crate::kinfo!(
+                "PCI:   BAR{}: phys=0x{:x} size=0x{:x}",
+                i,
+                bar_addrs[i],
+                bar_sizes[i]
+            );
+        }
+    }
+
     // PCI capabilities: MSI/MSI-X
     let msi_cap = find_capability(bus, dev, func, 0x05);
     let msix_cap = find_capability(bus, dev, func, 0x11);
@@ -347,6 +359,20 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         );
         register_ahci_controller(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap,
+        );
+    }
+
+    // Virtio network device detection (vendor 0x1af4, class 0x02 network controller)
+    // Device IDs: 0x1000 (transitional), 0x1041 (modern)
+    if vendor_id == 0x1af4 && class_code == 0x02 {
+        crate::kinfo!(
+            "PCI: Found virtio network controller at {:02x}:{:02x}.{}",
+            bus,
+            dev,
+            func
+        );
+        register_virtio_net(
+            node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
     }
 }
@@ -620,4 +646,67 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
     }
 
     crate::kinfo!("LPC: Created Legacy IO bus with CMOS and PS/2 controller");
+}
+
+/// Register virtio network controller in device registry for userspace claiming
+fn register_virtio_net(
+    graph_id: u64,
+    bus: u8,
+    dev: u8,
+    func: u8,
+    bar_addrs: &[u64; 6],
+    bar_sizes: &[u64; 6],
+    msi_cap: Option<u8>,
+    msix_cap: Option<u8>,
+    create: &mut impl FnMut(&str) -> u64,
+    set: &mut impl FnMut(u64, &str, u64),
+    link: &mut impl FnMut(u64, &str, u64),
+) {
+    use crate::device_registry::{
+        DeviceEntry, MsiCapability, MsixCapability, PciLocation, REGISTRY,
+    };
+
+    let net_node = create(kinds::DEV_NET_NIC);
+    set(net_node, keys::SOURCE, source::PCI as u64);
+    set(net_node, keys::CONFIDENCE, confidence::HIGH as u64);
+    link(graph_id, rels::IMPLEMENTS, net_node);
+
+    // Parse VirtIO PCI capabilities and publish as graph properties
+    parse_virtio_capabilities(bus, dev, func, net_node, set);
+
+    let entry = DeviceEntry::new_mmio(kinds::DEV_NET_NIC, net_node, *bar_addrs, *bar_sizes);
+
+    let mut reg = REGISTRY.lock();
+    if let Some(idx) = reg.register(entry) {
+        let msi_info = msi_cap.map(|offset| {
+            let msg_ctrl = pci_read_config_u16(bus, dev, func, offset + 0x2);
+            MsiCapability {
+                offset,
+                is_64bit: (msg_ctrl & (1 << 7)) != 0,
+                has_mask: (msg_ctrl & (1 << 8)) != 0,
+            }
+        });
+
+        let msix_info = msix_cap.map(|offset| {
+            let table = unsafe { pci_read_config(bus, dev, func, offset + 0x4) };
+            let table_bar = (table & 0x7) as u8;
+            let table_offset = table & 0xFFFF_FFF8;
+            MsixCapability {
+                offset,
+                table_bar,
+                table_offset,
+            }
+        });
+
+        let location = PciLocation { bus, dev, func };
+        reg.set_pci_info(idx, location, msi_info, msix_info);
+        crate::kinfo!(
+            "PCI: Registered virtio network (graph_id={}, idx={}) BAR0=0x{:x}",
+            graph_id,
+            idx,
+            bar_addrs[0]
+        );
+    } else {
+        crate::kinfo!("PCI: Failed to register virtio network - registry full");
+    }
 }

@@ -616,6 +616,11 @@ fn main(arg: usize) -> ! {
                             // Calculate buffer age
                             let buffer_age = frame_pool.buffer_age(handle.index, present_queue.current_sequence());
                             
+                            info!(
+                                "display_virtio_gpu: acquired frame idx={} res={} age={}",
+                                handle.index, frame.resource_id, buffer_age
+                            );
+                            
                             let acquired = drvproto::AcquiredPayload {
                                 bytespace_id: frame.bytespace_id,
                                 width: frame.width,
@@ -637,6 +642,7 @@ fn main(arg: usize) -> ! {
                     } else {
                         // No frames available - all are in-flight
                         // Complete oldest to make room
+                        info!("display_virtio_gpu: all frames in-flight, completing oldest");
                         if present_queue.pending_count() > 0 {
                             present_queue.complete_oldest(&mut frame_pool);
                         }
@@ -644,6 +650,11 @@ fn main(arg: usize) -> ! {
                         if let Some(handle) = frame_pool.acquire_frame() {
                             if let Some(frame) = frame_pool.get_frame(&handle) {
                                 let buffer_age = frame_pool.buffer_age(handle.index, present_queue.current_sequence());
+                                
+                                info!(
+                                    "display_virtio_gpu: acquired frame (retry) idx={} res={} age={}",
+                                    handle.index, frame.resource_id, buffer_age
+                                );
                                 
                                 let acquired = drvproto::AcquiredPayload {
                                     bytespace_id: frame.bytespace_id,
@@ -786,18 +797,33 @@ fn main(arg: usize) -> ! {
                         // ============================================================
                         // Flip the hardware scanout to this resource
                         // Only set scanout if it's a new resource
-                        if surface.current_resource != Some(resource_id) {
+                        let needs_scanout = surface.current_resource != Some(resource_id);
+                        if needs_scanout {
                             let _ = gpu.set_scanout(resource_id, disp_width, disp_height);
                             surface.current_resource = Some(resource_id);
+                            info!(
+                                "display_virtio_gpu: set_scanout to resource {}",
+                                resource_id
+                            );
                         }
                         
                         // Enqueue the frame in the present queue (marks it in-flight)
-                        let _seq = present_queue.enqueue_present(&mut frame_pool, handle);
+                        let seq = present_queue.enqueue_present(&mut frame_pool, handle);
+                        
+                        info!(
+                            "display_virtio_gpu: present seq={} res={} rects={} pending={}",
+                            seq, resource_id, present.rect_count, present_queue.pending_count()
+                        );
                         
                         // Conservative completion: immediately complete oldest present
                         // to simulate fence completion (in a real impl, this would be driven by GPU IRQ)
                         if present_queue.pending_count() > 1 {
-                            present_queue.complete_oldest(&mut frame_pool);
+                            if let Some(completed_idx) = present_queue.complete_oldest(&mut frame_pool) {
+                                info!(
+                                    "display_virtio_gpu: completed frame idx={} (conservative)",
+                                    completed_idx
+                                );
+                            }
                         }
 
                         // Rate-limited stats logging

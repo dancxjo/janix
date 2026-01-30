@@ -5,7 +5,6 @@ extern crate alloc;
 
 use abi::display_driver_protocol as drvproto;
 use abi::driver_frame::FrameReader;
-use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
@@ -64,13 +63,6 @@ fn rect_clamp_to_bounds(r: Rect, w: u32, h: u32) -> Rect {
 // ============================================================================
 // Instrumentation counters for verification
 // ============================================================================
-
-struct Buffer {
-    bs_id: ThingId,
-    res_id: u32,
-    phys: u64,
-    last_present_seq: u64,
-}
 
 struct PresentStats {
     frame_count: u32,
@@ -483,20 +475,21 @@ fn main(arg: usize) -> ! {
     }
 
     // =========================================================================
-    // SWAPCHAIN SETUP: Create multiple GPU resources and bytespaces
+    // FRAME POOL SETUP: Create multiple GPU resources and bytespaces
     // =========================================================================
     let (disp_width, disp_height, disp_stride, disp_format) = get_display_dimensions();
     let disp_size = (disp_height as usize) * (disp_stride as usize);
     
+    // Use triple-buffering for smooth presentation
+    const FRAME_COUNT: usize = 3;
+    
     info!(
-        "display_virtio_gpu: creating swapchain 1x {}x{} stride={} format={}",
-        disp_width, disp_height, disp_stride, disp_format
+        "display_virtio_gpu: creating frame pool {}x {}x{} stride={} format={}",
+        FRAME_COUNT, disp_width, disp_height, disp_stride, disp_format
     );
     
-    // Single buffer for now - multi-buffer requires cross-process bytespace access
-    let swapchain_count = 1;
-    let mut swapchain_buffers = alloc::vec::Vec::new();
-    for i in 0..swapchain_count {
+    let mut frame_resources = alloc::vec::Vec::new();
+    for i in 0..FRAME_COUNT {
         let bs_id = match thingsys::bytespace_create(disp_size, 0, disp_format as u64) {
             Ok(id) => id,
             Err(e) => {
@@ -514,7 +507,10 @@ fn main(arg: usize) -> ! {
         };
 
         // Explicitly map it locally so it stays pinned/resident
-        let _ = thingsys::bytespace_map(bs_id);
+        let virt = match thingsys::bytespace_map(bs_id) {
+            Ok(v) => v,
+            Err(_) => core::ptr::null_mut(),
+        };
 
         let res_id = (i + 1) as u32;
         gpu.set_dimensions(disp_width, disp_height);
@@ -527,22 +523,36 @@ fn main(arg: usize) -> ! {
             loop { stem::yield_now(); }
         }
 
-        swapchain_buffers.push(Buffer {
-            bs_id,
+        frame_resources.push(virtio_gpu::FrameResource::new(
             res_id,
             phys,
-            last_present_seq: 0,
-        });
+            bs_id.to_u64_lossy(),
+            disp_size,
+            disp_width,
+            disp_height,
+            disp_stride,
+            disp_format,
+            virt as u64,
+        ));
     }
 
-    // Set initial scanout to first buffer
-    if let Err(e) = gpu.set_scanout(swapchain_buffers[0].res_id, disp_width, disp_height) {
-        info!("display_virtio_gpu: set_scanout failed: {}", e);
-        loop { stem::yield_now(); }
+    // Create frame pool and present queue
+    let mut frame_pool = virtio_gpu::FramePool::new(frame_resources);
+    let mut present_queue = virtio_gpu::PresentQueue::new(2); // Conservative: max 2 in-flight
+    let mut surface = virtio_gpu::DisplaySurface::new(0, disp_width, disp_height, disp_format);
+    
+    // Set initial scanout to first resource
+    if let Some(first_frame) = frame_pool.get_frame(&virtio_gpu::FrameHandle { index: 0 }) {
+        if let Err(e) = gpu.set_scanout(first_frame.resource_id, disp_width, disp_height) {
+            info!("display_virtio_gpu: set_scanout failed: {}", e);
+            loop { stem::yield_now(); }
+        }
+        surface.current_resource = Some(first_frame.resource_id);
     }
     
     info!(
-        "display_virtio_gpu: swapchain ready (3 buffers)"
+        "display_virtio_gpu: frame pool ready ({} buffers)",
+        frame_pool.frame_count()
     );
     
     // Send MSG_REGISTER
@@ -562,13 +572,10 @@ fn main(arg: usize) -> ! {
     let mut buf = [0u8; 512];
     let mut frames = FrameReader::<4096>::new();
     
-    let mut current_bs_id: Option<ThingId> = None;
-    let mut current_res_id: u32 = 1;
-    let mut next_buffer_idx = 0;
-    let mut present_seq: u64 = 0;
-    let mut last_presented_idx: Option<usize> = None;
+    // Track current acquired frame
+    let mut current_frame_handle: Option<virtio_gpu::FrameHandle> = None;
     
-    let mut stats = PresentStats::new(true);
+    let mut stats = PresentStats::new(false); // Not using old swapchain
     const STATS_LOG_INTERVAL: u32 = 120;
 
     // Texture registry for 3D textures (client_id → TextureEntry)
@@ -603,64 +610,93 @@ fn main(arg: usize) -> ! {
                     }
                 }
                 drvproto::MSG_ACQUIRE => {
-                    let mut buffer_age = 0;
-                    let idx = next_buffer_idx;
-                    
-                    if let Some(last_idx) = last_presented_idx {
-                        let age = present_seq.saturating_sub(swapchain_buffers[idx].last_present_seq);
-                        buffer_age = if swapchain_buffers[idx].last_present_seq == 0 {
-                            0 // Never presented
-                        } else {
-                            age as u32
-                        };
-                    }
-
-                    next_buffer_idx = (next_buffer_idx + 1) % swapchain_buffers.len();
-                    
-                    let acquired = drvproto::AcquiredPayload {
-                        bytespace_id: swapchain_buffers[idx].bs_id.to_u64_lossy(),
-                        width: disp_width,
-                        height: disp_height,
-                        stride: disp_stride,
-                        format: disp_format,
-                        buffer_age,
-                        _pad: 0,
-                    };
-                    
-                    current_bs_id = Some(swapchain_buffers[idx].bs_id);
-                    current_res_id = swapchain_buffers[idx].res_id;
-                    
-                    let mut acq_bytes = [0u8; drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE];
-                    if let Some(len) = drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes) {
-                        send_msg(drv_resp_write, drvproto::MSG_ACQUIRED, &acq_bytes[..len]);
+                    // Try to acquire a free frame from the pool
+                    if let Some(handle) = frame_pool.acquire_frame() {
+                        if let Some(frame) = frame_pool.get_frame(&handle) {
+                            // Calculate buffer age
+                            let buffer_age = frame_pool.buffer_age(handle.index, present_queue.current_sequence());
+                            
+                            let acquired = drvproto::AcquiredPayload {
+                                bytespace_id: frame.bytespace_id,
+                                width: frame.width,
+                                height: frame.height,
+                                stride: frame.stride,
+                                format: frame.format,
+                                buffer_age,
+                                _pad: 0,
+                            };
+                            
+                            // Store the handle for when we receive PRESENT
+                            current_frame_handle = Some(handle);
+                            
+                            let mut acq_bytes = [0u8; drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE];
+                            if let Some(len) = drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes) {
+                                send_msg(drv_resp_write, drvproto::MSG_ACQUIRED, &acq_bytes[..len]);
+                            }
+                        }
+                    } else {
+                        // No frames available - all are in-flight
+                        // Complete oldest to make room
+                        if present_queue.pending_count() > 0 {
+                            present_queue.complete_oldest(&mut frame_pool);
+                        }
+                        // Retry immediately
+                        if let Some(handle) = frame_pool.acquire_frame() {
+                            if let Some(frame) = frame_pool.get_frame(&handle) {
+                                let buffer_age = frame_pool.buffer_age(handle.index, present_queue.current_sequence());
+                                
+                                let acquired = drvproto::AcquiredPayload {
+                                    bytespace_id: frame.bytespace_id,
+                                    width: frame.width,
+                                    height: frame.height,
+                                    stride: frame.stride,
+                                    format: frame.format,
+                                    buffer_age,
+                                    _pad: 0,
+                                };
+                                
+                                current_frame_handle = Some(handle);
+                                
+                                let mut acq_bytes = [0u8; drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE];
+                                if let Some(len) = drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes) {
+                                    send_msg(drv_resp_write, drvproto::MSG_ACQUIRED, &acq_bytes[..len]);
+                                }
+                            }
+                        }
                     }
                 }
                 drvproto::MSG_BIND => {
-                    // MSG_BIND legacy fallback
-                    if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
-                        let bs_id = ThingId({
-                            let mut b = [0u8; 16];
-                            b[0..8].copy_from_slice(&bind.bytespace_id.to_le_bytes());
-                            b
-                        });
-                        current_bs_id = Some(bs_id);
-                        // In legacy mode, we just stay on the first buffer's resource
-                        current_res_id = swapchain_buffers[0].res_id;
-                        send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
+                    // Legacy BIND is no longer supported with frame pool
+                    // Client must use ACQUIRE instead
+                    let err = drvproto::ErrResp { code: 255 }; // Unsupported
+                    let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                    if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                        send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
                     }
                 }
                 drvproto::MSG_PRESENT => {
-                    if current_bs_id.is_none() {
-                        let err = drvproto::ErrResp { code: 1 };
-                        let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                        if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
-                            send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                    // We must have an acquired frame to present
+                    let handle = match current_frame_handle.take() {
+                        Some(h) => h,
+                        None => {
+                            let err = drvproto::ErrResp { code: 1 };
+                            let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                            if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
+                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                            }
+                            continue;
                         }
-                        continue;
-                    }
+                    };
 
                     if let Some(present) = drvproto::decode_present_header_le(payload) {
                         let rects_payload = &payload[drvproto::PRESENT_HEADER_WIRE_SIZE..];
+                        
+                        // Get the frame resource
+                        let resource_id = if let Some(frame) = frame_pool.get_frame(&handle) {
+                            frame.resource_id
+                        } else {
+                            continue;
+                        };
                         
                         // Handle full-frame present (rect_count==0 or FULLFRAME flag)
                         if present.rect_count == 0
@@ -672,7 +708,7 @@ fn main(arg: usize) -> ! {
                                 w: disp_width,
                                 h: disp_height,
                             };
-                            let _ = gpu.present_rect(current_res_id, full_rect);
+                            let _ = gpu.present_rect(resource_id, full_rect);
                             stats.frame_count += 1;
                             stats.total_transfers += 1;
                             stats.total_flushes += 1;
@@ -712,7 +748,7 @@ fn main(arg: usize) -> ! {
                             if !valid_rects.is_empty() {
                                 // Phase 2: Transfer all rects (bandwidth follows true damage)
                                 for &rect in &valid_rects {
-                                    let _ = gpu.transfer_to_host(current_res_id, rect);
+                                    let _ = gpu.transfer_to_host(resource_id, rect);
                                 }
                                 stats.total_transfers += valid_rects.len() as u32;
                                 
@@ -731,13 +767,13 @@ fn main(arg: usize) -> ! {
                                 if valid_rects.len() > 1 && union_area > sum_area * 2 {
                                     // Distant rects case: per-rect flush
                                     for &rect in &valid_rects {
-                                        let _ = gpu.flush_resource(current_res_id, rect);
+                                        let _ = gpu.flush_resource(resource_id, rect);
                                     }
                                     stats.total_flushes += valid_rects.len() as u32;
                                     stats.per_rect_flush_count += 1;
                                 } else {
                                     // Common case: single union flush
-                                    let _ = gpu.flush_resource(current_res_id, union_rect);
+                                    let _ = gpu.flush_resource(resource_id, union_rect);
                                     stats.total_flushes += 1;
                                     stats.union_flush_count += 1;
                                 }
@@ -746,23 +782,23 @@ fn main(arg: usize) -> ! {
                         }
                         
                         // ============================================================
-                        // FLIP SCANOUT
+                        // FLIP SCANOUT and ENQUEUE PRESENT
                         // ============================================================
-                        // Now that transfers and flushes for THIS resource are done,
-                        // flip the hardware scanout to this resource ID.
-                        let _ = gpu.set_scanout(current_res_id, disp_width, disp_height);
-                        
-                        // Update sequence and age bookkeeping
-                        present_seq += 1;
-                        let mut presented_idx = 0;
-                        for (i, buf) in swapchain_buffers.iter_mut().enumerate() {
-                            if buf.res_id == current_res_id {
-                                buf.last_present_seq = present_seq;
-                                presented_idx = i;
-                                break;
-                            }
+                        // Flip the hardware scanout to this resource
+                        // Only set scanout if it's a new resource
+                        if surface.current_resource != Some(resource_id) {
+                            let _ = gpu.set_scanout(resource_id, disp_width, disp_height);
+                            surface.current_resource = Some(resource_id);
                         }
-                        last_presented_idx = Some(presented_idx);
+                        
+                        // Enqueue the frame in the present queue (marks it in-flight)
+                        let _seq = present_queue.enqueue_present(&mut frame_pool, handle);
+                        
+                        // Conservative completion: immediately complete oldest present
+                        // to simulate fence completion (in a real impl, this would be driven by GPU IRQ)
+                        if present_queue.pending_count() > 1 {
+                            present_queue.complete_oldest(&mut frame_pool);
+                        }
 
                         // Rate-limited stats logging
                         if stats.frame_count >= STATS_LOG_INTERVAL {

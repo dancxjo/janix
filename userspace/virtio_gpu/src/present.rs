@@ -39,6 +39,8 @@ pub struct FrameResource {
     pub resource_id: u32,
     /// Physical address of backing memory
     pub phys_addr: u64,
+    /// Bytespace ID for this frame
+    pub bytespace_id: u64,
     /// Size of backing memory in bytes
     pub size: usize,
     /// Width in pixels
@@ -62,6 +64,7 @@ impl FrameResource {
     pub fn new(
         resource_id: u32,
         phys_addr: u64,
+        bytespace_id: u64,
         size: usize,
         width: u32,
         height: u32,
@@ -72,6 +75,7 @@ impl FrameResource {
         Self {
             resource_id,
             phys_addr,
+            bytespace_id,
             size,
             width,
             height,
@@ -328,7 +332,7 @@ mod tests {
 
     #[test]
     fn frame_resource_state_machine() {
-        let mut frame = FrameResource::new(1, 0x1000, 4096, 100, 100, 400, 1, 0);
+        let mut frame = FrameResource::new(1, 0x1000, 0, 4096, 100, 100, 400, 1, 0);
         assert_eq!(frame.state, FrameState::Free);
         assert!(frame.is_free());
 
@@ -349,9 +353,9 @@ mod tests {
     #[test]
     fn frame_pool_acquire_release() {
         let frames = vec![
-            FrameResource::new(1, 0x1000, 4096, 100, 100, 400, 1, 0),
-            FrameResource::new(2, 0x2000, 4096, 100, 100, 400, 1, 0),
-            FrameResource::new(3, 0x3000, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(1, 0x1000, 0, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(2, 0x2000, 0, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(3, 0x3000, 0, 4096, 100, 100, 400, 1, 0),
         ];
 
         let mut pool = FramePool::new(frames);
@@ -383,8 +387,8 @@ mod tests {
     #[test]
     fn present_queue_basic_flow() {
         let frames = vec![
-            FrameResource::new(1, 0x1000, 4096, 100, 100, 400, 1, 0),
-            FrameResource::new(2, 0x2000, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(1, 0x1000, 0, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(2, 0x2000, 0, 4096, 100, 100, 400, 1, 0),
         ];
 
         let mut pool = FramePool::new(frames);
@@ -420,8 +424,8 @@ mod tests {
     #[test]
     fn buffer_age_calculation() {
         let frames = vec![
-            FrameResource::new(1, 0x1000, 4096, 100, 100, 400, 1, 0),
-            FrameResource::new(2, 0x2000, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(1, 0x1000, 0, 4096, 100, 100, 400, 1, 0),
+            FrameResource::new(2, 0x2000, 0, 4096, 100, 100, 400, 1, 0),
         ];
 
         let mut pool = FramePool::new(frames);

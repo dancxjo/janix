@@ -718,7 +718,7 @@ fn ingest_svg_xml(asset_id: ThingId, bytes: &[u8], name: &str) {
         attach_under: Some(asset_id),
         keep_whitespace_text: false,
         max_depth: 64,
-        max_nodes: 4096,
+        max_nodes: 16384,
     };
 
     let mut graph = SysGraphApply;

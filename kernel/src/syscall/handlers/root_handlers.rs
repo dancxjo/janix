@@ -13,12 +13,13 @@ pub fn sys_root_get_kind(id: usize) -> SysResult<usize> {
 }
 
 pub fn sys_root_intern(ptr: usize, len: usize) -> SysResult<usize> {
-    if len > 256 {
+    // Support up to 4KB strings for SVG path data and style attributes
+    if len > 4096 {
         return Err(Errno::EINVAL);
     }
     validate_user_range(ptr, len, false)?;
 
-    let mut buf = [0u8; 256];
+    let mut buf = alloc::vec![0u8; len];
     unsafe {
         copyin(&mut buf[..len], ptr)?;
     }
@@ -222,8 +223,9 @@ pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResu
 
 pub fn sys_root_describe_symbol(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
     validate_user_range(out_ptr, len, true)?;
-    let mut kbuf = [0u8; 256];
-    let kbuf_len = core::cmp::min(len, kbuf.len());
+    // Support up to 4KB for long SVG path data and style attributes
+    let kbuf_len = core::cmp::min(len, 4096);
+    let mut kbuf = alloc::vec![0u8; kbuf_len];
     let reply = root_svc::enqueue(RootOp::DescribeSymbol {
         id: id as u32,
         buffer: kbuf.as_mut_ptr() as u64,

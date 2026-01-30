@@ -131,7 +131,8 @@ impl XmlGraph {
         if sym_id == 0 {
             return None;
         }
-        let mut buf = [0u8; 256];
+        // Support up to 4KB for long SVG path data and style attributes
+        let mut buf = alloc::vec![0u8; 4096];
         match sys::describe_symbol(sym_id as u32, &mut buf) {
             Ok(len) if len > 0 => {
                 core::str::from_utf8(&buf[..len]).ok().map(String::from)

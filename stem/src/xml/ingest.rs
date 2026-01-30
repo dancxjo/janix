@@ -7,6 +7,10 @@ use alloc::vec::Vec;
 pub enum XmlIngestError {
     ParseError,
     GraphError,
+    CreateNodeFailed,
+    LinkFailed,
+    SetPropFailed,
+    InternFailed,
     LimitExceeded(&'static str),
     Utf8Error,
 }
@@ -58,20 +62,20 @@ pub struct SysGraphApply;
 
 impl GraphApply for SysGraphApply {
     fn create_node(&mut self, kind: &str) -> Result<ThingId, XmlIngestError> {
-        crate::thing::sys::create_node(kind).map_err(|_| XmlIngestError::GraphError)
+        crate::thing::sys::create_node(kind).map_err(|_| XmlIngestError::CreateNodeFailed)
     }
 
     fn link(&mut self, src: ThingId, rel: &str, dst: ThingId) -> Result<(), XmlIngestError> {
-        crate::thing::sys::link(src, rel, dst).map_err(|_| XmlIngestError::GraphError)
+        crate::thing::sys::link(src, rel, dst).map_err(|_| XmlIngestError::LinkFailed)
     }
 
     fn set_prop(&mut self, node: ThingId, key: &str, val: u64) -> Result<(), XmlIngestError> {
-        crate::thing::sys::prop_set(node, key, val).map_err(|_| XmlIngestError::GraphError)
+        crate::thing::sys::prop_set(node, key, val).map_err(|_| XmlIngestError::SetPropFailed)
     }
 
     fn intern(&mut self, s: &str) -> Result<u64, XmlIngestError> {
         crate::thing::sys::intern(s)
-            .map_err(|_| XmlIngestError::GraphError)
+            .map_err(|_| XmlIngestError::InternFailed)
             .map(|v| v as u64)
     }
 }

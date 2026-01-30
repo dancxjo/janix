@@ -26,9 +26,11 @@
 //! ## Example Contract
 //!
 //! ```rust,ignore
-//! ServiceContract {
+//! use abi::service_contract::ServiceContract;
+//! 
+//! const INGESTD_CONTRACT: ServiceContract = ServiceContract {
 //!     name: "ingestd",
-//!     watched_kinds: &["boot.Module", "CONTENT_SOURCE"],
+//!     watched_kinds: &["boot.Module", "content.Source"],
 //!     published_kinds: &["Asset"],
 //!     published_properties: &[
 //!         "asset.name", "asset.kind", "asset.hash",
@@ -37,10 +39,21 @@
 //!     ],
 //!     idempotent: true,
 //!     boot_assumptions: &[],
+//! };
+//! 
+//! // At service startup:
+//! fn main() {
+//!     INGESTD_CONTRACT.validate().expect("Invalid contract");
+//!     info!("ingestd contract validated");
+//!     // ... continue with service initialization
 //! }
 //! ```
 
 #![allow(dead_code)]
+
+// Note: schema imports are reserved for future use in registration helpers
+#[allow(unused_imports)]
+use crate::schema::{keys, kinds, rels};
 
 /// A service contract declaration
 ///

@@ -213,10 +213,9 @@ impl VirtioNetDriver {
             let data_len = (len as usize).saturating_sub(header_size);
             
             if data_len > 0 {
-                // Log frame details for debugging
-                let frame_ptr = (buf_virt + header_size as u64) as *const u8;
-                let frame = unsafe { core::slice::from_raw_parts(frame_ptr, data_len) };
-                log_frame_details(frame, data_len);
+                // Log frame received (detailed parsing disabled to reduce log spam)
+                // To debug RX issues, uncomment log_frame_details below:
+                // log_frame_details(frame, data_len);
                 
                 self.last_rx = Some((buf_virt + header_size as u64, data_len));
                 self.rx_active -= 1;

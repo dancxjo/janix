@@ -68,13 +68,9 @@ pub fn lookup_a(
         let socket = socket_set.get_mut::<UdpSocket>(udp_handle);
 
         if !sent && socket.can_send() {
-            // Log the socket's local endpoint to see what port we're using
-            let local_ep = socket.endpoint();
-            stem::info!("DNS: Socket local endpoint port={}", local_ep.port);
-            stem::info!("DNS: Sending query txid=0x{:04x} to {}:53", 0x1234u16, dns_server);
             socket.send_slice(&query, endpoint).ok();
             sent = true;
-            stem::info!("DNS: Query sent ({} bytes)", query.len());
+            stem::info!("DNS: Query sent to {}:53 (txid=0x1234, {} bytes)", dns_server, query.len());
         }
 
         if socket.can_recv() {

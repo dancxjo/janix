@@ -334,6 +334,54 @@ impl VirtioGpu {
         self.flush_resource(rect)
     }
 
+    /// Flush the union of multiple rectangles as a single operation.
+    ///
+    /// Computes the bounding box (union) of all provided rects, clamps it to bounds,
+    /// and issues a single flush command. Returns Ok(()) even if rects is empty.
+    pub fn flush_union(
+        &mut self,
+        rects: &[Rect],
+        bounds: (u32, u32),
+    ) -> Result<(), &'static str> {
+        if rects.is_empty() {
+            return Ok(());
+        }
+
+        // Compute union of all rects
+        let mut union = rects[0];
+        for &r in &rects[1..] {
+            let x1 = union.x.min(r.x);
+            let y1 = union.y.min(r.y);
+            let x2 = (union.x + union.w).max(r.x + r.w);
+            let y2 = (union.y + union.h).max(r.y + r.h);
+            union = Rect {
+                x: x1,
+                y: y1,
+                w: x2.saturating_sub(x1),
+                h: y2.saturating_sub(y1),
+            };
+        }
+
+        // Clamp to bounds
+        let x = union.x.min(bounds.0);
+        let y = union.y.min(bounds.1);
+        let max_w = bounds.0.saturating_sub(x);
+        let max_h = bounds.1.saturating_sub(y);
+        let clamped = Rect {
+            x,
+            y,
+            w: union.w.min(max_w),
+            h: union.h.min(max_h),
+        };
+
+        // Skip empty rect
+        if clamped.w == 0 || clamped.h == 0 {
+            return Ok(());
+        }
+
+        self.flush_resource(clamped)
+    }
+
     // === Internal methods ===
 
     fn setup_controlq(&mut self) -> Result<(), &'static str> {

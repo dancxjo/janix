@@ -13,6 +13,95 @@ use stem::syscall::{port_recv, port_send, PortHandle};
 use stem::thing::{sys as thingsys, ThingId};
 use virtio_gpu::{Rect, VirtioGpu};
 
+// ============================================================================
+// Rect Utilities - no allocations, fast inline helpers
+// ============================================================================
+
+/// Compute the bounding box (union) of two rectangles
+#[inline]
+fn rect_union(a: Rect, b: Rect) -> Rect {
+    let x1 = a.x.min(b.x);
+    let y1 = a.y.min(b.y);
+    let x2 = (a.x + a.w).max(b.x + b.w);
+    let y2 = (a.y + a.h).max(b.y + b.h);
+    Rect {
+        x: x1,
+        y: y1,
+        w: x2.saturating_sub(x1),
+        h: y2.saturating_sub(y1),
+    }
+}
+
+/// Compute the area of a rectangle
+#[inline]
+fn rect_area(r: Rect) -> u64 {
+    (r.w as u64) * (r.h as u64)
+}
+
+/// Check if a rectangle is empty (zero width or height)
+#[inline]
+fn rect_is_empty(r: Rect) -> bool {
+    r.w == 0 || r.h == 0
+}
+
+/// Clamp a rectangle to screen bounds
+#[inline]
+fn rect_clamp_to_bounds(r: Rect, w: u32, h: u32) -> Rect {
+    // Clamp origin to screen
+    let x = r.x.min(w);
+    let y = r.y.min(h);
+    // Clamp extent to remaining screen space
+    let max_w = w.saturating_sub(x);
+    let max_h = h.saturating_sub(y);
+    Rect {
+        x,
+        y,
+        w: r.w.min(max_w),
+        h: r.h.min(max_h),
+    }
+}
+
+// ============================================================================
+// Instrumentation counters for verification
+// ============================================================================
+
+struct PresentStats {
+    frame_count: u32,
+    total_rects_in: u32,
+    total_transfers: u32,
+    total_flushes: u32,
+    union_flush_count: u32,
+    per_rect_flush_count: u32,
+}
+
+impl PresentStats {
+    const fn new() -> Self {
+        Self {
+            frame_count: 0,
+            total_rects_in: 0,
+            total_transfers: 0,
+            total_flushes: 0,
+            union_flush_count: 0,
+            per_rect_flush_count: 0,
+        }
+    }
+    
+    fn log_and_reset(&mut self) {
+        if self.frame_count > 0 {
+            info!(
+                "display_virtio_gpu stats: frames={}, rects_in={}, transfers={}, flushes={}, union_flush={}, per_rect_flush={}",
+                self.frame_count,
+                self.total_rects_in,
+                self.total_transfers,
+                self.total_flushes,
+                self.union_flush_count,
+                self.per_rect_flush_count
+            );
+        }
+        *self = Self::new();
+    }
+}
+
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]
 #[used]
@@ -105,6 +194,8 @@ fn main(arg: usize) -> ! {
     let mut src_width = 0u32;
     let mut src_height = 0u32;
     let mut resource_created = false;
+    let mut stats = PresentStats::new();
+    const STATS_LOG_INTERVAL: u32 = 120;
 
     loop {
         if let Ok(n) = port_recv(drv_req_read, &mut buf) {
@@ -237,7 +328,7 @@ fn main(arg: usize) -> ! {
                     if let Some(present) = drvproto::decode_present_header_le(payload) {
                         let rects_payload = &payload[drvproto::PRESENT_HEADER_WIRE_SIZE..];
                         
-                        // Handle full-frame present
+                        // Handle full-frame present (rect_count==0 or FULLFRAME flag)
                         if present.rect_count == 0
                             || (present._pad & drvproto::PRESENT_FLAG_FULLFRAME != 0)
                         {
@@ -248,11 +339,18 @@ fn main(arg: usize) -> ! {
                                 h: src_height,
                             };
                             let _ = gpu.present_rect(full_rect);
+                            stats.frame_count += 1;
+                            stats.total_transfers += 1;
+                            stats.total_flushes += 1;
                         } else {
-                            // Batch all transfers first, then all flushes
-                            // This prevents intermediate states from being visible
-                            let mut rects_to_flush = alloc::vec::Vec::new();
+                            // ============================================================
+                            // GPU-Fast Present Path: batch transfers, smart flush
+                            // ============================================================
+                            
+                            // Phase 1: Decode and clamp all rects, skip empty ones
+                            let mut valid_rects: alloc::vec::Vec<Rect> = alloc::vec::Vec::new();
                             let rect_size = drvproto::RECT_WIRE_SIZE;
+                            
                             for i in 0..present.rect_count as usize {
                                 let off = i * rect_size;
                                 if rects_payload.len() < off + rect_size {
@@ -267,14 +365,55 @@ fn main(arg: usize) -> ! {
                                         w: rect.w,
                                         h: rect.h,
                                     };
-                                    let _ = gpu.transfer_to_host(gpu_rect);
-                                    rects_to_flush.push(gpu_rect);
+                                    // Clamp to screen bounds and skip empty rects
+                                    let clamped = rect_clamp_to_bounds(gpu_rect, src_width, src_height);
+                                    if !rect_is_empty(clamped) {
+                                        valid_rects.push(clamped);
+                                    }
                                 }
                             }
-                            // Now flush all rects
-                            for rect in rects_to_flush {
-                                let _ = gpu.flush_resource(rect);
+                            
+                            stats.total_rects_in += valid_rects.len() as u32;
+                            
+                            if !valid_rects.is_empty() {
+                                // Phase 2: Transfer all rects (bandwidth follows true damage)
+                                for &rect in &valid_rects {
+                                    let _ = gpu.transfer_to_host(rect);
+                                }
+                                stats.total_transfers += valid_rects.len() as u32;
+                                
+                                // Phase 3: Compute union and sum of areas for flush policy
+                                let mut union_rect = valid_rects[0];
+                                let mut sum_area: u64 = 0;
+                                for &rect in &valid_rects {
+                                    union_rect = rect_union(union_rect, rect);
+                                    sum_area += rect_area(rect);
+                                }
+                                let union_area = rect_area(union_rect);
+                                
+                                // Phase 4: Smart flush policy
+                                // If union is much larger than sum of individual rects,
+                                // flush each rect separately to avoid giant flush area
+                                if valid_rects.len() > 1 && union_area > sum_area * 2 {
+                                    // Distant rects case: per-rect flush
+                                    for &rect in &valid_rects {
+                                        let _ = gpu.flush_resource(rect);
+                                    }
+                                    stats.total_flushes += valid_rects.len() as u32;
+                                    stats.per_rect_flush_count += 1;
+                                } else {
+                                    // Common case: single union flush
+                                    let _ = gpu.flush_resource(union_rect);
+                                    stats.total_flushes += 1;
+                                    stats.union_flush_count += 1;
+                                }
                             }
+                            stats.frame_count += 1;
+                        }
+                        
+                        // Rate-limited stats logging
+                        if stats.frame_count >= STATS_LOG_INTERVAL {
+                            stats.log_and_reset();
                         }
                     }
                     send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);

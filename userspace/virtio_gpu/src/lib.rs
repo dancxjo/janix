@@ -13,9 +13,11 @@ use core::ptr::{read_volatile, write_volatile};
 pub mod commands;
 pub mod virtio;
 pub mod virtqueue;
+pub mod present;
 
 pub use commands::*;
 pub use virtqueue::Virtqueue;
+pub use present::{DisplaySurface, FrameResource, FramePool, FrameHandle, PresentQueue, FrameState};
 
 /// Rectangle for partial updates
 #[derive(Copy, Clone, Debug)]

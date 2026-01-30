@@ -121,6 +121,16 @@ pub mod keys {
     pub const UI_RANK: &str = "ui.rank";
     pub const UI_FIXED: &str = "ui.fixed";
     pub const UI_MANUAL_POSITION: &str = "ui.manual_position";
+    
+    // Graph layout properties (Photosynthesis)
+    pub const LAYOUT_POS_X: &str = "layout.pos.x";
+    pub const LAYOUT_POS_Y: &str = "layout.pos.y";
+    pub const LAYOUT_SIZE_W: &str = "layout.size.w";
+    pub const LAYOUT_SIZE_H: &str = "layout.size.h";
+    pub const LAYOUT_VEL_X: &str = "layout.vel.x";
+    pub const LAYOUT_VEL_Y: &str = "layout.vel.y";
+    pub const LAYOUT_PIN: &str = "layout.pin";
+    pub const LAYOUT_GEN: &str = "layout.gen";
     /// Compositor has taken control of framebuffer (boot console should stop)
     pub const UI_COMPOSITOR_ACTIVE: &str = "ui.compositor.active";
     pub const UI_BUTTON_LABEL: &str = "ui.button.label";

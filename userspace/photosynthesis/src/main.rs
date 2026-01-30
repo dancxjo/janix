@@ -190,14 +190,30 @@ fn main() -> ! {
                 // 1. Convert to Layout types
                 let mut layout_nodes: Vec<LayoutNode> = nodes
                     .iter()
-                    .map(|n| LayoutNode {
-                        id: n.id,
-                        x: n.x,
-                        y: n.y,
-                        w: TILE_WIDTH as f32,
-                        h: TILE_HEIGHT as f32,
-                        fixed: n.fixed,
-                        rank: n.rank,
+                    .map(|n| {
+                        // Read velocity and generation from graph
+                        let vx = stem::thing::sys::prop_get(n.id, keys::LAYOUT_VEL_X)
+                            .unwrap_or(0) as f32 / 1000.0; // Store as millis for integer
+                        let vy = stem::thing::sys::prop_get(n.id, keys::LAYOUT_VEL_Y)
+                            .unwrap_or(0) as f32 / 1000.0;
+                        let gen = stem::thing::sys::prop_get(n.id, keys::LAYOUT_GEN)
+                            .unwrap_or(0);
+                        let pinned = stem::thing::sys::prop_get(n.id, keys::LAYOUT_PIN)
+                            .unwrap_or(0) != 0;
+                        
+                        LayoutNode {
+                            id: n.id,
+                            x: n.x,
+                            y: n.y,
+                            w: TILE_WIDTH as f32,
+                            h: TILE_HEIGHT as f32,
+                            vx,
+                            vy,
+                            fixed: n.fixed,
+                            pinned,
+                            rank: n.rank,
+                            gen,
+                        }
                     })
                     .collect();
 
@@ -230,9 +246,23 @@ fn main() -> ! {
                         .unwrap_or(false);
 
                     if changed && !is_window {
+                        // Write position
                         prop_set(ln.id, keys::UI_X, ln.x as i32 as u64).ok();
                         prop_set(ln.id, keys::UI_Y, ln.y as i32 as u64).ok();
                         prop_set(ln.id, keys::UI_RANK, ln.rank as u64).ok();
+                        
+                        // Write layout properties
+                        prop_set(ln.id, keys::LAYOUT_POS_X, ln.x as i32 as u64).ok();
+                        prop_set(ln.id, keys::LAYOUT_POS_Y, ln.y as i32 as u64).ok();
+                        prop_set(ln.id, keys::LAYOUT_SIZE_W, ln.w as i32 as u64).ok();
+                        prop_set(ln.id, keys::LAYOUT_SIZE_H, ln.h as i32 as u64).ok();
+                        prop_set(ln.id, keys::LAYOUT_VEL_X, (ln.vx * 1000.0) as i32 as u64).ok();
+                        prop_set(ln.id, keys::LAYOUT_VEL_Y, (ln.vy * 1000.0) as i32 as u64).ok();
+                        prop_set(ln.id, keys::LAYOUT_GEN, ln.gen).ok();
+                        
+                        if ln.pinned {
+                            prop_set(ln.id, keys::LAYOUT_PIN, 1).ok();
+                        }
                     }
                 }
 

@@ -197,6 +197,10 @@ pub struct DriverPresenter {
     fallback_warned: bool,
     unknown_msg_logged: bool,
     frame_count: u64,
+    /// Offered framebuffer from driver for zero-copy rendering
+    offered_fb: Option<drvproto::OfferFramebufferPayload>,
+    /// Whether we accepted the offered framebuffer
+    accepted_fb: bool,
 }
 
 impl DriverPresenter {
@@ -211,6 +215,8 @@ impl DriverPresenter {
             fallback_warned: false,
             unknown_msg_logged: false,
             frame_count: 0,
+            offered_fb: None,
+            accepted_fb: false,
         }
     }
 
@@ -250,6 +256,39 @@ impl DriverPresenter {
         } else {
             self.pending_bind = Some(*payload);
         }
+    }
+
+    /// Check if driver has offered a framebuffer for zero-copy rendering.
+    pub fn has_offered_fb(&self) -> bool {
+        self.offered_fb.is_some()
+    }
+
+    /// Accept the offered framebuffer and send MSG_ACCEPT_FRAMEBUFFER.
+    /// Returns the offer details if available.
+    pub fn accept_offered_framebuffer(&mut self) -> Option<drvproto::OfferFramebufferPayload> {
+        if let Some(offer) = self.offered_fb.take() {
+            let accept = drvproto::AcceptFramebufferPayload {
+                accepted: 1,
+                _pad: 0,
+            };
+            let mut accept_bytes = [0u8; drvproto::ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE];
+            if let Some(len) = drvproto::encode_accept_framebuffer_payload_le(&accept, &mut accept_bytes) {
+                let mut buf = [0u8; 64];
+                if let Some(total) = drvproto::encode_message(&mut buf, drvproto::MSG_ACCEPT_FRAMEBUFFER, &accept_bytes[..len]) {
+                    let _ = port_send(self.req_write, &buf[..total]);
+                }
+            }
+            self.accepted_fb = true;
+            info!("bloom: accepting zero-copy framebuffer bytespace {}", offer.bytespace_id);
+            Some(offer)
+        } else {
+            None
+        }
+    }
+
+    /// Check if we accepted the driver-provided framebuffer.
+    pub fn is_zero_copy(&self) -> bool {
+        self.accepted_fb
     }
 
     fn send_present(&mut self, snapshot: &PresentDamageSnapshot) -> usize {
@@ -391,6 +430,17 @@ impl DriverPresenter {
                     self.awaiting_bind_ack = false;
                 } else {
                     info!("bloom: driver PRESENT ERR code={}", code);
+                }
+            }
+            drvproto::MSG_OFFER_FRAMEBUFFER => {
+                if let Some(offer) = drvproto::decode_offer_framebuffer_payload_le(payload) {
+                    info!(
+                        "bloom: driver offered framebuffer bytespace {} ({}x{})",
+                        offer.bytespace_id, offer.width, offer.height
+                    );
+                    self.offered_fb = Some(offer);
+                } else {
+                    info!("bloom: MSG_OFFER_FRAMEBUFFER payload decode failed");
                 }
             }
             _ => {

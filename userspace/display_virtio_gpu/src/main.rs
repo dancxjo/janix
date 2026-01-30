@@ -6,7 +6,7 @@ extern crate alloc;
 use abi::display_driver_protocol as drvproto;
 use abi::driver_frame::FrameReader;
 use abi::ids::HandleId;
-use abi::schema::kinds;
+use abi::schema::{keys, kinds};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
@@ -72,10 +72,11 @@ struct PresentStats {
     total_flushes: u32,
     union_flush_count: u32,
     per_rect_flush_count: u32,
+    using_zero_copy: bool,
 }
 
 impl PresentStats {
-    const fn new() -> Self {
+    const fn new(zero_copy: bool) -> Self {
         Self {
             frame_count: 0,
             total_rects_in: 0,
@@ -83,22 +84,25 @@ impl PresentStats {
             total_flushes: 0,
             union_flush_count: 0,
             per_rect_flush_count: 0,
+            using_zero_copy: zero_copy,
         }
     }
     
     fn log_and_reset(&mut self) {
         if self.frame_count > 0 {
             info!(
-                "display_virtio_gpu stats: frames={}, rects_in={}, transfers={}, flushes={}, union_flush={}, per_rect_flush={}",
+                "display_virtio_gpu stats: frames={}, rects_in={}, transfers={}, flushes={}, union_flush={}, per_rect_flush={}, zero_copy={}",
                 self.frame_count,
                 self.total_rects_in,
                 self.total_transfers,
                 self.total_flushes,
                 self.union_flush_count,
-                self.per_rect_flush_count
+                self.per_rect_flush_count,
+                self.using_zero_copy
             );
         }
-        *self = Self::new();
+        let zc = self.using_zero_copy;
+        *self = Self::new(zc);
     }
 }
 
@@ -131,6 +135,24 @@ fn find_gpu() -> Option<ThingId> {
         return None;
     }
     Some(buf[0])
+}
+
+/// Query the boot framebuffer for display dimensions.
+/// Falls back to 1024x768 if not found.
+fn get_display_dimensions() -> (u32, u32, u32, u32) {
+    let mut fb_buf = [ThingId::default(); 1];
+    if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
+        if count > 0 {
+            let fb = fb_buf[0];
+            let width = thingsys::prop_get(fb, keys::WIDTH).unwrap_or(1024) as u32;
+            let height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(768) as u32;
+            let stride = width * 4;
+            let format = thingsys::prop_get(fb, keys::FORMAT).unwrap_or(1) as u32;
+            return (width, height, stride, format);
+        }
+    }
+    // Fallback defaults
+    (1024, 768, 1024 * 4, 1)
 }
 
 #[stem::main]
@@ -173,6 +195,65 @@ fn main(arg: usize) -> ! {
 
     info!("display_virtio_gpu: GPU initialized successfully");
 
+    // =========================================================================
+    // ZERO-COPY SCANOUT SETUP: Create GPU resource and bytespace at startup
+    // =========================================================================
+    let (disp_width, disp_height, disp_stride, disp_format) = get_display_dimensions();
+    let disp_size = (disp_height as usize) * (disp_stride as usize);
+    
+    info!(
+        "display_virtio_gpu: creating scanout {}x{} stride={} format={}",
+        disp_width, disp_height, disp_stride, disp_format
+    );
+    
+    // Create bytespace for GPU backing memory (zero-copy target)
+    let scanout_bs_id = match thingsys::bytespace_create(disp_size, 0, disp_format as u64) {
+        Ok(id) => id,
+        Err(e) => {
+            info!("display_virtio_gpu: bytespace_create failed: {:?}", e);
+            loop { stem::yield_now(); }
+        }
+    };
+    
+    let scanout_ptr = match thingsys::bytespace_map(scanout_bs_id) {
+        Ok(ptr) => ptr,
+        Err(e) => {
+            info!("display_virtio_gpu: bytespace_map failed: {:?}", e);
+            loop { stem::yield_now(); }
+        }
+    };
+    
+    let scanout_phys = match thingsys::bytespace_phys(scanout_bs_id) {
+        Ok(phys) => phys,
+        Err(e) => {
+            info!("display_virtio_gpu: bytespace_phys failed: {:?}", e);
+            loop { stem::yield_now(); }
+        }
+    };
+    
+    // Set up GPU resource with this backing
+    gpu.set_dimensions(disp_width, disp_height);
+    
+    if let Err(e) = gpu.create_resource_2d() {
+        info!("display_virtio_gpu: create_resource_2d failed: {}", e);
+        loop { stem::yield_now(); }
+    }
+    
+    if let Err(e) = gpu.attach_backing(scanout_phys, disp_size) {
+        info!("display_virtio_gpu: attach_backing failed: {}", e);
+        loop { stem::yield_now(); }
+    }
+    
+    if let Err(e) = gpu.set_scanout(disp_width, disp_height) {
+        info!("display_virtio_gpu: set_scanout failed: {}", e);
+        loop { stem::yield_now(); }
+    }
+    
+    info!(
+        "display_virtio_gpu: scanout bytespace {} ready (ptr={:?}, phys={:#x})",
+        scanout_bs_id.to_u64_lossy(), scanout_ptr, scanout_phys
+    );
+    
     // Send MSG_REGISTER
     let register = drvproto::RegisterPayload {
         driver_kind: drvproto::DRIVER_KIND_VIRTIO_GPU,
@@ -189,12 +270,17 @@ fn main(arg: usize) -> ! {
 
     let mut buf = [0u8; 512];
     let mut frames = FrameReader::<4096>::new();
+    
+    // Zero-copy mode state
+    let mut zero_copy_accepted = false;
     let mut bound_bytespace: Option<ThingId> = None;
-    let mut src_ptr: *const u8 = core::ptr::null();
-    let mut src_width = 0u32;
-    let mut src_height = 0u32;
-    let mut resource_created = false;
-    let mut stats = PresentStats::new();
+    let mut src_width = disp_width;
+    let mut src_height = disp_height;
+    
+    // Track if we offered the framebuffer (to avoid re-offering)
+    let mut offered_fb = false;
+    
+    let mut stats = PresentStats::new(false); // Will switch to true once accepted
     const STATS_LOG_INTERVAL: u32 = 120;
 
     loop {
@@ -224,95 +310,69 @@ fn main(arg: usize) -> ! {
                     {
                         send_msg(drv_resp_write, drvproto::MSG_WELCOME, &welcome_bytes[..len]);
                     }
+                    
+                    // Offer our pre-created framebuffer for zero-copy rendering
+                    if !offered_fb {
+                        let offer = drvproto::OfferFramebufferPayload {
+                            bytespace_id: scanout_bs_id.to_u64_lossy(),
+                            width: disp_width,
+                            height: disp_height,
+                            stride: disp_stride,
+                            format: disp_format,
+                        };
+                        let mut offer_bytes = [0u8; drvproto::OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE];
+                        if let Some(len) = drvproto::encode_offer_framebuffer_payload_le(&offer, &mut offer_bytes) {
+                            send_msg(drv_resp_write, drvproto::MSG_OFFER_FRAMEBUFFER, &offer_bytes[..len]);
+                            info!(
+                                "display_virtio_gpu: offering framebuffer bytespace {} ({}x{})",
+                                scanout_bs_id.to_u64_lossy(), disp_width, disp_height
+                            );
+                            offered_fb = true;
+                        }
+                    }
+                }
+                drvproto::MSG_ACCEPT_FRAMEBUFFER => {
+                    if let Some(accept) = drvproto::decode_accept_framebuffer_payload_le(payload) {
+                        if accept.accepted != 0 {
+                            zero_copy_accepted = true;
+                            bound_bytespace = Some(scanout_bs_id);
+                            stats.using_zero_copy = true;
+                            info!("display_virtio_gpu: zero-copy framebuffer ACCEPTED");
+                        } else {
+                            info!("display_virtio_gpu: zero-copy framebuffer REJECTED");
+                        }
+                    }
                 }
                 drvproto::MSG_BIND => {
+                    // MSG_BIND is a fallback path when zero-copy wasn't accepted.
+                    // The GPU resource is already created at startup with our scanout bytespace.
+                    // If Bloom sends BIND with a DIFFERENT bytespace, we note that we're not
+                    // in zero-copy mode. The GPU resource backing remains our pre-allocated
+                    // bytespace - Bloom would need to copy into it (or we'd need more complex
+                    // resource management which we don't implement here).
+                    
                     if let Some(bind) = drvproto::decode_bind_payload_le(payload) {
                         let bs_id = ThingId::from_u64(bind.bytespace_id);
                         
-                        // Map bytespace
-                        match thingsys::bytespace_map(bs_id) {
-                            Ok(ptr) => {
-                                // Get physical address for GPU backing
-                                match thingsys::bytespace_phys(bs_id) {
-                                    Ok(phys_addr) => {
-                                        bound_bytespace = Some(bs_id);
-                                        src_ptr = ptr as *const u8;
-                                        src_width = bind.width;
-                                        src_height = bind.height;
-
-                                        let size = (bind.height as usize) * (bind.stride as usize);
-
-                                        // Set GPU dimensions
-                                        gpu.set_dimensions(bind.width, bind.height);
-
-                                        // Create resource if not created yet or dimensions changed
-                                        if !resource_created {
-                                            if let Err(e) = gpu.create_resource_2d() {
-                                                info!("display_virtio_gpu: create_resource_2d failed: {}", e);
-                                                let err = drvproto::ErrResp { code: 3 };
-                                                let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                                if let Some(len) =
-                                                    drvproto::encode_err_resp_le(&err, &mut err_bytes)
-                                                {
-                                                    send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
-                                                }
-                                                continue;
-                                            }
-                                            resource_created = true;
-                                        }
-
-                                        // Attach bytespace as backing memory
-                                        if let Err(e) = gpu.attach_backing(phys_addr, size) {
-                                            info!("display_virtio_gpu: attach_backing failed: {}", e);
-                                            let err = drvproto::ErrResp { code: 4 };
-                                            let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                            if let Some(len) =
-                                                drvproto::encode_err_resp_le(&err, &mut err_bytes)
-                                            {
-                                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
-                                            }
-                                            continue;
-                                        }
-
-                                        // Set scanout
-                                        if let Err(e) = gpu.set_scanout(bind.width, bind.height) {
-                                            info!("display_virtio_gpu: set_scanout failed: {}", e);
-                                            let err = drvproto::ErrResp { code: 5 };
-                                            let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                            if let Some(len) =
-                                                drvproto::encode_err_resp_le(&err, &mut err_bytes)
-                                            {
-                                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
-                                            }
-                                            continue;
-                                        }
-
-                                        send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
-                                        info!("display_virtio_gpu: bound bytespace {}", bind.bytespace_id);
-                                    }
-                                    Err(e) => {
-                                        info!("display_virtio_gpu: bytespace_phys failed: {:?}", e);
-                                        let err = drvproto::ErrResp { code: 6 };
-                                        let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                        if let Some(len) =
-                                            drvproto::encode_err_resp_le(&err, &mut err_bytes)
-                                        {
-                                            send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
-                                        }
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                info!("display_virtio_gpu: bytespace_map failed: {:?}", e);
-                                let err = drvproto::ErrResp { code: 2 };
-                                let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                if let Some(len) =
-                                    drvproto::encode_err_resp_le(&err, &mut err_bytes)
-                                {
-                                    send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
-                                }
-                            }
+                        if bs_id == scanout_bs_id {
+                            // Bloom is binding our offered bytespace - zero-copy confirmed
+                            zero_copy_accepted = true;
+                            stats.using_zero_copy = true;
+                            info!("display_virtio_gpu: bound to our zero-copy bytespace");
+                        } else {
+                            // Bloom is using a different bytespace (fallback mode)
+                            // We don't support re-attaching backing, so just note the dimensions
+                            info!(
+                                "display_virtio_gpu: fallback bind (different bytespace {})",
+                                bind.bytespace_id
+                            );
+                            stats.using_zero_copy = false;
                         }
+                        
+                        bound_bytespace = Some(bs_id);
+                        src_width = bind.width;
+                        src_height = bind.height;
+                        send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
                     }
                 }
                 drvproto::MSG_PRESENT => {

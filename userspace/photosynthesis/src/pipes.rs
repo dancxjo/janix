@@ -134,7 +134,7 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
                  let predicate_id = row.kind_rel as u32;
                  let target_id = ThingId::from_u64(row.val_dst);
                  
-                 stem::info!("[photo]   Edge: {:X} --[pred={}]--> {:X}", 
+                 stem::trace!("[photo]   Edge: {:X} --[pred={}]--> {:X}", 
                      id.to_u64_lossy(), predicate_id, target_id.to_u64_lossy());
                  
                 let weight =

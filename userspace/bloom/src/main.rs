@@ -63,7 +63,7 @@ use crate::cursor_rasterizer::CursorRasterizer;
 use crate::frame::FrameBuilder;
 use crate::frame_loop::FrameLoop;
 use crate::paint_vm::{PaintPipeline, WindowHit};
-use crate::present::{evaluate_present_strategy, DriverPresenter, PresenterImpl};
+use crate::present::{evaluate_present_strategy, DriverPresenter, Presenter, PresenterImpl};
 use crate::snapshot::SnapshotInvalidation;
 use crate::state::{DamageOverlayState, DebugFlags, OverlayMode};
 use alloc::collections::BTreeSet;
@@ -375,27 +375,75 @@ fn main(arg: usize) -> ! {
     let mut presenter = if target.driver_req != 0 {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
         d.start_handshake();
-        d.send_bind(&BindPayload {
-            bytespace_id: target.bs_id.to_u64_lossy(),
-            width: target.width,
-            height: target.height,
-            stride: target.stride_bytes,
-            format: target.format,
-        });
+        
+        // Pump a few times to receive MSG_WELCOME and potential MSG_OFFER_FRAMEBUFFER
+        for _ in 0..10 {
+            d.pump();
+            if d.has_offered_fb() {
+                break;
+            }
+            stem::sleep_ms(5);
+        }
+        
         PresenterImpl::Driver(d)
     } else {
         PresenterImpl::Null(present::NullPresenter)
     };
 
+    // Check if driver offered a zero-copy framebuffer
+    let (final_ptr, final_size, final_width, final_height, final_stride, final_bs_id, using_zero_copy) = 
+        if let PresenterImpl::Driver(ref mut d) = &mut presenter {
+            if let Some(offer) = d.accept_offered_framebuffer() {
+                // Driver provided a framebuffer - map it for zero-copy rendering
+                let offer_bs_id = ThingId::from_u64(offer.bytespace_id);
+                match stem::thing::sys::bytespace_map(offer_bs_id) {
+                    Ok(ptr) => {
+                        let size = (offer.height * offer.stride) as usize;
+                        log!("bloom: using zero-copy framebuffer (bytespace {})", offer.bytespace_id);
+                        (ptr, size, offer.width, offer.height, offer.stride, offer_bs_id, true)
+                    }
+                    Err(e) => {
+                        log!("bloom: zero-copy bytespace map failed: {:?}, falling back", e);
+                        // Fall back to Sprout-provided bytespace
+                        d.send_bind(&BindPayload {
+                            bytespace_id: target.bs_id.to_u64_lossy(),
+                            width: target.width,
+                            height: target.height,
+                            stride: target.stride_bytes,
+                            format: target.format,
+                        });
+                        (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false)
+                    }
+                }
+            } else {
+                // No offer received, use MSG_BIND with Sprout's bytespace
+                log!("bloom: no zero-copy offer, binding sprout bytespace");
+                d.send_bind(&BindPayload {
+                    bytespace_id: target.bs_id.to_u64_lossy(),
+                    width: target.width,
+                    height: target.height,
+                    stride: target.stride_bytes,
+                    format: target.format,
+                });
+                (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false)
+            }
+        } else {
+            // NullPresenter - use Sprout's bytespace
+            (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false)
+        };
+    
+    let _ = (final_bs_id, using_zero_copy); // Suppress unused warnings for now
+
     let mut surface = unsafe {
         surface::Surface::new(
-            target.ptr,
-            target.size_bytes,
-            target.width,
-            target.height,
-            target.stride_bytes,
+            final_ptr,
+            final_size,
+            final_width,
+            final_height,
+            final_stride,
         )
     };
+
 
     // UI Root
     let mut roots = [ThingId::default(); 1];

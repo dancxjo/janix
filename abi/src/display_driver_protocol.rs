@@ -15,6 +15,8 @@ pub const MSG_ERR: u16 = 5;
 pub const MSG_HELLO: u16 = 6;
 pub const MSG_WELCOME: u16 = 7;
 pub const MSG_CAPS: u16 = 8;
+pub const MSG_OFFER_FRAMEBUFFER: u16 = 9;
+pub const MSG_ACCEPT_FRAMEBUFFER: u16 = 10;
 
 pub const PROTO_MAJOR: u16 = 1;
 pub const PROTO_MINOR: u16 = 0;
@@ -96,6 +98,27 @@ pub struct ErrResp {
     pub code: u32,
 }
 
+/// Driver offers a pre-allocated framebuffer bytespace for zero-copy rendering.
+/// Sent by driver to compositor after MSG_WELCOME.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct OfferFramebufferPayload {
+    pub bytespace_id: u64,
+    pub width: u32,
+    pub height: u32,
+    pub stride: u32,
+    pub format: u32,
+}
+
+/// Compositor response to OfferFramebufferPayload.
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct AcceptFramebufferPayload {
+    /// 0 = rejected, 1 = accepted
+    pub accepted: u32,
+    pub _pad: u32,
+}
+
 pub const HEADER_SIZE: usize = size_of::<DriverHeader>();
 pub const REGISTER_PAYLOAD_WIRE_SIZE: usize = 8;
 pub const HELLO_PAYLOAD_WIRE_SIZE: usize = 8;
@@ -104,6 +127,8 @@ pub const BIND_PAYLOAD_WIRE_SIZE: usize = 24;
 pub const RECT_WIRE_SIZE: usize = 16;
 pub const PRESENT_HEADER_WIRE_SIZE: usize = 8;
 pub const ERR_RESP_WIRE_SIZE: usize = 4;
+pub const OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 24; // 8 + 4 + 4 + 4 + 4
+pub const ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 8; // 4 + 4
 
 pub fn encode_message(buf: &mut [u8], msg_type: u16, payload: &[u8]) -> Option<usize> {
     let total = HEADER_SIZE + payload.len();
@@ -370,5 +395,55 @@ pub fn decode_err_resp_le(buf: &[u8]) -> Option<ErrResp> {
     }
     Some(ErrResp {
         code: u32::from_le_bytes(buf[0..4].try_into().ok()?),
+    })
+}
+
+pub fn encode_offer_framebuffer_payload_le(
+    payload: &OfferFramebufferPayload,
+    out: &mut [u8],
+) -> Option<usize> {
+    if out.len() < OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    out[0..8].copy_from_slice(&payload.bytespace_id.to_le_bytes());
+    out[8..12].copy_from_slice(&payload.width.to_le_bytes());
+    out[12..16].copy_from_slice(&payload.height.to_le_bytes());
+    out[16..20].copy_from_slice(&payload.stride.to_le_bytes());
+    out[20..24].copy_from_slice(&payload.format.to_le_bytes());
+    Some(OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE)
+}
+
+pub fn decode_offer_framebuffer_payload_le(buf: &[u8]) -> Option<OfferFramebufferPayload> {
+    if buf.len() < OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    Some(OfferFramebufferPayload {
+        bytespace_id: u64::from_le_bytes(buf[0..8].try_into().ok()?),
+        width: u32::from_le_bytes(buf[8..12].try_into().ok()?),
+        height: u32::from_le_bytes(buf[12..16].try_into().ok()?),
+        stride: u32::from_le_bytes(buf[16..20].try_into().ok()?),
+        format: u32::from_le_bytes(buf[20..24].try_into().ok()?),
+    })
+}
+
+pub fn encode_accept_framebuffer_payload_le(
+    payload: &AcceptFramebufferPayload,
+    out: &mut [u8],
+) -> Option<usize> {
+    if out.len() < ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    out[0..4].copy_from_slice(&payload.accepted.to_le_bytes());
+    out[4..8].copy_from_slice(&payload._pad.to_le_bytes());
+    Some(ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE)
+}
+
+pub fn decode_accept_framebuffer_payload_le(buf: &[u8]) -> Option<AcceptFramebufferPayload> {
+    if buf.len() < ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE {
+        return None;
+    }
+    Some(AcceptFramebufferPayload {
+        accepted: u32::from_le_bytes(buf[0..4].try_into().ok()?),
+        _pad: u32::from_le_bytes(buf[4..8].try_into().ok()?),
     })
 }

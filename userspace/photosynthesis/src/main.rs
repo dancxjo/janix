@@ -228,13 +228,11 @@ fn main() -> ! {
                 let mut layout_nodes: Vec<LayoutNode> = nodes
                     .iter()
                     .map(|n| {
-                        // Read velocity and generation from graph
+                        // Read velocity from graph (not in NodeInfo)
                         let vx = stem::thing::sys::prop_get(n.id, keys::LAYOUT_VEL_X)
                             .unwrap_or(0) as f32 / 1000.0; // Store as millis for integer
                         let vy = stem::thing::sys::prop_get(n.id, keys::LAYOUT_VEL_Y)
                             .unwrap_or(0) as f32 / 1000.0;
-                        let gen = stem::thing::sys::prop_get(n.id, keys::LAYOUT_GEN)
-                            .unwrap_or(0);
                         let pinned = stem::thing::sys::prop_get(n.id, keys::LAYOUT_PIN)
                             .unwrap_or(0) != 0;
                         
@@ -249,7 +247,7 @@ fn main() -> ! {
                             fixed: n.fixed,
                             pinned,
                             rank: n.rank,
-                            gen,
+                            gen: n.gen, // Use gen from NodeInfo
                         }
                     })
                     .collect();

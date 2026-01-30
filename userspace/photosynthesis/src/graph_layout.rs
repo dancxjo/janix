@@ -151,8 +151,10 @@ fn initial_placement(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: &
     let order = bfs_ordering(nodes, edges);
     
     for i in 0..nodes.len() {
-        // Skip nodes that already have positions (preserve existing layout)
-        if nodes[i].x != 0.0 || nodes[i].y != 0.0 {
+        // Skip nodes that have already been positioned:
+        // - gen > 0 means positioned in a previous layout cycle
+        // - non-zero coordinates means positioned earlier in this cycle
+        if nodes[i].gen > 0 || nodes[i].x != 0.0 || nodes[i].y != 0.0 {
             continue;
         }
         
@@ -212,11 +214,24 @@ fn apply_repulsion(nodes: &mut [LayoutNode], settings: &LayoutSettings) {
             continue;
         }
         
+        // Guard against NaN positions - reset to center if corrupted
+        if nodes[i].x.is_nan() || nodes[i].y.is_nan() {
+            nodes[i].x = 400.0;
+            nodes[i].y = 300.0;
+            nodes[i].vx = 0.0;
+            nodes[i].vy = 0.0;
+        }
+        
         let mut fx = 0.0;
         let mut fy = 0.0;
         
         for j in 0..n {
             if i == j {
+                continue;
+            }
+            
+            // Skip nodes with NaN positions
+            if nodes[j].x.is_nan() || nodes[j].y.is_nan() {
                 continue;
             }
             
@@ -250,8 +265,11 @@ fn apply_repulsion(nodes: &mut [LayoutNode], settings: &LayoutSettings) {
             }
         }
         
-        nodes[i].vx += fx;
-        nodes[i].vy += fy;
+        // Guard against NaN in accumulated forces
+        if !fx.is_nan() && !fy.is_nan() {
+            nodes[i].vx += fx;
+            nodes[i].vy += fy;
+        }
     }
 }
 
@@ -272,6 +290,11 @@ fn apply_attraction(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: &L
             None => continue,
         };
         
+        // Skip if either node has NaN positions
+        if nodes[i].x.is_nan() || nodes[i].y.is_nan() || nodes[j].x.is_nan() || nodes[j].y.is_nan() {
+            continue;
+        }
+        
         let dx = nodes[j].x - nodes[i].x;
         let dy = nodes[j].y - nodes[i].y;
         let dist = libm::sqrtf(dx * dx + dy * dy);
@@ -283,6 +306,11 @@ fn apply_attraction(nodes: &mut [LayoutNode], edges: &[LayoutEdge], settings: &L
         let force = settings.attraction_strength * edge.weight;
         let fx = (dx / dist) * force * dist;
         let fy = (dy / dist) * force * dist;
+        
+        // Guard against NaN forces
+        if fx.is_nan() || fy.is_nan() {
+            continue;
+        }
         
         if !nodes[i].pinned {
             nodes[i].vx += fx;
@@ -348,6 +376,13 @@ fn resolve_collisions(nodes: &mut [LayoutNode], settings: &LayoutSettings) {
 fn update_positions(nodes: &mut [LayoutNode], settings: &LayoutSettings) -> f32 {
     let mut max_movement = 0.0;
     
+    // Define world bounds (centered on 400, 300 with generous margin)
+    const MIN_X: f32 = -2000.0;
+    const MAX_X: f32 = 3000.0;
+    const MIN_Y: f32 = -2000.0;
+    const MAX_Y: f32 = 3000.0;
+    const MAX_VELOCITY: f32 = 100.0; // Prevent runaway physics
+    
     for node in nodes.iter_mut() {
         if node.pinned {
             node.vx = 0.0;
@@ -359,9 +394,21 @@ fn update_positions(nodes: &mut [LayoutNode], settings: &LayoutSettings) -> f32 
         node.vx *= settings.damping;
         node.vy *= settings.damping;
         
+        // Clamp velocity to prevent runaway physics
+        if node.vx > MAX_VELOCITY { node.vx = MAX_VELOCITY; }
+        if node.vx < -MAX_VELOCITY { node.vx = -MAX_VELOCITY; }
+        if node.vy > MAX_VELOCITY { node.vy = MAX_VELOCITY; }
+        if node.vy < -MAX_VELOCITY { node.vy = -MAX_VELOCITY; }
+        
         // Update position
         node.x += node.vx;
         node.y += node.vy;
+        
+        // Clamp position to world bounds
+        if node.x < MIN_X { node.x = MIN_X; node.vx = 0.0; }
+        if node.x > MAX_X { node.x = MAX_X; node.vx = 0.0; }
+        if node.y < MIN_Y { node.y = MIN_Y; node.vy = 0.0; }
+        if node.y > MAX_Y { node.y = MAX_Y; node.vy = 0.0; }
         
         // Track maximum movement
         let movement = libm::sqrtf(node.vx * node.vx + node.vy * node.vy);

@@ -21,6 +21,7 @@ pub struct NodeInfo {
     pub y: f32,
     pub fixed: bool,
     pub rank: i32,
+    pub gen: u64, // layout generation (0 = never positioned)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -41,51 +42,12 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
     let mut seen = BTreeMap::new();
     let mut queue = Vec::new();
 
-    // Initial seeds - comprehensive list of all discoverable system entities
-    // NOTE: mem.Range, Bytespace, and log.Entry are filtered out during scan
+    // Initial seeds - focused on core system entities only
     let interesting_kinds = [
-        // Core system
-        kinds::SVC_ROOT,
-        kinds::PROC_KERNEL,
-        kinds::SVC_SCHEDULER,
-        kinds::SVC_INIT,
-        kinds::SVC_CAMBIUM,
-        // UI
-        kinds::UI_CROWN,
-        kinds::UI_WINDOW,
-        kinds::UI_PANEL,
-        kinds::UI_SCENE,
-        // Hardware/Devices
-        kinds::DEV_HOST,
-        kinds::DEV_CPU,
-        kinds::DEV_BUS_PCI,
-        kinds::DEV_PCI_FUNCTION,
-        kinds::DEV_DISPLAY_FRAMEBUFFER,
-        kinds::DEV_DISPLAY_GPU,
-        kinds::DEV_STORAGE_DISK,
-        kinds::DEV_INPUT_PS2_CONTROLLER,
-        kinds::DEV_RTC_CMOS,
-        // Boot
-        kinds::BOOT_MODULE,
-        kinds::FW_BOOT,
-        kinds::FW_TABLE_ACPI,
-        // Content
-        kinds::CONTENT_SOURCE,
-        kinds::CONTENT_DIR,
-        kinds::CONTENT_FILE,
-        // Storage/Time
-        kinds::SVC_STORAGE,
-        kinds::SVC_TIME_SYSTEM_CLOCK,
-        kinds::TIME_CLOCK,
-        // Fonts
-        kinds::FONT_FAMILY,
-        kinds::FONT_FACE,
-        // Assets
-        kinds::ASSET,
-        kinds::ASSET_REQUEST,
-        // Tasks/Threads
-        kinds::PROC_TASK,
-        kinds::PROC_THREAD,
+        kinds::SVC_ROOT,     // System root node
+        kinds::PROC_KERNEL,  // Kernel process
+        kinds::UI_CROWN,     // UI crown (desktop)
+        kinds::UI_WINDOW,    // Windows
     ];
 
     for &kind_name in &interesting_kinds {
@@ -138,10 +100,13 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
             }
         }
 
-        let x = stem::thing::sys::prop_get(id, keys::UI_X).unwrap_or(0) as f32;
-        let y = stem::thing::sys::prop_get(id, keys::UI_Y).unwrap_or(0) as f32;
+        // Read layout-specific positions (persisted by photosynthesis itself)
+        // These are separate from UI_X/UI_Y which are used by the window manager
+        let x = stem::thing::sys::prop_get(id, keys::LAYOUT_POS_X).unwrap_or(0) as f32;
+        let y = stem::thing::sys::prop_get(id, keys::LAYOUT_POS_Y).unwrap_or(0) as f32;
         let rank = stem::thing::sys::prop_get(id, keys::UI_RANK).unwrap_or(u64::MAX) as i32;
         let fixed = stem::thing::sys::prop_get(id, keys::UI_FIXED).unwrap_or(0) != 0;
+        let gen = stem::thing::sys::prop_get(id, keys::LAYOUT_GEN).unwrap_or(0);
 
         nodes.push(NodeInfo {
             id,
@@ -152,6 +117,7 @@ pub fn scan_system_graph() -> (Vec<NodeInfo>, Vec<EdgeInfo>) {
             y,
             fixed,
             rank,
+            gen,
         });
         seen.insert(id, ());
 

@@ -99,7 +99,7 @@ pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> (
         state.left_down = true;
         state.click_start_x = state.pointer_x;
         state.click_start_y = state.pointer_y;
-        ctrl.begin_drag(state.pointer_x as f32, state.pointer_y as f32);
+        ctrl.begin_drag(state.pointer_x as f32, state.pointer_y as f32, stem::monotonic_ns());
     }
 
     // Handle left button release: end drag or register click
@@ -125,7 +125,7 @@ pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> (
 
     // Handle drag movement
     if state.left_down && moved && ctrl.is_dragging() {
-        ctrl.update_drag(state.pointer_x as f32, state.pointer_y as f32);
+        ctrl.update_drag(state.pointer_x as f32, state.pointer_y as f32, stem::monotonic_ns());
         updated = true;
     }
 

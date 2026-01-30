@@ -9,6 +9,7 @@ use walkdir::WalkDir;
 pub struct ProgramConfig {
     pub name: &'static str,
     pub is_init: bool,
+    pub boot_module: bool,
     pub features: Vec<&'static str>,
 }
 
@@ -26,112 +27,134 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "sprout",
             is_init: false,
+            boot_module: true,
             features: vec!["diagnostic-apps"],
         },
         ProgramConfig {
             name: "bristle",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "rtc_cmos",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "clock",
             is_init: false,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "font_explorer",
             is_init: false,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "ps2_kbd",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "echo",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "bloom",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "ps2_mouse",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "root_batch_bench",
             is_init: false,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "root_watch_tester",
             is_init: false,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "display_bootfb",
             is_init: false,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "fontd",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "blossom",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "ingestd",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "cambium",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         // Scheduler fairness test apps
         ProgramConfig {
             name: "scheduler_fairness",
             is_init: false,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "drawlist_demo",
             is_init: false,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "tick_printer",
             is_init: false,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "photosynthesis",
             is_init: false,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
-            name: "ata_disk",
+            name: "ahci_disk",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "iso_reader",
             is_init: false,
+            boot_module: true,
             features: vec![],
         },
     ]
@@ -152,6 +175,9 @@ fn generate_limine_config(
     conf.push_str("    kernel_path: boot():/boot/kernel\n");
 
     for prog in programs {
+        if !prog.boot_module {
+            continue;
+        }
         conf.push_str(&format!("    module_path: boot():/boot/{}\n", prog.name));
         if prog.is_init {
             conf.push_str("    module_cmdline: init\n");
@@ -160,14 +186,15 @@ fn generate_limine_config(
 
     for asset in assets {
         let path_str = asset.to_string_lossy();
-        if path_str.ends_with(".txt") || path_str.ends_with(".crs") {
-            continue;
-        }
-        if !path_str.starts_with("assets/") {
-            continue;
-        }
         let clean_path = path_str.replace("\\", "/");
-        conf.push_str(&format!("    module_path: boot():/{}\n", clean_path));
+
+        // Allowed assets
+        let allowed = clean_path.ends_with("NotoSans-Regular.ttf")
+            || clean_path.ends_with("future/default.svg");
+
+        if allowed {
+            conf.push_str(&format!("    module_path: boot():/{}\n", clean_path));
+        }
     }
 
     conf

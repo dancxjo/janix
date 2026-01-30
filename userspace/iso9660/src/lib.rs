@@ -170,11 +170,57 @@ impl IsoFs {
 
                 // Convert name to string, strip version suffix
                 let name_str = core::str::from_utf8(name_bytes).unwrap_or("");
-                let name = if let Some(pos) = name_str.find(';') {
+                let mut name = if let Some(pos) = name_str.find(';') {
                     String::from(&name_str[..pos])
                 } else {
                     String::from(name_str)
                 };
+
+                // Parse System Use Area for Rock Ridge NM (Alternate Name)
+                let mut sys_use_offset = offset + 33 + name_len;
+                if name_len % 2 == 0 {
+                    sys_use_offset += 1;
+                }
+
+                let mut rock_ridge_name = String::new();
+                let mut found_nm = false;
+
+                while sys_use_offset + 4 <= offset + record_len {
+                    let sig = &buf[sys_use_offset..sys_use_offset + 2];
+                    let len = buf[sys_use_offset + 2] as usize;
+                    let _ver = buf[sys_use_offset + 3];
+
+                    if len < 4 || sys_use_offset + len > offset + record_len {
+                        break;
+                    }
+
+                    if sig == b"NM" {
+                        let flags = buf[sys_use_offset + 4];
+                        let name_start = sys_use_offset + 5;
+                        let name_end = sys_use_offset + len;
+                        
+                        if name_end > name_start {
+                             if let Ok(nm_part) = core::str::from_utf8(&buf[name_start..name_end]) {
+                                 rock_ridge_name.push_str(nm_part);
+                                 found_nm = true;
+                             }
+                        }
+                        
+                        // If CONTINUE bit (0) or others are not set, we might be done, 
+                        // but NM entries can be split. We just append them all.
+                    } else if sig == b"CE" {
+                        // Continuation Area (implied TODO: simple NM parsing normally resides in the record itself)
+                    } else if sig == b"ST" {
+                        // Terminator
+                        break;
+                    }
+
+                    sys_use_offset += len;
+                }
+
+                if found_nm {
+                    name = rock_ridge_name;
+                }
 
                 entries.push(IsoDirEntry {
                     name,

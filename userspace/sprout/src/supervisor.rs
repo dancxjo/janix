@@ -164,30 +164,24 @@ impl Supervisor {
     fn spawn_apps(&mut self) {
         info!("SPROUT: spawn_apps start. tasks len={}", self.tasks.len());
 
-        self.ensure_app("/clock");
-        self.ensure_app("/clock");
-        // self.ensure_app("/echo");  // Handled by pipelines.rs now
-        self.ensure_app("/font_explorer");
-        self.ensure_app("/font_explorer");
-        // self.ensure_app("/ata_disk");
-        // self.ensure_app("/disk_probe");
-        // self.ensure_app("/ahci_disk");
-
-        // #[cfg(feature = "diagnostic-apps")]
-        // {
-        //     self.ensure_app("/threads");
-        //     self.ensure_app("/stack_heap_torture");
-        //     self.ensure_app("/root_batch_bench");
-        // }
-        // self.ensure_app("/root_watch_tester");
+        // Services & Drivers
         self.ensure_app("/ingestd");
         self.ensure_app("/fontd");
         self.ensure_app("/blossom");
-        // self.ensure_app("/png_creator");
         self.ensure_app("/cambium");
-        self.ensure_app("/photosynthesis");
-        self.ensure_app("/drawlist_demo");
-        // self.ensure_app("/scheduler_verify");
+        
+        // Storage
+        self.ensure_app("/ahci_disk");
+        self.ensure_app("/iso_reader");
+
+        // User Apps (Disabled per user request)
+        // self.ensure_app("/clock");
+        // self.ensure_app("/font_explorer");
+        // self.ensure_app("/photosynthesis");
+        // self.ensure_app("/drawlist_demo");
+
+        // #[cfg(feature = "diagnostic-apps")]
+        // { ... }
 
         // Scheduler fairness verification apps (disabled after testing)
         // self.ensure_app("/scheduler_fairness");

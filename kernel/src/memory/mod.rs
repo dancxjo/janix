@@ -148,6 +148,23 @@ pub unsafe fn unmap_user_page(virt: u64) -> Result<(), abi::errors::Errno> {
     }
 }
 
+/// Global hook for translating user addresses.
+static mut TRANSLATE_USER_PAGE_HOOK: Option<unsafe fn(u64) -> Option<u64>> = None;
+
+/// Initialize the user page translation hook.
+pub unsafe fn set_translate_user_page_hook(hook: unsafe fn(u64) -> Option<u64>) {
+    unsafe { TRANSLATE_USER_PAGE_HOOK = Some(hook) };
+}
+
+/// Translate a user virtual address to a physical address.
+pub fn translate_user_page(virt: u64) -> Option<u64> {
+    if let Some(hook) = unsafe { TRANSLATE_USER_PAGE_HOOK } {
+        unsafe { hook(virt) }
+    } else {
+        None
+    }
+}
+
 /// Map a physical page into the current process's userspace with explicit permissions.
 pub unsafe fn map_user_page_with_perms(
     virt: u64,

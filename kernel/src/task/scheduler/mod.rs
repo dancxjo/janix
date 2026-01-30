@@ -90,6 +90,7 @@ pub fn init<R: BootRuntime>() {
             hooks::REMOVE_USER_MAPPINGS_HOOK = Some(vm::remove_user_mappings::<R>);
             hooks::CHECK_USER_MAPPING_HOOK = Some(vm::check_user_mapping::<R>);
             hooks::GET_USER_MAPPING_AT_HOOK = Some(vm::get_user_mapping_at::<R>);
+            crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
         crate::contract!("Scheduler initialized");

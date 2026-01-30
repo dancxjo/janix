@@ -8,6 +8,13 @@ use stem::petals::PanZoomController;
 use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 
+/// Click result when a click is detected
+#[derive(Debug, Clone, Copy)]
+pub struct ClickEvent {
+    pub x: i32,
+    pub y: i32,
+}
+
 /// Input state for tracking pointer position, drag, and keyboard.
 pub struct InputState {
     /// Left button currently held
@@ -22,6 +29,9 @@ pub struct InputState {
     last_keyboard_gen: u64,
     /// Cached bristle node ID
     bristle_node: Option<ThingId>,
+    /// Track click for pinning (position must not change much)
+    click_start_x: i32,
+    click_start_y: i32,
 }
 
 impl InputState {
@@ -34,6 +44,8 @@ impl InputState {
             prev_y: 300,
             last_keyboard_gen: 0,
             bristle_node: None,
+            click_start_x: 0,
+            click_start_y: 0,
         }
     }
 
@@ -56,13 +68,16 @@ impl InputState {
 
 /// Poll pointer and keyboard state from system graph and apply to viewport controller.
 ///
-/// Returns true if the viewport was updated (needs redraw).
-pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> bool {
+/// Returns (viewport_updated, click_event, toggle_debug) where click_event is Some if a click occurred
+/// and toggle_debug is true if the debug key was pressed.
+pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> (bool, Option<ClickEvent>, bool) {
     let mut updated = false;
+    let mut click_event = None;
+    let mut toggle_debug = false;
 
     let bristle = match state.get_bristle() {
         Some(b) => b,
-        None => return false,
+        None => return (false, None, false),
     };
 
     // --- Pointer handling ---
@@ -82,13 +97,29 @@ pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> b
     // Handle left button press: start drag
     if left_now && !left_was {
         state.left_down = true;
+        state.click_start_x = state.pointer_x;
+        state.click_start_y = state.pointer_y;
         ctrl.begin_drag(state.pointer_x as f32, state.pointer_y as f32);
     }
 
-    // Handle left button release: end drag
+    // Handle left button release: end drag or register click
     if !left_now && left_was {
         state.left_down = false;
-        ctrl.end_drag();
+        
+        // Check if this was a click (minimal movement) vs a drag
+        let dx = (state.pointer_x - state.click_start_x).abs();
+        let dy = (state.pointer_y - state.click_start_y).abs();
+        let was_click = dx < 5 && dy < 5;
+        
+        if was_click {
+            click_event = Some(ClickEvent {
+                x: state.pointer_x,
+                y: state.pointer_y,
+            });
+        } else {
+            ctrl.end_drag();
+        }
+        
         updated = true;
     }
 
@@ -114,53 +145,64 @@ pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> b
             // Key down event
             let key = Key::from_raw(key_code as u16);
             let mods = Mods(mods_val as u8);
-            updated |= handle_key_down(key, mods, ctrl);
+            let (kb_updated, kb_toggle_debug) = handle_key_down(key, mods, ctrl);
+            updated |= kb_updated;
+            toggle_debug = kb_toggle_debug;
         }
     }
 
-    updated
+    (updated, click_event, toggle_debug)
 }
 
 /// Handle keyboard shortcuts for viewport control.
-fn handle_key_down(key: Key, mods: Mods, ctrl: &mut PanZoomController) -> bool {
+/// Returns (viewport_updated, toggle_debug)
+fn handle_key_down(key: Key, mods: Mods, ctrl: &mut PanZoomController) -> (bool, bool) {
     let alt = mods.has_alt();
+    let mut updated = false;
+    let mut toggle_debug = false;
 
     // F8: Cycle locale
     if key == Key::F8 {
         stem::i18n::cycle_locale();
         stem::info!("Locale switched to: {:?}", stem::i18n::current_locale());
-        return true;
+        return (true, false);
+    }
+
+    // D: Toggle debug mode
+    if key == Key::D {
+        toggle_debug = true;
+        return (false, true);
     }
 
     // Alt+Equal (Plus): Zoom in
     if alt && key == Key::Equal {
         ctrl.handle_keyboard_zoom(true);
-        return true;
+        return (true, false);
     }
 
     // Alt+Minus: Zoom out
     if alt && key == Key::Minus {
         ctrl.handle_keyboard_zoom(false);
-        return true;
+        return (true, false);
     }
 
     // Arrow keys: Pan
     match key {
         Key::Up => {
             ctrl.handle_arrow_key(true, false, false, false);
-            return true;
+            updated = true;
         }
         Key::Down => {
             ctrl.handle_arrow_key(false, true, false, false);
-            return true;
+            updated = true;
         }
         Key::Left => {
             ctrl.handle_arrow_key(false, false, true, false);
-            return true;
+            updated = true;
         }
         Key::Right => {
             ctrl.handle_arrow_key(false, false, false, true);
-            return true;
+            updated = true;
         }
         _ => {}
     }
@@ -168,18 +210,18 @@ fn handle_key_down(key: Key, mods: Mods, ctrl: &mut PanZoomController) -> bool {
     // Home: Reset view
     if key == Key::Home {
         ctrl.handle_home();
-        return true;
+        updated = true;
     }
 
     // Page Up/Down: Large scroll
     if key == Key::PageUp {
         ctrl.handle_page(true);
-        return true;
+        updated = true;
     }
     if key == Key::PageDown {
         ctrl.handle_page(false);
-        return true;
+        updated = true;
     }
 
-    false
+    (updated, toggle_debug)
 }

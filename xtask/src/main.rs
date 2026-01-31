@@ -11,6 +11,7 @@ mod fetch;
 mod image;
 mod kill;
 mod limine;
+mod proxy;
 mod run;
 
 use clap::{Parser, Subcommand};
@@ -143,6 +144,15 @@ enum Commands {
     Kill,
     /// Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
     Fetch,
+    /// Run HTTPS reverse proxy for guest httpd
+    HttpsProxy {
+        /// HTTPS listen port
+        #[arg(long, default_value = "8443")]
+        port: u16,
+        /// Target HTTP port (guest httpd via QEMU forwarding)
+        #[arg(long, default_value = "8888")]
+        target: u16,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -235,6 +245,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => bdd(&sh, feature, tags, arch)?,
         Commands::Kill => kill::run()?,
         Commands::Fetch => fetch()?,
+        Commands::HttpsProxy { port, target } => proxy::https_proxy(port, target)?,
     }
 
     Ok(())

@@ -111,6 +111,8 @@ impl SocketApi {
         &mut self,
         socket_set: &mut SocketSet<'a>,
         listen_handle: u32,
+        rx_storage: &'a mut [u8],
+        tx_storage: &'a mut [u8],
     ) -> Vec<u8> {
         // Check if we have a pending accepted connection
         if let Some(pending) = self.pending_accepts.get_mut(&listen_handle) {
@@ -124,17 +126,21 @@ impl SocketApi {
         }
 
         // No pending connections - check if listener socket has a connection ready
-        let listener = match self.sockets.get(&listen_handle) {
-            Some(s) if s.is_listener => s,
+        let (listener_socket_handle, listen_port) = match self.sockets.get(&listen_handle) {
+            Some(s) if s.is_listener => (s.handle, s.listen_port.unwrap_or(80)),
             _ => return encode_error(),
         };
 
-        let socket = socket_set.get_mut::<TcpSocket>(listener.handle);
+        let socket = socket_set.get_mut::<TcpSocket>(listener_socket_handle);
         
         // Check socket state - if it's established, we have a connection
         if socket.state() == TcpState::Established {
             // The listener socket itself became the connection
-            // We need to create a new listener and return this socket as the connection
+            // We need to:
+            // 1. Mark this listener as no longer a listener (it's now a connection)
+            // 2. Create a new listener socket on the same port
+            // 3. Return a NEW handle for the connection
+            
             let remote = socket.remote_endpoint();
             if let Some(ep) = remote {
                 let remote_ip = match ep.addr {
@@ -144,13 +150,54 @@ impl SocketApi {
                 let remote_port = ep.port;
 
                 info!(
-                    "SOCKET_API: Connection from {}:{} on listener {}",
+                    "SOCKET_API: Connection established from {}:{} on listener {}",
                     remote_ip, remote_port, listen_handle
                 );
 
-                // Return the listener handle as the connection
-                // The caller should call TCP_LISTEN again if they want more connections
-                return encode_accept(listen_handle, remote_ip, remote_port);
+                // Create a new handle for this connection (reusing the same socket)
+                let conn_handle = self.alloc_handle();
+                
+                // Update the managed socket entry: it's now a connection, not a listener
+                if let Some(managed) = self.sockets.get_mut(&listen_handle) {
+                    managed.is_listener = false;
+                    managed.listen_port = None;
+                }
+                
+                // Move the socket to the new connection handle
+                if let Some(mut old_managed) = self.sockets.remove(&listen_handle) {
+                    old_managed.is_listener = false;
+                    old_managed.listen_port = None;
+                    self.sockets.insert(conn_handle, old_managed);
+                }
+                
+                // Remove old pending_accepts entry
+                self.pending_accepts.remove(&listen_handle);
+                
+                // Create a new listener socket on the same port
+                let rx_buffer = SocketBuffer::new(rx_storage);
+                let tx_buffer = SocketBuffer::new(tx_storage);
+                let mut new_listener = TcpSocket::new(rx_buffer, tx_buffer);
+                
+                let endpoint = IpListenEndpoint::from(listen_port);
+                if let Err(e) = new_listener.listen(endpoint) {
+                    warn!("SOCKET_API: Failed to respawn listener: {:?}", e);
+                    // Connection still works, but no more accepts possible
+                } else {
+                    let new_socket_handle = socket_set.add(new_listener);
+                    // Reuse the original listen_handle for the new listener
+                    self.sockets.insert(
+                        listen_handle,
+                        ManagedSocket {
+                            handle: new_socket_handle,
+                            is_listener: true,
+                            listen_port: Some(listen_port),
+                        },
+                    );
+                    self.pending_accepts.insert(listen_handle, Vec::new());
+                    info!("SOCKET_API: Respawned listener on port {} handle={}", listen_port, listen_handle);
+                }
+
+                return encode_accept(conn_handle, remote_ip, remote_port);
             }
         }
 
@@ -265,7 +312,7 @@ impl SocketApi {
                     return encode_error();
                 }
                 let listen_handle = u32::from_le_bytes([msg[2], msg[3], msg[4], msg[5]]);
-                self.handle_accept(socket_set, listen_handle)
+                self.handle_accept(socket_set, listen_handle, rx_storage, tx_storage)
             }
             MSG_TCP_SEND => {
                 if msg.len() < 6 {

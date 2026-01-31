@@ -142,7 +142,7 @@ pub fn track_watch_encode_reject(reason: WatchEncodeRejectReason) {
     log_watch_encode_reject_once(reason);
 }
 
-struct CoalesceEntry {
+pub(crate) struct CoalesceEntry {
     subject: WireThingId,
     predicate: PredicateId,
     encoding: u8,
@@ -183,10 +183,15 @@ fn event_matches_filter(
     true
 }
 
-pub fn filter_watch_payload(payload: &[u8], filter: &WatchFilter) -> Result<Vec<u8>, DecodeError> {
+pub(crate) fn filter_watch_payload(
+    payload: &[u8],
+    filter: &WatchFilter,
+    out: &mut Vec<u8>,
+    coalesce: &mut Vec<CoalesceEntry>,
+) -> Result<(), DecodeError> {
     let mut cursor = 0usize;
-    let mut out = Vec::new();
-    let mut coalesce: Vec<CoalesceEntry> = Vec::new();
+    out.clear();
+    coalesce.clear();
 
     while cursor < payload.len() {
         let event_start = cursor;
@@ -220,7 +225,7 @@ pub fn filter_watch_payload(payload: &[u8], filter: &WatchFilter) -> Result<Vec<
         });
     }
 
-    Ok(out)
+    Ok(())
 }
 
 #[cfg(test)]
@@ -228,6 +233,13 @@ mod tests {
     use super::*;
     use abi::watch::{self, WatchEvent, WatchOp, ValueEncoding, encode_event, decode_event};
     use abi::wire::{ThingId, PredicateId};
+
+    fn run_filter(payload: &[u8], filter: &WatchFilter) -> Result<Vec<u8>, DecodeError> {
+        let mut out = Vec::new();
+        let mut coalesce = Vec::new();
+        filter_watch_payload(payload, filter, &mut out, &mut coalesce)?;
+        Ok(out)
+    }
 
     fn make_thing(val: u64) -> ThingId {
         let mut bytes = [0u8; 16];
@@ -275,7 +287,7 @@ mod tests {
         encode_test_event(subj, pred, ValueEncoding::U64LE, &200u64.to_le_bytes(), &mut payload);
 
         let filter = WatchFilter::default();
-        let filtered = filter_watch_payload(&payload, &filter).expect("filter failed");
+        let filtered = run_filter(&payload, &filter).expect("filter failed");
 
         // Should have only one event
         let mut cursor = 0;
@@ -301,7 +313,7 @@ mod tests {
         encode_test_event(subj, pred, ValueEncoding::Bytes, &[1, 2, 3, 4, 5], &mut payload);
 
         let filter = WatchFilter::default();
-        let filtered = filter_watch_payload(&payload, &filter).expect("filter failed");
+        let filtered = run_filter(&payload, &filter).expect("filter failed");
 
         let mut cursor = 0;
 
@@ -332,7 +344,7 @@ mod tests {
         filter.flags |= WATCH_F_SUBJECT;
         filter.subject_lo = 10;
 
-        let filtered = filter_watch_payload(&payload, &filter).expect("filter failed");
+        let filtered = run_filter(&payload, &filter).expect("filter failed");
 
         let (h, _) = decode_event(&filtered).expect("decode");
         assert_eq!(h.subject, subj1);
@@ -353,7 +365,7 @@ mod tests {
         filter.flags |= WATCH_F_PREDICATE;
         filter.predicate_id = 200;
 
-        let filtered = filter_watch_payload(&payload, &filter).expect("filter failed");
+        let filtered = run_filter(&payload, &filter).expect("filter failed");
 
         let (h, _) = decode_event(&filtered).expect("decode");
         assert_eq!(h.predicate, pred2);
@@ -384,7 +396,7 @@ mod tests {
         filter.flags |= WATCH_F_KIND;
         filter.kind_id = 50;
 
-        let filtered = filter_watch_payload(&payload, &filter).expect("filter failed");
+        let filtered = run_filter(&payload, &filter).expect("filter failed");
 
         assert_eq!(filtered.len(), watch::encoded_len(4));
         let (h, v) = decode_event(&filtered).expect("decode");
@@ -410,7 +422,7 @@ mod tests {
         encode_test_event(subj, pred_b, ValueEncoding::U64LE, &5u64.to_le_bytes(), &mut payload); // Update B
 
         let filter = WatchFilter::default();
-        let filtered = filter_watch_payload(&payload, &filter).expect("filter failed");
+        let filtered = run_filter(&payload, &filter).expect("filter failed");
 
         let mut cursor = 0;
 

@@ -43,7 +43,7 @@ mod sniff;
 use alloc::format;
 use alloc::vec;
 use abi::ids::HandleId;
-use abi::schema::{keys, kinds};
+use abi::schema::{keys, kinds, rels};
 use abi::service_contract::ServiceContract;
 use abi::tree_provider::*;
 use abi::types::{WatchMode, WatchSpec};
@@ -272,7 +272,7 @@ fn is_in_hot_set(path: &str) -> bool {
 
 use stem::thing::sys::{
     bytespace_info, bytespace_map, bytespace_unmap, create_node, describe_thing, find, intern,
-    prop_get, prop_set,
+    link, prop_get, prop_set,
 };
 use stem::xml::ingest::{ingest_xml_to_graph, SysGraphApply, XmlIngestOptions};
 use stem::{info, warn, syscall};
@@ -1000,6 +1000,19 @@ fn seed_system_assets() {
             }
         }
     };
+
+    // Ensure UI Crown is linked to System Root
+    let mut root_buf = [ThingId::default(); 1];
+    if let Ok(1) = find(kinds::SVC_ROOT, &mut root_buf) {
+        let svc_root = root_buf[0];
+        if let Err(e) = link(root_ui, rels::CHILD_OF, svc_root) {
+            warn!("INGESTD: Failed to link ui.Crown to svc.Root: {:?}", e);
+        } else {
+            info!("INGESTD: Linked ui.Crown to svc.Root");
+        }
+    } else {
+        warn!("INGESTD: Could not find svc.Root to link ui.Crown");
+    }
 
     let mut assets = [ThingId::default(); 256];
     if let Ok(count) = find(kinds::ASSET, &mut assets) {

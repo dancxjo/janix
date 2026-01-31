@@ -7,6 +7,11 @@
 }
 
 :root {
+    /* Photosynthesis-inspired light theme for graph canvas */
+    --bg-graph: #F5F5F0;          /* Matches Photosynthesis window bg */
+    --grid-dot: #D0D0D0;          /* Subtle grid dots */
+    
+    /* UI panels remain dark for dev-tool contrast */
     --bg-primary: #0d0d0d;
     --bg-secondary: #161616;
     --bg-tertiary: #1e1e1e;
@@ -17,9 +22,14 @@
     --accent-hover: #5cc3f7;
     --success: #7dd87d;
     --warning: #f5c842;
-    --node-bg: #2d2d2d;
-    --node-border: #4a4a4a;
-    --edge-color: #555;
+    
+    /* Matching Photosynthesis node colors */
+    --node-bg: rgba(255, 255, 255, 0.53);    /* TILE_FILL_COLOR */
+    --node-border: #E0E0E8;                   /* TILE_BORDER_COLOR */
+    --edge-color: #888888;                    /* Edge color 0xFF888888 */
+    --node-text: #383838;                     /* TYPE_TEXT_COLOR */
+    --node-text-secondary: #8A8A8C;           /* ID_TEXT_COLOR */
+    
     --font-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
 }
 
@@ -136,12 +146,12 @@ html, body {
     height: calc(100vh - 48px - 28px);
 }
 
-/* Graph Canvas */
+/* Graph Canvas - Light background matching Photosynthesis */
 #cy {
     flex: 1;
-    background: var(--bg-primary);
+    background: var(--bg-graph);
     background-image: 
-        radial-gradient(circle, var(--border-color) 1px, transparent 1px);
+        radial-gradient(circle, var(--grid-dot) 1px, transparent 1px);
     background-size: 20px 20px;
 }
 

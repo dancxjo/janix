@@ -86,20 +86,38 @@ function initCytoscape() {
         container: $('cy'),
         elements: [],
         style: [
+            // Photosynthesis-style nodes: 120x160 rectangular cards
             {
                 selector: 'node',
                 style: {
-                    'background-color': '#2d2d2d',
+                    // Card dimensions to match Photosynthesis (120x160)
+                    'width': 120,
+                    'height': 160,
+                    'shape': 'roundrectangle',
+                    // Light glassmorphism fill (translucent white like native app)
+                    'background-color': 'rgba(255, 255, 255, 0.53)',
+                    'background-opacity': 1,
+                    // Light border matching Photosynthesis TILE_BORDER_COLOR #E0E0E8
                     'border-width': 2,
-                    'border-color': '#4a4a4a',
-                    'label': 'data(label)',
-                    'color': '#e5e5e5',
-                    'font-size': '11px',
-                    'font-family': 'SF Mono, Monaco, monospace',
+                    'border-color': '#E0E0E8',
+                    'border-opacity': 1,
+                    // Compound label: name + kindName (like Photosynthesis)
+                    'label': function (ele) {
+                        const name = ele.data('label') || '';
+                        const kind = ele.data('kindName') || '';
+                        return name + '\n' + kind;
+                    },
+                    'color': '#383838',  // TYPE_TEXT_COLOR
+                    'font-size': '13px',
+                    'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    'font-weight': 500,
                     'text-valign': 'bottom',
-                    'text-margin-y': 6,
-                    'width': 40,
-                    'height': 40,
+                    'text-halign': 'center',
+                    'text-margin-y': -20,
+                    'text-wrap': 'wrap',
+                    'text-max-width': '110px',
+                    // Enable line height for multi-line labels
+                    'line-height': 1.4,
                 },
             },
             {
@@ -107,25 +125,27 @@ function initCytoscape() {
                 style: {
                     'border-color': '#4ea8de',
                     'border-width': 3,
-                    'background-color': '#3a3a3a',
+                    'background-color': 'rgba(255, 255, 255, 0.7)',
                 },
             },
             {
                 selector: 'node[?isRoot]',
                 style: {
-                    'background-color': '#4ea8de',
-                    'border-color': '#5cc3f7',
+                    'background-color': 'rgba(78, 168, 222, 0.2)',
+                    'border-color': '#4ea8de',
                 },
             },
+            // Edges: gray lines matching Photosynthesis 0xFF888888
             {
                 selector: 'edge',
                 style: {
-                    'width': 1.5,
-                    'line-color': '#555',
-                    'target-arrow-color': '#555',
+                    'width': 2,
+                    'line-color': '#888888',
+                    'target-arrow-color': '#888888',
                     'target-arrow-shape': 'triangle',
                     'curve-style': 'bezier',
-                    'arrow-scale': 0.8,
+                    'arrow-scale': 1.0,
+                    'opacity': 0.8,
                 },
             },
             {
@@ -133,7 +153,20 @@ function initCytoscape() {
                 style: {
                     'line-color': '#4ea8de',
                     'target-arrow-color': '#4ea8de',
-                    'width': 2,
+                    'width': 3,
+                    'opacity': 1,
+                },
+            },
+            // Edge labels
+            {
+                selector: 'edge[label]',
+                style: {
+                    'label': 'data(label)',
+                    'font-size': '9px',
+                    'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+                    'color': '#666666',
+                    'text-rotation': 'autorotate',
+                    'text-margin-y': -8,
                 },
             },
         ],
@@ -195,11 +228,19 @@ async function loadGraph(root, depth) {
         const elements = [];
 
         for (const n of data.nodes) {
+            // Format labels like Photosynthesis: prefer name, fallback to shortened ID
+            const primaryLabel = n.label || n.id.toString().slice(-8);
+            // Use kind_name from API (resolved symbol name like "ui.window")
+            const kindName = n.kind_name || 'unknown';
+
             const elem = {
                 data: {
                     id: n.id.toString(),
-                    label: n.label || n.id.toString().slice(-8),
-                    kind: n.kind || 'unknown',
+                    // Primary label (name or shortened ID)
+                    label: primaryLabel,
+                    // Kind name for secondary display
+                    kindName: kindName,
+                    kind: n.kind || 0,
                     // Only mark as root if a specific root was requested
                     isRoot: root && root.trim() !== '' && n.id.toString() === root.toString(),
                 },
@@ -216,7 +257,9 @@ async function loadGraph(root, depth) {
                     id: e.id,
                     source: e.from.toString(),
                     target: e.to.toString(),
-                    rel: e.rel || 'link',
+                    rel: e.rel || 0,
+                    // Use resolved relationship name for edge label
+                    label: e.rel_name || 'link',
                 },
             });
         }
@@ -318,7 +361,7 @@ function selectNode(node) {
 
     $('inspectorThingLink').textContent = id;
     $('inspectorThingLink').href = `/#thing=${encodeURIComponent(id)}`;
-    $('inspectorKind').textContent = data.kind || '-';
+    $('inspectorKind').textContent = data.kindName || data.kind || '-';
     $('inspectorLabel').textContent = data.label || '-';
     updateInspectorPosition(node);
 }

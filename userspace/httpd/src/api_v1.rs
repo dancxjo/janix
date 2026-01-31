@@ -383,6 +383,11 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
         json.key("kind");
         json.number_value(kind_id);
         
+        // Resolve kind to string name (like Photosynthesis NodeInfo.kind_full)
+        let kind_name = get_symbol_name(kind_id as u32);
+        json.key("kind_name");
+        json.string_value(&kind_name);
+        
         // Label heuristic - try NAME first, then shortened ID
         let label = get_node_label(*node_id);
         json.key("label");
@@ -432,6 +437,11 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
             
             json.key("rel");
             json.number_value(*rel_sym);
+            
+            // Resolve relationship name like Photosynthesis edge labels
+            let rel_name = get_symbol_name(*rel_sym as u32);
+            json.key("rel_name");
+            json.string_value(&rel_name);
             
             json.end_object();
             json.buf.push(b',');
@@ -492,6 +502,21 @@ fn get_node_label(node_id: u64) -> String {
     } else {
         id_str
     }
+}
+
+fn get_symbol_name(sym_id: u32) -> String {
+    if sym_id == 0 {
+        return String::from("unknown");
+    }
+    let mut buf = [0u8; 128];
+    if let Ok(len) = stem::thing::sys::describe_symbol(sym_id, &mut buf) {
+        if len > 0 {
+            if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                return String::from(s);
+            }
+        }
+    }
+    format!("sym:{}", sym_id)
 }
 
 // ============================================================================

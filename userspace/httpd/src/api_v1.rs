@@ -296,18 +296,39 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
         }
     }
     
-    let root = match root_id {
-        Some(id) => id,
-        None => return error_response(ApiError::bad_request("Missing required 'root' parameter")),
-    };
-    
     // BFS traversal
     let mut visited: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
     let mut edges_out: alloc::vec::Vec<(u64, u64, u64)> = alloc::vec::Vec::new(); // (from, to, rel_sym)
     let mut queue: alloc::collections::VecDeque<(u64, u32)> = alloc::collections::VecDeque::new();
     let mut truncated = false;
     
-    queue.push_back((root, 0));
+    // If root is specified, use it. Otherwise, auto-discover from interesting kinds (like Photosynthesis)
+    if let Some(root) = root_id {
+        queue.push_back((root, 0));
+    } else {
+        // Auto-discovery mode: seed from interesting system nodes
+        use stem::thing::sys::find;
+        use abi::schema::kinds;
+        
+        let interesting_kinds = [
+            kinds::SVC_ROOT,     // System root node
+            kinds::PROC_KERNEL,  // Kernel process
+            kinds::UI_CROWN,     // UI crown (desktop)
+            kinds::UI_WINDOW,    // Windows
+        ];
+        
+        for kind_name in &interesting_kinds {
+            let mut ids = [ThingId::default(); 32];
+            if let Ok(count) = find(*kind_name, &mut ids) {
+                for i in 0..count {
+                    let id = ids[i].to_u64_lossy();
+                    if !visited.contains(&id) {
+                        queue.push_back((id, 0));
+                    }
+                }
+            }
+        }
+    }
     
     while let Some((node_id, node_depth)) = queue.pop_front() {
         if visited.contains(&node_id) {
@@ -341,8 +362,13 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
     let mut json = JsonBuilder::new();
     json.start_object();
     
+    // Root field - either the specified root or null for auto-discovery
     json.key("root");
-    json.number_value(root);
+    if let Some(root) = root_id {
+        json.number_value(root);
+    } else {
+        json.buf.extend_from_slice(b"null,");
+    }
     
     // Nodes array
     json.key("nodes");

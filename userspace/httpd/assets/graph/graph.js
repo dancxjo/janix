@@ -7,8 +7,8 @@
 // =============================================================================
 
 const CONFIG = {
-    DEFAULT_ROOT: '1',  // Kernel node - default view shows kernel's neighbors
-    DEFAULT_DEPTH: 2,
+    DEFAULT_ROOT: '',   // Empty = auto-discover from system nodes (like Photosynthesis)
+    DEFAULT_DEPTH: 3,   // Increased for auto-discovery
     MAX_NODES: 500,
     AUTOSAVE_DEBOUNCE_MS: 750,
     LAYOUT_SPACE: 'graph_ui_v1',
@@ -27,10 +27,13 @@ const $ = (id) => document.getElementById(id);
 const api = {
     async getSubgraph(root, depth = CONFIG.DEFAULT_DEPTH, maxNodes = CONFIG.MAX_NODES) {
         const params = new URLSearchParams({
-            root: root,
             depth: depth.toString(),
             max_nodes: maxNodes.toString(),
         });
+        // Only add root if specified (empty = auto-discover)
+        if (root && root.trim() !== '') {
+            params.set('root', root);
+        }
         const r = await fetch(`/api/v1/subgraph?${params}`);
         if (!r.ok) {
             const text = await r.text();
@@ -197,7 +200,8 @@ async function loadGraph(root, depth) {
                     id: n.id.toString(),
                     label: n.label || n.id.toString().slice(-8),
                     kind: n.kind || 'unknown',
-                    isRoot: n.id.toString() === root.toString(),
+                    // Only mark as root if a specific root was requested
+                    isRoot: root && root.trim() !== '' && n.id.toString() === root.toString(),
                 },
             };
             if (usePreset && n.x !== undefined && n.y !== undefined) {
@@ -343,7 +347,7 @@ function setStatus(text, className) {
 function getUrlParams() {
     const params = new URLSearchParams(window.location.search);
     return {
-        root: params.get('root') || CONFIG.DEFAULT_ROOT,
+        root: params.get('root') ?? CONFIG.DEFAULT_ROOT,  // Allow empty string
         depth: parseInt(params.get('depth')) || CONFIG.DEFAULT_DEPTH,
     };
 }
@@ -360,7 +364,7 @@ function updateUrl(root, depth) {
 function bindEvents() {
     // Load button
     $('loadBtn').addEventListener('click', () => {
-        const root = $('rootInput').value.trim() || CONFIG.DEFAULT_ROOT;
+        const root = $('rootInput').value.trim();  // Allow empty for auto-discover
         const depth = parseInt($('depthInput').value) || CONFIG.DEFAULT_DEPTH;
         updateUrl(root, depth);
         loadGraph(root, depth);

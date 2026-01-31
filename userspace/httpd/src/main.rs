@@ -15,6 +15,9 @@ use stem::{info, warn};
 
 const SERVER_NAME: &str = "ThingOS-httpd/0.1";
 
+// Magic value to signal server mode (vs stdio mode)
+const SERVER_MODE_MAGIC: usize = 0xDEADBEEF;
+
 /// Build HTTP response with headers
 fn build_response(status: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
     use alloc::format;
@@ -245,7 +248,7 @@ fn main(arg: usize) -> ! {
     // For now, default to stdio mode
     // TODO: Parse command line arguments when available
     // Check arg to determine mode
-    if arg == 0xDEADBEEF {
+    if arg == SERVER_MODE_MAGIC {
         // Magic value for server mode (to be implemented)
         run_server_mode(8080);
     } else {

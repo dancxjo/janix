@@ -62,8 +62,22 @@ impl JsonBuilder {
 
     pub fn string_value(&mut self, v: &str) {
         self.buf.push(b'"');
-        // TODO: proper JSON escaping for production
-        self.buf.extend_from_slice(v.as_bytes());
+        // Escape special JSON characters
+        for ch in v.bytes() {
+            match ch {
+                b'"' => self.buf.extend_from_slice(b"\\\""),
+                b'\\' => self.buf.extend_from_slice(b"\\\\"),
+                b'\n' => self.buf.extend_from_slice(b"\\n"),
+                b'\r' => self.buf.extend_from_slice(b"\\r"),
+                b'\t' => self.buf.extend_from_slice(b"\\t"),
+                ch if ch < 32 => {
+                    // Escape control characters as \uXXXX
+                    let hex = alloc::format!("\\u{:04x}", ch);
+                    self.buf.extend_from_slice(hex.as_bytes());
+                }
+                _ => self.buf.push(ch),
+            }
+        }
         self.buf.push(b'"');
         self.buf.push(b',');
     }
@@ -213,5 +227,30 @@ mod tests {
         
         let result = json.as_string().unwrap();
         assert!(result.contains("\"items\":[1,2]"));
+    }
+
+    #[test]
+    fn test_json_string_escaping() {
+        let mut json = JsonBuilder::new();
+        json.start_object();
+        json.key("text");
+        json.string_value("Hello \"world\"\nNew line");
+        json.end_object();
+        
+        let result = json.as_string().unwrap();
+        assert!(result.contains("\\\""));
+        assert!(result.contains("\\n"));
+    }
+
+    #[test]
+    fn test_json_control_char_escaping() {
+        let mut json = JsonBuilder::new();
+        json.start_object();
+        json.key("ctrl");
+        json.string_value("test\x01\x02");
+        json.end_object();
+        
+        let result = json.as_string().unwrap();
+        assert!(result.contains("\\u"));
     }
 }

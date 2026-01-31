@@ -79,7 +79,7 @@ struct PresentStats {
     total_flushes: u32,
     union_flush_count: u32,
     per_rect_flush_count: u32,
-    using_swapchain: bool,
+    using_frame_pool: bool,
 }
 
 /// Entry in the texture registry mapping client IDs to GPU resource IDs
@@ -93,7 +93,7 @@ struct TextureEntry {
 static NEXT_TEXTURE_RESOURCE_ID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1000);
 
 impl PresentStats {
-    const fn new(swapchain: bool) -> Self {
+    const fn new(frame_pool: bool) -> Self {
         Self {
             frame_count: 0,
             total_rects_in: 0,
@@ -101,25 +101,25 @@ impl PresentStats {
             total_flushes: 0,
             union_flush_count: 0,
             per_rect_flush_count: 0,
-            using_swapchain: swapchain,
+            using_frame_pool: frame_pool,
         }
     }
     
     fn log_and_reset(&mut self) {
         if self.frame_count > 0 {
             info!(
-                "display_virtio_gpu stats: frames={}, rects_in={}, transfers={}, flushes={}, union_flush={}, per_rect_flush={}, swapchain={}",
+                "display_virtio_gpu stats: frames={}, rects_in={}, transfers={}, flushes={}, union_flush={}, per_rect_flush={}, frame_pool={}",
                 self.frame_count,
                 self.total_rects_in,
                 self.total_transfers,
                 self.total_flushes,
                 self.union_flush_count,
                 self.per_rect_flush_count,
-                self.using_swapchain
+                self.using_frame_pool
             );
         }
-        let sc = self.using_swapchain;
-        *self = Self::new(sc);
+        let fp = self.using_frame_pool;
+        *self = Self::new(fp);
     }
 }
 
@@ -483,20 +483,20 @@ fn main(arg: usize) -> ! {
     }
 
     // =========================================================================
-    // SWAPCHAIN SETUP: Create multiple GPU resources and bytespaces
+    // FRAME POOL SETUP: Create GPU resources and bytespaces for triple buffering
     // =========================================================================
     let (disp_width, disp_height, disp_stride, disp_format) = get_display_dimensions();
     let disp_size = (disp_height as usize) * (disp_stride as usize);
     
     info!(
-        "display_virtio_gpu: creating swapchain 1x {}x{} stride={} format={}",
+        "display_virtio_gpu: creating frame pool 1x {}x{} stride={} format={}",
         disp_width, disp_height, disp_stride, disp_format
     );
     
     // Single buffer for now - multi-buffer requires cross-process bytespace access
-    let swapchain_count = 1;
-    let mut swapchain_buffers = alloc::vec::Vec::new();
-    for i in 0..swapchain_count {
+    let frame_pool_count = 1;
+    let mut frame_pool_buffers = alloc::vec::Vec::new();
+    for i in 0..frame_pool_count {
         let bs_id = match thingsys::bytespace_create(disp_size, 0, disp_format as u64) {
             Ok(id) => id,
             Err(e) => {
@@ -527,7 +527,7 @@ fn main(arg: usize) -> ! {
             loop { stem::yield_now(); }
         }
 
-        swapchain_buffers.push(Buffer {
+        frame_pool_buffers.push(Buffer {
             bs_id,
             res_id,
             phys,
@@ -536,13 +536,15 @@ fn main(arg: usize) -> ! {
     }
 
     // Set initial scanout to first buffer
-    if let Err(e) = gpu.set_scanout(swapchain_buffers[0].res_id, disp_width, disp_height) {
+    if let Err(e) = gpu.set_scanout(frame_pool_buffers[0].res_id, disp_width, disp_height) {
         info!("display_virtio_gpu: set_scanout failed: {}", e);
         loop { stem::yield_now(); }
     }
     
     info!(
-        "display_virtio_gpu: swapchain ready (3 buffers)"
+        "display_virtio_gpu: frame pool ready ({} buffer{})",
+        frame_pool_count,
+        if frame_pool_count == 1 { "" } else { "s" }
     );
     
     // Send MSG_REGISTER
@@ -607,18 +609,18 @@ fn main(arg: usize) -> ! {
                     let idx = next_buffer_idx;
                     
                     if let Some(last_idx) = last_presented_idx {
-                        let age = present_seq.saturating_sub(swapchain_buffers[idx].last_present_seq);
-                        buffer_age = if swapchain_buffers[idx].last_present_seq == 0 {
+                        let age = present_seq.saturating_sub(frame_pool_buffers[idx].last_present_seq);
+                        buffer_age = if frame_pool_buffers[idx].last_present_seq == 0 {
                             0 // Never presented
                         } else {
                             age as u32
                         };
                     }
 
-                    next_buffer_idx = (next_buffer_idx + 1) % swapchain_buffers.len();
+                    next_buffer_idx = (next_buffer_idx + 1) % frame_pool_buffers.len();
                     
                     let acquired = drvproto::AcquiredPayload {
-                        bytespace_id: swapchain_buffers[idx].bs_id.to_u64_lossy(),
+                        bytespace_id: frame_pool_buffers[idx].bs_id.to_u64_lossy(),
                         width: disp_width,
                         height: disp_height,
                         stride: disp_stride,
@@ -627,8 +629,8 @@ fn main(arg: usize) -> ! {
                         _pad: 0,
                     };
                     
-                    current_bs_id = Some(swapchain_buffers[idx].bs_id);
-                    current_res_id = swapchain_buffers[idx].res_id;
+                    current_bs_id = Some(frame_pool_buffers[idx].bs_id);
+                    current_res_id = frame_pool_buffers[idx].res_id;
                     
                     let mut acq_bytes = [0u8; drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE];
                     if let Some(len) = drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes) {
@@ -645,7 +647,7 @@ fn main(arg: usize) -> ! {
                         });
                         current_bs_id = Some(bs_id);
                         // In legacy mode, we just stay on the first buffer's resource
-                        current_res_id = swapchain_buffers[0].res_id;
+                        current_res_id = frame_pool_buffers[0].res_id;
                         send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
                     }
                 }
@@ -755,7 +757,7 @@ fn main(arg: usize) -> ! {
                         // Update sequence and age bookkeeping
                         present_seq += 1;
                         let mut presented_idx = 0;
-                        for (i, buf) in swapchain_buffers.iter_mut().enumerate() {
+                        for (i, buf) in frame_pool_buffers.iter_mut().enumerate() {
                             if buf.res_id == current_res_id {
                                 buf.last_present_seq = present_seq;
                                 presented_idx = i;

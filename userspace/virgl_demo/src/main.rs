@@ -5,6 +5,18 @@
 //! 2. Creates a render target resource
 //! 3. Clears to a solid color (simpler than triangle for initial bring-up)
 //! 4. Presents to scanout
+//!
+//! ## Debugging Virgl Errors
+//!
+//! Virglrenderer errors are logged by QEMU to the **host console**, not the guest.
+//! If you see "Illegal command buffer" or similar errors in the QEMU output,
+//! check the command buffer diagnostics logged on the first frame.
+//! 
+//! Common issues:
+//! - Incorrect command header format (cmd, obj_type, length)
+//! - Surface handles not created before use
+//! - Resource IDs not attached to context
+//! - Format mismatches between resources and surfaces
 
 #![no_std]
 #![no_main]
@@ -308,9 +320,32 @@ fn demo_3d_clear(gpu: &mut VirtioGpu) -> ! {
         // Clear to cycling color
         cmds.clear(clear_bits::COLOR, r, g, b, 1.0, 1.0, 0);
 
+        // Log command details on first frame for diagnostics
+        if frame == 0 {
+            let cmd_words = cmds.finish();
+            info!("virgl_demo: Submitting virgl command stream:");
+            info!("  - ctx_id={}, resource_id={}, format={}", ctx_id, rt_resource_id, format);
+            info!("  - command count={} words ({} bytes)", cmd_words.len(), cmds.as_bytes().len());
+            info!("  - First 8 command words: {:08x?}", &cmd_words[..8.min(cmd_words.len())]);
+        }
+
         // Submit command stream
-        if let Err(e) = gpu.submit_3d(ctx_id, cmds.as_bytes()) {
-            info!("virgl_demo: submit_3d failed: {}", e);
+        match gpu.submit_3d(ctx_id, cmds.as_bytes()) {
+            Ok(_) => {
+                if frame == 0 {
+                    info!("virgl_demo: submit_3d succeeded (check host console for virgl errors)");
+                }
+            }
+            Err(e) => {
+                let cmd_words = cmds.finish();
+                info!("virgl_demo: FAIL - submit_3d returned error: {}", e);
+                info!("virgl_demo: Command buffer details:");
+                info!("  - ctx_id={}, resource_id={}, format={}", ctx_id, rt_resource_id, format);
+                // Limit output to first 32 words to avoid spam
+                let words_to_show = 32.min(cmd_words.len());
+                info!("  - First {} command words: {:08x?}", words_to_show, &cmd_words[..words_to_show]);
+                loop { stem::sleep(Duration::from_secs(1)); }
+            }
         }
 
         // Set scanout to show result (resource_id, width, height)

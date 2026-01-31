@@ -13,6 +13,9 @@ pub enum Method {
     Get,
     Head,
     Post,
+    Put,
+    Patch,
+    Delete,
     Other,
 }
 
@@ -59,6 +62,9 @@ pub fn parse_method(s: &str) -> Result<Method, ParseError> {
         "GET" => Ok(Method::Get),
         "HEAD" => Ok(Method::Head),
         "POST" => Ok(Method::Post),
+        "PUT" => Ok(Method::Put),
+        "PATCH" => Ok(Method::Patch),
+        "DELETE" => Ok(Method::Delete),
         _ => Ok(Method::Other),
     }
 }
@@ -139,6 +145,45 @@ pub fn decode_path(path: &str) -> Option<&str> {
     // and avoid allocations. Just validate and return the path.
     // A full implementation would decode %XX sequences.
     Some(path)
+}
+
+/// Parse Content-Length header value
+pub fn parse_content_length(req: &Request<'_>) -> Option<usize> {
+    req.get_header("Content-Length")
+        .and_then(|v| v.parse::<usize>().ok())
+}
+
+/// Parsed byte range from Range header
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ByteRange {
+    pub start: usize,
+    pub end: Option<usize>, // None means "to end of content"
+}
+
+/// Parse Range header (supports single byte range only)
+/// Format: "bytes=start-end" or "bytes=start-"
+pub fn parse_range_header(req: &Request<'_>) -> Option<ByteRange> {
+    let value = req.get_header("Range")?;
+    
+    // Must start with "bytes="
+    let rest = value.strip_prefix("bytes=")?;
+    
+    // Find the hyphen separator
+    let hyphen_pos = rest.find('-')?;
+    
+    // Parse start
+    let start_str = &rest[..hyphen_pos];
+    let start: usize = start_str.parse().ok()?;
+    
+    // Parse end (optional)
+    let end_str = &rest[hyphen_pos + 1..];
+    let end = if end_str.is_empty() {
+        None
+    } else {
+        Some(end_str.parse().ok()?)
+    };
+    
+    Some(ByteRange { start, end })
 }
 
 #[cfg(test)]

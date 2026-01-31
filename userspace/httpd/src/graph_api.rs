@@ -24,7 +24,7 @@ pub enum GraphError {
 
 /// Simple JSON builder (avoiding allocations where possible)
 pub struct JsonBuilder {
-    buf: Vec<u8>,
+    pub(crate) buf: Vec<u8>,
 }
 
 impl JsonBuilder {
@@ -178,6 +178,39 @@ pub fn read_bytespace(bytespace_id: u64, max_size: usize) -> Result<Vec<u8>, Gra
             buffer.truncate(n);
             Ok(buffer)
         }
+        Err(_) => Err(GraphError::SyscallFailed),
+    }
+}
+
+/// Read bytespace data with offset and limit (for Range header support)
+pub fn read_bytespace_ranged(bytespace_id: u64, offset: usize, max_len: usize) -> Result<Vec<u8>, GraphError> {
+    let limit = max_len.min(MAX_BYTESPACE_SIZE);
+    let mut buffer = Vec::new();
+    buffer.resize(limit, 0);
+    
+    match root_bytespace_read(bytespace_id as usize, offset, &mut buffer) {
+        Ok(n) => {
+            buffer.truncate(n);
+            Ok(buffer)
+        }
+        Err(_) => Err(GraphError::SyscallFailed),
+    }
+}
+
+/// Bytespace metadata
+pub struct BytespaceMeta {
+    pub size: usize,
+}
+
+/// Get bytespace metadata
+pub fn bytespace_meta(bytespace_id: u64) -> Result<BytespaceMeta, GraphError> {
+    use abi::ids::HandleId;
+    use stem::thing::sys::bytespace_info;
+    use stem::thing::ThingId;
+    
+    let thing_id = ThingId::from_u64(bytespace_id);
+    match bytespace_info(thing_id) {
+        Ok(size) => Ok(BytespaceMeta { size }),
         Err(_) => Err(GraphError::SyscallFailed),
     }
 }

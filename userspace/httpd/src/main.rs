@@ -7,9 +7,12 @@
 
 extern crate alloc;
 
-mod http;
+mod api_v1;
+mod error;
 mod graph_api;
+mod http;
 mod net_client;
+mod router;
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -63,6 +66,9 @@ fn handle_request(request_str: &str) -> Vec<u8> {
               http::Method::Get => "GET",
               http::Method::Head => "HEAD",
               http::Method::Post => "POST",
+              http::Method::Put => "PUT",
+              http::Method::Patch => "PATCH",
+              http::Method::Delete => "DELETE",
               http::Method::Other => "OTHER",
           },
           req.path,
@@ -78,12 +84,24 @@ fn handle_request(request_str: &str) -> Vec<u8> {
     };
     
     // Route the request
-    route_request(req.method, safe_path, req.method == http::Method::Head)
+    route_request(&req, safe_path)
 }
 
 /// Route a request to the appropriate handler
-fn route_request(method: http::Method, path: &str, is_head: bool) -> Vec<u8> {
-    // Only support GET and HEAD
+fn route_request(req: &http::Request<'_>, path: &str) -> Vec<u8> {
+    let method = req.method;
+    let is_head = method == http::Method::Head;
+    
+    // Check if this is an API v1 request
+    if router::is_api_v1_path(path) {
+        if let Some(route) = router::match_route(method, path) {
+            // For API routes, we need the request body (for POST/PUT/PATCH)
+            // Note: body parsing is handled at connection level, passed as empty for now
+            return api_v1::dispatch(route, req, &[]);
+        }
+    }
+    
+    // Legacy routes - only GET and HEAD allowed
     if method != http::Method::Get && method != http::Method::Head {
         let body = b"405 Method Not Allowed\n";
         return build_response("405 Method Not Allowed", "text/plain", body);

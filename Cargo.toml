@@ -50,6 +50,7 @@ members = [
     "userspace/virtio_netd",
     "userspace/netd",
     "userspace/fetchd",
+    "userspace/httpd",
 ]
 resolver = "2"
 

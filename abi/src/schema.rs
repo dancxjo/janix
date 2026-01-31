@@ -437,6 +437,20 @@ pub mod keys {
     pub const SERVICE_CONTRACT_STATUS: &str = "service.contract.status";
     /// Service contract version (monotonic, increments on contract updates)
     pub const SERVICE_CONTRACT_VERSION: &str = "service.contract.version";
+
+    // Scheduler/Process Properties
+    /// Task ID (u64)
+    pub const PROC_TID: &str = "proc.tid";
+    /// Task state as interned symbol (runnable/running/blocked/sleeping/dead)
+    pub const PROC_STATE: &str = "proc.state";
+    /// Task priority (0-4: Idle, Low, Normal, High, Realtime)
+    pub const PROC_PRIORITY: &str = "proc.priority";
+    /// Boolean: 1 for userspace thread, 0 for kernel
+    pub const PROC_IS_USER: &str = "proc.is_user";
+    /// Exit code when task dies (i32 stored as u64)
+    pub const PROC_EXIT_CODE: &str = "proc.exit_code";
+    /// Interned string name of the task/module
+    pub const PROC_NAME: &str = "proc.name";
 }
 
 pub mod kinds {
@@ -715,6 +729,16 @@ pub mod rels {
     pub const WATCHES_KIND: &str = "WATCHES_KIND";
     /// Service publishes a node kind (Contract -> Kind)
     pub const PUBLISHES_KIND: &str = "PUBLISHES_KIND";
+
+    // Scheduler/Process Relationships
+    /// Scheduler owns/manages a task (svc.Scheduler -> proc.Thread)
+    pub const SCHED_HAS_TASK: &str = "SCHED_HAS_TASK";
+    /// Task is child of another task (proc.Thread -> proc.Thread)
+    pub const TASK_CHILD_OF: &str = "TASK_CHILD_OF";
+    /// Task was spawned by another task (semantic "caused" edge)
+    pub const TASK_SPAWNED: &str = "TASK_SPAWNED";
+    /// Thread uses a bytespace mapping (proc.Thread -> Bytespace)
+    pub const THREAD_USES_BYTESPACE: &str = "THREAD_USES_BYTESPACE";
 }
 
 // Virtio GPU additions

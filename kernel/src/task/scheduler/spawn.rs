@@ -50,6 +50,11 @@ impl<R: BootRuntime> Scheduler<R> {
 
         self.tasks.push(task);
         self.runq[priority as usize].push_back(id);
+
+        // Queue graph node creation (processed after scheduler lock released)
+        let parent_tid = self.current;
+        super::graphify::create_thread_node(id, priority as u8, false, None, parent_tid);
+
         id
     }
 
@@ -114,6 +119,11 @@ impl<R: BootRuntime> Scheduler<R> {
 
         self.tasks.push(task);
         self.runq[priority as usize].push_back(id);
+
+        // Queue graph node creation (processed after scheduler lock released)
+        let parent_tid = self.current;
+        super::graphify::create_thread_node(id, priority as u8, true, None, parent_tid);
+
         id
     }
 
@@ -165,6 +175,11 @@ impl<R: BootRuntime> Scheduler<R> {
 
         self.tasks.push(task);
         self.runq[priority as usize].push_back(id);
+
+        // Queue graph node creation (processed after scheduler lock released)
+        let parent_tid = self.current;
+        super::graphify::create_thread_node(id, priority as u8, true, None, parent_tid);
+
         Some(id)
     }
 }
@@ -252,9 +267,13 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
-    let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority);
+    let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority)?;
+
+    // Queue setting the process name (processed after scheduler lock released)
+    super::graphify::set_name(id, module.name);
+
     rt.irq_restore(_irq);
-    id
+    Some(id)
 }
 
 pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {

@@ -4,6 +4,7 @@ use crate::BootRuntime;
 use crate::BootTasking;
 
 use super::SCHEDULER;
+use super::graphify;
 use super::types::{ScheduleReason, Scheduler};
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]
@@ -70,6 +71,9 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             task_id: current_id,
             wake_tick,
         });
+
+        // Queue graph state update to sleeping
+        graphify::update_task_state(current_id, "sleeping");
 
         // Do NOT push current task to runq - it's now sleeping
         // Just call prepare_schedule to pick next task

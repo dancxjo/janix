@@ -9,6 +9,8 @@
 //! - `sleep`: Timing and yield functions
 
 pub(crate) mod blocking;
+pub(crate) mod graph_queue;
+pub(crate) mod graphify;
 mod hooks;
 mod sleep;
 mod spawn;
@@ -56,6 +58,112 @@ pub static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 pub fn on_tick<R: BootRuntime>() {
     TICK_COUNT.fetch_add(1, Ordering::Relaxed);
     crate::task::resched_if_needed::<R>();
+    
+    // NOTE: Graph queue flushing removed from here - blocking operations  
+    // in ISR context would cause deadlock. Queue is flushed elsewhere.
+}
+
+/// Process pending graph work items.
+/// MUST be called WITHOUT holding the scheduler lock.
+fn flush_graph_queue<R: BootRuntime>() {
+    use crate::root::graph_anchors;
+    use graph_queue::GraphWork;
+    
+    let work_items = graph_queue::drain();
+    if work_items.is_empty() {
+        return;
+    }
+    
+    // Get scheduler service ThingId for linking
+    let sched_thing = match graph_anchors::scheduler_service() {
+        Some(id) => id,
+        None => {
+            // Graph anchors not initialized yet - drop work items
+            return;
+        }
+    };
+    
+    for item in work_items {
+        match item {
+            GraphWork::CreateThread { tid, priority, is_user, name, parent_tid } => {
+                // Create thread node synchronously (safe - no scheduler lock held)
+                if let Some(thing_id) = graphify::do_create_thread_node(
+                    tid, priority, is_user, name.as_deref(), sched_thing
+                ) {
+                    // Store mapping in task_graph (briefly acquire scheduler lock)
+                    let lock = SCHEDULER.lock();
+                    if let Some(ptr) = *lock {
+                        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+                        sched.task_graph.insert(tid, thing_id);
+                        
+                        // Link to parent if available
+                        if let Some(parent_tid) = parent_tid {
+                            if let Some(&parent_thing) = sched.task_graph.get(&parent_tid) {
+                                graphify::do_link_parent(thing_id, parent_thing, sched_thing);
+                            }
+                        }
+                    }
+                }
+            }
+            GraphWork::UpdateState { tid, state } => {
+                // Look up ThingId and update state
+                let thing_id = {
+                    let lock = SCHEDULER.lock();
+                    if let Some(ptr) = *lock {
+                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+                        sched.task_graph.get(&tid).copied()
+                    } else {
+                        None
+                    }
+                };
+                if let Some(id) = thing_id {
+                    graphify::do_update_state(id, state);
+                }
+            }
+            GraphWork::SetExitCode { tid, code } => {
+                let thing_id = {
+                    let lock = SCHEDULER.lock();
+                    if let Some(ptr) = *lock {
+                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+                        sched.task_graph.get(&tid).copied()
+                    } else {
+                        None
+                    }
+                };
+                if let Some(id) = thing_id {
+                    graphify::do_set_exit_code(id, code);
+                }
+            }
+            GraphWork::SetPriority { tid, priority } => {
+                let thing_id = {
+                    let lock = SCHEDULER.lock();
+                    if let Some(ptr) = *lock {
+                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+                        sched.task_graph.get(&tid).copied()
+                    } else {
+                        None
+                    }
+                };
+                if let Some(id) = thing_id {
+                    graphify::do_set_priority(id, priority);
+                }
+            }
+            GraphWork::SetName { tid, name } => {
+                let thing_id = {
+                    let lock = SCHEDULER.lock();
+                    if let Some(ptr) = *lock {
+                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+                        sched.task_graph.get(&tid).copied()
+                    } else {
+                        None
+                    }
+                };
+                if let Some(id) = thing_id {
+                    graphify::do_set_name(id, &name);
+                }
+            }
+        }
+    }
 }
 
 pub fn init<R: BootRuntime>() {
@@ -141,6 +249,11 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
             q.remove(pos);
         }
     }
+    
+    // Spawn graph worker task at low priority
+    crate::kinfo!("  Creating graph worker task...");
+    let _graph_worker_id = sched.spawn(graph_worker_task::<R>, StartupArg::None, TaskPriority::Low);
+    
     crate::kinfo!("  Boot task initialized");
 }
 
@@ -216,6 +329,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 if let Some(task) = self.tasks.iter().find(|t| t.id == entry.task_id) {
                     let priority = task.priority;
                     self.runq[priority as usize].push_back(entry.task_id);
+                    
+                    // Queue graph state update from sleeping to runnable
+                    graphify::update_task_state(entry.task_id, "runnable");
                 }
             } else {
                 // Still sleeping
@@ -383,8 +499,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;
+                // Queue graph state update for old task
+                graphify::update_task_state(old_task.id, "runnable");
             }
             new_task.state = TaskState::Running;
+            // Queue graph state update for new task
+            graphify::update_task_state(new_task.id, "running");
             old_task.simd.save(crate::runtime::<R>());
             new_task.simd.restore(crate::runtime::<R>());
 
@@ -415,6 +535,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
         if let Some(idx) = self.tasks.iter().position(|t| t.id == current_id) {
             self.tasks[idx].state = TaskState::Dead;
             self.tasks[idx].exit_code = Some(code);
+            
+            // Queue graph state update and exit code
+            graphify::update_task_state(current_id, "dead");
+            graphify::set_exit_code(current_id, code);
         }
 
         // Release any claimed devices
@@ -443,6 +567,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
         if let Some(idx) = self.tasks.iter().position(|t| t.id == id) {
             let old_priority = self.tasks[idx].priority;
             self.tasks[idx].priority = priority;
+
+            // Queue graph priority property update
+            graphify::update_task_priority(id, priority as u8);
 
             // If it's runnable and in a runq, move it to the new runq
             if self.tasks[idx].state == TaskState::Runnable {
@@ -603,5 +730,16 @@ extern "C" fn idle_task<R: BootRuntime>(_: usize) -> ! {
     let rt = crate::runtime::<R>();
     loop {
         rt.wait_for_interrupt();
+    }
+}
+
+/// Dedicated task for processing deferred graph work.
+/// Runs at low priority and yields after each flush.
+extern "C" fn graph_worker_task<R: BootRuntime>(_: usize) -> ! {
+    loop {
+        // Process any pending graph work
+        flush_graph_queue::<R>();
+        // Yield to let other tasks run
+        sleep::yield_now::<R>();
     }
 }

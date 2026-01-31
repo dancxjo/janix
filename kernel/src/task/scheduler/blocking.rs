@@ -5,6 +5,7 @@ use crate::BootTasking;
 use crate::task::TaskState;
 
 use super::SCHEDULER;
+use super::graphify;
 use super::types::Scheduler;
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]
@@ -40,6 +41,9 @@ pub fn block_current<R: BootRuntime>() {
                 return;
             }
             sched.tasks[idx].state = TaskState::Blocked;
+            
+            // Queue graph state update
+            graphify::update_task_state(current_id, "blocked");
         }
 
         // Add to wait queue
@@ -98,6 +102,9 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
             let priority = sched.tasks[idx].priority;
             sched.runq[priority as usize].push_back(tid);
             sched.tasks[idx].wake_pending = false;
+            
+            // Queue graph state update
+            graphify::update_task_state(tid, "runnable");
         } else {
             sched.tasks[idx].wake_pending = true;
         }

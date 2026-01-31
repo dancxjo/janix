@@ -5,6 +5,7 @@ use spin::Mutex;
 
 pub mod abi;
 pub mod graph;
+pub mod graph_anchors;
 pub mod handlers;
 pub mod journal;
 pub mod pci;

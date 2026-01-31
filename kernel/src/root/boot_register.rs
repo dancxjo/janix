@@ -359,6 +359,11 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     // 10. Tasking
     let scheduler = create(kinds::SVC_SCHEDULER);
     link(kernel, rels::PROVIDES, scheduler);
+    
+    // Store well-known ThingIds for scheduler graphification
+    super::graph_anchors::set_scheduler_service(scheduler);
+    super::graph_anchors::set_kernel_proc(kernel);
+    super::graph_anchors::set_root_service(root_svc);
 
     // 11. PCI
     crate::kinfo!("ROOT: Census Phase 2: PCI");

@@ -2,6 +2,7 @@
 
 use crate::BootRuntime;
 use crate::task::{Task, TaskId};
+use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
@@ -62,6 +63,8 @@ pub struct Scheduler<R: BootRuntime> {
     pub(crate) watchdog_warned: bool,
     pub(crate) need_resched: bool,
     pub(crate) metrics: SchedulerMetrics,
+    /// Maps TaskId -> ThingId for graph node lookups
+    pub(crate) task_graph: BTreeMap<TaskId, u64>,
 }
 
 impl SchedulerMetrics {
@@ -97,6 +100,7 @@ impl<R: BootRuntime> Scheduler<R> {
             watchdog_warned: false,
             need_resched: false,
             metrics: SchedulerMetrics::new(),
+            task_graph: BTreeMap::new(),
         }
     }
 
@@ -111,5 +115,20 @@ impl<R: BootRuntime> Scheduler<R> {
     pub fn current_priority(&self) -> Option<crate::task::TaskPriority> {
         let tid = self.current?;
         self.tasks.iter().find(|t| t.id == tid).map(|t| t.priority)
+    }
+
+    /// Get the graph ThingId for a task
+    pub fn graph_thing_for_tid(&self, tid: TaskId) -> Option<u64> {
+        self.task_graph.get(&tid).copied()
+    }
+
+    /// Set the graph ThingId for a task
+    pub fn set_graph_thing_for_tid(&mut self, tid: TaskId, thing_id: u64) {
+        self.task_graph.insert(tid, thing_id);
+    }
+
+    /// Remove the graph ThingId for a task (e.g., when task is cleaned up)
+    pub fn remove_graph_thing_for_tid(&mut self, tid: TaskId) -> Option<u64> {
+        self.task_graph.remove(&tid)
     }
 }

@@ -46,6 +46,8 @@ pub struct SocketApi {
     sockets: BTreeMap<u32, ManagedSocket>,
     /// Pending accepted connections (listen_handle -> Vec<(conn_handle, remote_ip, remote_port)>)
     pending_accepts: BTreeMap<u32, Vec<(u32, Ipv4Address, u16)>>,
+    /// Socket handles pending removal from SocketSet (after TCP close completes)
+    pending_removal: Vec<SocketHandle>,
 }
 
 impl SocketApi {
@@ -54,6 +56,7 @@ impl SocketApi {
             next_handle: 1,
             sockets: BTreeMap::new(),
             pending_accepts: BTreeMap::new(),
+            pending_removal: Vec::new(),
         }
     }
 
@@ -283,13 +286,31 @@ impl SocketApi {
             let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
             socket.close();
             info!("SOCKET_API: TCP_CLOSE handle={} (initiating close)", handle);
-            // Note: We intentionally do NOT remove from socket_set here.
-            // The socket will be cleaned up later when it reaches Closed state.
+            
+            // Track this socket for later removal once it reaches Closed state
+            self.pending_removal.push(managed.handle);
         }
         // Remove from our tracking map so future operations fail
         self.sockets.remove(&handle);
         self.pending_accepts.remove(&handle);
         encode_ok()
+    }
+
+    /// Garbage collect closed sockets from the SocketSet
+    /// Call this periodically from the main loop to reclaim socket slots
+    pub fn gc_closed_sockets<'a>(&mut self, socket_set: &mut SocketSet<'a>) {
+        // Retain only sockets that are NOT yet in Closed state
+        self.pending_removal.retain(|&socket_handle| {
+            let socket = socket_set.get_mut::<TcpSocket>(socket_handle);
+            if socket.state() == TcpState::Closed {
+                // Socket is fully closed, remove it from the set
+                socket_set.remove(socket_handle);
+                info!("SOCKET_API: GC removed closed socket");
+                false // Remove from pending_removal
+            } else {
+                true // Keep in pending_removal, check again later
+            }
+        });
     }
 
     /// Process an incoming API message

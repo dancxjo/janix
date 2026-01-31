@@ -187,6 +187,9 @@ fn main(_arg: usize) -> ! {
         // Poll the interface to process any pending packets
         iface.poll(now, &mut device, &mut socket_set);
 
+        // Garbage collect closed sockets to prevent SocketSet exhaustion
+        socket_api.gc_closed_sockets(&mut socket_set);
+
         // Process socket API messages
         // Message format: [4: response_port][2: msg_type][payload...]
         match port_recv(api_read_port, &mut api_msg_buf) {

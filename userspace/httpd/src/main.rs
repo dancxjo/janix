@@ -111,8 +111,9 @@ fn route_request(req: &http::Request<'_>, path: &str) -> Vec<u8> {
     // TODO: Authentication - add token/capability check here
     // TODO: Per-route permission gating
     
-    // Check for static assets first
-    if let Some(asset) = assets::get_asset(path) {
+    // Check for static assets first (strip query string)
+    let asset_path = path.split('?').next().unwrap_or(path);
+    if let Some(asset) = assets::get_asset(asset_path) {
         let body: &[u8] = if is_head { &[] } else { asset.content };
         return build_response("200 OK", asset.content_type, body);
     }
@@ -327,13 +328,12 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     let response = handle_request(request_str);
     info!("httpd: Sending response ({} bytes)", response.len());
 
-    // Send response in manageable chunks
-    // The TCP TX buffer is 32KB, but we send smaller chunks to allow
-    // smoltcp time to transmit between sends
-    const CHUNK_SIZE: usize = 4096;
+    // Send response in chunks
+    // Use larger chunks (8KB) to reduce overhead, the TX buffer is 32KB
+    const CHUNK_SIZE: usize = 8192;
     let mut sent = 0;
     let mut stall_count = 0;
-    const MAX_STALLS: usize = 50;  // 500ms total stall time max
+    const MAX_STALLS: usize = 100;  // 1 second total stall time max
     
     while sent < response.len() {
         let remaining = response.len() - sent;
@@ -343,33 +343,33 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
         let n = net.tcp_send(conn_handle, chunk);
         
         if n == 0 {
-            // Socket TX buffer full or not ready - wait for netd to drain
+            // Socket TX buffer full - wait briefly for netd to drain
             stall_count += 1;
             if stall_count >= MAX_STALLS {
                 warn!("httpd: Send stalled after {} bytes (max retries)", sent);
                 break;
             }
+            // Shorter delay on stall
             stem::time::sleep_ms(10);
             continue;
         }
         
         sent += n;
         stall_count = 0;  // Reset stall counter on successful send
-        
-        // Small delay between chunks to let netd poll and transmit
-        if remaining > CHUNK_SIZE {
-            stem::time::sleep_ms(5);
-        }
+        // No inter-chunk delay - let the TX buffer fill naturally
     }
 
-    // Wait for TCP stack to transmit buffered data before close
-    // Scale delay based on response size (roughly 10ms per KB, min 20ms, max 500ms)
-    let flush_delay_ms = ((response.len() / 1024) * 10).clamp(20, 500) as u64;
-    info!("httpd: Flushing ({} ms delay)", flush_delay_ms);
+    // Brief flush delay before close (2ms per KB, min 10ms, max 100ms)
+    let flush_delay_ms = ((response.len() / 1024) * 2).clamp(10, 100) as u64;
     stem::time::sleep_ms(flush_delay_ms);
 
-    // Close connection
+    // Close connection - this initiates the TCP FIN handshake
     net.tcp_close(conn_handle);
+    
+    // Post-close delay to allow smoltcp to complete FIN/ACK exchange
+    // The connection needs time for: FIN -> FIN-ACK -> ACK sequence
+    stem::time::sleep_ms(50);
+    
     info!("httpd: Connection closed (sent {}/{} bytes)", sent, response.len());
 }
 

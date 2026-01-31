@@ -10,6 +10,7 @@ use alloc::vec::Vec;
 use alloc::format;
 use alloc::string::String;
 use stem::syscall::graph::{find, get_kind, prop_get};
+use stem::syscall::root_bytespace_read;
 
 const MAX_BYTESPACE_SIZE: usize = 1024 * 1024; // 1MB limit for safety
 
@@ -152,8 +153,20 @@ pub fn get_property(thing_id: u64, key_id: u64) -> Result<u64, GraphError> {
     prop_get(thing_id, key_id).map_err(|_| GraphError::NotFound)
 }
 
-// TODO: Bytespace reading functions
-// For now, we'll stub these out until we understand the bytespace API better
+/// Read bytespace data with safety limits
+pub fn read_bytespace(bytespace_id: u64, max_size: usize) -> Result<Vec<u8>, GraphError> {
+    let limit = max_size.min(MAX_BYTESPACE_SIZE);
+    let mut buffer = Vec::new();
+    buffer.resize(limit, 0);
+    
+    match root_bytespace_read(bytespace_id as usize, 0, &mut buffer) {
+        Ok(n) => {
+            buffer.truncate(n);
+            Ok(buffer)
+        }
+        Err(_) => Err(GraphError::SyscallFailed),
+    }
+}
 
 #[cfg(test)]
 mod tests {

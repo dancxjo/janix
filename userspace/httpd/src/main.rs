@@ -86,6 +86,9 @@ fn route_request(method: http::Method, path: &str, is_head: bool) -> Vec<u8> {
         return build_response("405 Method Not Allowed", "text/plain", body);
     }
     
+    // TODO: Authentication - add token/capability check here
+    // TODO: Per-route permission gating
+    
     match path {
         "/health" => handle_health(is_head),
         "/" => handle_index(is_head),
@@ -172,13 +175,34 @@ fn handle_graph_thing(path: &str, is_head: bool) -> Vec<u8> {
 }
 
 /// GET /graph/<thing_id>/bytespace/<key>
-fn handle_bytespace(thing_id: u64, key_str: &str, _is_head: bool) -> Vec<u8> {
-    // TODO: Implement bytespace reading
-    // For now, return not implemented
-    use alloc::format;
-    let msg = format!("501 Not Implemented: Bytespace reading for thing {} key {} not yet implemented\n", 
-                     thing_id, key_str);
-    build_response("501 Not Implemented", "text/plain", msg.as_bytes())
+fn handle_bytespace(_thing_id: u64, key_str: &str, _is_head: bool) -> Vec<u8> {
+    // TODO: Add size limit query parameter support (?size=N or ?range=N-M)
+    // TODO: Add permission check for bytespace access
+    
+    // Parse the key as a bytespace ID
+    let bytespace_id = match key_str.parse::<u64>() {
+        Ok(id) => id,
+        Err(_) => {
+            let body = b"400 Bad Request: Invalid bytespace ID\n";
+            return build_response("400 Bad Request", "text/plain", body);
+        }
+    };
+    
+    // Try to read the bytespace
+    match graph_api::read_bytespace(bytespace_id, 1024 * 1024) {
+        Ok(data) => {
+            // Return the raw bytespace data
+            build_response("200 OK", "application/octet-stream", &data)
+        }
+        Err(graph_api::GraphError::NotFound) => {
+            let body = b"404 Not Found: Bytespace does not exist\n";
+            build_response("404 Not Found", "text/plain", body)
+        }
+        Err(_) => {
+            let body = b"500 Internal Server Error\n";
+            build_response("500 Internal Server Error", "text/plain", body)
+        }
+    }
 }
 
 /// 404 Not Found

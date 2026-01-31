@@ -333,7 +333,10 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     const CHUNK_SIZE: usize = 8192;
     let mut sent = 0;
     let mut stall_count = 0;
-    const MAX_STALLS: usize = 100;  // 1 second total stall time max
+    // Allow longer stall time - 5 seconds total for large responses
+    // This handles cases where smoltcp TX buffer fills and needs time to drain
+    const MAX_STALLS: usize = 500;
+    const STALL_SLEEP_MS: u64 = 5;  // Shorter sleep for faster retry
     
     while sent < response.len() {
         let remaining = response.len() - sent;
@@ -349,13 +352,14 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                 warn!("httpd: Send stalled after {} bytes (max retries)", sent);
                 break;
             }
-            // Shorter delay on stall
-            stem::time::sleep_ms(10);
+            // Brief yield to let netd/smoltcp process
+            stem::time::sleep_ms(STALL_SLEEP_MS);
             continue;
         }
         
         sent += n;
-        stall_count = 0;  // Reset stall counter on successful send
+        // Reset stall counter on ANY successful send
+        stall_count = 0;
         // No inter-chunk delay - let the TX buffer fill naturally
     }
 

@@ -258,7 +258,8 @@ fn main(_arg: usize) -> ! {
             _ => {}
         }
 
-        stem::time::sleep_ms(5);
+        // Minimal sleep for responsive I/O - TX buffers drain faster
+        stem::time::sleep_ms(1);
     }
 }
 

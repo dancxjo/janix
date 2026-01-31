@@ -322,15 +322,40 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
     if let Some(root) = root_id {
         queue.push_back((root, 0));
     } else {
-        // Auto-discovery mode: seed from interesting system nodes
+        // Auto-discovery mode: seed from diverse system nodes to show full graph variety
         use stem::thing::sys::find;
         use abi::schema::kinds;
         
+        // Comprehensive list of interesting kinds to seed from
+        // This ensures the subgraph shows all types of nodes, not just mem.Range
         let interesting_kinds = [
-            kinds::SVC_ROOT,     // System root node
-            kinds::PROC_KERNEL,  // Kernel process
-            kinds::UI_CROWN,     // UI crown (desktop)
-            kinds::UI_WINDOW,    // Windows
+            // Core system
+            kinds::SVC_ROOT,              // System root node
+            kinds::PROC_KERNEL,           // Kernel process
+            kinds::SVC_SCHEDULER,         // Scheduler service
+            // Device/Hardware
+            kinds::DEV_HOST,              // Host device
+            kinds::DEV_BUS_PCI,           // PCI bus
+            kinds::DEV_PCI_FUNCTION,      // PCI devices
+            kinds::DEV_NET_NIC,           // Network cards
+            kinds::DEV_STORAGE_DISK,      // Disks
+            kinds::DEV_DISPLAY_GPU,       // GPU
+            kinds::DEV_CPU,               // CPUs
+            // UI
+            kinds::UI_CROWN,              // UI crown (desktop)
+            kinds::UI_WINDOW,             // Windows
+            // Fonts
+            kinds::FONT_FAMILY,           // Font families
+            kinds::FONT_FACE,             // Font faces
+            // Content/Files
+            kinds::CONTENT_SOURCE,        // Content sources
+            kinds::CONTENT_FILE,          // Files
+            kinds::BOOT_MODULE,           // Boot modules
+            // Services
+            "svc.net.Stack",              // Network stack
+            "svc.net.Driver",             // Network driver
+            // Assets
+            kinds::ASSET,                 // Assets
         ];
         
         for kind_name in &interesting_kinds {

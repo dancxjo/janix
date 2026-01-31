@@ -90,4 +90,4 @@ just clear-behavior
 
 ## License
 
-Apache 2.0
+MIT

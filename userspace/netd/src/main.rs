@@ -15,13 +15,15 @@ mod dhcp;
 mod dns;
 mod driver_protocol;
 mod ipc_device;
+mod socket_api;
 
 use alloc::format;
 use abi::schema::keys;
 use ipc_device::IpcNicDevice;
-use smoltcp::iface::{Config, Interface};
+use socket_api::SocketApi;
+use smoltcp::iface::{Config, Interface, SocketSet, SocketStorage};
 use smoltcp::wire::EthernetAddress;
-use stem::syscall::port::{port_recv, port_send, PortHandle};
+use stem::syscall::port::{port_create, port_recv, port_send, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::{info, warn, error};
@@ -109,19 +111,114 @@ fn main(_arg: usize) -> ! {
     }
 
     info!("NETD: Network stack ready, entering service loop");
-    
-    // Main service loop - for now just keep interface alive
-    // TODO: Implement socket API for applications
+
+    // Create socket API port
+    let (api_write_port, api_read_port) = match port_create(8192) {
+        Ok((w, r)) => {
+            info!("NETD: Created socket API port (write={}, read={})", w, r);
+            (w, r)
+        }
+        Err(e) => {
+            error!("NETD: Failed to create socket API port: {:?}", e);
+            loop {
+                stem::time::sleep_ms(1000);
+            }
+        }
+    };
+
+    // Publish socket API port to graph
+    let mut net_buf = [ThingId::default(); 1];
+    if let Ok(count) = thingsys::find("svc.net.Stack", &mut net_buf) {
+        if count > 0 {
+            let net_id = net_buf[0];
+            thingsys::prop_set(net_id, "net.socket_api", api_write_port as u64).ok();
+            info!("NETD: Published socket API port {} to graph", api_write_port);
+        }
+    }
+
+    // Initialize socket API
+    let mut socket_api = SocketApi::new();
+
+    // Socket buffers for incoming connections (statically allocated)
+    // We support up to 4 concurrent sockets
+    static mut RX_BUF_0: [u8; 8192] = [0; 8192];
+    static mut TX_BUF_0: [u8; 4096] = [0; 4096];
+    static mut RX_BUF_1: [u8; 8192] = [0; 8192];
+    static mut TX_BUF_1: [u8; 4096] = [0; 4096];
+    static mut RX_BUF_2: [u8; 8192] = [0; 8192];
+    static mut TX_BUF_2: [u8; 4096] = [0; 4096];
+    static mut RX_BUF_3: [u8; 8192] = [0; 8192];
+    static mut TX_BUF_3: [u8; 4096] = [0; 4096];
+
+    let mut next_buf = 0usize;
+    let mut api_msg_buf = [0u8; 2048];
+
+    // Socket storage for smoltcp - support up to 8 sockets
+    let mut sockets_storage: [SocketStorage; 8] = Default::default();
+    let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
+
+    // Main service loop
     loop {
         let now = IpcNicDevice::now();
-        
+
         // Poll the interface to process any pending packets
-        // Note: We need to create an empty socket set for poll
-        let mut sockets_storage: [smoltcp::iface::SocketStorage; 0] = [];
-        let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
         iface.poll(now, &mut device, &mut socket_set);
-        
-        stem::time::sleep_ms(10);
+
+        // Process socket API messages
+        // Message format: [4: response_port][2: msg_type][payload...]
+        match port_recv(api_read_port, &mut api_msg_buf) {
+            Ok(len) if len > 6 => {
+                // Extract the client's response port from the message header
+                let client_response_port = u32::from_le_bytes([
+                    api_msg_buf[0],
+                    api_msg_buf[1],
+                    api_msg_buf[2],
+                    api_msg_buf[3],
+                ]) as PortHandle;
+                
+                // The rest is the actual socket API message
+                let msg_body = &api_msg_buf[4..len];
+                
+                // Get buffer pair for this request
+                let response = unsafe {
+                    match next_buf % 4 {
+                        0 => socket_api.process_message(
+                            &mut socket_set,
+                            msg_body,
+                            &mut RX_BUF_0,
+                            &mut TX_BUF_0,
+                        ),
+                        1 => socket_api.process_message(
+                            &mut socket_set,
+                            msg_body,
+                            &mut RX_BUF_1,
+                            &mut TX_BUF_1,
+                        ),
+                        2 => socket_api.process_message(
+                            &mut socket_set,
+                            msg_body,
+                            &mut RX_BUF_2,
+                            &mut TX_BUF_2,
+                        ),
+                        _ => socket_api.process_message(
+                            &mut socket_set,
+                            msg_body,
+                            &mut RX_BUF_3,
+                            &mut TX_BUF_3,
+                        ),
+                    }
+                };
+                next_buf = next_buf.wrapping_add(1);
+
+                // Send response to the client's response port
+                if let Err(e) = port_send(client_response_port, &response) {
+                    warn!("NETD: Failed to send API response to port {}: {:?}", client_response_port, e);
+                }
+            }
+            _ => {}
+        }
+
+        stem::time::sleep_ms(5);
     }
 }
 

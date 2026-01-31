@@ -442,6 +442,24 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                     warn!("SPROUT: Failed to spawn fetchd: {:?}", e);
                 }
             }
+
+            // Spawn httpd - HTTP server
+            match stem::syscall::spawn_process("/httpd", 0) {
+                Ok(pid) => {
+                    info!("SPROUT: Spawned httpd (PID={})", pid);
+                    let _ = stem::thread::set_priority(pid, 2); // Normal priority
+                    tasks.push(ManagedTask {
+                        name: "/httpd".to_string(),
+                        kind: TaskKind::Service("svc.http".to_string()),
+                        module_path: "/httpd".to_string(),
+                        pid: Some(pid),
+                        restarts: 0,
+                    });
+                }
+                Err(e) => {
+                    warn!("SPROUT: Failed to spawn httpd: {:?}", e);
+                }
+            }
         } else {
             info!("SPROUT: No NIC device found, skipping network pipeline");
         }

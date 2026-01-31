@@ -9,14 +9,14 @@ extern crate alloc;
 
 mod http;
 mod graph_api;
+mod net_client;
 
+use alloc::string::String;
 use alloc::vec::Vec;
+use net_client::NetClient;
 use stem::{info, warn};
 
 const SERVER_NAME: &str = "ThingOS-httpd/0.1";
-
-// Magic value to signal server mode (vs stdio mode)
-const SERVER_MODE_MAGIC: usize = 0xDEADBEEF;
 
 /// Build HTTP response with headers
 fn build_response(status: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
@@ -231,29 +231,126 @@ fn run_stdio_mode() -> ! {
     stem::syscall::exit(0);
 }
 
-/// Run in server mode (not yet implemented - needs network stack)
+/// Run in server mode - listen for TCP connections and serve HTTP
 fn run_server_mode(port: u16) -> ! {
-    info!("httpd: Server mode on port {} not yet implemented", port);
-    info!("httpd: Waiting for network stack support...");
-    
+    info!("httpd: Starting server mode on port {}...", port);
+
+    // Wait for network stack to be ready
+    let net = loop {
+        match NetClient::connect() {
+            Some(n) => break n,
+            None => {
+                info!("httpd: Waiting for network stack...");
+                stem::time::sleep_ms(500);
+            }
+        }
+    };
+
+    info!("httpd: Connected to network stack");
+
+    // Start listening
+    let listen_handle = loop {
+        match net.tcp_listen(port) {
+            Some(h) => break h,
+            None => {
+                warn!("httpd: Failed to listen on port {}, retrying...", port);
+                stem::time::sleep_ms(1000);
+            }
+        }
+    };
+
+    info!("httpd: Listening on port {} (handle={})", port, listen_handle);
+
+    // Main server loop
     loop {
-        stem::time::sleep_ms(10000);
+        // Try to accept a connection
+        if let Some(accept) = net.tcp_accept(listen_handle) {
+            info!(
+                "httpd: Connection from {}.{}.{}.{}:{}",
+                accept.remote_ip[0],
+                accept.remote_ip[1],
+                accept.remote_ip[2],
+                accept.remote_ip[3],
+                accept.remote_port
+            );
+
+            // Handle this connection
+            handle_connection(&net, accept.conn_handle);
+        }
+
+        // Small delay to avoid busy-waiting
+        stem::time::sleep_ms(10);
     }
 }
+
+/// Handle a single HTTP connection
+fn handle_connection(net: &NetClient, conn_handle: u32) {
+    // Read the request (with timeout)
+    let mut request_data = Vec::new();
+    let mut attempts = 0;
+    
+    while attempts < 100 {
+        if let Some(data) = net.tcp_recv(conn_handle, 4096) {
+            request_data.extend_from_slice(&data);
+            
+            // Check if we have a complete request (ends with \r\n\r\n)
+            if request_data.windows(4).any(|w| w == b"\r\n\r\n") {
+                break;
+            }
+        }
+        attempts += 1;
+        stem::time::sleep_ms(10);
+    }
+
+    if request_data.is_empty() {
+        warn!("httpd: No request received, closing connection");
+        net.tcp_close(conn_handle);
+        return;
+    }
+
+    // Parse and handle the request
+    let request_str = match core::str::from_utf8(&request_data) {
+        Ok(s) => s,
+        Err(_) => {
+            warn!("httpd: Invalid UTF-8 in request");
+            net.tcp_close(conn_handle);
+            return;
+        }
+    };
+
+    let response = handle_request(request_str);
+    info!("httpd: Sending response ({} bytes)", response.len());
+
+    // Send response
+    let mut sent = 0;
+    while sent < response.len() {
+        let chunk = &response[sent..];
+        let n = net.tcp_send(conn_handle, chunk);
+        if n == 0 {
+            break;
+        }
+        sent += n;
+    }
+
+    // Close connection
+    net.tcp_close(conn_handle);
+    info!("httpd: Connection closed");
+}
+
+// Magic value to signal stdio mode (for testing)
+const STDIO_MODE_MAGIC: usize = 0xDEADBEEF;
 
 #[stem::main]
 fn main(arg: usize) -> ! {
     info!("httpd: Starting HTTP server (ThingOS httpd v0.1)");
     
-    // For now, default to stdio mode
-    // TODO: Parse command line arguments when available
-    // Check arg to determine mode
-    if arg == SERVER_MODE_MAGIC {
-        // Magic value for server mode (to be implemented)
-        run_server_mode(8080);
-    } else {
-        // Default to stdio mode for testing
+    // Default to server mode when spawned as a service (arg=0)
+    // stdio mode is only for testing (requires magic value)
+    if arg == STDIO_MODE_MAGIC {
         run_stdio_mode();
+    } else {
+        // Default: run as a persistent server (like other services)
+        run_server_mode(80);
     }
 }
 

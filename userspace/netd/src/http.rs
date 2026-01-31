@@ -15,9 +15,9 @@ use crate::smol_device::VirtioNicDevice;
 const MAX_REDIRECTS: u8 = 5;
 
 /// HTTPS proxy server (QEMU user-mode networking gateway)
-/// The host runs scripts/https_proxy.py on port 8080
+/// The host runs scripts/https_proxy.py on port 8081
 const PROXY_HOST: Ipv4Address = Ipv4Address::new(10, 0, 2, 2);
-const PROXY_PORT: u16 = 8080;
+const PROXY_PORT: u16 = 8081;
 
 #[derive(Debug)]
 pub enum HttpError {
@@ -262,7 +262,7 @@ fn follow_redirect(
 }
 
 /// Fetch a URL via the HTTPS proxy server
-/// The proxy runs on the host at 10.0.2.2:8080 and accepts requests like:
+/// The proxy runs on the host at 10.0.2.2:8081 and accepts requests like:
 ///   GET /?url=https://example.com/path
 fn fetch_via_proxy(
     iface: &mut Interface,

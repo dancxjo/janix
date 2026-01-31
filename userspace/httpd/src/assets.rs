@@ -27,6 +27,19 @@ pub fn get_asset(path: &str) -> Option<Asset> {
             content: include_bytes!("../assets/explorer/3d.html"),
             content_type: "text/html; charset=utf-8",
         }),
+        // Graph viewer assets
+        "/graph.html" => Some(Asset {
+            content: include_bytes!("../assets/graph/graph.html"),
+            content_type: "text/html; charset=utf-8",
+        }),
+        "/graph.js" => Some(Asset {
+            content: include_bytes!("../assets/graph/graph.js"),
+            content_type: "application/javascript; charset=utf-8",
+        }),
+        "/graph.css" => Some(Asset {
+            content: include_bytes!("../assets/graph/graph.css"),
+            content_type: "text/css; charset=utf-8",
+        }),
         _ => None,
     }
 }

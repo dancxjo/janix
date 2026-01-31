@@ -89,6 +89,19 @@ impl JsonBuilder {
         self.buf.push(b',');
     }
 
+    pub fn float_value(&mut self, v: f32) {
+        // Format float as JSON number
+        let s = alloc::format!("{:.6}", v);
+        // Remove trailing zeros for cleaner output
+        let trimmed = s.trim_end_matches('0').trim_end_matches('.');
+        if trimmed.is_empty() {
+            self.buf.extend_from_slice(b"0");
+        } else {
+            self.buf.extend_from_slice(trimmed.as_bytes());
+        }
+        self.buf.push(b',');
+    }
+
     pub fn into_bytes(self) -> Vec<u8> {
         self.buf
     }

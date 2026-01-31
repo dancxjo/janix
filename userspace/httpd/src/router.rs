@@ -41,6 +41,12 @@ pub enum ApiRoute<'a> {
     /// GET /api/v1/watch
     Watch,
     
+    /// GET /api/v1/subgraph?root=...&depth=...
+    GetSubgraph { query: &'a str },
+    
+    /// PATCH /api/v1/layout
+    PatchLayout,
+    
     /// Route not found in API
     NotFound,
     
@@ -61,8 +67,9 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         };
     }
     
-    // Split into segments
-    let segments: alloc::vec::Vec<&str> = rest
+    // Split into segments (strip query string first)
+    let path_part = rest.split('?').next().unwrap_or(rest);
+    let segments: alloc::vec::Vec<&str> = path_part
         .split('/')
         .filter(|s| !s.is_empty())
         .collect();
@@ -101,12 +108,24 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         // /api/v1/watch
         (Method::Get, ["watch"]) => Some(ApiRoute::Watch),
         
+        // /api/v1/subgraph?root=...&depth=...
+        (Method::Get, ["subgraph"]) => {
+            // Pass the query string portion (after ?) to the handler
+            let query = path.find('?').map(|i| &path[i+1..]).unwrap_or("");
+            Some(ApiRoute::GetSubgraph { query })
+        }
+        
+        // /api/v1/layout
+        (Method::Patch, ["layout"]) => Some(ApiRoute::PatchLayout),
+        
         // Method not allowed variants
         (_, ["things"]) |
         (_, ["things", _]) |
         (_, ["things", _, "bytespaces", _]) |
         (_, ["things", _, "bytespaces", _, "meta"]) |
-        (_, ["watch"]) => Some(ApiRoute::MethodNotAllowed),
+        (_, ["watch"]) |
+        (_, ["subgraph"]) |
+        (_, ["layout"]) => Some(ApiRoute::MethodNotAllowed),
         
         // Not found
         _ => Some(ApiRoute::NotFound),

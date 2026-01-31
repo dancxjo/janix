@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thing-OS Graph Viewer</title>
+    <link rel="stylesheet" href="/graph.css">
+    <!-- Cytoscape.js v3.33.1 (pinned) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.33.1/cytoscape.min.js" crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
+</head>
+
+<body>
+    <!-- Top Bar -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <label>
+                Root: <input type="text" id="rootInput" placeholder="ThingId" size="12">
+            </label>
+            <label>
+                Depth: <input type="number" id="depthInput" value="2" min="1" max="10" size="3">
+            </label>
+            <button id="loadBtn">Load</button>
+            <button id="saveBtn">Save Layout</button>
+            <label class="toggle-label">
+                <input type="checkbox" id="autoSaveToggle">
+                Auto-save
+            </label>
+        </div>
+        <div class="topbar-right">
+            <span id="statusText" class="status">Ready</span>
+            <a href="/" class="nav-link">← Explorer</a>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Graph Canvas -->
+        <div id="cy"></div>
+
+        <!-- Inspector Panel -->
+        <aside class="inspector" id="inspector">
+            <h3>Inspector</h3>
+            <div class="inspector-empty" id="inspectorEmpty">
+                Click a node to inspect
+            </div>
+            <div class="inspector-content" id="inspectorContent" style="display:none">
+                <div class="inspector-row">
+                    <span class="inspector-label">ThingId:</span>
+                    <span class="inspector-value">
+                        <a id="inspectorThingLink" href="#">-</a>
+                        <button id="copyIdBtn" class="btn-small" title="Copy ThingId">📋</button>
+                    </span>
+                </div>
+                <div class="inspector-row">
+                    <span class="inspector-label">Kind:</span>
+                    <span class="inspector-value" id="inspectorKind">-</span>
+                </div>
+                <div class="inspector-row">
+                    <span class="inspector-label">Label:</span>
+                    <span class="inspector-value" id="inspectorLabel">-</span>
+                </div>
+                <div class="inspector-row">
+                    <span class="inspector-label">Position:</span>
+                    <span class="inspector-value" id="inspectorPos">-</span>
+                </div>
+                <div class="inspector-actions">
+                    <button id="centerBtn">Center on Node</button>
+                    <button id="openExplorerBtn">Open in Explorer</button>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Stats Bar -->
+    <footer class="statsbar">
+        <span id="graphStats">No graph loaded</span>
+    </footer>
+
+    <script src="/graph.js"></script>
+</body>
+
+</html>

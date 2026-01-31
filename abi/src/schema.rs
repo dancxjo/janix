@@ -178,6 +178,19 @@ pub mod keys {
     pub const LAYOUT_VEL_Y: &str = "layout.vel.y";
     pub const LAYOUT_PIN: &str = "layout.pin";
     pub const LAYOUT_GEN: &str = "layout.gen";
+    
+    // User-authored layout properties (Graph UI, shared with Photosynthesis)
+    /// UI layout X coordinate (f32 bits stored as u64)
+    pub const UI_LAYOUT_X: &str = "ui.layout.x";
+    /// UI layout Y coordinate (f32 bits stored as u64)
+    pub const UI_LAYOUT_Y: &str = "ui.layout.y";
+    /// UI layout Z coordinate (f32 bits stored as u64, reserved for 3D)
+    pub const UI_LAYOUT_Z: &str = "ui.layout.z";
+    /// Layout space identifier (interned, e.g. "graph_ui_v1", "photosynthesis")
+    pub const UI_LAYOUT_SPACE: &str = "ui.layout.space";
+    /// Layout generation counter for debugging/versioning
+    pub const UI_LAYOUT_GEN: &str = "ui.layout.gen";
+    
     /// Compositor has taken control of framebuffer (boot console should stop)
     pub const UI_COMPOSITOR_ACTIVE: &str = "ui.compositor.active";
     pub const UI_BUTTON_LABEL: &str = "ui.button.label";

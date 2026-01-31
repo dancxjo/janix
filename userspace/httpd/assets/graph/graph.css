@@ -1,0 +1,257 @@
+/* Thing-OS Graph Viewer Styles */
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+:root {
+    --bg-primary: #0d0d0d;
+    --bg-secondary: #161616;
+    --bg-tertiary: #1e1e1e;
+    --border-color: #2a2a2a;
+    --text-primary: #e5e5e5;
+    --text-secondary: #a0a0a0;
+    --accent: #4ea8de;
+    --accent-hover: #5cc3f7;
+    --success: #7dd87d;
+    --warning: #f5c842;
+    --node-bg: #2d2d2d;
+    --node-border: #4a4a4a;
+    --edge-color: #555;
+    --font-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
+}
+
+html, body {
+    height: 100%;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-size: 14px;
+}
+
+/* Top Bar */
+.topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    height: 48px;
+}
+
+.topbar-left, .topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.topbar label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--text-secondary);
+    font-size: 13px;
+}
+
+.topbar input[type="text"],
+.topbar input[type="number"] {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 4px 8px;
+    color: var(--text-primary);
+    font-family: var(--font-mono);
+    font-size: 13px;
+}
+
+.topbar input[type="text"]:focus,
+.topbar input[type="number"]:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+.topbar button {
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 4px;
+    padding: 6px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.topbar button:hover {
+    background: var(--accent-hover);
+}
+
+.topbar button:active {
+    transform: translateY(1px);
+}
+
+.toggle-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+    accent-color: var(--accent);
+}
+
+.status {
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 4px 8px;
+    background: var(--bg-tertiary);
+    border-radius: 4px;
+}
+
+.status.saving {
+    color: var(--warning);
+}
+
+.status.saved {
+    color: var(--success);
+}
+
+.nav-link {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 13px;
+}
+
+.nav-link:hover {
+    text-decoration: underline;
+}
+
+/* Main Content */
+.main-content {
+    display: flex;
+    height: calc(100vh - 48px - 28px);
+}
+
+/* Graph Canvas */
+#cy {
+    flex: 1;
+    background: var(--bg-primary);
+    background-image: 
+        radial-gradient(circle, var(--border-color) 1px, transparent 1px);
+    background-size: 20px 20px;
+}
+
+/* Inspector Panel */
+.inspector {
+    width: 280px;
+    background: var(--bg-secondary);
+    border-left: 1px solid var(--border-color);
+    padding: 16px;
+    overflow-y: auto;
+}
+
+.inspector h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 16px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.inspector-empty {
+    color: var(--text-secondary);
+    font-style: italic;
+    text-align: center;
+    padding: 24px 0;
+}
+
+.inspector-row {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 14px;
+}
+
+.inspector-label {
+    font-size: 11px;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.inspector-value {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    word-break: break-all;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.inspector-value a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.inspector-value a:hover {
+    text-decoration: underline;
+}
+
+.btn-small {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 3px;
+    padding: 2px 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: background 0.15s;
+}
+
+.btn-small:hover {
+    background: var(--border-color);
+}
+
+.inspector-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--border-color);
+}
+
+.inspector-actions button {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 8px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.inspector-actions button:hover {
+    background: var(--border-color);
+    border-color: var(--accent);
+}
+
+/* Stats Bar */
+.statsbar {
+    height: 28px;
+    padding: 0 16px;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+    display: flex;
+    align-items: center;
+    font-size: 12px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+}
+
+/* Cytoscape Node/Edge Styles (applied via JS, but CSS provides context) */

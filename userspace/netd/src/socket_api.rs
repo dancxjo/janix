@@ -275,17 +275,20 @@ impl SocketApi {
         socket_set: &mut SocketSet<'a>,
         handle: u32,
     ) -> Vec<u8> {
-        if let Some(managed) = self.sockets.remove(&handle) {
-            // Close the socket first
-            {
-                let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
-                socket.close();
-            }
-            // Remove the socket from the socket set to free up the slot
-            socket_set.remove(managed.handle);
-            info!("SOCKET_API: TCP_CLOSE handle={} (removed from socket set)", handle);
-            self.pending_accepts.remove(&handle);
+        if let Some(managed) = self.sockets.get(&handle) {
+            // Just close the socket - don't remove it yet
+            // The socket needs to remain in the set so smoltcp can:
+            // 1. Flush remaining TX data
+            // 2. Complete the TCP FIN handshake
+            let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
+            socket.close();
+            info!("SOCKET_API: TCP_CLOSE handle={} (initiating close)", handle);
+            // Note: We intentionally do NOT remove from socket_set here.
+            // The socket will be cleaned up later when it reaches Closed state.
         }
+        // Remove from our tracking map so future operations fail
+        self.sockets.remove(&handle);
+        self.pending_accepts.remove(&handle);
         encode_ok()
     }
 

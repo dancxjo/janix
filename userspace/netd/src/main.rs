@@ -142,16 +142,16 @@ fn main(_arg: usize) -> ! {
     // Socket buffers for incoming connections (statically allocated)
     // We support up to 4 concurrent sockets
     static mut RX_BUF_0: [u8; 8192] = [0; 8192];
-    static mut TX_BUF_0: [u8; 4096] = [0; 4096];
+    static mut TX_BUF_0: [u8; 16384] = [0; 16384];
     static mut RX_BUF_1: [u8; 8192] = [0; 8192];
-    static mut TX_BUF_1: [u8; 4096] = [0; 4096];
+    static mut TX_BUF_1: [u8; 16384] = [0; 16384];
     static mut RX_BUF_2: [u8; 8192] = [0; 8192];
-    static mut TX_BUF_2: [u8; 4096] = [0; 4096];
+    static mut TX_BUF_2: [u8; 16384] = [0; 16384];
     static mut RX_BUF_3: [u8; 8192] = [0; 8192];
-    static mut TX_BUF_3: [u8; 4096] = [0; 4096];
+    static mut TX_BUF_3: [u8; 16384] = [0; 16384];
 
     let mut next_buf = 0usize;
-    let mut api_msg_buf = [0u8; 2048];
+    let mut api_msg_buf = [0u8; 16384];
 
     // Socket storage for smoltcp - support up to 16 sockets
     let mut sockets_storage: [SocketStorage; 16] = Default::default();

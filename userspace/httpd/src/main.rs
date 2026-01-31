@@ -1,0 +1,309 @@
+//! httpd: HTTP/1.1 server for Thing-OS
+//!
+//! A minimal HTTP server that serves static responses and graph-backed endpoints.
+
+#![no_std]
+#![no_main]
+
+extern crate alloc;
+
+mod http;
+mod graph_api;
+
+use alloc::vec::Vec;
+use stem::{info, warn};
+
+const SERVER_NAME: &str = "ThingOS-httpd/0.1";
+
+// Magic value to signal server mode (vs stdio mode)
+const SERVER_MODE_MAGIC: usize = 0xDEADBEEF;
+
+/// Build HTTP response with headers
+fn build_response(status: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
+    use alloc::format;
+    let mut response = Vec::new();
+    
+    // Status line
+    let status_line = format!("HTTP/1.1 {}\r\n", status);
+    response.extend_from_slice(status_line.as_bytes());
+    
+    // Headers
+    let server_hdr = format!("Server: {}\r\n", SERVER_NAME);
+    response.extend_from_slice(server_hdr.as_bytes());
+    
+    let content_type_hdr = format!("Content-Type: {}\r\n", content_type);
+    response.extend_from_slice(content_type_hdr.as_bytes());
+    
+    let content_len_hdr = format!("Content-Length: {}\r\n", body.len());
+    response.extend_from_slice(content_len_hdr.as_bytes());
+    
+    response.extend_from_slice(b"Connection: close\r\n");
+    response.extend_from_slice(b"\r\n");
+    
+    // Body
+    response.extend_from_slice(body);
+    
+    response
+}
+
+/// Handle a single HTTP request and return a response
+fn handle_request(request_str: &str) -> Vec<u8> {
+    // Parse the request
+    let req = match http::parse_request(request_str) {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("httpd: Parse error: {:?}", e);
+            let body = b"400 Bad Request\n";
+            return build_response("400 Bad Request", "text/plain", body);
+        }
+    };
+    
+    info!("httpd: {} {} {:?}", 
+          match req.method {
+              http::Method::Get => "GET",
+              http::Method::Head => "HEAD",
+              http::Method::Post => "POST",
+              http::Method::Other => "OTHER",
+          },
+          req.path,
+          req.version);
+    
+    // Validate path
+    let safe_path = match http::decode_path(req.path) {
+        Some(p) => p,
+        None => {
+            let body = b"400 Bad Request: Invalid path\n";
+            return build_response("400 Bad Request", "text/plain", body);
+        }
+    };
+    
+    // Route the request
+    route_request(req.method, safe_path, req.method == http::Method::Head)
+}
+
+/// Route a request to the appropriate handler
+fn route_request(method: http::Method, path: &str, is_head: bool) -> Vec<u8> {
+    // Only support GET and HEAD
+    if method != http::Method::Get && method != http::Method::Head {
+        let body = b"405 Method Not Allowed\n";
+        return build_response("405 Method Not Allowed", "text/plain", body);
+    }
+    
+    // TODO: Authentication - add token/capability check here
+    // TODO: Per-route permission gating
+    
+    match path {
+        "/health" => handle_health(is_head),
+        "/" => handle_index(is_head),
+        "/graph" => handle_graph_index(is_head),
+        p if p.starts_with("/graph/") => handle_graph_thing(p, is_head),
+        _ => handle_404(is_head),
+    }
+}
+
+/// GET /health
+fn handle_health(is_head: bool) -> Vec<u8> {
+    let body: &[u8] = if is_head { &[] } else { b"ok" };
+    build_response("200 OK", "text/plain", body)
+}
+
+/// GET /
+fn handle_index(is_head: bool) -> Vec<u8> {
+    let html = r#"<!DOCTYPE html>
+<html>
+<head><title>ThingOS HTTP Server</title></head>
+<body>
+<h1>ThingOS HTTP Server</h1>
+<p>Graph-native admin interface</p>
+<ul>
+<li><a href="/health">Health Check</a></li>
+<li><a href="/graph">Graph Index</a></li>
+</ul>
+<p><em>TODO: Authentication and write operations</em></p>
+</body>
+</html>
+"#;
+    let body: &[u8] = if is_head { &[] } else { html.as_bytes() };
+    build_response("200 OK", "text/html; charset=utf-8", body)
+}
+
+/// GET /graph
+fn handle_graph_index(is_head: bool) -> Vec<u8> {
+    // For now, return a simple JSON structure
+    // TODO: enumerate actual graph roots/kinds
+    let json = r#"{"message":"Graph index endpoint","note":"Use /graph/<thing_id> to query specific things"}"#;
+    let body: &[u8] = if is_head { &[] } else { json.as_bytes() };
+    build_response("200 OK", "application/json", body)
+}
+
+/// GET /graph/<thing_id> or /graph/<thing_id>/bytespace/<key>
+fn handle_graph_thing(path: &str, is_head: bool) -> Vec<u8> {
+    // Parse path like "/graph/123" or "/graph/123/bytespace/456"
+    let path_parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    
+    if path_parts.len() < 2 {
+        let body = b"400 Bad Request: Invalid graph path\n";
+        return build_response("400 Bad Request", "text/plain", body);
+    }
+    
+    // Parse thing_id
+    let thing_id = match path_parts[1].parse::<u64>() {
+        Ok(id) => id,
+        Err(_) => {
+            let body = b"400 Bad Request: Invalid thing ID\n";
+            return build_response("400 Bad Request", "text/plain", body);
+        }
+    };
+    
+    // Check if this is a bytespace request
+    if path_parts.len() >= 4 && path_parts[2] == "bytespace" {
+        return handle_bytespace(thing_id, path_parts[3], is_head);
+    }
+    
+    // Get the thing as JSON
+    match graph_api::thing_to_json(thing_id) {
+        Ok(json) => {
+            let body = if is_head { b"" } else { json.as_bytes() };
+            build_response("200 OK", "application/json", body)
+        }
+        Err(graph_api::GraphError::NotFound) => {
+            let body = b"404 Not Found: Thing does not exist\n";
+            build_response("404 Not Found", "text/plain", body)
+        }
+        Err(_) => {
+            let body = b"500 Internal Server Error\n";
+            build_response("500 Internal Server Error", "text/plain", body)
+        }
+    }
+}
+
+/// GET /graph/<thing_id>/bytespace/<key>
+fn handle_bytespace(_thing_id: u64, key_str: &str, _is_head: bool) -> Vec<u8> {
+    // TODO: Add size limit query parameter support (?size=N or ?range=N-M)
+    // TODO: Add permission check for bytespace access
+    
+    // Parse the key as a bytespace ID
+    let bytespace_id = match key_str.parse::<u64>() {
+        Ok(id) => id,
+        Err(_) => {
+            let body = b"400 Bad Request: Invalid bytespace ID\n";
+            return build_response("400 Bad Request", "text/plain", body);
+        }
+    };
+    
+    // Try to read the bytespace
+    match graph_api::read_bytespace(bytespace_id, 1024 * 1024) {
+        Ok(data) => {
+            // Return the raw bytespace data
+            build_response("200 OK", "application/octet-stream", &data)
+        }
+        Err(graph_api::GraphError::NotFound) => {
+            let body = b"404 Not Found: Bytespace does not exist\n";
+            build_response("404 Not Found", "text/plain", body)
+        }
+        Err(_) => {
+            let body = b"500 Internal Server Error\n";
+            build_response("500 Internal Server Error", "text/plain", body)
+        }
+    }
+}
+
+/// 404 Not Found
+fn handle_404(is_head: bool) -> Vec<u8> {
+    let body: &[u8] = if is_head { &[] } else { b"404 Not Found\n" };
+    build_response("404 Not Found", "text/plain", body)
+}
+
+/// Run in stdio mode: read request from stdin, write response to stdout
+fn run_stdio_mode() -> ! {
+    info!("httpd: Running in stdio mode");
+    
+    // Read request from stdin (simulated via a buffer for now)
+    // In a real implementation, we'd use SYS_STREAM_READ or similar
+    let test_request = "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n";
+    let response = handle_request(test_request);
+    
+    // In stdio mode, we'd write to stdout here
+    // For now, just log it
+    info!("httpd: Response generated: {} bytes", response.len());
+    
+    // Exit after one request in stdio mode
+    stem::syscall::exit(0);
+}
+
+/// Run in server mode (not yet implemented - needs network stack)
+fn run_server_mode(port: u16) -> ! {
+    info!("httpd: Server mode on port {} not yet implemented", port);
+    info!("httpd: Waiting for network stack support...");
+    
+    loop {
+        stem::time::sleep_ms(10000);
+    }
+}
+
+#[stem::main]
+fn main(arg: usize) -> ! {
+    info!("httpd: Starting HTTP server (ThingOS httpd v0.1)");
+    
+    // For now, default to stdio mode
+    // TODO: Parse command line arguments when available
+    // Check arg to determine mode
+    if arg == SERVER_MODE_MAGIC {
+        // Magic value for server mode (to be implemented)
+        run_server_mode(8080);
+    } else {
+        // Default to stdio mode for testing
+        run_stdio_mode();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_handle_health() {
+        let response = handle_health(false);
+        let response_str = core::str::from_utf8(&response).unwrap();
+        assert!(response_str.contains("200 OK"));
+        assert!(response_str.contains("ok"));
+    }
+
+    #[test]
+    fn test_handle_index() {
+        let response = handle_index(false);
+        let response_str = core::str::from_utf8(&response).unwrap();
+        assert!(response_str.contains("200 OK"));
+        assert!(response_str.contains("ThingOS"));
+    }
+
+    #[test]
+    fn test_handle_404() {
+        let response = handle_404(false);
+        let response_str = core::str::from_utf8(&response).unwrap();
+        assert!(response_str.contains("404 Not Found"));
+    }
+
+    #[test]
+    fn test_build_response() {
+        let response = build_response("200 OK", "text/plain", b"test");
+        let response_str = core::str::from_utf8(&response).unwrap();
+        assert!(response_str.contains("HTTP/1.1 200 OK"));
+        assert!(response_str.contains("Content-Length: 4"));
+        assert!(response_str.contains("test"));
+    }
+
+    #[test]
+    fn test_route_health() {
+        let response = route_request(http::Method::Get, "/health", false);
+        let response_str = core::str::from_utf8(&response).unwrap();
+        assert!(response_str.contains("200 OK"));
+    }
+
+    #[test]
+    fn test_route_invalid_method() {
+        let response = route_request(http::Method::Post, "/health", false);
+        let response_str = core::str::from_utf8(&response).unwrap();
+        assert!(response_str.contains("405"));
+    }
+}

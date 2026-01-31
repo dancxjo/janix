@@ -970,7 +970,6 @@ name = "fetchd"
 version = "0.1.0"
 dependencies = [
  "abi",
- "smoltcp",
  "stem",
 ]
 

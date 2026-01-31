@@ -424,6 +424,24 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                     warn!("SPROUT: Failed to spawn netd: {:?}", e);
                 }
             }
+
+            // Spawn fetchd - IP address display UI
+            match stem::syscall::spawn_process("/fetchd", 0) {
+                Ok(pid) => {
+                    info!("SPROUT: Spawned fetchd (PID={})", pid);
+                    let _ = stem::thread::set_priority(pid, 2); // Normal priority
+                    tasks.push(ManagedTask {
+                        name: "/fetchd".to_string(),
+                        kind: TaskKind::App,
+                        module_path: "/fetchd".to_string(),
+                        pid: Some(pid),
+                        restarts: 0,
+                    });
+                }
+                Err(e) => {
+                    warn!("SPROUT: Failed to spawn fetchd: {:?}", e);
+                }
+            }
         } else {
             info!("SPROUT: No NIC device found, skipping network pipeline");
         }

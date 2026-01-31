@@ -4,12 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
+stem = { path = "../../stem", features = ["rt"] }
 abi = { path = "../../abi" }
-smoltcp = { version = "0.11", default-features = false, features = [
-    "proto-ipv4",
-    "socket-udp",
-    "socket-tcp",
-    "medium-ethernet",
-    "alloc",
-] }

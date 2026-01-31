@@ -26,6 +26,9 @@ pub enum ApiRoute<'a> {
     /// PATCH /api/v1/things/{id}
     PatchThing { id: &'a str },
     
+    /// GET /api/v1/things/{id}/props
+    GetThingProps { id: &'a str },
+    
     /// GET /api/v1/things/{id}/bytespaces/{key}
     GetBytespace { thing_id: &'a str, key: &'a str },
     
@@ -84,6 +87,9 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         (Method::Delete, ["things", id]) => Some(ApiRoute::DeleteThing { id }),
         (Method::Patch, ["things", id]) => Some(ApiRoute::PatchThing { id }),
         
+        // /api/v1/things/{id}/props
+        (Method::Get, ["things", id, "props"]) => Some(ApiRoute::GetThingProps { id }),
+        
         // /api/v1/things/{id}/bytespaces/{key}
         (Method::Get, ["things", thing_id, "bytespaces", key]) => {
             Some(ApiRoute::GetBytespace { thing_id, key })
@@ -121,6 +127,7 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         // Method not allowed variants
         (_, ["things"]) |
         (_, ["things", _]) |
+        (_, ["things", _, "props"]) |
         (_, ["things", _, "bytespaces", _]) |
         (_, ["things", _, "bytespaces", _, "meta"]) |
         (_, ["watch"]) |

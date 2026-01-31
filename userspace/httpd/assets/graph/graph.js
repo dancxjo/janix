@@ -262,6 +262,9 @@ const state = {
     movedNodes: new Set(),
     graphData: null,
     lastLayoutMs: 0,
+    // Property watching
+    watchInterval: null,
+    lastProps: {},  // Track previous values for change detection
 };
 
 // =============================================================================
@@ -683,6 +686,9 @@ async function saveLayout() {
 // =============================================================================
 
 function selectNode(node) {
+    // Stop any existing watch
+    stopWatching();
+
     state.selectedNode = node;
 
     $('inspectorEmpty').style.display = 'none';
@@ -696,6 +702,9 @@ function selectNode(node) {
     $('inspectorKind').textContent = data.kindName || data.kind || '-';
     $('inspectorLabel').textContent = data.label || '-';
     updateInspectorPosition(node);
+
+    // Start watching this node's properties
+    startWatching(id);
 }
 
 function updateInspectorPosition(node) {
@@ -704,9 +713,126 @@ function updateInspectorPosition(node) {
 }
 
 function clearSelection() {
+    stopWatching();
     state.selectedNode = null;
     $('inspectorEmpty').style.display = 'block';
     $('inspectorContent').style.display = 'none';
+}
+
+// =============================================================================
+// Property Watching
+// =============================================================================
+
+const WATCH_POLL_INTERVAL_MS = 1000;  // Poll every 1 second
+
+async function fetchProps(thingId) {
+    try {
+        const r = await fetch(`/api/v1/things/${thingId}/props`);
+        if (!r.ok) {
+            return null;
+        }
+        return r.json();
+    } catch (err) {
+        console.warn('[Watch] Fetch failed:', err);
+        return null;
+    }
+}
+
+function startWatching(thingId) {
+    // Clear previous props
+    state.lastProps = {};
+    renderProps(null, true);  // Show loading state
+
+    // Fetch immediately
+    pollProps(thingId, true);
+
+    // Set up interval for subsequent polls
+    state.watchInterval = setInterval(() => {
+        pollProps(thingId, false);
+    }, WATCH_POLL_INTERVAL_MS);
+}
+
+function stopWatching() {
+    if (state.watchInterval) {
+        clearInterval(state.watchInterval);
+        state.watchInterval = null;
+    }
+    state.lastProps = {};
+    // Reset props list to empty state
+    $('propsList').innerHTML = '<div class="props-empty">Select a node to view properties</div>';
+    $('propsLoading').style.display = 'none';
+}
+
+async function pollProps(thingId, isInitial) {
+    if (isInitial) {
+        $('propsLoading').style.display = 'inline';
+    }
+
+    const data = await fetchProps(thingId);
+
+    $('propsLoading').style.display = 'none';
+
+    if (!data) {
+        if (isInitial) {
+            renderProps({ props: {} }, false);
+        }
+        return;
+    }
+
+    renderProps(data, false);
+}
+
+function renderProps(data, isLoading) {
+    const container = $('propsList');
+
+    if (isLoading) {
+        container.innerHTML = '<div class="props-empty">Loading...</div>';
+        return;
+    }
+
+    if (!data || !data.props || Object.keys(data.props).length === 0) {
+        container.innerHTML = '<div class="props-empty">No properties found</div>';
+        return;
+    }
+
+    // Build property list
+    const props = data.props;
+    const propKeys = Object.keys(props).sort();
+
+    let html = '';
+    for (const key of propKeys) {
+        const value = props[key];
+        const prevValue = state.lastProps[key];
+        const isChanged = prevValue !== undefined && prevValue !== value;
+
+        // Format value for display
+        let displayValue = value;
+        if (typeof value === 'number') {
+            // For floats, show fewer decimals
+            if (!Number.isInteger(value)) {
+                displayValue = value.toFixed(2);
+            }
+        } else if (typeof value === 'string' && value.length > 30) {
+            displayValue = value.substring(0, 27) + '...';
+        }
+
+        const changedClass = isChanged ? ' updated' : '';
+        html += `<div class="prop-item">
+            <span class="prop-name">${escapeHtml(key)}</span>
+            <span class="prop-value${changedClass}" title="${escapeHtml(String(value))}">${escapeHtml(String(displayValue))}</span>
+        </div>`;
+    }
+
+    container.innerHTML = html;
+
+    // Update lastProps for next comparison
+    state.lastProps = { ...props };
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
 }
 
 // =============================================================================

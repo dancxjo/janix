@@ -156,6 +156,123 @@ pub fn handle_patch_thing(id_str: &str, _body: &[u8]) -> Vec<u8> {
     ))
 }
 
+/// GET /api/v1/things/{id}/props
+/// Returns all properties of a Thing as JSON
+pub fn handle_get_thing_props(id_str: &str) -> Vec<u8> {
+    let id = match parse_thing_id(id_str) {
+        Ok(id) => id,
+        Err(err) => return error_response(err),
+    };
+    
+    // Check if the thing exists by getting its kind
+    let kind_id = match stem::syscall::graph::get_kind(id) {
+        Ok(k) if k != 0 => k,
+        _ => return error_response(ApiError::not_found(format!("Thing {} not found", id))),
+    };
+    
+    // Well-known property keys to check
+    // These are the most commonly used properties in the system
+    const PROPERTY_KEYS: &[&str] = &[
+        // Names and labels
+        "name",
+        "ui.title",
+        "asset.name",
+        "file.name",
+        // Positions  
+        "layout.pos.x",
+        "layout.pos.y",
+        "ui.x",
+        "ui.y",
+        "ui.width",
+        "ui.height",
+        // Identifiers
+        "ui.text",
+        "asset.hash",
+        "file.path",
+        "file.size",
+        // State
+        "ui.visible",
+        "ui.focused",
+        "ui.order",
+        // Network
+        "net.ip",
+        "net.port",
+        // Device
+        "dev.vendor_id",
+        "dev.device_id",
+        // Time
+        "time.created",
+        "time.modified",
+        "clock.now_text",
+        // Memory/bytespace
+        "mem.size",
+        "mem.phys",
+    ];
+    
+    use alloc::collections::BTreeMap;
+    let mut symbol_cache: BTreeMap<u32, String> = BTreeMap::new();
+    
+    let mut json = JsonBuilder::new();
+    json.start_object();
+    
+    // Thing ID
+    json.key("thing_id");
+    json.number_value(id);
+    
+    // Kind
+    json.key("kind_id");
+    json.number_value(kind_id);
+    
+    // Resolve kind name
+    json.key("kind_name");
+    let kind_name = get_symbol_name_cached(kind_id as u32, &mut symbol_cache);
+    json.string_value(&kind_name);
+    
+    // Properties object
+    json.key("props");
+    json.start_object();
+    
+    for key_name in PROPERTY_KEYS {
+        if let Ok(key_sym) = intern(key_name) {
+            if let Ok(val) = prop_get(id, key_sym) {
+                // Only include non-zero values
+                if val != 0 {
+                    json.key(key_name);
+                    
+                    // Try to decode as various types
+                    // For layout positions, decode as f32
+                    if key_name.contains("pos.") || key_name.ends_with(".x") || key_name.ends_with(".y") {
+                        let f = f32::from_bits(val as u32);
+                        json.float_value(f);
+                    } else if key_name.contains("text") || key_name.contains("name") || key_name.contains("path") {
+                        // Try to resolve as interned string
+                        let mut buf = [0u8; 128];
+                        if let Ok(len) = stem::thing::sys::describe_symbol(val as u32, &mut buf) {
+                            if len > 0 {
+                                if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                                    json.string_value(s);
+                                    continue;
+                                }
+                            }
+                        }
+                        // Fallback: just output the numeric value
+                        json.number_value(val);
+                    } else {
+                        // Default: output as number
+                        json.number_value(val);
+                    }
+                }
+            }
+        }
+    }
+    
+    json.end_object();
+    
+    json.end_object();
+    
+    json_response("200 OK", &json.as_string().unwrap_or_default())
+}
+
 /// GET /api/v1/things/{id}/bytespaces/{key}
 pub fn handle_get_bytespace(thing_id_str: &str, key: &str, req: &Request<'_>) -> Vec<u8> {
     let _thing_id = match parse_thing_id(thing_id_str) {
@@ -714,6 +831,7 @@ pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> Vec<u8> 
         ApiRoute::CreateThing => handle_create_thing(body),
         ApiRoute::DeleteThing { id } => handle_delete_thing(id),
         ApiRoute::PatchThing { id } => handle_patch_thing(id, body),
+        ApiRoute::GetThingProps { id } => handle_get_thing_props(id),
         ApiRoute::GetBytespace { thing_id, key } => handle_get_bytespace(thing_id, key, req),
         ApiRoute::GetBytespaceMetadata { thing_id, key } => handle_bytespace_meta(thing_id, key),
         ApiRoute::PutBytespace { thing_id, key } => handle_put_bytespace(thing_id, key, body),

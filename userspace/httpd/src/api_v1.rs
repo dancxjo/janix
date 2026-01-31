@@ -296,11 +296,27 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
         }
     }
     
-    // BFS traversal
-    let mut visited: alloc::vec::Vec<u64> = alloc::vec::Vec::new();
+    // Pre-intern all symbols we'll need - avoids syscalls in hot loops
+    let layout_x_sym = intern("layout.pos.x").unwrap_or(0);
+    let layout_y_sym = intern("layout.pos.y").unwrap_or(0);
+    let name_syms: [u64; 4] = [
+        intern("name").unwrap_or(0),
+        intern("ui.title").unwrap_or(0),
+        intern("asset.name").unwrap_or(0),
+        intern("file.name").unwrap_or(0),
+    ];
+    
+    // BFS traversal - use BTreeSet for O(log n) membership checks
+    use alloc::collections::BTreeSet;
+    let mut visited_set: BTreeSet<u64> = BTreeSet::new();
+    let mut visited_order: alloc::vec::Vec<u64> = alloc::vec::Vec::new();  // Preserve order for JSON
     let mut edges_out: alloc::vec::Vec<(u64, u64, u64)> = alloc::vec::Vec::new(); // (from, to, rel_sym)
     let mut queue: alloc::collections::VecDeque<(u64, u32)> = alloc::collections::VecDeque::new();
     let mut truncated = false;
+    
+    // Symbol cache for relationship names (avoids redundant describe_symbol calls)
+    use alloc::collections::BTreeMap;
+    let mut symbol_cache: BTreeMap<u32, String> = BTreeMap::new();
     
     // If root is specified, use it. Otherwise, auto-discover from interesting kinds (like Photosynthesis)
     if let Some(root) = root_id {
@@ -322,7 +338,7 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
             if let Ok(count) = find(*kind_name, &mut ids) {
                 for i in 0..count {
                     let id = ids[i].to_u64_lossy();
-                    if !visited.contains(&id) {
+                    if !visited_set.contains(&id) {
                         queue.push_back((id, 0));
                     }
                 }
@@ -331,14 +347,15 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
     }
     
     while let Some((node_id, node_depth)) = queue.pop_front() {
-        if visited.contains(&node_id) {
+        if visited_set.contains(&node_id) {
             continue;
         }
-        if visited.len() >= max_nodes {
+        if visited_order.len() >= max_nodes {
             truncated = true;
             break;
         }
-        visited.push(node_id);
+        visited_set.insert(node_id);
+        visited_order.push(node_id);
         
         // Get outgoing edges if we haven't reached max depth
         if node_depth < depth {
@@ -350,7 +367,7 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
                     let dst = e.to.to_u64_lossy();
                     let rel = e.predicate.to_u64_lossy();
                     edges_out.push((node_id, dst, rel));
-                    if !visited.contains(&dst) {
+                    if !visited_set.contains(&dst) {
                         queue.push_back((dst, node_depth + 1));
                     }
                 }
@@ -373,7 +390,7 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
     // Nodes array
     json.key("nodes");
     json.start_array();
-    for node_id in &visited {
+    for node_id in &visited_order {
         json.start_object();
         json.key("id");
         json.number_value(*node_id);
@@ -383,19 +400,17 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
         json.key("kind");
         json.number_value(kind_id);
         
-        // Resolve kind to string name (like Photosynthesis NodeInfo.kind_full)
-        let kind_name = get_symbol_name(kind_id as u32);
+        // Resolve kind to string name (cached)
+        let kind_name = get_symbol_name_cached(kind_id as u32, &mut symbol_cache);
         json.key("kind_name");
         json.string_value(&kind_name);
         
-        // Label heuristic - try NAME first, then shortened ID
-        let label = get_node_label(*node_id);
+        // Label heuristic - try NAME first, then shortened ID (using pre-interned symbols)
+        let label = get_node_label_fast(*node_id, &name_syms);
         json.key("label");
         json.string_value(&label);
         
         // Layout positions from existing LAYOUT_POS_X/Y (shared with Photosynthesis)
-        let layout_x_sym = intern("layout.pos.x").unwrap_or(0);
-        let layout_y_sym = intern("layout.pos.y").unwrap_or(0);
         if layout_x_sym != 0 && layout_y_sym != 0 {
             if let (Ok(x_bits), Ok(y_bits)) = (prop_get(*node_id, layout_x_sym), prop_get(*node_id, layout_y_sym)) {
                 if x_bits != 0 || y_bits != 0 {
@@ -420,8 +435,8 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
     json.key("edges");
     json.start_array();
     for (from, to, rel_sym) in &edges_out {
-        // Only include edges where both endpoints are in visited set
-        if visited.contains(from) && visited.contains(to) {
+        // Only include edges where both endpoints are in visited set (O(log n) check)
+        if visited_set.contains(from) && visited_set.contains(to) {
             json.start_object();
             
             // Edge ID
@@ -438,8 +453,8 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
             json.key("rel");
             json.number_value(*rel_sym);
             
-            // Resolve relationship name like Photosynthesis edge labels
-            let rel_name = get_symbol_name(*rel_sym as u32);
+            // Resolve relationship name (cached)
+            let rel_name = get_symbol_name_cached(*rel_sym as u32, &mut symbol_cache);
             json.key("rel_name");
             json.string_value(&rel_name);
             
@@ -464,7 +479,7 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
     json.key("depth");
     json.number_value(depth as u64);
     json.key("nodes");
-    json.number_value(visited.len() as u64);
+    json.number_value(visited_order.len() as u64);
     json.key("edges");
     json.number_value(edges_out.len() as u64);
     json.end_object();
@@ -472,6 +487,47 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
     json.end_object();
     
     json_response("200 OK", &json.as_string().unwrap_or_default())
+}
+
+/// Fast label lookup using pre-interned symbols
+fn get_node_label_fast(node_id: u64, name_syms: &[u64; 4]) -> String {
+    for &sym in name_syms {
+        if sym == 0 { continue; }
+        if let Ok(val) = prop_get(node_id, sym) {
+            if val != 0 {
+                // Try to resolve as interned string
+                let mut buf = [0u8; 64];
+                if let Ok(len) = stem::thing::sys::describe_symbol(val as u32, &mut buf) {
+                    if len > 0 {
+                        if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                            return String::from(s);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback: shortened ID
+    let id_str = format!("{}", node_id);
+    if id_str.len() > 8 {
+        format!("...{}", &id_str[id_str.len()-8..])
+    } else {
+        id_str
+    }
+}
+
+/// Cached symbol name resolution
+fn get_symbol_name_cached(sym_id: u32, cache: &mut alloc::collections::BTreeMap<u32, String>) -> String {
+    if sym_id == 0 {
+        return String::from("unknown");
+    }
+    if let Some(cached) = cache.get(&sym_id) {
+        return cached.clone();
+    }
+    let name = get_symbol_name(sym_id);
+    cache.insert(sym_id, name.clone());
+    name
 }
 
 fn get_node_label(node_id: u64) -> String {

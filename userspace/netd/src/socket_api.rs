@@ -276,9 +276,14 @@ impl SocketApi {
         handle: u32,
     ) -> Vec<u8> {
         if let Some(managed) = self.sockets.remove(&handle) {
-            let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
-            socket.close();
-            info!("SOCKET_API: TCP_CLOSE handle={}", handle);
+            // Close the socket first
+            {
+                let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
+                socket.close();
+            }
+            // Remove the socket from the socket set to free up the slot
+            socket_set.remove(managed.handle);
+            info!("SOCKET_API: TCP_CLOSE handle={} (removed from socket set)", handle);
             self.pending_accepts.remove(&handle);
         }
         encode_ok()

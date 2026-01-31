@@ -153,8 +153,8 @@ fn main(_arg: usize) -> ! {
     let mut next_buf = 0usize;
     let mut api_msg_buf = [0u8; 2048];
 
-    // Socket storage for smoltcp - support up to 8 sockets
-    let mut sockets_storage: [SocketStorage; 8] = Default::default();
+    // Socket storage for smoltcp - support up to 16 sockets
+    let mut sockets_storage: [SocketStorage; 16] = Default::default();
     let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
 
     // Main service loop

@@ -90,18 +90,24 @@ fn flush_graph_queue<R: BootRuntime>() {
                 if let Some(thing_id) = graphify::do_create_thread_node(
                     tid, priority, is_user, name.as_deref(), sched_thing
                 ) {
-                    // Store mapping in task_graph (briefly acquire scheduler lock)
-                    let lock = SCHEDULER.lock();
-                    if let Some(ptr) = *lock {
-                        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
-                        sched.task_graph.insert(tid, thing_id);
-                        
-                        // Link to parent if available
-                        if let Some(parent_tid) = parent_tid {
-                            if let Some(&parent_thing) = sched.task_graph.get(&parent_tid) {
-                                graphify::do_link_parent(thing_id, parent_thing, sched_thing);
-                            }
+                    // Store mapping and get parent ThingId (briefly acquire scheduler lock)
+                    let parent_thing = {
+                        let lock = SCHEDULER.lock();
+                        if let Some(ptr) = *lock {
+                            let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+                            sched.task_graph.insert(tid, thing_id);
+                            
+                            // Get parent ThingId if available
+                            parent_tid.and_then(|ptid| sched.task_graph.get(&ptid).copied())
+                        } else {
+                            None
                         }
+                        // lock drops here - BEFORE calling blocking operation
+                    };
+                    
+                    // Link to parent (blocking operation - must not hold scheduler lock)
+                    if let Some(parent_thing) = parent_thing {
+                        graphify::do_link_parent(thing_id, parent_thing, sched_thing);
                     }
                 }
             }

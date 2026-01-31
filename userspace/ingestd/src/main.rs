@@ -31,6 +31,11 @@
 //! - disappears → node can be marked stale (future enhancement)
 //!
 //! The graph is the truth, continuously updated.
+//!
+//! ## Service Contract
+//!
+//! This service implements a formal contract declaring its graph interface.
+//! See `INGESTD_CONTRACT` below for the complete specification.
 
 extern crate alloc;
 mod sniff;
@@ -39,6 +44,7 @@ use alloc::format;
 use alloc::vec;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
+use abi::service_contract::ServiceContract;
 use abi::tree_provider::*;
 use abi::types::{WatchMode, WatchSpec};
 use alloc::collections::{BTreeMap, BTreeSet};
@@ -49,6 +55,37 @@ use sha2::{Digest, Sha256};
 use sniff::sniff;
 use stem::syscall::port::{port_recv, port_send, PortHandle};
 use stem::thing::ThingId;
+
+/// Service Contract Declaration
+///
+/// This contract formalizes ingestd's graph-native interface:
+/// - Watches: Boot modules and content sources (inputs)
+/// - Publishes: Asset nodes (outputs)
+/// - Properties: All asset metadata fields
+/// - Idempotent: Yes - same inputs produce same outputs
+/// - Boot Assumptions: None - we watch for everything!
+const INGESTD_CONTRACT: ServiceContract = ServiceContract {
+    name: "ingestd",
+    watched_kinds: &[
+        kinds::BOOT_MODULE,     // Limine boot modules
+        kinds::CONTENT_SOURCE,  // ISO9660 disks, future sources
+    ],
+    published_kinds: &[
+        kinds::ASSET,           // Canonical asset nodes
+    ],
+    published_properties: &[
+        keys::ASSET_NAME,       // Asset filename/path
+        keys::ASSET_KIND,       // Type: font, svg, image, cursor, raw
+        keys::ASSET_HASH,       // SHA-256 content hash (first 8 bytes)
+        keys::ASSET_SIZE,       // Size in bytes
+        keys::ASSET_BYTESPACE,  // Reference to asset content
+        keys::ASSET_GENERATION, // Change counter (increments on update)
+        keys::ASSET_SOURCE,     // Origin: "boot", "iso9660", etc.
+        keys::ASSET_READY,      // 1 when ready for use
+    ],
+    idempotent: true,
+    boot_assumptions: &[],      // Graph-native: no boot assumptions!
+};
 
 /// Flag to track whether initial Limine boot module scan is complete.
 /// Limine modules are immutable, so we skip reprocessing after initial scan.
@@ -244,6 +281,11 @@ use ttf_parser::Face;
 #[stem::main]
 fn main(_arg: usize) -> ! {
     info!("INGESTD: Starting unified content provider service...");
+    
+    // Validate service contract
+    INGESTD_CONTRACT.validate()
+        .expect("INGESTD: Invalid service contract");
+    info!("INGESTD: Service contract validated - graph-native asset watcher");
 
     // Create deduplication index for O(log n) asset lookups
     let mut asset_index = AssetIndex::new();

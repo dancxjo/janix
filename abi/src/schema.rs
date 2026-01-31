@@ -406,6 +406,24 @@ pub mod keys {
     pub const DIR_NAME: &str = "dir.name";
     /// Directory full path (optional, for quick lookups)
     pub const DIR_PATH: &str = "dir.path";
+    
+    // Service Contract Properties
+    /// Service contract name (service canonical name)
+    pub const SERVICE_CONTRACT_NAME: &str = "service.contract.name";
+    /// Service contract watched kinds (bytespace containing list of kind names)
+    pub const SERVICE_CONTRACT_WATCHED_KINDS: &str = "service.contract.watched_kinds";
+    /// Service contract published kinds (bytespace containing list of kind names)
+    pub const SERVICE_CONTRACT_PUBLISHED_KINDS: &str = "service.contract.published_kinds";
+    /// Service contract published properties (bytespace containing list of property keys)
+    pub const SERVICE_CONTRACT_PUBLISHED_PROPERTIES: &str = "service.contract.published_properties";
+    /// Service contract idempotency flag (1 if idempotent, 0 if stateful)
+    pub const SERVICE_CONTRACT_IDEMPOTENT: &str = "service.contract.idempotent";
+    /// Service contract boot assumptions (bytespace, MUST be empty for graph-native services)
+    pub const SERVICE_CONTRACT_BOOT_ASSUMPTIONS: &str = "service.contract.boot_assumptions";
+    /// Service contract status ("declared", "registered", "active", "error")
+    pub const SERVICE_CONTRACT_STATUS: &str = "service.contract.status";
+    /// Service contract version (monotonic, increments on contract updates)
+    pub const SERVICE_CONTRACT_VERSION: &str = "service.contract.version";
 }
 
 pub mod kinds {
@@ -540,6 +558,12 @@ pub mod kinds {
     pub const CONTENT_DIR: &str = "fs.Directory";
     /// A file in the filesystem graph
     pub const CONTENT_FILE: &str = "fs.File";
+    
+    // Service Contract Kinds
+    /// Service contract node (registered at /sys/services/{name})
+    pub const SERVICE_CONTRACT: &str = "svc.Contract";
+    /// Service instance node (running service)
+    pub const SERVICE_INSTANCE: &str = "svc.Instance";
 }
 
 /// Snapshot semantics and constants for UI presentation surfaces.
@@ -668,6 +692,16 @@ pub mod rels {
     pub const CONTENT_LOCATED_AT: &str = "content.located_at";
     /// Content provided by source
     pub const CONTENT_PROVIDED_BY: &str = "content.provided_by";
+    
+    // Service Contract Relationships
+    /// Service implements contract (Service -> Contract)
+    pub const IMPLEMENTS_CONTRACT: &str = "IMPLEMENTS_CONTRACT";
+    /// Service requires another service (Service -> Service)
+    pub const REQUIRES_SERVICE: &str = "REQUIRES_SERVICE";
+    /// Service watches a node kind (Contract -> Kind)
+    pub const WATCHES_KIND: &str = "WATCHES_KIND";
+    /// Service publishes a node kind (Contract -> Kind)
+    pub const PUBLISHES_KIND: &str = "PUBLISHES_KIND";
 }
 
 // Virtio GPU additions

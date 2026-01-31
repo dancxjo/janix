@@ -20,6 +20,7 @@ pub mod names;
 pub mod query;
 pub mod root;
 pub mod schema;
+pub mod service_contract;
 pub mod symbols;
 pub mod syscall;
 pub mod trace;

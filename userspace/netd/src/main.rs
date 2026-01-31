@@ -140,17 +140,40 @@ fn main(_arg: usize) -> ! {
     let mut socket_api = SocketApi::new();
 
     // Socket buffers for incoming connections (statically allocated)
-    // We support up to 4 concurrent sockets
-    static mut RX_BUF_0: [u8; 8192] = [0; 8192];
-    static mut TX_BUF_0: [u8; 16384] = [0; 16384];
-    static mut RX_BUF_1: [u8; 8192] = [0; 8192];
-    static mut TX_BUF_1: [u8; 16384] = [0; 16384];
-    static mut RX_BUF_2: [u8; 8192] = [0; 8192];
-    static mut TX_BUF_2: [u8; 16384] = [0; 16384];
-    static mut RX_BUF_3: [u8; 8192] = [0; 8192];
-    static mut TX_BUF_3: [u8; 16384] = [0; 16384];
+    // TX buffers sized to handle ~30KB HTTP responses (e.g., graph.js)
+    // We need enough buffers for: multiple listener respawns + concurrent connections
+    
+    // Dedicated buffers for listener sockets (used by TCP_LISTEN and respawned listeners)
+    // Listeners need minimal buffers but we need one per simultaneous listener
+    static mut LISTENER_RX_0: [u8; 4096] = [0; 4096];
+    static mut LISTENER_TX_0: [u8; 4096] = [0; 4096];
+    static mut LISTENER_RX_1: [u8; 4096] = [0; 4096];
+    static mut LISTENER_TX_1: [u8; 4096] = [0; 4096];
+    static mut LISTENER_RX_2: [u8; 4096] = [0; 4096];
+    static mut LISTENER_TX_2: [u8; 4096] = [0; 4096];
+    static mut LISTENER_RX_3: [u8; 4096] = [0; 4096];
+    static mut LISTENER_TX_3: [u8; 4096] = [0; 4096];
+    
+    // Buffers for active connections (larger for HTTP responses)
+    static mut CONN_RX_0: [u8; 8192] = [0; 8192];
+    static mut CONN_TX_0: [u8; 32768] = [0; 32768];
+    static mut CONN_RX_1: [u8; 8192] = [0; 8192];
+    static mut CONN_TX_1: [u8; 32768] = [0; 32768];
+    static mut CONN_RX_2: [u8; 8192] = [0; 8192];
+    static mut CONN_TX_2: [u8; 32768] = [0; 32768];
+    static mut CONN_RX_3: [u8; 8192] = [0; 8192];
+    static mut CONN_TX_3: [u8; 32768] = [0; 32768];
+    static mut CONN_RX_4: [u8; 8192] = [0; 8192];
+    static mut CONN_TX_4: [u8; 32768] = [0; 32768];
+    static mut CONN_RX_5: [u8; 8192] = [0; 8192];
+    static mut CONN_TX_5: [u8; 32768] = [0; 32768];
+    static mut CONN_RX_6: [u8; 8192] = [0; 8192];
+    static mut CONN_TX_6: [u8; 32768] = [0; 32768];
+    static mut CONN_RX_7: [u8; 8192] = [0; 8192];
+    static mut CONN_TX_7: [u8; 32768] = [0; 32768];
 
-    let mut next_buf = 0usize;
+    let mut next_listener_buf = 0usize;
+    let mut next_conn_buf = 0usize;
     let mut api_msg_buf = [0u8; 16384];
 
     // Socket storage for smoltcp - support up to 16 sockets
@@ -179,36 +202,50 @@ fn main(_arg: usize) -> ! {
                 // The rest is the actual socket API message
                 let msg_body = &api_msg_buf[4..len];
                 
-                // Get buffer pair for this request
+                // Determine message type to select appropriate buffer pool
+                let msg_type = if msg_body.len() >= 2 {
+                    u16::from_le_bytes([msg_body[0], msg_body[1]])
+                } else {
+                    0
+                };
+                
+                // Buffer assignment:
+                // - TCP_LISTEN uses LARGE buffers because the listener socket becomes the connection
+                // - TCP_ACCEPT uses SMALL buffers for the respawned listener
+                // - All other operations don't create sockets, so buffer choice doesn't matter
+                let uses_large_buf = msg_type == socket_api::MSG_TCP_LISTEN;
+                
                 let response = unsafe {
-                    match next_buf % 4 {
-                        0 => socket_api.process_message(
-                            &mut socket_set,
-                            msg_body,
-                            &mut RX_BUF_0,
-                            &mut TX_BUF_0,
-                        ),
-                        1 => socket_api.process_message(
-                            &mut socket_set,
-                            msg_body,
-                            &mut RX_BUF_1,
-                            &mut TX_BUF_1,
-                        ),
-                        2 => socket_api.process_message(
-                            &mut socket_set,
-                            msg_body,
-                            &mut RX_BUF_2,
-                            &mut TX_BUF_2,
-                        ),
-                        _ => socket_api.process_message(
-                            &mut socket_set,
-                            msg_body,
-                            &mut RX_BUF_3,
-                            &mut TX_BUF_3,
-                        ),
+                    if uses_large_buf {
+                        // TCP_LISTEN: Use large connection buffers (listener becomes connection)
+                        let (rx, tx) = match next_conn_buf % 8 {
+                            0 => (&mut CONN_RX_0[..], &mut CONN_TX_0[..]),
+                            1 => (&mut CONN_RX_1[..], &mut CONN_TX_1[..]),
+                            2 => (&mut CONN_RX_2[..], &mut CONN_TX_2[..]),
+                            3 => (&mut CONN_RX_3[..], &mut CONN_TX_3[..]),
+                            4 => (&mut CONN_RX_4[..], &mut CONN_TX_4[..]),
+                            5 => (&mut CONN_RX_5[..], &mut CONN_TX_5[..]),
+                            6 => (&mut CONN_RX_6[..], &mut CONN_TX_6[..]),
+                            _ => (&mut CONN_RX_7[..], &mut CONN_TX_7[..]),
+                        };
+                        next_conn_buf = next_conn_buf.wrapping_add(1);
+                        socket_api.process_message(&mut socket_set, msg_body, rx, tx)
+                    } else if msg_type == socket_api::MSG_TCP_ACCEPT {
+                        // TCP_ACCEPT: Use small buffers for respawned listener
+                        let (rx, tx) = match next_listener_buf % 4 {
+                            0 => (&mut LISTENER_RX_0[..], &mut LISTENER_TX_0[..]),
+                            1 => (&mut LISTENER_RX_1[..], &mut LISTENER_TX_1[..]),
+                            2 => (&mut LISTENER_RX_2[..], &mut LISTENER_TX_2[..]),
+                            _ => (&mut LISTENER_RX_3[..], &mut LISTENER_TX_3[..]),
+                        };
+                        next_listener_buf = next_listener_buf.wrapping_add(1);
+                        socket_api.process_message(&mut socket_set, msg_body, rx, tx)
+                    } else {
+                        // Other operations (SEND, RECV, CLOSE) - buffers not used for socket creation
+                        // Just pass any buffer (won't be used)
+                        socket_api.process_message(&mut socket_set, msg_body, &mut CONN_RX_0[..], &mut CONN_TX_0[..])
                     }
                 };
-                next_buf = next_buf.wrapping_add(1);
 
                 // Send response to the client's response port
                 if let Err(e) = port_send(client_response_port, &response) {

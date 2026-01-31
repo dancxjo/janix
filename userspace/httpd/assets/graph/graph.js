@@ -1,6 +1,6 @@
 // Thing-OS Graph Viewer
 // ======================
-// Interactive Cytoscape.js graph visualization with layout persistence
+// Interactive Cytoscape.js graph visualization with ELK.js layout
 
 // =============================================================================
 // Configuration
@@ -12,6 +12,9 @@ const CONFIG = {
     MAX_NODES: 500,
     AUTOSAVE_DEBOUNCE_MS: 750,
     LAYOUT_SPACE: 'graph_ui_v1',
+    // ELK layout defaults
+    DEFAULT_SPACING: 40,
+    DEFAULT_LAYER_SPACING: 60,
 };
 
 // =============================================================================
@@ -19,6 +22,143 @@ const CONFIG = {
 // =============================================================================
 
 const $ = (id) => document.getElementById(id);
+
+// =============================================================================
+// Label Measurement
+// =============================================================================
+
+const labelMeasurer = {
+    svg: null,
+    text: null,
+    cache: new Map(),
+
+    init() {
+        // Create offscreen SVG for text measurement
+        this.svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        this.svg.style.position = 'absolute';
+        this.svg.style.visibility = 'hidden';
+        this.svg.style.pointerEvents = 'none';
+        this.svg.setAttribute('width', '1');
+        this.svg.setAttribute('height', '1');
+
+        this.text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+        this.text.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        this.text.style.fontSize = '13px';
+        this.text.style.fontWeight = '500';
+
+        this.svg.appendChild(this.text);
+        document.body.appendChild(this.svg);
+    },
+
+    measure(label, secondaryLabel = '') {
+        const cacheKey = `${label}|${secondaryLabel}`;
+        if (this.cache.has(cacheKey)) {
+            return this.cache.get(cacheKey);
+        }
+
+        // Measure primary label
+        this.text.textContent = label || '';
+        let bbox = this.text.getBBox();
+        let width = bbox.width;
+        let height = bbox.height;
+
+        // Measure secondary label if present
+        if (secondaryLabel) {
+            this.text.style.fontSize = '11px';
+            this.text.style.fontWeight = '400';
+            this.text.textContent = secondaryLabel;
+            const secBbox = this.text.getBBox();
+            width = Math.max(width, secBbox.width);
+            height += secBbox.height + 4; // Line gap
+            // Reset to primary style
+            this.text.style.fontSize = '13px';
+            this.text.style.fontWeight = '500';
+        }
+
+        // Add padding: 24px horizontal, 16px vertical minimum
+        const result = {
+            width: Math.max(80, Math.ceil(width) + 24),
+            height: Math.max(50, Math.ceil(height) + 16),
+        };
+
+        this.cache.set(cacheKey, result);
+        return result;
+    },
+
+    clearCache() {
+        this.cache.clear();
+    },
+};
+
+// =============================================================================
+// ELK Worker
+// =============================================================================
+
+const elkLayout = {
+    worker: null,
+    pending: new Map(), // requestId -> { resolve, reject }
+    requestCounter: 0,
+    ready: false,
+
+    init() {
+        this.worker = new Worker('/elk-worker.js');
+
+        this.worker.onmessage = (event) => {
+            const data = event.data;
+
+            // Handle ready signal
+            if (data.type === 'ready') {
+                this.ready = true;
+                console.log('[ELK] Worker ready');
+                return;
+            }
+
+            const { requestId, laidOut, error, ms } = data;
+            const pending = this.pending.get(requestId);
+
+            if (!pending) {
+                console.warn('[ELK] Received response for unknown request:', requestId);
+                return;
+            }
+
+            this.pending.delete(requestId);
+
+            if (error) {
+                pending.reject(new Error(error));
+            } else {
+                pending.resolve({ laidOut, ms });
+            }
+        };
+
+        this.worker.onerror = (err) => {
+            console.error('[ELK] Worker error:', err);
+            // Reject all pending requests
+            for (const [id, pending] of this.pending) {
+                pending.reject(new Error('Worker crashed'));
+            }
+            this.pending.clear();
+        };
+    },
+
+    layout(graph, options = {}) {
+        return new Promise((resolve, reject) => {
+            const requestId = `elk-${++this.requestCounter}`;
+
+            this.pending.set(requestId, { resolve, reject });
+
+            this.worker.postMessage({
+                requestId,
+                graph,
+                options,
+            });
+        });
+    },
+
+    // Cancel pending request (for debouncing)
+    cancel(requestId) {
+        this.pending.delete(requestId);
+    },
+};
 
 // =============================================================================
 // API Layer
@@ -65,6 +205,52 @@ const api = {
 };
 
 // =============================================================================
+// ELK Graph Builder
+// =============================================================================
+
+function buildElkGraph(graphData) {
+    const children = [];
+    const edges = [];
+
+    for (const node of graphData.nodes) {
+        const label = node.label || node.id.toString().slice(-8);
+        const kindName = node.kind_name || 'unknown';
+
+        // Measure label size
+        const size = labelMeasurer.measure(label, kindName);
+
+        children.push({
+            id: node.id.toString(),
+            width: size.width,
+            height: size.height,
+            labels: [{ text: label }],
+            // Store original data for rendering
+            _data: {
+                label,
+                kindName,
+                kind: node.kind || 0,
+            },
+        });
+    }
+
+    for (const edge of graphData.edges) {
+        edges.push({
+            id: edge.id,
+            sources: [edge.from.toString()],
+            targets: [edge.to.toString()],
+            // Edge labels are optional
+            labels: edge.rel_name ? [{ text: edge.rel_name }] : [],
+        });
+    }
+
+    return {
+        id: 'root',
+        children,
+        edges,
+    };
+}
+
+// =============================================================================
 // State
 // =============================================================================
 
@@ -75,6 +261,7 @@ const state = {
     saveTimeout: null,
     movedNodes: new Set(),
     graphData: null,
+    lastLayoutMs: 0,
 };
 
 // =============================================================================
@@ -86,13 +273,13 @@ function initCytoscape() {
         container: $('cy'),
         elements: [],
         style: [
-            // Photosynthesis-style nodes: 120x160 rectangular cards
+            // Photosynthesis-style nodes: rectangular cards with dynamic sizing
             {
                 selector: 'node',
                 style: {
-                    // Card dimensions to match Photosynthesis (120x160)
-                    'width': 120,
-                    'height': 160,
+                    // Width/height set per-node from ELK results
+                    'width': 'data(width)',
+                    'height': 'data(height)',
                     'shape': 'roundrectangle',
                     // Light glassmorphism fill (translucent white like native app)
                     'background-color': 'rgba(255, 255, 255, 0.53)',
@@ -111,9 +298,8 @@ function initCytoscape() {
                     'font-size': '13px',
                     'font-family': '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
                     'font-weight': 500,
-                    'text-valign': 'bottom',
+                    'text-valign': 'center',
                     'text-halign': 'center',
-                    'text-margin-y': -20,
                     'text-wrap': 'wrap',
                     'text-max-width': '110px',
                     // Enable line height for multi-line labels
@@ -135,7 +321,7 @@ function initCytoscape() {
                     'border-color': '#4ea8de',
                 },
             },
-            // Edges: gray lines matching Photosynthesis 0xFF888888
+            // Edges: styled for orthogonal routing
             {
                 selector: 'edge',
                 style: {
@@ -143,7 +329,8 @@ function initCytoscape() {
                     'line-color': '#888888',
                     'target-arrow-color': '#888888',
                     'target-arrow-shape': 'triangle',
-                    'curve-style': 'bezier',
+                    'curve-style': 'taxi',  // Orthogonal-style edges
+                    'taxi-direction': 'rightward',
                     'arrow-scale': 1.0,
                     'opacity': 0.8,
                 },
@@ -209,7 +396,7 @@ function initCytoscape() {
 }
 
 // =============================================================================
-// Graph Loading
+// Graph Loading with ELK Layout
 // =============================================================================
 
 async function loadGraph(root, depth) {
@@ -220,79 +407,224 @@ async function loadGraph(root, depth) {
         state.graphData = data;
         state.movedNodes.clear();
 
-        // Determine if we should use preset or auto layout
+        // Check for existing layout positions
         const nodesWithPos = data.nodes.filter(n => n.x !== undefined && n.y !== undefined);
         const usePreset = nodesWithPos.length > data.nodes.length * 0.5;
 
-        // Build Cytoscape elements
-        const elements = [];
-
-        for (const n of data.nodes) {
-            // Format labels like Photosynthesis: prefer name, fallback to shortened ID
-            const primaryLabel = n.label || n.id.toString().slice(-8);
-            // Use kind_name from API (resolved symbol name like "ui.window")
-            const kindName = n.kind_name || 'unknown';
-
-            const elem = {
-                data: {
-                    id: n.id.toString(),
-                    // Primary label (name or shortened ID)
-                    label: primaryLabel,
-                    // Kind name for secondary display
-                    kindName: kindName,
-                    kind: n.kind || 0,
-                    // Only mark as root if a specific root was requested
-                    isRoot: root && root.trim() !== '' && n.id.toString() === root.toString(),
-                },
-            };
-            if (usePreset && n.x !== undefined && n.y !== undefined) {
-                elem.position = { x: n.x, y: n.y };
-            }
-            elements.push(elem);
-        }
-
-        for (const e of data.edges) {
-            elements.push({
-                data: {
-                    id: e.id,
-                    source: e.from.toString(),
-                    target: e.to.toString(),
-                    rel: e.rel || 0,
-                    // Use resolved relationship name for edge label
-                    label: e.rel_name || 'link',
-                },
-            });
-        }
-
-        // Update graph
-        state.cy.elements().remove();
-        state.cy.add(elements);
-
-        // Apply layout
         if (usePreset) {
-            // Already positioned via preset
-            state.cy.fit(undefined, 50);
+            // Use existing positions from graph
+            renderWithPresetLayout(data, root);
         } else {
-            // Use cose layout for automatic positioning
-            state.cy.layout({
-                name: 'cose',
-                animate: false,
-                padding: 50,
-                nodeRepulsion: 8000,
-                idealEdgeLength: 100,
-            }).run();
+            // Use ELK for layout
+            await runElkLayout(data, root);
         }
-
-        // Update stats
-        const truncMsg = data.truncated ? ' (truncated)' : '';
-        $('graphStats').textContent =
-            `${data.nodes.length} nodes, ${data.edges.length} edges, depth ${data.stats?.depth || depth}${truncMsg}`;
-
-        setStatus('Ready', '');
 
     } catch (err) {
         setStatus(`Error: ${err.message}`, '');
         console.error('Load failed:', err);
+    }
+}
+
+async function runElkLayout(data, root) {
+    setStatus('Computing layout...', '');
+
+    try {
+        // Build ELK graph with measured node sizes
+        const elkGraph = buildElkGraph(data);
+
+        // Get layout options from URL
+        const params = new URLSearchParams(window.location.search);
+        const spacing = parseInt(params.get('spacing')) || CONFIG.DEFAULT_SPACING;
+        const layerSpacing = parseInt(params.get('layer_spacing')) || CONFIG.DEFAULT_LAYER_SPACING;
+
+        const options = {
+            'elk.spacing.nodeNode': spacing.toString(),
+            'elk.layered.spacing.nodeNodeBetweenLayers': layerSpacing.toString(),
+        };
+
+        // Run ELK layout in worker
+        const { laidOut, ms } = await elkLayout.layout(elkGraph, options);
+        state.lastLayoutMs = ms;
+
+        // Apply layout to Cytoscape
+        applyElkLayout(laidOut, data, root);
+
+        // Update stats
+        updateStats(data, ms);
+        setStatus('Ready', '');
+
+    } catch (err) {
+        console.error('ELK layout failed:', err);
+        setStatus(`Layout error: ${err.message}`, '');
+        // Fallback to cose layout
+        renderWithCoseLayout(data, root);
+    }
+}
+
+function applyElkLayout(laidOut, data, root) {
+    const elements = [];
+
+    // Build node map from ELK results
+    const nodePositions = new Map();
+    for (const child of laidOut.children || []) {
+        nodePositions.set(child.id, {
+            x: child.x + child.width / 2,  // ELK uses top-left, Cytoscape uses center
+            y: child.y + child.height / 2,
+            width: child.width,
+            height: child.height,
+        });
+    }
+
+    // Create Cytoscape elements with ELK positions
+    for (const n of data.nodes) {
+        const id = n.id.toString();
+        const pos = nodePositions.get(id);
+        const primaryLabel = n.label || n.id.toString().slice(-8);
+        const kindName = n.kind_name || 'unknown';
+
+        elements.push({
+            data: {
+                id,
+                label: primaryLabel,
+                kindName,
+                kind: n.kind || 0,
+                width: pos ? pos.width : 100,
+                height: pos ? pos.height : 60,
+                isRoot: root && root.trim() !== '' && id === root.toString(),
+            },
+            position: pos ? { x: pos.x, y: pos.y } : { x: 0, y: 0 },
+        });
+    }
+
+    for (const e of data.edges) {
+        elements.push({
+            data: {
+                id: e.id,
+                source: e.from.toString(),
+                target: e.to.toString(),
+                rel: e.rel || 0,
+                label: e.rel_name || 'link',
+            },
+        });
+    }
+
+    // Update Cytoscape
+    state.cy.elements().remove();
+    state.cy.add(elements);
+    state.cy.fit(undefined, 50);
+}
+
+function renderWithPresetLayout(data, root) {
+    const elements = [];
+
+    for (const n of data.nodes) {
+        const primaryLabel = n.label || n.id.toString().slice(-8);
+        const kindName = n.kind_name || 'unknown';
+        const size = labelMeasurer.measure(primaryLabel, kindName);
+
+        elements.push({
+            data: {
+                id: n.id.toString(),
+                label: primaryLabel,
+                kindName,
+                kind: n.kind || 0,
+                width: size.width,
+                height: size.height,
+                isRoot: root && root.trim() !== '' && n.id.toString() === root.toString(),
+            },
+            position: { x: n.x, y: n.y },
+        });
+    }
+
+    for (const e of data.edges) {
+        elements.push({
+            data: {
+                id: e.id,
+                source: e.from.toString(),
+                target: e.to.toString(),
+                rel: e.rel || 0,
+                label: e.rel_name || 'link',
+            },
+        });
+    }
+
+    state.cy.elements().remove();
+    state.cy.add(elements);
+    state.cy.fit(undefined, 50);
+
+    updateStats(data, 0);
+    setStatus('Ready (preset)', '');
+}
+
+function renderWithCoseLayout(data, root) {
+    const elements = [];
+
+    for (const n of data.nodes) {
+        const primaryLabel = n.label || n.id.toString().slice(-8);
+        const kindName = n.kind_name || 'unknown';
+        const size = labelMeasurer.measure(primaryLabel, kindName);
+
+        elements.push({
+            data: {
+                id: n.id.toString(),
+                label: primaryLabel,
+                kindName,
+                kind: n.kind || 0,
+                width: size.width,
+                height: size.height,
+                isRoot: root && root.trim() !== '' && n.id.toString() === root.toString(),
+            },
+        });
+    }
+
+    for (const e of data.edges) {
+        elements.push({
+            data: {
+                id: e.id,
+                source: e.from.toString(),
+                target: e.to.toString(),
+                rel: e.rel || 0,
+                label: e.rel_name || 'link',
+            },
+        });
+    }
+
+    state.cy.elements().remove();
+    state.cy.add(elements);
+
+    state.cy.layout({
+        name: 'cose',
+        animate: false,
+        padding: 50,
+        nodeRepulsion: 8000,
+        idealEdgeLength: 100,
+    }).run();
+
+    updateStats(data, 0);
+    setStatus('Ready (fallback)', '');
+}
+
+function updateStats(data, layoutMs) {
+    const truncMsg = data.truncated ? ' (truncated)' : '';
+    const layoutInfo = layoutMs > 0 ? ` | Layout: ${layoutMs}ms` : '';
+    $('graphStats').textContent =
+        `${data.nodes.length} nodes, ${data.edges.length} edges, depth ${data.stats?.depth || CONFIG.DEFAULT_DEPTH}${truncMsg}${layoutInfo}`;
+}
+
+// =============================================================================
+// Re-layout Action
+// =============================================================================
+
+async function relayout() {
+    if (!state.graphData) return;
+
+    const root = $('rootInput').value.trim();
+    await runElkLayout(state.graphData, root);
+}
+
+function fitToScreen() {
+    if (state.cy) {
+        state.cy.fit(undefined, 50);
     }
 }
 
@@ -424,6 +756,12 @@ function bindEvents() {
     // Save button
     $('saveBtn').addEventListener('click', saveLayout);
 
+    // Re-layout button
+    $('relayoutBtn').addEventListener('click', relayout);
+
+    // Fit button
+    $('fitBtn').addEventListener('click', fitToScreen);
+
     // Auto-save toggle
     $('autoSaveToggle').addEventListener('change', (e) => {
         state.autoSave = e.target.checked;
@@ -456,6 +794,13 @@ function bindEvents() {
 // =============================================================================
 
 async function init() {
+    // Initialize label measurer
+    labelMeasurer.init();
+
+    // Initialize ELK worker
+    elkLayout.init();
+
+    // Initialize Cytoscape
     initCytoscape();
     bindEvents();
 

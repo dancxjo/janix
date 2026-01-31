@@ -52,6 +52,52 @@ For testing without network stack. Reads request from stdin, writes response to 
 ### Server Mode (Future)
 Will listen on a TCP port when network stack is available.
 
+## Graph Viewer (ELK Layout)
+
+The interactive graph viewer at `/graph.html` provides visual exploration of the system graph using **ELK.js** (Eclipse Layout Kernel) for automatic node layout.
+
+### Features
+
+- **Automatic Layout**: ELK's layered algorithm places nodes to minimize edge crossings and ensure readable labels
+- **Web Worker**: Layout computation runs in a background worker to prevent UI freezes
+- **Label-Based Sizing**: Node dimensions are computed from label text to avoid overlap
+- **Pan/Zoom**: Mouse wheel zoom and drag panning
+- **Click Navigation**: Double-click a node to navigate to its detail page
+- **Layout Persistence**: Save layout positions back to the graph for sharing with Photosynthesis
+
+### URL Parameters
+
+- `?root=<ThingId>` - Focus on a specific root node (empty = auto-discover)
+- `?depth=<N>` - Traversal depth (default: 3, max: 10)
+- `?spacing=<px>` - Node-to-node spacing (default: 40)
+- `?layer_spacing=<px>` - Layer-to-layer spacing (default: 60)
+
+### UI Controls
+
+| Button | Action |
+|--------|--------|
+| Load | Fetch graph data and compute layout |
+| Re-layout | Re-run ELK layout without refetching |
+| Fit | Fit graph to viewport |
+| Save Layout | Persist node positions to graph |
+
+### Architecture
+
+```
+┌─────────────────┐     ┌─────────────────┐
+│   graph.js      │────▶│  elk-worker.js  │
+│ (Main Thread)   │◀────│ (Web Worker)    │
+└────────┬────────┘     └─────────────────┘
+         │                      │
+         ▼                      ▼
+┌─────────────────┐     ┌─────────────────┐
+│ Cytoscape.js    │     │    ELK.js       │
+│  (Rendering)    │     │   (Layout)      │
+└─────────────────┘     └─────────────────┘
+```
+
+The ELK worker handles layout computation, returning node positions that Cytoscape renders. This separation enables future renderer swaps (e.g., WebGL/Three.js for 3D).
+
 ## Security Constraints
 
 - Maximum bytespace response size: 1MB

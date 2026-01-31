@@ -40,6 +40,10 @@ pub fn get_asset(path: &str) -> Option<Asset> {
             content: include_bytes!("../assets/graph/graph.css"),
             content_type: "text/css; charset=utf-8",
         }),
+        "/elk-worker.js" => Some(Asset {
+            content: include_bytes!("../assets/graph/elk-worker.js"),
+            content_type: "application/javascript; charset=utf-8",
+        }),
         _ => None,
     }
 }

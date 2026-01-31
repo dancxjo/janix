@@ -327,20 +327,50 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     let response = handle_request(request_str);
     info!("httpd: Sending response ({} bytes)", response.len());
 
-    // Send response
+    // Send response in manageable chunks
+    // The TCP TX buffer is 32KB, but we send smaller chunks to allow
+    // smoltcp time to transmit between sends
+    const CHUNK_SIZE: usize = 4096;
     let mut sent = 0;
+    let mut stall_count = 0;
+    const MAX_STALLS: usize = 50;  // 500ms total stall time max
+    
     while sent < response.len() {
-        let chunk = &response[sent..];
+        let remaining = response.len() - sent;
+        let chunk_len = remaining.min(CHUNK_SIZE);
+        let chunk = &response[sent..sent + chunk_len];
+        
         let n = net.tcp_send(conn_handle, chunk);
+        
         if n == 0 {
-            break;
+            // Socket TX buffer full or not ready - wait for netd to drain
+            stall_count += 1;
+            if stall_count >= MAX_STALLS {
+                warn!("httpd: Send stalled after {} bytes (max retries)", sent);
+                break;
+            }
+            stem::time::sleep_ms(10);
+            continue;
         }
+        
         sent += n;
+        stall_count = 0;  // Reset stall counter on successful send
+        
+        // Small delay between chunks to let netd poll and transmit
+        if remaining > CHUNK_SIZE {
+            stem::time::sleep_ms(5);
+        }
     }
+
+    // Wait for TCP stack to transmit buffered data before close
+    // Scale delay based on response size (roughly 10ms per KB, min 20ms, max 500ms)
+    let flush_delay_ms = ((response.len() / 1024) * 10).clamp(20, 500) as u64;
+    info!("httpd: Flushing ({} ms delay)", flush_delay_ms);
+    stem::time::sleep_ms(flush_delay_ms);
 
     // Close connection
     net.tcp_close(conn_handle);
-    info!("httpd: Connection closed");
+    info!("httpd: Connection closed (sent {}/{} bytes)", sent, response.len());
 }
 
 // Magic value to signal stdio mode (for testing)

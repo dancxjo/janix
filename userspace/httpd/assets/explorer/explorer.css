@@ -1,0 +1,23 @@
+:root { color-scheme: dark; }
+body { margin: 0; font-family: system-ui, sans-serif; }
+header { padding: 12px 14px; border-bottom: 1px solid #2b2b2b; display: grid; gap: 10px; }
+.brand .title { font-size: 18px; font-weight: 700; }
+.subtle { color: #a8a8a8; font-size: 12px; }
+.nav { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+input { padding: 8px 10px; border-radius: 10px; border: 1px solid #333; background: #111; color: #eee; min-width: 220px; }
+button, a.pill { padding: 8px 10px; border-radius: 999px; border: 1px solid #333; background: #161616; color: #eee; cursor: pointer; text-decoration: none; }
+button:hover, a.pill:hover { background: #1e1e1e; }
+button.pill.on { border-color: #4c8; }
+main { display: grid; grid-template-columns: 340px 1fr; gap: 12px; padding: 12px; }
+.panel { border: 1px solid #2b2b2b; border-radius: 14px; padding: 12px; background: #0f0f0f; min-height: 70vh; }
+h2 { margin: 0 0 10px 0; font-size: 14px; color: #ddd; }
+.list { display: grid; gap: 6px; }
+a { color: #9ad; }
+a:hover { color: #cde; }
+.table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+.table th, .table td { text-align: left; padding: 6px 6px; border-bottom: 1px solid #232323; vertical-align: top; }
+.code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; white-space: pre-wrap; }
+.raw { margin-top: 12px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 999px; border: 1px solid #333; margin-left: 8px; font-size: 11px; }
+.badge.live { border-color: #4c8; color: #4c8; }
+.badge.stale { border-color: #c44; color: #c44; }

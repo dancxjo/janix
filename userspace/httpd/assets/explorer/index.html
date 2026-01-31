@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>Thing-OS Graph Explorer</title>
+  <link rel="stylesheet" href="/explorer.css"/>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="title">Thing-OS Graph Explorer</div>
+      <div id="apiInfo" class="subtle">Loading API info…</div>
+    </div>
+
+    <form id="navForm" class="nav">
+      <input id="thingInput" placeholder="ThingId…" autocomplete="off"/>
+      <button type="button" id="goThing">Go</button>
+
+      <input id="pathInput" placeholder="/path/like/this…" autocomplete="off"/>
+      <button type="button" id="goPath">Resolve</button>
+
+      <button type="button" id="goHome">Home</button>
+      <button type="button" id="toggleLive" class="pill">LIVE: off</button>
+
+      <a class="pill" href="/3d.html">3D</a>
+    </form>
+  </header>
+
+  <main>
+    <section class="panel" id="left">
+      <h2>Roots</h2>
+      <div id="roots" class="list">Loading…</div>
+
+      <h2>Links</h2>
+      <div id="links" class="list subtle">Navigate to a Thing to see links.</div>
+    </section>
+
+    <section class="panel" id="right">
+      <h2 id="thingTitle">Welcome</h2>
+      <div id="thingMeta" class="subtle">Enter a ThingId or a path.</div>
+
+      <div id="props"></div>
+
+      <details class="raw">
+        <summary>Raw JSON</summary>
+        <pre id="rawJson" class="code">{}</pre>
+      </details>
+    </section>
+  </main>
+
+  <script src="/explorer.js"></script>
+</body>
+</html>

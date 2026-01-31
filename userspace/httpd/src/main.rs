@@ -8,6 +8,7 @@
 extern crate alloc;
 
 mod api_v1;
+mod assets;
 mod error;
 mod graph_api;
 mod http;
@@ -110,9 +111,14 @@ fn route_request(req: &http::Request<'_>, path: &str) -> Vec<u8> {
     // TODO: Authentication - add token/capability check here
     // TODO: Per-route permission gating
     
+    // Check for static assets first
+    if let Some(asset) = assets::get_asset(path) {
+        let body: &[u8] = if is_head { &[] } else { asset.content };
+        return build_response("200 OK", asset.content_type, body);
+    }
+    
     match path {
         "/health" => handle_health(is_head),
-        "/" => handle_index(is_head),
         "/graph" => handle_graph_index(is_head),
         p if p.starts_with("/graph/") => handle_graph_thing(p, is_head),
         _ => handle_404(is_head),
@@ -125,25 +131,7 @@ fn handle_health(is_head: bool) -> Vec<u8> {
     build_response("200 OK", "text/plain", body)
 }
 
-/// GET /
-fn handle_index(is_head: bool) -> Vec<u8> {
-    let html = r#"<!DOCTYPE html>
-<html>
-<head><title>ThingOS HTTP Server</title></head>
-<body>
-<h1>ThingOS HTTP Server</h1>
-<p>Graph-native admin interface</p>
-<ul>
-<li><a href="/health">Health Check</a></li>
-<li><a href="/graph">Graph Index</a></li>
-</ul>
-<p><em>TODO: Authentication and write operations</em></p>
-</body>
-</html>
-"#;
-    let body: &[u8] = if is_head { &[] } else { html.as_bytes() };
-    build_response("200 OK", "text/html; charset=utf-8", body)
-}
+// Note: Index page is now served from embedded assets (assets.rs)
 
 /// GET /graph
 fn handle_graph_index(is_head: bool) -> Vec<u8> {

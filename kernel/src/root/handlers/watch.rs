@@ -6,7 +6,7 @@
 
 use super::HandlerResult;
 use crate::root::graph::{GlobalWatch, Graph, WATCH_SCAN_LIMIT, WatchFilter, commit_matches};
-use crate::root::handlers::watch_payload::filter_watch_payload;
+use crate::root::handlers::watch_payload::{filter_watch_payload, CoalesceEntry};
 use crate::root::query::PreparedStep;
 use crate::root::resources::{ResourceHandle, stream};
 use crate::root::symbols::Interner;
@@ -147,6 +147,8 @@ pub fn handle_watch_next(graph: &mut Graph, msg: &crate::root::RootMsg, id: u64)
 
     // 3. Bounded scan for matching commit
     let mut scanned = 0usize;
+    let mut out_buf = alloc::vec::Vec::new();
+    let mut coalesce_buf = alloc::vec::Vec::<CoalesceEntry>::new();
 
     while scanned < WATCH_SCAN_LIMIT {
         // Cursor ahead of newest: no new commits yet
@@ -183,23 +185,20 @@ pub fn handle_watch_next(graph: &mut Graph, msg: &crate::root::RootMsg, id: u64)
             None => return (-75, 0), // Shouldn't happen, treat as overflow
         };
 
-        let filtered = if filter.matches_all() {
-            None
+        let payload = if filter.matches_all() {
+            data
         } else {
-            match filter_watch_payload(data, &filter) {
-                Ok(bytes) => Some(bytes),
+            match filter_watch_payload(data, &filter, &mut out_buf, &mut coalesce_buf) {
+                Ok(()) => {
+                    if out_buf.is_empty() {
+                        cursor += 1;
+                        scanned += 1;
+                        continue;
+                    }
+                    out_buf.as_slice()
+                }
                 Err(_) => return (-22, 0),
             }
-        };
-
-        let payload = match filtered.as_ref() {
-            Some(bytes) if bytes.is_empty() => {
-                cursor += 1;
-                scanned += 1;
-                continue;
-            }
-            Some(bytes) => bytes.as_slice(),
-            None => data,
         };
 
         if (out_len as usize) < payload.len() {

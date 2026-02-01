@@ -1678,3 +1678,84 @@ async fn check_text_pixels(world: &mut ThingOsWorld, x: u32, y: u32) -> Result<(
 
     Ok(())
 }
+
+// ===== Creative Workflow Steps =====
+
+#[then(regex = r#"^I should see the "Photosynthesis" application window$"#)]
+async fn see_photosynthesis_window(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    // Photosynthesis window: 200, 100, 800x600, BG: #F5F5F0
+    check_window_bg_color(world, 200, 100, "#F5F5F0".to_string()).await
+}
+
+#[then("I should see graph nodes rendered inside the window")]
+async fn see_graph_nodes(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    let screenshot_path = crate::artifacts::global()
+        .lock()
+        .await
+        .screenshot_path("photosynthesis_nodes");
+
+    let png_path = world
+        .take_screenshot(&screenshot_path)
+        .await
+        .map_err(|e| StepError(format!("Failed to take screenshot: {}", e)))?;
+
+    let img = image::open(&png_path)
+        .map_err(|e| StepError(format!("Failed to open screenshot: {}", e)))?;
+    let rgb = img.to_rgb8();
+    let (width, height) = rgb.dimensions();
+
+    // Window area: x=200, y=100, w=800, h=600
+    // We'll scan a sub-region to avoid borders and title bar
+    let scan_x = 220;
+    let scan_y = 150; // Skip title bar
+    let scan_w = 760;
+    let scan_h = 540;
+
+    if scan_x + scan_w > width || scan_y + scan_h > height {
+         return Err(StepError("Window area out of screen bounds".to_string()));
+    }
+
+    let bg_color = [0xF5, 0xF5, 0xF0];
+    let mut non_bg_pixels = 0;
+    let mut dark_pixels = 0;
+
+    for y in scan_y..(scan_y + scan_h) {
+        for x in scan_x..(scan_x + scan_w) {
+            let pixel = rgb.get_pixel(x, y).0;
+
+            // Check if not background (tolerance 10)
+            if !color_close(pixel, bg_color, 10) {
+                non_bg_pixels += 1;
+            }
+
+            // Check if text/border (dark)
+            if pixel[0] < 100 && pixel[1] < 100 && pixel[2] < 100 {
+                dark_pixels += 1;
+            }
+        }
+    }
+
+    eprintln!(
+        "│  │  │      📊 Photosynthesis check: {} non-bg pixels, {} dark pixels",
+        non_bg_pixels, dark_pixels
+    );
+
+    // We expect some nodes. A single node is 120x160.
+    // If there are nodes, we should see significant non-bg pixels.
+    if non_bg_pixels < 1000 {
+        return Err(StepError(format!(
+            "No graph nodes detected inside Photosynthesis window. Found {} non-bg pixels.",
+            non_bg_pixels
+        )));
+    }
+
+    // Also expect some text/borders
+    if dark_pixels < 100 {
+         return Err(StepError(format!(
+            "No node borders or text detected. Found {} dark pixels.",
+            dark_pixels
+        )));
+    }
+
+    Ok(())
+}

@@ -297,4 +297,86 @@ mod tests {
         assert_eq!(r0.val_dst, b1);
         assert_eq!(r1.val_dst, b1);
     }
+
+    #[test]
+    fn test_query_start_op_and_edge_cases() {
+        let mut graph = Graph::new();
+        let kind_a = 1;
+        let kind_empty = 2;
+        let prop_x = 10;
+
+        let n1 = graph.alloc(kind_a);
+        if let Some(node) = graph.get_node_mut(n1) {
+            node.props.insert(prop_x, 100);
+        }
+
+        let _n2 = graph.alloc(kind_a);
+        // n2 has no props
+
+        let mut out = [QueryRow::default(); 10];
+
+        // 1. Test Start(Op 4) with valid node
+        let plan_start_valid = vec![PreparedStep {
+            op: 4,
+            symbol: 0,
+            arg1: n1,
+        }];
+        let count = execute(&graph, &plan_start_valid, &mut out).expect("Start valid failed");
+        assert_eq!(count, 1);
+        assert_eq!(out[0].id, n1);
+        assert_eq!(out[0].kind_rel, kind_a as u64);
+
+        // 2. Test Start(Op 4) with invalid node
+        let plan_start_invalid = vec![PreparedStep {
+            op: 4,
+            symbol: 0,
+            arg1: 999999,
+        }];
+        let count = execute(&graph, &plan_start_invalid, &mut out).expect("Start invalid failed");
+        assert_eq!(count, 0);
+
+        // 3. Test Scan(Op 1) with empty kind
+        let plan_scan_empty = vec![PreparedStep {
+            op: 1,
+            symbol: kind_empty,
+            arg1: 0,
+        }];
+        let count = execute(&graph, &plan_scan_empty, &mut out).expect("Scan empty failed");
+        assert_eq!(count, 0);
+
+        // 4. Test Scan + FilterEq where property is missing on some nodes
+        // n1 has prop_x=100, n2 has no prop_x
+        // Filter for prop_x=100 -> should find n1
+        let plan_filter_hit = vec![
+            PreparedStep {
+                op: 1,
+                symbol: kind_a,
+                arg1: 0,
+            },
+            PreparedStep {
+                op: 2,
+                symbol: prop_x,
+                arg1: 100,
+            },
+        ];
+        let count = execute(&graph, &plan_filter_hit, &mut out).expect("Filter hit failed");
+        assert_eq!(count, 1);
+        assert_eq!(out[0].id, n1);
+
+        // Filter for prop_x=200 -> should find nothing
+        let plan_filter_miss_val = vec![
+            PreparedStep {
+                op: 1,
+                symbol: kind_a,
+                arg1: 0,
+            },
+            PreparedStep {
+                op: 2,
+                symbol: prop_x,
+                arg1: 200,
+            },
+        ];
+        let count = execute(&graph, &plan_filter_miss_val, &mut out).expect("Filter miss val failed");
+        assert_eq!(count, 0);
+    }
 }

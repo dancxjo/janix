@@ -312,7 +312,7 @@ fn main(_arg: usize) -> ! {
     let content_source_pred = intern(kinds::CONTENT_SOURCE).unwrap_or(0);
     let asset_request_pred = intern(kinds::ASSET_REQUEST).unwrap_or(0);
     let proc_task_pred = intern(kinds::PROC_TASK).unwrap_or(0);
-    let content_file_pred = intern(kinds::CONTENT_FILE).unwrap_or(0);
+    let content_file_pred = intern(kinds::FS_FILE).unwrap_or(0);
 
     let mut watch_ids = Vec::new();
     let mut watch_bufs = Vec::new();
@@ -441,7 +441,7 @@ fn process_events(buf: &[u8], _source_id: ThingId, index: &mut AssetIndex) {
                     }
                 }
 
-                if let Ok(k_file) = intern(kinds::CONTENT_FILE) {
+                if let Ok(k_file) = intern(kinds::FS_FILE) {
                     if kind == k_file as u64 {
                         ingest_content_file(subject, index);
                         continue;
@@ -1192,7 +1192,7 @@ fn publish_content_file(
     // This prevents duplicates when both ahci_disk and ingestd publish the same file
     // Buffer size: 512 is reasonable for boot-time assets; larger systems may need pagination
     let mut files = [ThingId::default(); 512];
-    if let Ok(count) = find(kinds::CONTENT_FILE, &mut files) {
+    if let Ok(count) = find(kinds::FS_FILE, &mut files) {
         let name_sym = intern(name).unwrap_or(0) as u64;
         for &file_id in &files[..count] {
             let existing_name = prop_get(file_id, keys::FILE_NAME).unwrap_or(0);
@@ -1214,7 +1214,7 @@ fn publish_content_file(
 
 
     // Create new file node
-    match create_node(kinds::CONTENT_FILE) {
+    match create_node(kinds::FS_FILE) {
         Ok(file_id) => {
             let name_sym = intern(name).unwrap_or(0) as u64;
             let _ = prop_set(file_id, keys::FILE_NAME, name_sym);

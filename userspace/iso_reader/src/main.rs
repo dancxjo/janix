@@ -494,7 +494,7 @@ fn publish_content_file_indexed(
     }
 
     // Create new file node
-    match thingsys::create_node(kinds::CONTENT_FILE) {
+    match thingsys::create_node(kinds::FS_FILE) {
         Ok(file_id) => {
             let _ = thingsys::prop_set(file_id, keys::FILE_NAME, name_sym);
             let _ = thingsys::prop_set(file_id, keys::FILE_SIZE, size as u64);

@@ -582,9 +582,9 @@ pub mod kinds {
     /// A content source that provides files/directories (Limine modules, ISO, etc.)
     pub const CONTENT_SOURCE: &str = "content.Source";
     /// A directory in the filesystem graph
-    pub const CONTENT_DIR: &str = "content.Directory";
+    pub const FS_DIRECTORY: &str = "fs.Directory";
     /// A file in the filesystem graph
-    pub const CONTENT_FILE: &str = "content.File";
+    pub const FS_FILE: &str = "fs.File";
     
     // Service Contract Kinds
     /// Service contract node (registered at /sys/services/{name})

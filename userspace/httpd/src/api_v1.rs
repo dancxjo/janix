@@ -466,7 +466,7 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
             kinds::FONT_FACE,             // Font faces
             // Content/Files
             kinds::CONTENT_SOURCE,        // Content sources
-            kinds::CONTENT_FILE,          // Files
+            kinds::FS_FILE,               // Files
             kinds::BOOT_MODULE,           // Boot modules
             // Services
             "svc.net.Stack",              // Network stack

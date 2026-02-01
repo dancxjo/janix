@@ -10,9 +10,8 @@ use crate::framebuffer::{FramebufferTarget, PixelFormat};
 use crate::font::{SimpleFont, CHAR_WIDTH, CHAR_HEIGHT};
 use crate::parser::parse_log_line;
 
-// Colors (DOS-ish)
-const COLOR_BG: Rgb888 = Rgb888::new(0, 0, 128); // Deep Blue
-const COLOR_BORDER: Rgb888 = Rgb888::WHITE;
+// Colors
+const COLOR_BG: Rgb888 = Rgb888::BLACK;
 const COLOR_TIME: Rgb888 = Rgb888::CYAN;
 const COLOR_SOURCE: Rgb888 = Rgb888::YELLOW;
 const COLOR_MSG_DEFAULT: Rgb888 = Rgb888::WHITE;
@@ -22,75 +21,23 @@ const COLOR_MSG_INFO: Rgb888 = Rgb888::WHITE;
 const COLOR_MSG_DEBUG: Rgb888 = Rgb888::new(128, 128, 128); // Dim Gray
 
 // Layout
-const MARGIN: i32 = 20;
 const TEXT_PAD: i32 = 5;
-
-// Buffer constants
-const MAX_LINES: usize = 32;
-const MAX_LINE_LEN: usize = 128;
-
-struct LogBuffer {
-    lines: [[u8; MAX_LINE_LEN]; MAX_LINES],
-    line_lens: [usize; MAX_LINES],
-    head: usize,
-    count: usize,
-}
-
-impl LogBuffer {
-    fn new() -> Self {
-        Self {
-            lines: [[0; MAX_LINE_LEN]; MAX_LINES],
-            line_lens: [0; MAX_LINES],
-            head: 0,
-            count: 0,
-        }
-    }
-
-    fn add_line(&mut self, line: &str) {
-        let idx = self.head;
-        let bytes = line.as_bytes();
-        let len = bytes.len().min(MAX_LINE_LEN);
-
-        self.lines[idx][..len].copy_from_slice(&bytes[..len]);
-        self.line_lens[idx] = len;
-
-        self.head = (self.head + 1) % MAX_LINES;
-        if self.count < MAX_LINES {
-            self.count += 1;
-        }
-    }
-}
 
 pub struct BootUpDisplay<F: FramebufferTarget> {
     fb: F,
-    buffer: LogBuffer,
+    last_msg_area: Option<Rectangle>,
 }
 
 impl<F: FramebufferTarget> BootUpDisplay<F> {
     pub fn new(mut fb: F) -> Self {
-        // Initial clear and border draw
         {
             let mut drawer = FbDrawer { fb: &mut fb };
-            let info = drawer.fb.info();
-            let width = info.width as i32;
-            let height = info.height as i32;
-
-            // Fill background
             drawer.clear(COLOR_BG).ok();
-
-            // Draw border
-            let rect = Rectangle::new(
-                Point::new(MARGIN, MARGIN),
-                Size::new((width - 2 * MARGIN) as u32, (height - 2 * MARGIN) as u32),
-            );
-
-            let style = PrimitiveStyle::with_stroke(COLOR_BORDER, 2);
-            rect.into_styled(style).draw(&mut drawer).ok();
         }
 
         Self {
             fb,
-            buffer: LogBuffer::new(),
+            last_msg_area: None,
         }
     }
 
@@ -99,169 +46,108 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
     }
 
     pub fn render_log_line(&mut self, line: &str) {
-        self.buffer.add_line(line);
-
         let mut drawer = FbDrawer { fb: &mut self.fb };
+
+        // Clear previous message area
+        if let Some(rect) = self.last_msg_area {
+            rect.into_styled(PrimitiveStyle::with_fill(COLOR_BG))
+                .draw(&mut drawer)
+                .ok();
+        }
+
+        let parts = parse_log_line(line);
         let info = drawer.fb.info();
-        let height = info.height as i32;
-        let area_h = height - 2 * (MARGIN + TEXT_PAD);
-        let max_visible_lines = (area_h as usize) / CHAR_HEIGHT;
+        let center_x = (info.width / 2) as i32;
+        let center_y = (info.height / 2) as i32;
 
-        // Always redraw to update colors based on new active line
-        redraw_console_impl(&self.buffer, &mut drawer, max_visible_lines);
+        let mut lines_to_draw: [Option<(&str, Rgb888)>; 3] = [None; 3];
+        let mut line_count = 0;
+        let mut time_buf = [0u8; 24]; // Buffer for timestamp string
+
+        // 1. Timestamp (Top)
+        if let Some(t) = parts.time {
+             let s = u64_to_str_buf(t, &mut time_buf);
+             lines_to_draw[line_count] = Some((s, COLOR_TIME));
+             line_count += 1;
+        }
+
+        // 2. Source (Middle)
+        if let Some(src) = parts.source {
+            lines_to_draw[line_count] = Some((src, COLOR_SOURCE));
+            line_count += 1;
+        }
+
+        // 3. Message (Bottom)
+        let msg_color = get_msg_color(parts.message);
+        lines_to_draw[line_count] = Some((parts.message, msg_color));
+        line_count += 1;
+
+        let total_h = (line_count as i32 * CHAR_HEIGHT as i32) +
+                      ((line_count as i32 - 1).max(0) * TEXT_PAD);
+
+        let start_y = center_y - (total_h / 2);
+
+        let mut current_y = start_y;
+        let mut bounding_box: Option<Rectangle> = None;
+
+        for i in 0..line_count {
+            if let Some((text, color)) = lines_to_draw[i] {
+                let text_w = text.len() as i32 * CHAR_WIDTH as i32;
+                let start_x = center_x - (text_w / 2);
+
+                draw_string(&mut drawer, start_x, current_y, text, color, COLOR_BG);
+
+                let line_rect = Rectangle::new(
+                    Point::new(start_x, current_y),
+                    Size::new(text_w as u32, CHAR_HEIGHT as u32)
+                );
+
+                bounding_box = match bounding_box {
+                    Some(bb) => {
+                         let min_x = bb.top_left.x.min(line_rect.top_left.x);
+                         let min_y = bb.top_left.y.min(line_rect.top_left.y);
+                         // Accessing top_left and size assuming they are public or available via methods.
+                         // embedded_graphics Rectangle fields are public? Checking docs/memory.
+                         // Rectangle has `top_left` and `size` fields which are public.
+                         // Need to compute max extent.
+                         let bb_right = bb.top_left.x + bb.size.width as i32;
+                         let bb_bottom = bb.top_left.y + bb.size.height as i32;
+                         let lr_right = line_rect.top_left.x + line_rect.size.width as i32;
+                         let lr_bottom = line_rect.top_left.y + line_rect.size.height as i32;
+
+                         let max_x = bb_right.max(lr_right);
+                         let max_y = bb_bottom.max(lr_bottom);
+
+                         Some(Rectangle::new(
+                             Point::new(min_x, min_y),
+                             Size::new((max_x - min_x) as u32, (max_y - min_y) as u32)
+                         ))
+                    },
+                    None => Some(line_rect),
+                };
+
+                current_y += CHAR_HEIGHT as i32 + TEXT_PAD;
+            }
+        }
+
+        self.last_msg_area = bounding_box;
     }
 }
 
-fn redraw_console_impl<F: FramebufferTarget>(buffer: &LogBuffer, drawer: &mut FbDrawer<F>, _max_visible_lines: usize) {
-    let start_x = MARGIN + TEXT_PAD;
-    let start_y = MARGIN + TEXT_PAD;
-
-    let active_idx = (buffer.head + MAX_LINES - 1) % MAX_LINES;
-
-    for i in 0..MAX_LINES {
-        // Skip invalid lines if buffer not full
-        if buffer.count < MAX_LINES && i >= buffer.count {
-            continue;
-        }
-
-        let len = buffer.line_lens[i];
-        let buf = &buffer.lines[i][..len];
-
-        if let Ok(s) = str::from_utf8(buf) {
-             let y = start_y + (i as i32 * CHAR_HEIGHT as i32);
-
-             let dist = (active_idx + MAX_LINES - i) % MAX_LINES;
-
-             draw_log_line(drawer, start_x, y, s, COLOR_BG, dist, MAX_LINES);
-        }
+fn u64_to_str_buf(val: u64, buf: &mut [u8]) -> &str {
+    let mut i = buf.len();
+    let mut n = val;
+    if n == 0 {
+        i -= 1;
+        buf[i] = b'0';
+        return core::str::from_utf8(&buf[i..]).unwrap();
     }
-}
-
-fn dim_color(fg: Rgb888, bg: Rgb888, dist: usize, max: usize) -> Rgb888 {
-    if max <= 1 { return fg; }
-
-    // Scale factor: 0 (at max distance) to max-1 (at 0 distance)
-    // Actually we want dist=0 -> Brightest. dist=max-1 -> Darkest.
-
-    // Using simple linear interpolation.
-    // ratio = (max - 1 - dist) / (max - 1)
-
-    let num = (max - 1).saturating_sub(dist);
-    let den = max - 1;
-
-    // Avoid division by zero if max=1
-    if den == 0 { return fg; }
-
-    let r_fg = fg.r() as i32;
-    let g_fg = fg.g() as i32;
-    let b_fg = fg.b() as i32;
-
-    let r_bg = bg.r() as i32;
-    let g_bg = bg.g() as i32;
-    let b_bg = bg.b() as i32;
-
-    let r = r_bg + (r_fg - r_bg) * num as i32 / den as i32;
-    let g = g_bg + (g_fg - g_bg) * num as i32 / den as i32;
-    let b = b_bg + (b_fg - b_bg) * num as i32 / den as i32;
-
-    Rgb888::new(r as u8, g as u8, b as u8)
-}
-
-fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, line: &str, bg_color: Rgb888, dist: usize, max: usize) {
-    let parts = parse_log_line(line);
-    let mut current_x = x;
-
-    // Time
-    if let Some(_t) = parts.time {
-         if let Some(end) = line.find(']') {
-             let time_str = &line[0..=end];
-             let color = dim_color(COLOR_TIME, bg_color, dist, max);
-             draw_string(drawer, current_x, y, time_str, color, bg_color);
-             current_x += (time_str.len() * CHAR_WIDTH) as i32;
-             draw_string(drawer, current_x, y, " ", bg_color, bg_color); // spacer (bg)
-             current_x += CHAR_WIDTH as i32;
-         }
+    while n > 0 && i > 0 {
+        i -= 1;
+        buf[i] = b'0' + (n % 10) as u8;
+        n /= 10;
     }
-
-    // Source
-    if let Some(_src) = parts.source {
-        let rem = line;
-        if let Some(_time_end) = rem.find(']') {
-             let mut rem_line = line;
-             if parts.time.is_some() {
-                 if let Some(end) = rem_line.find(']') {
-                     let time_part = &rem_line[0..=end];
-                     let color = dim_color(COLOR_TIME, bg_color, dist, max);
-                     draw_string(drawer, current_x, y, time_part, color, bg_color);
-                     current_x += (time_part.len() * CHAR_WIDTH) as i32;
-                     rem_line = &rem_line[end+1..];
-                 }
-             }
-
-             let trimmed_rem = rem_line.trim_start();
-             let spaces_count = rem_line.len() - trimmed_rem.len();
-             if spaces_count > 0 {
-                 let color = dim_color(COLOR_DEFAULT, bg_color, dist, max);
-                 draw_string(drawer, current_x, y, &rem_line[..spaces_count], color, bg_color);
-                 current_x += (spaces_count * CHAR_WIDTH) as i32;
-                 rem_line = trimmed_rem;
-             }
-
-             if parts.source.is_some() && rem_line.starts_with('[') {
-                  if let Some(end) = rem_line.find(']') {
-                      let src_part = &rem_line[0..=end];
-                      let color = dim_color(COLOR_SOURCE, bg_color, dist, max);
-                      draw_string(drawer, current_x, y, src_part, color, bg_color);
-                      current_x += (src_part.len() * CHAR_WIDTH) as i32;
-                      rem_line = &rem_line[end+1..];
-                  }
-             }
-
-             let msg_color = dim_color(get_msg_color(rem_line), bg_color, dist, max);
-             draw_string(drawer, current_x, y, rem_line, msg_color, bg_color);
-             clear_line_end(drawer, current_x + (rem_line.len() * CHAR_WIDTH) as i32, y, bg_color);
-             return;
-        }
-    }
-
-    // Fallback
-    current_x = x;
-    let mut rem_line = line;
-
-    if parts.time.is_some() {
-         if let Some(end) = rem_line.find(']') {
-             let chunk = &rem_line[0..=end];
-             let color = dim_color(COLOR_TIME, bg_color, dist, max);
-             draw_string(drawer, current_x, y, chunk, color, bg_color);
-             current_x += (chunk.len() * CHAR_WIDTH) as i32;
-             rem_line = &rem_line[end+1..];
-         }
-    }
-
-    if parts.source.is_some() {
-         let trimmed = rem_line.trim_start();
-         let n_spaces = rem_line.len() - trimmed.len();
-         if n_spaces > 0 {
-              let color = dim_color(COLOR_DEFAULT, bg_color, dist, max);
-              draw_string(drawer, current_x, y, &rem_line[..n_spaces], color, bg_color);
-              current_x += (n_spaces * CHAR_WIDTH) as i32;
-              rem_line = trimmed;
-         }
-
-         if rem_line.starts_with('[') {
-             if let Some(end) = rem_line.find(']') {
-                 let chunk = &rem_line[0..=end];
-                 let color = dim_color(COLOR_SOURCE, bg_color, dist, max);
-                 draw_string(drawer, current_x, y, chunk, color, bg_color);
-                 current_x += (chunk.len() * CHAR_WIDTH) as i32;
-                 rem_line = &rem_line[end+1..];
-             }
-         }
-    }
-
-    let msg_color = dim_color(get_msg_color(rem_line), bg_color, dist, max);
-    draw_string(drawer, current_x, y, rem_line, msg_color, bg_color);
-    clear_line_end(drawer, current_x + (rem_line.len() * CHAR_WIDTH) as i32, y, bg_color);
+    core::str::from_utf8(&buf[i..]).unwrap()
 }
 
 fn draw_string<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, s: &str, color: Rgb888, bg_color: Rgb888) {
@@ -272,22 +158,6 @@ fn draw_string<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, s
     }
 }
 
-fn clear_line_end<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, bg_color: Rgb888) {
-    let info = drawer.fb.info();
-    let width = info.width as i32;
-    let end_x = width - (MARGIN + TEXT_PAD);
-
-    if x < end_x {
-        let rect = Rectangle::new(
-            Point::new(x, y),
-            Size::new((end_x - x) as u32, CHAR_HEIGHT as u32)
-        );
-        rect.into_styled(PrimitiveStyle::with_fill(bg_color)).draw(drawer).ok();
-    }
-}
-
-const COLOR_DEFAULT: Rgb888 = Rgb888::WHITE;
-
 fn get_msg_color(msg: &str) -> Rgb888 {
     if msg.contains("ERROR") { COLOR_MSG_ERROR }
     else if msg.contains("WARN") { COLOR_MSG_WARN }
@@ -296,7 +166,7 @@ fn get_msg_color(msg: &str) -> Rgb888 {
     else { COLOR_MSG_DEFAULT }
 }
 
-fn draw_char<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, c: u8, color: Rgb888, bg_color: Rgb888) {
+fn draw_char<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, c: u8, color: Rgb888, _bg_color: Rgb888) {
     let glyph = SimpleFont::get_glyph(c);
     for gy in 0..CHAR_HEIGHT {
         let row_byte = glyph[gy];
@@ -305,9 +175,8 @@ fn draw_char<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, c: 
              let py = y + gy as i32;
              if (row_byte >> (7 - gx)) & 1 != 0 {
                  drawer.put_pixel(Point::new(px, py), color);
-             } else {
-                 drawer.put_pixel(Point::new(px, py), bg_color);
              }
+             // Additive drawing: Skip background pixels
         }
     }
 }
@@ -330,15 +199,19 @@ impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
             _ => return, // Unknown
         };
 
-        let min_stride = match info.format {
-            PixelFormat::Bgrx8888 | PixelFormat::Rgbx8888 => info.width * 4,
-            PixelFormat::Rgb888 | PixelFormat::Bgr888 => info.width * 3,
-            _ => info.width,
+        let width_bytes = info.width * bpp; // u32 * u32 -> u32
+        let stride = if info.stride > 0 {
+             if info.stride < width_bytes {
+                 info.stride * bpp
+             } else {
+                 info.stride
+             }
+        } else {
+            width_bytes
         };
-        let stride = if info.stride > 0 { info.stride } else { min_stride };
 
-        let offset = (point.y as usize * stride as usize) + (point.x as usize * bpp);
-        if offset + bpp > buffer.len() {
+        let offset = (point.y as usize * stride as usize) + (point.x as usize * bpp as usize);
+        if offset + (bpp as usize) > buffer.len() {
             return;
         }
 

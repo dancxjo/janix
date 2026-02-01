@@ -1,10 +1,7 @@
-
 use crate::display::BootUpDisplay;
 use crate::framebuffer::{FramebufferTarget, FramebufferInfo, PixelFormat};
 use std::vec;
 use std::vec::Vec;
-use std::format;
-use std::println;
 
 struct MockFb {
     buffer: Vec<u8>,
@@ -54,56 +51,62 @@ impl FramebufferTarget for MockFb {
 }
 
 #[test]
-fn test_console_wrapping_and_dimming() {
-    let fb = MockFb::new(800, 600);
-    // Fill background with BLUE (0, 0, 128)
-    // BootUpDisplay::new calls clear.
+fn test_centered_rendering() {
+    let width = 800;
+    let height = 600;
+    let fb = MockFb::new(width, height);
     let mut display = BootUpDisplay::new(fb);
 
-    // Fill 32 lines. 0..31.
-    for i in 0..32 {
-        display.render_log_line(&format!("Line {}", i));
-    }
-
-    // Add 33rd line. Wraps to index 0.
-    display.render_log_line("Line 32 (Newest)");
+    // Render a line with timestamp, source, message
+    let line = "[12345] [kernel] Hello World";
+    display.render_log_line(line);
 
     let fb = display.into_inner();
 
-    // Helper to get max red in a row (assuming text is White/Red/Yellow, so R component is present).
-    // Background is (0, 0, 128). R=0.
-    let get_row_max_r = |row_idx: usize| -> u8 {
-        let y_start = 25 + (row_idx * 13) as u32;
-        let mut max_r = 0;
-        for y in y_start..y_start+13 {
-            // Check first 200 pixels
-            for x in 25..200 {
-                let (r, _, _) = fb.get_pixel(x, y);
-                if r > max_r { max_r = r; }
+    // Center of screen
+    let cx = width / 2;
+    let cy = height / 2;
+
+    // Check center pixel. Should be colored (part of Source or Message).
+    // Timestamp is top, Source is middle, Message is bottom.
+    // Source should be around cy.
+    // Source color is Yellow (R=255, G=255, B=0).
+
+    // We check a small area around center to find ANY non-black pixel.
+    let mut found_yellow = false;
+    for y in (cy - 10)..(cy + 10) {
+        for x in (cx - 50)..(cx + 50) {
+            let (r, g, b) = fb.get_pixel(x, y);
+            if r > 200 && g > 200 && b < 50 {
+                found_yellow = true;
+                break;
             }
         }
-        max_r
-    };
+    }
+    assert!(found_yellow, "Should have rendered yellow text (Source) near center");
 
-    let r_row0 = get_row_max_r(0);
-    let r_row1 = get_row_max_r(1);
-    let r_row31 = get_row_max_r(31);
+    // Re-create display to test clearing
+    let mut display = BootUpDisplay::new(fb);
 
-    println!("R Row 0: {}", r_row0);
-    println!("R Row 1: {}", r_row1);
-    println!("R Row 31: {}", r_row31);
+    // Render a NEW line with different content/color.
+    // "[99999] [newsrc] [ERROR] New Message" -> Message is RED.
+    display.render_log_line("[99999] [newsrc] [ERROR] New Message");
 
-    // Assertions for NEW behavior.
+    let fb = display.into_inner();
 
-    // Row 0 (Active) should be bright.
-    assert!(r_row0 > 200, "Row 0 (Active) should be bright. Got {}", r_row0);
+    // Check for RED pixel (Message) at bottom.
+    // And verify previous text is gone (or overwritten).
 
-    // Row 1 (Oldest) should be dim.
-    assert!(r_row1 < 100, "Row 1 (Oldest) should be dim. Got {}", r_row1);
-
-    // Row 31 (Recent) should be bright.
-    assert!(r_row31 > 150, "Row 31 (Recent) should be relatively bright. Got {}", r_row31);
-
-    // Row 31 should be slightly dimmer than Row 0.
-    assert!(r_row31 < r_row0, "Row 31 should be slightly dimmer than Row 0. Got {} vs {}", r_row31, r_row0);
+    let mut found_red = false;
+    // Message is below center.
+    for y in cy..(cy + 50) {
+        for x in (cx - 100)..(cx + 100) {
+            let (r, g, b) = fb.get_pixel(x, y);
+            if r > 200 && g < 50 && b < 50 {
+                found_red = true;
+                break;
+            }
+        }
+    }
+    assert!(found_red, "Should have rendered red text (Error Message) below center");
 }

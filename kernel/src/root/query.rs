@@ -379,4 +379,61 @@ mod tests {
         let count = execute(&graph, &plan_filter_miss_val, &mut out).expect("Filter miss val failed");
         assert_eq!(count, 0);
     }
+
+    #[test]
+    fn test_query_chaining_and_limits() {
+        let mut graph = Graph::new();
+        let kind_node = 1;
+        let rel_link = 10;
+
+        let gp = graph.alloc(kind_node);
+        let p = graph.alloc(kind_node);
+        let c = graph.alloc(kind_node);
+
+        // GP -> P -> C
+        graph.link(gp, rel_link, p);
+        graph.link(p, rel_link, c);
+
+        let mut out = [QueryRow::default(); 10];
+
+        // 1. Expand In Chaining: Start(C) -> Expand(In) -> Expand(In)
+        // Should traverse C -> P -> GP
+        let plan_in = vec![
+            PreparedStep { op: 4, symbol: 0, arg1: c }, // Start(C)
+            PreparedStep { op: 3, symbol: rel_link, arg1: 1 }, // Expand In (finds P)
+            PreparedStep { op: 3, symbol: rel_link, arg1: 1 }, // Expand In (finds GP)
+        ];
+        let count = execute(&graph, &plan_in, &mut out).expect("Plan In failed");
+        assert_eq!(count, 1);
+        // Result is edge P -> GP (where id=GP, val_dst=P)
+        assert_eq!(out[0].id, gp);
+        assert_eq!(out[0].val_dst, p);
+
+        // 2. Expand Out Chaining: Start(GP) -> Expand(Out) -> Expand(Out)
+        // Expand Out does NOT update 'id' to destination, so it expands from source again.
+        // Start(GP) -> finds P. Result row: id=GP, dst=P.
+        // Next Expand(Out) -> looks at row.id (GP). Finds P again.
+        // So we expect 1 row: GP -> P.
+        let plan_out = vec![
+            PreparedStep { op: 4, symbol: 0, arg1: gp }, // Start(GP)
+            PreparedStep { op: 3, symbol: rel_link, arg1: 0 }, // Expand Out (finds P)
+            PreparedStep { op: 3, symbol: rel_link, arg1: 0 }, // Expand Out (finds P again from GP)
+        ];
+        let count = execute(&graph, &plan_out, &mut out).expect("Plan Out failed");
+        assert_eq!(count, 1);
+        assert_eq!(out[0].id, gp);
+        assert_eq!(out[0].val_dst, p);
+
+        // 3. Buffer Limits
+        // We have GP->P, P->C.
+        // Scan(Node) -> Expand(Out). Should find 2 edges (GP->P, P->C).
+        // Provide buffer of size 1.
+        let plan_scan = vec![
+            PreparedStep { op: 1, symbol: kind_node, arg1: 0 }, // Scan
+            PreparedStep { op: 3, symbol: rel_link, arg1: 0 }, // Expand Out
+        ];
+        let mut small_out = [QueryRow::default(); 1];
+        let count = execute(&graph, &plan_scan, &mut small_out).expect("Plan Limit failed");
+        assert_eq!(count, 1); // Should be truncated to 1
+    }
 }

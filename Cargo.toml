@@ -51,6 +51,7 @@ members = [
     "userspace/netd",
     "userspace/fetchd",
     "userspace/httpd",
+    "userspace/root_canal",
 ]
 resolver = "2"
 

@@ -1,41 +1,73 @@
 use crate::requests::FRAMEBUFFER_REQUEST;
 use kernel::{FramebufferInfo, PixelFormat};
+use bud::framebuffer::PixelFormat as BudPixelFormat;
 
 #[derive(Clone, Copy)]
 pub struct Framebuffer {
-    pub addr: *mut u32,
+    pub addr: *mut u8,
     pub width: u32,
     pub height: u32,
     pub pitch: u32,
+    pub bpp: u16,
+    pub format: BudPixelFormat,
 }
 
 impl Framebuffer {
     pub fn new(fb: &limine::framebuffer::Framebuffer) -> Self {
+        let bpp = fb.bpp() as u16;
+        let format = match (fb.memory_model(), bpp) {
+            (limine::framebuffer::MemoryModel::RGB, 32) => BudPixelFormat::Bgrx8888,
+            (limine::framebuffer::MemoryModel::RGB, 24) => BudPixelFormat::Bgr888,
+            _ => BudPixelFormat::Unknown,
+        };
+
         Self {
-            addr: fb.addr() as *mut u32,
+            addr: fb.addr() as *mut u8,
             width: fb.width() as u32,
             height: fb.height() as u32,
             pitch: fb.pitch() as u32,
+            bpp,
+            format,
         }
     }
 
     pub fn clear(&mut self, color: u32) {
-        // Convert raw pointer to a slice for safe(r) manipulation
-        // Safety: We assume the framebuffer memory is valid for the byte length reported by Limine.
-        // We only access up to pitch * height.
-        let buffer = unsafe {
-            core::slice::from_raw_parts_mut(
-                self.addr,
-                (self.pitch as usize * self.height as usize) / 4,
-            )
-        };
+        // color is 0xAARRGGBB
+        let r = ((color >> 16) & 0xFF) as u8;
+        let g = ((color >> 8) & 0xFF) as u8;
+        let b = (color & 0xFF) as u8;
+        // let a = ((color >> 24) & 0xFF) as u8;
 
-        for y in 0..self.height as usize {
-            let row_start = (y * self.pitch as usize) / 4;
-            let row_end = row_start + self.width as usize;
+        // For clear, we fill the buffer.
+        // We only support 32bpp and 24bpp BGR(A/X) for now.
 
-            if row_end <= buffer.len() {
-                buffer[row_start..row_end].fill(color);
+        for y in 0..self.height {
+            let row_offset = (y as usize) * (self.pitch as usize);
+
+            // Calculate row length in bytes based on width * bytes_per_pixel
+            // Note: pitch might be larger than width * bpp (padding)
+            let row_bytes = self.width as usize * (self.bpp as usize / 8);
+
+            let row_slice = unsafe {
+                core::slice::from_raw_parts_mut(
+                    self.addr.add(row_offset),
+                    row_bytes
+                )
+            };
+
+            if self.bpp == 32 {
+                for chunk in row_slice.chunks_exact_mut(4) {
+                    chunk[0] = b;
+                    chunk[1] = g;
+                    chunk[2] = r;
+                    chunk[3] = 0xFF; // Fill alpha/reserved with opaque
+                }
+            } else if self.bpp == 24 {
+                for chunk in row_slice.chunks_exact_mut(3) {
+                    chunk[0] = b;
+                    chunk[1] = g;
+                    chunk[2] = r;
+                }
             }
         }
     }
@@ -43,28 +75,19 @@ impl Framebuffer {
 
 impl bud::framebuffer::FramebufferTarget for Framebuffer {
     fn info(&self) -> bud::framebuffer::FramebufferInfo {
-        // Ensure stride is at least width * 4 (32bpp)
-        // This handles cases where bootloader might report 0 or invalid pitch
-        let min_stride = self.width * 4;
-        let stride = if self.pitch > 0 {
-            self.pitch
-        } else {
-            min_stride
-        };
-
         bud::framebuffer::FramebufferInfo {
             width: self.width,
             height: self.height,
-            stride,
-            format: bud::framebuffer::PixelFormat::Bgrx8888,
+            stride: self.pitch,
+            format: self.format,
         }
     }
 
     fn buffer_mut(&mut self) -> &mut [u8] {
         unsafe {
             core::slice::from_raw_parts_mut(
-                self.addr as *mut u8,
-                (self.pitch as usize * self.height as usize),
+                self.addr,
+                self.pitch as usize * self.height as usize,
             )
         }
     }

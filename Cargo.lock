@@ -2239,6 +2239,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "root_canal"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "root_watch_tester"
 version = "0.1.0"
 dependencies = [

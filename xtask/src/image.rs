@@ -37,6 +37,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "root_canal",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "rtc_cmos",
             is_init: false,
             boot_module: true,
@@ -502,7 +508,7 @@ fn build_userspace_app_with_features(
 
     let mut cmd = cmd!(
         sh,
-        "cargo build --target {target} --profile {profile} -p {name} -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem"
+        "cargo build --target {target} --profile {profile} -p {name} -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -Z json-target-spec"
     )
     .env("RUSTFLAGS", "-Awarnings");
 

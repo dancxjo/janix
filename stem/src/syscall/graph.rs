@@ -21,6 +21,44 @@ pub fn intern(name: &str) -> Result<u64, Errno> {
     }
 }
 
+pub fn describe_symbol(id: u32, out_buf: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ROOT_DESCRIBE_SYMBOL,
+            id as usize,
+            out_buf.as_mut_ptr() as usize,
+            out_buf.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    if ret < 0 {
+        errno(ret).map(|_| 0)
+    } else {
+        Ok(ret as usize)
+    }
+}
+
+pub fn get_edges(node: u64, out_buf: &mut [u64]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ROOT_GET_EDGES,
+            node as usize,
+            out_buf.as_mut_ptr() as usize,
+            out_buf.len() * 8,
+            0,
+            0,
+            0,
+        )
+    };
+    if ret < 0 {
+        errno(ret).map(|_| 0)
+    } else {
+        Ok(ret as usize)
+    }
+}
+
 pub fn create_node(kind: u64) -> Result<u64, Errno> {
     let ret = unsafe { raw_syscall6(SYS_ROOT_CREATE_NODE, kind as usize, 0, 0, 0, 0, 0) };
     if ret < 0 {

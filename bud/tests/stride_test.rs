@@ -29,10 +29,6 @@ impl FramebufferTarget for MockFb {
     }
 
     fn clear(&mut self, color: u32) {
-        // Handle BGRX color packing
-        // color is u32 (0xAARRGGBB in LE? No, depends on caller)
-        // bud passes: u32::from_le_bytes([b, g, r, 0])
-        // So color is 0x00RRGGBB.
         let bytes = color.to_le_bytes(); // [B, G, R, 0]
 
         let mut buf = self.buffer.borrow_mut();
@@ -49,7 +45,6 @@ impl FramebufferTarget for MockFb {
 fn test_render_log_line_respects_stride() {
     let width = 200;
     let height = 100;
-    let bpp = 4;
     // Stride is larger than width * bpp.
     // width * 4 = 800. Stride = 900.
     let stride = 900;
@@ -66,28 +61,39 @@ fn test_render_log_line_respects_stride() {
 
     let mut display = BootUpDisplay::new(fb);
 
-    // Draw a log line
+    // Draw a log line "Test"
     display.render_log_line("Test");
 
-    // "Test" starts at MARGIN + TEXT_PAD.
-    // MARGIN=20, TEXT_PAD=5. Start X = 25.
-    // Start Y = 25.
+    // Calculation of position:
+    // Center X = 100. Center Y = 50.
+    // Text "Test": 4 chars * 8 = 32 width.
+    // Start X = 100 - 16 = 84.
+    // Lines = 1. Height = 13.
+    // Start Y = 50 - 6 = 44.
 
-    // The first character 'T' is at (25, 25).
-    // Row 1 (gy=1) of 'T' has 0x7E.
-    // x = 26, y = 26.
+    // Character 'T' is at (84, 44).
+    // b'T' => [0x00, 0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00]
+    // Row 1 is 0x7E (01111110).
+    // x offsets: 1 to 6.
+    // x = 84 + 1 = 85.
+    // y = 44 + 1 = 45.
 
-    // Offset should be: y * stride + x * bpp
-    // 26 * 900 + 26 * 4 = 23400 + 104 = 23504.
+    let target_x = 85;
+    let target_y = 45;
+    let bpp = 4;
+
+    // Offset = y * stride + x * bpp
+    let offset = (target_y as usize * stride as usize) + (target_x as usize * bpp);
 
     // Wrong offset (width based):
-    // 26 * 800 + 26 * 4 = 20800 + 104 = 20904.
+    let wrong_stride = width * 4;
+    let wrong_offset = (target_y as usize * wrong_stride as usize) + (target_x as usize * bpp);
 
     let buf = buffer.borrow();
 
-    let b = buf[23504];
-    let g = buf[23504 + 1];
-    let r = buf[23504 + 2];
+    let b = buf[offset];
+    let g = buf[offset + 1];
+    let r = buf[offset + 2];
 
     // Text is White (255, 255, 255).
     assert_eq!(b, 255, "Blue channel should be 255 at correct stride");
@@ -95,14 +101,13 @@ fn test_render_log_line_respects_stride() {
     assert_eq!(r, 255, "Red channel should be 255 at correct stride");
 
     // Check pixel at WRONG stride.
-    // It should be background color (Blue: 128, 0, 0).
-    // Note: MockFb.clear implements filling with Blue.
+    // It should be background color (Black: 0, 0, 0).
 
-    let b_wrong = buf[20904];
-    let g_wrong = buf[20904 + 1];
-    let r_wrong = buf[20904 + 2];
+    let b_wrong = buf[wrong_offset];
+    let g_wrong = buf[wrong_offset + 1];
+    let r_wrong = buf[wrong_offset + 2];
 
-    assert_eq!(b_wrong, 128, "Blue channel should be 128 (BG) at wrong stride");
+    assert_eq!(b_wrong, 0, "Blue channel should be 0 (BG) at wrong stride");
     assert_eq!(g_wrong, 0, "Green channel should be 0 (BG) at wrong stride");
     assert_eq!(r_wrong, 0, "Red channel should be 0 (BG) at wrong stride");
 }
@@ -127,27 +132,33 @@ fn test_stride_zero_fallback() {
     // Draw text "A".
     display.render_log_line("A");
 
-    // If stride was 0, y*stride would be 0.
-    // Text at y=25 would be drawn at offset 0 + x*4.
-    // x starts at 25.
-    // So it would overwrite the first line.
+    // Center X = 50, Center Y = 50.
+    // "A" width 8. Start X = 46.
+    // Height 13. Start Y = 44.
 
-    // If stride is corrected (400), it draws at y=25 -> offset 25*400 = 10000.
+    // 'A' row 3 (idx 3, 4th byte).
+    // b'A' => [0x00, 0x18, 0x3C, 0x66, ...]
+    // Row 2 is 0x3C (00111100).
+    // x offsets: 2,3,4,5.
+    // x = 46 + 2 = 48.
+    // y = 44 + 2 = 46.
+
+    let target_x = 48;
+    let target_y = 46;
+    let bpp = 4;
+    let corrected_stride = width * 4;
+
+    let offset = (target_y as usize * corrected_stride as usize) + (target_x as usize * bpp);
+
+    // Zero-stride offset: y*0 + x*4
+    let zero_offset = target_x as usize * bpp;
 
     let buf = buffer.borrow();
 
-    // 'A' at x=25, y=25.
-    // 'A' row 3 (y=28) is 0x3C (00111100).
-    // x = 25+2 = 27.
-
-    // Correct offset: 28 * 400 + 27 * 4 = 11200 + 108 = 11308.
-
-    // Zero-stride offset: 28 * 0 + 27 * 4 = 108.
-
-    let b_correct = buf[11308];
+    let b_correct = buf[offset];
     assert_eq!(b_correct, 255, "Should have text pixel at corrected stride");
 
-    let b_zero = buf[108];
+    let b_zero = buf[zero_offset];
     // If stride was 0, text would be here.
     assert_ne!(b_zero, 255, "Should NOT have text pixel at zero stride offset");
 }

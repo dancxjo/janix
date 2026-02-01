@@ -19,8 +19,8 @@ fn test_content_source_states() {
 fn test_content_kinds_exist() {
     // Ensure content provider kinds are defined
     assert_eq!(kinds::CONTENT_SOURCE, "content.Source");
-    assert_eq!(kinds::CONTENT_DIR, "content.Directory");
-    assert_eq!(kinds::CONTENT_FILE, "content.File");
+    assert_eq!(kinds::CONTENT_DIR, "fs.Directory");
+    assert_eq!(kinds::CONTENT_FILE, "fs.File");
 }
 
 #[test]

@@ -52,6 +52,7 @@ members = [
     "userspace/fetchd",
     "userspace/httpd",
     "userspace/root_canal",
+    "bud",
 ]
 resolver = "2"
 

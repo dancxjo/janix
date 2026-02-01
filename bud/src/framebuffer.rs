@@ -18,4 +18,5 @@ pub struct FramebufferInfo {
 pub trait FramebufferTarget {
     fn info(&self) -> FramebufferInfo;
     fn buffer_mut(&mut self) -> &mut [u8];
+    fn clear(&mut self, color: u32);
 }

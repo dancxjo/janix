@@ -59,6 +59,10 @@ impl bud::framebuffer::FramebufferTarget for Framebuffer {
             )
         }
     }
+
+    fn clear(&mut self, color: u32) {
+        self.clear(color);
+    }
 }
 
 pub fn get_info() -> Option<FramebufferInfo> {

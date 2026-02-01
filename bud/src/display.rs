@@ -364,6 +364,18 @@ impl<'a, F: FramebufferTarget> DrawTarget for FbDrawer<'a, F> {
         }
         Ok(())
     }
+
+    fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
+        let info = self.fb.info();
+        let c = match info.format {
+            PixelFormat::Bgrx8888 => u32::from_le_bytes([color.b(), color.g(), color.r(), 0]),
+            PixelFormat::Rgbx8888 => u32::from_le_bytes([color.r(), color.g(), color.b(), 0]),
+            // Fallback for others (assuming 32-bit for now as clear takes u32)
+            _ => u32::from_le_bytes([color.b(), color.g(), color.r(), 0]),
+        };
+        self.fb.clear(c);
+        Ok(())
+    }
 }
 
 impl<'a, F: FramebufferTarget> OriginDimensions for FbDrawer<'a, F> {

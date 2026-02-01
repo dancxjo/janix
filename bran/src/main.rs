@@ -43,7 +43,7 @@ fn indicate_progress() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
             let display = Framebuffer::new(&framebuffer);
             // Initialize framebuffer console for boot logging
-            console::init(&display);
+            console::init(display);
             // Register console disable callback for when compositor takes over
             kernel::syscall::handlers::register_console_disable(console::disable);
         }

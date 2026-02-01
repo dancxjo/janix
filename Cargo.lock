@@ -370,6 +370,7 @@ name = "bran"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "bud",
  "embedded-graphics",
  "kernel",
  "limine",
@@ -392,6 +393,14 @@ checksum = "63044e1ae8e69f3b5a92c736ca6269b8d12fa7efe39bf34ddb06d102cf0e2cab"
 dependencies = [
  "memchr",
  "serde",
+]
+
+[[package]]
+name = "bud"
+version = "0.1.0"
+dependencies = [
+ "embedded-graphics",
+ "embedded-graphics-core",
 ]
 
 [[package]]

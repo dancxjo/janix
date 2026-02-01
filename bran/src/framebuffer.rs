@@ -1,6 +1,7 @@
 use crate::requests::FRAMEBUFFER_REQUEST;
 use kernel::{FramebufferInfo, PixelFormat};
 
+#[derive(Clone, Copy)]
 pub struct Framebuffer {
     pub addr: *mut u32,
     pub width: u32,
@@ -36,6 +37,26 @@ impl Framebuffer {
             if row_end <= buffer.len() {
                 buffer[row_start..row_end].fill(color);
             }
+        }
+    }
+}
+
+impl bud::framebuffer::FramebufferTarget for Framebuffer {
+    fn info(&self) -> bud::framebuffer::FramebufferInfo {
+        bud::framebuffer::FramebufferInfo {
+            width: self.width,
+            height: self.height,
+            stride: self.pitch,
+            format: bud::framebuffer::PixelFormat::Bgrx8888,
+        }
+    }
+
+    fn buffer_mut(&mut self) -> &mut [u8] {
+        unsafe {
+            core::slice::from_raw_parts_mut(
+                self.addr as *mut u8,
+                (self.pitch as usize * self.height as usize),
+            )
         }
     }
 }

@@ -94,6 +94,10 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
         }
     }
 
+    pub fn into_inner(self) -> F {
+        self.fb
+    }
+
     pub fn render_log_line(&mut self, line: &str) {
         self.buffer.add_line(line);
 
@@ -103,50 +107,67 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
         let area_h = height - 2 * (MARGIN + TEXT_PAD);
         let max_visible_lines = (area_h as usize) / CHAR_HEIGHT;
 
-        // Optimization: If appending (scrolling not needed yet), just draw the new line
-        if self.buffer.count <= max_visible_lines && self.buffer.count > 0 {
-             let start_x = MARGIN + TEXT_PAD;
-             let start_y = MARGIN + TEXT_PAD;
-             let line_idx = self.buffer.count - 1; // 0-indexed position on screen
-             let y = start_y + (line_idx as i32 * CHAR_HEIGHT as i32);
-
-             // The added line is at previous head
-             let added_idx = (self.buffer.head + MAX_LINES - 1) % MAX_LINES;
-             let added_len = self.buffer.line_lens[added_idx];
-             if let Ok(s) = str::from_utf8(&self.buffer.lines[added_idx][..added_len]) {
-                 draw_log_line(&mut drawer, start_x, y, s, COLOR_BG);
-             }
-        } else {
-             // Scrolling needed, redraw all
-             redraw_console_impl(&self.buffer, &mut drawer, max_visible_lines);
-        }
+        // Always redraw to update colors based on new active line
+        redraw_console_impl(&self.buffer, &mut drawer, max_visible_lines);
     }
 }
 
-fn redraw_console_impl<F: FramebufferTarget>(buffer: &LogBuffer, drawer: &mut FbDrawer<F>, max_visible_lines: usize) {
+fn redraw_console_impl<F: FramebufferTarget>(buffer: &LogBuffer, drawer: &mut FbDrawer<F>, _max_visible_lines: usize) {
     let start_x = MARGIN + TEXT_PAD;
     let start_y = MARGIN + TEXT_PAD;
 
-    let lines_to_show = buffer.count.min(max_visible_lines);
-    if lines_to_show == 0 {
-        return;
-    }
+    let active_idx = (buffer.head + MAX_LINES - 1) % MAX_LINES;
 
-    let first_idx = (buffer.head + MAX_LINES - lines_to_show) % MAX_LINES;
+    for i in 0..MAX_LINES {
+        // Skip invalid lines if buffer not full
+        if buffer.count < MAX_LINES && i >= buffer.count {
+            continue;
+        }
 
-    for i in 0..lines_to_show {
-        let idx = (first_idx + i) % MAX_LINES;
-        let len = buffer.line_lens[idx];
-        let buf = &buffer.lines[idx][..len];
+        let len = buffer.line_lens[i];
+        let buf = &buffer.lines[i][..len];
 
         if let Ok(s) = str::from_utf8(buf) {
              let y = start_y + (i as i32 * CHAR_HEIGHT as i32);
-             draw_log_line(drawer, start_x, y, s, COLOR_BG);
+
+             let dist = (active_idx + MAX_LINES - i) % MAX_LINES;
+
+             draw_log_line(drawer, start_x, y, s, COLOR_BG, dist, MAX_LINES);
         }
     }
 }
 
-fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, line: &str, bg_color: Rgb888) {
+fn dim_color(fg: Rgb888, bg: Rgb888, dist: usize, max: usize) -> Rgb888 {
+    if max <= 1 { return fg; }
+
+    // Scale factor: 0 (at max distance) to max-1 (at 0 distance)
+    // Actually we want dist=0 -> Brightest. dist=max-1 -> Darkest.
+
+    // Using simple linear interpolation.
+    // ratio = (max - 1 - dist) / (max - 1)
+
+    let num = (max - 1).saturating_sub(dist);
+    let den = max - 1;
+
+    // Avoid division by zero if max=1
+    if den == 0 { return fg; }
+
+    let r_fg = fg.r() as i32;
+    let g_fg = fg.g() as i32;
+    let b_fg = fg.b() as i32;
+
+    let r_bg = bg.r() as i32;
+    let g_bg = bg.g() as i32;
+    let b_bg = bg.b() as i32;
+
+    let r = r_bg + (r_fg - r_bg) * num as i32 / den as i32;
+    let g = g_bg + (g_fg - g_bg) * num as i32 / den as i32;
+    let b = b_bg + (b_fg - b_bg) * num as i32 / den as i32;
+
+    Rgb888::new(r as u8, g as u8, b as u8)
+}
+
+fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, line: &str, bg_color: Rgb888, dist: usize, max: usize) {
     let parts = parse_log_line(line);
     let mut current_x = x;
 
@@ -154,9 +175,10 @@ fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32,
     if let Some(_t) = parts.time {
          if let Some(end) = line.find(']') {
              let time_str = &line[0..=end];
-             draw_string(drawer, current_x, y, time_str, COLOR_TIME, bg_color);
+             let color = dim_color(COLOR_TIME, bg_color, dist, max);
+             draw_string(drawer, current_x, y, time_str, color, bg_color);
              current_x += (time_str.len() * CHAR_WIDTH) as i32;
-             draw_string(drawer, current_x, y, " ", COLOR_BG, bg_color); // spacer
+             draw_string(drawer, current_x, y, " ", bg_color, bg_color); // spacer (bg)
              current_x += CHAR_WIDTH as i32;
          }
     }
@@ -169,7 +191,8 @@ fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32,
              if parts.time.is_some() {
                  if let Some(end) = rem_line.find(']') {
                      let time_part = &rem_line[0..=end];
-                     draw_string(drawer, current_x, y, time_part, COLOR_TIME, bg_color);
+                     let color = dim_color(COLOR_TIME, bg_color, dist, max);
+                     draw_string(drawer, current_x, y, time_part, color, bg_color);
                      current_x += (time_part.len() * CHAR_WIDTH) as i32;
                      rem_line = &rem_line[end+1..];
                  }
@@ -178,7 +201,8 @@ fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32,
              let trimmed_rem = rem_line.trim_start();
              let spaces_count = rem_line.len() - trimmed_rem.len();
              if spaces_count > 0 {
-                 draw_string(drawer, current_x, y, &rem_line[..spaces_count], COLOR_DEFAULT, bg_color);
+                 let color = dim_color(COLOR_DEFAULT, bg_color, dist, max);
+                 draw_string(drawer, current_x, y, &rem_line[..spaces_count], color, bg_color);
                  current_x += (spaces_count * CHAR_WIDTH) as i32;
                  rem_line = trimmed_rem;
              }
@@ -186,13 +210,14 @@ fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32,
              if parts.source.is_some() && rem_line.starts_with('[') {
                   if let Some(end) = rem_line.find(']') {
                       let src_part = &rem_line[0..=end];
-                      draw_string(drawer, current_x, y, src_part, COLOR_SOURCE, bg_color);
+                      let color = dim_color(COLOR_SOURCE, bg_color, dist, max);
+                      draw_string(drawer, current_x, y, src_part, color, bg_color);
                       current_x += (src_part.len() * CHAR_WIDTH) as i32;
                       rem_line = &rem_line[end+1..];
                   }
              }
 
-             let msg_color = get_msg_color(rem_line);
+             let msg_color = dim_color(get_msg_color(rem_line), bg_color, dist, max);
              draw_string(drawer, current_x, y, rem_line, msg_color, bg_color);
              clear_line_end(drawer, current_x + (rem_line.len() * CHAR_WIDTH) as i32, y, bg_color);
              return;
@@ -206,7 +231,8 @@ fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32,
     if parts.time.is_some() {
          if let Some(end) = rem_line.find(']') {
              let chunk = &rem_line[0..=end];
-             draw_string(drawer, current_x, y, chunk, COLOR_TIME, bg_color);
+             let color = dim_color(COLOR_TIME, bg_color, dist, max);
+             draw_string(drawer, current_x, y, chunk, color, bg_color);
              current_x += (chunk.len() * CHAR_WIDTH) as i32;
              rem_line = &rem_line[end+1..];
          }
@@ -216,7 +242,8 @@ fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32,
          let trimmed = rem_line.trim_start();
          let n_spaces = rem_line.len() - trimmed.len();
          if n_spaces > 0 {
-              draw_string(drawer, current_x, y, &rem_line[..n_spaces], COLOR_DEFAULT, bg_color);
+              let color = dim_color(COLOR_DEFAULT, bg_color, dist, max);
+              draw_string(drawer, current_x, y, &rem_line[..n_spaces], color, bg_color);
               current_x += (n_spaces * CHAR_WIDTH) as i32;
               rem_line = trimmed;
          }
@@ -224,14 +251,15 @@ fn draw_log_line<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32,
          if rem_line.starts_with('[') {
              if let Some(end) = rem_line.find(']') {
                  let chunk = &rem_line[0..=end];
-                 draw_string(drawer, current_x, y, chunk, COLOR_SOURCE, bg_color);
+                 let color = dim_color(COLOR_SOURCE, bg_color, dist, max);
+                 draw_string(drawer, current_x, y, chunk, color, bg_color);
                  current_x += (chunk.len() * CHAR_WIDTH) as i32;
                  rem_line = &rem_line[end+1..];
              }
          }
     }
 
-    let msg_color = get_msg_color(rem_line);
+    let msg_color = dim_color(get_msg_color(rem_line), bg_color, dist, max);
     draw_string(drawer, current_x, y, rem_line, msg_color, bg_color);
     clear_line_end(drawer, current_x + (rem_line.len() * CHAR_WIDTH) as i32, y, bg_color);
 }

@@ -43,10 +43,19 @@ impl Framebuffer {
 
 impl bud::framebuffer::FramebufferTarget for Framebuffer {
     fn info(&self) -> bud::framebuffer::FramebufferInfo {
+        // Ensure stride is at least width * 4 (32bpp)
+        // This handles cases where bootloader might report 0 or invalid pitch
+        let min_stride = self.width * 4;
+        let stride = if self.pitch >= min_stride {
+            self.pitch
+        } else {
+            min_stride
+        };
+
         bud::framebuffer::FramebufferInfo {
             width: self.width,
             height: self.height,
-            stride: self.pitch,
+            stride,
             format: bud::framebuffer::PixelFormat::Bgrx8888,
         }
     }

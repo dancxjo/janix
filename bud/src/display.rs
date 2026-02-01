@@ -302,7 +302,14 @@ impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
             _ => return, // Unknown
         };
 
-        let offset = (point.y as usize * info.stride as usize) + (point.x as usize * bpp);
+        let min_stride = match info.format {
+            PixelFormat::Bgrx8888 | PixelFormat::Rgbx8888 => info.width * 4,
+            PixelFormat::Rgb888 | PixelFormat::Bgr888 => info.width * 3,
+            _ => info.width,
+        };
+        let stride = if info.stride < min_stride { min_stride } else { info.stride };
+
+        let offset = (point.y as usize * stride as usize) + (point.x as usize * bpp);
         if offset + bpp > buffer.len() {
             return;
         }

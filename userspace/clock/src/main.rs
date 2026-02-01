@@ -9,7 +9,8 @@ use core::time::Duration;
 use stem::info;
 use stem::petals::{AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Styled, Text, Window};
 use stem::thing::sys::{
-    bytespace_create, bytespace_write, create_node, describe_thing, find, link, prop_get, prop_set,
+    bytespace_create, bytespace_read, bytespace_write, create_node, describe_thing, find, link,
+    prop_get, prop_set,
 };
 use stem::thing::ThingId;
 use time::OffsetDateTime;
@@ -43,6 +44,53 @@ fn search_for_icon(suffix: &str) -> Option<ThingId> {
     None
 }
 
+fn find_locale_conf() -> Option<ThingId> {
+    let mut modules = [ThingId::default(); 128];
+    let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
+    for i in 0..count {
+        let mut buf = [0u8; 512];
+        let len = describe_thing(modules[i], &mut buf).unwrap_or(0);
+        let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
+
+        let mod_name = if let Some(pos) = desc.find("name: \"") {
+            let rest = &desc[pos + 7..];
+            if let Some(end) = rest.find('"') {
+                &rest[..end]
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+
+        if mod_name == "locale.conf" || mod_name.ends_with("/locale.conf") {
+            return Some(modules[i]);
+        }
+    }
+    None
+}
+
+fn read_locale() -> Option<alloc::string::String> {
+    if let Some(mod_id) = find_locale_conf() {
+        if let Ok(bs_id) = prop_get(mod_id, "bytespace") {
+            let bs_thing = ThingId::from_u64(bs_id);
+            let len = stem::thing::sys::bytespace_info(bs_thing).unwrap_or(0);
+            if len > 0 {
+                let mut buf = alloc::vec![0u8; len];
+                if bytespace_read(bs_thing, 0, &mut buf).is_ok() {
+                    let content = alloc::string::String::from_utf8(buf).ok()?;
+                    for line in content.lines() {
+                        if let Some(val) = line.strip_prefix("LOCALE=") {
+                            return Some(val.trim().into());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
 /// Print a single tick with both wall clock (if anchored) and monotonic time.
 fn print_tick(unix: u64, mono_ns: u64) {
     if unix == 0 {
@@ -58,7 +106,7 @@ fn print_tick(unix: u64, mono_ns: u64) {
         }
     };
 
-    let dt = match OffsetDateTime::from_unix_timestamp(unix_i64) {
+    let _dt = match OffsetDateTime::from_unix_timestamp(unix_i64) {
         Ok(val) => val,
         Err(_) => {
             info!("unix={} utc=<invalid> mono_ns={}", unix, mono_ns);
@@ -111,7 +159,7 @@ fn build_scene(window_id: ThingId, time_text: &str) -> Scene {
 
 #[stem::main]
 fn main() -> ! {
-    let cpu = stem::arch::whoami();
+    let _cpu = stem::arch::whoami();
     // info!(
     //     "whoami: cs=0x{:x} ss=0x{:x} cpl={} rsp=0x{:x} rip=0x{:x} rflags=0x{:x}",
     //     cpu.cs, cpu.ss, cpu.cpl, cpu.rsp, cpu.rip, cpu.rflags
@@ -201,6 +249,9 @@ fn main() -> ! {
     //     clock_thing.to_u64_lossy()
     // );
 
+    let locale = read_locale().unwrap_or_else(|| "en_GB".into());
+    let is_12h = locale == "en_US";
+
     loop {
         // 1. Get precise system time
         let now_ns = stem::time::now_unix_nanos();
@@ -213,8 +264,27 @@ fn main() -> ! {
             // 2. Publish State to Graph
             let dt = OffsetDateTime::from_unix_timestamp(unix as i64).ok();
             if let Some(dt) = dt {
-                let time_str =
-                    alloc::format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second());
+                let time_str = if is_12h {
+                    let (h, am) = if dt.hour() == 0 {
+                        (12, true)
+                    } else if dt.hour() == 12 {
+                        (12, false)
+                    } else if dt.hour() > 12 {
+                        (dt.hour() - 12, false)
+                    } else {
+                        (dt.hour(), true)
+                    };
+                    alloc::format!(
+                        "{:02}:{:02}:{:02} {}",
+                        h,
+                        dt.minute(),
+                        dt.second(),
+                        if am { "AM" } else { "PM" }
+                    )
+                } else {
+                    alloc::format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second())
+                };
+
                 if let Some(win) = window_id {
                     let scene = build_scene(win, &time_str);
                     if let Err(e) = stem::petals::publish_window(&scene) {

@@ -247,6 +247,8 @@ fn generate_limine_config(
         }
     }
 
+    conf.push_str("    module_path: boot():/boot/locale.conf\n");
+
     conf
 }
 
@@ -342,6 +344,8 @@ pub fn build_iso_with_config(
 
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, iso_root.join("boot/kernel"))?;
+
+    sh.write_file(iso_root.join("boot/locale.conf"), "LOCALE=en_US\n")?;
 
     println!("Building userspace programs...");
 
@@ -571,6 +575,10 @@ pub fn build_hdd(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
 
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     cmd!(sh, "mcopy -i {hdd}@@1M {kernel_src} ::/boot").run()?;
+
+    sh.write_file("locale.conf", "LOCALE=en_US\n")?;
+    cmd!(sh, "mcopy -i {hdd}@@1M locale.conf ::/boot/locale.conf").run()?;
+    sh.remove_path("locale.conf")?;
 
     let limine_conf_content = generate_limine_config(sh, programs, &asset_files, None);
     let limine_cfg = "limine.generated.conf";

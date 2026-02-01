@@ -46,7 +46,7 @@ impl bud::framebuffer::FramebufferTarget for Framebuffer {
         // Ensure stride is at least width * 4 (32bpp)
         // This handles cases where bootloader might report 0 or invalid pitch
         let min_stride = self.width * 4;
-        let stride = if self.pitch >= min_stride {
+        let stride = if self.pitch > 0 {
             self.pitch
         } else {
             min_stride

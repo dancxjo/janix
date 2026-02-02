@@ -1,11 +1,7 @@
 use core::str;
-use embedded_graphics::{
-    prelude::*,
-    primitives::{PrimitiveStyle, Rectangle},
-    pixelcolor::{Rgb888, RgbColor},
-    draw_target::DrawTarget,
-    geometry::Point,
-};
+use embedded_graphics::pixelcolor::{Rgb888, RgbColor};
+use embedded_graphics::prelude::Point;
+use fb_common::calc_stride_bytes;
 use crate::framebuffer::{FramebufferTarget, PixelFormat};
 use crate::font::{SimpleFont, CHAR_WIDTH, CHAR_HEIGHT};
 use crate::parser::parse_log_line;
@@ -25,14 +21,22 @@ const TEXT_PAD: i32 = 5;
 
 pub struct BootUpDisplay<F: FramebufferTarget> {
     fb: F,
-    last_msg_area: Option<Rectangle>,
+    last_msg_area: Option<Rect>,
+}
+
+#[derive(Clone, Copy)]
+struct Rect {
+    x: i32,
+    y: i32,
+    w: u32,
+    h: u32,
 }
 
 impl<F: FramebufferTarget> BootUpDisplay<F> {
     pub fn new(mut fb: F) -> Self {
         {
             let mut drawer = FbDrawer { fb: &mut fb };
-            drawer.clear(COLOR_BG).ok();
+            drawer.clear(COLOR_BG);
         }
 
         Self {
@@ -50,9 +54,7 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
 
         // Clear previous message area
         if let Some(rect) = self.last_msg_area {
-            rect.into_styled(PrimitiveStyle::with_fill(COLOR_BG))
-                .draw(&mut drawer)
-                .ok();
+            drawer.fill_rect(rect, COLOR_BG);
         }
 
         let parts = parse_log_line(line);
@@ -88,7 +90,7 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
         let start_y = center_y - (total_h / 2);
 
         let mut current_y = start_y;
-        let mut bounding_box: Option<Rectangle> = None;
+        let mut bounding_box: Option<Rect> = None;
 
         for i in 0..line_count {
             if let Some((text, color)) = lines_to_draw[i] {
@@ -97,31 +99,31 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
 
                 draw_string(&mut drawer, start_x, current_y, text, color, COLOR_BG);
 
-                let line_rect = Rectangle::new(
-                    Point::new(start_x, current_y),
-                    Size::new(text_w as u32, CHAR_HEIGHT as u32)
-                );
+                let line_rect = Rect {
+                    x: start_x,
+                    y: current_y,
+                    w: text_w as u32,
+                    h: CHAR_HEIGHT as u32,
+                };
 
                 bounding_box = match bounding_box {
                     Some(bb) => {
-                         let min_x = bb.top_left.x.min(line_rect.top_left.x);
-                         let min_y = bb.top_left.y.min(line_rect.top_left.y);
-                         // Accessing top_left and size assuming they are public or available via methods.
-                         // embedded_graphics Rectangle fields are public? Checking docs/memory.
-                         // Rectangle has `top_left` and `size` fields which are public.
-                         // Need to compute max extent.
-                         let bb_right = bb.top_left.x + bb.size.width as i32;
-                         let bb_bottom = bb.top_left.y + bb.size.height as i32;
-                         let lr_right = line_rect.top_left.x + line_rect.size.width as i32;
-                         let lr_bottom = line_rect.top_left.y + line_rect.size.height as i32;
+                         let min_x = bb.x.min(line_rect.x);
+                         let min_y = bb.y.min(line_rect.y);
+                         let bb_right = bb.x + bb.w as i32;
+                         let bb_bottom = bb.y + bb.h as i32;
+                         let lr_right = line_rect.x + line_rect.w as i32;
+                         let lr_bottom = line_rect.y + line_rect.h as i32;
 
                          let max_x = bb_right.max(lr_right);
                          let max_y = bb_bottom.max(lr_bottom);
 
-                         Some(Rectangle::new(
-                             Point::new(min_x, min_y),
-                             Size::new((max_x - min_x) as u32, (max_y - min_y) as u32)
-                         ))
+                         Some(Rect {
+                             x: min_x,
+                             y: min_y,
+                             w: (max_x - min_x) as u32,
+                             h: (max_y - min_y) as u32,
+                         })
                     },
                     None => Some(line_rect),
                 };
@@ -186,6 +188,66 @@ struct FbDrawer<'a, F: FramebufferTarget> {
 }
 
 impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
+    fn fill_rect(&mut self, rect: Rect, color: Rgb888) {
+        let info = self.fb.info();
+        let bpp = match info.format {
+            PixelFormat::Bgrx8888 | PixelFormat::Rgbx8888 => 4,
+            PixelFormat::Rgb888 | PixelFormat::Bgr888 => 3,
+            PixelFormat::Rgb565 => 2,
+            _ => return,
+        };
+        let stride = calc_stride_bytes(info.width, bpp, info.stride) as usize;
+        let buffer = self.fb.buffer_mut();
+
+        let x0 = rect.x.max(0) as usize;
+        let y0 = rect.y.max(0) as usize;
+        let x1 = (rect.x + rect.w as i32).min(info.width as i32) as usize;
+        let y1 = (rect.y + rect.h as i32).min(info.height as i32) as usize;
+
+        for y in y0..y1 {
+            let row_start = y * stride;
+            for x in x0..x1 {
+                let offset = row_start + x * bpp as usize;
+                if offset + bpp as usize > buffer.len() {
+                    return;
+                }
+                match info.format {
+                    PixelFormat::Bgrx8888 => {
+                        buffer[offset] = color.b();
+                        buffer[offset + 1] = color.g();
+                        buffer[offset + 2] = color.r();
+                        buffer[offset + 3] = 0;
+                    }
+                    PixelFormat::Rgbx8888 => {
+                        buffer[offset] = color.r();
+                        buffer[offset + 1] = color.g();
+                        buffer[offset + 2] = color.b();
+                        buffer[offset + 3] = 0;
+                    }
+                    PixelFormat::Bgr888 => {
+                        buffer[offset] = color.b();
+                        buffer[offset + 1] = color.g();
+                        buffer[offset + 2] = color.r();
+                    }
+                    PixelFormat::Rgb888 => {
+                        buffer[offset] = color.r();
+                        buffer[offset + 1] = color.g();
+                        buffer[offset + 2] = color.b();
+                    }
+                    PixelFormat::Rgb565 => {
+                        let r5 = (color.r() >> 3) as u16;
+                        let g6 = (color.g() >> 2) as u16;
+                        let b5 = (color.b() >> 3) as u16;
+                        let packed = (r5 << 11) | (g6 << 5) | b5;
+                        buffer[offset] = (packed & 0xFF) as u8;
+                        buffer[offset + 1] = (packed >> 8) as u8;
+                    }
+                    PixelFormat::Unknown => {}
+                }
+            }
+        }
+    }
+
     fn put_pixel(&mut self, point: Point, color: Rgb888) {
         let info = self.fb.info();
         if point.x < 0 || point.y < 0 || point.x >= info.width as i32 || point.y >= info.height as i32 {
@@ -196,19 +258,11 @@ impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
         let bpp = match info.format {
             PixelFormat::Bgrx8888 | PixelFormat::Rgbx8888 => 4,
             PixelFormat::Rgb888 | PixelFormat::Bgr888 => 3,
+            PixelFormat::Rgb565 => 2,
             _ => return, // Unknown
         };
 
-        let width_bytes = info.width * bpp; // u32 * u32 -> u32
-        let stride = if info.stride > 0 {
-             if info.stride < width_bytes {
-                 info.stride * bpp
-             } else {
-                 info.stride
-             }
-        } else {
-            width_bytes
-        };
+        let stride = calc_stride_bytes(info.width, bpp, info.stride);
 
         let offset = (point.y as usize * stride as usize) + (point.x as usize * bpp as usize);
         if offset + (bpp as usize) > buffer.len() {
@@ -238,40 +292,48 @@ impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
                 buffer[offset + 1] = color.g();
                 buffer[offset + 2] = color.b();
             }
+            PixelFormat::Rgb565 => {
+                // Convert 8-bit channels to 5-6-5, little-endian
+                let r5 = (color.r() >> 3) as u16;
+                let g6 = (color.g() >> 2) as u16;
+                let b5 = (color.b() >> 3) as u16;
+                let packed = (r5 << 11) | (g6 << 5) | b5;
+                buffer[offset] = (packed & 0xFF) as u8;
+                buffer[offset + 1] = (packed >> 8) as u8;
+            }
             _ => {}
         }
     }
 }
 
-impl<'a, F: FramebufferTarget> DrawTarget for FbDrawer<'a, F> {
-    type Color = Rgb888;
-    type Error = core::convert::Infallible;
-
-    fn draw_iter<I>(&mut self, pixels: I) -> Result<(), Self::Error>
-    where
-        I: IntoIterator<Item = Pixel<Self::Color>>,
-    {
-        for Pixel(point, color) in pixels {
-             self.put_pixel(point, color);
-        }
-        Ok(())
-    }
-
-    fn clear(&mut self, color: Self::Color) -> Result<(), Self::Error> {
+impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
+    fn clear(&mut self, color: Rgb888) {
         let info = self.fb.info();
-        let c = match info.format {
-            PixelFormat::Bgrx8888 => u32::from_le_bytes([color.b(), color.g(), color.r(), 0]),
-            PixelFormat::Rgbx8888 => u32::from_le_bytes([color.r(), color.g(), color.b(), 0]),
-            _ => u32::from_le_bytes([color.b(), color.g(), color.r(), 0]),
+        match info.format {
+            PixelFormat::Bgrx8888 => {
+                let c = u32::from_le_bytes([color.b(), color.g(), color.r(), 0]);
+                self.fb.clear(c);
+            }
+            PixelFormat::Rgbx8888 => {
+                let c = u32::from_le_bytes([color.r(), color.g(), color.b(), 0]);
+                self.fb.clear(c);
+            }
+            PixelFormat::Rgb888 => {
+                let c = u32::from_le_bytes([color.r(), color.g(), color.b(), 0]);
+                self.fb.clear(c);
+            }
+            PixelFormat::Bgr888 => {
+                let c = u32::from_le_bytes([color.b(), color.g(), color.r(), 0]);
+                self.fb.clear(c);
+            }
+            PixelFormat::Rgb565 => {
+                let r5 = (color.r() >> 3) as u16;
+                let g6 = (color.g() >> 2) as u16;
+                let b5 = (color.b() >> 3) as u16;
+                let packed = (r5 << 11) | (g6 << 5) | b5;
+                self.fb.clear(packed as u32);
+            }
+            PixelFormat::Unknown => {}
         };
-        self.fb.clear(c);
-        Ok(())
-    }
-}
-
-impl<'a, F: FramebufferTarget> OriginDimensions for FbDrawer<'a, F> {
-    fn size(&self) -> Size {
-        let info = self.fb.info();
-        Size::new(info.width, info.height)
     }
 }

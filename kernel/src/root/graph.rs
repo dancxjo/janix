@@ -156,8 +156,8 @@ pub struct CommitSummary {
 }
 
 /// Hard limits for commit history
-pub const COMMIT_HISTORY_MAX_COMMITS: usize = 8192;
-pub const COMMIT_HISTORY_MAX_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+pub const COMMIT_HISTORY_MAX_COMMITS: usize = 1024;
+pub const COMMIT_HISTORY_MAX_BYTES: usize = 8 * 1024 * 1024; // 8 MiB - must fit within 32 MiB kernel heap
 
 /// Shared ring buffer of recent commits
 ///

@@ -1,11 +1,4 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PixelFormat {
-    Rgb888,
-    Bgr888,
-    Bgrx8888, // 32-bit BGR with padding (Blue is at offset 0)
-    Rgbx8888, // 32-bit RGB with padding (Red is at offset 0)
-    Unknown,
-}
+pub use fb_common::PixelFormat;
 
 #[derive(Debug, Clone, Copy)]
 pub struct FramebufferInfo {

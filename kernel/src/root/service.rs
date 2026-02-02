@@ -23,6 +23,19 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         iteration = iteration.wrapping_add(1);
         let mut processed = 0;
 
+        // Periodic memory stats (every 500 iterations)
+        if iteration % 500 == 0 {
+            let node_count = graph.nodes.len();
+            let watch_count = graph.global_watches.len();
+            let history_len = graph.commit_history.len();
+            let journal_len = journal.entries.len();
+            let symbol_count = interner.names.len();
+            crate::kinfo!(
+                "ROOT STATS: iter={} nodes={} watches={} history={} journal={} symbols={}",
+                iteration, node_count, watch_count, history_len, journal_len, symbol_count
+            );
+        }
+
         while processed < 16 {
             if let Some(msg) = super::pop_msg() {
                 handle_msg::<R>(

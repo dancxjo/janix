@@ -1,5 +1,6 @@
 #![no_std]
 #![no_main]
+#![feature(alloc_error_handler)]
 
 mod arch;
 pub mod console;
@@ -48,6 +49,36 @@ fn indicate_progress() {
             kernel::syscall::handlers::register_console_disable(console::disable);
         }
     }
+}
+
+#[alloc_error_handler]
+fn alloc_error_handler(layout: core::alloc::Layout) -> ! {
+    unsafe { kernel::logging::force_unlock() };
+    
+    // Get current task info for debugging
+    let tid = unsafe { kernel::task::scheduler::current_tid_current() };
+    
+    kernel::kerror!(
+        "OOM: allocation of {} bytes (align={}) failed in task {}",
+        layout.size(),
+        layout.align(),
+        tid
+    );
+    
+    // Log allocator stats if available (use try_lock to avoid deadlock)
+    if let Some(heap) = kernel::memory::kheap::kernel_heap().try_lock() {
+        let stats = heap.stats();
+        kernel::kerror!(
+            "OOM: heap stats: pinned={} evictable={} max_req={}",
+            stats.total_pinned_bytes,
+            stats.total_evictable_bytes,
+            stats.largest_alloc_request
+        );
+    } else {
+        kernel::kerror!("OOM: heap lock held, cannot get stats");
+    }
+    
+    hcf()
 }
 
 #[panic_handler]

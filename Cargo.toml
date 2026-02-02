@@ -53,6 +53,7 @@ members = [
     "userspace/pollen",
     "userspace/root_canal",
     "bud",
+    "libs/fb_common",
 ]
 resolver = "2"
 

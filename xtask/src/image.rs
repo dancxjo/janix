@@ -75,7 +75,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "bloom",
             is_init: false,
-            boot_module: true,
+            boot_module: false, //disabled for now; testing root_canal
             features: vec![],
         },
         ProgramConfig {
@@ -105,7 +105,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "display_virtio_gpu",
             is_init: false,
-            boot_module: true,
+            boot_module: false, //disabled for now; testing root_canal
             features: vec![],
         },
         ProgramConfig {
@@ -117,7 +117,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "blossom",
             is_init: false,
-            boot_module: true,
+            boot_module: false, // disabled for now; testing root_canal
             features: vec![],
         },
         ProgramConfig {
@@ -178,7 +178,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "photosynthesis",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
@@ -191,7 +191,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "virgl_demo",
             is_init: false,
-            boot_module: true,
+            boot_module: false, // disabled for now; testing root_canal
             features: vec![],
         },
         ProgramConfig {
@@ -209,7 +209,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "iso_cat",
             is_init: false,
-            boot_module: true,
+            boot_module: false, // disabled for now; testing root_canal
             features: vec![],
         },
     ]

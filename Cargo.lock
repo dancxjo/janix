@@ -401,6 +401,7 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-core",
+ "fb_common",
 ]
 
 [[package]]
@@ -958,6 +959,10 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "fb_common"
+version = "0.1.0"
 
 [[package]]
 name = "fdeflate"

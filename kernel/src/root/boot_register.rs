@@ -162,6 +162,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     let root_name = intern("/");
     set(root_svc, keys::NAME, root_name);
     link(kernel, rels::PROVIDES, root_svc);
+    link(root_svc, rels::MONITORS, host);
 
     // 5. CPUs
     for i in 0..info.cpu_count {
@@ -232,6 +233,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
         set(mod_node, keys::CONFIDENCE, conf_high);
 
         link(host, rels::HAS_MODULE, mod_node);
+        link(root_svc, rels::HAS_MODULE, mod_node);
     }
 
     // 8. Framebuffer
@@ -359,6 +361,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     // 10. Tasking
     let scheduler = create(kinds::SVC_SCHEDULER);
     link(kernel, rels::PROVIDES, scheduler);
+    link(root_svc, rels::HAS_SERVICE, scheduler);
     
     // Store well-known ThingIds for scheduler graphification
     super::graph_anchors::set_scheduler_service(scheduler);

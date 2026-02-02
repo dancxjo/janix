@@ -2,13 +2,33 @@
 
 ## Recent Status
 
-The operating system is currently undergoing significant refinements in its core subsystems. Key areas of focus include the **Unified Device Graph**, where schema definitions are being standardized (e.g., `fs.Directory` vs `content.Directory`), and the **Kernel Watch API**, which has received performance optimizations to reduce memory allocations and improve responsiveness during high-throughput graph mutations.
+The operating system has entered a new phase of visual and architectural maturity. The **Userspace Driver Ecosystem** is expanding with the introduction of a standalone `virtio-gpu` driver and the `ingestd` asset manager, which treats system resources as first-class graph citizens. Introspection capabilities have taken a leap forward with the **HTTPD Graph Explorer**, allowing developers to visualize the live object graph via a web interface. Meanwhile, the boot experience has been refined with a flicker-free, centered log display.
 
-On the user-facing side, the **Graphical Subsystem** is evolving with the introduction of `PresentQueue` replacing swapchains, enabling more robust frame presentation. The `drawlist_demo` application showcases the new vector drawing capabilities.
-
-Infrastructure-wise, the build system is becoming more architecture-aware, with test artifacts now organized by target architecture (e.g., `x86_64`), improving cross-compilation support.
+These changes complement the ongoing work on the **Unified Device Graph** and **Kernel Watch API** optimizations.
 
 ## Recent Changes
+
+### 🖥️ Display & UI
+
+*   **Bud Display Overhaul**: The early boot display (`bud`) has been redesigned for clarity and performance. It now renders a vertically-centered, three-line log message (Timestamp, Source, Message) and employs dirty-rectangle tracking to clear only the updated text area, eliminating full-screen clears.
+    *   *Artifacts*: `bud/src/display.rs`
+
+*   **HTTPD Graph Explorer**: The HTTP server now includes an interactive Graph Explorer at `/graph.html`. Powered by ELK (Eclipse Layout Kernel) and Cytoscape.js, it provides an automatic, layered layout of the system graph, allowing users to visualize node relationships and inspect properties in real-time.
+    *   *Artifacts*: `userspace/httpd/assets/graph/`, `userspace/httpd/README.md`
+
+*   **PresentQueue Implementation**: The rendering pipeline has moved from legacy swapchains to a `PresentQueue` model. This improves frame timing and error handling during composition.
+    *   *Artifacts*: `userspace/bloom`, `userspace/blossom`
+
+*   **DrawList Demo**: A new `drawlist_demo` application has been added to demonstrate and validate the vector drawing capabilities of the UI graph.
+    *   *Artifacts*: `userspace/drawlist_demo/`
+
+### 📦 System Services
+
+*   **Ingestd (Asset Service)**: A new core service, `ingestd`, has been introduced to manage system assets. It continuously watches boot modules and content sources, computes SHA-256 hashes for deduplication, and publishes canonical `ASSET` nodes to the graph. It also handles automatic seeding of wallpapers and cursors.
+    *   *Artifacts*: `userspace/ingestd/`
+
+*   **Virtio-GPU Driver**: A standalone userspace driver for VirtIO GPU has been added (`userspace/virtio_gpu`). It demonstrates 2D resource management, MSI-X interrupt handling, and framebuffer setup entirely from userspace, serving as a reference for future driver implementations.
+    *   *Artifacts*: `userspace/virtio_gpu/`
 
 ### 🛠️ Kernel & ABI
 
@@ -19,14 +39,6 @@ Infrastructure-wise, the build system is becoming more architecture-aware, with 
     *   *Artifacts*: `kernel/src/root/handlers/watch.rs`, `kernel/src/root/handlers/watch_payload.rs`
 
 *   **Locale Configuration**: Support for locale configuration has been merged, allowing for better internationalization support in the future.
-
-### 🎨 Graphics & UI
-
-*   **PresentQueue Implementation**: The rendering pipeline has moved from legacy swapchains to a `PresentQueue` model. This improves frame timing and error handling during composition.
-    *   *Artifacts*: `userspace/bloom`, `userspace/blossom`
-
-*   **DrawList Demo**: A new `drawlist_demo` application has been added to demonstrate and validate the vector drawing capabilities of the UI graph.
-    *   *Artifacts*: `userspace/drawlist_demo/`
 
 ### 🏗️ Infrastructure & Tests
 

@@ -14,11 +14,22 @@ impl Framebuffer {
     pub fn new(fb: &limine::framebuffer::Framebuffer) -> Self {
         // Limine reports `bpp` in bits; clamp to supported 24/32-bit formats.
         let bits_per_pixel = fb.bpp() as u32;
+        let pitch = fb.pitch() as u32;
+        let width = fb.width() as u32;
+
+        // Some firmware reports 24bpp but aligns pitch to 4 bytes per pixel.
+        let pitch_bytes_per_pixel = if width > 0 { pitch / width } else { 0 };
+
         let bpp = match bits_per_pixel {
             16 => 2,
-            24 => 3,
+            24 => {
+                if pitch_bytes_per_pixel >= 4 { 4 } else { 3 }
+            }
             32 => 4,
-            _ => 4, // default to 32-bit to avoid divide-by-zero later
+            _ => {
+                // Fallback: infer from pitch if sane, otherwise assume 4
+                if pitch_bytes_per_pixel >= 4 { 4 } else if pitch_bytes_per_pixel == 3 { 3 } else { 4 }
+            }
         };
 
         Self {
@@ -77,7 +88,15 @@ impl bud::framebuffer::FramebufferTarget for Framebuffer {
             2 => bud::framebuffer::PixelFormat::Rgb565,
             3 => bud::framebuffer::PixelFormat::Bgr888,
             4 => bud::framebuffer::PixelFormat::Bgrx8888,
-            _ => bud::framebuffer::PixelFormat::Unknown,
+            _ => {
+                if self.pitch / self.width >= 4 {
+                    bud::framebuffer::PixelFormat::Bgrx8888
+                } else if self.pitch / self.width >= 3 {
+                    bud::framebuffer::PixelFormat::Bgr888
+                } else {
+                    bud::framebuffer::PixelFormat::Unknown
+                }
+            }
         };
 
         bud::framebuffer::FramebufferInfo {

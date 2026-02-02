@@ -37,7 +37,7 @@ Represents a source of content (Limine boot modules, ISO9660 disk, future: netwo
 
 #### File Nodes
 
-**Kind**: `content.File`
+**Kind**: `fs.File`
 
 Represents a file from any content source.
 
@@ -51,7 +51,7 @@ Represents a file from any content source.
 
 #### Directory Nodes
 
-**Kind**: `content.Directory`
+**Kind**: `fs.Directory`
 
 Represents a directory in the content graph (future enhancement).
 
@@ -74,7 +74,7 @@ Represents a directory in the content graph (future enhancement).
 2. Watches for `boot.Module` nodes from the kernel
 3. For each module, creates:
    - An `Asset` node (backward compatibility with existing consumers)
-   - A `content.File` node with computed content hash and MIME type
+   - A `fs.File` node with computed content hash and MIME type
 4. Bytespaces point directly to physical memory (HHDM-mapped, zero-copy)
 
 ### ISO9660 Source
@@ -86,7 +86,7 @@ Represents a directory in the content graph (future enhancement).
 3. Creates a `content.Source` node with kind `"iso9660_disk"` and priority 50
 4. For each file:
    - Creates a `boot.Module` node (backward compatibility)
-   - Creates a `content.File` node with computed content hash and MIME type
+   - Creates a `fs.File` node with computed content hash and MIME type
 5. Bytespaces are dynamically allocated and populated from disk reads
 
 ### Content Discovery
@@ -94,7 +94,7 @@ Represents a directory in the content graph (future enhancement).
 Consumers can discover content in two ways:
 
 1. **By source**: Query `content.Source` nodes, then traverse `content.contains` relationships
-2. **By type**: Query `content.File` nodes directly, filter by `file.source` if needed
+2. **By type**: Query `fs.File` nodes directly, filter by `file.source` if needed
 
 ### Overlay Resolution
 
@@ -189,7 +189,7 @@ The system maintains full backward compatibility:
 2. **Boot Modules**: `iso_reader` still creates `boot.Module` nodes
 3. **Existing Consumers**: Services like `fontd`, `blossom`, etc. continue to work unchanged
 
-The new `content.File` nodes augment (not replace) the existing system, providing a unified view while preserving all existing functionality.
+The new `fs.File` nodes augment (not replace) the existing system, providing a unified view while preserving all existing functionality.
 
 ## Future Enhancements
 

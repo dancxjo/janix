@@ -1,4 +1,4 @@
-//! Static asset serving for httpd
+//! Static asset serving for pollen
 //!
 //! Embeds explorer assets at compile time and serves them as static files.
 

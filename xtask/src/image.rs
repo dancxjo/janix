@@ -151,7 +151,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "httpd",
+            name: "pollen",
             is_init: false,
             boot_module: true,
             features: vec![],
@@ -512,7 +512,7 @@ fn build_userspace_app_with_features(
 
     let mut cmd = cmd!(
         sh,
-        "cargo -Zjson-target-spec -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem build --target {target} --profile {profile} -p {name}"
+        "cargo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem build --target {target} --profile {profile} -p {name}"
     )
     .env("RUSTFLAGS", "-Awarnings");
 

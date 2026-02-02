@@ -1,4 +1,4 @@
-//! Integration tests for httpd
+//! Integration tests for pollen
 //!
 //! These tests validate the HTTP request/response handling.
 

@@ -1,4 +1,4 @@
-//! Network client for httpd
+//! Network client for pollen
 //!
 //! Provides simplified TCP socket operations by communicating with netd's socket API.
 

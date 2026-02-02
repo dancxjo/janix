@@ -50,7 +50,7 @@ members = [
     "userspace/virtio_netd",
     "userspace/netd",
     "userspace/fetchd",
-    "userspace/httpd",
+    "userspace/pollen",
     "userspace/root_canal",
     "bud",
 ]

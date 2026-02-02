@@ -1,4 +1,4 @@
-# httpd - Thing-OS HTTP Server
+# pollen - Thing-OS HTTP Server
 
 A minimal HTTP/1.1 server for Thing-OS that provides graph-backed endpoints.
 
@@ -120,7 +120,7 @@ The ELK worker handles layout computation, returning node positions that Cytosca
 cargo +nightly build -Z build-std=core,alloc \
   -Z build-std-features=compiler-builtins-mem \
   --target targets/x86_64-unknown-thingos.json \
-  -p httpd
+  -p pollen
 ```
 
 ## Testing
@@ -128,7 +128,7 @@ cargo +nightly build -Z build-std=core,alloc \
 Unit tests are included in each module:
 ```bash
 # Note: Tests run on host, not target
-cargo test -p httpd
+cargo test -p pollen
 ```
 
 ## Implementation Notes

@@ -675,6 +675,19 @@ pub fn handle_apply_batch_with_scratch(
     // Apply through canonical commit path
     let result = apply_ops_and_commit(graph, &scratch.ops);
 
+    // Host fallback links for CreateNode ops in this batch
+    if result.status == 0 && !result.created_ids.is_empty() {
+        let mut created_idx = 0usize;
+        for op in &scratch.ops {
+            if let ValidatedOp::CreateNode { kind, .. } = op {
+                if let Some(id) = result.created_ids.get(created_idx).copied() {
+                    super::graph::maybe_link_host_fallback(graph, interner, id, *kind);
+                }
+                created_idx += 1;
+            }
+        }
+    }
+
     (result.status, result.seq)
 }
 

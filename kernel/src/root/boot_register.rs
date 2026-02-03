@@ -140,6 +140,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
 
     set(host, keys::SOURCE, src_boot);
     set(host, keys::CONFIDENCE, conf_high);
+    // Publish host anchor early so fallback host links can attach during boot census.
+    super::graph_anchors::set_host(host);
 
     // 2. Platform Bus
     let platform_bus = create(kinds::DEV_BUS_PLATFORM);
@@ -368,10 +370,6 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     // 11. PCI
     crate::kinfo!("ROOT: Census Phase 2: PCI");
     crate::root::pci::enumerate_and_publish(host, &create, &set, &link, &intern);
-
-    // Publish host anchor after boot census is complete so fallback links don't
-    // duplicate the explicit boot-time relationships.
-    super::graph_anchors::set_host(host);
 
     crate::kinfo!(
         "ROOT: registered items. host={:x} kernel={:x}",

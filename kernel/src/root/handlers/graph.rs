@@ -71,7 +71,12 @@ pub fn handle_create_node(
     }
 }
 
-fn maybe_link_host_fallback(graph: &mut Graph, interner: &mut Interner, id: u64, kind: SymbolId) {
+pub(super) fn maybe_link_host_fallback(
+    graph: &mut Graph,
+    interner: &mut Interner,
+    id: u64,
+    kind: SymbolId,
+) {
     let kind_str = match interner.resolve(kind) {
         Some(s) => s,
         None => return,

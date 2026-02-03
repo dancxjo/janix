@@ -506,4 +506,69 @@ mod tests {
         assert!(IsoFs::ascii_eq_ignore_case("", ""));
         assert!(!IsoFs::ascii_eq_ignore_case("", "hello"));
     }
+
+    struct MockBlockDevice {
+        pvd_data: [u8; 2048],
+    }
+
+    impl BlockDevice for MockBlockDevice {
+        fn read_sectors(
+            &self,
+            lba: u64,
+            count: u64,
+            buf: &mut [u8],
+        ) -> Result<(), stem::block::BlockError> {
+            if lba == PVD_SECTOR && count == 1 {
+                buf[0..2048].copy_from_slice(&self.pvd_data);
+                Ok(())
+            } else {
+                Err(stem::block::BlockError::IoError)
+            }
+        }
+
+        fn sector_size(&self) -> u64 {
+            2048
+        }
+    }
+
+    #[test]
+    fn test_probe_valid_pvd() {
+        let mut pvd_data = [0u8; 2048];
+        pvd_data[0] = VD_TYPE_PRIMARY;
+        pvd_data[1..6].copy_from_slice(b"CD001");
+        pvd_data[6] = 1; // Version
+
+        let sys_id = b"TEST_SYSTEM";
+        pvd_data[8..8 + sys_id.len()].copy_from_slice(sys_id);
+
+        let vol_id = b"TEST_VOLUME";
+        pvd_data[40..40 + vol_id.len()].copy_from_slice(vol_id);
+
+        // Root dir extent (LBA 1234)
+        let root_lba = 1234u32;
+        pvd_data[158..162].copy_from_slice(&root_lba.to_le_bytes());
+
+        // Root dir size (2048 bytes)
+        let root_size = 2048u32;
+        pvd_data[166..170].copy_from_slice(&root_size.to_le_bytes());
+
+        let dev = MockBlockDevice { pvd_data };
+
+        let iso = IsoFs::probe(&dev).expect("Should probe successfully");
+
+        assert_eq!(iso.pvd.root_dir_extent, 1234);
+        assert_eq!(iso.pvd.root_dir_size, 2048);
+        assert!(volume_id_str(&iso.pvd).starts_with("TEST_VOLUME"));
+    }
+
+    #[test]
+    fn test_probe_invalid_signature() {
+        let mut pvd_data = [0u8; 2048];
+        pvd_data[0] = VD_TYPE_PRIMARY;
+        pvd_data[1..6].copy_from_slice(b"WRONG"); // Invalid signature
+        pvd_data[6] = 1;
+
+        let dev = MockBlockDevice { pvd_data };
+        assert!(IsoFs::probe(&dev).is_none());
+    }
 }

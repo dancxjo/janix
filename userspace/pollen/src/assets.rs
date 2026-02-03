@@ -11,7 +11,7 @@ pub struct Asset {
 /// Get embedded asset by path
 pub fn get_asset(path: &str) -> Option<Asset> {
     match path {
-        "/" | "/index.html" | "/graph.html" => Some(Asset {
+        "/" | "/index.html" => Some(Asset {
             content: include_bytes!("../assets/graph/graph.html"),
             content_type: "text/html; charset=utf-8",
         }),
@@ -26,10 +26,6 @@ pub fn get_asset(path: &str) -> Option<Asset> {
         "/explorer.css" => Some(Asset {
             content: include_bytes!("../assets/explorer/explorer.css"),
             content_type: "text/css; charset=utf-8",
-        }),
-        "/3d.html" => Some(Asset {
-            content: include_bytes!("../assets/explorer/3d.html"),
-            content_type: "text/html; charset=utf-8",
         }),
         // Graph viewer assets
         "/graph.js" => Some(Asset {

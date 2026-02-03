@@ -50,6 +50,31 @@ fn build_response(status: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
     response
 }
 
+/// Build HTTP redirect response
+fn build_redirect(location: &str, is_head: bool) -> Vec<u8> {
+    use alloc::format;
+    let body: &[u8] = if is_head { &[] } else { b"" };
+    let mut response = Vec::new();
+
+    let status_line = "HTTP/1.1 302 Found\r\n";
+    response.extend_from_slice(status_line.as_bytes());
+
+    let server_hdr = format!("Server: {}\r\n", SERVER_NAME);
+    response.extend_from_slice(server_hdr.as_bytes());
+
+    let location_hdr = format!("Location: {}\r\n", location);
+    response.extend_from_slice(location_hdr.as_bytes());
+
+    let content_len_hdr = format!("Content-Length: {}\r\n", body.len());
+    response.extend_from_slice(content_len_hdr.as_bytes());
+
+    response.extend_from_slice(b"Connection: close\r\n");
+    response.extend_from_slice(b"\r\n");
+    response.extend_from_slice(body);
+
+    response
+}
+
 /// Handle a single HTTP request and return a response
 fn handle_request(request_str: &str) -> Vec<u8> {
     // Parse the request
@@ -111,8 +136,12 @@ fn route_request(req: &http::Request<'_>, path: &str) -> Vec<u8> {
     // TODO: Authentication - add token/capability check here
     // TODO: Per-route permission gating
     
-    // Check for static assets first (strip query string)
     let asset_path = path.split('?').next().unwrap_or(path);
+    if asset_path == "/graph.html" || asset_path == "/3d.html" {
+        return build_redirect("/", is_head);
+    }
+
+    // Check for static assets first (strip query string)
     if let Some(asset) = assets::get_asset(asset_path) {
         let body: &[u8] = if is_head { &[] } else { asset.content };
         return build_response("200 OK", asset.content_type, body);

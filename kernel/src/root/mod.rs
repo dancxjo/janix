@@ -117,6 +117,11 @@ pub enum RootOp {
         buffer: u64,
         len: u64,
     },
+    GetProps {
+        id: u64,
+        buffer: u64,
+        len: u64,
+    },
     DumpGraph {
         limit: u64,
     },

@@ -309,6 +309,7 @@ fn get_predicate_name(id: u32) -> String {
             let common = [
                 rels::HAS_BUS,
                 rels::HAS_DEVICE,
+                rels::HAS_RESOURCE,
                 rels::BACKED_BY,
                 rels::RUNS_ON,
                 rels::PROVIDES,

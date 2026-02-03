@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Thing-OS Graph Viewer</title>
+    <title>Thing-OS Graph</title>
     <link rel="stylesheet" href="/graph.css">
     <!-- Cytoscape.js v3.33.1 (pinned) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.33.1/cytoscape.min.js" crossorigin="anonymous"
@@ -16,7 +16,7 @@
     <header class="topbar">
         <div class="topbar-left">
             <label>
-                Root: <input type="text" id="rootInput" placeholder="(auto)" size="12"
+                Root/Thing: <input type="text" id="rootInput" placeholder="(auto)" size="12"
                     title="Leave empty to auto-discover system nodes">
             </label>
             <label>
@@ -33,7 +33,7 @@
         </div>
         <div class="topbar-right">
             <span id="statusText" class="status">Ready</span>
-            <a href="/" class="nav-link">← Explorer</a>
+            <a href="/3d.html" class="nav-link">3D</a>
         </div>
     </header>
 
@@ -70,7 +70,7 @@
                 </div>
                 <div class="inspector-actions">
                     <button id="centerBtn">Center on Node</button>
-                    <button id="openExplorerBtn">Open in Explorer</button>
+                    <button id="setRootBtn">Set as Root</button>
                 </div>
                 <div class="inspector-section" id="propsSection">
                     <h4>Live Properties <span id="propsLoading" class="loading-indicator" style="display:none">⟳</span>

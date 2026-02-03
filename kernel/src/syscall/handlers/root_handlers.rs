@@ -360,6 +360,47 @@ pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<us
     }
 }
 
+pub fn sys_root_get_props(id: usize, out_ptr: usize, len: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, len, true)?;
+
+    let entry_size = core::mem::size_of::<abi::types::GraphProp>();
+    if entry_size == 0 || len < entry_size {
+        return Ok(0);
+    }
+
+    const MAX_PROP_BYTES: usize = 64 * 1024;
+    let kbuf_len = core::cmp::min(len, MAX_PROP_BYTES);
+    let mut kbuf = alloc::vec![0u8; kbuf_len];
+
+    let reply = root_svc::enqueue(RootOp::GetProps {
+        id: id as u64,
+        buffer: kbuf.as_mut_ptr() as u64,
+        len: kbuf_len as u64,
+    });
+
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let written = reply.value.load(Ordering::Relaxed) as usize;
+            if status == 0 {
+                let max_entries = kbuf_len / entry_size;
+                let actual_count = core::cmp::min(written, max_entries);
+                let bytes_to_copy = actual_count * entry_size;
+                unsafe {
+                    copyout(out_ptr, &kbuf[..bytes_to_copy])?;
+                }
+                return Ok(actual_count);
+            } else {
+                return Err(Errno::EIO);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}
+
 pub fn sys_root_dump_graph(limit: usize) -> SysResult<usize> {
     root_call(RootOp::DumpGraph {
         limit: limit as u64,

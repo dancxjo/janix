@@ -3,11 +3,12 @@
 //! Mutation handlers (create_node, link, prop_set) now route through
 //! the canonical batch pipeline for consistent watch delivery.
 
-use crate::root::SymbolShell;
+use crate::root::{SymbolShell, graph_anchors};
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
 use crate::root::symbols::Interner;
 use abi::symbols::SymbolId;
+use abi::schema::{kinds, rels};
 #[allow(unused_imports)]
 use core::sync::atomic::Ordering;
 
@@ -63,10 +64,35 @@ pub fn handle_create_node(
             id,
             kind: kid as u64,
         });
+        maybe_link_host_fallback(graph, interner, id, kid);
         (0, id)
     } else {
         (result.status, 0)
     }
+}
+
+fn maybe_link_host_fallback(graph: &mut Graph, interner: &mut Interner, id: u64, kind: SymbolId) {
+    let kind_str = match interner.resolve(kind) {
+        Some(s) => s,
+        None => return,
+    };
+
+    // Only attach for known host-orphaned kinds.
+    let needs_host = kind_str == kinds::BOOT_MODULE
+        || kind_str.starts_with("dev.bus.")
+        || kind_str.starts_with("svc.");
+
+    if !needs_host {
+        return;
+    }
+
+    let host = match graph_anchors::host() {
+        Some(host) if host != id => host,
+        _ => return,
+    };
+
+    // Attach with a generic relationship so higher-fidelity links can still be added.
+    let _ = handle_link(graph, interner, host, SymbolShell::Static(rels::HAS_RESOURCE), id);
 }
 
 pub fn handle_prop_get(
@@ -245,6 +271,34 @@ pub fn handle_get_edges(graph: &Graph, id: u64, buffer: u64, len: u64) -> Handle
                         predicate: abi::types::ThingId::from_u64(*rel as u64),
                         to: abi::types::ThingId::from_u64(*dst),
                         flags: 0,
+                    };
+                }
+            }
+            count += 1;
+        }
+        (0, count as u64)
+    } else {
+        (-1, 0)
+    }
+}
+
+pub fn handle_get_props(graph: &Graph, id: u64, buffer: u64, len: u64) -> HandlerResult {
+    if let Some(node) = graph.nodes.get(&id) {
+        let entry_size = core::mem::size_of::<abi::types::GraphProp>();
+        if entry_size == 0 {
+            return (-1, 0);
+        }
+        let max_entries = (len as usize) / entry_size;
+        let mut count = 0;
+        let out_ptr = buffer as *mut abi::types::GraphProp;
+
+        for (key, val) in &node.props {
+            if count < max_entries {
+                unsafe {
+                    *out_ptr.add(count) = abi::types::GraphProp {
+                        key: *key,
+                        _pad: 0,
+                        value: *val,
                     };
                 }
             }

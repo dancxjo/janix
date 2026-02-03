@@ -111,6 +111,14 @@ pub struct GraphEdge {
     pub target: u64,
 }
 
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct GraphProp {
+    pub key: u32,
+    pub _pad: u32,
+    pub value: u64,
+}
+
 // ============================================================================
 // Watch Semantics
 // ============================================================================

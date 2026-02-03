@@ -15,7 +15,7 @@ use crate::graph_api::{self, GraphError, JsonBuilder};
 use crate::http::{self, Request};
 use crate::router::ApiRoute;
 use stem::syscall::graph::{prop_get, prop_set, intern};
-use stem::thing::sys::get_edges;
+use stem::thing::sys::{get_edges, get_props};
 use stem::thing::ThingId;
 use stem::thing::HandleId; // for from_u64
 use abi::types::Edge;
@@ -169,46 +169,27 @@ pub fn handle_get_thing_props(id_str: &str) -> Vec<u8> {
         Ok(k) if k != 0 => k,
         _ => return error_response(ApiError::not_found(format!("Thing {} not found", id))),
     };
-    
-    // Well-known property keys to check
-    // These are the most commonly used properties in the system
-    const PROPERTY_KEYS: &[&str] = &[
-        // Names and labels
-        "name",
-        "ui.title",
-        "asset.name",
-        "file.name",
-        // Positions  
-        "layout.pos.x",
-        "layout.pos.y",
-        "ui.x",
-        "ui.y",
-        "ui.width",
-        "ui.height",
-        // Identifiers
-        "ui.text",
-        "asset.hash",
-        "file.path",
-        "file.size",
-        // State
-        "ui.visible",
-        "ui.focused",
-        "ui.order",
-        // Network
-        "net.ip",
-        "net.port",
-        // Device
-        "dev.vendor_id",
-        "dev.device_id",
-        // Time
-        "time.created",
-        "time.modified",
-        "clock.now_text",
-        // Memory/bytespace
-        "mem.size",
-        "mem.phys",
-    ];
-    
+
+    const INITIAL_PROP_CAP: usize = 128;
+    const MAX_PROP_CAP: usize = 4096;
+
+    let mut props_buf = alloc::vec![abi::types::GraphProp::default(); INITIAL_PROP_CAP];
+    let mut prop_count = get_props(ThingId::from_u64(id), &mut props_buf).unwrap_or(0);
+    let mut cap = INITIAL_PROP_CAP;
+
+    while prop_count == cap && cap < MAX_PROP_CAP {
+        cap = (cap * 2).min(MAX_PROP_CAP);
+        props_buf.resize(cap, abi::types::GraphProp::default());
+        prop_count = get_props(ThingId::from_u64(id), &mut props_buf).unwrap_or(0);
+        if prop_count < cap {
+            break;
+        }
+    }
+
+    let truncated = prop_count == cap && cap == MAX_PROP_CAP;
+    let prop_count = core::cmp::min(prop_count, cap);
+    props_buf.truncate(prop_count);
+
     use alloc::collections::BTreeMap;
     let mut symbol_cache: BTreeMap<u32, String> = BTreeMap::new();
     
@@ -231,43 +212,62 @@ pub fn handle_get_thing_props(id_str: &str) -> Vec<u8> {
     // Properties object
     json.key("props");
     json.start_object();
-    
-    for key_name in PROPERTY_KEYS {
-        if let Ok(key_sym) = intern(key_name) {
-            if let Ok(val) = prop_get(id, key_sym) {
-                // Only include non-zero values
-                if val != 0 {
-                    json.key(key_name);
-                    
-                    // Try to decode as various types
-                    // For layout positions, decode as f32
-                    if key_name.contains("pos.") || key_name.ends_with(".x") || key_name.ends_with(".y") {
-                        let f = f32::from_bits(val as u32);
-                        json.float_value(f);
-                    } else if key_name.contains("text") || key_name.contains("name") || key_name.contains("path") {
-                        // Try to resolve as interned string
-                        let mut buf = [0u8; 128];
-                        if let Ok(len) = stem::thing::sys::describe_symbol(val as u32, &mut buf) {
-                            if len > 0 {
-                                if let Ok(s) = core::str::from_utf8(&buf[..len]) {
-                                    json.string_value(s);
-                                    continue;
-                                }
-                            }
+
+    for prop in &props_buf {
+        let key_name = get_symbol_name_cached(prop.key, &mut symbol_cache);
+        let val = prop.value;
+        json.key(&key_name);
+
+        let is_layout_key = key_name.starts_with("layout.") || key_name.starts_with("ui.layout.");
+        let is_float = is_layout_key
+            && (key_name.ends_with(".x")
+                || key_name.ends_with(".y")
+                || key_name.ends_with(".w")
+                || key_name.ends_with(".h")
+                || key_name.ends_with(".z"));
+
+        if is_float {
+            let f = f32::from_bits(val as u32);
+            json.float_value(f);
+        } else if key_name.contains("text")
+            || key_name.contains("name")
+            || key_name.contains("path")
+            || key_name.contains("title")
+            || key_name.contains("label")
+            || key_name.contains("tag")
+            || key_name.contains("source")
+            || key_name.contains("icon")
+        {
+            if val <= u32::MAX as u64 {
+                let mut buf = [0u8; 128];
+                if let Ok(len) = stem::thing::sys::describe_symbol(val as u32, &mut buf) {
+                    if len > 0 {
+                        if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                            json.string_value(s);
+                            continue;
                         }
-                        // Fallback: just output the numeric value
-                        json.number_value(val);
-                    } else {
-                        // Default: output as number
-                        json.number_value(val);
                     }
                 }
             }
+            json.number_value(val);
+        } else {
+            json.number_value(val);
         }
     }
-    
+
     json.end_object();
-    
+    json.buf.push(b',');
+
+    json.key("prop_count");
+    json.number_value(prop_count as u64);
+
+    json.key("truncated");
+    if truncated {
+        json.buf.extend_from_slice(b"true,");
+    } else {
+        json.buf.extend_from_slice(b"false,");
+    }
+
     json.end_object();
     
     json_response("200 OK", &json.as_string().unwrap_or_default())

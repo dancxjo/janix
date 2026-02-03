@@ -369,6 +369,10 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     crate::kinfo!("ROOT: Census Phase 2: PCI");
     crate::root::pci::enumerate_and_publish(host, &create, &set, &link, &intern);
 
+    // Publish host anchor after boot census is complete so fallback links don't
+    // duplicate the explicit boot-time relationships.
+    super::graph_anchors::set_host(host);
+
     crate::kinfo!(
         "ROOT: registered items. host={:x} kernel={:x}",
         host,

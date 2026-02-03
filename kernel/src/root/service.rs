@@ -89,6 +89,7 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::DescribeEdge { .. } => "DescribeEdge",
         RootOp::DumpEdges { .. } => "DumpEdges",
         RootOp::GetEdges { .. } => "GetEdges",
+        RootOp::GetProps { .. } => "GetProps",
         RootOp::DumpGraph { .. } => "DumpGraph",
         RootOp::LogEvent { .. } => "LogEvent",
         RootOp::PropsGetMany { .. } => "PropsGetMany",
@@ -209,6 +210,9 @@ fn handle_msg<R: BootRuntime>(
         }
         RootOp::GetEdges { id, buffer, len } => {
             root_handlers::handle_get_edges(graph, id, buffer, len)
+        }
+        RootOp::GetProps { id, buffer, len } => {
+            root_handlers::handle_get_props(graph, id, buffer, len)
         }
         RootOp::DumpGraph { limit } => root_handlers::handle_dump_graph(graph, interner, limit),
 

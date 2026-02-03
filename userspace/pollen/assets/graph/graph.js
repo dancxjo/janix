@@ -844,7 +844,8 @@ function selectNode(node) {
     const data = node.data();
 
     $('inspectorThingLink').textContent = id;
-    $('inspectorThingLink').href = `/#thing=${encodeURIComponent(id)}`;
+    const depth = parseInt($('depthInput').value) || CONFIG.DEFAULT_DEPTH;
+    $('inspectorThingLink').href = `?root=${encodeURIComponent(id)}&depth=${depth}`;
     $('inspectorKind').textContent = data.kindName || data.kind || '-';
     $('inspectorLabel').textContent = data.label || '-';
     updateInspectorPosition(node);
@@ -946,6 +947,10 @@ function renderProps(data, isLoading) {
     const propKeys = Object.keys(props).sort();
 
     let html = '';
+    if (data.truncated) {
+        const count = data.prop_count ?? propKeys.length;
+        html += `<div class="props-note">Showing first ${count} properties (truncated)</div>`;
+    }
     for (const key of propKeys) {
         const value = props[key];
         const prevValue = state.lastProps[key];
@@ -1054,9 +1059,13 @@ function bindEvents() {
         }
     });
 
-    $('openExplorerBtn').addEventListener('click', () => {
+    $('setRootBtn').addEventListener('click', () => {
         if (state.selectedNode) {
-            window.location.href = `/#thing=${encodeURIComponent(state.selectedNode.id())}`;
+            const root = state.selectedNode.id();
+            const depth = parseInt($('depthInput').value) || CONFIG.DEFAULT_DEPTH;
+            $('rootInput').value = root;
+            updateUrl(root, depth);
+            loadGraph(root, depth);
         }
     });
 }

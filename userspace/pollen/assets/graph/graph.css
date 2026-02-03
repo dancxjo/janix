@@ -308,6 +308,12 @@ html, body {
     padding: 8px 0;
 }
 
+.props-note {
+    color: var(--text-secondary);
+    font-size: 12px;
+    padding: 6px 0 10px 0;
+}
+
 .prop-item {
     display: flex;
     justify-content: space-between;

@@ -314,6 +314,19 @@ const api = {
         }
         return r.json();
     },
+
+    async launch(thingId) {
+        const r = await fetchWithTimeout(`/api/v1/things/${encodeURIComponent(thingId)}/launch`, {
+            method: 'POST',
+        });
+        const ct = r.headers.get('content-type') || '';
+        const body = ct.includes('json') ? await r.json() : await r.text();
+        if (!r.ok) {
+            const msg = body?.error?.message || (typeof body === 'string' ? body : `${r.status} ${r.statusText}`);
+            throw new Error(msg);
+        }
+        return body;
+    },
 };
 
 // =============================================================================
@@ -378,6 +391,7 @@ const state = {
     // Property watching
     watchInterval: null,
     lastProps: {},  // Track previous values for change detection
+    launchInFlight: false,
 };
 
 // =============================================================================
@@ -834,6 +848,7 @@ async function saveLayout() {
 function selectNode(node) {
     // Stop any existing watch
     stopWatching();
+    resetLaunchUI();
 
     state.selectedNode = node;
 
@@ -864,6 +879,96 @@ function clearSelection() {
     state.selectedNode = null;
     $('inspectorEmpty').style.display = 'block';
     $('inspectorContent').style.display = 'none';
+    resetLaunchUI();
+}
+
+function resetLaunchUI() {
+    const btn = $('launchBtn');
+    const status = $('launchStatus');
+    if (btn) {
+        btn.style.display = 'none';
+        btn.disabled = false;
+        btn.textContent = 'Launch';
+    }
+    if (status) {
+        status.style.display = 'none';
+        status.textContent = '';
+        status.className = 'launch-status';
+    }
+    state.launchInFlight = false;
+}
+
+function shortModuleName(name) {
+    if (!name) return '';
+    const parts = name.split('/');
+    return parts[parts.length - 1] || name;
+}
+
+function setLaunchStatus(message, kind) {
+    const status = $('launchStatus');
+    if (!status) return;
+    status.textContent = message || '';
+    status.className = 'launch-status';
+    if (kind === 'success') {
+        status.classList.add('success');
+    } else if (kind === 'error') {
+        status.classList.add('error');
+    }
+    status.style.display = message ? 'block' : 'none';
+}
+
+function updateLaunchControls(data) {
+    const btn = $('launchBtn');
+    const status = $('launchStatus');
+    if (!btn || !status) return;
+
+    if (!state.selectedNode) {
+        resetLaunchUI();
+        return;
+    }
+
+    const launchable = !!(data && data.launchable);
+    if (!launchable) {
+        btn.style.display = 'none';
+        btn.disabled = true;
+        btn.textContent = 'Launch';
+        const reason = data && data.launch_reason ? data.launch_reason : '';
+        setLaunchStatus(reason, '');
+        return;
+    }
+
+    const name = data && data.launch_name ? data.launch_name : '';
+    const label = name ? `Launch ${shortModuleName(name)}` : 'Launch';
+    btn.textContent = label;
+    btn.style.display = 'block';
+    btn.disabled = state.launchInFlight;
+    btn.onclick = () => launchSelected(state.selectedNode.id());
+    if (!state.launchInFlight) {
+        setLaunchStatus('', '');
+    }
+}
+
+async function launchSelected(thingId) {
+    if (!thingId || state.launchInFlight) return;
+    state.launchInFlight = true;
+    const btn = $('launchBtn');
+    if (btn) btn.disabled = true;
+    setLaunchStatus('Launching...', '');
+
+    try {
+        const res = await api.launch(thingId);
+        const pid = res?.pid ?? '?';
+        if (res && res.graph_linked === false && res.graph_error) {
+            setLaunchStatus(`Launched (pid ${pid}), graph link failed: ${res.graph_error}`, 'error');
+        } else {
+            setLaunchStatus(`Launched (pid ${pid})`, 'success');
+        }
+    } catch (err) {
+        setLaunchStatus(`Launch failed: ${err.message}`, 'error');
+    } finally {
+        state.launchInFlight = false;
+        if (btn) btn.disabled = false;
+    }
 }
 
 // =============================================================================
@@ -934,11 +1039,13 @@ function renderProps(data, isLoading) {
 
     if (isLoading) {
         container.innerHTML = '<div class="props-empty">Loading...</div>';
+        updateLaunchControls(data);
         return;
     }
 
     if (!data || !data.props || Object.keys(data.props).length === 0) {
         container.innerHTML = '<div class="props-empty">No properties found</div>';
+        updateLaunchControls(data);
         return;
     }
 
@@ -978,6 +1085,8 @@ function renderProps(data, isLoading) {
 
     // Update lastProps for next comparison
     state.lastProps = { ...props };
+
+    updateLaunchControls(data);
 }
 
 function escapeHtml(text) {

@@ -14,11 +14,12 @@ use crate::error::{ApiError, ApiErrorCode};
 use crate::graph_api::{self, GraphError, JsonBuilder};
 use crate::http::{self, Request};
 use crate::router::ApiRoute;
-use stem::syscall::graph::{prop_get, prop_set, intern};
+use stem::syscall::graph::{prop_get, prop_set, intern, link, find};
 use stem::thing::sys::{get_edges, get_props};
 use stem::thing::ThingId;
 use stem::thing::HandleId; // for from_u64
 use abi::types::Edge;
+use abi::schema::{keys, kinds, rels};
 
 // ============================================================================
 // API Limits (constants)
@@ -88,6 +89,7 @@ pub fn handle_discovery() -> Vec<u8> {
     json.string_value("/api/v1/things");
     json.string_value("/api/v1/things/{id}");
     json.string_value("/api/v1/things/{id}/bytespaces/{key}");
+    json.string_value("/api/v1/things/{id}/launch");
     json.string_value("/api/v1/path/{path}");
     json.string_value("/api/v1/watch");
     json.end_array();
@@ -268,6 +270,22 @@ pub fn handle_get_thing_props(id_str: &str) -> Vec<u8> {
         json.buf.extend_from_slice(b"false,");
     }
 
+    let launch_info = get_launch_info(id, kind_id);
+    json.key("launchable");
+    if launch_info.launchable {
+        json.buf.extend_from_slice(b"true,");
+    } else {
+        json.buf.extend_from_slice(b"false,");
+    }
+    if let Some(name) = launch_info.name.as_ref() {
+        json.key("launch_name");
+        json.string_value(name);
+    }
+    if let Some(reason) = launch_info.reason.as_ref() {
+        json.key("launch_reason");
+        json.string_value(reason);
+    }
+
     json.end_object();
     
     json_response("200 OK", &json.as_string().unwrap_or_default())
@@ -379,6 +397,131 @@ pub fn handle_watch(_req: &Request<'_>) -> Vec<u8> {
         ApiErrorCode::InternalError,
         "Watch SSE not yet implemented",
     ))
+}
+
+/// GET /api/v1/things/{id}/launch
+/// Returns whether the Thing is launchable as a process.
+pub fn handle_get_launch_info(id_str: &str) -> Vec<u8> {
+    let id = match parse_thing_id(id_str) {
+        Ok(id) => id,
+        Err(err) => return error_response(err),
+    };
+
+    let kind_id = match stem::syscall::graph::get_kind(id) {
+        Ok(k) if k != 0 => k,
+        _ => return error_response(ApiError::not_found(format!("Thing {} not found", id))),
+    };
+
+    let launch_info = get_launch_info(id, kind_id);
+
+    let mut json = JsonBuilder::new();
+    json.start_object();
+    json.key("thing_id");
+    json.number_value(id);
+    json.key("launchable");
+    if launch_info.launchable {
+        json.buf.extend_from_slice(b"true,");
+    } else {
+        json.buf.extend_from_slice(b"false,");
+    }
+    if let Some(name) = launch_info.name.as_ref() {
+        json.key("launch_name");
+        json.string_value(name);
+    }
+    if let Some(reason) = launch_info.reason.as_ref() {
+        json.key("launch_reason");
+        json.string_value(reason);
+    }
+    json.end_object();
+
+    json_response("200 OK", &json.as_string().unwrap_or_default())
+}
+
+/// POST /api/v1/things/{id}/launch
+/// Launch a boot.Module via spawn_process and record a LAUNCHED edge.
+pub fn handle_launch(id_str: &str) -> Vec<u8> {
+    let id = match parse_thing_id(id_str) {
+        Ok(id) => id,
+        Err(err) => return error_response(err),
+    };
+
+    let kind_id = match stem::syscall::graph::get_kind(id) {
+        Ok(k) if k != 0 => k,
+        _ => return error_response(ApiError::not_found(format!("Thing {} not found", id))),
+    };
+
+    let launch_info = get_launch_info(id, kind_id);
+    if !launch_info.launchable {
+        let reason = launch_info
+            .reason
+            .unwrap_or_else(|| "Thing is not executable".into());
+        return error_response(ApiError::unprocessable(reason));
+    }
+
+    let name = match launch_info.name {
+        Some(n) => n,
+        None => return error_response(ApiError::unprocessable("Missing module name")),
+    };
+
+    let host_id = match find_host_id() {
+        Ok(id) => id,
+        Err(err) => return error_response(err),
+    };
+
+    let pid = match stem::syscall::spawn_process(&name, 0) {
+        Ok(pid) => pid,
+        Err(e) => {
+            return error_response(ApiError::internal(format!(
+                "spawn_process failed: {:?}",
+                e
+            )))
+        }
+    };
+
+    let launched_at = stem::time::monotonic_ns();
+
+    let mut graph_linked = false;
+    let mut graph_error: Option<String> = None;
+
+    if let Ok(rel_id) = intern(rels::LAUNCHED) {
+        if let Err(e) = link(host_id, rel_id, id) {
+            graph_error = Some(format!("LAUNCHED link failed: {:?}", e));
+        } else {
+            graph_linked = true;
+        }
+    } else {
+        graph_error = Some("Failed to intern LAUNCHED".into());
+    }
+
+    if let Ok(key_id) = intern(keys::LAUNCH_AT) {
+        let _ = prop_set(id, key_id, launched_at);
+    }
+
+    let mut json = JsonBuilder::new();
+    json.start_object();
+    json.key("thing_id");
+    json.number_value(id);
+    json.key("launch_name");
+    json.string_value(&name);
+    json.key("pid");
+    json.number_value(pid);
+    json.key("host_id");
+    json.number_value(host_id);
+    json.key("launched_at");
+    json.number_value(launched_at);
+    json.key("graph_linked");
+    if graph_linked {
+        json.buf.extend_from_slice(b"true,");
+    } else {
+        json.buf.extend_from_slice(b"false,");
+    }
+    if let Some(err) = graph_error.as_ref() {
+        json.key("graph_error");
+        json.string_value(err);
+    }
+    json.end_object();
+
+    json_response("200 OK", &json.as_string().unwrap_or_default())
 }
 
 /// Handle route not found
@@ -820,6 +963,103 @@ fn extract_json_number(obj: &str, key: &str) -> Option<f64> {
 }
 
 // ============================================================================
+// Launch Helpers
+// ============================================================================
+
+struct LaunchInfo {
+    launchable: bool,
+    name: Option<String>,
+    reason: Option<String>,
+}
+
+impl LaunchInfo {
+    fn not(reason: impl Into<String>) -> Self {
+        Self {
+            launchable: false,
+            name: None,
+            reason: Some(reason.into()),
+        }
+    }
+}
+
+fn get_launch_info(thing_id: u64, kind_id: u64) -> LaunchInfo {
+    let boot_kind = match intern(kinds::BOOT_MODULE) {
+        Ok(id) => id,
+        Err(_) => return LaunchInfo::not("Failed to resolve boot.Module kind"),
+    };
+
+    if kind_id != boot_kind {
+        return LaunchInfo {
+            launchable: false,
+            name: None,
+            reason: None,
+        };
+    }
+
+    let name_key = match intern(keys::NAME) {
+        Ok(id) => id,
+        Err(_) => return LaunchInfo::not("Failed to resolve module name key"),
+    };
+    let bytespace_key = match intern(keys::BYTESPACE) {
+        Ok(id) => id,
+        Err(_) => return LaunchInfo::not("Failed to resolve bytespace key"),
+    };
+
+    let name_val = prop_get(thing_id, name_key).unwrap_or(0);
+    let name = resolve_symbol_value(name_val);
+    if name.is_none() {
+        return LaunchInfo::not("Missing module name");
+    }
+
+    let bytespace_id = prop_get(thing_id, bytespace_key).unwrap_or(0);
+    if bytespace_id == 0 {
+        return LaunchInfo::not("Missing bytespace");
+    }
+
+    match bytespace_is_elf(bytespace_id) {
+        Ok(true) => LaunchInfo {
+            launchable: true,
+            name,
+            reason: None,
+        },
+        Ok(false) => LaunchInfo::not("Bytespace is not an ELF"),
+        Err(_) => LaunchInfo::not("Failed to read bytespace"),
+    }
+}
+
+fn bytespace_is_elf(bytespace_id: u64) -> Result<bool, GraphError> {
+    let data = graph_api::read_bytespace_ranged(bytespace_id, 0, 4)?;
+    Ok(data.len() >= 4 && data[0] == 0x7F && data[1] == b'E' && data[2] == b'L' && data[3] == b'F')
+}
+
+fn resolve_symbol_value(value: u64) -> Option<String> {
+    if value == 0 || value > u32::MAX as u64 {
+        return None;
+    }
+    let mut buf = [0u8; 256];
+    if let Ok(len) = stem::thing::sys::describe_symbol(value as u32, &mut buf) {
+        if len > 0 {
+            if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                return Some(String::from(s));
+            }
+        }
+    }
+    None
+}
+
+fn find_host_id() -> Result<u64, ApiError> {
+    let host_kind = intern(kinds::DEV_HOST)
+        .map_err(|_| ApiError::internal("Failed to resolve dev.Host kind"))?;
+    let mut ids = [0u64; 4];
+    let count = find(host_kind, &mut ids)
+        .map_err(|_| ApiError::internal("Failed to find dev.Host"))?;
+    if count == 0 {
+        return Err(ApiError::not_found("dev.Host not found"));
+    }
+    Ok(ids[0])
+}
+
+// ============================================================================
 // Dispatch
 // ============================================================================
 
@@ -835,6 +1075,8 @@ pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> Vec<u8> 
         ApiRoute::GetBytespace { thing_id, key } => handle_get_bytespace(thing_id, key, req),
         ApiRoute::GetBytespaceMetadata { thing_id, key } => handle_bytespace_meta(thing_id, key),
         ApiRoute::PutBytespace { thing_id, key } => handle_put_bytespace(thing_id, key, body),
+        ApiRoute::GetLaunchInfo { id } => handle_get_launch_info(id),
+        ApiRoute::Launch { id } => handle_launch(id),
         ApiRoute::ResolvePath { path } => handle_path_resolve(path),
         ApiRoute::Watch => handle_watch(req),
         ApiRoute::GetSubgraph { query } => handle_get_subgraph(query),

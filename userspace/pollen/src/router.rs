@@ -37,6 +37,12 @@ pub enum ApiRoute<'a> {
     
     /// PUT /api/v1/things/{id}/bytespaces/{key}
     PutBytespace { thing_id: &'a str, key: &'a str },
+
+    /// GET /api/v1/things/{id}/launch
+    GetLaunchInfo { id: &'a str },
+
+    /// POST /api/v1/things/{id}/launch
+    Launch { id: &'a str },
     
     /// GET /api/v1/path/{path}
     ResolvePath { path: &'a str },
@@ -102,6 +108,10 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         (Method::Get, ["things", thing_id, "bytespaces", key, "meta"]) => {
             Some(ApiRoute::GetBytespaceMetadata { thing_id, key })
         }
+
+        // /api/v1/things/{id}/launch
+        (Method::Get, ["things", id, "launch"]) => Some(ApiRoute::GetLaunchInfo { id }),
+        (Method::Post, ["things", id, "launch"]) => Some(ApiRoute::Launch { id }),
         
         // /api/v1/path/{path...}
         (Method::Get, ["path", rest @ ..]) if !rest.is_empty() => {
@@ -130,6 +140,7 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         (_, ["things", _, "props"]) |
         (_, ["things", _, "bytespaces", _]) |
         (_, ["things", _, "bytespaces", _, "meta"]) |
+        (_, ["things", _, "launch"]) |
         (_, ["watch"]) |
         (_, ["subgraph"]) |
         (_, ["layout"]) => Some(ApiRoute::MethodNotAllowed),
@@ -179,6 +190,18 @@ mod tests {
         assert_eq!(
             match_route(Method::Get, "/api/v1/things/1/bytespaces/content/meta"),
             Some(ApiRoute::GetBytespaceMetadata { thing_id: "1", key: "content" })
+        );
+    }
+
+    #[test]
+    fn test_launch_routes() {
+        assert_eq!(
+            match_route(Method::Get, "/api/v1/things/42/launch"),
+            Some(ApiRoute::GetLaunchInfo { id: "42" })
+        );
+        assert_eq!(
+            match_route(Method::Post, "/api/v1/things/42/launch"),
+            Some(ApiRoute::Launch { id: "42" })
         );
     }
 

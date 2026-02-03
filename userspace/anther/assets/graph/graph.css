@@ -471,3 +471,50 @@ html, body {
     background: var(--bg-primary);
     margin: 0;
 }
+
+.query-result-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 20px;
+    background: var(--bg-secondary);
+}
+
+.query-result-table th, 
+.query-result-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.query-result-table th {
+    background: var(--bg-tertiary);
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    position: sticky;
+    top: 0;
+}
+
+.query-result-table tr:hover {
+    background: var(--bg-tertiary);
+}
+
+.query-result-table a {
+    color: var(--accent);
+    text-decoration: none;
+}
+
+.query-result-table a:hover {
+    text-decoration: underline;
+}
+
+.error-msg {
+    color: var(--danger);
+    background: rgba(231, 111, 111, 0.1);
+    border: 1px solid var(--danger);
+    padding: 12px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+}

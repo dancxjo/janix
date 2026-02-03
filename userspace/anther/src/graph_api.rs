@@ -102,6 +102,18 @@ impl JsonBuilder {
         self.buf.push(b',');
     }
 
+    pub fn bool_value(&mut self, v: bool) {
+        if v {
+            self.buf.extend_from_slice(b"true,");
+        } else {
+            self.buf.extend_from_slice(b"false,");
+        }
+    }
+
+    pub fn null_value(&mut self) {
+        self.buf.extend_from_slice(b"null,");
+    }
+
     pub fn into_bytes(self) -> Vec<u8> {
         self.buf
     }

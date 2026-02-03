@@ -6,6 +6,7 @@ use crate::gql::{Command, Pattern, Value, NodePattern};
 use stem::thing::sys as graph;
 use stem::abi::ids::HandleId;
 use stem::thing::ThingId;
+use crate::{ExecutionResult, ResultValue};
 
 pub struct GraphExecutor {
     bindings: BTreeMap<String, u64>,
@@ -18,68 +19,70 @@ impl GraphExecutor {
         }
     }
 
-    pub fn execute(&mut self, cmd: Command) -> String {
+    pub fn execute(&mut self, cmd: Command) -> ExecutionResult {
         match cmd {
             Command::Help => self.help(),
-            Command::Quit => String::from("Bye.\n"),
-            Command::Schema => String::from("Schema not implemented.\n"),
+            Command::Quit => ExecutionResult::message("Bye."),
+            Command::Schema => ExecutionResult::error("Schema not implemented."),
             Command::Merge { pattern, returns } => self.execute_merge(pattern, returns),
             Command::Match { pattern, returns, limit } => self.execute_match(pattern, returns, limit),
             Command::Set { var, key, value } => self.execute_set(var, key, value),
         }
     }
 
-    fn help(&self) -> String {
-        "Commands:\n\
-         MERGE (n:Kind {key: \"val\"})\n\
-         MERGE (a)-[:REL]->(b)\n\
-         MATCH (n:Kind {key: \"val\"}) RETURN n\n\
-         MATCH (a)-[:REL]->(b) RETURN a, b\n\
-         SET n.key = \"val\"\n\
-         HELP\n\
-         QUIT\n".to_string()
+    fn help(&self) -> ExecutionResult {
+        ExecutionResult::message(
+            "Commands:\n\
+             MERGE (n:Kind {key: \"val\"})\n\
+             MERGE (a)-[:REL]->(b)\n\
+             MATCH (n:Kind {key: \"val\"}) RETURN n\n\
+             MATCH (a)-[:REL]->(b) RETURN a, b\n\
+             SET n.key = \"val\"\n\
+             HELP\n\
+             QUIT"
+        )
     }
 
-    fn execute_merge(&mut self, pattern: Pattern, returns: Vec<String>) -> String {
+    fn execute_merge(&mut self, pattern: Pattern, returns: Vec<String>) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
                 let id = match self.ensure_node(&node_pat) {
                     Ok(id) => id,
-                    Err(e) => return format!("error: {}\n", e),
+                    Err(e) => return ExecutionResult::error(&e),
                 };
                 self.bindings.insert(node_pat.var, id);
 
                 if returns.is_empty() {
-                    return format!("ok: merged node (id:{})\n", id);
+                    return ExecutionResult::success(&format!("ok: merged node (id:{})", id));
                 } else {
-                    return self.format_results(&returns);
+                    return self.format_results_structured(&returns);
                 }
             }
             Pattern::Edge { src_var, rel, dst_var } => {
                 let src_id = match self.bindings.get(&src_var) {
                     Some(&id) => id,
-                    None => return format!("error: variable '{}' not bound\n", src_var),
+                    None => return ExecutionResult::error(&format!("variable '{}' not bound", src_var)),
                 };
                 let dst_id = match self.bindings.get(&dst_var) {
                     Some(&id) => id,
-                    None => return format!("error: variable '{}' not bound\n", dst_var),
+                    None => return ExecutionResult::error(&format!("variable '{}' not bound", dst_var)),
                 };
 
                 match self.ensure_edge(src_id, &rel, dst_id) {
                     Ok(_) => {
                         if returns.is_empty() {
-                            format!("ok: merged edge ({})-[:{}]->({})\n", src_id, rel, dst_id)
+                            ExecutionResult::success(&format!("ok: merged edge ({})-[:{}]->({})", src_id, rel, dst_id))
                         } else {
-                            self.format_results(&returns)
+                            self.format_results_structured(&returns)
                         }
                     }
-                    Err(e) => format!("error: {}\n", e),
+                    Err(e) => ExecutionResult::error(&e),
                 }
             }
         }
     }
 
-    fn execute_match(&mut self, pattern: Pattern, returns: Vec<String>, limit: usize) -> String {
+    fn execute_match(&mut self, pattern: Pattern, returns: Vec<String>, limit: usize) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
                 let mut matched_ids = Vec::new();
@@ -89,7 +92,7 @@ impl GraphExecutor {
                         let mut candidates = [ThingId::from_u64(0); 128];
                         let count = match graph::find(k.as_str(), &mut candidates) {
                             Ok(c) => c,
-                            Err(_) => return "error: find syscall failed\n".to_string(),
+                            Err(_) => return ExecutionResult::error("find syscall failed"),
                         };
 
                         for i in 0..count {
@@ -139,130 +142,78 @@ impl GraphExecutor {
                     self.bindings.insert(node_pat.var.clone(), matched_ids[0]);
                 }
 
-                // Format output
-                let mut out = String::new();
-                out.push_str(&format!("ok: {} rows\n", matched_ids.len()));
-                for (idx, &id) in matched_ids.iter().enumerate() {
-                    out.push_str(&format!("row {}: ", idx + 1));
+                let mut rows = Vec::new();
+                for &id in &matched_ids {
+                    let mut row = Vec::new();
                     for var in &returns {
                         if var == &node_pat.var {
-                            out.push_str(&format!("{}={} ", var, self.format_node(id)));
+                            row.push(ResultValue::Node(id));
                         } else {
                             if let Some(&bid) = self.bindings.get(var) {
-                                out.push_str(&format!("{}={} ", var, self.format_node(bid)));
+                                row.push(ResultValue::Node(bid));
                             } else {
-                                out.push_str(&format!("{}=? ", var));
+                                row.push(ResultValue::Number(0));
                             }
                         }
                     }
-                    out.push('\n');
+                    rows.push(row);
                 }
-                out
+
+                ExecutionResult::rows(returns, rows)
             }
             Pattern::Edge { src_var, rel: _, dst_var } => {
-                // MATCH (a)-[:REL]->(b)
-                // Assuming 'a' is bound (or scanning all? MVP: require 'a' bound or 'b' bound?)
-                // Or Pattern::Edge implies we are matching this specific pattern.
-                // Usually variables are fresh unless already bound.
-
-                // For MVP, let's assume `a` is already bound from a previous match?
-                // Or maybe we need to support `MATCH (a:Kind)-[:REL]->(b:Kind)`?
-                // The parser supports `MATCH (a)-[:REL]->(b)`.
-                // If `a` is bound in `self.bindings`, we scan edges from it.
-                // If `a` is NOT bound, we scan ALL edges? That's hard.
-
-                // Let's implement: If src is bound, scan edges.
-
                 let src_id_opt = self.bindings.get(&src_var).cloned();
 
                 if let Some(src_id) = src_id_opt {
                     let edges = match self.get_outbound_edges(src_id) {
                         Ok(e) => e,
-                        Err(_) => return "error: failed to get edges\n".to_string(),
+                        Err(_) => return ExecutionResult::error("failed to get edges"),
                     };
-
-                    // Filter edges by REL? (The parser gives us REL name, we need ID)
-                    // But `Pattern` struct has `rel: String`.
-                    // We don't have REL ID easily unless we intern/guess.
-                    // But `get_outbound_edges` gives (RelId, DstId).
-
-                    // Actually, `get_edges` returns raw u64s.
-                    // Protocol: [RelId, DstId, RelId, DstId...] ?
-                    // Wait, `SYS_ROOT_GET_EDGES` usually returns a list of edges.
-                    // The kernel implementation returns `(SymbolId, ThingId)` pairs.
-                    // So `out_buf` should be `[u64; 2 * count]`.
 
                     let mut rows = Vec::new();
 
-                    for (rel_id, dst_id) in edges {
-                        // TODO: Filter by REL name if specified?
-                        // If pattern.rel is empty? Parser requires it.
-                        // Resolve rel_id to name to check?
-                        // Or intern pattern.rel and check?
-
-                        // For now, let's just collect all and bind `b`.
-                        // We should probably verify REL.
-                        // Let's intern the pattern rel.
-
-                        // NOTE: This logic assumes simple single-path execution.
-                        // Correct OpenGQL does cartesian products.
-
-                        // If we can resolve symbol:
-                        let rel_name_opt = self.resolve_symbol(rel_id as u32);
-                        // This is expensive loop.
-                        // Better: intern query rel.
-
-                        // (Assuming we can intern)
-                         // We can try to intern the pattern REL string.
-                        // If intern fails, it means that REL doesn't exist, so no edges match.
-
-                        // ...
-
+                    for (_rel_id, dst_id) in edges {
                         self.bindings.insert(dst_var.clone(), dst_id);
-                        rows.push((src_id, dst_id));
-                    }
-
-                    let mut out = String::new();
-                    out.push_str(&format!("ok: {} rows\n", rows.len()));
-                    for (idx, (_s, d)) in rows.iter().enumerate() {
-                        out.push_str(&format!("row {}: ", idx + 1));
+                        
+                        let mut row = Vec::new();
                         for var in &returns {
                             if var == &src_var {
-                                out.push_str(&format!("{}={} ", var, self.format_node(src_id)));
+                                row.push(ResultValue::Node(src_id));
                             } else if var == &dst_var {
-                                out.push_str(&format!("{}={} ", var, self.format_node(*d)));
+                                row.push(ResultValue::Node(dst_id));
                             } else {
-                                out.push_str(&format!("{}=? ", var));
+                                row.push(ResultValue::Number(0));
                             }
                         }
-                        out.push('\n');
+                        rows.push(row);
                     }
-                    return out;
+
+                    ExecutionResult::rows(returns, rows)
 
                 } else {
-                     return "error: MATCH edge requires bound source (e.g. use MERGE/MATCH node first)\n".to_string();
+                     return ExecutionResult::error("MATCH edge requires bound source (e.g. use MERGE/MATCH node first)");
                 }
             }
         }
     }
 
-    fn execute_set(&mut self, var: String, key: String, value: Value) -> String {
+    fn execute_set(&mut self, var: String, key: String, value: Value) -> ExecutionResult {
         let id = match self.bindings.get(&var) {
             Some(&id) => id,
-            None => return format!("error: variable '{}' not bound\n", var),
+            None => return ExecutionResult::error(&format!("variable '{}' not bound", var)),
         };
 
         let val_u64 = match value {
             Value::String(s) => match graph::intern(&s) {
                 Ok(id) => id as u64,
-                Err(_) => return "error: intern value failed\n".to_string(),
+                Err(_) => return ExecutionResult::error("intern value failed"),
             },
             Value::Number(n) => n,
         };
 
         match graph::prop_set(ThingId::from_u64(id), key.as_str(), val_u64) {
-            Ok(_) => "ok: property set\n".to_string(),
-            Err(e) => format!("error: prop_set failed {:?}\n", e),
+            Ok(_) => ExecutionResult::success("ok: property set"),
+            Err(e) => ExecutionResult::error(&format!("prop_set failed {:?}", e)),
         }
     }
 
@@ -354,17 +305,16 @@ impl GraphExecutor {
         true
     }
 
-    fn format_results(&self, vars: &[String]) -> String {
-        let mut out = String::new();
+    fn format_results_structured(&self, vars: &[String]) -> ExecutionResult {
+        let mut row = Vec::new();
         for var in vars {
             if let Some(&id) = self.bindings.get(var) {
-                out.push_str(&format!("{}={} ", var, self.format_node(id)));
+                row.push(ResultValue::Node(id));
             } else {
-                out.push_str(&format!("{}=? ", var));
+                row.push(ResultValue::Number(0));
             }
         }
-        out.push('\n');
-        out
+        ExecutionResult::rows(vars.to_vec(), alloc::vec![row])
     }
 
     fn format_node(&self, id: u64) -> String {

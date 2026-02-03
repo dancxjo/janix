@@ -334,11 +334,11 @@ const api = {
             headers: { 'Content-Type': 'text/plain' },
             body: query,
         });
-        const text = await r.text();
         if (!r.ok) {
+            const text = await r.text();
             throw new Error(`${r.status} ${r.statusText}: ${text}`);
         }
-        return text;
+        return await r.json();
     },
 };
 
@@ -1154,12 +1154,76 @@ async function executeGqlQuery() {
     }
 }
 
-function showQueryResults(text) {
+function showQueryResults(data) {
     const panel = $('queryResults');
     const content = $('queryResultsContent');
+    content.innerHTML = '';
 
-    content.textContent = text;
+    if (typeof data === 'string') {
+        content.textContent = data;
+    } else if (data && data.success === false) {
+        content.innerHTML = `<div class="error-msg">Error: ${data.error || data.message || 'Unknown error'}</div>`;
+    } else if (data && data.rows && data.columns) {
+        renderQueryResultTable(data, content);
+    } else if (data && data.message) {
+        content.textContent = data.message;
+    } else {
+        const pre = document.createElement('pre');
+        pre.textContent = JSON.stringify(data, null, 2);
+        content.appendChild(pre);
+    }
+
     panel.style.display = 'flex';
+}
+
+function renderQueryResultTable(data, container) {
+    const table = document.createElement('table');
+    table.className = 'query-result-table';
+
+    // Header
+    const thead = document.createElement('thead');
+    const headerRow = document.createElement('tr');
+    data.columns.forEach(col => {
+        const th = document.createElement('th');
+        th.textContent = col;
+        headerRow.appendChild(th);
+    });
+    thead.appendChild(headerRow);
+    table.appendChild(thead);
+
+    // Body
+    const tbody = document.createElement('tbody');
+    data.rows.forEach(row => {
+        const tr = document.createElement('tr');
+        row.forEach(val => {
+            const td = document.createElement('td');
+            if (val && val.type === 'node') {
+                const a = document.createElement('a');
+                a.href = '#';
+                a.textContent = `(ID: ${val.id})`;
+                a.onclick = (e) => {
+                    e.preventDefault();
+                    // Select node in graph
+                    const node = state.cy.getElementById(String(val.id));
+                    if (node.length > 0) {
+                        state.cy.center(node);
+                        node.select();
+                    } else {
+                        // Not in current subgraph?
+                        $('rootInput').value = val.id;
+                        $('loadBtn').click();
+                    }
+                };
+                td.appendChild(a);
+            } else {
+                td.textContent = val !== null ? val : 'null';
+            }
+            tr.appendChild(td);
+        });
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    container.appendChild(table);
 }
 
 function hideQueryResults() {

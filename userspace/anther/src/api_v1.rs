@@ -1075,8 +1075,8 @@ pub fn handle_execute_gql_query(body: &[u8]) -> Vec<u8> {
     // Execute the query
     let result = crate::gql_handler::handle_gql_post(query);
     
-    // Return as plain text for now (could be JSON in the future)
-    crate::build_response("200 OK", "text/plain", &result)
+    // Return as JSON
+    crate::build_response("200 OK", "application/json", &result)
 }
 
 /// GET /api/v1/query?q=...
@@ -1103,8 +1103,8 @@ pub fn handle_execute_gql_query_get(query_string: &str) -> Vec<u8> {
     // Execute the query
     let result = crate::gql_handler::handle_gql_get(gql_query);
     
-    // Return as plain text
-    crate::build_response("200 OK", "text/plain", &result)
+    // Return as JSON
+    crate::build_response("200 OK", "application/json", &result)
 }
 
 

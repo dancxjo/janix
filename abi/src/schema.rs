@@ -679,6 +679,8 @@ pub mod rels {
     pub const HAS_CPU: &str = "HAS_CPU";
     pub const HAS_MEMORY_RANGE: &str = "HAS_MEMORY_RANGE";
     pub const HAS_MODULE: &str = "HAS_MODULE";
+    pub const HAS_SERVICE: &str = "HAS_SERVICE";
+    pub const MONITORS: &str = "MONITORS";
     pub const SEEDED_BY: &str = "SEEDED_BY";
     pub const USES: &str = "USES";
     // LPC / Legacy IO

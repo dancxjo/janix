@@ -319,24 +319,20 @@ impl SocketApi {
             tracked_handles.insert(managed.handle);
         }
 
-        // Collect handles to remove (can't remove while iterating)
+        // Collect all handles first (to avoid borrow checker issues)
+        let all_handles: Vec<SocketHandle> = socket_set.iter().map(|(h, _)| h).collect();
+        
+        // Collect handles to remove
         let mut to_remove = Vec::new();
-        for (handle, socket) in socket_set.iter() {
-            let tcp_socket = socket.downcast_ref::<TcpSocket>().unwrap();
-            let state = tcp_socket.state();
+        for handle in all_handles {
+            // Skip sockets we're actively tracking
+            if tracked_handles.contains(&handle) {
+                continue;
+            }
             
-            // Remove sockets that are:
-            // 1. Closed and not tracked (orphaned)
-            // 2. In FinWait2 for too long (remote didn't close properly)
-            let should_remove = match state {
-                TcpState::Closed => {
-                    // Only remove if we're not tracking it (orphaned)
-                    !tracked_handles.contains(&handle)
-                }
-                _ => false,
-            };
-
-            if should_remove {
+            // For untracked sockets, try to get them as TCP sockets and check state
+            let tcp_socket = socket_set.get_mut::<TcpSocket>(handle);
+            if tcp_socket.state() == TcpState::Closed {
                 to_remove.push(handle);
             }
         }

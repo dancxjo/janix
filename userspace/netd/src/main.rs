@@ -181,7 +181,7 @@ fn main(_arg: usize) -> ! {
     // - Multiple listener sockets (respawned on each accept)
     // - Concurrent active connections
     // - Sockets in TIME_WAIT or FIN_WAIT states waiting for cleanup
-    let mut sockets_storage: [SocketStorage; 64] = Default::default();
+    let mut sockets_storage: [SocketStorage; 64] = [SocketStorage::EMPTY; 64];
     let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
 
     // Main service loop

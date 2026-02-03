@@ -48,3 +48,46 @@ pub const fn calc_stride_bytes(width: u32, bpp: u32, reported_stride: u32) -> u3
         row_bytes
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    extern crate std;
+
+    #[test]
+    fn test_pixel_format_bpp() {
+        assert_eq!(PixelFormat::Rgb888.bytes_per_pixel(), 3);
+        assert_eq!(PixelFormat::Bgr888.bytes_per_pixel(), 3);
+        assert_eq!(PixelFormat::Bgrx8888.bytes_per_pixel(), 4);
+        assert_eq!(PixelFormat::Rgbx8888.bytes_per_pixel(), 4);
+        assert_eq!(PixelFormat::Rgb565.bytes_per_pixel(), 2);
+        assert_eq!(PixelFormat::Unknown.bytes_per_pixel(), 0);
+    }
+
+    #[test]
+    fn test_calc_stride_bytes() {
+        // Case 1: reported_stride is 0 -> tight packing
+        // width=100, bpp=4 => row_bytes=400
+        assert_eq!(calc_stride_bytes(100, 4, 0), 400);
+
+        // Case 2: reported_stride >= row_bytes -> use reported
+        // width=100, bpp=4 => row_bytes=400
+        // reported 400 => 400
+        assert_eq!(calc_stride_bytes(100, 4, 400), 400);
+        // reported 512 => 512
+        assert_eq!(calc_stride_bytes(100, 4, 512), 512);
+
+        // Case 3: reported_stride < row_bytes, interpret as pixels
+        // width=100, bpp=4 => row_bytes=400
+        // reported 100 (pixels) => 100 * 4 = 400
+        assert_eq!(calc_stride_bytes(100, 4, 100), 400);
+        // reported 128 (pixels) => 128 * 4 = 512
+        assert_eq!(calc_stride_bytes(100, 4, 128), 512);
+
+        // Case 4: Ambiguous case / small value
+        // width=100, bpp=4 => row_bytes=400
+        // reported 50. 50 < 400. 50 * 4 = 200. 200 < 400.
+        // Should fallback to row_bytes (400)
+        assert_eq!(calc_stride_bytes(100, 4, 50), 400);
+    }
+}

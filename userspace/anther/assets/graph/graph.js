@@ -351,7 +351,7 @@ function buildElkGraph(graphData) {
     const edges = [];
 
     for (const node of graphData.nodes) {
-        const label = node.label || node.id.toString().slice(-8);
+        const label = node.name || node.label || node.id.toString().slice(-8);
         const kindName = node.kind_name || 'unknown';
 
         // Measure label size
@@ -365,6 +365,7 @@ function buildElkGraph(graphData) {
             // Store original data for rendering
             _data: {
                 label,
+                name: node.name || '',
                 kindName,
                 kind: node.kind || 0,
             },
@@ -433,7 +434,7 @@ function initCytoscape() {
                     'border-opacity': 1,
                     // Compound label: name + kindName (like Photosynthesis)
                     'label': function (ele) {
-                        const name = ele.data('label') || '';
+                        const name = ele.data('name') || ele.data('label') || '';
                         const kind = ele.data('kindName') || '';
                         return name + '\n' + kind;
                     },
@@ -655,13 +656,14 @@ function applyElkLayout(laidOut, data, root) {
     for (const n of data.nodes) {
         const id = n.id.toString();
         const pos = nodePositions.get(id);
-        const primaryLabel = n.label || n.id.toString().slice(-8);
+        const primaryLabel = n.name || n.label || n.id.toString().slice(-8);
         const kindName = n.kind_name || 'unknown';
 
         elements.push({
             data: {
                 id,
                 label: primaryLabel,
+                name: n.name || '',
                 kindName,
                 kind: n.kind || 0,
                 width: pos ? pos.width : 100,
@@ -694,7 +696,7 @@ function renderWithPresetLayout(data, root) {
     const elements = [];
 
     for (const n of data.nodes) {
-        const primaryLabel = n.label || n.id.toString().slice(-8);
+        const primaryLabel = n.name || n.label || n.id.toString().slice(-8);
         const kindName = n.kind_name || 'unknown';
         const size = labelMeasurer.measure(primaryLabel, kindName);
 
@@ -702,6 +704,7 @@ function renderWithPresetLayout(data, root) {
             data: {
                 id: n.id.toString(),
                 label: primaryLabel,
+                name: n.name || '',
                 kindName,
                 kind: n.kind || 0,
                 width: size.width,
@@ -736,7 +739,7 @@ function renderWithCoseLayout(data, root) {
     const elements = [];
 
     for (const n of data.nodes) {
-        const primaryLabel = n.label || n.id.toString().slice(-8);
+        const primaryLabel = n.name || n.label || n.id.toString().slice(-8);
         const kindName = n.kind_name || 'unknown';
         const size = labelMeasurer.measure(primaryLabel, kindName);
 
@@ -744,6 +747,7 @@ function renderWithCoseLayout(data, root) {
             data: {
                 id: n.id.toString(),
                 label: primaryLabel,
+                name: n.name || '',
                 kindName,
                 kind: n.kind || 0,
                 width: size.width,
@@ -875,7 +879,7 @@ function selectNode(node) {
     const depth = parseInt($('depthInput').value) || CONFIG.DEFAULT_DEPTH;
     $('inspectorThingLink').href = `?root=${encodeURIComponent(id)}&depth=${depth}`;
     $('inspectorKind').textContent = data.kindName || data.kind || '-';
-    $('inspectorLabel').textContent = data.label || '-';
+    $('inspectorLabel').textContent = data.name || data.label || '-';
     updateInspectorPosition(node);
 
     // Start watching this node's properties

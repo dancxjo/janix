@@ -30,11 +30,13 @@ pub enum Command {
     Merge {
         pattern: Pattern,
         returns: Vec<String>,
+        skip: usize,
     },
     Match {
         pattern: Pattern,
         returns: Vec<String>,
         limit: usize,
+        skip: usize,
     },
     Set {
         var: String,
@@ -69,7 +71,7 @@ enum Token {
     Dash,  // -
     Eq,    // =
     Dot,   // .
-    Keyword(String), // MERGE, MATCH, RETURN, SET, LIMIT, HELP, QUIT, SCHEMA
+    Keyword(String), // MERGE, MATCH, RETURN, SET, LIMIT, HELP, QUIT, SCHEMA, SKIP
 }
 
 fn tokenize(input: &str) -> Result<Vec<Token>, String> {
@@ -122,7 +124,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     }
                 }
                 match s.to_uppercase().as_str() {
-                    "MERGE" | "MATCH" | "RETURN" | "SET" | "LIMIT" | "HELP" | "QUIT" | "EXIT" | "SCHEMA" => {
+                    "MERGE" | "MATCH" | "RETURN" | "SET" | "LIMIT" | "SKIP" | "HELP" | "QUIT" | "EXIT" | "SCHEMA" => {
                         tokens.push(Token::Keyword(s.to_uppercase()));
                     }
                     _ => tokens.push(Token::Ident(s)),
@@ -191,38 +193,63 @@ impl Parser {
                     self.consume();
                     let pattern = self.parse_pattern()?;
                     let mut returns = Vec::new();
+                    let mut skip = 0;
                     if self.expect_keyword("RETURN") {
                         returns = self.parse_return_vars()?;
                     }
-                    Ok(Command::Merge { pattern, returns })
+                    if self.expect_keyword("SKIP") {
+                        if let Some(Token::Number(n)) = self.consume() {
+                            skip = *n as usize;
+                        }
+                    }
+                    Ok(Command::Merge { pattern, returns, skip })
                 }
                 "MATCH" => {
                     self.consume();
                     let pattern = self.parse_pattern()?;
-                    let mut limit = 100; // Default limit
+                    let mut limit = 1000; // Default limit increased
+                    let mut skip = 0;
                     let mut returns = Vec::new();
 
-                    // Optional LIMIT before RETURN or after? Standard is usually MATCH ... RETURN ... LIMIT
-                    // But prompt says: MATCH (n) LIMIT 10 RETURN n
-                    // Let's support LIMIT anywhere for flex.
-                    if self.expect_keyword("LIMIT") {
-                        if let Some(Token::Number(n)) = self.consume() {
-                            limit = *n as usize;
+                    // Support LIMIT/SKIP anywhere
+                    loop {
+                        if self.expect_keyword("LIMIT") {
+                            if let Some(Token::Number(n)) = self.consume() {
+                                limit = *n as usize;
+                            }
+                            continue;
                         }
+                        if self.expect_keyword("SKIP") {
+                            if let Some(Token::Number(n)) = self.consume() {
+                                skip = *n as usize;
+                            }
+                            continue;
+                        }
+                        break;
                     }
 
                     if self.expect_keyword("RETURN") {
                         returns = self.parse_return_vars()?;
                     }
 
-                    // Check limit again (if after return)
-                    if self.expect_keyword("LIMIT") {
-                        if let Some(Token::Number(n)) = self.consume() {
-                            limit = *n as usize;
+                    // Check again after return
+                    loop {
+                        if self.expect_keyword("LIMIT") {
+                            if let Some(Token::Number(n)) = self.consume() {
+                                limit = *n as usize;
+                            }
+                            continue;
                         }
+                        if self.expect_keyword("SKIP") {
+                            if let Some(Token::Number(n)) = self.consume() {
+                                skip = *n as usize;
+                            }
+                            continue;
+                        }
+                        break;
                     }
 
-                    Ok(Command::Match { pattern, returns, limit })
+                    Ok(Command::Match { pattern, returns, limit, skip })
                 }
                 "SET" => {
                     self.consume();

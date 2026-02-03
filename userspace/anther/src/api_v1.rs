@@ -694,6 +694,18 @@ pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
         let label = get_node_label_fast(*node_id, &name_syms);
         json.key("label");
         json.string_value(&label);
+
+        // Explicit name property if available
+        if name_syms[0] != 0 {
+            if let Ok(val) = prop_get(*node_id, name_syms[0]) {
+                if val != 0 {
+                    if let Some(name) = resolve_symbol_value(val) {
+                        json.key("name");
+                        json.string_value(&name);
+                    }
+                }
+            }
+        }
         
         // Layout positions from existing LAYOUT_POS_X/Y (shared with Photosynthesis)
         if layout_x_sym != 0 && layout_y_sym != 0 {

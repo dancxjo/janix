@@ -1,4 +1,4 @@
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::format;
@@ -24,8 +24,13 @@ impl GraphExecutor {
             Command::Help => self.help(),
             Command::Quit => ExecutionResult::message("Bye."),
             Command::Schema => ExecutionResult::error("Schema not implemented."),
-            Command::Merge { pattern, returns } => self.execute_merge(pattern, returns),
-            Command::Match { pattern, returns, limit } => self.execute_match(pattern, returns, limit),
+            Command::Merge { pattern, returns: _, skip: _ } => {
+                // TODO: Implement MERGE properly (for now it just MATCHes/CREATEs)
+                ExecutionResult::error("MERGE not fully implemented")
+            }
+            Command::Match { pattern, returns, limit, skip } => {
+                self.execute_match(pattern, returns, limit, skip)
+            }
             Command::Set { var, key, value } => self.execute_set(var, key, value),
         }
     }
@@ -82,15 +87,16 @@ impl GraphExecutor {
         }
     }
 
-    fn execute_match(&mut self, pattern: Pattern, returns: Vec<String>, limit: usize) -> ExecutionResult {
+    fn execute_match(&self, pattern: Pattern, returns: Vec<String>, limit: usize, skip: usize) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
+                let limit_total = limit + skip;
                 let mut matched_ids = Vec::new();
 
                 match &node_pat.kind {
-                    Some(k) => {
-                        let mut candidates = [ThingId::from_u64(0); 128];
-                        let count = match graph::find(k.as_str(), &mut candidates) {
+                    Some(_k) => { // Changed `k` to `_k` as it's not used directly here
+                        let mut candidates = [ThingId::from_u64(0); 2048];
+                        let count = match graph::find(_k.as_str(), &mut candidates) {
                             Ok(c) => c,
                             Err(_) => return ExecutionResult::error("find syscall failed"),
                         };
@@ -98,38 +104,69 @@ impl GraphExecutor {
                         for i in 0..count {
                             let id = candidates[i].to_u64_lossy();
                             if self.matches_props(id, &node_pat.props) {
-                                matched_ids.push(id);
-                                if matched_ids.len() >= limit {
+                                if !matched_ids.contains(&id) {
+                                    matched_ids.push(id);
+                                }
+                                if matched_ids.len() >= limit_total {
                                     break;
                                 }
                             }
                         }
                     }
                     None => {
-                        // MATCH (n) - discover from interesting kinds
-                        let interesting_kinds = [
-                            "svc.Root", "proc.Kernel", "svc.Scheduler",
-                            "dev.Host", "dev.bus.Platform", "dev.bus.Pci",
-                            "dev.pci.Function", "ui.Crown", "ui.Window",
-                            "content.Source", "fs.File", "boot.Module",
-                            "Asset", "svc.net.Stack"
-                        ];
+                        // BFS Discovery from well-known roots
+                        let mut queue = VecDeque::new();
+                        let mut seen = BTreeSet::new();
 
-                        for &kind_name in &interesting_kinds {
-                            if matched_ids.len() >= limit {
+                        // Well-known roots: Host(1), Root(2), Scheduler(3)
+                        for &root_id in &[1u64, 2u64, 3u64] {
+                            queue.push_back(root_id);
+                            seen.insert(root_id);
+                        }
+
+                        while let Some(current_id) = queue.pop_front() {
+                            if matched_ids.len() >= limit_total {
                                 break;
                             }
 
-                            let mut candidates = [ThingId::from_u64(0); 32]; // Small buffer for discovery
-                            if let Ok(count) = graph::find(kind_name, &mut candidates) {
-                                for i in 0..count {
-                                    let id = candidates[i].to_u64_lossy();
-                                    if self.matches_props(id, &node_pat.props) {
-                                        if !matched_ids.contains(&id) {
-                                            matched_ids.push(id);
-                                        }
-                                        if matched_ids.len() >= limit {
-                                            break;
+                            if self.matches_props(current_id, &node_pat.props) {
+                                if !matched_ids.contains(&current_id) {
+                                    matched_ids.push(current_id);
+                                }
+                            }
+
+                            // Discover neighbors
+                            if let Ok(edges) = self.get_outbound_edges(current_id) {
+                                for (_rel_id, dst_id) in edges {
+                                    if !seen.contains(&dst_id) {
+                                        seen.insert(dst_id);
+                                        queue.push_back(dst_id);
+                                    }
+                                }
+                            }
+
+                            // Optional: If we still have space and queue is empty, 
+                            // we could potentially scan for more entry points, 
+                            // but the root-based BFS should cover almost everything.
+                            if queue.is_empty() && matched_ids.len() < limit_total {
+                                let fallback_kinds = [
+                                    "fs.File", "content.Source", "Asset", "ui.Window", "proc.Process", "dev.bus.Pci",
+                                    "dev.pci.Function", "dev.net.Nic", "dev.storage.Disk", "dev.display.Gpu",
+                                    "dev.Cpu", "ui.Crown", "font.Family", "font.Face", "boot.Module",
+                                    "svc.net.Stack", "svc.net.Driver", "Bytespace", "mem.Range", "proc.Thread",
+                                    "proc.Task", "proc.Kernel", "svc.Root", "svc.Scheduler", "dev.Host",
+                                    "mem.Page", "mem.Stack", "mem.Heap", "ui.Panel", "ui.Text", "font.Family",
+                                    "font.Face", "font.File", "xml.Document", "html.Document", "css.Stylesheet"
+                                ];
+                                for &kind in &fallback_kinds {
+                                    let mut seeds = [ThingId::from_u64(0); 512];
+                                    if let Ok(count) = graph::find(kind, &mut seeds) {
+                                        for i in 0..count {
+                                            let id = seeds[i].to_u64_lossy();
+                                            if !seen.contains(&id) {
+                                                seen.insert(id);
+                                                queue.push_back(id);
+                                            }
                                         }
                                     }
                                 }
@@ -138,31 +175,29 @@ impl GraphExecutor {
                     }
                 }
 
-                if matched_ids.len() == 1 {
-                    self.bindings.insert(node_pat.var.clone(), matched_ids[0]);
-                }
-
-                let mut rows = Vec::new();
-                for &id in &matched_ids {
+                // Apply skip and limit to the final row generation
+                let rows: Vec<Vec<ResultValue>> = matched_ids
+                    .into_iter()
+                    .skip(skip)
+                    .take(limit)
+                    .map(|id| {
                     let mut row = Vec::new();
-                    for var in &returns {
-                        if var == &node_pat.var {
+                    for col in &returns {
+                        if col == &node_pat.var {
                             row.push(ResultValue::Node(id));
                         } else {
-                            if let Some(&bid) = self.bindings.get(var) {
-                                row.push(ResultValue::Node(bid));
-                            } else {
-                                row.push(ResultValue::Number(0));
-                            }
+                            // TODO: Support property returns like RETURN n.prop
+                            row.push(ResultValue::String(format!("unsupported: {}", col)));
                         }
                     }
-                    rows.push(row);
-                }
+                    row
+                }).collect();
 
                 ExecutionResult::rows(returns, rows)
             }
             Pattern::Edge { src_var, rel: _, dst_var } => {
                 let src_id_opt = self.bindings.get(&src_var).cloned();
+                let limit_total = limit + skip;
 
                 if let Some(src_id) = src_id_opt {
                     let edges = match self.get_outbound_edges(src_id) {
@@ -170,11 +205,9 @@ impl GraphExecutor {
                         Err(_) => return ExecutionResult::error("failed to get edges"),
                     };
 
-                    let mut rows = Vec::new();
+                    let mut all_rows = Vec::new();
 
                     for (_rel_id, dst_id) in edges {
-                        self.bindings.insert(dst_var.clone(), dst_id);
-                        
                         let mut row = Vec::new();
                         for var in &returns {
                             if var == &src_var {
@@ -182,11 +215,18 @@ impl GraphExecutor {
                             } else if var == &dst_var {
                                 row.push(ResultValue::Node(dst_id));
                             } else {
-                                row.push(ResultValue::Number(0));
+                                // TODO: Support property returns like RETURN n.prop
+                                row.push(ResultValue::String(format!("unsupported: {}", var)));
                             }
                         }
-                        rows.push(row);
+                        all_rows.push(row);
                     }
+
+                    let rows: Vec<Vec<ResultValue>> = all_rows
+                        .into_iter()
+                        .skip(skip)
+                        .take(limit)
+                        .collect();
 
                     ExecutionResult::rows(returns, rows)
 
@@ -263,7 +303,7 @@ impl GraphExecutor {
     }
 
     fn get_outbound_edges(&self, src: u64) -> Result<Vec<(u64, u64)>, ()> {
-        let mut buf = [abi::types::Edge::default(); 128];
+        let mut buf = [abi::types::Edge::default(); 1024];
         match graph::get_edges(ThingId::from_u64(src), &mut buf) {
             Ok(count) => {
                 let mut res = Vec::new();

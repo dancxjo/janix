@@ -54,6 +54,10 @@ members = [
     "userspace/root_canal",
     "bud",
     "libs/fb_common",
+    "libs/llm",
+    "libs/llm_stub",
+    "userspace/described",
+    "userspace/sysdescribe",
 ]
 resolver = "2"
 

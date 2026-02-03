@@ -68,20 +68,18 @@ pub fn on_tick<R: BootRuntime>() {
 fn flush_graph_queue<R: BootRuntime>() {
     use crate::root::graph_anchors;
     use graph_queue::GraphWork;
-    
+
+    // Get scheduler service ThingId for linking. If not ready yet,
+    // keep the queued work for a later flush instead of dropping it.
+    let sched_thing = match graph_anchors::scheduler_service() {
+        Some(id) => id,
+        None => return,
+    };
+
     let work_items = graph_queue::drain();
     if work_items.is_empty() {
         return;
     }
-    
-    // Get scheduler service ThingId for linking
-    let sched_thing = match graph_anchors::scheduler_service() {
-        Some(id) => id,
-        None => {
-            // Graph anchors not initialized yet - drop work items
-            return;
-        }
-    };
     
     for item in work_items {
         match item {
@@ -244,6 +242,10 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
     };
     sched.tasks.push(task);
     sched.current = Some(0);
+
+    // Queue graph node creation for the boot task so it appears in the graph.
+    graphify::create_thread_node(0, TaskPriority::Normal as u8, false, Some("boot"), None);
+    graphify::update_task_state(0, "running");
     crate::kinfo!("  Creating idle task...");
 
     let idle_id = sched.spawn(idle_task::<R>, StartupArg::None, TaskPriority::Idle);
@@ -256,9 +258,10 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         }
     }
     
-    // Spawn graph worker task at low priority
+    // Spawn graph worker task at normal priority so it runs alongside normal tasks
     crate::kinfo!("  Creating graph worker task...");
-    let _graph_worker_id = sched.spawn(graph_worker_task::<R>, StartupArg::None, TaskPriority::Low);
+    let _graph_worker_id =
+        sched.spawn(graph_worker_task::<R>, StartupArg::None, TaskPriority::Normal);
     
     crate::kinfo!("  Boot task initialized");
 }

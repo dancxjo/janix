@@ -745,6 +745,10 @@ pub mod rels {
     pub const TASK_SPAWNED: &str = "TASK_SPAWNED";
     /// Thread uses a bytespace mapping (proc.Thread -> Bytespace)
     pub const THREAD_USES_BYTESPACE: &str = "THREAD_USES_BYTESPACE";
+
+    // Root / System Links
+    pub const MONITORS: &str = "MONITORS";
+    pub const HAS_SERVICE: &str = "HAS_SERVICE";
     /// Host launched a module (dev.Host -> boot.Module)
     pub const LAUNCHED: &str = "LAUNCHED";
 }

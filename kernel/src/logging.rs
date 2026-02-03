@@ -152,8 +152,10 @@ pub unsafe fn force_unlock() {
 }
 
 /// Helper to check if graph logging is safe/ready
-fn can_log_to_graph(level: Level) -> bool {
-    crate::root::is_inbox_ready() && level != Level::Trace
+fn can_log_to_graph(_level: Level) -> bool {
+    // TEMP: Disabled for OOM debugging
+    false
+    // crate::root::is_inbox_ready() && level != Level::Trace
 }
 
 /// Check if this level should be logged (considering MIN_LOG_LEVEL)

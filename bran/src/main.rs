@@ -42,6 +42,33 @@ unsafe extern "C" fn kmain() -> ! {
 fn indicate_progress() {
     if let Some(framebuffer_response) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(framebuffer) = framebuffer_response.framebuffers().next() {
+            // Log raw Limine framebuffer params for debug
+            let width = framebuffer.width();
+            let height = framebuffer.height();
+            let pitch = framebuffer.pitch();
+            let bpp = framebuffer.bpp();
+            let model = if framebuffer.memory_model() == limine::framebuffer::MemoryModel::RGB {
+                "RGB"
+            } else {
+                "Other"
+            };
+            let bpp_bytes = (bpp as u64 + 7) / 8;
+            let stride = if pitch > 0 {
+                let min_stride = width.saturating_mul(4);
+                if pitch < min_stride { min_stride } else { pitch }
+            } else {
+                width.saturating_mul(4)
+            };
+            kernel::kinfo!(
+                "BOOTFB: limine width={} height={} pitch={} bpp={} model={} -> bpp_bytes={} stride={}",
+                width,
+                height,
+                pitch,
+                bpp,
+                model,
+                bpp_bytes,
+                stride
+            );
             let display = Framebuffer::new(&framebuffer);
             // Initialize framebuffer console for boot logging
             console::init(display);

@@ -203,8 +203,14 @@ pub struct RootMsg {
     pub reply: Arc<ReplyCell>,
 }
 
+/// Maximum inbox size to prevent OOM from unbounded queue growth.
+/// LogEvent messages are dropped when queue exceeds this limit.
+/// Each RootMsg is ~200+ bytes, so 4096 entries = ~1 MB max.
+const MAX_INBOX_SIZE: usize = 4096;
+
 static ROOT_INBOX: Mutex<Option<VecDeque<RootMsg>>> = Mutex::new(None);
 static ROOT_TID: AtomicU64 = AtomicU64::new(0);
+static INBOX_DROP_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_root_service<R: crate::BootRuntime>() {
     *ROOT_INBOX.lock() = Some(VecDeque::new());
@@ -219,12 +225,30 @@ pub fn init_root_service<R: crate::BootRuntime>() {
 
 pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
     let reply = Arc::new(ReplyCell::new());
+    
+    // Check if this is a droppable message type (LogEvent can be dropped under pressure)
+    let is_log_event = matches!(op, RootOp::LogEvent { .. });
+    
     let msg = RootMsg {
         op,
         reply: reply.clone(),
     };
 
     if let Some(q) = ROOT_INBOX.lock().as_mut() {
+        // Cap inbox size to prevent OOM from unbounded queue growth
+        if q.len() >= MAX_INBOX_SIZE {
+            if is_log_event {
+                // Drop log events under pressure - they're best-effort
+                INBOX_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
+                return reply;
+            }
+            // For critical ops, evict oldest to make room
+            // (This prevents blocking on full queue while still limiting growth)
+            while q.len() >= MAX_INBOX_SIZE {
+                q.pop_front();
+            }
+        }
+        
         q.push_back(msg);
         let tid = ROOT_TID.load(Ordering::Relaxed);
         if tid != 0 {
@@ -236,6 +260,11 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
         panic!("Root inbox not initialized");
     }
     reply
+}
+
+/// Get count of dropped messages due to inbox overflow
+pub fn inbox_drop_count() -> u64 {
+    INBOX_DROP_COUNT.load(Ordering::Relaxed)
 }
 
 pub fn pop_msg() -> Option<RootMsg> {

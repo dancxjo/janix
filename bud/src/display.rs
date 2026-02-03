@@ -37,6 +37,11 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
         {
             let mut drawer = FbDrawer { fb: &mut fb };
             drawer.clear(COLOR_BG);
+            // Draw a debug circle to help visualize stride/format issues.
+            let info = drawer.fb.info();
+            let cx = (info.width / 2) as i32;
+            let cy = (info.height / 2) as i32;
+            drawer.draw_circle(Point::new(cx, cy), 40, Rgb888::GREEN);
         }
 
         Self {
@@ -188,6 +193,40 @@ struct FbDrawer<'a, F: FramebufferTarget> {
 }
 
 impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
+    fn draw_circle(&mut self, center: Point, radius: i32, color: Rgb888) {
+        if radius <= 0 {
+            return;
+        }
+
+        let mut x = radius;
+        let mut y = 0;
+        let mut err = 1 - x;
+
+        while x >= y {
+            let points = [
+                Point::new(center.x + x, center.y + y),
+                Point::new(center.x + y, center.y + x),
+                Point::new(center.x - y, center.y + x),
+                Point::new(center.x - x, center.y + y),
+                Point::new(center.x - x, center.y - y),
+                Point::new(center.x - y, center.y - x),
+                Point::new(center.x + y, center.y - x),
+                Point::new(center.x + x, center.y - y),
+            ];
+            for p in points {
+                self.put_pixel(p, color);
+            }
+
+            y += 1;
+            if err < 0 {
+                err += 2 * y + 1;
+            } else {
+                x -= 1;
+                err += 2 * (y - x) + 1;
+            }
+        }
+    }
+
     fn fill_rect(&mut self, rect: Rect, color: Rgb888) {
         let info = self.fb.info();
         let bpp = match info.format {
@@ -262,6 +301,7 @@ impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
             _ => return, // Unknown
         };
 
+        // Trust the platform-reported stride when present; fall back to tight rows.
         let stride = calc_stride_bytes(info.width, bpp, info.stride);
 
         let offset = (point.y as usize * stride as usize) + (point.x as usize * bpp as usize);

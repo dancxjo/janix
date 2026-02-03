@@ -436,6 +436,17 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     init_runtime(runtime);
     unsafe { crate::logging::init(runtime) };
 
+    if let Some(fb) = runtime.framebuffer() {
+        crate::kinfo!(
+            "BOOTFB: width={} height={} pitch={} bpp={} format={:?}",
+            fb.width,
+            fb.height,
+            fb.pitch,
+            fb.bpp,
+            fb.format
+        );
+    }
+
     contract!("thing-os kernel starting...");
 
     memory::init(runtime);

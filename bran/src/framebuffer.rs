@@ -10,6 +10,35 @@ pub struct Framebuffer {
     pub bpp: u32, // bytes per pixel
 }
 
+fn normalize_geometry(width: u32, height: u32, pitch: u32, bpp: u32) -> (u32, u32, u32) {
+    let row_bytes = width.saturating_mul(bpp.max(1));
+    let mut eff_pitch = if pitch > 0 { pitch } else { row_bytes };
+    let mut eff_width = width;
+    let eff_height = height;
+
+    // Some firmware/QEMU combos report a width that isn't 8-pixel aligned.
+    // The actual scanout often rounds down to an 8-pixel boundary, which
+    // effectively reduces the stride and causes slanted output if we trust
+    // the raw pitch. When the delta is small, prefer the aligned geometry.
+    if bpp > 0 && eff_width % 8 != 0 {
+        let aligned_width = eff_width & !7;
+        if aligned_width > 0 {
+            let aligned_pitch = aligned_width.saturating_mul(bpp);
+            let delta = if eff_pitch > aligned_pitch {
+                eff_pitch - aligned_pitch
+            } else {
+                aligned_pitch - eff_pitch
+            };
+            if delta <= bpp.saturating_mul(8) && aligned_pitch % 64 == 0 {
+                eff_width = aligned_width;
+                eff_pitch = aligned_pitch;
+            }
+        }
+    }
+
+    (eff_width, eff_height, eff_pitch)
+}
+
 impl Framebuffer {
     pub fn new(fb: &limine::framebuffer::Framebuffer) -> Self {
         // Limine reports `bpp` in bits; clamp to supported 24/32-bit formats.
@@ -32,11 +61,13 @@ impl Framebuffer {
             }
         };
 
+        let (width, height, pitch) = normalize_geometry(width, fb.height() as u32, pitch, bpp);
+
         Self {
             addr: fb.addr() as *mut u32,
-            width: fb.width() as u32,
-            height: fb.height() as u32,
-            pitch: fb.pitch() as u32,
+            width,
+            height,
+            pitch,
             bpp,
         }
     }
@@ -79,45 +110,27 @@ impl Framebuffer {
 
 impl bud::framebuffer::FramebufferTarget for Framebuffer {
     fn info(&self) -> bud::framebuffer::FramebufferInfo {
-        // Ensure stride is at least width * bpp
-        // This handles cases where the bootloader might report 0 or invalid pitch
-        let min_stride = self.width.saturating_mul(self.bpp);
-        let stride = if self.pitch > 0 { self.pitch } else { min_stride };
-
-        let format = match self.bpp {
-            2 => bud::framebuffer::PixelFormat::Rgb565,
-            3 => bud::framebuffer::PixelFormat::Bgr888,
+        let bpp = self.bpp.max(1);
+        // Boot console expects BGRX; Limine RGB memory model is BGRX in memory.
+        let format = match bpp {
             4 => bud::framebuffer::PixelFormat::Bgrx8888,
-            _ => {
-                if self.pitch / self.width >= 4 {
-                    bud::framebuffer::PixelFormat::Bgrx8888
-                } else if self.pitch / self.width >= 3 {
-                    bud::framebuffer::PixelFormat::Bgr888
-                } else {
-                    bud::framebuffer::PixelFormat::Unknown
-                }
-            }
+            3 => bud::framebuffer::PixelFormat::Bgr888,
+            2 => bud::framebuffer::PixelFormat::Rgb565,
+            _ => bud::framebuffer::PixelFormat::Unknown,
         };
 
         bud::framebuffer::FramebufferInfo {
             width: self.width,
             height: self.height,
-            stride,
+            stride: self.pitch,
             format,
         }
     }
 
     fn buffer_mut(&mut self) -> &mut [u8] {
-        let stride = if self.pitch > 0 {
-            self.pitch
-        } else {
-            self.width.saturating_mul(self.bpp)
-        };
+        let buf_len = (self.pitch as usize).saturating_mul(self.height as usize);
         unsafe {
-            core::slice::from_raw_parts_mut(
-                self.addr as *mut u8,
-                stride as usize * self.height as usize,
-            )
+            core::slice::from_raw_parts_mut(self.addr as *mut u8, buf_len)
         }
     }
 
@@ -129,12 +142,30 @@ impl bud::framebuffer::FramebufferTarget for Framebuffer {
 pub fn get_info() -> Option<FramebufferInfo> {
     if let Some(resp) = FRAMEBUFFER_REQUEST.get_response() {
         if let Some(fb) = resp.framebuffers().into_iter().next() {
+            let pitch = fb.pitch() as u32;
+            let width = fb.width() as u32;
+            let height = fb.height() as u32;
+            let bits_per_pixel = fb.bpp() as u32;
+            let pitch_bytes_per_pixel = if width > 0 { pitch / width } else { 0 };
+            let bpp = match bits_per_pixel {
+                16 => 2,
+                24 => {
+                    if pitch_bytes_per_pixel >= 4 { 4 } else { 3 }
+                }
+                32 => 4,
+                _ => {
+                    if pitch_bytes_per_pixel >= 4 { 4 } else if pitch_bytes_per_pixel == 3 { 3 } else { 4 }
+                }
+            };
+            let (width, height, pitch) = normalize_geometry(width, height, pitch, bpp);
+
             return Some(FramebufferInfo {
                 addr: fb.addr() as u64,
+                // Keep the raw byte_len for full mapping safety.
                 byte_len: (fb.pitch() * fb.height()) as usize,
-                width: fb.width() as u32,
-                height: fb.height() as u32,
-                pitch: fb.pitch() as u32,
+                width,
+                height,
+                pitch,
                 bpp: fb.bpp() as u16,
                 format: match fb.memory_model() {
                     // Limine "RGB" memory model is actually BGRX in memory layout

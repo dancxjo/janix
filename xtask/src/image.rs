@@ -39,7 +39,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "root_canal",
             is_init: false,
-            boot_module: true,
+            boot_module: false, // temporarily disabled to test OOM
             features: vec![],
         },
         ProgramConfig {
@@ -51,13 +51,13 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "clock",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "font_explorer",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
@@ -99,7 +99,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "display_bootfb",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
@@ -111,7 +111,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "fontd",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
@@ -123,7 +123,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "ingestd",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
@@ -135,25 +135,25 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "virtio_netd",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "netd",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "fetchd",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "pollen",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         // Scheduler fairness test apps
@@ -203,7 +203,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "iso9660d",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {

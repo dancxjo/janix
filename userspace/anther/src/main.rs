@@ -77,7 +77,7 @@ fn build_redirect(location: &str, is_head: bool) -> Vec<u8> {
 }
 
 /// Handle a single HTTP request and return a response
-fn handle_request(request_str: &str) -> Vec<u8> {
+fn handle_request(request_str: &str, body: &[u8]) -> Vec<u8> {
     // Parse the request
     let req = match http::parse_request(request_str) {
         Ok(r) => r,
@@ -111,11 +111,11 @@ fn handle_request(request_str: &str) -> Vec<u8> {
     };
     
     // Route the request
-    route_request(&req, safe_path)
+    route_request(&req, safe_path, body)
 }
 
 /// Route a request to the appropriate handler
-fn route_request(req: &http::Request<'_>, path: &str) -> Vec<u8> {
+fn route_request(req: &http::Request<'_>, path: &str, body: &[u8]) -> Vec<u8> {
     let method = req.method;
     let is_head = method == http::Method::Head;
     
@@ -123,8 +123,7 @@ fn route_request(req: &http::Request<'_>, path: &str) -> Vec<u8> {
     if router::is_api_v1_path(path) {
         if let Some(route) = router::match_route(method, path) {
             // For API routes, we need the request body (for POST/PUT/PATCH)
-            // Note: body parsing is handled at connection level, passed as empty for now
-            return api_v1::dispatch(route, req, &[]);
+            return api_v1::dispatch(route, req, body);
         }
     }
     
@@ -258,7 +257,7 @@ fn run_stdio_mode() -> ! {
     // Read request from stdin (simulated via a buffer for now)
     // In a real implementation, we'd use SYS_STREAM_READ or similar
     let test_request = "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n";
-    let response = handle_request(test_request);
+    let response = handle_request(test_request, &[]);
     
     // In stdio mode, we'd write to stdout here
     // For now, just log it
@@ -355,7 +354,40 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
         }
     };
 
-    let response = handle_request(request_str);
+    // Parse headers to find Content-Length
+    let req_headers = match http::parse_request(request_str) {
+        Ok(r) => r,
+        Err(_) => {
+            warn!("anther: Failed to parse request for body extraction");
+            net.tcp_close(conn_handle);
+            return;
+        }
+    };
+
+    let content_length = http::parse_content_length(&req_headers).unwrap_or(0);
+    let mut body = Vec::new();
+
+    if content_length > 0 {
+        // We might already have some body in request_data
+        let header_end = request_data.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+        body.extend_from_slice(&request_data[header_end..]);
+
+        while body.len() < content_length {
+            if let Some(data) = net.tcp_recv(conn_handle, 4096) {
+                body.extend_from_slice(&data);
+            } else {
+                // Wait briefly or check for timeout
+                stem::time::sleep_ms(10);
+            }
+        }
+        
+        // Truncate if we read too much
+        if body.len() > content_length {
+            body.truncate(content_length);
+        }
+    }
+
+    let response = handle_request(request_str, &body);
     info!("anther: Sending response ({} bytes)", response.len());
 
     // Send response in chunks
@@ -462,14 +494,28 @@ mod tests {
 
     #[test]
     fn test_route_health() {
-        let response = route_request(http::Method::Get, "/health", false);
+        let req = http::Request {
+            method: http::Method::Get,
+            path: "/health",
+            version: http::HttpVersion::Http11,
+            headers: [(None, None); 64],
+            header_count: 0,
+        };
+        let response = route_request(&req, "/health", &[]);
         let response_str = core::str::from_utf8(&response).unwrap();
         assert!(response_str.contains("200 OK"));
     }
 
     #[test]
     fn test_route_invalid_method() {
-        let response = route_request(http::Method::Post, "/health", false);
+        let req = http::Request {
+            method: http::Method::Post,
+            path: "/health",
+            version: http::HttpVersion::Http11,
+            headers: [(None, None); 64],
+            header_count: 0,
+        };
+        let response = route_request(&req, "/health", &[]);
         let response_str = core::str::from_utf8(&response).unwrap();
         assert!(response_str.contains("405"));
     }

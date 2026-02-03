@@ -3,7 +3,9 @@ use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::format;
 use crate::gql::{Command, Pattern, Value, NodePattern};
-use stem::syscall::graph;
+use stem::thing::sys as graph;
+use stem::abi::ids::HandleId;
+use stem::thing::ThingId;
 
 pub struct GraphExecutor {
     bindings: BTreeMap<String, u64>,
@@ -80,30 +82,55 @@ impl GraphExecutor {
     fn execute_match(&mut self, pattern: Pattern, returns: Vec<String>, limit: usize) -> String {
         match pattern {
             Pattern::Node(node_pat) => {
-                // Find candidates
-                let kind_id = match &node_pat.kind {
-                    Some(k) => match graph::intern(k) {
-                        Ok(id) => id,
-                        Err(_) => return "error: failed to intern kind\n".to_string(),
-                    },
-                    None => return "error: MATCH (n) without kind not supported yet (needs scan)\n".to_string(),
-                };
-
-                let mut candidates = Vec::new();
-                candidates.resize(1024, 0); // Hard limit for find syscall
-                let count = match graph::find(kind_id, &mut candidates) {
-                    Ok(c) => c,
-                    Err(_) => return "error: find syscall failed\n".to_string(),
-                };
-
                 let mut matched_ids = Vec::new();
 
-                for i in 0..count {
-                    let id = candidates[i];
-                    if self.matches_props(id, &node_pat.props) {
-                        matched_ids.push(id);
-                        if matched_ids.len() >= limit {
-                            break;
+                match &node_pat.kind {
+                    Some(k) => {
+                        let mut candidates = [ThingId::from_u64(0); 128];
+                        let count = match graph::find(k.as_str(), &mut candidates) {
+                            Ok(c) => c,
+                            Err(_) => return "error: find syscall failed\n".to_string(),
+                        };
+
+                        for i in 0..count {
+                            let id = candidates[i].to_u64_lossy();
+                            if self.matches_props(id, &node_pat.props) {
+                                matched_ids.push(id);
+                                if matched_ids.len() >= limit {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    None => {
+                        // MATCH (n) - discover from interesting kinds
+                        let interesting_kinds = [
+                            "svc.Root", "proc.Kernel", "svc.Scheduler",
+                            "dev.Host", "dev.bus.Platform", "dev.bus.Pci",
+                            "dev.pci.Function", "ui.Crown", "ui.Window",
+                            "content.Source", "fs.File", "boot.Module",
+                            "Asset", "svc.net.Stack"
+                        ];
+
+                        for &kind_name in &interesting_kinds {
+                            if matched_ids.len() >= limit {
+                                break;
+                            }
+
+                            let mut candidates = [ThingId::from_u64(0); 32]; // Small buffer for discovery
+                            if let Ok(count) = graph::find(kind_name, &mut candidates) {
+                                for i in 0..count {
+                                    let id = candidates[i].to_u64_lossy();
+                                    if self.matches_props(id, &node_pat.props) {
+                                        if !matched_ids.contains(&id) {
+                                            matched_ids.push(id);
+                                        }
+                                        if matched_ids.len() >= limit {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
@@ -225,20 +252,15 @@ impl GraphExecutor {
             None => return format!("error: variable '{}' not bound\n", var),
         };
 
-        let key_id = match graph::intern(&key) {
-            Ok(id) => id,
-            Err(_) => return "error: intern key failed\n".to_string(),
-        };
-
         let val_u64 = match value {
             Value::String(s) => match graph::intern(&s) {
-                Ok(id) => id,
+                Ok(id) => id as u64,
                 Err(_) => return "error: intern value failed\n".to_string(),
             },
             Value::Number(n) => n,
         };
 
-        match graph::prop_set(id, key_id, val_u64) {
+        match graph::prop_set(ThingId::from_u64(id), key.as_str(), val_u64) {
             Ok(_) => "ok: property set\n".to_string(),
             Err(e) => format!("error: prop_set failed {:?}\n", e),
         }
@@ -246,74 +268,56 @@ impl GraphExecutor {
 
     fn ensure_node(&mut self, pat: &NodePattern) -> Result<u64, String> {
         let kind = pat.kind.as_ref().ok_or("MERGE requires a Kind")?;
-        let kind_id = graph::intern(kind).map_err(|_| "intern kind failed")?;
 
         // 1. Try to find
-        let mut candidates = Vec::new();
-        candidates.resize(1024, 0);
-        let count = graph::find(kind_id, &mut candidates).map_err(|_| "find failed")?;
+        let mut candidates = [ThingId::from_u64(0); 128];
+        let count = graph::find(kind.as_str(), &mut candidates).map_err(|_| "find failed")?;
 
         for i in 0..count {
-            let id = candidates[i];
+            let id = candidates[i].to_u64_lossy();
             if self.matches_props(id, &pat.props) {
                 return Ok(id);
             }
         }
 
         // 2. Create
-        let id = graph::create_node(kind_id).map_err(|_| "create_node failed")?;
+        let id_new = graph::create_node(kind.as_str()).map_err(|_| "create_node failed")?;
+        let id = id_new.to_u64_lossy();
 
         // Set props
         for (k, v) in &pat.props {
-            let key_id = graph::intern(k).map_err(|_| "intern key failed")?;
             let val_u64 = match v {
-                Value::String(s) => graph::intern(s).map_err(|_| "intern val failed")?,
+                Value::String(s) => graph::intern(s).map_err(|_| "intern val failed")? as u64,
                 Value::Number(n) => *n,
             };
-            graph::prop_set(id, key_id, val_u64).map_err(|_| "prop_set failed")?;
+            graph::prop_set(id_new, k.as_str(), val_u64).map_err(|_| "prop_set failed")?;
         }
 
         Ok(id)
     }
 
     fn ensure_edge(&mut self, src: u64, rel: &str, dst: u64) -> Result<(), String> {
-        let rel_id = graph::intern(rel).map_err(|_| "intern rel failed")?;
-
         // Check existing edges to ensure idempotence
         let edges = self.get_outbound_edges(src).map_err(|_| "failed to scan edges")?;
-        for (e_rel, e_dst) in edges {
-            if e_rel == rel_id && e_dst == dst {
+        for (e_rel_id, e_dst) in edges {
+            let rel_name = self.resolve_symbol(e_rel_id as u32).unwrap_or_default();
+            if rel_name == rel && e_dst == dst {
                 // Already exists
                 return Ok(());
             }
         }
 
-        graph::link(src, rel_id, dst).map_err(|_| "link failed")?;
+        graph::link(ThingId::from_u64(src), rel, ThingId::from_u64(dst)).map_err(|_| "link failed")?;
         Ok(())
     }
 
     fn get_outbound_edges(&self, src: u64) -> Result<Vec<(u64, u64)>, ()> {
-        let mut buf = [0u64; 1024]; // 512 edges max
-        match graph::get_edges(src, &mut buf) {
-            Ok(len) => {
-                // len is bytes? No, get_edges returns usize (ret).
-                // stem syscall wrappers usually return errno or Ok(val).
-                // My wrapper returns Ok(ret as usize).
-                // SYS_ROOT_GET_EDGES returns number of u64s written?
-                // Or number of edges?
-                // Kernel logic usually writes pairs.
-                // Let's assume it returns number of u64 elements written.
-
-                // Wait, checking `kernel`. `handle_get_edges`?
-                // `abi/syscall.rs` says `SYS_ROOT_GET_EDGES: u32 = 0x15C`.
-                // I should verify what the kernel does.
-                // But I can't read kernel source easily for that specifically unless I grep.
-                // Assuming it writes (Rel, Dst) pairs.
-
-                let count = len / 2;
+        let mut buf = [abi::types::Edge::default(); 128];
+        match graph::get_edges(ThingId::from_u64(src), &mut buf) {
+            Ok(count) => {
                 let mut res = Vec::new();
                 for i in 0..count {
-                    res.push((buf[2*i], buf[2*i+1]));
+                    res.push((buf[i].predicate.to_u64_lossy(), buf[i].to.to_u64_lossy()));
                 }
                 Ok(res)
             }
@@ -328,7 +332,7 @@ impl GraphExecutor {
                 Err(_) => return false,
             };
 
-            let val_id = match graph::prop_get(id, key_id) {
+            let val_id = match graph::prop_get(ThingId::from_u64(id), key_id) {
                 Ok(v) => v,
                 Err(_) => return false, // Property missing
             };
@@ -340,7 +344,7 @@ impl GraphExecutor {
                 Value::String(s) => {
                     match graph::intern(s) {
                         Ok(s_id) => {
-                            if s_id != val_id { return false; }
+                            if (s_id as u64) != val_id { return false; }
                         }
                         Err(_) => return false,
                     }
@@ -364,8 +368,8 @@ impl GraphExecutor {
     }
 
     fn format_node(&self, id: u64) -> String {
-        let kind_id = match graph::get_kind(id) {
-            Ok(k) => k,
+        let kind_id = match graph::get_kind(ThingId::from_u64(id)) {
+            Ok(k) => k.0,
             Err(_) => return format!("(id:{})", id),
         };
 

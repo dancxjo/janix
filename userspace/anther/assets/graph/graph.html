@@ -34,6 +34,16 @@
         <div class="topbar-right">
             <span id="statusText" class="status">Ready</span>
         </div>
+        <!-- GQL Query Row -->
+        <div class="topbar-query">
+            <label class="query-label">
+                GQL Query:
+                <input type="text" id="gqlInput" placeholder="MATCH (n) RETURN n LIMIT 10" size="60"
+                    title="Enter a GQL query to execute against the system graph">
+            </label>
+            <button id="executeBtn" title="Execute GQL query">Execute</button>
+            <button id="clearQueryBtn" title="Clear query results">Clear</button>
+        </div>
     </header>
 
     <!-- Main Content -->
@@ -81,6 +91,15 @@
                     </div>
                 </div>
             </div>
+        </aside>
+
+        <!-- Query Results Panel -->
+        <aside class="query-results" id="queryResults" style="display:none">
+            <div class="query-results-header">
+                <h3>Query Results</h3>
+                <button id="closeQueryBtn" class="btn-close" title="Close results">×</button>
+            </div>
+            <pre id="queryResultsContent" class="query-results-content"></pre>
         </aside>
     </main>
 

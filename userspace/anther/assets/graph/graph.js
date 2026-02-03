@@ -327,6 +327,19 @@ const api = {
         }
         return body;
     },
+
+    async executeGqlQuery(query) {
+        const r = await fetchWithTimeout('/api/v1/query', {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: query,
+        });
+        const text = await r.text();
+        if (!r.ok) {
+            throw new Error(`${r.status} ${r.statusText}: ${text}`);
+        }
+        return text;
+    },
 };
 
 // =============================================================================
@@ -1119,6 +1132,47 @@ function updateUrl(root, depth) {
 }
 
 // =============================================================================
+// GQL Query Execution
+// =============================================================================
+
+async function executeGqlQuery() {
+    const query = $('gqlInput').value.trim();
+    if (!query) {
+        return;
+    }
+
+    setStatus('Executing query...', '');
+
+    try {
+        const result = await api.executeGqlQuery(query);
+        showQueryResults(result);
+        setStatus('Query executed', '');
+    } catch (err) {
+        showQueryResults(`Error: ${err.message}`);
+        setStatus(`Query error: ${err.message}`, '');
+        console.error('Query execution failed:', err);
+    }
+}
+
+function showQueryResults(text) {
+    const panel = $('queryResults');
+    const content = $('queryResultsContent');
+
+    content.textContent = text;
+    panel.style.display = 'flex';
+}
+
+function hideQueryResults() {
+    const panel = $('queryResults');
+    panel.style.display = 'none';
+}
+
+function clearQueryResults() {
+    $('gqlInput').value = '';
+    hideQueryResults();
+}
+
+// =============================================================================
 // Event Bindings
 // =============================================================================
 
@@ -1175,6 +1229,20 @@ function bindEvents() {
             $('rootInput').value = root;
             updateUrl(root, depth);
             loadGraph(root, depth);
+        }
+    });
+
+    // GQL Query buttons
+    $('executeBtn').addEventListener('click', executeGqlQuery);
+
+    $('clearQueryBtn').addEventListener('click', clearQueryResults);
+
+    $('closeQueryBtn').addEventListener('click', hideQueryResults);
+
+    // Enter key in query input
+    $('gqlInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            executeGqlQuery();
         }
     });
 }

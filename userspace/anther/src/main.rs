@@ -1,4 +1,4 @@
-//! pollen: HTTP/1.1 server for Thing-OS
+//! anther: HTTP/1.1 server for Thing-OS
 //!
 //! A minimal HTTP server that serves static responses and graph-backed endpoints.
 
@@ -20,7 +20,7 @@ use alloc::vec::Vec;
 use net_client::NetClient;
 use stem::{info, warn};
 
-const SERVER_NAME: &str = "ThingOS-pollen/0.1";
+const SERVER_NAME: &str = "ThingOS-anther/0.1";
 
 /// Build HTTP response with headers
 fn build_response(status: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
@@ -81,13 +81,13 @@ fn handle_request(request_str: &str) -> Vec<u8> {
     let req = match http::parse_request(request_str) {
         Ok(r) => r,
         Err(e) => {
-            warn!("pollen: Parse error: {:?}", e);
+            warn!("anther: Parse error: {:?}", e);
             let body = b"400 Bad Request\n";
             return build_response("400 Bad Request", "text/plain", body);
         }
     };
     
-    info!("pollen: {} {} {:?}", 
+    info!("anther: {} {} {:?}", 
           match req.method {
               http::Method::Get => "GET",
               http::Method::Head => "HEAD",
@@ -252,7 +252,7 @@ fn handle_404(is_head: bool) -> Vec<u8> {
 
 /// Run in stdio mode: read request from stdin, write response to stdout
 fn run_stdio_mode() -> ! {
-    info!("pollen: Running in stdio mode");
+    info!("anther: Running in stdio mode");
     
     // Read request from stdin (simulated via a buffer for now)
     // In a real implementation, we'd use SYS_STREAM_READ or similar
@@ -261,7 +261,7 @@ fn run_stdio_mode() -> ! {
     
     // In stdio mode, we'd write to stdout here
     // For now, just log it
-    info!("pollen: Response generated: {} bytes", response.len());
+    info!("anther: Response generated: {} bytes", response.len());
     
     // Exit after one request in stdio mode
     stem::syscall::exit(0);
@@ -269,40 +269,40 @@ fn run_stdio_mode() -> ! {
 
 /// Run in server mode - listen for TCP connections and serve HTTP
 fn run_server_mode(port: u16) -> ! {
-    info!("pollen: Starting server mode on port {}...", port);
+    info!("anther: Starting server mode on port {}...", port);
 
     // Wait for network stack to be ready
     let net = loop {
         match NetClient::connect() {
             Some(n) => break n,
             None => {
-                info!("pollen: Waiting for network stack...");
+                info!("anther: Waiting for network stack...");
                 stem::time::sleep_ms(500);
             }
         }
     };
 
-    info!("pollen: Connected to network stack");
+    info!("anther: Connected to network stack");
 
     // Start listening
     let listen_handle = loop {
         match net.tcp_listen(port) {
             Some(h) => break h,
             None => {
-                warn!("pollen: Failed to listen on port {}, retrying...", port);
+                warn!("anther: Failed to listen on port {}, retrying...", port);
                 stem::time::sleep_ms(1000);
             }
         }
     };
 
-    info!("pollen: Listening on port {} (handle={})", port, listen_handle);
+    info!("anther: Listening on port {} (handle={})", port, listen_handle);
 
     // Main server loop
     loop {
         // Try to accept a connection
         if let Some(accept) = net.tcp_accept(listen_handle) {
             info!(
-                "pollen: Connection from {}.{}.{}.{}:{}",
+                "anther: Connection from {}.{}.{}.{}:{}",
                 accept.remote_ip[0],
                 accept.remote_ip[1],
                 accept.remote_ip[2],
@@ -339,7 +339,7 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     }
 
     if request_data.is_empty() {
-        warn!("pollen: No request received, closing connection");
+        warn!("anther: No request received, closing connection");
         net.tcp_close(conn_handle);
         return;
     }
@@ -348,14 +348,14 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     let request_str = match core::str::from_utf8(&request_data) {
         Ok(s) => s,
         Err(_) => {
-            warn!("pollen: Invalid UTF-8 in request");
+            warn!("anther: Invalid UTF-8 in request");
             net.tcp_close(conn_handle);
             return;
         }
     };
 
     let response = handle_request(request_str);
-    info!("pollen: Sending response ({} bytes)", response.len());
+    info!("anther: Sending response ({} bytes)", response.len());
 
     // Send response in chunks
     // Use larger chunks (8KB) to reduce overhead, the TX buffer is 32KB
@@ -378,7 +378,7 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
             // Socket TX buffer full - wait briefly for netd to drain
             stall_count += 1;
             if stall_count >= MAX_STALLS {
-                warn!("pollen: Send stalled after {} bytes (max retries)", sent);
+                warn!("anther: Send stalled after {} bytes (max retries)", sent);
                 break;
             }
             // Brief yield to let netd/smoltcp process
@@ -403,7 +403,7 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     // The connection needs time for: FIN -> FIN-ACK -> ACK sequence
     stem::time::sleep_ms(50);
     
-    info!("pollen: Connection closed (sent {}/{} bytes)", sent, response.len());
+    info!("anther: Connection closed (sent {}/{} bytes)", sent, response.len());
 }
 
 // Magic value to signal stdio mode (for testing)
@@ -411,7 +411,7 @@ const STDIO_MODE_MAGIC: usize = 0xDEADBEEF;
 
 #[stem::main]
 fn main(arg: usize) -> ! {
-    info!("pollen: Starting HTTP server (ThingOS pollen v0.1)");
+    info!("anther: Starting HTTP server (ThingOS anther v0.1)");
     
     // Default to server mode when spawned as a service (arg=0)
     // stdio mode is only for testing (requires magic value)

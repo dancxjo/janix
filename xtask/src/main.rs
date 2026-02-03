@@ -144,12 +144,12 @@ enum Commands {
     Kill,
     /// Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
     Fetch,
-    /// Run HTTPS reverse proxy for guest pollen
+    /// Run HTTPS reverse proxy for guest anther
     HttpsProxy {
         /// HTTPS listen port
         #[arg(long, default_value = "8443")]
         port: u16,
-        /// Target HTTP port (guest pollen via QEMU forwarding)
+        /// Target HTTP port (guest anther via QEMU forwarding)
         #[arg(long, default_value = "8888")]
         target: u16,
     },

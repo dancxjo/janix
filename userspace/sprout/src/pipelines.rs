@@ -443,21 +443,21 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                 }
             }
 
-            // Spawn pollen - HTTP server
-            match stem::syscall::spawn_process("/pollen", 0) {
+            // Spawn anther - HTTP server
+            match stem::syscall::spawn_process("/anther", 0) {
                 Ok(pid) => {
-                    info!("SPROUT: Spawned pollen (PID={})", pid);
+                    info!("SPROUT: Spawned anther (PID={})", pid);
                     let _ = stem::thread::set_priority(pid, 2); // Normal priority
                     tasks.push(ManagedTask {
-                        name: "/pollen".to_string(),
+                        name: "/anther".to_string(),
                         kind: TaskKind::Service("svc.http".to_string()),
-                        module_path: "/pollen".to_string(),
+                        module_path: "/anther".to_string(),
                         pid: Some(pid),
                         restarts: 0,
                     });
                 }
                 Err(e) => {
-                    warn!("SPROUT: Failed to spawn pollen: {:?}", e);
+                    warn!("SPROUT: Failed to spawn anther: {:?}", e);
                 }
             }
         } else {

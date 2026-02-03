@@ -1,4 +1,4 @@
-//! Integration tests for pollen
+//! Integration tests for anther
 //!
 //! These tests validate the HTTP request/response handling.
 

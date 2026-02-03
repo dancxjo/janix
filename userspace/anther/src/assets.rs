@@ -1,4 +1,4 @@
-//! Static asset serving for pollen
+//! Static asset serving for anther
 //!
 //! Embeds explorer assets at compile time and serves them as static files.
 

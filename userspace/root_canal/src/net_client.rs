@@ -1,4 +1,4 @@
-//! Network client for pollen
+//! Network client for anther
 //!
 //! Provides simplified TCP socket operations by communicating with netd's socket API.
 

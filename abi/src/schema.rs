@@ -33,7 +33,6 @@ pub mod content_source_state {
     pub const INITIALIZING: &str = "initializing";
 }
 
-
 pub mod keys {
     pub const SOURCE: &str = "source";
     pub const CONFIDENCE: &str = "confidence";
@@ -114,7 +113,7 @@ pub mod keys {
     pub const VECTOR: &str = "vector";
     pub const MSI_CAPABLE: &str = "msi_capable";
     pub const MSIX_CAPABLE: &str = "msix_capable";
-    
+
     // VirtIO PCI Capability Offsets
     pub const VIRTIO_COMMON_BAR: &str = "virtio.common_bar";
     pub const VIRTIO_COMMON_OFFSET: &str = "virtio.common_offset";
@@ -125,7 +124,7 @@ pub mod keys {
     pub const VIRTIO_ISR_OFFSET: &str = "virtio.isr_offset";
     pub const VIRTIO_DEVICE_BAR: &str = "virtio.device_bar";
     pub const VIRTIO_DEVICE_OFFSET: &str = "virtio.device_offset";
-    
+
     // Storage
     pub const SECTOR_SIZE: &str = "sector_size";
     pub const SECTOR_COUNT: &str = "sector_count";
@@ -168,7 +167,7 @@ pub mod keys {
     pub const UI_RANK: &str = "ui.rank";
     pub const UI_FIXED: &str = "ui.fixed";
     pub const UI_MANUAL_POSITION: &str = "ui.manual_position";
-    
+
     // Graph layout properties (Photosynthesis)
     pub const LAYOUT_POS_X: &str = "layout.pos.x";
     pub const LAYOUT_POS_Y: &str = "layout.pos.y";
@@ -178,7 +177,7 @@ pub mod keys {
     pub const LAYOUT_VEL_Y: &str = "layout.vel.y";
     pub const LAYOUT_PIN: &str = "layout.pin";
     pub const LAYOUT_GEN: &str = "layout.gen";
-    
+
     // User-authored layout properties (Graph UI, shared with Photosynthesis)
     /// UI layout X coordinate (f32 bits stored as u64)
     pub const UI_LAYOUT_X: &str = "ui.layout.x";
@@ -190,7 +189,7 @@ pub mod keys {
     pub const UI_LAYOUT_SPACE: &str = "ui.layout.space";
     /// Layout generation counter for debugging/versioning
     pub const UI_LAYOUT_GEN: &str = "ui.layout.gen";
-    
+
     /// Compositor has taken control of framebuffer (boot console should stop)
     pub const UI_COMPOSITOR_ACTIVE: &str = "ui.compositor.active";
     pub const UI_BUTTON_LABEL: &str = "ui.button.label";
@@ -401,7 +400,7 @@ pub mod keys {
     pub const CONTENT_SOURCE_STATE: &str = "content.source.state";
     /// Content source generation (bumps on refresh/remount)
     pub const CONTENT_SOURCE_GEN: &str = "content.source.gen";
-    
+
     // File/Directory Properties
     /// File name (leaf name, not full path)
     pub const FILE_NAME: &str = "file.name";
@@ -419,7 +418,7 @@ pub mod keys {
     pub const DIR_NAME: &str = "dir.name";
     /// Directory full path (optional, for quick lookups)
     pub const DIR_PATH: &str = "dir.path";
-    
+
     // Service Contract Properties
     /// Service contract name (service canonical name)
     pub const SERVICE_CONTRACT_NAME: &str = "service.contract.name";
@@ -589,7 +588,7 @@ pub mod kinds {
     pub const CONTENT_DIR: &str = "fs.Directory";
     /// A file in the filesystem graph
     pub const CONTENT_FILE: &str = "fs.File";
-    
+
     // Service Contract Kinds
     /// Service contract node (registered at /sys/services/{name})
     pub const SERVICE_CONTRACT: &str = "svc.Contract";
@@ -725,7 +724,7 @@ pub mod rels {
     pub const CONTENT_LOCATED_AT: &str = "content.located_at";
     /// Content provided by source
     pub const CONTENT_PROVIDED_BY: &str = "content.provided_by";
-    
+
     // Service Contract Relationships
     /// Service implements contract (Service -> Contract)
     pub const IMPLEMENTS_CONTRACT: &str = "IMPLEMENTS_CONTRACT";
@@ -746,9 +745,6 @@ pub mod rels {
     /// Thread uses a bytespace mapping (proc.Thread -> Bytespace)
     pub const THREAD_USES_BYTESPACE: &str = "THREAD_USES_BYTESPACE";
 
-    // Root / System Links
-    pub const MONITORS: &str = "MONITORS";
-    pub const HAS_SERVICE: &str = "HAS_SERVICE";
     /// Host launched a module (dev.Host -> boot.Module)
     pub const LAUNCHED: &str = "LAUNCHED";
 }

@@ -146,6 +146,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "anther"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "anyhow"
 version = "1.0.100"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1966,14 +1974,6 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide",
-]
-
-[[package]]
-name = "pollen"
-version = "0.1.0"
-dependencies = [
- "abi",
- "stem",
 ]
 
 [[package]]

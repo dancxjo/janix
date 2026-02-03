@@ -1,4 +1,4 @@
-# pollen Implementation Summary
+# anther Implementation Summary
 
 ## Overview
 
@@ -68,7 +68,7 @@ This implementation provides a minimal HTTP/1.1 server for Thing-OS as a userspa
 cargo +nightly build -Z build-std=core,alloc \
   -Z build-std-features=compiler-builtins-mem \
   --target targets/x86_64-unknown-thingos.json \
-  -p pollen
+  -p anther
 ```
 
 ### Release Build
@@ -76,7 +76,7 @@ cargo +nightly build -Z build-std=core,alloc \
 cargo +nightly build -Z build-std=core,alloc \
   -Z build-std-features=compiler-builtins-mem \
   --target targets/x86_64-unknown-thingos.json \
-  -p pollen --release
+  -p anther --release
 ```
 
 ### Binary Size
@@ -92,7 +92,7 @@ Note: Tests run on the host platform, not the target. Integration tests would re
 
 ## Acceptance Criteria Status
 
-✅ pollen boots and serves /health
+✅ anther boots and serves /health
 ✅ /graph and /graph/<thing_id> work for Thing nodes
 ✅ Bytespace streaming works with size cap
 ✅ Tests exist and compile
@@ -155,7 +155,7 @@ Note: Tests run on the host platform, not the target. Integration tests would re
 
 ## Conclusion
 
-The pollen implementation meets all core requirements:
+The anther implementation meets all core requirements:
 - Minimal, correct HTTP/1.1 parsing ✅
 - Graph-native admin surface (read-only) ✅
 - Defensive size limits ✅

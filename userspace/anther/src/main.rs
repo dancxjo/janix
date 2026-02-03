@@ -10,6 +10,7 @@ extern crate alloc;
 mod api_v1;
 mod assets;
 mod error;
+mod gql_handler;
 mod graph_api;
 mod http;
 mod net_client;

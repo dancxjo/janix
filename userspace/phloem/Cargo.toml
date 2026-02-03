@@ -3,6 +3,10 @@ name = "phloem"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "phloem"
+path = "src/lib.rs"
+
 [dependencies]
-stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
+stem = { path = "../../stem", default-features = false }
 abi = { path = "../../abi" }

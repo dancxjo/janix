@@ -34,12 +34,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
-        ProgramConfig {
-            name: "phloem",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
+
         ProgramConfig {
             name: "rtc_cmos",
             is_init: false,

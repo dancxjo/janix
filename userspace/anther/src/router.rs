@@ -56,6 +56,12 @@ pub enum ApiRoute<'a> {
     /// PATCH /api/v1/layout
     PatchLayout,
     
+    /// POST /api/v1/query
+    ExecuteGqlQuery,
+    
+    /// GET /api/v1/query?q=...
+    ExecuteGqlQueryGet { query: &'a str },
+    
     /// Route not found in API
     NotFound,
     
@@ -134,6 +140,14 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         // /api/v1/layout
         (Method::Patch, ["layout"]) => Some(ApiRoute::PatchLayout),
         
+        // /api/v1/query
+        (Method::Post, ["query"]) => Some(ApiRoute::ExecuteGqlQuery),
+        (Method::Get, ["query"]) => {
+            // Pass the query string portion (after ?) to the handler
+            let query = path.find('?').map(|i| &path[i+1..]).unwrap_or("");
+            Some(ApiRoute::ExecuteGqlQueryGet { query })
+        }
+        
         // Method not allowed variants
         (_, ["things"]) |
         (_, ["things", _]) |
@@ -143,7 +157,8 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         (_, ["things", _, "launch"]) |
         (_, ["watch"]) |
         (_, ["subgraph"]) |
-        (_, ["layout"]) => Some(ApiRoute::MethodNotAllowed),
+        (_, ["layout"]) |
+        (_, ["query"]) => Some(ApiRoute::MethodNotAllowed),
         
         // Not found
         _ => Some(ApiRoute::NotFound),

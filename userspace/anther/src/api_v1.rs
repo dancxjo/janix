@@ -1060,6 +1060,55 @@ fn find_host_id() -> Result<u64, ApiError> {
 }
 
 // ============================================================================
+// GQL Query Endpoints
+// ============================================================================
+
+/// POST /api/v1/query
+/// Execute a GQL query from request body
+pub fn handle_execute_gql_query(body: &[u8]) -> Vec<u8> {
+    // Convert body to string
+    let query = match core::str::from_utf8(body) {
+        Ok(s) => s,
+        Err(_) => return error_response(ApiError::bad_request("Invalid UTF-8 in request body")),
+    };
+    
+    // Execute the query
+    let result = crate::gql_handler::handle_gql_post(query);
+    
+    // Return as plain text for now (could be JSON in the future)
+    crate::build_response("200 OK", "text/plain", &result)
+}
+
+/// GET /api/v1/query?q=...
+/// Execute a GQL query from query parameter
+pub fn handle_execute_gql_query_get(query_string: &str) -> Vec<u8> {
+    // Parse query parameter
+    let mut gql_query = "";
+    for part in query_string.split('&') {
+        if let Some((key, value)) = part.split_once('=') {
+            if key == "q" {
+                gql_query = value;
+                break;
+            }
+        }
+    }
+    
+    if gql_query.is_empty() {
+        return error_response(ApiError::bad_request("Missing 'q' query parameter"));
+    }
+    
+    // URL decode would go here if needed
+    // For now, assume it's already decoded
+    
+    // Execute the query
+    let result = crate::gql_handler::handle_gql_get(gql_query);
+    
+    // Return as plain text
+    crate::build_response("200 OK", "text/plain", &result)
+}
+
+
+// ============================================================================
 // Dispatch
 // ============================================================================
 
@@ -1081,6 +1130,8 @@ pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> Vec<u8> 
         ApiRoute::Watch => handle_watch(req),
         ApiRoute::GetSubgraph { query } => handle_get_subgraph(query),
         ApiRoute::PatchLayout => handle_patch_layout(body),
+        ApiRoute::ExecuteGqlQuery => handle_execute_gql_query(body),
+        ApiRoute::ExecuteGqlQueryGet { query } => handle_execute_gql_query_get(query),
         ApiRoute::NotFound => handle_not_found(),
         ApiRoute::MethodNotAllowed => handle_method_not_allowed(),
     }

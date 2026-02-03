@@ -3,11 +3,38 @@
 // Web Worker that runs ELK layout algorithm asynchronously
 // to prevent UI freezes on large graphs.
 
-// Load ELK.js from CDN
-importScripts('https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.min.js');
+// Load ELK.js from CDN (wrapped in try/catch for stability)
+const ELK_BUNDLE_URLS = [
+    'https://cdn.jsdelivr.net/npm/elkjs@0.9.3/lib/elk.bundled.min.js',
+];
 
-// Create ELK instance
-const elk = new ELK();
+let elk = null;
+let elkLoadError = null;
+
+function tryLoadElk(url) {
+    try {
+        importScripts(url);
+        if (typeof ELK === 'undefined') {
+            throw new Error(`ELK not found after loading ${url}`);
+        }
+        elk = new ELK();
+        return true;
+    } catch (err) {
+        elkLoadError = err instanceof Error ? err : new Error(String(err));
+        return false;
+    }
+}
+
+for (const url of ELK_BUNDLE_URLS) {
+    if (tryLoadElk(url)) {
+        elkLoadError = null;
+        break;
+    }
+}
+
+if (!elk && !elkLoadError) {
+    elkLoadError = new Error('ELK unavailable');
+}
 
 // Default layout options tuned for readable directed graphs
 const DEFAULT_OPTIONS = {
@@ -39,6 +66,14 @@ self.onmessage = async function (event) {
     const startTime = performance.now();
 
     try {
+        if (!requestId) {
+            return;
+        }
+
+        if (!elk) {
+            throw new Error(elkLoadError ? elkLoadError.message : 'ELK unavailable');
+        }
+
         // Validate input
         if (!graph || typeof graph !== 'object') {
             throw new Error('Invalid graph: must be an object');
@@ -79,4 +114,7 @@ self.onmessage = async function (event) {
 };
 
 // Signal that worker is ready
-self.postMessage({ type: 'ready' });
+self.postMessage({
+    type: 'ready',
+    error: elk ? null : (elkLoadError ? elkLoadError.message : 'ELK unavailable'),
+});

@@ -15,6 +15,12 @@ const CONFIG = {
     // ELK layout defaults
     DEFAULT_SPACING: 40,
     DEFAULT_LAYER_SPACING: 60,
+    // Network and layout stability
+    API_TIMEOUT_MS: 8000,
+    SUBGRAPH_RETRIES: 3,
+    SUBGRAPH_RETRY_BASE_MS: 250,
+    ELK_TIMEOUT_MS: 15000,
+    ELK_RETRY_COOLDOWN_MS: 5000,
 };
 
 // =============================================================================
@@ -22,6 +28,27 @@ const CONFIG = {
 // =============================================================================
 
 const $ = (id) => document.getElementById(id);
+
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+async function fetchWithTimeout(url, options = {}, timeoutMs = CONFIG.API_TIMEOUT_MS) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+        return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+        clearTimeout(timeout);
+    }
+}
+
+function isRetryableError(err) {
+    if (!err) return false;
+    if (err.name === 'AbortError') return true;
+    if (err.name === 'TypeError') return true; // Network errors surface as TypeError in fetch
+    const msg = String(err.message || '');
+    const code = parseInt(msg.slice(0, 3), 10);
+    return !Number.isNaN(code) && (code >= 500 || code === 408 || code === 429);
+}
 
 // =============================================================================
 // Label Measurement
@@ -96,11 +123,17 @@ const labelMeasurer = {
 
 const elkLayout = {
     worker: null,
-    pending: new Map(), // requestId -> { resolve, reject }
+    pending: new Map(), // requestId -> { resolve, reject, timeoutId }
     requestCounter: 0,
     ready: false,
+    disabledUntil: 0,
+    lastError: null,
 
     init() {
+        if (this.worker) {
+            return;
+        }
+        this.ready = false;
         this.worker = new Worker('/elk-worker.js');
 
         this.worker.onmessage = (event) => {
@@ -108,8 +141,15 @@ const elkLayout = {
 
             // Handle ready signal
             if (data.type === 'ready') {
-                this.ready = true;
-                console.log('[ELK] Worker ready');
+                if (data.error) {
+                    this.ready = false;
+                    this.disable(data.error);
+                    console.warn('[ELK] Worker disabled:', data.error);
+                    this.resetWorker();
+                } else {
+                    this.ready = true;
+                    console.log('[ELK] Worker ready');
+                }
                 return;
             }
 
@@ -132,31 +172,103 @@ const elkLayout = {
 
         this.worker.onerror = (err) => {
             console.error('[ELK] Worker error:', err);
-            // Reject all pending requests
-            for (const [id, pending] of this.pending) {
-                pending.reject(new Error('Worker crashed'));
-            }
-            this.pending.clear();
+            this.rejectAll(new Error('Worker crashed'));
+            this.disable('Worker crashed');
+            this.resetWorker();
+        };
+
+        this.worker.onmessageerror = (err) => {
+            console.error('[ELK] Worker message error:', err);
+            this.rejectAll(new Error('Worker message error'));
+            this.disable('Worker message error');
+            this.resetWorker();
         };
     },
 
     layout(graph, options = {}) {
         return new Promise((resolve, reject) => {
+            if (this.isDisabled()) {
+                reject(new Error(`ELK disabled: ${this.lastError || 'cooldown'}`));
+                return;
+            }
+
+            this.init();
+            if (!this.worker) {
+                reject(new Error('ELK worker unavailable'));
+                return;
+            }
             const requestId = `elk-${++this.requestCounter}`;
 
-            this.pending.set(requestId, { resolve, reject });
+            const timeoutId = setTimeout(() => {
+                this.pending.delete(requestId);
+                const err = new Error(`Layout timed out after ${CONFIG.ELK_TIMEOUT_MS}ms`);
+                this.disable(err.message);
+                this.resetWorker();
+                reject(err);
+            }, CONFIG.ELK_TIMEOUT_MS);
 
-            this.worker.postMessage({
-                requestId,
-                graph,
-                options,
+            this.pending.set(requestId, {
+                resolve: (payload) => {
+                    clearTimeout(timeoutId);
+                    resolve(payload);
+                },
+                reject: (err) => {
+                    clearTimeout(timeoutId);
+                    reject(err);
+                },
+                timeoutId,
             });
+
+            try {
+                this.worker.postMessage({
+                    requestId,
+                    graph,
+                    options,
+                });
+            } catch (err) {
+                clearTimeout(timeoutId);
+                this.pending.delete(requestId);
+                this.disable(err.message || 'Worker postMessage failed');
+                this.resetWorker();
+                reject(err);
+            }
         });
     },
 
     // Cancel pending request (for debouncing)
     cancel(requestId) {
+        const pending = this.pending.get(requestId);
+        if (pending?.timeoutId) {
+            clearTimeout(pending.timeoutId);
+        }
         this.pending.delete(requestId);
+    },
+
+    rejectAll(err) {
+        for (const [, pending] of this.pending) {
+            if (pending.timeoutId) {
+                clearTimeout(pending.timeoutId);
+            }
+            pending.reject(err);
+        }
+        this.pending.clear();
+    },
+
+    resetWorker() {
+        if (this.worker) {
+            this.worker.terminate();
+        }
+        this.worker = null;
+        this.ready = false;
+    },
+
+    disable(reason) {
+        this.lastError = reason;
+        this.disabledUntil = performance.now() + CONFIG.ELK_RETRY_COOLDOWN_MS;
+    },
+
+    isDisabled() {
+        return performance.now() < this.disabledUntil;
     },
 };
 
@@ -174,7 +286,7 @@ const api = {
         if (root && root.trim() !== '') {
             params.set('root', root);
         }
-        const r = await fetch(`/api/v1/subgraph?${params}`);
+        const r = await fetchWithTimeout(`/api/v1/subgraph?${params}`);
         if (!r.ok) {
             const text = await r.text();
             throw new Error(`${r.status} ${r.statusText}: ${text}`);
@@ -191,7 +303,7 @@ const api = {
                 y: n.y,
             })),
         };
-        const r = await fetch('/api/v1/layout', {
+        const r = await fetchWithTimeout('/api/v1/layout', {
             method: 'PATCH',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -262,6 +374,7 @@ const state = {
     movedNodes: new Set(),
     graphData: null,
     lastLayoutMs: 0,
+    loadSeq: 0,
     // Property watching
     watchInterval: null,
     lastProps: {},  // Track previous values for change detection
@@ -402,11 +515,36 @@ function initCytoscape() {
 // Graph Loading with ELK Layout
 // =============================================================================
 
+async function getSubgraphWithRetry(root, depth) {
+    let attempt = 0;
+    const maxAttempts = CONFIG.SUBGRAPH_RETRIES + 1;
+
+    while (attempt < maxAttempts) {
+        try {
+            return await api.getSubgraph(root, depth);
+        } catch (err) {
+            attempt += 1;
+            if (!isRetryableError(err) || attempt >= maxAttempts) {
+                throw err;
+            }
+            const delay = CONFIG.SUBGRAPH_RETRY_BASE_MS * Math.pow(2, attempt - 1);
+            setStatus(`Load failed, retrying in ${delay}ms (${attempt}/${CONFIG.SUBGRAPH_RETRIES})...`, 'retrying');
+            await sleep(delay);
+        }
+    }
+
+    throw new Error('Failed to load subgraph');
+}
+
 async function loadGraph(root, depth) {
+    const loadSeq = ++state.loadSeq;
     setStatus('Loading...', '');
 
     try {
-        const data = await api.getSubgraph(root, depth);
+        const data = await getSubgraphWithRetry(root, depth);
+        if (loadSeq !== state.loadSeq) {
+            return;
+        }
         state.graphData = data;
         state.movedNodes.clear();
 
@@ -423,6 +561,9 @@ async function loadGraph(root, depth) {
         }
 
     } catch (err) {
+        if (loadSeq !== state.loadSeq) {
+            return;
+        }
         setStatus(`Error: ${err.message}`, '');
         console.error('Load failed:', err);
     }
@@ -430,6 +571,11 @@ async function loadGraph(root, depth) {
 
 async function runElkLayout(data, root) {
     setStatus('Computing layout...', '');
+
+    if (elkLayout.isDisabled()) {
+        renderWithCoseLayout(data, root);
+        return;
+    }
 
     try {
         // Build ELK graph with measured node sizes
@@ -727,7 +873,7 @@ const WATCH_POLL_INTERVAL_MS = 1000;  // Poll every 1 second
 
 async function fetchProps(thingId) {
     try {
-        const r = await fetch(`/api/v1/things/${thingId}/props`);
+        const r = await fetchWithTimeout(`/api/v1/things/${thingId}/props`);
         if (!r.ok) {
             return null;
         }
@@ -925,6 +1071,12 @@ async function init() {
 
     // Initialize ELK worker
     elkLayout.init();
+
+    if (typeof cytoscape === 'undefined') {
+        console.error('Cytoscape.js failed to load');
+        setStatus('Cytoscape failed to load', 'error');
+        return;
+    }
 
     // Initialize Cytoscape
     initCytoscape();

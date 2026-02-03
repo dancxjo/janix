@@ -6,11 +6,11 @@ use alloc::vec::Vec;
 pub struct Interner {
     // Forward lookup: SymbolId -> String
     // We store the string data here.
-    names: Vec<String>,
+    pub names: Vec<String>,
 
     // Reverse lookup: String -> SymbolId
     // We duplicate the string key for now to satisfy BTreeMap ownership in no_std easily.
-    map: BTreeMap<String, SymbolId>,
+    pub map: BTreeMap<String, SymbolId>,
 }
 
 impl Interner {

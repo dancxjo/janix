@@ -156,8 +156,8 @@ pub struct CommitSummary {
 }
 
 /// Hard limits for commit history
-pub const COMMIT_HISTORY_MAX_COMMITS: usize = 8192;
-pub const COMMIT_HISTORY_MAX_BYTES: usize = 64 * 1024 * 1024; // 64 MiB
+pub const COMMIT_HISTORY_MAX_COMMITS: usize = 1024;
+pub const COMMIT_HISTORY_MAX_BYTES: usize = 8 * 1024 * 1024; // 8 MiB - must fit within 32 MiB kernel heap
 
 /// Shared ring buffer of recent commits
 ///
@@ -421,6 +421,27 @@ impl Graph {
             node.edges.push((rel, dst));
         }
         self.reverse_index.entry(dst).or_default().push((rel, src));
+    }
+
+    /// Remove a node from the graph, cleaning up indices.
+    /// Used for evicting old log entries.
+    pub fn remove_node(&mut self, id: ThingId) {
+        if let Some(node) = self.nodes.remove(&id) {
+            // Clean up kind_index
+            if let Some(kind_list) = self.kind_index.get_mut(&node.kind) {
+                kind_list.retain(|&x| x != id);
+            }
+            
+            // Clean up reverse_index for outgoing edges
+            for (_, dst) in &node.edges {
+                if let Some(rev_list) = self.reverse_index.get_mut(dst) {
+                    rev_list.retain(|(_, src)| *src != id);
+                }
+            }
+            
+            // Remove this node's reverse_index entry
+            self.reverse_index.remove(&id);
+        }
     }
 }
 

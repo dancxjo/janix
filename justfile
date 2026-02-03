@@ -44,7 +44,7 @@ run arch=karch:
 proxy port="8081":
     python3 scripts/https_proxy.py {{port}}
 
-# Start HTTPS reverse proxy for host browser access to guest httpd
+# Start HTTPS reverse proxy for host browser access to guest pollen
 # Wraps guest's HTTP server (port 8888) with self-signed HTTPS
 # Browser accesses: https://localhost:8443/
 https-proxy port="8443" target="8888":

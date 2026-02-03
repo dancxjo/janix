@@ -116,6 +116,7 @@ pub const SYS_ROOT_DESCRIBE_SYMBOL: u32 = 0x15D; // Added
 pub const SYS_ROOT_DUMP_EDGES: u32 = 0x15A;
 pub const SYS_ROOT_DUMP_GRAPH: u32 = 0x15B;
 pub const SYS_ROOT_GET_EDGES: u32 = 0x15C;
+pub const SYS_ROOT_GET_PROPS: u32 = 0x15E;
 
 // 0x160-0x167: Bytespace
 pub const SYS_ROOT_BYTESPACE_CREATE: u32 = 0x160;

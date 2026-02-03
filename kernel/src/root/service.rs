@@ -15,7 +15,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
     let mut graph = Graph::new();
     let mut journal = Journal::new();
     let mut interner = Interner::new();
-    let log_symbols = root_handlers::logging::LogSymbols::new(&mut interner);
+    let mut log_symbols = root_handlers::logging::LogSymbols::new(&mut interner);
     let mut batch_scratch = RootBatchScratch::new();
 
     let mut iteration = 0u64;
@@ -23,13 +23,26 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         iteration = iteration.wrapping_add(1);
         let mut processed = 0;
 
+        // Periodic memory stats (every 500 iterations)
+        if iteration % 500 == 0 {
+            let node_count = graph.nodes.len();
+            let watch_count = graph.global_watches.len();
+            let history_len = graph.commit_history.len();
+            let journal_len = journal.entries.len();
+            let symbol_count = interner.names.len();
+            crate::kinfo!(
+                "ROOT STATS: iter={} nodes={} watches={} history={} journal={} symbols={}",
+                iteration, node_count, watch_count, history_len, journal_len, symbol_count
+            );
+        }
+
         while processed < 16 {
             if let Some(msg) = super::pop_msg() {
                 handle_msg::<R>(
                     &mut graph,
                     &mut journal,
                     &mut interner,
-                    &log_symbols,
+                    &mut log_symbols,
                     &mut batch_scratch,
                     msg,
                 );
@@ -76,6 +89,7 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::DescribeEdge { .. } => "DescribeEdge",
         RootOp::DumpEdges { .. } => "DumpEdges",
         RootOp::GetEdges { .. } => "GetEdges",
+        RootOp::GetProps { .. } => "GetProps",
         RootOp::DumpGraph { .. } => "DumpGraph",
         RootOp::LogEvent { .. } => "LogEvent",
         RootOp::PropsGetMany { .. } => "PropsGetMany",
@@ -86,7 +100,7 @@ fn handle_msg<R: BootRuntime>(
     graph: &mut Graph,
     journal: &mut Journal,
     interner: &mut Interner,
-    log_symbols: &root_handlers::logging::LogSymbols,
+    log_symbols: &mut root_handlers::logging::LogSymbols,
     batch_scratch: &mut RootBatchScratch,
     msg: RootMsg,
 ) {
@@ -197,6 +211,9 @@ fn handle_msg<R: BootRuntime>(
         RootOp::GetEdges { id, buffer, len } => {
             root_handlers::handle_get_edges(graph, id, buffer, len)
         }
+        RootOp::GetProps { id, buffer, len } => {
+            root_handlers::handle_get_props(graph, id, buffer, len)
+        }
         RootOp::DumpGraph { limit } => root_handlers::handle_dump_graph(graph, interner, limit),
 
         // Logging
@@ -211,7 +228,7 @@ fn handle_msg<R: BootRuntime>(
         } => root_handlers::handle_log_event(
             graph,
             interner,
-            &log_symbols,
+            log_symbols,
             level,
             event,
             &message,

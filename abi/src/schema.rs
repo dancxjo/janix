@@ -451,6 +451,10 @@ pub mod keys {
     pub const PROC_EXIT_CODE: &str = "proc.exit_code";
     /// Interned string name of the task/module
     pub const PROC_NAME: &str = "proc.name";
+
+    // Launch/Event Properties
+    /// Monotonic timestamp for last launch (nanoseconds since boot)
+    pub const LAUNCH_AT: &str = "launch.at";
 }
 
 pub mod kinds {
@@ -743,6 +747,8 @@ pub mod rels {
     // Root / System Links
     pub const MONITORS: &str = "MONITORS";
     pub const HAS_SERVICE: &str = "HAS_SERVICE";
+    /// Host launched a module (dev.Host -> boot.Module)
+    pub const LAUNCHED: &str = "LAUNCHED";
 }
 
 // Virtio GPU additions

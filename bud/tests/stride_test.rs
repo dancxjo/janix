@@ -162,3 +162,50 @@ fn test_stride_zero_fallback() {
     // If stride was 0, text would be here.
     assert_ne!(b_zero, 255, "Should NOT have text pixel at zero stride offset");
 }
+
+#[test]
+fn test_put_pixel_respects_stride_in_pixels() {
+    let width = 200;
+    let height = 100;
+    // Reported stride is 100 pixels, which is LESS than width (200).
+    // This is weird but handled by calc_stride_bytes(200, 4, 100) -> 800 bytes.
+    // If the system misinterprets it as bytes, it will be 100 bytes (INVALID).
+    // If the system treats it as pixels: 100 * 4 = 400 bytes (STILL < 800).
+    // calc_stride_bytes should fall back to 800 bytes.
+    let reported_stride = 100;
+    let bpp = 4;
+    let expected_stride = width * bpp; // 800
+
+    let buffer_size = (expected_stride * height) as usize;
+    let buffer = Rc::new(RefCell::new(vec![0u8; buffer_size]));
+
+    let fb = MockFb {
+        width,
+        height,
+        stride: reported_stride,
+        buffer: buffer.clone(),
+    };
+
+    let mut display = BootUpDisplay::new(fb);
+
+    // Draw a single pixel at (10, 10)
+    // We need to access the inner FbDrawer or use a public method.
+    // render_log_line uses put_pixel.
+    display.render_log_line("X");
+
+    // Check a small area around the expected text position.
+    // If stride was wrong, the text would be shifted by many pixels (at least (800-400)*44 = 17600 bytes, which is ~22 rows).
+    let buf = buffer.borrow();
+    let mut found = false;
+    for y in 40..60 {
+        for x in 90..110 {
+            let off = (y as usize * expected_stride as usize) + (x * bpp as usize);
+            if off + 2 < buf.len() && buf[off] == 255 && buf[off + 1] == 255 && buf[off + 2] == 255 {
+                found = true;
+                break;
+            }
+        }
+        if found { break; }
+    }
+    assert!(found, "Should have rendered text at correct row with normalized stride");
+}

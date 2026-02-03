@@ -183,6 +183,21 @@ pub fn get_edges(id: ThingId, out: &mut [abi::types::Edge]) -> Result<usize, Err
     errno(ret).map(|v| v as usize)
 }
 
+pub fn get_props(id: ThingId, out: &mut [abi::types::GraphProp]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_GET_PROPS,
+            id.to_u64_lossy() as usize,
+            out.as_mut_ptr() as usize,
+            out.len() * core::mem::size_of::<abi::types::GraphProp>(),
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as usize)
+}
+
 pub fn link<S: IntoSymbolRef>(src: ThingId, rel: S, dst: ThingId) -> Result<(), Errno> {
     let wire = rel.to_wire();
     let ret = unsafe {

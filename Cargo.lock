@@ -401,6 +401,7 @@ version = "0.1.0"
 dependencies = [
  "embedded-graphics",
  "embedded-graphics-core",
+ "fb_common",
 ]
 
 [[package]]
@@ -774,6 +775,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "described"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "blake3",
+ "llm",
+ "llm_stub",
+ "stem",
+]
+
+[[package]]
 name = "digest"
 version = "0.10.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -958,6 +970,10 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "fb_common"
+version = "0.1.0"
 
 [[package]]
 name = "fdeflate"
@@ -1305,14 +1321,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48ce8546b993eaf241d69ded33b1be6d205dd9857ec879d9d18bd05d3676e144"
 
 [[package]]
-name = "httpd"
-version = "0.1.0"
-dependencies = [
- "abi",
- "stem",
-]
-
-[[package]]
 name = "humantime"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1638,6 +1646,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "df1d3c3b53da64cf5760482273a98e575c651a67eec7f77df96b5b642de8f039"
 
 [[package]]
+name = "llm"
+version = "0.1.0"
+
+[[package]]
+name = "llm_stub"
+version = "0.1.0"
+dependencies = [
+ "llm",
+]
+
+[[package]]
 name = "lock_api"
 version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1947,6 +1966,14 @@ dependencies = [
  "fdeflate",
  "flate2",
  "miniz_oxide",
+]
+
+[[package]]
+name = "pollen"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
 ]
 
 [[package]]
@@ -2575,6 +2602,17 @@ dependencies = [
  "quote",
  "sealed",
  "syn",
+]
+
+[[package]]
+name = "sysdescribe"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "described",
+ "llm",
+ "llm_stub",
+ "stem",
 ]
 
 [[package]]

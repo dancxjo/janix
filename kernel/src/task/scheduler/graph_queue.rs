@@ -45,10 +45,31 @@ pub enum GraphWork {
 /// Uses a separate lock from the scheduler to avoid deadlock.
 static WORK_QUEUE: Mutex<VecDeque<GraphWork>> = Mutex::new(VecDeque::new());
 
+/// Maximum work queue size to prevent OOM from feedback loops
+/// (context switches generate more work items which cause more context switches)
+const MAX_QUEUE_SIZE: usize = 256;
+
 /// Push a work item to the queue.
 /// This is safe to call while holding the scheduler lock.
+/// Non-critical items (UpdateState) may be dropped if queue is full.
 pub fn push(work: GraphWork) {
-    WORK_QUEUE.lock().push_back(work);
+    let mut q = WORK_QUEUE.lock();
+    
+    // If queue is full, drop non-critical items
+    if q.len() >= MAX_QUEUE_SIZE {
+        match &work {
+            GraphWork::UpdateState { .. } => {
+                // State updates are non-critical - drop silently
+                return;
+            }
+            _ => {
+                // For critical items, evict oldest to make room
+                q.pop_front();
+            }
+        }
+    }
+    
+    q.push_back(work);
 }
 
 /// Drain all work items from the queue.

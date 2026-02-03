@@ -70,6 +70,9 @@ fn intern(s: &str) -> u64 {
         if done != 0 {
             return reply.value.load(Ordering::Relaxed);
         }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
         core::hint::spin_loop();
     }
 }
@@ -84,6 +87,9 @@ fn create_node(kind: &str) -> Option<u64> {
         if done != 0 {
             let id = reply.value.load(Ordering::Relaxed);
             return if id != 0 { Some(id) } else { None };
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
         }
         core::hint::spin_loop();
     }
@@ -101,6 +107,9 @@ fn set_prop(id: u64, key: &str, value: u64) {
         if done != 0 {
             break;
         }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
         core::hint::spin_loop();
     }
 }
@@ -116,6 +125,9 @@ fn link(src: u64, rel: &str, dst: u64) {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
             break;
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
         }
         core::hint::spin_loop();
     }

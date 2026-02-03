@@ -140,6 +140,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
 
     set(host, keys::SOURCE, src_boot);
     set(host, keys::CONFIDENCE, conf_high);
+    // Publish host anchor early so fallback host links can attach during boot census.
+    super::graph_anchors::set_host(host);
 
     // 2. Platform Bus
     let platform_bus = create(kinds::DEV_BUS_PLATFORM);

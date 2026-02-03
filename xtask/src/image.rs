@@ -16,9 +16,7 @@ pub struct ProgramConfig {
 /// Configuration for ISO builds.
 #[derive(Default)]
 pub struct IsoConfig<'a> {
-    /// Display resolution (e.g., "1920x1080"). None = 1920x1080.
     pub resolution: Option<&'a str>,
-    /// Explicit ISO output path. None = use timestamped naming.
     pub iso_path: Option<&'a Path>,
 }
 
@@ -26,7 +24,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
     vec![
         ProgramConfig {
             name: "sprout",
-            is_init: false,
+            is_init: true,
             boot_module: true,
             features: vec!["diagnostic-apps"],
         },
@@ -51,13 +49,13 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "clock",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "font_explorer",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
@@ -75,7 +73,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "bloom",
             is_init: false,
-            boot_module: true,
+            boot_module: false, //disabled for now; testing root_canal
             features: vec![],
         },
         ProgramConfig {
@@ -85,49 +83,31 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "root_batch_bench",
-            is_init: false,
-            boot_module: false,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "root_watch_tester",
-            is_init: false,
-            boot_module: false,
-            features: vec![],
-        },
-        ProgramConfig {
             name: "display_bootfb",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "display_virtio_gpu",
             is_init: false,
-            boot_module: true,
+            boot_module: false, //disabled for now; testing root_canal
             features: vec![],
         },
         ProgramConfig {
             name: "fontd",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "blossom",
             is_init: false,
-            boot_module: true,
+            boot_module: false, // disabled for now; testing root_canal
             features: vec![],
         },
         ProgramConfig {
             name: "ingestd",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "cambium",
             is_init: false,
             boot_module: false,
             features: vec![],
@@ -151,34 +131,15 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "httpd",
+            name: "pollen",
             is_init: false,
             boot_module: true,
-            features: vec![],
-        },
-        // Scheduler fairness test apps
-        ProgramConfig {
-            name: "scheduler_fairness",
-            is_init: false,
-            boot_module: false,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "drawlist_demo",
-            is_init: false,
-            boot_module: false,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "tick_printer",
-            is_init: false,
-            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
             name: "photosynthesis",
             is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
         ProgramConfig {
@@ -187,29 +148,10 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: false,
             features: vec![],
         },
-        // Virgl 3D demo (testing virgl bring-up)
-        ProgramConfig {
-            name: "virgl_demo",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "iso_reader",
-            is_init: false,
-            boot_module: false,
-            features: vec![],
-        },
         ProgramConfig {
             name: "iso9660d",
             is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "iso_cat",
-            is_init: false,
-            boot_module: true,
+            boot_module: false,
             features: vec![],
         },
     ]
@@ -512,7 +454,7 @@ fn build_userspace_app_with_features(
 
     let mut cmd = cmd!(
         sh,
-        "cargo -Zjson-target-spec -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem build --target {target} --profile {profile} -p {name}"
+        "cargo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target {target} --profile {profile} -p {name}"
     )
     .env("RUSTFLAGS", "-Awarnings");
 

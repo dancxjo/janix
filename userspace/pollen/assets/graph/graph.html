@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Thing-OS Graph</title>
+    <link rel="stylesheet" href="/graph.css">
+    <!-- Cytoscape.js v3.33.1 (pinned) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.33.1/cytoscape.min.js" crossorigin="anonymous"
+        referrerpolicy="no-referrer"></script>
+</head>
+
+<body>
+    <!-- Top Bar -->
+    <header class="topbar">
+        <div class="topbar-left">
+            <label>
+                Root/Thing: <input type="text" id="rootInput" placeholder="(auto)" size="12"
+                    title="Leave empty to auto-discover system nodes">
+            </label>
+            <label>
+                Depth: <input type="number" id="depthInput" value="3" min="1" max="10" size="3">
+            </label>
+            <button id="loadBtn">Load</button>
+            <button id="relayoutBtn" title="Re-compute ELK layout">Re-layout</button>
+            <button id="fitBtn" title="Fit graph to viewport">Fit</button>
+            <button id="saveBtn">Save Layout</button>
+            <label class="toggle-label">
+                <input type="checkbox" id="autoSaveToggle">
+                Auto-save
+            </label>
+        </div>
+        <div class="topbar-right">
+            <span id="statusText" class="status">Ready</span>
+        </div>
+    </header>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <!-- Graph Canvas -->
+        <div id="cy"></div>
+
+        <!-- Inspector Panel -->
+        <aside class="inspector" id="inspector">
+            <h3>Inspector</h3>
+            <div class="inspector-empty" id="inspectorEmpty">
+                Click a node to inspect
+            </div>
+            <div class="inspector-content" id="inspectorContent" style="display:none">
+                <div class="inspector-row">
+                    <span class="inspector-label">ThingId:</span>
+                    <span class="inspector-value">
+                        <a id="inspectorThingLink" href="#">-</a>
+                        <button id="copyIdBtn" class="btn-small" title="Copy ThingId">📋</button>
+                    </span>
+                </div>
+                <div class="inspector-row">
+                    <span class="inspector-label">Kind:</span>
+                    <span class="inspector-value" id="inspectorKind">-</span>
+                </div>
+                <div class="inspector-row">
+                    <span class="inspector-label">Label:</span>
+                    <span class="inspector-value" id="inspectorLabel">-</span>
+                </div>
+                <div class="inspector-row">
+                    <span class="inspector-label">Position:</span>
+                    <span class="inspector-value" id="inspectorPos">-</span>
+                </div>
+                <div class="inspector-actions">
+                    <button id="centerBtn">Center on Node</button>
+                    <button id="setRootBtn">Set as Root</button>
+                    <button id="launchBtn" class="btn-launch" style="display:none">Launch</button>
+                </div>
+                <div id="launchStatus" class="launch-status" style="display:none"></div>
+                <div class="inspector-section" id="propsSection">
+                    <h4>Live Properties <span id="propsLoading" class="loading-indicator" style="display:none">⟳</span>
+                    </h4>
+                    <div id="propsList" class="props-list">
+                        <div class="props-empty">Select a node to view properties</div>
+                    </div>
+                </div>
+            </div>
+        </aside>
+    </main>
+
+    <!-- Stats Bar -->
+    <footer class="statsbar">
+        <span id="graphStats">No graph loaded</span>
+    </footer>
+
+    <script src="/graph.js"></script>
+</body>
+
+</html>

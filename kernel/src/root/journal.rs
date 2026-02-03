@@ -1,4 +1,7 @@
-use alloc::vec::Vec;
+use alloc::collections::VecDeque;
+
+/// Maximum journal entries to keep in memory
+const MAX_JOURNAL_ENTRIES: usize = 1024;
 
 pub enum JournalOp {
     Init,
@@ -12,22 +15,27 @@ pub struct JournalEntry {
 }
 
 pub struct Journal {
-    pub entries: Vec<JournalEntry>,
+    pub entries: VecDeque<JournalEntry>,
     pub next_seq: u64,
 }
 
 impl Journal {
     pub fn new() -> Self {
         Self {
-            entries: Vec::new(),
+            entries: VecDeque::with_capacity(MAX_JOURNAL_ENTRIES),
             next_seq: 1,
         }
     }
 
     pub fn append(&mut self, op: JournalOp) -> u64 {
+        // Evict oldest entries if at capacity
+        while self.entries.len() >= MAX_JOURNAL_ENTRIES {
+            self.entries.pop_front();
+        }
+        
         let seq = self.next_seq;
         self.next_seq += 1;
-        self.entries.push(JournalEntry { seq, op }); // In-memory only
+        self.entries.push_back(JournalEntry { seq, op }); // In-memory only
         seq
     }
 }

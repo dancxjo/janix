@@ -4,9 +4,13 @@ use crate::root::graph::Graph;
 use crate::root::symbols::Interner;
 use crate::root::{LogProvenance, SymbolShell};
 use abi::symbols::SymbolId;
+use alloc::collections::VecDeque;
 
 use super::HandlerResult;
 use super::graph::resolve_shell;
+
+/// Maximum number of log entries to keep in the graph
+const MAX_LOG_ENTRIES: usize = 256;
 
 pub struct LogSymbols {
     pub log_entry: SymbolId,
@@ -19,6 +23,8 @@ pub struct LogSymbols {
     pub file: SymbolId,
     pub module: SymbolId,
     pub tid: SymbolId,
+    /// Ring buffer of recent log entry ThingIds for eviction
+    pub recent_entries: VecDeque<u64>,
 }
 
 impl LogSymbols {
@@ -34,6 +40,7 @@ impl LogSymbols {
             file: interner.intern("file"),
             module: interner.intern("module"),
             tid: interner.intern("tid"),
+            recent_entries: VecDeque::with_capacity(MAX_LOG_ENTRIES),
         }
     }
 }
@@ -41,7 +48,7 @@ impl LogSymbols {
 pub fn handle_log_event(
     graph: &mut Graph,
     interner: &mut Interner,
-    log_symbols: &LogSymbols,
+    log_symbols: &mut LogSymbols,
     level: u8,
     event: SymbolShell,
     message: &str,
@@ -50,7 +57,15 @@ pub fn handle_log_event(
     fields: &[(SymbolShell, u64)],
     about: &[u64],
 ) -> HandlerResult {
+    // Evict oldest log entries if at capacity
+    while log_symbols.recent_entries.len() >= MAX_LOG_ENTRIES {
+        if let Some(old_id) = log_symbols.recent_entries.pop_front() {
+            graph.remove_node(old_id);
+        }
+    }
+
     let entry_id = graph.alloc(log_symbols.log_entry);
+    log_symbols.recent_entries.push_back(entry_id);
 
     let event_id = resolve_shell(event, interner);
     let msg_id = interner.intern(message);

@@ -50,9 +50,14 @@ members = [
     "userspace/virtio_netd",
     "userspace/netd",
     "userspace/fetchd",
-    "userspace/httpd",
+    "userspace/pollen",
     "userspace/root_canal",
     "bud",
+    "libs/fb_common",
+    "libs/llm",
+    "libs/llm_stub",
+    "userspace/described",
+    "userspace/sysdescribe",
 ]
 resolver = "2"
 

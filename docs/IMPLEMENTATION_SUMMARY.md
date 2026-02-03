@@ -10,8 +10,8 @@ Successfully implemented a unified content provider service that materializes fi
 
 **New Node Kinds:**
 - `content.Source`: Represents a content provider (Limine, ISO, etc.)
-- `content.File`: Unified file abstraction across all sources
-- `content.Directory`: Directory structure (schema defined, implementation deferred)
+- `fs.File`: Unified file abstraction across all sources
+- `fs.Directory`: Directory structure (schema defined, implementation deferred)
 
 **New Properties:**
 - ContentSource: `kind`, `name`, `priority`, `state`, `gen`

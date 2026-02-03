@@ -176,8 +176,12 @@ fn main(_arg: usize) -> ! {
     let mut next_conn_buf = 0usize;
     let mut api_msg_buf = [0u8; 16384];
 
-    // Socket storage for smoltcp - support up to 16 sockets
-    let mut sockets_storage: [SocketStorage; 16] = Default::default();
+    // Socket storage for smoltcp - support up to 64 sockets
+    // This needs to be large enough to handle:
+    // - Multiple listener sockets (respawned on each accept)
+    // - Concurrent active connections
+    // - Sockets in TIME_WAIT or FIN_WAIT states waiting for cleanup
+    let mut sockets_storage: [SocketStorage; 64] = Default::default();
     let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
 
     // Main service loop

@@ -299,18 +299,53 @@ impl SocketApi {
     /// Garbage collect closed sockets from the SocketSet
     /// Call this periodically from the main loop to reclaim socket slots
     pub fn gc_closed_sockets<'a>(&mut self, socket_set: &mut SocketSet<'a>) {
-        // Retain only sockets that are NOT yet in Closed state
+        // First, clean up sockets we explicitly closed
         self.pending_removal.retain(|&socket_handle| {
             let socket = socket_set.get_mut::<TcpSocket>(socket_handle);
             if socket.state() == TcpState::Closed {
                 // Socket is fully closed, remove it from the set
                 socket_set.remove(socket_handle);
-                info!("SOCKET_API: GC removed closed socket");
+                info!("SOCKET_API: GC removed explicitly closed socket");
                 false // Remove from pending_removal
             } else {
                 true // Keep in pending_removal, check again later
             }
         });
+
+        // Second, scan for orphaned sockets (remotely closed or in error states)
+        // Build a set of all socket handles we're actively tracking
+        let mut tracked_handles = alloc::collections::BTreeSet::new();
+        for managed in self.sockets.values() {
+            tracked_handles.insert(managed.handle);
+        }
+
+        // Collect handles to remove (can't remove while iterating)
+        let mut to_remove = Vec::new();
+        for (handle, socket) in socket_set.iter() {
+            let tcp_socket = socket.downcast_ref::<TcpSocket>().unwrap();
+            let state = tcp_socket.state();
+            
+            // Remove sockets that are:
+            // 1. Closed and not tracked (orphaned)
+            // 2. In FinWait2 for too long (remote didn't close properly)
+            let should_remove = match state {
+                TcpState::Closed => {
+                    // Only remove if we're not tracking it (orphaned)
+                    !tracked_handles.contains(&handle)
+                }
+                _ => false,
+            };
+
+            if should_remove {
+                to_remove.push(handle);
+            }
+        }
+
+        // Remove orphaned sockets
+        for handle in to_remove {
+            socket_set.remove(handle);
+            info!("SOCKET_API: GC removed orphaned socket");
+        }
     }
 
     /// Process an incoming API message

@@ -1922,6 +1922,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9555b1514d2d99d78150d3c799d4c357a3e2c2a8062cd108e93a06d9057629c5"
 
 [[package]]
+name = "phloem"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "photosynthesis"
 version = "0.1.0"
 dependencies = [
@@ -2268,14 +2276,6 @@ checksum = "0c6a884d2998352bb4daf0183589aec883f16a6da1f4dde84d8e2e9a5409a1ce"
 
 [[package]]
 name = "root_batch_bench"
-version = "0.1.0"
-dependencies = [
- "abi",
- "stem",
-]
-
-[[package]]
-name = "root_canal"
 version = "0.1.0"
 dependencies = [
  "abi",

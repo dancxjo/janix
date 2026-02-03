@@ -1,4 +1,4 @@
-//! Network client for anther
+//! Network client for phloem
 //!
 //! Provides simplified TCP socket operations by communicating with netd's socket API.
 
@@ -48,7 +48,7 @@ impl NetClient {
         let count = thingsys::find("svc.net.Stack", &mut buf).ok()?;
 
         if count == 0 {
-            warn!("root_canal: Network stack not found");
+            warn!("phloem: Network stack not found");
             return None;
         }
 
@@ -61,7 +61,7 @@ impl NetClient {
         // We give netd our write port so it can send responses to us
         let (our_write, our_read) = stem::syscall::port_create(8192).ok()?;
 
-        info!("root_canal: Connected to netd socket API (netd_port={}, our_write={}, our_read={})",
+        info!("phloem: Connected to netd socket API (netd_port={}, our_write={}, our_read={})",
               netd_write_port, our_write, our_read);
 
         Some(Self {
@@ -90,7 +90,7 @@ impl NetClient {
         let msg = self.build_msg(MSG_TCP_LISTEN, &payload);
 
         if let Err(e) = port_send(self.netd_write_port, &msg) {
-            warn!("root_canal: Failed to send TCP_LISTEN: {:?}", e);
+            warn!("phloem: Failed to send TCP_LISTEN: {:?}", e);
             return None;
         }
 
@@ -104,7 +104,7 @@ impl NetClient {
                         let handle = u32::from_le_bytes([resp_buf[2], resp_buf[3], resp_buf[4], resp_buf[5]]);
                         return Some(handle);
                     } else if resp_type == RESP_ERROR {
-                        warn!("root_canal: TCP_LISTEN returned error");
+                        warn!("phloem: TCP_LISTEN returned error");
                         return None;
                     }
                 }
@@ -114,7 +114,7 @@ impl NetClient {
             }
         }
 
-        warn!("root_canal: TCP_LISTEN timeout");
+        warn!("phloem: TCP_LISTEN timeout");
         None
     }
 
@@ -123,7 +123,7 @@ impl NetClient {
         let msg = self.build_msg(MSG_TCP_ACCEPT, &listen_handle.to_le_bytes());
 
         if let Err(e) = port_send(self.netd_write_port, &msg) {
-            warn!("root_canal: Failed to send TCP_ACCEPT: {:?}", e);
+            warn!("phloem: Failed to send TCP_ACCEPT: {:?}", e);
             return None;
         }
 

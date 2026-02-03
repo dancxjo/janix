@@ -1,4 +1,4 @@
-//! root_canal: Graph Shell Daemon
+//! phloem: Graph Shell Daemon
 //!
 //! A telnet server for OpenGQL-subset interaction with the system graph.
 
@@ -22,7 +22,7 @@ const SESSION_TIMEOUT_MS: u64 = 300_000; // 5 minutes
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("root_canal: Starting Graph Shell Daemon on port {}", PORT);
+    info!("phloem: Starting Graph Shell Daemon on port {}", PORT);
     run_server_mode(PORT);
 }
 
@@ -36,23 +36,23 @@ fn run_server_mode(port: u16) -> ! {
             }
         }
     };
-    info!("root_canal: Connected to network stack");
+    info!("phloem: Connected to network stack");
 
     // Listen
     let listen_handle = loop {
         match net.tcp_listen(port) {
             Some(h) => break h,
             None => {
-                warn!("root_canal: Failed to listen on port {}, retrying...", port);
+                warn!("phloem: Failed to listen on port {}, retrying...", port);
                 stem::time::sleep_ms(1000);
             }
         }
     };
-    info!("root_canal: Listening on port {} (handle={})", port, listen_handle);
+    info!("phloem: Listening on port {} (handle={})", port, listen_handle);
 
     loop {
         if let Some(accept) = net.tcp_accept(listen_handle) {
-            info!("root_canal: Connection from {}.{}.{}.{}:{}",
+            info!("phloem: Connection from {}.{}.{}.{}:{}",
                 accept.remote_ip[0], accept.remote_ip[1],
                 accept.remote_ip[2], accept.remote_ip[3],
                 accept.remote_port
@@ -60,7 +60,7 @@ fn run_server_mode(port: u16) -> ! {
 
             // Handle session (blocking for MVP)
             handle_session(&net, accept.conn_handle);
-            info!("root_canal: Session ended");
+            info!("phloem: Session ended");
         }
         stem::time::sleep_ms(10);
     }

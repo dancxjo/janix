@@ -51,7 +51,7 @@ members = [
     "userspace/netd",
     "userspace/fetchd",
     "userspace/anther",
-    "userspace/root_canal",
+    "userspace/phloem",
     "bud",
     "libs/fb_common",
     "libs/llm",

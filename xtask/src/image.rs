@@ -35,7 +35,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "root_canal",
+            name: "phloem",
             is_init: false,
             boot_module: true,
             features: vec![],
@@ -73,7 +73,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "bloom",
             is_init: false,
-            boot_module: false, //disabled for now; testing root_canal
+            boot_module: false, //disabled for now; testing phloem
             features: vec![],
         },
         ProgramConfig {
@@ -91,7 +91,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "display_virtio_gpu",
             is_init: false,
-            boot_module: false, //disabled for now; testing root_canal
+            boot_module: false, //disabled for now; testing phloem
             features: vec![],
         },
         ProgramConfig {
@@ -103,7 +103,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "blossom",
             is_init: false,
-            boot_module: false, // disabled for now; testing root_canal
+            boot_module: false, // disabled for now; testing phloem
             features: vec![],
         },
         ProgramConfig {

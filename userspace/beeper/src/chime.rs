@@ -2,71 +2,74 @@ use alloc::vec::Vec;
 use core::f32::consts::PI;
 
 pub fn generate_chime(sample_rate: u32) -> Vec<u8> {
-    let duration_secs = 10.5; // Tripled length
+    let duration_secs = 30.0; // Long ambient swell
     let total_samples = (sample_rate as f32 * duration_secs) as usize;
-    let mut buffer = Vec::with_capacity(total_samples * 4); // Stereo S16LE = 4 bytes/sample
+    let mut buffer = Vec::with_capacity(total_samples * 4); 
 
-    // Parameters
-    let f1 = 440.0;     // A4
-    let f2 = 554.37;    // C#5
-    let f3 = 659.25;    // E5
-    let f4 = 880.0;     // A5 (shimmer)
+    // Base Frequencies (A3 Major - warmer, less whistle-y)
+    let f_root = 220.0;      // A3
+    let f_third = 277.18;    // C#4
+    let f_fifth = 329.63;    // E4
+    let f_octave = 440.0;    // A4 (shimmer)
 
-    let attack = 0.2;   // Slightly slower attack
-    let decay = 0.5;
-    let sustain_level = 0.6;
-    let release = 3.0; // Long, smooth fade out
+    // Detuning for "Air/Chorus" effect
+    // We mix multiple sines per note to break the perfect interference patterns
+    let oscs = [
+        (f_root, 0.4), (f_root * 1.005, 0.3), // Root + slight detune
+        (f_third, 0.3), (f_third * 0.997, 0.2), // Third + slight detune
+        (f_fifth, 0.3), (f_fifth * 1.004, 0.2), // Fifth
+        (f_octave, 0.1), // Quiet octave
+    ];
+
+    let attack = 12.0; // Extremely slow, gentle bloom
+    let release = 8.0; // Long tail
     
-    // Derived envelope timings
-    let decay_start = (sample_rate as f32 * attack) as usize;
-    let sustain_start = (sample_rate as f32 * (attack + decay)) as usize;
-    let release_start = (sample_rate as f32 * (duration_secs - release)) as usize;
+    // Pre-calc envelope points
+    let release_start_sample = (total_samples as f32 * 0.6) as usize; // Check later
+    let release_len_samples = (sample_rate as f32 * release) as usize;
+    let attack_samples = (sample_rate as f32 * attack) as usize;
 
     for i in 0..total_samples {
         let t = i as f32 / sample_rate as f32;
 
-        // Envelope
-        let mut env = 0.0;
-        if i < decay_start {
-            // Attack
+        // Ethereal Envelope
+        // 0 -> Attack -> Hold -> Slow Release
+        let mut env = 1.0;
+        if i < attack_samples {
             env = t / attack;
-        } else if i < sustain_start {
-            // Decay
-            let dt = (t - attack) / decay;
-            env = 1.0 - (1.0 - sustain_level) * dt;
-        } else if i < release_start {
-            // Sustain
-            env = sustain_level;
-        } else {
-            // Release
-            let rt = (t - (duration_secs - release)) / release;
-            if rt < 1.0 {
-                env = sustain_level * (1.0 - rt);
-            } else {
+            // Quadratic ease-in for softer start (remains quiet longer)
+            env = env * env; 
+        } else if t > (duration_secs - release) {
+            let r_t = (t - (duration_secs - release)) / release;
+            if r_t >= 1.0 {
                 env = 0.0;
+            } else {
+                env = 1.0 - r_t;
+                // Exponential decay for tail
+                env = env * env;
             }
         }
+
+        // Slow "Breathing" Tremolo (0.5 Hz)
+        let breath = 0.9 + 0.1 * libm::sinf(2.0 * PI * 0.5 * t);
         
-        // Tremolo (gentle)
-        env *= 0.98 + 0.02 * libm::sinf(2.0 * PI * 5.0 * t);
+        // Sum oscillators
+        let mut signal = 0.0;
+        for (freq, amp) in oscs.iter() {
+            signal += libm::sinf(2.0 * PI * freq * t) * amp;
+        }
 
-        // Synthesis
-        let s1 = libm::sinf(2.0 * PI * f1 * t);
-        let s2 = libm::sinf(2.0 * PI * f2 * t);
-        let s3 = libm::sinf(2.0 * PI * f3 * t);
-        let s4 = libm::sinf(2.0 * PI * f4 * t) * 0.12; // Shimmer
+        signal *= env * breath * 0.15; // Master gain
 
-        let signal = (s1 + s2 + s3 + s4) / 3.2;
-        let master_gain = 0.15;
+        // Soft Clipping / Saturation to warm it up
+        let signal = if signal > 0.8 { 0.8 + (signal - 0.8) * 0.5 } else { signal };
         
-        // Ensure no clicking - clamp
-        let signal = if signal > 1.0 { 1.0 } else if signal < -1.0 { -1.0 } else { signal };
+        let sample_l = signal;
+        // Stereo widener: Phase shift the right channel slightly
+        let sample_r = signal * 0.9 + 0.1 * libm::sinf(2.0 * PI * (f_root * 1.01) * t) * env * 0.15;
 
-        let sample_l = signal * env * master_gain;
-        let sample_r = signal * env * master_gain * 0.95; // Slight stereo width
-
-        let pcm_l = (sample_l * 32000.0) as i16;
-        let pcm_r = (sample_r * 32000.0) as i16;
+        let pcm_l = (sample_l * 30000.0) as i16;
+        let pcm_r = (sample_r * 30000.0) as i16;
 
         buffer.extend_from_slice(&pcm_l.to_le_bytes());
         buffer.extend_from_slice(&pcm_r.to_le_bytes());

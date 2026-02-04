@@ -169,6 +169,7 @@ fn process_tx_queue(driver: &mut VirtioDevice) {
         // Recycle buffer?
         // In v0 we are leaking DMA, so we just acknowledge the descriptor recycle.
         // Virtqueue::poll_used automatically frees the descriptor chain back to the available pool.
+        // info!("SND: Recycled TX desc {}", _desc_id); // Uncomment for verbose debug
     }
 }
 
@@ -258,7 +259,7 @@ fn configure_stream(driver: &mut VirtioDevice, stream_id: u32) {
     unsafe {
         *(dma_req as *mut VirtioSndPcmSetParams) = VirtioSndPcmSetParams {
             hdr: VirtioSndHdr { code: VIRTIO_SND_R_PCM_SET_PARAMS },
-            buffer_bytes: 8192,
+            buffer_bytes: 65536, // Increased to 64KB
             period_bytes: 4096,
             features: 0,
             channels: 2, // Stereo

@@ -58,9 +58,14 @@ pub static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 pub fn on_tick<R: BootRuntime>() {
     TICK_COUNT.fetch_add(1, Ordering::Relaxed);
     crate::task::resched_if_needed::<R>();
-    
-    // NOTE: Graph queue flushing removed from here - blocking operations  
-    // in ISR context would cause deadlock. Queue is flushed elsewhere.
+}
+
+pub(crate) fn current_cpu_index<R: BootRuntime>() -> usize {
+    let rt = crate::runtime::<R>();
+    let id = BootRuntime::current_cpu_id(rt); // cpu id from runtime
+    let cpu_ids = rt.cpu_ids();
+    // Linear search for now (small N)
+    cpu_ids.iter().position(|&x| x == id).unwrap_or(0)
 }
 
 /// Process pending graph work items.
@@ -166,6 +171,34 @@ fn flush_graph_queue<R: BootRuntime>() {
                     graphify::do_set_name(id, &name);
                 }
             }
+            GraphWork::SetLocation { tid, cpu_index } => {
+                let thing_id = {
+                    let lock = SCHEDULER.lock();
+                    if let Some(ptr) = *lock {
+                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+                        sched.task_graph.get(&tid).copied()
+                    } else {
+                        None
+                    }
+                };
+                if let Some(id) = thing_id {
+                    graphify::do_update_task_location(id, cpu_index);
+                }
+            }
+            GraphWork::SetAffinity { tid, cpu_index } => {
+                let thing_id = {
+                    let lock = SCHEDULER.lock();
+                    if let Some(ptr) = *lock {
+                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+                        sched.task_graph.get(&tid).copied()
+                    } else {
+                        None
+                    }
+                };
+                if let Some(id) = thing_id {
+                    graphify::do_set_affinity(id, cpu_index);
+                }
+            }
         }
     }
 }
@@ -193,6 +226,7 @@ pub fn init<R: BootRuntime>() {
             hooks::SET_PRIORITY_HOOK = Some(set_priority::<R>);
             hooks::CURRENT_PRIORITY_HOOK = Some(current_priority::<R>);
             hooks::ALLOC_USER_STACK_HOOK = Some(stack::alloc_user_stack::<R>);
+            hooks::RUN_SCHEDULER_HOOK = Some(crate::task::run_scheduler::<R>);
             crate::memory::set_map_user_page_hook(stack::map_user_page::<R>);
             crate::memory::set_map_user_page_perms_hook(stack::map_user_page_perms::<R>);
             crate::memory::set_unmap_user_page_hook(stack::unmap_user_page::<R>);
@@ -211,6 +245,14 @@ pub fn init<R: BootRuntime>() {
 
 fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
     let rt = crate::runtime::<R>();
+    let cpu_count = rt.cpu_count();
+    
+    crate::kinfo!("  Initializing {} CPUs...", cpu_count);
+
+    // Initialize PerCpu state for all CPUs
+    for _ in 0..cpu_count {
+        sched.per_cpu.push(types::PerCpu::new());
+    }
 
     crate::kinfo!("  Creating boot task...");
 
@@ -239,29 +281,49 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
             crate::memory::mappings::MappingList::new(),
         )),
         timeslice_remaining: types::DEFAULT_TIMESLICE,
+        affinity: crate::task::Affinity::Any,
     };
     sched.tasks.push(task);
-    sched.current = Some(0);
+    
+    // Boot task runs on CPU 0
+    sched.per_cpu[0].current = Some(0);
 
-    // Queue graph node creation for the boot task so it appears in the graph.
+    // Queue graph node creation for the boot task
     graphify::create_thread_node(0, TaskPriority::Normal as u8, false, Some("boot"), None);
     graphify::update_task_state(0, "running");
-    crate::kinfo!("  Creating idle task...");
+    // Link boot task to CPU 0
+    graphify::update_task_location(0, 0);
 
-    let idle_id = sched.spawn(idle_task::<R>, StartupArg::None, TaskPriority::Idle);
-    sched.idle_task = Some(idle_id);
+    crate::kinfo!("  Creating idle tasks...");
 
-    // Idle task should not be in any runq (it's handled as fallback)
-    for q in sched.runq.iter_mut() {
-        if let Some(pos) = q.iter().position(|&id| id == idle_id) {
-            q.remove(pos);
+    // Create idle task for EACH CPU
+    for i in 0..cpu_count {
+         // Arg is cpu index, so idle loop knows who it is?
+         // Actually idle_task entry takes generic usize.
+        let idle_id = sched.spawn(idle_task::<R>, StartupArg::Raw(i), TaskPriority::Idle, crate::task::Affinity::Pinned(i));
+        
+        // Remove from run queues - idle tasks are special
+        for q in sched.per_cpu.iter_mut().flat_map(|pc| pc.runq.iter_mut()) {
+            if let Some(pos) = q.iter().position(|&id| id == idle_id) {
+                q.remove(pos);
+            }
         }
+        
+        // Set as this CPU's idle task
+        sched.per_cpu[i].idle_task = Some(idle_id);
+        
+        // Pin idle task to its CPU
+        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == idle_id) {
+            t.affinity = crate::task::Affinity::Pinned(i);
+        }
+        graphify::set_affinity_node(idle_id, i);
+        graphify::set_name(idle_id, &alloc::format!("idle/{}", i));
     }
     
-    // Spawn graph worker task at normal priority so it runs alongside normal tasks
+    // Spawn graph worker task at normal priority (CPU 0 preferred? or Any)
     crate::kinfo!("  Creating graph worker task...");
     let _graph_worker_id =
-        sched.spawn(graph_worker_task::<R>, StartupArg::None, TaskPriority::Normal);
+        sched.spawn(graph_worker_task::<R>, StartupArg::None, TaskPriority::Normal, crate::task::Affinity::Any);
     
     crate::kinfo!("  Boot task initialized");
 }
@@ -290,7 +352,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 }
 
                 // Decrement current task's time slice
-                if let Some(current_id) = self.current {
+                let cpu_idx = current_cpu_index::<R>();
+                if let Some(current_id) = self.per_cpu.get(cpu_idx).and_then(|pc| pc.current) {
                     if let Some(task) = self.tasks.iter_mut().find(|t| t.id == current_id) {
                         if task.timeslice_remaining > 0 {
                             task.timeslice_remaining -= 1;
@@ -337,7 +400,30 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 // Task should wake up - add back to run queue
                 if let Some(task) = self.tasks.iter().find(|t| t.id == entry.task_id) {
                     let priority = task.priority;
-                    self.runq[priority as usize].push_back(entry.task_id);
+                    // Wake to *a* CPU.
+                    // If pinned, wake to that CPU's runq.
+                    // If Any, wake to current CPU or round robin?
+                    // For now, wake to current CPU's runq for simplicity, or CPU 0 logic?
+                    // Let's rely on basic 'current CPU' push for wake.
+                    // Ideally we'd remember where it slept, but we don't store that.
+                    // Let's use affinity.
+                    
+                    let target_cpu = if let crate::task::Affinity::Pinned(cpu) = task.affinity {
+                        cpu
+                    } else {
+                        // Default to current CPU for now? Or round robin?
+                        // Let's just use current CPU (waker's CPU).
+                        current_cpu_index::<R>()
+                    };
+                    
+                    if let Some(pc) = self.per_cpu.get_mut(target_cpu) {
+                        pc.runq[priority as usize].push_back(entry.task_id);
+                    } else {
+                        // Fallback to CPU 0 if invalid target
+                         if let Some(pc) = self.per_cpu.get_mut(0) {
+                            pc.runq[priority as usize].push_back(entry.task_id);
+                        }
+                    }
                     
                     // Queue graph state update from sleeping to runnable
                     graphify::update_task_state(entry.task_id, "runnable");
@@ -431,18 +517,22 @@ impl<R: BootRuntime> types::Scheduler<R> {
             <R::Tasking as BootTasking>::AddressSpace,
         >,
     > {
-        let current_id = self.current?;
+        let cpu_idx = current_cpu_index::<R>();
+        let current_id = self.per_cpu.get(cpu_idx)?.current?;
 
         self.metrics.yields += 1;
 
-        if Some(current_id) != self.idle_task {
+        // Don't push idle task back to runq
+        if Some(current_id) != self.per_cpu[cpu_idx].idle_task {
             let priority = self
                 .tasks
                 .iter()
                 .find(|t| t.id == current_id)
                 .map(|t| t.priority)
                 .unwrap_or(TaskPriority::Normal);
-            self.runq[priority as usize].push_back(current_id);
+            
+            // Push to LOCAL runq (we are yielding on this CPU)
+            self.per_cpu[cpu_idx].runq[priority as usize].push_back(current_id);
             self.metrics.pushes += 1;
         }
 
@@ -459,11 +549,13 @@ impl<R: BootRuntime> types::Scheduler<R> {
     > {
         self.flush_metrics_if_needed();
 
+        let cpu_idx = current_cpu_index::<R>();
+        let pc = self.per_cpu.get_mut(cpu_idx)?;
+
         let mut next_id = None;
-        // Priority scan: Realtime (4) down to Normal (2) then Low (1).
-        // Skip Idle (0) in general scan.
+        // Priority scan
         for p in (1..5).rev() {
-            if let Some(id) = self.runq[p].pop_front() {
+            if let Some(id) = pc.runq[p].pop_front() {
                 self.metrics.pops += 1;
                 next_id = Some(id);
                 break;
@@ -473,11 +565,11 @@ impl<R: BootRuntime> types::Scheduler<R> {
         let next_id = match next_id {
             Some(id) => id,
             None => {
-                // Check Idle queue as last resort before special idle_task
-                if let Some(id) = self.runq[0].pop_front() {
+                // Check Idle queue
+                if let Some(id) = pc.runq[0].pop_front() {
                     self.metrics.pops += 1;
                     id
-                } else if let Some(idle) = self.idle_task {
+                } else if let Some(idle) = pc.idle_task {
                     self.metrics.idle_picks += 1;
                     idle
                 } else {
@@ -486,9 +578,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             }
         };
 
-        let current_id = self
-            .current
-            .expect("prepare_schedule called without current task");
+        let current_id = pc.current.expect("prepare_schedule called without current task");
 
         if next_id == current_id {
             let idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
@@ -496,7 +586,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             return None;
         }
 
-        self.current = Some(next_id);
+        pc.current = Some(next_id);
 
         let old_idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
         let new_idx = self.tasks.iter().position(|t| t.id == next_id).unwrap();
@@ -508,12 +598,13 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;
-                // Queue graph state update for old task
                 graphify::update_task_state(old_task.id, "runnable");
             }
             new_task.state = TaskState::Running;
-            // Queue graph state update for new task
             graphify::update_task_state(new_task.id, "running");
+            // Update location on switch
+            graphify::update_task_location(new_task.id, cpu_idx);
+            
             old_task.simd.save(crate::runtime::<R>());
             new_task.simd.restore(crate::runtime::<R>());
 
@@ -537,8 +628,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
     }
 
     pub fn terminate_current(&mut self, code: i32) -> ! {
-        let current_id = self
-            .current
+        let cpu_idx = current_cpu_index::<R>();
+        let current_id = self.per_cpu.get(cpu_idx).and_then(|pc| pc.current)
             .expect("terminate_current called with no current task");
 
         if let Some(idx) = self.tasks.iter().position(|t| t.id == current_id) {
@@ -581,13 +672,17 @@ impl<R: BootRuntime> types::Scheduler<R> {
             graphify::update_task_priority(id, priority as u8);
 
             // If it's runnable and in a runq, move it to the new runq
+            // If it's runnable and in a runq, move it to the new runq
             if self.tasks[idx].state == TaskState::Runnable {
-                if let Some(pos) = self.runq[old_priority as usize]
-                    .iter()
-                    .position(|&rid| rid == id)
-                {
-                    self.runq[old_priority as usize].remove(pos);
-                    self.runq[priority as usize].push_back(id);
+                // We need to find WHICH runq it is in if we don't track it.
+                // Brute force: check ALL per_cpu runqs? Or check affinity?
+                // For now, check all.
+                for pc in self.per_cpu.iter_mut() {
+                     if let Some(pos) = pc.runq[old_priority as usize].iter().position(|&rid| rid == id) {
+                         pc.runq[old_priority as usize].remove(pos);
+                         pc.runq[priority as usize].push_back(id);
+                         break;
+                     }
                 }
             }
         }
@@ -629,7 +724,11 @@ pub fn current_priority<R: BootRuntime>() -> TaskPriority {
     let res = if let Some(lock) = SCHEDULER.try_lock() {
         if let Some(ptr) = *lock {
             let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-            sched.current_priority().unwrap_or(TaskPriority::Normal)
+            let cpu = current_cpu_index::<R>();
+            sched.per_cpu.get(cpu).and_then(|pc| pc.current)
+                .and_then(|tid| sched.tasks.iter().find(|t| t.id == tid))
+                .map(|t| t.priority)
+                .unwrap_or(TaskPriority::Normal)
         } else {
             TaskPriority::Normal
         }
@@ -646,7 +745,8 @@ pub fn current_tid<R: BootRuntime>() -> u64 {
     let res = if let Some(lock) = SCHEDULER.try_lock() {
         if let Some(ptr) = *lock {
             let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-            sched.current_id().unwrap_or(0)
+             let cpu = current_cpu_index::<R>();
+            sched.per_cpu.get(cpu).and_then(|pc| pc.current).unwrap_or(0)
         } else {
             0
         }
@@ -674,9 +774,9 @@ pub fn dump_stats<R: BootRuntime>() {
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
     crate::kinfo!(
-        "Sched: tasks={} current={:?}",
+        "Sched: tasks={} cpu_current={:?}",
         sched.task_count(),
-        sched.current_id()
+        sched.per_cpu.iter().map(|pc| pc.current).collect::<alloc::vec::Vec<_>>()
     );
     rt.irq_restore(_irq);
 }
@@ -750,5 +850,30 @@ extern "C" fn graph_worker_task<R: BootRuntime>(_: usize) -> ! {
         flush_graph_queue::<R>();
         // Yield to let other tasks run
         sleep::yield_now::<R>();
+    }
+}
+
+pub static CPU_ONLINE: AtomicUsize = AtomicUsize::new(0);
+
+/// Entry point for secondary CPUs.
+///
+/// # Safety
+/// Must only be called from `kernel_secondary_entry`.
+pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
+    // Mark as online
+    CPU_ONLINE.fetch_add(1, Ordering::Relaxed);
+    crate::kinfo!("SMP: Secondary CPU {} online!", cpu_index);
+
+    // Enter scheduler loop
+    // Use the type-erased hook initialized by the boot CPU
+    if let Some(hook) = unsafe { hooks::RUN_SCHEDULER_HOOK } {
+        hook();
+    } else {
+        panic!("Scheduler hook not initialized!");
+    }
+    
+    // Fallback if run_scheduler returns (it shouldn't)
+    loop {
+        crate::runtime_base().wait_for_interrupt();
     }
 }

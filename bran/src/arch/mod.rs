@@ -1,3 +1,6 @@
+use kernel::CpuId;
+use core::sync::atomic::Ordering;
+
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
 #[cfg(target_arch = "loongarch64")]
@@ -106,6 +109,17 @@ fn init_x86_64_ioapic() {
         }
     };
     kinfo!("IOAPIC: MADT parsed OK");
+
+    // Store CPU IDs
+    {
+        let mut ids = [CpuId(0); x86_64::acpi::MAX_CPUS];
+        for i in 0..madt_info.cpu_count {
+            ids[i] = CpuId(madt_info.local_apic_ids[i]);
+        }
+        unsafe { x86_64::CPU_IDS = ids; }
+        x86_64::CPU_COUNT.store(madt_info.cpu_count as u64, Ordering::Relaxed);
+        kinfo!("SMP: Found {} CPUs", madt_info.cpu_count);
+    }
 
     if madt_info.ioapic_count == 0 {
         kinfo!("IOAPIC: No IOAPICs found");

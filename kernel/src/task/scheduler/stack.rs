@@ -134,7 +134,8 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
         }
     };
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    let current_id = match sched.current {
+    let cpu = super::current_cpu_index::<R>();
+    let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
         Some(id) => id,
         None => {
             rt.irq_restore(_irq);

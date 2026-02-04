@@ -15,6 +15,8 @@ pub struct GraphAnchors {
     kernel_proc: AtomicU64,
     /// ThingId of the svc.Root node
     root_service: AtomicU64,
+    /// ThingIds of dev.Cpu nodes (max 32)
+    cpus: [AtomicU64; 32],
 }
 
 static ANCHORS: GraphAnchors = GraphAnchors {
@@ -22,7 +24,29 @@ static ANCHORS: GraphAnchors = GraphAnchors {
     scheduler_service: AtomicU64::new(0),
     kernel_proc: AtomicU64::new(0),
     root_service: AtomicU64::new(0),
+    cpus: [const { AtomicU64::new(0) }; 32],
 };
+
+/// Set the ThingId for a specific CPU index
+pub fn set_cpu_thing(index: usize, id: u64) {
+    if index < 32 {
+        ANCHORS.cpus[index].store(id, Ordering::Release);
+    }
+}
+
+/// Get the ThingId for a specific CPU index
+pub fn cpu_thing(index: usize) -> Option<u64> {
+    if index < 32 {
+        let v = ANCHORS.cpus[index].load(Ordering::Acquire);
+        if v != 0 {
+            Some(v)
+        } else {
+            None
+        }
+    } else {
+        None
+    }
+}
 
 /// Set the host ThingId (called during boot registration)
 pub fn set_host(id: u64) {

@@ -193,13 +193,14 @@ pub fn _log_event(
                 crate::root::SymbolShell::Id(_) => "?",
             };
 
-            // Human-readable format: [TIME] [LEVEL] [SOURCE] Message
+            // Human-readable format: [TIME] [LEVEL] [SOURCE] [CPUx] Message
             let _ = write!(
                 writer,
-                "[{}] [{}] [{}] ",
+                "[{}] [{}] [{}] [CPU{}] ",
                 ts,
                 meta.level.as_str(),
-                event_str
+                event_str,
+                writer.runtime.current_cpu_id().0
             );
             let _ = writer.write_fmt(msg_fmt);
 

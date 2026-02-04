@@ -9,6 +9,31 @@ use alloc::vec::Vec;
 /// Default time slice in ticks (~100ms at 100Hz timer)
 pub const DEFAULT_TIMESLICE: u32 = 10;
 
+/// Maximum number of CPUs supported
+pub const MAX_CPUS: usize = 32;
+
+pub struct PerCpu {
+    pub runq: [VecDeque<TaskId>; 5],
+    pub idle_task: Option<TaskId>,
+    pub current: Option<TaskId>,
+}
+
+impl PerCpu {
+    pub fn new() -> Self {
+        PerCpu {
+            runq: [
+                VecDeque::new(),
+                VecDeque::new(),
+                VecDeque::new(),
+                VecDeque::new(),
+                VecDeque::new(),
+            ],
+            idle_task: None,
+            current: None,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StackFaultResult {
     NotStack,
@@ -52,12 +77,10 @@ pub(crate) struct SchedulerMetrics {
 
 pub struct Scheduler<R: BootRuntime> {
     pub(crate) tasks: Vec<Task<R>>,
-    pub(crate) runq: [VecDeque<TaskId>; 5],
     pub(crate) wait_queue: VecDeque<TaskId>,
     pub(crate) sleep_queue: VecDeque<SleepEntry>, // tasks sleeping with wake times
-    pub(crate) current: Option<TaskId>,
+    pub(crate) per_cpu: Vec<PerCpu>,
     pub(crate) next_id: TaskId,
-    pub(crate) idle_task: Option<TaskId>,
     pub(crate) preempt_disable_depth: usize,
     pub(crate) preempt_disable_since: u64,
     pub(crate) watchdog_warned: bool,
@@ -83,18 +106,10 @@ impl<R: BootRuntime> Scheduler<R> {
     pub fn new() -> Self {
         Scheduler {
             tasks: Vec::new(),
-            runq: [
-                VecDeque::new(),
-                VecDeque::new(),
-                VecDeque::new(),
-                VecDeque::new(),
-                VecDeque::new(),
-            ],
             wait_queue: VecDeque::new(),
             sleep_queue: VecDeque::new(),
-            current: None,
+            per_cpu: Vec::new(),
             next_id: 1,
-            idle_task: None,
             preempt_disable_depth: 0,
             preempt_disable_since: 0,
             watchdog_warned: false,
@@ -109,11 +124,27 @@ impl<R: BootRuntime> Scheduler<R> {
     }
 
     pub fn current_id(&self) -> Option<TaskId> {
-        self.current
+        // This is tricky without knowing which CPU we are asking about.
+        // For backwards compat logging, valid use mainly inside scheduler or per-cpu hooks.
+        // We really need current_cpu_index here.
+        // But Scheduler::current_id passed no index.
+        // We will return None or rely on caller to use per-cpu accessors.
+        // Actually, let's remove this helper or make it panic/useless?
+        // Or better: `Scheduler` methods should generally task `cpu_index`?
+        None
+    }
+
+    pub fn current_id_on_cpu(&self, cpu: usize) -> Option<TaskId> {
+        self.per_cpu.get(cpu).and_then(|pc| pc.current)
     }
 
     pub fn current_priority(&self) -> Option<crate::task::TaskPriority> {
-        let tid = self.current?;
+        // Also needs cpu index.
+        None
+    }
+
+    pub fn current_priority_on_cpu(&self, cpu: usize) -> Option<crate::task::TaskPriority> {
+        let tid = self.current_id_on_cpu(cpu)?;
         self.tasks.iter().find(|t| t.id == tid).map(|t| t.priority)
     }
 

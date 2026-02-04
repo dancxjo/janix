@@ -41,6 +41,12 @@ pub enum TaskPriority {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Affinity {
+    Any,
+    Pinned(usize),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TaskState {
     Runnable,
     Running,
@@ -55,6 +61,7 @@ pub struct Task<R: BootRuntime> {
     pub exit_code: Option<i32>,
     pub is_user: bool,
     pub wake_pending: bool,
+    pub affinity: Affinity,
 
     pub kstack_base: *mut u8,
     pub kstack_size: usize,

@@ -1,6 +1,6 @@
 use kernel::{
-    BootModuleDesc, BootRuntime, BootRuntimeBase, BootTasking, FrameAllocatorHook, FramebufferInfo,
-    IrqState, MapKind, MapPerms, PhysRange, UserEntry, UserTaskSpec,
+    BootModuleDesc, BootRuntime, BootRuntimeBase, BootTasking, CpuId, FrameAllocatorHook,
+    FramebufferInfo, IrqState, MapKind, MapPerms, PhysRange, UserEntry, UserTaskSpec,
 };
 
 pub trait ArchRuntime {
@@ -33,6 +33,18 @@ pub trait ArchRuntime {
     }
     fn fence_full(&self) {}
     fn icache_invalidate(&self) {}
+
+    // Multi-processor support
+    fn cpu_ids(&self) -> &'static [CpuId] {
+        const ONE: [CpuId; 1] = [CpuId(0)];
+        &ONE
+    }
+    fn current_cpu_id(&self) -> CpuId {
+        CpuId(0)
+    }
+    fn start_secondary_cpus(&self, _entry: extern "C" fn(usize) -> !) -> Result<(), abi::errors::Errno> {
+        Err(abi::errors::Errno::NotSupported)
+    }
 
     // Wait for interrupt - low-power idle until next IRQ
     fn wait_for_interrupt(&self) {}
@@ -236,6 +248,14 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn lapic_base_phys(&self) -> Result<u64, abi::errors::Errno> {
         self.arch.lapic_base_phys()
     }
+
+    fn simd_init_cpu(&self) {
+        self.arch.simd_init_cpu()
+    }
+    
+    fn wait_for_interrupt(&self) {
+        self.arch.wait_for_interrupt()
+    }
 }
 
 impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
@@ -248,13 +268,9 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
         self.arch.halt()
     }
 
-    fn wait_for_interrupt(&self) {
-        self.arch.wait_for_interrupt()
-    }
+    // wait_for_interrupt moved to BootRuntimeBase
 
-    fn simd_init_cpu(&self) {
-        self.arch.simd_init_cpu()
-    }
+    // simd_init_cpu moved to BootRuntimeBase
     fn simd_state_layout(&self) -> (usize, usize) {
         self.arch.simd_state_layout()
     }
@@ -287,6 +303,19 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     }
     fn framebuffer(&self) -> Option<FramebufferInfo> {
         self.limine.framebuffer()
+    }
+
+    fn cpu_count(&self) -> usize {
+        self.arch.cpu_ids().len()
+    }
+    fn cpu_ids(&self) -> &'static [CpuId] {
+        self.arch.cpu_ids()
+    }
+    fn current_cpu_id(&self) -> CpuId {
+        self.arch.current_cpu_id()
+    }
+    fn start_secondary_cpus(&self, entry: extern "C" fn(usize) -> !) -> Result<(), abi::errors::Errno> {
+        self.arch.start_secondary_cpus(entry)
     }
 
     fn irq_disable(&self) -> IrqState {

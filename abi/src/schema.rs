@@ -747,6 +747,8 @@ pub mod rels {
     pub const TASK_SPAWNED: &str = "TASK_SPAWNED";
     /// Thread uses a bytespace mapping (proc.Thread -> Bytespace)
     pub const THREAD_USES_BYTESPACE: &str = "THREAD_USES_BYTESPACE";
+    /// Task is pinned to a specific CPU (proc.Thread -> dev.Cpu)
+    pub const PINNED_TO: &str = "PINNED_TO";
 
     /// Host launched a module (dev.Host -> boot.Module)
     pub const LAUNCHED: &str = "LAUNCHED";

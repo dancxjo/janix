@@ -39,6 +39,16 @@ pub enum GraphWork {
         tid: TaskId,
         name: String,
     },
+    /// Set the location (RUNS_ON) of a task
+    SetLocation {
+        tid: TaskId,
+        cpu_index: usize,
+    },
+    /// Set the affinity (PINNED_TO) of a task
+    SetAffinity {
+        tid: TaskId,
+        cpu_index: usize,
+    },
 }
 
 /// The global work queue for deferred graph operations.

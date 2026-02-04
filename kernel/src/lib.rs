@@ -141,6 +141,9 @@ impl PixelFormat {
 #[derive(Debug, Clone, Copy)]
 pub struct IrqState(pub usize);
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct CpuId(pub u32);
+
 #[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub struct MapPerms {
     pub user: bool,
@@ -242,6 +245,15 @@ pub trait BootRuntimeBase: 'static {
     fn lapic_base_phys(&self) -> Result<u64, Errno> {
         Err(Errno::NotSupported)
     }
+
+    fn simd_init_cpu(&self) {}
+    
+    /// Wait for interrupt - low-power idle until next IRQ
+    fn wait_for_interrupt(&self) {}
+
+    fn current_cpu_id(&self) -> CpuId {
+        CpuId(0)
+    }
 }
 
 pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
@@ -253,7 +265,7 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn threads_supported(&self) -> bool {
         false
     }
-    fn simd_init_cpu(&self) {}
+    // simd_init_cpu moved to BootRuntimeBase
     fn simd_state_layout(&self) -> (usize, usize) {
         (0, 1)
     }
@@ -268,8 +280,7 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn fence_full(&self) {}
     fn icache_invalidate(&self) {}
 
-    /// Wait for interrupt - low-power idle until next IRQ
-    fn wait_for_interrupt(&self) {}
+    // wait_for_interrupt moved to BootRuntimeBase
 
     fn phys_memory_map(&self) -> &'static [PhysRange];
     fn phys_to_virt_offset(&self) -> u64;
@@ -287,6 +298,23 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     }
     fn boot_cpu_id(&self) -> usize {
         0
+    }
+    fn cpu_ids(&self) -> &'static [CpuId] {
+        const ONE: [CpuId; 1] = [CpuId(0)];
+        &ONE
+    }
+    fn current_cpu_id(&self) -> CpuId {
+        CpuId(self.boot_cpu_id() as u32)
+    }
+
+    /// Start all non-boot CPUs and run `entry` on each of them.
+    /// The runtime is responsible for providing a stack to each CPU
+    /// or consuming the provided stack tops, depending on arch needs.
+    fn start_secondary_cpus(
+        &self,
+        _entry: extern "C" fn(usize) -> !,
+    ) -> Result<(), Errno> {
+        Err(Errno::NotSupported)
     }
 
     fn irq_disable(&self) -> IrqState;
@@ -330,6 +358,11 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     /// Unmap a previously mapped temporary physical range.
     fn unmap_phys_temp(&self, _virt: u64, _size: usize) {}
 }
+
+// Per-CPU generic tracking
+// In a full implementation, this should be a per-cpu structure or array.
+// For now, we only trust this for the boot CPU or rely on atomic updates.
+static CPU_ONLINE: once_cell::OnceCell<&'static core::sync::atomic::AtomicUsize> = once_cell::OnceCell::new();
 
 static RUNTIME: once_cell::OnceCell<&'static dyn core::any::Any> = once_cell::OnceCell::new();
 static RUNTIME_BASE: once_cell::OnceCell<&'static dyn BootRuntimeBase> = once_cell::OnceCell::new();
@@ -458,6 +491,16 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
     contract!("Initializing tasking...");
     crate::task::init::<R>();
+
+    // NEW: bring up other cores (if supported)
+    let cpu_count = runtime.cpu_count();
+    crate::kinfo!("Kernel: Detected {} CPUs. Starting secondaries...", cpu_count);
+    if cpu_count > 1 {
+        match runtime.start_secondary_cpus(kernel_secondary_entry) {
+            Ok(_) => crate::kinfo!("Kernel: Secondaries started OK"),
+            Err(e) => crate::kinfo!("Kernel: Secondaries failed: {:?}", e),
+        }
+    }
 
     // Store global boot info for syscalls
     crate::boot_info::set(crate::boot_info::BootSyscallInfo {
@@ -701,3 +744,15 @@ pub fn run_time_tests() {
     tests::time_monotonic_test::run_selftest();
 }
 pub mod boot_info;
+
+extern "C" fn kernel_secondary_entry(cpu_index: usize) -> ! {
+    // Per-CPU init
+    runtime_base().mono_ticks(); // ok for logging
+    // IMPORTANT: per-CPU SIMD init
+    runtime_base().simd_init_cpu();
+
+    // Then:
+    unsafe {
+        crate::task::scheduler::enter_secondary(cpu_index);
+    }
+}

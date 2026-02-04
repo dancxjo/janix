@@ -57,11 +57,14 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
         // Get current task ID
-        let current_id = match sched.current {
-            Some(id) => id,
-            None => {
-                // No current task (shouldn't happen)
-                return;
+        let current_id = {
+            let cpu = super::current_cpu_index::<R>();
+            match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
+                Some(id) => id,
+                None => {
+                    // No current task (shouldn't happen)
+                    return;
+                }
             }
         };
 

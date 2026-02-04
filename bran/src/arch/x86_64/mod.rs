@@ -3,7 +3,7 @@ use crate::runtime::ArchRuntime;
 use core::arch::asm;
 use core::sync::atomic::{AtomicU64, Ordering};
 use kernel::time::MonotonicClamp;
-use kernel::{FrameAllocatorHook, IrqState, MapKind, MapPerms, UserEntry, UserTaskSpec};
+use kernel::{CpuId, FrameAllocatorHook, IrqState, MapKind, MapPerms, UserEntry, UserTaskSpec};
 
 pub mod acpi;
 pub mod apic;
@@ -15,6 +15,7 @@ pub mod paging;
 pub mod pci;
 pub mod pic;
 pub mod simd;
+pub mod smp;
 pub mod syscall;
 pub mod task;
 pub mod trap;
@@ -22,6 +23,23 @@ pub mod trap;
 pub struct X86_64Runtime {
     clamp: MonotonicClamp,
     hhdm_offset: AtomicU64,
+}
+
+pub static mut CPU_IDS: [CpuId; acpi::MAX_CPUS] = [CpuId(0); acpi::MAX_CPUS];
+pub static CPU_COUNT: AtomicU64 = AtomicU64::new(1); // Default to 1 (BSP)
+
+impl X86_64Runtime {
+    pub fn cpu_ids(&self) -> &'static [CpuId] {
+        let count = CPU_COUNT.load(Ordering::Relaxed) as usize;
+        unsafe { &CPU_IDS[..count] }
+    }
+
+    pub fn current_cpu_id(&self) -> CpuId {
+        match self.lapic_id() {
+             Ok(id) => CpuId(id),
+             Err(_) => CpuId(0),
+        }
+    }
 }
 
 const BOOT_TEMP_MAP_BASE: u64 = 0xffffff10_00000000;
@@ -370,6 +388,133 @@ impl ArchRuntime for X86_64Runtime {
         }
 
         Ok(BOOT_TEMP_MAP_BASE + offset)
+    }
+
+    fn start_secondary_cpus(
+        &self,
+        entry: extern "C" fn(usize) -> !,
+    ) -> Result<(), abi::errors::Errno> {
+        use kernel::{kinfo, kerror};
+        
+        let ids = self.cpu_ids();
+        let bsp_id = self.current_cpu_id();
+        let cpu_count = ids.len();
+        
+        if cpu_count <= 1 {
+            return Ok(());
+        }
+
+        kinfo!("SMP: Starting {} secondary CPUs...", cpu_count - 1);
+
+        // 1. Map trampoline page (0x8000)
+        let trampoline_base: u64 = 0x8000;
+        let trampoline_addr = match self.map_phys_temp(trampoline_base, 4096) {
+            Ok(addr) => addr,
+            Err(e) => {
+                kerror!("SMP: Failed to map trampoline page: {:?}", e);
+                return Err(e);
+            }
+        };
+
+        // 2. Copy trampoline code
+        unsafe {
+            let start = &smp::trampoline_start as *const _ as *const u8;
+            let end = &smp::trampoline_end as *const _ as *const u8;
+            let len = end.offset_from(start) as usize;
+            
+            if len > 4096 {
+                panic!("SMP: Trampoline too large!");
+            }
+            
+            core::ptr::copy_nonoverlapping(start, trampoline_addr as *mut u8, len);
+            kinfo!("SMP: Copied trampoline to 0x{:x}", trampoline_base);
+        }
+
+        // 3. Helper to write to trampoline data
+        let write_trampoline_data = |offset: usize, val: u64| unsafe {
+             core::ptr::write_volatile((trampoline_addr + offset as u64) as *mut u64, val);
+        };
+        
+        // 4. Helper to send IPI
+        let lapic_base = self.lapic_base_phys().unwrap(); // We know it works if we are here
+        // Map LAPIC
+        let lapic_virt = match self.map_phys_temp(lapic_base, 4096) {
+             Ok(a) => a,
+             Err(e) => return Err(e),
+        };
+
+        let write_icr = |high: u32, low: u32| unsafe {
+            core::ptr::write_volatile((lapic_virt + 0x310) as *mut u32, high);
+            core::ptr::write_volatile((lapic_virt + 0x300) as *mut u32, low);
+        };
+
+        // 5. Start each AP
+        for (i, &cpu_id) in ids.iter().enumerate() {
+            if cpu_id == bsp_id {
+                continue;
+            }
+            
+            let apic_id = cpu_id.0 as u32;
+            kinfo!("SMP: Starting CPU {} (APIC {})", i, apic_id);
+
+            // Allocate stack
+            // 1 page (4KB) for bootstrap stack
+            let stack_frames = 1;
+            let stack_base_run = kernel::memory::alloc_frame()
+                .expect("Failed to alloc AP stack");
+            let stack_top = stack_base_run + 4096;
+
+            // Setup trampoline data
+            // We use the offsets defined in smp.rs comments
+            // flag: 0x100
+            // cr3: 0x108
+            // stack_top: 0x110
+            // entry_point: 0x118
+            // cpu_index: 0x120
+            
+            write_trampoline_data(0x100, 0); // Clear flag
+            write_trampoline_data(0x108, self.debug_active_aspace_root()); // CR3
+            write_trampoline_data(0x110, stack_top);
+            write_trampoline_data(0x118, entry as usize as u64);
+            write_trampoline_data(0x120, i as u64);
+
+            // INIT IPI
+            // Dest Shorthand=0, TrigMode=Level, Level=Assert, DelivMode=INIT
+            // 0x00004500
+            write_icr(apic_id << 24, 0x00004500);
+            
+            // Wait 10ms (busy loop approximation - 2G Hz = 20M cycles)
+            // We don't have good delay here, just loop a bit.
+            for _ in 0..10_000_000 { core::hint::spin_loop(); }
+
+            // SIPI
+            // Vector = 0x08 (0x8000)
+            // 0x00004608
+            write_icr(apic_id << 24, 0x00004608);
+
+            // Wait for come up
+            let mut came_up = false;
+            for _ in 0..10_000_000 {
+                let flag = unsafe { core::ptr::read_volatile((trampoline_addr + 0x100) as *const u64) };
+                if flag == 1 {
+                    came_up = true;
+                    break;
+                }
+                core::hint::spin_loop();
+            }
+            
+            if came_up {
+                kinfo!("SMP: CPU {} started", i);
+            } else {
+                kerror!("SMP: CPU {} timed out", i);
+            }
+        }
+        
+        // Unmap temporary pages
+        self.unmap_phys_temp(trampoline_addr, 4096);
+        self.unmap_phys_temp(lapic_virt, 4096);
+
+        Ok(())
     }
 
     fn unmap_phys_temp(&self, virt: u64, size: usize) {

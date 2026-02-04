@@ -56,6 +56,16 @@ pub fn set_name(tid: TaskId, name: &str) {
     });
 }
 
+/// Queue update of the location (RUNS_ON) for a task.
+pub fn update_task_location(tid: TaskId, cpu_index: usize) {
+    graph_queue::push(GraphWork::SetLocation { tid, cpu_index });
+}
+
+/// Queue update of the affinity (PINNED_TO) for a task.
+pub fn set_affinity_node(tid: TaskId, cpu_index: usize) {
+    graph_queue::push(GraphWork::SetAffinity { tid, cpu_index });
+}
+
 // ============================================================================
 // Internal implementation - these do the actual graph work (no scheduler lock)
 // ============================================================================
@@ -203,6 +213,22 @@ pub fn do_set_name(thing_id: u64, name: &str) {
     let name_sym = intern(name);
     set_prop(thing_id, keys::PROC_NAME, name_sym);
 }
+
+/// Update task location (RUNS_ON) (called from flush_graph_queue).
+pub fn do_update_task_location(thing_id: u64, cpu_index: usize) {
+    if let Some(cpu_thing) = crate::root::graph_anchors::cpu_thing(cpu_index) {
+        link(thing_id, rels::RUNS_ON, cpu_thing);
+    }
+}
+
+/// Set the affinity on a task's graph node (called from flush_graph_queue).
+pub fn do_set_affinity(thing_id: u64, cpu_index: usize) {
+    if let Some(cpu_thing) = crate::root::graph_anchors::cpu_thing(cpu_index) {
+        link(thing_id, rels::PINNED_TO, cpu_thing);
+    }
+}
+
+
 
 /// Link a task to a bytespace it uses.
 #[allow(dead_code)]

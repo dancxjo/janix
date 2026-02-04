@@ -25,7 +25,8 @@ pub fn block_current<R: BootRuntime>() {
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
-        let current_id = match sched.current {
+        let cpu = super::current_cpu_index::<R>();
+        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => {
                 rt.irq_restore(_irq);
@@ -100,7 +101,16 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
         if sched.tasks[idx].state == TaskState::Blocked {
             sched.tasks[idx].state = TaskState::Runnable;
             let priority = sched.tasks[idx].priority;
-            sched.runq[priority as usize].push_back(tid);
+            let affinity = sched.tasks[idx].affinity;
+            
+            let target_cpu = match affinity {
+                crate::task::Affinity::Pinned(cpu) => cpu,
+                crate::task::Affinity::Any => super::current_cpu_index::<R>(),
+            };
+            
+            let safe_cpu = if target_cpu < sched.per_cpu.len() { target_cpu } else { 0 };
+            sched.per_cpu[safe_cpu].runq[priority as usize].push_back(tid);
+            
             sched.tasks[idx].wake_pending = false;
             
             // Queue graph state update

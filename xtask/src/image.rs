@@ -86,25 +86,25 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "display_virtio_gpu",
             is_init: false,
-            boot_module: false, 
+            boot_module: true, 
             features: vec![],
         },
         ProgramConfig {
             name: "fontd",
             is_init: false,
-            boot_module: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "blossom",
             is_init: false,
-            boot_module: false, // disabled for now; testing phloem
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
             name: "ingestd",
             is_init: false,
-            boot_module: false,
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {

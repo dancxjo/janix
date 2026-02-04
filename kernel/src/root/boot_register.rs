@@ -173,6 +173,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
         set(cpu, keys::SOURCE, src_boot);
         set(cpu, keys::CONFIDENCE, conf_high);
         link(host, rels::HAS_CPU, cpu);
+        super::graph_anchors::set_cpu_thing(i, cpu);
     }
 
     // 6. Memory Ranges

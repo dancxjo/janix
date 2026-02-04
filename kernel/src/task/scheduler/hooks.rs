@@ -34,6 +34,7 @@ pub(crate) static mut REMOVE_USER_MAPPINGS_HOOK: Option<
 > = None;
 pub(crate) static mut CHECK_USER_MAPPING_HOOK: Option<fn(usize, usize, bool) -> bool> = None;
 pub(crate) static mut GET_USER_MAPPING_AT_HOOK: Option<fn(usize) -> Option<VmRegionInfo>> = None;
+pub(crate) static mut RUN_SCHEDULER_HOOK: Option<fn() -> !> = None;
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {

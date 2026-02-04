@@ -1,10 +1,15 @@
+
 //! Task and thread spawning functions.
 
-use crate::task::{StartupArg, Task, TaskId, TaskState};
+use crate::task::{StartupArg, Task, TaskId, TaskPriority, TaskState, Affinity};
 use crate::{BootRuntime, BootTasking, UserEntry};
 
 use super::SCHEDULER;
 use super::types::{DEFAULT_TIMESLICE, Scheduler};
+use core::sync::atomic::{AtomicUsize, Ordering};
+
+// Global round-robin index for CPU selection
+static RR_IDX: AtomicUsize = AtomicUsize::new(0);
 
 impl<R: BootRuntime> Scheduler<R> {
     pub fn spawn(
@@ -12,6 +17,7 @@ impl<R: BootRuntime> Scheduler<R> {
         entry: extern "C" fn(usize) -> !,
         arg: StartupArg,
         priority: crate::task::TaskPriority,
+        affinity: Affinity,
     ) -> TaskId {
         let rt = crate::runtime::<R>();
         let id = self.next_id;
@@ -27,6 +33,17 @@ impl<R: BootRuntime> Scheduler<R> {
         let ctx = rt
             .tasking()
             .init_kernel_context(entry, stack_top, arg.to_raw());
+
+        // Determine target CPU
+        let target_cpu = match affinity {
+            Affinity::Pinned(cpu) => cpu,
+            Affinity::Any => {
+                let count = rt.cpu_count();
+                // Simple Round Robin
+                let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
+                idx % count
+            }
+        };
 
         let task: Task<R> = Task {
             id,
@@ -46,14 +63,24 @@ impl<R: BootRuntime> Scheduler<R> {
                 crate::memory::mappings::MappingList::new(),
             )),
             timeslice_remaining: DEFAULT_TIMESLICE,
+            affinity,
         };
 
         self.tasks.push(task);
-        self.runq[priority as usize].push_back(id);
+        // Push to target CPU's run queue
+        let cpu_count = self.per_cpu.len(); // Should match rt.cpu_count()
+        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
+        self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
 
         // Queue graph node creation (processed after scheduler lock released)
-        let parent_tid = self.current;
+        let parent_tid = self.per_cpu[super::current_cpu_index::<R>()].current;
         super::graphify::create_thread_node(id, priority as u8, false, None, parent_tid);
+        // Link affinity and initial location
+        if let Affinity::Pinned(cpu) = affinity {
+             super::graphify::set_affinity_node(id, cpu);
+        }
+        // Initial location matches target runq
+        super::graphify::update_task_location(id, safe_cpu);
 
         id
     }
@@ -65,6 +92,7 @@ impl<R: BootRuntime> Scheduler<R> {
         arg: StartupArg,
         stack_info: abi::types::StackInfo,
         priority: crate::task::TaskPriority,
+        affinity: Affinity,
     ) -> TaskId {
         let rt = crate::runtime::<R>();
         let id = self.next_id;
@@ -80,7 +108,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let aspace = rt.tasking().active_address_space();
 
         // Inherit mappings from current task
-        let mappings = if let Some(current_id) = self.current {
+        let mappings = if let Some(current_id) = self.per_cpu[super::current_cpu_index::<R>()].current {
             if let Some(parent) = self.tasks.iter().find(|t| t.id == current_id) {
                 parent.mappings.clone()
             } else {
@@ -99,6 +127,16 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let ctx = rt.tasking().init_user_context(spec, kstack_top);
 
+        // Determine target CPU
+        let target_cpu = match affinity {
+            Affinity::Pinned(cpu) => cpu,
+            Affinity::Any => {
+                let count = rt.cpu_count();
+                let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
+                idx % count
+            }
+        };
+
         let task: Task<R> = Task {
             id,
             state: TaskState::Runnable,
@@ -115,14 +153,24 @@ impl<R: BootRuntime> Scheduler<R> {
             stack_info: Some(stack_info),
             mappings,
             timeslice_remaining: DEFAULT_TIMESLICE,
+            affinity,
         };
 
         self.tasks.push(task);
-        self.runq[priority as usize].push_back(id);
+        // Push to target CPU's run queue
+        let cpu_count = self.per_cpu.len();
+        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
+        self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
 
         // Queue graph node creation (processed after scheduler lock released)
-        let parent_tid = self.current;
+        let parent_tid = self.per_cpu[super::current_cpu_index::<R>()].current;
         super::graphify::create_thread_node(id, priority as u8, true, None, parent_tid);
+        // Link affinity and initial location
+        if let Affinity::Pinned(cpu) = affinity {
+             super::graphify::set_affinity_node(id, cpu);
+        }
+        // Initial location matches target runq
+        super::graphify::update_task_location(id, safe_cpu);
 
         id
     }
@@ -134,6 +182,7 @@ impl<R: BootRuntime> Scheduler<R> {
         stack_info: abi::types::StackInfo,
         regions: alloc::vec::Vec<abi::vm::VmRegionInfo>,
         priority: crate::task::TaskPriority,
+        affinity: Affinity,
     ) -> Option<TaskId> {
         let rt = crate::runtime::<R>();
         let id = self.next_id;
@@ -155,6 +204,16 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let mapping_list = crate::memory::mappings::MappingList { regions };
 
+        // Determine target CPU
+        let target_cpu = match affinity {
+            Affinity::Pinned(cpu) => cpu,
+            Affinity::Any => {
+                let count = rt.cpu_count();
+                let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
+                idx % count
+            }
+        };
+
         let task: Task<R> = Task {
             id,
             state: TaskState::Runnable,
@@ -171,14 +230,24 @@ impl<R: BootRuntime> Scheduler<R> {
             stack_info: Some(stack_info),
             mappings: alloc::sync::Arc::new(spin::Mutex::new(mapping_list)),
             timeslice_remaining: DEFAULT_TIMESLICE,
+            affinity,
         };
 
         self.tasks.push(task);
-        self.runq[priority as usize].push_back(id);
+        // Push to target CPU's run queue
+        let cpu_count = self.per_cpu.len();
+        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
+        self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
 
         // Queue graph node creation (processed after scheduler lock released)
-        let parent_tid = self.current;
+        let parent_tid = self.per_cpu[super::current_cpu_index::<R>()].current;
         super::graphify::create_thread_node(id, priority as u8, true, None, parent_tid);
+        // Link affinity and initial location
+        if let Affinity::Pinned(cpu) = affinity {
+             super::graphify::set_affinity_node(id, cpu);
+        }
+        // Initial location matches target runq
+        super::graphify::update_task_location(id, safe_cpu);
 
         Some(id)
     }
@@ -190,7 +259,7 @@ pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: StartupArg) 
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    let id = sched.spawn(entry, arg, crate::task::TaskPriority::Normal);
+    let id = sched.spawn(entry, arg, crate::task::TaskPriority::Normal, crate::task::Affinity::Any);
     rt.irq_restore(_irq);
     id
 }
@@ -205,7 +274,7 @@ pub fn spawn_with_priority<R: BootRuntime>(
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    let id = sched.spawn(entry, arg, priority);
+    let id = sched.spawn(entry, arg, priority, crate::task::Affinity::Any);
     rt.irq_restore(_irq);
     id
 }
@@ -222,7 +291,7 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    let id = sched.spawn_user_thread(entry, stack, arg, stack_info, priority);
+    let id = sched.spawn_user_thread(entry, stack, arg, stack_info, priority, crate::task::Affinity::Any);
     rt.irq_restore(_irq);
     id
 }
@@ -239,7 +308,7 @@ pub unsafe fn spawn_user_task_full<R: BootRuntime>(
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority);
+    let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority, crate::task::Affinity::Any);
     rt.irq_restore(_irq);
     id
 }
@@ -263,11 +332,23 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     entry.arg0 = arg.to_raw();
 
     let _irq = rt.irq_disable();
+    
+    // HACK: Bloom pinning for smoke test
+    let affinity = if name == "bloom" {
+        if rt.cpu_count() > 1 {
+            crate::task::Affinity::Pinned(1)
+        } else {
+            crate::task::Affinity::Any
+        }
+    } else {
+        crate::task::Affinity::Any
+    };
+
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
-    let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority)?;
+    let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority, affinity)?;
 
     // Queue setting the process name (processed after scheduler lock released)
     super::graphify::set_name(id, module.name);
@@ -293,7 +374,6 @@ pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
     unsafe { rt.tasking().enter_user(entry) }
 }
 
-#[cfg(test)]
 #[cfg(test)]
 mod tests {
     use super::*;

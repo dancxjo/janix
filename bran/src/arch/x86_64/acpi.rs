@@ -51,12 +51,14 @@ fn rsdp_phys_from_virt(rsdp_addr: u64, hhdm_offset: u64) -> u64 {
 const MADT_SIGNATURE: [u8; 4] = *b"APIC";
 
 /// MADT entry types
-#[allow(dead_code)]
 const ENTRY_LOCAL_APIC: u8 = 0;
 const ENTRY_IOAPIC: u8 = 1;
 const ENTRY_INTERRUPT_OVERRIDE: u8 = 2;
 #[allow(dead_code)]
 const ENTRY_LOCAL_APIC_NMI: u8 = 4;
+
+/// Maximum supported CPUs
+pub const MAX_CPUS: usize = 32;
 
 /// Maximum supported IOAPICs
 pub const MAX_IOAPICS: usize = 8;
@@ -105,6 +107,8 @@ pub struct MadtInfo {
     pub ioapic_count: usize,
     pub overrides: [InterruptOverride; MAX_ISO],
     pub override_count: usize,
+    pub local_apic_ids: [u32; MAX_CPUS],
+    pub cpu_count: usize,
 }
 
 impl MadtInfo {
@@ -243,6 +247,8 @@ unsafe fn parse_madt_table(madt_virt: u64) -> Option<MadtInfo> {
         ioapic_count: 0,
         overrides: [InterruptOverride::default(); MAX_ISO],
         override_count: 0,
+        local_apic_ids: [0; MAX_CPUS],
+        cpu_count: 0,
     };
 
     let entries_start = madt_virt + 44; // sizeof(MadtHeader)
@@ -258,6 +264,16 @@ unsafe fn parse_madt_table(madt_virt: u64) -> Option<MadtInfo> {
         }
 
         match entry_type {
+            ENTRY_LOCAL_APIC if info.cpu_count < MAX_CPUS => {
+                let entry = ptr as *const LocalApicEntry;
+                let flags = unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).flags)) };
+                // Bit 0 = Enabled, Bit 1 = Online Capable
+                if (flags & 1) != 0 || (flags & 2) != 0 {
+                    let apic_id = unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).apic_id)) };
+                    info.local_apic_ids[info.cpu_count] = apic_id as u32;
+                    info.cpu_count += 1;
+                }
+            }
             ENTRY_IOAPIC if info.ioapic_count < MAX_IOAPICS => {
                 let entry = ptr as *const IoapicEntry;
                 info.ioapics[info.ioapic_count] = IoapicInfo {
@@ -320,6 +336,15 @@ struct AcpiSdtHeader {
 struct MadtHeader {
     header: AcpiSdtHeader,
     local_apic_addr: u32,
+    flags: u32,
+}
+
+#[repr(C, packed)]
+struct LocalApicEntry {
+    entry_type: u8,
+    length: u8,
+    processor_id: u8,
+    apic_id: u8,
     flags: u32,
 }
 

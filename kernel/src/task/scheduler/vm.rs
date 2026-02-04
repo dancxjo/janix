@@ -15,7 +15,8 @@ pub fn add_user_mapping<R: BootRuntime>(region: VmRegionInfo) -> Result<(), Errn
             None => return Err(Errno::ENOSYS),
         };
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        let current_id = match sched.current {
+        let cpu = super::current_cpu_index::<R>();
+        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => return Err(Errno::ESRCH),
         };
@@ -45,7 +46,8 @@ pub fn remove_user_mappings<R: BootRuntime>(
             None => return Err(Errno::ENOSYS),
         };
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        let current_id = match sched.current {
+        let cpu = super::current_cpu_index::<R>();
+        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => return Err(Errno::ESRCH),
         };
@@ -67,7 +69,8 @@ pub fn check_user_mapping<R: BootRuntime>(addr: usize, len: usize, write: bool) 
     let lock = SCHEDULER.lock();
     let res = if let Some(ptr) = *lock {
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        let current_id = match sched.current {
+        let cpu = super::current_cpu_index::<R>();
+        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => {
                 rt.irq_restore(_irq);
@@ -94,7 +97,8 @@ pub fn get_user_mapping_at<R: BootRuntime>(addr: usize) -> Option<VmRegionInfo> 
     let lock = SCHEDULER.lock();
     let res = if let Some(ptr) = *lock {
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        let current_id = match sched.current {
+        let cpu = super::current_cpu_index::<R>();
+        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => {
                 rt.irq_restore(_irq);
@@ -121,7 +125,8 @@ pub unsafe fn translate_user_page<R: BootRuntime>(addr: u64) -> Option<u64> {
     let lock = SCHEDULER.lock();
     let res = if let Some(ptr) = *lock {
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        let current_id = match sched.current {
+        let cpu = super::current_cpu_index::<R>();
+        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => {
                 rt.irq_restore(_irq);

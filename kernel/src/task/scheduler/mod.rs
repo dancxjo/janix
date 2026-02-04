@@ -16,12 +16,14 @@ mod sleep;
 mod spawn;
 mod stack;
 mod types;
+pub(crate) mod wait_queue;
 mod vm;
 
 // Re-export all public items
 pub use blocking::{
     block_current, block_current_erased, init_blocking_hooks, wake_task, wake_task_erased,
 };
+pub use wait_queue::WaitQueue;
 pub use hooks::{
     add_user_mapping_current, alloc_user_stack_current, check_user_mapping_current,
     current_priority_current, current_tid_current, exit_current, get_user_mapping_at_current,

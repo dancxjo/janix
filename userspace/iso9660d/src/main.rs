@@ -466,7 +466,7 @@ fn main(_arg: usize) -> ! {
         let port_handles: Vec<PortHandle> = mounts.iter().map(|m| m.tree_port_read).collect();
 
         // Wait for any port to become readable
-        match port_wait(&port_handles) {
+        match port_wait(&port_handles, abi::syscall::port_wait::READABLE) {
             Ok(ready_port) => {
                 // Find which mount this port belongs to
                 if let Some(mount) = mounts.iter().find(|m| m.tree_port_read == ready_port) {

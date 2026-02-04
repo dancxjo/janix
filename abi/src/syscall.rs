@@ -56,6 +56,12 @@ pub const SYS_PORT_SEND: u32 = 0x81;
 pub const SYS_PORT_RECV: u32 = 0x82;
 pub const SYS_PORT_CLOSE: u32 = 0x83;
 pub const SYS_PORT_WAIT: u32 = 0x84;
+pub const SYS_PORT_INFO: u32 = 0x86;
+
+pub mod port_wait {
+    pub const READABLE: u32 = 1 << 0;
+    pub const WRITABLE: u32 = 1 << 1;
+}
 
 // ============================================================================
 // Block 0x90–0x9F: Streams

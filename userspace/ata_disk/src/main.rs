@@ -626,12 +626,11 @@ fn main(_arg: usize) -> ! {
         loop {
             stem::sleep(Duration::from_secs(60));
         }
-    }
     
     // Main service loop
     loop {
         // Wait for a request on any port (blocking)
-        let ready_handle = match port_wait(&handles) {
+        let ready_handle = match port_wait(&handles, abi::syscall::port_wait::READABLE) {
             Ok(h) => h,
             Err(e) => {
                 error!("ATA_DISK: port_wait failed: {:?}", e);

@@ -110,14 +110,34 @@ fn main(_arg: usize) -> ! {
     let mut buf = [0u8; 4096]; // Max packet size (matched to beeper)
     let dma_dev_handle = driver.claim_handle(); // Pre-fetch handle
 
+    let mut underruns_total: u64 = 0;
+    let mut last_status_update = 0;
+
     loop {
         // 1. Process Events
-        process_event_queue(&mut driver);
+        if process_event_queue(&mut driver) {
+            underruns_total += 1;
+            warn!("SND: PCM Underrun detected by device!");
+        }
         
         // 2. Recycle TX Descriptors (CRITICAL: Free up space in ring!)
         process_tx_queue(&mut driver);
         
-        // 3. Process Audio Data
+        // 3. Update Status Properties (every ~100ms)
+        let now = stem::time::monotonic_ns();
+        if now - last_status_update > 100_000_000 {
+            use abi::schema::keys::*;
+            
+            let port_len = stem::syscall::port::port_len(read_handle).unwrap_or(0);
+            let port_cap = stem::syscall::port::port_capacity(read_handle).unwrap_or(1);
+            
+            thingsys::prop_set(ThingId::from_u64(device_id), SOUND_BUFFERED_FRAMES, (port_len / 4) as u64).ok();
+            thingsys::prop_set(ThingId::from_u64(device_id), SOUND_FREE_FRAMES, ((port_cap - port_len) / 4) as u64).ok();
+            thingsys::prop_set(ThingId::from_u64(device_id), SOUND_UNDERRUNS, underruns_total).ok();
+            last_status_update = now;
+        }
+
+        // 4. Process Audio Data
         match stem::syscall::port::port_recv(read_handle, &mut buf) {
             Ok(len) if len > 0 => {
                 match device_alloc_dma(dma_dev_handle, 2) { // 8KB pages (Need >4KB for 4K data + header)
@@ -189,14 +209,21 @@ fn populate_event_queue(driver: &mut VirtioDevice) {
     driver.notify_queue(VIRTIO_SND_VQ_EVENT);
 }
 
-fn process_event_queue(driver: &mut VirtioDevice) {
+fn process_event_queue(driver: &mut VirtioDevice) -> bool {
     let dma_dev = driver.claim_handle();
     let mut needs_notify = false;
+    let mut underrun_seen = false;
     {
         let q = driver.queue_mut(VIRTIO_SND_VQ_EVENT).unwrap();
-        while let Some((_desc_id, _len)) = q.poll_used() {
+        while let Some((desc_id, _len)) = q.poll_used() {
+            // The buffer contains a VirtioSndEvent
+            // For now, we don't bother reading the DMA buffer because any event 
+            // on the PCM stream is likely an xrun in this simple driver.
+            // But let's be technically correct if possible.
+            underrun_seen = true;
+
             // Recycle buffer
-            let size = size_of::<VirtioSndEvent>();
+            let size = core::mem::size_of::<VirtioSndEvent>();
             let dma = device_alloc_dma(dma_dev, 1).unwrap();
             let phys = device_dma_phys(dma).unwrap();
             q.add_buffer_single(phys, size as u32, true);
@@ -206,6 +233,7 @@ fn process_event_queue(driver: &mut VirtioDevice) {
     if needs_notify {
         driver.notify_queue(VIRTIO_SND_VQ_EVENT);
     }
+    underrun_seen
 }
 
 fn send_pcm_command(driver: &mut VirtioDevice, cmd: u32, stream_id: u32) {

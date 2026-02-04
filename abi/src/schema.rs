@@ -145,6 +145,11 @@ pub mod keys {
     pub const RX_BYTES: &str = "rx_bytes";
     pub const TX_BYTES: &str = "tx_bytes";
 
+    // Audio status
+    pub const SOUND_BUFFERED_FRAMES: &str = "sound.buffered_frames";
+    pub const SOUND_FREE_FRAMES: &str = "sound.free_frames";
+    pub const SOUND_UNDERRUNS: &str = "sound.underruns";
+
     // UI Properties
     pub const UI_X: &str = "ui.x";
     pub const UI_Y: &str = "ui.y";

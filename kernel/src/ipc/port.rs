@@ -23,8 +23,9 @@ pub struct Port {
     capacity: usize,
     head: AtomicUsize, // Write position (producer advances)
     tail: AtomicUsize, // Read position (consumer advances)
-    waiters: Mutex<VecDeque<u64>>,
-
+    waiters_read: crate::task::scheduler::WaitQueue,
+    waiters_write: crate::task::scheduler::WaitQueue,
+    
     #[cfg(debug_assertions)]
     sender_tid: AtomicU64,
     #[cfg(debug_assertions)]
@@ -41,12 +42,18 @@ impl Port {
             capacity,
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
-            waiters: Mutex::new(VecDeque::new()),
+            waiters_read: crate::task::scheduler::WaitQueue::new(),
+            waiters_write: crate::task::scheduler::WaitQueue::new(),
             #[cfg(debug_assertions)]
             sender_tid: AtomicU64::new(0),
             #[cfg(debug_assertions)]
             receiver_tid: AtomicU64::new(0),
         }
+    }
+
+    /// Returns the capacity of the port
+    pub fn capacity(&self) -> usize {
+        self.capacity
     }
 
     /// Returns the number of bytes currently in the buffer
@@ -104,31 +111,30 @@ impl Port {
         self.head
             .store(head.wrapping_add(to_write), Ordering::Release);
 
-        // Wake up waiters
-        let mut handlers = self.waiters.lock();
-        while let Some(tid) = handlers.pop_front() {
-            unsafe {
-                crate::task::scheduler::wake_task_erased(tid as usize);
-            }
-        }
+        // Wake up readers (likely multiple readers in some discovery flows, wake_all is safer)
+        self.waiters_read.wake_all();
 
         to_write
     }
 
-    /// Add a waiter to the port
-    pub fn add_waiter(&self, tid: u64) {
-        let mut waiters = self.waiters.lock();
-        if !waiters.contains(&tid) {
-            waiters.push_back(tid);
-        }
+    /// Add a reader waiter to the port
+    pub fn add_waiter_read(&self, tid: u64) {
+        self.waiters_read.push_back(tid);
     }
 
-    /// Remove a waiter from the port
-    pub fn remove_waiter(&self, tid: u64) {
-        let mut waiters = self.waiters.lock();
-        if let Some(pos) = waiters.iter().position(|&id| id == tid) {
-            waiters.remove(pos);
-        }
+    /// Remove a reader waiter from the port
+    pub fn remove_waiter_read(&self, tid: u64) {
+        self.waiters_read.remove(tid);
+    }
+
+    /// Add a writer waiter to the port
+    pub fn add_waiter_write(&self, tid: u64) {
+        self.waiters_write.push_back(tid);
+    }
+
+    /// Remove a writer waiter from the port
+    pub fn remove_waiter_write(&self, tid: u64) {
+        self.waiters_write.remove(tid);
     }
 
     /// Receive bytes from the port. Returns number of bytes read.
@@ -156,6 +162,10 @@ impl Port {
 
         self.tail
             .store(tail.wrapping_add(to_read), Ordering::Release);
+
+        // Wake up one writer (pacing/flow control)
+        self.waiters_write.wake_one();
+
         to_read
     }
 
@@ -233,11 +243,11 @@ impl Receiver {
     }
 
     pub fn add_waiter(&self, tid: u64) {
-        self.inner.add_waiter(tid);
+        self.inner.add_waiter_read(tid);
     }
 
     pub fn remove_waiter(&self, tid: u64) {
-        self.inner.remove_waiter(tid);
+        self.inner.remove_waiter_read(tid);
     }
 }
 

@@ -227,7 +227,7 @@ fn main(packed_handles: usize) -> ! {
     let wait_handles = [kbd_read, mouse_read];
     loop {
         // Block until keyboard or mouse data arrives
-        let _ = port_wait(&wait_handles);
+        let _ = port_wait(&wait_handles, abi::syscall::port_wait::READABLE);
 
         // Process keyboard input
         if let Ok(n) = port_recv(kbd_read, &mut kbd_buf) {

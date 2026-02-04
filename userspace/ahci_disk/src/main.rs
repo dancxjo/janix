@@ -691,7 +691,7 @@ fn main(_arg: usize) -> ! {
     // Main service loop
     loop {
         // Wait for a request on any port (blocking)
-        let ready_handle = match stem::syscall::port::port_wait(&handles) {
+        let ready_handle = match stem::syscall::port::port_wait(&handles, abi::syscall::port_wait::READABLE) {
             Ok(h) => h,
             Err(e) => {
                 error!("AHCI: port_wait failed: {:?}", e);

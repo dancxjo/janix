@@ -91,7 +91,7 @@ pub fn sys_port_close(handle: usize) -> SysResult<usize> {
     }
 }
 
-pub fn sys_port_wait(handles_ptr: usize, count: usize) -> SysResult<usize> {
+pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResult<usize> {
     if count == 0 || count > 64 {
         return Err(Errno::EINVAL);
     }
@@ -104,31 +104,73 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize) -> SysResult<usize> {
     }
 
     let tid = unsafe { crate::task::scheduler::current_tid_current() };
+    let flags = flags as u32;
+
+    // Cleanup helper to ensure we don't leave stale entries in any port's wait queue
+    let cleanup = |handles: &[u32], table: &mut crate::ipc::HandleTable| {
+        for &h in handles {
+            let h_ipc = crate::ipc::Handle(h);
+            if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Read) {
+                if let Some(port) = crate::ipc::get_port(entry.port_id) {
+                    port.remove_waiter_read(tid);
+                }
+            }
+            if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Write) {
+                if let Some(port) = crate::ipc::get_port(entry.port_id) {
+                    port.remove_waiter_write(tid);
+                }
+            }
+        }
+    };
 
     loop {
-        // 1. Check if any port is already readable
+        // 1. Register as waiter BEFORE checking (prevents race)
         {
-            let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+            let mut table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
             for i in 0..count {
-                let h = crate::ipc::Handle(handles[i]);
-                if let Some(entry) = table.get(h, crate::ipc::HandleMode::Read) {
-                    if let Some(port) = crate::ipc::get_port(entry.port_id) {
-                        if !port.is_empty() {
-                            return Ok(handles[i] as usize);
+                let h = handles[i];
+                let h_ipc = crate::ipc::Handle(h);
+                if (flags & abi::syscall::port_wait::READABLE) != 0 {
+                    if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Read) {
+                        if let Some(port) = crate::ipc::get_port(entry.port_id) {
+                            port.add_waiter_read(tid);
+                        }
+                    }
+                }
+                if (flags & abi::syscall::port_wait::WRITABLE) != 0 {
+                    if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Write) {
+                        if let Some(port) = crate::ipc::get_port(entry.port_id) {
+                            port.add_waiter_write(tid);
                         }
                     }
                 }
             }
         }
 
-        // 2. Not readable, register as waiter on all ports
+        // 2. Check if any port is ready
         {
-            let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+            let mut table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
             for i in 0..count {
-                let h = crate::ipc::Handle(handles[i]);
-                if let Some(entry) = table.get(h, crate::ipc::HandleMode::Read) {
-                    if let Some(port) = crate::ipc::get_port(entry.port_id) {
-                        port.add_waiter(tid);
+                let h = handles[i];
+                let h_ipc = crate::ipc::Handle(h);
+                if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Read) {
+                    if (flags & abi::syscall::port_wait::READABLE) != 0 {
+                        if let Some(port) = crate::ipc::get_port(entry.port_id) {
+                            if !port.is_empty() {
+                                cleanup(&handles[..count], &mut table);
+                                return Ok(h as usize);
+                            }
+                        }
+                    }
+                }
+                if let Some(entry) = table.get(h_ipc, crate::ipc::HandleMode::Write) {
+                    if (flags & abi::syscall::port_wait::WRITABLE) != 0 {
+                        if let Some(port) = crate::ipc::get_port(entry.port_id) {
+                            if !port.is_full() {
+                                cleanup(&handles[..count], &mut table);
+                                return Ok(h as usize);
+                            }
+                        }
                     }
                 }
             }
@@ -139,4 +181,21 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize) -> SysResult<usize> {
             crate::task::scheduler::block_current_erased();
         }
     }
+}
+
+pub fn sys_port_info(handle: usize) -> SysResult<usize> {
+    let handle = crate::ipc::Handle(handle as u32);
+    let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+    let entry = table
+        .get(handle, crate::ipc::HandleMode::Read)
+        .or_else(|| table.get(handle, crate::ipc::HandleMode::Write))
+        .ok_or(Errno::EBADF)?;
+
+    let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    
+    let len = port.len();
+    let cap = port.capacity(); // Need to expose capacity
+    
+    // Return packed: top 32 bits capacity, bottom 32 bits length
+    Ok((cap << 32) | (len & 0xFFFFFFFF))
 }

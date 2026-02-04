@@ -68,7 +68,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "bloom",
             is_init: true,
-            boot_module: false, //disabled for now; testing phloem
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
@@ -102,7 +102,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "ingestd",
+            name: "flytrap",
             is_init: false,
             boot_module: true,
             features: vec![],

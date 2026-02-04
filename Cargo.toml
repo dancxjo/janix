@@ -35,7 +35,7 @@ members = [
     "userspace/root_watch_tester",
     "userspace/scheduler_fairness",
     "userspace/photosynthesis",
-    "userspace/ingestd",
+    "userspace/flytrap",
     "userspace/cambium",
     "userspace/fontd",
     "userspace/blossom",

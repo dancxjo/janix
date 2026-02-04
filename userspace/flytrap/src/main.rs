@@ -1,7 +1,7 @@
 #![no_std]
 #![no_main]
 
-//! # Asset Watcher Service (assetd / ingestd)
+//! # Asset Watcher Service (assetd / flytrap)
 //!
 //! This service makes assets continuous graph citizens by:
 //!
@@ -35,7 +35,7 @@
 //! ## Service Contract
 //!
 //! This service implements a formal contract declaring its graph interface.
-//! See `INGESTD_CONTRACT` below for the complete specification.
+//! See `FLYTRAP_CONTRACT` below for the complete specification.
 
 extern crate alloc;
 mod sniff;
@@ -58,14 +58,14 @@ use stem::thing::ThingId;
 
 /// Service Contract Declaration
 ///
-/// This contract formalizes ingestd's graph-native interface:
+/// This contract formalizes flytrap's graph-native interface:
 /// - Watches: Boot modules and content sources (inputs)
 /// - Publishes: Asset nodes (outputs)
 /// - Properties: All asset metadata fields
 /// - Idempotent: Yes - same inputs produce same outputs
 /// - Boot Assumptions: None - we watch for everything!
-const INGESTD_CONTRACT: ServiceContract = ServiceContract {
-    name: "ingestd",
+const FLYTRAP_CONTRACT: ServiceContract = ServiceContract {
+    name: "flytrap",
     watched_kinds: &[
         kinds::BOOT_MODULE,     // Limine boot modules
         kinds::CONTENT_SOURCE,  // ISO9660 disks, future sources
@@ -280,30 +280,30 @@ use ttf_parser::Face;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("INGESTD: Starting unified content provider service...");
+    info!("FLYTRAP: Starting unified content provider service...");
     
     // Validate service contract
-    INGESTD_CONTRACT.validate()
-        .expect("INGESTD: Invalid service contract");
-    info!("INGESTD: Service contract validated - graph-native asset watcher");
+    FLYTRAP_CONTRACT.validate()
+        .expect("FLYTRAP: Invalid service contract");
+    info!("FLYTRAP: Service contract validated - graph-native asset watcher");
 
     // Create deduplication index for O(log n) asset lookups
     let mut asset_index = AssetIndex::new();
 
     // 1. Create ContentSource for Limine modules
-    info!("INGESTD: Initializing Limine module content source...");
+    info!("FLYTRAP: Initializing Limine module content source...");
     let limine_source = initialize_limine_content_source();
 
     // 2. Initial scan of boot modules to seed canonical assets
-    info!("INGESTD: Performing initial boot module scan...");
+    info!("FLYTRAP: Performing initial boot module scan...");
     scan_boot_modules(&mut asset_index);
     
     // Mark Limine as complete - these modules are immutable
     LIMINE_SCAN_COMPLETE.store(true, Ordering::Release);
-    info!("INGESTD: Limine boot module scan complete (indexed {} assets)", asset_index.by_key.len());
+    info!("FLYTRAP: Limine boot module scan complete (indexed {} assets)", asset_index.by_key.len());
 
     // 3. Seed system assets
-    info!("INGESTD: Seeding system assets (reactive)...");
+    info!("FLYTRAP: Seeding system assets (reactive)...");
     seed_system_assets();
 
     // 4. Open watches for new boot modules, content sources, and asset requests
@@ -338,7 +338,7 @@ fn main(_arg: usize) -> ! {
         }
     }
 
-    info!("INGESTD: Continuous asset watcher loop active. Watching for asset changes...");
+    info!("FLYTRAP: Continuous asset watcher loop active. Watching for asset changes...");
 
     loop {
         let mut any_activity = false;
@@ -370,7 +370,7 @@ fn initialize_limine_content_source() -> ThingId {
                 if let Ok(len) = stem::thing::sys::describe_symbol(kind_sym as u32, &mut buf) {
                     let kind_str = core::str::from_utf8(&buf[..len]).unwrap_or("");
                     if kind_str == "limine_module" {
-                        info!("INGESTD: Found existing Limine ContentSource");
+                        info!("FLYTRAP: Found existing Limine ContentSource");
                         return source_id;
                     }
                 }
@@ -391,11 +391,11 @@ fn initialize_limine_content_source() -> ThingId {
             let _ = prop_set(source_id, keys::CONTENT_SOURCE_STATE, state_sym as u64);
             let _ = prop_set(source_id, keys::CONTENT_SOURCE_GEN, 1u64);
             
-            info!("INGESTD: Created Limine ContentSource node");
+            info!("FLYTRAP: Created Limine ContentSource node");
             source_id
         }
         Err(_) => {
-            info!("INGESTD: Failed to create ContentSource, using default");
+            info!("FLYTRAP: Failed to create ContentSource, using default");
             ThingId::default()
         }
     }
@@ -537,11 +537,11 @@ fn ingest_content_file(file_id: ThingId, index: &mut AssetIndex) {
     // Conditional logging based on result
     let asset_id = match result {
         PublishResult::Created(id) => {
-            info!("INGESTD: Ingested file '{}' from disk ({}, {} bytes)", file_name, kind, size);
+            info!("FLYTRAP: Ingested file '{}' from disk ({}, {} bytes)", file_name, kind, size);
             id
         }
         PublishResult::Updated(id) => {
-            info!("INGESTD: Updated file '{}' from disk (hash changed)", file_name);
+            info!("FLYTRAP: Updated file '{}' from disk (hash changed)", file_name);
             id
         }
         PublishResult::Unchanged(_id) => {
@@ -601,22 +601,22 @@ fn ingest_content_source(source_id: ThingId, index: &mut AssetIndex) {
         Err(_) => {
             // Some content sources (like Limine modules) don't use tree providers
             // They expose files directly via other mechanisms (e.g., BOOT_MODULE nodes)
-            info!("INGESTD: CONTENT_SOURCE (kind={}) has no tree_provider_port, skipping tree scan", source_kind);
+            info!("FLYTRAP: CONTENT_SOURCE (kind={}) has no tree_provider_port, skipping tree scan", source_kind);
             return;
         }
     };
     
-    info!("INGESTD: Scanning tree provider source (kind={}, port={})", source_kind, port_handle);
+    info!("FLYTRAP: Scanning tree provider source (kind={}, port={})", source_kind, port_handle);
     
     // Scan the tree provider
     match scan_tree_provider(port_handle, source_id, source_kind, index) {
         Ok(count) => {
-            info!("INGESTD: Tree provider scan complete ({} files ingested)", count);
+            info!("FLYTRAP: Tree provider scan complete ({} files ingested)", count);
             // Mark as scanned
             index.mark_source_scanned(source_u64);
         }
         Err(e) => {
-            warn!("INGESTD: Tree provider scan failed: {}", e);
+            warn!("FLYTRAP: Tree provider scan failed: {}", e);
         }
     }
 }
@@ -767,11 +767,11 @@ fn ingest_tree_file(
     
     let asset_id = match result {
         PublishResult::Created(id) => {
-            info!("INGESTD: Ingested '{}' from {} ({}, {} bytes)", path, source_kind, kind, data.len());
+            info!("FLYTRAP: Ingested '{}' from {} ({}, {} bytes)", path, source_kind, kind, data.len());
             id
         }
         PublishResult::Updated(id) => {
-            info!("INGESTD: Updated '{}' from {} (hash changed)", path, source_kind);
+            info!("FLYTRAP: Updated '{}' from {} (hash changed)", path, source_kind);
             id
         }
         PublishResult::Unchanged(_) => {
@@ -887,11 +887,11 @@ fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {
     // Conditional logging based on result
     let asset_id = match result {
         PublishResult::Created(id) => {
-            info!("INGESTD: Published new asset '{}' ({}, {} bytes, hash={:016x})", mod_name, kind, size, hash);
+            info!("FLYTRAP: Published new asset '{}' ({}, {} bytes, hash={:016x})", mod_name, kind, size, hash);
             id
         }
         PublishResult::Updated(id) => {
-            info!("INGESTD: Updated asset '{}' (hash={:016x})", mod_name, hash);
+            info!("FLYTRAP: Updated asset '{}' (hash={:016x})", mod_name, hash);
             id
         }
         PublishResult::Unchanged(_) => {
@@ -924,7 +924,7 @@ fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {
                         };
                         
                         if publish_content_file(source_id, mod_name, bs_id, size, hash, mime).is_none() {
-                            info!("INGESTD: Failed to create File node for '{}'", mod_name);
+                            info!("FLYTRAP: Failed to create File node for '{}'", mod_name);
                         }
                         break;
                     }
@@ -936,7 +936,7 @@ fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {
     // Font debug logging (only for new assets)
     if mod_name.contains("fonts") || mod_name.ends_with(".ttf") {
         info!(
-            "INGESTD: Font debug - name='{}' kind='{}' guess={:?} first4={:02x?}",
+            "FLYTRAP: Font debug - name='{}' kind='{}' guess={:?} first4={:02x?}",
             mod_name,
             kind,
             guess.as_ref().map(|g| g.mime),
@@ -1006,12 +1006,12 @@ fn seed_system_assets() {
     if let Ok(1) = find(kinds::SVC_ROOT, &mut root_buf) {
         let svc_root = root_buf[0];
         if let Err(e) = link(root_ui, rels::CHILD_OF, svc_root) {
-            warn!("INGESTD: Failed to link ui.Crown to svc.Root: {:?}", e);
+            warn!("FLYTRAP: Failed to link ui.Crown to svc.Root: {:?}", e);
         } else {
-            info!("INGESTD: Linked ui.Crown to svc.Root");
+            info!("FLYTRAP: Linked ui.Crown to svc.Root");
         }
     } else {
-        warn!("INGESTD: Could not find svc.Root to link ui.Crown");
+        warn!("FLYTRAP: Could not find svc.Root to link ui.Crown");
     }
 
     let mut assets = [ThingId::default(); 256];
@@ -1036,12 +1036,12 @@ fn seed_system_assets() {
         }
 
         if leather_id.to_u64_lossy() != 0 {
-            info!("INGESTD: Seeding desktop wallpaper 'leather.bmp'");
+            info!("FLYTRAP: Seeding desktop wallpaper 'leather.bmp'");
             let _ = prop_set(root_ui, "ui.wallpaper", leather_id.to_u64_lossy());
         }
 
         if cursor_id.to_u64_lossy() != 0 {
-            info!("INGESTD: Seeding global cursor");
+            info!("FLYTRAP: Seeding global cursor");
             let _ = prop_set(root_ui, "ui.cursor", cursor_id.to_u64_lossy());
         }
 
@@ -1080,7 +1080,7 @@ fn seed_app_assets(app_id: ThingId) {
     if let Ok(len) = describe_thing(app_id, &mut name_buf) {
         let name = core::str::from_utf8(&name_buf[..len]).unwrap_or("");
         if name.contains("photosynthesis") {
-            info!("INGESTD: Seeding photosynthesis wallpaper 'linen.bmp'");
+            info!("FLYTRAP: Seeding photosynthesis wallpaper 'linen.bmp'");
             let _ = prop_set(app_id, "ui.wallpaper", linen_id.to_u64_lossy());
         }
     }
@@ -1229,11 +1229,11 @@ fn publish_content_file(
                 }
             }
             
-            info!("INGESTD: Created File node '{}' ({} bytes, hash={:016x})", name, size, hash);
+            info!("FLYTRAP: Created File node '{}' ({} bytes, hash={:016x})", name, size, hash);
             Some(file_id)
         }
         Err(_) => {
-            info!("INGESTD: Failed to create File node for '{}'", name);
+            info!("FLYTRAP: Failed to create File node for '{}'", name);
             None
         }
     }
@@ -1262,12 +1262,12 @@ fn ingest_svg_xml(asset_id: ThingId, bytes: &[u8], name: &str) {
                 result.document.to_u64_lossy(),
             );
             info!(
-                "INGESTD: Parsed SVG '{}' as XML tree ({} elements, {} attrs)",
+                "FLYTRAP: Parsed SVG '{}' as XML tree ({} elements, {} attrs)",
                 name, result.element_count, result.attribute_count
             );
         }
         Err(e) => {
-            info!("INGESTD: Failed to parse SVG '{}' as XML: {:?}", name, e);
+            info!("FLYTRAP: Failed to parse SVG '{}' as XML: {:?}", name, e);
         }
     }
 }

@@ -171,7 +171,7 @@ impl Supervisor {
         info!("SPROUT: spawn_apps start. tasks len={}", self.tasks.len());
 
         // Services & Drivers
-        self.ensure_app("/ingestd");
+        self.ensure_app("/flytrap");
         self.ensure_app("/fontd");
         self.ensure_app("/blossom");
         self.ensure_app("/cambium");
@@ -209,8 +209,8 @@ impl Supervisor {
                         info!("SPROUT: App launched (PID={})", pid);
                         task.pid = Some(pid);
 
-                        // If it's ingestd, seed initial requests immediately after launch
-                        if task.name.contains("ingestd") {
+                        // If it's flytrap, seed initial requests immediately after launch
+                        if task.name.contains("flytrap") {
                             seed_asset_requests();
                         }
 
@@ -222,7 +222,7 @@ impl Supervisor {
                         } else if task.name.contains("bloom") || task.name.contains("bristle") {
                             3 // High - interactive UI only
                         } else {
-                            2 // Normal - clock, ingestd, bindd, other apps
+                            2 // Normal - clock, flytrap, bindd, other apps
                         };
 
                         if let Err(e) = stem::thread::set_priority(pid, priority) {

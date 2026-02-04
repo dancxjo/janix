@@ -28,8 +28,8 @@
 //! ```rust,ignore
 //! use abi::service_contract::ServiceContract;
 //! 
-//! const INGESTD_CONTRACT: ServiceContract = ServiceContract {
-//!     name: "ingestd",
+//! const FLYTRAP_CONTRACT: ServiceContract = ServiceContract {
+//!     name: "flytrap",
 //!     watched_kinds: &["boot.Module", "content.Source"],
 //!     published_kinds: &["Asset"],
 //!     published_properties: &[
@@ -43,8 +43,8 @@
 //! 
 //! // At service startup:
 //! fn main() {
-//!     INGESTD_CONTRACT.validate().expect("Invalid contract");
-//!     info!("ingestd contract validated");
+//!     FLYTRAP_CONTRACT.validate().expect("Invalid contract");
+//!     info!("flytrap contract validated");
 //!     // ... continue with service initialization
 //! }
 //! ```

@@ -9,11 +9,9 @@
     <!-- Cytoscape.js v3.33.1 (pinned) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/cytoscape/3.33.1/cytoscape.min.js" crossorigin="anonymous"
         referrerpolicy="no-referrer"></script>
-    <!-- d3-force v3 (pinned) -->
-    <script src="https://d3js.org/d3-dispatch.v3.min.js"></script>
-    <script src="https://d3js.org/d3-quadtree.v3.min.js"></script>
-    <script src="https://d3js.org/d3-timer.v3.min.js"></script>
-    <script src="https://d3js.org/d3-force.v3.min.js"></script>
+    <!-- d3 v7 (pinned) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <script src="https://unpkg.com/cytoscape-d3-force@1.1.4/cytoscape-d3-force.js"></script>
 </head>
 
 <body>
@@ -28,11 +26,10 @@
                 Depth: <input type="number" id="depthInput" value="3" min="1" max="10" size="3">
             </label>
             <button id="loadBtn">Load</button>
-            <button id="relayoutBtn" title="Re-compute ELK layout">Re-layout</button>
-            <button id="resetElkBtn" title="Reset positions to ELK layout">Reset to ELK</button>
+            <button id="relayoutBtn" title="Re-run physics layout">Run Layout</button>
             <label class="toggle-label" title="Enable physics simulation">
                 <input type="checkbox" id="relaxToggle" checked>
-                Relax
+                Live
             </label>
             <label class="toggle-label">
                 View:

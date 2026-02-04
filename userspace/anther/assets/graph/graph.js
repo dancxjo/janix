@@ -1,6 +1,6 @@
 // Thing-OS Graph Viewer
 // ======================
-// Interactive Cytoscape.js graph visualization with ELK.js layout
+// Interactive Cytoscape.js graph visualization with d3-force layout
 
 // =============================================================================
 // Configuration
@@ -12,21 +12,19 @@ const CONFIG = {
     MAX_NODES: 500,
     AUTOSAVE_DEBOUNCE_MS: 750,
     LAYOUT_SPACE: 'graph_ui_v1',
-    // ELK layout defaults
-    DEFAULT_SPACING: 40,
-    DEFAULT_LAYER_SPACING: 60,
-    // Network and layout stability
+    // D3 Force Layout
+    D3_ALPHA: 1,
+    D3_ALPHA_MIN: 0.001,
+    D3_ALPHA_DECAY: 0.0228,
+    D3_VELOCITY_DECAY: 0.4,
+    D3_LINK_DISTANCE: 80,
+    D3_MANY_BODY_STRENGTH: -300,
+    D3_COLLIDE_RADIUS: 50,
+    D3_MAX_ITERATIONS: 0, // Infinite simulation
+    // Network
     API_TIMEOUT_MS: 8000,
     SUBGRAPH_RETRIES: 3,
     SUBGRAPH_RETRY_BASE_MS: 250,
-    ELK_TIMEOUT_MS: 15000,
-    ELK_RETRY_COOLDOWN_MS: 5000,
-    // Physics
-    FORCE_LINK_DISTANCE: 80,
-    FORCE_CHARGE: -200,
-    FORCE_COLLIDE_PADDING: 10,
-    FORCE_ALPHA_DECAY: 0.05,
-    FORCE_VELOCITY_DECAY: 0.3,
 };
 
 // =============================================================================
@@ -123,162 +121,7 @@ const labelMeasurer = {
     },
 };
 
-// =============================================================================
-// ELK Worker
-// =============================================================================
 
-const elkLayout = {
-    worker: null,
-    pending: new Map(), // requestId -> { resolve, reject, timeoutId }
-    requestCounter: 0,
-    ready: false,
-    disabledUntil: 0,
-    lastError: null,
-
-    init() {
-        if (this.worker) {
-            return;
-        }
-        this.ready = false;
-        this.worker = new Worker('/elk-worker.js');
-
-        this.worker.onmessage = (event) => {
-            const data = event.data;
-
-            // Handle ready signal
-            if (data.type === 'ready') {
-                if (data.error) {
-                    this.ready = false;
-                    this.disable(data.error);
-                    console.warn('[ELK] Worker disabled:', data.error);
-                    this.resetWorker();
-                } else {
-                    this.ready = true;
-                    console.log('[ELK] Worker ready');
-                }
-                return;
-            }
-
-            const { requestId, laidOut, error, ms } = data;
-            const pending = this.pending.get(requestId);
-
-            if (!pending) {
-                console.warn('[ELK] Received response for unknown request:', requestId);
-                return;
-            }
-
-            this.pending.delete(requestId);
-
-            if (error) {
-                pending.reject(new Error(error));
-            } else {
-                pending.resolve({ laidOut, ms });
-            }
-        };
-
-        this.worker.onerror = (err) => {
-            console.error('[ELK] Worker error:', err);
-            this.rejectAll(new Error('Worker crashed'));
-            this.disable('Worker crashed');
-            this.resetWorker();
-        };
-
-        this.worker.onmessageerror = (err) => {
-            console.error('[ELK] Worker message error:', err);
-            this.rejectAll(new Error('Worker message error'));
-            this.disable('Worker message error');
-            this.resetWorker();
-        };
-    },
-
-    layout(graph, options = {}) {
-        return new Promise((resolve, reject) => {
-            if (this.isDisabled()) {
-                reject(new Error(`ELK disabled: ${this.lastError || 'cooldown'}`));
-                return;
-            }
-
-            this.init();
-            if (!this.worker) {
-                reject(new Error('ELK worker unavailable'));
-                return;
-            }
-            const requestId = `elk-${++this.requestCounter}`;
-
-            const timeoutId = setTimeout(() => {
-                this.pending.delete(requestId);
-                const err = new Error(`Layout timed out after ${CONFIG.ELK_TIMEOUT_MS}ms`);
-                this.disable(err.message);
-                this.resetWorker();
-                reject(err);
-            }, CONFIG.ELK_TIMEOUT_MS);
-
-            this.pending.set(requestId, {
-                resolve: (payload) => {
-                    clearTimeout(timeoutId);
-                    resolve(payload);
-                },
-                reject: (err) => {
-                    clearTimeout(timeoutId);
-                    reject(err);
-                },
-                timeoutId,
-            });
-
-            try {
-                this.worker.postMessage({
-                    requestId,
-                    graph,
-                    options,
-                });
-            } catch (err) {
-                clearTimeout(timeoutId);
-                this.pending.delete(requestId);
-                this.disable(err.message || 'Worker postMessage failed');
-                this.resetWorker();
-                reject(err);
-            }
-        });
-    },
-
-    // Cancel pending request (for debouncing)
-    cancel(requestId) {
-        const pending = this.pending.get(requestId);
-        if (pending?.timeoutId) {
-            clearTimeout(pending.timeoutId);
-        }
-        this.pending.delete(requestId);
-    },
-
-    rejectAll(err) {
-        for (const [, pending] of this.pending) {
-            if (pending.timeoutId) {
-                clearTimeout(pending.timeoutId);
-            }
-            pending.reject(err);
-        }
-        this.pending.clear();
-    },
-
-    resetWorker() {
-        if (this.worker) {
-            this.worker.terminate();
-        }
-        this.worker = null;
-        this.ready = false;
-    },
-
-    disable(reason) {
-        this.lastError = reason;
-        this.disabledUntil = performance.now() + CONFIG.ELK_RETRY_COOLDOWN_MS;
-    },
-
-    isDisabled() {
-        return performance.now() < this.disabledUntil;
-    },
-};
-
-// =============================================================================
 // API Layer
 // =============================================================================
 
@@ -385,52 +228,7 @@ const api = {
     },
 };
 
-// =============================================================================
-// ELK Graph Builder
-// =============================================================================
 
-function buildElkGraph(graphData) {
-    const children = [];
-    const edges = [];
-
-    for (const node of graphData.nodes) {
-        const label = node.name || node.label || node.id.toString().slice(-8);
-        const kindName = node.kind_name || 'unknown';
-
-        // Measure label size
-        const size = labelMeasurer.measure(label, kindName);
-
-        children.push({
-            id: node.id.toString(),
-            width: size.width,
-            height: size.height,
-            labels: [{ text: label }],
-            // Store original data for rendering
-            _data: {
-                label,
-                name: node.name || '',
-                kindName,
-                kind: node.kind || 0,
-            },
-        });
-    }
-
-    for (const edge of graphData.edges) {
-        edges.push({
-            id: edge.id,
-            sources: [edge.from.toString()],
-            targets: [edge.to.toString()],
-            // Edge labels are optional
-            labels: edge.rel_name ? [{ text: edge.rel_name }] : [],
-        });
-    }
-
-    return {
-        id: 'root',
-        children,
-        edges,
-    };
-}
 
 // =============================================================================
 // State
@@ -449,10 +247,9 @@ const state = {
     watchInterval: null,
     lastProps: {},  // Track previous values for change detection
     launchInFlight: false,
-    // Physics
-    simulation: null,
+    // Layout
     forceEnabled: true,
-    elkPositions: new Map(), // id -> {x, y}
+    layout: null, // Current active layout
 };
 
 // =============================================================================
@@ -468,18 +265,15 @@ function initCytoscape() {
             {
                 selector: 'node',
                 style: {
-                    // Width/height set per-node from ELK results
+                    // Width/height setup in prepareElements
                     'width': 'data(width)',
                     'height': 'data(height)',
                     'shape': 'roundrectangle',
-                    // Light glassmorphism fill (translucent white like native app)
                     'background-color': 'rgba(255, 255, 255, 0.53)',
                     'background-opacity': 1,
-                    // Light border matching Photosynthesis TILE_BORDER_COLOR #E0E0E8
                     'border-width': 2,
                     'border-color': '#E0E0E8',
                     'border-opacity': 1,
-                    // Compound label: name + kindName (like Photosynthesis)
                     'label': function (ele) {
                         const name = ele.data('name') || ele.data('label') || '';
                         const kind = ele.data('kindName') || '';
@@ -493,7 +287,6 @@ function initCytoscape() {
                     'text-halign': 'center',
                     'text-wrap': 'wrap',
                     'text-max-width': '110px',
-                    // Enable line height for multi-line labels
                     'line-height': 1.4,
                 },
             },
@@ -520,8 +313,9 @@ function initCytoscape() {
                     'line-color': '#888888',
                     'target-arrow-color': '#888888',
                     'target-arrow-shape': 'triangle',
-                    'curve-style': 'taxi',  // Orthogonal-style edges
-                    'taxi-direction': 'rightward',
+                    'curve-style': 'bezier',  // 'taxi' for ELK, 'bezier' usually better for force?
+                    // 'taxi' edges look bad if nodes depend on physics. Bezier or haystack.
+                    // Let's stick to bezier/straight.
                     'arrow-scale': 1.0,
                     'opacity': 0.8,
                 },
@@ -535,7 +329,6 @@ function initCytoscape() {
                     'opacity': 1,
                 },
             },
-            // Edge labels
             {
                 selector: 'edge[label]',
                 style: {
@@ -548,7 +341,7 @@ function initCytoscape() {
                 },
             },
         ],
-        layout: { name: 'preset' },
+        layout: { name: 'preset' }, // Initial empty layout
         wheelSensitivity: 0.3,
         minZoom: 0.1,
         maxZoom: 5,
@@ -570,28 +363,13 @@ function initCytoscape() {
         window.location.href = `/#thing=${encodeURIComponent(id)}`;
     });
 
-    // Drag handlers for physics interaction
+    // Drag handlers
     state.cy.on('grab', 'node', (evt) => {
-        const node = evt.target;
-        if (state.simulation && state.forceEnabled) {
-            const d3Node = state.simulation.nodes().find(n => n.id === node.id());
-            if (d3Node) {
-                d3Node.fx = d3Node.x;
-                d3Node.fy = d3Node.y;
-                state.simulation.alphaTarget(0.3).restart();
-            }
-        }
-    });
-
-    state.cy.on('drag', 'node', (evt) => {
-        const node = evt.target;
-        if (state.simulation && state.forceEnabled) {
-            const d3Node = state.simulation.nodes().find(n => n.id === node.id());
-            if (d3Node) {
-                const pos = node.position();
-                d3Node.fx = pos.x;
-                d3Node.fy = pos.y;
-            }
+        // Option: if simulation is running, we might want to ensure it feels responsive
+        // cytoscape-d3-force usually handles drag if ungrabifyWhileSimulating: false
+        // But we might want to "wake up" the simulation if it settled
+        if (state.layout && state.layout.force) {
+            state.layout.force.alphaTarget(0.3).restart();
         }
     });
 
@@ -599,28 +377,16 @@ function initCytoscape() {
         const node = evt.target;
         state.movedNodes.add(node.id());
 
-        // Wake simulation if enabled
-        if (state.simulation && state.forceEnabled) {
-            state.simulation.alpha(0.3).restart();
-            // Free the node from fixed position after drag ends?
-            // Usually d3-force users want to pin it, but for our case let's release it
-            // back into the pool unless we implement per-node pinning.
-            // For now, update the d3 node state to match final drag position.
-            const d3Node = state.simulation.nodes().find(n => n.id === node.id());
-            if (d3Node) {
-                d3Node.x = node.position('x');
-                d3Node.y = node.position('y');
-                d3Node.fx = null;
-                d3Node.fy = null;
-            }
+        // Wake simulation
+        if (state.layout && state.layout.force && state.forceEnabled) {
+            state.layout.force.alphaTarget(0).restart();
+            // alphaTarget 0 lets it cool down again
         }
 
-        // Update inspector if this node is selected
         if (state.selectedNode && state.selectedNode.id() === node.id()) {
             updateInspectorPosition(node);
         }
 
-        // Auto-save if enabled
         if (state.autoSave) {
             scheduleSave();
         }
@@ -672,15 +438,7 @@ async function loadViewData(viewData) {
         };
         state.movedNodes.clear();
 
-        // Apply Hints
-        const hints = viewData.hints || {};
-        let layoutOptions = {};
-        if (hints.layout) {
-            if (hints.layout.direction) {
-                layoutOptions['elk.direction'] = hints.layout.direction;
-            }
-        }
-        await runElkLayout(state.graphData, null, layoutOptions);
+        renderGraph(state.graphData, null);
 
     } catch (err) {
         if (loadSeq !== state.loadSeq) return;
@@ -751,17 +509,7 @@ async function loadGraph(root, depth) {
         state.graphData = data;
         state.movedNodes.clear();
 
-        // Check for existing layout positions
-        const nodesWithPos = data.nodes.filter(n => n.x !== undefined && n.y !== undefined);
-        const usePreset = nodesWithPos.length > data.nodes.length * 0.5;
-
-        if (usePreset) {
-            // Use existing positions from graph
-            renderWithPresetLayout(data, root);
-        } else {
-            // Use ELK for layout
-            await runElkLayout(data, root);
-        }
+        renderGraph(data, root);
 
     } catch (err) {
         if (loadSeq !== state.loadSeq) {
@@ -773,339 +521,175 @@ async function loadGraph(root, depth) {
 }
 
 // =============================================================================
-// Physics Simulation (d3-force)
+// Layout & Rendering
 // =============================================================================
 
-function initForceSimulation(laidOut, edges) {
-    if (!state.forceEnabled) return;
+function prepareElements(data, root) {
+    const elements = [];
 
-    // Convert ELK layout to d3 nodes
-    // laidOut is { children: [{id, x, y, width, height}], edges: [...] }
-    const nodes = (laidOut.children || []).map(n => ({
-        id: n.id,
-        // ELK is top-left, move to center
-        x: n.x + n.width / 2,
-        y: n.y + n.height / 2,
-        width: n.width,
-        height: n.height,
-        // Save initial ELK pos for reset
-        initialX: n.x + n.width / 2,
-        initialY: n.y + n.height / 2,
-        // Preserve data for simulation logic
-        _data: n._data || {}
-    }));
+    // Nodes
+    for (const n of data.nodes) {
+        const primaryLabel = n.name || n.label || n.id.toString().slice(-8);
+        const kindName = n.kind_name || 'unknown';
 
-    // Save ELK positions for reset functionality
-    state.elkPositions.clear();
-    nodes.forEach(n => state.elkPositions.set(n.id, { x: n.initialX, y: n.initialY }));
+        // Measure for initial sizing (important for Cytoscape styles)
+        const size = labelMeasurer.measure(primaryLabel, kindName);
 
-    const links = (edges || []).map(e => ({
-        id: e.id,
-        source: e.from.toString(),
-        target: e.to.toString(),
-    }));
-
-    if (state.simulation) {
-        state.simulation.stop();
-    }
-
-    state.simulation = d3.forceSimulation(nodes)
-        .alphaDecay(CONFIG.FORCE_ALPHA_DECAY)
-        .velocityDecay(CONFIG.FORCE_VELOCITY_DECAY)
-        .force('link', d3.forceLink(links).id(d => d.id).distance(CONFIG.FORCE_LINK_DISTANCE))
-        .force('charge', d3.forceManyBody().strength(CONFIG.FORCE_CHARGE))
-        .force('collide', d3.forceCollide().radius(d => Math.max(d.width, d.height) / 2 + CONFIG.FORCE_COLLIDE_PADDING))
-        // ANTHER LAYOUT RULES
-        // 1. mem.Range tiled across the bottom
-        .force('mem', d3.forceY(500).strength(d => d._data.kindName === 'mem.Range' ? 0.8 : 0))
-        // 2. dev.Host just above svc.Root
-        .force('host_x', d3.forceX(0).strength(d => d.id === 'dev.Host' ? 1.0 : 0))
-        .force('host_y', d3.forceY(-150).strength(d => d.id === 'dev.Host' ? 1.0 : 0))
-        // 3. svc.Root centered
-        .force('root_center', d3.forceRadial(0, 0, 0).strength(d => d.id === 'svc.Root' ? 1.0 : 0))
-        .on('tick', () => {
-            // Apply positions to Cytoscape
-            // To improve performance, we could batch these or use requestAnimationFrame
-            // but for <500 nodes, direct update is usually fine.
-            state.cy.batch(() => {
-                for (const node of nodes) {
-                    const el = state.cy.getElementById(node.id);
-                    if (el.length > 0 && !el.locked() && !el.grabbed()) {
-                        el.position({ x: node.x, y: node.y });
-                    }
-                }
-            });
-
-            // Update inspector if selected node is moving
-            if (state.selectedNode) {
-                updateInspectorPosition(state.selectedNode);
-            }
+        elements.push({
+            data: {
+                id: n.id.toString(),
+                label: primaryLabel,
+                name: n.name || '',
+                kindName,
+                kind: n.kind || 0,
+                width: size.width,
+                height: size.height,
+                isRoot: root && root.trim() !== '' && n.id.toString() === root.toString(),
+                // Keep original position if available and meaningful (e.g. from save)
+                // If x/y are 0/0 or undefined, D3 will initialize them
+            },
+            position: (n.x !== undefined && n.y !== undefined) ? { x: n.x, y: n.y } : undefined,
         });
-}
-
-function stopSimulation() {
-    if (state.simulation) {
-        state.simulation.stop();
     }
-}
 
-function restartSimulation() {
-    if (state.simulation && state.forceEnabled) {
-        state.simulation.alpha(0.3).restart();
+    // Edges
+    for (const e of data.edges) {
+        elements.push({
+            data: {
+                id: e.id,
+                source: e.from.toString(),
+                target: e.to.toString(),
+                rel: e.rel || 0,
+                label: e.rel_name || 'link',
+            },
+        });
     }
+
+    return elements;
 }
 
-function resetToElk() {
-    stopSimulation();
+function runD3Layout(fit = false) {
+    if (state.layout) {
+        state.layout.stop();
+    }
 
-    state.cy.batch(() => {
-        state.elkPositions.forEach((pos, id) => {
+    // Configure d3-force layout
+    const options = {
+        name: 'd3-force',
+        d3: typeof d3 !== 'undefined' ? d3 : undefined, // Explicitly pass d3
+        animate: true,
+        fit,
+        linkId: function (d) { return d.id; },
+        linkDistance: CONFIG.D3_LINK_DISTANCE,
+        manyBodyStrength: CONFIG.D3_MANY_BODY_STRENGTH,
+        collideRadius: d => Math.max(d.width, d.height) / 2 + CONFIG.D3_COLLIDE_RADIUS,
+        alpha: CONFIG.D3_ALPHA,
+        alphaMin: CONFIG.D3_ALPHA_MIN,
+        alphaDecay: CONFIG.D3_ALPHA_DECAY,
+        velocityDecay: CONFIG.D3_VELOCITY_DECAY,
+        maxIterations: 0, // Infinite
+        fixedAfterDragging: true,
+
+        // Ready callback
+        ready: function () {
+            setStatus('Relative stability', '');
+        },
+        stop: function () {
+            // Stopped
+        }
+    };
+
+    state.layout = state.cy.layout(options);
+    state.layout.run();
+    state.forceEnabled = true;
+
+    // Apply custom forces if we can access the simulation
+    // The cytoscape-d3-force extension attaches 'force' (d3 simulation) to the layout instance
+    // after it starts.
+    if (state.layout.force) {
+        const sim = state.layout.force;
+
+        // Helper to get node data safely
+        const getKind = (d) => {
+            const id = d.id;
             const node = state.cy.getElementById(id);
-            if (node.length) {
-                node.position(pos);
-                // Also update d3 state if it exists
-                if (state.simulation) {
-                    const d3Node = state.simulation.nodes().find(n => n.id === id);
-                    if (d3Node) {
-                        d3Node.x = pos.x;
-                        d3Node.y = pos.y;
-                        d3Node.vx = 0;
-                        d3Node.vy = 0;
-                    }
-                }
-            }
-        });
+            return node.length ? (node.data('kindName') || '') : '';
+        };
+
+        // ANTHER LAYOUT RULES
+        // 1. mem.Range at bottom
+        sim.force('mem', d3.forceY(500).strength(d => {
+            return getKind(d) === 'mem.Range' ? 0.3 : 0;
+        }));
+
+        // 2/3. Host/Root structure
+        sim.force('host_x', d3.forceX(0).strength(d => d.id === 'dev.Host' ? 0.8 : 0));
+        sim.force('host_y', d3.forceY(-150).strength(d => d.id === 'dev.Host' ? 0.8 : 0));
+
+        // 3. svc.Root centered
+        sim.force('root_center', d3.forceRadial(0, 0, 0).strength(d => d.id === 'svc.Root' ? 0.8 : 0));
+
+        // Restart to apply new forces
+        sim.alpha(1).restart();
+    }
+}
+
+function renderGraph(data, root) {
+    setStatus('Rendering...', '');
+
+    // Prepare elements
+    const elements = prepareElements(data, root);
+
+    // Batch update
+    state.cy.batch(() => {
+        state.cy.elements().remove();
+        state.cy.add(elements);
     });
 
-    // If relax is on, restart gently? Or stay static?
-    // "Reset to ELK" implies "put things back". If physics is on, they'll drift again.
-    // Let's assume user wants to see the grid.
-    // But if relax toggle is checked, it will eventually start moving if we restart.
-    // Let's just set positions. If simulation is running, it will continue from there.
-    if (state.forceEnabled) {
-        state.simulation.alpha(0.1).restart();
-    }
+    // Decide layout: if we have positions for >50% nodes, use preset? 
+    // Or just let D3 settle them? 
+    // If we want "live physics", we should probably start D3 even if we have positions, 
+    // to let them settle. But maybe initialize with preset to avoid explosion.
+
+    const nodesWithPos = data.nodes.filter(n => n.x !== undefined && n.y !== undefined);
+    const hasPositions = nodesWithPos.length > data.nodes.length * 0.5;
+
+    // If we have positions, we already set them in prepareElements.
+    // D3 will pick them up as initial positions.
+
+    runD3Layout(!hasPositions); // Fit only if we didn't have positions
+
+    updateStats(data, 0);
+    setStatus('Ready', '');
 }
 
 function zapToCenter(nodeId) {
-    if (!state.simulation) return;
+    const node = state.cy.getElementById(nodeId);
+    if (!node || node.length === 0) return;
 
-    const node = state.simulation.nodes().find(n => n.id === nodeId);
-    if (!node) return;
+    // 1. Move node to center of viewport (graph coordinates)
+    // We want the node to be at the center of the visual field.
+    // We can pan the camera:
+    state.cy.animate({
+        center: { eles: node },
+        duration: 500,
+        easing: 'ease-out-cubic'
+    });
 
-    // 1. Pan viewport to center
-    // We already do state.cy.center(node) in some places, but let's be explicit
-    // Actually, physically pulling the node to (0,0) or center of layout might destroy layout structure.
-    // Instead, let's pull it to the *current center of the viewport* in physics space?
-    // Or just re-center the camera on the node (standard behavior) and let physics relax neighbors?
-
-    // The requirement says: "Clicking a node recenters view and 'zaps' it to the center with a smooth re-layout."
-    // This implies a physics "pull" to the visual center.
-
-    // Let's apply a temporary force to pull this node to the center of the graph's bounding box?
-    // Or just simple re-heat:
-    state.simulation.alpha(0.5).restart();
-
-    // Optionally: pull to center of mass?
-    // For now, just waking the simulation is usually enough to "breathe" around the selection.
-}
-
-async function runElkLayout(data, root) {
-    setStatus('Computing layout...', '');
-
-    if (elkLayout.isDisabled()) {
-        renderWithCoseLayout(data, root);
-        return;
+    // 2. Reheat simulation
+    if (state.layout && state.layout.force) {
+        // "Zap": high alpha to shake things up
+        state.layout.force.alpha(0.8).restart();
+    } else {
+        // Fallback if direct force access fails
+        runD3Layout(false);
     }
-
-    try {
-        // Build ELK graph with measured node sizes
-        const elkGraph = buildElkGraph(data);
-
-        // Get layout options from URL
-        const params = new URLSearchParams(window.location.search);
-        const spacing = parseInt(params.get('spacing')) || CONFIG.DEFAULT_SPACING;
-        const layerSpacing = parseInt(params.get('layer_spacing')) || CONFIG.DEFAULT_LAYER_SPACING;
-
-        const options = {
-            'elk.spacing.nodeNode': spacing.toString(),
-            'elk.layered.spacing.nodeNodeBetweenLayers': layerSpacing.toString(),
-        };
-
-        // Run ELK layout in worker
-        const { laidOut, ms } = await elkLayout.layout(elkGraph, options);
-        state.lastLayoutMs = ms;
-
-        // Apply layout to Cytoscape
-        applyElkLayout(laidOut, data, root);
-
-        // Update stats
-        updateStats(data, ms);
-
-        // Start physics after ELK is done
-        initForceSimulation(laidOut, data.edges);
-
-        setStatus('Ready', '');
-
-    } catch (err) {
-        console.error('ELK layout failed:', err);
-        setStatus(`Layout error: ${err.message}`, '');
-        // Fallback to cose layout
-        renderWithCoseLayout(data, root);
-    }
-}
-
-function applyElkLayout(laidOut, data, root) {
-    const elements = [];
-
-    // Build node map from ELK results
-    const nodePositions = new Map();
-    for (const child of laidOut.children || []) {
-        nodePositions.set(child.id, {
-            x: child.x + child.width / 2,  // ELK uses top-left, Cytoscape uses center
-            y: child.y + child.height / 2,
-            width: child.width,
-            height: child.height,
-        });
-    }
-
-    // Create Cytoscape elements with ELK positions
-    for (const n of data.nodes) {
-        const id = n.id.toString();
-        const pos = nodePositions.get(id);
-        const primaryLabel = n.name || n.label || n.id.toString().slice(-8);
-        const kindName = n.kind_name || 'unknown';
-
-        elements.push({
-            data: {
-                id,
-                label: primaryLabel,
-                name: n.name || '',
-                kindName,
-                kind: n.kind || 0,
-                width: pos ? pos.width : 100,
-                height: pos ? pos.height : 60,
-                isRoot: root && root.trim() !== '' && id === root.toString(),
-            },
-            position: pos ? { x: pos.x, y: pos.y } : { x: 0, y: 0 },
-        });
-    }
-
-    for (const e of data.edges) {
-        elements.push({
-            data: {
-                id: e.id,
-                source: e.from.toString(),
-                target: e.to.toString(),
-                rel: e.rel || 0,
-                label: e.rel_name || 'link',
-            },
-        });
-    }
-
-    // Update Cytoscape
-    state.cy.elements().remove();
-    state.cy.add(elements);
-    state.cy.fit(undefined, 50);
-}
-
-function renderWithPresetLayout(data, root) {
-    const elements = [];
-
-    for (const n of data.nodes) {
-        const primaryLabel = n.name || n.label || n.id.toString().slice(-8);
-        const kindName = n.kind_name || 'unknown';
-        const size = labelMeasurer.measure(primaryLabel, kindName);
-
-        elements.push({
-            data: {
-                id: n.id.toString(),
-                label: primaryLabel,
-                name: n.name || '',
-                kindName,
-                kind: n.kind || 0,
-                width: size.width,
-                height: size.height,
-                isRoot: root && root.trim() !== '' && n.id.toString() === root.toString(),
-            },
-            position: { x: n.x, y: n.y },
-        });
-    }
-
-    for (const e of data.edges) {
-        elements.push({
-            data: {
-                id: e.id,
-                source: e.from.toString(),
-                target: e.to.toString(),
-                rel: e.rel || 0,
-                label: e.rel_name || 'link',
-            },
-        });
-    }
-
-    state.cy.elements().remove();
-    state.cy.add(elements);
-    state.cy.fit(undefined, 50);
-
-    updateStats(data, 0);
-    setStatus('Ready (preset)', '');
-}
-
-function renderWithCoseLayout(data, root) {
-    const elements = [];
-
-    for (const n of data.nodes) {
-        const primaryLabel = n.name || n.label || n.id.toString().slice(-8);
-        const kindName = n.kind_name || 'unknown';
-        const size = labelMeasurer.measure(primaryLabel, kindName);
-
-        elements.push({
-            data: {
-                id: n.id.toString(),
-                label: primaryLabel,
-                name: n.name || '',
-                kindName,
-                kind: n.kind || 0,
-                width: size.width,
-                height: size.height,
-                isRoot: root && root.trim() !== '' && n.id.toString() === root.toString(),
-            },
-        });
-    }
-
-    for (const e of data.edges) {
-        elements.push({
-            data: {
-                id: e.id,
-                source: e.from.toString(),
-                target: e.to.toString(),
-                rel: e.rel || 0,
-                label: e.rel_name || 'link',
-            },
-        });
-    }
-
-    state.cy.elements().remove();
-    state.cy.add(elements);
-
-    state.cy.layout({
-        name: 'cose',
-        animate: false,
-        padding: 50,
-        nodeRepulsion: 8000,
-        idealEdgeLength: 100,
-    }).run();
-
-    updateStats(data, 0);
-    setStatus('Ready (fallback)', '');
 }
 
 function updateStats(data, layoutMs) {
     const truncMsg = data.truncated ? ' (truncated)' : '';
-    const layoutInfo = layoutMs > 0 ? ` | Layout: ${layoutMs}ms` : '';
     $('graphStats').textContent =
-        `${data.nodes.length} nodes, ${data.edges.length} edges, depth ${data.stats?.depth || CONFIG.DEFAULT_DEPTH}${truncMsg}${layoutInfo}`;
+        `${data.nodes.length} nodes, ${data.edges.length} edges, depth ${data.stats?.depth || CONFIG.DEFAULT_DEPTH}${truncMsg}`;
 }
 
 // =============================================================================
@@ -1114,9 +698,7 @@ function updateStats(data, layoutMs) {
 
 async function relayout() {
     if (!state.graphData) return;
-
-    const root = $('rootInput').value.trim();
-    await runElkLayout(state.graphData, root);
+    runD3Layout(false);
 }
 
 function fitToScreen() {
@@ -1203,7 +785,7 @@ function selectNode(node) {
     startWatching(id);
 
     // Physics "Zap"
-    if (state.forceEnabled && state.simulation) {
+    if (state.forceEnabled) {
         zapToCenter(id);
     }
 }
@@ -1610,14 +1192,11 @@ function bindEvents() {
     $('relaxToggle').addEventListener('change', (e) => {
         state.forceEnabled = e.target.checked;
         if (state.forceEnabled) {
-            restartSimulation();
+            runD3Layout(false);
         } else {
-            stopSimulation();
+            if (state.layout) state.layout.stop();
         }
     });
-
-    // Reset to ELK
-    $('resetElkBtn').addEventListener('click', resetToElk);
 
     // Inspector buttons
     $('copyIdBtn').addEventListener('click', () => {
@@ -1652,6 +1231,12 @@ function bindEvents() {
     $('closeQueryBtn').addEventListener('click', hideQueryResults);
 
     // Enter key in query input
+    $('gqlInput').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            executeGqlQuery();
+        }
+    });
+
     // Upload button
     $('uploadBtn').addEventListener('click', async () => {
         const fileInput = $('uploadInput');
@@ -1672,12 +1257,6 @@ function bindEvents() {
             setStatus(`Upload failed: ${err.message}`, 'error');
         }
     });
-
-    $('gqlInput').addEventListener('keydown', (e) => {
-        if (e.key === 'Enter') {
-            executeGqlQuery();
-        }
-    });
 }
 
 // =============================================================================
@@ -1688,9 +1267,6 @@ async function init() {
     // Initialize label measurer
     labelMeasurer.init();
 
-    // Initialize ELK worker
-    elkLayout.init();
-
     if (typeof cytoscape === 'undefined') {
         console.error('Cytoscape.js failed to load');
         setStatus('Cytoscape failed to load', 'error');
@@ -1698,6 +1274,12 @@ async function init() {
     }
 
     // Initialize Cytoscape
+    if (typeof cytoscapeD3Force !== 'undefined') {
+        cytoscape.use(cytoscapeD3Force);
+    } else if (typeof d3Force !== 'undefined') {
+        cytoscape.use(d3Force);
+    }
+
     initCytoscape();
     bindEvents();
 

@@ -395,6 +395,7 @@ mod tests {
         fn mono_freq_hz(&self) -> u64 {
             1
         }
+        fn init_secondary_cpu(&self, _cpu_index: usize) {}
     }
     impl BootRuntime for MockRuntime {
         type Tasking = MockRuntime;
@@ -480,6 +481,9 @@ mod tests {
         // But here we call sched.spawn directly.
 
         let mut sched = Scheduler::<MockRuntime>::new();
+        // Manually initialize PerCpu state for the mock
+        sched.per_cpu.push(super::super::types::PerCpu::new());
+        sched.per_cpu[0].current = Some(0); // Set a dummy current task ID for parent linking
 
         // We need a way to mock crate::runtime::<MockRuntime>()
         // In kernel/src/lib.rs:

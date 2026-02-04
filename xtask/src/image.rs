@@ -48,6 +48,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "iso_reader",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "font_explorer",
             is_init: false,
             boot_module: false,
@@ -461,7 +467,7 @@ fn build_userspace_app_with_features(
 
     let mut cmd = cmd!(
         sh,
-        "cargo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem build --target {target} --profile {profile} -p {name}"
+        "cargo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target {target} --profile {profile} -p {name}"
     )
     .env("RUSTFLAGS", "-Awarnings");
 

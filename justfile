@@ -127,7 +127,7 @@ sprout arch=karch:
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
     echo "Building sprout for $TARGET_ARCH using $TARGET_JSON..."
-    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p sprout
+    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -Z json-target-spec --target "$TARGET_JSON" -p sprout
 
 # Build rtc_cmos user app
 rtc_cmos arch=karch:
@@ -139,7 +139,7 @@ rtc_cmos arch=karch:
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
     echo "Building rtc_cmos for $TARGET_ARCH using $TARGET_JSON..."
-    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p rtc_cmos
+    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -Z json-target-spec --target "$TARGET_JSON" -p rtc_cmos
 
 # Build clock user app
 clock arch=karch:
@@ -151,7 +151,7 @@ clock arch=karch:
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
     echo "Building clock for $TARGET_ARCH using $TARGET_JSON..."
-    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p clock
+    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -Z json-target-spec --target "$TARGET_JSON" -p clock
 
 # Build bristle user app
 bristle arch=karch:
@@ -163,7 +163,7 @@ bristle arch=karch:
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
     echo "Building bristle for $TARGET_ARCH using $TARGET_JSON..."
-    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p bristle
+    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -Z json-target-spec --target "$TARGET_JSON" -p bristle
 
 # Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
 fetch:
@@ -175,7 +175,7 @@ test *args:
 
 # Check everything (compilation + UI split)
 check: check-ui-split
-    cargo +nightly check -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target targets/x86_64-unknown-thingos.json -p bloom -p blossom
+    cargo +nightly check -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -Z json-target-spec --target targets/x86_64-unknown-thingos.json -p bloom -p blossom
 
 # Run smoke tests (quick boot validation)
 smoke:

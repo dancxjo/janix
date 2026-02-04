@@ -77,6 +77,14 @@ fn execution_result_to_json(res: ExecutionResult) -> String {
 
 /// Handle a GQL query from HTTP request body
 pub fn handle_gql_post(body: &str) -> Vec<u8> {
+    let raw = body.trim();
+    if raw.starts_with("VIEW ") {
+        let view_id = raw[5..].trim();
+        // Forward to view handler body (not full response)
+        let json_body = crate::api_v1::handle_get_view_body(view_id, "");
+        return json_body.into_bytes();
+    }
+
     let result = execute_gql_query(body);
     result.into_bytes()
 }

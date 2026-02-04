@@ -652,25 +652,23 @@ async function getSubgraphWithRetry(root, depth) {
     throw new Error('Failed to load subgraph');
 }
 
-async function loadView(viewId) {
-    if (!viewId) return;
+async function loadViewData(viewData) {
     const loadSeq = ++state.loadSeq;
-    setStatus(`Loading view '${viewId}'...`, '');
 
-    // Update URL param
-    const url = new URL(window.location);
-    url.searchParams.set('view', viewId);
-    url.searchParams.delete('thing');
-    url.searchParams.delete('root');
-    window.history.pushState({}, '', url);
+    if (viewData.view && viewData.view.id) {
+        const url = new URL(window.location);
+        url.searchParams.set('view', viewData.view.id);
+        url.searchParams.delete('thing');
+        url.searchParams.delete('root');
+        window.history.pushState({}, '', url);
+    }
 
     try {
-        const viewData = await api.getView(viewId);
         if (loadSeq !== state.loadSeq) return;
 
         state.graphData = {
-            nodes: viewData.nodes,
-            edges: viewData.edges
+            nodes: viewData.nodes || [],
+            edges: viewData.edges || []
         };
         state.movedNodes.clear();
 
@@ -702,7 +700,7 @@ async function initViews() {
 
         views.forEach(v => {
             const opt = document.createElement('option');
-            opt.value = v.id;
+            opt.value = v.query || `VIEW ${v.id}`;
             opt.textContent = v.title;
             opt.title = v.description;
             select.appendChild(opt);
@@ -710,21 +708,13 @@ async function initViews() {
 
         // Handle selection change
         select.onchange = () => {
-            const val = select.value;
-            if (val) {
-                loadView(val);
-                $('rootInput').value = ''; // Clear sub-graph inputs
+            const query = select.value;
+            if (query) {
+                $('gqlInput').value = query;
+                executeGqlQuery();
             } else {
-                // Determine what to do when cleared? 
-                // Maybe reload default graph?
-                const root = $('rootInput').value;
-                const depth = parseInt($('depthInput').value, 10);
-                loadGraph(root, depth);
-
-                // Update URL
                 const url = new URL(window.location);
                 url.searchParams.delete('view');
-                if (root) url.searchParams.set('root', root);
                 window.history.pushState({}, '', url);
             }
         };
@@ -733,9 +723,15 @@ async function initViews() {
         const urlParams = new URLSearchParams(window.location.search);
         const viewId = urlParams.get('view');
         if (viewId) {
-            select.value = viewId;
-            loadView(viewId);
-            return true;
+            const expectedQuery = `VIEW ${viewId}`;
+            for (let i = 0; i < select.options.length; i++) {
+                if (select.options[i].value === expectedQuery) {
+                    select.selectedIndex = i;
+                    $('gqlInput').value = expectedQuery;
+                    executeGqlQuery();
+                    return true;
+                }
+            }
         }
     } catch (err) {
         console.warn('Failed to init views:', err);
@@ -795,6 +791,8 @@ function initForceSimulation(laidOut, edges) {
         // Save initial ELK pos for reset
         initialX: n.x + n.width / 2,
         initialY: n.y + n.height / 2,
+        // Preserve data for simulation logic
+        _data: n._data || {}
     }));
 
     // Save ELK positions for reset functionality
@@ -817,6 +815,14 @@ function initForceSimulation(laidOut, edges) {
         .force('link', d3.forceLink(links).id(d => d.id).distance(CONFIG.FORCE_LINK_DISTANCE))
         .force('charge', d3.forceManyBody().strength(CONFIG.FORCE_CHARGE))
         .force('collide', d3.forceCollide().radius(d => Math.max(d.width, d.height) / 2 + CONFIG.FORCE_COLLIDE_PADDING))
+        // ANTHER LAYOUT RULES
+        // 1. mem.Range tiled across the bottom
+        .force('mem', d3.forceY(500).strength(d => d._data.kindName === 'mem.Range' ? 0.8 : 0))
+        // 2. dev.Host just above svc.Root
+        .force('host_x', d3.forceX(0).strength(d => d.id === 'dev.Host' ? 1.0 : 0))
+        .force('host_y', d3.forceY(-150).strength(d => d.id === 'dev.Host' ? 1.0 : 0))
+        // 3. svc.Root centered
+        .force('root_center', d3.forceRadial(0, 0, 0).strength(d => d.id === 'svc.Root' ? 1.0 : 0))
         .on('tick', () => {
             // Apply positions to Cytoscape
             // To improve performance, we could batch these or use requestAnimationFrame
@@ -835,11 +841,6 @@ function initForceSimulation(laidOut, edges) {
                 updateInspectorPosition(state.selectedNode);
             }
         });
-
-    // Initial centering force (short-lived) to center the group? 
-    // Actually ELK already spaced them out. We might want a weak center force
-    // to keep drift in check.
-    // Let's rely on ELK's initial layout and just relax locally.
 }
 
 function stopSimulation() {
@@ -1471,8 +1472,16 @@ async function executeGqlQuery() {
 
     try {
         const result = await api.executeGqlQuery(query);
-        showQueryResults(result);
-        setStatus('Query executed', '');
+
+        // Prepare to render graph if result looks like a graph/view
+        if (result && (result.view || (result.nodes && result.edges))) {
+            hideQueryResults();
+            await loadViewData(result);
+            setStatus('Query executed (Graph View)', '');
+        } else {
+            showQueryResults(result);
+            setStatus('Query executed', '');
+        }
     } catch (err) {
         showQueryResults(`Error: ${err.message}`);
         setStatus(`Query error: ${err.message}`, '');

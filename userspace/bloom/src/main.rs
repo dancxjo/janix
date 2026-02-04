@@ -624,7 +624,10 @@ fn main(arg: usize) -> ! {
     loop {
         loop_ctrl.next();
         invalidation_causes.clear();
-        ASSETS.publish_pending();
+        let updates = ASSETS.publish_pending();
+        if updates.wallpaper_changed {
+            invalidation_causes.push(SnapshotInvalidation::WallpaperChanged);
+        }
 
         // 0. Update surface if buffer changed
         if let PresenterImpl::Driver(ref mut d) = presenter {

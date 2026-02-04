@@ -14,6 +14,7 @@ use crate::error::{ApiError, ApiErrorCode};
 use crate::graph_api::{self, GraphError, JsonBuilder};
 use crate::http::{self, Request};
 use crate::router::ApiRoute;
+use stem::error;
 use stem::syscall::graph::{prop_get, prop_set, intern, link, find};
 use stem::thing::sys::{get_edges, get_props};
 use stem::thing::ThingId;
@@ -822,6 +823,7 @@ struct ViewDef {
     id: &'static str,
     title: &'static str,
     description: &'static str,
+    query: &'static str,
 }
 
 const AVAILABLE_VIEWS: &[ViewDef] = &[
@@ -829,16 +831,19 @@ const AVAILABLE_VIEWS: &[ViewDef] = &[
         id: "task_monitor",
         title: "Task Monitor",
         description: "Processes, threads, and scheduling state",
+        query: "VIEW task_monitor",
     },
     ViewDef {
         id: "device_census",
         title: "Device Census",
         description: "Hardware devices and drivers",
+        query: "VIEW device_census",
     },
     ViewDef {
         id: "graph_islands",
         title: "Graph Islands",
         description: "Disconnected components analysis",
+        query: "VIEW graph_islands",
     },
 ];
 
@@ -855,6 +860,8 @@ pub fn handle_list_views() -> Vec<u8> {
         json.string_value(view.title);
         json.key("description");
         json.string_value(view.description);
+        json.key("query");
+        json.string_value(view.query);
         json.end_object();
         json.buf.push(b',');
     }
@@ -865,15 +872,28 @@ pub fn handle_list_views() -> Vec<u8> {
 
 /// GET /api/v1/views/{id}
 pub fn handle_get_view(id: &str, query: &str) -> Vec<u8> {
+    let json_body = handle_get_view_body(id, query);
+    json_response("200 OK", &json_body)
+}
+
+/// Helper to get just the JSON body for a view
+pub fn handle_get_view_body(id: &str, query: &str) -> String {
     match id {
         "task_monitor" => handle_view_task_monitor(query),
         "device_census" => handle_view_device_census(query),
         "graph_islands" => handle_view_graph_islands(query),
-        _ => error_response(ApiError::not_found(format!("View '{}' not found", id))),
+        _ => {
+            let mut json = JsonBuilder::new();
+            json.start_object();
+            json.key("error");
+            json.string_value(&alloc::format!("View '{}' not found", id));
+            json.end_object();
+            json.as_string().unwrap_or_default()
+        },
     }
 }
 
-fn handle_view_task_monitor(_query: &str) -> Vec<u8> {
+fn handle_view_task_monitor(_query: &str) -> String {
     // Task Monitor: Scheduler -> CPUs -> Tasks -> Threads
     // Layout: LR
     
@@ -906,11 +926,15 @@ fn handle_view_task_monitor(_query: &str) -> Vec<u8> {
     let mut seeds = Vec::new();
     let mut ids = [0u64; 32];
     
+    // Debug logging
+    error!("VIEW[task_monitor]: collecting seeds...");
+
     if let Ok(kind) = intern(kinds::SVC_SCHEDULER) {
         if let Ok(count) = find(kind, &mut ids) {
             if count > 0 { seeds.push(ids[0]); }
-        }
-    }
+        } else { error!("find(SVC_SCHEDULER) failed"); }
+    } else { error!("intern(SVC_SCHEDULER) failed"); }
+
     if let Ok(kind) = intern(kinds::PROC_KERNEL) {
         if let Ok(count) = find(kind, &mut ids) {
              if count > 0 { seeds.push(ids[0]); }
@@ -924,13 +948,17 @@ fn handle_view_task_monitor(_query: &str) -> Vec<u8> {
         }
     }
 
+    error!("VIEW[task_monitor]: seeds count = {}", seeds.len());
+
     let (nodes, edges) = traverse_view(seeds, 3, 200);
+    error!("VIEW[task_monitor]: nodes={} edges={}", nodes.len(), edges.len());
+    
     write_graph_json(&mut json, nodes, edges);
     json.end_object();
-    json_response("200 OK", &json.as_string().unwrap_or_default())
+    json.as_string().unwrap_or_default()
 }
 
-fn handle_view_device_census(_query: &str) -> Vec<u8> {
+fn handle_view_device_census(_query: &str) -> String {
     // Device Census: Host -> Buses -> Devices -> Drivers
     // Layout: TB
     
@@ -971,10 +999,10 @@ fn handle_view_device_census(_query: &str) -> Vec<u8> {
     let (nodes, edges) = traverse_view(seeds, 4, 300);
     write_graph_json(&mut json, nodes, edges);
     json.end_object();
-    json_response("200 OK", &json.as_string().unwrap_or_default())
+    json.as_string().unwrap_or_default()
 }
 
-fn handle_view_graph_islands(query: &str) -> Vec<u8> {
+fn handle_view_graph_islands(query: &str) -> String {
     let mut root = 0;
     for part in query.split('&') {
         if let Some((key, value)) = part.split_once('=') {
@@ -1015,7 +1043,7 @@ fn handle_view_graph_islands(query: &str) -> Vec<u8> {
     let (nodes, edges) = traverse_view(seeds, 3, 200);
     write_graph_json(&mut json, nodes, edges);
     json.end_object();
-    json_response("200 OK", &json.as_string().unwrap_or_default())
+    json.as_string().unwrap_or_default()
 }
 
 struct GraphNode {

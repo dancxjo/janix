@@ -18,6 +18,7 @@ pub enum SnapshotInvalidation {
     ContentChanged,
     FontChanged,
     ThemeChanged,
+    WallpaperChanged,
     Forced,
 }
 
@@ -28,6 +29,7 @@ impl fmt::Display for SnapshotInvalidation {
             Self::ContentChanged => write!(f, "ContentChanged"),
             Self::FontChanged => write!(f, "FontChanged"),
             Self::ThemeChanged => write!(f, "ThemeChanged"),
+            Self::WallpaperChanged => write!(f, "WallpaperChanged"),
             Self::Forced => write!(f, "Forced"),
         }
     }

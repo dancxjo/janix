@@ -372,6 +372,12 @@ pub enum AssetType {
     Font,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct AssetUpdates {
+    pub generation: AssetGeneration,
+    pub wallpaper_changed: bool,
+}
+
 pub struct AssetBank;
 
 const PREFERRED_WALLPAPERS: &[&str] = &["clouds.bmp", "linen.bmp", "leather.bmp"];
@@ -540,8 +546,10 @@ impl AssetBank {
     /// Promote all pending assets to ready, increment generation if any promoted.
     /// Must be called exactly once per acquire_frame().
     /// Returns the new current generation.
-    pub fn publish_pending(&self) -> AssetGeneration {
+    /// Returns asset updates including the new current generation.
+    pub fn publish_pending(&self) -> AssetUpdates {
         let mut promoted = false;
+        let mut wallpaper_changed = false;
 
         // Check and promote pending wallpaper
         if WALLPAPER_PENDING.has_pending.load(Ordering::Acquire) {
@@ -585,6 +593,7 @@ impl AssetBank {
                         IMAGES_READY_BY_ID.lock().insert(id, img);
                     }
                     promoted = true;
+                    wallpaper_changed = true;
                 }
             }
             WALLPAPER_PENDING
@@ -689,7 +698,10 @@ impl AssetBank {
             }
         }
 
-        self.current_generation()
+        AssetUpdates {
+            generation: self.current_generation(),
+            wallpaper_changed,
+        }
     }
 
     /// Publish wallpaper to pending (called by loader thread)

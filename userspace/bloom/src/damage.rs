@@ -53,6 +53,7 @@ impl DamageCause {
             SnapshotInvalidation::FontChanged => DamageCause::FontChanged,
             SnapshotInvalidation::ThemeChanged => DamageCause::ThemeChanged,
             SnapshotInvalidation::Forced => DamageCause::ForceFull,
+            SnapshotInvalidation::WallpaperChanged => DamageCause::ForceFull,
         }
     }
 

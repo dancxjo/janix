@@ -571,4 +571,80 @@ mod tests {
         let dev = MockBlockDevice { pvd_data };
         assert!(IsoFs::probe(&dev).is_none());
     }
+
+    struct ReadRangeMockDevice;
+
+    impl BlockDevice for ReadRangeMockDevice {
+        fn read_sectors(
+            &self,
+            lba: u64,
+            count: u64,
+            buf: &mut [u8],
+        ) -> Result<(), stem::block::BlockError> {
+            // Fill with a recognizable pattern based on LBA
+            for i in 0..count {
+                let sector_lba = lba + i;
+                let start_idx = (i * 2048) as usize;
+                let end_idx = start_idx + 2048;
+                let sector_buf = &mut buf[start_idx..end_idx];
+
+                // Simple pattern: byte value = (lba % 255) + offset % 255
+                for (j, byte) in sector_buf.iter_mut().enumerate() {
+                    *byte = ((sector_lba % 255) as u8).wrapping_add((j % 255) as u8);
+                }
+            }
+            Ok(())
+        }
+
+        fn sector_size(&self) -> u64 {
+            2048
+        }
+    }
+
+    #[test]
+    fn test_iso_file_read_range() {
+        let dev = ReadRangeMockDevice;
+        let file = IsoFile {
+            extent_lba: 100,
+            size: 5000, // 2048 + 2048 + 904
+        };
+
+        // 1. Read first 10 bytes
+        let data = file.read_range(&dev, 0, 10).expect("read_range failed");
+        assert_eq!(data.len(), 10);
+        // Verify content matches pattern for LBA 100
+        for (j, &byte) in data.iter().enumerate() {
+            assert_eq!(byte, ((100 % 255) as u8).wrapping_add((j % 255) as u8));
+        }
+
+        // 2. Read across sector boundary (LBA 100 -> 101)
+        // Sector 1 ends at 2048. Read from 2040 to 2060 (20 bytes).
+        let data = file.read_range(&dev, 2040, 20).expect("read_range failed");
+        assert_eq!(data.len(), 20);
+        // First 8 bytes from LBA 100
+        for j in 0..8 {
+            let offset_in_sector = 2040 + j;
+            let expected = ((100 % 255) as u8).wrapping_add((offset_in_sector % 255) as u8);
+            assert_eq!(data[j], expected, "Mismatch at index {}", j);
+        }
+        // Next 12 bytes from LBA 101
+        for j in 8..20 {
+            let offset_in_sector = j - 8;
+            let expected = ((101 % 255) as u8).wrapping_add((offset_in_sector % 255) as u8);
+            assert_eq!(data[j], expected, "Mismatch at index {}", j);
+        }
+
+        // 3. Read past EOF
+        let data = file.read_range(&dev, 4990, 20).expect("read_range failed");
+        // Should return only 10 bytes (4990 to 5000)
+        assert_eq!(data.len(), 10);
+
+        // Verify content for the last part (LBA 102)
+        // Offset 4990 corresponds to LBA 102, offset in sector = 4990 - 4096 = 894
+        for j in 0..10 {
+            let offset_in_sector = 894 + j;
+            let expected = ((102 % 255) as u8).wrapping_add((offset_in_sector % 255) as u8);
+            assert_eq!(data[j], expected, "Mismatch at last chunk index {}", j);
+        }
+    }
 }

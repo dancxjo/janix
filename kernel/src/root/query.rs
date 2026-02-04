@@ -15,7 +15,11 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
         return Ok(0);
     }
 
+    // Steward Improvement: Double-buffering strategy.
+    // We maintain two vectors and swap them after each step to reuse capacity.
+    // This avoids repeated heap allocations in the query hot path.
     let mut current_rows: Vec<QueryRow> = Vec::new();
+    let mut next_rows: Vec<QueryRow> = Vec::new();
 
     // Step 0: Source (Scan or Start)
     let step0 = &plan[0];
@@ -57,13 +61,13 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
 
     // Pipeline
     for step in &plan[1..] {
-        let mut next_rows = Vec::new();
+        next_rows.clear();
         match step.op {
             2 => {
                 // FilterEq
                 let key = step.symbol;
                 let val = step.arg1;
-                for row in current_rows {
+                for &row in &current_rows {
                     if let Some(node) = graph.nodes.get(&row.id) {
                         if let Some(&prop_val) = node.props.get(&key) {
                             if prop_val == val {
@@ -72,7 +76,6 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                         }
                     }
                 }
-                current_rows = next_rows;
             }
             3 => {
                 // Expand
@@ -82,7 +85,7 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                 let limit = 16384;
                 let mut count = 0;
 
-                for row in current_rows {
+                for &row in &current_rows {
                     if count >= limit {
                         break;
                     }
@@ -119,10 +122,10 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                         }
                     }
                 }
-                current_rows = next_rows;
             }
             _ => return Err(()),
         }
+        core::mem::swap(&mut current_rows, &mut next_rows);
     }
 
     let count = core::cmp::min(current_rows.len(), out.len());

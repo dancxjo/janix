@@ -86,6 +86,10 @@ impl KernelHeap {
         }
 
         self.next_va += size as u64;
+
+        // NEW: Broadcast TLB shootdown to other CPUs - essential for SMP heap consistency
+        rt.tlb_shootdown_broadcast();
+        
         Ok((base_va, size))
     }
 

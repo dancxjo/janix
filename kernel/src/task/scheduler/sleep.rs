@@ -33,7 +33,7 @@ pub fn yield_now<R: BootRuntime>() {
         log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
+            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
     }
 
@@ -95,7 +95,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
+            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
     }
 
@@ -129,7 +129,7 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
                 let cr3_after = rt.debug_active_aspace_root();
                 #[cfg(any(feature = "sched_debug", debug_assertions))]
                 log_context_switch::<R>(&switch, cr3_before, cr3_after);
-                rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
+                rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
                 rt.irq_restore(_irq);
             }
         } else {

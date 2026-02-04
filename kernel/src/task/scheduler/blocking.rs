@@ -66,7 +66,7 @@ pub fn block_current<R: BootRuntime>() {
         log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
+            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
     }
 

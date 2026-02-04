@@ -146,7 +146,7 @@ pub fn preempt_enable<R: BootRuntime>() {
         scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
+            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
     }
 
@@ -204,7 +204,7 @@ pub fn resched_if_needed<R: BootRuntime>() {
         scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
+            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
     }
 
@@ -231,6 +231,7 @@ fn bootstrap_cpu<R: BootRuntime>() {
                 // CPU hasn't been bootstrapped yet. Set current to idle task.
                 if let Some(idle_id) = pc.idle_task {
                     pc.current = Some(idle_id);
+                    rt.set_current_tid(idle_id);
                     crate::kinfo!("SMP: CPU {} bootstrapped with idle task {}", cpu_idx, idle_id);
                     
                     // Mark the idle task as running

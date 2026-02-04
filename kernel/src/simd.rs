@@ -22,7 +22,7 @@ pub fn with_simd<R: BootRuntime, T>(rt: &R, f: impl FnOnce() -> T) -> T {
     f()
 }
 
-const HEAP_SIZE: usize = 16384;
+const HEAP_SIZE: usize = 65536;
 static mut SIMD_HEAP: [u8; HEAP_SIZE] = [0; HEAP_SIZE];
 static HEAP_TOP: AtomicUsize = AtomicUsize::new(0);
 

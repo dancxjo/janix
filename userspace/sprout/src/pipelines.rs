@@ -460,6 +460,24 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                     warn!("SPROUT: Failed to spawn anther: {:?}", e);
                 }
             }
+
+            // Spawn nectar - mDNS responder
+            match stem::syscall::spawn_process("/nectar", 0) {
+                Ok(pid) => {
+                    info!("SPROUT: Spawned nectar (PID={})", pid);
+                    let _ = stem::thread::set_priority(pid, 2);
+                    tasks.push(ManagedTask {
+                        name: "/nectar".to_string(),
+                        kind: TaskKind::App,
+                        module_path: "/nectar".to_string(),
+                        pid: Some(pid),
+                        restarts: 0,
+                    });
+                }
+                Err(e) => {
+                    warn!("SPROUT: Failed to spawn nectar: {:?}", e);
+                }
+            }
         } else {
             info!("SPROUT: No NIC device found, skipping network pipeline");
         }

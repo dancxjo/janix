@@ -107,7 +107,18 @@ fn main(_arg: usize) -> ! {
         };
         thingsys::prop_set(net_id, "net.dns", dns_packed).ok();
         
-        info!("NETD: Published network configuration to graph");
+        let mac_packed = {
+            (mac[0] as u64) |
+            ((mac[1] as u64) << 8) |
+            ((mac[2] as u64) << 16) |
+            ((mac[3] as u64) << 24) |
+            ((mac[4] as u64) << 32) |
+            ((mac[5] as u64) << 40)
+        };
+        thingsys::prop_set(net_id, "net.mac", mac_packed).ok();
+        
+        info!("NETD: Published network configuration to graph (IP: {}, MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x})", 
+            dhcp_config.ip, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     }
 
     info!("NETD: Network stack ready, entering service loop");
@@ -163,14 +174,6 @@ fn main(_arg: usize) -> ! {
     static mut CONN_TX_2: [u8; 32768] = [0; 32768];
     static mut CONN_RX_3: [u8; 8192] = [0; 8192];
     static mut CONN_TX_3: [u8; 32768] = [0; 32768];
-    static mut CONN_RX_4: [u8; 8192] = [0; 8192];
-    static mut CONN_TX_4: [u8; 32768] = [0; 32768];
-    static mut CONN_RX_5: [u8; 8192] = [0; 8192];
-    static mut CONN_TX_5: [u8; 32768] = [0; 32768];
-    static mut CONN_RX_6: [u8; 8192] = [0; 8192];
-    static mut CONN_TX_6: [u8; 32768] = [0; 32768];
-    static mut CONN_RX_7: [u8; 8192] = [0; 8192];
-    static mut CONN_TX_7: [u8; 32768] = [0; 32768];
 
     let mut next_listener_buf = 0usize;
     let mut next_conn_buf = 0usize;
@@ -225,18 +228,14 @@ fn main(_arg: usize) -> ! {
                 let response = unsafe {
                     if uses_large_buf {
                         // TCP_LISTEN: Use large connection buffers (listener becomes connection)
-                        let (rx, tx) = match next_conn_buf % 8 {
+                        let (rx, tx) = match next_conn_buf % 4 {
                             0 => (&mut CONN_RX_0[..], &mut CONN_TX_0[..]),
                             1 => (&mut CONN_RX_1[..], &mut CONN_TX_1[..]),
                             2 => (&mut CONN_RX_2[..], &mut CONN_TX_2[..]),
-                            3 => (&mut CONN_RX_3[..], &mut CONN_TX_3[..]),
-                            4 => (&mut CONN_RX_4[..], &mut CONN_TX_4[..]),
-                            5 => (&mut CONN_RX_5[..], &mut CONN_TX_5[..]),
-                            6 => (&mut CONN_RX_6[..], &mut CONN_TX_6[..]),
-                            _ => (&mut CONN_RX_7[..], &mut CONN_TX_7[..]),
+                            _ => (&mut CONN_RX_3[..], &mut CONN_TX_3[..]),
                         };
                         next_conn_buf = next_conn_buf.wrapping_add(1);
-                        socket_api.process_message(&mut socket_set, msg_body, rx, tx)
+                        socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, rx, tx)
                     } else if msg_type == socket_api::MSG_TCP_ACCEPT {
                         // TCP_ACCEPT: Use small buffers for respawned listener
                         let (rx, tx) = match next_listener_buf % 4 {
@@ -246,11 +245,10 @@ fn main(_arg: usize) -> ! {
                             _ => (&mut LISTENER_RX_3[..], &mut LISTENER_TX_3[..]),
                         };
                         next_listener_buf = next_listener_buf.wrapping_add(1);
-                        socket_api.process_message(&mut socket_set, msg_body, rx, tx)
+                        socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, rx, tx)
                     } else {
-                        // Other operations (SEND, RECV, CLOSE) - buffers not used for socket creation
-                        // Just pass any buffer (won't be used)
-                        socket_api.process_message(&mut socket_set, msg_body, &mut CONN_RX_0[..], &mut CONN_TX_0[..])
+                        // Other operations (SEND, RECV, CLOSE, UDP)
+                        socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, &mut CONN_RX_0[..], &mut CONN_TX_0[..])
                     }
                 };
 

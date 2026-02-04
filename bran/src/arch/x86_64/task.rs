@@ -183,7 +183,7 @@ pub fn init_user_context(spec: UserTaskSpec<X86_64AddressSpace>, kstack_top: u64
     }
 }
 
-pub unsafe fn switch(from: &mut X86_64Context, to: &X86_64Context) {
+pub unsafe fn switch(from: &mut X86_64Context, to: &X86_64Context, to_tid: u64) {
     unsafe {
         // Update the kernel stack in GS via scratch register
         // We assume GS base is already pointing to CpuLocal
@@ -196,6 +196,9 @@ pub unsafe fn switch(from: &mut X86_64Context, to: &X86_64Context) {
         // We do this BEFORE switching, because we are in kernel mode.
         // The NEXT time we enter from user mode (syscall), we want this stack.
         asm!("mov gs:[8], {}", in(reg) kstack);
+
+        // Update current_tid in GS:24
+        asm!("mov gs:[24], {}", in(reg) to_tid);
 
         // Update TSS RSP0 for interrupts/exceptions from Ring 3
         crate::arch::x86_64::gdt::set_rsp0(kstack);

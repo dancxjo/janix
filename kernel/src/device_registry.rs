@@ -380,7 +380,8 @@ impl DeviceRegistry {
             return false;
         }
         let claim = &self.claims[claim_handle];
-        claim.valid && claim.task_id == task_id
+        let ok = claim.valid && claim.task_id == task_id;
+        ok
     }
 
     /// Release a claim

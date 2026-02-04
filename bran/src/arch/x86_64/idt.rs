@@ -2,6 +2,7 @@ use core::mem::size_of;
 
 pub const IRQ_TIMER_VECTOR: u8 = 0x20;
 pub const IRQ_RESCHED_VECTOR: u8 = 0x30;
+pub const IRQ_TLB_SHOOTDOWN_VECTOR: u8 = 0x41;
 
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
@@ -63,6 +64,7 @@ unsafe extern "C" {
     fn irq_common_handler_shim();
     fn irq_timer_handler_shim();
     fn irq_resched_handler_shim();
+    fn irq_tlb_shootdown_handler_shim();
 }
 
 core::arch::global_asm!(
@@ -253,6 +255,40 @@ core::arch::global_asm!(
         swapgs
     2:
         iretq
+    .global irq_tlb_shootdown_handler_shim
+    irq_tlb_shootdown_handler_shim:
+        testb $3, 8(%rsp)
+        jz 1f
+        swapgs
+    1:
+        push %rax
+        push %rcx
+        push %rdx
+        push %rsi
+        push %rdi
+        push %r8
+        push %r9
+        push %r10
+        push %r11
+
+        mov $0x41, %rdi
+        call rust_irq_handler
+
+        pop %r11
+        pop %r10
+        pop %r9
+        pop %r8
+        pop %rdi
+        pop %rsi
+        pop %rdx
+        pop %rcx
+        pop %rax
+
+        testb $3, 8(%rsp)
+        jz 2f
+        swapgs
+    2:
+        iretq
 "#,
     options(att_syntax)
 );
@@ -317,6 +353,14 @@ pub unsafe fn init() {
             0x8E,
         );
 
+        // Dedicated TLB Shootdown Vector
+        IDT.entries[IRQ_TLB_SHOOTDOWN_VECTOR as usize].set_handler(
+            irq_tlb_shootdown_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+
         let idtr = IdtDescriptor {
             size: (size_of::<Idt>() - 1) as u16,
             offset: core::ptr::addr_of!(IDT) as u64,
@@ -366,6 +410,9 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
     // IRQ_TIMER_VECTOR or IRQ_RESCHED_VECTOR is our preemption heartbeat
     if resolved == IRQ_TIMER_VECTOR || resolved == IRQ_RESCHED_VECTOR {
         kernel::task::scheduler::on_tick::<crate::arch::CurrentRuntime>();
+    } else if resolved == IRQ_TLB_SHOOTDOWN_VECTOR {
+        // Full TLB flush on local CPU (including Global pages)
+        crate::arch::x86_64::paging::tlb_flush_all();
     } else {
         kernel::irq::dispatch_irq(resolved);
     }

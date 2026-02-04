@@ -267,8 +267,8 @@ impl ArchRuntime for X86_64Runtime {
     ) -> Self::Context {
         task::init_user_context(spec, kstack_top)
     }
-    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
-        unsafe { task::switch(from, to) }
+    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context, to_tid: u64) {
+        unsafe { task::switch(from, to, to_tid) }
     }
 
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {
@@ -476,6 +476,28 @@ impl ArchRuntime for X86_64Runtime {
         idx as usize
     }
 
+    fn current_tid(&self) -> u64 {
+        let tid: u64;
+        unsafe {
+            core::arch::asm!(
+                "mov {}, gs:[24]",
+                out(reg) tid,
+                options(nostack, preserves_flags, readonly)
+            );
+        }
+        tid
+    }
+
+    fn set_current_tid(&self, tid: u64) {
+        unsafe {
+            core::arch::asm!(
+                "mov gs:[24], {}",
+                in(reg) tid,
+                options(nostack, preserves_flags)
+            );
+        }
+    }
+
     fn init_secondary_cpu(&self, cpu_index: usize) {
         // Load the kernel's GDT and IDT on this secondary CPU
         
@@ -512,6 +534,17 @@ impl ArchRuntime for X86_64Runtime {
             if let Some(cpu_id) = ids.get(cpu_index) {
                 // APIC ID is same as CpuId in this platform's enumeration
                 ioapic::send_fixed_ipi(cpu_id.0, vector);
+            }
+        }
+    }
+
+    fn tlb_shootdown_broadcast(&self) {
+        let current_cpu = self.current_cpu_index();
+        let cpu_count = CPU_COUNT.load(Ordering::SeqCst) as usize;
+        
+        for i in 0..cpu_count {
+            if i != current_cpu {
+                self.send_ipi(i, idt::IRQ_TLB_SHOOTDOWN_VECTOR);
             }
         }
     }

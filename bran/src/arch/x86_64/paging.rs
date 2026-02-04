@@ -58,6 +58,11 @@ pub fn map_page(
         flags |= 1 << 4;
     }
 
+    // NEW: Global bit (G) for kernel mappings - ensures consistency across AS switches in SMP
+    if !perms.user {
+        flags |= 1 << 8;
+    }
+
     let pml4 = (aspace.0 + unsafe { HHDM_OFFSET }) as *mut u64;
 
     let pdpt = ensure_table(pml4, (virt >> 39) & 0x1ff, allocator)?;
@@ -201,5 +206,30 @@ pub fn translate(aspace: X86_64AddressSpace, virt: u64) -> Option<u64> {
 pub fn tlb_flush_page(virt: u64) {
     unsafe {
         core::arch::asm!("invlpg [{}]", in(reg) virt);
+    }
+}
+
+pub fn tlb_flush_all() {
+    unsafe {
+        let cr4: u64;
+        core::arch::asm!("mov {}, cr4", out(reg) cr4);
+        if cr4 & (1 << 7) != 0 {
+            // PGE (Bit 7) is enabled. Toggle it to flush all pages (including Global)
+            core::arch::asm!(
+                "mov {tmp}, {cr4}",
+                "and {tmp}, {mask}",
+                "mov cr4, {tmp}",
+                "or {tmp}, {pge}",
+                "mov cr4, {tmp}",
+                cr4 = in(reg) cr4,
+                mask = const !(1u64 << 7),
+                pge = const (1u64 << 7),
+                tmp = out(reg) _,
+            );
+        } else {
+            // PGE is not enabled, mov cr3 is enough
+            let cr3: u64;
+            core::arch::asm!("mov {0}, cr3", "mov cr3, {0}", out(reg) cr3);
+        }
     }
 }

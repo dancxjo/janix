@@ -60,12 +60,14 @@ struct CpuLocal {
     scratch_rsp: u64, // offset 0
     kstack_top: u64,  // offset 8
     cpu_index: u64,   // offset 16
+    current_tid: u64, // offset 24
 }
 
 static mut CPU_LOCAL: [CpuLocal; MAX_CPUS] = [CpuLocal {
     scratch_rsp: 0,
     kstack_top: 0,
     cpu_index: 0,
+    current_tid: 0,
 }; MAX_CPUS];
 
 pub unsafe fn init(cpu_index: usize) {

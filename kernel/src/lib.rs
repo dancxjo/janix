@@ -196,7 +196,7 @@ pub trait BootTasking {
         kstack_top: u64,
     ) -> Self::Context;
 
-    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context);
+    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context, to_tid: u64);
     unsafe fn enter_user(&self, entry: UserEntry) -> !;
 
     fn make_user_address_space(&self) -> Self::AddressSpace;
@@ -261,6 +261,15 @@ pub trait BootRuntimeBase: 'static {
     fn current_cpu_index(&self) -> usize {
         0
     }
+
+    fn current_tid(&self) -> u64 {
+        0
+    }
+
+    fn set_current_tid(&self, _tid: u64) {}
+
+    /// Broadcast a TLB shootdown IPI to all other CPUs.
+    fn tlb_shootdown_broadcast(&self) {}
 
     /// Per-CPU initialization for secondary CPUs.
     /// Initialize a secondary CPU after it has entered the kernel.
@@ -758,12 +767,12 @@ pub fn run_time_tests() {
 pub mod boot_info;
 
 extern "C" fn kernel_secondary_entry(cpu_index: usize) -> ! {
-    crate::kinfo!("SMP: Entering kernel_secondary_entry for CPU {}", cpu_index);
-    // CRITICAL: First, load the kernel's GDT/IDT on this secondary CPU
-    // This must happen before ANY kernel code that might fault.
-    // Use RAW_RUNTIME_BASE to avoid OnceCell atomics which might fault if GDT/IDT not loaded.
+    // CRITICAL: First, load the kernel's GDT/IDT and set GS_BASE on this secondary CPU
+    // This must happen before ANY kernel code that might fault or use logging (which uses GS).
     let base = unsafe { RAW_RUNTIME_BASE.expect("RAW_RUNTIME_BASE not initialized") };
     base.init_secondary_cpu(cpu_index);
+
+    crate::kinfo!("SMP: Entering kernel_secondary_entry for CPU {}", cpu_index);
 
     // Per-CPU init
     base.mono_ticks(); // ok for logging

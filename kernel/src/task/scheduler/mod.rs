@@ -654,7 +654,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     let cr3_after = rt.debug_active_aspace_root();
                     #[cfg(any(feature = "sched_debug", debug_assertions))]
                     log_context_switch::<R>(&switch, cr3_before, cr3_after);
-                    rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx);
+                    rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
                 }
             }
         }
@@ -737,21 +737,7 @@ pub fn current_priority<R: BootRuntime>() -> TaskPriority {
 }
 
 pub fn current_tid<R: BootRuntime>() -> u64 {
-    let rt = crate::runtime::<R>();
-    let _irq = rt.irq_disable();
-    let res = if let Some(lock) = SCHEDULER.try_lock() {
-        if let Some(ptr) = *lock {
-            let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-             let cpu = current_cpu_index::<R>();
-            sched.per_cpu.get(cpu).and_then(|pc| pc.current).unwrap_or(0)
-        } else {
-            0
-        }
-    } else {
-        0
-    };
-    rt.irq_restore(_irq);
-    res
+    crate::runtime::<R>().current_tid()
 }
 
 pub fn exit<R: BootRuntime>(code: i32) {

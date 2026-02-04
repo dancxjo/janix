@@ -54,6 +54,12 @@ pub trait ArchRuntime {
 
     /// Send an Inter-Processor Interrupt (IPI) to a specific CPU.
     fn send_ipi(&self, _cpu_index: usize, _vector: u8) {}
+    fn tlb_shootdown_broadcast(&self) {}
+
+    fn current_tid(&self) -> u64 {
+        0
+    }
+    fn set_current_tid(&self, _tid: u64) {}
 
     // Wait for interrupt - low-power idle until next IRQ
     fn wait_for_interrupt(&self) {}
@@ -74,7 +80,7 @@ pub trait ArchRuntime {
     ) -> Self::Context {
         Self::Context::default()
     }
-    unsafe fn switch(&self, _from: &mut Self::Context, _to: &Self::Context) {
+    unsafe fn switch(&self, _from: &mut Self::Context, _to: &Self::Context, _to_tid: u64) {
         // No-op
     }
     unsafe fn enter_user(&self, _entry: UserEntry) -> ! {
@@ -281,6 +287,18 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn send_ipi(&self, cpu_index: usize, vector: u8) {
         self.arch.send_ipi(cpu_index, vector)
     }
+
+    fn current_tid(&self) -> u64 {
+        self.arch.current_tid()
+    }
+
+    fn set_current_tid(&self, tid: u64) {
+        self.arch.set_current_tid(tid)
+    }
+
+    fn tlb_shootdown_broadcast(&self) {
+        self.arch.tlb_shootdown_broadcast()
+    }
 }
 
 impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
@@ -417,8 +435,8 @@ impl<A: ArchRuntime + 'static> BootTasking for Runtime<A> {
         self.arch.init_user_context(spec, kstack_top)
     }
 
-    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
-        unsafe { self.arch.switch(from, to) }
+    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context, to_tid: u64) {
+        unsafe { self.arch.switch(from, to, to_tid) }
     }
 
     unsafe fn enter_user(&self, entry: UserEntry) -> ! {

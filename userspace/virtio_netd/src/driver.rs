@@ -42,7 +42,7 @@ pub const VIRTIO_NET_F_STATUS: u32 = 1 << 16;
 #[allow(dead_code)]
 pub const VIRTIO_NET_F_MRG_RXBUF: u32 = 1 << 15;
 
-const QUEUE_SIZE: u16 = 64;
+const QUEUE_SIZE: u16 = 32;
 const RX_BUFFER_SIZE: usize = 2048;
 const TX_BUFFER_SIZE: usize = 2048;
 const NET_HEADER_SIZE: usize = 10; // Without num_buffers (no MRG_RXBUF feature)

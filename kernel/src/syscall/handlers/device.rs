@@ -265,21 +265,13 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
     }
 
     // Allocate contiguous physical frames for DMA
-    let mut phys_base = 0u64;
-
-    FRAME_ALLOCATOR.with_lock(|alloc| {
-        if let Some((phys,)) = alloc.alloc() {
-            phys_base = phys;
-            for _ in 1..page_count {
-                alloc.alloc();
-            }
+    let phys_base = match crate::memory::alloc_contiguous_frames(page_count) {
+        Some(phys) => phys,
+        None => {
+            crate::kinfo!("DEVICE: DMA alloc failed ({} pages) - no contiguous memory", page_count);
+            return Err(Errno::ENOMEM);
         }
-    });
-
-    if phys_base == 0 {
-        crate::kinfo!("DEVICE: DMA alloc failed - no memory");
-        return Err(Errno::ENOMEM);
-    }
+    };
 
     // Allocate userspace virtual address and map the DMA pages there
     let user_va = crate::memory::alloc_user_va(page_count * 4096);

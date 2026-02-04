@@ -48,14 +48,14 @@ pub const DEFAULT_SUBGRAPH_DEPTH: u32 = 2;
 // Response Helpers
 // ============================================================================
 
-/// Build HTTP response with JSON content type
-pub fn json_response(status: &str, body: &str) -> Vec<u8> {
-    crate::build_response(status, "application/json", body.as_bytes())
+/// Build HTTP response body with JSON content type
+pub fn json_response(status: &'static str, body: &str) -> (&'static str, Vec<u8>) {
+    (status, body.as_bytes().to_vec())
 }
 
 /// Build error response
-pub fn error_response(err: ApiError) -> Vec<u8> {
-    json_response(err.http_status(), &err.to_json())
+pub fn error_response(err: ApiError) -> (&'static str, Vec<u8>) {
+    (err.http_status(), err.to_json().into_bytes())
 }
 
 // ============================================================================
@@ -64,7 +64,7 @@ pub fn error_response(err: ApiError) -> Vec<u8> {
 
 /// GET /api/v1/
 /// Returns API capabilities and schema versions
-pub fn handle_discovery() -> Vec<u8> {
+pub fn handle_discovery() -> (&'static str, Vec<u8>) {
     let mut json = JsonBuilder::new();
     json.start_object();
     
@@ -102,7 +102,7 @@ pub fn handle_discovery() -> Vec<u8> {
 
 /// GET /api/v1/things/{id}
 /// Returns full Thing representation with props and links
-pub fn handle_get_thing(id_str: &str) -> Vec<u8> {
+pub fn handle_get_thing(id_str: &str) -> (&'static str, Vec<u8>) {
     let id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -121,7 +121,7 @@ pub fn handle_get_thing(id_str: &str) -> Vec<u8> {
 
 /// POST /api/v1/things
 /// Create a new thing
-pub fn handle_create_thing(_body: &[u8]) -> Vec<u8> {
+pub fn handle_create_thing(_body: &[u8]) -> (&'static str, Vec<u8>) {
     // TODO: Parse JSON body for kind_id and initial props
     // For now, return not implemented
     error_response(ApiError::new(
@@ -131,7 +131,7 @@ pub fn handle_create_thing(_body: &[u8]) -> Vec<u8> {
 }
 
 /// DELETE /api/v1/things/{id}
-pub fn handle_delete_thing(id_str: &str) -> Vec<u8> {
+pub fn handle_delete_thing(id_str: &str) -> (&'static str, Vec<u8>) {
     let _id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -146,7 +146,7 @@ pub fn handle_delete_thing(id_str: &str) -> Vec<u8> {
 
 /// PATCH /api/v1/things/{id}
 /// Update thing properties
-pub fn handle_patch_thing(id_str: &str, _body: &[u8]) -> Vec<u8> {
+pub fn handle_patch_thing(id_str: &str, _body: &[u8]) -> (&'static str, Vec<u8>) {
     let _id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -161,7 +161,7 @@ pub fn handle_patch_thing(id_str: &str, _body: &[u8]) -> Vec<u8> {
 
 /// GET /api/v1/things/{id}/props
 /// Returns all properties of a Thing as JSON
-pub fn handle_get_thing_props(id_str: &str) -> Vec<u8> {
+pub fn handle_get_thing_props(id_str: &str) -> (&'static str, Vec<u8>) {
     let id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -293,7 +293,7 @@ pub fn handle_get_thing_props(id_str: &str) -> Vec<u8> {
 }
 
 /// GET /api/v1/things/{id}/bytespaces/{key}
-pub fn handle_get_bytespace(thing_id_str: &str, key: &str, req: &Request<'_>) -> Vec<u8> {
+pub fn handle_get_bytespace(thing_id_str: &str, key: &str, req: &Request<'_>) -> (&'static str, Vec<u8>) {
     let _thing_id = match parse_thing_id(thing_id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -316,7 +316,7 @@ pub fn handle_get_bytespace(thing_id_str: &str, key: &str, req: &Request<'_>) ->
     
     match graph_api::read_bytespace_ranged(bytespace_id, offset, limit) {
         Ok(data) => {
-            crate::build_response("200 OK", "application/octet-stream", &data)
+            ("200 OK", data)
         }
         Err(GraphError::NotFound) => {
             error_response(ApiError::not_found(format!("Bytespace {} not found", key)))
@@ -328,7 +328,7 @@ pub fn handle_get_bytespace(thing_id_str: &str, key: &str, req: &Request<'_>) ->
 }
 
 /// GET /api/v1/things/{id}/bytespaces/{key}/meta
-pub fn handle_bytespace_meta(thing_id_str: &str, key: &str) -> Vec<u8> {
+pub fn handle_bytespace_meta(thing_id_str: &str, key: &str) -> (&'static str, Vec<u8>) {
     let _thing_id = match parse_thing_id(thing_id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -361,7 +361,7 @@ pub fn handle_bytespace_meta(thing_id_str: &str, key: &str) -> Vec<u8> {
 }
 
 /// PUT /api/v1/things/{id}/bytespaces/{key}
-pub fn handle_put_bytespace(thing_id_str: &str, _key: &str, body: &[u8]) -> Vec<u8> {
+pub fn handle_put_bytespace(thing_id_str: &str, _key: &str, body: &[u8]) -> (&'static str, Vec<u8>) {
     let _thing_id = match parse_thing_id(thing_id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -381,7 +381,7 @@ pub fn handle_put_bytespace(thing_id_str: &str, _key: &str, body: &[u8]) -> Vec<
 }
 
 /// GET /api/v1/path/{path}
-pub fn handle_path_resolve(path: &str) -> Vec<u8> {
+pub fn handle_path_resolve(path: &str) -> (&'static str, Vec<u8>) {
     // TODO: Implement path resolution via graph find
     let _ = path;
     error_response(ApiError::new(
@@ -392,7 +392,7 @@ pub fn handle_path_resolve(path: &str) -> Vec<u8> {
 
 /// GET /api/v1/watch
 /// Returns SSE stream of graph events
-pub fn handle_watch(_req: &Request<'_>) -> Vec<u8> {
+pub fn handle_watch(_req: &Request<'_>) -> (&'static str, Vec<u8>) {
     // TODO: Implement SSE streaming (requires persistent connection)
     error_response(ApiError::new(
         ApiErrorCode::InternalError,
@@ -402,7 +402,7 @@ pub fn handle_watch(_req: &Request<'_>) -> Vec<u8> {
 
 /// GET /api/v1/things/{id}/launch
 /// Returns whether the Thing is launchable as a process.
-pub fn handle_get_launch_info(id_str: &str) -> Vec<u8> {
+pub fn handle_get_launch_info(id_str: &str) -> (&'static str, Vec<u8>) {
     let id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -440,7 +440,7 @@ pub fn handle_get_launch_info(id_str: &str) -> Vec<u8> {
 
 /// POST /api/v1/things/{id}/launch
 /// Launch a boot.Module via spawn_process and record a LAUNCHED edge.
-pub fn handle_launch(id_str: &str) -> Vec<u8> {
+pub fn handle_launch(id_str: &str) -> (&'static str, Vec<u8>) {
     let id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -526,12 +526,12 @@ pub fn handle_launch(id_str: &str) -> Vec<u8> {
 }
 
 /// Handle route not found
-pub fn handle_not_found() -> Vec<u8> {
+pub fn handle_not_found() -> (&'static str, Vec<u8>) {
     error_response(ApiError::not_found("API endpoint not found"))
 }
 
 /// Handle method not allowed
-pub fn handle_method_not_allowed() -> Vec<u8> {
+pub fn handle_method_not_allowed() -> (&'static str, Vec<u8>) {
     error_response(ApiError::method_not_allowed("Method not allowed for this endpoint"))
 }
 
@@ -540,7 +540,7 @@ pub fn handle_method_not_allowed() -> Vec<u8> {
 // ============================================================================
 
 /// GET /api/v1/subgraph?root=...&depth=...&max_nodes=...
-pub fn handle_get_subgraph(query: &str) -> Vec<u8> {
+pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
     // Parse query parameters
     let mut root_id: Option<u64> = None;
     let mut depth: u32 = DEFAULT_SUBGRAPH_DEPTH;
@@ -848,7 +848,7 @@ const AVAILABLE_VIEWS: &[ViewDef] = &[
 ];
 
 /// GET /api/v1/views
-pub fn handle_list_views() -> Vec<u8> {
+pub fn handle_list_views() -> (&'static str, Vec<u8>) {
     let mut json = JsonBuilder::new();
     json.start_array();
     
@@ -871,7 +871,7 @@ pub fn handle_list_views() -> Vec<u8> {
 }
 
 /// GET /api/v1/views/{id}
-pub fn handle_get_view(id: &str, query: &str) -> Vec<u8> {
+pub fn handle_get_view(id: &str, query: &str) -> (&'static str, Vec<u8>) {
     let json_body = handle_get_view_body(id, query);
     json_response("200 OK", &json_body)
 }
@@ -1261,7 +1261,7 @@ fn get_symbol_name(sym_id: u32) -> String {
 
 /// PATCH /api/v1/layout
 /// Bulk update node positions (shared with Photosynthesis via LAYOUT_POS_X/Y)
-pub fn handle_patch_layout(body: &[u8]) -> Vec<u8> {
+pub fn handle_patch_layout(body: &[u8]) -> (&'static str, Vec<u8>) {
     // Simple JSON parsing for layout updates
     // Expected: { "space": "graph_ui_v1", "nodes": [{ "id": "...", "x": 1.0, "y": 2.0 }] }
     
@@ -1460,7 +1460,7 @@ fn find_host_id() -> Result<u64, ApiError> {
 
 /// POST /api/v1/query
 /// Execute a GQL query from request body
-pub fn handle_execute_gql_query(body: &[u8]) -> Vec<u8> {
+pub fn handle_execute_gql_query(body: &[u8]) -> (&'static str, Vec<u8>) {
     // Convert body to string
     let query = match core::str::from_utf8(body) {
         Ok(s) => s,
@@ -1471,12 +1471,12 @@ pub fn handle_execute_gql_query(body: &[u8]) -> Vec<u8> {
     let result = crate::gql_handler::handle_gql_post(query);
     
     // Return as JSON
-    crate::build_response("200 OK", "application/json", &result)
+    ("200 OK", result)
 }
 
 /// GET /api/v1/query?q=...
 /// Execute a GQL query from query parameter
-pub fn handle_execute_gql_query_get(query_string: &str) -> Vec<u8> {
+pub fn handle_execute_gql_query_get(query_string: &str) -> (&'static str, Vec<u8>) {
     // Parse query parameter
     let mut gql_query = "";
     for part in query_string.split('&') {
@@ -1499,7 +1499,7 @@ pub fn handle_execute_gql_query_get(query_string: &str) -> Vec<u8> {
     let result = crate::gql_handler::handle_gql_get(gql_query);
     
     // Return as JSON
-    crate::build_response("200 OK", "application/json", &result)
+    ("200 OK", result)
 }
 
 
@@ -1508,7 +1508,7 @@ pub fn handle_execute_gql_query_get(query_string: &str) -> Vec<u8> {
 // ============================================================================
 
 /// Dispatch a request to the appropriate API handler
-pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> Vec<u8> {
+pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> (&'static str, Vec<u8>) {
     match route {
         ApiRoute::Discovery => handle_discovery(),
         ApiRoute::GetThing { id } => handle_get_thing(id),

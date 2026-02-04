@@ -32,6 +32,7 @@ pub struct Request<'a> {
     pub version: HttpVersion,
     pub headers: [(Option<&'a str>, Option<&'a str>); MAX_HEADERS],
     pub header_count: usize,
+    pub header_len: usize,
 }
 
 impl<'a> Request<'a> {
@@ -44,6 +45,13 @@ impl<'a> Request<'a> {
             }
         }
         None
+    }
+
+    pub fn is_keep_alive(&self) -> bool {
+        match self.get_header("Connection") {
+            Some(v) => v.eq_ignore_ascii_case("keep-alive"),
+            None => self.version == HttpVersion::Http11,
+        }
     }
 }
 
@@ -113,7 +121,6 @@ pub fn parse_request(buf: &str) -> Result<Request<'_>, ParseError> {
             return Err(ParseError::TooManyHeaders);
         }
         
-        // Parse "Key: Value"
         if let Some(colon_pos) = line.find(':') {
             let key = line[..colon_pos].trim();
             let value = line[colon_pos + 1..].trim();
@@ -124,12 +131,22 @@ pub fn parse_request(buf: &str) -> Result<Request<'_>, ParseError> {
         }
     }
     
+    // Calculate header length (offset to end of \r\n\r\n)
+    let header_len = if let Some(pos) = buf.find("\r\n\r\n") {
+        pos + 4
+    } else if let Some(pos) = buf.find("\n\n") {
+        pos + 2
+    } else {
+        buf.len()
+    };
+    
     Ok(Request {
         method,
         path,
         version,
         headers,
         header_count,
+        header_len,
     })
 }
 
@@ -199,6 +216,7 @@ mod tests {
         assert_eq!(req.version, HttpVersion::Http11);
         assert_eq!(req.header_count, 1);
         assert_eq!(req.get_header("Host"), Some("localhost"));
+        assert_eq!(req.header_len, 42); // "GET /health HTTP/1.1\r\nHost: localhost\r\n\r\n".len()
     }
 
     #[test]

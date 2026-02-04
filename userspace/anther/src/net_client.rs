@@ -85,7 +85,7 @@ impl NetClient {
     pub fn tcp_listen(&self, port: u16) -> Option<u32> {
         let mut payload = Vec::with_capacity(4);
         payload.extend_from_slice(&port.to_le_bytes());
-        payload.extend_from_slice(&1u16.to_le_bytes()); // backlog
+        payload.extend_from_slice(&64u16.to_le_bytes()); // backlog
         
         let msg = self.build_msg(MSG_TCP_LISTEN, &payload);
 

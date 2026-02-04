@@ -14,7 +14,7 @@ use stem::info;
 /// - X-File-Name: <filename> (optional, defaults to "upload_<timestamp>")
 /// - Content-Length: <size>
 /// Body: Raw file content
-pub fn handle_upload(req: &Request<'_>, body: &[u8]) -> Vec<u8> {
+pub fn handle_upload_new(req: &Request<'_>, body: &[u8]) -> (&'static str, Vec<u8>) {
     // 1. Get filename
     let filename = req.get_header("X-File-Name")
         .or_else(|| req.get_header("x-file-name")) // Case insensitive check just in case
@@ -38,7 +38,7 @@ pub fn handle_upload(req: &Request<'_>, body: &[u8]) -> Vec<u8> {
     let bs_id = match bytespace_create(body.len(), 0, 0) {
         Ok(id) => id,
         Err(e) => {
-            return error_response(ApiError::internal(format!("Failed to create bytespace: {:?}", e)));
+            return ("500 Internal Server Error", ApiError::internal(format!("Failed to create bytespace: {:?}", e)).to_json().into_bytes());
         }
     };
 
@@ -47,7 +47,7 @@ pub fn handle_upload(req: &Request<'_>, body: &[u8]) -> Vec<u8> {
         Ok(ptr) => ptr,
         Err(e) => {
             // Cleanup bytespace if map fails? currently no delete syscall exposed easily here but in future yes
-            return error_response(ApiError::internal(format!("Failed to map bytespace: {:?}", e)));
+            return ("500 Internal Server Error", ApiError::internal(format!("Failed to map bytespace: {:?}", e)).to_json().into_bytes());
         }
     };
 
@@ -61,7 +61,7 @@ pub fn handle_upload(req: &Request<'_>, body: &[u8]) -> Vec<u8> {
     let file_id = match create_node(kinds::CONTENT_FILE) {
         Ok(id) => id,
         Err(e) => {
-            return error_response(ApiError::internal(format!("Failed to create file node: {:?}", e)));
+            return ("500 Internal Server Error", ApiError::internal(format!("Failed to create file node: {:?}", e)).to_json().into_bytes());
         }
     };
 
@@ -91,5 +91,5 @@ pub fn handle_upload(req: &Request<'_>, body: &[u8]) -> Vec<u8> {
     info!("anther: Upload successful. Created file node {:?} for '{}'", file_id, basename);
 
     // 7. Return Success
-    crate::build_response("200 OK", "application/json", b"{\"status\":\"ok\"}")
+    ("200 OK", b"{\"status\":\"ok\"}".to_vec())
 }

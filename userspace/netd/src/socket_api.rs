@@ -11,7 +11,7 @@ use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address};
 
 use crate::ipc_device::IpcNicDevice;
-use stem::{info, warn};
+use stem::{info, trace, warn};
 
 // Socket API message types
 pub const MSG_TCP_CONNECT: u16 = 0x0200;
@@ -60,6 +60,8 @@ pub struct SocketApi {
     pending_accepts: BTreeMap<u32, Vec<(u32, Ipv4Address, u16)>>,
     /// Socket handles pending removal from SocketSet (after TCP close completes)
     pending_removal: Vec<SocketHandle>,
+    /// Reusable scratch buffer for receive operations
+    recv_scratch: Vec<u8>,
 }
 
 impl SocketApi {
@@ -69,6 +71,7 @@ impl SocketApi {
             sockets: BTreeMap::new(),
             pending_accepts: BTreeMap::new(),
             pending_removal: Vec::new(),
+            recv_scratch: Vec::with_capacity(32768), // Large enough for most frames
         }
     }
 
@@ -354,7 +357,7 @@ impl SocketApi {
 
         match socket.send_slice(data) {
             Ok(sent) => {
-                info!("SOCKET_API: TCP_SEND handle={} sent {} bytes", handle, sent);
+                trace!("SOCKET_API: TCP_SEND handle={} sent {} bytes", handle, sent);
                 encode_send_result(sent as u16)
             }
             Err(e) => {
@@ -378,18 +381,16 @@ impl SocketApi {
 
         let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
 
-        if !socket.can_recv() {
-            return encode_data(&[]);
+        // Use reusable scratch buffer
+        let max_len = max_len as usize;
+        if self.recv_scratch.len() < max_len {
+            self.recv_scratch.resize(max_len, 0);
         }
 
-        let mut buf = Vec::new();
-        buf.resize(max_len as usize, 0u8);
-
-        match socket.recv_slice(&mut buf) {
+        match socket.recv_slice(&mut self.recv_scratch[..max_len]) {
             Ok(len) => {
-                buf.truncate(len);
-                info!("SOCKET_API: TCP_RECV handle={} got {} bytes", handle, len);
-                encode_data(&buf)
+                trace!("SOCKET_API: TCP_RECV handle={} got {} bytes", handle, len);
+                encode_data(&self.recv_scratch[..len])
             }
             Err(e) => {
                 warn!("SOCKET_API: TCP_RECV error: {:?}", e);

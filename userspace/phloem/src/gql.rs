@@ -8,6 +8,21 @@ pub enum Value {
     Number(u64),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReturnExpression {
+    Variable(String),
+    Count(String),
+}
+
+impl ReturnExpression {
+    pub fn to_string(&self) -> String {
+        match self {
+            ReturnExpression::Variable(s) => s.clone(),
+            ReturnExpression::Count(s) => format!("count({})", s),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct NodePattern {
     pub var: String,
@@ -29,12 +44,12 @@ pub enum Pattern {
 pub enum Command {
     Merge {
         pattern: Pattern,
-        returns: Vec<String>,
+        returns: Vec<ReturnExpression>,
         skip: usize,
     },
     Match {
         pattern: Pattern,
-        returns: Vec<String>,
+        returns: Vec<ReturnExpression>,
         limit: usize,
         skip: usize,
     },
@@ -124,7 +139,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     }
                 }
                 match s.to_uppercase().as_str() {
-                    "MERGE" | "MATCH" | "RETURN" | "SET" | "LIMIT" | "SKIP" | "HELP" | "QUIT" | "EXIT" | "SCHEMA" => {
+                    "MERGE" | "MATCH" | "RETURN" | "SET" | "LIMIT" | "SKIP" | "HELP" | "QUIT" | "EXIT" | "SCHEMA" | "COUNT" => {
                         tokens.push(Token::Keyword(s.to_uppercase()));
                     }
                     _ => tokens.push(Token::Ident(s)),
@@ -351,17 +366,29 @@ impl Parser {
         Ok(NodePattern { var, kind, props })
     }
 
-    fn parse_return_vars(&mut self) -> Result<Vec<String>, String> {
-        let mut vars = Vec::new();
+    fn parse_return_vars(&mut self) -> Result<Vec<ReturnExpression>, String> {
+        let mut exprs = Vec::new();
         loop {
-            vars.push(self.parse_ident()?);
+            if self.expect_keyword("COUNT") {
+                if self.consume() != Some(&Token::LParen) {
+                    return Err("Expected '(' after COUNT".to_string());
+                }
+                let var = self.parse_ident()?;
+                if self.consume() != Some(&Token::RParen) {
+                    return Err("Expected ')' after COUNT(var)".to_string());
+                }
+                exprs.push(ReturnExpression::Count(var));
+            } else {
+                exprs.push(ReturnExpression::Variable(self.parse_ident()?));
+            }
+
             if let Some(Token::Comma) = self.peek() {
                 self.consume();
             } else {
                 break;
             }
         }
-        Ok(vars)
+        Ok(exprs)
     }
 
     fn parse_ident(&mut self) -> Result<String, String> {

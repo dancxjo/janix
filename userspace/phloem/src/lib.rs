@@ -67,5 +67,5 @@ impl ExecutionResult {
     }
 }
 
-pub use gql::{Command, Pattern, Value, NodePattern, parse};
+pub use gql::{Command, Pattern, Value, NodePattern, ReturnExpression, parse};
 pub use executor::GraphExecutor;

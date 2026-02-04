@@ -16,7 +16,7 @@ mod http;
 mod net_client;
 mod router;
 
-use alloc::string::String;
+
 use alloc::vec::Vec;
 use net_client::NetClient;
 use stem::{info, warn};

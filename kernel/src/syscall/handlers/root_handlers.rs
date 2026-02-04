@@ -83,21 +83,21 @@ pub fn sys_root_find(ptr_kind: usize, ptr_buf: usize, len: usize) -> SysResult<u
 
     validate_user_range(ptr_buf, len, true)?;
 
-    if len > 4096 {
-        return Err(Errno::EINVAL);
-    }
-    let mut kbuf = [0u8; 4096];
+    // Support up to 64KB of results (4096 nodes)
+    const MAX_FIND_BYTES: usize = 64 * 1024;
+    let kbuf_len = core::cmp::min(len, MAX_FIND_BYTES);
+    let mut kbuf = alloc::vec![0u8; kbuf_len];
 
     let msg = RootOp::Find {
         kind: sym,
         buffer: kbuf.as_mut_ptr() as u64,
-        len: len as u64,
+        len: kbuf_len as u64,
     };
 
     let count = root_call(msg)?;
 
     let entries_found = count;
-    let entries_to_copy = core::cmp::min(entries_found, len / 16);
+    let entries_to_copy = core::cmp::min(entries_found, kbuf_len / 16);
     let bytes_to_copy = entries_to_copy * 16;
 
     unsafe {

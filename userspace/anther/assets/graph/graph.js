@@ -1146,6 +1146,7 @@ async function executeGqlQuery() {
     }
 
     setStatus('Executing query...', '');
+    showQueryResults('Executing...'); // Show loading state
 
     try {
         const result = await api.executeGqlQuery(query);

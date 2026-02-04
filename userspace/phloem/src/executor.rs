@@ -2,7 +2,7 @@ use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use alloc::format;
-use crate::gql::{Command, Pattern, Value, NodePattern};
+use crate::gql::{Command, Pattern, Value, NodePattern, ReturnExpression};
 use stem::thing::sys as graph;
 use stem::abi::ids::HandleId;
 use stem::thing::ThingId;
@@ -48,7 +48,7 @@ impl GraphExecutor {
         )
     }
 
-    fn execute_merge(&mut self, pattern: Pattern, returns: Vec<String>) -> ExecutionResult {
+    fn execute_merge(&mut self, pattern: Pattern, returns: Vec<ReturnExpression>) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
                 let id = match self.ensure_node(&node_pat) {
@@ -87,7 +87,7 @@ impl GraphExecutor {
         }
     }
 
-    fn execute_match(&self, pattern: Pattern, returns: Vec<String>, limit: usize, skip: usize) -> ExecutionResult {
+    fn execute_match(&self, pattern: Pattern, returns: Vec<ReturnExpression>, limit: usize, skip: usize) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
                 let limit_total = limit + skip;
@@ -185,25 +185,67 @@ impl GraphExecutor {
                     }
                 }
 
-                // Apply skip and limit to the final row generation
-                let rows: Vec<Vec<ResultValue>> = matched_ids
-                    .into_iter()
-                    .skip(skip)
-                    .take(limit)
-                    .map(|id| {
+                // Check if we have any aggregate functions
+                let has_aggregate = returns.iter().any(|r| matches!(r, ReturnExpression::Count(_)));
+
+                if has_aggregate {
                     let mut row = Vec::new();
-                    for col in &returns {
-                        if col == &node_pat.var {
-                            row.push(ResultValue::Node(id));
-                        } else {
-                            // TODO: Support property returns like RETURN n.prop
-                            row.push(ResultValue::String(format!("unsupported: {}", col)));
+                    for expr in &returns {
+                        match expr {
+                            ReturnExpression::Count(var) => {
+                                // count(*) or count(n) - for now we just count the matches
+                                // if var matches any variable in the pattern, we count matched_ids
+                                // In this simple executor, we only have one node pattern variable
+                                if var == &node_pat.var || var == "*" {
+                                    row.push(ResultValue::Number(matched_ids.len() as u64));
+                                } else {
+                                    row.push(ResultValue::Number(0));
+                                }
+                            }
+                            ReturnExpression::Variable(v) => {
+                                // In a real GQL engine, this would be a grouping key.
+                                // For now, we just pick the first match if any, or null.
+                                if let Some(&id) = matched_ids.first() {
+                                    if v == &node_pat.var {
+                                        row.push(ResultValue::Node(id));
+                                    } else {
+                                        row.push(ResultValue::String(format!("unsupported: {}", v)));
+                                    }
+                                } else {
+                                    row.push(ResultValue::Number(0)); // Should probably be Null
+                                }
+                            }
                         }
                     }
-                    row
-                }).collect();
+                    let cols = returns.iter().map(|r| r.to_string()).collect();
+                    ExecutionResult::rows(cols, alloc::vec![row])
+                } else {
+                    // Apply skip and limit to the final row generation
+                    let rows: Vec<Vec<ResultValue>> = matched_ids
+                        .into_iter()
+                        .skip(skip)
+                        .take(limit)
+                        .map(|id| {
+                        let mut row = Vec::new();
+                        for expr in &returns {
+                            match expr {
+                                ReturnExpression::Variable(col) => {
+                                    if col == &node_pat.var {
+                                        row.push(ResultValue::Node(id));
+                                    } else {
+                                        // TODO: Support property returns like RETURN n.prop
+                                        row.push(ResultValue::String(format!("unsupported: {}", col)));
+                                    }
+                                }
+                                ReturnExpression::Count(_) => unreachable!(),
+                            }
+                        }
+                        row
+                    }).collect();
 
-                ExecutionResult::rows(returns, rows)
+                    let cols = returns.iter().map(|r| r.to_string()).collect();
+                    ExecutionResult::rows(cols, rows)
+                }
             }
             Pattern::Edge { src_var, rel: _, dst_var } => {
                 let src_id_opt = self.bindings.get(&src_var).cloned();
@@ -219,14 +261,21 @@ impl GraphExecutor {
 
                     for (_rel_id, dst_id) in edges {
                         let mut row = Vec::new();
-                        for var in &returns {
-                            if var == &src_var {
-                                row.push(ResultValue::Node(src_id));
-                            } else if var == &dst_var {
-                                row.push(ResultValue::Node(dst_id));
-                            } else {
-                                // TODO: Support property returns like RETURN n.prop
-                                row.push(ResultValue::String(format!("unsupported: {}", var)));
+                        for expr in &returns {
+                            match expr {
+                                ReturnExpression::Variable(var) => {
+                                    if var == &src_var {
+                                        row.push(ResultValue::Node(src_id));
+                                    } else if var == &dst_var {
+                                        row.push(ResultValue::Node(dst_id));
+                                    } else {
+                                        // TODO: Support property returns like RETURN n.prop
+                                        row.push(ResultValue::String(format!("unsupported: {}", var)));
+                                    }
+                                }
+                                ReturnExpression::Count(_) => {
+                                    row.push(ResultValue::String("count() not supported in edge match yet".to_string()));
+                                }
                             }
                         }
                         all_rows.push(row);
@@ -238,7 +287,8 @@ impl GraphExecutor {
                         .take(limit)
                         .collect();
 
-                    ExecutionResult::rows(returns, rows)
+                    let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
+                    ExecutionResult::rows(cols, rows)
 
                 } else {
                      return ExecutionResult::error("MATCH edge requires bound source (e.g. use MERGE/MATCH node first)");
@@ -355,16 +405,29 @@ impl GraphExecutor {
         true
     }
 
-    fn format_results_structured(&self, vars: &[String]) -> ExecutionResult {
+    fn format_results_structured(&self, vars: &[ReturnExpression]) -> ExecutionResult {
         let mut row = Vec::new();
-        for var in vars {
-            if let Some(&id) = self.bindings.get(var) {
-                row.push(ResultValue::Node(id));
-            } else {
-                row.push(ResultValue::Number(0));
+        let mut col_names = Vec::new();
+        for expr in vars {
+            col_names.push(expr.to_string());
+            match expr {
+                ReturnExpression::Variable(var) => {
+                    if let Some(&id) = self.bindings.get(var) {
+                        row.push(ResultValue::Node(id));
+                    } else {
+                        row.push(ResultValue::Number(0));
+                    }
+                }
+                ReturnExpression::Count(var) => {
+                    if let Some(_) = self.bindings.get(var) {
+                        row.push(ResultValue::Number(1));
+                    } else {
+                        row.push(ResultValue::Number(0));
+                    }
+                }
             }
         }
-        ExecutionResult::rows(vars.to_vec(), alloc::vec![row])
+        ExecutionResult::rows(col_names, alloc::vec![row])
     }
 
     fn format_node(&self, id: u64) -> String {

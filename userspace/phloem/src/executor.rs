@@ -8,14 +8,74 @@ use stem::abi::ids::HandleId;
 use stem::thing::ThingId;
 use crate::{ExecutionResult, ResultValue};
 
-pub struct GraphExecutor {
+pub trait Graph {
+    fn get_kind(&self, id: ThingId) -> Result<stem::thing::ThingKind, stem::errors::Errno>;
+    fn find(&self, kind: &str, out: &mut [ThingId]) -> Result<usize, stem::errors::Errno>;
+    fn intern(&self, s: &str) -> Result<stem::abi::symbols::SymbolId, stem::errors::Errno>;
+    fn prop_set(&self, id: ThingId, key: &str, value: u64) -> Result<(), stem::errors::Errno>;
+    fn create_node(&self, kind: &str) -> Result<ThingId, stem::errors::Errno>;
+    fn link(&self, src: ThingId, rel: &str, dst: ThingId) -> Result<(), stem::errors::Errno>;
+    fn get_edges(&self, id: ThingId, out: &mut [stem::abi::types::Edge]) -> Result<usize, stem::errors::Errno>;
+    fn describe_symbol(&self, id: stem::abi::symbols::SymbolId, out: &mut [u8]) -> Result<usize, stem::errors::Errno>;
+    fn prop_get(&self, id: ThingId, key: stem::abi::symbols::SymbolId) -> Result<u64, stem::errors::Errno>;
+    fn yield_now(&self);
+}
+
+pub struct SystemGraph;
+
+impl Graph for SystemGraph {
+    fn get_kind(&self, id: ThingId) -> Result<stem::thing::ThingKind, stem::errors::Errno> {
+        graph::get_kind(id)
+    }
+    fn find(&self, kind: &str, out: &mut [ThingId]) -> Result<usize, stem::errors::Errno> {
+        graph::find(kind, out)
+    }
+    fn intern(&self, s: &str) -> Result<stem::abi::symbols::SymbolId, stem::errors::Errno> {
+        graph::intern(s)
+    }
+    fn prop_set(&self, id: ThingId, key: &str, value: u64) -> Result<(), stem::errors::Errno> {
+        graph::prop_set(id, key, value)
+    }
+    fn create_node(&self, kind: &str) -> Result<ThingId, stem::errors::Errno> {
+        graph::create_node(kind)
+    }
+    fn link(&self, src: ThingId, rel: &str, dst: ThingId) -> Result<(), stem::errors::Errno> {
+        graph::link(src, rel, dst)
+    }
+    fn get_edges(&self, id: ThingId, out: &mut [stem::abi::types::Edge]) -> Result<usize, stem::errors::Errno> {
+        graph::get_edges(id, out)
+    }
+    fn describe_symbol(&self, id: stem::abi::symbols::SymbolId, out: &mut [u8]) -> Result<usize, stem::errors::Errno> {
+        graph::describe_symbol(id, out)
+    }
+    fn prop_get(&self, id: ThingId, key: stem::abi::symbols::SymbolId) -> Result<u64, stem::errors::Errno> {
+        graph::prop_get(id, key)
+    }
+    fn yield_now(&self) {
+        stem::yield_now();
+    }
+}
+
+pub struct GraphExecutor<G: Graph = SystemGraph> {
+    graph: G,
     bindings: BTreeMap<String, u64>,
     parameters: BTreeMap<String, Value>,
 }
 
-impl GraphExecutor {
+impl GraphExecutor<SystemGraph> {
     pub fn new() -> Self {
         Self {
+            graph: SystemGraph,
+            bindings: BTreeMap::new(),
+            parameters: BTreeMap::new(),
+        }
+    }
+}
+
+impl<G: Graph> GraphExecutor<G> {
+    pub fn with_graph(graph: G) -> Self {
+        Self {
+            graph,
             bindings: BTreeMap::new(),
             parameters: BTreeMap::new(),
         }
@@ -129,7 +189,7 @@ impl GraphExecutor {
                         if let Some(id) = target_id {
                             // Verify kind and other props
                             let matches_kind = match &node_pat.kind {
-                                Some(k) => match graph::get_kind(ThingId::from_u64(id)) {
+                                Some(k) => match self.graph.get_kind(ThingId::from_u64(id)) {
                                     Ok(kind_id) => {
                                         let kind_name = self.resolve_symbol(kind_id.0 as u32).unwrap_or_default();
                                         &kind_name == k
@@ -152,7 +212,7 @@ impl GraphExecutor {
                     Some(_k) => {
                         let mut candidates = [ThingId::from_u64(0); 2048];
                         stem::info!("phloem: calling find for kind: {}", _k);
-                        let count = match graph::find(_k.as_str(), &mut candidates) {
+                        let count = match self.graph.find(_k.as_str(), &mut candidates) {
                             Ok(c) => c,
                             Err(e) => {
                                 stem::info!("phloem: find failed for kind {}: {:?}", _k, e);
@@ -162,7 +222,7 @@ impl GraphExecutor {
                         stem::info!("phloem: find returned {} candidates", count);
 
                         for i in 0..count {
-                            stem::yield_now();
+                            self.graph.yield_now();
                             let id = candidates[i].to_u64_lossy();
                             if self.matches_props(id, &node_pat.props) {
                                 if !matched_ids.contains(&id) {
@@ -202,7 +262,7 @@ impl GraphExecutor {
                 stem::info!("phloem: edge match starting. source_nodes count: {}. limit_total: {}", source_nodes.len(), limit_total);
 
                 for src_id in source_nodes {
-                    stem::yield_now();
+                    self.graph.yield_now();
                     if rows.len() >= limit_total { break; }
 
                     let edges = match self.get_outbound_edges(src_id) {
@@ -211,7 +271,7 @@ impl GraphExecutor {
                     };
 
                     for (rel_symbol_id, dst_id) in edges {
-                        stem::yield_now();
+                        self.graph.yield_now();
                         if rows.len() >= limit_total { break; }
                         
                         stem::trace!("phloem: checking edge {} -> {}", src_id, dst_id);
@@ -225,7 +285,7 @@ impl GraphExecutor {
                         // Check dst node pattern
                         if !self.matches_props(dst_id, &dst.props) { continue; }
                         if let Some(ref kind) = dst.kind {
-                            let d_kind_id = match graph::get_kind(ThingId::from_u64(dst_id)) {
+                            let d_kind_id = match self.graph.get_kind(ThingId::from_u64(dst_id)) {
                                 Ok(k) => k.0,
                                 Err(_) => continue,
                             };
@@ -277,10 +337,10 @@ impl GraphExecutor {
         if let Some(k) = kind {
             stem::info!("phloem: discovering nodes of kind {}", k);
             let mut candidates = alloc::vec![ThingId::from_u64(0); 2048];
-            if let Ok(count) = graph::find(k, &mut candidates) {
+            if let Ok(count) = self.graph.find(k, &mut candidates) {
                 stem::info!("phloem: found {} candidates for kind {}", count, k);
                 for i in 0..count {
-                    stem::yield_now();
+                    self.graph.yield_now();
                     let id = candidates[i].to_u64_lossy();
                     if self.matches_props(id, props) {
                         let matches_where = if let Some(expr) = where_clause {
@@ -327,9 +387,9 @@ impl GraphExecutor {
                 "font.Face", "font.File", "xml.Document", "html.Document", "css.Stylesheet"
             ];
             for &k in &fallback_kinds {
-                stem::yield_now();
+                self.graph.yield_now();
                 let mut seeds = alloc::vec![ThingId::from_u64(0); 512];
-                if let Ok(count) = graph::find(k, &mut seeds) {
+                if let Ok(count) = self.graph.find(k, &mut seeds) {
                     for i in 0..count {
                         let id = seeds[i].to_u64_lossy();
                         if !seen.contains(&id) {
@@ -342,7 +402,7 @@ impl GraphExecutor {
             stem::info!("phloem: BFS seeded with {} nodes", queue.len());
 
             while let Some(current_id) = queue.pop_front() {
-                stem::yield_now();
+                self.graph.yield_now();
                 if matched_ids.len() >= limit_total {
                     break;
                 }
@@ -386,7 +446,7 @@ impl GraphExecutor {
         };
 
         let val_u64 = match value {
-            Value::String(s) => match graph::intern(&s) {
+            Value::String(s) => match self.graph.intern(&s) {
                 Ok(id) => id as u64,
                 Err(_) => return ExecutionResult::error("intern value failed"),
             },
@@ -394,7 +454,7 @@ impl GraphExecutor {
             Value::Parameter(name) => {
                 match self.parameters.get(&name) {
                     Some(Value::Number(n)) => *n,
-                    Some(Value::String(s)) => match graph::intern(s) {
+                    Some(Value::String(s)) => match self.graph.intern(s) {
                         Ok(id) => id as u64,
                         Err(_) => return ExecutionResult::error("intern parameter value failed"),
                     },
@@ -403,7 +463,7 @@ impl GraphExecutor {
             }
         };
 
-        match graph::prop_set(ThingId::from_u64(id), key.as_str(), val_u64) {
+        match self.graph.prop_set(ThingId::from_u64(id), key.as_str(), val_u64) {
             Ok(_) => ExecutionResult::success("ok: property set"),
             Err(e) => ExecutionResult::error(&format!("prop_set failed {:?}", e)),
         }
@@ -414,7 +474,7 @@ impl GraphExecutor {
 
         // 1. Try to find
         let mut candidates = [ThingId::from_u64(0); 128];
-        let count = graph::find(kind.as_str(), &mut candidates).map_err(|_| "find failed")?;
+        let count = self.graph.find(kind.as_str(), &mut candidates).map_err(|_| "find failed")?;
 
         for i in 0..count {
             let id = candidates[i].to_u64_lossy();
@@ -424,23 +484,23 @@ impl GraphExecutor {
         }
 
         // 2. Create
-        let id_new = graph::create_node(kind.as_str()).map_err(|_| "create_node failed")?;
+        let id_new = self.graph.create_node(kind.as_str()).map_err(|_| "create_node failed")?;
         let id = id_new.to_u64_lossy();
 
         // Set props
         for (k, v) in &pat.props {
             let val_u64 = match v {
-                Value::String(s) => graph::intern(s).map_err(|_| "intern val failed")? as u64,
+                Value::String(s) => self.graph.intern(s).map_err(|_| "intern val failed")? as u64,
                 Value::Number(n) => *n,
                 Value::Parameter(p) => {
                     match self.parameters.get(p) {
                         Some(Value::Number(n)) => *n,
-                        Some(Value::String(s)) => graph::intern(s).map_err(|_| "intern val failed")? as u64,
+                        Some(Value::String(s)) => self.graph.intern(s).map_err(|_| "intern val failed")? as u64,
                         _ => return Err(format!("parameter '{}' not found", p)),
                     }
                 }
             };
-            graph::prop_set(id_new, k.as_str(), val_u64).map_err(|_| "prop_set failed")?;
+            self.graph.prop_set(id_new, k.as_str(), val_u64).map_err(|_| "prop_set failed")?;
         }
 
         Ok(id)
@@ -457,13 +517,13 @@ impl GraphExecutor {
             }
         }
 
-        graph::link(ThingId::from_u64(src), rel, ThingId::from_u64(dst)).map_err(|_| "link failed")?;
+        self.graph.link(ThingId::from_u64(src), rel, ThingId::from_u64(dst)).map_err(|_| "link failed")?;
         Ok(())
     }
 
     fn get_outbound_edges(&self, src: u64) -> Result<Vec<(u32, u64)>, ()> {
         let mut edges = alloc::vec![stem::abi::types::Edge::default(); 256];
-        match graph::get_edges(ThingId::from_u64(src), &mut edges) {
+        match self.graph.get_edges(ThingId::from_u64(src), &mut edges) {
             Ok(count) => {
                 let mut res = Vec::new();
                 for i in 0..count {
@@ -477,12 +537,12 @@ impl GraphExecutor {
 
     fn matches_props(&self, id: u64, props: &[(String, Value)]) -> bool {
         for (k, v) in props {
-            let key_id = match graph::intern(k) {
+            let key_id = match self.graph.intern(k) {
                 Ok(id) => id,
                 Err(_) => return false,
             };
 
-            let val_id = match graph::prop_get(ThingId::from_u64(id), key_id) {
+            let val_id = match self.graph.prop_get(ThingId::from_u64(id), key_id) {
                 Ok(v) => v,
                 Err(_) => return false, // Property missing
             };
@@ -492,7 +552,7 @@ impl GraphExecutor {
                     if val_id != *n { return false; }
                 }
                 Value::String(s) => {
-                    match graph::intern(s) {
+                    match self.graph.intern(s) {
                         Ok(s_id) => {
                             if (s_id as u64) != val_id { return false; }
                         }
@@ -503,7 +563,7 @@ impl GraphExecutor {
                     match self.parameters.get(p) {
                         Some(Value::Number(n)) => { if val_id != *n { return false; } }
                         Some(Value::String(s)) => {
-                            match graph::intern(s) {
+                            match self.graph.intern(s) {
                                 Ok(s_id) => { if (s_id as u64) != val_id { return false; } }
                                 Err(_) => return false,
                             }
@@ -542,7 +602,7 @@ impl GraphExecutor {
     }
 
     fn format_node(&self, id: u64) -> String {
-        let kind_id = match graph::get_kind(ThingId::from_u64(id)) {
+        let kind_id = match self.graph.get_kind(ThingId::from_u64(id)) {
             Ok(k) => k.0,
             Err(_) => return format!("(id:{})", id),
         };
@@ -553,7 +613,7 @@ impl GraphExecutor {
 
     fn resolve_symbol(&self, id: u32) -> Option<String> {
         let mut buf = [0u8; 64];
-        match graph::describe_symbol(id, &mut buf) {
+        match self.graph.describe_symbol(id, &mut buf) {
             Ok(len) => {
                 if len > buf.len() {
                     Some("...".to_string())

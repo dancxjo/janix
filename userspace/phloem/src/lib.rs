@@ -8,6 +8,8 @@ extern crate alloc;
 
 pub mod gql;
 pub mod executor;
+#[cfg(test)]
+pub mod query_tests;
 
 use alloc::string::String;
 use crate::alloc::string::ToString;

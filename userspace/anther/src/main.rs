@@ -101,6 +101,10 @@ fn handle_request(request_str: &str, body: &[u8]) -> Vec<u8> {
           req.path,
           req.version);
     
+    if req.method == http::Method::Post {
+        info!("anther: Request body size: {} bytes", body.len());
+    }
+    
     // Validate path
     let safe_path = match http::decode_path(req.path) {
         Some(p) => p,
@@ -372,15 +376,24 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
         let header_end = request_data.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
         body.extend_from_slice(&request_data[header_end..]);
 
-        while body.len() < content_length {
+        let mut body_attempts = 0;
+        while body.len() < content_length && body_attempts < 100 {
             if let Some(data) = net.tcp_recv(conn_handle, 4096) {
                 body.extend_from_slice(&data);
+                body_attempts = 0; // Reset on success
             } else {
                 // Wait briefly or check for timeout
+                body_attempts += 1;
                 stem::time::sleep_ms(10);
             }
         }
         
+        if body.len() < content_length {
+            warn!("anther: Body incomplete ({}/{} bytes received after timeout)", body.len(), content_length);
+            net.tcp_close(conn_handle);
+            return;
+        }
+
         // Truncate if we read too much
         if body.len() > content_length {
             body.truncate(content_length);

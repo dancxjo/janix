@@ -96,13 +96,15 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
             lines_to_draw[line_count] = Some((src, COLOR_SOURCE));
             line_count += 1;
 
-            // Track unique source
-            let src_bytes = src.as_bytes();
+            // Track unique source (matrix at the top)
+            // Only consider the first part of the :: path
+            let domain = src.split("::").next().unwrap_or(src);
+            let domain_bytes = domain.as_bytes();
             let mut found = false;
             for i in 0..self.source_count {
                 let existing = &self.sources[i];
                 let len = existing.iter().position(|&b| b == 0).unwrap_or(SOURCE_NAME_LEN);
-                if &existing[..len] == src_bytes {
+                if &existing[..len] == domain_bytes {
                     found = true;
                     break;
                 }
@@ -110,8 +112,8 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
 
             if !found && self.source_count < MAX_SOURCES {
                 let name = &mut self.sources[self.source_count];
-                let len = src_bytes.len().min(SOURCE_NAME_LEN);
-                name[..len].copy_from_slice(&src_bytes[..len]);
+                let len = domain_bytes.len().min(SOURCE_NAME_LEN);
+                name[..len].copy_from_slice(&domain_bytes[..len]);
                 self.source_count += 1;
             }
         }

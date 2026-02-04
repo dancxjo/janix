@@ -34,7 +34,7 @@ impl ReturnExpression {
 
 #[derive(Debug, Clone)]
 pub struct NodePattern {
-    pub var: String,
+    pub var: Option<String>,
     pub kind: Option<String>,
     pub props: Vec<(String, Value)>,
 }
@@ -43,9 +43,10 @@ pub struct NodePattern {
 pub enum Pattern {
     Node(NodePattern),
     Edge {
-        src_var: String,
-        rel: String,
-        dst_var: String,
+        src: NodePattern,
+        rel_var: Option<String>,
+        rel_kind: Option<String>,
+        dst: NodePattern,
     },
 }
 
@@ -220,6 +221,16 @@ impl Parser {
         false
     }
 
+    fn expect_token(&mut self, tok: Token) -> bool {
+        if let Some(t) = self.peek() {
+            if *t == tok {
+                self.consume();
+                return true;
+            }
+        }
+        false
+    }
+
     fn parse_command(&mut self) -> Result<Command, String> {
         if let Some(Token::Keyword(k)) = self.peek() {
             match k.as_str() {
@@ -321,22 +332,32 @@ impl Parser {
     fn parse_pattern(&mut self) -> Result<Pattern, String> {
         // (n:Kind { ... })
         // or (a)-[:REL]->(b)
+        // or ()-[e:REL]->()
 
         let node_a = self.parse_node_pattern()?;
 
         // Check for edge
         if let Some(Token::Dash) = self.peek() {
             self.consume(); // -
-            if self.consume() != Some(&Token::LBracket) {
-                return Err("Expected '[' in edge pattern".to_string());
+            
+            let mut rel_var = None;
+            let mut rel_kind = None;
+
+            if self.expect_token(Token::LBracket) {
+                // [e:REL]
+                if let Some(Token::Ident(_s)) = self.peek() {
+                    rel_var = Some(self.parse_ident()?);
+                }
+
+                if self.expect_token(Token::Colon) {
+                    rel_kind = Some(self.parse_ident()?);
+                }
+
+                if !self.expect_token(Token::RBracket) {
+                    return Err("Expected ']' in edge pattern".to_string());
+                }
             }
-            if self.consume() != Some(&Token::Colon) {
-                return Err("Expected ':' in edge pattern".to_string());
-            }
-            let rel = self.parse_ident()?;
-            if self.consume() != Some(&Token::RBracket) {
-                return Err("Expected ']' in edge pattern".to_string());
-            }
+
             if self.consume() != Some(&Token::Arrow) {
                 return Err("Expected '->' in edge pattern".to_string());
             }
@@ -344,9 +365,10 @@ impl Parser {
             let node_b = self.parse_node_pattern()?;
 
             return Ok(Pattern::Edge {
-                src_var: node_a.var,
-                rel,
-                dst_var: node_b.var,
+                src: node_a,
+                rel_var,
+                rel_kind,
+                dst: node_b,
             });
         }
 
@@ -358,7 +380,11 @@ impl Parser {
             return Err("Expected '(' for node pattern".to_string());
         }
 
-        let var = self.parse_ident()?;
+        let mut var = None;
+        if let Some(Token::Ident(_)) = self.peek() {
+            var = Some(self.parse_ident()?);
+        }
+
         let mut kind = None;
         let mut props = Vec::new();
 
@@ -514,7 +540,7 @@ mod tests {
         let cmd = parse("MATCH (n) RETURN n").unwrap();
         if let Command::Match { pattern, returns, .. } = cmd {
             if let Pattern::Node(pat) = pattern {
-                assert_eq!(pat.var, "n");
+                assert_eq!(pat.var.as_deref(), Some("n"));
             } else { panic!("Wrong pattern"); }
             assert_eq!(returns.len(), 1);
             assert_eq!(returns[0], ReturnExpression::Variable("n".to_string()));
@@ -526,7 +552,7 @@ mod tests {
         let cmd = parse("MATCH (p:proc.Process {name: \"init\"}) RETURN p").unwrap();
         if let Command::Match { pattern, .. } = cmd {
             if let Pattern::Node(pat) = pattern {
-                assert_eq!(pat.var, "p");
+                assert_eq!(pat.var.as_deref(), Some("p"));
                 assert_eq!(pat.kind.as_deref(), Some("proc.Process"));
                 assert_eq!(pat.props.len(), 1);
                 assert_eq!(pat.props[0].0, "name");
@@ -541,10 +567,11 @@ mod tests {
     fn test_parse_match_edge() {
         let cmd = parse("MATCH (a)-[:PARENT]->(b) RETURN a, b").unwrap();
         if let Command::Match { pattern, returns, .. } = cmd {
-            if let Pattern::Edge { src_var, rel, dst_var } = pattern {
-                assert_eq!(src_var, "a");
-                assert_eq!(rel, "PARENT");
-                assert_eq!(dst_var, "b");
+            if let Pattern::Edge { src, rel_var, rel_kind, dst } = pattern {
+                assert_eq!(src.var.as_deref(), Some("a"));
+                assert_eq!(rel_var, None);
+                assert_eq!(rel_kind.as_deref(), Some("PARENT"));
+                assert_eq!(dst.var.as_deref(), Some("b"));
             } else { panic!("Wrong pattern"); }
             assert_eq!(returns.len(), 2);
         }
@@ -634,5 +661,19 @@ mod tests {
         }
         // Note: our current tokenize doesn't actually handle backslash escapes based on view_file
         // Let's check that.
+    }
+    #[test]
+    fn test_parse_match_anonymous_edge() {
+        let cmd = parse("MATCH ()-[e]->() RETURN e").unwrap();
+        if let Command::Match { pattern, returns, .. } = cmd {
+            if let Pattern::Edge { src, rel_var, rel_kind, dst } = pattern {
+                assert!(src.var.is_none());
+                assert_eq!(rel_var.as_deref(), Some("e"));
+                assert!(rel_kind.is_none());
+                assert!(dst.var.is_none());
+            } else { panic!("Wrong pattern"); }
+            assert_eq!(returns.len(), 1);
+            assert_eq!(returns[0], ReturnExpression::Variable("e".to_string()));
+        } else { panic!("Expected Match"); }
     }
 }

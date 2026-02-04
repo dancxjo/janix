@@ -24,7 +24,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         let mut processed = 0;
 
         // Periodic memory stats (every 500 iterations)
-        if iteration % 500 == 0 {
+        if iteration % 10000 == 0 {
             let node_count = graph.nodes.len();
             let watch_count = graph.global_watches.len();
             let history_len = graph.commit_history.len();

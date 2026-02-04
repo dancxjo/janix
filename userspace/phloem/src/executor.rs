@@ -61,7 +61,9 @@ impl GraphExecutor {
                     Ok(id) => id,
                     Err(e) => return ExecutionResult::error(&e),
                 };
-                self.bindings.insert(node_pat.var, id);
+                if let Some(var) = &node_pat.var {
+                    self.bindings.insert(var.clone(), id);
+                }
 
                 if returns.is_empty() {
                     return ExecutionResult::success(&format!("ok: merged node (id:{})", id));
@@ -69,21 +71,32 @@ impl GraphExecutor {
                     return self.format_results_structured(&returns);
                 }
             }
-            Pattern::Edge { src_var, rel, dst_var } => {
-                let src_id = match self.bindings.get(&src_var) {
+            Pattern::Edge { src, rel_var, rel_kind, dst } => {
+                let src_id = match src.var.as_ref().and_then(|v| self.bindings.get(v)) {
                     Some(&id) => id,
-                    None => return ExecutionResult::error(&format!("variable '{}' not bound", src_var)),
+                    None => return ExecutionResult::error(&format!("variable '{:?}' not bound", src.var)),
                 };
-                let dst_id = match self.bindings.get(&dst_var) {
+                let dst_id = match dst.var.as_ref().and_then(|v| self.bindings.get(v)) {
                     Some(&id) => id,
-                    None => return ExecutionResult::error(&format!("variable '{}' not bound", dst_var)),
+                    None => return ExecutionResult::error(&format!("variable '{:?}' not bound", dst.var)),
                 };
 
-                match self.ensure_edge(src_id, &rel, dst_id) {
+                let rel_kind_str = rel_kind.as_deref().ok_or_else(|| "MERGE edge requires a relationship type".to_string());
+                let rel = match rel_kind_str {
+                    Ok(r) => r,
+                    Err(e) => return ExecutionResult::error(&e),
+                };
+
+                match self.ensure_edge(src_id, rel, dst_id) {
                     Ok(_) => {
                         if returns.is_empty() {
                             ExecutionResult::success(&format!("ok: merged edge ({})-[:{}]->({})", src_id, rel, dst_id))
                         } else {
+                            if let Some(_rv) = rel_var {
+                                // Bind the relationship if possible? 
+                                // Actually we don't have a good way to bind "edge IDs" yet as they are just predicates.
+                                // For now we'll just return results.
+                            }
                             self.format_results_structured(&returns)
                         }
                     }
@@ -104,11 +117,11 @@ impl GraphExecutor {
                     if let crate::gql::Expression::Eq(left, right) = expr {
                         let mut target_id = None;
                         if let (crate::gql::Expression::IdFunc(var), crate::gql::Expression::Value(val)) = (&**left, &**right) {
-                            if var == &node_pat.var {
+                            if Some(var) == node_pat.var.as_ref() {
                                 target_id = self.resolve_value_as_u64(val);
                             }
                         } else if let (crate::gql::Expression::Value(val), crate::gql::Expression::IdFunc(var)) = (&**left, &**right) {
-                            if var == &node_pat.var {
+                            if Some(var) == node_pat.var.as_ref() {
                                 target_id = self.resolve_value_as_u64(val);
                             }
                         }
@@ -135,9 +148,8 @@ impl GraphExecutor {
                         }
                     }
                 }
-
                 match &node_pat.kind {
-                    Some(_k) => { // Changed `k` to `_k` as it's not used directly here
+                    Some(_k) => {
                         let mut candidates = [ThingId::from_u64(0); 2048];
                         stem::info!("phloem: calling find for kind: {}", _k);
                         let count = match graph::find(_k.as_str(), &mut candidates) {
@@ -150,6 +162,7 @@ impl GraphExecutor {
                         stem::info!("phloem: find returned {} candidates", count);
 
                         for i in 0..count {
+                            stem::yield_now();
                             let id = candidates[i].to_u64_lossy();
                             if self.matches_props(id, &node_pat.props) {
                                 if !matched_ids.contains(&id) {
@@ -162,106 +175,77 @@ impl GraphExecutor {
                         }
                     }
                     None => {
-                        // BFS Discovery from well-known roots and exhaustive kinds
-                        let mut queue = VecDeque::new();
-                        let mut seen = BTreeSet::new();
-
-                        // Well-known roots: Host(1), Root(2), Scheduler(3)
-                        for &root_id in &[1u64, 2u64, 3u64] {
-                            queue.push_back(root_id);
-                            seen.insert(root_id);
-                        }
-
-                        // Exhaustive kinds to seed from
-                        let fallback_kinds = [
-                            "fs.File", "content.Source", "Asset", "ui.Window", "proc.Process", "dev.bus.Pci",
-                            "dev.pci.Function", "dev.net.Nic", "dev.storage.Disk", "dev.display.Gpu",
-                            "dev.Cpu", "ui.Crown", "font.Family", "font.Face", "boot.Module",
-                            "svc.net.Stack", "svc.net.Driver", "Bytespace", "mem.Range", "proc.Thread",
-                            "proc.Task", "proc.Kernel", "svc.Root", "svc.Scheduler", "dev.Host",
-                            "mem.Page", "mem.Stack", "mem.Heap", "ui.Panel", "ui.Text", "font.Family",
-                            "font.Face", "font.File", "xml.Document", "html.Document", "css.Stylesheet"
-                        ];
-                        for &kind in &fallback_kinds {
-                            let mut seeds = [ThingId::from_u64(0); 512];
-                            stem::info!("phloem: discovery find for kind: {}", kind);
-                            match graph::find(kind, &mut seeds) {
-                                Ok(count) => {
-                                    if count > 0 {
-                                        stem::info!("phloem: discovery found {} seeds for {}", count, kind);
-                                    }
-                                    for i in 0..count {
-                                        let id = seeds[i].to_u64_lossy();
-                                        if !seen.contains(&id) {
-                                            seen.insert(id);
-                                            queue.push_back(id);
-                                        }
-                                    }
-                                }
-                                Err(e) => {
-                                    stem::info!("phloem: discovery find failed for kind {}: {:?}", kind, e);
-                                }
-                            }
-                        }
-
-                        while let Some(current_id) = queue.pop_front() {
-                            if matched_ids.len() >= limit_total {
-                                break;
-                            }
-
-                            if self.matches_props(current_id, &node_pat.props) {
-                                // Apply where clause filter if present (and not already handled by optimization)
-                                let matches_where = if let Some(ref expr) = where_clause {
-                                    self.evaluate_expression(expr, current_id, &node_pat.var)
-                                } else {
-                                    true
-                                };
-
-                                if matches_where {
-                                    if !matched_ids.contains(&current_id) {
-                                        matched_ids.push(current_id);
-                                    }
-                                }
-                            }
-
-                            // Discover neighbors
-                            if let Ok(edges) = self.get_outbound_edges(current_id) {
-                                for (_rel_id, dst_id) in edges {
-                                    if !seen.contains(&dst_id) {
-                                        seen.insert(dst_id);
-                                        queue.push_back(dst_id);
-                                    }
-                                }
-                            }
-                        }
+                        matched_ids = self.discover_nodes(&node_pat.props, None, limit_total, where_clause.as_ref(), node_pat.var.as_deref());
                     }
                 }
-    
+                stem::info!("phloem: discovered {} nodes", matched_ids.len());
                 self.format_match_results(&node_pat, matched_ids, returns, limit, skip)
             }
-            Pattern::Edge { src_var, rel: _, dst_var } => {
-                let src_id_opt = self.bindings.get(&src_var).cloned();
-                let _limit_total = limit + skip;
+            Pattern::Edge { src, rel_var, rel_kind, dst } => {
+                stem::info!("phloem: edge match starting. rel_var: {:?}, rel_kind: {:?}", rel_var, rel_kind);
+                let limit_total = limit + skip;
 
-                if let Some(src_id) = src_id_opt {
+                let mut rows = Vec::new();
+
+                let src_id_opt = if let Some(ref props) = src.props.first() {
+                    if props.0 == "id" { self.resolve_value_as_u64(&props.1) } else { None }
+                } else { None };
+
+                let source_nodes = if let Some(id) = src_id_opt {
+                    stem::info!("phloem: using fixed src_id: {}", id);
+                    alloc::vec![id]
+                } else {
+                    stem::info!("phloem: discovering source nodes for edge...");
+                    self.discover_nodes(&src.props, src.kind.as_deref(), 1000, None, None)
+                };
+                stem::info!("phloem: found {} potential source nodes", source_nodes.len());
+                stem::info!("phloem: edge match starting. source_nodes count: {}. limit_total: {}", source_nodes.len(), limit_total);
+
+                for src_id in source_nodes {
+                    stem::yield_now();
+                    if rows.len() >= limit_total { break; }
+
                     let edges = match self.get_outbound_edges(src_id) {
                         Ok(e) => e,
-                        Err(_) => return ExecutionResult::error("failed to get edges"),
+                        Err(_) => continue,
                     };
 
-                    let mut all_rows = Vec::new();
+                    for (rel_symbol_id, dst_id) in edges {
+                        stem::yield_now();
+                        if rows.len() >= limit_total { break; }
+                        
+                        stem::trace!("phloem: checking edge {} -> {}", src_id, dst_id);
 
-                    for (_rel_id, dst_id) in edges {
+                        // Check rel_kind if present
+                        if let Some(ref kind) = rel_kind {
+                            let rel_name = self.resolve_symbol(rel_symbol_id as u32).unwrap_or_default();
+                            if &rel_name != kind { continue; }
+                        }
+
+                        // Check dst node pattern
+                        if !self.matches_props(dst_id, &dst.props) { continue; }
+                        if let Some(ref kind) = dst.kind {
+                            let d_kind_id = match graph::get_kind(ThingId::from_u64(dst_id)) {
+                                Ok(k) => k.0,
+                                Err(_) => continue,
+                            };
+                            let d_kind_name = self.resolve_symbol(d_kind_id as u32).unwrap_or_default();
+                            if &d_kind_name != kind { continue; }
+                        }
+
+                        // Match!
                         let mut row = Vec::new();
                         for expr in &returns {
                             match expr {
                                 ReturnExpression::Variable(var) => {
-                                    if var == &src_var {
+                                    if Some(var) == src.var.as_ref() {
                                         row.push(ResultValue::Node(src_id));
-                                    } else if var == &dst_var {
+                                    } else if Some(var) == dst.var.as_ref() {
                                         row.push(ResultValue::Node(dst_id));
+                                    } else if Some(var) == rel_var.as_ref() {
+                                        let rel_name = self.resolve_symbol(rel_symbol_id as u32).unwrap_or_else(|| format!("{}", rel_symbol_id));
+                                        row.push(ResultValue::String(rel_name));
                                     } else {
-                                        // TODO: Support property returns like RETURN n.prop
                                         row.push(ResultValue::String(format!("unsupported: {}", var)));
                                     }
                                 }
@@ -270,23 +254,129 @@ impl GraphExecutor {
                                 }
                             }
                         }
-                        all_rows.push(row);
+                        rows.push(row);
                     }
+                }
 
-                    let rows: Vec<Vec<ResultValue>> = all_rows
-                        .into_iter()
-                        .skip(skip)
-                        .take(limit)
-                        .collect();
+                let final_rows: Vec<Vec<ResultValue>> = rows
+                    .into_iter()
+                    .skip(skip)
+                    .take(limit)
+                    .collect();
 
-                    let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
-                    ExecutionResult::rows(cols, rows)
+                let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
+                ExecutionResult::rows(cols, final_rows)
+            }
+        }
+    }
 
-                } else {
-                     return ExecutionResult::error("MATCH edge requires bound source (e.g. use MERGE/MATCH node first)");
+    fn discover_nodes(&self, props: &[(String, Value)], kind: Option<&str>, limit_total: usize, where_clause: Option<&crate::gql::Expression>, var_name: Option<&str>) -> Vec<u64> {
+        stem::info!("phloem: entering discover_nodes");
+        let mut matched_ids = Vec::new();
+
+        if let Some(k) = kind {
+            stem::info!("phloem: discovering nodes of kind {}", k);
+            let mut candidates = alloc::vec![ThingId::from_u64(0); 2048];
+            if let Ok(count) = graph::find(k, &mut candidates) {
+                stem::info!("phloem: found {} candidates for kind {}", count, k);
+                for i in 0..count {
+                    stem::yield_now();
+                    let id = candidates[i].to_u64_lossy();
+                    if self.matches_props(id, props) {
+                        let matches_where = if let Some(expr) = where_clause {
+                            if let Some(var) = var_name {
+                                self.evaluate_expression(expr, id, var)
+                            } else {
+                                true
+                            }
+                        } else {
+                            true
+                        };
+
+                        if matches_where {
+                            if !matched_ids.contains(&id) {
+                                matched_ids.push(id);
+                            }
+                            if matched_ids.len() >= limit_total {
+                                return matched_ids;
+                            }
+                        }
+                    }
+                }
+            }
+        } else {
+            // BFS Discovery from well-known roots and exhaustive kinds
+            let mut queue = VecDeque::new();
+            let mut seen = BTreeSet::new();
+
+            // Well-known roots: Host(1), Root(2), Scheduler(3)
+            stem::info!("phloem: starting BFS discovery from roots");
+            for &root_id in &[1u64, 2u64, 3u64] {
+                queue.push_back(root_id);
+                seen.insert(root_id);
+            }
+
+            // Exhaustive kinds to seed from
+            let fallback_kinds = [
+                "fs.File", "content.Source", "Asset", "ui.Window", "proc.Process", "dev.bus.Pci",
+                "dev.pci.Function", "dev.net.Nic", "dev.storage.Disk", "dev.display.Gpu",
+                "dev.Cpu", "ui.Crown", "font.Family", "font.Face", "boot.Module",
+                "svc.net.Stack", "svc.net.Driver", "Bytespace", "mem.Range", "proc.Thread",
+                "proc.Task", "proc.Kernel", "svc.Root", "svc.Scheduler", "dev.Host",
+                "mem.Page", "mem.Stack", "mem.Heap", "ui.Panel", "ui.Text", "font.Family",
+                "font.Face", "font.File", "xml.Document", "html.Document", "css.Stylesheet"
+            ];
+            for &k in &fallback_kinds {
+                stem::yield_now();
+                let mut seeds = alloc::vec![ThingId::from_u64(0); 512];
+                if let Ok(count) = graph::find(k, &mut seeds) {
+                    for i in 0..count {
+                        let id = seeds[i].to_u64_lossy();
+                        if !seen.contains(&id) {
+                            seen.insert(id);
+                            queue.push_back(id);
+                        }
+                    }
+                }
+            }
+            stem::info!("phloem: BFS seeded with {} nodes", queue.len());
+
+            while let Some(current_id) = queue.pop_front() {
+                stem::yield_now();
+                if matched_ids.len() >= limit_total {
+                    break;
+                }
+
+                if self.matches_props(current_id, props) {
+                    let matches_where = if let Some(expr) = where_clause {
+                        if let Some(var) = var_name {
+                            self.evaluate_expression(expr, current_id, var)
+                        } else {
+                            true
+                        }
+                    } else {
+                        true
+                    };
+
+                    if matches_where {
+                        if !matched_ids.contains(&current_id) {
+                            matched_ids.push(current_id);
+                        }
+                    }
+                }
+
+                // Discover neighbors
+                if let Ok(edges) = self.get_outbound_edges(current_id) {
+                    for (_rel_id, dst_id) in edges {
+                        if !seen.contains(&dst_id) {
+                            seen.insert(dst_id);
+                            queue.push_back(dst_id);
+                        }
+                    }
                 }
             }
         }
+        matched_ids
     }
 
     fn execute_set(&mut self, var: String, key: String, value: Value) -> ExecutionResult {
@@ -371,13 +461,13 @@ impl GraphExecutor {
         Ok(())
     }
 
-    fn get_outbound_edges(&self, src: u64) -> Result<Vec<(u64, u64)>, ()> {
-        let mut buf = [abi::types::Edge::default(); 1024];
-        match graph::get_edges(ThingId::from_u64(src), &mut buf) {
+    fn get_outbound_edges(&self, src: u64) -> Result<Vec<(u32, u64)>, ()> {
+        let mut edges = alloc::vec![stem::abi::types::Edge::default(); 256];
+        match graph::get_edges(ThingId::from_u64(src), &mut edges) {
             Ok(count) => {
                 let mut res = Vec::new();
                 for i in 0..count {
-                    res.push((buf[i].predicate.to_u64_lossy(), buf[i].to.to_u64_lossy()));
+                    res.push((edges[i].predicate.to_u64_lossy() as u32, edges[i].to.to_u64_lossy()));
                 }
                 Ok(res)
             }
@@ -484,7 +574,7 @@ impl GraphExecutor {
             for expr in &returns {
                 match expr {
                     ReturnExpression::Count(var) => {
-                        if var == &node_pat.var || var == "*" {
+                        if Some(var) == node_pat.var.as_ref() || var == "*" {
                             row.push(ResultValue::Number(matched_ids.len() as u64));
                         } else {
                             row.push(ResultValue::Number(0));
@@ -492,7 +582,7 @@ impl GraphExecutor {
                     }
                     ReturnExpression::Variable(v) => {
                         if let Some(&id) = matched_ids.first() {
-                            if v == &node_pat.var {
+                            if Some(v) == node_pat.var.as_ref() {
                                 row.push(ResultValue::Node(id));
                             } else {
                                 row.push(ResultValue::String(format!("unsupported: {}", v)));
@@ -515,7 +605,7 @@ impl GraphExecutor {
                 for expr in &returns {
                     match expr {
                         ReturnExpression::Variable(col) => {
-                            if col == &node_pat.var {
+                            if Some(col) == node_pat.var.as_ref() {
                                 row.push(ResultValue::Node(id));
                             } else {
                                 row.push(ResultValue::String(format!("unsupported: {}", col)));

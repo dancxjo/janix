@@ -201,8 +201,9 @@ pub fn send_eoi() {
     }
 }
 
-/// Setup LAPIC timer for periodic interrupts
-pub fn setup_lapic_timer(vector: u8, hz: u32) {
+
+/// Calibrate LAPIC timer against PIT to determine ticks per second.
+pub fn calibrate_lapic_timer(hz: u32) -> (u32, u64) {
     let lapic_base = LOCAL_APIC_BASE.load(Ordering::SeqCst);
     let hhdm = HHDM_OFFSET.load(Ordering::SeqCst);
     let base = lapic_base + hhdm;
@@ -212,55 +213,67 @@ pub fn setup_lapic_timer(vector: u8, hz: u32) {
         ptr::write_volatile((base + LAPIC_TIMER_DIVIDE as u64) as *mut u32, 0x03);
 
         // 2. Calibrate LAPIC timer against PIT
-        // Setup PIT Channel 2 (0x42) to one-shot mode (Mode 0)
-        // Measure ~10ms (11932 PIT ticks)
         ioport_write_u8(0x43, 0xB0);
         let count = 11932u16;
         ioport_write_u8(0x42, (count & 0xFF) as u8);
         ioport_write_u8(0x42, (count >> 8) as u8);
 
-        // Enable PIT Channel 2
         let port61 = ioport_read_u8(0x61);
         ioport_write_u8(0x61, port61 | 0x01);
 
-        // Start LAPIC timer with max value
         ptr::write_volatile((base + LAPIC_TIMER_INITCNT as u64) as *mut u32, 0xFFFFFFFF);
-        let start_lapic = ptr::read_volatile((base + 0x390) as *const u32); // Current Count Register
+        let start_lapic = ptr::read_volatile((base + 0x390) as *const u32);
 
-        // Wait for PIT
         let mut timeout = 10_000_000;
         while (ioport_read_u8(0x61) & 0x20) == 0 {
             core::hint::spin_loop();
             timeout -= 1;
-            if timeout == 0 {
-                break;
-            }
+            if timeout == 0 { break; }
         }
 
         let end_lapic = ptr::read_volatile((base + 0x390) as *const u32);
-
-        // Disable PIT Channel 2
         ioport_write_u8(0x61, port61 & !0x01);
 
         let delta = start_lapic.saturating_sub(end_lapic);
-        let ticks_per_10ms = delta;
-        let ticks_per_sec = ticks_per_10ms as u64 * 100;
-
+        let ticks_per_sec = (delta as u64) * 100;
         let init_cnt = (ticks_per_sec / hz as u64) as u32;
 
-        // 3. Set LVT Timer register: Periodic mode (bit 17) + Vector
+        (init_cnt, ticks_per_sec)
+    }
+}
+
+/// Set LAPIC timer to periodic mode with a pre-calculated initial count.
+/// This avoids re-calibrating against the PIT on every CPU.
+pub fn set_lapic_timer_periodic(vector: u8, init_cnt: u32) {
+    let lapic_base = LOCAL_APIC_BASE.load(Ordering::SeqCst);
+    let hhdm = HHDM_OFFSET.load(Ordering::SeqCst);
+    let base = lapic_base + hhdm;
+
+    unsafe {
+        // 1. Set divide configuration to 16
+        ptr::write_volatile((base + LAPIC_TIMER_DIVIDE as u64) as *mut u32, 0x03);
+
+        // 2. Set LVT Timer register: Periodic mode (bit 17) + Vector
         let lvt_val = (1 << 17) | (vector as u32);
         ptr::write_volatile((base + LAPIC_LVT_TIMER as u64) as *mut u32, lvt_val);
 
-        // 4. Set final initial count
+        // 3. Set final initial count
         ptr::write_volatile((base + LAPIC_TIMER_INITCNT as u64) as *mut u32, init_cnt);
+    }
+}
 
-        kernel::kinfo!(
-            "LAPIC: calibrated timer ({} ticks/sec), init_cnt={} for {}Hz",
-            ticks_per_sec,
-            init_cnt,
-            hz
-        );
+/// Send a Fixed IPI to a target CPU's Local APIC.
+pub fn send_fixed_ipi(apic_id: u32, vector: u8) {
+    let lapic_base = LOCAL_APIC_BASE.load(Ordering::SeqCst);
+    let hhdm = HHDM_OFFSET.load(Ordering::SeqCst);
+    let base = lapic_base + hhdm;
+
+    unsafe {
+        // ICR High: Destination (bits 56-63)
+        ptr::write_volatile((base + 0x310) as *mut u32, apic_id << 24);
+        // ICR Low: Fixed (mode 0), Edge (0), Physical (0), Vector (bits 0-7)
+        // Bit 14 is 'Assert' (usually 1 for fixed IPIs)
+        ptr::write_volatile((base + 0x300) as *mut u32, (1 << 14) | (vector as u32));
     }
 }
 

@@ -76,7 +76,7 @@ pub(crate) struct SchedulerMetrics {
 }
 
 pub struct Scheduler<R: BootRuntime> {
-    pub(crate) tasks: Vec<Task<R>>,
+    pub(crate) tasks: Vec<alloc::boxed::Box<Task<R>>>,
     pub(crate) wait_queue: VecDeque<TaskId>,
     pub(crate) sleep_queue: VecDeque<SleepEntry>, // tasks sleeping with wake times
     pub(crate) per_cpu: Vec<PerCpu>,

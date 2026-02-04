@@ -251,9 +251,20 @@ pub trait BootRuntimeBase: 'static {
     /// Wait for interrupt - low-power idle until next IRQ
     fn wait_for_interrupt(&self) {}
 
+    /// Send an Inter-Processor Interrupt (IPI) to a specific CPU.
+    fn send_ipi(&self, _cpu_index: usize, _vector: u8) {}
+
     fn current_cpu_id(&self) -> CpuId {
         CpuId(0)
     }
+
+    fn current_cpu_index(&self) -> usize {
+        0
+    }
+
+    /// Per-CPU initialization for secondary CPUs.
+    /// Initialize a secondary CPU after it has entered the kernel.
+    fn init_secondary_cpu(&self, cpu_index: usize);
 }
 
 pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
@@ -302,9 +313,6 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn cpu_ids(&self) -> &'static [CpuId] {
         const ONE: [CpuId; 1] = [CpuId(0)];
         &ONE
-    }
-    fn current_cpu_id(&self) -> CpuId {
-        CpuId(self.boot_cpu_id() as u32)
     }
 
     /// Start all non-boot CPUs and run `entry` on each of them.
@@ -366,16 +374,20 @@ static CPU_ONLINE: once_cell::OnceCell<&'static core::sync::atomic::AtomicUsize>
 
 static RUNTIME: once_cell::OnceCell<&'static dyn core::any::Any> = once_cell::OnceCell::new();
 static RUNTIME_BASE: once_cell::OnceCell<&'static dyn BootRuntimeBase> = once_cell::OnceCell::new();
+static mut RAW_RUNTIME_BASE: Option<&'static dyn BootRuntimeBase> = None;
 
 /// Initialize the runtime. Panics if called more than once.
 pub fn init_runtime<R: BootRuntime>(runtime: &'static R) {
-    RUNTIME.set(runtime);
+    RUNTIME.set(runtime as &'static dyn core::any::Any);
     RUNTIME_BASE.set(runtime as &'static dyn BootRuntimeBase);
+    unsafe {
+        RAW_RUNTIME_BASE = Some(runtime as &'static dyn BootRuntimeBase);
+    }
 }
 
 pub fn runtime<R: BootRuntime>() -> &'static R {
-    RUNTIME
-        .get()
+    let any_ref: &'static dyn core::any::Any = *RUNTIME.get();
+    any_ref
         .downcast_ref::<R>()
         .expect("Runtime type mismatch")
 }
@@ -746,10 +758,17 @@ pub fn run_time_tests() {
 pub mod boot_info;
 
 extern "C" fn kernel_secondary_entry(cpu_index: usize) -> ! {
+    crate::kinfo!("SMP: Entering kernel_secondary_entry for CPU {}", cpu_index);
+    // CRITICAL: First, load the kernel's GDT/IDT on this secondary CPU
+    // This must happen before ANY kernel code that might fault.
+    // Use RAW_RUNTIME_BASE to avoid OnceCell atomics which might fault if GDT/IDT not loaded.
+    let base = unsafe { RAW_RUNTIME_BASE.expect("RAW_RUNTIME_BASE not initialized") };
+    base.init_secondary_cpu(cpu_index);
+
     // Per-CPU init
-    runtime_base().mono_ticks(); // ok for logging
+    base.mono_ticks(); // ok for logging
     // IMPORTANT: per-CPU SIMD init
-    runtime_base().simd_init_cpu();
+    base.simd_init_cpu();
 
     // Then:
     unsafe {

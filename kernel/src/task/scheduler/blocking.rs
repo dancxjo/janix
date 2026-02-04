@@ -111,6 +111,11 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
             let safe_cpu = if target_cpu < sched.per_cpu.len() { target_cpu } else { 0 };
             sched.per_cpu[safe_cpu].runq[priority as usize].push_back(tid);
             
+            // If the target CPU is not the current one, send an IPI to wake it up
+            if safe_cpu != super::current_cpu_index::<R>() {
+                rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+            }
+            
             sched.tasks[idx].wake_pending = false;
             
             // Queue graph state update

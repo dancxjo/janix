@@ -56,6 +56,7 @@ const ENTRY_IOAPIC: u8 = 1;
 const ENTRY_INTERRUPT_OVERRIDE: u8 = 2;
 #[allow(dead_code)]
 const ENTRY_LOCAL_APIC_NMI: u8 = 4;
+const ENTRY_LOCAL_X2APIC: u8 = 9;
 
 /// Maximum supported CPUs
 pub const MAX_CPUS: usize = 32;
@@ -101,6 +102,16 @@ impl InterruptOverride {
 
 /// Result of MADT parsing
 #[derive(Debug)]
+#[repr(C, packed)]
+struct LocalX2ApicEntry {
+    entry_type: u8,
+    length: u8,
+    _reserved: u16,
+    x2apic_id: u32,
+    flags: u32,
+    acpi_processor_id: u32,
+}
+
 pub struct MadtInfo {
     pub local_apic_addr: u64,
     pub ioapics: [IoapicInfo; MAX_IOAPICS],
@@ -196,6 +207,7 @@ pub unsafe fn parse_madt(rsdp_virt: u64, hhdm_offset: u64) -> Option<MadtInfo> {
     let madt_length = unsafe {
         ptr::read_unaligned(ptr::addr_of!((*(madt_virt as *const AcpiSdtHeader)).length))
     };
+    kernel::kinfo!("MADT: total length {}", madt_length);
     map_phys_range(madt_phys, madt_length as u64, hhdm_offset);
     unsafe { parse_madt_table(madt_virt) }
 }
@@ -259,19 +271,39 @@ unsafe fn parse_madt_table(madt_virt: u64) -> Option<MadtInfo> {
         let entry_type = unsafe { ptr::read_unaligned(ptr as *const u8) };
         let entry_len = unsafe { ptr::read_unaligned((ptr + 1) as *const u8) };
 
+        // Debug: log EVERY entry
+        kernel::kinfo!("MADT: Entry type {}, len {} at 0x{:x}", entry_type, entry_len, ptr);
+
         if entry_len < 2 {
-            break; // Invalid entry
+            kernel::kerror!("MADT: Invalid entry length {} at 0x{:x}", entry_len, ptr);
+            break; 
         }
 
         match entry_type {
-            ENTRY_LOCAL_APIC if info.cpu_count < MAX_CPUS => {
+            ENTRY_LOCAL_APIC => {
                 let entry = ptr as *const LocalApicEntry;
                 let flags = unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).flags)) };
-                // Bit 0 = Enabled, Bit 1 = Online Capable
                 if (flags & 1) != 0 || (flags & 2) != 0 {
                     let apic_id = unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).apic_id)) };
-                    info.local_apic_ids[info.cpu_count] = apic_id as u32;
-                    info.cpu_count += 1;
+                    if info.cpu_count < MAX_CPUS {
+                        info.local_apic_ids[info.cpu_count] = apic_id as u32;
+                        info.cpu_count += 1;
+                    } else {
+                        kernel::kwarn!("MADT: Too many CPUs, ignoring APIC ID {}", apic_id);
+                    }
+                }
+            }
+            ENTRY_LOCAL_X2APIC => {
+                let entry = ptr as *const LocalX2ApicEntry;
+                let flags = unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).flags)) };
+                if (flags & 1) != 0 || (flags & 2) != 0 {
+                    let apic_id = unsafe { ptr::read_unaligned(ptr::addr_of!((*entry).x2apic_id)) };
+                    if info.cpu_count < MAX_CPUS {
+                        info.local_apic_ids[info.cpu_count] = apic_id;
+                        info.cpu_count += 1;
+                    } else {
+                        kernel::kwarn!("MADT: Too many CPUs, ignoring x2APIC ID {}", apic_id);
+                    }
                 }
             }
             ENTRY_IOAPIC if info.ioapic_count < MAX_IOAPICS => {

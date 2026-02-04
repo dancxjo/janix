@@ -1,6 +1,7 @@
 use core::mem::size_of;
 
-pub const IRQ_TIMER_VECTOR: u8 = 0xFE;
+pub const IRQ_TIMER_VECTOR: u8 = 0x20;
+pub const IRQ_RESCHED_VECTOR: u8 = 0x30;
 
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
@@ -39,11 +40,11 @@ impl IdtEntry {
 }
 
 #[repr(C, align(16))]
-struct Idt {
+pub struct Idt {
     entries: [IdtEntry; 256],
 }
 
-static mut IDT: Idt = Idt {
+pub static mut IDT: Idt = Idt {
     entries: [IdtEntry::missing(); 256],
 };
 
@@ -61,6 +62,7 @@ unsafe extern "C" {
     fn generic_handler_shim();
     fn irq_common_handler_shim();
     fn irq_timer_handler_shim();
+    fn irq_resched_handler_shim();
 }
 
 core::arch::global_asm!(
@@ -102,20 +104,42 @@ core::arch::global_asm!(
     2:  hlt
         jmp 2b
 
-    .global pf_handler_shim
     pf_handler_shim:
-        mov $0x3f8, %dx
-        mov $0x50, %al
-        out %al, %dx
+        // Check if coming from user mode (CS bit 0-1)
         testb $3, 16(%rsp)
         jz 1f
         swapgs
     1:
-        cli
-        mov %rsp, %rdi
+        // PF pushes error code, so stack has: ERR, RIP, CS, RFLAGS, RSP, SS
+        push %r11
+        push %r10
+        push %r9
+        push %r8
+        push %rdi
+        push %rsi
+        push %rdx
+        push %rcx
+        push %rax
+
+        lea 72(%rsp), %rdi // Pointer to InterruptStackFrame (skipping 9 registers)
         call rust_pf_handler
-    2:  hlt
-        jmp 2b
+
+        pop %rax
+        pop %rcx
+        pop %rdx
+        pop %rsi
+        pop %rdi
+        pop %r8
+        pop %r9
+        pop %r10
+        pop %r11
+
+        testb $3, 16(%rsp) // CS of frame
+        jz 2f
+        swapgs
+    2:
+        add $8, %rsp // Pop error code
+        iretq
 
     .global generic_handler_shim
     generic_handler_shim:
@@ -125,8 +149,13 @@ core::arch::global_asm!(
     2:  hlt
         jmp 2b
 
-    .global irq_common_handler_shim
     irq_common_handler_shim:
+        // IRQ stubs (generic) don't push error code. 
+        // Stack has: RIP, CS, RFLAGS, RSP, SS
+        testb $3, 8(%rsp)
+        jz 1f
+        swapgs
+    1:
         push %rax
         push %rcx
         push %rdx
@@ -137,7 +166,7 @@ core::arch::global_asm!(
         push %r10
         push %r11
 
-        mov $0, %rdi
+        mov $0, %rdi // Vector will be resolved via LAPIC ISR
         call rust_irq_handler
 
         pop %r11
@@ -150,10 +179,17 @@ core::arch::global_asm!(
         pop %rcx
         pop %rax
 
+        testb $3, 8(%rsp)
+        jz 2f
+        swapgs
+    2:
         iretq
 
-    .global irq_timer_handler_shim
     irq_timer_handler_shim:
+        testb $3, 8(%rsp)
+        jz 1f
+        swapgs
+    1:
         push %rax
         push %rcx
         push %rdx
@@ -164,7 +200,7 @@ core::arch::global_asm!(
         push %r10
         push %r11
 
-        mov $0xFE, %rdi
+        mov $0x20, %rdi
         call rust_irq_handler
 
         pop %r11
@@ -177,6 +213,45 @@ core::arch::global_asm!(
         pop %rcx
         pop %rax
 
+        testb $3, 8(%rsp)
+        jz 2f
+        swapgs
+    2:
+        iretq
+
+    .global irq_resched_handler_shim
+    irq_resched_handler_shim:
+        testb $3, 8(%rsp)
+        jz 1f
+        swapgs
+    1:
+        push %rax
+        push %rcx
+        push %rdx
+        push %rsi
+        push %rdi
+        push %r8
+        push %r9
+        push %r10
+        push %r11
+
+        mov $0x30, %rdi
+        call rust_irq_handler
+
+        pop %r11
+        pop %r10
+        pop %r9
+        pop %r8
+        pop %rdi
+        pop %rsi
+        pop %rdx
+        pop %rcx
+        pop %rax
+
+        testb $3, 8(%rsp)
+        jz 2f
+        swapgs
+    2:
         iretq
 "#,
     options(att_syntax)
@@ -234,11 +309,32 @@ pub unsafe fn init() {
             0x8E,
         );
 
+        // Dedicated Reschedule IPI Vector
+        IDT.entries[IRQ_RESCHED_VECTOR as usize].set_handler(
+            irq_resched_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+
         let idtr = IdtDescriptor {
             size: (size_of::<Idt>() - 1) as u16,
             offset: core::ptr::addr_of!(IDT) as u64,
         };
 
+        core::arch::asm!("lidt [{}]", in(reg) &idtr);
+    }
+}
+
+/// Load the kernel IDT on secondary CPUs.
+/// The IDT entries are already set up by the BSP.
+pub unsafe fn load_on_secondary() {
+    let idtr = IdtDescriptor {
+        size: (size_of::<Idt>() - 1) as u16,
+        offset: unsafe { core::ptr::addr_of!(IDT) } as u64,
+    };
+
+    unsafe {
         core::arch::asm!("lidt [{}]", in(reg) &idtr);
     }
 }
@@ -267,8 +363,8 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
         crate::arch::x86_64::pic::send_eoi(resolved);
     }
 
-    // IRQ_TIMER_VECTOR is our preemption heartbeat
-    if resolved == IRQ_TIMER_VECTOR {
+    // IRQ_TIMER_VECTOR or IRQ_RESCHED_VECTOR is our preemption heartbeat
+    if resolved == IRQ_TIMER_VECTOR || resolved == IRQ_RESCHED_VECTOR {
         kernel::task::scheduler::on_tick::<crate::arch::CurrentRuntime>();
     } else {
         kernel::irq::dispatch_irq(resolved);

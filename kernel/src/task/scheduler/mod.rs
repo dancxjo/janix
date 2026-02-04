@@ -62,10 +62,7 @@ pub fn on_tick<R: BootRuntime>() {
 
 pub(crate) fn current_cpu_index<R: BootRuntime>() -> usize {
     let rt = crate::runtime::<R>();
-    let id = BootRuntime::current_cpu_id(rt); // cpu id from runtime
-    let cpu_ids = rt.cpu_ids();
-    // Linear search for now (small N)
-    cpu_ids.iter().position(|&x| x == id).unwrap_or(0)
+    rt.current_cpu_index()
 }
 
 /// Process pending graph work items.
@@ -283,7 +280,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         timeslice_remaining: types::DEFAULT_TIMESLICE,
         affinity: crate::task::Affinity::Any,
     };
-    sched.tasks.push(task);
+    sched.tasks.push(alloc::boxed::Box::new(task));
     
     // Boot task runs on CPU 0
     sched.per_cpu[0].current = Some(0);
@@ -314,7 +311,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         
         // Pin idle task to its CPU
         if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == idle_id) {
-            t.affinity = crate::task::Affinity::Pinned(i);
+            (**t).affinity = crate::task::Affinity::Pinned(i);
         }
         graphify::set_affinity_node(idle_id, i);
         graphify::set_name(idle_id, &alloc::format!("idle/{}", i));
@@ -593,8 +590,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         let tasks_ptr = self.tasks.as_mut_ptr();
         unsafe {
-            let old_task = &mut *tasks_ptr.add(old_idx);
-            let new_task = &mut *tasks_ptr.add(new_idx);
+            let old_task = &mut **tasks_ptr.add(old_idx);
+            let new_task = &mut **tasks_ptr.add(new_idx);
 
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;
@@ -864,8 +861,9 @@ pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
     CPU_ONLINE.fetch_add(1, Ordering::Relaxed);
     crate::kinfo!("SMP: Secondary CPU {} online!", cpu_index);
 
-    // Enter scheduler loop
-    // Use the type-erased hook initialized by the boot CPU
+    // Enter scheduler loop via the hook which bootstraps this CPU.
+    // The run_scheduler hook will call bootstrap_cpu to set up this CPU's
+    // current task before entering the yield loop.
     if let Some(hook) = unsafe { hooks::RUN_SCHEDULER_HOOK } {
         hook();
     } else {

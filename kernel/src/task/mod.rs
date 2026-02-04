@@ -215,9 +215,45 @@ pub fn dump_stats<R: BootRuntime>() {
     scheduler::dump_stats::<R>();
 }
 
+/// Bootstrap a CPU for scheduling. Must be called before the first yield
+/// on any CPU that doesn't already have a current task set (e.g., secondary CPUs).
+fn bootstrap_cpu<R: BootRuntime>() {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    
+    let lock = scheduler::SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+        let cpu_idx = scheduler::current_cpu_index::<R>();
+        
+        if let Some(pc) = sched.per_cpu.get_mut(cpu_idx) {
+            if pc.current.is_none() {
+                // CPU hasn't been bootstrapped yet. Set current to idle task.
+                if let Some(idle_id) = pc.idle_task {
+                    pc.current = Some(idle_id);
+                    crate::kinfo!("SMP: CPU {} bootstrapped with idle task {}", cpu_idx, idle_id);
+                    
+                    // Mark the idle task as running
+                    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == idle_id) {
+                        task.state = TaskState::Running;
+                    }
+                } else {
+                    crate::kerror!("SMP: CPU {} has no idle task!", cpu_idx);
+                }
+            }
+        }
+    }
+    
+    rt.irq_restore(_irq);
+}
+
 pub fn run_scheduler<R: BootRuntime>() -> ! {
+    // Bootstrap this CPU if needed (sets current task for secondary CPUs)
+    bootstrap_cpu::<R>();
+    
     loop {
         yield_now::<R>();
         core::hint::spin_loop();
     }
 }
+

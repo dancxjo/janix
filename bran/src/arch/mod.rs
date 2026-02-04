@@ -117,8 +117,8 @@ fn init_x86_64_ioapic() {
             ids[i] = CpuId(madt_info.local_apic_ids[i]);
         }
         unsafe { x86_64::CPU_IDS = ids; }
-        x86_64::CPU_COUNT.store(madt_info.cpu_count as u64, Ordering::Relaxed);
-        kinfo!("SMP: Found {} CPUs", madt_info.cpu_count);
+        x86_64::CPU_COUNT.store(madt_info.cpu_count as u64, Ordering::SeqCst);
+        kinfo!("SMP: Found {} CPUs (CPU_COUNT now = {})", madt_info.cpu_count, x86_64::CPU_COUNT.load(Ordering::SeqCst));
     }
 
     if madt_info.ioapic_count == 0 {

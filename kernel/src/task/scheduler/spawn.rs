@@ -23,12 +23,12 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(65536, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             panic!("Failed to allocate stack for task {}", id);
         }
-        let stack_top = (stack_base as u64) + 16384;
+        let stack_top = (stack_base as u64) + 65536;
 
         let ctx = rt
             .tasking()
@@ -66,7 +66,7 @@ impl<R: BootRuntime> Scheduler<R> {
             affinity,
         };
 
-        self.tasks.push(task);
+        self.tasks.push(alloc::boxed::Box::new(task));
         // Push to target CPU's run queue
         let cpu_count = self.per_cpu.len(); // Should match rt.cpu_count()
         let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
@@ -98,12 +98,12 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(65536, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             panic!("Failed to allocate kernel stack for user thread {}", id);
         }
-        let kstack_top = (stack_base as u64) + 16384;
+        let kstack_top = (stack_base as u64) + 65536;
 
         let aspace = rt.tasking().active_address_space();
 
@@ -156,7 +156,7 @@ impl<R: BootRuntime> Scheduler<R> {
             affinity,
         };
 
-        self.tasks.push(task);
+        self.tasks.push(alloc::boxed::Box::new(task));
         // Push to target CPU's run queue
         let cpu_count = self.per_cpu.len();
         let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
@@ -188,12 +188,12 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
 
         self.next_id += 1;
-        let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(65536, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             return None;
         }
-        let stack_top = (stack_base as u64) + 16384;
+        let stack_top = (stack_base as u64) + 65536;
 
         let user_entry = alloc::boxed::Box::new(entry);
         let entry_ptr = alloc::boxed::Box::into_raw(user_entry) as usize;
@@ -233,7 +233,7 @@ impl<R: BootRuntime> Scheduler<R> {
             affinity,
         };
 
-        self.tasks.push(task);
+        self.tasks.push(alloc::boxed::Box::new(task));
         // Push to target CPU's run queue
         let cpu_count = self.per_cpu.len();
         let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
@@ -496,7 +496,7 @@ mod tests {
         ];
 
         for (arg, expected) in cases {
-            let id = sched.spawn(mock_entry, arg, TaskPriority::Normal);
+            let id = sched.spawn(mock_entry, arg, TaskPriority::Normal, Affinity::Any);
             let task = sched.tasks.iter().find(|t| t.id == id).unwrap();
 
             // In our MockTasking.init_kernel_context, we store arg in MockContext.0

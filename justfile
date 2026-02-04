@@ -5,7 +5,7 @@
 karch := env_var_or_default("KARCH", "x86_64")
 
 # Default user QEMU flags
-qemuflags := env_var_or_default("QEMUFLAGS", "-m 2G")
+qemuflags := env_var_or_default("QEMUFLAGS", "-m 2G -smp 6")
 
 # Rust profile (dev/release)
 rust_profile := env_var_or_default("RUST_PROFILE", "dev")

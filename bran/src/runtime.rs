@@ -45,6 +45,15 @@ pub trait ArchRuntime {
     fn start_secondary_cpus(&self, _entry: extern "C" fn(usize) -> !) -> Result<(), abi::errors::Errno> {
         Err(abi::errors::Errno::NotSupported)
     }
+    fn current_cpu_index(&self) -> usize {
+        0
+    }
+    /// Per-CPU initialization for secondary cores.
+    /// Called on each secondary CPU after it starts.
+    fn init_secondary_cpu(&self, cpu_index: usize) {}
+
+    /// Send an Inter-Processor Interrupt (IPI) to a specific CPU.
+    fn send_ipi(&self, _cpu_index: usize, _vector: u8) {}
 
     // Wait for interrupt - low-power idle until next IRQ
     fn wait_for_interrupt(&self) {}
@@ -256,6 +265,22 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn wait_for_interrupt(&self) {
         self.arch.wait_for_interrupt()
     }
+
+    fn current_cpu_id(&self) -> CpuId {
+        self.arch.current_cpu_id()
+    }
+
+    fn current_cpu_index(&self) -> usize {
+        self.arch.current_cpu_index()
+    }
+
+    fn init_secondary_cpu(&self, cpu_index: usize) {
+        self.arch.init_secondary_cpu(cpu_index)
+    }
+
+    fn send_ipi(&self, cpu_index: usize, vector: u8) {
+        self.arch.send_ipi(cpu_index, vector)
+    }
 }
 
 impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
@@ -310,9 +335,6 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     }
     fn cpu_ids(&self) -> &'static [CpuId] {
         self.arch.cpu_ids()
-    }
-    fn current_cpu_id(&self) -> CpuId {
-        self.arch.current_cpu_id()
     }
     fn start_secondary_cpus(&self, entry: extern "C" fn(usize) -> !) -> Result<(), abi::errors::Errno> {
         self.arch.start_secondary_cpus(entry)

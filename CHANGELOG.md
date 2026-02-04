@@ -2,13 +2,22 @@
 
 ## Recent Status
 
-The operating system is seeing major improvements in core stability, memory management, and display reliability. A critical update introduces **kernel log eviction**, a mechanism that manages graph history memory usage by evicting old entries when pressure is high, preventing system-wide memory exhaustion. Performance for the **Unified Device Graph** has been significantly boosted by linking core services—such as the Scheduler, Host, and Boot Modules—directly to `svc.Root` for O(1) discovery, bypassing expensive traversals.
+The operating system's userspace capabilities have expanded significantly with the introduction of a **WASM Driver Host**. This new runtime environment allows drivers to be executed as WebAssembly modules, providing a sandboxed and architecture-independent execution model. Crucially, the host includes a **record-and-replay syscall tracing** system, enabling developers to capture driver interactions and replay them deterministically for debugging.
 
-On the visual front, the **early boot display (bud)** now incorporates smarter heuristics for framebuffer stride and BPP detection. This eliminates diagonal shearing artifacts previously observed on certain hardware configurations.
-
-Testing infrastructure has also been expanded with new **multi-tasking BDD scenarios** to verify task isolation and scheduling, alongside comprehensive **ISO9660 unit tests** that validate filesystem probing logic without the need for external images.
+Complementing this, the **Anther** HTTP server has gained **file upload capabilities**. Clients can now push files directly to the system via a `POST /upload` endpoint, which automatically handles bytespace creation, SHA-256 hashing, and metadata extraction (MIME type, size) to populate `fs.File` nodes in the graph.
 
 ## Recent Changes
+
+### 🔌 Userspace & Drivers
+
+*   **WASM Driver Host**: Introduced a runtime for executing WASM-based drivers with `thing.sys` syscall support. It features a tracing mechanism to record and replay syscalls for deterministic debugging.
+    *   *Artifacts*: `userspace/driver_wasm_host/`
+
+*   **WASM Driver Prototype**: Added an example driver demonstrating MMIO interactions and logging from within the WASM sandbox.
+    *   *Artifacts*: `userspace/proto_driver_wasm/`
+
+*   **Anther File Upload**: Added a `POST /upload` endpoint to the web server. It handles file ingestion by creating bytespaces and file nodes, automatically calculating hashes and setting metadata properties (`FILE_MIME`, `FILE_SIZE`, etc.).
+    *   *Artifacts*: `userspace/anther/src/upload.rs`
 
 ### 🛠️ Kernel & ABI
 

@@ -26,7 +26,7 @@ The system initializes in the following sequence:
 ### Key Components
 
 *   **[Bud](./docs/components/bud.md)**: Early-boot display and diagnostics.
-*   **[Ingestd](./docs/components/ingestd.md)**: Asset watcher service (hot-loading resources).
+*   **[Flytrap](./docs/components/flytrap.md)**: Asset watcher service (hot-loading resources).
 
 ## Quick Start
 

@@ -1189,7 +1189,7 @@ fn publish_content_file(
     mime: Option<&str>,
 ) -> Option<ThingId> {
     // Check if file already exists by NAME (regardless of source)
-    // This prevents duplicates when both ahci_disk and ingestd publish the same file
+    // This prevents duplicates when both ahci_disk and flytrap publish the same file
     // Buffer size: 512 is reasonable for boot-time assets; larger systems may need pagination
     let mut files = [ThingId::default(); 512];
     if let Ok(count) = find(kinds::CONTENT_FILE, &mut files) {
@@ -1198,7 +1198,7 @@ fn publish_content_file(
             let existing_name = prop_get(file_id, keys::FILE_NAME).unwrap_or(0);
             
             // If file with same name already exists (from any source), skip creation
-            // This prevents race between ahci_disk (iso9660_disk source) and ingestd (limine_module source)
+            // This prevents race between ahci_disk (iso9660_disk source) and flytrap (limine_module source)
             if existing_name == name_sym {
                 // File exists - update bytespace/hash if changed, but don't create duplicate
                 let old_hash = prop_get(file_id, keys::FILE_HASH).unwrap_or(0);

@@ -15,11 +15,11 @@ This contradicted Thing-OS's core philosophy: **the graph is the system, and tru
 
 ## Solution
 
-The `ingestd` service (conceptually `assetd`) now implements continuous asset watching:
+The `flytrap` service (conceptually `assetd`) now implements continuous asset watching:
 
 ### Architecture
 
-**Service**: `userspace/ingestd/src/main.rs`
+**Service**: `userspace/flytrap/src/main.rs`
 
 **Key Features**:
 1. **Continuous Discovery**: Watches BOOT_MODULE nodes for new assets appearing at runtime
@@ -48,7 +48,7 @@ Thing: Asset {
 ### How It Works
 
 #### 1. Initial Scan
-At service startup, `ingestd` scans existing BOOT_MODULE nodes and publishes them as assets.
+At service startup, `flytrap` scans existing BOOT_MODULE nodes and publishes them as assets.
 
 #### 2. Continuous Watching
 The service watches for:
@@ -137,7 +137,7 @@ Build the service:
 cargo +nightly build -Z build-std=core,alloc \
   -Z build-std-features=compiler-builtins-mem \
   --target targets/x86_64-unknown-thingos.json \
-  -p ingestd
+  -p flytrap
 ```
 
 The service is automatically included in ISO builds via `just iso`.

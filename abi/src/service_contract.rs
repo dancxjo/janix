@@ -61,7 +61,7 @@ use crate::schema::{keys, kinds, rels};
 /// Services MUST declare their contract at startup and register it in the graph.
 #[derive(Debug, Clone)]
 pub struct ServiceContract {
-    /// Canonical service name (e.g., "ingestd", "blossom")
+    /// Canonical service name (e.g., "flytrap", "blossom")
     pub name: &'static str,
     
     /// Node kinds this service watches (input dependencies)

@@ -340,6 +340,22 @@ const api = {
         }
         return await r.json();
     },
+
+    async uploadFile(file) {
+        const r = await fetchWithTimeout('/upload', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/octet-stream',
+                'X-File-Name': file.name,
+            },
+            body: file,
+        }, 30000); // Longer timeout for uploads
+        if (!r.ok) {
+            const text = await r.text();
+            throw new Error(`${r.status} ${r.statusText}: ${text}`);
+        }
+        return r.json();
+    },
 };
 
 // =============================================================================
@@ -1309,6 +1325,27 @@ function bindEvents() {
     $('closeQueryBtn').addEventListener('click', hideQueryResults);
 
     // Enter key in query input
+    // Upload button
+    $('uploadBtn').addEventListener('click', async () => {
+        const fileInput = $('uploadInput');
+        if (fileInput.files.length === 0) {
+            alert('Please select a file first');
+            return;
+        }
+        const file = fileInput.files[0];
+
+        setStatus(`Uploading ${file.name}...`, '');
+        try {
+            await api.uploadFile(file);
+            setStatus(`Uploaded ${file.name}`, 'success');
+            // Clear input
+            fileInput.value = '';
+        } catch (err) {
+            console.error('Upload failed:', err);
+            setStatus(`Upload failed: ${err.message}`, 'error');
+        }
+    });
+
     $('gqlInput').addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             executeGqlQuery();

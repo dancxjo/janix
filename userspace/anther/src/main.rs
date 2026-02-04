@@ -15,6 +15,7 @@ mod graph_api;
 mod http;
 mod net_client;
 mod router;
+mod upload;
 
 
 use alloc::vec::Vec;
@@ -153,6 +154,7 @@ fn route_request(req: &http::Request<'_>, path: &str, body: &[u8]) -> Vec<u8> {
     
     match path {
         "/health" => handle_health(is_head),
+        "/upload" if req.method == http::Method::Post => upload::handle_upload(req, body),
         "/graph" => handle_graph_index(is_head),
         p if p.starts_with("/graph/") => handle_graph_thing(p, is_head),
         _ => handle_404(is_head),

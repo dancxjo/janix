@@ -7,3 +7,4 @@ edition = "2021"
 stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
 abi = { path = "../../abi" }
 phloem = { path = "../phloem" }
+sha2 = { version = "0.10", default-features = false }

@@ -58,6 +58,8 @@ members = [
     "libs/llm_stub",
     "userspace/described",
     "userspace/sysdescribe",
+    "userspace/driver_wasm_host",
+    "userspace/proto_driver_wasm",
 ]
 resolver = "2"
 

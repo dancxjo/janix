@@ -255,6 +255,26 @@ mod tests {
         assert_eq!(res.rows.len(), 1);
     }
 
+    #[test]
+    fn test_order_by_id() {
+        // MATCH (n) RETURN n ORDER BY id(n) LIMIT 200
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) LIMIT 200").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        // Results should be sorted by ascending ID
+        // In our mock we have nodes 1, 2, 3, 4, 5
+        if res.rows.len() >= 2 {
+            // Verify ascending order
+            for i in 1..res.rows.len() {
+                let prev_id = if let crate::ResultValue::Node(id) = res.rows[i-1][0] { id } else { 0 };
+                let curr_id = if let crate::ResultValue::Node(id) = res.rows[i][0] { id } else { 0 };
+                assert!(prev_id <= curr_id, "Expected ascending order");
+            }
+        }
+    }
+
     // ===== 1) Identity and direct lookup =====
 
     #[test]

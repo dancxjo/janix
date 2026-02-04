@@ -52,6 +52,12 @@ pub enum Pattern {
 }
 
 #[derive(Debug, Clone)]
+pub enum OrderBy {
+    IdAsc(String),  // ORDER BY id(n) or ORDER BY id(n) ASC
+    IdDesc(String), // ORDER BY id(n) DESC
+}
+
+#[derive(Debug, Clone)]
 pub enum Command {
     Merge {
         pattern: Pattern,
@@ -62,6 +68,7 @@ pub enum Command {
         pattern: Pattern,
         where_clause: Option<Expression>,
         returns: Vec<ReturnExpression>,
+        order_by: Option<OrderBy>,
         limit: usize,
         skip: usize,
     },
@@ -163,7 +170,7 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     }
                 }
                 match s.to_uppercase().as_str() {
-                    "MERGE" | "MATCH" | "WHERE" | "RETURN" | "SET" | "LIMIT" | "SKIP" | "HELP" | "QUIT" | "EXIT" | "SCHEMA" | "COUNT" => {
+                    "MERGE" | "MATCH" | "WHERE" | "RETURN" | "SET" | "LIMIT" | "SKIP" | "HELP" | "QUIT" | "EXIT" | "SCHEMA" | "COUNT" | "ORDER" | "BY" | "ASC" | "DESC" => {
                         tokens.push(Token::Keyword(s.to_uppercase()));
                     }
                     _ => tokens.push(Token::Ident(s)),
@@ -265,6 +272,7 @@ impl Parser {
                     let mut limit = 1000; // Default limit increased
                     let mut skip = 0;
                     let mut returns = Vec::new();
+                    let mut order_by = None;
 
                     // Support LIMIT/SKIP anywhere
                     loop {
@@ -287,7 +295,38 @@ impl Parser {
                         returns = self.parse_return_vars()?;
                     }
 
-                    // Check again after return
+                    // Check for ORDER BY after RETURN
+                    if self.expect_keyword("ORDER") {
+                        if !self.expect_keyword("BY") {
+                            return Err("Expected BY after ORDER".to_string());
+                        }
+                        // Parse ORDER BY id(var) [ASC|DESC]
+                        if let Some(Token::Ident(func)) = self.peek() {
+                            if func == "id" {
+                                self.consume(); // consume "id"
+                                if self.consume() != Some(&Token::LParen) {
+                                    return Err("Expected '(' after id in ORDER BY".to_string());
+                                }
+                                let var = self.parse_ident()?;
+                                if self.consume() != Some(&Token::RParen) {
+                                    return Err("Expected ')' after id(var) in ORDER BY".to_string());
+                                }
+                                // Check for ASC/DESC
+                                if self.expect_keyword("DESC") {
+                                    order_by = Some(OrderBy::IdDesc(var));
+                                } else {
+                                    self.expect_keyword("ASC"); // optional, consume if present
+                                    order_by = Some(OrderBy::IdAsc(var));
+                                }
+                            } else {
+                                return Err(format!("Unsupported ORDER BY expression: {}", func));
+                            }
+                        } else {
+                            return Err("Expected id(var) after ORDER BY".to_string());
+                        }
+                    }
+
+                    // Check again for LIMIT/SKIP after ORDER BY
                     loop {
                         if self.expect_keyword("LIMIT") {
                             if let Some(Token::Number(n)) = self.consume() {
@@ -304,7 +343,7 @@ impl Parser {
                         break;
                     }
 
-                    Ok(Command::Match { pattern, where_clause, returns, limit, skip })
+                    Ok(Command::Match { pattern, where_clause, returns, order_by, limit, skip })
                 }
                 "SET" => {
                     self.consume();

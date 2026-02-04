@@ -94,8 +94,8 @@ impl<G: Graph> GraphExecutor<G> {
                 // TODO: Implement MERGE properly (for now it just MATCHes/CREATEs)
                 ExecutionResult::error("MERGE not fully implemented")
             }
-            Command::Match { pattern, where_clause, returns, limit, skip } => {
-                self.execute_match(pattern, where_clause, returns, limit, skip)
+            Command::Match { pattern, where_clause, returns, order_by, limit, skip } => {
+                self.execute_match(pattern, where_clause, returns, order_by, limit, skip)
             }
             Command::Set { var, key, value } => self.execute_set(var, key, value),
         }
@@ -166,7 +166,7 @@ impl<G: Graph> GraphExecutor<G> {
         }
     }
 
-    fn execute_match(&self, pattern: Pattern, where_clause: Option<crate::gql::Expression>, returns: Vec<ReturnExpression>, limit: usize, skip: usize) -> ExecutionResult {
+    fn execute_match(&self, pattern: Pattern, where_clause: Option<crate::gql::Expression>, returns: Vec<ReturnExpression>, order_by: Option<crate::gql::OrderBy>, limit: usize, skip: usize) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
                 let limit_total = limit + skip;
@@ -204,7 +204,7 @@ impl<G: Graph> GraphExecutor<G> {
                             }
                             
                             // Skip discovery since we had a direct ID lookup
-                            return self.format_match_results(&node_pat, matched_ids, returns, limit, skip);
+                            return self.format_match_results(&node_pat, matched_ids, returns, order_by, limit, skip);
                         }
                     }
                 }
@@ -228,7 +228,8 @@ impl<G: Graph> GraphExecutor<G> {
                                 if !matched_ids.contains(&id) {
                                     matched_ids.push(id);
                                 }
-                                if matched_ids.len() >= limit_total {
+                                // Don't limit early if we need to sort
+                                if order_by.is_none() && matched_ids.len() >= limit_total {
                                     break;
                                 }
                             }
@@ -239,7 +240,7 @@ impl<G: Graph> GraphExecutor<G> {
                     }
                 }
                 stem::info!("phloem: discovered {} nodes", matched_ids.len());
-                self.format_match_results(&node_pat, matched_ids, returns, limit, skip)
+                self.format_match_results(&node_pat, matched_ids, returns, order_by, limit, skip)
             }
             Pattern::Edge { src, rel_var, rel_kind, dst } => {
                 stem::info!("phloem: edge match starting. rel_var: {:?}, rel_kind: {:?}", rel_var, rel_kind);
@@ -672,9 +673,22 @@ impl<G: Graph> GraphExecutor<G> {
         }
     }
 
-    fn format_match_results(&self, node_pat: &NodePattern, matched_ids: Vec<u64>, returns: Vec<ReturnExpression>, limit: usize, skip: usize) -> ExecutionResult {
+    fn format_match_results(&self, node_pat: &NodePattern, mut matched_ids: Vec<u64>, returns: Vec<ReturnExpression>, order_by: Option<crate::gql::OrderBy>, limit: usize, skip: usize) -> ExecutionResult {
         // Check if we have any aggregate functions
         let has_aggregate = returns.iter().any(|r| matches!(r, ReturnExpression::Count(_)));
+
+        // Apply ORDER BY if present (before limit/skip)
+        if let Some(ref order) = order_by {
+            match order {
+                crate::gql::OrderBy::IdAsc(_) => {
+                    matched_ids.sort();
+                }
+                crate::gql::OrderBy::IdDesc(_) => {
+                    matched_ids.sort();
+                    matched_ids.reverse();
+                }
+            }
+        }
 
         if has_aggregate {
             let mut row = Vec::new();

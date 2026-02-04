@@ -61,6 +61,12 @@ pub enum ApiRoute<'a> {
     
     /// GET /api/v1/query?q=...
     ExecuteGqlQueryGet { query: &'a str },
+
+    /// GET /api/v1/views
+    ListViews,
+
+    /// GET /api/v1/views/{id}
+    GetView { id: &'a str, query: &'a str },
     
     /// Route not found in API
     NotFound,
@@ -146,6 +152,23 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
             // Pass the query string portion (after ?) to the handler
             let query = path.find('?').map(|i| &path[i+1..]).unwrap_or("");
             Some(ApiRoute::ExecuteGqlQueryGet { query })
+        }
+
+        // /api/v1/views
+        (Method::Get, ["views"]) => Some(ApiRoute::ListViews),
+
+        // /api/v1/views/{id}
+        (Method::Get, ["views", _id]) => {
+             // Pass the query string portion (after ?) to the handler
+             let query = path.find('?').map(|i| &path[i+1..]).unwrap_or("");
+             // Extract id from path segment (it might have query params if split failed, but here we use the segment)
+             // Actually, `segments` logic splits by '/', but doesn't strip query params from individual segments?
+             // Ah, `path_part` strips query string first. So `segments` are clean.
+             // Wait, `match_route` implementation:
+             // let path_part = rest.split('?').next().unwrap_or(rest);
+             // So segments DO NOT contain query params. Correct.
+             let id = segments[1];
+             Some(ApiRoute::GetView { id, query })
         }
         
         // Method not allowed variants

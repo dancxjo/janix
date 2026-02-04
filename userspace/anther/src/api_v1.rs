@@ -814,6 +814,361 @@ fn get_node_label_fast(node_id: u64, name_syms: &[u64; 4]) -> String {
     }
 }
 
+// ============================================================================
+// Views System
+// ============================================================================
+
+struct ViewDef {
+    id: &'static str,
+    title: &'static str,
+    description: &'static str,
+}
+
+const AVAILABLE_VIEWS: &[ViewDef] = &[
+    ViewDef {
+        id: "task_monitor",
+        title: "Task Monitor",
+        description: "Processes, threads, and scheduling state",
+    },
+    ViewDef {
+        id: "device_census",
+        title: "Device Census",
+        description: "Hardware devices and drivers",
+    },
+    ViewDef {
+        id: "graph_islands",
+        title: "Graph Islands",
+        description: "Disconnected components analysis",
+    },
+];
+
+/// GET /api/v1/views
+pub fn handle_list_views() -> Vec<u8> {
+    let mut json = JsonBuilder::new();
+    json.start_array();
+    
+    for view in AVAILABLE_VIEWS {
+        json.start_object();
+        json.key("id");
+        json.string_value(view.id);
+        json.key("title");
+        json.string_value(view.title);
+        json.key("description");
+        json.string_value(view.description);
+        json.end_object();
+        json.buf.push(b',');
+    }
+    
+    json.end_array();
+    json_response("200 OK", &json.as_string().unwrap_or_default())
+}
+
+/// GET /api/v1/views/{id}
+pub fn handle_get_view(id: &str, query: &str) -> Vec<u8> {
+    match id {
+        "task_monitor" => handle_view_task_monitor(query),
+        "device_census" => handle_view_device_census(query),
+        "graph_islands" => handle_view_graph_islands(query),
+        _ => error_response(ApiError::not_found(format!("View '{}' not found", id))),
+    }
+}
+
+fn handle_view_task_monitor(_query: &str) -> Vec<u8> {
+    // Task Monitor: Scheduler -> CPUs -> Tasks -> Threads
+    // Layout: LR
+    
+    let mut json = JsonBuilder::new();
+    json.start_object();
+    
+    json.key("view");
+    json.start_object();
+    json.key("id");
+    json.string_value("task_monitor");
+    json.key("title");
+    json.string_value("Task Monitor");
+    json.end_object();
+    json.buf.push(b',');
+
+    // Hints
+    json.key("hints");
+    json.start_object();
+    json.key("layout");
+    json.start_object();
+    json.key("engine");
+    json.string_value("elk");
+    json.key("direction");
+    json.string_value("RIGHT"); // Left-to-Right layout
+    json.end_object();
+    json.end_object();
+    json.buf.push(b',');
+
+    // Collect seeds
+    let mut seeds = Vec::new();
+    let mut ids = [0u64; 32];
+    
+    if let Ok(kind) = intern(kinds::SVC_SCHEDULER) {
+        if let Ok(count) = find(kind, &mut ids) {
+            if count > 0 { seeds.push(ids[0]); }
+        }
+    }
+    if let Ok(kind) = intern(kinds::PROC_KERNEL) {
+        if let Ok(count) = find(kind, &mut ids) {
+             if count > 0 { seeds.push(ids[0]); }
+        }
+    }
+    if let Ok(kind) = intern(kinds::DEV_CPU) {
+        if let Ok(count) = find(kind, &mut ids) {
+            for i in 0..count {
+                seeds.push(ids[i]);
+            }
+        }
+    }
+
+    let (nodes, edges) = traverse_view(seeds, 3, 200);
+    write_graph_json(&mut json, nodes, edges);
+    json.end_object();
+    json_response("200 OK", &json.as_string().unwrap_or_default())
+}
+
+fn handle_view_device_census(_query: &str) -> Vec<u8> {
+    // Device Census: Host -> Buses -> Devices -> Drivers
+    // Layout: TB
+    
+    let mut json = JsonBuilder::new();
+    json.start_object();
+    
+    json.key("view");
+    json.start_object();
+    json.key("id");
+    json.string_value("device_census");
+    json.key("title");
+    json.string_value("Device Census");
+    json.end_object();
+    json.buf.push(b',');
+
+    // Hints
+    json.key("hints");
+    json.start_object();
+    json.key("layout");
+    json.start_object();
+    json.key("engine");
+    json.string_value("elk");
+    json.key("direction");
+    json.string_value("DOWN"); // Top-Down layout
+    json.end_object();
+    json.end_object();
+    json.buf.push(b',');
+
+    let mut seeds = Vec::new();
+    let mut ids = [0u64; 32];
+    
+    if let Ok(kind) = intern(kinds::DEV_HOST) {
+        if let Ok(count) = find(kind, &mut ids) {
+            if count > 0 { seeds.push(ids[0]); }
+        }
+    }
+    
+    let (nodes, edges) = traverse_view(seeds, 4, 300);
+    write_graph_json(&mut json, nodes, edges);
+    json.end_object();
+    json_response("200 OK", &json.as_string().unwrap_or_default())
+}
+
+fn handle_view_graph_islands(query: &str) -> Vec<u8> {
+    let mut root = 0;
+    for part in query.split('&') {
+        if let Some((key, value)) = part.split_once('=') {
+            if key == "root" {
+                root = value.parse().unwrap_or(0);
+            }
+        }
+    }
+    
+    let mut seeds = Vec::new();
+    if root != 0 {
+        seeds.push(root);
+    } else {
+        let mut ids = [0u64; 1];
+        if let Ok(kind) = intern(kinds::SVC_ROOT) {
+            if let Ok(count) = find(kind, &mut ids) {
+               if count > 0 { seeds.push(ids[0]); }
+            }
+        }
+    }
+    
+    let mut json = JsonBuilder::new();
+    json.start_object();
+    json.key("view");
+    json.start_object();
+    json.key("id");
+    json.string_value("graph_islands");
+    json.key("title");
+    json.string_value("Graph Islands");
+    json.end_object();
+    json.buf.push(b',');
+    
+    json.key("hints");
+    json.start_object();
+    json.end_object();
+    json.buf.push(b',');
+
+    let (nodes, edges) = traverse_view(seeds, 3, 200);
+    write_graph_json(&mut json, nodes, edges);
+    json.end_object();
+    json_response("200 OK", &json.as_string().unwrap_or_default())
+}
+
+struct GraphNode {
+    id: u64,
+    kind: u64,
+    label: String,
+    x: Option<f32>,
+    y: Option<f32>,
+}
+
+struct GraphEdge {
+    from: u64,
+    to: u64,
+    rel: u64,
+}
+
+fn traverse_view(seeds: Vec<u64>, depth: u32, max_nodes: usize) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+    let layout_x_sym = intern("layout.pos.x").unwrap_or(0);
+    let layout_y_sym = intern("layout.pos.y").unwrap_or(0);
+    let name_syms: [u64; 4] = [
+        intern("name").unwrap_or(0),
+        intern("ui.title").unwrap_or(0),
+        intern("asset.name").unwrap_or(0),
+        intern("file.name").unwrap_or(0),
+    ];
+    
+    use alloc::collections::BTreeSet;
+    let mut visited_set: BTreeSet<u64> = BTreeSet::new();
+    let mut visited_order: Vec<u64> = Vec::new();
+    let mut edges_out: Vec<GraphEdge> = Vec::new();
+    let mut queue: alloc::collections::VecDeque<(u64, u32)> = alloc::collections::VecDeque::new();
+    
+    for seed in seeds {
+        if !visited_set.contains(&seed) {
+            queue.push_back((seed, 0));
+        }
+    }
+    
+    while let Some((node_id, node_depth)) = queue.pop_front() {
+        if visited_set.contains(&node_id) {
+            continue;
+        }
+        if visited_order.len() >= max_nodes {
+            break;
+        }
+        visited_set.insert(node_id);
+        visited_order.push(node_id);
+        
+        if node_depth < depth {
+            let mut edge_buf = [Edge::default(); 64];
+            let thing_id = ThingId::from_u64(node_id);
+            if let Ok(count) = get_edges(thing_id, &mut edge_buf) {
+                for i in 0..count {
+                    let e = &edge_buf[i];
+                    let dst = e.to.to_u64_lossy();
+                    let rel = e.predicate.to_u64_lossy();
+                    
+                    edges_out.push(GraphEdge { from: node_id, to: dst, rel });
+                    if !visited_set.contains(&dst) {
+                        queue.push_back((dst, node_depth + 1));
+                    }
+                }
+            }
+        }
+    }
+    
+    let mut nodes = Vec::new();
+    for node_id in visited_order {
+        let kind_id = stem::syscall::graph::get_kind(node_id).unwrap_or(0);
+        let label = get_node_label_fast(node_id, &name_syms);
+        
+        let mut x = None;
+        let mut y = None;
+        
+        if layout_x_sym != 0 && layout_y_sym != 0 {
+            if let (Ok(x_bits), Ok(y_bits)) = (prop_get(node_id, layout_x_sym), prop_get(node_id, layout_y_sym)) {
+                if x_bits != 0 || y_bits != 0 {
+                    x = Some(f32::from_bits(x_bits as u32));
+                    y = Some(f32::from_bits(y_bits as u32));
+                }
+            }
+        }
+        
+        nodes.push(GraphNode { id: node_id, kind: kind_id, label, x, y });
+    }
+    
+    // Filter edges to ensure both ends exist in our node set
+    let valid_edges = edges_out.into_iter()
+        .filter(|e| visited_set.contains(&e.from) && visited_set.contains(&e.to))
+        .collect();
+        
+    (nodes, valid_edges)
+}
+
+fn write_graph_json(json: &mut JsonBuilder, nodes: Vec<GraphNode>, edges: Vec<GraphEdge>) {
+    use alloc::collections::BTreeMap;
+    let mut symbol_cache: BTreeMap<u32, String> = BTreeMap::new();
+
+    json.key("nodes");
+    json.start_array();
+    for node in nodes {
+        json.start_object();
+        json.key("id");
+        json.number_value(node.id);
+        json.key("kind");
+        json.number_value(node.kind);
+        
+        let kind_name = get_symbol_name_cached(node.kind as u32, &mut symbol_cache);
+        json.key("kind_name");
+        json.string_value(&kind_name);
+        
+        json.key("label");
+        json.string_value(&node.label);
+        
+        if let Some(v) = node.x {
+            json.key("x");
+            json.float_value(v);
+        }
+        if let Some(v) = node.y {
+            json.key("y");
+            json.float_value(v);
+        }
+        json.end_object();
+        json.buf.push(b',');
+    }
+    json.end_array();
+    json.buf.push(b',');
+    
+    json.key("edges");
+    json.start_array();
+    for edge in edges {
+        json.start_object();
+        let edge_id = format!("e:{}->{}:{}", edge.from, edge.to, edge.rel);
+        json.key("id");
+        json.string_value(&edge_id);
+        json.key("from");
+        json.number_value(edge.from);
+        json.key("to");
+        json.number_value(edge.to);
+        json.key("rel");
+        json.number_value(edge.rel);
+        
+        let rel_name = get_symbol_name_cached(edge.rel as u32, &mut symbol_cache);
+        json.key("rel_name");
+        json.string_value(&rel_name);
+        
+        json.end_object();
+        json.buf.push(b',');
+    }
+    
+    json.end_array();
+}
+
 /// Cached symbol name resolution
 fn get_symbol_name_cached(sym_id: u32, cache: &mut alloc::collections::BTreeMap<u32, String>) -> String {
     if sym_id == 0 {
@@ -1144,6 +1499,8 @@ pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> Vec<u8> 
         ApiRoute::PatchLayout => handle_patch_layout(body),
         ApiRoute::ExecuteGqlQuery => handle_execute_gql_query(body),
         ApiRoute::ExecuteGqlQueryGet { query } => handle_execute_gql_query_get(query),
+        ApiRoute::ListViews => handle_list_views(),
+        ApiRoute::GetView { id, query } => handle_get_view(id, query),
         ApiRoute::NotFound => handle_not_found(),
         ApiRoute::MethodNotAllowed => handle_method_not_allowed(),
     }

@@ -589,9 +589,9 @@ impl ArchRuntime for X86_64Runtime {
                 read: true,
                 write: true,
                 exec: true, // Need execute for the trampoline code
-                kind: MapKind::Normal,
+                kind: MapKind::Device,
             },
-            MapKind::Normal,
+            MapKind::Device,
             &ProxyAllocator,
         )
         .map_err(|_| {

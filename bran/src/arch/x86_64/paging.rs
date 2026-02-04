@@ -54,7 +54,7 @@ pub fn map_page(
         flags |= 1 << 63;
     } // NX
 
-    if kind == MapKind::Device {
+    if kind == MapKind::Device || kind == MapKind::Framebuffer {
         flags |= 1 << 4;
     }
 

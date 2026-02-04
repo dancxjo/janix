@@ -289,7 +289,7 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
                     read: true,
                     write: true,
                     exec: false,
-                    kind: crate::MapKind::Normal,
+                    kind: crate::MapKind::Device,
                 },
             )
             .map_err(|_| Errno::ENOMEM)?;

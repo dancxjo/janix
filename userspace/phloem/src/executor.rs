@@ -245,7 +245,12 @@ impl<G: Graph> GraphExecutor<G> {
                 stem::info!("phloem: edge match starting. rel_var: {:?}, rel_kind: {:?}", rel_var, rel_kind);
                 let limit_total = limit + skip;
 
-                let mut rows = Vec::new();
+                // Check if we have any aggregate functions
+                let has_aggregate = returns.iter().any(|r| matches!(r, ReturnExpression::Count(_)));
+
+                // We'll collect edge match data first
+                // Each entry is (src_id, rel_symbol_id, dst_id)
+                let mut edge_matches: Vec<(u64, u64, u64)> = Vec::new();
 
                 let src_id_opt = if let Some(ref props) = src.props.first() {
                     if props.0 == "id" { self.resolve_value_as_u64(&props.1) } else { None }
@@ -263,7 +268,8 @@ impl<G: Graph> GraphExecutor<G> {
 
                 for src_id in source_nodes {
                     self.graph.yield_now();
-                    if rows.len() >= limit_total { break; }
+                    // For count, we may need all matches; for rows, respect limit
+                    if !has_aggregate && edge_matches.len() >= limit_total { break; }
 
                     let edges = match self.get_outbound_edges(src_id) {
                         Ok(e) => e,
@@ -272,7 +278,7 @@ impl<G: Graph> GraphExecutor<G> {
 
                     for (rel_symbol_id, dst_id) in edges {
                         self.graph.yield_now();
-                        if rows.len() >= limit_total { break; }
+                        if !has_aggregate && edge_matches.len() >= limit_total { break; }
                         
                         stem::trace!("phloem: checking edge {} -> {}", src_id, dst_id);
 
@@ -294,38 +300,79 @@ impl<G: Graph> GraphExecutor<G> {
                         }
 
                         // Match!
-                        let mut row = Vec::new();
-                        for expr in &returns {
-                            match expr {
-                                ReturnExpression::Variable(var) => {
+                        edge_matches.push((src_id, rel_symbol_id as u64, dst_id));
+                    }
+                }
+
+                // Now format results based on whether we have aggregates
+                if has_aggregate {
+                    let mut row = Vec::new();
+                    for expr in &returns {
+                        match expr {
+                            ReturnExpression::Count(var) => {
+                                // count(*), count(a), count(b), or count(e) should all count edge matches
+                                if var == "*" 
+                                    || Some(var) == src.var.as_ref() 
+                                    || Some(var) == dst.var.as_ref()
+                                    || Some(var) == rel_var.as_ref() 
+                                {
+                                    row.push(ResultValue::Number(edge_matches.len() as u64));
+                                } else {
+                                    row.push(ResultValue::Number(0));
+                                }
+                            }
+                            ReturnExpression::Variable(var) => {
+                                // For aggregate queries with variables, just show first match
+                                if let Some(&(s, r, d)) = edge_matches.first() {
                                     if Some(var) == src.var.as_ref() {
-                                        row.push(ResultValue::Node(src_id));
+                                        row.push(ResultValue::Node(s));
                                     } else if Some(var) == dst.var.as_ref() {
-                                        row.push(ResultValue::Node(dst_id));
+                                        row.push(ResultValue::Node(d));
                                     } else if Some(var) == rel_var.as_ref() {
-                                        let rel_name = self.resolve_symbol(rel_symbol_id as u32).unwrap_or_else(|| format!("{}", rel_symbol_id));
+                                        let rel_name = self.resolve_symbol(r as u32).unwrap_or_else(|| format!("{}", r));
                                         row.push(ResultValue::String(rel_name));
                                     } else {
                                         row.push(ResultValue::String(format!("unsupported: {}", var)));
                                     }
-                                }
-                                ReturnExpression::Count(_) => {
-                                    row.push(ResultValue::String("count() not supported in edge match yet".to_string()));
+                                } else {
+                                    row.push(ResultValue::Number(0));
                                 }
                             }
                         }
-                        rows.push(row);
                     }
+                    let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
+                    ExecutionResult::rows(cols, alloc::vec![row])
+                } else {
+                    // Non-aggregate: build rows
+                    let rows: Vec<Vec<ResultValue>> = edge_matches
+                        .into_iter()
+                        .skip(skip)
+                        .take(limit)
+                        .map(|(s, r, d)| {
+                            let mut row = Vec::new();
+                            for expr in &returns {
+                                match expr {
+                                    ReturnExpression::Variable(var) => {
+                                        if Some(var) == src.var.as_ref() {
+                                            row.push(ResultValue::Node(s));
+                                        } else if Some(var) == dst.var.as_ref() {
+                                            row.push(ResultValue::Node(d));
+                                        } else if Some(var) == rel_var.as_ref() {
+                                            let rel_name = self.resolve_symbol(r as u32).unwrap_or_else(|| format!("{}", r));
+                                            row.push(ResultValue::String(rel_name));
+                                        } else {
+                                            row.push(ResultValue::String(format!("unsupported: {}", var)));
+                                        }
+                                    }
+                                    ReturnExpression::Count(_) => unreachable!(),
+                                }
+                            }
+                            row
+                        }).collect();
+
+                    let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
+                    ExecutionResult::rows(cols, rows)
                 }
-
-                let final_rows: Vec<Vec<ResultValue>> = rows
-                    .into_iter()
-                    .skip(skip)
-                    .take(limit)
-                    .collect();
-
-                let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
-                ExecutionResult::rows(cols, final_rows)
             }
         }
     }
@@ -702,7 +749,7 @@ impl<G: Graph> GraphExecutor<G> {
                 let r_val = self.evaluate_primary(right, node_id, node_var);
                 l_val == r_val && l_val.is_some()
             }
-            _ => false, // Only Eq supported for now
+            _ => false, // Only Eq supported at top level for now
         }
     }
 
@@ -719,6 +766,17 @@ impl<G: Graph> GraphExecutor<G> {
                 match v {
                     Value::Parameter(name) => self.parameters.get(name).cloned(),
                     _ => Some(v.clone()),
+                }
+            }
+            crate::gql::Expression::CountEdges(var) => {
+                // count((var)-[]->()) - count outgoing edges from the node if var matches
+                if var == node_var {
+                    match self.get_outbound_edges(node_id) {
+                        Ok(edges) => Some(Value::Number(edges.len() as u64)),
+                        Err(_) => Some(Value::Number(0)),
+                    }
+                } else {
+                    None
                 }
             }
             _ => None,

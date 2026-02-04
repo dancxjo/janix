@@ -280,6 +280,20 @@ mod tests {
     }
 
     #[test]
+    fn test_where_count_edges_zero() {
+        // MATCH (n) WHERE count((n)-[]->()) = 0 RETURN n LIMIT 50
+        // This finds nodes with no outgoing edges
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) WHERE count((n)-[]->()) = 0 RETURN n LIMIT 50").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        // In our mock, nodes 4 (Process) and 5 (Process) have no outgoing edges
+        // We expect to find them (and possibly others that have no edges)
+        assert!(!res.rows.is_empty());
+    }
+
+    #[test]
     fn test_lookup_nonexistent() {
         // MATCH (n) WHERE id(n) = 9999 RETURN n
         // NOTE: The ID lookup optimization directly uses the ID without checking existence.
@@ -339,6 +353,28 @@ mod tests {
         let cmd = parse("MATCH ()-[e]->() RETURN e").unwrap();
         let res = ex.execute(cmd);
         assert!(res.success);
+    }
+
+    #[test]
+    fn test_count_edge_matches() {
+        // MATCH (a)-[]->(b) RETURN count(b) LIMIT 200
+        // This should return the count of edges, not "count() not supported" message
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (a)-[]->(b) RETURN count(b) LIMIT 200").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        // Should have one row with the count
+        assert_eq!(res.rows.len(), 1);
+        // The count should be a number, not a string error message
+        if let Some(row) = res.rows.first() {
+            if let Some(crate::ResultValue::Number(n)) = row.first() {
+                // We have 4 edges in setup_mock
+                assert_eq!(*n, 4);
+            } else {
+                panic!("Expected a Number result for count(), got: {:?}", row.first());
+            }
+        }
     }
 
     // ===== 7) Minimal mutation =====

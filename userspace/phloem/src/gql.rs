@@ -15,6 +15,7 @@ pub enum Expression {
     Eq(Box<Expression>, Box<Expression>),
     IdFunc(String), // id(n)
     Value(Value),
+    CountEdges(String), // count((n)-[]->()) - counts outgoing edges from bound var
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -490,6 +491,7 @@ impl Parser {
     }
 
     fn parse_primary_expression(&mut self) -> Result<Expression, String> {
+        // Handle id(n)
         if let Some(Token::Ident(s)) = self.peek() {
             if s == "id" {
                 self.consume();
@@ -501,6 +503,50 @@ impl Parser {
                     return Err("Expected ')' after id(var)".to_string());
                 }
                 return Ok(Expression::IdFunc(var));
+            }
+        }
+        
+        // Handle count((n)-[]->()) for outgoing edge count
+        if let Some(Token::Keyword(kw)) = self.peek() {
+            if kw == "COUNT" {
+                self.consume(); // COUNT
+                if self.consume() != Some(&Token::LParen) {
+                    return Err("Expected '(' after count".to_string());
+                }
+                // Now we expect: (var) - [] -> ()
+                // Parse (var)
+                if self.consume() != Some(&Token::LParen) {
+                    return Err("Expected '(' for count edge pattern".to_string());
+                }
+                let var = self.parse_ident()?;
+                if self.consume() != Some(&Token::RParen) {
+                    return Err("Expected ')' after variable in count edge pattern".to_string());
+                }
+                // Parse - [] ->
+                if self.consume() != Some(&Token::Dash) {
+                    return Err("Expected '-' in count edge pattern".to_string());
+                }
+                if self.consume() != Some(&Token::LBracket) {
+                    return Err("Expected '[' in count edge pattern".to_string());
+                }
+                if self.consume() != Some(&Token::RBracket) {
+                    return Err("Expected ']' in count edge pattern".to_string());
+                }
+                if self.consume() != Some(&Token::Arrow) {
+                    return Err("Expected '->' in count edge pattern".to_string());
+                }
+                // Parse ()
+                if self.consume() != Some(&Token::LParen) {
+                    return Err("Expected '(' for target in count edge pattern".to_string());
+                }
+                if self.consume() != Some(&Token::RParen) {
+                    return Err("Expected ')' for target in count edge pattern".to_string());
+                }
+                // Close the count()
+                if self.consume() != Some(&Token::RParen) {
+                    return Err("Expected ')' to close count()".to_string());
+                }
+                return Ok(Expression::CountEdges(var));
             }
         }
         

@@ -10,13 +10,19 @@ use crate::{ExecutionResult, ResultValue};
 
 pub struct GraphExecutor {
     bindings: BTreeMap<String, u64>,
+    parameters: BTreeMap<String, Value>,
 }
 
 impl GraphExecutor {
     pub fn new() -> Self {
         Self {
             bindings: BTreeMap::new(),
+            parameters: BTreeMap::new(),
         }
+    }
+
+    pub fn set_parameter(&mut self, name: String, value: Value) {
+        self.parameters.insert(name, value);
     }
 
     pub fn execute(&mut self, cmd: Command) -> ExecutionResult {
@@ -24,12 +30,12 @@ impl GraphExecutor {
             Command::Help => self.help(),
             Command::Quit => ExecutionResult::message("Bye."),
             Command::Schema => ExecutionResult::error("Schema not implemented."),
-            Command::Merge { pattern, returns: _, skip: _ } => {
+            Command::Merge { pattern: _, returns: _, skip: _ } => {
                 // TODO: Implement MERGE properly (for now it just MATCHes/CREATEs)
                 ExecutionResult::error("MERGE not fully implemented")
             }
-            Command::Match { pattern, returns, limit, skip } => {
-                self.execute_match(pattern, returns, limit, skip)
+            Command::Match { pattern, where_clause, returns, limit, skip } => {
+                self.execute_match(pattern, where_clause, returns, limit, skip)
             }
             Command::Set { var, key, value } => self.execute_set(var, key, value),
         }
@@ -87,11 +93,48 @@ impl GraphExecutor {
         }
     }
 
-    fn execute_match(&self, pattern: Pattern, returns: Vec<ReturnExpression>, limit: usize, skip: usize) -> ExecutionResult {
+    fn execute_match(&self, pattern: Pattern, where_clause: Option<crate::gql::Expression>, returns: Vec<ReturnExpression>, limit: usize, skip: usize) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
                 let limit_total = limit + skip;
                 let mut matched_ids = Vec::new();
+
+                // OPTIMIZATION: If WHERE id(n) = $id or id(n) = 123, just look up that node
+                if let Some(ref expr) = where_clause {
+                    if let crate::gql::Expression::Eq(left, right) = expr {
+                        let mut target_id = None;
+                        if let (crate::gql::Expression::IdFunc(var), crate::gql::Expression::Value(val)) = (&**left, &**right) {
+                            if var == &node_pat.var {
+                                target_id = self.resolve_value_as_u64(val);
+                            }
+                        } else if let (crate::gql::Expression::Value(val), crate::gql::Expression::IdFunc(var)) = (&**left, &**right) {
+                            if var == &node_pat.var {
+                                target_id = self.resolve_value_as_u64(val);
+                            }
+                        }
+
+                        if let Some(id) = target_id {
+                            // Verify kind and other props
+                            let matches_kind = match &node_pat.kind {
+                                Some(k) => match graph::get_kind(ThingId::from_u64(id)) {
+                                    Ok(kind_id) => {
+                                        let kind_name = self.resolve_symbol(kind_id.0 as u32).unwrap_or_default();
+                                        &kind_name == k
+                                    }
+                                    Err(_) => false,
+                                },
+                                None => true,
+                            };
+
+                            if matches_kind && self.matches_props(id, &node_pat.props) {
+                                matched_ids.push(id);
+                            }
+                            
+                            // Skip discovery since we had a direct ID lookup
+                            return self.format_match_results(&node_pat, matched_ids, returns, limit, skip);
+                        }
+                    }
+                }
 
                 match &node_pat.kind {
                     Some(_k) => { // Changed `k` to `_k` as it's not used directly here
@@ -167,8 +210,17 @@ impl GraphExecutor {
                             }
 
                             if self.matches_props(current_id, &node_pat.props) {
-                                if !matched_ids.contains(&current_id) {
-                                    matched_ids.push(current_id);
+                                // Apply where clause filter if present (and not already handled by optimization)
+                                let matches_where = if let Some(ref expr) = where_clause {
+                                    self.evaluate_expression(expr, current_id, &node_pat.var)
+                                } else {
+                                    true
+                                };
+
+                                if matches_where {
+                                    if !matched_ids.contains(&current_id) {
+                                        matched_ids.push(current_id);
+                                    }
                                 }
                             }
 
@@ -184,72 +236,12 @@ impl GraphExecutor {
                         }
                     }
                 }
-
-                // Check if we have any aggregate functions
-                let has_aggregate = returns.iter().any(|r| matches!(r, ReturnExpression::Count(_)));
-
-                if has_aggregate {
-                    let mut row = Vec::new();
-                    for expr in &returns {
-                        match expr {
-                            ReturnExpression::Count(var) => {
-                                // count(*) or count(n) - for now we just count the matches
-                                // if var matches any variable in the pattern, we count matched_ids
-                                // In this simple executor, we only have one node pattern variable
-                                if var == &node_pat.var || var == "*" {
-                                    row.push(ResultValue::Number(matched_ids.len() as u64));
-                                } else {
-                                    row.push(ResultValue::Number(0));
-                                }
-                            }
-                            ReturnExpression::Variable(v) => {
-                                // In a real GQL engine, this would be a grouping key.
-                                // For now, we just pick the first match if any, or null.
-                                if let Some(&id) = matched_ids.first() {
-                                    if v == &node_pat.var {
-                                        row.push(ResultValue::Node(id));
-                                    } else {
-                                        row.push(ResultValue::String(format!("unsupported: {}", v)));
-                                    }
-                                } else {
-                                    row.push(ResultValue::Number(0)); // Should probably be Null
-                                }
-                            }
-                        }
-                    }
-                    let cols = returns.iter().map(|r| r.to_string()).collect();
-                    ExecutionResult::rows(cols, alloc::vec![row])
-                } else {
-                    // Apply skip and limit to the final row generation
-                    let rows: Vec<Vec<ResultValue>> = matched_ids
-                        .into_iter()
-                        .skip(skip)
-                        .take(limit)
-                        .map(|id| {
-                        let mut row = Vec::new();
-                        for expr in &returns {
-                            match expr {
-                                ReturnExpression::Variable(col) => {
-                                    if col == &node_pat.var {
-                                        row.push(ResultValue::Node(id));
-                                    } else {
-                                        // TODO: Support property returns like RETURN n.prop
-                                        row.push(ResultValue::String(format!("unsupported: {}", col)));
-                                    }
-                                }
-                                ReturnExpression::Count(_) => unreachable!(),
-                            }
-                        }
-                        row
-                    }).collect();
-
-                    let cols = returns.iter().map(|r| r.to_string()).collect();
-                    ExecutionResult::rows(cols, rows)
-                }
+    
+                self.format_match_results(&node_pat, matched_ids, returns, limit, skip)
             }
             Pattern::Edge { src_var, rel: _, dst_var } => {
                 let src_id_opt = self.bindings.get(&src_var).cloned();
-                let limit_total = limit + skip;
+                let _limit_total = limit + skip;
 
                 if let Some(src_id) = src_id_opt {
                     let edges = match self.get_outbound_edges(src_id) {
@@ -309,6 +301,16 @@ impl GraphExecutor {
                 Err(_) => return ExecutionResult::error("intern value failed"),
             },
             Value::Number(n) => n,
+            Value::Parameter(name) => {
+                match self.parameters.get(&name) {
+                    Some(Value::Number(n)) => *n,
+                    Some(Value::String(s)) => match graph::intern(s) {
+                        Ok(id) => id as u64,
+                        Err(_) => return ExecutionResult::error("intern parameter value failed"),
+                    },
+                    _ => return ExecutionResult::error(&format!("parameter '{}' not found or invalid type", name)),
+                }
+            }
         };
 
         match graph::prop_set(ThingId::from_u64(id), key.as_str(), val_u64) {
@@ -340,6 +342,13 @@ impl GraphExecutor {
             let val_u64 = match v {
                 Value::String(s) => graph::intern(s).map_err(|_| "intern val failed")? as u64,
                 Value::Number(n) => *n,
+                Value::Parameter(p) => {
+                    match self.parameters.get(p) {
+                        Some(Value::Number(n)) => *n,
+                        Some(Value::String(s)) => graph::intern(s).map_err(|_| "intern val failed")? as u64,
+                        _ => return Err(format!("parameter '{}' not found", p)),
+                    }
+                }
             };
             graph::prop_set(id_new, k.as_str(), val_u64).map_err(|_| "prop_set failed")?;
         }
@@ -400,6 +409,18 @@ impl GraphExecutor {
                         Err(_) => return false,
                     }
                 }
+                Value::Parameter(p) => {
+                    match self.parameters.get(p) {
+                        Some(Value::Number(n)) => { if val_id != *n { return false; } }
+                        Some(Value::String(s)) => {
+                            match graph::intern(s) {
+                                Ok(s_id) => { if (s_id as u64) != val_id { return false; } }
+                                Err(_) => return false,
+                            }
+                        }
+                        _ => return false,
+                    }
+                }
             }
         }
         true
@@ -452,5 +473,147 @@ impl GraphExecutor {
             }
             Err(_) => None,
         }
+    }
+
+    fn format_match_results(&self, node_pat: &NodePattern, matched_ids: Vec<u64>, returns: Vec<ReturnExpression>, limit: usize, skip: usize) -> ExecutionResult {
+        // Check if we have any aggregate functions
+        let has_aggregate = returns.iter().any(|r| matches!(r, ReturnExpression::Count(_)));
+
+        if has_aggregate {
+            let mut row = Vec::new();
+            for expr in &returns {
+                match expr {
+                    ReturnExpression::Count(var) => {
+                        if var == &node_pat.var || var == "*" {
+                            row.push(ResultValue::Number(matched_ids.len() as u64));
+                        } else {
+                            row.push(ResultValue::Number(0));
+                        }
+                    }
+                    ReturnExpression::Variable(v) => {
+                        if let Some(&id) = matched_ids.first() {
+                            if v == &node_pat.var {
+                                row.push(ResultValue::Node(id));
+                            } else {
+                                row.push(ResultValue::String(format!("unsupported: {}", v)));
+                            }
+                        } else {
+                            row.push(ResultValue::Number(0));
+                        }
+                    }
+                }
+            }
+            let cols = returns.iter().map(|r| r.to_string()).collect();
+            ExecutionResult::rows(cols, alloc::vec![row])
+        } else {
+            let rows: Vec<Vec<ResultValue>> = matched_ids
+                .into_iter()
+                .skip(skip)
+                .take(limit)
+                .map(|id| {
+                let mut row = Vec::new();
+                for expr in &returns {
+                    match expr {
+                        ReturnExpression::Variable(col) => {
+                            if col == &node_pat.var {
+                                row.push(ResultValue::Node(id));
+                            } else {
+                                row.push(ResultValue::String(format!("unsupported: {}", col)));
+                            }
+                        }
+                        ReturnExpression::Count(_) => unreachable!(),
+                    }
+                }
+                row
+            }).collect();
+
+            let cols = returns.iter().map(|r| r.to_string()).collect();
+            ExecutionResult::rows(cols, rows)
+        }
+    }
+
+    fn resolve_value_as_u64(&self, val: &Value) -> Option<u64> {
+        match val {
+            Value::Number(n) => Some(*n),
+            Value::Parameter(name) => {
+                match self.parameters.get(name) {
+                    Some(Value::Number(n)) => Some(*n),
+                    _ => None,
+                }
+            }
+            Value::String(_) => None,
+        }
+    }
+
+    fn evaluate_expression(&self, expr: &crate::gql::Expression, node_id: u64, node_var: &str) -> bool {
+        match expr {
+            crate::gql::Expression::Eq(left, right) => {
+                let l_val = self.evaluate_primary(left, node_id, node_var);
+                let r_val = self.evaluate_primary(right, node_id, node_var);
+                l_val == r_val && l_val.is_some()
+            }
+            _ => false, // Only Eq supported for now
+        }
+    }
+
+    fn evaluate_primary(&self, expr: &crate::gql::Expression, node_id: u64, node_var: &str) -> Option<Value> {
+        match expr {
+            crate::gql::Expression::IdFunc(var) => {
+                if var == node_var {
+                    Some(Value::Number(node_id))
+                } else {
+                    None
+                }
+            }
+            crate::gql::Expression::Value(v) => {
+                match v {
+                    Value::Parameter(name) => self.parameters.get(name).cloned(),
+                    _ => Some(v.clone()),
+                }
+            }
+            _ => None,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::gql::{Expression, Value};
+    use alloc::boxed::Box;
+
+    #[test]
+    fn test_executor_params() {
+        let mut ex = GraphExecutor::new();
+        ex.set_parameter("id".to_string(), Value::Number(42));
+        assert_eq!(ex.parameters.get("id"), Some(&Value::Number(42)));
+    }
+
+    #[test]
+    fn test_resolve_value_as_u64() {
+        let mut ex = GraphExecutor::new();
+        ex.set_parameter("pid".to_string(), Value::Number(100));
+        
+        assert_eq!(ex.resolve_value_as_u64(&Value::Number(50)), Some(50));
+        assert_eq!(ex.resolve_value_as_u64(&Value::Parameter("pid".to_string())), Some(100));
+        assert_eq!(ex.resolve_value_as_u64(&Value::Parameter("unknown".to_string())), None);
+    }
+
+    #[test]
+    fn test_evaluate_expression() {
+        let mut ex = GraphExecutor::new();
+        ex.set_parameter("target".to_string(), Value::Number(123));
+        
+        let expr = Expression::Eq(
+            Box::new(Expression::IdFunc("n".to_string())),
+            Box::new(Expression::Value(Value::Parameter("target".to_string())))
+        );
+        
+        // n = 123 -> true
+        assert!(ex.evaluate_expression(&expr, 123, "n"));
+        // n = 456 -> false
+        assert!(!ex.evaluate_expression(&expr, 456, "n"));
+        // wrong variable name -> false
+        assert!(!ex.evaluate_expression(&expr, 123, "x"));
     }
 }

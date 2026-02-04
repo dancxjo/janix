@@ -69,3 +69,32 @@ impl ExecutionResult {
 
 pub use gql::{Command, Pattern, Value, NodePattern, ReturnExpression, parse};
 pub use executor::GraphExecutor;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_execution_result_constructors() {
+        let res = ExecutionResult::success("test success");
+        assert!(res.success);
+        assert_eq!(res.message, "test success");
+        assert!(res.columns.is_empty());
+
+        let res = ExecutionResult::error("test error");
+        assert!(!res.success);
+        assert_eq!(res.message, "test error");
+
+        let res = ExecutionResult::message("hello");
+        assert!(res.success);
+        assert_eq!(res.message, "hello");
+
+        let cols = alloc::vec!["a".to_string(), "b".to_string()];
+        let rows = alloc::vec![alloc::vec![ResultValue::Number(1), ResultValue::String("x".to_string())]];
+        let res = ExecutionResult::rows(cols, rows);
+        assert!(res.success);
+        assert_eq!(res.columns.len(), 2);
+        assert_eq!(res.rows.len(), 1);
+        assert_eq!(res.message, "ok: 1 rows");
+    }
+}

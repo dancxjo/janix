@@ -87,6 +87,7 @@ impl X86_64Runtime {
                     read: true,
                     write: false,
                     exec: true,
+                    kind: MapKind::Normal,
                 },
                 MapKind::Normal,
                 &ProxyAllocator,
@@ -109,6 +110,7 @@ impl X86_64Runtime {
                     read: true,
                     write: true,
                     exec: false,
+                    kind: MapKind::Normal,
                 },
                 MapKind::Normal,
                 &ProxyAllocator,
@@ -163,7 +165,7 @@ impl ArchRuntime for X86_64Runtime {
             }
             
             // Map as uncacheable device memory
-            let perms = kernel::MapPerms { read: true, write: true, exec: false, user: false };
+            let perms = kernel::MapPerms { read: true, write: true, exec: false, user: false, kind: kernel::MapKind::Device };
             let _ = paging::map_page(
                 aspace,
                 lapic_virt,
@@ -438,8 +440,9 @@ impl ArchRuntime for X86_64Runtime {
                 MapPerms {
                     user: false,
                     read: true,
-                    write: true,  // Need write for trampoline copy
+                    write: true, // Need write for trampoline copy
                     exec: false,
+                    kind: MapKind::Normal,
                 },
                 MapKind::Normal,
                 &ProxyAllocator,
@@ -585,7 +588,8 @@ impl ArchRuntime for X86_64Runtime {
                 user: false,
                 read: true,
                 write: true,
-                exec: true,  // Need execute for the trampoline code
+                exec: true, // Need execute for the trampoline code
+                kind: MapKind::Normal,
             },
             MapKind::Normal,
             &ProxyAllocator,

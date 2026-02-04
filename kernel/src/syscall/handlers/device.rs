@@ -95,6 +95,7 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
                     read: true,
                     write: true,
                     exec: false,
+                    kind: crate::MapKind::Device,
                 },
             )
             .map_err(|_| Errno::ENOMEM)?;
@@ -288,6 +289,7 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
                     read: true,
                     write: true,
                     exec: false,
+                    kind: crate::MapKind::Normal,
                 },
             )
             .map_err(|_| Errno::ENOMEM)?;

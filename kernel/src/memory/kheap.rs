@@ -79,6 +79,7 @@ impl KernelHeap {
                     write: true,
                     user: false,
                     exec: false,
+                    kind: MapKind::Normal,
                 },
                 MapKind::Normal,
                 &KernelFrameHook,

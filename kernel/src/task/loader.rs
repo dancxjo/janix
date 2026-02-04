@@ -36,6 +36,7 @@ pub fn load_module<R: BootRuntime>(
         read: true,
         write: true,
         exec: false,
+        kind: MapKind::Normal,
     };
 
     let page_size = rt.page_size() as u64;
@@ -57,6 +58,7 @@ pub fn load_module<R: BootRuntime>(
             read: false,
             write: false,
             exec: false,
+            kind: MapKind::Normal,
         };
 
         for ph in elf.load_segments.iter() {
@@ -73,6 +75,7 @@ pub fn load_module<R: BootRuntime>(
                 read: ph.read || ph.write || ph.exec,
                 write: ph.write,
                 exec: ph.exec,
+                kind: MapKind::Normal,
             };
             crate::kinfo!("Segment: vaddr={:x} exec={}", seg_vaddr, perms.exec);
 
@@ -176,6 +179,7 @@ pub fn load_module<R: BootRuntime>(
             read: true,
             write: true,
             exec: true,
+            kind: MapKind::Normal,
         };
         let mut virt = load_addr as u64;
 
@@ -378,6 +382,7 @@ fn merge_perms(last: MapPerms, next: MapPerms) -> Result<MapPerms, &'static str>
         read: last.read || next.read,
         write: last.write || next.write,
         exec: last.exec || next.exec,
+        kind: last.kind,
     };
 
     // Enforce W^X: never produce RWX
@@ -399,24 +404,28 @@ mod tests {
             read: true,
             write: false,
             exec: false,
+            kind: MapKind::Normal,
         };
         let rw = MapPerms {
             user: true,
             read: true,
             write: true,
             exec: false,
+            kind: MapKind::Normal,
         };
         let rx = MapPerms {
             user: true,
             read: true,
             write: false,
             exec: true,
+            kind: MapKind::Normal,
         };
         let x = MapPerms {
             user: true,
             read: false,
             write: false,
             exec: true,
+            kind: MapKind::Normal,
         };
 
         // RX + RW -> Error

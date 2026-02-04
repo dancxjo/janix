@@ -34,6 +34,7 @@ pub fn alloc_page<R: BootRuntime>() -> u64 {
                     write: true,
                     user: false,
                     exec: false,
+                    kind: MapKind::Normal,
                 },
                 MapKind::Normal,
                 &DumbAlloc,

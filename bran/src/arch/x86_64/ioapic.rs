@@ -24,6 +24,7 @@ fn map_mmio_range(phys: u64, len: u64, hhdm: u64) {
         read: true,
         write: true,
         exec: false,
+        kind: MapKind::Device,
     };
 
     let mut p = start;

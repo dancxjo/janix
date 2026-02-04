@@ -34,6 +34,7 @@ pub fn alloc_user_stack<R: BootRuntime>(pages: usize) -> Option<usize> {
         read: true,
         write: true,
         exec: false,
+        kind: MapKind::Normal,
     };
     let hook = crate::GlobalAllocHook;
 
@@ -71,6 +72,7 @@ pub unsafe fn map_user_page<R: BootRuntime>(virt: u64, phys: u64) -> Result<(), 
         read: true,
         write: true,
         exec: false,
+        kind: MapKind::Normal,
     };
     let hook = MapHook;
 
@@ -102,7 +104,7 @@ pub unsafe fn map_user_page_perms<R: BootRuntime>(
     let hook = MapHook;
 
     rt.tasking()
-        .map_page(aspace, virt, phys, perms, MapKind::Normal, &hook)
+        .map_page(aspace, virt, phys, perms, perms.kind, &hook)
         .map_err(|()| MapError::OutOfMemory)?;
     rt.tasking().tlb_flush_page(virt);
     Ok(())
@@ -196,6 +198,7 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
         read: true,
         write: true,
         exec: false,
+        kind: MapKind::Normal,
     };
 
     let mut virt = new_commit_start;

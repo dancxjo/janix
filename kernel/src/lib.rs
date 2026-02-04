@@ -150,10 +150,12 @@ pub struct MapPerms {
     pub read: bool,
     pub write: bool,
     pub exec: bool,
+    pub kind: MapKind,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+#[derive(Copy, Clone, Debug, Default, PartialEq, Eq)]
 pub enum MapKind {
+    #[default]
     Normal,
     Device,
     Framebuffer,
@@ -642,6 +644,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
                     read: true,
                     write: false,
                     exec: false,
+                    kind: MapKind::Normal,
                 },
                 MapKind::Normal,
                 &GlobalAllocHook,

@@ -26,6 +26,7 @@ fn map_phys_range(phys: u64, len: u64, hhdm: u64) {
         read: true,
         write: false,
         exec: false,
+        kind: MapKind::Normal,
     };
 
     let mut p = start;

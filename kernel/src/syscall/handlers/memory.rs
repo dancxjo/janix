@@ -190,5 +190,6 @@ fn map_perms_from_prot(prot: VmProt) -> crate::MapPerms {
         read: prot.contains(VmProt::READ),
         write: prot.contains(VmProt::WRITE),
         exec: prot.contains(VmProt::EXEC),
+        kind: crate::MapKind::Normal,
     }
 }

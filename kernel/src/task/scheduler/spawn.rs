@@ -380,7 +380,6 @@ mod tests {
     use crate::task::TaskPriority;
     use crate::{BootRuntime, BootRuntimeBase, BootTasking, UserEntry, UserTaskSpec};
 
-    struct MockArch;
     #[derive(Clone, Copy, Default)]
     struct MockContext(usize);
     #[derive(Clone, Copy, Default)]
@@ -442,7 +441,7 @@ mod tests {
         ) -> Self::Context {
             MockContext(_spec.arg)
         }
-        unsafe fn switch(&self, _f: &mut Self::Context, _t: &Self::Context) {}
+        unsafe fn switch(&self, _f: &mut Self::Context, _t: &Self::Context, _tid: u64) {}
         unsafe fn enter_user(&self, _e: UserEntry) -> ! {
             loop {}
         }

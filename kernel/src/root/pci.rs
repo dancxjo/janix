@@ -376,6 +376,19 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
     }
+
+    // Virtio sound device detection (vendor 0x1af4, device 0x1059)
+    if vendor_id == 0x1af4 && device_id == 0x1059 {
+        crate::kinfo!(
+            "PCI: Found virtio sound device at {:02x}:{:02x}.{}",
+            bus,
+            dev,
+            func
+        );
+        register_virtio_sound(
+            node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
+        );
+    }
 }
 
 /// Register virtio GPU in device registry for userspace claiming
@@ -799,4 +812,76 @@ fn register_virtio_net(
     // The device is registered and properties are published via parse_virtio_capabilities
     // Userspace netd will claim the device and do feature negotiation directly
     crate::kinfo!("VirtIO-Net: Device registered for userspace driver");
+}
+/// Register virtio sound device in device registry for userspace claiming
+fn register_virtio_sound(
+    graph_id: u64,
+    bus: u8,
+    dev: u8,
+    func: u8,
+    bar_addrs: &[u64; 6],
+    bar_sizes: &[u64; 6],
+    msi_cap: Option<u8>,
+    msix_cap: Option<u8>,
+    create: &mut impl FnMut(&str) -> u64,
+    set: &mut impl FnMut(u64, &str, u64),
+    link: &mut impl FnMut(u64, &str, u64),
+) {
+    use crate::device_registry::{
+        DeviceEntry, MsiCapability, MsixCapability, PciLocation, REGISTRY,
+    };
+
+    let snd_node = create(kinds::DEV_SOUND);
+    set(snd_node, keys::SOURCE, source::PCI as u64);
+    set(snd_node, keys::CONFIDENCE, confidence::HIGH as u64);
+    link(graph_id, rels::IMPLEMENTS, snd_node);
+
+    // Parse VirtIO PCI capabilities and publish as graph properties
+    parse_virtio_capabilities(bus, dev, func, snd_node, set);
+
+    let entry = DeviceEntry::new_mmio(kinds::DEV_SOUND, snd_node, *bar_addrs, *bar_sizes);
+
+    let mut reg = REGISTRY.lock();
+    if let Some(idx) = reg.register(entry) {
+        let msi_info = msi_cap.map(|offset| {
+            let msg_ctrl = pci_read_config_u16(bus, dev, func, offset + 0x2);
+            MsiCapability {
+                offset,
+                is_64bit: (msg_ctrl & (1 << 7)) != 0,
+                has_mask: (msg_ctrl & (1 << 8)) != 0,
+            }
+        });
+
+        let msix_info = msix_cap.map(|offset| {
+            let table = unsafe { pci_read_config(bus, dev, func, offset + 0x4) };
+            let table_bar = (table & 0x7) as u8;
+            let table_offset = table & 0xFFFF_FFF8;
+            MsixCapability {
+                offset,
+                table_bar,
+                table_offset,
+            }
+        });
+
+        let location = PciLocation { bus, dev, func };
+        reg.set_pci_info(idx, location, msi_info, msix_info);
+        
+        // Find which BAR has the VirtIO config (from common_cfg capability)
+        let caps = get_virtio_capabilities(bus, dev, func);
+        let config_bar = if let Some(ref common) = caps.common_cfg {
+            common.bar as usize
+        } else {
+            0
+        };
+        
+        crate::kinfo!(
+            "PCI: Registered virtio sound (graph_id={}, idx={}) BAR{}=0x{:x}",
+            graph_id,
+            idx,
+            config_bar,
+            bar_addrs[config_bar]
+        );
+    } else {
+        crate::kinfo!("PCI: Failed to register virtio sound - registry full");
+    }
 }

@@ -296,6 +296,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "beeper"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "libm",
+ "stem",
+]
+
+[[package]]
 name = "bench_blit"
 version = "0.1.0"
 dependencies = [
@@ -2957,6 +2966,15 @@ dependencies = [
 
 [[package]]
 name = "virtio_netd"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+ "virtio",
+]
+
+[[package]]
+name = "virtio_sound"
 version = "0.1.0"
 dependencies = [
  "abi",

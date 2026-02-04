@@ -29,6 +29,9 @@ impl Supervisor {
         // 1. Discovery
         self.discover();
 
+        // 1.5. Setup audio pipeline (PRIORITY: Proof-of-life)
+        crate::pipelines::setup_audio_pipeline(&mut self.tasks);
+
         // 2. Spawn Apps
         self.spawn_apps();
 
@@ -194,6 +197,9 @@ impl Supervisor {
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {
+                if task.pid.is_some() {
+                    continue;
+                }
                 // name is full path. spawn_process expects name to match module name?
                 // spawn_process implementation in kernel matches `if m.name.contains(name)`.
                 // So passing full path is fine.

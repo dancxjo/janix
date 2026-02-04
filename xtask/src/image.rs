@@ -149,6 +149,18 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: false,
             features: vec![],
         },
+        ProgramConfig {
+            name: "virtio_sound",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "beeper",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
     ]
 }
 

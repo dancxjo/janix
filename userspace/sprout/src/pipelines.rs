@@ -467,3 +467,58 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
         info!("SPROUT: No NIC device found, skipping network pipeline");
     }
 }
+
+/// Set up audio pipeline - spawn virtio_sound and beeper
+pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: Setting up audio pipeline...");
+
+    // Check for VirtIO Sound device
+    let mut snd_buf = [ThingId::default(); 1];
+    if let Ok(count) = thingsys::find(kinds::DEV_SOUND, &mut snd_buf) {
+        if count > 0 {
+            let snd = snd_buf[0];
+            info!("SPROUT: Found Sound device {:?}", snd);
+
+            // Spawn virtio_sound driver
+            match stem::syscall::spawn_process("/virtio_sound", snd.to_u64_lossy() as usize) {
+                Ok(pid) => {
+                    info!("SPROUT: Spawned virtio_sound (PID={})", pid);
+                    let _ = stem::thread::set_priority(pid, 2);
+                    tasks.push(ManagedTask {
+                        name: "/virtio_sound".to_string(),
+                        kind: TaskKind::Driver("dev.sound.virtio".to_string()),
+                        module_path: "/virtio_sound".to_string(),
+                        pid: Some(pid),
+                        restarts: 0,
+                    });
+                }
+                Err(e) => {
+                    warn!("SPROUT: Failed to spawn virtio_sound: {:?}", e);
+                    return;
+                }
+            }
+
+            // Spawn beeper demo
+            match stem::syscall::spawn_process("/beeper", 0) {
+                Ok(pid) => {
+                    info!("SPROUT: Spawned beeper (PID={})", pid);
+                    let _ = stem::thread::set_priority(pid, 2);
+                    tasks.push(ManagedTask {
+                        name: "/beeper".to_string(),
+                        kind: TaskKind::App,
+                        module_path: "/beeper".to_string(),
+                        pid: Some(pid),
+                        restarts: 0,
+                    });
+                }
+                Err(e) => {
+                    warn!("SPROUT: Failed to spawn beeper: {:?}", e);
+                }
+            }
+        } else {
+            info!("SPROUT: No Sound device found");
+        }
+    } else {
+        info!("SPROUT: No Sound device found");
+    }
+}

@@ -510,6 +510,9 @@ pub mod kinds {
     pub const SVC_STORAGE: &str = "svc.Storage";
     pub const LOG_ENTRY: &str = "log.Entry";
 
+    // Audio
+    pub const DEV_SOUND: &str = "dev.sound.Virtio";
+
     // UI Kinds
     pub const UI_CROWN: &str = "ui.Crown";
     pub const UI_WINDOW: &str = "ui.Window";

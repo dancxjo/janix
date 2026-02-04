@@ -59,7 +59,7 @@ members = [
     "userspace/described",
     "userspace/sysdescribe",
     "userspace/driver_wasm_host",
-    "userspace/proto_driver_wasm",
+    "userspace/proto_driver_wasm", "userspace/virtio_sound", "userspace/beeper",
 ]
 resolver = "2"
 

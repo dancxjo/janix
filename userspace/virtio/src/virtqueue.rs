@@ -137,6 +137,11 @@ impl Virtqueue {
         Some(head)
     }
 
+    /// Add a single buffer to the virtqueue (convenience wrapper)
+    pub fn add_buffer_single(&mut self, addr: u64, len: u32, writable: bool) -> Option<u16> {
+        self.add_buffer(&[(addr, len, writable)])
+    }
+
     /// Check for completed buffers
     pub fn poll_used(&mut self) -> Option<(u16, u32)> {
         let avail_offset = (self.size as usize) * core::mem::size_of::<VirtqDesc>();

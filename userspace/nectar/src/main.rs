@@ -5,11 +5,13 @@ extern crate alloc;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use abi::schema::keys;
+use abi::schema::{keys, kinds, rels};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::syscall::port::{port_create, port_recv, port_send, PortHandle};
 use stem::{info, warn, error};
+use stem::petals::{AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Styled, Text, Window};
+use core::time::Duration;
 
 mod dns_packet;
 
@@ -45,8 +47,52 @@ fn main(_arg: usize) -> ! {
     // 3. Publish hostname to graph
     publish_hostname(&hostname);
 
-    // 4. Initialize Networking
-    let (resp_write, resp_read) = port_create(4096).expect("Failed to create response port");
+    // 4. Setup UI
+    let mut window_id: Option<ThingId> = None;
+    let mut ui_crown = ThingId::default();
+    
+    // Attempt to find UI crown for UI display
+    let mut i = 0;
+    while i < 10 {
+        let mut ui_crowns = [ThingId::default(); 1];
+        if let Ok(count) = thingsys::find(kinds::UI_CROWN, &mut ui_crowns) {
+            if count > 0 {
+                ui_crown = ui_crowns[0];
+                break;
+            }
+        }
+        stem::time::sleep_ms(100);
+        i += 1;
+    }
+
+    if ui_crown.to_u64_lossy() != 0 {
+        info!("NECTAR: Creating UI_WINDOW node...");
+        let win = thingsys::create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
+        thingsys::link(win, rels::CHILD_OF, ui_crown).expect("link window");
+        thingsys::link(ui_crown, rels::HAS_CHILD, win).expect("link window has_child");
+        window_id = Some(win);
+
+        thingsys::prop_set(win, keys::UI_BG_COLOR, 0xFF181824).ok(); // Dark slate
+        set_string_prop(win, keys::UI_TITLE, "Hostname");
+
+        thingsys::prop_set(win, keys::UI_WIDTH, 360).ok();
+        thingsys::prop_set(win, keys::UI_HEIGHT, 100).ok();
+        thingsys::prop_set(win, keys::UI_X, 0).ok();
+        thingsys::prop_set(win, keys::UI_Y, 20).ok(); // 20px from top
+        thingsys::prop_set(win, keys::UI_INSET_RIGHT, 20).ok(); // 20px from right
+
+        info!("NECTAR: Publishing scene for hostname '{}' on window {:?}...", hostname, win);
+        let scene = build_scene(win, &hostname);
+        match stem::petals::publish_window(&scene) {
+            Ok(_) => info!("NECTAR: Scene published successfully."),
+            Err(e) => warn!("NECTAR: Failed to publish scene: {:?}", e),
+        }
+    } else {
+        warn!("NECTAR: Could not find UI_CROWN. UI disabled.");
+    }
+
+    // 5. Initialize Networking
+    let (resp_write, resp_read) = port_create(1024).expect("Failed to create response port");
     
     // Bind to 5353
     let handle = match udp_bind(api_port, resp_write, resp_read, 5353) {
@@ -54,33 +100,60 @@ fn main(_arg: usize) -> ! {
             info!("NECTAR: Bound to UDP 5353, handle={}", h);
             h
         }
-        Err(e) => {
-            error!("NECTAR: Failed to bind to 5353: {:?}", e);
-            loop { stem::time::sleep_ms(1000); }
+        Err(_) => {
+            error!("NECTAR: Failed to bind to 5353. mDNS features disabled.");
+            0 // Dummy handle
         }
     };
 
-    // Join mDNS multicast group 224.0.0.251
-    let mdns_ip = [224, 0, 0, 251];
-    if let Err(e) = net_join_multicast(api_port, resp_write, resp_read, mdns_ip) {
-        warn!("NECTAR: Failed to join multicast group: {:?}", e);
-    } else {
-        info!("NECTAR: Joined multicast group 224.0.0.251");
+    if handle != 0 {
+        // Join mDNS multicast group 224.0.0.251
+        let mdns_ip = [224, 0, 0, 251];
+        if let Err(_) = net_join_multicast(api_port, resp_write, resp_read, mdns_ip) {
+            warn!("NECTAR: Failed to join multicast group.");
+        } else {
+            info!("NECTAR: Joined multicast group 224.0.0.251");
+        }
     }
 
     info!("NECTAR: mDNS responder active.");
 
-    // 5. Main Loop
+    // 6. Main Loop
     let mut buf = [0u8; 2048];
+    let mut last_sync_check = stem::monotonic_ns();
+    let mut hostname = hostname;
+
     loop {
-        // Poll for UDP packets
-        match udp_recv_from(api_port, resp_write, resp_read, handle, &mut buf) {
-            Ok(Some((remote_ip, remote_port, len))) => {
-                let packet = &buf[..len];
-                handle_mdns_packet(api_port, resp_write, resp_read, handle, &hostname, remote_ip, remote_port, packet);
+        if handle != 0 {
+            // Poll for UDP packets
+            match udp_recv_from(api_port, resp_write, resp_read, handle, &mut buf) {
+                Ok(Some((remote_ip, remote_port, len))) => {
+                    let packet = &buf[..len];
+                    handle_mdns_packet(api_port, resp_write, resp_read, handle, &hostname, remote_ip, remote_port, packet);
+                }
+                Ok(None) => {}
+                Err(e) => warn!("NECTAR: recv error: {:?}", e),
             }
-            Ok(None) => {}
-            Err(e) => warn!("NECTAR: recv error: {:?}", e),
+        }
+
+        // Periodic sync check (every second)
+        let now = stem::monotonic_ns();
+        if now - last_sync_check > 1_000_000_000 {
+            last_sync_check = now;
+            let current_hostname = get_or_generate_hostname(mac);
+            if current_hostname != hostname {
+                info!("NECTAR: Synchronizing hostname: '{}' -> '{}'", hostname, current_hostname);
+                hostname = current_hostname;
+                
+                // Update UI
+                if let Some(win) = window_id {
+                    let scene = build_scene(win, &hostname);
+                    match stem::petals::publish_window(&scene) {
+                        Ok(_) => info!("NECTAR: UI updated with new hostname."),
+                        Err(e) => warn!("NECTAR: Failed to update UI: {:?}", e),
+                    }
+                }
+            }
         }
 
         stem::time::sleep_ms(10);
@@ -111,15 +184,11 @@ fn find_net_stack() -> Option<(PortHandle, [u8; 6])> {
 fn get_or_generate_hostname(mac: [u8; 6]) -> String {
     // Check if hostname is already set in dev.Host.name
     let mut host_buf = [ThingId::default(); 1];
-    if let Ok(1) = thingsys::find(KIND_DEV_HOST, &mut host_buf) {
+    if let Ok(1) = thingsys::find(kinds::DEV_HOST, &mut host_buf) {
         let host_id = host_buf[0];
         if let Ok(sym) = thingsys::prop_get(host_id, keys::NAME) {
-            // Check if it's non-zero (assuming 0 is "not set" or placeholder)
+            // Check if it's non-zero
             if sym != 0 {
-                // We'd need to de-intern this, but we don't have a de-intern syscall.
-                // However, if it's already set, maybe we should just leave it?
-                // For now, if it's set, we'll try to find what it is.
-                // Describe thing might work?
                 let mut desc_buf = [0u8; 256];
                 if let Ok(len) = thingsys::describe_thing(host_id, &mut desc_buf) {
                     let s = core::str::from_utf8(&desc_buf[..len]).unwrap_or("");
@@ -145,13 +214,49 @@ fn get_or_generate_hostname(mac: [u8; 6]) -> String {
     format!("{}-{}", descriptors[d_idx], plants[p_idx])
 }
 
+fn build_scene(window_id: ThingId, hostname: &str) -> Scene {
+    Scene::new().window(
+        Window::new(window_id)
+            .title("Hostname")
+            .initial_size(360, 100)
+            .root(
+                Flex::column()
+                    .gap(8)
+                    .padding(16)
+                    .align_items(AlignItems::Center)
+                    .justify_content(JustifyContent::Center)
+                    .push(
+                        Text::new("Hostname")
+                            .font(FontKey::new("NotoSans-Regular").size(14))
+                            .color(Color::rgb(180, 180, 180)),
+                    )
+                    .push(
+                        Text::new(hostname)
+                            .font(FontKey::new("DSEG7Classic-Regular").size(32))
+                            .color(Color::rgb(100, 200, 255)), // Light blue
+                    ),
+            ),
+    )
+}
+
+fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
+    use stem::thing::sys::{bytespace_create, bytespace_write};
+    if value.is_empty() {
+        thingsys::prop_set(id, key_name, 0).ok();
+        return;
+    }
+    let bs_id = bytespace_create(value.len(), 0, 0).expect("create bytespace");
+    bytespace_write(bs_id, 0, value.as_bytes()).ok();
+    thingsys::prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
+}
+
 fn publish_hostname(hostname: &str) {
     let mut host_buf = [ThingId::default(); 1];
-    if let Ok(count) = thingsys::find(KIND_DEV_HOST, &mut host_buf) {
+    if let Ok(count) = thingsys::find(kinds::DEV_HOST, &mut host_buf) {
         let host_id = if count > 0 {
             host_buf[0]
         } else {
-            thingsys::create_node(KIND_DEV_HOST).expect("Failed to create dev.Host node")
+            thingsys::create_node(kinds::DEV_HOST).expect("Failed to create dev.Host node")
         };
         
         if let Ok(sym) = thingsys::intern(hostname) {
@@ -172,11 +277,27 @@ fn udp_bind(api: PortHandle, resp_w: PortHandle, resp_r: PortHandle, port: u16) 
     port_send(api, &msg).map_err(|_| ())?;
     
     let mut resp = [0u8; 128];
-    let len = port_recv(resp_r, &mut resp).map_err(|_| ())?;
+    let mut len = 0;
+    for _ in 0..100 {
+        match port_recv(resp_r, &mut resp) {
+            Ok(l) if l >= 2 => {
+                len = l;
+                break;
+            }
+            _ => stem::time::sleep_ms(10),
+        }
+    }
     
-    if len >= 6 && u16::from_le_bytes([resp[0], resp[1]]) == RESP_HANDLE {
-        Ok(u32::from_le_bytes([resp[2], resp[3], resp[4], resp[5]]))
+    if len >= 2 {
+        let resp_type = u16::from_le_bytes([resp[0], resp[1]]);
+        if resp_type == RESP_HANDLE {
+            Ok(u32::from_le_bytes([resp[2], resp[3], resp[4], resp[5]]))
+        } else {
+            error!("NECTAR: udp_bind failed - resp_type=0x{:04x}", resp_type);
+            Err(())
+        }
     } else {
+        error!("NECTAR: udp_bind timeout/failed");
         Err(())
     }
 }
@@ -190,22 +311,23 @@ fn udp_recv_from(api: PortHandle, resp_w: PortHandle, resp_r: PortHandle, handle
     port_send(api, &msg).map_err(|_| ())?;
     
     let mut resp = [0u8; 2048];
-    let len = port_recv(resp_r, &mut resp).map_err(|_| ())?;
-    
-    if len >= 2 {
-        let resp_type = u16::from_le_bytes([resp[0], resp[1]]);
-        if resp_type == RESP_DATA && len >= 8 {
-            let mut ip = [0u8; 4];
-            ip.copy_from_slice(&resp[2..6]);
-            let port = u16::from_le_bytes([resp[6], resp[7]]);
-            let data_len = len - 8;
-            buf[..data_len].copy_from_slice(&resp[8..len]);
-            Ok(Some((ip, port, data_len)))
-        } else {
-            Ok(None)
+    match port_recv(resp_r, &mut resp) {
+        Ok(len) if len >= 2 => {
+            let resp_type = u16::from_le_bytes([resp[0], resp[1]]);
+            if resp_type == RESP_DATA && len >= 8 {
+                let mut ip = [0u8; 4];
+                ip.copy_from_slice(&resp[2..6]);
+                let port = u16::from_le_bytes([resp[6], resp[7]]);
+                let data_len = len - 8;
+                buf[..data_len].copy_from_slice(&resp[8..len]);
+                Ok(Some((ip, port, data_len)))
+            } else {
+                Ok(None)
+            }
         }
-    } else {
-        Err(())
+        Err(abi::errors::Errno::EAGAIN) => Ok(None),
+        Err(_) => Err(()),
+        _ => Ok(None),
     }
 }
 
@@ -222,7 +344,10 @@ fn udp_send_to(api: PortHandle, resp_w: PortHandle, resp_r: PortHandle, handle: 
     
     // We don't necessarily need to wait for response for simple send, but netd sends one
     let mut resp = [0u8; 64];
-    let _ = port_recv(resp_r, &mut resp);
+    for _ in 0..10 {
+        if port_recv(resp_r, &mut resp).is_ok() { break; }
+        stem::time::sleep_ms(5);
+    }
     
     Ok(())
 }
@@ -236,7 +361,10 @@ fn net_join_multicast(api: PortHandle, resp_w: PortHandle, resp_r: PortHandle, i
     port_send(api, &msg).map_err(|_| ())?;
     
     let mut resp = [0u8; 64];
-    let _ = port_recv(resp_r, &mut resp);
+    for _ in 0..10 {
+        if port_recv(resp_r, &mut resp).is_ok() { break; }
+        stem::time::sleep_ms(5);
+    }
     
     Ok(())
 }

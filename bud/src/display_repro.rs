@@ -57,8 +57,8 @@ fn test_centered_rendering() {
     let fb = MockFb::new(width, height);
     let mut display = BootUpDisplay::new(fb);
 
-    // Render a line with timestamp, source, message
-    let line = "[12345] [kernel] Hello World";
+    // Render a line with timestamp, level, source, message
+    let line = "[12345] [INFO] [kernel] Hello World";
     display.render_log_line(line);
 
     let fb = display.into_inner();
@@ -89,8 +89,8 @@ fn test_centered_rendering() {
     let mut display = BootUpDisplay::new(fb);
 
     // Render a NEW line with different content/color.
-    // "[99999] [newsrc] [ERROR] New Message" -> Message is RED.
-    display.render_log_line("[99999] [newsrc] [ERROR] New Message");
+    // "[99999] [ERROR] [newsrc] New Message" -> level is ERROR (RED).
+    display.render_log_line("[99999] [ERROR] [newsrc] New Message");
 
     let fb = display.into_inner();
 

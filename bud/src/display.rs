@@ -13,8 +13,16 @@ const COLOR_SOURCE: Rgb888 = Rgb888::YELLOW;
 const COLOR_MSG_DEFAULT: Rgb888 = Rgb888::WHITE;
 const COLOR_MSG_ERROR: Rgb888 = Rgb888::RED;
 const COLOR_MSG_WARN: Rgb888 = Rgb888::MAGENTA;
-const COLOR_MSG_INFO: Rgb888 = Rgb888::WHITE;
-const COLOR_MSG_DEBUG: Rgb888 = Rgb888::new(128, 128, 128); // Dim Gray
+const COLOR_MSG_INFO: Rgb888 = Rgb888::new(200, 200, 200); // Light Gray
+const COLOR_MSG_DEBUG: Rgb888 = Rgb888::new(100, 100, 100); // Darker Gray
+
+// Dashboard Layout
+const MAX_SOURCES: usize = 32;
+const SOURCE_NAME_LEN: usize = 24;
+const DASHBOARD_COLS: i32 = 4;
+const DASHBOARD_Y: i32 = 20;
+const DASHBOARD_COL_WIDTH: i32 = 200;
+const COLOR_DASHBOARD_TEXT: Rgb888 = Rgb888::GREEN;
 
 // Layout
 const TEXT_PAD: i32 = 5;
@@ -22,6 +30,8 @@ const TEXT_PAD: i32 = 5;
 pub struct BootUpDisplay<F: FramebufferTarget> {
     fb: F,
     last_msg_area: Option<Rect>,
+    sources: [[u8; SOURCE_NAME_LEN]; MAX_SOURCES],
+    source_count: usize,
 }
 
 #[derive(Clone, Copy)]
@@ -47,6 +57,8 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
         Self {
             fb,
             last_msg_area: None,
+            sources: [[0; SOURCE_NAME_LEN]; MAX_SOURCES],
+            source_count: 0,
         }
     }
 
@@ -79,15 +91,38 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
         }
 
         // 2. Source (Middle)
+        // We show the source (3rd bracket) in the middle.
         if let Some(src) = parts.source {
             lines_to_draw[line_count] = Some((src, COLOR_SOURCE));
             line_count += 1;
+
+            // Track unique source
+            let src_bytes = src.as_bytes();
+            let mut found = false;
+            for i in 0..self.source_count {
+                let existing = &self.sources[i];
+                let len = existing.iter().position(|&b| b == 0).unwrap_or(SOURCE_NAME_LEN);
+                if &existing[..len] == src_bytes {
+                    found = true;
+                    break;
+                }
+            }
+
+            if !found && self.source_count < MAX_SOURCES {
+                let name = &mut self.sources[self.source_count];
+                let len = src_bytes.len().min(SOURCE_NAME_LEN);
+                name[..len].copy_from_slice(&src_bytes[..len]);
+                self.source_count += 1;
+            }
         }
 
         // 3. Message (Bottom)
-        let msg_color = get_msg_color(parts.message);
+        let msg_color = get_level_color(parts.level);
         lines_to_draw[line_count] = Some((parts.message, msg_color));
         line_count += 1;
+
+        // Draw dashboard
+        Self::draw_dashboard(&self.sources, self.source_count, &mut drawer);
 
         let total_h = (line_count as i32 * CHAR_HEIGHT as i32) +
                       ((line_count as i32 - 1).max(0) * TEXT_PAD);
@@ -139,6 +174,26 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
 
         self.last_msg_area = bounding_box;
     }
+
+    fn draw_dashboard(sources: &[[u8; SOURCE_NAME_LEN]; MAX_SOURCES], count: usize, drawer: &mut FbDrawer<'_, F>) {
+        let info = drawer.fb.info();
+        let total_w = DASHBOARD_COLS * DASHBOARD_COL_WIDTH;
+        let start_x = (info.width as i32 - total_w) / 2;
+
+        for i in 0..count {
+            let row = (i as i32) / DASHBOARD_COLS;
+            let col = (i as i32) % DASHBOARD_COLS;
+
+            let x = start_x + (col * DASHBOARD_COL_WIDTH);
+            let y = DASHBOARD_Y + (row * (CHAR_HEIGHT as i32 + TEXT_PAD));
+
+            let name_bytes = &sources[i];
+            let len = name_bytes.iter().position(|&b| b == 0).unwrap_or(SOURCE_NAME_LEN);
+            if let Ok(name) = str::from_utf8(&name_bytes[..len]) {
+                draw_string(drawer, x, y, name, COLOR_DASHBOARD_TEXT, COLOR_BG);
+            }
+        }
+    }
 }
 
 fn u64_to_str_buf(val: u64, buf: &mut [u8]) -> &str {
@@ -165,12 +220,14 @@ fn draw_string<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, s
     }
 }
 
-fn get_msg_color(msg: &str) -> Rgb888 {
-    if msg.contains("ERROR") { COLOR_MSG_ERROR }
-    else if msg.contains("WARN") { COLOR_MSG_WARN }
-    else if msg.contains("INFO") { COLOR_MSG_INFO }
-    else if msg.contains("DEBUG") { COLOR_MSG_DEBUG }
-    else { COLOR_MSG_DEFAULT }
+fn get_level_color(level: Option<&str>) -> Rgb888 {
+    match level {
+        Some(l) if l.contains("ERROR") => COLOR_MSG_ERROR,
+        Some(l) if l.contains("WARN") => COLOR_MSG_WARN,
+        Some(l) if l.contains("INFO") => COLOR_MSG_INFO,
+        Some(l) if l.contains("DEBUG") => COLOR_MSG_DEBUG,
+        _ => COLOR_MSG_DEFAULT,
+    }
 }
 
 fn draw_char<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, c: u8, color: Rgb888, _bg_color: Rgb888) {

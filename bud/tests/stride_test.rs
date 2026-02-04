@@ -43,11 +43,11 @@ impl FramebufferTarget for MockFb {
 
 #[test]
 fn test_render_log_line_respects_stride() {
-    let width = 200;
-    let height = 100;
+    let width = 800;
+    let height = 600;
     // Stride is larger than width * bpp.
-    // width * 4 = 800. Stride = 900.
-    let stride = 900;
+    // 800 * 4 = 3200. Stride = 3300.
+    let stride = 3300;
 
     let buffer_size = (stride * height) as usize;
     let buffer = Rc::new(RefCell::new(vec![0u8; buffer_size]));
@@ -65,21 +65,21 @@ fn test_render_log_line_respects_stride() {
     display.render_log_line("Test");
 
     // Calculation of position:
-    // Center X = 100. Center Y = 50.
+    // Center X = 400. Center Y = 300.
     // Text "Test": 4 chars * 8 = 32 width.
-    // Start X = 100 - 16 = 84.
+    // Start X = 400 - 16 = 384.
     // Lines = 1. Height = 13.
-    // Start Y = 50 - 6 = 44.
+    // Start Y = 300 - 6 = 294.
 
-    // Character 'T' is at (84, 44).
+    // Character 'T' is at (384, 294).
     // b'T' => [0x00, 0x7E, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00, 0x00, 0x00, 0x00]
     // Row 1 is 0x7E (01111110).
     // x offsets: 1 to 6.
-    // x = 84 + 1 = 85.
-    // y = 44 + 1 = 45.
+    // x = 384 + 1 = 385.
+    // y = 294 + 1 = 295.
 
-    let target_x = 85;
-    let target_y = 45;
+    let target_x = 385;
+    let target_y = 295;
     let bpp = 4;
 
     // Offset = y * stride + x * bpp

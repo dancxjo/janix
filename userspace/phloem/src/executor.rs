@@ -96,10 +96,15 @@ impl GraphExecutor {
                 match &node_pat.kind {
                     Some(_k) => { // Changed `k` to `_k` as it's not used directly here
                         let mut candidates = [ThingId::from_u64(0); 2048];
+                        stem::info!("phloem: calling find for kind: {}", _k);
                         let count = match graph::find(_k.as_str(), &mut candidates) {
                             Ok(c) => c,
-                            Err(_) => return ExecutionResult::error("find syscall failed"),
+                            Err(e) => {
+                                stem::info!("phloem: find failed for kind {}: {:?}", _k, e);
+                                return ExecutionResult::error("find syscall failed")
+                            },
                         };
+                        stem::info!("phloem: find returned {} candidates", count);
 
                         for i in 0..count {
                             let id = candidates[i].to_u64_lossy();
@@ -114,7 +119,7 @@ impl GraphExecutor {
                         }
                     }
                     None => {
-                        // BFS Discovery from well-known roots
+                        // BFS Discovery from well-known roots and exhaustive kinds
                         let mut queue = VecDeque::new();
                         let mut seen = BTreeSet::new();
 
@@ -122,6 +127,38 @@ impl GraphExecutor {
                         for &root_id in &[1u64, 2u64, 3u64] {
                             queue.push_back(root_id);
                             seen.insert(root_id);
+                        }
+
+                        // Exhaustive kinds to seed from
+                        let fallback_kinds = [
+                            "fs.File", "content.Source", "Asset", "ui.Window", "proc.Process", "dev.bus.Pci",
+                            "dev.pci.Function", "dev.net.Nic", "dev.storage.Disk", "dev.display.Gpu",
+                            "dev.Cpu", "ui.Crown", "font.Family", "font.Face", "boot.Module",
+                            "svc.net.Stack", "svc.net.Driver", "Bytespace", "mem.Range", "proc.Thread",
+                            "proc.Task", "proc.Kernel", "svc.Root", "svc.Scheduler", "dev.Host",
+                            "mem.Page", "mem.Stack", "mem.Heap", "ui.Panel", "ui.Text", "font.Family",
+                            "font.Face", "font.File", "xml.Document", "html.Document", "css.Stylesheet"
+                        ];
+                        for &kind in &fallback_kinds {
+                            let mut seeds = [ThingId::from_u64(0); 512];
+                            stem::info!("phloem: discovery find for kind: {}", kind);
+                            match graph::find(kind, &mut seeds) {
+                                Ok(count) => {
+                                    if count > 0 {
+                                        stem::info!("phloem: discovery found {} seeds for {}", count, kind);
+                                    }
+                                    for i in 0..count {
+                                        let id = seeds[i].to_u64_lossy();
+                                        if !seen.contains(&id) {
+                                            seen.insert(id);
+                                            queue.push_back(id);
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    stem::info!("phloem: discovery find failed for kind {}: {:?}", kind, e);
+                                }
+                            }
                         }
 
                         while let Some(current_id) = queue.pop_front() {
@@ -141,33 +178,6 @@ impl GraphExecutor {
                                     if !seen.contains(&dst_id) {
                                         seen.insert(dst_id);
                                         queue.push_back(dst_id);
-                                    }
-                                }
-                            }
-
-                            // Optional: If we still have space and queue is empty, 
-                            // we could potentially scan for more entry points, 
-                            // but the root-based BFS should cover almost everything.
-                            if queue.is_empty() && matched_ids.len() < limit_total {
-                                let fallback_kinds = [
-                                    "fs.File", "content.Source", "Asset", "ui.Window", "proc.Process", "dev.bus.Pci",
-                                    "dev.pci.Function", "dev.net.Nic", "dev.storage.Disk", "dev.display.Gpu",
-                                    "dev.Cpu", "ui.Crown", "font.Family", "font.Face", "boot.Module",
-                                    "svc.net.Stack", "svc.net.Driver", "Bytespace", "mem.Range", "proc.Thread",
-                                    "proc.Task", "proc.Kernel", "svc.Root", "svc.Scheduler", "dev.Host",
-                                    "mem.Page", "mem.Stack", "mem.Heap", "ui.Panel", "ui.Text", "font.Family",
-                                    "font.Face", "font.File", "xml.Document", "html.Document", "css.Stylesheet"
-                                ];
-                                for &kind in &fallback_kinds {
-                                    let mut seeds = [ThingId::from_u64(0); 512];
-                                    if let Ok(count) = graph::find(kind, &mut seeds) {
-                                        for i in 0..count {
-                                            let id = seeds[i].to_u64_lossy();
-                                            if !seen.contains(&id) {
-                                                seen.insert(id);
-                                                queue.push_back(id);
-                                            }
-                                        }
                                     }
                                 }
                             }

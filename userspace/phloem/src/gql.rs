@@ -254,11 +254,14 @@ impl Parser {
                 "SET" => {
                     self.consume();
                     // SET n.prop = val
-                    let var = self.parse_ident()?;
-                    if self.consume() != Some(&Token::Dot) {
-                        return Err("Expected '.' after variable in SET".to_string());
+                    let var_key = self.parse_ident()?; // This will now handle "n.prop"
+                    let parts: Vec<&str> = var_key.split('.').collect();
+                    if parts.len() != 2 {
+                        return Err("Expected 'var.key' format for SET".to_string());
                     }
-                    let key = self.parse_ident()?;
+                    let var = parts[0].to_string();
+                    let key = parts[1].to_string();
+
                     if self.consume() != Some(&Token::Eq) {
                         return Err("Expected '=' in SET".to_string());
                     }
@@ -362,11 +365,22 @@ impl Parser {
     }
 
     fn parse_ident(&mut self) -> Result<String, String> {
-        match self.consume() {
-            Some(Token::Ident(s)) => Ok(s.clone()),
-            Some(t) => Err(format!("Expected identifier, got {:?}", t)),
-            None => Err("Unexpected end of input".to_string()),
+        let mut s = match self.consume() {
+            Some(Token::Ident(s)) => s.clone(),
+            _ => return Err("Expected identifier".to_string()),
+        };
+
+        while let Some(Token::Dot) = self.peek() {
+            self.consume();
+            match self.consume() {
+                Some(Token::Ident(part)) => {
+                    s.push('.');
+                    s.push_str(part);
+                }
+                _ => return Err("Expected identifier after '.'".to_string()),
+            }
         }
+        Ok(s)
     }
 
     fn parse_value(&mut self) -> Result<Value, String> {

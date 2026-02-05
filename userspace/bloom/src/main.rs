@@ -429,13 +429,11 @@ fn main(arg: usize) -> ! {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
         d.start_handshake();
         
-        // Pump a few times to receive MSG_WELCOME
-        for i in 0..5 {
-            stem::info!("[bloom] handshake pump {}/5", i + 1);
+        // Pump a few times to receive MSG_WELCOME (use yield_now, not sleep which can hang)
+        for i in 0..10 {
             d.pump();
-            stem::sleep_ms(2);
+            stem::yield_now();
         }
-        stem::info!("[bloom] handshake pump loop complete");
         
         PresenterImpl::Driver(d)
     } else {
@@ -443,7 +441,6 @@ fn main(arg: usize) -> ! {
     };
 
     // Buffer mapping cache for swapchain - maps bytespace IDs to their virtual addresses
-    stem::info!("[bloom] Presenter created, setting up surface...");
     let mut buffer_cache: BTreeMap<ThingId, *mut u8> = BTreeMap::new();
 
     // Use fallback framebuffer initially - swapchain buffers acquired dynamically in frame loop

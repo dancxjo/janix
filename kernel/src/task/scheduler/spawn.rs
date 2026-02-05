@@ -35,15 +35,24 @@ impl<R: BootRuntime> Scheduler<R> {
             .init_kernel_context(entry, stack_top, arg.to_raw());
 
         // Determine target CPU
+        let count = self.online_cpu_count;
+        let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
         let target_cpu = match affinity {
             Affinity::Pinned(cpu) => cpu,
-            Affinity::Any => {
-                let count = rt.cpu_count();
-                // Simple Round Robin
-                let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
-                idx % count
-            }
+            Affinity::Any => idx % count,
         };
+
+        // NEW: Check if we should trigger bring-up of more CPUs
+        if self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
+            if let Some(next_cpu_id) = rt.next_offline_cpu() {
+                crate::kinfo!("SMP: spawn triggered bring-up of CPU{}", self.online_cpu_count);
+                self.bringup_in_progress = true;
+                // Safety: kernel_secondary_entry is the standard entry point
+                unsafe {
+                    let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, self.online_cpu_count);
+                }
+            }
+        }
 
         let task: Task<R> = Task {
             id,
@@ -128,14 +137,23 @@ impl<R: BootRuntime> Scheduler<R> {
         let ctx = rt.tasking().init_user_context(spec, kstack_top);
 
         // Determine target CPU
+        let count = self.online_cpu_count;
+        let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
         let target_cpu = match affinity {
             Affinity::Pinned(cpu) => cpu,
-            Affinity::Any => {
-                let count = rt.cpu_count();
-                let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
-                idx % count
-            }
+            Affinity::Any => idx % count,
         };
+
+        // NEW: Check if we should trigger bring-up of more CPUs
+        if self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
+            if let Some(next_cpu_id) = rt.next_offline_cpu() {
+                crate::kinfo!("SMP: spawn triggered bring-up of CPU{}", self.online_cpu_count);
+                self.bringup_in_progress = true;
+                unsafe {
+                    let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, self.online_cpu_count);
+                }
+            }
+        }
 
         let task: Task<R> = Task {
             id,
@@ -205,14 +223,23 @@ impl<R: BootRuntime> Scheduler<R> {
         let mapping_list = crate::memory::mappings::MappingList { regions };
 
         // Determine target CPU
+        let count = self.online_cpu_count;
+        let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
         let target_cpu = match affinity {
             Affinity::Pinned(cpu) => cpu,
-            Affinity::Any => {
-                let count = rt.cpu_count();
-                let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
-                idx % count
-            }
+            Affinity::Any => idx % count,
         };
+
+        // NEW: Check if we should trigger bring-up of more CPUs
+        if self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
+            if let Some(next_cpu_id) = rt.next_offline_cpu() {
+                crate::kinfo!("SMP: spawn triggered bring-up of CPU{}", self.online_cpu_count);
+                self.bringup_in_progress = true;
+                unsafe {
+                    let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, self.online_cpu_count);
+                }
+            }
+        }
 
         let task: Task<R> = Task {
             id,
@@ -335,7 +362,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     
     // HACK: Bloom pinning for smoke test
     let affinity = if name == "bloom" {
-        if rt.cpu_count() > 1 {
+        if rt.cpu_total_count() > 1 {
             crate::task::Affinity::Pinned(1)
         } else {
             crate::task::Affinity::Any

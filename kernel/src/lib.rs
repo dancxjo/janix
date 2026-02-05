@@ -276,6 +276,26 @@ pub trait BootRuntimeBase: 'static {
     /// Per-CPU initialization for secondary CPUs.
     /// Initialize a secondary CPU after it has entered the kernel.
     fn init_secondary_cpu(&self, cpu_index: usize);
+
+    /// Total CPUs discovered on this platform.
+    fn cpu_total_count(&self) -> usize {
+        1
+    }
+
+    /// Returns the next offline CPU id.
+    fn next_offline_cpu(&self) -> Option<CpuId> {
+        None
+    }
+
+    /// Request that one CPU be started.
+    unsafe fn start_cpu(
+        &self,
+        _cpu: CpuId,
+        _entry: extern "C" fn(usize) -> !,
+        _arg: usize,
+    ) -> Result<(), Errno> {
+        Err(Errno::NotSupported)
+    }
 }
 
 pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
@@ -315,9 +335,6 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     fn kernel_virt_base(&self) -> u64 {
         0xffffffff80000000
     }
-    fn cpu_count(&self) -> usize {
-        1
-    }
     fn boot_cpu_id(&self) -> usize {
         0
     }
@@ -327,8 +344,7 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
     }
 
     /// Start all non-boot CPUs and run `entry` on each of them.
-    /// The runtime is responsible for providing a stack to each CPU
-    /// or consuming the provided stack tops, depending on arch needs.
+    /// Deprecated: use start_cpu for lazy bring-up.
     fn start_secondary_cpus(
         &self,
         _entry: extern "C" fn(usize) -> !,
@@ -515,15 +531,9 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     contract!("Initializing tasking...");
     crate::task::init::<R>();
 
-    // NEW: bring up other cores (if supported)
-    let cpu_count = runtime.cpu_count();
-    crate::kinfo!("Kernel: Detected {} CPUs. Starting secondaries...", cpu_count);
-    if cpu_count > 1 {
-        match runtime.start_secondary_cpus(kernel_secondary_entry) {
-            Ok(_) => crate::kinfo!("Kernel: Secondaries started OK"),
-            Err(e) => crate::kinfo!("Kernel: Secondaries failed: {:?}", e),
-        }
-    }
+    // SMP bring-up is now lazy and driven by the scheduler.
+    let cpu_total = runtime.cpu_total_count();
+    crate::kinfo!("Kernel: Detected {} CPUs. SMP will be brought up lazily.", cpu_total);
 
     // Store global boot info for syscalls
     crate::boot_info::set(crate::boot_info::BootSyscallInfo {
@@ -539,7 +549,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     // Root Boot Registration
 
     let boot_info = crate::root::boot_register::BootInfo {
-        cpu_count: runtime.cpu_count(),
+        cpu_count: runtime.cpu_total_count(),
         memory_map: runtime.phys_memory_map(),
         modules: runtime.modules(),
         framebuffer: runtime.framebuffer(),
@@ -705,6 +715,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         if !spawned_fallback {
             kinfo!("No modules found. Checking threads_supported...");
             if runtime.threads_supported() {
+                kinfo!("Lazy SMP: spawning initial threads should trigger CPU bring-up if needed");
                 kinfo!("Spawning Thread A...");
                 crate::task::spawn::<R>(thread_a, StartupArg::Raw(1));
                 kinfo!("Spawning Thread B...");
@@ -769,7 +780,7 @@ pub fn run_time_tests() {
 }
 pub mod boot_info;
 
-extern "C" fn kernel_secondary_entry(cpu_index: usize) -> ! {
+extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
     // CRITICAL: First, load the kernel's GDT/IDT and set GS_BASE on this secondary CPU
     // This must happen before ANY kernel code that might fault or use logging (which uses GS).
     let base = unsafe { RAW_RUNTIME_BASE.expect("RAW_RUNTIME_BASE not initialized") };
@@ -784,6 +795,7 @@ extern "C" fn kernel_secondary_entry(cpu_index: usize) -> ! {
 
     // Then:
     unsafe {
+        crate::task::scheduler::cpu_online::<R>(cpu_index);
         crate::task::scheduler::enter_secondary(cpu_index);
     }
 }

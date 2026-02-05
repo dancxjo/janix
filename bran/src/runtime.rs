@@ -34,14 +34,30 @@ pub trait ArchRuntime {
     fn fence_full(&self) {}
     fn icache_invalidate(&self) {}
 
-    // Multi-processor support
     fn cpu_ids(&self) -> &'static [CpuId] {
-        const ONE: [CpuId; 1] = [CpuId(0)];
+        static ONE: [CpuId; 1] = [CpuId(0)];
         &ONE
     }
     fn current_cpu_id(&self) -> CpuId {
         CpuId(0)
     }
+
+    fn cpu_total_count(&self) -> usize {
+        self.cpu_ids().len()
+    }
+    fn next_offline_cpu(&self) -> Option<CpuId> {
+        None
+    }
+    unsafe fn start_cpu(
+        &self,
+        _cpu: CpuId,
+        _entry: extern "C" fn(usize) -> !,
+        _arg: usize,
+    ) -> Result<(), abi::errors::Errno> {
+        Err(abi::errors::Errno::NotSupported)
+    }
+
+    /// Deprecated: use start_cpu for lazy bring-up.
     fn start_secondary_cpus(&self, _entry: extern "C" fn(usize) -> !) -> Result<(), abi::errors::Errno> {
         Err(abi::errors::Errno::NotSupported)
     }
@@ -51,6 +67,7 @@ pub trait ArchRuntime {
     /// Per-CPU initialization for secondary cores.
     /// Called on each secondary CPU after it starts.
     fn init_secondary_cpu(&self, cpu_index: usize) {}
+
 
     /// Send an Inter-Processor Interrupt (IPI) to a specific CPU.
     fn send_ipi(&self, _cpu_index: usize, _vector: u8) {}
@@ -284,6 +301,23 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
         self.arch.init_secondary_cpu(cpu_index)
     }
 
+    fn cpu_total_count(&self) -> usize {
+        self.arch.cpu_total_count()
+    }
+
+    fn next_offline_cpu(&self) -> Option<CpuId> {
+        self.arch.next_offline_cpu()
+    }
+
+    unsafe fn start_cpu(
+        &self,
+        cpu: CpuId,
+        entry: extern "C" fn(usize) -> !,
+        arg: usize,
+    ) -> Result<(), abi::errors::Errno> {
+        unsafe { self.arch.start_cpu(cpu, entry, arg) }
+    }
+
     fn send_ipi(&self, cpu_index: usize, vector: u8) {
         self.arch.send_ipi(cpu_index, vector)
     }
@@ -348,9 +382,6 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
         self.limine.framebuffer()
     }
 
-    fn cpu_count(&self) -> usize {
-        self.arch.cpu_ids().len()
-    }
     fn cpu_ids(&self) -> &'static [CpuId] {
         self.arch.cpu_ids()
     }

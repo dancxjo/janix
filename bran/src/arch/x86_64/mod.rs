@@ -30,6 +30,9 @@ pub struct X86_64Runtime {
     // Timer calibration results for SMP sync
     timer_vector: AtomicUsize,
     timer_init_cnt: AtomicUsize,
+
+    started_cpu_count: AtomicUsize,
+    trampoline_ready: AtomicUsize,
 }
 
 pub static mut CPU_IDS: [CpuId; acpi::MAX_CPUS] = [CpuId(0); acpi::MAX_CPUS];
@@ -63,6 +66,8 @@ impl X86_64Runtime {
             cpu_ids: OnceCell::new(),
             timer_vector: AtomicUsize::new(0),
             timer_init_cnt: AtomicUsize::new(0),
+            started_cpu_count: AtomicUsize::new(1),
+            trampoline_ready: AtomicUsize::new(0),
         }
     }
 
@@ -292,7 +297,7 @@ impl ArchRuntime for X86_64Runtime {
             let cpl = (cs & 0x3) as u64;
             kernel::log_event!(
                 kernel::logging::LogLevel::Info,
-                "task.user_enter",
+                "bran::arch::x86_64::enter_user",
                 "Entering user mode",
                 {
                     tid: tid,
@@ -460,6 +465,16 @@ impl ArchRuntime for X86_64Runtime {
         unsafe { &CPU_IDS[..count] }
     }
 
+    fn next_offline_cpu(&self) -> Option<CpuId> {
+        let started = self.started_cpu_count.load(Ordering::SeqCst);
+        let total = CPU_COUNT.load(Ordering::SeqCst) as usize;
+        if started < total {
+            Some(unsafe { CPU_IDS[started] })
+        } else {
+            None
+        }
+    }
+
     fn current_cpu_id(&self) -> CpuId {
         match self.lapic_id() {
             Ok(id) => CpuId(id),
@@ -552,75 +567,70 @@ impl ArchRuntime for X86_64Runtime {
         }
     }
 
-    fn start_secondary_cpus(
+    unsafe fn start_cpu(
         &self,
+        cpu: CpuId,
         entry: extern "C" fn(usize) -> !,
+        cpu_index: usize,
     ) -> Result<(), abi::errors::Errno> {
-        use kernel::{kinfo, kerror};
+        use kernel::{kinfo, kerror, MapKind, MapPerms};
         use core::sync::atomic::Ordering;
-        
-        kinfo!("SMP: Starting secondary CPUs...");
-        let ids = self.cpu_ids();
-        let bsp_id = self.current_cpu_id();
-        let cpu_count = ids.len();
-        
-        if cpu_count <= 1 {
-            return Ok(());
-        }
-
-        kinfo!("SMP: Starting {} secondary CPUs...", cpu_count - 1);
 
         let hhdm = self.hhdm_offset.load(Ordering::SeqCst);
-
-        // 1. Setup trampoline page (0x8000)
-        let trampoline_base: u64 = 0x8000;
-        let trampoline_addr = trampoline_base + hhdm; // Use HHDM directly
-
-        // 2. Also identity-map the trampoline page (phys 0x8000 -> virt 0x8000)
-        //    This is required because after the AP enables paging, it continues executing
-        //    at the physical address 0x8000, which must be accessible as virtual 0x8000.
         let aspace = self.active_address_space();
-        self.map_page(
-            aspace,
-            trampoline_base,  // Virtual = Physical for identity map
-            trampoline_base,
-            MapPerms {
-                user: false,
-                read: true,
-                write: true,
-                exec: true, // Need execute for the trampoline code
-                kind: MapKind::Device,
-            },
-            MapKind::Device,
-            &ProxyAllocator,
-        )
-        .map_err(|_| {
-            kerror!("SMP: Failed to identity-map trampoline");
-            abi::errors::Errno::ENOMEM
-        })?;
-        self.tlb_flush_page(trampoline_base);
-        kinfo!("SMP: Identity-mapped trampoline at 0x{:x}", trampoline_base);
+        let trampoline_base: u64 = 0x8000;
+        let trampoline_addr = trampoline_base + hhdm;
 
-        // 3. Copy trampoline code
-        unsafe {
-            let start = &smp::trampoline_start as *const _ as *const u8;
-            let end = &smp::trampoline_end as *const _ as *const u8;
-            let len = end.offset_from(start) as usize;
+        // 1. One-time trampoline setup
+        if self.trampoline_ready.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+            kinfo!("SMP: Initializing trampoline at 0x{:x}", trampoline_base);
             
-            if len > 4096 {
-                panic!("SMP: Trampoline too large!");
+            self.map_page(
+                aspace,
+                trampoline_base,
+                trampoline_base,
+                MapPerms {
+                    user: false,
+                    read: true,
+                    write: true,
+                    exec: true,
+                    kind: MapKind::Device,
+                },
+                MapKind::Device,
+                &ProxyAllocator,
+            ).map_err(|_| {
+                kerror!("SMP: Failed to identity-map trampoline");
+                abi::errors::Errno::ENOMEM
+            })?;
+            self.tlb_flush_page(trampoline_base);
+
+            unsafe {
+                let start = &smp::trampoline_start as *const _ as *const u8;
+                let end = &smp::trampoline_end as *const _ as *const u8;
+                let len = end.offset_from(start) as usize;
+                
+                if len > 4096 {
+                    panic!("SMP: Trampoline too large!");
+                }
+                
+                core::ptr::copy_nonoverlapping(start, trampoline_addr as *mut u8, len);
             }
-            
-            core::ptr::copy_nonoverlapping(start, trampoline_addr as *mut u8, len);
-            kinfo!("SMP: Copied trampoline to 0x{:x}", trampoline_base);
+            self.trampoline_ready.store(2, Ordering::SeqCst); // 2 means fully ready
+        } else {
+            // Wait for trampoline to be ready if another CPU is initializing it
+            while self.trampoline_ready.load(Ordering::SeqCst) < 2 {
+                core::hint::spin_loop();
+            }
         }
 
-        // 3. Helper to write to trampoline data
+        // 2. Start the specific AP
+        let apic_id = cpu.0 as u32;
+        kinfo!("SMP: Starting CPU {} (APIC {})", cpu_index, apic_id);
+
         let write_trampoline_data = |offset: usize, val: u64| unsafe {
              core::ptr::write_volatile((trampoline_addr + offset as u64) as *mut u64, val);
         };
         
-        // 4. Get LAPIC virtual address via HHDM
         let lapic_base = self.lapic_base_phys().unwrap(); 
         let lapic_virt = lapic_base + hhdm;
 
@@ -629,102 +639,83 @@ impl ArchRuntime for X86_64Runtime {
             core::ptr::write_volatile((lapic_virt + 0x300) as *mut u32, low);
         };
 
-        // 5. Start each AP
-        for (i, &cpu_id) in ids.iter().enumerate() {
-            if cpu_id == bsp_id {
-                continue;
-            }
-            
-            let apic_id = cpu_id.0 as u32;
-            kinfo!("SMP: Starting CPU {} (APIC {})", i, apic_id);
+        // 4 pages (16KB) for bootstrap stack
+        let stack_frames = 4;
+        let stack_base_phys = kernel::memory::alloc_contiguous_frames(stack_frames)
+            .expect("Failed to alloc AP stack");
+        let stack_top_virt = stack_base_phys + hhdm + (stack_frames as u64 * 4096);
 
-            // 4 pages (16KB) for bootstrap stack
-            let stack_frames = 4;
-            let stack_base_phys = kernel::memory::alloc_contiguous_frames(stack_frames)
-                .expect("Failed to alloc AP stack");
-            // Convert physical to virtual via HHDM - stack pointer must be virtual in long mode
-            let stack_top_virt = stack_base_phys + hhdm + (stack_frames as u64 * 4096);
+        // Setup trampoline data
+        write_trampoline_data(0x500, 0); // Clear flag
+        write_trampoline_data(0x508, self.debug_active_aspace_root()); // CR3
+        write_trampoline_data(0x510, stack_top_virt);
+        write_trampoline_data(0x518, entry as usize as u64);
+        write_trampoline_data(0x520, cpu_index as u64);
+        write_trampoline_data(0x528, hhdm);
 
-            // Setup trampoline data
-            // We use the offsets defined in smp.rs
-            // Data block at 0x500 (GDT is at 0x100):
-            // flag: 0x500
-            // cr3: 0x508
-            // stack_top: 0x510
-            // entry_point: 0x518
-            // cpu_index: 0x520
-            // hhdm: 0x528
-            
-            let cr3 = self.debug_active_aspace_root();
-            kinfo!("SMP: Writing CR3 0x{:x} to physical 0x{:x}", cr3, 0x8508);
-            write_trampoline_data(0x500, 0); // Clear flag
-            write_trampoline_data(0x508, cr3); // CR3
-            write_trampoline_data(0x510, stack_top_virt);
-            write_trampoline_data(0x518, entry as usize as u64);
-            write_trampoline_data(0x520, i as u64);
-            write_trampoline_data(0x528, hhdm);
-
-            // GDT descriptor at 0x530
-            unsafe {
-                let cpu_index = i + 1; // i=0 is first secondary (CPU 1)
-                let gdt_base = core::ptr::addr_of!(gdt::GDT_ARRAY[cpu_index]) as u64;
-                let gdt_size = (core::mem::size_of::<gdt::Gdt>() - 1) as u16;
-                let mut desc = [0u8; 10];
-                desc[0..2].copy_from_slice(&gdt_size.to_le_bytes());
-                desc[2..10].copy_from_slice(&gdt_base.to_le_bytes());
-                for (off, &v) in desc.iter().enumerate() {
-                    core::ptr::write_volatile((trampoline_addr + 0x530 + off as u64) as *mut u8, v);
-                }
-            }
-
-            // IDT descriptor at 0x540
-            unsafe {
-                let idt_base = core::ptr::addr_of!(idt::IDT) as u64;
-                let idt_size = (core::mem::size_of::<idt::Idt>() - 1) as u16;
-                let mut desc = [0u8; 10];
-                desc[0..2].copy_from_slice(&idt_size.to_le_bytes());
-                desc[2..10].copy_from_slice(&idt_base.to_le_bytes());
-                for (off, &v) in desc.iter().enumerate() {
-                    core::ptr::write_volatile((trampoline_addr + 0x540 + off as u64) as *mut u8, v);
-                }
-            }
-
-            // Memory fence to ensure all writes are visible to AP before SIPI
-            core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
-
-            // INIT IPI
-            // Dest Shorthand=0, TrigMode=Level, Level=Assert, DelivMode=INIT
-            // 0x0000C500 (Level, Assert, INIT)
-            write_icr(apic_id << 24, 0x0000C500);
-            
-            // Wait 10ms for INIT to take effect
-            for _ in 0..10_000_000 { core::hint::spin_loop(); }
-
-            // SIPI (Startup IPI) - Page 0x08 (0x08000)
-            // Send SIPI twice as per standard multi-processor initialization
-            write_icr(apic_id << 24, 0x00004608);
-            for _ in 0..1_000_000 { core::hint::spin_loop(); } // ~1ms delay
-            write_icr(apic_id << 24, 0x00004608);
-
-            // Wait for come up
-            let mut came_up = false;
-            for _ in 0..10_000_000 {
-                // Read from identity-mapped address (0x8500) which is what the AP writes to
-                let flag = unsafe { core::ptr::read_volatile((0x8500 + hhdm) as *const u64) };
-                if flag == 1 {
-                    came_up = true;
-                    break;
-                }
-                core::hint::spin_loop();
-            }
-            
-            if came_up {
-                kinfo!("SMP: CPU {} (APIC {}) is online", i, apic_id);
-            } else {
-                kerror!("SMP: CPU {} (APIC {}) timed out", i, apic_id);
+        // GDT descriptor at 0x530
+        unsafe {
+            let gdt_base = core::ptr::addr_of!(gdt::GDT_ARRAY[cpu_index]) as u64;
+            let gdt_size = (core::mem::size_of::<gdt::Gdt>() - 1) as u16;
+            let mut desc = [0u8; 10];
+            desc[0..2].copy_from_slice(&gdt_size.to_le_bytes());
+            desc[2..10].copy_from_slice(&gdt_base.to_le_bytes());
+            for (off, &v) in desc.iter().enumerate() {
+                core::ptr::write_volatile((trampoline_addr + 0x530 + off as u64) as *mut u8, v);
             }
         }
+
+        // IDT descriptor at 0x540
+        unsafe {
+            let idt_base = core::ptr::addr_of!(idt::IDT) as u64;
+            let idt_size = (core::mem::size_of::<idt::Idt>() - 1) as u16;
+            let mut desc = [0u8; 10];
+            desc[0..2].copy_from_slice(&idt_size.to_le_bytes());
+            desc[2..10].copy_from_slice(&idt_base.to_le_bytes());
+            for (off, &v) in desc.iter().enumerate() {
+                core::ptr::write_volatile((trampoline_addr + 0x540 + off as u64) as *mut u8, v);
+            }
+        }
+
+        core::sync::atomic::fence(core::sync::atomic::Ordering::SeqCst);
+
+        // INIT IPI
+        write_icr(apic_id << 24, 0x0000C500);
         
+        // Wait 10ms
+        for _ in 0..10_000_000 { core::hint::spin_loop(); }
+
+        // SIPI
+        write_icr(apic_id << 24, 0x00004608);
+        for _ in 0..1_000_000 { core::hint::spin_loop(); }
+        write_icr(apic_id << 24, 0x00004608);
+
+        // Wait for come up (bounded)
+        let mut came_up = false;
+        for _ in 0..10_000_000 {
+            let flag = unsafe { core::ptr::read_volatile((0x8500 + hhdm) as *const u64) };
+            if flag == 1 {
+                came_up = true;
+                break;
+            }
+            core::hint::spin_loop();
+        }
+        
+        if came_up {
+            kinfo!("SMP: CPU {} (APIC {}) is online", cpu_index, apic_id);
+            self.started_cpu_count.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        } else {
+            kerror!("SMP: CPU {} (APIC {}) timed out", cpu_index, apic_id);
+            Err(abi::errors::Errno::ETIMEDOUT)
+        }
+    }
+
+    fn start_secondary_cpus(
+        &self,
+        _entry: extern "C" fn(usize) -> !,
+    ) -> Result<(), abi::errors::Errno> {
+        // Deprecated
         Ok(())
     }
 

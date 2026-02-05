@@ -52,6 +52,7 @@ pub enum Errno {
     EOVERFLOW = 75,
     ENOBUFS = 105,
     EMSGSIZE = 90,
+    ETIMEDOUT = 110,
     // Add more as needed, following Linux numbers usually helps debugging
 
     // Custom/Extension

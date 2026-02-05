@@ -244,14 +244,15 @@ pub fn init<R: BootRuntime>() {
 
 fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
     let rt = crate::runtime::<R>();
-    let cpu_count = rt.cpu_count();
+    let cpu_total = rt.cpu_total_count();
     
-    crate::kinfo!("  Initializing {} CPUs...", cpu_count);
-
-    // Initialize PerCpu state for all CPUs
-    for _ in 0..cpu_count {
+    // Initialize PerCpu state for all CPUs (initially empty/offline)
+    for _ in 0..cpu_total {
         sched.per_cpu.push(types::PerCpu::new());
     }
+    
+    sched.total_cpu_count = cpu_total;
+    sched.online_cpu_count = 1;
 
     crate::kinfo!("  Creating boot task...");
 
@@ -295,10 +296,9 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
 
     crate::kinfo!("  Creating idle tasks...");
 
-    // Create idle task for EACH CPU
-    for i in 0..cpu_count {
-         // Arg is cpu index, so idle loop knows who it is?
-         // Actually idle_task entry takes generic usize.
+    // Create idle task for CPU 0 initially
+    {
+        let i = 0;
         let idle_id = sched.spawn(idle_task::<R>, StartupArg::Raw(i), TaskPriority::Idle, crate::task::Affinity::Pinned(i));
         
         // Remove from run queues - idle tasks are special
@@ -671,11 +671,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
             graphify::update_task_priority(id, priority as u8);
 
             // If it's runnable and in a runq, move it to the new runq
-            // If it's runnable and in a runq, move it to the new runq
             if self.tasks[idx].state == TaskState::Runnable {
                 // We need to find WHICH runq it is in if we don't track it.
                 // Brute force: check ALL per_cpu runqs? Or check affinity?
-                // For now, check all.
                 for pc in self.per_cpu.iter_mut() {
                      if let Some(pos) = pc.runq[old_priority as usize].iter().position(|&rid| rid == id) {
                          pc.runq[old_priority as usize].remove(pos);
@@ -685,6 +683,34 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 }
             }
         }
+    }
+
+    /// Mark a secondary CPU as online and initialize its idle task.
+    pub fn cpu_online(&mut self, cpu_index: usize) {
+        crate::kinfo!("SMP: CPU {} online (triggered by scheduler spawn)", cpu_index);
+        self.bringup_in_progress = false;
+        self.online_cpu_count += 1;
+
+        // Create idle task for this new CPU
+        let i = cpu_index;
+        let idle_id = self.spawn(idle_task::<R>, StartupArg::Raw(i), TaskPriority::Idle, crate::task::Affinity::Pinned(i));
+        
+        // Remove from run queues - idle tasks are special
+        for q in self.per_cpu.iter_mut().flat_map(|pc| pc.runq.iter_mut()) {
+            if let Some(pos) = q.iter().position(|&id| id == idle_id) {
+                q.remove(pos);
+            }
+        }
+        
+        // Set as this CPU's idle task
+        self.per_cpu[i].idle_task = Some(idle_id);
+        
+        // Pin idle task to its CPU
+        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == idle_id) {
+            (**t).affinity = crate::task::Affinity::Pinned(i);
+        }
+        graphify::set_affinity_node(idle_id, i);
+        graphify::set_name(idle_id, &alloc::format!("idle/{}", i));
     }
 }
 
@@ -750,6 +776,17 @@ pub fn exit<R: BootRuntime>(code: i32) {
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
     sched.terminate_current(code)
+}
+
+pub fn cpu_online<R: BootRuntime>(cpu_index: usize) {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let lock = SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+        sched.cpu_online(cpu_index);
+    }
+    rt.irq_restore(_irq);
 }
 
 pub fn dump_stats<R: BootRuntime>() {

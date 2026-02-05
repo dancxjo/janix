@@ -85,6 +85,11 @@ pub struct Scheduler<R: BootRuntime> {
     pub(crate) preempt_disable_since: u64,
     pub(crate) watchdog_warned: bool,
     pub(crate) need_resched: bool,
+
+    pub(crate) total_cpu_count: usize,
+    pub(crate) online_cpu_count: usize,
+    pub(crate) bringup_in_progress: bool,
+
     pub(crate) metrics: SchedulerMetrics,
     /// Maps TaskId -> ThingId for graph node lookups
     pub(crate) task_graph: BTreeMap<TaskId, u64>,
@@ -114,6 +119,9 @@ impl<R: BootRuntime> Scheduler<R> {
             preempt_disable_since: 0,
             watchdog_warned: false,
             need_resched: false,
+            total_cpu_count: 1,
+            online_cpu_count: 1,
+            bringup_in_progress: false,
             metrics: SchedulerMetrics::new(),
             task_graph: BTreeMap::new(),
         }

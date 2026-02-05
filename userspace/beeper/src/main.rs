@@ -18,7 +18,7 @@ use stem::thing::ThingId;
 #[stem::main]
 fn main(_arg: usize) -> ! {
     let tone_freq: Option<f64> = None; // Args not supported yet in stem
-    let seconds = 30.0;
+    let seconds = 10.0;
     
     let mut dev_buf = [ThingId::default(); 1];
     let mut device_id = None;

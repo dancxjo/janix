@@ -2,7 +2,7 @@ use alloc::vec::Vec;
 use core::f32::consts::PI;
 
 pub fn generate_chime(sample_rate: u32) -> Vec<u8> {
-    let duration_secs = 30.0; // Long ambient swell
+    let duration_secs = 10.0; // Sped up ambient swell (300%)
     let total_samples = (sample_rate as f32 * duration_secs) as usize;
     let mut buffer = Vec::with_capacity(total_samples * 4); 
 
@@ -21,8 +21,8 @@ pub fn generate_chime(sample_rate: u32) -> Vec<u8> {
         (f_octave, 0.1), // Quiet octave
     ];
 
-    let attack = 12.0; // Extremely slow, gentle bloom
-    let release = 8.0; // Long tail
+    let attack = 4.0; // Sped up bloom
+    let release = 2.66; // Sped up tail
     
     // Pre-calc envelope points
     let release_start_sample = (total_samples as f32 * 0.6) as usize; // Check later
@@ -50,8 +50,8 @@ pub fn generate_chime(sample_rate: u32) -> Vec<u8> {
             }
         }
 
-        // Slow "Breathing" Tremolo (0.5 Hz)
-        let breath = 0.9 + 0.1 * libm::sinf(2.0 * PI * 0.5 * t);
+        // Sped up "Breathing" Tremolo (1.5 Hz)
+        let breath = 0.9 + 0.1 * libm::sinf(2.0 * PI * 1.5 * t);
         
         // Sum oscillators
         let mut signal = 0.0;

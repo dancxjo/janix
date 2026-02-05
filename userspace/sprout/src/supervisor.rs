@@ -189,6 +189,8 @@ impl Supervisor {
         // User Apps
         self.ensure_app("/font_explorer");
         self.ensure_app("/photosynthesis");
+        self.ensure_app("/nectar");
+        self.ensure_app("/fetchd");
         // self.ensure_app("/clock");
         // self.ensure_app("/drawlist_demo");
 

@@ -403,7 +403,6 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                 }
                 Err(e) => {
                     warn!("SPROUT: Failed to spawn virtio_netd: {:?}", e);
-                    return; // Can't run netd without the driver
                 }
             }
 
@@ -425,25 +424,7 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                 }
             }
 
-            // Spawn fetchd - IP address display UI
-            match stem::syscall::spawn_process("/fetchd", 0) {
-                Ok(pid) => {
-                    info!("SPROUT: Spawned fetchd (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 2); // Normal priority
-                    tasks.push(ManagedTask {
-                        name: "/fetchd".to_string(),
-                        kind: TaskKind::App,
-                        module_path: "/fetchd".to_string(),
-                        pid: Some(pid),
-                        restarts: 0,
-                    });
-                }
-                Err(e) => {
-                    warn!("SPROUT: Failed to spawn fetchd: {:?}", e);
-                }
-            }
-
-            // Spawn anther - HTTP server
+            // Spawn anther - HTTP server (we keep this in the pipeline for now as it doesn't have a window)
             match stem::syscall::spawn_process("/anther", 0) {
                 Ok(pid) => {
                     info!("SPROUT: Spawned anther (PID={})", pid);
@@ -458,24 +439,6 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                 }
                 Err(e) => {
                     warn!("SPROUT: Failed to spawn anther: {:?}", e);
-                }
-            }
-
-            // Spawn nectar - mDNS responder
-            match stem::syscall::spawn_process("/nectar", 0) {
-                Ok(pid) => {
-                    info!("SPROUT: Spawned nectar (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 2);
-                    tasks.push(ManagedTask {
-                        name: "/nectar".to_string(),
-                        kind: TaskKind::App,
-                        module_path: "/nectar".to_string(),
-                        pid: Some(pid),
-                        restarts: 0,
-                    });
-                }
-                Err(e) => {
-                    warn!("SPROUT: Failed to spawn nectar: {:?}", e);
                 }
             }
         } else {

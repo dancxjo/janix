@@ -196,6 +196,9 @@ struct UiWatcher {
     buf: [u8; 4096],
 }
 
+// "kind" as u32 little-endian: 'k' | 'i'<<8 | 'n'<<16 | 'd'<<24
+const PRED_KIND: u32 = 0x646E696B;
+
 struct UiPipeline {
     watchers: Vec<UiWatcher>,
     windows: BTreeMap<ThingId, WindowState>,
@@ -233,15 +236,38 @@ impl UiPipeline {
             }
         }
 
-        Self {
+        // Register watch for new window creation events
+        if let Ok(window_kind_id) = stem::thing::sys::intern(kinds::UI_WINDOW) {
+            let filter = RootWatchFilter::kind(window_kind_id);
+            let spec = WatchSpec {
+                mode: WatchMode::StreamOnly as u32,
+                filter_ptr: &filter as *const _ as u64,
+                filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+                ..Default::default()
+            };
+            if let Ok(id) = syscall::root_watch_open(&spec) {
+                watchers.push(UiWatcher {
+                    id,
+                    key: PRED_KIND,
+                    seq: 0,
+                    buf: [0u8; 4096],
+                });
+            }
+        }
+
+        let mut pipeline = Self {
             watchers,
             windows: BTreeMap::new(),
             ui_symbols: graph_ui::UiSymbols::intern_sys(),
-        }
+        };
+
+        // Initial census of existing windows
+        pipeline.refresh_windows();
+
+        pipeline
     }
 
     fn poll(&mut self) {
-        self.refresh_windows();
         let mut dirty: BTreeMap<ThingId, bool> = BTreeMap::new();
 
         for watcher in &mut self.watchers {
@@ -255,7 +281,32 @@ impl UiPipeline {
                         cursor = cursor.saturating_add(event_len);
                         let pred = header.predicate.to_u32_lossy();
                         if pred == watcher.key {
-                            dirty.insert(header.subject, true);
+                            if pred == PRED_KIND {
+                                // Check op type (Upsert=1, Delete=2)
+                                if let Some(op) = watch::WatchOp::from_u8(header.op) {
+                                    match op {
+                                        watch::WatchOp::Upsert => {
+                                            // New window created: start tracking it
+                                            self.windows.entry(header.subject).or_insert(WindowState {
+                                                last_gen: 0,
+                                                last_w: 0,
+                                                last_h: 0,
+                                                last_bg: 0,
+                                                last_title_bs: 0,
+                                                last_focused: false,
+                                            });
+                                            dirty.insert(header.subject, true);
+                                        }
+                                        watch::WatchOp::Delete => {
+                                            // Window deleted: stop tracking
+                                            self.windows.remove(&header.subject);
+                                            dirty.remove(&header.subject);
+                                        }
+                                    }
+                                }
+                            } else {
+                                dirty.insert(header.subject, true);
+                            }
                         }
                     } else {
                         break;

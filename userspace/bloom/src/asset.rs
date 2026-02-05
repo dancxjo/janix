@@ -304,7 +304,7 @@ static JOB_QUEUE: Mutex<VecDeque<AssetLoadJob>> = Mutex::new(VecDeque::new());
 static WORKER_SPAWNED: AtomicBool = AtomicBool::new(false);
 
 extern "C" fn asset_worker_entry() -> ! {
-    info!("[asset_bank] worker started (priority bump)");
+    debug!("[asset_bank] worker started (priority bump)");
     let mut idle_spins = 0;
     loop {
         let job = {
@@ -412,7 +412,7 @@ impl AssetBank {
             Ok(tid) => {
                 // Keep worker responsive but avoid starving device drivers: use Normal (2).
                 let _ = stem::thread::set_priority(tid, 2);
-                info!("[asset_bank] worker spawned tid={} (priority=2)", tid);
+                debug!("[asset_bank] worker spawned tid={} (priority=2)", tid);
             }
             Err(e) => {
                 crate::log!("[asset_bank] ERROR: failed to spawn worker: {:?}", e);
@@ -706,7 +706,7 @@ impl AssetBank {
 
     /// Publish wallpaper to pending (called by loader thread)
     pub fn publish_wallpaper(&self, img: Image) {
-        info!(
+        debug!(
             "[asset_bank] publish_wallpaper (pending): {}x{}",
             img.width, img.height
         );
@@ -749,16 +749,16 @@ impl AssetBank {
 
     /// Publish cursor to pending (called by loader thread)
     pub fn publish_cursor(&self, cursor: CursorAsset) {
-        info!("[asset_bank] publish_cursor (pending)");
+        debug!("[asset_bank] publish_cursor (pending)");
         match &cursor {
             CursorAsset::Static(frame) => {
-                info!(
+                debug!(
                     "[asset_bank] cursor: Static frame {}x{} hotspot ({}, {})",
                     frame.image.width, frame.image.height, frame.hotspot_x, frame.hotspot_y
                 );
             }
             CursorAsset::Animated { frames } => {
-                info!("[asset_bank] cursor: Animated with {} frames", frames.len());
+                debug!("[asset_bank] cursor: Animated with {} frames", frames.len());
             }
         }
         unsafe {
@@ -846,7 +846,7 @@ impl AssetBank {
         size: usize,
         display_name: &str,
     ) -> Option<Image> {
-        info!(
+        debug!(
             "[asset_bank] mapping bytespace {} ({} bytes) for '{}'",
             id.to_u64_lossy(),
             size,
@@ -855,9 +855,9 @@ impl AssetBank {
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
 
-        info!("[asset_bank] decoding BMP for '{}'...", display_name);
+        debug!("[asset_bank] decoding BMP for '{}'...", display_name);
         let res = crate::bmp::decode(slice).ok().map(|bmp| {
-            info!(
+            debug!(
                 "[asset_bank] BMP decoded: {}x{} for '{}'",
                 bmp.width, bmp.height, display_name
             );
@@ -875,7 +875,7 @@ impl AssetBank {
         res
     }
     pub fn load_cursor_immediate_from_bs(id: ThingId, name: &str) -> Option<CursorAsset> {
-        info!("[asset_bank] load_cursor_immediate_from_bs: {}", name);
+        debug!("[asset_bank] load_cursor_immediate_from_bs: {}", name);
         let size = stem::thing::sys::bytespace_info(id).ok()?;
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
@@ -927,7 +927,7 @@ impl AssetBank {
             if !FONTS_PENDING[i].has_pending.load(Ordering::Acquire)
                 && !FONTS_READY[i].ready.load(Ordering::Acquire)
             {
-                info!(
+                debug!(
                     "[asset_bank] publish_font (pending): '{}' in slot {}",
                     font.name, i
                 );
@@ -1130,7 +1130,7 @@ impl AssetBank {
 
         match asset_type {
             AssetType::Wallpaper => {
-                info!(
+                debug!(
                     "[asset_bank] evicting wallpaper (gen={}, {}b)",
                     meta.gen.0, freed
                 );
@@ -1141,7 +1141,7 @@ impl AssetBank {
                 WALLPAPER_READY.decoded_bytes.store(0, Ordering::Release);
             }
             AssetType::Cursor => {
-                info!(
+                debug!(
                     "[asset_bank] evicting cursor (gen={}, {}b)",
                     meta.gen.0, freed
                 );
@@ -1152,7 +1152,7 @@ impl AssetBank {
                 CURSOR_READY.decoded_bytes.store(0, Ordering::Release);
             }
             AssetType::Font => {
-                info!(
+                debug!(
                     "[asset_bank] evicting fonts (gen={}, {}b)",
                     meta.gen.0, freed
                 );
@@ -1231,7 +1231,7 @@ impl AssetBank {
     }
 
     pub fn load_wallpaper_immediate(&self, path: &str) -> Option<Image> {
-        info!("[asset_bank] load_wallpaper_immediate: {}", path);
+        debug!("[asset_bank] load_wallpaper_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
         Self::load_wallpaper_immediate_from_bs_with_size(id, size, path)
     }
@@ -1245,12 +1245,12 @@ impl AssetBank {
         let svg_content = match core::str::from_utf8(slice) {
             Ok(s) => s,
             Err(_) => {
-                info!("[asset_bank] SVG is not valid UTF-8");
+                warn!("[asset_bank] SVG is not valid UTF-8");
                 return None;
             }
         };
 
-        info!("[asset_bank] parsing SVG cursor from {}", path);
+        debug!("[asset_bank] parsing SVG cursor from {}", path);
 
         // Rasterize SVG to 32x32 @ 1.0 scale (or scaled up? Windows uses 32x32 usually, large is 48)
         // Let's use 32x32 for now.
@@ -1266,7 +1266,7 @@ impl AssetBank {
         // Convert Vec<u32> to Arc<[u32]>
         let pixels = Arc::from(pixels_vec.into_boxed_slice());
 
-        info!(
+        debug!(
             "[asset_bank] SUCCESS: SVG cursor rasterized {}x{}",
             size, size
         );
@@ -1293,16 +1293,16 @@ impl AssetBank {
     }
 
     pub fn load_cursor_immediate(path: &str) -> Option<CursorAsset> {
-        info!("[asset_bank] load_cursor_immediate: {}", path);
+        debug!("[asset_bank] load_cursor_immediate: {}", path);
         let (id, size) = Self::probe_asset(path)?;
 
-        info!(
+        debug!(
             "[asset_bank] mapping bytespace {} ({} bytes)",
             id.to_u64_lossy(),
             size
         );
         let ptr = stem::thing::sys::bytespace_map(id).ok()?;
-        info!("[asset_bank] mapped to {:p}", ptr);
+        debug!("[asset_bank] mapped to {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
 
         // Check for SVG format first (when feature is enabled)
@@ -1320,35 +1320,35 @@ impl AssetBank {
                         && slice[2] == b'v'
                         && slice[3] == b'g'))
             {
-                info!("[asset_bank] detected SVG format");
+                debug!("[asset_bank] detected SVG format");
                 let result = Self::load_svg_cursor(slice, path);
                 let _ = stem::thing::sys::bytespace_unmap(id, ptr);
                 return result;
             }
         }
 
-        info!("[asset_bank] checking CUR header: len={}", slice.len());
+        debug!("[asset_bank] checking CUR header: len={}", slice.len());
 
         // ICO/CUR check: type=2 for CUR
         if slice.len() > 22 && slice[0] == 0 && slice[1] == 0 && slice[2] == 2 && slice[3] == 0 {
-            info!("[asset_bank] valid CUR header detected");
+            debug!("[asset_bank] valid CUR header detected");
             let hx = u16::from_le_bytes([slice[10], slice[11]]);
             let hy = u16::from_le_bytes([slice[12], slice[13]]);
             let img_size =
                 u32::from_le_bytes([slice[14], slice[15], slice[16], slice[17]]) as usize;
             let offset = u32::from_le_bytes([slice[18], slice[19], slice[20], slice[21]]) as usize;
 
-            info!(
+            debug!(
                 "[asset_bank] CUR: hotspot=({}, {}), img_size={}, offset={}",
                 hx, hy, img_size, offset
             );
 
             if slice.len() >= offset + img_size {
-                info!("[asset_bank] decoding embedded DIB at offset {}...", offset);
+                debug!("[asset_bank] decoding embedded DIB at offset {}...", offset);
                 // CUR files embed DIB (no BM header), use decode_dib
                 match crate::bmp::decode_dib(&slice[offset..offset + img_size]) {
                     Ok(dib) => {
-                        info!(
+                        debug!(
                             "[asset_bank] SUCCESS: cursor DIB decoded {}x{}",
                             dib.width, dib.height
                         );
@@ -1368,20 +1368,20 @@ impl AssetBank {
                         }));
                     }
                     Err(e) => {
-                        info!("[asset_bank] DIB decode FAILED: {:?}", e);
+                        warn!("[asset_bank] DIB decode FAILED: {:?}", e);
                     }
                 }
             } else {
-                info!(
+                warn!(
                     "[asset_bank] CUR data truncated: need {} have {}",
                     offset + img_size,
                     slice.len()
                 );
             }
         } else {
-            info!("[asset_bank] NOT a valid CUR file (magic bytes don't match)");
+            debug!("[asset_bank] NOT a valid CUR file (magic bytes don't match)");
             if slice.len() >= 4 {
-                info!(
+                debug!(
                     "[asset_bank] header bytes: {:02x} {:02x} {:02x} {:02x}",
                     slice[0], slice[1], slice[2], slice[3]
                 );
@@ -1389,12 +1389,12 @@ impl AssetBank {
         }
 
         let _ = stem::thing::sys::bytespace_unmap(id, ptr);
-        info!("[asset_bank] bytespace unmapped, returning None");
+        debug!("[asset_bank] bytespace unmapped, returning None");
         None
     }
     /// Load a TTF font from the system graph
     pub fn load_font_from_graph_by_path(path: &str) -> Option<FontAsset> {
-        info!("[asset_bank] load_font_from_graph_by_path: {}", path);
+        debug!("[asset_bank] load_font_from_graph_by_path: {}", path);
         let (id, size) = Self::probe_asset(path)?;
         Self::load_font_from_node_id(id, size, path)
     }
@@ -1408,7 +1408,7 @@ impl AssetBank {
     }
 
     pub fn load_font_immediate(id: ThingId, size: usize, display_name: &str) -> Option<FontAsset> {
-        info!(
+        debug!(
             "[asset_bank] mapping font bytespace {} ({} bytes)",
             id.to_u64_lossy(),
             size
@@ -1416,19 +1416,19 @@ impl AssetBank {
         let ptr = match stem::thing::sys::bytespace_map(id) {
             Ok(p) => p,
             Err(e) => {
-                info!("[asset_bank] bytespace_map FAILED: {:?}", e);
+                warn!("[asset_bank] bytespace_map FAILED: {:?}", e);
                 return None;
             }
         };
-        info!("[asset_bank] mapped at {:p}", ptr);
+        debug!("[asset_bank] mapped at {:p}", ptr);
         let slice = unsafe { core::slice::from_raw_parts(ptr, size) };
 
-        info!("[asset_bank] parsing font '{}'...", display_name);
+        debug!("[asset_bank] parsing font '{}'...", display_name);
 
         let settings = fontdue::FontSettings::default();
         match fontdue::Font::from_bytes(slice, settings) {
             Ok(font) => {
-                info!("[asset_bank] SUCCESS: font parsed");
+                debug!("[asset_bank] SUCCESS: font parsed");
                 // NOTE: We do NOT unmap on success because fontdue keeps a reference to the slice.
                 // Extract name from path/display name
                 // Handles both raw paths and the debug-printed "module{ name: \"...\" }" format
@@ -1454,7 +1454,7 @@ impl AssetBank {
                 })
             }
             Err(e) => {
-                info!("[asset_bank] font parse FAILED: {}", e);
+                warn!("[asset_bank] font parse FAILED: {}", e);
                 let _ = stem::thing::sys::bytespace_unmap(id, ptr);
                 None
             }

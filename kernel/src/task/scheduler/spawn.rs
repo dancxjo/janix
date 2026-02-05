@@ -60,7 +60,7 @@ impl<R: BootRuntime> Scheduler<R> {
         // Determine target CPU: Balanced among online CPUs. 
         // Kernel threads do NOT trigger bring-up by default unless balanced carefully.
         let target_cpu = self.pick_cpu_and_bringup(affinity, false);
-        crate::kinfo!("SCHED: Task {} assigned to CPU {}", id, target_cpu);
+        crate::kdebug!("SCHED: Task {} assigned to CPU {}", id, target_cpu);
 
         // Push to target CPU's run queue
         let cpu_count = self.per_cpu.len(); // Should match rt.cpu_count()
@@ -155,7 +155,7 @@ impl<R: BootRuntime> Scheduler<R> {
             Affinity::Pinned(cpu) => cpu,
             Affinity::Any => super::current_cpu_index::<R>(),
         };
-        crate::kinfo!("SCHED: Task {} (user thread) assigned to CPU {}", id, target_cpu);
+        crate::kdebug!("SCHED: Task {} (user thread) assigned to CPU {}", id, target_cpu);
 
         // Push to target CPU's run queue
         let cpu_count = self.per_cpu.len();
@@ -233,7 +233,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // Determine target CPU: New processes trigger bring-up of offline CPUs
         let target_cpu = self.pick_cpu_and_bringup(affinity, true);
-        crate::kinfo!("SCHED: Task {} (user task/process) assigned to CPU {}", id, target_cpu);
+        crate::kdebug!("SCHED: Task {} (user task/process) assigned to CPU {}", id, target_cpu);
 
         // Push to target CPU's run queue
         let cpu_count = self.per_cpu.len();
@@ -387,7 +387,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
 }
 
 pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {
-    crate::kinfo!("Trampoline entered. Arg: 0x{:x}", arg);
+    crate::kdebug!("Trampoline entered. Arg: 0x{:x}", arg);
     let rt = crate::runtime::<R>();
     let entry_ptr = arg as *mut UserEntry;
     let entry = unsafe { *alloc::boxed::Box::from_raw(entry_ptr) };

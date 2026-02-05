@@ -13,15 +13,15 @@ pub static ASSETS: AssetBank = AssetBank::new();
 
 // Alias for main.rs compatibility - spawns all loaders then becomes font loader
 pub extern "C" fn asset_watcher_entry() -> ! {
-    info!("[bloom] asset_watcher_entry: spawning sub-loaders");
+    debug!("[bloom] asset_watcher_entry: spawning sub-loaders");
     if let Err(e) = stem::thread::spawn(wallpaper_loader_entry) {
-        info!("[bloom] failed to spawn wallpaper loader: {:?}", e);
+        warn!("[bloom] failed to spawn wallpaper loader: {:?}", e);
     }
     if let Err(e) = stem::thread::spawn(cursor_loader_entry) {
-        info!("[bloom] failed to spawn cursor loader: {:?}", e);
+        warn!("[bloom] failed to spawn cursor loader: {:?}", e);
     }
     if let Err(e) = stem::thread::spawn(icon_loader_entry) {
-        info!("[bloom] failed to spawn icon loader: {:?}", e);
+        warn!("[bloom] failed to spawn icon loader: {:?}", e);
     }
 
     font_loader_entry()
@@ -29,7 +29,7 @@ pub extern "C" fn asset_watcher_entry() -> ! {
 
 pub extern "C" fn wallpaper_loader_entry() -> ! {
     stem::sleep_ms(100);
-    info!("[bloom] wallpaper loader: loading leather.bmp");
+    debug!("[bloom] wallpaper loader: loading leather.bmp");
     ASSETS.enqueue_wallpaper_load("leather.bmp");
     loop {
         stem::syscall::sleep_ms(10000);
@@ -191,7 +191,7 @@ pub extern "C" fn font_loader_entry() -> ! {
 
 pub extern "C" fn cursor_loader_entry() -> ! {
     stem::sleep_ms(100);
-    info!("[bloom] cursor loader: loading default cursor");
+    debug!("[bloom] cursor loader: loading default cursor");
     ASSETS.enqueue_cursor_load("/assets/cursors/future/default.svg");
     loop {
         stem::syscall::sleep_ms(10000);
@@ -200,7 +200,7 @@ pub extern "C" fn cursor_loader_entry() -> ! {
 
 pub extern "C" fn icon_loader_entry() -> ! {
     stem::sleep_ms(100);
-    info!("[bloom] icon loader started");
+    debug!("[bloom] icon loader started");
 
     // Explicitly load known icons
     let icons = [

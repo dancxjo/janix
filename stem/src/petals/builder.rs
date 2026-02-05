@@ -839,6 +839,9 @@ pub enum NodeData {
     Separator(SeparatorData),
     Checkbox(CheckboxData),
     TextInput(TextInputData),
+    Button(ButtonData),
+    Label(LabelData),
+    MessageBox(MessageBoxData),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -941,6 +944,24 @@ pub struct TextInputData {
     pub focused: bool,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct ButtonData {
+    pub text: String,
+    pub focused: bool,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct LabelData {
+    pub text: String,
+    pub for_id: Option<ThingId>,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MessageBoxData {
+    pub message: String,
+    pub focused: bool,
+}
+
 impl From<Window> for Node {
     fn from(value: Window) -> Self {
         value.node
@@ -1016,6 +1037,111 @@ impl From<Checkbox> for Node {
 impl From<TextInput> for Node {
     fn from(value: TextInput) -> Self {
         value.node
+    }
+}
+
+impl From<Button> for Node {
+    fn from(value: Button) -> Self {
+        value.node
+    }
+}
+
+impl From<Label> for Node {
+    fn from(value: Label) -> Self {
+        value.node
+    }
+}
+
+impl From<MessageBox> for Node {
+    fn from(value: MessageBox) -> Self {
+        value.node
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Button {
+    pub(crate) node: Node,
+}
+
+impl Button {
+    pub fn new(text: &str) -> Self {
+        Self {
+            node: Node::new(NodeData::Button(ButtonData {
+                text: text.to_string(),
+                focused: false,
+            })),
+        }
+    }
+
+    pub fn focused(mut self, focused: bool) -> Self {
+        if let NodeData::Button(ref mut data) = self.node.data {
+            data.focused = focused;
+        }
+        self
+    }
+}
+
+impl Styled for Button {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Label {
+    pub(crate) node: Node,
+}
+
+impl Label {
+    pub fn new(text: &str) -> Self {
+        Self {
+            node: Node::new(NodeData::Label(LabelData {
+                text: text.to_string(),
+                for_id: None,
+            })),
+        }
+    }
+
+    pub fn for_id(mut self, id: ThingId) -> Self {
+        if let NodeData::Label(ref mut data) = self.node.data {
+            data.for_id = Some(id);
+        }
+        self
+    }
+}
+
+impl Styled for Label {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MessageBox {
+    pub(crate) node: Node,
+}
+
+impl MessageBox {
+    pub fn new(message: &str) -> Self {
+        Self {
+            node: Node::new(NodeData::MessageBox(MessageBoxData {
+                message: message.to_string(),
+                focused: false,
+            })),
+        }
+    }
+
+    pub fn focused(mut self, focused: bool) -> Self {
+        if let NodeData::MessageBox(ref mut data) = self.node.data {
+            data.focused = focused;
+        }
+        self
+    }
+}
+
+impl Styled for MessageBox {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
     }
 }
 

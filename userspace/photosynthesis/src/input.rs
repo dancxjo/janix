@@ -68,16 +68,17 @@ impl InputState {
 
 /// Poll pointer and keyboard state from system graph and apply to viewport controller.
 ///
-/// Returns (viewport_updated, click_event, toggle_debug) where click_event is Some if a click occurred
-/// and toggle_debug is true if the debug key was pressed.
-pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> (bool, Option<ClickEvent>, bool) {
+/// Returns (viewport_updated, click_event, toggle_debug, key_event) where click_event is Some if a click occurred,
+/// toggle_debug is true if the debug key was pressed, and key_event contains the key and modifiers if a key was pressed.
+pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> (bool, Option<ClickEvent>, bool, Option<(Key, Mods)>) {
     let mut updated = false;
     let mut click_event = None;
     let mut toggle_debug = false;
+    let mut key_event = None;
 
     let bristle = match state.get_bristle() {
         Some(b) => b,
-        None => return (false, None, false),
+        None => return (false, None, false, None),
     };
 
     // --- Pointer handling ---
@@ -145,13 +146,17 @@ pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> (
             // Key down event
             let key = Key::from_raw(key_code as u16);
             let mods = Mods(mods_val as u8);
+            
+            // Store key event for caller to handle
+            key_event = Some((key, mods));
+            
             let (kb_updated, kb_toggle_debug) = handle_key_down(key, mods, ctrl);
             updated |= kb_updated;
             toggle_debug = kb_toggle_debug;
         }
     }
 
-    (updated, click_event, toggle_debug)
+    (updated, click_event, toggle_debug, key_event)
 }
 
 /// Handle keyboard shortcuts for viewport control.

@@ -15,7 +15,7 @@ use core::time::Duration;
 use stem::info;
 use stem::petals::{
     Canvas, Color, Flex, FontKey, Line, PanZoomController, Rect, Scene, Size, Styled, Text,
-    TextInput, Viewport, ViewportConstraints, Window,
+    TextInput, Viewport, ViewportConstraints, Window, Button, Label, MessageBox,
 };
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
@@ -102,6 +102,13 @@ const DEBUG_COLLISION_BOX_COLOR: Color = Color::from_argb_u32(0x80FF0000);
 const DEBUG_VELOCITY_COLOR: Color = Color::from_argb_u32(0xFF00FF00);
 const DEBUG_PIN_INDICATOR_COLOR: Color = Color::from_argb_u32(0xFFFFAA00);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FocusedElement {
+    TextInput,
+    SubmitButton,
+    MessageBoxButton,
+}
+
 #[stem::main]
 fn main() -> ! {
     // Initialize i18n system
@@ -151,6 +158,12 @@ fn main() -> ! {
     let mut graph_watch = None;
     let mut debug_mode = false; // Toggle with 'D' key
 
+    // Form state
+    let mut text_input_value = String::new();
+    let mut show_message_box = false;
+    let mut message_box_text = String::new();
+    let mut focused_element = FocusedElement::TextInput; // Track focus
+
     // Input state for viewport control
     let mut input_state = input::InputState::new();
 
@@ -165,7 +178,7 @@ fn main() -> ! {
 
     loop {
         // Poll input from system graph and apply to viewport
-        let (viewport_updated, click_event, toggle_debug_flag) = input::poll_and_apply(&mut viewport_controller, &mut input_state);
+        let (viewport_updated, click_event, toggle_debug_flag, key_event) = input::poll_and_apply(&mut viewport_controller, &mut input_state);
         if viewport_updated {
             dirty = true;
         }
@@ -174,6 +187,89 @@ fn main() -> ! {
             debug_mode = !debug_mode;
             info!("Debug mode: {}", debug_mode);
             dirty = true;
+        }
+        
+        // Handle keyboard events for form
+        if let Some((key, mods)) = key_event {
+            use abi::hid::Key;
+            
+            // Tab key: cycle focus
+            if key == Key::Tab {
+                focused_element = if mods.has_shift() {
+                    // Shift+Tab: go backward
+                    match focused_element {
+                        FocusedElement::MessageBoxButton => FocusedElement::SubmitButton,
+                        FocusedElement::SubmitButton => FocusedElement::TextInput,
+                        FocusedElement::TextInput => {
+                            if show_message_box {
+                                FocusedElement::MessageBoxButton
+                            } else {
+                                FocusedElement::SubmitButton
+                            }
+                        }
+                    }
+                } else {
+                    // Tab: go forward
+                    match focused_element {
+                        FocusedElement::TextInput => FocusedElement::SubmitButton,
+                        FocusedElement::SubmitButton => {
+                            if show_message_box {
+                                FocusedElement::MessageBoxButton
+                            } else {
+                                FocusedElement::TextInput
+                            }
+                        }
+                        FocusedElement::MessageBoxButton => FocusedElement::TextInput,
+                    }
+                };
+                dirty = true;
+            }
+            
+            // Enter key: activate focused element
+            if key == Key::Enter {
+                match focused_element {
+                    FocusedElement::SubmitButton => {
+                        // Submit the form
+                        if !text_input_value.is_empty() {
+                            message_box_text = format!("Form submitted: {}", text_input_value);
+                            show_message_box = true;
+                            focused_element = FocusedElement::MessageBoxButton;
+                            dirty = true;
+                        }
+                    }
+                    FocusedElement::MessageBoxButton => {
+                        // Dismiss message box
+                        show_message_box = false;
+                        focused_element = FocusedElement::TextInput;
+                        dirty = true;
+                    }
+                    FocusedElement::TextInput => {
+                        // Submit on Enter in text field
+                        if !text_input_value.is_empty() {
+                            message_box_text = format!("Form submitted: {}", text_input_value);
+                            show_message_box = true;
+                            focused_element = FocusedElement::MessageBoxButton;
+                            dirty = true;
+                        }
+                    }
+                }
+            }
+            
+            // Handle text input when text field is focused
+            if focused_element == FocusedElement::TextInput && !show_message_box {
+                // Backspace: delete character
+                if key == Key::Backspace {
+                    if !text_input_value.is_empty() {
+                        text_input_value.pop();
+                        dirty = true;
+                    }
+                }
+                // Character input (simplified - just alphanumeric and space)
+                else if let Some(ch) = key_to_char(key, mods.has_shift()) {
+                    text_input_value.push(ch);
+                    dirty = true;
+                }
+            }
         }
         
         // Handle node pinning/unpinning on click
@@ -320,6 +416,10 @@ fn main() -> ! {
                     &viewport_controller.viewport,
                     &layout_nodes,
                     debug_mode,
+                    &text_input_value,
+                    show_message_box,
+                    &message_box_text,
+                    focused_element,
                 );
                 let _ = stem::petals::publish_window(&scene);
                 last_nodes = final_nodes;
@@ -342,6 +442,10 @@ fn build_graph_scene(
     viewport: &Viewport,
     layout_nodes: &[LayoutNode],
     debug_mode: bool,
+    text_input_value: &str,
+    show_message_box: bool,
+    message_box_text: &str,
+    focused_element: FocusedElement,
 ) -> Scene {
     let mut canvas = Canvas::new().width(Size::Pct(100)).height(Size::Pct(100));
 
@@ -543,20 +647,48 @@ fn build_graph_scene(
         }
     }
 
+    let mut root_content = Flex::column()
+        .push(
+            Flex::column()
+                .gap(8)
+                .padding(16)
+                .push(
+                    Label::new("Enter your name:")
+                        .height(Size::Px(20))
+                )
+                .push(
+                    TextInput::new()
+                        .placeholder("Type here...")
+                        .value(text_input_value)
+                        .focused(focused_element == FocusedElement::TextInput)
+                        .height(Size::Px(32))
+                        .width(Size::Pct(100))
+                )
+                .push(
+                    Button::new("Submit")
+                        .focused(focused_element == FocusedElement::SubmitButton)
+                        .height(Size::Px(36))
+                        .width(Size::Px(120))
+                )
+        )
+        .push(canvas.flex_grow(1.0));
+
+    // Add message box overlay if needed
+    if show_message_box {
+        root_content = root_content.push(
+            MessageBox::new(message_box_text)
+                .focused(focused_element == FocusedElement::MessageBoxButton)
+                .width(Size::Px(400))
+                .height(Size::Px(200))
+                .margin(100) // Center it roughly
+        );
+    }
+
     Scene::new().window(
         Window::new(win)
             .title("Photosynthesis")
             .initial_size(800, 600)
-            .root(
-                Flex::column()
-                    .push(
-                        TextInput::new()
-                            .placeholder("Search nodes...")
-                            .height(Size::Px(32))
-                            .width(Size::Pct(100)),
-                    )
-                    .push(canvas.flex_grow(1.0)),
-            ),
+            .root(root_content),
     )
 }
 
@@ -571,4 +703,50 @@ fn format_type_label(kind_full: &str, name: &str) -> String {
     }
 }
 
+fn key_to_char(key: abi::hid::Key, shift: bool) -> Option<char> {
+    use abi::hid::Key;
+    
+    match key {
+        Key::A => Some(if shift { 'A' } else { 'a' }),
+        Key::B => Some(if shift { 'B' } else { 'b' }),
+        Key::C => Some(if shift { 'C' } else { 'c' }),
+        Key::D => Some(if shift { 'D' } else { 'd' }),
+        Key::E => Some(if shift { 'E' } else { 'e' }),
+        Key::F => Some(if shift { 'F' } else { 'f' }),
+        Key::G => Some(if shift { 'G' } else { 'g' }),
+        Key::H => Some(if shift { 'H' } else { 'h' }),
+        Key::I => Some(if shift { 'I' } else { 'i' }),
+        Key::J => Some(if shift { 'J' } else { 'j' }),
+        Key::K => Some(if shift { 'K' } else { 'k' }),
+        Key::L => Some(if shift { 'L' } else { 'l' }),
+        Key::M => Some(if shift { 'M' } else { 'm' }),
+        Key::N => Some(if shift { 'N' } else { 'n' }),
+        Key::O => Some(if shift { 'O' } else { 'o' }),
+        Key::P => Some(if shift { 'P' } else { 'p' }),
+        Key::Q => Some(if shift { 'Q' } else { 'q' }),
+        Key::R => Some(if shift { 'R' } else { 'r' }),
+        Key::S => Some(if shift { 'S' } else { 's' }),
+        Key::T => Some(if shift { 'T' } else { 't' }),
+        Key::U => Some(if shift { 'U' } else { 'u' }),
+        Key::V => Some(if shift { 'V' } else { 'v' }),
+        Key::W => Some(if shift { 'W' } else { 'w' }),
+        Key::X => Some(if shift { 'X' } else { 'x' }),
+        Key::Y => Some(if shift { 'Y' } else { 'y' }),
+        Key::Z => Some(if shift { 'Z' } else { 'z' }),
+        Key::Num0 => Some(if shift { ')' } else { '0' }),
+        Key::Num1 => Some(if shift { '!' } else { '1' }),
+        Key::Num2 => Some(if shift { '@' } else { '2' }),
+        Key::Num3 => Some(if shift { '#' } else { '3' }),
+        Key::Num4 => Some(if shift { '$' } else { '4' }),
+        Key::Num5 => Some(if shift { '%' } else { '5' }),
+        Key::Num6 => Some(if shift { '^' } else { '6' }),
+        Key::Num7 => Some(if shift { '&' } else { '7' }),
+        Key::Num8 => Some(if shift { '*' } else { '8' }),
+        Key::Num9 => Some(if shift { '(' } else { '9' }),
+        Key::Space => Some(' '),
+        Key::Minus => Some(if shift { '_' } else { '-' }),
+        Key::Equal => Some(if shift { '+' } else { '=' }),
+        _ => None,
+    }
+}
 

@@ -45,6 +45,9 @@ use abi::ui_scene::{
     UI_SCENE_WINDOW_INIT_W_OFFSET, UI_SCENE_WINDOW_MAX_H_OFFSET, UI_SCENE_WINDOW_MAX_W_OFFSET,
     UI_SCENE_WINDOW_MIN_H_OFFSET, UI_SCENE_WINDOW_MIN_W_OFFSET, UI_SCENE_WINDOW_TITLE_LEN_OFFSET,
     UI_SCENE_WINDOW_TITLE_OFFSET_OFFSET, UI_SCENE_WINDOW_WID_OFFSET,
+    UI_SCENE_BUTTON_TEXT_OFFSET_OFFSET, UI_SCENE_BUTTON_TEXT_LEN_OFFSET, UI_SCENE_BUTTON_FOCUSED_OFFSET,
+    UI_SCENE_LABEL_TEXT_OFFSET_OFFSET, UI_SCENE_LABEL_TEXT_LEN_OFFSET, UI_SCENE_LABEL_FOR_ID_OFFSET,
+    UI_SCENE_MESSAGE_BOX_MESSAGE_OFFSET_OFFSET, UI_SCENE_MESSAGE_BOX_MESSAGE_LEN_OFFSET, UI_SCENE_MESSAGE_BOX_FOCUSED_OFFSET,
 };
 
 use crate::errors::{Error, Result};
@@ -52,7 +55,7 @@ use crate::petals::builder::{
     AlignItems as BuilderAlign, CheckboxData, FlexData, FlexDirection as BuilderDirection,
     FontKeyKind, IconData, ImageData, ImageFit as BuilderFit, JustifyContent as BuilderJustify,
     LineData, Node, NodeData, Scene, ScrollAxis, ScrollData, SeparatorData, Size, SpacerData,
-    Style, TextData, TextInputData, TextWrap, WindowData,
+    Style, TextData, TextInputData, TextWrap, WindowData, ButtonData, LabelData, MessageBoxData,
 };
 
 pub fn pack_scene(scene: &Scene) -> Result<Vec<u8>> {
@@ -144,6 +147,15 @@ fn collect_strings(node: &Node, table: &mut StringTable) {
                 table.add(placeholder);
             }
         }
+        NodeData::Button(ButtonData { text, .. }) => {
+            table.add(text);
+        }
+        NodeData::Label(LabelData { text, .. }) => {
+            table.add(text);
+        }
+        NodeData::MessageBox(MessageBoxData { message, .. }) => {
+            table.add(message);
+        }
         _ => {}
     }
     for child in &node.children {
@@ -178,6 +190,9 @@ fn pack_node(
         NodeData::Separator(data) => (NodeKind::Separator, PayloadWriter::Separator(data)),
         NodeData::Checkbox(data) => (NodeKind::Checkbox, PayloadWriter::Checkbox(data)),
         NodeData::TextInput(data) => (NodeKind::TextInput, PayloadWriter::TextInput(data)),
+        NodeData::Button(data) => (NodeKind::Button, PayloadWriter::Button(data)),
+        NodeData::Label(data) => (NodeKind::Label, PayloadWriter::Label(data)),
+        NodeData::MessageBox(data) => (NodeKind::MessageBox, PayloadWriter::MessageBox(data)),
     };
     write_u16_slice(&mut buf, UI_SCENE_NODE_KIND_OFFSET, kind.as_raw());
     write_style(&mut buf, &node.style);
@@ -280,6 +295,9 @@ enum PayloadWriter<'a> {
     None,
     Checkbox(&'a CheckboxData),
     TextInput(&'a TextInputData),
+    Button(&'a ButtonData),
+    Label(&'a LabelData),
+    MessageBox(&'a MessageBoxData),
 }
 
 fn write_payload(
@@ -476,6 +494,32 @@ fn write_payload(
             );
             write_u32_slice(payload_buf, UI_SCENE_TEXT_INPUT_CURSOR_OFFSET, data.cursor);
             payload_buf[UI_SCENE_TEXT_INPUT_FOCUSED_OFFSET] = if data.focused { 1 } else { 0 };
+        }
+        PayloadWriter::Button(data) => {
+            let text = table.ref_for(Some(&data.text));
+            write_u32_slice(payload_buf, UI_SCENE_BUTTON_TEXT_OFFSET_OFFSET, text.offset);
+            write_u32_slice(payload_buf, UI_SCENE_BUTTON_TEXT_LEN_OFFSET, text.len);
+            payload_buf[UI_SCENE_BUTTON_FOCUSED_OFFSET] = if data.focused { 1 } else { 0 };
+        }
+        PayloadWriter::Label(data) => {
+            let text = table.ref_for(Some(&data.text));
+            write_u32_slice(payload_buf, UI_SCENE_LABEL_TEXT_OFFSET_OFFSET, text.offset);
+            write_u32_slice(payload_buf, UI_SCENE_LABEL_TEXT_LEN_OFFSET, text.len);
+            write_u64_slice(
+                payload_buf,
+                UI_SCENE_LABEL_FOR_ID_OFFSET,
+                data.for_id.map(|id| id.to_u64_lossy()).unwrap_or(0),
+            );
+        }
+        PayloadWriter::MessageBox(data) => {
+            let message = table.ref_for(Some(&data.message));
+            write_u32_slice(
+                payload_buf,
+                UI_SCENE_MESSAGE_BOX_MESSAGE_OFFSET_OFFSET,
+                message.offset,
+            );
+            write_u32_slice(payload_buf, UI_SCENE_MESSAGE_BOX_MESSAGE_LEN_OFFSET, message.len);
+            payload_buf[UI_SCENE_MESSAGE_BOX_FOCUSED_OFFSET] = if data.focused { 1 } else { 0 };
         }
         PayloadWriter::None => {}
     }

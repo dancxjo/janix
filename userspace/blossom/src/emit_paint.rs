@@ -190,6 +190,15 @@ fn emit_node(
         NodeKind::TextInput => {
             draw_text_input(scene, node, rect, builder);
         }
+        NodeKind::Button => {
+            draw_button(scene, node, rect, builder);
+        }
+        NodeKind::Label => {
+            draw_label(scene, node, rect, builder);
+        }
+        NodeKind::MessageBox => {
+            draw_message_box(scene, node, rect, builder);
+        }
         _ => {}
     }
 
@@ -327,6 +336,157 @@ fn draw_text_input(
             let caret_y = text_y + 2;
             builder.fill_rect(caret_x, caret_y, 2, caret_h, 0xFF000000);
         }
+    }
+}
+
+fn draw_button(
+    scene: &SceneGraph,
+    node: &SceneNode,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
+    // Button background color (darker if focused)
+    let bg_color = if node.button_meta.map(|m| m.focused).unwrap_or(false) {
+        0xFF0066CC // Focused blue
+    } else {
+        0xFF3399FF // Normal blue
+    };
+    
+    // Draw button background with rounded corners
+    builder.fill_rect(rect.x, rect.y, rect.w, rect.h, bg_color);
+    
+    // Draw focus outline if focused
+    if node.button_meta.map(|m| m.focused).unwrap_or(false) {
+        let outline_color = 0xFF000000;
+        let outline_width = 2;
+        // Top
+        builder.fill_rect(rect.x, rect.y, rect.w, outline_width, outline_color);
+        // Bottom
+        builder.fill_rect(rect.x, rect.y + rect.h - outline_width, rect.w, outline_width, outline_color);
+        // Left
+        builder.fill_rect(rect.x, rect.y, outline_width, rect.h, outline_color);
+        // Right
+        builder.fill_rect(rect.x + rect.w - outline_width, rect.y, outline_width, rect.h, outline_color);
+    }
+    
+    if let Some(meta) = node.button_meta {
+        let text = scene.string(meta.text).unwrap_or("");
+        let font_size = 16;
+        let baseline = rect.y + rect.h / 2 + font_size / 2 - 2;
+        
+        builder.draw_text_run(
+            rect.x + 16,
+            rect.y + 8,
+            (rect.w - 32).max(0),
+            (rect.h - 16).max(0),
+            baseline,
+            "NotoSans-Regular",
+            font_size,
+            text,
+            0xFFFFFFFF, // White text
+        );
+    }
+}
+
+fn draw_label(
+    scene: &SceneGraph,
+    node: &SceneNode,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
+    if let Some(meta) = node.label_meta {
+        let text = scene.string(meta.text).unwrap_or("");
+        let font_size = 14;
+        let baseline = rect.y + font_size + 2;
+        
+        builder.draw_text_run(
+            rect.x,
+            rect.y,
+            rect.w,
+            rect.h,
+            baseline,
+            "NotoSans-Regular",
+            font_size,
+            text,
+            0xFF000000, // Black text
+        );
+    }
+}
+
+fn draw_message_box(
+    scene: &SceneGraph,
+    node: &SceneNode,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
+    // Semi-transparent overlay background
+    builder.fill_rect(0, 0, rect.x + rect.w, rect.y + rect.h, 0x80000000);
+    
+    // Message box background (white with border)
+    let border_color = 0xFF888888;
+    builder.fill_rect(rect.x, rect.y, rect.w, rect.h, border_color);
+    
+    let padding = 2;
+    let inner_x = rect.x + padding;
+    let inner_y = rect.y + padding;
+    let inner_w = (rect.w - padding * 2).max(0);
+    let inner_h = (rect.h - padding * 2).max(0);
+    builder.fill_rect(inner_x, inner_y, inner_w, inner_h, 0xFFFFFFFF);
+    
+    if let Some(meta) = node.message_box_meta {
+        let message = scene.string(meta.message).unwrap_or("");
+        let font_size = 16;
+        let baseline = rect.y + 40;
+        
+        // Draw message text
+        builder.draw_text_run(
+            rect.x + 20,
+            rect.y + 20,
+            (rect.w - 40).max(0),
+            80,
+            baseline,
+            "NotoSans-Regular",
+            font_size,
+            message,
+            0xFF000000,
+        );
+        
+        // Draw OK button at the bottom
+        let button_w = 80;
+        let button_h = 32;
+        let button_x = rect.x + (rect.w - button_w) / 2;
+        let button_y = rect.y + rect.h - button_h - 20;
+        
+        let button_bg = if meta.focused {
+            0xFF0066CC // Focused blue
+        } else {
+            0xFF3399FF // Normal blue
+        };
+        
+        builder.fill_rect(button_x, button_y, button_w, button_h, button_bg);
+        
+        // Draw focus outline on button if focused
+        if meta.focused {
+            let outline_color = 0xFF000000;
+            let outline_width = 2;
+            builder.fill_rect(button_x, button_y, button_w, outline_width, outline_color);
+            builder.fill_rect(button_x, button_y + button_h - outline_width, button_w, outline_width, outline_color);
+            builder.fill_rect(button_x, button_y, outline_width, button_h, outline_color);
+            builder.fill_rect(button_x + button_w - outline_width, button_y, outline_width, button_h, outline_color);
+        }
+        
+        let ok_baseline = button_y + button_h / 2 + 8 / 2;
+        builder.draw_text_run(
+            button_x + 20,
+            button_y + 8,
+            (button_w - 40).max(0),
+            (button_h - 16).max(0),
+            ok_baseline,
+            "NotoSans-Regular",
+            14,
+            "OK",
+            0xFFFFFFFF,
+        );
     }
 }
 

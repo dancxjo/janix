@@ -52,7 +52,7 @@ members = [
     "userspace/fetchd",
     "userspace/anther",
     "userspace/phloem",
-    "bud",
+    "budd",
     "libs/fb_common",
     "libs/llm",
     "libs/llm_stub",

@@ -108,18 +108,18 @@ impl Framebuffer {
     }
 }
 
-impl bud::framebuffer::FramebufferTarget for Framebuffer {
-    fn info(&self) -> bud::framebuffer::FramebufferInfo {
+impl budd::framebuffer::FramebufferTarget for Framebuffer {
+    fn info(&self) -> budd::framebuffer::FramebufferInfo {
         let bpp = self.bpp.max(1);
         // Boot console expects BGRX; Limine RGB memory model is BGRX in memory.
         let format = match bpp {
-            4 => bud::framebuffer::PixelFormat::Bgrx8888,
-            3 => bud::framebuffer::PixelFormat::Bgr888,
-            2 => bud::framebuffer::PixelFormat::Rgb565,
-            _ => bud::framebuffer::PixelFormat::Unknown,
+            4 => budd::framebuffer::PixelFormat::Bgrx8888,
+            3 => budd::framebuffer::PixelFormat::Bgr888,
+            2 => budd::framebuffer::PixelFormat::Rgb565,
+            _ => budd::framebuffer::PixelFormat::Unknown,
         };
 
-        bud::framebuffer::FramebufferInfo {
+        budd::framebuffer::FramebufferInfo {
             width: self.width,
             height: self.height,
             stride: self.pitch,

@@ -295,3 +295,49 @@ fn url_encode(s: &str) -> String {
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    extern crate std;
+
+    #[test]
+    fn test_url_encoding() {
+        // Alphanumeric - should not be encoded
+        assert_eq!(url_encode("abc123XYZ"), "abc123XYZ");
+
+        // Allowed characters - should not be encoded
+        assert_eq!(url_encode("a-b_c.d~e"), "a-b_c.d~e");
+
+        // Space - should be encoded as %20
+        assert_eq!(url_encode("hello world"), "hello%20world");
+
+        // Special characters - should be encoded
+        // / -> %2F, : -> %3A
+        assert_eq!(url_encode("http://example.com"), "http%3A%2F%2Fexample.com");
+
+        // Empty string
+        assert_eq!(url_encode(""), "");
+    }
+
+    #[test]
+    fn test_parse_ipv4() {
+        // Valid IPs
+        assert_eq!(parse_ipv4("127.0.0.1"), Ok([127, 0, 0, 1]));
+        assert_eq!(parse_ipv4("192.168.1.100"), Ok([192, 168, 1, 100]));
+        assert_eq!(parse_ipv4("0.0.0.0"), Ok([0, 0, 0, 0]));
+        assert_eq!(parse_ipv4("255.255.255.255"), Ok([255, 255, 255, 255]));
+
+        // Invalid format
+        assert_eq!(parse_ipv4(""), Err(()));
+        assert_eq!(parse_ipv4("1.2.3"), Err(()));
+        assert_eq!(parse_ipv4("1.2.3.4.5"), Err(()));
+
+        // Invalid numbers
+        assert_eq!(parse_ipv4("256.0.0.1"), Err(()));
+        assert_eq!(parse_ipv4("-1.0.0.0"), Err(()));
+
+        // Non-numeric
+        assert_eq!(parse_ipv4("a.b.c.d"), Err(()));
+    }
+}

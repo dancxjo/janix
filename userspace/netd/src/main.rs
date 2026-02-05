@@ -220,14 +220,14 @@ fn main(_arg: usize) -> ! {
                 };
                 
                 // Buffer assignment:
-                // - TCP_LISTEN uses LARGE buffers because the listener socket becomes the connection
+                // - TCP_LISTEN and TCP_CONNECT use LARGE buffers because they manage active connections
                 // - TCP_ACCEPT uses SMALL buffers for the respawned listener
                 // - All other operations don't create sockets, so buffer choice doesn't matter
-                let uses_large_buf = msg_type == socket_api::MSG_TCP_LISTEN;
+                let uses_large_buf = msg_type == socket_api::MSG_TCP_LISTEN || msg_type == socket_api::MSG_TCP_CONNECT;
                 
                 let response = unsafe {
                     if uses_large_buf {
-                        // TCP_LISTEN: Use large connection buffers (listener becomes connection)
+                        // TCP_LISTEN/CONNECT: Use large connection buffers
                         let (rx, tx) = match next_conn_buf % 4 {
                             0 => (&mut CONN_RX_0[..], &mut CONN_TX_0[..]),
                             1 => (&mut CONN_RX_1[..], &mut CONN_TX_1[..]),
@@ -235,7 +235,7 @@ fn main(_arg: usize) -> ! {
                             _ => (&mut CONN_RX_3[..], &mut CONN_TX_3[..]),
                         };
                         next_conn_buf = next_conn_buf.wrapping_add(1);
-                        socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, rx, tx)
+                        socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, rx, tx, Some(dhcp_config.dns))
                     } else if msg_type == socket_api::MSG_TCP_ACCEPT {
                         // TCP_ACCEPT: Use small buffers for respawned listener
                         let (rx, tx) = match next_listener_buf % 4 {
@@ -245,10 +245,10 @@ fn main(_arg: usize) -> ! {
                             _ => (&mut LISTENER_RX_3[..], &mut LISTENER_TX_3[..]),
                         };
                         next_listener_buf = next_listener_buf.wrapping_add(1);
-                        socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, rx, tx)
+                        socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, rx, tx, Some(dhcp_config.dns))
                     } else {
-                        // Other operations (SEND, RECV, CLOSE, UDP)
-                        socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, &mut CONN_RX_0[..], &mut CONN_TX_0[..])
+                        // Other operations (SEND, RECV, CLOSE, UDP, DNS)
+                        socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, &mut CONN_RX_0[..], &mut CONN_TX_0[..], Some(dhcp_config.dns))
                     }
                 };
 

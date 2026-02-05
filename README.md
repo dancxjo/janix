@@ -25,7 +25,7 @@ The system initializes in the following sequence:
 
 ### Key Components
 
-*   **[Bud](./docs/components/bud.md)**: Early-boot display and diagnostics.
+*   **[Budd](./docs/components/budd.md)**: Boot Up Display & Diagnostics.
 *   **[Flytrap](./docs/components/flytrap.md)**: Asset watcher service (hot-loading resources).
 
 ## Quick Start
@@ -78,7 +78,7 @@ Supported: `x86_64` (default), `aarch64`, `riscv64`, `loongarch64`
 ```
 ├── bran/           # Boot Runtime Abstraction Node
 ├── kernel/         # Core Kernel & Root Service
-├── bud/            # Boot Display Library
+├── budd/           # Boot Up Display & Diagnostics
 ├── stem/           # Userspace System Library
 ├── userspace/      # Applications & Services
 │   ├── sprout/     # Init Process

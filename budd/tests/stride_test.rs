@@ -1,6 +1,6 @@
 
-use bud::framebuffer::{FramebufferTarget, FramebufferInfo, PixelFormat};
-use bud::display::BootUpDisplay;
+use budd::framebuffer::{FramebufferTarget, FramebufferInfo, PixelFormat};
+use budd::display::BootUpDisplay;
 use std::cell::RefCell;
 use std::rc::Rc;
 

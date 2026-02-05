@@ -1,6 +1,6 @@
 //! Framebuffer text console for early boot logging
 //!
-//! Wraps `bud::display::BootUpDisplay` to provide a character-oriented interface.
+//! Wraps `budd::display::BootUpDisplay` to provide a character-oriented interface.
 
 use crate::framebuffer::Framebuffer;
 use spin::Mutex;
@@ -13,7 +13,7 @@ pub static CONSOLE: Mutex<Option<FbConsole>> = Mutex::new(None);
 pub static CONSOLE_DISABLED: AtomicBool = AtomicBool::new(false);
 
 pub struct FbConsole {
-    display: bud::display::BootUpDisplay<Framebuffer>,
+    display: budd::display::BootUpDisplay<Framebuffer>,
     line_buf: [u8; 256],
     line_len: usize,
 }
@@ -23,7 +23,7 @@ unsafe impl Send for FbConsole {}
 impl FbConsole {
     pub fn new(fb: Framebuffer) -> Self {
         Self {
-            display: bud::display::BootUpDisplay::new(fb),
+            display: budd::display::BootUpDisplay::new(fb),
             line_buf: [0; 256],
             line_len: 0,
         }

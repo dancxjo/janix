@@ -389,7 +389,7 @@ name = "bran"
 version = "0.1.0"
 dependencies = [
  "abi",
- "bud",
+ "budd",
  "embedded-graphics",
  "kernel",
  "limine",
@@ -415,7 +415,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "bud"
+name = "budd"
 version = "0.1.0"
 dependencies = [
  "embedded-graphics",

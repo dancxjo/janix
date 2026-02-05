@@ -201,7 +201,8 @@ fn generate_limine_config(
         // Allowed assets
         let allowed = clean_path.ends_with("NotoSans-Regular.ttf")
             || clean_path.ends_with("future/default.svg")
-            || clean_path.ends_with("wallpapers/leather.bmp");
+            || clean_path.ends_with("wallpapers/leather.bmp")
+            || clean_path.ends_with("themes/genie_circles.wasm");
 
         if allowed {
             conf.push_str(&format!("    module_path: boot():/{}\n", clean_path));

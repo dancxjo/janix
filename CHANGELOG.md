@@ -37,8 +37,8 @@ Complementing this, the **Anther** HTTP server has gained **file upload capabili
 
 ### 🎨 Graphics & UI
 
-*   **Framebuffer Stride Heuristics**: The `bud` crate and `fb_common` library now correctly interpret framebuffer stride as pixels or bytes based on a BPP heuristic. This fixes diagonal shearing issues observed during early boot on certain display backends.
-    *   *Artifacts*: `libs/fb_common/src/lib.rs`, `bud/src/display.rs`
+*   **Framebuffer Stride Heuristics**: The `bulb` crate and `fb_common` library now correctly interpret framebuffer stride as pixels or bytes based on a BPP heuristic. This fixes diagonal shearing issues observed during early boot on certain display backends.
+    *   *Artifacts*: `libs/fb_common/src/lib.rs`, `bulb/src/display.rs`
 
 *   **PresentQueue Implementation**: The rendering pipeline has moved from legacy swapchains to a `PresentQueue` model. This improves frame timing and error handling during composition.
     *   *Artifacts*: `userspace/bloom`, `userspace/blossom`

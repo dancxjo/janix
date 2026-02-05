@@ -72,7 +72,7 @@ This workspace contains **60+ crates** organized into logical layers:
 | `abi-macros` | Procedural macros for ABI definitions |
 | `stem` | Userspace runtime library ("libc") — syscalls, allocator, threading |
 | `stem-macros` | `#[stem::main]` entry point macro |
-| `budd` | **B**oot **U**p **D**isplay — early-boot diagnostics on framebuffer |
+| `bulb` | **B**oot **U**p **L**iveness **B**ehavior — early-boot display with Wasm plugin support |
 
 ### Graphics & Display
 
@@ -209,7 +209,7 @@ thing-os/
 ├── abi-macros/             # Procedural macros for ABI
 ├── bran/                   # Boot runtime (per-arch)
 │   └── src/arch/{x86_64,aarch64,riscv64,loongarch64}/
-├── budd/                   # Early-boot display
+├── bulb/                   # Boot Up Liveness Behavior (early-boot display + Wasm)
 ├── kernel/                 # Core kernel + Root graph service
 │   └── src/{memory,task,syscall,root}/
 ├── stem/                   # Userspace "libc"

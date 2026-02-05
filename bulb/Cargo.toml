@@ -1,9 +1,14 @@
 [package]
-name = "budd"
+name = "bulb"
 version = "0.1.0"
 edition = "2021"
+
+[features]
+default = []
+wasm = ["wasmi"]
 
 [dependencies]
 embedded-graphics = "0.8.1"
 embedded-graphics-core = "0.4.0"
 fb_common = { path = "../libs/fb_common" }
+wasmi = { version = "0.38", default-features = false, optional = true }

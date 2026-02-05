@@ -62,8 +62,24 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
         }
     }
 
+    /// Create with a vertical offset for log rendering (theme header area)
+    pub fn new_with_offset(mut fb: F, _header_height: u32) -> Self {
+        // Don't clear - theme has already drawn header
+        Self {
+            fb,
+            last_msg_area: None,
+            sources: [[0; SOURCE_NAME_LEN]; MAX_SOURCES],
+            source_count: 0,
+        }
+    }
+
     pub fn into_inner(self) -> F {
         self.fb
+    }
+
+    /// Get mutable access to the underlying framebuffer
+    pub fn fb_mut(&mut self) -> &mut F {
+        &mut self.fb
     }
 
     pub fn render_log_line(&mut self, line: &str) {

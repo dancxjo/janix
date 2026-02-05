@@ -244,8 +244,8 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn putchar(&self, c: u8) {
         // Write to serial (arch-specific)
         self.arch.putchar(c);
-        // Mirror to framebuffer console
-        crate::console::put_char(c);
+        // Mirror to themed framebuffer console
+        crate::theme::put_char(c);
     }
     fn mono_ticks(&self) -> u64 {
         self.arch.mono_ticks()

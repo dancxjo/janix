@@ -236,16 +236,27 @@ pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
         // Advance ERA by 4 (instruction size)
         tf.era += 4;
     } else {
+        // Check if this is a timer interrupt (ecode = 0 means interrupt, check ISR)
         let isr = estat & 0x1FFF;
-        kernel::kprintln!(
-            "Unexpected LoongArch trap: ESTAT={:x} ECODE={:x} SUBCODE={:x} ISR={:x} ERA={:x} BADV={:x}",
-            estat,
-            ecode,
-            subcode,
-            isr,
-            tf.era,
-            tf.badv
-        );
-        loop {}
+        if isr != 0 {
+            // Timer/hardware interrupt - tick the theme animation
+            // Read stable counter (if available) or use 0 as fallback
+            let now_ticks: u64;
+            unsafe {
+                asm!("rdtime.d {}, $r0", out(reg) now_ticks, options(nomem, nostack));
+            }
+            crate::theme::tick(now_ticks);
+        } else {
+            kernel::kprintln!(
+                "Unexpected LoongArch trap: ESTAT={:x} ECODE={:x} SUBCODE={:x} ISR={:x} ERA={:x} BADV={:x}",
+                estat,
+                ecode,
+                subcode,
+                isr,
+                tf.era,
+                tf.badv
+            );
+            loop {}
+        }
     }
 }

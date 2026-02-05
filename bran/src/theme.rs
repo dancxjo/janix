@@ -80,8 +80,12 @@ pub struct GenieCirclesTheme {
     logs: [LogLine; MAX_LOG_LINES],
     log_count: usize,
     log_head: usize,
-    line_buf: [u8; 256],
-    line_len: usize,
+    /// Current tick count for animation
+    tick_count: u64,
+    /// Last render timestamp
+    last_render: u64,
+    /// Dirty flag - logs have been added since last render
+    dirty: bool,
 }
 
 // Safety: Framebuffer is only accessed from the boot CPU during early init
@@ -100,8 +104,9 @@ impl GenieCirclesTheme {
             logs: core::array::from_fn(|_| LogLine::default()),
             log_count: 0,
             log_head: 0,
-            line_buf: [0; 256],
-            line_len: 0,
+            tick_count: 0,
+            last_render: 0,
+            dirty: true,
         };
         
         // Initial render
@@ -109,64 +114,54 @@ impl GenieCirclesTheme {
         theme
     }
     
-    pub fn put_char(&mut self, c: u8) {
-        if c == b'\n' {
-            self.process_line();
-            self.line_len = 0;
-            self.render_full();
-        } else if c >= 0x20 || c == b'\t' {
-            if self.line_len < self.line_buf.len() {
-                self.line_buf[self.line_len] = c;
-                self.line_len += 1;
-            }
+    /// Called when a structured log event arrives (replaces put_char)
+    pub fn on_log_event(&mut self, event: bulb::theme_api::LogEvent<'_>) {
+        // Detect phase change from message content
+        let new_phase = BootPhase::detect_from_log(event.message, self.phase);
+        if new_phase != self.phase {
+            self.phase = new_phase;
         }
+        
+        // Add to log buffer (ring buffer)
+        let idx = (self.log_head + self.log_count) % MAX_LOG_LINES;
+        if self.log_count < MAX_LOG_LINES {
+            self.log_count += 1;
+        } else {
+            self.log_head = (self.log_head + 1) % MAX_LOG_LINES;
+        }
+        
+        let log = &mut self.logs[idx];
+        
+        // Copy source
+        if let Some(src) = event.source {
+            let bytes = src.as_bytes();
+            let len = bytes.len().min(24);
+            log.source[..len].copy_from_slice(&bytes[..len]);
+            log.source_len = len;
+        } else {
+            log.source_len = 0;
+        }
+        
+        // Copy message
+        let msg_bytes = event.message.as_bytes();
+        let msg_len = msg_bytes.len().min(80);
+        log.message[..msg_len].copy_from_slice(&msg_bytes[..msg_len]);
+        log.message_len = msg_len;
+        log.level = event.level;
+        
+        self.dirty = true;
     }
     
-    fn process_line(&mut self) {
-        let line_len = self.line_len;
-        if line_len == 0 {
-            return;
-        }
+    /// Called on timer tick for animation (~30Hz recommended)
+    pub fn tick(&mut self, now_ms: u64) {
+        self.tick_count = now_ms;
         
-        // Copy line to temp buffer to avoid borrow issues
-        let mut temp_line = [0u8; 256];
-        temp_line[..line_len].copy_from_slice(&self.line_buf[..line_len]);
-        
-        if let Ok(line) = core::str::from_utf8(&temp_line[..line_len]) {
-            let parts = bulb::parser::parse_log_line(line);
-            
-            // Detect phase change
-            let new_phase = BootPhase::detect_from_log(line, self.phase);
-            if new_phase != self.phase {
-                self.phase = new_phase;
-            }
-            
-            // Add to log buffer
-            let idx = (self.log_head + self.log_count) % MAX_LOG_LINES;
-            if self.log_count < MAX_LOG_LINES {
-                self.log_count += 1;
-            } else {
-                self.log_head = (self.log_head + 1) % MAX_LOG_LINES;
-            }
-            
-            let log = &mut self.logs[idx];
-            
-            // Copy source
-            if let Some(src) = parts.source {
-                let bytes = src.as_bytes();
-                let len = bytes.len().min(24);
-                log.source[..len].copy_from_slice(&bytes[..len]);
-                log.source_len = len;
-            } else {
-                log.source_len = 0;
-            }
-            
-            // Copy message
-            let msg_bytes = parts.message.as_bytes();
-            let msg_len = msg_bytes.len().min(80);
-            log.message[..msg_len].copy_from_slice(&msg_bytes[..msg_len]);
-            log.message_len = msg_len;
-            log.level = parts.level.map(LogLevel::from_str).unwrap_or(LogLevel::Unknown);
+        // Render if dirty or time for animation frame (~30 FPS)
+        const RENDER_INTERVAL_MS: u64 = 33;
+        if self.dirty || now_ms.saturating_sub(self.last_render) >= RENDER_INTERVAL_MS {
+            self.render_full();
+            self.dirty = false;
+            self.last_render = now_ms;
         }
     }
     
@@ -401,12 +396,22 @@ pub fn disable() {
     THEME_DISABLED.store(true, Ordering::Relaxed);
 }
 
-/// Write a character to the themed console
-pub fn put_char(c: u8) {
+/// Send a structured log event to the theme
+pub fn on_log_event(event: bulb::theme_api::LogEvent<'_>) {
     if THEME_DISABLED.load(Ordering::Relaxed) {
         return;
     }
     if let Some(ref mut theme) = *THEMED_CONSOLE.lock() {
-        theme.put_char(c);
+        theme.on_log_event(event);
+    }
+}
+
+/// Tick the theme animation (call from timer interrupt)
+pub fn tick(now_ms: u64) {
+    if THEME_DISABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    if let Some(ref mut theme) = *THEMED_CONSOLE.lock() {
+        theme.tick(now_ms);
     }
 }

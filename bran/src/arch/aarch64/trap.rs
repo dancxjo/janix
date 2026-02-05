@@ -20,6 +20,17 @@ pub unsafe extern "C" fn handle_sync_el0_rust(tf: &mut UserTrapFrame, esr: u64) 
     }
 }
 
+/// IRQ handler from lower EL (user mode) - calls theme tick
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn handle_irq_el0_rust() {
+    // Read CNTPCT_EL0 for timestamp
+    let now_ticks: u64;
+    unsafe {
+        asm!("mrs {}, cntpct_el0", out(reg) now_ticks, options(nomem, nostack));
+    }
+    crate::theme::tick(now_ticks);
+}
+
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn unhandled_exception_rust(esr: u64, elr: u64, origin: u64, spsr: u64) -> ! {
     panic!(

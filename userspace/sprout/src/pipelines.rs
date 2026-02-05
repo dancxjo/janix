@@ -356,6 +356,31 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
     }
 
+    // Spawn pollen (cursor daemon)
+    // Pollen needs: cursor_evt port (read) and display bytespace for overlay
+    // For now, Pollen shares the same bristle evt port as Bloom for mouse events
+    // TODO: Create dedicated cursor_evt port with fan-out from bristle
+    let pollen_arg = (evt.1 as u64)  // cursor event read handle (same as bloom for now)
+        | ((display_bs_id.to_u64_lossy() & 0xFFFF) << 16)
+        | (((display_bs_id.to_u64_lossy() >> 16) & 0xFFFF) << 32);
+
+    match stem::syscall::spawn_process("/pollen", pollen_arg as usize) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned pollen (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 1); // Higher priority for cursor responsiveness
+            tasks.push(ManagedTask {
+                name: "/pollen".to_string(),
+                kind: TaskKind::App,
+                module_path: "/pollen".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            stem::error!("SPROUT: Failed to spawn pollen: {:?}", e);
+        }
+    }
+
     // Spawn echo with evt_echo read handle
     match stem::syscall::spawn_process("/echo", evt_echo.1 as usize) {
         Ok(pid) => {

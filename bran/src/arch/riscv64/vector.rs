@@ -182,7 +182,14 @@ pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
     let code = scause & 0x7FFFFFFFFFFFFFFF;
 
     if is_interrupt {
-        // Ignored for now
+        // Timer interrupt handling - tick the theme animation
+        // Use time CSR if available, or just use code as placeholder
+        let now_ticks: u64;
+        unsafe {
+            // Read cycle counter (if available) for timestamp
+            asm!("rdtime {}", out(reg) now_ticks, options(nomem, nostack));
+        }
+        crate::theme::tick(now_ticks);
     } else {
         match code {
             8 => {

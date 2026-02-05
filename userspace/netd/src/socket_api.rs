@@ -201,7 +201,7 @@ impl SocketApi {
         // Check if we have a pending accepted connection
         if let Some(pending) = self.pending_accepts.get_mut(&listen_handle) {
             if let Some((conn_handle, remote_ip, remote_port)) = pending.pop() {
-                info!(
+                debug!(
                     "SOCKET_API: TCP_ACCEPT returning connection handle={} from {}:{}",
                     conn_handle, remote_ip, remote_port
                 );
@@ -227,7 +227,7 @@ impl SocketApi {
                 };
                 let remote_port = ep.port;
 
-                info!(
+                debug!(
                     "SOCKET_API: Connection established from {}:{} on listener {}",
                     remote_ip, remote_port, listen_handle
                 );
@@ -344,7 +344,7 @@ impl SocketApi {
 
         match socket.send_slice(data, endpoint) {
             Ok(_) => {
-                info!("SOCKET_API: UDP_SEND_TO handle={} sent {} bytes to {}:{}", handle, data.len(), remote_ip, remote_port);
+                trace!("SOCKET_API: UDP_SEND_TO handle={} sent {} bytes to {}:{}", handle, data.len(), remote_ip, remote_port);
                 encode_send_result(data.len() as u16)
             }
             Err(e) => {
@@ -379,7 +379,7 @@ impl SocketApi {
                 };
                 let remote_port = endpoint.endpoint.port;
                 
-                info!("SOCKET_API: UDP_RECV_FROM handle={} got {} bytes from {}:{}", handle, data.len(), remote_ip, remote_port);
+                trace!("SOCKET_API: UDP_RECV_FROM handle={} got {} bytes from {}:{}", handle, data.len(), remote_ip, remote_port);
                 encode_udp_data(remote_ip, remote_port, data)
             }
             Err(e) => {
@@ -484,12 +484,12 @@ impl SocketApi {
             if managed.kind == SocketType::Tcp {
                 let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
                 socket.close();
-                info!("SOCKET_API: TCP_CLOSE handle={} (initiating close)", handle);
+                debug!("SOCKET_API: TCP_CLOSE handle={} (initiating close)", handle);
                 self.pending_removal.push(managed.handle);
             } else {
                 // UDP sockets can be removed immediately
                 socket_set.remove(managed.handle);
-                info!("SOCKET_API: UDP close handle={} (removed)", handle);
+                debug!("SOCKET_API: UDP close handle={} (removed)", handle);
             }
         }
         self.sockets.remove(&handle);
@@ -506,7 +506,7 @@ impl SocketApi {
             let socket = socket_set.get_mut::<TcpSocket>(socket_handle);
             if socket.state() == TcpState::Closed {
                 socket_set.remove(socket_handle);
-                info!("SOCKET_API: GC removed explicitly closed TCP socket");
+                debug!("SOCKET_API: GC removed explicitly closed TCP socket");
                 false
             } else {
                 true
@@ -533,7 +533,7 @@ impl SocketApi {
 
         for handle in to_remove {
             socket_set.remove(handle);
-            info!("SOCKET_API: GC removed orphaned socket");
+            debug!("SOCKET_API: GC removed orphaned socket");
         }
     }
 

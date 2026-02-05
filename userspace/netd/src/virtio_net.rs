@@ -213,7 +213,7 @@ impl VirtioNetDriver {
         let rxq = self.device.queue_mut(0)?;
         
         if let Some((desc_id, len)) = rxq.poll_used() {
-            info!("VirtIO-NET: RX frame! desc={} len={}", desc_id, len);
+            trace!("VirtIO-NET: RX frame! desc={} len={}", desc_id, len);
             
             let buf_virt = self.rx_buffers_virt[desc_id as usize];
             
@@ -249,7 +249,7 @@ impl VirtioNetDriver {
             return Err("Frame too large");
         }
         
-        info!("VirtIO-NET: TX {} bytes", data.len());
+        trace!("VirtIO-NET: TX {} bytes", data.len());
         
         // Write header
         let header = VirtioNetHeader::zeroed();
@@ -318,7 +318,7 @@ pub fn find_nic_device() -> Result<u64, Errno> {
 /// Log detailed frame information for debugging RX path
 fn log_frame_details(frame: &[u8], len: usize) {
     if len < 14 {
-        info!("RX: frame too short for Ethernet header ({})", len);
+        trace!("RX: frame too short for Ethernet header ({})", len);
         return;
     }
     
@@ -327,7 +327,7 @@ fn log_frame_details(frame: &[u8], len: usize) {
     let src_mac = &frame[6..12];
     let ethertype = u16::from_be_bytes([frame[12], frame[13]]);
     
-    info!(
+    trace!(
         "RX: Eth dst={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} src={:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x} type=0x{:04x}",
         dst_mac[0], dst_mac[1], dst_mac[2], dst_mac[3], dst_mac[4], dst_mac[5],
         src_mac[0], src_mac[1], src_mac[2], src_mac[3], src_mac[4], src_mac[5],
@@ -343,7 +343,7 @@ fn log_frame_details(frame: &[u8], len: usize) {
         let src_ip = &ip_header[12..16];
         let dst_ip = &ip_header[16..20];
         
-        info!(
+        trace!(
             "RX: IPv4 ver={} ihl={} proto={} src={}.{}.{}.{} dst={}.{}.{}.{}",
             version, ihl, protocol,
             src_ip[0], src_ip[1], src_ip[2], src_ip[3],
@@ -357,7 +357,7 @@ fn log_frame_details(frame: &[u8], len: usize) {
             let dst_port = u16::from_be_bytes([udp_header[2], udp_header[3]]);
             let udp_len = u16::from_be_bytes([udp_header[4], udp_header[5]]);
             
-            info!(
+            trace!(
                 "RX: UDP src_port={} dst_port={} len={}",
                 src_port, dst_port, udp_len
             );
@@ -368,7 +368,7 @@ fn log_frame_details(frame: &[u8], len: usize) {
                 let txid = u16::from_be_bytes([dns_data[0], dns_data[1]]);
                 let flags = u16::from_be_bytes([dns_data[2], dns_data[3]]);
                 let is_response = (flags >> 15) != 0;
-                info!(
+                trace!(
                     "RX: DNS txid=0x{:04x} is_response={} flags=0x{:04x}",
                     txid, is_response, flags
                 );
@@ -380,7 +380,7 @@ fn log_frame_details(frame: &[u8], len: usize) {
             let icmp_header = &frame[14 + ihl..];
             let icmp_type = icmp_header[0];
             let icmp_code = icmp_header[1];
-            info!("RX: ICMP type={} code={}", icmp_type, icmp_code);
+            trace!("RX: ICMP type={} code={}", icmp_type, icmp_code);
         }
     }
     
@@ -390,7 +390,7 @@ fn log_frame_details(frame: &[u8], len: usize) {
         let oper = u16::from_be_bytes([arp[6], arp[7]]);
         let sender_ip = &arp[14..18];
         let target_ip = &arp[24..28];
-        info!(
+        trace!(
             "RX: ARP oper={} sender={}.{}.{}.{} target={}.{}.{}.{}",
             oper,
             sender_ip[0], sender_ip[1], sender_ip[2], sender_ip[3],

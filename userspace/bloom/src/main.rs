@@ -430,10 +430,12 @@ fn main(arg: usize) -> ! {
         d.start_handshake();
         
         // Pump a few times to receive MSG_WELCOME
-        for _ in 0..5 {
+        for i in 0..5 {
+            stem::info!("[bloom] handshake pump {}/5", i + 1);
             d.pump();
             stem::sleep_ms(2);
         }
+        stem::info!("[bloom] handshake pump loop complete");
         
         PresenterImpl::Driver(d)
     } else {
@@ -441,22 +443,13 @@ fn main(arg: usize) -> ! {
     };
 
     // Buffer mapping cache for swapchain - maps bytespace IDs to their virtual addresses
+    stem::info!("[bloom] Presenter created, setting up surface...");
     let mut buffer_cache: BTreeMap<ThingId, *mut u8> = BTreeMap::new();
 
-    // Check if driver offered a zero-copy framebuffer
+    // Use fallback framebuffer initially - swapchain buffers acquired dynamically in frame loop
+    // This avoids blocking during init when the display driver may still be initializing
     let (final_ptr, final_size, mut final_width, mut final_height, mut final_stride, mut final_bs_id, using_zero_copy, mut final_age) = 
-    match presenter {
-        PresenterImpl::Null(_) => {
-            (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false, 0u32)
-        }
-        PresenterImpl::Driver(_) => {
-            let (bs_id, w, h, s, _f, age) = presenter.acquire_buffer();
-            let ptr = stem::thing::sys::bytespace_map(bs_id).unwrap();
-            buffer_cache.insert(bs_id, ptr);
-            let size = (h * s) as usize;
-            (ptr, size, w, h, s, bs_id, true, age)
-        }
-    };
+        (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false, 0u32);
     
     let _ = (final_bs_id, using_zero_copy); // Suppress unused warnings for now
 
@@ -1027,6 +1020,11 @@ fn main(arg: usize) -> ! {
         // Damage Tracking (cursor fallback handling)
         let bounds = crate::geometry::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
+
+        // Force full damage on first frame to ensure UI appears immediately
+        if !first_frame_rendered {
+            damage = damage::Damage::full_with_cause(bounds, damage::DamageCause::ForceFull, None);
+        }
         
         // Add damage from paint pipeline with appropriate causes
         for rect in &paint_res.damage {

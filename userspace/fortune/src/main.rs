@@ -11,6 +11,7 @@ use alloc::format;
 use core::time::Duration;
 
 use abi::schema::{keys, kinds, rels};
+use abi::ids::HandleId;
 use llm::{ChatRequest, Message, Role, StreamingLlmClient};
 use ollama::OllamaClient;
 use stem::info;
@@ -18,6 +19,11 @@ use stem::petals::{AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Styl
 use stem::thing::sys::{bytespace_read, create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
 use core::task::{RawWaker, RawWakerVTable, Waker};
+
+struct OllamaConfig {
+    server: String,
+    model: String,
+}
 
 fn find_locale_conf() -> Option<ThingId> {
     let mut modules = [ThingId::default(); 128];
@@ -45,7 +51,7 @@ fn find_locale_conf() -> Option<ThingId> {
     None
 }
 
-fn read_ollama_config() -> (String, String) {
+fn read_ollama_config() -> OllamaConfig {
     let mut server = String::from("https://forebrain.local:11434");
     let mut model = String::from("tinyllama");
 
@@ -70,7 +76,7 @@ fn read_ollama_config() -> (String, String) {
         }
     }
 
-    (server, model)
+    OllamaConfig { server, model }
 }
 
 
@@ -111,11 +117,11 @@ fn main(_arg: usize) -> ! {
     update_ui(win, &fortune_text);
 
     // Read Ollama configuration from locale.conf
-    let (ollama_server, ollama_model) = read_ollama_config();
-    info!("FORTUNE: Using Ollama server: {}, model: {}", ollama_server, ollama_model);
+    let config = read_ollama_config();
+    info!("FORTUNE: Using Ollama server: {}, model: {}", config.server, config.model);
 
     // Initialize Ollama
-    let client = OllamaClient::new(&ollama_server, &ollama_model);
+    let client = OllamaClient::new(&config.server, &config.model);
 
     let req = ChatRequest {
         messages: vec![Message {

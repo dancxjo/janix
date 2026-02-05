@@ -359,8 +359,11 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
 
     let _irq = rt.irq_disable();
     
-    // HACK: Bloom pinning for smoke test
-    let affinity = if name == "bloom" {
+    // Audio pipeline: Pin to CPU 0 to avoid waiting for SMP bring-up
+    let affinity = if name.contains("virtio_sound") || name.contains("beeper") {
+        // Audio proof-of-life: Run on CPU 0 immediately, don't trigger SMP bring-up
+        crate::task::Affinity::Pinned(0)
+    } else if name == "bloom" {
         if rt.cpu_total_count() > 1 {
             crate::task::Affinity::Pinned(1)
         } else {

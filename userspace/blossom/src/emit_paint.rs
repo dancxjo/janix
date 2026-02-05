@@ -187,6 +187,9 @@ fn emit_node(
         NodeKind::Checkbox => {
             draw_checkbox(scene, node, rect, builder);
         }
+        NodeKind::TextInput => {
+            draw_text_input(scene, node, rect, builder);
+        }
         _ => {}
     }
 
@@ -261,6 +264,69 @@ fn draw_checkbox(
             label,
             0xFFFFFFFF,
         );
+    }
+}
+
+fn draw_text_input(
+    scene: &SceneGraph,
+    node: &SceneNode,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
+    // Draw border (using a gray color)
+    let border_color = 0xFF888888;
+    builder.fill_rect(rect.x, rect.y, rect.w, rect.h, border_color);
+    
+    // Draw background (white)
+    let padding = 2;
+    let inner_x = rect.x + padding;
+    let inner_y = rect.y + padding;
+    let inner_w = (rect.w - padding * 2).max(0);
+    let inner_h = (rect.h - padding * 2).max(0);
+    builder.fill_rect(inner_x, inner_y, inner_w, inner_h, 0xFFFFFFFF);
+    
+    if let Some(meta) = node.text_input_meta {
+        let text_padding = 8;
+        let text_x = rect.x + text_padding;
+        let text_y = rect.y + padding;
+        let text_w = (rect.w - text_padding * 2).max(0);
+        let text_h = (rect.h - padding * 2).max(0);
+        
+        let value = scene.string(meta.value).unwrap_or("");
+        let display_text = if value.is_empty() {
+            scene.string(meta.placeholder).unwrap_or("")
+        } else {
+            value
+        };
+        
+        let text_color = if value.is_empty() {
+            0xFF888888 // Gray for placeholder
+        } else {
+            0xFF000000 // Black for actual text
+        };
+        
+        let font_size = 16;
+        let baseline = text_y + font_size + 2;
+        builder.draw_text_run(
+            text_x,
+            text_y,
+            text_w,
+            text_h,
+            baseline,
+            "NotoSans-Regular",
+            font_size,
+            display_text,
+            text_color,
+        );
+        
+        // Draw caret if focused
+        if meta.focused {
+            // Simple caret at end of text for now (cursor position handling to be added)
+            let caret_x = text_x + (display_text.len() as i32 * 8); // Rough approximation
+            let caret_h = (text_h - 4).max(0);
+            let caret_y = text_y + 2;
+            builder.fill_rect(caret_x, caret_y, 2, caret_h, 0xFF000000);
+        }
     }
 }
 

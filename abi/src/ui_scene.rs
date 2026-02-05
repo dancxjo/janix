@@ -94,6 +94,13 @@ pub const UI_SCENE_SPACER_HEIGHT_OFFSET: usize = 0;
 pub const UI_SCENE_SEPARATOR_THICKNESS_OFFSET: usize = 0;
 pub const UI_SCENE_SEPARATOR_COLOR_OFFSET: usize = 4;
 
+pub const UI_SCENE_TEXT_INPUT_VALUE_OFFSET_OFFSET: usize = 0;
+pub const UI_SCENE_TEXT_INPUT_VALUE_LEN_OFFSET: usize = 4;
+pub const UI_SCENE_TEXT_INPUT_PLACEHOLDER_OFFSET_OFFSET: usize = 8;
+pub const UI_SCENE_TEXT_INPUT_PLACEHOLDER_LEN_OFFSET: usize = 12;
+pub const UI_SCENE_TEXT_INPUT_CURSOR_OFFSET: usize = 16;
+pub const UI_SCENE_TEXT_INPUT_FOCUSED_OFFSET: usize = 20;
+
 pub const UI_SCENE_LINE_X1_OFFSET: usize = 0;
 pub const UI_SCENE_LINE_Y1_OFFSET: usize = 4;
 pub const UI_SCENE_LINE_X2_OFFSET: usize = 8;
@@ -116,6 +123,7 @@ pub enum NodeKind {
     Scroll = 10,
     Spacer = 11,
     Separator = 12,
+    TextInput = 13,
     Unknown(u16),
 }
 
@@ -134,6 +142,7 @@ impl NodeKind {
             10 => NodeKind::Scroll,
             11 => NodeKind::Spacer,
             12 => NodeKind::Separator,
+            13 => NodeKind::TextInput,
             _ => NodeKind::Unknown(raw),
         }
     }
@@ -152,6 +161,7 @@ impl NodeKind {
             NodeKind::Scroll => 10,
             NodeKind::Spacer => 11,
             NodeKind::Separator => 12,
+            NodeKind::TextInput => 13,
             NodeKind::Unknown(raw) => raw,
         }
     }
@@ -411,6 +421,14 @@ pub struct SpacerMeta {
 pub struct SeparatorMeta {
     pub thickness_px: u8,
     pub color: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct TextInputMeta {
+    pub value: StringRef,
+    pub placeholder: StringRef,
+    pub cursor: u32,
+    pub focused: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -792,6 +810,30 @@ impl<'a> NodeView<'a> {
         Some(SeparatorMeta {
             thickness_px: payload[UI_SCENE_SEPARATOR_THICKNESS_OFFSET],
             color: read_u32(payload, UI_SCENE_SEPARATOR_COLOR_OFFSET).unwrap_or(0xFF000000),
+        })
+    }
+
+    pub fn text_input_meta(&self) -> Option<TextInputMeta> {
+        if self.kind() != NodeKind::TextInput {
+            return None;
+        }
+        let payload = self.payload();
+        Some(TextInputMeta {
+            value: StringRef {
+                offset: read_u32(payload, UI_SCENE_TEXT_INPUT_VALUE_OFFSET_OFFSET).unwrap_or(0),
+                len: read_u32(payload, UI_SCENE_TEXT_INPUT_VALUE_LEN_OFFSET).unwrap_or(0),
+            },
+            placeholder: StringRef {
+                offset: read_u32(payload, UI_SCENE_TEXT_INPUT_PLACEHOLDER_OFFSET_OFFSET)
+                    .unwrap_or(0),
+                len: read_u32(payload, UI_SCENE_TEXT_INPUT_PLACEHOLDER_LEN_OFFSET).unwrap_or(0),
+            },
+            cursor: read_u32(payload, UI_SCENE_TEXT_INPUT_CURSOR_OFFSET).unwrap_or(0),
+            focused: payload
+                .get(UI_SCENE_TEXT_INPUT_FOCUSED_OFFSET)
+                .copied()
+                .unwrap_or(0)
+                != 0,
         })
     }
 

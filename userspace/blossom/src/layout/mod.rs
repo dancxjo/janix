@@ -137,6 +137,13 @@ fn fallback_absolute_size(node: &SceneNode, container: i32, is_width: bool) -> i
             .map(|m| m.thickness_px as i32)
             .unwrap_or(1),
         NodeKind::Checkbox => 20,
+        NodeKind::TextInput => {
+            if is_width {
+                200 // Default width for text input
+            } else {
+                32 // Default height for text input
+            }
+        }
         _ => {
             if is_width {
                 container
@@ -335,7 +342,8 @@ fn fallback_main_size(node: &SceneNode, main: i32, cross: i32, is_row: bool) -> 
         | NodeKind::Scroll
         | NodeKind::Canvas
         | NodeKind::Window
-        | NodeKind::Checkbox => {
+        | NodeKind::Checkbox
+        | NodeKind::TextInput => {
             if is_row {
                 cross
             } else {
@@ -357,7 +365,8 @@ fn fallback_cross_size(node: &SceneNode, cross: i32, align: AlignItems) -> i32 {
         | NodeKind::Scroll
         | NodeKind::Canvas
         | NodeKind::Window
-        | NodeKind::Checkbox => cross,
+        | NodeKind::Checkbox
+        | NodeKind::TextInput => cross,
         _ => 0,
     }
 }

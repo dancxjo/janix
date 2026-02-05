@@ -7,8 +7,6 @@ use super::SCHEDULER;
 use super::graphify;
 use super::types::{ScheduleReason, Scheduler};
 
-#[cfg(any(feature = "sched_debug", debug_assertions))]
-use super::log_context_switch;
 
 pub fn yield_now<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
@@ -22,15 +20,16 @@ pub fn yield_now<R: BootRuntime>() {
     };
 
     if let Some(switch) = switch_params {
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_before = rt.debug_active_aspace_root();
-
         rt.tasking().activate_address_space(switch.to_aspace);
-
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_after = rt.debug_active_aspace_root();
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
-        log_context_switch::<R>(&switch, cr3_before, cr3_after);
+
+        {
+            let lock = SCHEDULER.lock();
+            let ptr = lock.expect("Scheduler not initialized");
+            let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+            sched.log_context_switch(&switch, cr3_before, cr3_after);
+        }
 
         unsafe {
             rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
@@ -60,9 +59,13 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         let current_id = {
             let cpu = super::current_cpu_index::<R>();
             match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
-                Some(id) => id,
+                Some(id) => {
+                    crate::kinfo!("SCHED: CPU {} task {} sleeping for {} ticks", cpu, id, ticks);
+                    id
+                },
                 None => {
                     // No current task (shouldn't happen)
+                    crate::kerror!("SCHED: CPU {} sleeping without current task!", cpu);
                     return;
                 }
             }
@@ -84,19 +87,23 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
     };
 
     if let Some(switch) = switch_params {
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_before = rt.debug_active_aspace_root();
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_after = rt.debug_active_aspace_root();
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
-        log_context_switch::<R>(&switch, cr3_before, cr3_after);
+        
+        {
+            let lock = SCHEDULER.lock();
+            let ptr = lock.expect("Scheduler not initialized");
+            let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+            sched.log_context_switch(&switch, cr3_before, cr3_after);
+        }
 
         unsafe {
             rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
+        crate::kinfo!("SCHED: task woke up on CPU");
     }
 
     rt.irq_restore(_irq);
@@ -122,13 +129,17 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
         if let Some(switch) = switch_params {
             unsafe {
                 let _irq = rt.irq_disable();
-                #[cfg(any(feature = "sched_debug", debug_assertions))]
                 let cr3_before = rt.debug_active_aspace_root();
                 rt.tasking().activate_address_space(switch.to_aspace);
-                #[cfg(any(feature = "sched_debug", debug_assertions))]
                 let cr3_after = rt.debug_active_aspace_root();
-                #[cfg(any(feature = "sched_debug", debug_assertions))]
-                log_context_switch::<R>(&switch, cr3_before, cr3_after);
+                
+                {
+                    let lock = SCHEDULER.lock();
+                    let ptr = lock.expect("Scheduler not initialized");
+                    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+                    sched.log_context_switch(&switch, cr3_before, cr3_after);
+                }
+
                 rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
                 rt.irq_restore(_irq);
             }

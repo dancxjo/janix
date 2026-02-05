@@ -38,12 +38,14 @@ pub fn get_modules() -> &'static [BootModuleDesc] {
             if let Some(response) = MODULE_REQUEST.get_response() {
                 let files = response.modules();
                 let count = core::cmp::min(files.len(), MAX_MODULES);
+                kernel::kinfo!("Limine: Found {} boot modules", files.len());
                 for i in 0..count {
                     let file = files[i];
 
                     // Name
                     let name = file.path().to_str().unwrap_or("unknown");
                     let cmdline = core::str::from_utf8(file.cmdline()).unwrap_or("");
+                    kernel::kinfo!("  [{}] {} (cmdline='{}') size={}", i, name, cmdline, file.size());
 
                     // Data
                     let ptr = file.addr();

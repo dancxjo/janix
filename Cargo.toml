@@ -53,7 +53,7 @@ members = [
     "userspace/fortune",
     "userspace/anther",
     "userspace/phloem",
-    "budd",
+    "bulb",
     "libs/fb_common",
     "libs/llm",
     "libs/llm_stub",
@@ -64,6 +64,12 @@ members = [
     "userspace/driver_wasm_host",
     "userspace/proto_driver_wasm", "userspace/virtio_sound", "userspace/beeper", "userspace/nectar",
 ]
+
+# Exclude wasm32 theme crates (different target)
+exclude = [
+    "bulb/themes/genie_circles",
+]
+
 resolver = "2"
 
 [profile.dev]

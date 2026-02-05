@@ -195,6 +195,10 @@ pub fn load_module<R: BootRuntime>(
             _reserved: [0; 7],
         });
 
+        if page_size == 0 {
+            panic!("LOADER: page_size is zero!");
+        }
+
         for chunk in module.bytes.chunks(page_size as usize) {
             let phys = memory::alloc_frame().expect("OOM loading module");
             let hhdm_virt = phys + rt.phys_to_virt_offset();

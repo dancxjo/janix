@@ -170,24 +170,22 @@ impl NetClient {
             return None;
         }
 
-        // Wait for response
+        // Wait for response (non-blocking)
         let mut resp_buf = [0u8; 4096];
-        for _ in 0..50 {
+        for _ in 0..5 {
             match port_recv(self.our_read_port, &mut resp_buf) {
                 Ok(len) if len >= 2 => {
                     let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
-                    if resp_type == RESP_DATA {
+                    if resp_type == RESP_DATA && len > 2 {
                         let data = resp_buf[2..len].to_vec();
-                        if data.is_empty() {
-                            return None; // No data yet
-                        }
                         return Some(data);
-                    } else if resp_type == RESP_ERROR {
+                    } else if resp_type == RESP_EMPTY || resp_type == RESP_ERROR || resp_type == RESP_DATA {
+                        // EMPTY: No data yet. ERROR: Connection closed. DATA(len=2): Also empty.
                         return None;
                     }
                 }
                 _ => {
-                    stem::time::sleep_ms(5);
+                    stem::time::sleep_ms(1);
                 }
             }
         }

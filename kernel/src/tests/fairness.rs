@@ -31,8 +31,8 @@ extern "C" fn fair_thread_b(_arg: usize) -> ! {
 
 pub fn run<R: BootRuntime>() {
     crate::kprintln!("Running fairness smoke test...");
-    task::spawn::<R>(fair_thread_a, task::StartupArg::None);
-    task::spawn::<R>(fair_thread_b, task::StartupArg::None);
+    task::spawn::<R>(fair_thread_a, task::StartupArg::None, task::TaskPriority::Normal, task::Affinity::Any);
+    task::spawn::<R>(fair_thread_b, task::StartupArg::None, task::TaskPriority::Normal, task::Affinity::Any);
 
     // Yield a few times to let them run
     for _ in 0..15 {

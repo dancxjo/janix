@@ -8,6 +8,7 @@ mod framebuffer;
 mod mem;
 mod requests;
 pub mod runtime;
+mod theme;
 
 use arch::hcf;
 use core::assert;
@@ -70,10 +71,12 @@ fn indicate_progress() {
                 stride
             );
             let display = Framebuffer::new(&framebuffer);
-            // Initialize framebuffer console for boot logging
-            console::init(display);
-            // Register console disable callback for when compositor takes over
-            kernel::syscall::handlers::register_console_disable(console::disable);
+            
+            // Initialize themed console for boot logging
+            // Theme draws circles at top and renders logs below
+            theme::init(display);
+            // Register disable callback for when compositor takes over
+            kernel::syscall::handlers::register_console_disable(theme::disable);
         }
     }
 }

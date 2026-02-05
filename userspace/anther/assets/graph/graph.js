@@ -576,7 +576,7 @@ function runD3Layout(fit = false) {
     // Configure d3-force layout
     const options = {
         name: 'd3-force',
-        d3: typeof d3 !== 'undefined' ? d3 : undefined, // Explicitly pass d3
+        d3: typeof window.d3 !== 'undefined' ? window.d3 : undefined, // Explicitly pass d3
         animate: true,
         fit,
         linkId: function (d) { return d.id; },
@@ -606,7 +606,7 @@ function runD3Layout(fit = false) {
     // Apply custom forces if we can access the simulation
     // The cytoscape-d3-force extension attaches 'force' (d3 simulation) to the layout instance
     // after it starts.
-    if (state.layout.force) {
+    if (state.layout.force && typeof window.d3 !== 'undefined') {
         const sim = state.layout.force;
 
         // Helper to get node data safely
@@ -618,16 +618,16 @@ function runD3Layout(fit = false) {
 
         // ANTHER LAYOUT RULES
         // 1. mem.Range at bottom
-        sim.force('mem', d3.forceY(500).strength(d => {
+        sim.force('mem', window.d3.forceY(500).strength(d => {
             return getKind(d) === 'mem.Range' ? 0.3 : 0;
         }));
 
         // 2/3. Host/Root structure
-        sim.force('host_x', d3.forceX(0).strength(d => d.id === 'dev.Host' ? 0.8 : 0));
-        sim.force('host_y', d3.forceY(-150).strength(d => d.id === 'dev.Host' ? 0.8 : 0));
+        sim.force('host_x', window.d3.forceX(0).strength(d => d.id === 'dev.Host' ? 0.8 : 0));
+        sim.force('host_y', window.d3.forceY(-150).strength(d => d.id === 'dev.Host' ? 0.8 : 0));
 
         // 3. svc.Root centered
-        sim.force('root_center', d3.forceRadial(0, 0, 0).strength(d => d.id === 'svc.Root' ? 0.8 : 0));
+        sim.force('root_center', window.d3.forceRadial(0, 0, 0).strength(d => d.id === 'svc.Root' ? 0.8 : 0));
 
         // Restart to apply new forces
         sim.alpha(1).restart();

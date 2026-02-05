@@ -48,8 +48,6 @@ use spin::Mutex;
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]
 static SWITCH_LOG_COUNT: AtomicUsize = AtomicUsize::new(0);
-#[cfg(any(feature = "sched_debug", debug_assertions))]
-static LAST_SWITCH: AtomicU64 = AtomicU64::new(0);
 
 pub static SCHEDULER: Mutex<Option<usize>> = Mutex::new(None);
 
@@ -282,6 +280,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         )),
         timeslice_remaining: types::DEFAULT_TIMESLICE,
         affinity: crate::task::Affinity::Any,
+        last_cpu: Some(0),
     };
     sched.tasks.push(alloc::boxed::Box::new(task));
     
@@ -409,10 +408,13 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     
                     let target_cpu = if let crate::task::Affinity::Pinned(cpu) = task.affinity {
                         cpu
+                    } else if let Some(last) = task.last_cpu {
+                        // Use last CPU to prevent drifting
+                        last
                     } else {
-                        // Default to current CPU for now? Or round robin?
-                        // Let's just use current CPU (waker's CPU).
-                        current_cpu_index::<R>()
+                        // Fallback to round-robin if no history
+                        let idx = spawn::RR_IDX.fetch_add(1, Ordering::Relaxed);
+                        idx % self.online_cpu_count
                     };
                     
                     if let Some(pc) = self.per_cpu.get_mut(target_cpu) {
@@ -548,7 +550,15 @@ impl<R: BootRuntime> types::Scheduler<R> {
     > {
         self.flush_metrics_if_needed();
 
+        let rt = crate::runtime::<R>();
         let cpu_idx = current_cpu_index::<R>();
+        let real_cpu_id = rt.current_cpu_id().0 as usize;
+        if cpu_idx != real_cpu_id {
+            crate::kprintln!(
+                "FATAL GS CORRUPTION: Core {} thinks it is index {} via GS!",
+                real_cpu_id, cpu_idx
+            );
+        }
         let pc = self.per_cpu.get_mut(cpu_idx)?;
 
         let mut next_id = None;
@@ -600,6 +610,19 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 graphify::update_task_state(old_task.id, "runnable");
             }
             new_task.state = TaskState::Running;
+            new_task.last_cpu = Some(cpu_idx);
+            
+            // STRICT AFFINITY CHECK
+            if let crate::task::Affinity::Pinned(pinned_cpu) = new_task.affinity {
+                if pinned_cpu != cpu_idx {
+                    crate::kprintln!(
+                        "FATAL SCHED BUG: CPU {} picked Task {} which is pinned to CPU {}!",
+                        cpu_idx, new_task.id, pinned_cpu
+                    );
+                    // For now, just log it, but we could panic here if we are sure.
+                }
+            }
+
             graphify::update_task_state(new_task.id, "running");
             // Update location on switch
             graphify::update_task_location(new_task.id, cpu_idx);
@@ -655,7 +678,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     #[cfg(any(feature = "sched_debug", debug_assertions))]
                     let cr3_after = rt.debug_active_aspace_root();
                     #[cfg(any(feature = "sched_debug", debug_assertions))]
-                    log_context_switch::<R>(&switch, cr3_before, cr3_after);
+                    self.log_context_switch(&switch, cr3_before, cr3_after);
                     rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
                 }
             }
@@ -712,6 +735,59 @@ impl<R: BootRuntime> types::Scheduler<R> {
         graphify::set_affinity_node(idle_id, i);
         graphify::set_name(idle_id, &alloc::format!("idle/{}", i));
     }
+
+    pub(crate) fn log_context_switch(
+        &mut self,
+        switch: &SwitchParams<
+            <R::Tasking as BootTasking>::Context,
+            <R::Tasking as BootTasking>::AddressSpace,
+        >,
+        cr3_before: u64,
+        cr3_after: u64,
+    ) {
+        let idx = SWITCH_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
+        if idx >= 20000 {
+            return;
+        }
+
+        let cpu_idx = current_cpu_index::<R>();
+        let pair = ((switch.from_tid as u64) << 32) | (switch.to_tid as u64);
+
+        if let Some(pc) = self.per_cpu.get_mut(cpu_idx) {
+            if pc.last_switch == pair {
+                return;
+            }
+            pc.last_switch = pair;
+        }
+
+        // crate::contract!(
+        //     "sched.switch: from={} to={} u_from={} u_to={} cr3_b={:#x} cr3_a={:#x}",
+        //     switch.from_tid,
+        //     switch.to_tid,
+        //     switch.from_user,
+        //     switch.to_user,
+        //     cr3_before,
+        //     cr3_after
+        // );
+    }
+}
+
+pub(crate) fn log_context_switch<R: BootRuntime>(
+    switch: &SwitchParams<
+        <R::Tasking as BootTasking>::Context,
+        <R::Tasking as BootTasking>::AddressSpace,
+    >,
+    cr3_before: u64,
+    cr3_after: u64,
+) {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let lock = SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+        sched.log_context_switch(switch, cr3_before, cr3_after);
+    }
+    rt.irq_restore(_irq);
 }
 
 pub fn set_priority<R: BootRuntime>(id: TaskId, priority: TaskPriority) {
@@ -803,59 +879,7 @@ pub fn dump_stats<R: BootRuntime>() {
     rt.irq_restore(_irq);
 }
 
-#[cfg(any(feature = "sched_debug", debug_assertions))]
-pub(crate) fn log_context_switch<R: BootRuntime>(
-    switch: &SwitchParams<
-        <R::Tasking as BootTasking>::Context,
-        <R::Tasking as BootTasking>::AddressSpace,
-    >,
-    cr3_before: u64,
-    cr3_after: u64,
-) {
-    if switch.from_user == switch.to_user && cr3_before == cr3_after {
-        return;
-    }
 
-    let idx = SWITCH_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
-    if idx >= 64 {
-        return;
-    }
-
-    let pair = ((switch.from_tid as u64) << 32) | (switch.to_tid as u64);
-    let last = LAST_SWITCH.load(Ordering::Relaxed);
-    if last == pair {
-        return;
-    }
-    LAST_SWITCH.store(pair, Ordering::Relaxed);
-
-    if idx < 8 || idx % 64 == 0 {
-        crate::log_event!(
-            crate::logging::LogLevel::Debug,
-            "sched.switch",
-            "Context switch",
-            {
-                from_tid: switch.from_tid,
-                to_tid: switch.to_tid,
-                from_user: switch.from_user as u64,
-                to_user: switch.to_user as u64,
-                cr3_before: cr3_before,
-                cr3_after: cr3_after
-            },
-            about=[]
-        );
-    }
-}
-
-#[cfg(not(any(feature = "sched_debug", debug_assertions)))]
-pub(crate) fn log_context_switch<R: BootRuntime>(
-    _switch: &SwitchParams<
-        <R::Tasking as BootTasking>::Context,
-        <R::Tasking as BootTasking>::AddressSpace,
-    >,
-    _cr3_before: u64,
-    _cr3_after: u64,
-) {
-}
 
 extern "C" fn idle_task<R: BootRuntime>(_: usize) -> ! {
     let rt = crate::runtime::<R>();

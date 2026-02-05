@@ -14,8 +14,8 @@ use blossom::widgets::ThingosIcon;
 use core::time::Duration;
 use stem::info;
 use stem::petals::{
-    Canvas, Color, FontKey, Line, PanZoomController, Rect, Scene, Size, Styled, Text, Viewport,
-    ViewportConstraints, Window,
+    Canvas, Color, Flex, FontKey, Line, PanZoomController, Rect, Scene, Size, Styled, Text,
+    TextInput, Viewport, ViewportConstraints, Window,
 };
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
@@ -547,7 +547,16 @@ fn build_graph_scene(
         Window::new(win)
             .title("Photosynthesis")
             .initial_size(800, 600)
-            .root(canvas),
+            .root(
+                Flex::column()
+                    .push(
+                        TextInput::new()
+                            .placeholder("Search nodes...")
+                            .height(Size::Px(32))
+                            .width(Size::Pct(100)),
+                    )
+                    .push(canvas.flex_grow(1.0)),
+            ),
     )
 }
 

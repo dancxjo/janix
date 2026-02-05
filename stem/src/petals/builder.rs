@@ -756,6 +756,58 @@ impl Styled for Checkbox {
 }
 
 #[derive(Clone, Debug, PartialEq)]
+pub struct TextInput {
+    pub(crate) node: Node,
+}
+
+impl TextInput {
+    pub fn new() -> Self {
+        Self {
+            node: Node::new(NodeData::TextInput(TextInputData {
+                value: String::new(),
+                placeholder: String::new(),
+                cursor: 0,
+                focused: false,
+            })),
+        }
+    }
+
+    pub fn value(mut self, value: &str) -> Self {
+        if let NodeData::TextInput(ref mut data) = self.node.data {
+            data.value = value.to_string();
+        }
+        self
+    }
+
+    pub fn placeholder(mut self, placeholder: &str) -> Self {
+        if let NodeData::TextInput(ref mut data) = self.node.data {
+            data.placeholder = placeholder.to_string();
+        }
+        self
+    }
+
+    pub fn cursor(mut self, cursor: u32) -> Self {
+        if let NodeData::TextInput(ref mut data) = self.node.data {
+            data.cursor = cursor;
+        }
+        self
+    }
+
+    pub fn focused(mut self, focused: bool) -> Self {
+        if let NodeData::TextInput(ref mut data) = self.node.data {
+            data.focused = focused;
+        }
+        self
+    }
+}
+
+impl Styled for TextInput {
+    fn style_mut(&mut self) -> &mut Style {
+        &mut self.node.style
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
 pub struct Node {
     pub data: NodeData,
     pub style: Style,
@@ -786,6 +838,7 @@ pub enum NodeData {
     Spacer(SpacerData),
     Separator(SeparatorData),
     Checkbox(CheckboxData),
+    TextInput(TextInputData),
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -880,6 +933,14 @@ pub struct CheckboxData {
     pub label: Option<String>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct TextInputData {
+    pub value: String,
+    pub placeholder: String,
+    pub cursor: u32,
+    pub focused: bool,
+}
+
 impl From<Window> for Node {
     fn from(value: Window) -> Self {
         value.node
@@ -948,6 +1009,12 @@ impl From<Separator> for Node {
 
 impl From<Checkbox> for Node {
     fn from(value: Checkbox) -> Self {
+        value.node
+    }
+}
+
+impl From<TextInput> for Node {
+    fn from(value: TextInput) -> Self {
         value.node
     }
 }

@@ -33,10 +33,13 @@ use abi::ui_scene::{
     UI_SCENE_SCROLL_CLIP_OFFSET, UI_SCENE_SCROLL_CONTENT_MIN_HEIGHT_OFFSET,
     UI_SCENE_SCROLL_ESTIMATED_ROW_HEIGHT_OFFSET, UI_SCENE_SCROLL_SCROLL_Y_OFFSET,
     UI_SCENE_SCROLL_TOTAL_ROWS_OFFSET, UI_SCENE_SEPARATOR_COLOR_OFFSET,
-    UI_SCENE_SEPARATOR_THICKNESS_OFFSET, UI_SCENE_SPACER_HEIGHT_OFFSET, UI_SCENE_TEXT_COLOR_OFFSET,
-    UI_SCENE_TEXT_ELLIPSIS_OFFSET, UI_SCENE_TEXT_FONT_KIND_OFFSET,
+    UI_SCENE_SEPARATOR_THICKNESS_OFFSET, UI_SCENE_SPACER_HEIGHT_OFFSET,
+    UI_SCENE_TEXT_COLOR_OFFSET, UI_SCENE_TEXT_ELLIPSIS_OFFSET, UI_SCENE_TEXT_FONT_KIND_OFFSET,
     UI_SCENE_TEXT_FONT_NAME_LEN_OFFSET, UI_SCENE_TEXT_FONT_NAME_OFFSET_OFFSET,
-    UI_SCENE_TEXT_FONT_THING_OFFSET, UI_SCENE_TEXT_SIZE_OFFSET, UI_SCENE_TEXT_STYLE_OFFSET,
+    UI_SCENE_TEXT_FONT_THING_OFFSET, UI_SCENE_TEXT_INPUT_CURSOR_OFFSET,
+    UI_SCENE_TEXT_INPUT_FOCUSED_OFFSET, UI_SCENE_TEXT_INPUT_PLACEHOLDER_LEN_OFFSET,
+    UI_SCENE_TEXT_INPUT_PLACEHOLDER_OFFSET_OFFSET, UI_SCENE_TEXT_INPUT_VALUE_LEN_OFFSET,
+    UI_SCENE_TEXT_INPUT_VALUE_OFFSET_OFFSET, UI_SCENE_TEXT_SIZE_OFFSET, UI_SCENE_TEXT_STYLE_OFFSET,
     UI_SCENE_TEXT_TEXT_LEN_OFFSET, UI_SCENE_TEXT_TEXT_OFFSET_OFFSET, UI_SCENE_TEXT_WEIGHT_OFFSET,
     UI_SCENE_TEXT_WRAP_OFFSET, UI_SCENE_VERSION, UI_SCENE_WINDOW_INIT_H_OFFSET,
     UI_SCENE_WINDOW_INIT_W_OFFSET, UI_SCENE_WINDOW_MAX_H_OFFSET, UI_SCENE_WINDOW_MAX_W_OFFSET,
@@ -49,7 +52,7 @@ use crate::petals::builder::{
     AlignItems as BuilderAlign, CheckboxData, FlexData, FlexDirection as BuilderDirection,
     FontKeyKind, IconData, ImageData, ImageFit as BuilderFit, JustifyContent as BuilderJustify,
     LineData, Node, NodeData, Scene, ScrollAxis, ScrollData, SeparatorData, Size, SpacerData,
-    Style, TextData, TextWrap, WindowData,
+    Style, TextData, TextInputData, TextWrap, WindowData,
 };
 
 pub fn pack_scene(scene: &Scene) -> Result<Vec<u8>> {
@@ -131,6 +134,16 @@ fn collect_strings(node: &Node, table: &mut StringTable) {
                 table.add(label);
             }
         }
+        NodeData::TextInput(TextInputData {
+            value, placeholder, ..
+        }) => {
+            if !value.is_empty() {
+                table.add(value);
+            }
+            if !placeholder.is_empty() {
+                table.add(placeholder);
+            }
+        }
         _ => {}
     }
     for child in &node.children {
@@ -164,6 +177,7 @@ fn pack_node(
         NodeData::Spacer(data) => (NodeKind::Spacer, PayloadWriter::Spacer(data)),
         NodeData::Separator(data) => (NodeKind::Separator, PayloadWriter::Separator(data)),
         NodeData::Checkbox(data) => (NodeKind::Checkbox, PayloadWriter::Checkbox(data)),
+        NodeData::TextInput(data) => (NodeKind::TextInput, PayloadWriter::TextInput(data)),
     };
     write_u16_slice(&mut buf, UI_SCENE_NODE_KIND_OFFSET, kind.as_raw());
     write_style(&mut buf, &node.style);
@@ -265,6 +279,7 @@ enum PayloadWriter<'a> {
     Separator(&'a SeparatorData),
     None,
     Checkbox(&'a CheckboxData),
+    TextInput(&'a TextInputData),
 }
 
 fn write_payload(
@@ -427,6 +442,40 @@ fn write_payload(
         PayloadWriter::Separator(data) => {
             payload_buf[UI_SCENE_SEPARATOR_THICKNESS_OFFSET] = data.thickness_px;
             write_u32_slice(payload_buf, UI_SCENE_SEPARATOR_COLOR_OFFSET, data.color.0);
+        }
+        PayloadWriter::TextInput(data) => {
+            let value_ref = if data.value.is_empty() {
+                StringRef { offset: 0, len: 0 }
+            } else {
+                table.ref_for(Some(&data.value))
+            };
+            let placeholder_ref = if data.placeholder.is_empty() {
+                StringRef { offset: 0, len: 0 }
+            } else {
+                table.ref_for(Some(&data.placeholder))
+            };
+            write_u32_slice(
+                payload_buf,
+                UI_SCENE_TEXT_INPUT_VALUE_OFFSET_OFFSET,
+                value_ref.offset,
+            );
+            write_u32_slice(
+                payload_buf,
+                UI_SCENE_TEXT_INPUT_VALUE_LEN_OFFSET,
+                value_ref.len,
+            );
+            write_u32_slice(
+                payload_buf,
+                UI_SCENE_TEXT_INPUT_PLACEHOLDER_OFFSET_OFFSET,
+                placeholder_ref.offset,
+            );
+            write_u32_slice(
+                payload_buf,
+                UI_SCENE_TEXT_INPUT_PLACEHOLDER_LEN_OFFSET,
+                placeholder_ref.len,
+            );
+            write_u32_slice(payload_buf, UI_SCENE_TEXT_INPUT_CURSOR_OFFSET, data.cursor);
+            payload_buf[UI_SCENE_TEXT_INPUT_FOCUSED_OFFSET] = if data.focused { 1 } else { 0 };
         }
         PayloadWriter::None => {}
     }

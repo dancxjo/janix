@@ -5,7 +5,8 @@ use alloc::vec::Vec;
 
 use abi::ui_scene::{
     CheckboxMeta, EdgeInsets, FlexMeta, IconMeta, ImageMeta, LineMeta, NodeKind, RectMeta,
-    ScrollMeta, SeparatorMeta, SizeSpec, SpacerMeta, StringRef, TextMeta, UiScene, WindowMeta,
+    ScrollMeta, SeparatorMeta, SizeSpec, SpacerMeta, StringRef, TextInputMeta, TextMeta, UiScene,
+    WindowMeta,
 };
 
 #[derive(Clone, Debug)]
@@ -59,6 +60,7 @@ impl SceneGraph {
                 spacer_meta: view.spacer_meta(),
                 separator_meta: view.separator_meta(),
                 checkbox_meta: view.checkbox_meta(),
+                text_input_meta: view.text_input_meta(),
             });
         }
 
@@ -134,4 +136,5 @@ pub struct SceneNode {
     pub spacer_meta: Option<SpacerMeta>,
     pub separator_meta: Option<SeparatorMeta>,
     pub checkbox_meta: Option<CheckboxMeta>,
+    pub text_input_meta: Option<TextInputMeta>,
 }

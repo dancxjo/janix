@@ -46,7 +46,7 @@ use alloc::vec::Vec;
 pub use builder::{
     AlignItems, Canvas, Checkbox, Color, Flex, FlexDirection, FontKey, FontKeyKind, Icon, Image,
     ImageFit, JustifyContent, Line, Rect, Scene, Scroll, ScrollAxis, Separator, Size, Spacer,
-    Styled, Text, TextWrap, Window,
+    Styled, Text, TextInput, TextWrap, Window,
 };
 pub use drawlist::DrawList;
 pub use graph::{Petals, UiTreeBuilder};

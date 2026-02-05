@@ -3,16 +3,20 @@
 //! This crate provides Rust-based build automation, replacing shell scripts
 //! in the justfile with proper type-safe implementations.
 
+mod audit;
 mod bdd;
 mod build;
 mod clean;
 mod common;
 mod fetch;
+mod guest_proxy;
 mod image;
 mod kill;
 mod limine;
 mod proxy;
 mod run;
+mod scan;
+mod test_phloem;
 
 use clap::{Parser, Subcommand};
 use xshell::Shell;
@@ -144,7 +148,7 @@ enum Commands {
     Kill,
     /// Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
     Fetch,
-    /// Run HTTPS reverse proxy for guest anther
+    /// Run HTTPS reverse proxy for guest anther (Host -> Guest)
     HttpsProxy {
         /// HTTPS listen port
         #[arg(long, default_value = "8443")]
@@ -153,6 +157,18 @@ enum Commands {
         #[arg(long, default_value = "8888")]
         target: u16,
     },
+    /// Run HTTP proxy for guest internet access (Guest -> Host -> Internet)
+    GuestProxy {
+        /// Listen port
+        #[arg(long, default_value = "8080")]
+        port: u16,
+    },
+    /// Audit platform boundary (no_std compliance)
+    Audit,
+    /// Scan or verify images
+    Scan(scan::ScanArgs),
+    /// Run Phloem integration test
+    TestPhloem,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -234,8 +250,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             run_hdd(&sh, &env, &qemu_flags, &hdd_path)?;
         }
         Commands::Limine => limine(&sh)?,
-        Commands::Ovmf { env: _ } => fetch()?, // OVMF handled by unified fetch
-        Commands::OvmfAll => fetch()?,         // OVMF handled by unified fetch
+        Commands::Ovmf { env: _ } => fetch()?,
+        Commands::OvmfAll => fetch()?,
         Commands::Clean => clean(&sh)?,
         Commands::Distclean => distclean(&sh)?,
         Commands::Bdd {
@@ -246,6 +262,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Commands::Kill => kill::run()?,
         Commands::Fetch => fetch()?,
         Commands::HttpsProxy { port, target } => proxy::https_proxy(port, target)?,
+        Commands::GuestProxy { port } => guest_proxy::run(port)?,
+        Commands::Audit => audit::audit()?,
+        Commands::Scan(args) => scan::run(args)?,
+        Commands::TestPhloem => test_phloem::run()?,
     }
 
     Ok(())

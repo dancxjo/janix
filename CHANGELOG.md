@@ -2,13 +2,14 @@
 
 ## Recent Status
 
-The operating system's userspace capabilities have expanded significantly with the introduction of a **WASM Driver Host**. This new runtime environment allows drivers to be executed as WebAssembly modules, providing a sandboxed and architecture-independent execution model. Crucially, the host includes a **record-and-replay syscall tracing** system, enabling developers to capture driver interactions and replay them deterministically for debugging.
-
-Complementing this, the **Anther** HTTP server has gained **file upload capabilities**. Clients can now push files directly to the system via a `POST /upload` endpoint, which automatically handles bytespace creation, SHA-256 hashing, and metadata extraction (MIME type, size) to populate `fs.File` nodes in the graph.
+Recent work has focused on hardening the **kernel test infrastructure** and expanding **content discovery** capabilities. The `MockRuntime` used for scheduler validation has been patched to handle task switching more robustly, eliminating spurious test failures. Simultaneously, the userspace ecosystem has gained a dedicated **Content Discovery** mechanism to reliably locate assets on boot media. Performance optimizations have also landed in the **Steward** query engine, which now implements buffer recycling to minimize memory allocation churn during graph operations.
 
 ## Recent Changes
 
 ### 🔌 Userspace & Drivers
+
+*   **Content Discovery**: Implemented a new content discovery feature and fixed build issues in the `iso_reader`, ensuring reliable asset loading from the boot medium.
+    *   *Artifacts*: `userspace/iso_reader/`
 
 *   **WASM Driver Host**: Introduced a runtime for executing WASM-based drivers with `thing.sys` syscall support. It features a tracing mechanism to record and replay syscalls for deterministic debugging.
     *   *Artifacts*: `userspace/driver_wasm_host/`
@@ -20,6 +21,9 @@ Complementing this, the **Anther** HTTP server has gained **file upload capabili
     *   *Artifacts*: `userspace/anther/src/upload.rs`
 
 ### 🛠️ Kernel & ABI
+
+*   **Query Buffer Recycling**: The Steward service now recycles query buffers to reduce memory allocations during high-frequency graph queries.
+    *   *Artifacts*: `kernel/src/root/query.rs`
 
 *   **Log Entry Eviction**: Implemented a ring-buffer eviction strategy for kernel log entries. This ensures that the graph history doesn't grow indefinitely, evicting the oldest entries when memory limits are reached.
     *   *Artifacts*: `kernel/src/memory/kheap.rs`, `kernel/src/root/graph.rs`
@@ -47,6 +51,9 @@ Complementing this, the **Anther** HTTP server has gained **file upload capabili
     *   *Artifacts*: `userspace/drawlist_demo/`
 
 ### 🏗️ Infrastructure & Tests
+
+*   **Kernel Test Hardening**: Fixed the `MockRuntime` to correctly handle task switching, preventing panics during scheduler tests and improving CI reliability.
+    *   *Artifacts*: `kernel/src/task/scheduler/spawn.rs`
 
 *   **Multi-tasking BDD**: Added a new BDD feature file and test steps to verify multi-tasking capabilities, ensuring proper task scheduling and isolation.
     *   *Artifacts*: `docs/behavior/multi_tasking.feature`

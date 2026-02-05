@@ -7,12 +7,31 @@ use abi::schema::{hid, keyboard as kb, pointer};
 use stem::petals::PanZoomController;
 use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
+use alloc::string::String;
+use blossom::widgets::TextInputState;
 
 /// Click result when a click is detected
 #[derive(Debug, Clone, Copy)]
 pub struct ClickEvent {
     pub x: i32,
     pub y: i32,
+}
+
+#[derive(Debug, Clone)]
+pub enum InputResult {
+    None,
+    ViewportUpdated,
+    FormUpdated,
+    Submit(String),
+    ToggleDebug,
+    Click(ClickEvent),
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum FocusTarget {
+    Graph,
+    FormInput,
+    FormButton,
 }
 
 /// Input state for tracking pointer position, drag, and keyboard.
@@ -32,6 +51,9 @@ pub struct InputState {
     /// Track click for pinning (position must not change much)
     click_start_x: i32,
     click_start_y: i32,
+
+    // Focus state
+    pub focus: FocusTarget,
 }
 
 impl InputState {
@@ -46,6 +68,7 @@ impl InputState {
             bristle_node: None,
             click_start_x: 0,
             click_start_y: 0,
+            focus: FocusTarget::Graph, // Start with graph focused
         }
     }
 
@@ -67,17 +90,17 @@ impl InputState {
 }
 
 /// Poll pointer and keyboard state from system graph and apply to viewport controller.
-///
-/// Returns (viewport_updated, click_event, toggle_debug) where click_event is Some if a click occurred
-/// and toggle_debug is true if the debug key was pressed.
-pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> (bool, Option<ClickEvent>, bool) {
-    let mut updated = false;
-    let mut click_event = None;
-    let mut toggle_debug = false;
+pub fn poll_and_apply(
+    ctrl: &mut PanZoomController,
+    state: &mut InputState,
+    text_input: &mut TextInputState,
+    button_pressed: &mut bool
+) -> InputResult {
+    let mut result = InputResult::None;
 
     let bristle = match state.get_bristle() {
         Some(b) => b,
-        None => return (false, None, false),
+        None => return InputResult::None,
     };
 
     // --- Pointer handling ---
@@ -99,34 +122,79 @@ pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> (
         state.left_down = true;
         state.click_start_x = state.pointer_x;
         state.click_start_y = state.pointer_y;
-        ctrl.begin_drag(state.pointer_x as f32, state.pointer_y as f32, stem::monotonic_ns());
+
+        // Simple hit testing for focus (assuming hardcoded layout for now)
+        // Form is at top. Height approx 50px?
+        // Layout: <row><label/><input/><submit/></row>
+        // Input: approx x=60, y=0, w=200, h=30?
+        // Button: approx x=270, y=0, w=60, h=30?
+        // This is fragile but sufficient for "handles mouse input" requirement without full hit testing engine.
+
+        if state.pointer_y < 50 {
+            // Click in form area
+            if state.pointer_x > 50 && state.pointer_x < 250 {
+                state.focus = FocusTarget::FormInput;
+                text_input.focused = true;
+                *button_pressed = false;
+                result = InputResult::FormUpdated;
+            } else if state.pointer_x > 260 && state.pointer_x < 360 {
+                state.focus = FocusTarget::FormButton;
+                text_input.focused = false;
+                *button_pressed = true;
+                result = InputResult::FormUpdated;
+            } else {
+                state.focus = FocusTarget::Graph;
+                text_input.focused = false;
+                *button_pressed = false;
+                result = InputResult::FormUpdated;
+            }
+        } else {
+            // Click in graph area
+            if state.focus != FocusTarget::Graph {
+                 state.focus = FocusTarget::Graph;
+                 text_input.focused = false;
+                 *button_pressed = false;
+                 result = InputResult::FormUpdated;
+            }
+            ctrl.begin_drag(state.pointer_x as f32, state.pointer_y as f32, stem::monotonic_ns());
+        }
     }
 
     // Handle left button release: end drag or register click
     if !left_now && left_was {
         state.left_down = false;
         
-        // Check if this was a click (minimal movement) vs a drag
-        let dx = (state.pointer_x - state.click_start_x).abs();
-        let dy = (state.pointer_y - state.click_start_y).abs();
-        let was_click = dx < 5 && dy < 5;
-        
-        if was_click {
-            click_event = Some(ClickEvent {
-                x: state.pointer_x,
-                y: state.pointer_y,
-            });
-        } else {
-            ctrl.end_drag();
+        if *button_pressed {
+            *button_pressed = false;
+            if state.focus == FocusTarget::FormButton {
+                // Button click action
+                return InputResult::Submit(text_input.text.clone());
+            }
+            result = InputResult::FormUpdated;
         }
-        
-        updated = true;
+
+        if state.focus == FocusTarget::Graph {
+            // Check if this was a click (minimal movement) vs a drag
+            let dx = (state.pointer_x - state.click_start_x).abs();
+            let dy = (state.pointer_y - state.click_start_y).abs();
+            let was_click = dx < 5 && dy < 5;
+
+            if was_click {
+                result = InputResult::Click(ClickEvent {
+                    x: state.pointer_x,
+                    y: state.pointer_y,
+                });
+            } else {
+                ctrl.end_drag();
+                result = InputResult::ViewportUpdated;
+            }
+        }
     }
 
     // Handle drag movement
-    if state.left_down && moved && ctrl.is_dragging() {
+    if state.left_down && moved && ctrl.is_dragging() && state.focus == FocusTarget::Graph {
         ctrl.update_drag(state.pointer_x as f32, state.pointer_y as f32, stem::monotonic_ns());
-        updated = true;
+        result = InputResult::ViewportUpdated;
     }
 
     state.left_down = left_now;
@@ -145,18 +213,76 @@ pub fn poll_and_apply(ctrl: &mut PanZoomController, state: &mut InputState) -> (
             // Key down event
             let key = Key::from_raw(key_code as u16);
             let mods = Mods(mods_val as u8);
-            let (kb_updated, kb_toggle_debug) = handle_key_down(key, mods, ctrl);
-            updated |= kb_updated;
-            toggle_debug = kb_toggle_debug;
+
+            // Tab handling for focus cycling
+            if key == Key::Tab {
+                let shift = mods.has_shift();
+                if shift {
+                    // Previous
+                     match state.focus {
+                        FocusTarget::Graph => state.focus = FocusTarget::FormButton,
+                        FocusTarget::FormButton => state.focus = FocusTarget::FormInput,
+                        FocusTarget::FormInput => state.focus = FocusTarget::Graph,
+                    }
+                } else {
+                    // Next
+                    match state.focus {
+                        FocusTarget::Graph => state.focus = FocusTarget::FormInput,
+                        FocusTarget::FormInput => state.focus = FocusTarget::FormButton,
+                        FocusTarget::FormButton => state.focus = FocusTarget::Graph,
+                    }
+                }
+
+                // Sync detailed states
+                match state.focus {
+                    FocusTarget::Graph => {
+                        text_input.focused = false;
+                        *button_pressed = false;
+                    }
+                    FocusTarget::FormInput => {
+                        text_input.focused = true;
+                        *button_pressed = false;
+                    }
+                    FocusTarget::FormButton => {
+                        text_input.focused = false;
+                        // Button focused, but not pressed yet (wait for enter/space)
+                        *button_pressed = false;
+                    }
+                }
+
+                return InputResult::FormUpdated;
+            }
+
+            match state.focus {
+                FocusTarget::Graph => {
+                    let (kb_updated, kb_toggle_debug) = handle_key_down_graph(key, mods, ctrl);
+                    if kb_toggle_debug { return InputResult::ToggleDebug; }
+                    if kb_updated { return InputResult::ViewportUpdated; }
+                }
+                FocusTarget::FormInput => {
+                     // Pass to text input widget
+                     if key == Key::Enter {
+                         return InputResult::Submit(text_input.text.clone());
+                     }
+                     text_input.handle_key(key, mods.has_shift());
+                     return InputResult::FormUpdated;
+                }
+                FocusTarget::FormButton => {
+                    if key == Key::Enter || key == Key::Space {
+                        return InputResult::Submit(text_input.text.clone());
+                    }
+                    // Allow navigation keys to bubble up? Or consume?
+                    // Consuming avoids moving the graph while focused on button.
+                }
+            }
         }
     }
 
-    (updated, click_event, toggle_debug)
+    result
 }
 
 /// Handle keyboard shortcuts for viewport control.
-/// Returns (viewport_updated, toggle_debug)
-fn handle_key_down(key: Key, mods: Mods, ctrl: &mut PanZoomController) -> (bool, bool) {
+fn handle_key_down_graph(key: Key, mods: Mods, ctrl: &mut PanZoomController) -> (bool, bool) {
     let alt = mods.has_alt();
     let mut updated = false;
     let mut toggle_debug = false;

@@ -10,15 +10,17 @@ use abi::watch;
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use blossom::widgets::ThingosIcon;
+use blossom::widgets::{ThingosIcon, Label, TextInput, TextInputState, Button};
 use core::time::Duration;
 use stem::info;
 use stem::petals::{
     Canvas, Color, FontKey, Line, PanZoomController, Rect, Scene, Size, Styled, Text, Viewport,
-    ViewportConstraints, Window,
+    ViewportConstraints, Window, Flex, AlignItems
 };
+use stem::petals::builder::Node;
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
+use input::{InputResult, FocusTarget};
 
 fn find_svg_assets() -> Vec<(String, ThingId)> {
     let mut assets = Vec::new();
@@ -32,11 +34,6 @@ fn find_svg_assets() -> Vec<(String, ThingId)> {
             Err(_) => continue,
         };
         let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
-        // Format is often: 'Boot Module: "name" (size=...)' or just properties?
-        // Actually describe_thing usually returns the debug string.
-        // Let's rely on checking the "name" property if possible?
-        // But bloom checks description string.
-        // "BootModule(id) name: \"foo.svg\" ..."
 
         let mod_name = if let Some(pos) = desc.find("name: \"") {
             let rest = &desc[pos + 7..];
@@ -153,6 +150,9 @@ fn main() -> ! {
 
     // Input state for viewport control
     let mut input_state = input::InputState::new();
+    let mut text_input_state = TextInputState::new();
+    let mut button_pressed = false;
+    let mut submission_message: Option<String> = None;
 
     let filter = RootWatchFilter::all();
     let spec = WatchSpec {
@@ -165,39 +165,54 @@ fn main() -> ! {
 
     loop {
         // Poll input from system graph and apply to viewport
-        let (viewport_updated, click_event, toggle_debug_flag) = input::poll_and_apply(&mut viewport_controller, &mut input_state);
-        if viewport_updated {
-            dirty = true;
-        }
-        
-        if toggle_debug_flag {
-            debug_mode = !debug_mode;
-            info!("Debug mode: {}", debug_mode);
-            dirty = true;
-        }
-        
-        // Handle node pinning/unpinning on click
-        if let Some(click) = click_event {
-            // Convert screen coords to world coords
-            let (world_x, world_y) = viewport_controller.viewport.screen_to_world(click.x as f32, click.y as f32);
-            
-            // Check if click hit any node
-            for node in &last_nodes {
-                let half_w = TILE_WIDTH as f32 / 2.0;
-                let half_h = TILE_HEIGHT as f32 / 2.0;
-                
-                if world_x >= node.x - half_w && world_x <= node.x + half_w &&
-                   world_y >= node.y - half_h && world_y <= node.y + half_h {
-                    // Toggle pin state
-                    let currently_pinned = stem::thing::sys::prop_get(node.id, keys::LAYOUT_PIN).unwrap_or(0) != 0;
-                    let new_pin_state = if currently_pinned { 0 } else { 1 };
-                    stem::thing::sys::prop_set(node.id, keys::LAYOUT_PIN, new_pin_state).ok();
-                    
-                    info!("Node {} pin state: {}", node.id.to_u64_lossy(), !currently_pinned);
+        let result = input::poll_and_apply(
+            &mut viewport_controller,
+            &mut input_state,
+            &mut text_input_state,
+            &mut button_pressed
+        );
+
+        match result {
+            InputResult::ViewportUpdated => dirty = true,
+            InputResult::FormUpdated => dirty = true,
+            InputResult::Submit(val) => {
+                submission_message = Some(format!("Form submitted: {}", val));
+                dirty = true;
+            },
+            InputResult::Click(click) => {
+                // If message is showing, dismiss it
+                if submission_message.is_some() {
+                    submission_message = None;
                     dirty = true;
-                    break;
+                } else {
+                    // Convert screen coords to world coords
+                    let (world_x, world_y) = viewport_controller.viewport.screen_to_world(click.x as f32, click.y as f32);
+
+                    // Check if click hit any node
+                    for node in &last_nodes {
+                        let half_w = TILE_WIDTH as f32 / 2.0;
+                        let half_h = TILE_HEIGHT as f32 / 2.0;
+
+                        if world_x >= node.x - half_w && world_x <= node.x + half_w &&
+                           world_y >= node.y - half_h && world_y <= node.y + half_h {
+                            // Toggle pin state
+                            let currently_pinned = stem::thing::sys::prop_get(node.id, keys::LAYOUT_PIN).unwrap_or(0) != 0;
+                            let new_pin_state = if currently_pinned { 0 } else { 1 };
+                            stem::thing::sys::prop_set(node.id, keys::LAYOUT_PIN, new_pin_state).ok();
+
+                            info!("Node {} pin state: {}", node.id.to_u64_lossy(), !currently_pinned);
+                            dirty = true;
+                            break;
+                        }
+                    }
                 }
-            }
+            },
+            InputResult::ToggleDebug => {
+                debug_mode = !debug_mode;
+                info!("Debug mode: {}", debug_mode);
+                dirty = true;
+            },
+            InputResult::None => {}
         }
 
         if let Some(watch_id) = graph_watch {
@@ -320,6 +335,10 @@ fn main() -> ! {
                     &viewport_controller.viewport,
                     &layout_nodes,
                     debug_mode,
+                    &text_input_state,
+                    button_pressed,
+                    input_state.focus == FocusTarget::FormButton,
+                    &submission_message,
                 );
                 let _ = stem::petals::publish_window(&scene);
                 last_nodes = final_nodes;
@@ -342,8 +361,12 @@ fn build_graph_scene(
     viewport: &Viewport,
     layout_nodes: &[LayoutNode],
     debug_mode: bool,
+    text_input_state: &TextInputState,
+    button_pressed: bool,
+    button_focused: bool,
+    submission_message: &Option<String>,
 ) -> Scene {
-    let mut canvas = Canvas::new().width(Size::Pct(100)).height(Size::Pct(100));
+    let mut graph_canvas = Canvas::new().width(Size::Pct(100)).height(Size::Pct(100));
 
     // Helper closure to transform world coords to screen coords
     let to_screen = |wx: f32, wy: f32| -> (i32, i32) {
@@ -364,7 +387,7 @@ fn build_graph_scene(
                 let (sx1, sy1) = to_screen(x1, y1);
                 let (sx2, sy2) = to_screen(x2, y2);
 
-                canvas = canvas.push(
+                graph_canvas = graph_canvas.push(
                     Line::new(sx1, sy1, sx2, sy2)
                         .width(2)
                         .color(Color::from_argb_u32(0xFF888888)),
@@ -386,7 +409,7 @@ fn build_graph_scene(
             let shx2 = send_x + (head_len * libm::cosf(a2)) as i32;
             let shy2 = send_y + (head_len * libm::sinf(a2)) as i32;
 
-            canvas = canvas
+            graph_canvas = graph_canvas
                 .push(
                     Line::new(send_x, send_y, shx1, shy1)
                         .width(2)
@@ -406,7 +429,7 @@ fn build_graph_scene(
             let (smid_x, smid_y) = to_screen(mid_x, mid_y);
 
             let label_w = (edge.rel.len() as i32 * 6).max(10);
-            canvas = canvas.push_at(
+            graph_canvas = graph_canvas.push_at(
                 Text::new(&edge.rel)
                     .font(FontKey::new("NotoSans-Regular").size(9))
                     .color(Color::from_argb_u32(0xFF666666))
@@ -415,14 +438,6 @@ fn build_graph_scene(
                 smid_x,
                 smid_y,
             );
-        } else {
-            // Fallback (Direct Line)
-            // if let (Some(&(x1, y1)), Some(&(x2, y2))) = (
-            //     layout.positions.get(&edge.from),
-            //     layout.positions.get(&edge.to),
-            // ) {
-            //      // ... legacy direct line drawing ...
-            // }
         }
     }
 
@@ -434,7 +449,7 @@ fn build_graph_scene(
             let left = scx - TILE_WIDTH / 2;
             let top = scy - TILE_HEIGHT / 2;
 
-            canvas = canvas.push_at(
+            graph_canvas = graph_canvas.push_at(
                 Rect::new()
                     .color(TILE_BORDER_COLOR)
                     .radius(TILE_RADIUS)
@@ -448,7 +463,7 @@ fn build_graph_scene(
             let inner_top = top + TILE_BORDER;
             let inner_width = TILE_WIDTH - TILE_BORDER * 2;
             let inner_height = TILE_HEIGHT - TILE_BORDER * 2;
-            canvas = canvas.push_at(
+            graph_canvas = graph_canvas.push_at(
                 Rect::new()
                     .color(TILE_FILL_COLOR)
                     .radius(TILE_RADIUS - TILE_BORDER)
@@ -460,7 +475,7 @@ fn build_graph_scene(
 
             let icon_x = scx - ICON_SIZE / 2;
             let icon_y = top + ICON_TOP_PADDING;
-            canvas = canvas.push_at(
+            graph_canvas = graph_canvas.push_at(
                 ThingosIcon::new(&node.icon)
                     .size(ICON_SIZE)
                     .width(Size::Px(ICON_SIZE))
@@ -475,7 +490,7 @@ fn build_graph_scene(
             let type_width = (type_text.chars().count() as i32 * TYPE_CHAR_WIDTH).max(40);
             let type_left = scx - type_width / 2;
             let type_y = icon_y + ICON_SIZE + 12;
-            canvas = canvas.push_at(
+            graph_canvas = graph_canvas.push_at(
                 Text::new(&type_text)
                     .font(FontKey::new("NotoSans-Regular").size(TYPE_FONT_SIZE))
                     .color(TYPE_TEXT_COLOR)
@@ -488,7 +503,7 @@ fn build_graph_scene(
             let id_width = (id_text.chars().count() as i32 * ID_CHAR_WIDTH).max(30);
             let id_left = scx - id_width / 2;
             let id_y = type_y + TYPE_LINE_HEIGHT;
-            canvas = canvas.push_at(
+            graph_canvas = graph_canvas.push_at(
                 Text::new(&id_text)
                     .font(FontKey::new("NotoSans-Regular").size(ID_FONT_SIZE))
                     .color(ID_TEXT_COLOR)
@@ -505,7 +520,7 @@ fn build_graph_scene(
                     // Draw collision box
                     let box_left = scx - (ln.w / 2.0) as i32;
                     let box_top = scy - (ln.h / 2.0) as i32;
-                    canvas = canvas.push_at(
+                    graph_canvas = graph_canvas.push_at(
                         Rect::new()
                             .color(DEBUG_COLLISION_BOX_COLOR)
                             .width(Size::Px(ln.w as i32))
@@ -519,7 +534,7 @@ fn build_graph_scene(
                     if vel_mag > 0.1 {
                         let vel_scale = 10.0;
                         let (end_x, end_y) = to_screen(x + ln.vx * vel_scale, y + ln.vy * vel_scale);
-                        canvas = canvas.push(
+                        graph_canvas = graph_canvas.push(
                             Line::new(scx, scy, end_x, end_y)
                                 .width(2)
                                 .color(DEBUG_VELOCITY_COLOR),
@@ -528,7 +543,7 @@ fn build_graph_scene(
                     
                     // Draw pin indicator
                     if ln.pinned {
-                        canvas = canvas.push_at(
+                        graph_canvas = graph_canvas.push_at(
                             Rect::new()
                                 .color(DEBUG_PIN_INDICATOR_COLOR)
                                 .radius(4)
@@ -543,11 +558,56 @@ fn build_graph_scene(
         }
     }
 
+    // Build Layout
+    let form = Flex::row()
+        .align_items(AlignItems::Center)
+        .padding(10)
+        .gap(10)
+        .height(Size::Auto)
+        .push(Label::new("Input:").build())
+        .push(TextInput::new(text_input_state).placeholder("Type here...").build())
+        .push(Button::new("Submit").focused(button_focused).pressed(button_pressed).build());
+
+    let mut root_canvas = Canvas::new();
+
+    root_canvas = root_canvas.push(
+        Flex::column()
+            .width(Size::Pct(100))
+            .height(Size::Pct(100))
+            .push(form)
+            .push(
+                graph_canvas.flex_grow(1.0)
+            )
+    );
+
+    // Message Box Overlay
+    if let Some(msg) = submission_message {
+         let mut overlay_bg: Node = Rect::new()
+             .color(Color::from_argb_u32(0xDD000000))
+             .width(Size::Px(400))
+             .height(Size::Px(150))
+             .radius(10)
+             .into();
+
+         let overlay = Flex::column()
+             .padding(20)
+             .align_items(AlignItems::Center)
+             .justify_content(stem::petals::JustifyContent::Center)
+             .push(Text::new(msg).color(Color::from_argb_u32(0xFFFFFFFF)).size(24))
+             .push(stem::petals::Spacer::new(10))
+             .push(Text::new("(Click to dismiss)").color(Color::from_argb_u32(0xFFAAAAAA)).size(14));
+
+         overlay_bg.children.push(overlay.into());
+
+         // Center on screen (800x600) -> 200, 225
+         root_canvas = root_canvas.push_at(overlay_bg, 200, 225);
+    }
+
     Scene::new().window(
         Window::new(win)
             .title("Photosynthesis")
             .initial_size(800, 600)
-            .root(canvas),
+            .root(root_canvas),
     )
 }
 
@@ -561,5 +621,3 @@ fn format_type_label(kind_full: &str, name: &str) -> String {
         kind_full.to_string()
     }
 }
-
-

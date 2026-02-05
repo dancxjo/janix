@@ -47,10 +47,6 @@ impl Supervisor {
         // 3.6. Setup network pipeline
         crate::pipelines::setup_network_pipeline(&mut self.tasks);
 
-        // EXTRA: Verification of hostname sync
-        // Spawn sethostname after a delay (e.g. 20 seconds)
-        info!("SPROUT: Scheduling hostname sync verification in 20s...");
-        let _ = stem::thread::spawn(verification_thread);
 
         // 4. Loop
         info!("SPROUT: Entering supervisor loop.");
@@ -395,13 +391,3 @@ fn seed_asset_requests() {
     }
 }
 
-extern "C" fn verification_thread() -> ! {
-    stem::time::sleep_ms(20000);
-    info!("SPROUT: Triggering hostname sync verification...");
-    if let Err(e) = stem::syscall::spawn_process("/boot/sethostname", 0) {
-        info!("SPROUT: Failed to spawn sethostname: {:?}", e);
-    }
-    loop {
-        stem::time::sleep_ms(1000);
-    }
-}

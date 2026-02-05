@@ -302,7 +302,7 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
         reg.alloc_dma_slot(claim_handle, phys_base, user_va, page_count);
     }
 
-    crate::kinfo!(
+    crate::kdebug!(
         "DEVICE: DMA alloc {} pages phys=0x{:x} -> user_va=0x{:x}",
         page_count,
         phys_base,

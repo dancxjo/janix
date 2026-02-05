@@ -405,6 +405,8 @@ static mut RAW_RUNTIME_BASE: Option<&'static dyn BootRuntimeBase> = None;
 
 /// Initialize the runtime. Panics if called more than once.
 pub fn init_runtime<R: BootRuntime>(runtime: &'static R) {
+    let name = core::any::type_name::<R>();
+    crate::contract!("INIT_RUNTIME: type={}", name);
     RUNTIME.set(runtime as &'static dyn core::any::Any);
     RUNTIME_BASE.set(runtime as &'static dyn BootRuntimeBase);
     unsafe {
@@ -414,9 +416,11 @@ pub fn init_runtime<R: BootRuntime>(runtime: &'static R) {
 
 pub fn runtime<R: BootRuntime>() -> &'static R {
     let any_ref: &'static dyn core::any::Any = *RUNTIME.get();
-    any_ref
-        .downcast_ref::<R>()
-        .expect("Runtime type mismatch")
+    if let Some(rt) = any_ref.downcast_ref::<R>() {
+        rt
+    } else {
+        panic!("Runtime type mismatch: expected {}", core::any::type_name::<R>());
+    }
 }
 
 pub fn runtime_base() -> &'static dyn BootRuntimeBase {
@@ -579,6 +583,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         inventory.root
     );
     let modules = runtime.modules();
+    contract!("Kernel: Enumerating {} boot modules...", modules.len());
+    for (i, m) in modules.iter().enumerate() {
+        contract!("  [{}] name='{}' cmdline='{}' size={}", i, m.name, m.cmdline, m.bytes.len());
+    }
 
     // Look for module with "init" in cmdline, otherwise fallback to "sprout" by name
     let init_module = modules
@@ -717,9 +725,9 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             if runtime.threads_supported() {
                 kinfo!("Lazy SMP: spawning initial threads should trigger CPU bring-up if needed");
                 kinfo!("Spawning Thread A...");
-                crate::task::spawn::<R>(thread_a, StartupArg::Raw(1));
+                crate::task::spawn::<R>(thread_a, StartupArg::Raw(1), crate::task::TaskPriority::Normal, crate::task::Affinity::Any);
                 kinfo!("Spawning Thread B...");
-                crate::task::spawn::<R>(thread_b, StartupArg::Raw(2));
+                crate::task::spawn::<R>(thread_b, StartupArg::Raw(2), crate::task::TaskPriority::Normal, crate::task::Affinity::Any);
             }
         }
     }
@@ -785,7 +793,8 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
     // This must happen before ANY kernel code that might fault or use logging (which uses GS).
     let base = unsafe { RAW_RUNTIME_BASE.expect("RAW_RUNTIME_BASE not initialized") };
     base.init_secondary_cpu(cpu_index);
-
+    // Verification done via base properties later if needed
+ 
     crate::kinfo!("SMP: Entering kernel_secondary_entry for CPU {}", cpu_index);
 
     // Per-CPU init

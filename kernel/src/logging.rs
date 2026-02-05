@@ -19,7 +19,7 @@ static MUTE_SERIAL: AtomicBool = AtomicBool::new(false);
 
 /// Minimum log level to output (1=Error, 2=Warn, 3=Info, 4=Debug, 5=Trace, 0=Contract-only)
 /// Default is 0 (contract-only) for performance. Set to 3 for Info+ during debugging.
-static MIN_LOG_LEVEL: AtomicU8 = AtomicU8::new(3);
+static MIN_LOG_LEVEL: AtomicU8 = AtomicU8::new(4);
 
 /// Set the minimum log level for output (0=Contract-only, 1=Error+, 2=Warn+, etc.)
 pub fn set_log_level(level: u8) {
@@ -273,7 +273,13 @@ pub fn _log_contract(source: &'static str, args: fmt::Arguments) {
         let mut lock = GLOBAL_LOGGER.lock();
         if let Some(writer) = lock.as_mut() {
             let ts = writer.runtime.mono_ticks();
-            let _ = write!(writer, "[{}] [CONTRACT] [{}] ", ts, source);
+            let _ = write!(
+                writer,
+                "[{}] [CONTRACT] [{}] [CPU{}] ",
+                ts,
+                source,
+                writer.runtime.current_cpu_id().0
+            );
             let _ = writer.write_fmt(args);
             let _ = writer.write_char('\n');
         }

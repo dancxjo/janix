@@ -331,7 +331,7 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
         let mut header_found = false;
         let mut attempts = 0;
         
-        while attempts < 20 { // Reduced attempts
+        while attempts < 100 {
             if let Some(data) = net.tcp_recv(conn_handle, 4096) {
                 request_data.extend_from_slice(&data);
                 
@@ -343,7 +343,7 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                 attempts = 0; // Reset on data
             } else {
                 attempts += 1;
-                stem::syscall::yield_now(); // Yield instead of sleep for better responsiveness
+                stem::time::sleep_ms(10);
             }
         }
 

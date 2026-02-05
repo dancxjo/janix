@@ -78,14 +78,20 @@ pub struct Task<R: BootRuntime> {
 
     /// Remaining time slice in ticks before preemption
     pub timeslice_remaining: u32,
+    pub last_cpu: Option<usize>,
 }
 
 pub fn init<R: BootRuntime>() {
     scheduler::init::<R>();
 }
 
-pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: StartupArg) -> TaskId {
-    scheduler::spawn::<R>(entry, arg)
+pub fn spawn<R: BootRuntime>(
+    entry: extern "C" fn(usize) -> !,
+    arg: StartupArg,
+    priority: TaskPriority,
+    affinity: Affinity,
+) -> TaskId {
+    scheduler::spawn::<R>(entry, arg, priority, affinity)
 }
 
 pub fn spawn_with_priority<R: BootRuntime>(
@@ -135,14 +141,11 @@ pub fn preempt_enable<R: BootRuntime>() {
     };
 
     if let Some(switch) = switch_params {
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_before = rt.debug_active_aspace_root();
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_after = rt.debug_active_aspace_root();
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
@@ -193,14 +196,11 @@ pub fn resched_if_needed<R: BootRuntime>() {
     };
 
     if let Some(switch) = switch_params {
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_before = rt.debug_active_aspace_root();
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_after = rt.debug_active_aspace_root();
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
@@ -252,6 +252,9 @@ pub fn run_scheduler<R: BootRuntime>() -> ! {
     // Bootstrap this CPU if needed (sets current task for secondary CPUs)
     bootstrap_cpu::<R>();
     
+    // Enable interrupts so this CPU can be preempted or woken from idle (HLT)
+    crate::runtime::<R>().irq_restore(crate::IrqState(1));
+
     loop {
         yield_now::<R>();
         core::hint::spin_loop();

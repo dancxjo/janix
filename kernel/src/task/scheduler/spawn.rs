@@ -9,9 +9,32 @@ use super::types::{DEFAULT_TIMESLICE, Scheduler};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 // Global round-robin index for CPU selection
-static RR_IDX: AtomicUsize = AtomicUsize::new(0);
+pub(crate) static RR_IDX: AtomicUsize = AtomicUsize::new(0);
 
 impl<R: BootRuntime> Scheduler<R> {
+    fn pick_cpu_and_bringup(&mut self, affinity: Affinity, trigger_smp: bool) -> usize {
+        let rt = crate::runtime::<R>();
+        let count = self.online_cpu_count;
+        let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
+
+        match affinity {
+            Affinity::Pinned(cpu) => cpu,
+            Affinity::Any => {
+                if trigger_smp && self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
+                    if let Some(next_cpu_id) = rt.next_offline_cpu() {
+                        let target_cpu = next_cpu_id.0 as usize;
+                        self.bringup_in_progress = true;
+                        crate::kinfo!("SMP: Spawn triggered bring-up of CPU {}", target_cpu);
+                        unsafe {
+                            let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, target_cpu);
+                        }
+                        return target_cpu;
+                    }
+                }
+                idx % count
+            }
+        }
+    }
     pub fn spawn(
         &mut self,
         entry: extern "C" fn(usize) -> !,
@@ -34,25 +57,14 @@ impl<R: BootRuntime> Scheduler<R> {
             .tasking()
             .init_kernel_context(entry, stack_top, arg.to_raw());
 
-        // Determine target CPU
-        let count = self.online_cpu_count;
-        let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
-        let target_cpu = match affinity {
-            Affinity::Pinned(cpu) => cpu,
-            Affinity::Any => idx % count,
-        };
+        // Determine target CPU: Balanced among online CPUs. 
+        // Kernel threads do NOT trigger bring-up by default unless balanced carefully.
+        let target_cpu = self.pick_cpu_and_bringup(affinity, false);
+        crate::kinfo!("SCHED: Task {} assigned to CPU {}", id, target_cpu);
 
-        // NEW: Check if we should trigger bring-up of more CPUs
-        if self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
-            if let Some(next_cpu_id) = rt.next_offline_cpu() {
-                crate::kinfo!("SMP: spawn triggered bring-up of CPU{}", self.online_cpu_count);
-                self.bringup_in_progress = true;
-                // Safety: kernel_secondary_entry is the standard entry point
-                unsafe {
-                    let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, self.online_cpu_count);
-                }
-            }
-        }
+        // Push to target CPU's run queue
+        let cpu_count = self.per_cpu.len(); // Should match rt.cpu_count()
+        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
 
         let task: Task<R> = Task {
             id,
@@ -73,13 +85,16 @@ impl<R: BootRuntime> Scheduler<R> {
             )),
             timeslice_remaining: DEFAULT_TIMESLICE,
             affinity,
+            last_cpu: Some(safe_cpu),
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
-        // Push to target CPU's run queue
-        let cpu_count = self.per_cpu.len(); // Should match rt.cpu_count()
-        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
         self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
+
+        // If the target CPU is not the current one, send an IPI to wake it up
+        if safe_cpu != super::current_cpu_index::<R>() {
+            rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+        }
 
         // Queue graph node creation (processed after scheduler lock released)
         let parent_tid = self.per_cpu[super::current_cpu_index::<R>()].current;
@@ -136,24 +151,15 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let ctx = rt.tasking().init_user_context(spec, kstack_top);
 
-        // Determine target CPU
-        let count = self.online_cpu_count;
-        let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
         let target_cpu = match affinity {
             Affinity::Pinned(cpu) => cpu,
-            Affinity::Any => idx % count,
+            Affinity::Any => super::current_cpu_index::<R>(),
         };
+        crate::kinfo!("SCHED: Task {} (user thread) assigned to CPU {}", id, target_cpu);
 
-        // NEW: Check if we should trigger bring-up of more CPUs
-        if self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
-            if let Some(next_cpu_id) = rt.next_offline_cpu() {
-                crate::kinfo!("SMP: spawn triggered bring-up of CPU{}", self.online_cpu_count);
-                self.bringup_in_progress = true;
-                unsafe {
-                    let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, self.online_cpu_count);
-                }
-            }
-        }
+        // Push to target CPU's run queue
+        let cpu_count = self.per_cpu.len();
+        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
 
         let task: Task<R> = Task {
             id,
@@ -172,13 +178,16 @@ impl<R: BootRuntime> Scheduler<R> {
             mappings,
             timeslice_remaining: DEFAULT_TIMESLICE,
             affinity,
+            last_cpu: Some(safe_cpu),
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
-        // Push to target CPU's run queue
-        let cpu_count = self.per_cpu.len();
-        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
         self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
+
+        // If the target CPU is not the current one, send an IPI to wake it up
+        if safe_cpu != super::current_cpu_index::<R>() {
+            rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+        }
 
         // Queue graph node creation (processed after scheduler lock released)
         let parent_tid = self.per_cpu[super::current_cpu_index::<R>()].current;
@@ -222,24 +231,13 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let mapping_list = crate::memory::mappings::MappingList { regions };
 
-        // Determine target CPU
-        let count = self.online_cpu_count;
-        let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
-        let target_cpu = match affinity {
-            Affinity::Pinned(cpu) => cpu,
-            Affinity::Any => idx % count,
-        };
+        // Determine target CPU: New processes trigger bring-up of offline CPUs
+        let target_cpu = self.pick_cpu_and_bringup(affinity, true);
+        crate::kinfo!("SCHED: Task {} (user task/process) assigned to CPU {}", id, target_cpu);
 
-        // NEW: Check if we should trigger bring-up of more CPUs
-        if self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
-            if let Some(next_cpu_id) = rt.next_offline_cpu() {
-                crate::kinfo!("SMP: spawn triggered bring-up of CPU{}", self.online_cpu_count);
-                self.bringup_in_progress = true;
-                unsafe {
-                    let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, self.online_cpu_count);
-                }
-            }
-        }
+        // Push to target CPU's run queue
+        let cpu_count = self.per_cpu.len();
+        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
 
         let task: Task<R> = Task {
             id,
@@ -258,13 +256,16 @@ impl<R: BootRuntime> Scheduler<R> {
             mappings: alloc::sync::Arc::new(spin::Mutex::new(mapping_list)),
             timeslice_remaining: DEFAULT_TIMESLICE,
             affinity,
+            last_cpu: Some(safe_cpu),
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
-        // Push to target CPU's run queue
-        let cpu_count = self.per_cpu.len();
-        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
         self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
+
+        // If the target CPU is not the current one, send an IPI to wake it up
+        if safe_cpu != super::current_cpu_index::<R>() {
+            rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
+        }
 
         // Queue graph node creation (processed after scheduler lock released)
         let parent_tid = self.per_cpu[super::current_cpu_index::<R>()].current;
@@ -280,13 +281,18 @@ impl<R: BootRuntime> Scheduler<R> {
     }
 }
 
-pub fn spawn<R: BootRuntime>(entry: extern "C" fn(usize) -> !, arg: StartupArg) -> TaskId {
+pub fn spawn<R: BootRuntime>(
+    entry: extern "C" fn(usize) -> !,
+    arg: StartupArg,
+    priority: crate::task::TaskPriority,
+    affinity: crate::task::Affinity,
+) -> TaskId {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    let id = sched.spawn(entry, arg, crate::task::TaskPriority::Normal, crate::task::Affinity::Any);
+    let id = sched.spawn(entry, arg, priority, affinity);
     rt.irq_restore(_irq);
     id
 }
@@ -296,14 +302,7 @@ pub fn spawn_with_priority<R: BootRuntime>(
     arg: StartupArg,
     priority: crate::task::TaskPriority,
 ) -> TaskId {
-    let rt = crate::runtime::<R>();
-    let _irq = rt.irq_disable();
-    let lock = SCHEDULER.lock();
-    let ptr = lock.expect("Scheduler not initialized");
-    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    let id = sched.spawn(entry, arg, priority, crate::task::Affinity::Any);
-    rt.irq_restore(_irq);
-    id
+    spawn::<R>(entry, arg, priority, crate::task::Affinity::Any)
 }
 
 pub unsafe fn spawn_user_thread<R: BootRuntime>(

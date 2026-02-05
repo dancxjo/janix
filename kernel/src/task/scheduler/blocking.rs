@@ -8,8 +8,6 @@ use super::SCHEDULER;
 use super::graphify;
 use super::types::Scheduler;
 
-#[cfg(any(feature = "sched_debug", debug_assertions))]
-use super::log_context_switch;
 
 static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> =
     core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
@@ -55,15 +53,18 @@ pub fn block_current<R: BootRuntime>() {
     };
 
     if let Some(switch) = switch_params {
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_before = rt.debug_active_aspace_root();
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
         let cr3_after = rt.debug_active_aspace_root();
-        #[cfg(any(feature = "sched_debug", debug_assertions))]
-        log_context_switch::<R>(&switch, cr3_before, cr3_after);
+        
+        {
+            let lock = SCHEDULER.lock();
+            let ptr = lock.expect("Scheduler not initialized");
+            let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+            sched.log_context_switch(&switch, cr3_before, cr3_after);
+        }
 
         unsafe {
             rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
@@ -105,7 +106,10 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
             
             let target_cpu = match affinity {
                 crate::task::Affinity::Pinned(cpu) => cpu,
-                crate::task::Affinity::Any => super::current_cpu_index::<R>(),
+                crate::task::Affinity::Any => {
+                    // Try to wake to the last CPU it ran on to avoid immediate migration
+                    sched.tasks[idx].last_cpu.unwrap_or_else(|| super::current_cpu_index::<R>())
+                }
             };
             
             let safe_cpu = if target_cpu < sched.per_cpu.len() { target_cpu } else { 0 };

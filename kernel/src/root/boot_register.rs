@@ -131,6 +131,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     let conf_high = confidence::HIGH as u64;
 
     // 1. Host
+    crate::contract!("ROOT: registering Host...");
     let host = create(kinds::DEV_HOST);
     set(host, keys::HHDM_OFFSET, info.hhdm_offset);
     let arch_id = intern(info.arch);
@@ -142,6 +143,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     set(host, keys::CONFIDENCE, conf_high);
     // Publish host anchor early so fallback host links can attach during boot census.
     super::graph_anchors::set_host(host);
+    crate::contract!("ROOT: Host registered: t{:x}", host);
 
     // 2. Platform Bus
     let platform_bus = create(kinds::DEV_BUS_PLATFORM);
@@ -372,11 +374,11 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     super::graph_anchors::set_root_service(root_svc);
 
     // 11. PCI
-    crate::kinfo!("ROOT: Census Phase 2: PCI");
+    crate::contract!("ROOT: Census Phase 2: PCI");
     crate::root::pci::enumerate_and_publish(host, &create, &set, &link, &intern);
 
-    crate::kinfo!(
-        "ROOT: registered items. host={:x} kernel={:x}",
+    crate::contract!(
+        "ROOT: registered items. host=t{:x} kernel=t{:x}",
         host,
         kernel
     );

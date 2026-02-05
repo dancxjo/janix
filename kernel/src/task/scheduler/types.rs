@@ -16,6 +16,7 @@ pub struct PerCpu {
     pub runq: [VecDeque<TaskId>; 5],
     pub idle_task: Option<TaskId>,
     pub current: Option<TaskId>,
+    pub last_switch: u64,
 }
 
 impl PerCpu {
@@ -30,6 +31,7 @@ impl PerCpu {
             ],
             idle_task: None,
             current: None,
+            last_switch: 0,
         }
     }
 }

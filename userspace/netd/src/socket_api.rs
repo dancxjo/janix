@@ -392,9 +392,19 @@ impl SocketApi {
                 trace!("SOCKET_API: TCP_RECV handle={} got {} bytes", handle, len);
                 encode_data(&self.recv_scratch[..len])
             }
-            Err(e) => {
-                warn!("SOCKET_API: TCP_RECV error: {:?}", e);
-                encode_data(&[])
+            Err(_) => {
+                // If we can't receive, check if it's because the socket is empty or closed
+                if socket.state() == TcpState::Established {
+                    // Still established but no data
+                    encode_empty()
+                } else if socket.may_recv() {
+                    // Still potentially receiving (e.g. FIN received but buffer not empty, 
+                    // though recv_slice would have returned data in that case)
+                    encode_empty()
+                } else {
+                    // Socket closed or EOF reached
+                    encode_error()
+                }
             }
         }
     }

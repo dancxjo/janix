@@ -3,14 +3,8 @@
 //! Verifies that the watch system correctly handles overflow scenarios
 //! and maintains cursor monotonicity.
 
-use crate::root::graph::{
-    COMMIT_HISTORY_MAX_COMMITS, CommitHistory, CommitSummary, Graph, WatchFilter,
-};
-use crate::root::handlers::watch::{handle_watch_close, handle_watch_next, handle_watch_open};
-use crate::root::query::PreparedStep;
-use crate::root::symbols::Interner;
+use crate::root::graph::{CommitHistory, CommitSummary};
 use alloc::vec;
-use alloc::vec::Vec;
 
 /// Test that a watch receives EOVERFLOW when its cursor falls behind oldest history.
 #[cfg(test)]

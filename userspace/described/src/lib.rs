@@ -4,6 +4,7 @@ extern crate alloc;
 
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::{String, ToString};
+use alloc::vec;
 use alloc::vec::Vec;
 use core::fmt::Write;
 use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
@@ -274,7 +275,7 @@ impl<'a, C: StreamingLlmClient, Clk: Clock> DescriptionService<'a, C, Clk> {
         &self,
         graph: &mut G,
         req: DescribeRequest,
-        mut sink: Option<&mut dyn DescribeSink>,
+        sink: Option<&mut dyn DescribeSink>,
     ) -> Result<DescribeResponse, DescribeError> {
         let prompt = build_prompt_packet(graph, req.thing_id, &req.view_spec, &self.config)?;
         let input_hash_hex = hex_encode(&prompt.input_hash);
@@ -311,7 +312,7 @@ impl<'a, C: StreamingLlmClient, Clk: Clock> DescriptionService<'a, C, Clk> {
         let (text, _finish) = drain_stream(
             &mut *stream,
             self.config.max_description_bytes,
-            sink.as_deref_mut(),
+            sink,
         )?;
 
         let created_at = self.clock.monotonic_ns();
@@ -340,12 +341,14 @@ impl<'a, C: StreamingLlmClient, Clk: Clock> DescriptionService<'a, C, Clk> {
 }
 
 pub fn build_prompt_packet<G: DescribeGraph>(
-    graph: &G,
+    graph: &mut G,
     thing_id: ThingId,
     view: &ViewSpec,
     config: &DescriptionConfig,
 ) -> Result<PromptPacket, DescribeError> {
     let mut text = String::new();
+    let skip_rel = graph.intern(REL_HAS_DESCRIPTION).ok();
+
     let _ = writeln!(text, "thing_id {}", thing_id.to_u64_lossy());
 
     if let Some(kind) = graph.get_kind(thing_id) {
@@ -355,7 +358,7 @@ pub fn build_prompt_packet<G: DescribeGraph>(
     match view {
         ViewSpec::NodeOnly => {
             let _ = writeln!(text, "view node_only");
-            append_node_only(graph, thing_id, &mut text, config)?;
+            append_node_only(graph, thing_id, &mut text, config, skip_rel)?;
         }
         ViewSpec::Neighborhood {
             max_hops,
@@ -371,6 +374,7 @@ pub fn build_prompt_packet<G: DescribeGraph>(
                 edge_whitelist,
                 &mut text,
                 config,
+                skip_rel,
             )?;
         }
     }
@@ -389,6 +393,7 @@ fn append_node_only<G: DescribeGraph>(
     thing_id: ThingId,
     text: &mut String,
     config: &DescriptionConfig,
+    skip_rel: Option<u64>,
 ) -> Result<(), DescribeError> {
     let mut props = vec![GraphProp::default(); config.max_prompt_props];
     let prop_count = graph.get_props(thing_id, &mut props)?;
@@ -406,9 +411,14 @@ fn append_node_only<G: DescribeGraph>(
     let mut edges = vec![Edge::default(); config.max_prompt_edges];
     let edge_count = graph.get_edges(thing_id, &mut edges)?;
     edges.truncate(edge_count);
+
+    if let Some(skip) = skip_rel {
+        edges.retain(|e| e.predicate.to_u64_lossy() != skip);
+    }
+
     edges.sort_by_key(|e| (e.predicate.to_u64_lossy(), e.to.to_u64_lossy()));
 
-    let _ = writeln!(text, "edges {}", edge_count);
+    let _ = writeln!(text, "edges {}", edges.len());
     for edge in &edges {
         if text.len() >= config.max_prompt_bytes {
             break;
@@ -432,6 +442,7 @@ fn append_neighborhood<G: DescribeGraph>(
     whitelist: &[PredicateId],
     text: &mut String,
     config: &DescriptionConfig,
+    skip_rel: Option<u64>,
 ) -> Result<(), DescribeError> {
     let mut visited: BTreeSet<ThingId> = BTreeSet::new();
     let mut frontier: Vec<(ThingId, u8)> = Vec::new();
@@ -452,6 +463,11 @@ fn append_neighborhood<G: DescribeGraph>(
         for edge in edge_buf.iter().take(count) {
             if edges.len() >= max_edges {
                 break;
+            }
+            if let Some(skip) = skip_rel {
+                if edge.predicate.to_u64_lossy() == skip {
+                    continue;
+                }
             }
             if !whitelist.is_empty() && !predicate_whitelisted(edge.predicate, whitelist) {
                 continue;
@@ -854,8 +870,8 @@ mod tests {
         }
 
         fn prop_set(&mut self, id: ThingId, key: &str, value: u64) -> Result<(), Errno> {
-            let node = self.nodes.get_mut(&id).ok_or(Errno::ENOENT)?;
             self.intern_symbol(key);
+            let node = self.nodes.get_mut(&id).ok_or(Errno::ENOENT)?;
             node.props.insert(key.to_string(), value);
             Ok(())
         }
@@ -875,8 +891,8 @@ mod tests {
         }
 
         fn link(&mut self, src: ThingId, rel: &str, dst: ThingId) -> Result<(), Errno> {
-            let node = self.nodes.get_mut(&src).ok_or(Errno::ENOENT)?;
             let pred_id = ThingId::from_u64(self.intern_symbol(rel) as u64);
+            let node = self.nodes.get_mut(&src).ok_or(Errno::ENOENT)?;
             node.edges.push((pred_id, dst));
             Ok(())
         }
@@ -960,6 +976,7 @@ mod tests {
 
         let mut sink2 = RecordingSink::default();
         let resp2 = service.describe(&mut graph, req, Some(&mut sink2)).unwrap();
+
         assert_eq!(sink2.chunks.len(), 0);
         assert_eq!(resp1.description_id, resp2.description_id);
         assert_eq!(client.calls(), 1);

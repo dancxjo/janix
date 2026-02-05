@@ -760,15 +760,15 @@ impl<R: BootRuntime> types::Scheduler<R> {
             pc.last_switch = pair;
         }
 
-        crate::contract!(
-            "sched.switch: from={} to={} u_from={} u_to={} cr3_b={:#x} cr3_a={:#x}",
-            switch.from_tid,
-            switch.to_tid,
-            switch.from_user,
-            switch.to_user,
-            cr3_before,
-            cr3_after
-        );
+        // crate::contract!(
+        //     "sched.switch: from={} to={} u_from={} u_to={} cr3_b={:#x} cr3_a={:#x}",
+        //     switch.from_tid,
+        //     switch.to_tid,
+        //     switch.from_user,
+        //     switch.to_user,
+        //     cr3_before,
+        //     cr3_after
+        // );
     }
 }
 

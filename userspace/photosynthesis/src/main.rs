@@ -15,7 +15,7 @@ use core::time::Duration;
 use stem::info;
 use stem::petals::{
     Canvas, Color, Flex, FontKey, Line, PanZoomController, Rect, Scene, Size, Styled, Text,
-    TextInput, Viewport, ViewportConstraints, Window,
+    TextInput, Viewport, ViewportConstraints, Window, Button, Label, MessageBox,
 };
 use stem::thing::sys::{create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
@@ -102,6 +102,13 @@ const DEBUG_COLLISION_BOX_COLOR: Color = Color::from_argb_u32(0x80FF0000);
 const DEBUG_VELOCITY_COLOR: Color = Color::from_argb_u32(0xFF00FF00);
 const DEBUG_PIN_INDICATOR_COLOR: Color = Color::from_argb_u32(0xFFFFAA00);
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum FocusedElement {
+    TextInput,
+    SubmitButton,
+    MessageBoxButton,
+}
+
 #[stem::main]
 fn main() -> ! {
     // Initialize i18n system
@@ -150,6 +157,12 @@ fn main() -> ! {
     let mut dirty = true;
     let mut graph_watch = None;
     let mut debug_mode = false; // Toggle with 'D' key
+
+    // Form state
+    let mut text_input_value = String::new();
+    let mut show_message_box = false;
+    let mut message_box_text = String::new();
+    let mut focused_element = FocusedElement::TextInput; // Track focus
 
     // Input state for viewport control
     let mut input_state = input::InputState::new();
@@ -320,6 +333,10 @@ fn main() -> ! {
                     &viewport_controller.viewport,
                     &layout_nodes,
                     debug_mode,
+                    &text_input_value,
+                    show_message_box,
+                    &message_box_text,
+                    focused_element,
                 );
                 let _ = stem::petals::publish_window(&scene);
                 last_nodes = final_nodes;
@@ -342,6 +359,10 @@ fn build_graph_scene(
     viewport: &Viewport,
     layout_nodes: &[LayoutNode],
     debug_mode: bool,
+    text_input_value: &str,
+    show_message_box: bool,
+    message_box_text: &str,
+    focused_element: FocusedElement,
 ) -> Scene {
     let mut canvas = Canvas::new().width(Size::Pct(100)).height(Size::Pct(100));
 
@@ -543,20 +564,48 @@ fn build_graph_scene(
         }
     }
 
+    let mut root_content = Flex::column()
+        .push(
+            Flex::column()
+                .gap(8)
+                .padding(16)
+                .push(
+                    Label::new("Enter your name:")
+                        .height(Size::Px(20))
+                )
+                .push(
+                    TextInput::new()
+                        .placeholder("Type here...")
+                        .value(text_input_value)
+                        .focused(focused_element == FocusedElement::TextInput)
+                        .height(Size::Px(32))
+                        .width(Size::Pct(100))
+                )
+                .push(
+                    Button::new("Submit")
+                        .focused(focused_element == FocusedElement::SubmitButton)
+                        .height(Size::Px(36))
+                        .width(Size::Px(120))
+                )
+        )
+        .push(canvas.flex_grow(1.0));
+
+    // Add message box overlay if needed
+    if show_message_box {
+        root_content = root_content.push(
+            MessageBox::new(message_box_text)
+                .focused(focused_element == FocusedElement::MessageBoxButton)
+                .width(Size::Px(400))
+                .height(Size::Px(200))
+                .margin(100) // Center it roughly
+        );
+    }
+
     Scene::new().window(
         Window::new(win)
             .title("Photosynthesis")
             .initial_size(800, 600)
-            .root(
-                Flex::column()
-                    .push(
-                        TextInput::new()
-                            .placeholder("Search nodes...")
-                            .height(Size::Px(32))
-                            .width(Size::Pct(100)),
-                    )
-                    .push(canvas.flex_grow(1.0)),
-            ),
+            .root(root_content),
     )
 }
 

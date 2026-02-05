@@ -101,6 +101,18 @@ pub const UI_SCENE_TEXT_INPUT_PLACEHOLDER_LEN_OFFSET: usize = 12;
 pub const UI_SCENE_TEXT_INPUT_CURSOR_OFFSET: usize = 16;
 pub const UI_SCENE_TEXT_INPUT_FOCUSED_OFFSET: usize = 20;
 
+pub const UI_SCENE_BUTTON_TEXT_OFFSET_OFFSET: usize = 0;
+pub const UI_SCENE_BUTTON_TEXT_LEN_OFFSET: usize = 4;
+pub const UI_SCENE_BUTTON_FOCUSED_OFFSET: usize = 8;
+
+pub const UI_SCENE_LABEL_TEXT_OFFSET_OFFSET: usize = 0;
+pub const UI_SCENE_LABEL_TEXT_LEN_OFFSET: usize = 4;
+pub const UI_SCENE_LABEL_FOR_ID_OFFSET: usize = 8;
+
+pub const UI_SCENE_MESSAGE_BOX_MESSAGE_OFFSET_OFFSET: usize = 0;
+pub const UI_SCENE_MESSAGE_BOX_MESSAGE_LEN_OFFSET: usize = 4;
+pub const UI_SCENE_MESSAGE_BOX_FOCUSED_OFFSET: usize = 8;
+
 pub const UI_SCENE_LINE_X1_OFFSET: usize = 0;
 pub const UI_SCENE_LINE_Y1_OFFSET: usize = 4;
 pub const UI_SCENE_LINE_X2_OFFSET: usize = 8;
@@ -124,6 +136,9 @@ pub enum NodeKind {
     Spacer = 11,
     Separator = 12,
     TextInput = 13,
+    Button = 14,
+    Label = 15,
+    MessageBox = 16,
     Unknown(u16),
 }
 
@@ -143,6 +158,9 @@ impl NodeKind {
             11 => NodeKind::Spacer,
             12 => NodeKind::Separator,
             13 => NodeKind::TextInput,
+            14 => NodeKind::Button,
+            15 => NodeKind::Label,
+            16 => NodeKind::MessageBox,
             _ => NodeKind::Unknown(raw),
         }
     }
@@ -162,6 +180,9 @@ impl NodeKind {
             NodeKind::Spacer => 11,
             NodeKind::Separator => 12,
             NodeKind::TextInput => 13,
+            NodeKind::Button => 14,
+            NodeKind::Label => 15,
+            NodeKind::MessageBox => 16,
             NodeKind::Unknown(raw) => raw,
         }
     }
@@ -428,6 +449,24 @@ pub struct TextInputMeta {
     pub value: StringRef,
     pub placeholder: StringRef,
     pub cursor: u32,
+    pub focused: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ButtonMeta {
+    pub text: StringRef,
+    pub focused: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct LabelMeta {
+    pub text: StringRef,
+    pub for_id: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MessageBoxMeta {
+    pub message: StringRef,
     pub focused: bool,
 }
 
@@ -831,6 +870,56 @@ impl<'a> NodeView<'a> {
             cursor: read_u32(payload, UI_SCENE_TEXT_INPUT_CURSOR_OFFSET).unwrap_or(0),
             focused: payload
                 .get(UI_SCENE_TEXT_INPUT_FOCUSED_OFFSET)
+                .copied()
+                .unwrap_or(0)
+                != 0,
+        })
+    }
+
+    pub fn button_meta(&self) -> Option<ButtonMeta> {
+        if self.kind() != NodeKind::Button {
+            return None;
+        }
+        let payload = self.payload();
+        Some(ButtonMeta {
+            text: StringRef {
+                offset: read_u32(payload, UI_SCENE_BUTTON_TEXT_OFFSET_OFFSET).unwrap_or(0),
+                len: read_u32(payload, UI_SCENE_BUTTON_TEXT_LEN_OFFSET).unwrap_or(0),
+            },
+            focused: payload
+                .get(UI_SCENE_BUTTON_FOCUSED_OFFSET)
+                .copied()
+                .unwrap_or(0)
+                != 0,
+        })
+    }
+
+    pub fn label_meta(&self) -> Option<LabelMeta> {
+        if self.kind() != NodeKind::Label {
+            return None;
+        }
+        let payload = self.payload();
+        Some(LabelMeta {
+            text: StringRef {
+                offset: read_u32(payload, UI_SCENE_LABEL_TEXT_OFFSET_OFFSET).unwrap_or(0),
+                len: read_u32(payload, UI_SCENE_LABEL_TEXT_LEN_OFFSET).unwrap_or(0),
+            },
+            for_id: read_u64(payload, UI_SCENE_LABEL_FOR_ID_OFFSET).unwrap_or(0),
+        })
+    }
+
+    pub fn message_box_meta(&self) -> Option<MessageBoxMeta> {
+        if self.kind() != NodeKind::MessageBox {
+            return None;
+        }
+        let payload = self.payload();
+        Some(MessageBoxMeta {
+            message: StringRef {
+                offset: read_u32(payload, UI_SCENE_MESSAGE_BOX_MESSAGE_OFFSET_OFFSET).unwrap_or(0),
+                len: read_u32(payload, UI_SCENE_MESSAGE_BOX_MESSAGE_LEN_OFFSET).unwrap_or(0),
+            },
+            focused: payload
+                .get(UI_SCENE_MESSAGE_BOX_FOCUSED_OFFSET)
                 .copied()
                 .unwrap_or(0)
                 != 0,

@@ -11,6 +11,7 @@ use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address};
 
 use crate::ipc_device::IpcNicDevice;
+use crate::dns;
 use stem::{info, trace, warn};
 
 // Socket API message types
@@ -25,6 +26,8 @@ pub const MSG_UDP_BIND: u16 = 0x0300;
 pub const MSG_UDP_SEND_TO: u16 = 0x0301;
 pub const MSG_UDP_RECV_FROM: u16 = 0x0302;
 pub const MSG_NET_JOIN_MULTICAST: u16 = 0x0400;
+
+pub const MSG_DNS_QUERY: u16 = 0x0500;
 
 // Response types
 pub const RESP_OK: u16 = 0x0000;
@@ -123,6 +126,68 @@ impl SocketApi {
 
         info!("SOCKET_API: Listening on port {}, handle={}", port, api_handle);
         encode_handle(api_handle)
+    }
+
+    /// Handle a TCP_CONNECT request
+    pub fn handle_connect<'a, D: smoltcp::phy::Device>(
+        &mut self,
+        iface: &mut Interface,
+        _device: &mut D,
+        socket_set: &mut SocketSet<'a>,
+        remote_ip: Ipv4Address,
+        remote_port: u16,
+        rx_storage: &'a mut [u8],
+        tx_storage: &'a mut [u8],
+    ) -> Vec<u8> {
+        info!("SOCKET_API: TCP_CONNECT to {}:{}", remote_ip, remote_port);
+
+        let rx_buffer = SocketBuffer::new(rx_storage);
+        let tx_buffer = SocketBuffer::new(tx_storage);
+        let mut socket = TcpSocket::new(rx_buffer, tx_buffer);
+
+        let endpoint = IpEndpoint::new(IpAddress::Ipv4(remote_ip), remote_port);
+        // Ephemeral port generation is handled by smoltcp if local_port is not specified (unspecified endpoint)
+        let local_port = 49152 + (self.next_handle as u16 % 16384);
+
+        if let Err(e) = socket.connect(iface.context(), endpoint, local_port) {
+            warn!("SOCKET_API: Failed to connect: {:?}", e);
+            return encode_error();
+        }
+
+        let socket_handle = socket_set.add(socket);
+        let api_handle = self.alloc_handle();
+
+        self.sockets.insert(
+            api_handle,
+            ManagedSocket {
+                handle: socket_handle,
+                kind: SocketType::Tcp,
+                is_listener: false,
+                port: Some(local_port),
+            },
+        );
+
+        info!("SOCKET_API: Connected handle={} local_port={}", api_handle, local_port);
+        encode_handle(api_handle)
+    }
+
+    /// Handle a DNS query
+    pub fn handle_dns_query(
+        &mut self,
+        iface: &mut Interface,
+        device: &mut IpcNicDevice,
+        dns_server: Ipv4Address,
+        hostname: &str,
+    ) -> Vec<u8> {
+        match dns::lookup_a(iface, device, dns_server, hostname) {
+            Ok(ip) => {
+                let mut v = Vec::with_capacity(6);
+                v.extend_from_slice(&RESP_DATA.to_le_bytes());
+                v.extend_from_slice(ip.as_bytes());
+                v
+            }
+            Err(_) => encode_error(),
+        }
     }
 
     /// Handle a TCP_ACCEPT request (non-blocking)
@@ -463,14 +528,15 @@ impl SocketApi {
     }
 
     /// Process an incoming API message
-    pub fn process_message<'a, D: smoltcp::phy::Device>(
+    pub fn process_message<'a>(
         &mut self,
         iface: &mut Interface,
-        device: &mut D,
+        device: &mut IpcNicDevice,
         socket_set: &mut SocketSet<'a>,
         msg: &[u8],
         rx_storage: &'a mut [u8],
         tx_storage: &'a mut [u8],
+        dns_server: Option<Ipv4Address>,
     ) -> Vec<u8> {
         if msg.len() < 2 {
             return encode_error();
@@ -479,6 +545,14 @@ impl SocketApi {
         let msg_type = u16::from_le_bytes([msg[0], msg[1]]);
 
         match msg_type {
+            MSG_TCP_CONNECT => {
+                if msg.len() < 8 {
+                    return encode_error();
+                }
+                let ip = Ipv4Address::from_bytes(&msg[2..6]);
+                let port = u16::from_le_bytes([msg[6], msg[7]]);
+                self.handle_connect(iface, device, socket_set, ip, port, rx_storage, tx_storage)
+            }
             MSG_TCP_LISTEN => {
                 if msg.len() < 6 {
                     return encode_error();
@@ -551,6 +625,17 @@ impl SocketApi {
                 }
                 let ip = Ipv4Address::from_bytes(&msg[2..6]);
                 self.handle_multicast_join(iface, device, ip)
+            }
+            MSG_DNS_QUERY => {
+                if let Some(dns_server) = dns_server {
+                    if let Ok(hostname) = core::str::from_utf8(&msg[2..]) {
+                        self.handle_dns_query(iface, device, dns_server, hostname)
+                    } else {
+                        encode_error()
+                    }
+                } else {
+                    encode_error()
+                }
             }
             _ => {
                 warn!("SOCKET_API: Unknown message type 0x{:04x}", msg_type);

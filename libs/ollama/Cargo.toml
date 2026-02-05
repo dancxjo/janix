@@ -1,0 +1,12 @@
+[package]
+name = "ollama"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stem = { path = "../../stem" }
+abi = { path = "../../abi" }
+http = { path = "../http" }
+llm = { path = "../llm" }
+serde = { version = "1.0", default-features = false, features = ["alloc", "derive"] }
+serde_json = { version = "1.0", default-features = false, features = ["alloc"] }

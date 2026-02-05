@@ -1110,6 +1110,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fortune"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "llm",
+ "ollama",
+ "stem",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.31"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1369,6 +1379,14 @@ name = "htmlparser"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48ce8546b993eaf241d69ded33b1be6d205dd9857ec879d9d18bd05d3676e144"
+
+[[package]]
+name = "http"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
 
 [[package]]
 name = "humantime"
@@ -1914,6 +1932,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "071dfc062690e90b734c0b2273ce72ad0ffa95f0c74596bc250dcfd960262841"
 dependencies = [
  "autocfg",
+]
+
+[[package]]
+name = "ollama"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "http",
+ "llm",
+ "serde",
+ "serde_json",
+ "stem",
 ]
 
 [[package]]

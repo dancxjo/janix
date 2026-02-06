@@ -100,57 +100,67 @@ fn send_aux_byte(byte: u8) {
 }
 
 fn init_mouse() {
-    info!("ps2_mouse: enabling aux port");
+    info!("ps2_mouse: starting robust init");
 
-    // Clear any initial garbage
+    // 1. Clear any initial garbage
     flush_output_buffer();
 
-    // Enable aux port
+    // 2. Enable aux port
     wait_input_empty();
     ioport_write(PS2_CMD, CMD_ENABLE_AUX as usize, 1);
     stem::sleep_ms(50);
 
-    // Ensure IRQ12 is enabled (Bit 1) and Mouse Disabled (Bit 5) is CLEARED.
-    // Bit 5: 1 = Mouse Disabled, 0 = Mouse Enabled.
+    // 3. Reset mouse
+    info!("ps2_mouse: sending reset (0xFF)");
+    send_aux_byte(0xFF);
+    
+    // Wait for ACK (0xFA)
+    if let Some(ack) = read_data_filtered(true, "reset ACK") {
+        info!("ps2_mouse: reset ACK received (0x{:02x})", ack);
+    }
+    
+    // Wait for BAT completion (0xAA)
+    if let Some(bat) = read_data_filtered(true, "BAT result") {
+        info!("ps2_mouse: BAT result received (0x{:02x})", bat);
+    }
+    
+    // Wait for Device ID (0x00)
+    if let Some(id) = read_data_filtered(true, "device ID") {
+        info!("ps2_mouse: device ID received (0x{:02x})", id);
+    }
+
+    // 4. Set Defaults
+    info!("ps2_mouse: sending set defaults (0xF6)");
+    send_aux_byte(0xF6);
+    let _ = read_data_filtered(true, "set defaults ACK");
+
+    // 5. Set Sample Rate (100)
+    info!("ps2_mouse: setting sample rate (100)");
+    send_aux_byte(0xF3);
+    let _ = read_data_filtered(true, "sample rate cmd ACK");
+    send_aux_byte(100);
+    let _ = read_data_filtered(true, "sample rate val ACK");
+
+    // 6. Set Resolution (3)
+    info!("ps2_mouse: setting resolution (3)");
+    send_aux_byte(0xE8);
+    let _ = read_data_filtered(true, "resolution cmd ACK");
+    send_aux_byte(3);
+    let _ = read_data_filtered(true, "resolution val ACK");
+
+    // 7. Controller Config
     let cfg = read_controller_config();
-
-    // Force: Set Bit 1 (IRQ12), Clear Bit 5 (Mouse Disable)
-    let new_cfg = (cfg | 0x02) & !0x20;
-
+    let new_cfg = (cfg | 0x02) & !0x20; // Enable IRQ12, Enable Mouse
     if new_cfg != cfg {
         write_controller_config(new_cfg);
-        info!(
-            "ps2_mouse: updated controller cfg 0x{:02x} -> 0x{:02x}",
-            cfg, new_cfg
-        );
-    } else {
-        info!("ps2_mouse: controller cfg already correct (0x{:02x})", cfg);
+        info!("ps2_mouse: updated controller cfg 0x{:02x} -> 0x{:02x}", cfg, new_cfg);
     }
 
-    // Enable mouse data reporting (0xF4)
-    info!("ps2_mouse: sending enable command (0xF4)");
+    // 8. Enable data reporting
+    info!("ps2_mouse: sending enable (0xF4)");
     send_aux_byte(MOUSE_ENABLE);
-
-    // Wait for ACK (0xFA)
-    let ack = read_data_filtered(true, "enable ACK (0xFA)").unwrap_or(0);
-    if ack == 0xFA {
-        info!("ps2_mouse: enable ACK received (0xFA)");
-    } else {
-        info!(
-            "ps2_mouse: enable failed? received 0x{:02x} instead of ACK",
-            ack
-        );
-    }
-
-    stem::sleep_ms(100);
-
-    // Drain any lingering response bytes.
-    for _ in 0..10 {
-        if ioport_read(PS2_STATUS, 1) & STATUS_OUTPUT_FULL != 0 {
-            let byte = ioport_read(PS2_DATA, 1) as u8;
-            info!("ps2_mouse: drained 0x{:02x}", byte);
-        }
-        stem::sleep_ms(10);
+    if let Some(ack) = read_data_filtered(true, "enable ACK") {
+        info!("ps2_mouse: enable ACK received (0x{:02x})", ack);
     }
 
     info!("ps2_mouse: init done");
@@ -192,6 +202,7 @@ fn main(raw_write_handle: usize) -> ! {
                 drain_mouse_data(handle, &mut packet, &mut idx);
             }
             Err(_) => {
+                // Fallback: yield and retry
                 stem::yield_now();
             }
         }
@@ -220,11 +231,6 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
 
             if *idx == 3 {
                 let _ = port_send(handle, packet);
-
-                /*
-                    info!("ps2_mouse: packet {} = [{:02x} {:02x} {:02x}]",
-                          packets_sent, packet[0], packet[1], packet[2]);
-                */
                 *idx = 0;
             }
         } else {
@@ -245,9 +251,11 @@ fn polling_loop(handle: PortHandle) -> ! {
         let status = ioport_read(PS2_STATUS, 1);
 
         if status & STATUS_OUTPUT_FULL != 0 {
-            if status & STATUS_AUX_DATA != 0 {
-                let byte = ioport_read(PS2_DATA, 1) as u8;
+            let is_aux = status & STATUS_AUX_DATA != 0;
+            let byte = ioport_read(PS2_DATA, 1) as u8;
+            stem::info!("ps2_mouse: (POLL) byte=0x{:02x} aux={}", byte, is_aux);
 
+            if is_aux {
                 if idx == 0 && (byte & 0x08) == 0 {
                     continue;
                 }
@@ -256,7 +264,11 @@ fn polling_loop(handle: PortHandle) -> ! {
                 idx += 1;
 
                 if idx == 3 {
-                    let _ = port_send(handle, &packet);
+                    if let Err(e) = port_send(handle, &packet) {
+                        stem::error!("ps2_mouse: (POLL) port_send FAILED: {:?}", e);
+                    } else {
+                        stem::info!("ps2_mouse: (POLL) packet sent: [{:02x} {:02x} {:02x}]", packet[0], packet[1], packet[2]);
+                    }
                     idx = 0;
                 }
             }

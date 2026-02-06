@@ -3,6 +3,7 @@ use core::mem::size_of;
 pub const IRQ_TIMER_VECTOR: u8 = 0x20;
 pub const IRQ_RESCHED_VECTOR: u8 = 0x30;
 pub const IRQ_TLB_SHOOTDOWN_VECTOR: u8 = 0x41;
+use kernel::kinfo;
 
 #[derive(Clone, Copy)]
 #[repr(C, packed)]

@@ -1,5 +1,6 @@
 //! Echo: Bristle Event Display
 //!
+//! Self-registers as an input subscriber via the System Graph.
 //! Reads BristleEvents and prints them to the console.
 //! Demonstrates normalized input - keys and pointer events.
 
@@ -10,8 +11,10 @@ use abi::hid::{
     BristleEventHeader, Key, KeyEventPayload, Mods, PointerButtonPayload, PointerMovePayload,
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
+use abi::schema::input::{SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER};
 use stem::info;
-use stem::syscall::{port_recv, PortHandle};
+use stem::syscall::{port_create, port_recv, PortHandle};
+use stem::thing::sys::{create_node, prop_set};
 
 fn format_mods(mods: Mods) -> &'static str {
     match mods.0 {
@@ -24,7 +27,7 @@ fn format_mods(mods: Mods) -> &'static str {
         m if m == (Mods::SHIFT | Mods::CTRL) => " +Shift+Ctrl",
         m if m == (Mods::SHIFT | Mods::ALT) => " +Shift+Alt",
         m if m == (Mods::CTRL | Mods::ALT | Mods::SHIFT) => " +Ctrl+Alt+Shift",
-        _ => " +Mods", // Changed from +? to +Mods for clarity
+        _ => " +Mods",
     }
 }
 
@@ -86,7 +89,6 @@ fn parse_and_print_event(buf: &[u8]) {
                 let payload: PointerMovePayload = unsafe {
                     core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerMovePayload)
                 };
-                // Copy to locals to avoid packed struct field reference
                 let dx = payload.dx;
                 let dy = payload.dy;
                 info!("PointerMove dx={} dy={}", dx, dy);
@@ -116,11 +118,19 @@ fn parse_and_print_event(buf: &[u8]) {
     }
 }
 
-#[stem::main]
-fn main(evt_read_handle: usize) -> ! {
-    let handle = evt_read_handle as PortHandle;
 
-    info!("echo: online (handle={})", handle);
+#[stem::main]
+fn main(arg: usize) -> ! {
+    info!("echo: starting up");
+
+    let handle = arg as PortHandle;
+    if handle == 0 {
+        info!("echo: no input handle provided, exiting");
+        loop {
+            stem::yield_now();
+        }
+    }
+
     info!("echo: ready for Bristle events (keyboard + mouse)");
 
     let mut buf = [0u8; 256];

@@ -206,17 +206,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
     };
 
-    // Create evt port (bristle -> bloom)
-    let evt = match stem::syscall::port_create(8192) {
-        Ok((write_h, read_h)) => {
-            info!("SPROUT: Created evt port (w={}, r={})", write_h, read_h);
-            (write_h, read_h)
-        }
-        Err(e) => {
-            stem::error!("SPROUT: Failed to create evt port: {:?}", e);
-            return;
-        }
-    };
+    // Note: evt port no longer needed - bloom and echo self-register as input subscribers
 
     // Spawn ps2_kbd with raw write handle
     match stem::syscall::spawn_process("/ps2_kbd", kbd_raw.0 as usize) {
@@ -254,20 +244,9 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
     }
 
-    // Create evt_echo port (bristle -> echo)
-    let evt_echo = match stem::syscall::port_create(8192) {
-        Ok((write_h, read_h)) => {
-            info!(
-                "SPROUT: Created evt_echo port (w={}, r={})",
-                write_h, read_h
-            );
-            (write_h, read_h)
-        }
-        Err(e) => {
-            stem::error!("SPROUT: Failed to create evt_echo port: {:?}", e);
-            return;
-        }
-    };
+    // Event ports (legacy fan-out)
+    let evt = stem::syscall::port_create(8192).unwrap_or((0, 0));
+    let evt_echo = stem::syscall::port_create(8192).unwrap_or((0, 0));
 
     // Spawn bristle with packed handles:
     // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_echo_write[15:0]
@@ -275,6 +254,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         | ((mouse_raw.1 as u64) << 32)
         | ((evt.0 as u64) << 16)
         | (evt_echo.0 as u64);
+
     match stem::syscall::spawn_process("/bristle", bristle_arg as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned bristle (PID={})", pid);
@@ -320,7 +300,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
             slice[0] = 0xB100AA01; // Magic
             slice[1] = drv_req_write as u32;
             slice[2] = drv_resp_read as u32;
-            slice[3] = evt.1 as u32; // bristle read
+            slice[3] = evt.1 as u32; // Pass legacy event handle
             info!("SPROUT: Writing bloom BS: drv_req={}, drv_resp={}, bristle_evt={}", drv_req_write, drv_resp_read, evt.1);
 
             // Display bytespace id (u64 split into two u32s)
@@ -359,7 +339,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
     }
 
-    // Spawn echo with evt_echo read handle
+    // Spawn echo with legacy port handle
     match stem::syscall::spawn_process("/echo", evt_echo.1 as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned echo (PID={})", pid);

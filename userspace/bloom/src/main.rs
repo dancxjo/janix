@@ -53,8 +53,11 @@ use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 
 use abi::display_driver_protocol::BindPayload;
+use abi::schema::input::{SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER, FILTER_POINTER, FILTER_BUTTON};
 use abi::schema::{keys, kinds};
-use stem::syscall::PortHandle;
+use stem::syscall::{port_create, PortHandle};
+
+
 
 use crate::asset::AssetBank;
 use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
@@ -491,6 +494,7 @@ fn main(arg: usize) -> ! {
     let (screen_w, screen_h) = (target.width as i32, target.height as i32);
 
     // Cursor state
+    // Input handle: use legacy handle from bootstrap
     let bristle_evt_handle = bristle_evt as PortHandle;
     stem::info!("[bloom] bristle_evt_handle = {} (from bristle_evt={})", bristle_evt_handle, bristle_evt);
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);

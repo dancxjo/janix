@@ -220,11 +220,7 @@ fn serialize_pointer_button_up(button: u8, timestamp_ns: u64, buf: &mut [u8]) ->
 
 #[stem::main]
 fn main(packed_handles: usize) -> ! {
-    // Unpack handles from 64-bit value:
-    // bits 48-63: kbd_read
-    // bits 32-47: mouse_read
-    // bits 16-31: evt_write (bloom - legacy, kept for compatibility)
-    // bits  0-15: evt_echo_write (echo - legacy, kept for compatibility)
+    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_echo_write[15:0]
     let packed = packed_handles as u64;
     let kbd_read = ((packed >> 48) & 0xFFFF) as PortHandle;
     let mouse_read = ((packed >> 32) & 0xFFFF) as PortHandle;
@@ -232,46 +228,13 @@ fn main(packed_handles: usize) -> ! {
     let legacy_evt_echo_write = (packed & 0xFFFF) as PortHandle;
 
     info!(
-        "bristle: online (kbd={}, mouse={}, evt={}, evt_echo={})",
+        "bristle: online (kbd={}, mouse={}, evt={}, echo={})",
         kbd_read, mouse_read, legacy_evt_write, legacy_evt_echo_write
     );
-
-    let bristle_node = register_in_graph();
 
     let mut kbd_state = KeyboardState::new();
     let mut mouse_state = MouseState::new();
     let mut keyboard_gen: u64 = 0;
-
-    // Dynamic subscriber list from graph
-    let mut subscribers: [Subscriber; MAX_SUBSCRIBERS] = [Subscriber::default(); MAX_SUBSCRIBERS];
-    let mut subscriber_count: usize = 0;
-    let mut scan_interval: u32 = 0;
-    const SCAN_INTERVAL: u32 = 100; // Rescan graph every N loop iterations
-
-    #[cfg(feature = "diagnostic-apps")]
-    let evt_mouse_write: PortHandle = {
-        let mut write_handle: PortHandle = 0;
-        match port_create(8192) {
-            Ok((write_h, read_h)) => {
-                write_handle = write_h;
-                match spawn_process("/echo_mouse", read_h as usize) {
-                    Ok(pid) => {
-                        info!("bristle: spawned echo_mouse (PID={})", pid);
-                    }
-                    Err(e) => {
-                        info!("bristle: failed to spawn echo_mouse: {:?}", e);
-                    }
-                }
-            }
-            Err(e) => {
-                info!("bristle: failed to create echo_mouse port: {:?}", e);
-            }
-        }
-        write_handle
-    };
-
-    #[cfg(not(feature = "diagnostic-apps"))]
-    let evt_mouse_write: PortHandle = 0;
 
     let mut kbd_buf = [0u8; 64];
     let mut mouse_buf = [0u8; 64];
@@ -281,23 +244,19 @@ fn main(packed_handles: usize) -> ! {
 
     let wait_handles = [kbd_read, mouse_read];
     loop {
-        // Periodically rescan for new subscribers
-        scan_interval += 1;
-        if scan_interval >= SCAN_INTERVAL {
-            scan_interval = 0;
-            let new_count = scan_subscribers(&mut subscribers);
-            if new_count != subscriber_count {
-                info!("bristle: {} dynamic subscribers registered", new_count);
-                subscriber_count = new_count;
-            }
-        }
-
         // Block until keyboard or mouse data arrives
-        let _ = port_wait(&wait_handles, abi::syscall::port_wait::READABLE);
+        let ready_handle = match port_wait(&wait_handles, abi::syscall::port_wait::READABLE) {
+            Ok(h) => h,
+            Err(_) => {
+                stem::yield_now();
+                continue;
+            }
+        };
 
         // Process keyboard input
-        if let Ok(n) = port_recv(kbd_read, &mut kbd_buf) {
-            if n > 0 {
+        if ready_handle == kbd_read {
+            if let Ok(n) = port_recv(kbd_read, &mut kbd_buf) {
+                if n > 0 {
                 for &byte in &kbd_buf[..n] {
                     if let Some(edge) = kbd_state.process_ps2(byte) {
                         let timestamp_ns = stem::monotonic_ns();
@@ -316,13 +275,14 @@ fn main(packed_handles: usize) -> ! {
                                 let _ = thingsys::dump_graph(0);
                             }
 
-                            // Broadcast to legacy ports (evt + echo)
+                            // Broadcast to legacy ports
                             let mut sent = false;
                             if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
                                 sent = true;
                             } else {
                                 drop_counter += 1;
                             }
+
                             if legacy_evt_echo_write != 0 {
                                 if port_send(legacy_evt_echo_write, &send_buf[..len]).is_ok() {
                                     sent = true;
@@ -331,54 +291,18 @@ fn main(packed_handles: usize) -> ! {
                                 }
                             }
 
-                            // Broadcast to dynamic subscribers (keyboard filter = 1)
-                            for i in 0..subscriber_count {
-                                let sub = &subscribers[i];
-                                if matches_filter(sub.filter, abi::schema::input::FILTER_KEYBOARD) {
-                                    if port_send(sub.port, &send_buf[..len]).is_ok() {
-                                        sent = true;
-                                    } else {
-                                        drop_counter += 1;
-                                    }
-                                }
-                            }
-
                             if sent {
                                 event_count += 1;
-                            }
-
-                            // Publish keyboard state to graph
-                            if let Some(node) = bristle_node {
-                                use abi::schema::keyboard as kb;
-                                let (key_code, mods_val, is_down) = match edge {
-                                    KeyEdge::Down { key, mods, .. } => {
-                                        (key as u16, mods.0 as u64, true)
-                                    }
-                                    KeyEdge::Up { key, mods } => (key as u16, mods.0 as u64, false),
-                                };
-                                keyboard_gen += 1;
-                                let _ = thingsys::prop_set(node, kb::KEYBOARD_MODS, mods_val);
-                                let _ = thingsys::prop_set(
-                                    node,
-                                    kb::KEYBOARD_LAST_KEY,
-                                    key_code as u64,
-                                );
-                                let _ = thingsys::prop_set(
-                                    node,
-                                    kb::KEYBOARD_KEY_EDGE,
-                                    if is_down { 1 } else { 0 },
-                                );
-                                let _ = thingsys::prop_set(node, kb::KEYBOARD_GEN, keyboard_gen);
                             }
                         }
                     }
                 }
             }
         }
-
-        // Process mouse input
-        if let Ok(n) = port_recv(mouse_read, &mut mouse_buf) {
-            if n >= 3 {
+        } else if ready_handle == mouse_read {
+            // Process mouse input
+            if let Ok(n) = port_recv(mouse_read, &mut mouse_buf) {
+                if n >= 3 {
                 // Process 3-byte packets
                 let mut offset = 0;
                 while offset + 3 <= n {
@@ -418,6 +342,7 @@ fn main(packed_handles: usize) -> ! {
                                 } else {
                                     drop_counter += 1;
                                 }
+
                                 if legacy_evt_echo_write != 0 {
                                     if port_send(legacy_evt_echo_write, &send_buf[..len]).is_ok() {
                                         sent = true;
@@ -426,25 +351,6 @@ fn main(packed_handles: usize) -> ! {
                                     }
                                 }
 
-                                // Broadcast to dynamic subscribers (with filter matching)
-                                for j in 0..subscriber_count {
-                                    let sub = &subscribers[j];
-                                    if matches_filter(sub.filter, filter_kind) {
-                                        if port_send(sub.port, &send_buf[..len]).is_ok() {
-                                            sent = true;
-                                        } else {
-                                            drop_counter += 1;
-                                        }
-                                    }
-                                }
-
-                                if evt_mouse_write != 0 {
-                                    if port_send(evt_mouse_write, &send_buf[..len]).is_ok() {
-                                        sent = true;
-                                    } else {
-                                        drop_counter += 1;
-                                    }
-                                }
                                 if sent {
                                     event_count += 1;
                                 }
@@ -455,6 +361,7 @@ fn main(packed_handles: usize) -> ! {
                 }
             }
         }
+    }
 
         // Rate-limited drop logging
         if drop_counter > 0 && drop_counter % 100 == 0 {

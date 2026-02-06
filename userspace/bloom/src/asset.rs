@@ -11,7 +11,7 @@ use stem::thing::sys::{
     bytespace_create, bytespace_write, create_node, find, intern, prop_get, prop_set,
 };
 use stem::thing::ThingId;
-use stem::{info, thread, warn};
+use stem::{debug, info, thread, warn};
 
 use crate::frame::AssetGeneration;
 use crate::reclaimer;

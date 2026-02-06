@@ -10,7 +10,7 @@ use crate::asset::AssetBank;
 use crate::frame::AssetGeneration;
 use core::cell::UnsafeCell;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
-use stem::info;
+use stem::{debug, info, warn};
 
 /// Default memory budget for decoded surfaces (32 MiB)
 pub const DEFAULT_MEMORY_BUDGET: usize = 32 * 1024 * 1024;

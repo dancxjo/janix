@@ -12,7 +12,7 @@ use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address};
 
 use crate::ipc_device::IpcNicDevice;
 use crate::dns;
-use stem::{info, trace, warn};
+use stem::{debug, info, trace, warn};
 
 // Socket API message types
 pub const MSG_TCP_CONNECT: u16 = 0x0200;

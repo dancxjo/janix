@@ -28,7 +28,7 @@ static EVICTION_COUNT: AtomicU64 = AtomicU64::new(0);
 #[allow(dead_code)]
 pub fn set_memory_budget(bytes: usize) {
     MEMORY_BUDGET.store(bytes, Ordering::Release);
-    info!("[reclaimer] memory budget set to {} bytes", bytes);
+    debug!("[reclaimer] memory budget set to {} bytes", bytes);
 }
 
 /// Get the current memory budget
@@ -45,14 +45,14 @@ pub fn decoded_bytes() -> usize {
 #[allow(dead_code)]
 pub fn add_decoded_bytes(bytes: usize) {
     let prev = DECODED_BYTES.fetch_add(bytes, Ordering::AcqRel);
-    info!("[reclaimer] +{} bytes (total: {})", bytes, prev + bytes);
+    debug!("[reclaimer] +{} bytes (total: {})", bytes, prev + bytes);
 }
 
 /// Subtract from decoded bytes counter (called on asset eviction)
 #[allow(dead_code)]
 pub fn sub_decoded_bytes(bytes: usize) {
     let prev = DECODED_BYTES.fetch_sub(bytes, Ordering::AcqRel);
-    info!(
+    debug!(
         "[reclaimer] -{} bytes (total: {})",
         bytes,
         prev.saturating_sub(bytes)
@@ -158,7 +158,7 @@ impl InFlightFrames {
         }
 
         // All slots full, replace oldest (shouldn't happen with proper complete() calls)
-        info!(
+        warn!(
             "[reclaimer] WARNING: in-flight slots full, replacing frame {}",
             oldest_frame
         );

@@ -60,7 +60,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             let cpu = super::current_cpu_index::<R>();
             match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
                 Some(id) => {
-                    crate::kinfo!("SCHED: CPU {} task {} sleeping for {} ticks", cpu, id, ticks);
+                    crate::ktrace!("SCHED: CPU {} task {} sleeping for {} ticks", cpu, id, ticks);
                     id
                 },
                 None => {
@@ -103,7 +103,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         unsafe {
             rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
-        crate::kinfo!("SCHED: task woke up on CPU");
+        crate::ktrace!("SCHED: task woke up on CPU");
     }
 
     rt.irq_restore(_irq);

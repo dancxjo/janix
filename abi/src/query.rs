@@ -7,7 +7,14 @@ pub enum QueryOpKind {
     FilterEq = 2,
     Expand = 3,
     Start = 4,
+    Anchor = 5,
 }
+
+pub const ANCHOR_HOST: u64 = 0;
+pub const ANCHOR_ROOT: u64 = 1;
+pub const ANCHOR_KERNEL: u64 = 2;
+pub const ANCHOR_SCHEDULER: u64 = 3;
+pub const ANCHOR_CPU: u64 = 4;
 
 #[repr(C)]
 #[derive(Clone, Copy, Debug)]

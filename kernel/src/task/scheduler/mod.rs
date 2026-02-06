@@ -55,9 +55,42 @@ pub static SCHEDULER: Mutex<Option<usize>> = Mutex::new(None);
 pub static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 
 /// Called from timer ISR - records tick and triggers reschedule if needed
+/// Uses try_resched_if_needed to avoid deadlock when SCHEDULER is held by main code
 pub fn on_tick<R: BootRuntime>() {
     TICK_COUNT.fetch_add(1, Ordering::Relaxed);
-    crate::task::resched_if_needed::<R>();
+    try_resched_if_needed::<R>();
+}
+
+/// Interrupt-safe version of resched_if_needed - uses try_lock to avoid deadlock
+/// If SCHEDULER lock is contended, simply skip rescheduling this tick
+fn try_resched_if_needed<R: BootRuntime>() {
+    let rt = crate::runtime::<R>();
+    let irq = rt.irq_disable();
+
+    // Use try_lock to avoid deadlock if SCHEDULER is held by main code
+    if let Some(lock) = SCHEDULER.try_lock() {
+        if let Some(ptr) = *lock {
+            let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+            if let Some(switch) = sched.schedule_point(ScheduleReason::PreemptTick) {
+                // Must drop lock before context switch!
+                drop(lock);
+                
+                let cr3_before = rt.debug_active_aspace_root();
+                rt.tasking().activate_address_space(switch.to_aspace);
+                let cr3_after = rt.debug_active_aspace_root();
+                
+                // Note: log_context_switch also uses lock internally but that's OK since we dropped ours
+                log_context_switch::<R>(&switch, cr3_before, cr3_after);
+                
+                unsafe {
+                    rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+                }
+            }
+        }
+    }
+    // If try_lock failed, skip rescheduling this tick - not a problem, next tick will try again
+
+    rt.irq_restore(irq);
 }
 
 pub(crate) fn current_cpu_index<R: BootRuntime>() -> usize {
@@ -377,10 +410,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
         if self.preempt_disable_depth > 0 && !self.watchdog_warned {
             let now = TICK_COUNT.load(Ordering::Relaxed);
             if now.saturating_sub(self.preempt_disable_since) > 500 {
-                crate::kinfo!(
-                    "WATCHDOG: preemption disabled for >500 ticks! depth={}",
-                    self.preempt_disable_depth
-                );
+                // WARNING: Cannot log here! This is called from timer interrupt via
+                // on_tick() while GLOBAL_LOGGER may be held, causing deadlock.
+                // crate::kinfo!(
+                //     "WATCHDOG: preemption disabled for >500 ticks! depth={}",
+                //     self.preempt_disable_depth
+                // );
                 self.watchdog_warned = true;
             }
         }

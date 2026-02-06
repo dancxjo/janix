@@ -12,7 +12,7 @@ use core::sync::atomic::{AtomicUsize, Ordering};
 pub(crate) static RR_IDX: AtomicUsize = AtomicUsize::new(0);
 
 impl<R: BootRuntime> Scheduler<R> {
-    fn pick_cpu_and_bringup(&mut self, affinity: Affinity, trigger_smp: bool) -> usize {
+    fn pick_cpu_and_bringup(&mut self, affinity: Affinity, _trigger_smp: bool) -> usize {
         let rt = crate::runtime::<R>();
         let count = self.online_cpu_count;
         let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
@@ -20,17 +20,20 @@ impl<R: BootRuntime> Scheduler<R> {
         match affinity {
             Affinity::Pinned(cpu) => cpu,
             Affinity::Any => {
-                if trigger_smp && self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
-                    if let Some(next_cpu_id) = rt.next_offline_cpu() {
-                        let target_cpu = next_cpu_id.0 as usize;
-                        self.bringup_in_progress = true;
-                        crate::kinfo!("SMP: Spawn triggered bring-up of CPU {}", target_cpu);
-                        unsafe {
-                            let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, target_cpu);
-                        }
-                        return target_cpu;
-                    }
-                }
+                // NOTE: Automatic SMP bring-up disabled for now. Additional processors
+                // will be brought up manually when needed.
+                // if trigger_smp && self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
+                //     if let Some(next_cpu_id) = rt.next_offline_cpu() {
+                //         let target_cpu = next_cpu_id.0 as usize;
+                //         self.bringup_in_progress = true;
+                //         crate::kinfo!("SMP: Spawn triggered bring-up of CPU {}", target_cpu);
+                //         unsafe {
+                //             let _ = rt.start_cpu(next_cpu_id, crate::kernel_secondary_entry::<R>, target_cpu);
+                //         }
+                //         return target_cpu;
+                //     }
+                // }
+                let _ = rt; // Suppress unused variable warning
                 idx % count
             }
         }

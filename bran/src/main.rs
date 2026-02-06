@@ -70,12 +70,14 @@ fn indicate_progress() {
                 bpp_bytes,
                 stride
             );
-            let display = Framebuffer::new(&framebuffer);
+            let mut display = Framebuffer::new(&framebuffer);
             
-            // Initialize themed console for boot logging
-            // Theme draws circles at top and renders logs below
-            theme::init(display);
-            // Register disable callback for when compositor takes over
+            // DISABLED: Bulb theme - just clear to dark gray for faster boot
+            // Dark gray: 0x181818 in BGRX format
+            display.clear(0x00181818);
+            kernel::kinfo!("BOOTFB: cleared to dark gray (bulb theme disabled)");
+            
+            // Register disable callback (no-op now but keep for compatibility)
             kernel::syscall::handlers::register_console_disable(theme::disable);
         }
     }

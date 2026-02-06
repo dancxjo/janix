@@ -20,7 +20,7 @@ pub fn load_module<R: BootRuntime>(
 ) -> Option<(UserEntry, StackInfo, alloc::vec::Vec<VmRegionInfo>)> {
     crate::kinfo!("Loading module: {}", module.name);
     if module.bytes.len() >= 16 {
-        crate::kinfo!("  Header: {:02x?}", &module.bytes[0..16]);
+        crate::kdebug!("  Header: {:02x?}", &module.bytes[0..16]);
     }
 
     let load_addr: u64 = 0x200000;

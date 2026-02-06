@@ -71,6 +71,16 @@ impl X86_64Runtime {
         }
     }
 
+    /// TSC-based microsecond delay for SMP bring-up timing
+    fn delay_us(&self, us: u64) {
+        let freq = self.mono_freq_hz();
+        let ticks_to_wait = (freq * us) / 1_000_000;
+        let start = self.mono_ticks();
+        while self.mono_ticks().wrapping_sub(start) < ticks_to_wait {
+            core::hint::spin_loop();
+        }
+    }
+
     // Helper to map user entry pages
     fn map_user_entry(&self, entry: &UserEntry) -> Result<(), ()> {
         let page_mask = !(0xFFF_u64);
@@ -682,12 +692,14 @@ impl ArchRuntime for X86_64Runtime {
         // INIT IPI
         write_icr(apic_id << 24, 0x0000C500);
         
-        // Wait 10ms
-        for _ in 0..10_000_000 { core::hint::spin_loop(); }
+        // Wait 10ms (Intel spec: 10ms after INIT before first SIPI)
+        self.delay_us(10_000);
 
-        // SIPI
+        // First SIPI
         write_icr(apic_id << 24, 0x00004608);
-        for _ in 0..1_000_000 { core::hint::spin_loop(); }
+        // Wait 200µs (Intel spec: 200µs between SIPIs)
+        self.delay_us(200);
+        // Second SIPI (required by some CPUs)
         write_icr(apic_id << 24, 0x00004608);
 
         // Wait for come up (bounded)

@@ -73,36 +73,63 @@ impl Framebuffer {
     }
 
     pub fn clear(&mut self, color: u32) {
-        // Safety: We assume the framebuffer memory is valid for the byte length reported by Limine.
-        // We only access up to pitch * height bytes.
+        // Fast blit clear: fill first row, then copy to remaining rows
         let buf_len = (self.pitch as usize).saturating_mul(self.height as usize);
         let buffer = unsafe {
             core::slice::from_raw_parts_mut(self.addr as *mut u8, buf_len)
         };
 
-        let bpp = self.bpp.max(1);
-        let color_bytes = color.to_le_bytes();
-        let row_payload_bytes = (self.width as usize).saturating_mul(bpp as usize);
+        let bpp = self.bpp.max(1) as usize;
+        let row_bytes = self.pitch as usize;
+        
+        if buf_len == 0 || row_bytes == 0 {
+            return;
+        }
 
-        for y in 0..self.height as usize {
-            let row_start = y.saturating_mul(self.pitch as usize);
-            let row_end = row_start.saturating_add(row_payload_bytes.min(self.pitch as usize));
-            if row_end > buffer.len() {
-                break;
+        // For 32bpp, use u32 writes for even faster filling
+        if bpp == 4 && row_bytes % 4 == 0 {
+            // Cast to u32 slice for fast 4-byte writes
+            let buffer_u32 = unsafe {
+                core::slice::from_raw_parts_mut(self.addr, buf_len / 4)
+            };
+            let pixels_per_row = row_bytes / 4;
+            
+            // Fill first row with u32 writes
+            for i in 0..pixels_per_row.min(self.width as usize) {
+                buffer_u32[i] = color;
             }
-
-            let row = &mut buffer[row_start..row_end];
-            for chunk in row.chunks_mut(bpp as usize) {
-                chunk[0] = color_bytes[0];
-                if bpp > 1 {
-                    chunk[1] = color_bytes[1];
+            
+            // Copy first row to all remaining rows using fast slice copy
+            for y in 1..self.height as usize {
+                let dst_start = y * pixels_per_row;
+                if dst_start + pixels_per_row > buffer_u32.len() {
+                    break;
                 }
-                if bpp > 2 {
-                    chunk[2] = color_bytes[2];
+                buffer_u32.copy_within(0..pixels_per_row, dst_start);
+            }
+        } else {
+            // Fallback for other bpp: fill first row byte-by-byte, then copy
+            let color_bytes = color.to_le_bytes();
+            let row_payload = (self.width as usize).saturating_mul(bpp).min(row_bytes);
+            
+            // Fill first row
+            for x in 0..self.width as usize {
+                let offset = x * bpp;
+                if offset + bpp > row_bytes {
+                    break;
                 }
-                if bpp > 3 {
-                    chunk[3] = color_bytes[3];
+                for b in 0..bpp.min(4) {
+                    buffer[offset + b] = color_bytes[b];
                 }
+            }
+            
+            // Copy first row to remaining rows
+            for y in 1..self.height as usize {
+                let dst_start = y * row_bytes;
+                if dst_start + row_payload > buf_len {
+                    break;
+                }
+                buffer.copy_within(0..row_payload, dst_start);
             }
         }
     }

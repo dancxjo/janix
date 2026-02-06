@@ -24,6 +24,47 @@ impl Supervisor {
     }
 
     pub fn run_forever(&mut self) -> ! {
+        info!("SPROUT: Supervisor starting (minimal mode)...");
+
+        // 1. Discovery - needed for device detection
+        self.discover();
+
+        // 1.5. Setup audio pipeline (PRIORITY: Proof-of-life)
+        crate::pipelines::setup_audio_pipeline(&mut self.tasks);
+
+        // 2. Setup display pipeline (needed for bloom)
+        let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
+
+        // 3. Setup input pipeline (ps2_kbd, ps2_mouse, bristle, bloom, echo)
+        crate::pipelines::setup_input_pipeline(&mut self.tasks, display_handles);
+
+        // ============================================================
+        // TEMPORARILY DISABLED - re-enable as needed:
+        // ============================================================
+        
+        // // Spawn Apps
+        // self.spawn_apps();
+
+        // // Match and Spawn Drivers
+        // self.match_and_spawn_drivers();
+
+        // // Setup network pipeline
+        // crate::pipelines::setup_network_pipeline(&mut self.tasks);
+
+        // ============================================================
+        // END DISABLED SECTION
+        // ============================================================
+
+        // Enter idle loop
+        info!("SPROUT: Startup complete. Entering idle loop.");
+        loop {
+            stem::yield_now();
+            stem::sleep_ms(100);
+        }
+    }
+
+    #[allow(dead_code)]
+    fn run_forever_full(&mut self) -> ! {
         info!("SPROUT: Supervisor starting...");
 
         // 1. Discovery
@@ -55,12 +96,6 @@ impl Supervisor {
             self.monitor();
             stem::yield_now();
             stem::sleep_ms(100);
-
-            // Heartbeat?
-            // "If there are no runnable user tasks, Idle runs and emits an occasional heartbeat (throttled)."
-            // Sprout is a user task. If Sprout is sleeping 100ms, then Idle runs (if nothing else).
-            // So Sprout doesn't need to print heartbeat. Idle does.
-            // Sprout is supervisor.
         }
     }
 
@@ -391,3 +426,51 @@ fn seed_asset_requests() {
     }
 }
 
+/// Spawn bloom compositor with display handles (minimal - no input events)
+fn spawn_bloom(tasks: &mut Vec<ManagedTask>, dh: &crate::pipelines::DisplayHandles) {
+    use stem::thing::sys::{bytespace_create, bytespace_map, bytespace_unmap};
+
+    let boot_size = 4096;
+    let boot_bs = bytespace_create(boot_size, 0, 0).unwrap_or(ThingId::default());
+
+    if boot_bs.to_u64_lossy() != 0 {
+        if let Ok(ptr) = bytespace_map(boot_bs) {
+            let slice = unsafe { core::slice::from_raw_parts_mut(ptr as *mut u32, boot_size / 4) };
+            slice[0] = 0xB100AA01; // Magic
+            slice[1] = dh.drv_req_write as u32;
+            slice[2] = dh.drv_resp_read as u32;
+            slice[3] = 0; // No bristle event handle (input disabled)
+            
+            // Display bytespace id (u64 split into two u32s)
+            let bs = dh.bs_id.to_u64_lossy();
+            slice[4] = bs as u32;
+            slice[5] = (bs >> 32) as u32;
+
+            let _ = bytespace_unmap(boot_bs, ptr);
+        }
+    }
+
+    let bloom_arg = boot_bs.to_u64_lossy() as usize;
+    info!(
+        "SPROUT: Bloom handles via BS={} backend={}",
+        boot_bs.to_u64_lossy(),
+        dh.backend_name
+    );
+
+    match stem::syscall::spawn_process("/bloom", bloom_arg) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned bloom (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/bloom".to_string(),
+                kind: TaskKind::App,
+                module_path: "/bloom".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            stem::error!("SPROUT: Failed to spawn bloom: {:?}", e);
+        }
+    }
+}

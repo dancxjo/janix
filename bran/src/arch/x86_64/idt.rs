@@ -410,16 +410,15 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
     // IRQ_TIMER_VECTOR or IRQ_RESCHED_VECTOR is our preemption heartbeat
     if resolved == IRQ_TIMER_VECTOR || resolved == IRQ_RESCHED_VECTOR {
         kernel::task::scheduler::on_tick::<crate::arch::CurrentRuntime>();
-        // Tick the boot theme animation (throttled internally to ~30fps)
-        // Use rdtsc directly for timestamp
-        let now_ticks: u64;
-        unsafe {
-            let low: u32;
-            let high: u32;
-            core::arch::asm!("rdtsc", out("eax") low, out("edx") high, options(nostack, nomem));
-            now_ticks = ((high as u64) << 32) | (low as u64);
-        }
-        crate::theme::tick(now_ticks);
+        // DISABLED: Bulb theme disabled for faster boot
+        // let now_ticks: u64;
+        // unsafe {
+        //     let low: u32;
+        //     let high: u32;
+        //     core::arch::asm!("rdtsc", out("eax") low, out("edx") high, options(nostack, nomem));
+        //     now_ticks = ((high as u64) << 32) | (low as u64);
+        // }
+        // crate::theme::try_tick(now_ticks);
     } else if resolved == IRQ_TLB_SHOOTDOWN_VECTOR {
         // Full TLB flush on local CPU (including Global pages)
         crate::arch::x86_64::paging::tlb_flush_all();

@@ -185,54 +185,6 @@ pub trait ArchRuntime {
     fn unmap_phys_temp(&self, _virt: u64, _size: usize) {}
 }
 
-// --- Theme Log Buffer (converts putchar bytes to structured LogEvents) ---
-
-use spin::Mutex;
-
-/// Static line buffer for accumulating putchar output
-static LOG_LINE_BUF: Mutex<LogLineBuffer> = Mutex::new(LogLineBuffer::new());
-
-struct LogLineBuffer {
-    buf: [u8; 256],
-    len: usize,
-}
-
-impl LogLineBuffer {
-    const fn new() -> Self {
-        Self { buf: [0; 256], len: 0 }
-    }
-}
-
-/// Accumulate characters and emit LogEvents on newlines
-fn emit_to_theme(c: u8) {
-    let mut guard = LOG_LINE_BUF.lock();
-    
-    if c == b'\n' {
-        // Parse and emit the line as a structured LogEvent
-        let len = guard.len;
-        if len > 0 {
-            if let Ok(line) = core::str::from_utf8(&guard.buf[..len]) {
-                let parts = bulb::parser::parse_log_line(line);
-                let event = bulb::theme_api::LogEvent {
-                    timestamp: None,
-                    level: parts.level.map(bulb::theme_api::LogLevel::from_str)
-                        .unwrap_or(bulb::theme_api::LogLevel::Unknown),
-                    source: parts.source,
-                    message: parts.message,
-                };
-                crate::theme::on_log_event(event);
-            }
-        }
-        guard.len = 0;
-    } else if c >= 0x20 || c == b'\t' {
-        let len = guard.len;
-        if len < guard.buf.len() {
-            guard.buf[len] = c;
-            guard.len = len + 1;
-        }
-    }
-}
-
 // --- Generic Runtime ---
 
 pub struct Runtime<A: ArchRuntime> {
@@ -292,8 +244,8 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn putchar(&self, c: u8) {
         // Write to serial (arch-specific)
         self.arch.putchar(c);
-        // Accumulate lines and emit structured log events
-        emit_to_theme(c);
+        // DISABLED: Bulb theme disabled for faster boot
+        // crate::theme::putchar(c);
     }
     fn mono_ticks(&self) -> u64 {
         self.arch.mono_ticks()

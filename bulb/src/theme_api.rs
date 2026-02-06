@@ -9,6 +9,7 @@ pub struct LogEvent<'a> {
     pub timestamp: Option<u64>,
     pub level: LogLevel,
     pub source: Option<&'a str>,
+    pub cpu: Option<u32>,
     pub message: &'a str,
 }
 

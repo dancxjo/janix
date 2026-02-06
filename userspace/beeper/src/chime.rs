@@ -21,7 +21,7 @@ pub fn generate_chime(sample_rate: u32) -> Vec<u8> {
         (f_octave, 0.1), // Quiet octave
     ];
 
-    let attack = 4.0; // Sped up bloom
+    let attack = 0.5; // Quick fade-in so chime is heard immediately
     let release = 2.66; // Sped up tail
     
     // Pre-calc envelope points

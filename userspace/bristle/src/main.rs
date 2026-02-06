@@ -35,6 +35,55 @@ fn register_in_graph() -> Option<stem::thing::ThingId> {
     }
 }
 
+/// Maximum number of dynamic event subscribers
+const MAX_SUBSCRIBERS: usize = 16;
+
+/// A subscriber entry with port handle and optional filter
+#[derive(Clone, Copy, Default)]
+struct Subscriber {
+    port: PortHandle,
+    filter: u64, // 0=all, 1=keyboard, 2=pointer, 4=button
+}
+
+/// Scan the graph for registered input event subscribers.
+/// Returns the count of subscribers found (up to MAX_SUBSCRIBERS).
+fn scan_subscribers(subscribers: &mut [Subscriber; MAX_SUBSCRIBERS]) -> usize {
+    use abi::schema::input::{SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER};
+    use stem::thing::ThingId;
+
+    let mut node_buf = [ThingId::default(); MAX_SUBSCRIBERS];
+    let count = match thingsys::find(SVC_INPUT_SUBSCRIBER, &mut node_buf) {
+        Ok(c) => c.min(MAX_SUBSCRIBERS),
+        Err(_) => 0,
+    };
+
+    let mut valid = 0;
+    for i in 0..count {
+        let node = node_buf[i];
+        // Get the subscriber's port handle
+        if let Ok(port) = thingsys::prop_get(node, SUBSCRIBER_PORT) {
+            if port > 0 && port <= 0xFFFF_FFFF {
+                // Get optional filter (default to 0 = all)
+                let filter = thingsys::prop_get(node, SUBSCRIBER_FILTER).unwrap_or(0);
+                subscribers[valid] = Subscriber {
+                    port: port as PortHandle,
+                    filter,
+                };
+                valid += 1;
+            }
+        }
+    }
+
+    valid
+}
+
+/// Check if event matches subscriber filter
+#[inline]
+fn matches_filter(filter: u64, event_kind: u64) -> bool {
+    filter == 0 || (filter & event_kind) != 0
+}
+
+
 /// Serialize a KeyDown event
 fn serialize_key_down(
     key: Key,
@@ -174,17 +223,17 @@ fn main(packed_handles: usize) -> ! {
     // Unpack handles from 64-bit value:
     // bits 48-63: kbd_read
     // bits 32-47: mouse_read
-    // bits 16-31: evt_write (bloom)
-    // bits  0-15: evt_echo_write
+    // bits 16-31: evt_write (bloom - legacy, kept for compatibility)
+    // bits  0-15: evt_echo_write (echo - legacy, kept for compatibility)
     let packed = packed_handles as u64;
     let kbd_read = ((packed >> 48) & 0xFFFF) as PortHandle;
     let mouse_read = ((packed >> 32) & 0xFFFF) as PortHandle;
-    let evt_write = ((packed >> 16) & 0xFFFF) as PortHandle;
-    let evt_echo_write = (packed & 0xFFFF) as PortHandle;
+    let legacy_evt_write = ((packed >> 16) & 0xFFFF) as PortHandle;
+    let legacy_evt_echo_write = (packed & 0xFFFF) as PortHandle;
 
     info!(
         "bristle: online (kbd={}, mouse={}, evt={}, evt_echo={})",
-        kbd_read, mouse_read, evt_write, evt_echo_write
+        kbd_read, mouse_read, legacy_evt_write, legacy_evt_echo_write
     );
 
     let bristle_node = register_in_graph();
@@ -192,6 +241,12 @@ fn main(packed_handles: usize) -> ! {
     let mut kbd_state = KeyboardState::new();
     let mut mouse_state = MouseState::new();
     let mut keyboard_gen: u64 = 0;
+
+    // Dynamic subscriber list from graph
+    let mut subscribers: [Subscriber; MAX_SUBSCRIBERS] = [Subscriber::default(); MAX_SUBSCRIBERS];
+    let mut subscriber_count: usize = 0;
+    let mut scan_interval: u32 = 0;
+    const SCAN_INTERVAL: u32 = 100; // Rescan graph every N loop iterations
 
     #[cfg(feature = "diagnostic-apps")]
     let evt_mouse_write: PortHandle = {
@@ -226,6 +281,17 @@ fn main(packed_handles: usize) -> ! {
 
     let wait_handles = [kbd_read, mouse_read];
     loop {
+        // Periodically rescan for new subscribers
+        scan_interval += 1;
+        if scan_interval >= SCAN_INTERVAL {
+            scan_interval = 0;
+            let new_count = scan_subscribers(&mut subscribers);
+            if new_count != subscriber_count {
+                info!("bristle: {} dynamic subscribers registered", new_count);
+                subscriber_count = new_count;
+            }
+        }
+
         // Block until keyboard or mouse data arrives
         let _ = port_wait(&wait_handles, abi::syscall::port_wait::READABLE);
 
@@ -250,19 +316,33 @@ fn main(packed_handles: usize) -> ! {
                                 let _ = thingsys::dump_graph(0);
                             }
 
+                            // Broadcast to legacy ports (evt + echo)
                             let mut sent = false;
-                            if port_send(evt_write, &send_buf[..len]).is_ok() {
+                            if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
                                 sent = true;
                             } else {
                                 drop_counter += 1;
                             }
-                            if evt_echo_write != 0 {
-                                if port_send(evt_echo_write, &send_buf[..len]).is_ok() {
+                            if legacy_evt_echo_write != 0 {
+                                if port_send(legacy_evt_echo_write, &send_buf[..len]).is_ok() {
                                     sent = true;
                                 } else {
                                     drop_counter += 1;
                                 }
                             }
+
+                            // Broadcast to dynamic subscribers (keyboard filter = 1)
+                            for i in 0..subscriber_count {
+                                let sub = &subscribers[i];
+                                if matches_filter(sub.filter, abi::schema::input::FILTER_KEYBOARD) {
+                                    if port_send(sub.port, &send_buf[..len]).is_ok() {
+                                        sent = true;
+                                    } else {
+                                        drop_counter += 1;
+                                    }
+                                }
+                            }
+
                             if sent {
                                 event_count += 1;
                             }
@@ -312,35 +392,52 @@ fn main(packed_handles: usize) -> ! {
                     for i in 0..count {
                         if let Some(evt) = events[i] {
                             let timestamp_ns = stem::monotonic_ns();
-                            let len = match evt {
-                                PointerEvent::Move { dx, dy } => {
-                                    serialize_pointer_move(dx, dy, timestamp_ns, &mut send_buf)
-                                }
-                                PointerEvent::ButtonDown { button } => {
+                            let (len, filter_kind) = match evt {
+                                PointerEvent::Move { dx, dy } => (
+                                    serialize_pointer_move(dx, dy, timestamp_ns, &mut send_buf),
+                                    abi::schema::input::FILTER_POINTER,
+                                ),
+                                PointerEvent::ButtonDown { button } => (
                                     serialize_pointer_button_down(
                                         button,
                                         timestamp_ns,
                                         &mut send_buf,
-                                    )
-                                }
-                                PointerEvent::ButtonUp { button } => {
-                                    serialize_pointer_button_up(button, timestamp_ns, &mut send_buf)
-                                }
+                                    ),
+                                    abi::schema::input::FILTER_BUTTON,
+                                ),
+                                PointerEvent::ButtonUp { button } => (
+                                    serialize_pointer_button_up(button, timestamp_ns, &mut send_buf),
+                                    abi::schema::input::FILTER_BUTTON,
+                                ),
                             };
                             if len > 0 {
+                                // Broadcast to legacy ports
                                 let mut sent = false;
-                                if port_send(evt_write, &send_buf[..len]).is_ok() {
+                                if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
                                     sent = true;
                                 } else {
                                     drop_counter += 1;
                                 }
-                                if evt_echo_write != 0 {
-                                    if port_send(evt_echo_write, &send_buf[..len]).is_ok() {
+                                if legacy_evt_echo_write != 0 {
+                                    if port_send(legacy_evt_echo_write, &send_buf[..len]).is_ok() {
                                         sent = true;
                                     } else {
                                         drop_counter += 1;
                                     }
                                 }
+
+                                // Broadcast to dynamic subscribers (with filter matching)
+                                for j in 0..subscriber_count {
+                                    let sub = &subscribers[j];
+                                    if matches_filter(sub.filter, filter_kind) {
+                                        if port_send(sub.port, &send_buf[..len]).is_ok() {
+                                            sent = true;
+                                        } else {
+                                            drop_counter += 1;
+                                        }
+                                    }
+                                }
+
                                 if evt_mouse_write != 0 {
                                     if port_send(evt_mouse_write, &send_buf[..len]).is_ok() {
                                         sent = true;
@@ -365,3 +462,4 @@ fn main(packed_handles: usize) -> ! {
         }
     }
 }
+

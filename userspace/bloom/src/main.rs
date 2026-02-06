@@ -416,6 +416,7 @@ fn main(arg: usize) -> ! {
         bristle_evt = unpack_handle(arg, 2) as u32;
     }
 
+    stem::info!("[bloom] EARLY boot args: bristle_evt={} arg_req={} arg_resp={}", bristle_evt, arg_req, arg_resp);
     let target = if display_bs_id != 0 {
         CompositorTarget::map_from_bytespace(ThingId::from_u64(display_bs_id), (arg_req, arg_resp))
             .or_else(|_| CompositorTarget::discover_and_map((arg_req, arg_resp), 2000))
@@ -491,6 +492,7 @@ fn main(arg: usize) -> ! {
 
     // Cursor state
     let bristle_evt_handle = bristle_evt as PortHandle;
+    stem::info!("[bloom] bristle_evt_handle = {} (from bristle_evt={})", bristle_evt_handle, bristle_evt);
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
     let mut cursor_rasterizer = CursorRasterizer::new();
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();

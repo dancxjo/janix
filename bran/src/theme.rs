@@ -86,6 +86,13 @@ pub struct GenieCirclesTheme {
     last_render: u64,
     /// Dirty flag - logs have been added since last render
     dirty: bool,
+    /// Internal line buffer for accumulating putchar output
+    line_buf: [u8; 256],
+    line_len: usize,
+    /// Pending completed lines waiting to be processed in tick()
+    pending_lines: [[u8; 256]; 8],
+    pending_lens: [usize; 8],
+    pending_count: usize,
 }
 
 // Safety: Framebuffer is only accessed from the boot CPU during early init
@@ -107,6 +114,11 @@ impl GenieCirclesTheme {
             tick_count: 0,
             last_render: 0,
             dirty: true,
+            line_buf: [0; 256],
+            line_len: 0,
+            pending_lines: [[0; 256]; 8],
+            pending_lens: [0; 8],
+            pending_count: 0,
         };
         
         // Initial render
@@ -152,17 +164,73 @@ impl GenieCirclesTheme {
         self.dirty = true;
     }
     
-    /// Called on timer tick for animation (~30Hz recommended)
-    pub fn tick(&mut self, now_ms: u64) {
-        self.tick_count = now_ms;
-        
-        // Render if dirty or time for animation frame (~30 FPS)
-        const RENDER_INTERVAL_MS: u64 = 33;
-        if self.dirty || now_ms.saturating_sub(self.last_render) >= RENDER_INTERVAL_MS {
-            self.render_full();
-            self.dirty = false;
-            self.last_render = now_ms;
+    /// Receive a single character - buffer internally, queue completed lines
+    /// Does NOT render or parse - that happens on tick()
+    pub fn putchar(&mut self, c: u8) {
+        if c == b'\n' {
+            // Queue the completed line for deferred processing in tick()
+            if self.line_len > 0 && self.pending_count < 8 {
+                let idx = self.pending_count;
+                self.pending_lines[idx][..self.line_len]
+                    .copy_from_slice(&self.line_buf[..self.line_len]);
+                self.pending_lens[idx] = self.line_len;
+                self.pending_count += 1;
+                self.dirty = true;
+            }
+            self.line_len = 0;
+        } else if c >= 0x20 || c == b'\t' {
+            // Accumulate printable chars
+            if self.line_len < self.line_buf.len() {
+                self.line_buf[self.line_len] = c;
+                self.line_len += 1;
+            }
         }
+    }
+    
+    /// Process any pending lines (called from tick)
+    fn process_pending_lines(&mut self) {
+        // Copy count out first to avoid borrow issues
+        let count = self.pending_count;
+        for i in 0..count {
+            // Copy line data to local buffer to avoid borrow conflict
+            let mut line_buf = [0u8; 256];
+            let len = self.pending_lens[i];
+            line_buf[..len].copy_from_slice(&self.pending_lines[i][..len]);
+            
+            if let Ok(line) = core::str::from_utf8(&line_buf[..len]) {
+                let parts = bulb::parser::parse_log_line(line);
+                let event = bulb::theme_api::LogEvent {
+                    timestamp: None,
+                    level: parts.level.map(bulb::theme_api::LogLevel::from_str)
+                        .unwrap_or(bulb::theme_api::LogLevel::Unknown),
+                    source: parts.source,
+                    cpu: None,
+                    message: parts.message,
+                };
+                self.on_log_event(event);
+            }
+        }
+        self.pending_count = 0;
+    }
+    
+    /// Called on timer tick for animation (~30Hz recommended)
+    /// NOTE: Rendering disabled during boot to avoid slowing down startup.
+    /// The theme buffers log lines but doesn't update the display.
+    pub fn tick(&mut self, _now_ticks: u64) {
+        self.tick_count = self.tick_count.wrapping_add(1);
+        
+        // Process any pending lines (just updates internal log buffer)
+        if self.pending_count > 0 {
+            self.process_pending_lines();
+        }
+        
+        // DISABLED: Rendering in timer ISR context is too expensive and slows boot.
+        // The theme animation could be enabled later via a dedicated render thread
+        // or by explicitly triggering renders at key boot milestones.
+        // if self.dirty || (self.tick_count % 3 == 0) {
+        //     self.render_full();
+        //     self.dirty = false;
+        // }
     }
     
     fn render_full(&mut self) {
@@ -401,8 +469,12 @@ pub fn on_log_event(event: bulb::theme_api::LogEvent<'_>) {
     if THEME_DISABLED.load(Ordering::Relaxed) {
         return;
     }
-    if let Some(ref mut theme) = *THEMED_CONSOLE.lock() {
-        theme.on_log_event(event);
+    // Use try_lock() to avoid blocking - if theme is busy (e.g., timer tick rendering),
+    // skip this log event for visual purposes (serial output still happens)
+    if let Some(mut guard) = THEMED_CONSOLE.try_lock() {
+        if let Some(ref mut theme) = *guard {
+            theme.on_log_event(event);
+        }
     }
 }
 
@@ -413,5 +485,35 @@ pub fn tick(now_ms: u64) {
     }
     if let Some(ref mut theme) = *THEMED_CONSOLE.lock() {
         theme.tick(now_ms);
+    }
+}
+
+/// Tick the theme animation from interrupt context (uses try_lock to avoid deadlock)
+/// If the lock is contended (logging in progress), skip this animation frame.
+pub fn try_tick(now_ms: u64) {
+    if THEME_DISABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    // Use try_lock() - if contended, skip this animation frame
+    if let Some(mut guard) = THEMED_CONSOLE.try_lock() {
+        if let Some(ref mut theme) = *guard {
+            theme.tick(now_ms);
+        }
+    }
+}
+
+/// Send a character to the theme's internal buffer (uses try_lock to avoid blocking)
+/// Characters are accumulated internally, processed into log events on newline.
+/// Rendering happens on tick(), not per-character.
+pub fn putchar(c: u8) {
+    if THEME_DISABLED.load(Ordering::Relaxed) {
+        return;
+    }
+    // Use try_lock() - if theme is busy, skip this char visually
+    // (serial output still happens, so no data loss)
+    if let Some(mut guard) = THEMED_CONSOLE.try_lock() {
+        if let Some(ref mut theme) = *guard {
+            theme.putchar(c);
+        }
     }
 }

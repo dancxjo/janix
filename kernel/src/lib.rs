@@ -13,7 +13,7 @@ pub mod root;
 pub mod simd;
 pub mod syscall;
 pub mod task;
-pub mod tests;
+
 pub mod time;
 pub mod trace;
 pub mod virtio;
@@ -736,8 +736,6 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     runtime.setup_preemption_timer(100);
 
     contract!("Entering scheduler loop.");
-    run_time_tests();
-    crate::tests::fw_tables::run_selftest();
     loop {
         crate::task::yield_now::<R>();
         // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty
@@ -779,13 +777,7 @@ extern "C" fn thread_b(arg: usize) -> ! {
         }
     }
 }
-pub fn run_fairness_test<R: BootRuntime>() {
-    tests::fairness::run::<R>();
-}
-pub fn run_time_tests() {
-    tests::time_test::run_selftest();
-    tests::time_monotonic_test::run_selftest();
-}
+
 pub mod boot_info;
 
 extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {

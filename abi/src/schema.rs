@@ -805,3 +805,28 @@ pub mod keyboard {
     /// Monotonic generation for key events (increments on each key event)
     pub const KEYBOARD_GEN: &str = "keyboard.gen";
 }
+
+/// Input event subscriber registration for dynamic pub-sub routing.
+///
+/// Any service that wants to receive HID events from bristle should:
+/// 1. Create a graph node with kind `svc.InputSubscriber`
+/// 2. Set the `input.subscriber.port` property to the port handle for receiving events
+/// 3. Optionally set `input.subscriber.filter` to receive only specific event types
+///
+/// Bristle will scan for all subscribers and broadcast events to them.
+pub mod input {
+    /// Kind for input event subscribers
+    pub const SVC_INPUT_SUBSCRIBER: &str = "svc.InputSubscriber";
+    /// Port handle for receiving input events (PortHandle as u64)
+    pub const SUBSCRIBER_PORT: &str = "input.subscriber.port";
+    /// Optional: filter bitmask (1=keyboard, 2=pointer, 4=button; 0 or absent=all)
+    pub const SUBSCRIBER_FILTER: &str = "input.subscriber.filter";
+    /// Optional: priority for subscriber ordering (higher=earlier; default=0)
+    pub const SUBSCRIBER_PRIORITY: &str = "input.subscriber.priority";
+
+    // Filter bits
+    pub const FILTER_KEYBOARD: u64 = 1;
+    pub const FILTER_POINTER: u64 = 2;
+    pub const FILTER_BUTTON: u64 = 4;
+    pub const FILTER_ALL: u64 = 0; // 0 means all events
+}

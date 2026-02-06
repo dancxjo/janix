@@ -270,6 +270,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     };
 
     // Spawn bristle with packed handles:
+    // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_echo_write[15:0]
     let bristle_arg = ((kbd_raw.1 as u64) << 48)
         | ((mouse_raw.1 as u64) << 32)
         | ((evt.0 as u64) << 16)
@@ -293,6 +294,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
 
     // Font handling is now integrated into Bloom. No standalone fontd service.
 
+    // Extract display handles early for bloom compositor
     let (drv_req_write, drv_resp_read, display_bs_id) = display
         .as_ref()
         .map(|d| (d.drv_req_write, d.drv_resp_read, d.bs_id))
@@ -301,7 +303,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     // Bloom Bootstrap
     // Create bytespace to hold args
     // Layout:
-    // 0: magic (0xBl00mArg)
+    // 0: magic (0xBl00mArg)e
     // 8: drv_req
     // 12: drv_resp
     // 16: evt
@@ -319,6 +321,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
             slice[1] = drv_req_write as u32;
             slice[2] = drv_resp_read as u32;
             slice[3] = evt.1 as u32; // bristle read
+            info!("SPROUT: Writing bloom BS: drv_req={}, drv_resp={}, bristle_evt={}", drv_req_write, drv_resp_read, evt.1);
 
             // Display bytespace id (u64 split into two u32s)
             let bs = display_bs_id.to_u64_lossy();
@@ -353,31 +356,6 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
         Err(e) => {
             stem::error!("SPROUT: Failed to spawn bloom: {:?}", e);
-        }
-    }
-
-    // Spawn pollen (cursor daemon)
-    // Pollen needs: cursor_evt port (read) and display bytespace for overlay
-    // For now, Pollen shares the same bristle evt port as Bloom for mouse events
-    // TODO: Create dedicated cursor_evt port with fan-out from bristle
-    let pollen_arg = (evt.1 as u64)  // cursor event read handle (same as bloom for now)
-        | ((display_bs_id.to_u64_lossy() & 0xFFFF) << 16)
-        | (((display_bs_id.to_u64_lossy() >> 16) & 0xFFFF) << 32);
-
-    match stem::syscall::spawn_process("/pollen", pollen_arg as usize) {
-        Ok(pid) => {
-            info!("SPROUT: Spawned pollen (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 1); // Higher priority for cursor responsiveness
-            tasks.push(ManagedTask {
-                name: "/pollen".to_string(),
-                kind: TaskKind::App,
-                module_path: "/pollen".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-            });
-        }
-        Err(e) => {
-            stem::error!("SPROUT: Failed to spawn pollen: {:?}", e);
         }
     }
 

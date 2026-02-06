@@ -1,7 +1,7 @@
 //! ISO9660 Filesystem Parser
 //!
 //! Minimal, read-only ISO9660 parser for reading files from CD-ROM boot media.
-//! Supports Level 1/2 interchange without Rock Ridge or Joliet extensions.
+//! Supports Level 1/2 interchange with basic Rock Ridge NM (Alternate Name) support.
 //!
 //! ## Performance Optimizations
 //!
@@ -174,27 +174,25 @@ impl IsoFs {
     }
 
     /// ASCII case-insensitive string comparison without allocation.
-    /// Handles ISO9660 version suffixes (e.g., ";1").
+    /// Handles ISO9660 version suffixes (e.g., ";1") in the search path `b`.
+    /// `a` is the directory entry name, which is assumed to be either stripped of ISO version
+    /// or a raw Rock Ridge name (which may contain semicolons).
     fn ascii_eq_ignore_case(a: &str, b: &str) -> bool {
-        // Strip version suffix from both strings
-        let a_clean = if let Some(pos) = a.find(';') {
-            &a[..pos]
-        } else {
-            a
-        };
-        let b_clean = if let Some(pos) = b.find(';') {
-            &b[..pos]
-        } else {
-            b
-        };
-
-        if a_clean.len() != b_clean.len() {
-            return false;
+        // Check for direct match first (handling Rock Ridge names with semicolons)
+        if a.eq_ignore_ascii_case(b) {
+            return true;
         }
 
-        a_clean.bytes().zip(b_clean.bytes()).all(|(a_byte, b_byte)| {
-            a_byte.to_ascii_lowercase() == b_byte.to_ascii_lowercase()
-        })
+        // If direct match failed, try stripping version suffix from search path `b`
+        // (to handle looking up "FILE;1" against "FILE")
+        if let Some(pos) = b.rfind(';') {
+            let b_stripped = &b[..pos];
+            if a.eq_ignore_ascii_case(b_stripped) {
+                return true;
+            }
+        }
+
+        false
     }
 
     /// Parse directory entries from extent and cache them.
@@ -493,10 +491,17 @@ mod tests {
         assert!(IsoFs::ascii_eq_ignore_case("MixedCase", "mixedcase"));
 
         // Version suffix handling
-        assert!(IsoFs::ascii_eq_ignore_case("FILE.TXT;1", "file.txt"));
+        // 'a' is the entry name (stripped/raw), 'b' is the search path
         assert!(IsoFs::ascii_eq_ignore_case("FILE.TXT", "file.txt;1"));
-        // Version suffixes are completely stripped, so any version matches
-        assert!(IsoFs::ascii_eq_ignore_case("README;1", "readme;2"));
+        assert!(IsoFs::ascii_eq_ignore_case("FILE.TXT", "file.txt"));
+
+        // We no longer strip 'a', so "README;1" as 'a' means literal "README;1"
+        // This simulates a Rock Ridge name "README;1".
+        // It should NOT match "readme;2" (which strips to "readme").
+        assert!(!IsoFs::ascii_eq_ignore_case("README;1", "readme;2"));
+
+        // But "README" (ISO stripped) matches "readme;2" (stripped)
+        assert!(IsoFs::ascii_eq_ignore_case("README", "readme;2"));
 
         // Different strings
         assert!(!IsoFs::ascii_eq_ignore_case("hello", "world"));
@@ -505,6 +510,14 @@ mod tests {
         // Empty strings
         assert!(IsoFs::ascii_eq_ignore_case("", ""));
         assert!(!IsoFs::ascii_eq_ignore_case("", "hello"));
+    }
+
+    #[test]
+    fn test_ascii_eq_ignore_case_rock_ridge_collision() {
+        // Semicolons in names (e.g. Rock Ridge) shouldn't be treated as version separators
+        // if they are part of the filename.
+        // Current implementation blindly strips everything after ';'.
+        assert!(!IsoFs::ascii_eq_ignore_case("foo;bar", "foo;baz"));
     }
 
     struct MockBlockDevice {

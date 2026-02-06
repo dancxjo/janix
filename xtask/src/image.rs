@@ -313,7 +313,7 @@ pub fn build_iso_with_config(
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, iso_root.join("boot/kernel"))?;
 
-    sh.write_file(iso_root.join("boot/locale.conf"), "LOCALE=en_US\n")?;
+    sh.write_file(iso_root.join("boot/locale.conf"), "LOCALE=en_US\nOLLAMA_SERVER=https://forebrain.local:11434\nOLLAMA_MODEL=tinyllama\n")?;
 
     println!("Building userspace programs...");
 
@@ -544,7 +544,7 @@ pub fn build_hdd(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     cmd!(sh, "mcopy -i {hdd}@@1M {kernel_src} ::/boot").run()?;
 
-    sh.write_file("locale.conf", "LOCALE=en_US\n")?;
+    sh.write_file("locale.conf", "LOCALE=en_US\nOLLAMA_SERVER=https://forebrain.local:11434\nOLLAMA_MODEL=tinyllama\n")?;
     cmd!(sh, "mcopy -i {hdd}@@1M locale.conf ::/boot/locale.conf").run()?;
     sh.remove_path("locale.conf")?;
 

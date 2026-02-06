@@ -11,13 +11,74 @@ use alloc::format;
 use core::time::Duration;
 
 use abi::schema::{keys, kinds, rels};
+use abi::ids::HandleId;
 use llm::{ChatRequest, Message, Role, StreamingLlmClient};
 use ollama::OllamaClient;
 use stem::info;
 use stem::petals::{AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Styled, Text, Window};
-use stem::thing::sys::{create_node, find, link, prop_set};
+use stem::thing::sys::{bytespace_read, create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
 use core::task::{RawWaker, RawWakerVTable, Waker};
+
+struct OllamaConfig {
+    server: String,
+    model: String,
+}
+
+fn find_locale_conf() -> Option<ThingId> {
+    let mut modules = [ThingId::default(); 128];
+    let count = find(kinds::BOOT_MODULE, &mut modules).unwrap_or(0);
+    for i in 0..count {
+        let mut buf = [0u8; 512];
+        let len = describe_thing(modules[i], &mut buf).unwrap_or(0);
+        let desc = core::str::from_utf8(&buf[..len]).unwrap_or("");
+
+        let mod_name = if let Some(pos) = desc.find("name: \"") {
+            let rest = &desc[pos + 7..];
+            if let Some(end) = rest.find('"') {
+                &rest[..end]
+            } else {
+                continue;
+            }
+        } else {
+            continue;
+        };
+
+        if mod_name == "locale.conf" || mod_name.ends_with("/locale.conf") {
+            return Some(modules[i]);
+        }
+    }
+    None
+}
+
+fn read_ollama_config() -> OllamaConfig {
+    let mut server = String::from("https://forebrain.local:11434");
+    let mut model = String::from("tinyllama");
+
+    if let Some(mod_id) = find_locale_conf() {
+        if let Ok(bs_id) = prop_get(mod_id, "bytespace") {
+            let bs_thing = ThingId::from_u64(bs_id);
+            let len = stem::thing::sys::bytespace_info(bs_thing).unwrap_or(0);
+            if len > 0 {
+                let mut buf = alloc::vec![0u8; len];
+                if bytespace_read(bs_thing, 0, &mut buf).is_ok() {
+                    if let Ok(content) = alloc::string::String::from_utf8(buf) {
+                        for line in content.lines() {
+                            if let Some(val) = line.strip_prefix("OLLAMA_SERVER=") {
+                                server = val.trim().into();
+                            } else if let Some(val) = line.strip_prefix("OLLAMA_MODEL=") {
+                                model = val.trim().into();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    OllamaConfig { server, model }
+}
+
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
@@ -55,8 +116,12 @@ fn main(_arg: usize) -> ! {
     // Initial scene
     update_ui(win, &fortune_text);
 
+    // Read Ollama configuration from locale.conf
+    let config = read_ollama_config();
+    info!("FORTUNE: Using Ollama server: {}, model: {}", config.server, config.model);
+
     // Initialize Ollama
-    let client = OllamaClient::new("http://10.0.2.2:11434", "tinyllama");
+    let client = OllamaClient::new(&config.server, &config.model);
 
     let req = ChatRequest {
         messages: vec![Message {

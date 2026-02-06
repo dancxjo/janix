@@ -601,6 +601,7 @@ mod tests {
     use crate::scene::SceneGraph;
     use abi::ui_paint::{PaintOpTag, PaintReader};
     use abi::ui_scene::{EdgeInsets, NodeKind, SizeKind, SizeSpec, StringRef, TextMeta};
+    use alloc::vec;
 
     #[test]
     fn emit_text_op() {
@@ -648,13 +649,28 @@ mod tests {
             flex_meta: None,
             text_meta: Some(TextMeta {
                 text: StringRef { offset: 0, len: 5 },
-                font: StringRef { offset: 0, len: 0 },
+                font_kind: abi::ui_scene::FontKeyKind::Name,
+                font_name: StringRef { offset: 0, len: 0 },
+                font_thing: 0,
                 size: 12,
+                weight: 4,
+                style: 0,
+                wrap: abi::ui_scene::TextWrap::NoWrap,
+                ellipsis: false,
                 color: 0xFFFFFFFF,
             }),
             rect_meta: None,
             image_meta: None,
             checkbox_meta: None,
+            text_input_meta: None,
+            button_meta: None,
+            label_meta: None,
+            message_box_meta: None,
+            line_meta: None,
+            icon_meta: None,
+            scroll_meta: None,
+            spacer_meta: None,
+            separator_meta: None,
         });
 
         let layout = vec![LayoutRect {

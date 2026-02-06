@@ -545,6 +545,15 @@ mod tests {
             rect_meta: None,
             image_meta: None,
             checkbox_meta: None,
+            text_input_meta: None,
+            button_meta: None,
+            label_meta: None,
+            message_box_meta: None,
+            line_meta: None,
+            icon_meta: None,
+            scroll_meta: None,
+            spacer_meta: None,
+            separator_meta: None,
         });
         scene.nodes.push(SceneNode {
             id: 1,
@@ -587,6 +596,15 @@ mod tests {
             rect_meta: None,
             image_meta: None,
             checkbox_meta: None,
+            text_input_meta: None,
+            button_meta: None,
+            label_meta: None,
+            message_box_meta: None,
+            line_meta: None,
+            icon_meta: None,
+            scroll_meta: None,
+            spacer_meta: None,
+            separator_meta: None,
         });
 
         let rects = layout_scene(
@@ -600,5 +618,72 @@ mod tests {
         );
         assert_eq!(rects[0].w, 200);
         assert!(rects[1].y >= 0);
+    }
+
+    fn default_node(id: u32, kind: NodeKind) -> SceneNode {
+        SceneNode {
+            id,
+            parent: None,
+            children: Vec::new(),
+            kind,
+            width: SizeSpec { kind: SizeKind::Auto, value: 0 },
+            height: SizeSpec { kind: SizeKind::Auto, value: 0 },
+            flex_basis: SizeSpec { kind: SizeKind::Auto, value: 0 },
+            min_width: None, min_height: None, max_width: None, max_height: None,
+            margin: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
+            padding: EdgeInsets { left: 0, top: 0, right: 0, bottom: 0 },
+            flex_grow: 0.0,
+            flex_shrink: 0.0,
+            window_meta: None, flex_meta: None, text_meta: None, rect_meta: None,
+            image_meta: None, line_meta: None, icon_meta: None, scroll_meta: None,
+            spacer_meta: None, separator_meta: None, checkbox_meta: None,
+            text_input_meta: None, button_meta: None, label_meta: None, message_box_meta: None,
+        }
+    }
+
+    #[test]
+    fn flex_row_center_center_exact() {
+        let mut scene = SceneGraph {
+            nodes: Vec::new(),
+            strings: Vec::new(),
+            root: 0,
+        };
+
+        // Root: Flex Row, 200x200, Center/Center
+        let mut root = default_node(0, NodeKind::Flex);
+        root.children = vec![1];
+        root.width = SizeSpec { kind: SizeKind::Px, value: 200 };
+        root.height = SizeSpec { kind: SizeKind::Px, value: 200 };
+        root.flex_meta = Some(FlexMeta {
+            direction: FlexDirection::Row,
+            align: AlignItems::Center,
+            justify: JustifyContent::Center,
+            gap: 0,
+        });
+        scene.nodes.push(root);
+
+        // Child: Fixed 50x50
+        let mut child = default_node(1, NodeKind::Rect);
+        child.parent = Some(0);
+        child.width = SizeSpec { kind: SizeKind::Px, value: 50 };
+        child.height = SizeSpec { kind: SizeKind::Px, value: 50 };
+        scene.nodes.push(child);
+
+        let rects = layout_scene(
+            &scene,
+            LayoutRect {
+                x: 0,
+                y: 0,
+                w: 200,
+                h: 200,
+            },
+        );
+
+        // Expected: (200-50)/2 = 75
+        let child_rect = rects[1];
+        assert_eq!(child_rect.x, 75, "Child X should be centered (75)");
+        assert_eq!(child_rect.y, 75, "Child Y should be centered (75)");
+        assert_eq!(child_rect.w, 50, "Child width should be 50");
+        assert_eq!(child_rect.h, 50, "Child height should be 50");
     }
 }

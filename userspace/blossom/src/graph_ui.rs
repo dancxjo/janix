@@ -727,7 +727,8 @@ mod tests {
             UiEventKind::from_raw(decoded.kind),
             Some(UiEventKind::Toggled)
         );
-        assert_eq!(decoded.node_id, checkbox_id.to_u64_lossy());
+        let node_id = decoded.node_id;
+        assert_eq!(node_id, checkbox_id.to_u64_lossy());
         assert_eq!(decoded.checked, new_checked as u8);
     }
 }

@@ -189,28 +189,36 @@ fn layout_flex(
             total_fixed.saturating_add(gap.saturating_mul((node.children.len() - 1) as i32));
     }
 
-    let mut remaining = main.saturating_sub(total_fixed);
+    let remaining = main.saturating_sub(total_fixed);
     let mut main_sizes = bases;
 
     if remaining > 0 && total_grow > 0.0 {
+        let mut distributed_so_far = 0;
+        let mut grow_seen = 0.0;
         for (i, &child_idx) in node.children.iter().enumerate() {
             let grow = scene.nodes[child_idx].flex_grow;
             if grow > 0.0 {
-                let extra = ((remaining as f32 * (grow / total_grow)) + 0.5) as i32;
+                grow_seen += grow;
+                let target_distributed = ((remaining as f32 * (grow_seen / total_grow)) + 0.5) as i32;
+                let extra = target_distributed - distributed_so_far;
                 main_sizes[i] = main_sizes[i].saturating_add(extra);
+                distributed_so_far += extra;
             }
         }
-        remaining = 0;
     } else if remaining < 0 && total_shrink > 0.0 {
         let deficit = -remaining;
+        let mut cut_so_far = 0;
+        let mut shrink_seen = 0.0;
         for (i, &child_idx) in node.children.iter().enumerate() {
             let shrink = scene.nodes[child_idx].flex_shrink;
             if shrink > 0.0 {
-                let cut = ((deficit as f32 * (shrink / total_shrink)) + 0.5) as i32;
+                shrink_seen += shrink;
+                let target_cut = ((deficit as f32 * (shrink_seen / total_shrink)) + 0.5) as i32;
+                let cut = target_cut - cut_so_far;
                 main_sizes[i] = (main_sizes[i] - cut).max(0);
+                cut_so_far += cut;
             }
         }
-        remaining = 0;
     }
 
     let total_main: i32 = main_sizes
@@ -685,5 +693,68 @@ mod tests {
         assert_eq!(child_rect.y, 75, "Child Y should be centered (75)");
         assert_eq!(child_rect.w, 50, "Child width should be 50");
         assert_eq!(child_rect.h, 50, "Child height should be 50");
+    }
+
+    #[test]
+    fn flex_grow_rounding_overflow() {
+        let mut scene = SceneGraph {
+            nodes: Vec::new(),
+            strings: Vec::new(),
+            root: 0,
+        };
+
+        // Root: Flex Row, 2px wide
+        let mut root = default_node(0, NodeKind::Flex);
+        root.children = vec![1, 2, 3];
+        root.width = SizeSpec { kind: SizeKind::Px, value: 2 };
+        root.height = SizeSpec { kind: SizeKind::Px, value: 10 };
+        root.flex_meta = Some(FlexMeta {
+            direction: FlexDirection::Row,
+            align: AlignItems::Start,
+            justify: JustifyContent::Start,
+            gap: 0,
+        });
+        scene.nodes.push(root);
+
+        // Children: Basis 0, Grow 1.0
+        for i in 1..=3 {
+            let mut child = default_node(i as u32, NodeKind::Rect);
+            child.parent = Some(0);
+            child.width = SizeSpec { kind: SizeKind::Auto, value: 0 };
+            child.height = SizeSpec { kind: SizeKind::Auto, value: 0 };
+            child.flex_basis = SizeSpec { kind: SizeKind::Px, value: 0 };
+            child.flex_grow = 1.0;
+            scene.nodes.push(child);
+        }
+
+        let rects = layout_scene(
+            &scene,
+            LayoutRect {
+                x: 0,
+                y: 0,
+                w: 2,
+                h: 10,
+            },
+        );
+
+        // Total width is 2. 3 children with grow 1.0.
+        // Each child gets: 2 * (1/3) + 0.5 = 1.16 -> 1.
+        // Total allocated: 3.
+        // Overflow: 1.
+
+        let child1 = rects[1];
+        let child2 = rects[2];
+        let child3 = rects[3];
+
+        let total_w = child1.w + child2.w + child3.w;
+        assert_eq!(total_w, 2, "Total width of children should equal container width (2)");
+
+        assert_eq!(child1.x, 0);
+        assert!(child2.x >= 0);
+        assert!(child3.x >= 0);
+
+        assert!(child1.x + child1.w <= 2);
+        assert!(child2.x + child2.w <= 2);
+        assert!(child3.x + child3.w <= 2);
     }
 }

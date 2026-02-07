@@ -6,6 +6,8 @@ The operating system's userspace capabilities have expanded significantly with t
 
 Complementing this, the **Anther** HTTP server has gained **file upload capabilities**. Clients can now push files directly to the system via a `POST /upload` endpoint, which automatically handles bytespace creation, SHA-256 hashing, and metadata extraction (MIME type, size) to populate `fs.File` nodes in the graph.
 
+On the visual front, the default desktop experience has been refreshed with a new wallpaper (`linen.bmp`), automatically seeded by the `flytrap` asset service.
+
 ## Recent Changes
 
 ### 🔌 Userspace & Drivers
@@ -45,6 +47,9 @@ Complementing this, the **Anther** HTTP server has gained **file upload capabili
 
 *   **DrawList Demo**: A new `drawlist_demo` application has been added to demonstrate and validate the vector drawing capabilities of the UI graph.
     *   *Artifacts*: `userspace/drawlist_demo/`
+
+*   **Default Wallpaper**: Updated the default system wallpaper to `linen.bmp`, providing a cleaner aesthetic. The `flytrap` service now automatically seeds this wallpaper for the `photosynthesis` desktop environment, and the build system (`xtask`) explicitly allows this asset in the ISO image.
+    *   *Artifacts*: `assets/wallpapers/linen.bmp`, `userspace/flytrap/src/main.rs`, `xtask/src/image.rs`
 
 ### 🏗️ Infrastructure & Tests
 

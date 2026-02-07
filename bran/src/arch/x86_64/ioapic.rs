@@ -302,3 +302,39 @@ pub fn mask_all() {
         mask_pin(pin);
     }
 }
+
+/// Explicitly enable the Local APIC
+/// This is required because relying on BIOS state is unreliable.
+/// Sets SVR (0xF0) to Enable + Vector 0xFF.
+/// Sets TPR (0x80) to 0 (Accept all).
+pub fn enable_local_apic() {
+    let lapic_base = LOCAL_APIC_BASE.load(Ordering::SeqCst);
+    let hhdm = HHDM_OFFSET.load(Ordering::SeqCst);
+    let base = lapic_base + hhdm;
+
+    unsafe {
+        // 1. Spurious Interrupt Vector Register (0xF0)
+        // Bit 8: Enable APIC
+        // Bits 0-7: Vector (0xFF is common for spurious)
+        let svr = 0x100 | 0xFF;
+        ptr::write_volatile((base + 0xF0) as *mut u32, svr);
+
+        // 2. Task Priority Register (0x80)
+        // Set to 0 to accept all priorities
+        ptr::write_volatile((base + 0x80) as *mut u32, 0);
+
+        // 3. Logical Destination Register (0xD0) 
+        // Set ID to 1 (Logical ID for this CPU in Flat Mode)
+        // This assumes Flat Model. For Physical mode routing (which we use), this is less critical
+        // but good for sanity.
+        // val = (Logical ID << 24)
+        // We'll skip this for now since we use Physical Destination Mode in IOAPIC.
+
+        // 4. Destination Format Register (0xE0)
+        // Set to Flat Model (0xFFFFFFFF)
+        ptr::write_volatile((base + 0xE0) as *mut u32, 0xFFFFFFFF);
+         
+        // 5. Acknowledge any pending EOI just in case
+        ptr::write_volatile((base + 0xB0) as *mut u32, 0);
+    }
+}

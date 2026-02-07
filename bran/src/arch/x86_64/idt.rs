@@ -66,6 +66,7 @@ unsafe extern "C" {
     fn irq_timer_handler_shim();
     fn irq_resched_handler_shim();
     fn irq_tlb_shootdown_handler_shim();
+    fn irq_mouse_handler_shim();
 }
 
 core::arch::global_asm!(
@@ -290,6 +291,41 @@ core::arch::global_asm!(
         swapgs
     2:
         iretq
+
+    .global irq_mouse_handler_shim
+    irq_mouse_handler_shim:
+        testb $3, 8(%rsp)
+        jz 1f
+        swapgs
+    1:
+        push %rax
+        push %rcx
+        push %rdx
+        push %rsi
+        push %rdi
+        push %r8
+        push %r9
+        push %r10
+        push %r11
+
+        mov $0x2C, %rdi
+        call rust_irq_handler
+
+        pop %r11
+        pop %r10
+        pop %r9
+        pop %r8
+        pop %rdi
+        pop %rsi
+        pop %rdx
+        pop %rcx
+        pop %rax
+
+        testb $3, 8(%rsp)
+        jz 2f
+        swapgs
+    2:
+        iretq
 "#,
     options(att_syntax)
 );
@@ -357,6 +393,14 @@ pub unsafe fn init() {
         // Dedicated TLB Shootdown Vector
         IDT.entries[IRQ_TLB_SHOOTDOWN_VECTOR as usize].set_handler(
             irq_tlb_shootdown_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+        
+        // Dedicated Mouse Vector (0x2C) - Bypass Common Shim/ISR lookup
+        IDT.entries[0x2C].set_handler(
+            irq_mouse_handler_shim as *const () as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             0,
             0x8E,

@@ -253,6 +253,10 @@ fn main(packed_handles: usize) -> ! {
             }
         };
 
+        if ready_handle == mouse_read {
+             info!("bristle: woke up for MOUSE (handle={})", ready_handle);
+        }
+
         // Process keyboard input
         if ready_handle == kbd_read {
             if let Ok(n) = port_recv(kbd_read, &mut kbd_buf) {
@@ -302,6 +306,7 @@ fn main(packed_handles: usize) -> ! {
         } else if ready_handle == mouse_read {
             // Process mouse input
             if let Ok(n) = port_recv(mouse_read, &mut mouse_buf) {
+                if n > 0 { info!("bristle: recv mouse n={}", n); }
                 if n >= 3 {
                 // Process 3-byte packets
                 let mut offset = 0;

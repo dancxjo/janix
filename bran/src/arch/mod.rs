@@ -137,6 +137,10 @@ fn init_x86_64_ioapic() {
     x86_64::ioapic::init(ioapic.mmio_base, madt_info.local_apic_addr, hhdm);
     kinfo!("IOAPIC: Registers initialized");
 
+    // Enable Local APIC (SVR, TPR)
+    x86_64::ioapic::enable_local_apic();
+    kinfo!("IOAPIC: Local APIC enabled (SVR=0x1FF, TPR=0)");
+
     let (version, max_entries) = x86_64::ioapic::get_version();
     kinfo!(
         "IOAPIC: version 0x{:02x}, {} redir entries",

@@ -100,6 +100,7 @@ fn drain_keyboard_data(handle: PortHandle) {
             let _ = port_send(handle, &[scancode]);
         } else {
             // If aux data (mouse), stop draining - let ps2_mouse handle it
+            stem::info!("ps2_kbd: yield on AUX data (mouse packet)");
             break;
         }
     }

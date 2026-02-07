@@ -49,9 +49,13 @@ fn parse_and_print_event(buf: &[u8]) {
         unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const BristleEventHeader) };
 
     if header.magic != BRISTLE_EVENT_MAGIC {
+        let magic = header.magic;
+        info!("echo: dropped invalid magic: {:x}", magic);
         return;
     }
     if header.version != BRISTLE_EVENT_VERSION {
+        let version = header.version;
+        info!("echo: dropped invalid version: {:x}", version);
         return;
     }
 

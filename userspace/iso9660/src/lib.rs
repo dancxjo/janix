@@ -660,4 +660,164 @@ mod tests {
             assert_eq!(data[j], expected, "Mismatch at last chunk index {}", j);
         }
     }
+
+    struct MockDirBlockDevice {
+        dir_data: Vec<u8>,
+    }
+
+    impl BlockDevice for MockDirBlockDevice {
+        fn read_sectors(
+            &self,
+            _lba: u64,
+            count: u64,
+            buf: &mut [u8],
+        ) -> Result<(), stem::block::BlockError> {
+            let len = (count * 2048) as usize;
+            if buf.len() < len {
+                return Err(stem::block::BlockError::IoError);
+            }
+            if len > self.dir_data.len() {
+                buf[..self.dir_data.len()].copy_from_slice(&self.dir_data);
+                buf[self.dir_data.len()..len].fill(0);
+            } else {
+                buf[..len].copy_from_slice(&self.dir_data[..len]);
+            }
+            Ok(())
+        }
+        fn sector_size(&self) -> u64 {
+            2048
+        }
+    }
+
+    fn write_dir_record(
+        buf: &mut [u8],
+        offset: &mut usize,
+        name: &str,
+        extent: u32,
+        size: u32,
+        flags: u8,
+        rock_ridge_nm: Option<&str>,
+    ) {
+        let start = *offset;
+        let name_bytes = name.as_bytes();
+        let name_len = name_bytes.len();
+
+        // Basic length: 33 fixed + name_len
+        let mut record_len = 33 + name_len;
+        if name_len % 2 == 0 {
+            record_len += 1; // Padding byte after name if len is even
+        }
+
+        let mut system_use_len = 0;
+        if let Some(rr_name) = rock_ridge_nm {
+            // NM (2) + Len (1) + Ver (1) + Flags (1) + name
+            system_use_len = 5 + rr_name.len();
+        }
+        record_len += system_use_len;
+
+        if record_len % 2 != 0 {
+            record_len += 1;
+        }
+
+        buf[start] = record_len as u8; // Length
+        buf[start + 1] = 0; // Ext Attr Len
+
+        // Extent (LE)
+        buf[start + 2..start + 6].copy_from_slice(&extent.to_le_bytes());
+        // Extent (BE)
+        buf[start + 6..start + 10].copy_from_slice(&extent.to_be_bytes());
+
+        // Data Length (LE)
+        buf[start + 10..start + 14].copy_from_slice(&size.to_le_bytes());
+        // Data Length (BE)
+        buf[start + 14..start + 18].copy_from_slice(&size.to_be_bytes());
+
+        buf[start + 25] = flags;
+
+        // Vol seq (1) at 28
+        buf[start + 28] = 1;
+        buf[start + 30] = 1;
+
+        buf[start + 32] = name_len as u8;
+        buf[start + 33..start + 33 + name_len].copy_from_slice(name_bytes);
+
+        let mut sys_use_offset = start + 33 + name_len;
+        if name_len % 2 == 0 {
+            sys_use_offset += 1; // Padding
+        }
+
+        if let Some(rr_name) = rock_ridge_nm {
+            buf[sys_use_offset] = b'N';
+            buf[sys_use_offset + 1] = b'M';
+            let nm_len = 5 + rr_name.len();
+            buf[sys_use_offset + 2] = nm_len as u8;
+            buf[sys_use_offset + 3] = 1; // Ver
+            buf[sys_use_offset + 4] = 0; // Flags
+            buf[sys_use_offset + 5..sys_use_offset + 5 + rr_name.len()]
+                .copy_from_slice(rr_name.as_bytes());
+        }
+
+        *offset += record_len;
+    }
+
+    #[test]
+    fn test_parse_dir_entries_with_rock_ridge() {
+        let mut buf = alloc::vec![0u8; 2048];
+        let mut offset = 0;
+
+        // 1. Current Directory "." (0x00)
+        write_dir_record(&mut buf, &mut offset, "\x00", 100, 2048, 2, None);
+
+        // 2. Parent Directory ".." (0x01)
+        write_dir_record(&mut buf, &mut offset, "\x01", 50, 2048, 2, None);
+
+        // 3. Regular File "TEST.TXT;1"
+        write_dir_record(&mut buf, &mut offset, "TEST.TXT;1", 200, 1234, 0, None);
+
+        // 4. Rock Ridge File "LONG_FIL.;1" with NM "LongFileName.txt"
+        write_dir_record(
+            &mut buf,
+            &mut offset,
+            "LONG_FIL.;1",
+            300,
+            5678,
+            0,
+            Some("LongFileName.txt"),
+        );
+
+        let dev = MockDirBlockDevice { dir_data: buf };
+
+        let iso = IsoFs {
+            pvd: PrimaryVolumeDescriptor {
+                system_id: [0; 32],
+                volume_id: [0; 32],
+                volume_space_size: 0,
+                root_dir_extent: 0,
+                root_dir_size: 0,
+                logical_block_size: 2048,
+            },
+            dir_cache: RefCell::new(BTreeMap::new()),
+            #[cfg(feature = "perf")]
+            perf: RefCell::new(PerfCounters::default()),
+        };
+
+        let entries = iso.parse_dir_entries(&dev, 0, 2048);
+
+        // Verify results
+        assert_eq!(entries.len(), 2, "Should have 2 entries (skipped . and ..)");
+
+        // Entry 1: TEST.TXT
+        let e1 = &entries[0];
+        assert_eq!(e1.name, "TEST.TXT");
+        assert_eq!(e1.extent_lba, 200);
+        assert_eq!(e1.size, 1234);
+        assert!(!e1.is_directory);
+
+        // Entry 2: LongFileName.txt
+        let e2 = &entries[1];
+        assert_eq!(e2.name, "LongFileName.txt");
+        assert_eq!(e2.extent_lba, 300);
+        assert_eq!(e2.size, 5678);
+        assert!(!e2.is_directory);
+    }
 }

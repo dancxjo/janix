@@ -11,7 +11,37 @@ pub struct PreparedStep {
     pub symbol: SymbolId,
 }
 
-pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Result<usize, ()> {
+pub struct QueryScratch {
+    pub rows_a: Vec<QueryRow>,
+    pub rows_b: Vec<QueryRow>,
+}
+
+impl QueryScratch {
+    pub fn new() -> Self {
+        Self {
+            rows_a: Vec::with_capacity(128),
+            rows_b: Vec::with_capacity(128),
+        }
+    }
+
+    pub fn reset(&mut self) {
+        self.rows_a.clear();
+        self.rows_b.clear();
+    }
+}
+
+impl Default for QueryScratch {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+pub fn execute(
+    graph: &Graph,
+    plan: &[PreparedStep],
+    out: &mut [QueryRow],
+    scratch: &mut QueryScratch,
+) -> Result<usize, ()> {
     if plan.is_empty() {
         return Ok(0);
     }
@@ -19,12 +49,18 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
     // Steward Improvement: Double-buffering strategy.
     // We maintain two vectors and swap them after each step to reuse capacity.
     // This avoids repeated heap allocations in the query hot path.
-    let mut current_rows: Vec<QueryRow> = Vec::new();
-    let mut next_rows: Vec<QueryRow> = Vec::new();
+    scratch.reset();
+
+    // Move buffers out of scratch to avoid simultaneous mutable borrow issues.
+    // `mem::take` replaces the scratch fields with default empty Vecs.
+    // The original Vecs (with their capacity) are moved to local variables.
+    // We will move them back to `scratch` before returning to preserve capacity.
+    let mut current_rows = core::mem::take(&mut scratch.rows_a);
+    let mut next_rows = core::mem::take(&mut scratch.rows_b);
 
     // Step 0: Source (Scan or Start)
     let step0 = &plan[0];
-    
+
     if step0.op == 1 {
         // Scan: initialize with all nodes of a given kind
         let kind_sym = step0.symbol;
@@ -83,6 +119,9 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
             }
         }
     } else {
+        // Restore scratch before returning
+        scratch.rows_a = current_rows;
+        scratch.rows_b = next_rows;
         return Err(()); // Must be Scan or Start or Anchor
     }
 
@@ -150,7 +189,12 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
                     }
                 }
             }
-            _ => return Err(()),
+            _ => {
+                // Restore scratch before returning
+                scratch.rows_a = current_rows;
+                scratch.rows_b = next_rows;
+                return Err(());
+            }
         }
         core::mem::swap(&mut current_rows, &mut next_rows);
     }
@@ -159,6 +203,10 @@ pub fn execute(graph: &Graph, plan: &[PreparedStep], out: &mut [QueryRow]) -> Re
     for i in 0..count {
         out[i] = current_rows[i];
     }
+
+    // Restore scratch buffers (retaining capacity)
+    scratch.rows_a = current_rows;
+    scratch.rows_b = next_rows;
 
     Ok(count)
 }
@@ -171,6 +219,7 @@ mod tests {
     #[test]
     fn test_query_execution_scenarios() {
         let mut graph = Graph::new();
+        let mut scratch = QueryScratch::new();
 
         // Define symbols
         let kind_person = 100;
@@ -215,7 +264,7 @@ mod tests {
         ];
 
         let mut out = [QueryRow::default(); 10];
-        let count = execute(&graph, &plan1, &mut out).expect("Plan 1 failed");
+        let count = execute(&graph, &plan1, &mut out, &mut scratch).expect("Plan 1 failed");
 
         assert_eq!(count, 1);
         assert_eq!(out[0].id, p2);
@@ -228,7 +277,7 @@ mod tests {
             PreparedStep { op: 3, symbol: rel_authored, arg1: 1, arg2: 0 }, // In
         ];
 
-        let count = execute(&graph, &plan2, &mut out).expect("Plan 2 failed");
+        let count = execute(&graph, &plan2, &mut out, &mut scratch).expect("Plan 2 failed");
 
         // Post1 is authored by P2. Post2 is authored by nobody.
         // Scan returns Post1, Post2.
@@ -248,7 +297,7 @@ mod tests {
             PreparedStep { op: 3, symbol: rel_liked, arg1: 0, arg2: 0 },
         ];
 
-        let count = execute(&graph, &plan3, &mut out).expect("Plan 3 failed");
+        let count = execute(&graph, &plan3, &mut out, &mut scratch).expect("Plan 3 failed");
         assert_eq!(count, 2);
 
         // Order depends on Scan order (kind_index order) and Expand order.
@@ -280,13 +329,14 @@ mod tests {
                 arg2: 0,
             },
         ];
-        let count = execute(&graph, &plan4, &mut out).expect("Plan 4 failed");
+        let count = execute(&graph, &plan4, &mut out, &mut scratch).expect("Plan 4 failed");
         assert_eq!(count, 3);
     }
 
     #[test]
     fn test_query_reverse_index_optimization() {
         let mut graph = Graph::new();
+        let mut scratch = QueryScratch::new();
         let kind_a = 1;
         let kind_b = 2;
         let rel_x = 10;
@@ -318,7 +368,7 @@ mod tests {
         ];
 
         let mut out = [QueryRow::default(); 10];
-        let count = execute(&graph, &plan, &mut out).expect("Plan failed");
+        let count = execute(&graph, &plan, &mut out, &mut scratch).expect("Plan failed");
 
         assert_eq!(count, 2);
 
@@ -335,6 +385,7 @@ mod tests {
     #[test]
     fn test_query_start_op_and_edge_cases() {
         let mut graph = Graph::new();
+        let mut scratch = QueryScratch::new();
         let kind_a = 1;
         let kind_empty = 2;
         let prop_x = 10;
@@ -356,7 +407,7 @@ mod tests {
             arg1: n1,
             arg2: 0,
         }];
-        let count = execute(&graph, &plan_start_valid, &mut out).expect("Start valid failed");
+        let count = execute(&graph, &plan_start_valid, &mut out, &mut scratch).expect("Start valid failed");
         assert_eq!(count, 1);
         assert_eq!(out[0].id, n1);
         assert_eq!(out[0].kind_rel, kind_a as u64);
@@ -368,7 +419,7 @@ mod tests {
             arg1: 999999,
             arg2: 0,
         }];
-        let count = execute(&graph, &plan_start_invalid, &mut out).expect("Start invalid failed");
+        let count = execute(&graph, &plan_start_invalid, &mut out, &mut scratch).expect("Start invalid failed");
         assert_eq!(count, 0);
 
         // 3. Test Scan(Op 1) with empty kind
@@ -378,7 +429,7 @@ mod tests {
             arg1: 0,
             arg2: 0,
         }];
-        let count = execute(&graph, &plan_scan_empty, &mut out).expect("Scan empty failed");
+        let count = execute(&graph, &plan_scan_empty, &mut out, &mut scratch).expect("Scan empty failed");
         assert_eq!(count, 0);
 
         // 4. Test Scan + FilterEq where property is missing on some nodes
@@ -398,7 +449,7 @@ mod tests {
                 arg2: 0,
             },
         ];
-        let count = execute(&graph, &plan_filter_hit, &mut out).expect("Filter hit failed");
+        let count = execute(&graph, &plan_filter_hit, &mut out, &mut scratch).expect("Filter hit failed");
         assert_eq!(count, 1);
         assert_eq!(out[0].id, n1);
 
@@ -417,7 +468,7 @@ mod tests {
                 arg2: 0,
             },
         ];
-        let count = execute(&graph, &plan_filter_miss_val, &mut out).expect("Filter miss val failed");
+        let count = execute(&graph, &plan_filter_miss_val, &mut out, &mut scratch).expect("Filter miss val failed");
         assert_eq!(count, 0);
     }
 
@@ -426,6 +477,7 @@ mod tests {
         use crate::root::graph_anchors;
 
         let mut graph = Graph::new();
+        let mut scratch = QueryScratch::new();
         // Create nodes
         let host_kind = 10;
         let root_kind = 11;
@@ -449,7 +501,7 @@ mod tests {
             symbol: 0,
         }];
 
-        let count = execute(&graph, &plan_host, &mut out).expect("Anchor Host failed");
+        let count = execute(&graph, &plan_host, &mut out, &mut scratch).expect("Anchor Host failed");
         assert_eq!(count, 1);
         assert_eq!(out[0].id, host_id);
         assert_eq!(out[0].kind_rel, host_kind as u64);
@@ -462,7 +514,7 @@ mod tests {
             symbol: 0,
         }];
 
-        let count = execute(&graph, &plan_root, &mut out).expect("Anchor Root failed");
+        let count = execute(&graph, &plan_root, &mut out, &mut scratch).expect("Anchor Root failed");
         assert_eq!(count, 1);
         assert_eq!(out[0].id, root_id);
         assert_eq!(out[0].kind_rel, root_kind as u64);
@@ -476,13 +528,14 @@ mod tests {
         }];
 
         // It should return 0 rows if anchor is missing or not in graph
-        let count = execute(&graph, &plan_kernel, &mut out).expect("Anchor Kernel failed");
+        let count = execute(&graph, &plan_kernel, &mut out, &mut scratch).expect("Anchor Kernel failed");
         assert_eq!(count, 0);
     }
 
     #[test]
     fn test_query_chaining_and_limits() {
         let mut graph = Graph::new();
+        let mut scratch = QueryScratch::new();
         let kind_node = 1;
         let rel_link = 10;
 
@@ -503,7 +556,7 @@ mod tests {
             PreparedStep { op: 3, symbol: rel_link, arg1: 1, arg2: 0 }, // Expand In (finds P)
             PreparedStep { op: 3, symbol: rel_link, arg1: 1, arg2: 0 }, // Expand In (finds GP)
         ];
-        let count = execute(&graph, &plan_in, &mut out).expect("Plan In failed");
+        let count = execute(&graph, &plan_in, &mut out, &mut scratch).expect("Plan In failed");
         assert_eq!(count, 1);
         // Result is edge P -> GP (where id=GP, val_dst=P)
         assert_eq!(out[0].id, gp);
@@ -519,7 +572,7 @@ mod tests {
             PreparedStep { op: 3, symbol: rel_link, arg1: 0, arg2: 0 }, // Expand Out (finds P)
             PreparedStep { op: 3, symbol: rel_link, arg1: 0, arg2: 0 }, // Expand Out (finds P again from GP)
         ];
-        let count = execute(&graph, &plan_out, &mut out).expect("Plan Out failed");
+        let count = execute(&graph, &plan_out, &mut out, &mut scratch).expect("Plan Out failed");
         assert_eq!(count, 1);
         assert_eq!(out[0].id, gp);
         assert_eq!(out[0].val_dst, p);
@@ -533,7 +586,7 @@ mod tests {
             PreparedStep { op: 3, symbol: rel_link, arg1: 0, arg2: 0 }, // Expand Out
         ];
         let mut small_out = [QueryRow::default(); 1];
-        let count = execute(&graph, &plan_scan, &mut small_out).expect("Plan Limit failed");
+        let count = execute(&graph, &plan_scan, &mut small_out, &mut scratch).expect("Plan Limit failed");
         assert_eq!(count, 1); // Should be truncated to 1
     }
 }

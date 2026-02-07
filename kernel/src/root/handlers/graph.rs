@@ -224,6 +224,7 @@ pub fn handle_query(
     plan: &[crate::root::query::PreparedStep],
     out_buffer: u64,
     out_len: u64,
+    scratch: &mut crate::root::query::QueryScratch,
 ) -> HandlerResult {
     let max_rows = (out_len as usize) / core::mem::size_of::<abi::query::QueryRow>();
     // Use stack buffer for small queries (<= 32 rows, 1KB) to avoid allocation.
@@ -232,10 +233,10 @@ pub fn handle_query(
 
     if max_rows <= STACK_CAP {
         let mut stack_buf = [abi::query::QueryRow::default(); STACK_CAP];
-        execute_and_copy(graph, plan, &mut stack_buf[..max_rows], out_buffer)
+        execute_and_copy(graph, plan, &mut stack_buf[..max_rows], out_buffer, scratch)
     } else {
         let mut krows = alloc::vec![abi::query::QueryRow::default(); max_rows];
-        execute_and_copy(graph, plan, &mut krows, out_buffer)
+        execute_and_copy(graph, plan, &mut krows, out_buffer, scratch)
     }
 }
 
@@ -244,8 +245,9 @@ fn execute_and_copy(
     plan: &[crate::root::query::PreparedStep],
     buffer: &mut [abi::query::QueryRow],
     out_buffer: u64,
+    scratch: &mut crate::root::query::QueryScratch,
 ) -> HandlerResult {
-    let res = crate::root::query::execute(graph, plan, buffer);
+    let res = crate::root::query::execute(graph, plan, buffer, scratch);
 
     if let Ok(count) = res {
         unsafe {
@@ -430,10 +432,12 @@ mod tests {
     #[test]
     fn test_handle_query_optimization() {
         use crate::root::query::PreparedStep;
+        use crate::root::query::QueryScratch;
         use abi::query::QueryRow;
 
         let mut graph = Graph::new();
         let mut interner = Interner::new();
+        let mut scratch = QueryScratch::new();
 
         let kind = interner.intern("TestKind");
         let id1 = graph.alloc(kind);
@@ -455,7 +459,7 @@ mod tests {
         let buf_ptr = buffer_stack.as_mut_ptr() as u64;
         let buf_len = buffer_stack.len() as u64;
 
-        let (status, count) = handle_query(&graph, &plan, buf_ptr, buf_len);
+        let (status, count) = handle_query(&graph, &plan, buf_ptr, buf_len, &mut scratch);
         assert_eq!(status, 0);
         assert_eq!(count, 3);
 
@@ -476,7 +480,7 @@ mod tests {
         let buf_ptr_heap = buffer_heap.as_mut_ptr() as u64;
         let buf_len_heap = buffer_heap.len() as u64;
 
-        let (status, count) = handle_query(&graph, &plan, buf_ptr_heap, buf_len_heap);
+        let (status, count) = handle_query(&graph, &plan, buf_ptr_heap, buf_len_heap, &mut scratch);
         assert_eq!(status, 0);
         assert_eq!(count, 3);
 

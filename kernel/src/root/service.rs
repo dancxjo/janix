@@ -23,6 +23,8 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
     crate::contract!("ROOT: LogSymbols initialized");
     let mut batch_scratch = RootBatchScratch::new();
     crate::contract!("ROOT: BatchScratch initialized");
+    let mut query_scratch = crate::root::query::QueryScratch::new();
+    crate::contract!("ROOT: QueryScratch initialized");
 
     let mut iteration = 0u64;
     crate::contract!("ROOT: Entering main loop");
@@ -51,6 +53,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
                     &mut interner,
                     &mut log_symbols,
                     &mut batch_scratch,
+                    &mut query_scratch,
                     msg,
                 );
                 processed += 1;
@@ -109,6 +112,7 @@ fn handle_msg<R: BootRuntime>(
     interner: &mut Interner,
     log_symbols: &mut root_handlers::logging::LogSymbols,
     batch_scratch: &mut RootBatchScratch,
+    query_scratch: &mut crate::root::query::QueryScratch,
     msg: RootMsg,
 ) {
     let (status, value) = match msg.op {
@@ -130,7 +134,7 @@ fn handle_msg<R: BootRuntime>(
             plan,
             out_buffer,
             out_len,
-        } => root_handlers::handle_query(graph, &plan, out_buffer, out_len),
+        } => root_handlers::handle_query(graph, &plan, out_buffer, out_len, query_scratch),
 
         // Property operations
         RootOp::PropGet { id, key } => root_handlers::handle_prop_get(graph, interner, id, key),

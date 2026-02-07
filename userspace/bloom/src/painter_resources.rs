@@ -29,8 +29,8 @@ pub extern "C" fn asset_watcher_entry() -> ! {
 
 pub extern "C" fn wallpaper_loader_entry() -> ! {
     stem::sleep_ms(100);
-    debug!("[bloom] wallpaper loader: loading linen.bmp");
-    ASSETS.enqueue_wallpaper_load("linen.bmp");
+    debug!("[bloom] wallpaper loader: loading flower.bmp");
+    ASSETS.enqueue_wallpaper_load("flower.bmp");
     loop {
         stem::syscall::sleep_ms(10000);
     }

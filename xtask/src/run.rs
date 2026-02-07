@@ -23,7 +23,7 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path) -> Result<
             // virtio-net-pci for network support
             // virtio-vga-gl enables virgl 3D acceleration on virtio-vga
             // virtio-net-pci for network support
-            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga-gl -display gtk,gl=on -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev user,id=n0,hostfwd=tcp::8888-:80")
+            cmd!(sh, "qemu-system-x86_64 -M q35,usb=off -device virtio-vga-gl -display gtk,gl=on -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev user,id=n0,hostfwd=tcp::8888-:80")
                 .args(&qemu_args)
                 .run()?;
         }
@@ -60,7 +60,7 @@ pub fn run_bios(sh: &Shell, qemu_flags: &str, iso_path: &Path) -> Result<()> {
     // virtio-net-pci for network support
     cmd!(
         sh,
-        "qemu-system-x86_64 -M q35 -device virtio-vga-gl -display gtk,gl=on -serial stdio -cdrom {iso} -boot d -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev user,id=n0,hostfwd=tcp::8888-:80"
+        "qemu-system-x86_64 -M q35,usb=off -device virtio-vga-gl -display gtk,gl=on -serial stdio -cdrom {iso} -boot d -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev user,id=n0,hostfwd=tcp::8888-:80"
     )
     .args(&qemu_args)
     .run()?;
@@ -82,7 +82,7 @@ pub fn run_hdd(sh: &Shell, arch: &str, qemu_flags: &str, hdd_path: &Path) -> Res
         "x86_64" => {
             // virtio-vga-gl enables virgl 3D acceleration
             // virtio-net-pci for network support
-            cmd!(sh, "qemu-system-x86_64 -M q35 -device virtio-vga-gl -display gtk,gl=on -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd} -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev user,id=n0,hostfwd=tcp::8888-:80")
+            cmd!(sh, "qemu-system-x86_64 -M q35,usb=off -device virtio-vga-gl -display gtk,gl=on -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -hda {hdd} -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev user,id=n0,hostfwd=tcp::8888-:80")
                 .args(&qemu_args)
                 .run()?;
         }

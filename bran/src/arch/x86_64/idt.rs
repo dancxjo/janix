@@ -1,9 +1,12 @@
 use core::mem::size_of;
+use core::sync::atomic::{AtomicU64, Ordering};
 
 pub const IRQ_TIMER_VECTOR: u8 = 0x20;
 pub const IRQ_RESCHED_VECTOR: u8 = 0x30;
 pub const IRQ_TLB_SHOOTDOWN_VECTOR: u8 = 0x41;
 use kernel::kinfo;
+
+static IRQ12_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
@@ -442,6 +445,13 @@ pub struct InterruptStackFrame {
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_irq_handler(vector: u64) {
     let resolved = crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
+
+    if resolved == 0x2C {
+        let count = IRQ12_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if count <= 3 || (count % 128 == 0) {
+            kinfo!("IRQ12 fired (count={})", count);
+        }
+    }
 
     // Send EOI to Local APIC early to avoid wedging during context switch
     crate::arch::x86_64::ioapic::send_eoi();

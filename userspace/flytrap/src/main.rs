@@ -40,20 +40,20 @@
 extern crate alloc;
 mod sniff;
 
-use alloc::format;
-use alloc::vec;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
 use abi::service_contract::ServiceContract;
 use abi::tree_provider::*;
 use abi::types::{WatchMode, WatchSpec};
 use alloc::collections::{BTreeMap, BTreeSet};
+use alloc::format;
 use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, Ordering};
 use sha2::{Digest, Sha256};
 use sniff::sniff;
-use stem::syscall::port::{port_recv, port_send, PortHandle};
+use stem::syscall::port::{PortHandle, port_recv, port_send};
 use stem::thing::ThingId;
 
 /// Service Contract Declaration
@@ -67,11 +67,11 @@ use stem::thing::ThingId;
 const FLYTRAP_CONTRACT: ServiceContract = ServiceContract {
     name: "flytrap",
     watched_kinds: &[
-        kinds::BOOT_MODULE,     // Limine boot modules
-        kinds::CONTENT_SOURCE,  // ISO9660 disks, future sources
+        kinds::BOOT_MODULE,    // Limine boot modules
+        kinds::CONTENT_SOURCE, // ISO9660 disks, future sources
     ],
     published_kinds: &[
-        kinds::ASSET,           // Canonical asset nodes
+        kinds::ASSET, // Canonical asset nodes
     ],
     published_properties: &[
         keys::ASSET_NAME,       // Asset filename/path
@@ -84,7 +84,7 @@ const FLYTRAP_CONTRACT: ServiceContract = ServiceContract {
         keys::ASSET_READY,      // 1 when ready for use
     ],
     idempotent: true,
-    boot_assumptions: &[],      // Graph-native: no boot assumptions!
+    boot_assumptions: &[], // Graph-native: no boot assumptions!
 };
 
 /// Flag to track whether initial Limine boot module scan is complete.
@@ -116,7 +116,7 @@ enum PublishResult {
 /// In-memory index of processed assets for O(log n) deduplication
 struct AssetIndex {
     by_key: BTreeMap<AssetKey, (ThingId, u64)>, // (asset_id, hash)
-    scanned_sources: BTreeSet<u64>, // Track scanned tree provider sources
+    scanned_sources: BTreeSet<u64>,             // Track scanned tree provider sources
 }
 
 impl AssetIndex {
@@ -151,24 +151,28 @@ impl AssetIndex {
 /// Tree Provider Client Helpers
 /// These functions implement the client side of the tree provider RPC protocol
 
-fn send_tree_request(port: PortHandle, request_type: u8, payload: &[u8]) -> Result<Vec<u8>, &'static str> {
+fn send_tree_request(
+    port: PortHandle,
+    request_type: u8,
+    payload: &[u8],
+) -> Result<Vec<u8>, &'static str> {
     // Build request message: [request_type, payload...]
     let mut msg = Vec::with_capacity(1 + payload.len());
     msg.push(request_type);
     msg.extend_from_slice(payload);
-    
+
     // Send request
     port_send(port, &msg).map_err(|_| "port_send failed")?;
-    
+
     // Receive response
     let mut response = vec![0u8; 8192];
     let len = port_recv(port, &mut response).map_err(|_| "port_recv failed")?;
     response.truncate(len);
-    
+
     if response.is_empty() {
         return Err("empty response");
     }
-    
+
     // Check response type
     match response[0] {
         0 => Ok(response[1..].to_vec()), // TreeProviderResponse::Ok
@@ -179,83 +183,103 @@ fn send_tree_request(port: PortHandle, request_type: u8, payload: &[u8]) -> Resu
 
 fn get_root_node(port: PortHandle) -> Result<u64, &'static str> {
     let response = send_tree_request(port, TreeProviderRequest::Root as u8, &[])?;
-    
+
     if response.len() < 8 {
         return Err("truncated root response");
     }
-    
+
     let root_resp = unsafe { &*(response.as_ptr() as *const RootResponse) };
     Ok(root_resp.node_id)
 }
 
-fn list_children(port: PortHandle, node_id: u64) -> Result<Vec<(u64, NodeKind, String, u64)>, &'static str> {
+fn list_children(
+    port: PortHandle,
+    node_id: u64,
+) -> Result<Vec<(u64, NodeKind, String, u64)>, &'static str> {
     let req = ListRequest { node_id };
     let req_bytes = unsafe {
-        core::slice::from_raw_parts(&req as *const _ as *const u8, core::mem::size_of::<ListRequest>())
+        core::slice::from_raw_parts(
+            &req as *const _ as *const u8,
+            core::mem::size_of::<ListRequest>(),
+        )
     };
-    
+
     let response = send_tree_request(port, TreeProviderRequest::List as u8, req_bytes)?;
-    
+
     if response.len() < core::mem::size_of::<ListResponseHeader>() {
         return Err("truncated list response");
     }
-    
+
     let header = unsafe { &*(response.as_ptr() as *const ListResponseHeader) };
     let count = header.count as usize;
-    
+
     let mut children = Vec::new();
     let mut offset = core::mem::size_of::<ListResponseHeader>();
-    
+
     for _ in 0..count {
         if offset + core::mem::size_of::<ChildEntry>() > response.len() {
             break;
         }
-        
+
         let entry = unsafe { &*((response.as_ptr().add(offset)) as *const ChildEntry) };
         offset += core::mem::size_of::<ChildEntry>();
-        
+
         let name_len = entry.name_len as usize;
         if offset + name_len > response.len() {
             break;
         }
-        
+
         let name_bytes = &response[offset..offset + name_len];
         let name = String::from_utf8_lossy(name_bytes).into_owned();
         offset += name_len;
-        
+
         let kind = match entry.kind {
             0 => NodeKind::Directory,
             1 => NodeKind::File,
             2 => NodeKind::Symlink,
             _ => NodeKind::Other,
         };
-        
+
         children.push((entry.node_id, kind, name, entry.size));
     }
-    
+
     Ok(children)
 }
 
-fn read_file_data(port: PortHandle, node_id: u64, offset: u64, length: u32) -> Result<Vec<u8>, &'static str> {
-    let req = ReadRequest { node_id, offset, length };
-    let req_bytes = unsafe {
-        core::slice::from_raw_parts(&req as *const _ as *const u8, core::mem::size_of::<ReadRequest>())
+fn read_file_data(
+    port: PortHandle,
+    node_id: u64,
+    offset: u64,
+    length: u32,
+) -> Result<Vec<u8>, &'static str> {
+    let req = ReadRequest {
+        node_id,
+        offset,
+        length,
     };
-    
+    let req_bytes = unsafe {
+        core::slice::from_raw_parts(
+            &req as *const _ as *const u8,
+            core::mem::size_of::<ReadRequest>(),
+        )
+    };
+
     let response = send_tree_request(port, TreeProviderRequest::Read as u8, req_bytes)?;
-    
+
     if response.len() < core::mem::size_of::<ReadResponse>() {
         return Err("truncated read response");
     }
-    
+
     let read_resp = unsafe { &*(response.as_ptr() as *const ReadResponse) };
     let data_len = read_resp.data_len as usize;
-    
+
     if response.len() < core::mem::size_of::<ReadResponse>() + data_len {
         return Err("truncated read data");
     }
-    
-    let data = response[core::mem::size_of::<ReadResponse>()..core::mem::size_of::<ReadResponse>() + data_len].to_vec();
+
+    let data = response
+        [core::mem::size_of::<ReadResponse>()..core::mem::size_of::<ReadResponse>() + data_len]
+        .to_vec();
     Ok(data)
 }
 
@@ -263,27 +287,28 @@ fn read_file_data(port: PortHandle, node_id: u64, offset: u64, length: u32) -> R
 fn is_in_hot_set(path: &str) -> bool {
     let path_lower = path.to_lowercase();
     // Load fonts, cursors, and critical UI assets eagerly
-    path_lower.contains("/cursor") ||
-    path_lower.ends_with(".ttf") ||
-    path_lower.ends_with(".otf") ||
-    path_lower.contains("/font") ||
-    path_lower == "/boot.svg" // Boot logo if present
+    path_lower.contains("/cursor")
+        || path_lower.ends_with(".ttf")
+        || path_lower.ends_with(".otf")
+        || path_lower.contains("/font")
+        || path_lower == "/boot.svg" // Boot logo if present
 }
 
 use stem::thing::sys::{
     bytespace_info, bytespace_map, bytespace_unmap, create_node, describe_thing, find, intern,
     link, prop_get, prop_set,
 };
-use stem::xml::ingest::{ingest_xml_to_graph, SysGraphApply, XmlIngestOptions};
-use stem::{info, warn, syscall};
+use stem::xml::ingest::{SysGraphApply, XmlIngestOptions, ingest_xml_to_graph};
+use stem::{info, syscall, warn};
 use ttf_parser::Face;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
     info!("FLYTRAP: Starting unified content provider service...");
-    
+
     // Validate service contract
-    FLYTRAP_CONTRACT.validate()
+    FLYTRAP_CONTRACT
+        .validate()
         .expect("FLYTRAP: Invalid service contract");
     info!("FLYTRAP: Service contract validated - graph-native asset watcher");
 
@@ -297,10 +322,13 @@ fn main(_arg: usize) -> ! {
     // 2. Initial scan of boot modules to seed canonical assets
     info!("FLYTRAP: Performing initial boot module scan...");
     scan_boot_modules(&mut asset_index);
-    
+
     // Mark Limine as complete - these modules are immutable
     LIMINE_SCAN_COMPLETE.store(true, Ordering::Release);
-    info!("FLYTRAP: Limine boot module scan complete (indexed {} assets)", asset_index.by_key.len());
+    info!(
+        "FLYTRAP: Limine boot module scan complete (indexed {} assets)",
+        asset_index.by_key.len()
+    );
 
     // 3. Seed system assets
     info!("FLYTRAP: Seeding system assets (reactive)...");
@@ -318,7 +346,13 @@ fn main(_arg: usize) -> ! {
     let mut watch_bufs = Vec::new();
     let mut watch_seqs = Vec::new();
 
-    let preds = [boot_module_pred, content_source_pred, asset_request_pred, proc_task_pred, content_file_pred];
+    let preds = [
+        boot_module_pred,
+        content_source_pred,
+        asset_request_pred,
+        proc_task_pred,
+        content_file_pred,
+    ];
     for &pred in &preds {
         if pred == 0 {
             continue;
@@ -384,13 +418,13 @@ fn initialize_limine_content_source() -> ThingId {
             let kind_sym = intern("limine_module").unwrap_or(0);
             let name_sym = intern("boot").unwrap_or(0);
             let state_sym = intern("ready").unwrap_or(0);
-            
+
             let _ = prop_set(source_id, keys::CONTENT_SOURCE_KIND, kind_sym as u64);
             let _ = prop_set(source_id, keys::CONTENT_SOURCE_NAME, name_sym as u64);
             let _ = prop_set(source_id, keys::CONTENT_SOURCE_PRIORITY, 100u64); // Default priority
             let _ = prop_set(source_id, keys::CONTENT_SOURCE_STATE, state_sym as u64);
             let _ = prop_set(source_id, keys::CONTENT_SOURCE_GEN, 1u64);
-            
+
             info!("FLYTRAP: Created Limine ContentSource node");
             source_id
         }
@@ -473,14 +507,16 @@ fn ingest_content_file(file_id: ThingId, index: &mut AssetIndex) {
         Ok(s) => s,
         Err(_) => return,
     };
-    
+
     let mut buf = [0u8; 256];
     let len = match stem::thing::sys::describe_symbol(name_sym as u32, &mut buf) {
         Ok(l) => l,
         Err(_) => return,
     };
     let file_name = core::str::from_utf8(&buf[..len]).unwrap_or("");
-    if file_name.is_empty() { return; }
+    if file_name.is_empty() {
+        return;
+    }
 
     let bs_id = match prop_get(file_id, keys::FILE_BYTESPACE) {
         Ok(id) => ThingId::from_u64(id),
@@ -489,59 +525,80 @@ fn ingest_content_file(file_id: ThingId, index: &mut AssetIndex) {
 
     let size = prop_get(file_id, keys::FILE_SIZE).unwrap_or(0) as usize;
     let hash = prop_get(file_id, keys::FILE_HASH).unwrap_or(0);
-    
+
     // Quick index check before any content sniffing - avoid I/O for unchanged files
     let key = AssetKey { name_sym };
     if let DedupeResult::Unchanged(_) = index.check(&key, hash) {
         return; // Already processed with same hash - skip entirely
     }
-    
+
     let mime_sym = prop_get(file_id, keys::FILE_MIME).unwrap_or(0);
-    
+
     // Map to sniff/validate
     let ptr = match bytespace_map(bs_id) {
         Ok(ptr) => ptr,
         Err(_) => return,
     };
     let slice = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
-    
+
     // Sniff or use MIME
     let kind = if mime_sym != 0 {
-         let mut mbuf = [0u8; 128];
-         if let Ok(mlen) = stem::thing::sys::describe_symbol(mime_sym as u32, &mut mbuf) {
-             let m = core::str::from_utf8(&mbuf[..mlen]).unwrap_or("");
-             if m.starts_with("font") || m == "application/font-sfnt" { "font" }
-             else if m == "image/svg+xml" { "svg" }
-             else if m.starts_with("image") { "image" }
-             else { "raw" }
-         } else {
-             "raw"
-         }
+        let mut mbuf = [0u8; 128];
+        if let Ok(mlen) = stem::thing::sys::describe_symbol(mime_sym as u32, &mut mbuf) {
+            let m = core::str::from_utf8(&mbuf[..mlen]).unwrap_or("");
+            if m.starts_with("font") || m == "application/font-sfnt" {
+                "font"
+            } else if m == "image/svg+xml" {
+                "svg"
+            } else if m.starts_with("image") {
+                "image"
+            } else {
+                "raw"
+            }
+        } else {
+            "raw"
+        }
     } else {
-         let guess = sniff(slice);
-         if let Some(ref g) = guess {
-            if g.mime.starts_with("font/") || g.mime == "application/font-sfnt" { "font" }
-            else if g.mime == "image/svg+xml" { "svg" }
-            else if g.mime.starts_with("image/") { "image" }
-            else { "raw" }
-         } else {
-             if file_name.ends_with(".ttf") || file_name.ends_with(".otf") { "font" }
-             else if file_name.ends_with(".svg") { "svg" }
-             else if file_name.ends_with(".bmp") || file_name.ends_with(".png") { "image" }
-             else { "raw" }
-         }
+        let guess = sniff(slice);
+        if let Some(ref g) = guess {
+            if g.mime.starts_with("font/") || g.mime == "application/font-sfnt" {
+                "font"
+            } else if g.mime == "image/svg+xml" {
+                "svg"
+            } else if g.mime.starts_with("image/") {
+                "image"
+            } else {
+                "raw"
+            }
+        } else {
+            if file_name.ends_with(".ttf") || file_name.ends_with(".otf") {
+                "font"
+            } else if file_name.ends_with(".svg") {
+                "svg"
+            } else if file_name.ends_with(".bmp") || file_name.ends_with(".png") {
+                "image"
+            } else {
+                "raw"
+            }
+        }
     };
 
     let result = publish_asset(file_name, kind, bs_id, "disk", size, hash, index);
-    
+
     // Conditional logging based on result
     let asset_id = match result {
         PublishResult::Created(id) => {
-            info!("FLYTRAP: Ingested file '{}' from disk ({}, {} bytes)", file_name, kind, size);
+            info!(
+                "FLYTRAP: Ingested file '{}' from disk ({}, {} bytes)",
+                file_name, kind, size
+            );
             id
         }
         PublishResult::Updated(id) => {
-            info!("FLYTRAP: Updated file '{}' from disk (hash changed)", file_name);
+            info!(
+                "FLYTRAP: Updated file '{}' from disk (hash changed)",
+                file_name
+            );
             id
         }
         PublishResult::Unchanged(_id) => {
@@ -570,12 +627,12 @@ fn ingest_content_file(file_id: ThingId, index: &mut AssetIndex) {
             }
         }
     }
-    
+
     // Parse and import SVG as XML tree
     if kind == "svg" && !slice.is_empty() {
         ingest_svg_xml(asset_id, slice, file_name);
     }
-    
+
     let _ = bytespace_unmap(bs_id, ptr);
 }
 
@@ -585,33 +642,43 @@ fn ingest_content_source(source_id: ThingId, index: &mut AssetIndex) {
     if index.is_source_scanned(source_u64) {
         return; // Immutable source already scanned
     }
-    
+
     // Get source kind for logging
     let kind_sym = prop_get(source_id, keys::CONTENT_SOURCE_KIND).unwrap_or(0);
     let mut kind_buf = [0u8; 64];
-    let source_kind = if let Ok(len) = stem::thing::sys::describe_symbol(kind_sym as u32, &mut kind_buf) {
-        core::str::from_utf8(&kind_buf[..len]).unwrap_or("unknown")
-    } else {
-        "unknown"
-    };
-    
+    let source_kind =
+        if let Ok(len) = stem::thing::sys::describe_symbol(kind_sym as u32, &mut kind_buf) {
+            core::str::from_utf8(&kind_buf[..len]).unwrap_or("unknown")
+        } else {
+            "unknown"
+        };
+
     // Get tree provider port handle
     let port_handle = match prop_get(source_id, "tree_provider_port") {
         Ok(handle) => handle as PortHandle,
         Err(_) => {
             // Some content sources (like Limine modules) don't use tree providers
             // They expose files directly via other mechanisms (e.g., BOOT_MODULE nodes)
-            info!("FLYTRAP: CONTENT_SOURCE (kind={}) has no tree_provider_port, skipping tree scan", source_kind);
+            info!(
+                "FLYTRAP: CONTENT_SOURCE (kind={}) has no tree_provider_port, skipping tree scan",
+                source_kind
+            );
             return;
         }
     };
-    
-    info!("FLYTRAP: Scanning tree provider source (kind={}, port={})", source_kind, port_handle);
-    
+
+    info!(
+        "FLYTRAP: Scanning tree provider source (kind={}, port={})",
+        source_kind, port_handle
+    );
+
     // Scan the tree provider
     match scan_tree_provider(port_handle, source_id, source_kind, index) {
         Ok(count) => {
-            info!("FLYTRAP: Tree provider scan complete ({} files ingested)", count);
+            info!(
+                "FLYTRAP: Tree provider scan complete ({} files ingested)",
+                count
+            );
             // Mark as scanned
             index.mark_source_scanned(source_u64);
         }
@@ -629,10 +696,18 @@ fn scan_tree_provider(
 ) -> Result<usize, &'static str> {
     // Get root node
     let root_id = get_root_node(port)?;
-    
+
     let mut file_count = 0;
-    scan_tree_recursive(port, root_id, String::new(), source_id, source_kind, index, &mut file_count)?;
-    
+    scan_tree_recursive(
+        port,
+        root_id,
+        String::new(),
+        source_id,
+        source_kind,
+        index,
+        &mut file_count,
+    )?;
+
     Ok(file_count)
 }
 
@@ -646,7 +721,7 @@ fn scan_tree_recursive(
     file_count: &mut usize,
 ) -> Result<(), &'static str> {
     let children = list_children(port, node_id)?;
-    
+
     for (child_id, kind, name, size) in children {
         // Build full path
         let full_path = if path_prefix.is_empty() {
@@ -654,15 +729,31 @@ fn scan_tree_recursive(
         } else {
             format!("{}/{}", path_prefix, name)
         };
-        
+
         match kind {
             NodeKind::Directory => {
                 // Recurse into subdirectory
-                scan_tree_recursive(port, child_id, full_path, source_id, source_kind, index, file_count)?;
+                scan_tree_recursive(
+                    port,
+                    child_id,
+                    full_path,
+                    source_id,
+                    source_kind,
+                    index,
+                    file_count,
+                )?;
             }
             NodeKind::File => {
                 // Process file
-                ingest_tree_file(port, child_id, &full_path, size, source_id, source_kind, index)?;
+                ingest_tree_file(
+                    port,
+                    child_id,
+                    &full_path,
+                    size,
+                    source_id,
+                    source_kind,
+                    index,
+                )?;
                 *file_count += 1;
             }
             _ => {
@@ -670,7 +761,7 @@ fn scan_tree_recursive(
             }
         }
     }
-    
+
     Ok(())
 }
 
@@ -685,43 +776,49 @@ fn ingest_tree_file(
 ) -> Result<(), &'static str> {
     // Check hot-set policy
     let in_hot_set = is_in_hot_set(path);
-    
+
     if !in_hot_set && size > MAX_READ_SIZE as u64 {
         // Skip large files outside hot-set (publish metadata only in future)
         return Ok(());
     }
-    
+
     // Read file data (in chunks if needed)
     let mut data = Vec::new();
     let mut offset = 0u64;
-    
+
     while offset < size {
         let to_read = ((size - offset) as usize).min(MAX_READ_SIZE);
         let chunk = read_file_data(port, node_id, offset, to_read as u32)?;
         data.extend_from_slice(&chunk);
         offset += chunk.len() as u64;
-        
+
         if chunk.len() < to_read {
             break; // EOF
         }
     }
-    
+
     // Compute content hash
     let mut hasher = Sha256::new();
     hasher.update(&data);
     let hash_bytes = hasher.finalize();
     let hash = u64::from_le_bytes([
-        hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
-        hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+        hash_bytes[0],
+        hash_bytes[1],
+        hash_bytes[2],
+        hash_bytes[3],
+        hash_bytes[4],
+        hash_bytes[5],
+        hash_bytes[6],
+        hash_bytes[7],
     ]);
-    
+
     // Check if we've already ingested this file with same hash
     let name_sym = intern(path).unwrap_or(0) as u64;
     let key = AssetKey { name_sym };
     if let DedupeResult::Unchanged(_) = index.check(&key, hash) {
         return Ok(()); // Already have this exact file
     }
-    
+
     // Sniff asset kind
     let guess = sniff(&data);
     let kind = if let Some(ref g) = guess {
@@ -745,33 +842,42 @@ fn ingest_tree_file(
             "raw"
         }
     };
-    
+
     // Create bytespace for the file data
     let bs_id = match stem::thing::sys::bytespace_create(data.len(), 0, 0) {
         Ok(id) => id,
         Err(_) => return Err("bytespace_create failed"),
     };
-    
+
     // Map and copy data
     let ptr = match bytespace_map(bs_id) {
         Ok(ptr) => ptr,
         Err(_) => return Err("bytespace_map failed"),
     };
-    
+
     unsafe {
         core::ptr::copy_nonoverlapping(data.as_ptr(), ptr as *mut u8, data.len());
     }
-    
+
     // Publish asset
     let result = publish_asset(path, kind, bs_id, source_kind, data.len(), hash, index);
-    
+
     let asset_id = match result {
         PublishResult::Created(id) => {
-            info!("FLYTRAP: Ingested '{}' from {} ({}, {} bytes)", path, source_kind, kind, data.len());
+            info!(
+                "FLYTRAP: Ingested '{}' from {} ({}, {} bytes)",
+                path,
+                source_kind,
+                kind,
+                data.len()
+            );
             id
         }
         PublishResult::Updated(id) => {
-            info!("FLYTRAP: Updated '{}' from {} (hash changed)", path, source_kind);
+            info!(
+                "FLYTRAP: Updated '{}' from {} (hash changed)",
+                path, source_kind
+            );
             id
         }
         PublishResult::Unchanged(_) => {
@@ -779,7 +885,7 @@ fn ingest_tree_file(
             return Ok(());
         }
     };
-    
+
     // Metadata enrichment for fonts
     if kind == "font" && !data.is_empty() {
         if let Ok(face) = Face::parse(&data, 0) {
@@ -799,14 +905,14 @@ fn ingest_tree_file(
             }
         }
     }
-    
+
     // Parse and import SVG as XML tree
     if kind == "svg" && !data.is_empty() {
         ingest_svg_xml(asset_id, &data, path);
     }
-    
+
     let _ = bytespace_unmap(bs_id, ptr);
-    
+
     Ok(())
 }
 
@@ -844,17 +950,23 @@ fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {
     };
 
     let slice = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
-    
+
     // Compute content hash
     let mut hasher = Sha256::new();
     hasher.update(slice);
     let hash_bytes = hasher.finalize();
     // Convert first 8 bytes to u64 for storage
     let hash = u64::from_le_bytes([
-        hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
-        hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+        hash_bytes[0],
+        hash_bytes[1],
+        hash_bytes[2],
+        hash_bytes[3],
+        hash_bytes[4],
+        hash_bytes[5],
+        hash_bytes[6],
+        hash_bytes[7],
     ]);
-    
+
     let guess = sniff(slice);
 
     let kind = if let Some(ref g) = guess {
@@ -883,11 +995,14 @@ fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {
     };
 
     let result = publish_asset(mod_name, kind, bs_id, "boot", size, hash, index);
-    
+
     // Conditional logging based on result
     let asset_id = match result {
         PublishResult::Created(id) => {
-            info!("FLYTRAP: Published new asset '{}' ({}, {} bytes, hash={:016x})", mod_name, kind, size, hash);
+            info!(
+                "FLYTRAP: Published new asset '{}' ({}, {} bytes, hash={:016x})",
+                mod_name, kind, size, hash
+            );
             id
         }
         PublishResult::Updated(id) => {
@@ -900,7 +1015,7 @@ fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {
             return;
         }
     };
-    
+
     // Also create a File node in the content graph for unified access
     // Cache lookup: 16 sources is sufficient for boot-time sources (Limine, ISO, etc.)
     let mut sources = [ThingId::default(); 16];
@@ -922,8 +1037,10 @@ fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {
                         } else {
                             None
                         };
-                        
-                        if publish_content_file(source_id, mod_name, bs_id, size, hash, mime).is_none() {
+
+                        if publish_content_file(source_id, mod_name, bs_id, size, hash, mime)
+                            .is_none()
+                        {
                             info!("FLYTRAP: Failed to create File node for '{}'", mod_name);
                         }
                         break;
@@ -932,7 +1049,7 @@ fn ingest_boot_module(mod_id: ThingId, index: &mut AssetIndex) {
             }
         }
     }
-    
+
     // Font debug logging (only for new assets)
     if mod_name.contains("fonts") || mod_name.ends_with(".ttf") {
         info!(
@@ -1064,7 +1181,7 @@ fn seed_app_assets(app_id: ThingId) {
             let mut name_buf = [0u8; 256];
             if let Ok(len) = stem::thing::sys::describe_symbol(name_sym as u32, &mut name_buf) {
                 let name = core::str::from_utf8(&name_buf[..len]).unwrap_or("");
-                if name.contains("linen.bmp") {
+                if name.contains("flower.bmp") {
                     linen_id = id;
                     break;
                 }
@@ -1080,7 +1197,7 @@ fn seed_app_assets(app_id: ThingId) {
     if let Ok(len) = describe_thing(app_id, &mut name_buf) {
         let name = core::str::from_utf8(&name_buf[..len]).unwrap_or("");
         if name.contains("photosynthesis") {
-            info!("FLYTRAP: Seeding photosynthesis wallpaper 'linen.bmp'");
+            info!("FLYTRAP: Seeding photosynthesis wallpaper 'flower.bmp'");
             let _ = prop_set(app_id, "ui.wallpaper", linen_id.to_u64_lossy());
         }
     }
@@ -1196,7 +1313,7 @@ fn publish_content_file(
         let name_sym = intern(name).unwrap_or(0) as u64;
         for &file_id in &files[..count] {
             let existing_name = prop_get(file_id, keys::FILE_NAME).unwrap_or(0);
-            
+
             // If file with same name already exists (from any source), skip creation
             // This prevents race between ahci_disk (iso9660_disk source) and flytrap (limine_module source)
             if existing_name == name_sym {
@@ -1212,7 +1329,6 @@ fn publish_content_file(
         }
     }
 
-
     // Create new file node
     match create_node(kinds::CONTENT_FILE) {
         Ok(file_id) => {
@@ -1222,14 +1338,17 @@ fn publish_content_file(
             let _ = prop_set(file_id, keys::FILE_HASH, hash);
             let _ = prop_set(file_id, keys::FILE_BYTESPACE, bs_id.to_u64_lossy());
             let _ = prop_set(file_id, keys::FILE_SOURCE, source_id.to_u64_lossy());
-            
+
             if let Some(mime_str) = mime {
                 if let Ok(mime_sym) = intern(mime_str) {
                     let _ = prop_set(file_id, keys::FILE_MIME, mime_sym as u64);
                 }
             }
-            
-            info!("FLYTRAP: Created File node '{}' ({} bytes, hash={:016x})", name, size, hash);
+
+            info!(
+                "FLYTRAP: Created File node '{}' ({} bytes, hash={:016x})",
+                name, size, hash
+            );
             Some(file_id)
         }
         Err(_) => {

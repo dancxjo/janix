@@ -380,7 +380,7 @@ pub struct AssetUpdates {
 
 pub struct AssetBank;
 
-const PREFERRED_WALLPAPERS: &[&str] = &["clouds.bmp", "linen.bmp", "leather.bmp"];
+const PREFERRED_WALLPAPERS: &[&str] = &["flower.bmp", "clouds.bmp", "linen.bmp", "leather.bmp"];
 
 fn is_preferred_wallpaper(name: &str) -> bool {
     for &p in PREFERRED_WALLPAPERS {

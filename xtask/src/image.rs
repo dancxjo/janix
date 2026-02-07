@@ -34,7 +34,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
-
         ProgramConfig {
             name: "rtc_cmos",
             is_init: true,
@@ -86,7 +85,7 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "display_virtio_gpu",
             is_init: true,
-            boot_module: true, 
+            boot_module: true,
             features: vec![],
         },
         ProgramConfig {
@@ -201,6 +200,8 @@ fn generate_limine_config(
         // Allowed assets
         let allowed = clean_path.ends_with("NotoSans-Regular.ttf")
             || clean_path.ends_with("future/default.svg")
+            || clean_path.ends_with("wallpapers/flower.bmp")
+            || clean_path.ends_with("wallpapers/clouds.bmp")
             || clean_path.ends_with("wallpapers/leather.bmp")
             || clean_path.ends_with("wallpapers/linen.bmp")
             || clean_path.ends_with("themes/genie_circles.wasm");
@@ -308,7 +309,10 @@ pub fn build_iso_with_config(
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     sh.copy_file(&kernel_src, iso_root.join("boot/kernel"))?;
 
-    sh.write_file(iso_root.join("boot/locale.conf"), "LOCALE=en_US\nOLLAMA_SERVER=https://forebrain.local:11434\nOLLAMA_MODEL=tinyllama\n")?;
+    sh.write_file(
+        iso_root.join("boot/locale.conf"),
+        "LOCALE=en_US\nOLLAMA_SERVER=https://forebrain.local:11434\nOLLAMA_MODEL=tinyllama\n",
+    )?;
 
     println!("Building userspace programs...");
 
@@ -469,7 +473,7 @@ fn build_userspace_app_with_features(
 
     let mut cmd = cmd!(
         sh,
-        "cargo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target {target} --profile {profile} -p {name}"
+        "cargo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem build --target {target} --profile {profile} -p {name}"
     )
     .env("RUSTFLAGS", "-Awarnings");
 
@@ -539,7 +543,10 @@ pub fn build_hdd(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
     let kernel_src = format!("bran/bin-{}/kernel", arch);
     cmd!(sh, "mcopy -i {hdd}@@1M {kernel_src} ::/boot").run()?;
 
-    sh.write_file("locale.conf", "LOCALE=en_US\nOLLAMA_SERVER=https://forebrain.local:11434\nOLLAMA_MODEL=tinyllama\n")?;
+    sh.write_file(
+        "locale.conf",
+        "LOCALE=en_US\nOLLAMA_SERVER=https://forebrain.local:11434\nOLLAMA_MODEL=tinyllama\n",
+    )?;
     cmd!(sh, "mcopy -i {hdd}@@1M locale.conf ::/boot/locale.conf").run()?;
     sh.remove_path("locale.conf")?;
 

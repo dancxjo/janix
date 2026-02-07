@@ -160,6 +160,7 @@ pub fn sys_root_query(
         steps.push(PreparedStep {
             op: step.op,
             arg1: step.arg1,
+            arg2: step.arg2,
             symbol: sym_id,
         });
     }
@@ -814,6 +815,7 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
         steps.push(PreparedStep {
             op: step.op,
             arg1: step.arg1,
+            arg2: step.arg2,
             symbol: sym_id,
         });
     }

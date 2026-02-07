@@ -445,6 +445,7 @@ mod tests {
             op: 1, // Scan
             symbol: kind,
             arg1: 0,
+            arg2: 0,
         }];
 
         // 1. Test Stack Path (Small buffer)

@@ -2,6 +2,8 @@
 
 ## Recent Status
 
+Current development is focused on **refining the build process and developer ergonomics**. The experimental `json-target-spec` flag has been dropped to simplify the build pipeline, and the userspace library (`stem`) now provides first-class `debug!` and `warn!` macros to aid in application development and troubleshooting.
+
 The operating system's userspace capabilities have expanded significantly with the introduction of a **WASM Driver Host**. This new runtime environment allows drivers to be executed as WebAssembly modules, providing a sandboxed and architecture-independent execution model. Crucially, the host includes a **record-and-replay syscall tracing** system, enabling developers to capture driver interactions and replay them deterministically for debugging.
 
 Complementing this, the **Anther** HTTP server has gained **file upload capabilities**. Clients can now push files directly to the system via a `POST /upload` endpoint, which automatically handles bytespace creation, SHA-256 hashing, and metadata extraction (MIME type, size) to populate `fs.File` nodes in the graph.
@@ -9,6 +11,16 @@ Complementing this, the **Anther** HTTP server has gained **file upload capabili
 On the visual front, the default desktop experience has been refreshed with a new wallpaper (`linen.bmp`), automatically seeded by the `flytrap` asset service.
 
 ## Recent Changes
+
+### 🏗️ Infrastructure & Tooling
+
+*   **Simplified Build Flags**: Removed `-Z json-target-spec` from the cargo build invocations in `xtask`. This streamlining reduces reliance on unstable compiler flags for target specification.
+    *   *Artifacts*: `xtask/src/image.rs`
+
+### 📚 Libraries & Runtime
+
+*   **Enhanced Logging in Stem**: Added `debug!` and `warn!` macros to the `stem` library. This unifies logging capabilities across the userspace ecosystem, making it easier to instrument code with appropriate log levels.
+    *   *Artifacts*: `stem/src/lib.rs`
 
 ### 🔌 Userspace & Drivers
 

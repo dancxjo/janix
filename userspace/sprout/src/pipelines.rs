@@ -607,6 +607,25 @@ pub fn setup_clock_service(tasks: &mut Vec<ManagedTask>) {
     }
 }
 
+pub fn setup_cambium_service(tasks: &mut Vec<ManagedTask>) {
+    match stem::syscall::spawn_process("/cambium", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned cambium (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/cambium".to_string(),
+                kind: TaskKind::Service("svc.cambium".to_string()),
+                module_path: "/cambium".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn cambium: {:?}", e);
+        }
+    }
+}
+
 /// Set up audio pipeline - spawn virtio_sound and beeper
 pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Setting up audio pipeline...");

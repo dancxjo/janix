@@ -30,6 +30,8 @@ impl Supervisor {
 
         // 1.25. Spawn hardware stubs for non-virtio PCI devices we can detect.
         crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
+        crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
+        crate::pipelines::setup_storage_pipeline(&mut self.tasks);
 
         // 1.5. Setup audio pipeline (PRIORITY: Proof-of-life)
         crate::pipelines::setup_audio_pipeline(&mut self.tasks);
@@ -43,6 +45,7 @@ impl Supervisor {
         // Setup network pipeline (native NIC driver + net stack)
         crate::pipelines::setup_network_pipeline(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
+        crate::pipelines::setup_cambium_service(&mut self.tasks);
 
         // Enter idle loop
         info!("SPROUT: Startup complete. Entering idle loop.");
@@ -61,6 +64,8 @@ impl Supervisor {
 
         // 1.25. Spawn hardware stubs for non-virtio PCI devices we can detect.
         crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
+        crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
+        crate::pipelines::setup_storage_pipeline(&mut self.tasks);
 
         // 1.5. Setup audio pipeline (PRIORITY: Proof-of-life)
         crate::pipelines::setup_audio_pipeline(&mut self.tasks);
@@ -80,6 +85,7 @@ impl Supervisor {
         // 3.6. Setup network pipeline
         crate::pipelines::setup_network_pipeline(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
+        crate::pipelines::setup_cambium_service(&mut self.tasks);
 
 
         // 4. Loop
@@ -203,7 +209,6 @@ impl Supervisor {
         self.ensure_app("/flytrap");
         self.ensure_app("/fontd");
         self.ensure_app("/blossom");
-        self.ensure_app("/cambium");
         // netd is spawned by setup_network_pipeline, not here
         
         // Storage

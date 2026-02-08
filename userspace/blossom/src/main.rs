@@ -32,7 +32,9 @@
 extern crate alloc;
 extern crate stem;
 
-use blossom::{graph_ui, read_bytespace};
+// ── Internal modules ──
+// Blossom is a renderer, not a library. These are private to this binary.
+mod graph_ui;
 
 use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, ui_kind};
@@ -43,16 +45,17 @@ use abi::svg_protocol::{
 use abi::types::{WatchMode, WatchSpec};
 use abi::watch;
 use alloc::collections::BTreeMap;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use log::debug;
 use stem::info;
 use stem::syscall;
 use stem::thing::sys::{
-    bytespace_create, bytespace_info, bytespace_write, create_node, find, prop_get,
+    bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, prop_get,
     prop_set,
 };
-use stem::thing::ThingId;
+use stem::thing::{HandleId, ThingId};
 
 /// Cache entry for a rasterized SVG variant
 #[derive(Clone)]
@@ -579,4 +582,37 @@ fn handle_rasterize(
         variant_hash,
     };
     response.encode(resp)
+}
+
+// ── Crate-internal helpers ──
+// These live at the crate root so `graph_ui` can reference them via `crate::`.
+
+fn read_string_prop(node: ThingId, key: &str) -> Option<String> {
+    let bs = prop_get(node, key).ok()?;
+    if bs == 0 {
+        return None;
+    }
+    let bytes = read_bytespace(ThingId::from_u64(bs)).ok()?;
+    core::str::from_utf8(&bytes)
+        .ok()
+        .map(|s| s.trim_end_matches('\0').to_string())
+}
+
+fn read_bytespace(bs_id: ThingId) -> Result<Vec<u8>, abi::errors::Errno> {
+    let size = bytespace_info(bs_id)?;
+    if size == 0 {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::with_capacity(size);
+    out.resize(size, 0);
+    let mut offset = 0usize;
+    while offset < size {
+        let end = core::cmp::min(offset + 4096, size);
+        let read = bytespace_read(bs_id, offset, &mut out[offset..end])?;
+        if read == 0 {
+            break;
+        }
+        offset = offset.saturating_add(read);
+    }
+    Ok(out)
 }

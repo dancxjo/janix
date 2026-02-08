@@ -14,14 +14,13 @@ fn ui_intent_contract_documented() {
     // (docs/UI_INTENT_CONTRACT.md) defines the architectural boundary.
     //
     // The boundary is enforced at compile time through Rust's module privacy:
-    // - blossom::layout is private (mod layout)
-    // - blossom::emit_paint is private (mod emit_paint)
-    // - blossom::scene is private (mod scene)
+    // - blossom::graph_ui is pub(crate) — not externally importable
+    // - blossom::read_string_prop is pub(crate)
+    // - blossom::read_bytespace is pub(crate)
     //
-    // Any attempt to import these modules from outside blossom will fail:
-    //   use blossom::layout;      // error: module `layout` is private
-    //   use blossom::emit_paint;  // error: module `emit_paint` is private
-    //   use blossom::scene;       // error: module `scene` is private
+    // Any attempt to import these from outside blossom will fail:
+    //   use blossom::graph_ui;        // error: module `graph_ui` is private
+    //   use blossom::read_bytespace;  // error: function `read_bytespace` is private
 }
 
 #[test]
@@ -40,19 +39,12 @@ fn petals_api_is_sufficient_for_apps() {
 }
 
 #[test]
-fn blossom_modules_are_implementation_details() {
-    // Verification that Blossom's internal modules are not part of the public API.
+fn blossom_has_no_public_api() {
+    // Blossom is a renderer, not a library. It intentionally exposes
+    // zero public API surface. All modules and helpers are pub(crate).
     //
-    // The following modules are implementation details and private:
-    // - layout::layout_scene() - computes rectangles from intent
-    // - emit_paint::emit_paint() - generates paint commands
-    // - scene::SceneGraph - internal scene representation
+    // The crate enforces this with #![warn(unreachable_pub)].
     //
-    // Apps must use the Petals builder API instead:
-    // - stem::petals::Scene - for building intent
-    // - stem::petals::Petals graph-native publishing
-    //
-    // This separation allows Blossom to change its layout/paint algorithms
-    // without breaking apps.
+    // If something from Blossom is needed externally, it should be
+    // promoted to stem, abi, or petals — never exposed from Blossom.
 }
-

@@ -2480,7 +2480,6 @@ name = "photosynthesis"
 version = "0.1.0"
 dependencies = [
  "abi",
- "blossom",
  "libm",
  "stem",
 ]

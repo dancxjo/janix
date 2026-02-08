@@ -12,6 +12,7 @@ mod graph_api;
 mod error;
 mod net_client;
 mod gql_handler;
+mod ui;
 
 use alloc::vec::Vec;
 use stem::{info, warn, error};
@@ -140,7 +141,8 @@ fn route_request(req: &http::Request<'_>, path: &str, body: &[u8], keep_alive: b
     }
     
     // Legacy routes - only GET and HEAD allowed
-    if method != http::Method::Get && method != http::Method::Head {
+    let allow_post_legacy = method == http::Method::Post && (path == "/upload" || path == "/ui/event");
+    if method != http::Method::Get && method != http::Method::Head && !allow_post_legacy {
         let body = b"405 Method Not Allowed\n";
         return build_response("405 Method Not Allowed", "text/plain", ResponseBody::Static(body), keep_alive);
     }
@@ -158,14 +160,144 @@ fn route_request(req: &http::Request<'_>, path: &str, body: &[u8], keep_alive: b
     
     match path {
         "/health" => handle_health(is_head, keep_alive),
+        "/ui" => handle_ui_index(is_head, keep_alive),
+        "/ui/event" if req.method == http::Method::Post => handle_ui_event(body, keep_alive),
         "/upload" if req.method == http::Method::Post => {
             let (status, body) = upload::handle_upload_new(req, body);
             build_response(status, "application/json", ResponseBody::Owned(body), keep_alive)
         },
+        p if p.starts_with("/ui/") => handle_ui_route(req, p, is_head, keep_alive),
         "/graph" => handle_graph_index(is_head, keep_alive),
         p if p.starts_with("/graph/") => handle_graph_thing(p, is_head, keep_alive),
         _ => handle_404(is_head, keep_alive),
     }
+}
+
+fn handle_ui_index(is_head: bool, keep_alive: bool) -> (Vec<u8>, ResponseBody) {
+    let json = ui::list_windows_json();
+    let body = if is_head { Vec::new() } else { json };
+    build_response("200 OK", "application/json", ResponseBody::Owned(body), keep_alive)
+}
+
+fn handle_ui_route(req: &http::Request<'_>, path: &str, is_head: bool, keep_alive: bool) -> (Vec<u8>, ResponseBody) {
+    if req.method != http::Method::Get && req.method != http::Method::Head {
+        let body = b"405 Method Not Allowed\n";
+        return build_response("405 Method Not Allowed", "text/plain", ResponseBody::Static(body), keep_alive);
+    }
+
+    let path_only = path.split('?').next().unwrap_or(path);
+    let segs: Vec<&str> = path_only.split('/').filter(|s| !s.is_empty()).collect();
+    if segs.len() < 2 || segs[0] != "ui" {
+        return handle_404(is_head, keep_alive);
+    }
+
+    if segs.len() == 2 && path_only.ends_with(".json") {
+        let id_str = segs[1].trim_end_matches(".json");
+        let id = match id_str.parse::<u64>() {
+            Ok(v) => v,
+            Err(_) => {
+                let body = b"400 Bad Request: Invalid window ID\n";
+                return build_response("400 Bad Request", "text/plain", ResponseBody::Static(body), keep_alive);
+            }
+        };
+        return handle_ui_json(id, is_head, keep_alive);
+    }
+
+    if segs.len() == 3 && segs[2] == "json" {
+        let window_id = match segs[1].parse::<u64>() {
+            Ok(id) => id,
+            Err(_) => {
+                let body = b"400 Bad Request: Invalid window ID\n";
+                return build_response("400 Bad Request", "text/plain", ResponseBody::Static(body), keep_alive);
+            }
+        };
+        return handle_ui_json(window_id, is_head, keep_alive);
+    }
+
+    if segs.len() == 2 {
+        let window_id = match segs[1].parse::<u64>() {
+            Ok(id) => id,
+            Err(_) => {
+                let body = b"400 Bad Request: Invalid window ID\n";
+                return build_response("400 Bad Request", "text/plain", ResponseBody::Static(body), keep_alive);
+            }
+        };
+        let if_scene_gen = parse_u64_query(path, "gen");
+        return match ui::render_window_html(window_id, if_scene_gen) {
+            Ok(None) => {
+                // 204 with empty body when scene generation has not changed.
+                let empty: &[u8] = if is_head { &[] } else { b"" };
+                build_response("204 No Content", "text/plain", ResponseBody::Static(empty), keep_alive)
+            }
+            Ok(Some(html)) => {
+                let body = if is_head { Vec::new() } else { html };
+                build_response("200 OK", "text/html; charset=utf-8", ResponseBody::Owned(body), keep_alive)
+            }
+            Err(ui::UiError::NotFound) => {
+                let body = b"404 Not Found: UI window root not found\n";
+                build_response("404 Not Found", "text/plain", ResponseBody::Static(body), keep_alive)
+            }
+            Err(ui::UiError::BadRequest(msg)) => {
+                let body = alloc::format!("400 Bad Request: {}\n", msg).into_bytes();
+                build_response("400 Bad Request", "text/plain", ResponseBody::Owned(body), keep_alive)
+            }
+            Err(ui::UiError::Internal) => {
+                let body = b"500 Internal Server Error\n";
+                build_response("500 Internal Server Error", "text/plain", ResponseBody::Static(body), keep_alive)
+            }
+        };
+    }
+
+    handle_404(is_head, keep_alive)
+}
+
+fn handle_ui_json(window_id: u64, is_head: bool, keep_alive: bool) -> (Vec<u8>, ResponseBody) {
+    match ui::render_window_json(window_id) {
+        Ok(bytes) => {
+            let body = if is_head { Vec::new() } else { bytes };
+            build_response("200 OK", "application/json", ResponseBody::Owned(body), keep_alive)
+        }
+        Err(ui::UiError::NotFound) => {
+            let body = b"404 Not Found: UI window root not found\n";
+            build_response("404 Not Found", "text/plain", ResponseBody::Static(body), keep_alive)
+        }
+        Err(_) => {
+            let body = b"500 Internal Server Error\n";
+            build_response("500 Internal Server Error", "text/plain", ResponseBody::Static(body), keep_alive)
+        }
+    }
+}
+
+fn handle_ui_event(body: &[u8], keep_alive: bool) -> (Vec<u8>, ResponseBody) {
+    match ui::ingest_event(body) {
+        Ok(resp) => build_response(
+            "200 OK",
+            "application/json",
+            ResponseBody::Owned(resp),
+            keep_alive,
+        ),
+        Err(ui::UiError::BadRequest(msg)) => {
+            let json = alloc::format!("{{\"ok\":false,\"error\":\"{}\"}}", msg).into_bytes();
+            build_response("400 Bad Request", "application/json", ResponseBody::Owned(json), keep_alive)
+        }
+        Err(_) => {
+            let json = b"{\"ok\":false,\"error\":\"internal\"}".to_vec();
+            build_response("500 Internal Server Error", "application/json", ResponseBody::Owned(json), keep_alive)
+        }
+    }
+}
+
+fn parse_u64_query(path: &str, key: &str) -> Option<u64> {
+    let q = path.split_once('?')?.1;
+    for part in q.split('&') {
+        let (k, v) = part.split_once('=')?;
+        if k == key {
+            if let Ok(parsed) = v.parse::<u64>() {
+                return Some(parsed);
+            }
+        }
+    }
+    None
 }
 
 /// GET /health

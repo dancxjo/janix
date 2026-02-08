@@ -2,6 +2,7 @@ use crate::task::{ManagedTask, TaskKind};
 use abi::schema::{keys, kinds};
 use alloc::string::ToString;
 use alloc::vec::Vec;
+use stem::abi::driver_ctx::DriverCtx;
 use stem::syscall::{port_create, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
@@ -18,6 +19,20 @@ pub struct DisplayHandles {
 fn has_kind(kind: &str) -> bool {
     let mut buf = [ThingId::default(); 1];
     matches!(thingsys::find(kind, &mut buf), Ok(count) if count > 0)
+}
+
+fn has_ahci_controller() -> bool {
+    let mut funcs = [ThingId::default(); 64];
+    let count = thingsys::find(kinds::DEV_PCI_FUNCTION, &mut funcs).unwrap_or(0);
+    for f in funcs.iter().take(count) {
+        let class = thingsys::prop_get(*f, keys::CLASS_CODE).unwrap_or(0);
+        let sub = thingsys::prop_get(*f, keys::SUBCLASS_CODE).unwrap_or(0);
+        let prog = thingsys::prop_get(*f, keys::PROG_IF).unwrap_or(0);
+        if class == 0x01 && sub == 0x06 && prog == 0x01 {
+            return true;
+        }
+    }
+    false
 }
 
 pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
@@ -42,6 +57,78 @@ pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
         Err(e) => {
             warn!("SPROUT: Failed to spawn pci_stubd: {:?}", e);
         }
+    }
+}
+
+pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
+    let mut rtcs = [ThingId::default(); 1];
+    let count = thingsys::find(kinds::DEV_RTC_CMOS, &mut rtcs).unwrap_or(0);
+    if count == 0 {
+        info!("SPROUT: No RTC CMOS device found, skipping rtc_cmos");
+        return;
+    }
+
+    let rtc = rtcs[0];
+    let arg = DriverCtx { device_id: rtc }.to_raw();
+    match stem::syscall::spawn_process("/rtc_cmos", arg) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned rtc_cmos (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/rtc_cmos".to_string(),
+                kind: TaskKind::Driver(kinds::DEV_RTC_CMOS.to_string()),
+                module_path: "/rtc_cmos".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn rtc_cmos: {:?}", e);
+        }
+    }
+}
+
+pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: Setting up storage pipeline...");
+    if has_ahci_controller() {
+        match stem::syscall::spawn_process("/ahci_disk", 0) {
+            Ok(pid) => {
+                info!("SPROUT: Spawned ahci_disk (PID={})", pid);
+                let _ = stem::thread::set_priority(pid, 2);
+                tasks.push(ManagedTask {
+                    name: "/ahci_disk".to_string(),
+                    kind: TaskKind::Driver("dev.storage.Ahci".to_string()),
+                    module_path: "/ahci_disk".to_string(),
+                    pid: Some(pid),
+                    restarts: 0,
+                });
+            }
+            Err(e) => {
+                warn!("SPROUT: Failed to spawn ahci_disk: {:?}", e);
+            }
+        }
+        return;
+    }
+
+    if has_kind(kinds::DEV_BUS_LEGACY_IO) {
+        match stem::syscall::spawn_process("/ata_disk", 0) {
+            Ok(pid) => {
+                info!("SPROUT: Spawned ata_disk (PID={})", pid);
+                let _ = stem::thread::set_priority(pid, 2);
+                tasks.push(ManagedTask {
+                    name: "/ata_disk".to_string(),
+                    kind: TaskKind::Driver("dev.storage.ata".to_string()),
+                    module_path: "/ata_disk".to_string(),
+                    pid: Some(pid),
+                    restarts: 0,
+                });
+            }
+            Err(e) => {
+                warn!("SPROUT: Failed to spawn ata_disk: {:?}", e);
+            }
+        }
+    } else {
+        info!("SPROUT: No AHCI or legacy ATA hardware detected, skipping storage drivers");
     }
 }
 
@@ -422,39 +509,7 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                     }
                 }
 
-                match stem::syscall::spawn_process("/netd", 0) {
-                    Ok(pid) => {
-                        info!("SPROUT: Spawned netd (PID={})", pid);
-                        let _ = stem::thread::set_priority(pid, 2);
-                        tasks.push(ManagedTask {
-                            name: "/netd".to_string(),
-                            kind: TaskKind::Service("svc.net".to_string()),
-                            module_path: "/netd".to_string(),
-                            pid: Some(pid),
-                            restarts: 0,
-                        });
-                    }
-                    Err(e) => {
-                        warn!("SPROUT: Failed to spawn netd: {:?}", e);
-                    }
-                }
-
-                match stem::syscall::spawn_process("/anther", 0) {
-                    Ok(pid) => {
-                        info!("SPROUT: Spawned anther (PID={})", pid);
-                        let _ = stem::thread::set_priority(pid, 2);
-                        tasks.push(ManagedTask {
-                            name: "/anther".to_string(),
-                            kind: TaskKind::Service("svc.http".to_string()),
-                            module_path: "/anther".to_string(),
-                            pid: Some(pid),
-                            restarts: 0,
-                        });
-                    }
-                    Err(e) => {
-                        warn!("SPROUT: Failed to spawn anther: {:?}", e);
-                    }
-                }
+                spawn_net_stack_services(tasks);
 
                 return;
             }
@@ -486,46 +541,69 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                 }
             }
 
-            // Spawn netd - the network stack that talks to virtio_netd via IPC
-            match stem::syscall::spawn_process("/netd", 0) {
-                Ok(pid) => {
-                    info!("SPROUT: Spawned netd (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 2); // Normal priority
-                    tasks.push(ManagedTask {
-                        name: "/netd".to_string(),
-                        kind: TaskKind::Service("svc.net".to_string()),
-                        module_path: "/netd".to_string(),
-                        pid: Some(pid),
-                        restarts: 0,
-                    });
-                }
-                Err(e) => {
-                    warn!("SPROUT: Failed to spawn netd: {:?}", e);
-                }
-            }
-
-            // Spawn anther - HTTP server (we keep this in the pipeline for now as it doesn't have a window)
-            match stem::syscall::spawn_process("/anther", 0) {
-                Ok(pid) => {
-                    info!("SPROUT: Spawned anther (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 2); // Normal priority
-                    tasks.push(ManagedTask {
-                        name: "/anther".to_string(),
-                        kind: TaskKind::Service("svc.http".to_string()),
-                        module_path: "/anther".to_string(),
-                        pid: Some(pid),
-                        restarts: 0,
-                    });
-                }
-                Err(e) => {
-                    warn!("SPROUT: Failed to spawn anther: {:?}", e);
-                }
-            }
+            spawn_net_stack_services(tasks);
         } else {
-            info!("SPROUT: No NIC device found, skipping network pipeline");
+            info!("SPROUT: No NIC device found, starting net services without NIC driver");
+            spawn_net_stack_services(tasks);
         }
     } else {
-        info!("SPROUT: No NIC device found, skipping network pipeline");
+        info!("SPROUT: No NIC device found, starting net services without NIC driver");
+        spawn_net_stack_services(tasks);
+    }
+}
+
+fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
+    match stem::syscall::spawn_process("/netd", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned netd (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/netd".to_string(),
+                kind: TaskKind::Service("svc.net".to_string()),
+                module_path: "/netd".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn netd: {:?}", e);
+        }
+    }
+
+    match stem::syscall::spawn_process("/anther", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned anther (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/anther".to_string(),
+                kind: TaskKind::Service("svc.http".to_string()),
+                module_path: "/anther".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn anther: {:?}", e);
+        }
+    }
+}
+
+pub fn setup_clock_service(tasks: &mut Vec<ManagedTask>) {
+    match stem::syscall::spawn_process("/clock", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned clock (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/clock".to_string(),
+                kind: TaskKind::Service("svc.clock".to_string()),
+                module_path: "/clock".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn clock: {:?}", e);
+        }
     }
 }
 

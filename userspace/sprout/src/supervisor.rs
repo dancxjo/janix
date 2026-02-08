@@ -42,6 +42,7 @@ impl Supervisor {
 
         // Setup network pipeline (native NIC driver + net stack)
         crate::pipelines::setup_network_pipeline(&mut self.tasks);
+        crate::pipelines::setup_clock_service(&mut self.tasks);
 
         // Enter idle loop
         info!("SPROUT: Startup complete. Entering idle loop.");
@@ -78,6 +79,7 @@ impl Supervisor {
 
         // 3.6. Setup network pipeline
         crate::pipelines::setup_network_pipeline(&mut self.tasks);
+        crate::pipelines::setup_clock_service(&mut self.tasks);
 
 
         // 4. Loop

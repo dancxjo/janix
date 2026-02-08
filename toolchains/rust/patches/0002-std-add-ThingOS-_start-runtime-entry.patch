@@ -1,0 +1,37 @@
+From a7fcf923a7e275cc241d6ba51a39973352ebceaf Mon Sep 17 00:00:00 2001
+From: Travis Reed <tdreed@gmail.com>
+Date: Sun, 8 Feb 2026 10:01:45 -0800
+Subject: [PATCH] std: add ThingOS _start runtime entry
+
+---
+ library/std/src/sys/pal/thingos/mod.rs | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/library/std/src/sys/pal/thingos/mod.rs b/library/std/src/sys/pal/thingos/mod.rs
+index 6b32054a..425e6df4 100644
+--- a/library/std/src/sys/pal/thingos/mod.rs
++++ b/library/std/src/sys/pal/thingos/mod.rs
+@@ -75,6 +75,20 @@ pub(crate) fn errno_or(ret: isize) -> crate::io::Result<usize> {
+ pub const SYS_LOG_WRITE: usize = 0x31;
+ pub const SYS_VM_MAP: usize = 0x41;
+ 
++#[cfg(not(test))]
++#[unsafe(no_mangle)]
++pub extern "C" fn _start(arg: usize) -> ! {
++    unsafe extern "C" {
++        fn main(argc: isize, argv: *const *const u8, sigpipe: u8) -> i32;
++    }
++    let _ = arg;
++    let code = unsafe { main(0, core::ptr::null(), 0) };
++    unsafe {
++        let _ = raw_syscall6(SYS_EXIT, code as usize, 0, 0, 0, 0, 0);
++    }
++    core::intrinsics::abort()
++}
++
+ pub fn abort_internal() -> ! {
+     unsafe {
+         let _ = raw_syscall6(SYS_EXIT, 101, 0, 0, 0, 0, 0);
+-- 
+2.51.0
+

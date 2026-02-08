@@ -177,6 +177,101 @@ test *args:
 check: check-ui-split
     cargo +nightly check -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target targets/x86_64-unknown-thingos.json -p bloom -p blossom
 
+# -----------------------------------------------------------------------------
+# Rust std patch-queue workflow (Ramp A)
+# -----------------------------------------------------------------------------
+
+# Prepare a local rust-lang/rust checkout at the ThingOS std baseline.
+# Example: just rust-std-setup ../rust
+rust-std-setup rust_dir="../rust":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    BASELINE="286fbe5d84569c718f189122db9e68a16b50eeef"
+    if [ ! -d "{{rust_dir}}/.git" ]; then
+        git clone https://github.com/rust-lang/rust "{{rust_dir}}"
+    fi
+    git -C "{{rust_dir}}" fetch --all --tags
+    if [ -n "$(git -C "{{rust_dir}}" status --porcelain)" ]; then
+        echo "Rust checkout is dirty: {{rust_dir}}" >&2
+        echo "Please commit/stash changes before running rust-std-setup." >&2
+        exit 1
+    fi
+    git -C "{{rust_dir}}" checkout "$BASELINE"
+    if git -C "{{rust_dir}}" rev-parse --verify thingos-std >/dev/null 2>&1; then
+        git -C "{{rust_dir}}" checkout thingos-std
+    else
+        git -C "{{rust_dir}}" checkout -b thingos-std
+    fi
+    cp toolchains/rust/bootstrap.toml.example "{{rust_dir}}/bootstrap.toml"
+
+# Apply ThingOS rust std patch queue to a rust checkout.
+# Example: just rust-std-apply ../rust
+rust-std-apply rust_dir="../rust":
+    ./toolchains/rust/scripts/apply.sh "{{rust_dir}}"
+
+# Build library/std for a ThingOS JSON target from patched rust checkout.
+# Examples:
+#   just rust-std-build
+#   just rust-std-build ../rust aarch64
+#   just rust-std-build ../rust riscv64
+rust-std-build rust_dir="../rust" arch=karch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    TARGET_ARCH="{{arch}}"
+    if [ "$TARGET_ARCH" == "riscv64" ]; then
+        TARGET_JSON="$(pwd)/targets/riscv64gc-unknown-thingos.json"
+    else
+        TARGET_JSON="$(pwd)/targets/${TARGET_ARCH}-unknown-thingos.json"
+    fi
+    (cd "{{rust_dir}}" && ./x.py build library/std --target "$TARGET_JSON")
+
+# Build an opt-in ThingOS std demo without changing workspace userspace crates.
+# By default this performs a compile/link proof and validates the ELF entrypoint.
+# Optional `boot=1` injects it as `/boot/beeper` into the HDD image, and `run=1`
+# then boots QEMU.
+#
+# Example:
+#   just rust-std-demo
+#   just rust-std-demo ../rust 1 1
+rust-std-demo rust_dir="../rust" boot="0" run="0":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    ROOT="$(pwd)"
+    TARGET_JSON="$ROOT/targets/x86_64-unknown-thingos.json"
+    if [[ "{{rust_dir}}" = /* ]]; then
+        RUST_DIR="{{rust_dir}}"
+    else
+        RUST_DIR="$ROOT/{{rust_dir}}"
+    fi
+    SYSROOT="$RUST_DIR/build/x86_64-unknown-linux-gnu/stage2"
+    RUSTC="$SYSROOT/bin/rustc"
+    DEMO_SRC="$ROOT/toolchains/rust/demo/std_demo.rs"
+    DEMO_OUT="$ROOT/target/std-demo/beeper"
+    HDD="$ROOT/thing-os-x86_64.hdd"
+
+    just rust-std-build "$RUST_DIR" x86_64
+    mkdir -p "$ROOT/target/std-demo"
+    (cd "$ROOT" && "$RUSTC" -Zunstable-options --target "$TARGET_JSON" --sysroot "$SYSROOT" "$DEMO_SRC" -o "$DEMO_OUT")
+
+    ENTRY="$(readelf -h "$DEMO_OUT" | awk '/Entry point address/ {print $4}')"
+    if [ "$ENTRY" = "0x0" ]; then
+        echo "std demo link proof failed: entrypoint is 0x0" >&2
+        exit 1
+    fi
+    echo "std demo compile/link proof OK: $DEMO_OUT (entry $ENTRY)"
+
+    if [ "{{boot}}" = "1" ]; then
+        cargo xtask hdd --env x86_64 --profile {{rust_profile}}
+        mcopy -o -i "$HDD"@@1M "$DEMO_OUT" ::/boot/beeper
+        echo "Injected std demo as /boot/beeper"
+        if [ "{{run}}" = "1" ]; then
+            echo "Booting HDD image..."
+            cargo xtask run-hdd --env x86_64 --profile {{rust_profile}} --qemu-flags "{{qemuflags}}"
+        else
+            echo "Skipping QEMU run (run={{run}})"
+        fi
+    fi
+
 # Run smoke tests (quick boot validation)
 smoke:
     cargo xtask bdd --arch x86_64 --tags @smoke

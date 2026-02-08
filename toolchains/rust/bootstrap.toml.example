@@ -1,0 +1,8 @@
+change-id = "ignore"
+
+[llvm]
+download-ci-llvm = true
+
+[rust]
+download-rustc = true
+deny-warnings = false

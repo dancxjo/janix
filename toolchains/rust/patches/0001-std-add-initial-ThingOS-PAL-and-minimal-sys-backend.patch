@@ -1,0 +1,680 @@
+From 39abb8ccf5622e1f5fced7080358ccbd10e34404 Mon Sep 17 00:00:00 2001
+From: Travis Reed <tdreed@gmail.com>
+Date: Sun, 8 Feb 2026 09:48:43 -0800
+Subject: [PATCH] std: add initial ThingOS PAL and minimal sys backend
+
+---
+ library/std/Cargo.toml                  |   2 +-
+ library/std/src/sys/alloc/mod.rs        |   3 +
+ library/std/src/sys/alloc/thingos.rs    | 158 ++++++++++++++++++++++++
+ library/std/src/sys/io/error/mod.rs     |   4 +
+ library/std/src/sys/pal/mod.rs          |   4 +
+ library/std/src/sys/pal/thingos/mod.rs  |  83 +++++++++++++
+ library/std/src/sys/pal/thingos/os.rs   |  67 ++++++++++
+ library/std/src/sys/random/mod.rs       |   2 +
+ library/std/src/sys/stdio/mod.rs        |   4 +
+ library/std/src/sys/stdio/thingos.rs    |  54 ++++++++
+ library/std/src/sys/thread/mod.rs       |   7 ++
+ library/std/src/sys/thread/thingos.rs   |  42 +++++++
+ library/std/src/sys/thread_local/mod.rs |   2 +
+ library/std/src/sys/time/mod.rs         |   4 +
+ library/std/src/sys/time/thingos.rs     |  63 ++++++++++
+ 15 files changed, 498 insertions(+), 1 deletion(-)
+ create mode 100644 library/std/src/sys/alloc/thingos.rs
+ create mode 100644 library/std/src/sys/pal/thingos/mod.rs
+ create mode 100644 library/std/src/sys/pal/thingos/os.rs
+ create mode 100644 library/std/src/sys/stdio/thingos.rs
+ create mode 100644 library/std/src/sys/thread/thingos.rs
+ create mode 100644 library/std/src/sys/time/thingos.rs
+
+diff --git a/library/std/Cargo.toml b/library/std/Cargo.toml
+index f4cc8edc..21302aec 100644
+--- a/library/std/Cargo.toml
++++ b/library/std/Cargo.toml
+@@ -62,7 +62,7 @@ path = "../windows_link"
+ rand = { version = "0.9.0", default-features = false, features = ["alloc"] }
+ rand_xorshift = "0.4.0"
+ 
+-[target.'cfg(any(all(target_family = "wasm", target_os = "unknown"), target_os = "xous", target_os = "vexos", all(target_vendor = "fortanix", target_env = "sgx")))'.dependencies]
++[target.'cfg(any(all(target_family = "wasm", target_os = "unknown"), target_os = "xous", target_os = "vexos", target_os = "thingos", all(target_vendor = "fortanix", target_env = "sgx")))'.dependencies]
+ dlmalloc = { version = "0.2.10", features = ['rustc-dep-of-std'] }
+ 
+ [target.x86_64-fortanix-unknown-sgx.dependencies]
+diff --git a/library/std/src/sys/alloc/mod.rs b/library/std/src/sys/alloc/mod.rs
+index f2f1d1c7..b4635227 100644
+--- a/library/std/src/sys/alloc/mod.rs
++++ b/library/std/src/sys/alloc/mod.rs
+@@ -104,6 +104,9 @@ unsafe fn realloc_fallback(
+     target_os = "xous" => {
+         mod xous;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++    }
+     target_os = "zkvm" => {
+         mod zkvm;
+     }
+diff --git a/library/std/src/sys/alloc/thingos.rs b/library/std/src/sys/alloc/thingos.rs
+new file mode 100644
+index 00000000..cb94c337
+--- /dev/null
++++ b/library/std/src/sys/alloc/thingos.rs
+@@ -0,0 +1,158 @@
++#![allow(static_mut_refs)]
++
++use crate::alloc::{GlobalAlloc, Layout, System};
++use crate::ptr;
++use crate::sync::atomic::{AtomicBool, Ordering};
++use crate::sys::pal::{SYS_VM_MAP, raw_syscall6};
++
++static mut DLMALLOC: dlmalloc::Dlmalloc<Thingos> = dlmalloc::Dlmalloc::new_with_allocator(Thingos);
++
++struct Thingos;
++
++const PAGE_SIZE: usize = 4096;
++
++#[repr(transparent)]
++#[derive(Clone, Copy)]
++struct VmProt(u32);
++
++impl VmProt {
++    const READ: Self = Self(1 << 0);
++    const WRITE: Self = Self(1 << 1);
++    const USER: Self = Self(1 << 3);
++}
++
++impl core::ops::BitOr for VmProt {
++    type Output = Self;
++    fn bitor(self, rhs: Self) -> Self::Output {
++        Self(self.0 | rhs.0)
++    }
++}
++
++#[repr(transparent)]
++#[derive(Clone, Copy)]
++struct VmMapFlags(u32);
++
++impl VmMapFlags {
++    const PRIVATE: Self = Self(1 << 2);
++}
++
++#[repr(C)]
++#[derive(Clone, Copy)]
++enum VmBacking {
++    Anonymous {
++        #[allow(dead_code)]
++        zeroed: bool,
++    },
++}
++
++#[repr(C)]
++#[derive(Clone, Copy)]
++struct VmMapReq {
++    addr_hint: usize,
++    len: usize,
++    prot: VmProt,
++    flags: VmMapFlags,
++    backing: VmBacking,
++}
++
++#[repr(C)]
++#[derive(Clone, Copy, Default)]
++struct VmMapResp {
++    addr: usize,
++    len: usize,
++}
++
++#[inline]
++fn align_up(v: usize, align: usize) -> usize {
++    (v + align - 1) & !(align - 1)
++}
++
++unsafe impl dlmalloc::Allocator for Thingos {
++    fn alloc(&self, size: usize) -> (*mut u8, usize, u32) {
++        let len = align_up(size.max(PAGE_SIZE), PAGE_SIZE);
++        let req = VmMapReq {
++            addr_hint: 0,
++            len,
++            prot: VmProt::READ | VmProt::WRITE | VmProt::USER,
++            flags: VmMapFlags::PRIVATE,
++            backing: VmBacking::Anonymous { zeroed: true },
++        };
++        let mut resp = VmMapResp::default();
++        let ret = unsafe {
++            raw_syscall6(
++                SYS_VM_MAP,
++                &req as *const VmMapReq as usize,
++                &mut resp as *mut VmMapResp as usize,
++                0,
++                0,
++                0,
++                0,
++            )
++        };
++        if ret < 0 || resp.addr == 0 || resp.len == 0 {
++            (ptr::null_mut(), 0, 0)
++        } else {
++            (ptr::without_provenance_mut(resp.addr), resp.len, 0)
++        }
++    }
++
++    fn remap(&self, _ptr: *mut u8, _oldsize: usize, _newsize: usize, _can_move: bool) -> *mut u8 {
++        ptr::null_mut()
++    }
++
++    fn free_part(&self, _ptr: *mut u8, _oldsize: usize, _newsize: usize) -> bool {
++        false
++    }
++
++    fn free(&self, _ptr: *mut u8, _size: usize) -> bool {
++        false
++    }
++
++    fn can_release_part(&self, _flags: u32) -> bool {
++        false
++    }
++
++    fn allocates_zeros(&self) -> bool {
++        true
++    }
++
++    fn page_size(&self) -> usize {
++        PAGE_SIZE
++    }
++}
++
++fn with_alloc<R>(f: impl FnOnce(&mut dlmalloc::Dlmalloc<Thingos>) -> R) -> R {
++    static LOCK: AtomicBool = AtomicBool::new(false);
++    while LOCK
++        .compare_exchange_weak(false, true, Ordering::Acquire, Ordering::Relaxed)
++        .is_err()
++    {
++        core::hint::spin_loop();
++    }
++    let out = unsafe { f(&mut DLMALLOC) };
++    LOCK.store(false, Ordering::Release);
++    out
++}
++
++#[stable(feature = "alloc_system_type", since = "1.28.0")]
++unsafe impl GlobalAlloc for System {
++    #[inline]
++    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
++        with_alloc(|dl| unsafe { dl.malloc(layout.size(), layout.align()) })
++    }
++
++    #[inline]
++    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
++        with_alloc(|dl| unsafe { dl.calloc(layout.size(), layout.align()) })
++    }
++
++    #[inline]
++    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
++        with_alloc(|dl| unsafe { dl.free(ptr, layout.size(), layout.align()) })
++    }
++
++    #[inline]
++    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
++        with_alloc(|dl| unsafe { dl.realloc(ptr, layout.size(), layout.align(), new_size) })
++    }
++}
+diff --git a/library/std/src/sys/io/error/mod.rs b/library/std/src/sys/io/error/mod.rs
+index d7a0b9b4..ba816145 100644
+--- a/library/std/src/sys/io/error/mod.rs
++++ b/library/std/src/sys/io/error/mod.rs
+@@ -39,6 +39,10 @@
+         mod xous;
+         pub use xous::*;
+     }
++    target_os = "thingos" => {
++        mod generic;
++        pub use generic::*;
++    }
+     any(
+         target_os = "vexos",
+         target_family = "wasm",
+diff --git a/library/std/src/sys/pal/mod.rs b/library/std/src/sys/pal/mod.rs
+index 88d9d420..626875e9 100644
+--- a/library/std/src/sys/pal/mod.rs
++++ b/library/std/src/sys/pal/mod.rs
+@@ -36,6 +36,10 @@
+         mod wasi;
+         pub use self::wasi::*;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++        pub use self::thingos::*;
++    }
+     target_family = "wasm" => {
+         mod wasm;
+         pub use self::wasm::*;
+diff --git a/library/std/src/sys/pal/thingos/mod.rs b/library/std/src/sys/pal/thingos/mod.rs
+new file mode 100644
+index 00000000..6b32054a
+--- /dev/null
++++ b/library/std/src/sys/pal/thingos/mod.rs
+@@ -0,0 +1,83 @@
++#![deny(unsafe_op_in_unsafe_fn)]
++
++pub mod os;
++
++// SAFETY: must be called only once during runtime initialization.
++pub unsafe fn init(_argc: isize, _argv: *const *const u8, _sigpipe: u8) {}
++
++// SAFETY: must be called only once during runtime cleanup.
++pub unsafe fn cleanup() {}
++
++pub fn unsupported<T>() -> crate::io::Result<T> {
++    Err(crate::io::Error::UNSUPPORTED_PLATFORM)
++}
++
++#[cfg(target_arch = "x86_64")]
++#[inline]
++pub(crate) unsafe fn raw_syscall6(
++    n: usize,
++    a0: usize,
++    a1: usize,
++    a2: usize,
++    a3: usize,
++    a4: usize,
++    a5: usize,
++) -> isize {
++    let ret: isize;
++    // SAFETY: caller guarantees syscall ABI correctness and argument validity.
++    unsafe {
++        core::arch::asm!(
++            "syscall",
++            in("rax") n,
++            in("rdi") a0,
++            in("rsi") a1,
++            in("rdx") a2,
++            in("r10") a3,
++            in("r8") a4,
++            in("r9") a5,
++            lateout("rax") ret,
++            lateout("rcx") _,
++            lateout("r11") _,
++            options(nostack)
++        );
++    }
++    ret
++}
++
++#[cfg(not(target_arch = "x86_64"))]
++#[inline]
++pub(crate) unsafe fn raw_syscall6(
++    _n: usize,
++    _a0: usize,
++    _a1: usize,
++    _a2: usize,
++    _a3: usize,
++    _a4: usize,
++    _a5: usize,
++) -> isize {
++    -38 // ENOSYS
++}
++
++#[inline]
++pub(crate) fn errno_or(ret: isize) -> crate::io::Result<usize> {
++    if ret < 0 {
++        Err(crate::io::Error::from_raw_os_error((-ret) as i32))
++    } else {
++        Ok(ret as usize)
++    }
++}
++
++pub const SYS_EXIT: usize = 0x01;
++pub const SYS_YIELD: usize = 0x10;
++pub const SYS_SLEEP_NS: usize = 0x11;
++pub const SYS_TIME_MONOTONIC: usize = 0x20;
++pub const SYS_TIME_NOW: usize = 0x21;
++pub const SYS_LOG_WRITE: usize = 0x31;
++pub const SYS_VM_MAP: usize = 0x41;
++
++pub fn abort_internal() -> ! {
++    unsafe {
++        let _ = raw_syscall6(SYS_EXIT, 101, 0, 0, 0, 0, 0);
++    }
++    core::intrinsics::abort()
++}
+diff --git a/library/std/src/sys/pal/thingos/os.rs b/library/std/src/sys/pal/thingos/os.rs
+new file mode 100644
+index 00000000..f211d8fb
+--- /dev/null
++++ b/library/std/src/sys/pal/thingos/os.rs
+@@ -0,0 +1,67 @@
++use crate::ffi::{OsStr, OsString};
++use crate::marker::PhantomData;
++use crate::path::{self, PathBuf};
++use crate::{fmt, io};
++
++pub fn getcwd() -> io::Result<PathBuf> {
++    Err(io::Error::UNSUPPORTED_PLATFORM)
++}
++
++pub fn chdir(_: &path::Path) -> io::Result<()> {
++    Err(io::Error::UNSUPPORTED_PLATFORM)
++}
++
++pub struct SplitPaths<'a>(!, PhantomData<&'a ()>);
++
++pub fn split_paths(_unparsed: &OsStr) -> SplitPaths<'_> {
++    panic!("unsupported")
++}
++
++impl<'a> Iterator for SplitPaths<'a> {
++    type Item = PathBuf;
++    fn next(&mut self) -> Option<PathBuf> {
++        self.0
++    }
++}
++
++#[derive(Debug)]
++pub struct JoinPathsError;
++
++pub fn join_paths<I, T>(_paths: I) -> Result<OsString, JoinPathsError>
++where
++    I: Iterator<Item = T>,
++    T: AsRef<OsStr>,
++{
++    Err(JoinPathsError)
++}
++
++impl fmt::Display for JoinPathsError {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        "not supported on this platform yet".fmt(f)
++    }
++}
++
++impl crate::error::Error for JoinPathsError {}
++
++pub fn current_exe() -> io::Result<PathBuf> {
++    Err(io::Error::UNSUPPORTED_PLATFORM)
++}
++
++pub fn temp_dir() -> PathBuf {
++    panic!("no filesystem on this platform")
++}
++
++pub fn home_dir() -> Option<PathBuf> {
++    None
++}
++
++pub fn exit(code: i32) -> ! {
++    unsafe {
++        let _ = super::raw_syscall6(super::SYS_EXIT, code as usize, 0, 0, 0, 0, 0);
++    }
++    core::intrinsics::abort()
++}
++
++pub fn getpid() -> u32 {
++    0
++}
+diff --git a/library/std/src/sys/random/mod.rs b/library/std/src/sys/random/mod.rs
+index 91f72d07..24e2f4a3 100644
+--- a/library/std/src/sys/random/mod.rs
++++ b/library/std/src/sys/random/mod.rs
+@@ -106,6 +106,7 @@
+         all(target_family = "wasm", target_os = "unknown"),
+         target_os = "xous",
+         target_os = "vexos",
++        target_os = "thingos",
+     ) => {
+         // FIXME: finally remove std support for wasm32-unknown-unknown
+         // FIXME: add random data generation to xous
+@@ -122,6 +123,7 @@
+     all(target_os = "wasi", not(target_env = "p1")),
+     target_os = "xous",
+     target_os = "vexos",
++    target_os = "thingos",
+ )))]
+ pub fn hashmap_random_keys() -> (u64, u64) {
+     let mut buf = [0; 16];
+diff --git a/library/std/src/sys/stdio/mod.rs b/library/std/src/sys/stdio/mod.rs
+index 86d0f3fe..7df26d66 100644
+--- a/library/std/src/sys/stdio/mod.rs
++++ b/library/std/src/sys/stdio/mod.rs
+@@ -37,6 +37,10 @@
+         mod vexos;
+         pub use vexos::*;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++        pub use thingos::*;
++    }
+     target_os = "xous" => {
+         mod xous;
+         pub use xous::*;
+diff --git a/library/std/src/sys/stdio/thingos.rs b/library/std/src/sys/stdio/thingos.rs
+new file mode 100644
+index 00000000..4b4e9265
+--- /dev/null
++++ b/library/std/src/sys/stdio/thingos.rs
+@@ -0,0 +1,54 @@
++#[expect(dead_code)]
++#[path = "unsupported.rs"]
++mod unsupported_stdio;
++
++use crate::io;
++use crate::io::IoSlice;
++use crate::sys::pal::{SYS_LOG_WRITE, errno_or, raw_syscall6};
++
++pub type Stdin = unsupported_stdio::Stdin;
++pub struct Stdout;
++pub type Stderr = Stdout;
++
++impl Stdout {
++    pub const fn new() -> Stdout {
++        Stdout
++    }
++}
++
++fn write_log(buf: &[u8], level: usize) -> io::Result<usize> {
++    let ret = unsafe { raw_syscall6(SYS_LOG_WRITE, buf.as_ptr() as usize, buf.len(), level, 0, 0, 0) };
++    errno_or(ret)
++}
++
++impl io::Write for Stdout {
++    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
++        write_log(buf, 3)
++    }
++
++    fn write_vectored(&mut self, bufs: &[IoSlice<'_>]) -> io::Result<usize> {
++        let mut total = 0;
++        for buf in bufs {
++            total += self.write(buf)?;
++        }
++        Ok(total)
++    }
++
++    fn is_write_vectored(&self) -> bool {
++        true
++    }
++
++    fn flush(&mut self) -> io::Result<()> {
++        Ok(())
++    }
++}
++
++pub const STDIN_BUF_SIZE: usize = unsupported_stdio::STDIN_BUF_SIZE;
++
++pub fn is_ebadf(err: &io::Error) -> bool {
++    err.raw_os_error() == Some(9)
++}
++
++pub fn panic_output() -> Option<impl io::Write> {
++    Some(Stdout::new())
++}
+diff --git a/library/std/src/sys/thread/mod.rs b/library/std/src/sys/thread/mod.rs
+index 9816981c..d2a4f531 100644
+--- a/library/std/src/sys/thread/mod.rs
++++ b/library/std/src/sys/thread/mod.rs
+@@ -115,6 +115,13 @@
+         mod unsupported;
+         pub use unsupported::{current_os_id, set_name};
+     }
++    target_os = "thingos" => {
++        mod thingos;
++        pub use thingos::{Thread, available_parallelism, sleep, yield_now, DEFAULT_MIN_STACK_SIZE};
++        #[expect(dead_code)]
++        mod unsupported;
++        pub use unsupported::{current_os_id, set_name};
++    }
+     _ => {
+         mod unsupported;
+         pub use unsupported::{Thread, available_parallelism, current_os_id, set_name, sleep, yield_now, DEFAULT_MIN_STACK_SIZE};
+diff --git a/library/std/src/sys/thread/thingos.rs b/library/std/src/sys/thread/thingos.rs
+new file mode 100644
+index 00000000..01954b96
+--- /dev/null
++++ b/library/std/src/sys/thread/thingos.rs
+@@ -0,0 +1,42 @@
++use crate::num::NonZero;
++use crate::thread::ThreadInit;
++use crate::time::Duration;
++use crate::{cmp, io};
++
++use crate::sys::pal::{SYS_SLEEP_NS, SYS_YIELD, raw_syscall6};
++
++pub struct Thread(!);
++
++pub const DEFAULT_MIN_STACK_SIZE: usize = 64 * 1024;
++
++impl Thread {
++    // unsafe: see thread::Builder::spawn_unchecked for safety requirements
++    pub unsafe fn new(_stack: usize, _init: Box<ThreadInit>) -> io::Result<Thread> {
++        Err(io::Error::UNSUPPORTED_PLATFORM)
++    }
++
++    pub fn join(self) {
++        self.0
++    }
++}
++
++pub fn available_parallelism() -> io::Result<NonZero<usize>> {
++    Ok(NonZero::new(1).unwrap())
++}
++
++pub fn yield_now() {
++    unsafe {
++        let _ = raw_syscall6(SYS_YIELD, 0, 0, 0, 0, 0, 0);
++    }
++}
++
++pub fn sleep(dur: Duration) {
++    let mut nanos = dur.as_nanos();
++    while nanos > 0 {
++        let chunk = cmp::min(nanos, usize::MAX as u128) as usize;
++        unsafe {
++            let _ = raw_syscall6(SYS_SLEEP_NS, chunk, 0, 0, 0, 0, 0);
++        }
++        nanos -= chunk as u128;
++    }
++}
+diff --git a/library/std/src/sys/thread_local/mod.rs b/library/std/src/sys/thread_local/mod.rs
+index e88011aa..9c9dafae 100644
+--- a/library/std/src/sys/thread_local/mod.rs
++++ b/library/std/src/sys/thread_local/mod.rs
+@@ -30,6 +30,7 @@
+         target_os = "zkvm",
+         target_os = "trusty",
+         target_os = "vexos",
++        target_os = "thingos",
+     ) => {
+         mod no_threads;
+         pub use no_threads::{EagerStorage, LazyStorage, thread_local_inner};
+@@ -100,6 +101,7 @@ pub(crate) mod guard {
+             target_os = "zkvm",
+             target_os = "trusty",
+             target_os = "vexos",
++            target_os = "thingos",
+         ) => {
+             pub(crate) fn enable() {
+                 // FIXME: Right now there is no concept of "thread exit" on
+diff --git a/library/std/src/sys/time/mod.rs b/library/std/src/sys/time/mod.rs
+index 6cd1850e..0e72cee4 100644
+--- a/library/std/src/sys/time/mod.rs
++++ b/library/std/src/sys/time/mod.rs
+@@ -44,6 +44,10 @@ mod imp {
+         mod xous;
+         use xous as imp;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++        use thingos as imp;
++    }
+     _ => {
+         mod unsupported;
+         use unsupported as imp;
+diff --git a/library/std/src/sys/time/thingos.rs b/library/std/src/sys/time/thingos.rs
+new file mode 100644
+index 00000000..39dc0816
+--- /dev/null
++++ b/library/std/src/sys/time/thingos.rs
+@@ -0,0 +1,63 @@
++use crate::time::Duration;
++
++use crate::sys::pal::{SYS_TIME_MONOTONIC, SYS_TIME_NOW, raw_syscall6};
++
++#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
++pub struct Instant(Duration);
++
++#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Hash)]
++pub struct SystemTime(Duration);
++
++pub const UNIX_EPOCH: SystemTime = SystemTime(Duration::from_secs(0));
++
++#[inline]
++fn monotonic_now() -> Duration {
++    let nanos = unsafe { raw_syscall6(SYS_TIME_MONOTONIC, 0, 0, 0, 0, 0, 0) };
++    if nanos < 0 { Duration::ZERO } else { Duration::from_nanos(nanos as u64) }
++}
++
++#[inline]
++fn wall_now() -> Duration {
++    let nanos = unsafe { raw_syscall6(SYS_TIME_NOW, 0, 0, 0, 0, 0, 0) };
++    if nanos < 0 { Duration::ZERO } else { Duration::from_nanos(nanos as u64) }
++}
++
++impl Instant {
++    pub fn now() -> Instant {
++        Instant(monotonic_now())
++    }
++
++    pub fn checked_sub_instant(&self, other: &Instant) -> Option<Duration> {
++        self.0.checked_sub(other.0)
++    }
++
++    pub fn checked_add_duration(&self, other: &Duration) -> Option<Instant> {
++        Some(Instant(self.0.checked_add(*other)?))
++    }
++
++    pub fn checked_sub_duration(&self, other: &Duration) -> Option<Instant> {
++        Some(Instant(self.0.checked_sub(*other)?))
++    }
++}
++
++impl SystemTime {
++    pub const MAX: SystemTime = SystemTime(Duration::MAX);
++
++    pub const MIN: SystemTime = SystemTime(Duration::ZERO);
++
++    pub fn now() -> SystemTime {
++        SystemTime(wall_now())
++    }
++
++    pub fn sub_time(&self, other: &SystemTime) -> Result<Duration, Duration> {
++        self.0.checked_sub(other.0).ok_or_else(|| other.0 - self.0)
++    }
++
++    pub fn checked_add_duration(&self, other: &Duration) -> Option<SystemTime> {
++        Some(SystemTime(self.0.checked_add(*other)?))
++    }
++
++    pub fn checked_sub_duration(&self, other: &Duration) -> Option<SystemTime> {
++        Some(SystemTime(self.0.checked_sub(*other)?))
++    }
++}
+-- 
+2.51.0
+

@@ -43,6 +43,18 @@ impl ArchRuntime for AArch64Runtime {
         hcf()
     }
 
+    fn reboot(&self) -> ! {
+        // PSCI SYSTEM_RESET via HVC
+        unsafe {
+            asm!(
+                "mov x0, {fid}",
+                "hvc #0",
+                fid = in(reg) 0x8400_0009u64,
+                options(noreturn)
+            );
+        }
+    }
+
     fn wait_for_interrupt(&self) {
         unsafe {
             core::arch::asm!("wfe", options(nomem, nostack));

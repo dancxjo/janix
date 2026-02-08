@@ -276,6 +276,17 @@ fn main(packed_handles: usize) -> ! {
                                 let _ = thingsys::dump_graph(0);
                             }
 
+                            // Check for Ctrl+Alt+Delete (System Reboot)
+                            if kbd_state.is_key_pressed(Key::Delete)
+                                && (kbd_state.is_key_pressed(Key::LeftCtrl)
+                                    || kbd_state.is_key_pressed(Key::RightCtrl))
+                                && (kbd_state.is_key_pressed(Key::LeftAlt)
+                                    || kbd_state.is_key_pressed(Key::RightAlt))
+                            {
+                                info!("bristle: Ctrl+Alt+Del - rebooting system...");
+                                stem::syscall::reboot();
+                            }
+
                             let mut sent = false;
                             if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
                                 sent = true;

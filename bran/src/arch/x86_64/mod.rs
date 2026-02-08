@@ -257,6 +257,24 @@ impl ArchRuntime for X86_64Runtime {
         hcf()
     }
 
+    fn reboot(&self) -> ! {
+        // Pulse the CPU reset line via the 8042 keyboard controller
+        unsafe {
+            // Wait for the keyboard controller input buffer to be clear
+            let mut attempts = 0u32;
+            while attempts < 100_000 {
+                let status: u8;
+                core::arch::asm!("in al, dx", out("al") status, in("dx") 0x64u16, options(nostack, preserves_flags));
+                if status & 0x02 == 0 { break; }
+                attempts += 1;
+            }
+            // Send the reset command (0xFE = pulse reset line)
+            core::arch::asm!("out dx, al", in("dx") 0x64u16, in("al") 0xFEu8, options(nostack, preserves_flags));
+        }
+        // If that didn't work, halt
+        hcf()
+    }
+
     fn wait_for_interrupt(&self) {
         // Enable interrupts and halt until next IRQ
         unsafe {

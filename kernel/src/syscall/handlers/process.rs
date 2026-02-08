@@ -13,6 +13,11 @@ pub fn sys_exit(code: i32) -> SysResult<usize> {
     Ok(0)
 }
 
+pub fn sys_reboot() -> SysResult<usize> {
+    crate::kprintln!("SYSCALL REBOOT: system reboot requested");
+    crate::runtime_base().reboot();
+}
+
 pub fn sys_get_tid() -> SysResult<usize> {
     unsafe { Ok(crate::task::scheduler::current_tid_current() as usize) }
 }

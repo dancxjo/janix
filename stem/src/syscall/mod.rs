@@ -32,6 +32,14 @@ pub fn exit(code: i32) -> ! {
     }
 }
 
+/// Reboot the system. This call does not return.
+pub fn reboot() -> ! {
+    unsafe {
+        raw_syscall6(SYS_REBOOT, 0, 0, 0, 0, 0, 0);
+        core::hint::unreachable_unchecked();
+    }
+}
+
 pub fn log_write(msg: &str, level: usize) -> Result<usize, Errno> {
     let ret = unsafe {
         raw_syscall6(

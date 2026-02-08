@@ -44,6 +44,16 @@ impl ArchRuntime for LoongArch64Runtime {
         hcf()
     }
 
+    fn reboot(&self) -> ! {
+        // LoongArch ACPI reset register (QEMU standard)
+        unsafe {
+            let reset_port = 0x3F4 as *mut u8;
+            core::ptr::write_volatile(reset_port, 0x02);
+        }
+        // Fallback
+        hcf()
+    }
+
     fn wait_for_interrupt(&self) {
         unsafe {
             core::arch::asm!("idle 0");

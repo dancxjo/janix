@@ -43,6 +43,22 @@ impl ArchRuntime for RISCV64Runtime {
         hcf()
     }
 
+    fn reboot(&self) -> ! {
+        // SBI System Reset Extension (SRST)
+        // EID = 0x53525354 ("SRST"), FID = 0 (sbi_system_reset)
+        // reset_type = 0 (shutdown), but we want 1 (cold reboot)
+        unsafe {
+            asm!(
+                "ecall",
+                in("a7") 0x53525354u64,  // EID: SRST
+                in("a6") 0u64,           // FID: sbi_system_reset
+                in("a0") 1u64,           // reset_type: cold reboot
+                in("a1") 0u64,           // reset_reason: no reason
+                options(noreturn)
+            );
+        }
+    }
+
     fn wait_for_interrupt(&self) {
         unsafe {
             core::arch::asm!("wfi");

@@ -81,6 +81,11 @@ pub trait ArchRuntime {
     // Wait for interrupt - low-power idle until next IRQ
     fn wait_for_interrupt(&self) {}
 
+    /// Reboot the system. Architecture-specific implementation required.
+    fn reboot(&self) -> ! {
+        loop { core::hint::spin_loop(); }
+    }
+
     // Tasking - defaults
     fn init_kernel_context(
         &self,
@@ -287,6 +292,10 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     
     fn wait_for_interrupt(&self) {
         self.arch.wait_for_interrupt()
+    }
+
+    fn reboot(&self) -> ! {
+        self.arch.reboot()
     }
 
     fn current_cpu_id(&self) -> CpuId {

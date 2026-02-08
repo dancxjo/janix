@@ -136,7 +136,7 @@ impl KeyboardState {
         }
     }
 
-    fn is_key_pressed(&self, key: Key) -> bool {
+    pub fn is_key_pressed(&self, key: Key) -> bool {
         let key_idx = key as u16 as usize;
         let word_idx = key_idx / 64;
         let bit_idx = key_idx % 64;

@@ -12,6 +12,7 @@ pub const SYS_GET_TID: u32 = 0x02;
 pub const SYS_SPAWN_THREAD: u32 = 0x03;
 pub const SYS_SPAWN_PROCESS: u32 = 0x04;
 pub const SYS_TASK_WAIT: u32 = 0x05;
+pub const SYS_REBOOT: u32 = 0x06;
 
 // ============================================================================
 // Block 0x10–0x1F: Scheduling + sleep/yield

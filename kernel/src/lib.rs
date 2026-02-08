@@ -253,6 +253,11 @@ pub trait BootRuntimeBase: 'static {
     /// Wait for interrupt - low-power idle until next IRQ
     fn wait_for_interrupt(&self) {}
 
+    /// Reboot the system. This should never return.
+    fn reboot(&self) -> ! {
+        loop { core::hint::spin_loop(); }
+    }
+
     /// Send an Inter-Processor Interrupt (IPI) to a specific CPU.
     fn send_ipi(&self, _cpu_index: usize, _vector: u8) {}
 

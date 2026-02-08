@@ -54,6 +54,32 @@ pub static SCHEDULER: Mutex<Option<usize>> = Mutex::new(None);
 /// Global tick counter for debugging scheduler health
 pub static TICK_COUNT: AtomicU64 = AtomicU64::new(0);
 
+static PROF_GRAPH_FLUSH_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROF_GRAPH_FLUSH_ITEMS: AtomicU64 = AtomicU64::new(0);
+static PROF_GRAPH_FLUSH_US_TOTAL: AtomicU64 = AtomicU64::new(0);
+static PROF_GRAPH_FLUSH_SLOW: AtomicU64 = AtomicU64::new(0);
+static PROF_GRAPH_FLUSH_MAX_US: AtomicU64 = AtomicU64::new(0);
+static PROF_RESCHED_TRYLOCK_MISS: AtomicU64 = AtomicU64::new(0);
+static PROF_LAST_LOG_TICKS: AtomicU64 = AtomicU64::new(0);
+
+#[inline]
+fn ticks_to_us<R: BootRuntime>(ticks: u64) -> u64 {
+    let rt = crate::runtime::<R>();
+    let freq = rt.mono_freq_hz().max(1);
+    ticks.saturating_mul(1_000_000) / freq
+}
+
+#[inline]
+fn update_max_u64(slot: &AtomicU64, val: u64) {
+    let mut prev = slot.load(Ordering::Relaxed);
+    while val > prev {
+        match slot.compare_exchange_weak(prev, val, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break,
+            Err(actual) => prev = actual,
+        }
+    }
+}
+
 /// Called from timer ISR - records tick and triggers reschedule if needed
 /// Uses try_resched_if_needed to avoid deadlock when SCHEDULER is held by main code
 pub fn on_tick<R: BootRuntime>() {
@@ -87,6 +113,8 @@ fn try_resched_if_needed<R: BootRuntime>() {
                 }
             }
         }
+    } else {
+        PROF_RESCHED_TRYLOCK_MISS.fetch_add(1, Ordering::Relaxed);
     }
     // If try_lock failed, skip rescheduling this tick - not a problem, next tick will try again
 
@@ -103,6 +131,8 @@ pub(crate) fn current_cpu_index<R: BootRuntime>() -> usize {
 fn flush_graph_queue<R: BootRuntime>() {
     use crate::root::graph_anchors;
     use graph_queue::GraphWork;
+    let rt = crate::runtime::<R>();
+    let t0 = rt.mono_ticks();
 
     // Get scheduler service ThingId for linking. If not ready yet,
     // keep the queued work for a later flush instead of dropping it.
@@ -115,6 +145,7 @@ fn flush_graph_queue<R: BootRuntime>() {
     if work_items.is_empty() {
         return;
     }
+    let item_count = work_items.len() as u64;
     
     for item in work_items {
         match item {
@@ -231,6 +262,56 @@ fn flush_graph_queue<R: BootRuntime>() {
             }
         }
     }
+
+    let elapsed_us = ticks_to_us::<R>(rt.mono_ticks().wrapping_sub(t0));
+    PROF_GRAPH_FLUSH_CALLS.fetch_add(1, Ordering::Relaxed);
+    PROF_GRAPH_FLUSH_ITEMS.fetch_add(item_count, Ordering::Relaxed);
+    PROF_GRAPH_FLUSH_US_TOTAL.fetch_add(elapsed_us, Ordering::Relaxed);
+    update_max_u64(&PROF_GRAPH_FLUSH_MAX_US, elapsed_us);
+    if elapsed_us >= 5_000 {
+        PROF_GRAPH_FLUSH_SLOW.fetch_add(1, Ordering::Relaxed);
+        // Per-flush log removed — the 2-second summary captures the same stats
+        // without hammering the serial port on every call.
+    }
+}
+
+fn maybe_log_scheduler_profile<R: BootRuntime>() {
+    let rt = crate::runtime::<R>();
+    let now = rt.mono_ticks();
+    let period = rt.mono_freq_hz().max(1) * 2;
+    let last = PROF_LAST_LOG_TICKS.load(Ordering::Relaxed);
+    if last != 0 && now.wrapping_sub(last) < period {
+        return;
+    }
+    if PROF_LAST_LOG_TICKS
+        .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+        .is_err()
+    {
+        return;
+    }
+
+    let calls = PROF_GRAPH_FLUSH_CALLS.swap(0, Ordering::Relaxed);
+    let items = PROF_GRAPH_FLUSH_ITEMS.swap(0, Ordering::Relaxed);
+    let total_us = PROF_GRAPH_FLUSH_US_TOTAL.swap(0, Ordering::Relaxed);
+    let slow = PROF_GRAPH_FLUSH_SLOW.swap(0, Ordering::Relaxed);
+    let max_us = PROF_GRAPH_FLUSH_MAX_US.swap(0, Ordering::Relaxed);
+    let trylock_miss = PROF_RESCHED_TRYLOCK_MISS.swap(0, Ordering::Relaxed);
+    let q = graph_queue::stats_snapshot();
+    let avg_us = if calls > 0 { total_us / calls } else { 0 };
+
+    crate::kinfo!(
+        "PROF: sched 2s: graph_flush calls={} items={} avg_us={} max_us={} slow={} trylock_miss={} qlen={} q_hwm={} q_drop_state={} q_evict={}",
+        calls,
+        items,
+        avg_us,
+        max_us,
+        slow,
+        trylock_miss,
+        q.current_len,
+        q.high_water_mark,
+        q.dropped_update_state,
+        q.evicted_critical
+    );
 }
 
 pub fn init<R: BootRuntime>() {
@@ -642,7 +723,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;
-                graphify::update_task_state(old_task.id, "runnable");
+                // Hot-path graph emission disabled — fires on every context
+                // switch and overwhelms the queue.  Lifecycle events (block,
+                // sleep, exit) still update the graph.
+                // graphify::update_task_state(old_task.id, "runnable");
             }
             new_task.state = TaskState::Running;
             new_task.last_cpu = Some(cpu_idx);
@@ -658,9 +742,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 }
             }
 
-            graphify::update_task_state(new_task.id, "running");
-            // Update location on switch
-            graphify::update_task_location(new_task.id, cpu_idx);
+            // Hot-path graph emissions disabled — see comment above.
+            // graphify::update_task_state(new_task.id, "running");
+            // graphify::update_task_location(new_task.id, cpu_idx);
             
             old_task.simd.save(crate::runtime::<R>());
             new_task.simd.restore(crate::runtime::<R>());
@@ -929,8 +1013,10 @@ extern "C" fn graph_worker_task<R: BootRuntime>(_: usize) -> ! {
     loop {
         // Process any pending graph work
         flush_graph_queue::<R>();
-        // Yield to let other tasks run
-        sleep::yield_now::<R>();
+        maybe_log_scheduler_profile::<R>();
+        // Sleep between flushes — graph bookkeeping is non-critical and the
+        // tight yield loop was starving interactive tasks (bloom cursor).
+        sleep::sleep_ms::<R>(100);
     }
 }
 

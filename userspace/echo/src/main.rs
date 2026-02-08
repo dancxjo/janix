@@ -88,15 +88,15 @@ fn parse_and_print_event(buf: &[u8]) {
             }
         }
         3 => {
-            // PointerMove
-            if buf.len() >= 24 {
-                let payload: PointerMovePayload = unsafe {
-                    core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerMovePayload)
-                };
-                let dx = payload.dx;
-                let dy = payload.dy;
-                info!("PointerMove dx={} dy={}", dx, dy);
-            }
+            // // PointerMove
+            // if buf.len() >= 24 {
+            //     let payload: PointerMovePayload = unsafe {
+            //         core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerMovePayload)
+            //     };
+            //     let dx = payload.dx;
+            //     let dy = payload.dy;
+            //     info!("PointerMove dx={} dy={}", dx, dy);
+            // }
         }
         4 => {
             // PointerButtonDown
@@ -121,7 +121,6 @@ fn parse_and_print_event(buf: &[u8]) {
         _ => {}
     }
 }
-
 
 #[stem::main]
 fn main(arg: usize) -> ! {

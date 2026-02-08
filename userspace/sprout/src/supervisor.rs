@@ -42,8 +42,8 @@ impl Supervisor {
         // TEMPORARILY DISABLED - re-enable as needed:
         // ============================================================
         
-        // Spawn Apps
-        self.spawn_apps();
+        // Spawn Apps (DISABLED - stop after bloom)
+        // self.spawn_apps();
 
         // // Match and Spawn Drivers
         // self.match_and_spawn_drivers();

@@ -6,6 +6,7 @@
 use crate::task::TaskId;
 use alloc::collections::VecDeque;
 use alloc::string::String;
+use core::sync::atomic::{AtomicUsize, Ordering};
 use spin::Mutex;
 
 /// A deferred graph operation.
@@ -59,6 +60,18 @@ static WORK_QUEUE: Mutex<VecDeque<GraphWork>> = Mutex::new(VecDeque::new());
 /// (context switches generate more work items which cause more context switches)
 const MAX_QUEUE_SIZE: usize = 256;
 
+static DROPPED_UPDATE_STATE: AtomicUsize = AtomicUsize::new(0);
+static EVICTED_CRITICAL: AtomicUsize = AtomicUsize::new(0);
+static HIGH_WATER_MARK: AtomicUsize = AtomicUsize::new(0);
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct QueueStats {
+    pub dropped_update_state: usize,
+    pub evicted_critical: usize,
+    pub high_water_mark: usize,
+    pub current_len: usize,
+}
+
 /// Push a work item to the queue.
 /// This is safe to call while holding the scheduler lock.
 /// Non-critical items (UpdateState) may be dropped if queue is full.
@@ -70,22 +83,42 @@ pub fn push(work: GraphWork) {
         match &work {
             GraphWork::UpdateState { .. } => {
                 // State updates are non-critical - drop silently
+                DROPPED_UPDATE_STATE.fetch_add(1, Ordering::Relaxed);
                 return;
             }
             _ => {
                 // For critical items, evict oldest to make room
                 q.pop_front();
+                EVICTED_CRITICAL.fetch_add(1, Ordering::Relaxed);
             }
         }
     }
     
     q.push_back(work);
+    let len = q.len();
+    let mut prev = HIGH_WATER_MARK.load(Ordering::Relaxed);
+    while len > prev {
+        match HIGH_WATER_MARK.compare_exchange_weak(prev, len, Ordering::Relaxed, Ordering::Relaxed) {
+            Ok(_) => break,
+            Err(actual) => prev = actual,
+        }
+    }
 }
 
 /// Drain all work items from the queue.
 /// Returns the items for processing. Call this WITHOUT holding the scheduler lock.
 pub fn drain() -> VecDeque<GraphWork> {
     core::mem::take(&mut *WORK_QUEUE.lock())
+}
+
+pub fn stats_snapshot() -> QueueStats {
+    let len = WORK_QUEUE.lock().len();
+    QueueStats {
+        dropped_update_state: DROPPED_UPDATE_STATE.load(Ordering::Relaxed),
+        evicted_critical: EVICTED_CRITICAL.load(Ordering::Relaxed),
+        high_water_mark: HIGH_WATER_MARK.load(Ordering::Relaxed),
+        current_len: len,
+    }
 }
 
 /// Check if the queue is empty.

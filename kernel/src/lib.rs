@@ -535,9 +535,21 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     contract!("Initializing tasking...");
     crate::task::init::<R>();
 
-    // SMP bring-up is now lazy and driven by the scheduler.
+    // Bring up all secondary CPUs during early boot.
     let cpu_total = runtime.cpu_total_count();
-    crate::kinfo!("Kernel: Detected {} CPUs. SMP will be brought up lazily.", cpu_total);
+    if cpu_total > 1 {
+        crate::kinfo!(
+            "Kernel: Detected {} CPUs. Starting {} secondaries...",
+            cpu_total,
+            cpu_total - 1
+        );
+        match runtime.start_secondary_cpus(kernel_secondary_entry::<R>) {
+            Ok(()) => crate::kinfo!("Kernel: Secondary CPU bring-up complete."),
+            Err(err) => crate::kerror!("Kernel: Secondary CPU bring-up failed: {:?}", err),
+        }
+    } else {
+        crate::kinfo!("Kernel: Detected {} CPU.", cpu_total);
+    }
 
     // Store global boot info for syscalls
     crate::boot_info::set(crate::boot_info::BootSyscallInfo {
@@ -723,7 +735,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         if !spawned_fallback {
             kinfo!("No modules found. Checking threads_supported...");
             if runtime.threads_supported() {
-                kinfo!("Lazy SMP: spawning initial threads should trigger CPU bring-up if needed");
+                kinfo!("Spawning initial threads...");
                 kinfo!("Spawning Thread A...");
                 crate::task::spawn::<R>(thread_a, StartupArg::Raw(1), crate::task::TaskPriority::Normal, crate::task::Affinity::Any);
                 kinfo!("Spawning Thread B...");

@@ -135,6 +135,91 @@ impl CursorMetrics {
     }
 }
 
+#[derive(Default)]
+struct CursorUnderlay {
+    bs_id: ThingId,
+    rect: crate::geometry::Rect,
+    pixels: alloc::vec::Vec<u32>,
+    valid: bool,
+}
+
+#[inline]
+fn capture_cursor_underlay(
+    surface: &surface::Surface,
+    bs_id: ThingId,
+    rect: crate::geometry::Rect,
+    underlay: &mut CursorUnderlay,
+) {
+    let bounds = crate::geometry::Rect::full(surface.width(), surface.height());
+    let clipped = rect.clip(bounds);
+    if clipped.is_empty() {
+        underlay.valid = false;
+        return;
+    }
+
+    let w = clipped.width() as usize;
+    let h = clipped.height() as usize;
+    let row_bytes = w * 4;
+    let total_pixels = w * h;
+
+    if underlay.pixels.len() != total_pixels {
+        underlay.pixels.resize(total_pixels, 0);
+    }
+
+    unsafe {
+        let dst = underlay.pixels.as_mut_ptr() as *mut u8;
+        for row in 0..h {
+            let src_off =
+                (clipped.y() as usize + row) * surface.stride_bytes + (clipped.x() as usize * 4);
+            core::ptr::copy_nonoverlapping(
+                surface.ptr.add(src_off),
+                dst.add(row * row_bytes),
+                row_bytes,
+            );
+        }
+    }
+
+    underlay.bs_id = bs_id;
+    underlay.rect = clipped;
+    underlay.valid = true;
+}
+
+#[inline]
+fn restore_cursor_underlay(surface: &mut surface::Surface, underlay: &CursorUnderlay) {
+    if !underlay.valid {
+        return;
+    }
+
+    let rect = underlay.rect;
+    if rect.is_empty() {
+        return;
+    }
+
+    let bounds = crate::geometry::Rect::full(surface.width(), surface.height());
+    if rect.clip(bounds) != rect {
+        return;
+    }
+
+    let w = rect.width() as usize;
+    let h = rect.height() as usize;
+    let row_bytes = w * 4;
+    if underlay.pixels.len() != w * h {
+        return;
+    }
+
+    unsafe {
+        let src = underlay.pixels.as_ptr() as *const u8;
+        for row in 0..h {
+            let dst_off = (rect.y() as usize + row) * surface.stride_bytes + (rect.x() as usize * 4);
+            core::ptr::copy_nonoverlapping(
+                src.add(row * row_bytes),
+                surface.ptr.add(dst_off),
+                row_bytes,
+            );
+        }
+    }
+}
+
 fn log_simd_backend() {
     #[cfg(any(target_arch = "x86", target_arch = "x86_64"))]
     {
@@ -349,6 +434,18 @@ fn set_focus(focused_window: &mut Option<ThingId>, target: Option<ThingId>) {
     }
 }
 
+fn should_force_full_damage(causes: &[SnapshotInvalidation]) -> Option<SnapshotInvalidation> {
+    causes.iter().copied().find(|cause| {
+        matches!(
+            cause,
+            SnapshotInvalidation::FontChanged
+                | SnapshotInvalidation::ThemeChanged
+                | SnapshotInvalidation::WallpaperChanged
+                | SnapshotInvalidation::Forced
+        )
+    })
+}
+
 fn cycle_windows_in_order(
     order: &[ThingId],
     current: Option<ThingId>,
@@ -515,6 +612,7 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_x = cursor.x;
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
+    let mut cursor_underlay = CursorUnderlay::default();
     let mut drag_state: Option<DragState> = None;
 
     let mut debug_flags = DebugFlags::default();
@@ -1152,12 +1250,12 @@ fn main(arg: usize) -> ! {
             cursor_metrics.record_cursor_damage_rects(cursor_damage_added as u64);
         }
 
-        if !invalidation_causes.is_empty() {
+        if let Some(full_cause) = should_force_full_damage(&invalidation_causes) {
             if debug_flags.show_damage_stats {
                 stem::info!("[bloom] Full damage forced by: {:?}", invalidation_causes);
             }
-            // Use the first invalidation cause for the damage tracking
-            let cause = damage::DamageCause::from_invalidation(invalidation_causes[0]);
+            // Use the first force-full invalidation cause for damage tracking.
+            let cause = damage::DamageCause::from_invalidation(full_cause);
             damage = damage::Damage::full_with_cause(bounds, cause, None);
         }
 
@@ -1266,20 +1364,18 @@ fn main(arg: usize) -> ! {
         
         append_damage_overlay(&mut list, &overlay_state, &debug_flags, Some(&damage), screen_w, screen_h);
         
-        // Cursor-only fast path: skip window composition if only cursor moved
-        if is_cursor_only_frame {
-            // For cursor-only frames, we only need to:
-            // 1. Repair the old cursor position (already in framebuffer from last frame)
-            // 2. Draw cursor at new position
-            // The background/windows don't need recomposition since they haven't changed
-            
-            // Note: This optimization requires the framebuffer to be preserved between frames
-            // Currently, we always recompose, so we skip this optimization for now
-            // TODO: Implement true cursor-only fast path when we have a stable backbuffer
-        }
+        // Cursor-only fast path: restore old cursor underlay and skip scene composition.
+        // Only valid when the current buffer is stable (age=1) and we captured underlay for
+        // this exact bytespace on the previous frame.
+        let cursor_only_fast_path =
+            is_cursor_only_frame
+            && current_age == 1
+            && cursor_underlay.valid
+            && cursor_underlay.bs_id == current_bs_id
+            && list.commands_ref().is_empty();
         
-        // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
-        {
+        if !cursor_only_fast_path {
+            // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
             let rects: alloc::vec::Vec<_> = damage.iter().collect();
 
             // Reactive wallpaper selection
@@ -1383,6 +1479,8 @@ fn main(arg: usize) -> ! {
                     }
                 }
             }
+        } else {
+            restore_cursor_underlay(&mut surface, &cursor_underlay);
         }
 
         // ============================================================================
@@ -1401,6 +1499,10 @@ fn main(arg: usize) -> ! {
         // the UI is busy with expensive repaints.
         // ============================================================================
         
+        let cursor_bounds = crate::geometry::Rect::full(surface.width(), surface.height());
+        let mut cursor_rect =
+            crate::geometry::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17).clip(cursor_bounds);
+
         // Cursor overlay: blend cached snapshot or draw fallback
         let cursor_drawn = if let Some(asset) = ASSETS.get_cursor() {
             let (snapshot_opt, _rasterized) = cursor_rasterizer.get_snapshot(&asset);
@@ -1409,6 +1511,14 @@ fn main(arg: usize) -> ! {
             if let Some(snapshot) = snapshot_opt {
                 let cx = cursor.x - snapshot.hotspot_x;
                 let cy = cursor.y - snapshot.hotspot_y;
+                cursor_rect = crate::geometry::Rect::new(
+                    cx,
+                    cy,
+                    snapshot.image.width as i32,
+                    snapshot.image.height as i32,
+                )
+                .clip(cursor_bounds);
+                capture_cursor_underlay(&surface, current_bs_id, cursor_rect, &mut cursor_underlay);
                 raster::blit_cursor_overlay(&mut surface, &snapshot.image, cx, cy);
                 true
             } else {
@@ -1419,6 +1529,7 @@ fn main(arg: usize) -> ! {
         };
 
         if !cursor_drawn {
+            capture_cursor_underlay(&surface, current_bs_id, cursor_rect, &mut cursor_underlay);
             raster::draw_crosshair(&mut surface, cursor.x, cursor.y, 0xFFFFFFFF);
         }
 

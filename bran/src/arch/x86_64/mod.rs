@@ -39,6 +39,10 @@ pub static mut CPU_IDS: [CpuId; acpi::MAX_CPUS] = [CpuId(0); acpi::MAX_CPUS];
 pub static CPU_COUNT: AtomicU64 = AtomicU64::new(1); // Default to 1 (BSP)
 
 impl X86_64Runtime {
+    const LAPIC_ICR_DELIVERY_TIMEOUT_US: u64 = 100_000;
+    const AP_STARTUP_TIMEOUT_US: u64 = 5_000_000;
+    const AP_FLAG_POLL_INTERVAL_US: u64 = 25;
+
     pub fn cpu_ids(&self) -> &'static [CpuId] {
         if !self.cpu_ids.is_initialized() {
             let count = CPU_COUNT.load(Ordering::SeqCst) as usize;
@@ -73,11 +77,57 @@ impl X86_64Runtime {
 
     /// TSC-based microsecond delay for SMP bring-up timing
     fn delay_us(&self, us: u64) {
-        let freq = self.mono_freq_hz();
-        let ticks_to_wait = (freq * us) / 1_000_000;
+        let ticks_to_wait = self.ticks_for_us(us);
         let start = self.mono_ticks();
         while self.mono_ticks().wrapping_sub(start) < ticks_to_wait {
             core::hint::spin_loop();
+        }
+    }
+
+    #[inline]
+    fn ticks_for_us(&self, us: u64) -> u64 {
+        let freq = self.mono_freq_hz().max(1);
+        // Round up so very short waits still make forward progress.
+        freq.saturating_mul(us).saturating_add(999_999) / 1_000_000
+    }
+
+    fn wait_lapic_icr_idle(&self, lapic_virt: u64, timeout_us: u64) -> bool {
+        let timeout_ticks = self.ticks_for_us(timeout_us).max(1);
+        let start = self.mono_ticks();
+        loop {
+            let icr_low = unsafe { core::ptr::read_volatile((lapic_virt + 0x300) as *const u32) };
+            if (icr_low & (1 << 12)) == 0 {
+                return true;
+            }
+            if self.mono_ticks().wrapping_sub(start) >= timeout_ticks {
+                return false;
+            }
+            core::hint::spin_loop();
+        }
+    }
+
+    fn wait_for_ap_flag(&self, hhdm: u64, timeout_us: u64) -> bool {
+        let timeout_ticks = self.ticks_for_us(timeout_us).max(1);
+        let poll_interval_ticks = self.ticks_for_us(Self::AP_FLAG_POLL_INTERVAL_US).max(1);
+        let start = self.mono_ticks();
+        let mut next_poll = start;
+
+        loop {
+            let now = self.mono_ticks();
+            if now.wrapping_sub(start) >= timeout_ticks {
+                return false;
+            }
+
+            if now.wrapping_sub(next_poll) < poll_interval_ticks {
+                core::hint::spin_loop();
+                continue;
+            }
+            next_poll = now;
+
+            let flag = unsafe { core::ptr::read_volatile((0x8500 + hhdm) as *const u64) };
+            if flag == 1 {
+                return true;
+            }
         }
     }
 
@@ -583,7 +633,7 @@ impl ArchRuntime for X86_64Runtime {
         entry: extern "C" fn(usize) -> !,
         cpu_index: usize,
     ) -> Result<(), abi::errors::Errno> {
-        use kernel::{kinfo, kerror, MapKind, MapPerms};
+        use kernel::{kinfo, kerror, kwarn, MapKind, MapPerms};
         use core::sync::atomic::Ordering;
 
         let hhdm = self.hhdm_offset.load(Ordering::SeqCst);
@@ -645,8 +695,18 @@ impl ArchRuntime for X86_64Runtime {
         let lapic_virt = lapic_base + hhdm;
 
         let write_icr = |high: u32, low: u32| unsafe {
+            if !self.wait_lapic_icr_idle(lapic_virt, Self::LAPIC_ICR_DELIVERY_TIMEOUT_US) {
+                kwarn!("SMP: LAPIC ICR busy before IPI to CPU {} (APIC {})", cpu_index, apic_id);
+            }
             core::ptr::write_volatile((lapic_virt + 0x310) as *mut u32, high);
             core::ptr::write_volatile((lapic_virt + 0x300) as *mut u32, low);
+            if !self.wait_lapic_icr_idle(lapic_virt, Self::LAPIC_ICR_DELIVERY_TIMEOUT_US) {
+                kwarn!(
+                    "SMP: LAPIC ICR still busy after IPI to CPU {} (APIC {})",
+                    cpu_index,
+                    apic_id
+                );
+            }
         };
 
         // 4 pages (16KB) for bootstrap stack
@@ -703,15 +763,7 @@ impl ArchRuntime for X86_64Runtime {
         write_icr(apic_id << 24, 0x00004608);
 
         // Wait for come up (bounded)
-        let mut came_up = false;
-        for _ in 0..10_000_000 {
-            let flag = unsafe { core::ptr::read_volatile((0x8500 + hhdm) as *const u64) };
-            if flag == 1 {
-                came_up = true;
-                break;
-            }
-            core::hint::spin_loop();
-        }
+        let came_up = self.wait_for_ap_flag(hhdm, Self::AP_STARTUP_TIMEOUT_US);
         
         if came_up {
             kinfo!("SMP: CPU {} (APIC {}) is online", cpu_index, apic_id);
@@ -725,10 +777,41 @@ impl ArchRuntime for X86_64Runtime {
 
     fn start_secondary_cpus(
         &self,
-        _entry: extern "C" fn(usize) -> !,
+        entry: extern "C" fn(usize) -> !,
     ) -> Result<(), abi::errors::Errno> {
-        // Deprecated
-        Ok(())
+        use kernel::{kerror, kinfo};
+
+        let total = CPU_COUNT.load(Ordering::SeqCst) as usize;
+        if total <= 1 {
+            kinfo!("SMP: No secondary CPUs to start");
+            return Ok(());
+        }
+
+        kinfo!("SMP: Starting {} secondary CPUs...", total - 1);
+        let mut first_err: Option<abi::errors::Errno> = None;
+
+        for cpu_index in 1..total {
+            let cpu_id = unsafe { CPU_IDS[cpu_index] };
+            let result = unsafe { self.start_cpu(cpu_id, entry, cpu_index) };
+            if let Err(err) = result {
+                kerror!(
+                    "SMP: Failed to start CPU {} (APIC {}): {:?}",
+                    cpu_index,
+                    cpu_id.0,
+                    err
+                );
+                if first_err.is_none() {
+                    first_err = Some(err);
+                }
+            }
+        }
+
+        if let Some(err) = first_err {
+            Err(err)
+        } else {
+            kinfo!("SMP: Secondary CPU startup complete");
+            Ok(())
+        }
     }
 
     fn unmap_phys_temp(&self, virt: u64, size: usize) {

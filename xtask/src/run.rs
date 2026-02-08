@@ -30,6 +30,20 @@ fn user_netdev_arg() -> String {
     }
 }
 
+fn x86_qemu_trace_enabled() -> bool {
+    // Keep heavy QEMU tracing opt-in so normal SMP boot timings are not distorted.
+    // Any value except "0"/"off"/"false"/"no" enables tracing.
+    if let Ok(v) = std::env::var("THINGOS_QEMU_TRACE") {
+        let v = v.trim();
+        if v.is_empty() {
+            return false;
+        }
+        !matches!(v.to_ascii_lowercase().as_str(), "0" | "off" | "false" | "no")
+    } else {
+        false
+    }
+}
+
 /// Run ISO image in QEMU (UEFI mode).
 pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path) -> Result<()> {
     let name = image_name(arch);
@@ -49,9 +63,15 @@ pub fn run(sh: &Shell, arch: &str, qemu_flags: &str, iso_path: &Path) -> Result<
             // Force host pointer events through legacy PS/2:
             // - `usb=off` removes USB tablet/mouse defaults
             // - `vmport=off` removes VMware vmmouse path
-            cmd!(sh, "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
-                .args(&qemu_args)
-                .run()?;
+            if x86_qemu_trace_enabled() {
+                cmd!(sh, "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -d int,cpu_reset -D qemu.log -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
+                    .args(&qemu_args)
+                    .run()?;
+            } else {
+                cmd!(sh, "qemu-system-x86_64 -M q35,usb=off,vmport=off,i8042=on -device virtio-vga -serial stdio -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso} -no-reboot -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56,disable-legacy=on -netdev {netdev}")
+                    .args(&qemu_args)
+                    .run()?;
+            }
         }
         "aarch64" => {
             cmd!(sh, "qemu-system-aarch64 -M virt -cpu cortex-a72 -serial stdio -semihosting -device ramfb -device qemu-xhci -device usb-kbd -device usb-mouse -drive if=pflash,unit=0,format=raw,file={ovmf_code},readonly=on -drive if=pflash,unit=1,format=raw,file={ovmf_vars} -cdrom {iso}")

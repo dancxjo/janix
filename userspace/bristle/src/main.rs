@@ -234,17 +234,18 @@ fn main(packed_handles: usize) -> ! {
 
     let mut kbd_state = KeyboardState::new();
     let mut mouse_state = MouseState::new();
-    let mut keyboard_gen: u64 = 0;
+    let mut _keyboard_gen: u64 = 0;
 
     let mut kbd_buf = [0u8; 64];
     let mut mouse_buf = [0u8; 64];
     let mut send_buf = [0u8; 64];
+    let mut mouse_packet = [0u8; 3];
+    let mut mouse_packet_len = 0usize;
     let mut drop_counter: u32 = 0;
     let mut event_count: u64 = 0;
 
     let wait_handles = [kbd_read, mouse_read];
     loop {
-        // Block until keyboard or mouse data arrives
         let ready_handle = match port_wait(&wait_handles, abi::syscall::port_wait::READABLE) {
             Ok(h) => h,
             Err(_) => {
@@ -252,10 +253,6 @@ fn main(packed_handles: usize) -> ! {
                 continue;
             }
         };
-
-        if ready_handle == mouse_read {
-             info!("bristle: woke up for MOUSE (handle={})", ready_handle);
-        }
 
         // Process keyboard input
         if ready_handle == kbd_read {
@@ -279,7 +276,6 @@ fn main(packed_handles: usize) -> ! {
                                 let _ = thingsys::dump_graph(0);
                             }
 
-                            // Broadcast to legacy ports
                             let mut sent = false;
                             if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
                                 sent = true;
@@ -301,77 +297,77 @@ fn main(packed_handles: usize) -> ! {
                         }
                     }
                 }
+                }
             }
         }
-        } else if ready_handle == mouse_read {
-            // Process mouse input
+
+        // Process mouse input
+        if ready_handle == mouse_read {
             if let Ok(n) = port_recv(mouse_read, &mut mouse_buf) {
-                if n > 0 { info!("bristle: recv mouse n={}", n); }
-                if n >= 3 {
-                // Process 3-byte packets
-                let mut offset = 0;
-                while offset + 3 <= n {
-                    let packet: [u8; 3] = [
-                        mouse_buf[offset],
-                        mouse_buf[offset + 1],
-                        mouse_buf[offset + 2],
-                    ];
+                for &byte in &mouse_buf[..n] {
+                    // Keep packet framing across recv calls: the stream can split 3-byte packets.
+                    if mouse_packet_len == 0 && (byte & 0x08) == 0 {
+                        continue;
+                    }
 
-                    let (events, count) = mouse_state.process_packet(&packet);
-                    for i in 0..count {
-                        if let Some(evt) = events[i] {
-                            let timestamp_ns = stem::monotonic_ns();
-                            let (len, filter_kind) = match evt {
-                                PointerEvent::Move { dx, dy } => (
-                                    serialize_pointer_move(dx, dy, timestamp_ns, &mut send_buf),
-                                    abi::schema::input::FILTER_POINTER,
-                                ),
-                                PointerEvent::ButtonDown { button } => (
-                                    serialize_pointer_button_down(
-                                        button,
-                                        timestamp_ns,
-                                        &mut send_buf,
+                    mouse_packet[mouse_packet_len] = byte;
+                    mouse_packet_len += 1;
+
+                    if mouse_packet_len == 3 {
+                        let (events, count) = mouse_state.process_packet(&mouse_packet);
+                        for i in 0..count {
+                            if let Some(evt) = events[i] {
+                                let timestamp_ns = stem::monotonic_ns();
+                                let (len, _filter_kind) = match evt {
+                                    PointerEvent::Move { dx, dy } => (
+                                        serialize_pointer_move(dx, dy, timestamp_ns, &mut send_buf),
+                                        abi::schema::input::FILTER_POINTER,
                                     ),
-                                    abi::schema::input::FILTER_BUTTON,
-                                ),
-                                PointerEvent::ButtonUp { button } => (
-                                    serialize_pointer_button_up(button, timestamp_ns, &mut send_buf),
-                                    abi::schema::input::FILTER_BUTTON,
-                                ),
-                            };
-                            if len > 0 {
-                                // Broadcast to legacy ports
-                                let mut sent = false;
-                                if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
-                                    sent = true;
-                                } else {
-                                    drop_counter += 1;
-                                }
+                                    PointerEvent::ButtonDown { button } => (
+                                        serialize_pointer_button_down(
+                                            button,
+                                            timestamp_ns,
+                                            &mut send_buf,
+                                        ),
+                                        abi::schema::input::FILTER_BUTTON,
+                                    ),
+                                    PointerEvent::ButtonUp { button } => (
+                                        serialize_pointer_button_up(button, timestamp_ns, &mut send_buf),
+                                        abi::schema::input::FILTER_BUTTON,
+                                    ),
+                                };
 
-                                if legacy_evt_echo_write != 0 {
-                                    if port_send(legacy_evt_echo_write, &send_buf[..len]).is_ok() {
+                                if len > 0 {
+                                    let mut sent = false;
+                                    if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
                                         sent = true;
                                     } else {
                                         drop_counter += 1;
                                     }
-                                }
 
-                                if sent {
-                                    event_count += 1;
+                                    if legacy_evt_echo_write != 0 {
+                                        if port_send(legacy_evt_echo_write, &send_buf[..len]).is_ok() {
+                                            sent = true;
+                                        } else {
+                                            drop_counter += 1;
+                                        }
+                                    }
+
+                                    if sent {
+                                        event_count += 1;
+                                    }
                                 }
                             }
                         }
+                        mouse_packet_len = 0;
                     }
-                    offset += 3;
                 }
             }
         }
-    }
-
         // Rate-limited drop logging
         if drop_counter > 0 && drop_counter % 100 == 0 {
             info!("bristle: dropped {} events (port full)", drop_counter);
         }
+
     }
 }
-

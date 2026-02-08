@@ -220,15 +220,10 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
 
             if *idx == 3 {
                 let _ = port_send(handle, packet);
-
-                /*
-                    info!("ps2_mouse: packet {} = [{:02x} {:02x} {:02x}]",
-                          packets_sent, packet[0], packet[1], packet[2]);
-                */
                 *idx = 0;
             }
         } else {
-            // Not mouse data, stop draining - let ps2_kbd handle it
+            // Not mouse data; leave it for ps2_kbd and stop this drain pass.
             break;
         }
     }

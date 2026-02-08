@@ -444,7 +444,10 @@ pub struct InterruptStackFrame {
 /// Hardware IRQ handler - dispatches to kernel and sends EOI
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_irq_handler(vector: u64) {
-    let resolved = crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
+    // Prefer the LAPIC ISR-reported in-service vector when available.
+    // This matches the historical path and avoids relying on shim-passed constants.
+    let resolved =
+        crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
 
     if resolved == 0x2C {
         let count = IRQ12_COUNT.fetch_add(1, Ordering::Relaxed) + 1;

@@ -6,7 +6,7 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 use abi::ids::HandleId;
-use abi::schema::{keys, kinds, rels};
+use abi::schema::{keys, kinds, rels, ui_kind};
 use abi::types::Edge;
 use stem::thing::ThingId;
 
@@ -19,6 +19,7 @@ pub enum UiNodeKind {
     Button,
     Checkbox,
     Text,
+    TextInput,
     Unknown,
 }
 
@@ -30,10 +31,13 @@ pub struct UiNode {
     pub children: Vec<usize>,
     pub label_id: Option<ThingId>,
     pub text: Option<String>,
+    pub placeholder: Option<String>,
     pub checked: bool,
     pub pressed: bool,
     pub action_id: u64,
     pub value_id: u64,
+    pub focused: bool,
+    pub cursor: u32,
     pub visible: bool,
     pub enabled: bool,
 }
@@ -124,6 +128,7 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             continue;
         }
         let kind = graph.get_kind(id)?;
+        let ui_kind_value = graph.get_prop(id, keys::UI_KIND).unwrap_or(0);
         let node_kind = if kind == symbols.kind_button {
             UiNodeKind::Button
         } else if kind == symbols.kind_checkbox {
@@ -132,6 +137,8 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             UiNodeKind::Text
         } else if kind == symbols.kind_column {
             UiNodeKind::Column
+        } else if ui_kind_value == ui_kind::TEXT_INPUT {
+            UiNodeKind::TextInput
         } else {
             UiNodeKind::Unknown
         };
@@ -153,8 +160,11 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
                 }
             });
 
-        let text = if node_kind == UiNodeKind::Text {
-            let bs = graph.get_prop(id, keys::UI_TEXT).unwrap_or(0);
+        let text = if node_kind == UiNodeKind::Text || node_kind == UiNodeKind::TextInput {
+            let bs = graph
+                .get_prop(id, keys::UI_TEXT)
+                .or_else(|| graph.get_prop(id, keys::UI_INPUT_VALUE))
+                .unwrap_or(0);
             if bs != 0 {
                 let bytes = graph.read_bytespace(ThingId::from_u64(bs))?;
                 core::str::from_utf8(&bytes).ok().map(|s| s.to_string())
@@ -164,6 +174,25 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
         } else {
             None
         };
+        let placeholder = if node_kind == UiNodeKind::TextInput {
+            let bs = graph
+                .get_prop(id, keys::UI_PLACEHOLDER_TEXT)
+                .or_else(|| graph.get_prop(id, keys::UI_PLACEHOLDER))
+                .unwrap_or(0);
+            if bs != 0 {
+                let bytes = graph.read_bytespace(ThingId::from_u64(bs))?;
+                core::str::from_utf8(&bytes).ok().map(|s| s.to_string())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let focused = graph.get_prop(id, keys::UI_FOCUSED).unwrap_or(0) != 0;
+        let cursor = graph
+            .get_prop(id, keys::UI_CURSOR)
+            .or_else(|| graph.get_prop(id, keys::UI_CURSOR_POS))
+            .unwrap_or(0) as u32;
 
         let index = nodes.len();
         nodes.push(UiNode {
@@ -173,10 +202,13 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             children: Vec::new(),
             label_id,
             text,
+            placeholder,
             checked,
             pressed,
             action_id,
             value_id,
+            focused,
+            cursor,
             visible,
             enabled,
         });
@@ -241,6 +273,7 @@ const COLUMN_GAP: i32 = 8;
 const BUTTON_HEIGHT: i32 = 32;
 const CHECKBOX_HEIGHT: i32 = 28;
 const TEXT_HEIGHT: i32 = 20;
+const TEXT_INPUT_HEIGHT: i32 = 32;
 const CHECKBOX_BOX: i32 = 16;
 const BUTTON_BG: u32 = 0xFFC0C0C0;
 const BUTTON_BG_PRESSED: u32 = 0xFFB0B0B0;
@@ -249,6 +282,10 @@ const BUTTON_BORDER: u32 = 0xFF202020;
 const TEXT_COLOR: u32 = 0xFF101010;
 const CHECKBOX_BORDER: u32 = 0xFF202020;
 const CHECKBOX_FILL: u32 = 0xFFFFFFFF;
+const INPUT_BG: u32 = 0xFFFFFFFF;
+const INPUT_BORDER: u32 = 0xFF303030;
+const INPUT_BORDER_FOCUS: u32 = 0xFF1A73E8;
+const INPUT_PLACEHOLDER: u32 = 0xFF6E6E6E;
 
 fn layout_node(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [LayoutRect]) {
     rects[index] = rect;
@@ -292,6 +329,7 @@ fn layout_column(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [Lay
             UiNodeKind::Button => BUTTON_HEIGHT,
             UiNodeKind::Checkbox => CHECKBOX_HEIGHT,
             UiNodeKind::Text => TEXT_HEIGHT,
+            UiNodeKind::TextInput => TEXT_INPUT_HEIGHT,
             UiNodeKind::Column => BUTTON_HEIGHT,
             UiNodeKind::Unknown => TEXT_HEIGHT,
         };
@@ -311,6 +349,7 @@ fn emit_node(tree: &UiTree, rects: &[LayoutRect], index: usize, builder: &mut Pa
     match node.kind {
         UiNodeKind::Button => draw_button(tree, rects, index, rect, builder),
         UiNodeKind::Checkbox => draw_checkbox(tree, rects, index, rect, builder),
+        UiNodeKind::TextInput => draw_text_input(node, rect, builder),
         UiNodeKind::Text => {
             if !is_label_child(tree, index) {
                 if let Some(text) = &node.text {
@@ -417,7 +456,43 @@ fn draw_checkbox(
     }
 }
 
+fn draw_text_input(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) {
+    let border = if node.focused {
+        INPUT_BORDER_FOCUS
+    } else {
+        INPUT_BORDER
+    };
+    builder.fill_rect(rect.x, rect.y, rect.w, rect.h, INPUT_BG);
+    builder.fill_rect(rect.x, rect.y, rect.w, 1, border);
+    builder.fill_rect(rect.x, rect.y + rect.h - 1, rect.w, 1, border);
+    builder.fill_rect(rect.x, rect.y, 1, rect.h, border);
+    builder.fill_rect(rect.x + rect.w - 1, rect.y, 1, rect.h, border);
+
+    let text_rect = LayoutRect {
+        x: rect.x + 8,
+        y: rect.y,
+        w: rect.w.saturating_sub(16),
+        h: rect.h,
+    };
+    let content = node.text.as_deref().unwrap_or("");
+    if !content.is_empty() {
+        draw_text(text_rect, content, builder);
+    } else if let Some(placeholder) = node.placeholder.as_deref() {
+        draw_text_colored(text_rect, placeholder, INPUT_PLACEHOLDER, builder);
+    }
+    if node.focused {
+        let cursor = core::cmp::min(node.cursor as usize, content.len()) as i32;
+        let cursor_x = text_rect.x + cursor.saturating_mul(8);
+        let cursor_h = (rect.h - 10).max(1);
+        builder.fill_rect(cursor_x, rect.y + 5, 1, cursor_h, TEXT_COLOR);
+    }
+}
+
 fn draw_text(rect: LayoutRect, text: &str, builder: &mut PaintBuilder) {
+    draw_text_colored(rect, text, TEXT_COLOR, builder);
+}
+
+fn draw_text_colored(rect: LayoutRect, text: &str, color: u32, builder: &mut PaintBuilder) {
     let size = 16;
     let baseline = rect.y + (rect.h + size) / 2 - 2;
     builder.draw_text_run(
@@ -429,7 +504,7 @@ fn draw_text(rect: LayoutRect, text: &str, builder: &mut PaintBuilder) {
         "NotoSans-Regular",
         size,
         text,
-        TEXT_COLOR,
+        color,
     );
 }
 
@@ -535,11 +610,43 @@ mod tests {
                 .unwrap_or(0))
         }
 
+        fn get_edges(&mut self, id: ThingId, out: &mut [Edge]) -> Result<usize> {
+            let mut count = 0usize;
+            for edge in &self.edges {
+                if edge.from == id && count < out.len() {
+                    out[count] = *edge;
+                    count += 1;
+                }
+            }
+            Ok(count)
+        }
+
         fn bytespace_create(&mut self, len: usize) -> Result<ThingId> {
             let id = ThingId::from_u64(self.next_id);
             self.next_id += 1;
             self.bytespaces.insert(id.to_u64_lossy(), vec![0u8; len]);
             Ok(id)
+        }
+
+        fn bytespace_info(&mut self, id: ThingId) -> Result<usize> {
+            Ok(self
+                .bytespaces
+                .get(&id.to_u64_lossy())
+                .map(|b| b.len())
+                .unwrap_or(0))
+        }
+
+        fn bytespace_read(&mut self, id: ThingId, offset: usize, out: &mut [u8]) -> Result<usize> {
+            if let Some(buf) = self.bytespaces.get(&id.to_u64_lossy()) {
+                if offset >= buf.len() {
+                    return Ok(0);
+                }
+                let n = core::cmp::min(out.len(), buf.len() - offset);
+                out[..n].copy_from_slice(&buf[offset..offset + n]);
+                Ok(n)
+            } else {
+                Err(Error::Errno(Errno::ENOENT))
+            }
         }
 
         fn bytespace_write(&mut self, id: ThingId, offset: usize, bytes: &[u8]) -> Result<()> {
@@ -711,7 +818,12 @@ mod tests {
             ),
             new_checked,
         );
-        let event = UiEventWire::new_toggled(checkbox_id.to_u64_lossy(), new_checked != 0, 11);
+        let event = UiEventWire::new_toggled(
+            window_id.to_u64_lossy(),
+            checkbox_id.to_u64_lossy(),
+            new_checked != 0,
+            11,
+        );
         let mut buf = [0u8; UI_EVENT_BYTES];
         event.encode(&mut buf).unwrap();
         let queue = graph
@@ -726,9 +838,9 @@ mod tests {
             UiEventKind::from_raw(decoded.kind),
             Some(UiEventKind::Toggled)
         );
-        let node_id = decoded.node_id;
+        let node_id = decoded.target_id;
         assert_eq!(node_id, checkbox_id.to_u64_lossy());
-        assert_eq!(decoded.checked, new_checked as u8);
+        assert_eq!(decoded.checked(), new_checked != 0);
     }
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

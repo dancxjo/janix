@@ -181,10 +181,24 @@ pub mod keys {
     pub const UI_FONT_NAME: &str = "ui.font_name";
     /// Placeholder text bytespace for text input
     pub const UI_PLACEHOLDER: &str = "ui.placeholder";
+    /// Placeholder text bytespace for text input (canonical alias)
+    pub const UI_PLACEHOLDER_TEXT: &str = "ui.placeholder_text";
     /// Text input cursor position (u64)
     pub const UI_CURSOR_POS: &str = "ui.cursor_pos";
+    /// Text input cursor position (u64, canonical alias)
+    pub const UI_CURSOR: &str = "ui.cursor";
     /// Text input current value bytespace
     pub const UI_INPUT_VALUE: &str = "ui.input_value";
+    /// Stable UI identity key (bytespace UTF-8 string)
+    pub const UI_KEY: &str = "ui.key";
+    /// Optional UI role/classification string for tooling (bytespace UTF-8 string)
+    pub const UI_ROLE: &str = "ui.role";
+    /// Whether a node can receive input focus (0/1)
+    pub const UI_FOCUSABLE: &str = "ui.focusable";
+    /// Optional text selection start byte offset
+    pub const UI_SELECTION_START: &str = "ui.selection.start";
+    /// Optional text selection end byte offset
+    pub const UI_SELECTION_END: &str = "ui.selection.end";
     pub const UI_ENABLED: &str = "ui.enabled";
     pub const UI_FOCUSED: &str = "ui.focused";
     pub const UI_RANK: &str = "ui.rank";

@@ -599,7 +599,7 @@ fn main(arg: usize) -> ! {
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_cursor_buttons = cursor.buttons();
-    let ui_dispatch = ui_events::UiEventDispatcher::new();
+    let mut ui_dispatch = ui_events::UiEventDispatcher::new();
     let mut focused_window: Option<ThingId> = None;
     let mut alt_cycle_order: alloc::vec::Vec<ThingId> = alloc::vec::Vec::new();
     let mut maximized_windows: alloc::collections::BTreeMap<ThingId, crate::geometry::Rect> =
@@ -1109,6 +1109,8 @@ fn main(arg: usize) -> ! {
                     .map(|h| h.id);
                 set_focus(&mut focused_window, hovered);
             }
+
+            ui_dispatch.dispatch_keyboard(&pressed_keys, &prev_keys);
 
             // Alt-Tab logic moved handled earlier (lines 656+)
 

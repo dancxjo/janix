@@ -1,8 +1,10 @@
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
 use alloc::string::ToString;
 use alloc::vec::Vec;
 
+use abi::hid::Key;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
@@ -19,6 +21,7 @@ pub struct UiEventDispatcher {
     rel_has_child: u64,
     kind_button: u64,
     kind_checkbox: u64,
+    focused_text_target: Option<(ThingId, ThingId)>,
 }
 
 impl UiEventDispatcher {
@@ -28,15 +31,16 @@ impl UiEventDispatcher {
             rel_has_child: stem::thing::sys::intern(rels::HAS_CHILD).unwrap_or(0) as u64,
             kind_button: stem::thing::sys::intern(kinds::UI_BUTTON).unwrap_or(0) as u64,
             kind_checkbox: stem::thing::sys::intern(kinds::UI_CHECKBOX).unwrap_or(0) as u64,
+            focused_text_target: None,
         }
     }
 
-    pub fn dispatch_click(&self, screen_x: i32, screen_y: i32, screen_w: i32, screen_h: i32) {
+    pub fn dispatch_click(&mut self, screen_x: i32, screen_y: i32, screen_w: i32, screen_h: i32) {
         if let Some((window_id, rect)) = window_at_point(screen_x, screen_y, screen_w, screen_h) {
             let local_x = screen_x - rect.x();
             let local_y = screen_y - rect.y();
             if let Some(root) = find_root_ui(window_id, self.rel_root_ui) {
-                if let Some(hit) = hit_test(
+                if let Some((hit, hit_kind)) = hit_test(
                     root,
                     local_x,
                     local_y,
@@ -44,12 +48,15 @@ impl UiEventDispatcher {
                     self.kind_button,
                     self.kind_checkbox,
                 ) {
-                    let kind = get_kind(hit).unwrap_or(ThingKind::default());
-                    if kind.0 == self.kind_button {
+                    if hit_kind == HitKind::TextInput {
+                        self.focused_text_target = Some((window_id, hit));
+                        emit_focus(window_id, hit);
+                        bump_window_gen(window_id);
+                    } else if hit_kind == HitKind::Button {
                         let action_id = prop_get(hit, keys::UI_BUTTON_ACTION_ID).unwrap_or(0);
                         emit_clicked(window_id, hit, action_id);
                         bump_window_gen(window_id);
-                    } else if kind.0 == self.kind_checkbox {
+                    } else if hit_kind == HitKind::Checkbox {
                         let checked = prop_get(hit, keys::UI_CHECKBOX_CHECKED).unwrap_or(0) != 0;
                         let new_checked = if checked { 0 } else { 1 };
                         let _ = prop_set(hit, keys::UI_CHECKBOX_CHECKED, new_checked);
@@ -57,8 +64,45 @@ impl UiEventDispatcher {
                         emit_toggled(window_id, hit, new_checked != 0, value_id);
                         bump_window_gen(window_id);
                     }
+                } else {
+                    self.clear_focus();
                 }
             }
+        }
+    }
+
+    pub fn dispatch_keyboard(&self, pressed: &BTreeSet<Key>, prev: &BTreeSet<Key>) {
+        let Some((window_id, target_id)) = self.focused_text_target else {
+            return;
+        };
+        let shift = pressed.contains(&Key::LeftShift) || pressed.contains(&Key::RightShift);
+        for key in pressed {
+            if prev.contains(key) {
+                continue;
+            }
+            match *key {
+                Key::Backspace => emit_text_backspace(window_id, target_id),
+                Key::Delete => emit_text_delete(window_id, target_id),
+                Key::Enter => emit_submit(window_id, target_id),
+                Key::Left => emit_cursor_move(window_id, target_id, -1),
+                Key::Right => emit_cursor_move(window_id, target_id, 1),
+                Key::Home => emit_cursor_move(window_id, target_id, -4096),
+                Key::End => emit_cursor_move(window_id, target_id, 4096),
+                _ => {
+                    if let Some(ch) = key_to_ascii(*key, shift) {
+                        let mut bytes = [0u8; 4];
+                        let s = ch.encode_utf8(&mut bytes);
+                        emit_text_insert(window_id, target_id, s.as_bytes());
+                    }
+                }
+            }
+        }
+    }
+
+    fn clear_focus(&mut self) {
+        if let Some((window_id, target)) = self.focused_text_target.take() {
+            emit_blur(window_id, target);
+            bump_window_gen(window_id);
         }
     }
 }
@@ -116,6 +160,13 @@ fn find_root_ui(window_id: ThingId, rel_root_ui: u64) -> Option<ThingId> {
     None
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum HitKind {
+    Button,
+    Checkbox,
+    TextInput,
+}
+
 fn hit_test(
     root: ThingId,
     x: i32,
@@ -123,7 +174,7 @@ fn hit_test(
     rel_has_child: u64,
     kind_button: u64,
     kind_checkbox: u64,
-) -> Option<ThingId> {
+) -> Option<(ThingId, HitKind)> {
     let mut stack = Vec::new();
     stack.push(root);
     while let Some(id) = stack.pop() {
@@ -139,7 +190,17 @@ fn hit_test(
             }
             let kind = get_kind(id).unwrap_or(ThingKind::default());
             if kind.0 == kind_button || kind.0 == kind_checkbox {
-                return Some(id);
+                let hit = if kind.0 == kind_button {
+                    HitKind::Button
+                } else {
+                    HitKind::Checkbox
+                };
+                return Some((id, hit));
+            }
+            if prop_get(id, keys::UI_KIND).unwrap_or(0) == abi::schema::ui_kind::TEXT_INPUT
+                && prop_get(id, keys::UI_FOCUSABLE).unwrap_or(1) != 0
+            {
+                return Some((id, HitKind::TextInput));
             }
             let mut edges = [Edge::default(); 64];
             if let Ok(count) = get_edges(id, &mut edges) {
@@ -171,12 +232,52 @@ fn node_enabled(id: ThingId) -> bool {
 }
 
 fn emit_clicked(window_id: ThingId, node_id: ThingId, action_id: u64) {
-    let event = UiEventWire::new_clicked(node_id.to_u64_lossy(), action_id);
+    let event = UiEventWire::new_clicked(window_id.to_u64_lossy(), node_id.to_u64_lossy(), action_id);
     write_event(window_id, event);
 }
 
 fn emit_toggled(window_id: ThingId, node_id: ThingId, checked: bool, value_id: u64) {
-    let event = UiEventWire::new_toggled(node_id.to_u64_lossy(), checked, value_id);
+    let event = UiEventWire::new_toggled(
+        window_id.to_u64_lossy(),
+        node_id.to_u64_lossy(),
+        checked,
+        value_id,
+    );
+    write_event(window_id, event);
+}
+
+fn emit_focus(window_id: ThingId, node_id: ThingId) {
+    let event = UiEventWire::new_focus(window_id.to_u64_lossy(), node_id.to_u64_lossy());
+    write_event(window_id, event);
+}
+
+fn emit_blur(window_id: ThingId, node_id: ThingId) {
+    let event = UiEventWire::new_blur(window_id.to_u64_lossy(), node_id.to_u64_lossy());
+    write_event(window_id, event);
+}
+
+fn emit_text_insert(window_id: ThingId, node_id: ThingId, text: &[u8]) {
+    let event = UiEventWire::new_text_insert(window_id.to_u64_lossy(), node_id.to_u64_lossy(), text);
+    write_event(window_id, event);
+}
+
+fn emit_text_backspace(window_id: ThingId, node_id: ThingId) {
+    let event = UiEventWire::new_text_backspace(window_id.to_u64_lossy(), node_id.to_u64_lossy());
+    write_event(window_id, event);
+}
+
+fn emit_text_delete(window_id: ThingId, node_id: ThingId) {
+    let event = UiEventWire::new_text_delete(window_id.to_u64_lossy(), node_id.to_u64_lossy());
+    write_event(window_id, event);
+}
+
+fn emit_cursor_move(window_id: ThingId, node_id: ThingId, delta: i32) {
+    let event = UiEventWire::new_cursor_move(window_id.to_u64_lossy(), node_id.to_u64_lossy(), delta);
+    write_event(window_id, event);
+}
+
+fn emit_submit(window_id: ThingId, node_id: ThingId) {
+    let event = UiEventWire::new_submit(window_id.to_u64_lossy(), node_id.to_u64_lossy());
     write_event(window_id, event);
 }
 
@@ -207,6 +308,62 @@ fn bump_window_gen(window_id: ThingId) {
     let _ = prop_set(window_id, keys::UI_SCENE_GEN, current.saturating_add(1));
 }
 
+fn key_to_ascii(key: Key, shift: bool) -> Option<char> {
+    let ch = match key {
+        Key::A => if shift { 'A' } else { 'a' },
+        Key::B => if shift { 'B' } else { 'b' },
+        Key::C => if shift { 'C' } else { 'c' },
+        Key::D => if shift { 'D' } else { 'd' },
+        Key::E => if shift { 'E' } else { 'e' },
+        Key::F => if shift { 'F' } else { 'f' },
+        Key::G => if shift { 'G' } else { 'g' },
+        Key::H => if shift { 'H' } else { 'h' },
+        Key::I => if shift { 'I' } else { 'i' },
+        Key::J => if shift { 'J' } else { 'j' },
+        Key::K => if shift { 'K' } else { 'k' },
+        Key::L => if shift { 'L' } else { 'l' },
+        Key::M => if shift { 'M' } else { 'm' },
+        Key::N => if shift { 'N' } else { 'n' },
+        Key::O => if shift { 'O' } else { 'o' },
+        Key::P => if shift { 'P' } else { 'p' },
+        Key::Q => if shift { 'Q' } else { 'q' },
+        Key::R => if shift { 'R' } else { 'r' },
+        Key::S => if shift { 'S' } else { 's' },
+        Key::T => if shift { 'T' } else { 't' },
+        Key::U => if shift { 'U' } else { 'u' },
+        Key::V => if shift { 'V' } else { 'v' },
+        Key::W => if shift { 'W' } else { 'w' },
+        Key::X => if shift { 'X' } else { 'x' },
+        Key::Y => if shift { 'Y' } else { 'y' },
+        Key::Z => if shift { 'Z' } else { 'z' },
+        Key::Num1 => if shift { '!' } else { '1' },
+        Key::Num2 => if shift { '@' } else { '2' },
+        Key::Num3 => if shift { '#' } else { '3' },
+        Key::Num4 => if shift { '$' } else { '4' },
+        Key::Num5 => if shift { '%' } else { '5' },
+        Key::Num6 => if shift { '^' } else { '6' },
+        Key::Num7 => if shift { '&' } else { '7' },
+        Key::Num8 => if shift { '*' } else { '8' },
+        Key::Num9 => if shift { '(' } else { '9' },
+        Key::Num0 => if shift { ')' } else { '0' },
+        Key::Space => ' ',
+        Key::Tab => '\t',
+        Key::Minus => if shift { '_' } else { '-' },
+        Key::Equal => if shift { '+' } else { '=' },
+        Key::LeftBracket => if shift { '{' } else { '[' },
+        Key::RightBracket => if shift { '}' } else { ']' },
+        Key::Backslash => if shift { '|' } else { '\\' },
+        Key::Semicolon => if shift { ':' } else { ';' },
+        Key::Quote => if shift { '"' } else { '\'' },
+        Key::Grave => if shift { '~' } else { '`' },
+        Key::Comma => if shift { '<' } else { ',' },
+        Key::Period => if shift { '>' } else { '.' },
+        Key::Slash => if shift { '?' } else { '/' },
+        _ => return None,
+    };
+    Some(ch)
+}
+
 #[derive(Clone, Copy)]
 struct RectI32 {
     x: i32,
@@ -222,7 +379,7 @@ mod tests {
     use alloc::collections::BTreeMap;
     use alloc::string::String;
     use stem::errors::{Error, Result};
-    use stem::petals::graph::{GraphBackend, UiTreeBuilder};
+    use stem::petals::graph::{reduce_window_events_with_graph, GraphBackend, UiKey, UiTreeBuilder};
 
     #[derive(Default)]
     struct TestGraph {
@@ -288,11 +445,43 @@ mod tests {
                 .unwrap_or(0))
         }
 
+        fn get_edges(&mut self, id: ThingId, out: &mut [Edge]) -> Result<usize> {
+            let mut count = 0usize;
+            for edge in &self.edges {
+                if edge.from == id && count < out.len() {
+                    out[count] = *edge;
+                    count += 1;
+                }
+            }
+            Ok(count)
+        }
+
         fn bytespace_create(&mut self, len: usize) -> Result<ThingId> {
             let id = ThingId::from_u64(self.next_id);
             self.next_id += 1;
             self.bytespaces.insert(id.to_u64_lossy(), alloc::vec![0u8; len]);
             Ok(id)
+        }
+
+        fn bytespace_info(&mut self, id: ThingId) -> Result<usize> {
+            Ok(self
+                .bytespaces
+                .get(&id.to_u64_lossy())
+                .map(|b| b.len())
+                .unwrap_or(0))
+        }
+
+        fn bytespace_read(&mut self, id: ThingId, offset: usize, out: &mut [u8]) -> Result<usize> {
+            if let Some(buf) = self.bytespaces.get(&id.to_u64_lossy()) {
+                if offset >= buf.len() {
+                    return Ok(0);
+                }
+                let n = core::cmp::min(out.len(), buf.len() - offset);
+                out[..n].copy_from_slice(&buf[offset..offset + n]);
+                Ok(n)
+            } else {
+                Err(Error::Errno(abi::errors::Errno::ENOENT))
+            }
         }
 
         fn bytespace_write(&mut self, id: ThingId, offset: usize, bytes: &[u8]) -> Result<()> {
@@ -349,15 +538,68 @@ mod tests {
             0,
         );
 
-        let event = UiEventWire::new_toggled(checkbox_id.to_u64_lossy(), true, 7);
+        let event = UiEventWire::new_toggled(
+            window_id.to_u64_lossy(),
+            checkbox_id.to_u64_lossy(),
+            true,
+            7,
+        );
         let mut buf = [0u8; abi::ui_event::UI_EVENT_BYTES];
         let _ = event.encode(&mut buf);
         graph.bytespaces.insert(999, buf.to_vec());
 
         // Simulate event write
-        let written = UiEventWire::new_toggled(checkbox_id.to_u64_lossy(), true, 7);
+        let written = UiEventWire::new_toggled(
+            window_id.to_u64_lossy(),
+            checkbox_id.to_u64_lossy(),
+            true,
+            7,
+        );
         let mut out = [0u8; abi::ui_event::UI_EVENT_BYTES];
         let _ = written.encode(&mut out);
         assert_eq!(UiEventKind::from_raw(out[0]), Some(UiEventKind::Toggled));
+    }
+
+    #[test]
+    fn text_input_focus_insert_backspace_reduces_to_graph_state() {
+        let graph = TestGraph::new();
+        let window_id = ThingId::from_u64(77);
+        let mut builder = UiTreeBuilder::new(graph, window_id);
+        let mut input_id = ThingId::default();
+        builder
+            .column(|ui| {
+                input_id = ui.text_input_keyed(UiKey("query_input"), "", "Search")?;
+                Ok(())
+            })
+            .unwrap();
+        let (_root, mut graph) = builder.finish_with_graph().unwrap();
+        let queue = graph.prop_get(window_id, keys::UI_EVENT_QUEUE).unwrap();
+
+        let mut buf = [0u8; abi::ui_event::UI_EVENT_BYTES];
+        let focus = UiEventWire::new_focus(window_id.to_u64_lossy(), input_id.to_u64_lossy());
+        focus.encode(&mut buf).unwrap();
+        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
+        assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
+
+        let insert =
+            UiEventWire::new_text_insert(window_id.to_u64_lossy(), input_id.to_u64_lossy(), b"hi");
+        insert.encode(&mut buf).unwrap();
+        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
+        assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
+
+        let backspace =
+            UiEventWire::new_text_backspace(window_id.to_u64_lossy(), input_id.to_u64_lossy());
+        backspace.encode(&mut buf).unwrap();
+        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
+        assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
+
+        let text_bs = graph.prop_get(input_id, keys::UI_TEXT).unwrap();
+        let bytes = graph
+            .bytespaces
+            .get(&text_bs)
+            .cloned()
+            .unwrap_or_else(Vec::new);
+        assert_eq!(core::str::from_utf8(&bytes).unwrap_or(""), "h");
+        assert_eq!(graph.prop_get(input_id, keys::UI_CURSOR).unwrap_or(0), 1);
     }
 }

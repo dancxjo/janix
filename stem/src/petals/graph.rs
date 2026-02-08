@@ -1,20 +1,31 @@
 extern crate alloc;
 
+use alloc::collections::BTreeSet;
+use alloc::string::String;
+use alloc::vec;
 use alloc::vec::Vec;
 
 use crate::errors::{Error, Result};
-use crate::thing::sys::{bytespace_create, bytespace_write, create_node, link, prop_get, prop_set};
+use crate::thing::sys::{
+    bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, get_edges,
+    link, prop_get, prop_set,
+};
 use crate::thing::ThingId;
 use abi::errors::Errno;
+use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels, ui_kind};
 use abi::ui_event::UI_EVENT_BYTES;
+use abi::types::Edge;
 
 pub trait GraphBackend {
     fn create_node(&mut self, kind: &str) -> Result<ThingId>;
     fn link(&mut self, src: ThingId, rel: &str, dst: ThingId) -> Result<()>;
     fn prop_set(&mut self, id: ThingId, key: &str, value: u64) -> Result<()>;
     fn prop_get(&mut self, id: ThingId, key: &str) -> Result<u64>;
+    fn get_edges(&mut self, id: ThingId, out: &mut [Edge]) -> Result<usize>;
     fn bytespace_create(&mut self, len: usize) -> Result<ThingId>;
+    fn bytespace_info(&mut self, id: ThingId) -> Result<usize>;
+    fn bytespace_read(&mut self, id: ThingId, offset: usize, out: &mut [u8]) -> Result<usize>;
     fn bytespace_write(&mut self, id: ThingId, offset: usize, bytes: &[u8]) -> Result<()>;
 }
 
@@ -37,8 +48,20 @@ impl GraphBackend for SysGraph {
         prop_get(id, key).map_err(Error::Errno)
     }
 
+    fn get_edges(&mut self, id: ThingId, out: &mut [Edge]) -> Result<usize> {
+        get_edges(id, out).map_err(Error::Errno)
+    }
+
     fn bytespace_create(&mut self, len: usize) -> Result<ThingId> {
         bytespace_create(len, 0, 0).map_err(Error::Errno)
+    }
+
+    fn bytespace_info(&mut self, id: ThingId) -> Result<usize> {
+        bytespace_info(id).map_err(Error::Errno)
+    }
+
+    fn bytespace_read(&mut self, id: ThingId, offset: usize, out: &mut [u8]) -> Result<usize> {
+        bytespace_read(id, offset, out).map_err(Error::Errno)
     }
 
     fn bytespace_write(&mut self, id: ThingId, offset: usize, bytes: &[u8]) -> Result<()> {
@@ -54,6 +77,26 @@ impl Petals {
     pub fn begin_window(window_id: ThingId) -> UiTreeBuilder<SysGraph> {
         UiTreeBuilder::new(SysGraph, window_id)
     }
+
+    /// Apply the latest UI event for a window to graph-native widget state.
+    pub fn reduce_window_events(window_id: ThingId) -> Result<bool> {
+        reduce_window_events_with_graph(&mut SysGraph, window_id)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UiKey<'a>(pub &'a str);
+
+impl<'a> UiKey<'a> {
+    pub fn as_str(self) -> &'a str {
+        self.0
+    }
+}
+
+impl<'a> From<&'a str> for UiKey<'a> {
+    fn from(value: &'a str) -> Self {
+        UiKey(value)
+    }
 }
 
 pub struct UiTreeBuilder<G: GraphBackend> {
@@ -61,7 +104,6 @@ pub struct UiTreeBuilder<G: GraphBackend> {
     window_id: ThingId,
     root: Option<ThingId>,
     parent_stack: Vec<ThingId>,
-    created: Vec<ThingId>,
 }
 
 impl<G: GraphBackend> UiTreeBuilder<G> {
@@ -71,7 +113,6 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
             window_id,
             root: None,
             parent_stack: Vec::new(),
-            created: Vec::new(),
         }
     }
 
@@ -79,7 +120,7 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
     where
         F: FnOnce(&mut Self) -> Result<()>,
     {
-        let id = self.create_node(kinds::UI_COLUMN, ui_kind::COLUMN)?;
+        let id = self.create_node(kinds::UI_COLUMN, ui_kind::COLUMN, None)?;
         let prev_parent = self.parent_stack.last().copied();
         self.attach_child(prev_parent, id)?;
         self.parent_stack.push(id);
@@ -92,7 +133,7 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
         if label.is_empty() {
             return Err(Error::Errno(Errno::EINVAL));
         }
-        let id = self.create_node(kinds::UI_BUTTON, ui_kind::BUTTON)?;
+        let id = self.create_node(kinds::UI_BUTTON, ui_kind::BUTTON, None)?;
         self.parent_stack.push(id);
         let label_node = self.text_node(label)?;
         self.parent_stack.pop();
@@ -109,7 +150,7 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
         if label.is_empty() {
             return Err(Error::Errno(Errno::EINVAL));
         }
-        let id = self.create_node(kinds::UI_CHECKBOX, ui_kind::CHECKBOX)?;
+        let id = self.create_node(kinds::UI_CHECKBOX, ui_kind::CHECKBOX, None)?;
         self.parent_stack.push(id);
         let label_node = self.text_node(label)?;
         self.parent_stack.pop();
@@ -130,7 +171,7 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
     where
         F: FnOnce(&mut Self) -> Result<()>,
     {
-        let id = self.create_node(kinds::UI_NODE, ui_kind::ROW)?;
+        let id = self.create_node(kinds::UI_NODE, ui_kind::ROW, None)?;
         let prev_parent = self.parent_stack.last().copied();
         self.attach_child(prev_parent, id)?;
         self.parent_stack.push(id);
@@ -149,21 +190,49 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
     }
 
     pub fn text_input(&mut self, value: &str, placeholder: &str) -> Result<ThingId> {
-        let id = self.create_node(kinds::UI_NODE, ui_kind::TEXT_INPUT)?;
-        self.set_string_prop(id, keys::UI_INPUT_VALUE, value)?;
-        self.set_string_prop(id, keys::UI_PLACEHOLDER, placeholder)?;
+        let id = self.create_node(kinds::UI_NODE, ui_kind::TEXT_INPUT, None)?;
+        self.set_text_input_state(id, value, placeholder)?;
         self.attach_child(self.parent_stack.last().copied(), id)?;
         Ok(id)
     }
 
+    pub fn text_input_keyed(
+        &mut self,
+        key: UiKey<'_>,
+        value: &str,
+        placeholder: &str,
+    ) -> Result<ThingId> {
+        let id = self.create_node(kinds::UI_NODE, ui_kind::TEXT_INPUT, Some(key.as_str()))?;
+        self.set_text_input_state(id, value, placeholder)?;
+        self.attach_child(self.parent_stack.last().copied(), id)?;
+        Ok(id)
+    }
+
+    pub fn text_input_with_key(
+        &mut self,
+        key: &str,
+        value: &str,
+        placeholder: &str,
+    ) -> Result<ThingId> {
+        self.text_input_keyed(UiKey(key), value, placeholder)
+    }
+
+    pub fn key_node(&mut self, node: ThingId, key: UiKey<'_>) -> Result<()> {
+        self.set_string_prop(node, keys::UI_KEY, key.as_str())
+    }
+
+    pub fn find_by_key(&mut self, key: UiKey<'_>) -> Result<Option<ThingId>> {
+        self.find_keyed_node_under_window(key.as_str())
+    }
+
     pub fn spacer(&mut self) -> Result<ThingId> {
-        let id = self.create_node(kinds::UI_NODE, ui_kind::SPACER)?;
+        let id = self.create_node(kinds::UI_NODE, ui_kind::SPACER, None)?;
         self.attach_child(self.parent_stack.last().copied(), id)?;
         Ok(id)
     }
 
     pub fn separator(&mut self) -> Result<ThingId> {
-        let id = self.create_node(kinds::UI_NODE, ui_kind::SEPARATOR)?;
+        let id = self.create_node(kinds::UI_NODE, ui_kind::SEPARATOR, None)?;
         self.attach_child(self.parent_stack.last().copied(), id)?;
         Ok(id)
     }
@@ -218,12 +287,19 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
         self.graph
     }
 
-    fn create_node(&mut self, kind: &str, ui_kind: u64) -> Result<ThingId> {
-        let id = self.graph.create_node(kind)?;
+    fn create_node(&mut self, kind: &str, ui_kind: u64, key: Option<&str>) -> Result<ThingId> {
+        let id = match key {
+            Some(k) if !k.is_empty() => self.find_or_create_keyed_node(k, kind)?,
+            _ => self.graph.create_node(kind)?,
+        };
         self.graph.prop_set(id, keys::UI_KIND, ui_kind)?;
         self.graph.prop_set(id, keys::UI_VISIBLE, 1)?;
         self.graph.prop_set(id, keys::UI_ENABLED, 1)?;
-        self.created.push(id);
+        if let Some(k) = key {
+            if !k.is_empty() {
+                self.set_string_prop(id, keys::UI_KEY, k)?;
+            }
+        }
         if self.root.is_none() {
             self.root = Some(id);
         } else if self.parent_stack.is_empty() {
@@ -233,9 +309,64 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
     }
 
     fn text_node(&mut self, text: &str) -> Result<ThingId> {
-        let id = self.create_node(kinds::UI_TEXT, ui_kind::TEXT)?;
+        let id = self.create_node(kinds::UI_TEXT, ui_kind::TEXT, None)?;
         self.set_string_prop(id, keys::UI_TEXT, text)?;
         Ok(id)
+    }
+
+    fn set_text_input_state(&mut self, id: ThingId, value: &str, placeholder: &str) -> Result<()> {
+        self.set_string_prop(id, keys::UI_TEXT, value)?;
+        self.set_string_prop(id, keys::UI_INPUT_VALUE, value)?;
+        self.set_string_prop(id, keys::UI_PLACEHOLDER, placeholder)?;
+        self.set_string_prop(id, keys::UI_PLACEHOLDER_TEXT, placeholder)?;
+        self.graph.prop_set(id, keys::UI_FOCUSABLE, 1)?;
+        let cursor = value.len() as u64;
+        self.graph.prop_set(id, keys::UI_CURSOR, cursor)?;
+        self.graph.prop_set(id, keys::UI_CURSOR_POS, cursor)?;
+        Ok(())
+    }
+
+    fn find_or_create_keyed_node(&mut self, key: &str, kind: &str) -> Result<ThingId> {
+        if let Some(existing) = self.find_keyed_node_under_window(key)? {
+            return Ok(existing);
+        }
+        self.graph.create_node(kind)
+    }
+
+    fn find_keyed_node_under_window(&mut self, key: &str) -> Result<Option<ThingId>> {
+        let mut visited = BTreeSet::new();
+        let mut stack = self.window_root_nodes()?;
+        while let Some(id) = stack.pop() {
+            if !visited.insert(id) {
+                continue;
+            }
+            if self.node_key_matches(id, key)? {
+                return Ok(Some(id));
+            }
+            let mut edges = [Edge::default(); 128];
+            let count = self.graph.get_edges(id, &mut edges)?;
+            for edge in edges.iter().take(count) {
+                stack.push(edge.to);
+            }
+        }
+        Ok(None)
+    }
+
+    fn window_root_nodes(&mut self) -> Result<Vec<ThingId>> {
+        let mut roots = Vec::new();
+        let mut edges = [Edge::default(); 64];
+        let count = self.graph.get_edges(self.window_id, &mut edges)?;
+        for edge in edges.iter().take(count) {
+            roots.push(edge.to);
+        }
+        Ok(roots)
+    }
+
+    fn node_key_matches(&mut self, id: ThingId, key: &str) -> Result<bool> {
+        Ok(read_string_prop(&mut self.graph, id, keys::UI_KEY)?
+            .as_deref()
+            .map(|value| value == key)
+            .unwrap_or(false))
     }
 
     fn attach_child(&mut self, parent: Option<ThingId>, child: ThingId) -> Result<()> {
@@ -293,18 +424,207 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
     }
 }
 
+fn read_string_prop<G: GraphBackend>(graph: &mut G, id: ThingId, key: &str) -> Result<Option<String>> {
+    let bs = graph.prop_get(id, key).unwrap_or(0);
+    if bs == 0 {
+        return Ok(None);
+    }
+    let bs_id = ThingId::from_u64(bs);
+    let len = graph.bytespace_info(bs_id)?;
+    if len == 0 {
+        return Ok(Some(String::new()));
+    }
+    let mut buf = vec![0u8; len];
+    let read = graph.bytespace_read(bs_id, 0, &mut buf)?;
+    buf.truncate(read);
+    let text = core::str::from_utf8(&buf)
+        .ok()
+        .map(String::from)
+        .unwrap_or_else(String::new);
+    Ok(Some(text))
+}
+
+fn write_string_prop<G: GraphBackend>(graph: &mut G, id: ThingId, key: &str, value: &str) -> Result<()> {
+    if value.is_empty() {
+        graph.prop_set(id, key, 0)?;
+        return Ok(());
+    }
+    let bs_id = graph.bytespace_create(value.len())?;
+    graph.bytespace_write(bs_id, 0, value.as_bytes())?;
+    graph.prop_set(id, key, bs_id.to_u64_lossy())
+}
+
+fn window_root_nodes<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> Result<Vec<ThingId>> {
+    let mut roots = Vec::new();
+    let mut edges = [Edge::default(); 64];
+    let count = graph.get_edges(window_id, &mut edges)?;
+    for edge in edges.iter().take(count) {
+        roots.push(edge.to);
+    }
+    Ok(roots)
+}
+
+fn collect_window_nodes<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> Result<Vec<ThingId>> {
+    let mut visited = BTreeSet::new();
+    let mut ordered = Vec::new();
+    let mut stack = window_root_nodes(graph, window_id)?;
+    while let Some(id) = stack.pop() {
+        if !visited.insert(id) {
+            continue;
+        }
+        ordered.push(id);
+        let mut edges = [Edge::default(); 128];
+        let count = graph.get_edges(id, &mut edges)?;
+        for edge in edges.iter().take(count) {
+            stack.push(edge.to);
+        }
+    }
+    Ok(ordered)
+}
+
+fn clear_focus_in_window<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> Result<()> {
+    for id in collect_window_nodes(graph, window_id)? {
+        if graph.prop_get(id, keys::UI_FOCUSABLE).unwrap_or(0) != 0
+            || graph.prop_get(id, keys::UI_FOCUSED).unwrap_or(0) != 0
+        {
+            graph.prop_set(id, keys::UI_FOCUSED, 0)?;
+        }
+    }
+    Ok(())
+}
+
+fn clamp_cursor(text: &str, cursor: usize) -> usize {
+    core::cmp::min(cursor, text.len())
+}
+
+fn previous_char_start(text: &str, cursor: usize) -> usize {
+    if cursor == 0 {
+        return 0;
+    }
+    let mut idx = 0usize;
+    for (byte_idx, _) in text.char_indices() {
+        if byte_idx >= cursor {
+            break;
+        }
+        idx = byte_idx;
+    }
+    idx
+}
+
+fn next_char_end(text: &str, cursor: usize) -> usize {
+    if cursor >= text.len() {
+        return text.len();
+    }
+    for (byte_idx, ch) in text[cursor..].char_indices() {
+        if byte_idx == 0 {
+            return cursor + ch.len_utf8();
+        }
+    }
+    text.len()
+}
+
+pub fn reduce_window_events_with_graph<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> Result<bool> {
+    use abi::ui_event::{UiEventKind, UiEventWire};
+
+    let queue_bs = graph.prop_get(window_id, keys::UI_EVENT_QUEUE).unwrap_or(0);
+    if queue_bs == 0 {
+        return Ok(false);
+    }
+    let mut buf = [0u8; UI_EVENT_BYTES];
+    let read = graph.bytespace_read(ThingId::from_u64(queue_bs), 0, &mut buf)?;
+    if read < UI_EVENT_BYTES {
+        return Ok(false);
+    }
+    let Some(event) = UiEventWire::decode(&buf) else {
+        return Ok(false);
+    };
+    if event.window_id != window_id.to_u64_lossy() {
+        return Ok(false);
+    }
+    let target = ThingId::from_u64(event.target_id);
+    let Some(kind) = UiEventKind::from_raw(event.kind) else {
+        return Ok(false);
+    };
+    match kind {
+        UiEventKind::Focus => {
+            clear_focus_in_window(graph, window_id)?;
+            graph.prop_set(target, keys::UI_FOCUSED, 1)?;
+            if graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) == 0 {
+                let current_text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+                let cursor = current_text.len() as u64;
+                graph.prop_set(target, keys::UI_CURSOR, cursor)?;
+                graph.prop_set(target, keys::UI_CURSOR_POS, cursor)?;
+            }
+        }
+        UiEventKind::Blur => {
+            graph.prop_set(target, keys::UI_FOCUSED, 0)?;
+        }
+        UiEventKind::TextInsert => {
+            let mut text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+            let cursor = clamp_cursor(&text, graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize);
+            let insert = core::str::from_utf8(event.text_bytes()).unwrap_or("");
+            if !insert.is_empty() {
+                text.insert_str(cursor, insert);
+                let next_cursor = cursor.saturating_add(insert.len()) as u64;
+                write_string_prop(graph, target, keys::UI_TEXT, &text)?;
+                write_string_prop(graph, target, keys::UI_INPUT_VALUE, &text)?;
+                graph.prop_set(target, keys::UI_CURSOR, next_cursor)?;
+                graph.prop_set(target, keys::UI_CURSOR_POS, next_cursor)?;
+            }
+        }
+        UiEventKind::TextBackspace => {
+            let mut text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+            let cursor = clamp_cursor(&text, graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize);
+            if cursor > 0 {
+                let prev = previous_char_start(&text, cursor);
+                text.replace_range(prev..cursor, "");
+                write_string_prop(graph, target, keys::UI_TEXT, &text)?;
+                write_string_prop(graph, target, keys::UI_INPUT_VALUE, &text)?;
+                graph.prop_set(target, keys::UI_CURSOR, prev as u64)?;
+                graph.prop_set(target, keys::UI_CURSOR_POS, prev as u64)?;
+            }
+        }
+        UiEventKind::TextDelete => {
+            let mut text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+            let cursor = clamp_cursor(&text, graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize);
+            let next = next_char_end(&text, cursor);
+            if next > cursor {
+                text.replace_range(cursor..next, "");
+                write_string_prop(graph, target, keys::UI_TEXT, &text)?;
+                write_string_prop(graph, target, keys::UI_INPUT_VALUE, &text)?;
+                graph.prop_set(target, keys::UI_CURSOR, cursor as u64)?;
+                graph.prop_set(target, keys::UI_CURSOR_POS, cursor as u64)?;
+            }
+        }
+        UiEventKind::CursorMove => {
+            let text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+            let cursor = clamp_cursor(&text, graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize);
+            let mut next = cursor as i64 + event.delta as i64;
+            next = next.clamp(0, text.len() as i64);
+            graph.prop_set(target, keys::UI_CURSOR, next as u64)?;
+            graph.prop_set(target, keys::UI_CURSOR_POS, next as u64)?;
+        }
+        UiEventKind::Submit => {}
+        UiEventKind::Clicked | UiEventKind::Toggled => {}
+    }
+    let current = graph.prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0);
+    graph.prop_set(window_id, keys::UI_SCENE_GEN, current.saturating_add(1))?;
+    Ok(true)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use abi::types::Edge;
-    use alloc::string::String;
     use alloc::collections::BTreeMap;
+    use alloc::string::String;
 
     #[derive(Default)]
     struct FakeGraph {
         next_id: u64,
         props: BTreeMap<(u64, String), u64>,
         edges: Vec<Edge>,
+        bytespaces: BTreeMap<u64, Vec<u8>>,
     }
 
     impl FakeGraph {
@@ -313,6 +633,7 @@ mod tests {
                 next_id: 1,
                 props: BTreeMap::new(),
                 edges: Vec::new(),
+                bytespaces: BTreeMap::new(),
             }
         }
     }
@@ -353,14 +674,56 @@ mod tests {
                 .unwrap_or(0))
         }
 
-        fn bytespace_create(&mut self, _len: usize) -> Result<ThingId> {
+        fn get_edges(&mut self, id: ThingId, out: &mut [Edge]) -> Result<usize> {
+            let mut count = 0usize;
+            for edge in &self.edges {
+                if edge.from == id && count < out.len() {
+                    out[count] = *edge;
+                    count += 1;
+                }
+            }
+            Ok(count)
+        }
+
+        fn bytespace_create(&mut self, len: usize) -> Result<ThingId> {
             let id = ThingId::from_u64(self.next_id);
             self.next_id += 1;
+            self.bytespaces.insert(id.to_u64_lossy(), vec![0u8; len]);
             Ok(id)
         }
 
-        fn bytespace_write(&mut self, _id: ThingId, _offset: usize, _bytes: &[u8]) -> Result<()> {
-            Ok(())
+        fn bytespace_info(&mut self, id: ThingId) -> Result<usize> {
+            Ok(self
+                .bytespaces
+                .get(&id.to_u64_lossy())
+                .map(|b| b.len())
+                .unwrap_or(0))
+        }
+
+        fn bytespace_read(&mut self, id: ThingId, offset: usize, out: &mut [u8]) -> Result<usize> {
+            if let Some(buf) = self.bytespaces.get(&id.to_u64_lossy()) {
+                if offset >= buf.len() {
+                    return Ok(0);
+                }
+                let n = core::cmp::min(out.len(), buf.len() - offset);
+                out[..n].copy_from_slice(&buf[offset..offset + n]);
+                Ok(n)
+            } else {
+                Err(Error::Errno(Errno::ENOENT))
+            }
+        }
+
+        fn bytespace_write(&mut self, id: ThingId, offset: usize, bytes: &[u8]) -> Result<()> {
+            if let Some(buf) = self.bytespaces.get_mut(&id.to_u64_lossy()) {
+                let end = offset.saturating_add(bytes.len());
+                if end > buf.len() {
+                    buf.resize(end, 0);
+                }
+                buf[offset..end].copy_from_slice(bytes);
+                Ok(())
+            } else {
+                Err(Error::Errno(Errno::ENOENT))
+            }
         }
     }
 
@@ -409,5 +772,108 @@ mod tests {
             graph.props.keys().map(|(id, _)| *id).collect()
         }
         assert_eq!(build_ids(), build_ids());
+    }
+
+    #[test]
+    fn keyed_text_input_reuses_thing_id_across_rebuilds() {
+        let mut graph = FakeGraph::new();
+        let window = ThingId::from_u64(44);
+
+        let mut first = UiTreeBuilder::new(graph, window);
+        let mut first_input = ThingId::default();
+        first
+            .column(|ui| {
+                first_input = ui.text_input_keyed(UiKey("query_input"), "", "Search")?;
+                Ok(())
+            })
+            .unwrap();
+        let (_root, first_graph) = first.finish_with_graph().unwrap();
+        graph = first_graph;
+
+        let mut second = UiTreeBuilder::new(graph, window);
+        let mut second_input = ThingId::default();
+        second
+            .column(|ui| {
+                second_input = ui.text_input_keyed(UiKey("query_input"), "abc", "Search")?;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(first_input, second_input);
+    }
+
+    #[test]
+    fn keyed_text_input_reuse_survives_sibling_reorder() {
+        let mut graph = FakeGraph::new();
+        let window = ThingId::from_u64(55);
+
+        let mut first = UiTreeBuilder::new(graph, window);
+        let mut input_a = ThingId::default();
+        first
+            .column(|ui| {
+                ui.text("A")?;
+                input_a = ui.text_input_keyed(UiKey("query_input"), "", "Search")?;
+                ui.text("B")?;
+                Ok(())
+            })
+            .unwrap();
+        let (_root, first_graph) = first.finish_with_graph().unwrap();
+        graph = first_graph;
+
+        let mut second = UiTreeBuilder::new(graph, window);
+        let mut input_b = ThingId::default();
+        second
+            .column(|ui| {
+                ui.text("B")?;
+                input_b = ui.text_input_keyed(UiKey("query_input"), "", "Search")?;
+                ui.text("A")?;
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(input_a, input_b);
+    }
+
+    #[test]
+    fn reducer_applies_focus_insert_and_backspace() {
+        let graph = FakeGraph::new();
+        let window = ThingId::from_u64(99);
+        let mut builder = UiTreeBuilder::new(graph, window);
+        let mut input = ThingId::default();
+        builder
+            .column(|ui| {
+                input = ui.text_input_keyed(UiKey("query_input"), "", "Search")?;
+                Ok(())
+            })
+            .unwrap();
+        let (_root, mut graph) = builder.finish_with_graph().unwrap();
+
+        let focus = abi::ui_event::UiEventWire::new_focus(window.to_u64_lossy(), input.to_u64_lossy());
+        let mut buf = [0u8; UI_EVENT_BYTES];
+        focus.encode(&mut buf).unwrap();
+        let queue = graph.prop_get(window, keys::UI_EVENT_QUEUE).unwrap();
+        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
+        assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
+
+        let insert = abi::ui_event::UiEventWire::new_text_insert(
+            window.to_u64_lossy(),
+            input.to_u64_lossy(),
+            b"hi",
+        );
+        insert.encode(&mut buf).unwrap();
+        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
+        assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
+
+        let backspace = abi::ui_event::UiEventWire::new_text_backspace(
+            window.to_u64_lossy(),
+            input.to_u64_lossy(),
+        );
+        backspace.encode(&mut buf).unwrap();
+        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
+        assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
+
+        let text = read_string_prop(&mut graph, input, keys::UI_TEXT)
+            .unwrap()
+            .unwrap_or_default();
+        assert_eq!(text, "h");
+        assert_eq!(graph.prop_get(input, keys::UI_CURSOR).unwrap(), 1);
     }
 }

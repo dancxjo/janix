@@ -34,5 +34,5 @@ pub mod graph;
 pub mod viewport;
 
 pub use drawlist::DrawList;
-pub use graph::{Petals, UiTreeBuilder};
+pub use graph::{reduce_window_events_with_graph, Petals, UiKey, UiTreeBuilder};
 pub use viewport::{PanZoomController, Viewport, ViewportConstraints, ViewportIntent};

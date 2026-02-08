@@ -508,6 +508,8 @@ pub mod kinds {
     pub const DEV_DISPLAY_SCANOUT: &str = "dev.display.Scanout";
     // Network
     pub const DEV_NET_NIC: &str = "dev.net.Nic";
+    pub const DEV_NET_PCI_STUB: &str = "dev.net.PciStub";
+    pub const DEV_NET_WLAN_PCI_STUB: &str = "dev.net.WlanPciStub";
     // Storage
     pub const DEV_STORAGE_DISK: &str = "dev.storage.Disk";
     pub const DEV_STORAGE_PARTITION: &str = "dev.storage.Partition";
@@ -517,6 +519,13 @@ pub mod kinds {
 
     // Audio
     pub const DEV_SOUND: &str = "dev.sound.Virtio";
+    pub const DEV_SOUND_HDA_PCI_STUB: &str = "dev.sound.HdaPciStub";
+
+    // USB
+    pub const DEV_USB_XHCI_PCI_STUB: &str = "dev.usb.XhciPciStub";
+
+    // Display (non-virtio PCI fallback)
+    pub const DEV_DISPLAY_GPU_PCI_STUB: &str = "dev.display.GpuPciStub";
 
     // UI Kinds
     pub const UI_CROWN: &str = "ui.Crown";

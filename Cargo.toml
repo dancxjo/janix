@@ -52,6 +52,8 @@ members = [
     "userspace/fetchd",
     "userspace/fortune",
     "userspace/anther",
+    "userspace/drivers/pci_stubd",
+    "userspace/drivers/rtl8168d",
     "userspace/phloem",
     "bulb",
     "libs/fb_common",

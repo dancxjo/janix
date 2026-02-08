@@ -1,6 +1,5 @@
 use crate::registry::Registry;
 use crate::task::{ManagedTask, TaskKind};
-use abi::ids::HandleId;
 use abi::kinds as abi_kinds;
 use abi::schema::keys;
 use alloc::format;
@@ -29,6 +28,9 @@ impl Supervisor {
         // 1. Discovery - needed for device detection
         self.discover();
 
+        // 1.25. Spawn hardware stubs for non-virtio PCI devices we can detect.
+        crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
+
         // 1.5. Setup audio pipeline (PRIORITY: Proof-of-life)
         crate::pipelines::setup_audio_pipeline(&mut self.tasks);
 
@@ -38,22 +40,8 @@ impl Supervisor {
         // 3. Setup input pipeline (ps2_kbd, ps2_mouse, bristle, bloom, echo)
         crate::pipelines::setup_input_pipeline(&mut self.tasks, display_handles);
 
-        // ============================================================
-        // TEMPORARILY DISABLED - re-enable as needed:
-        // ============================================================
-        
-        // Spawn Apps (DISABLED - stop after bloom)
-        // self.spawn_apps();
-
-        // // Match and Spawn Drivers
-        // self.match_and_spawn_drivers();
-
-        // // Setup network pipeline
-        // crate::pipelines::setup_network_pipeline(&mut self.tasks);
-
-        // ============================================================
-        // END DISABLED SECTION
-        // ============================================================
+        // Setup network pipeline (native NIC driver + net stack)
+        crate::pipelines::setup_network_pipeline(&mut self.tasks);
 
         // Enter idle loop
         info!("SPROUT: Startup complete. Entering idle loop.");
@@ -69,6 +57,9 @@ impl Supervisor {
 
         // 1. Discovery
         self.discover();
+
+        // 1.25. Spawn hardware stubs for non-virtio PCI devices we can detect.
+        crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
 
         // 1.5. Setup audio pipeline (PRIORITY: Proof-of-life)
         crate::pipelines::setup_audio_pipeline(&mut self.tasks);

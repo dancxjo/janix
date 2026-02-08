@@ -9,6 +9,7 @@ pub mod graph_anchors;
 pub mod handlers;
 pub mod journal;
 pub mod pci;
+pub mod pci_stub;
 pub mod resources;
 pub mod schema;
 pub mod service;

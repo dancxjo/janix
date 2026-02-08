@@ -113,6 +113,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
+            name: "rtl8168d",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
             name: "netd",
             is_init: false,
             boot_module: true,
@@ -151,6 +157,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "virtio_sound",
             is_init: true,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "pci_stubd",
+            is_init: false,
             boot_module: true,
             features: vec![],
         },

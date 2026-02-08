@@ -3,7 +3,7 @@
 use abi::schema::{confidence, keys, kinds, rels, source};
 use alloc::format;
 use stem::pci;
-use crate::net::Nic;
+use crate::root::pci_stub::{classify_stub, publish_stub_device, PciClassInfo};
 
 // Wrappers for BootRuntime PCI access
 // 0xFFFFFFFF is returned on error to simulate "not present"
@@ -387,6 +387,33 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         );
         register_virtio_sound(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
+        );
+    }
+
+    // Non-virtio boot stubs for real hardware paths we don't yet drive natively.
+    if let Some(spec) = classify_stub(PciClassInfo {
+        vendor_id,
+        class_code,
+        subclass,
+        prog_if,
+    }) {
+        publish_stub_device(
+            node,
+            bus,
+            dev,
+            func,
+            vendor_id,
+            device_id,
+            class_code,
+            subclass,
+            prog_if,
+            spec,
+            &bar_addrs,
+            &bar_sizes,
+            create,
+            set,
+            link,
+            intern,
         );
     }
 }

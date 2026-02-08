@@ -1,5 +1,4 @@
 use crate::task::{ManagedTask, TaskKind};
-use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use alloc::string::ToString;
 use alloc::vec::Vec;
@@ -14,6 +13,36 @@ pub struct DisplayHandles {
     pub bs_id: ThingId,
     /// Which display backend was selected
     pub backend_name: &'static str,
+}
+
+fn has_kind(kind: &str) -> bool {
+    let mut buf = [ThingId::default(); 1];
+    matches!(thingsys::find(kind, &mut buf), Ok(count) if count > 0)
+}
+
+pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
+    let needs_stubd = has_kind(kinds::DEV_PCI_FUNCTION);
+
+    if !needs_stubd {
+        return;
+    }
+
+    match stem::syscall::spawn_process("/pci_stubd", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned pci_stubd (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/pci_stubd".to_string(),
+                kind: TaskKind::Driver("dev.pci.stub".to_string()),
+                module_path: "/pci_stubd".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn pci_stubd: {:?}", e);
+        }
+    }
 }
 
 pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHandles> {
@@ -364,7 +393,75 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
 pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Setting up network pipeline...");
 
-    // Check for VirtIO NIC device
+    // Prefer native RTL8168 driver if present.
+    let mut rtl_buf = [ThingId::default(); 1];
+    if let Ok(count) = thingsys::find(kinds::DEV_NET_PCI_STUB, &mut rtl_buf) {
+        if count > 0 {
+            let rtl_dev = rtl_buf[0];
+            let vendor = thingsys::prop_get(rtl_dev, keys::VENDOR_ID).unwrap_or(0) as u16;
+            let device = thingsys::prop_get(rtl_dev, keys::DEVICE_ID).unwrap_or(0) as u16;
+
+            if vendor == 0x10ec && device == 0x8168 {
+                info!("SPROUT: Found RTL8168 NIC {:?}, spawning rtl8168d", rtl_dev);
+
+                match stem::syscall::spawn_process("/rtl8168d", 0) {
+                    Ok(pid) => {
+                        info!("SPROUT: Spawned rtl8168d (PID={})", pid);
+                        let _ = stem::thread::set_priority(pid, 2);
+                        tasks.push(ManagedTask {
+                            name: "/rtl8168d".to_string(),
+                            kind: TaskKind::Driver("dev.net.rtl8168".to_string()),
+                            module_path: "/rtl8168d".to_string(),
+                            pid: Some(pid),
+                            restarts: 0,
+                        });
+                    }
+                    Err(e) => {
+                        warn!("SPROUT: Failed to spawn rtl8168d: {:?}", e);
+                        return;
+                    }
+                }
+
+                match stem::syscall::spawn_process("/netd", 0) {
+                    Ok(pid) => {
+                        info!("SPROUT: Spawned netd (PID={})", pid);
+                        let _ = stem::thread::set_priority(pid, 2);
+                        tasks.push(ManagedTask {
+                            name: "/netd".to_string(),
+                            kind: TaskKind::Service("svc.net".to_string()),
+                            module_path: "/netd".to_string(),
+                            pid: Some(pid),
+                            restarts: 0,
+                        });
+                    }
+                    Err(e) => {
+                        warn!("SPROUT: Failed to spawn netd: {:?}", e);
+                    }
+                }
+
+                match stem::syscall::spawn_process("/anther", 0) {
+                    Ok(pid) => {
+                        info!("SPROUT: Spawned anther (PID={})", pid);
+                        let _ = stem::thread::set_priority(pid, 2);
+                        tasks.push(ManagedTask {
+                            name: "/anther".to_string(),
+                            kind: TaskKind::Service("svc.http".to_string()),
+                            module_path: "/anther".to_string(),
+                            pid: Some(pid),
+                            restarts: 0,
+                        });
+                    }
+                    Err(e) => {
+                        warn!("SPROUT: Failed to spawn anther: {:?}", e);
+                    }
+                }
+
+                return;
+            }
+        }
+    }
+
+    // Fall back to VirtIO NIC device
     let mut nic_buf = [ThingId::default(); 1];
     if let Ok(count) = thingsys::find(kinds::DEV_NET_NIC, &mut nic_buf) {
         if count > 0 {

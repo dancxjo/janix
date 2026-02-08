@@ -10,9 +10,9 @@
 //! ## Architecture
 //!
 //! 1. **Watch for changes**: Monitor `ui.scene_gen` and window properties
-//! 2. **Read UI intent**: Deserialize Scene graphs from `ui.scene_bytespace`
-//! 3. **Compute layout**: Calculate final rectangles using flexbox algorithm
-//! 4. **Generate paint**: Emit drawlist commands to `ui.paint_bytespace`
+//! 2. **Read UI intent**: Traverse graph UI nodes from `ui.RootUi` and `ui.HasChild`
+//! 3. **Compute layout**: Calculate final rectangles from graph properties
+//! 4. **Generate paint**: Emit paint commands to `ui.paint_bytespace`
 //! 5. **Increment generation**: Bump `ui.paint_gen` to notify Bloom
 //!
 //! ## Responsibilities
@@ -32,8 +32,7 @@
 extern crate alloc;
 extern crate stem;
 
-// Modules are now in lib.rs
-use blossom::{emit_paint, graph_ui, layout, read_bytespace, read_string_prop, scene};
+use blossom::{graph_ui, read_bytespace};
 
 use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, ui_kind};
@@ -44,18 +43,16 @@ use abi::svg_protocol::{
 use abi::types::{WatchMode, WatchSpec};
 use abi::watch;
 use alloc::collections::BTreeMap;
-use alloc::string::{String, ToString};
-use alloc::vec;
 use alloc::vec::Vec;
 use hashbrown::HashMap;
 use log::debug;
 use stem::info;
 use stem::syscall;
 use stem::thing::sys::{
-    bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, prop_get,
+    bytespace_create, bytespace_info, bytespace_write, create_node, find, prop_get,
     prop_set,
 };
-use stem::thing::{HandleId, ThingId};
+use stem::thing::ThingId;
 
 /// Cache entry for a rasterized SVG variant
 #[derive(Clone)]
@@ -378,71 +375,10 @@ impl UiPipeline {
 
     fn process_window(&mut self, window_id: ThingId) -> Result<(), abi::errors::Errno> {
         let mut sys_graph = graph_ui::SysGraph;
-        if let Some(root_id) = graph_ui::find_root_ui(&sys_graph, &self.ui_symbols, window_id) {
-            return self.process_graph_ui(window_id, root_id, &mut sys_graph);
-        }
-        let bs_id = prop_get(window_id, keys::UI_SCENE_BYTESPACE).unwrap_or(0);
-        if bs_id == 0 {
+        let Some(root_id) = graph_ui::find_root_ui(&sys_graph, &self.ui_symbols, window_id) else {
             return Ok(());
-        }
-        let window_bg = prop_get(window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32;
-        let is_focused = prop_get(window_id, keys::UI_FOCUSED).unwrap_or(0) != 0;
-        let title_override = read_string_prop(window_id, keys::UI_TITLE);
-        let bytes = read_bytespace(ThingId::from_u64(bs_id))?;
-        let scene = match scene::SceneGraph::from_bytes(&bytes) {
-            Ok(scene) => scene,
-            Err(_) => return Ok(()),
         };
-
-        let mut w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
-        let mut h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
-        if w <= 0 || h <= 0 {
-            if let Some(meta) = scene.nodes.get(scene.root).and_then(|n| n.window_meta) {
-                if w <= 0 && meta.init_w > 0 {
-                    w = meta.init_w;
-                }
-                if h <= 0 && meta.init_h > 0 {
-                    h = meta.init_h;
-                }
-                if w <= 0 && meta.min_w > 0 {
-                    w = meta.min_w;
-                }
-                if h <= 0 && meta.min_h > 0 {
-                    h = meta.min_h;
-                }
-            }
-        }
-        if w <= 0 || h <= 0 {
-            return Ok(());
-        }
-
-        let root_rect = layout::LayoutRect { x: 0, y: 0, w, h };
-        let rects = layout::layout_scene(&scene, root_rect);
-        let paint_bytes = emit_paint::emit_paint(
-            &scene,
-            &rects,
-            window_bg,
-            title_override.as_deref(),
-            is_focused,
-        );
-        let paint_bs = bytespace_create(paint_bytes.len(), 0, 0)?;
-        let _ = bytespace_write(paint_bs, 0, &paint_bytes);
-        let _ = prop_set(window_id, keys::UI_PAINT_BYTESPACE, paint_bs.to_u64_lossy());
-        let current = prop_get(window_id, keys::UI_PAINT_GEN).unwrap_or(0);
-        let _ = prop_set(window_id, keys::UI_PAINT_GEN, current.saturating_add(1));
-
-        self.windows.insert(
-            window_id,
-            WindowState {
-                last_gen: prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0),
-                last_w: w,
-                last_h: h,
-                last_bg: window_bg,
-                last_title_bs: prop_get(window_id, keys::UI_TITLE).unwrap_or(0),
-                last_focused: is_focused,
-            },
-        );
-        Ok(())
+        self.process_graph_ui(window_id, root_id, &mut sys_graph)
     }
 
     fn process_graph_ui(
@@ -463,7 +399,7 @@ impl UiPipeline {
             Some(tree) => tree,
             None => return Ok(()),
         };
-        let root_rect = layout::LayoutRect { x: 0, y: 0, w, h };
+        let root_rect = graph_ui::LayoutRect { x: 0, y: 0, w, h };
         let rects = graph_ui::layout_tree(&tree, root_rect);
         graph_ui::write_bounds(graph, &tree, &rects);
         let paint_bytes = graph_ui::emit_paint(&tree, &rects, window_bg, is_focused);

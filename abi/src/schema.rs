@@ -167,6 +167,24 @@ pub mod keys {
     pub const UI_Z_INDEX: &str = "ui.z_index";
     pub const UI_KIND: &str = "ui.kind";
     pub const UI_VISIBLE: &str = "ui.visible";
+
+    // Graph-UI layout/styling properties (used by UiTreeBuilder + Blossom graph_ui)
+    /// Flex gap in pixels between children (u64)
+    pub const UI_GAP: &str = "ui.gap";
+    /// Padding in pixels (uniform, u64)
+    pub const UI_PADDING: &str = "ui.padding";
+    /// Flex align-items: 0=Start, 1=Center, 2=End, 3=Stretch
+    pub const UI_ALIGN: &str = "ui.align";
+    /// Flex justify-content: 0=Start, 1=Center, 2=End, 3=SpaceBetween
+    pub const UI_JUSTIFY: &str = "ui.justify";
+    /// Font name bytespace (string, e.g. "NotoSans-Regular")
+    pub const UI_FONT_NAME: &str = "ui.font_name";
+    /// Placeholder text bytespace for text input
+    pub const UI_PLACEHOLDER: &str = "ui.placeholder";
+    /// Text input cursor position (u64)
+    pub const UI_CURSOR_POS: &str = "ui.cursor_pos";
+    /// Text input current value bytespace
+    pub const UI_INPUT_VALUE: &str = "ui.input_value";
     pub const UI_ENABLED: &str = "ui.enabled";
     pub const UI_FOCUSED: &str = "ui.focused";
     pub const UI_RANK: &str = "ui.rank";
@@ -217,8 +235,6 @@ pub mod keys {
     pub const UI_DRAWLIST_BOUNDS: &str = "ui.drawlist.bounds";
     /// Optional: Debug name string bytespace.
     pub const UI_DRAWLIST_DEBUG_NAME: &str = "ui.drawlist.debug_name";
-    /// Bytespace id containing packed Petals ui scene.
-    pub const UI_SCENE_BYTESPACE: &str = "ui.scene.bytespace";
     /// Monotonic generation for scene updates.
     pub const UI_SCENE_GEN: &str = "ui.scene.gen";
     /// Bytespace id containing packed paint ops.
@@ -591,7 +607,6 @@ pub mod kinds {
     pub const SVC_CAMBIUM: &str = "svc.Cambium";
     pub const TIME_CLOCK: &str = "time.Clock";
     pub const TIME_TIMER: &str = "time.Timer";
-    pub const UI_SCENE: &str = "ui.Scene";
     pub const UI_THEME: &str = "ui.Theme";
     pub const UI_WIDGET: &str = "ui.Widget";
 
@@ -680,6 +695,10 @@ pub mod ui_kind {
     pub const TEXT: u64 = 3;
     pub const COLUMN: u64 = 4;
     pub const WINDOW: u64 = 5;
+    pub const ROW: u64 = 6;
+    pub const TEXT_INPUT: u64 = 7;
+    pub const SPACER: u64 = 8;
+    pub const SEPARATOR: u64 = 9;
 }
 
 pub mod rels {

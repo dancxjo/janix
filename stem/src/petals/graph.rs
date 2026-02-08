@@ -6,7 +6,6 @@ use crate::errors::{Error, Result};
 use crate::thing::sys::{bytespace_create, bytespace_write, create_node, link, prop_get, prop_set};
 use crate::thing::ThingId;
 use abi::errors::Errno;
-use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels, ui_kind};
 use abi::ui_event::UI_EVENT_BYTES;
 
@@ -127,6 +126,19 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
         Ok(id)
     }
 
+    pub fn row<F>(&mut self, f: F) -> Result<ThingId>
+    where
+        F: FnOnce(&mut Self) -> Result<()>,
+    {
+        let id = self.create_node(kinds::UI_NODE, ui_kind::ROW)?;
+        let prev_parent = self.parent_stack.last().copied();
+        self.attach_child(prev_parent, id)?;
+        self.parent_stack.push(id);
+        f(self)?;
+        self.parent_stack.pop();
+        Ok(id)
+    }
+
     pub fn text(&mut self, text: &str) -> Result<ThingId> {
         if text.is_empty() {
             return Err(Error::Errno(Errno::EINVAL));
@@ -134,6 +146,63 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
         let id = self.text_node(text)?;
         self.attach_child(self.parent_stack.last().copied(), id)?;
         Ok(id)
+    }
+
+    pub fn text_input(&mut self, value: &str, placeholder: &str) -> Result<ThingId> {
+        let id = self.create_node(kinds::UI_NODE, ui_kind::TEXT_INPUT)?;
+        self.set_string_prop(id, keys::UI_INPUT_VALUE, value)?;
+        self.set_string_prop(id, keys::UI_PLACEHOLDER, placeholder)?;
+        self.attach_child(self.parent_stack.last().copied(), id)?;
+        Ok(id)
+    }
+
+    pub fn spacer(&mut self) -> Result<ThingId> {
+        let id = self.create_node(kinds::UI_NODE, ui_kind::SPACER)?;
+        self.attach_child(self.parent_stack.last().copied(), id)?;
+        Ok(id)
+    }
+
+    pub fn separator(&mut self) -> Result<ThingId> {
+        let id = self.create_node(kinds::UI_NODE, ui_kind::SEPARATOR)?;
+        self.attach_child(self.parent_stack.last().copied(), id)?;
+        Ok(id)
+    }
+
+    // ── Style helpers (call after creating a node) ──
+
+    /// Set flex gap in pixels on the last-created container node.
+    pub fn set_gap(&mut self, node: ThingId, gap: u64) -> Result<()> {
+        self.graph.prop_set(node, keys::UI_GAP, gap)
+    }
+
+    /// Set uniform padding in pixels.
+    pub fn set_padding(&mut self, node: ThingId, padding: u64) -> Result<()> {
+        self.graph.prop_set(node, keys::UI_PADDING, padding)
+    }
+
+    /// Set flex align-items (0=Start, 1=Center, 2=End, 3=Stretch).
+    pub fn set_align(&mut self, node: ThingId, align: u64) -> Result<()> {
+        self.graph.prop_set(node, keys::UI_ALIGN, align)
+    }
+
+    /// Set flex justify-content (0=Start, 1=Center, 2=End, 3=SpaceBetween).
+    pub fn set_justify(&mut self, node: ThingId, justify: u64) -> Result<()> {
+        self.graph.prop_set(node, keys::UI_JUSTIFY, justify)
+    }
+
+    /// Set font name (stored as a bytespace string).
+    pub fn set_font_name(&mut self, node: ThingId, name: &str) -> Result<()> {
+        self.set_string_prop(node, keys::UI_FONT_NAME, name)
+    }
+
+    /// Set font size in pixels.
+    pub fn set_font_size(&mut self, node: ThingId, size: u64) -> Result<()> {
+        self.graph.prop_set(node, keys::UI_FONT_SIZE, size)
+    }
+
+    /// Set foreground color as 0xAARRGGBB.
+    pub fn set_color(&mut self, node: ThingId, argb: u64) -> Result<()> {
+        self.graph.prop_set(node, keys::UI_COLOR, argb)
     }
 
     pub fn finish(mut self) -> Result<ThingId> {

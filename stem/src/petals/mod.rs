@@ -1,12 +1,11 @@
 //! # Petals - UI Intent Builder
 //!
-//! Petals provides a declarative builder API for constructing UI intent.
-//! Applications use Petals to describe **what** their UI should look like,
-//! without performing any layout calculations or paint operations.
+//! Petals provides a graph-native API for constructing UI intent.
+//! Applications write UI nodes and relationships directly into the system graph.
 //!
 //! ## Architecture
 //!
-//! - **Apps** use Petals to build UI intent (Scene trees)
+//! - **Apps** use Petals to build UI intent (graph nodes + edges)
 //! - **Blossom** reads intent from the graph and performs layout/paint
 //! - **Bloom** composites the final rendered output
 //!
@@ -15,152 +14,25 @@
 //! ## Example
 //!
 //! ```rust,ignore
-//! use stem::petals::{Scene, Window, Flex, Text, FontKey, Color};
+//! use stem::petals::Petals;
 //!
-//! let scene = Scene::new().window(
-//!     Window::new(window_id)
-//!         .title("My App")
-//!         .root(
-//!             Flex::column()
-//!                 .gap(8)
-//!                 .padding(16)
-//!                 .push(Text::new("Hello, World!")
-//!                     .font(FontKey::new("NotoSans-Regular").size(16))
-//!                     .color(Color::rgb(0, 0, 0)))
-//!         )
-//! );
+//! let mut ui = Petals::begin_window(window_id);
+//! let root = ui.column(|ui| {
+//!     ui.text("Hello, World!")?;
+//!     Ok(())
+//! })?;
+//! ui.set_gap(root, 8)?;
+//! ui.set_padding(root, 16)?;
 //!
-//! stem::petals::publish_window(&scene)?;
+//! ui.finish()?;
 //! ```
 
 extern crate alloc;
 
-pub mod builder;
 pub mod drawlist;
 pub mod graph;
-pub mod pack;
 pub mod viewport;
 
-use alloc::vec::Vec;
-
-pub use builder::{
-    AlignItems, Canvas, Checkbox, Color, Flex, FlexDirection, FontKey, FontKeyKind, Icon, Image,
-    ImageFit, JustifyContent, Line, Rect, Scene, Scroll, ScrollAxis, Separator, Size, Spacer,
-    Styled, Text, TextInput, TextWrap, Window, Button, Label, MessageBox,
-};
 pub use drawlist::DrawList;
 pub use graph::{Petals, UiTreeBuilder};
 pub use viewport::{PanZoomController, Viewport, ViewportConstraints, ViewportIntent};
-
-use crate::errors::{Error, Result};
-use crate::thing::sys::{bytespace_create, bytespace_write, find, prop_get, prop_set};
-use crate::thing::ThingId;
-use abi::errors::Errno;
-use abi::ids::HandleId;
-use abi::schema::{keys, kinds};
-
-pub fn publish_window(scene: &Scene) -> Result<()> {
-    let target = scene_window_id(scene).ok_or(Error::Errno(Errno::EINVAL))?;
-    publish_scene(target, scene)
-}
-
-pub fn publish_desktop(scene: &Scene) -> Result<()> {
-    let mut roots = [ThingId::default(); 1];
-    let count = find(kinds::UI_CROWN, &mut roots).map_err(Error::Errno)?;
-    if count == 0 {
-        return Err(Error::Errno(Errno::ENOENT));
-    }
-    publish_scene(roots[0], scene)
-}
-
-fn publish_scene(target: ThingId, scene: &Scene) -> Result<()> {
-    let bytes = pack::pack_scene(scene)?;
-    let bs = bytespace_create(bytes.len(), 0, 0).map_err(Error::Errno)?;
-    bytespace_write(bs, 0, &bytes).map_err(Error::Errno)?;
-    prop_set(target, keys::UI_SCENE_BYTESPACE, bs.to_u64_lossy()).map_err(Error::Errno)?;
-    let current = prop_get(target, keys::UI_SCENE_GEN).unwrap_or(0);
-    let next = current.saturating_add(1);
-    prop_set(target, keys::UI_SCENE_GEN, next).map_err(Error::Errno)?;
-    Ok(())
-}
-
-fn scene_window_id(scene: &Scene) -> Option<ThingId> {
-    let root = scene.root.as_ref()?;
-    match &root.data {
-        builder::NodeData::Window(window) => Some(window.wid),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::petals::builder::{Flex, Text, Window};
-    use abi::ids::HandleId;
-    use alloc::collections::BTreeMap;
-
-    struct FakeGraph {
-        props: BTreeMap<(ThingId, &'static str), u64>,
-        bytespaces: Vec<Vec<u8>>,
-    }
-
-    impl FakeGraph {
-        fn new() -> Self {
-            Self {
-                props: BTreeMap::new(),
-                bytespaces: Vec::new(),
-            }
-        }
-    }
-
-    fn publish_with_fake(scene: &Scene, target: ThingId, graph: &mut FakeGraph) -> Result<()> {
-        let bytes = pack::pack_scene(scene)?;
-        let bs_id = ThingId::from_u64(graph.bytespaces.len() as u64 + 1);
-        graph.bytespaces.push(bytes);
-        graph
-            .props
-            .insert((target, keys::UI_SCENE_BYTESPACE), bs_id.to_u64_lossy());
-        let current = graph
-            .props
-            .get(&(target, keys::UI_SCENE_GEN))
-            .copied()
-            .unwrap_or(0);
-        graph
-            .props
-            .insert((target, keys::UI_SCENE_GEN), current.saturating_add(1));
-        Ok(())
-    }
-
-    #[test]
-    fn publish_increments_gen_and_updates_bytespace() {
-        let wid = ThingId::from_u64(42);
-        let scene = Scene::new().window(Window::new(wid).root(Flex::column().push(Text::new("x"))));
-        let mut graph = FakeGraph::new();
-        publish_with_fake(&scene, wid, &mut graph).expect("publish");
-        let first_bs = graph
-            .props
-            .get(&(wid, keys::UI_SCENE_BYTESPACE))
-            .copied()
-            .unwrap_or(0);
-        let first_gen = graph
-            .props
-            .get(&(wid, keys::UI_SCENE_GEN))
-            .copied()
-            .unwrap_or(0);
-        publish_with_fake(&scene, wid, &mut graph).expect("publish");
-        let second_bs = graph
-            .props
-            .get(&(wid, keys::UI_SCENE_BYTESPACE))
-            .copied()
-            .unwrap_or(0);
-        let second_gen = graph
-            .props
-            .get(&(wid, keys::UI_SCENE_GEN))
-            .copied()
-            .unwrap_or(0);
-        assert_ne!(first_bs, 0);
-        assert_ne!(second_bs, 0);
-        assert_ne!(first_bs, second_bs);
-        assert_eq!(first_gen + 1, second_gen);
-    }
-}

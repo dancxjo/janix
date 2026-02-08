@@ -10,7 +10,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::info;
-use stem::petals::{AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Text, Window, Styled};
+use stem::petals::Petals;
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::syscall::port::{port_recv, port_send, port_create, PortHandle};
@@ -51,8 +51,7 @@ fn main(_arg: usize) -> ! {
             thingsys::link(crown_id, "ui.HasWindow", win).ok();
             
             // Initial scene
-            let scene = build_scene(win, &hostname);
-            match stem::petals::publish_window(&scene) {
+            match render_window(win, &hostname) {
                 Ok(_) => info!("NECTAR: Initial UI scene published."),
                 Err(e) => stem::warn!("NECTAR: Failed to publish initial UI: {:?}", e),
             }
@@ -100,8 +99,7 @@ fn main(_arg: usize) -> ! {
     }
     
     if let Some(win) = window_id {
-        let scene = build_scene(win, &hostname);
-        match stem::petals::publish_window(&scene) {
+        match render_window(win, &hostname) {
             Ok(_) => info!("NECTAR: Publishing scene for hostname '{}' on window {:?}...", hostname, win),
             Err(e) => stem::warn!("NECTAR: Failed to update UI: {:?}", e),
         }
@@ -145,8 +143,7 @@ fn main(_arg: usize) -> ! {
                 
                 // Update UI
                 if let Some(win) = window_id {
-                    let scene = build_scene(win, &hostname);
-                    match stem::petals::publish_window(&scene) {
+                    match render_window(win, &hostname) {
                         Ok(_) => info!("NECTAR: UI updated with new hostname."),
                         Err(e) => stem::warn!("NECTAR: Failed to update UI: {:?}", e),
                     }
@@ -212,29 +209,24 @@ fn get_or_generate_hostname(mac: [u8; 6]) -> String {
     format!("{}-{}", descriptors[d_idx], plants[p_idx])
 }
 
-fn build_scene(window_id: ThingId, hostname: &str) -> Scene {
-    Scene::new().window(
-        Window::new(window_id)
-            .title("Hostname")
-            .initial_size(360, 100)
-            .root(
-                Flex::column()
-                    .gap(8)
-                    .padding(16)
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center)
-                    .push(
-                        Text::new("Hostname")
-                            .font(FontKey::new("NotoSans-Regular").size(14))
-                            .color(Color::rgb(180, 180, 180)),
-                    )
-                    .push(
-                        Text::new(hostname)
-                            .font(FontKey::new("NotoSans-Regular").size(32)) // Use NotoSans as fallback if DSEG7 is missing
-                            .color(Color::rgb(100, 200, 255)), // Light blue
-                    ),
-            ),
-    )
+fn render_window(window_id: ThingId, hostname: &str) -> Result<(), stem::errors::Error> {
+    let mut ui = Petals::begin_window(window_id);
+    let root = ui.column(|ui| {
+        let label = ui.text("Hostname")?;
+        let _ = ui.set_font_name(label, "NotoSans-Regular");
+        let _ = ui.set_font_size(label, 14);
+        let _ = ui.set_color(label, 0xFFB4B4B4);
+
+        let value = ui.text(hostname)?;
+        let _ = ui.set_font_name(value, "NotoSans-Regular");
+        let _ = ui.set_font_size(value, 32);
+        let _ = ui.set_color(value, 0xFF64C8FF);
+        Ok(())
+    })?;
+    let _ = ui.set_gap(root, 8);
+    let _ = ui.set_padding(root, 16);
+    ui.finish()?;
+    Ok(())
 }
 
 fn set_string_prop(id: ThingId, key_name: &str, value: &str) {

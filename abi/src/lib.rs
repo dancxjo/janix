@@ -28,7 +28,6 @@ pub mod tree_provider;
 pub mod types;
 pub mod ui_event;
 pub mod ui_paint;
-pub mod ui_scene;
 pub mod vm;
 pub mod watch;
 

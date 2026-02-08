@@ -12,7 +12,7 @@ use abi::schema::{keys, kinds, rels};
 use alloc::format;
 use core::time::Duration;
 use stem::info;
-use stem::petals::{AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Styled, Text, Window};
+use stem::petals::Petals;
 use stem::thing::sys::{create_node, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
 
@@ -30,34 +30,29 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
     prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
 }
 
-fn build_scene(window_id: ThingId, ip_text: &str, status_text: &str) -> Scene {
-    Scene::new().window(
-        Window::new(window_id)
-            .title("Network")
-            .initial_size(360, 140)
-            .root(
-                Flex::column()
-                    .gap(12)
-                    .padding(20)
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center)
-                    .push(
-                        Text::new("IP Address")
-                            .font(FontKey::new("NotoSans-Regular").size(16))
-                            .color(Color::rgb(180, 180, 180)),
-                    )
-                    .push(
-                        Text::new(ip_text)
-                            .font(FontKey::new("DSEG7Classic-Regular").size(48))
-                            .color(Color::rgb(64, 240, 128)),
-                    )
-                    .push(
-                        Text::new(status_text)
-                            .font(FontKey::new("NotoSans-Regular").size(12))
-                            .color(Color::rgb(140, 140, 140)),
-                    ),
-            ),
-    )
+fn render_window(window_id: ThingId, ip_text: &str, status_text: &str) -> Result<(), stem::errors::Error> {
+    let mut ui = Petals::begin_window(window_id);
+    let root = ui.column(|ui| {
+        let label = ui.text("IP Address")?;
+        let _ = ui.set_font_name(label, "NotoSans-Regular");
+        let _ = ui.set_font_size(label, 16);
+        let _ = ui.set_color(label, 0xFFB4B4B4);
+
+        let ip = ui.text(ip_text)?;
+        let _ = ui.set_font_name(ip, "DSEG7Classic-Regular");
+        let _ = ui.set_font_size(ip, 48);
+        let _ = ui.set_color(ip, 0xFF40F080);
+
+        let status = ui.text(status_text)?;
+        let _ = ui.set_font_name(status, "NotoSans-Regular");
+        let _ = ui.set_font_size(status, 12);
+        let _ = ui.set_color(status, 0xFF8C8C8C);
+        Ok(())
+    })?;
+    let _ = ui.set_gap(root, 12);
+    let _ = ui.set_padding(root, 20);
+    ui.finish()?;
+    Ok(())
 }
 
 /// Unpack IP address from u64 to dotted decimal string
@@ -107,8 +102,7 @@ fn main(_arg: usize) -> ! {
         prop_set(win, keys::UI_INSET_BOTTOM, 30).ok(); // Match clock's bottom offset
 
         // Initial scene publish
-        let scene = build_scene(win, "-.-.-.--", "Waiting for network...");
-        if let Err(e) = stem::petals::publish_window(&scene) {
+        if let Err(e) = render_window(win, "-.-.-.--", "Waiting for network...") {
             info!("FETCHD: initial scene publish failed: {:?}", e);
         }
     }
@@ -151,8 +145,7 @@ fn main(_arg: usize) -> ! {
 
         // Update window if we have one
         if let Some(win) = window_id {
-            let scene = build_scene(win, &ip_text, &status_text);
-            if let Err(e) = stem::petals::publish_window(&scene) {
+            if let Err(e) = render_window(win, &ip_text, &status_text) {
                 info!("FETCHD: scene publish failed: {:?}", e);
             }
         }

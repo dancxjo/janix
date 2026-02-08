@@ -15,7 +15,7 @@ use abi::ids::HandleId;
 use llm::{ChatRequest, Message, Role, StreamingLlmClient};
 use ollama::OllamaClient;
 use stem::info;
-use stem::petals::{AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Styled, Text, Window};
+use stem::petals::Petals;
 use stem::thing::sys::{bytespace_read, create_node, describe_thing, find, link, prop_get, prop_set};
 use stem::thing::ThingId;
 use core::task::{RawWaker, RawWakerVTable, Waker};
@@ -170,22 +170,17 @@ fn main(_arg: usize) -> ! {
 }
 
 fn update_ui(win: ThingId, text: &str) {
-    let scene = Scene::new().window(
-        Window::new(win)
-            .title("Fortune Cookie")
-            .root(
-                Flex::column()
-                    .padding(20)
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center)
-                    .push(
-                        Text::new(text)
-                            .font(FontKey::new("NotoSans-Regular").size(18))
-                            .color(Color::rgb(0, 0, 0))
-                    ),
-            ),
-    );
-    stem::petals::publish_window(&scene).ok();
+    let mut ui = Petals::begin_window(win);
+    let result = ui.column(|ui| {
+        let text_node = ui.text(text)?;
+        let _ = ui.set_font_name(text_node, "NotoSans-Regular");
+        let _ = ui.set_font_size(text_node, 18);
+        let _ = ui.set_color(text_node, 0xFF000000);
+        Ok(())
+    });
+    if result.is_ok() {
+        let _ = ui.finish();
+    }
 }
 
 fn noop_waker() -> Waker {

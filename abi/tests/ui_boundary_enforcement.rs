@@ -30,12 +30,12 @@ fn petals_api_is_sufficient_for_apps() {
     // to build UI without accessing Blossom internals.
     //
     // Apps can successfully build UI using only:
-    //   use stem::petals::{Scene, Window, Flex, Text, Color, FontKey};
+    //   use stem::petals::Petals;
     //
     // This is demonstrated by Font Explorer which:
     // - Depends only on stem and abi (not blossom)
     // - Uses only Petals builders
-    // - Publishes via stem::petals::publish_window()
+    // - Publishes via stem::petals::Petals::begin_window(...).finish()
     // - Contains no layout or paint code
 }
 
@@ -50,10 +50,9 @@ fn blossom_modules_are_implementation_details() {
     //
     // Apps must use the Petals builder API instead:
     // - stem::petals::Scene - for building intent
-    // - stem::petals::publish_window() - for publishing
+    // - stem::petals::Petals graph-native publishing
     //
     // This separation allows Blossom to change its layout/paint algorithms
     // without breaking apps.
 }
-
 

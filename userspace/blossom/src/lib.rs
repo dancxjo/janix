@@ -6,17 +6,6 @@ extern crate alloc;
 // These modules contain layout and paint logic that apps must not access.
 // Apps should only use the Petals builder API from `stem::petals`.
 // These are public only for the blossom binary; external use is prohibited.
-#[doc(hidden)]
-pub mod emit_paint;
-#[doc(hidden)]
-pub mod layout;
-#[doc(hidden)]
-pub mod scene;
-
-// TODO: Move widgets to a shared library or stem::petals
-// Currently public only because photosynthesis uses ThingosIcon
-pub mod widgets;
-
 // Public only for use within the blossom binary
 #[doc(hidden)]
 pub mod graph_ui;

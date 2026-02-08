@@ -8,8 +8,8 @@
 //! ## Architecture Compliance
 //!
 //! This application follows the UI Intent Contract (see `docs/UI_INTENT_CONTRACT.md`):
-//! - Uses Petals builder API to declare UI intent (Scene, Window, Flex, Text, etc.)
-//! - Publishes intent via `stem::petals::publish_window()`
+//! - Uses graph-native Petals APIs to declare UI intent
+//! - Publishes intent directly to graph nodes/edges
 //! - Does NOT perform layout calculations or paint operations
 //! - Does NOT import from blossom::layout or blossom::emit_paint
 //!
@@ -28,9 +28,7 @@ use abi::types::{WatchMode, WatchSpec};
 use abi::watch;
 use alloc::string::String;
 use alloc::vec::Vec;
-use stem::petals::{
-    AlignItems, Color, Flex, FontKey, Scene, Scroll, Separator, Styled, Text, Window,
-};
+use stem::petals::Petals;
 use stem::thing::ThingId;
 use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_read, bytespace_write, create_node, find, intern,
@@ -200,68 +198,30 @@ fn main() -> ! {
             last_font_count = fonts.len();
         }
 
-        let row_hint = 28u16;
-        let row_height = row_hint as i32;
-        let content_min = (row_hint as i32).saturating_mul(fonts.len() as i32);
-        let scroll_y = 0i32;
         last_tick = now;
 
-        let mut rows = Flex::column().gap(0);
-        for (i, entry) in fonts.iter().enumerate() {
-            let row = Flex::row()
-                .width(stem::petals::Size::Pct(100))
-                .height(stem::petals::Size::Px(row_height))
-                .align_items(AlignItems::Center)
-                .gap(12)
-                .padding(6)
-                .push(
-                    Text::new(SAMPLE.get())
-                        .font(FontKey::thing(entry.id).size(18))
-                        .color(Color::rgb(20, 20, 20))
-                        .nowrap()
-                        .ellipsis(true)
-                        .flex_grow(1.0),
-                )
-                .push(
-                    Text::new(&entry.name)
-                        .font(FontKey::new("NotoSans-Regular").size(12))
-                        .color(Color::rgb(60, 60, 60))
-                        .width(stem::petals::Size::Px(180)),
-                );
-            rows = rows.push(row);
-            if i + 1 < fonts.len() {
-                rows = rows.push(Separator::new(1, Color::from_argb_u32(0xFFE0E0E0)));
-            }
-        }
-
-        let scroll = Scroll::vertical()
-            .scroll_y(scroll_y)
-            .content_min_height(content_min)
-            .estimated_row_height(row_hint)
-            .total_rows(fonts.len() as u32)
-            .clip(true)
-            .flex_grow(1.0)
-            .push(rows);
-
         let header_text = alloc::format!("{} ({})", COUNT_LABEL.get(), fonts.len());
-        let scene = Scene::new().window(
-            Window::new(win)
-                .title(EXPLORER.get())
-                .initial_size(900, 520)
-                .root(
-                    Flex::column()
-                        .gap(8)
-                        .padding(16)
-                        .push(
-                            Text::new(&header_text)
-                                .font(FontKey::new("NotoSans-Regular").size(20))
-                                .color(Color::rgb(0, 0, 0)),
-                        )
-                        .push(scroll),
-                ),
-        );
+        let mut ui = Petals::begin_window(win);
+        let root = ui.column(|ui| {
+            let header = ui.text(&header_text)?;
+            let _ = ui.set_font_name(header, "NotoSans-Regular");
+            let _ = ui.set_font_size(header, 20);
+            let _ = ui.set_color(header, 0xFF000000);
 
-        let _ = stem::petals::publish_window(&scene);
+            for entry in fonts.iter().take(32) {
+                let sample = alloc::format!("{}  [{}]", SAMPLE.get(), entry.name);
+                let text = ui.text(&sample)?;
+                let _ = ui.set_font_name(text, "NotoSans-Regular");
+                let _ = ui.set_font_size(text, 14);
+                let _ = ui.set_color(text, 0xFF222222);
+            }
+            Ok(())
+        });
+        if let Ok(root) = root {
+            let _ = ui.set_gap(root, 8);
+            let _ = ui.set_padding(root, 16);
+            let _ = ui.finish();
+        }
 
         stem::sleep_ms(33); // ~30 FPS
     }

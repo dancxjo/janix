@@ -10,7 +10,6 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
 use stem::thing::ThingId;
 
-use crate::layout::LayoutRect;
 use abi::ui_paint::PaintBuilder;
 use alloc::string::ToString;
 
@@ -731,4 +730,11 @@ mod tests {
         assert_eq!(node_id, checkbox_id.to_u64_lossy());
         assert_eq!(decoded.checked, new_checked as u8);
     }
+}
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct LayoutRect {
+    pub x: i32,
+    pub y: i32,
+    pub w: i32,
+    pub h: i32,
 }

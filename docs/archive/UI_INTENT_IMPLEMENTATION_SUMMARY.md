@@ -87,7 +87,7 @@ Fixed doctests in `abi/src/drawlist.rs`:
 ### Font Explorer Analysis
 The Font Explorer app (`userspace/font_explorer`) was analyzed:
 - ✅ Uses only Petals builders (Scene, Window, Flex, Text, Scroll)
-- ✅ Publishes via `stem::petals::publish_window()`
+- ✅ Publishes via graph-native Petals APIs
 - ✅ No imports from blossom internals
 - ✅ No layout calculations (only declarative sizing)
 - ✅ No paint operations
@@ -141,7 +141,7 @@ If you're writing a new app or updating an existing one:
 1. **Remove** any imports from `blossom::*` (except temporarily `widgets`)
 2. **Use** only `stem::petals::*` for UI building
 3. **Build** UI using declarative builders (Scene, Window, Flex, Text, etc.)
-4. **Publish** via `stem::petals::publish_window(&scene)`
+4. **Publish** via `ui.finish()`
 5. **Avoid** all geometry calculations (no LayoutRect, no positions)
 6. **Avoid** all paint operations (no PaintBuilder, no drawing)
 

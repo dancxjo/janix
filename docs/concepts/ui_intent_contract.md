@@ -52,22 +52,21 @@ This document defines the architectural boundary between applications, the Petal
 
 Applications are **PERMITTED** to:
 
-1. **Build UI intent trees** using the Petals builder API:
+1. **Build UI intent graph** using Petals graph APIs:
    ```rust
-   use stem::petals::{Scene, Window, Flex, Text, Scroll, ...};
+   use stem::petals::Petals;
    
-   let scene = Scene::new().window(
-       Window::new(window_id)
-           .title("My App")
-           .root(Flex::column()
-               .push(Text::new("Hello"))
-               .push(Text::new("World")))
-   );
+   let mut ui = Petals::begin_window(window_id);
+   let _root = ui.column(|ui| {
+       ui.text("Hello")?;
+       ui.text("World")?;
+       Ok(())
+   })?;
    ```
 
-2. **Publish scenes** to the graph:
+2. **Publish intent** to the graph:
    ```rust
-   stem::petals::publish_window(&scene)?;
+   ui.finish()?;
    ```
 
 3. **Handle user input events** from the graph (clicks, key presses, etc.)
@@ -106,7 +105,7 @@ Applications are **FORBIDDEN** from:
 
 ## What Petals Provides
 
-The `stem::petals` module provides the **builder API** for constructing UI intent:
+The `stem::petals` module provides the **graph UI API** for constructing UI intent:
 
 ### Core Types
 
@@ -227,9 +226,9 @@ When migrating an app to this contract:
 - [ ] Remove all geometry calculations (x, y, w, h arithmetic)
 - [ ] Remove all `PaintBuilder` or direct paint calls
 - [ ] Remove dirty tracking, damage computation
-- [ ] Replace with Petals builder API (Scene, Window, Flex, Text, etc.)
+- [ ] Replace with Petals graph API (`Petals::begin_window`, `UiTreeBuilder`)
 - [ ] Use only declarative styling (Size::Px, padding, Color, etc.)
-- [ ] Publish scenes via `stem::petals::publish_window()`
+- [ ] Publish graph UI via `Petals::begin_window(...).finish()`
 - [ ] Verify no imports from `blossom::` or `bloom::`
 
 ## Example: Compliant App Structure
@@ -238,8 +237,7 @@ When migrating an app to this contract:
 #![no_std]
 #![no_main]
 
-extern crate alloc;
-use stem::petals::{Scene, Window, Flex, Text, FontKey, Color, Size};
+use stem::petals::Petals;
 
 #[stem::main]
 fn main() -> ! {
@@ -249,24 +247,20 @@ fn main() -> ! {
         // 1. Read application state
         let items = fetch_items_from_graph();
         
-        // 2. Build UI intent
-        let mut container = Flex::column().gap(8).padding(16);
-        for item in items {
-            container = container.push(
-                Text::new(&item.label)
-                    .font(FontKey::new("NotoSans-Regular").size(14))
-                    .color(Color::rgb(0, 0, 0))
-            );
-        }
-        
-        let scene = Scene::new().window(
-            Window::new(window_id)
-                .title("My App")
-                .root(container)
-        );
-        
+        // 2. Build graph-native UI intent
+        let mut ui = Petals::begin_window(window_id);
+        let root = ui.column(|ui| {
+            ui.text("My App")?;
+            for item in items {
+                ui.text(&item.label)?;
+            }
+            Ok(())
+        })?;
+        let _ = ui.set_gap(root, 8);
+        let _ = ui.set_padding(root, 16);
+
         // 3. Publish to graph
-        let _ = stem::petals::publish_window(&scene);
+        let _ = ui.finish();
         
         // 4. Sleep and repeat
         stem::sleep_ms(33);
@@ -284,6 +278,6 @@ fn main() -> ! {
 ## References
 
 - `docs/ui_architecture.md`: High-level UI architecture
-- `stem/src/petals/builder.rs`: Petals builder API implementation
+- `stem/src/petals/graph.rs`: Petals graph UI API implementation
 - `userspace/blossom/src/main.rs`: Blossom service main loop
 - `userspace/font_explorer/src/main.rs`: Example application

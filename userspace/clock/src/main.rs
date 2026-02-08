@@ -7,7 +7,7 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
 use core::time::Duration;
 use stem::info;
-use stem::petals::{AlignItems, Color, Flex, FontKey, JustifyContent, Scene, Styled, Text, Window};
+use stem::petals::Petals;
 use stem::thing::sys::{
     bytespace_create, bytespace_read, bytespace_write, create_node, describe_thing, find, link,
     prop_get, prop_set,
@@ -137,24 +137,19 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
     prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
 }
 
-fn build_scene(window_id: ThingId, time_text: &str) -> Scene {
-    Scene::new().window(
-        Window::new(window_id)
-            .title("Clock")
-            .initial_size(400, 150)
-            .root(
-                Flex::column()
-                    .gap(8)
-                    .padding(16)
-                    .align_items(AlignItems::Center)
-                    .justify_content(JustifyContent::Center)
-                    .push(
-                        Text::new(time_text)
-                            .font(FontKey::new("DSEG7Classic-Regular").size(64))
-                            .color(Color::rgb(240, 64, 64)),
-                    ),
-            ),
-    )
+fn render_window(window_id: ThingId, time_text: &str) -> Result<(), stem::errors::Error> {
+    let mut ui = Petals::begin_window(window_id);
+    let root = ui.column(|ui| {
+        let text = ui.text(time_text)?;
+        let _ = ui.set_font_name(text, "DSEG7Classic-Regular");
+        let _ = ui.set_font_size(text, 64);
+        let _ = ui.set_color(text, 0xFFF04040);
+        Ok(())
+    })?;
+    let _ = ui.set_gap(root, 8);
+    let _ = ui.set_padding(root, 16);
+    ui.finish()?;
+    Ok(())
 }
 
 #[stem::main]
@@ -238,8 +233,7 @@ fn main() -> ! {
         }
 
         // Initial scene publish
-        let scene = build_scene(win, "--:--:--");
-        if let Err(e) = stem::petals::publish_window(&scene) {
+        if let Err(e) = render_window(win, "--:--:--") {
             info!("CLOCK: initial scene publish failed: {:?}", e);
         }
     }
@@ -286,8 +280,7 @@ fn main() -> ! {
                 };
 
                 if let Some(win) = window_id {
-                    let scene = build_scene(win, &time_str);
-                    if let Err(e) = stem::petals::publish_window(&scene) {
+                    if let Err(e) = render_window(win, &time_str) {
                         info!("CLOCK: scene publish failed: {:?}", e);
                     }
                 }

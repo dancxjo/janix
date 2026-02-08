@@ -8,7 +8,7 @@ use abi::hid::Key;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
-use abi::ui_event::UiEventWire;
+use abi::ui_event::{self, UiEvent};
 use stem::thing::sys::{
     bytespace_create, bytespace_write, find, get_edges, get_kind, prop_get, prop_set,
 };
@@ -232,63 +232,66 @@ fn node_enabled(id: ThingId) -> bool {
 }
 
 fn emit_clicked(window_id: ThingId, node_id: ThingId, action_id: u64) {
-    let event = UiEventWire::new_clicked(window_id.to_u64_lossy(), node_id.to_u64_lossy(), action_id);
-    write_event(window_id, event);
+    let event = UiEvent::clicked(window_id.to_u64_lossy(), node_id.to_u64_lossy(), action_id);
+    write_event(window_id, &event);
 }
 
 fn emit_toggled(window_id: ThingId, node_id: ThingId, checked: bool, value_id: u64) {
-    let event = UiEventWire::new_toggled(
+    let event = UiEvent::toggled(
         window_id.to_u64_lossy(),
         node_id.to_u64_lossy(),
         checked,
         value_id,
     );
-    write_event(window_id, event);
+    write_event(window_id, &event);
 }
 
 fn emit_focus(window_id: ThingId, node_id: ThingId) {
-    let event = UiEventWire::new_focus(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, event);
+    let event = UiEvent::focus(window_id.to_u64_lossy(), node_id.to_u64_lossy());
+    write_event(window_id, &event);
 }
 
 fn emit_blur(window_id: ThingId, node_id: ThingId) {
-    let event = UiEventWire::new_blur(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, event);
+    let event = UiEvent::blur(window_id.to_u64_lossy(), node_id.to_u64_lossy());
+    write_event(window_id, &event);
 }
 
 fn emit_text_insert(window_id: ThingId, node_id: ThingId, text: &[u8]) {
-    let event = UiEventWire::new_text_insert(window_id.to_u64_lossy(), node_id.to_u64_lossy(), text);
-    write_event(window_id, event);
+    let event = UiEvent::text_input(window_id.to_u64_lossy(), node_id.to_u64_lossy(), text);
+    write_event(window_id, &event);
 }
 
 fn emit_text_backspace(window_id: ThingId, node_id: ThingId) {
-    let event = UiEventWire::new_text_backspace(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, event);
+    let event = UiEvent::text_backspace(window_id.to_u64_lossy(), node_id.to_u64_lossy());
+    write_event(window_id, &event);
 }
 
 fn emit_text_delete(window_id: ThingId, node_id: ThingId) {
-    let event = UiEventWire::new_text_delete(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, event);
+    let event = UiEvent::text_delete(window_id.to_u64_lossy(), node_id.to_u64_lossy());
+    write_event(window_id, &event);
 }
 
 fn emit_cursor_move(window_id: ThingId, node_id: ThingId, delta: i32) {
-    let event = UiEventWire::new_cursor_move(window_id.to_u64_lossy(), node_id.to_u64_lossy(), delta);
-    write_event(window_id, event);
+    let event = UiEvent::cursor_move(window_id.to_u64_lossy(), node_id.to_u64_lossy(), delta);
+    write_event(window_id, &event);
 }
 
 fn emit_submit(window_id: ThingId, node_id: ThingId) {
-    let event = UiEventWire::new_submit(window_id.to_u64_lossy(), node_id.to_u64_lossy());
-    write_event(window_id, event);
+    let event = UiEvent::submit(window_id.to_u64_lossy(), node_id.to_u64_lossy());
+    write_event(window_id, &event);
 }
 
-fn write_event(window_id: ThingId, event: UiEventWire) {
-    let mut buf = [0u8; abi::ui_event::UI_EVENT_BYTES];
-    if event.encode(&mut buf).is_none() {
+/// Max encoded event size for the buffer allocation.
+const EVENT_BUF_SIZE: usize = 128;
+
+fn write_event(window_id: ThingId, event: &UiEvent) {
+    let mut buf = [0u8; EVENT_BUF_SIZE];
+    let Some(written) = ui_event::encode(event, &mut buf) else {
         return;
-    }
+    };
     let bs_id = prop_get(window_id, keys::UI_EVENT_QUEUE).unwrap_or(0);
     let bs = if bs_id == 0 {
-        match bytespace_create(buf.len(), 0, 0) {
+        match bytespace_create(written, 0, 0) {
             Ok(id) => {
                 let _ = prop_set(window_id, keys::UI_EVENT_QUEUE, id.to_u64_lossy());
                 id
@@ -298,7 +301,7 @@ fn write_event(window_id: ThingId, event: UiEventWire) {
     } else {
         ThingId::from_u64(bs_id)
     };
-    let _ = bytespace_write(bs, 0, &buf);
+    let _ = bytespace_write(bs, 0, &buf[..written]);
     let current = prop_get(window_id, keys::UI_EVENT_GEN).unwrap_or(0);
     let _ = prop_set(window_id, keys::UI_EVENT_GEN, current.saturating_add(1));
 }
@@ -375,7 +378,7 @@ struct RectI32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi::ui_event::{UiEventKind, UiEventWire};
+    use abi::ui_event::{self, UiEvent, UiEventKind};
     use alloc::collections::BTreeMap;
     use alloc::string::String;
     use stem::errors::{Error, Result};
@@ -487,12 +490,21 @@ mod tests {
         fn bytespace_write(&mut self, id: ThingId, offset: usize, bytes: &[u8]) -> Result<()> {
             if let Some(buf) = self.bytespaces.get_mut(&id.to_u64_lossy()) {
                 let end = offset + bytes.len();
+                if end > buf.len() {
+                    buf.resize(end, 0);
+                }
                 buf[offset..end].copy_from_slice(bytes);
                 Ok(())
             } else {
                 Err(Error::Errno(abi::errors::Errno::ENOENT))
             }
         }
+    }
+
+    fn encode_event(event: &UiEvent) -> Vec<u8> {
+        let mut buf = [0u8; 128];
+        let n = ui_event::encode(event, &mut buf).expect("encode");
+        buf[..n].to_vec()
     }
 
     #[test]
@@ -538,26 +550,18 @@ mod tests {
             0,
         );
 
-        let event = UiEventWire::new_toggled(
+        let event = UiEvent::toggled(
             window_id.to_u64_lossy(),
             checkbox_id.to_u64_lossy(),
             true,
             7,
         );
-        let mut buf = [0u8; abi::ui_event::UI_EVENT_BYTES];
-        let _ = event.encode(&mut buf);
-        graph.bytespaces.insert(999, buf.to_vec());
+        let buf = encode_event(&event);
+        graph.bytespaces.insert(999, buf.clone());
 
-        // Simulate event write
-        let written = UiEventWire::new_toggled(
-            window_id.to_u64_lossy(),
-            checkbox_id.to_u64_lossy(),
-            true,
-            7,
-        );
-        let mut out = [0u8; abi::ui_event::UI_EVENT_BYTES];
-        let _ = written.encode(&mut out);
-        assert_eq!(UiEventKind::from_raw(out[0]), Some(UiEventKind::Toggled));
+        // Verify roundtrip decode
+        let (decoded, _) = ui_event::decode_one(&buf).unwrap();
+        assert_eq!(decoded.kind(), Some(UiEventKind::Toggled));
     }
 
     #[test]
@@ -575,21 +579,18 @@ mod tests {
         let (_root, mut graph) = builder.finish_with_graph().unwrap();
         let queue = graph.prop_get(window_id, keys::UI_EVENT_QUEUE).unwrap();
 
-        let mut buf = [0u8; abi::ui_event::UI_EVENT_BYTES];
-        let focus = UiEventWire::new_focus(window_id.to_u64_lossy(), input_id.to_u64_lossy());
-        focus.encode(&mut buf).unwrap();
+        let focus = UiEvent::focus(window_id.to_u64_lossy(), input_id.to_u64_lossy());
+        let buf = encode_event(&focus);
         graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
         assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
 
-        let insert =
-            UiEventWire::new_text_insert(window_id.to_u64_lossy(), input_id.to_u64_lossy(), b"hi");
-        insert.encode(&mut buf).unwrap();
+        let insert = UiEvent::text_input(window_id.to_u64_lossy(), input_id.to_u64_lossy(), b"hi");
+        let buf = encode_event(&insert);
         graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
         assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
 
-        let backspace =
-            UiEventWire::new_text_backspace(window_id.to_u64_lossy(), input_id.to_u64_lossy());
-        backspace.encode(&mut buf).unwrap();
+        let backspace = UiEvent::text_backspace(window_id.to_u64_lossy(), input_id.to_u64_lossy());
+        let buf = encode_event(&backspace);
         graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
         assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
 

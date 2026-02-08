@@ -540,7 +540,7 @@ pub fn checkbox_box_rect(rect: LayoutRect) -> LayoutRect {
 mod tests {
     use super::*;
     use abi::errors::Errno;
-    use abi::ui_event::{UiEventKind, UiEventWire, UI_EVENT_BYTES};
+    use abi::ui_event::{self, UiEvent, UiEventKind};
     use abi::ui_paint::PaintReader;
     use alloc::collections::BTreeMap;
     use alloc::string::String;
@@ -818,29 +818,30 @@ mod tests {
             ),
             new_checked,
         );
-        let event = UiEventWire::new_toggled(
+        let event = UiEvent::toggled(
             window_id.to_u64_lossy(),
             checkbox_id.to_u64_lossy(),
             new_checked != 0,
             11,
         );
-        let mut buf = [0u8; UI_EVENT_BYTES];
-        event.encode(&mut buf).unwrap();
+        let mut buf = [0u8; 128];
+        let n = ui_event::encode(&event, &mut buf).unwrap();
         let queue = graph
             .props
             .get(&(window_id.to_u64_lossy(), keys::UI_EVENT_QUEUE.to_string()))
             .copied()
             .unwrap();
-        graph.bytespaces.insert(queue, buf.to_vec());
+        graph.bytespaces.insert(queue, buf[..n].to_vec());
 
-        let decoded = UiEventWire::decode(&buf).unwrap();
-        assert_eq!(
-            UiEventKind::from_raw(decoded.kind),
-            Some(UiEventKind::Toggled)
-        );
-        let node_id = decoded.target_id;
-        assert_eq!(node_id, checkbox_id.to_u64_lossy());
-        assert_eq!(decoded.checked(), new_checked != 0);
+        let (decoded, _) = ui_event::decode_one(&buf[..n]).unwrap();
+        assert_eq!(decoded.kind(), Some(UiEventKind::Toggled));
+        match decoded {
+            UiEvent::Toggled { target, checked, .. } => {
+                assert_eq!(target, checkbox_id.to_u64_lossy());
+                assert_eq!(checked != 0, new_checked != 0);
+            }
+            _ => panic!("expected Toggled"),
+        }
     }
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

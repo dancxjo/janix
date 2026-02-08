@@ -11,12 +11,10 @@ const MAX_TRACKED: usize = 128;
 
 const CLASS_DISPLAY: u8 = 0x03;
 const CLASS_NETWORK: u8 = 0x02;
-const CLASS_MULTIMEDIA: u8 = 0x04;
 const CLASS_SERIAL_BUS: u8 = 0x0c;
 const CLASS_STORAGE: u8 = 0x01;
 
 const SUBCLASS_NETWORK_OTHER: u8 = 0x80;
-const SUBCLASS_AUDIO: u8 = 0x03;
 const SUBCLASS_USB: u8 = 0x03;
 const SUBCLASS_NVME: u8 = 0x08;
 
@@ -39,7 +37,7 @@ struct ClaimedDevice {
     id: ThingId,
 }
 
-const RULES: [PciRule; 12] = [
+const RULES: [PciRule; 9] = [
     // Discrete NVIDIA mobile GPUs (exact GA107M id + class fallback for this vendor/class)
     PciRule {
         name: "nvidia-ga107m-gpu",
@@ -59,16 +57,6 @@ const RULES: [PciRule; 12] = [
         prog_if: None,
         role_kind: "drv.display.nvidia",
     },
-    // NVIDIA HDMI/DP HDA function commonly paired with dGPU
-    PciRule {
-        name: "nvidia-hda",
-        vendor_id: 0x10de,
-        device_id: Some(0x2291),
-        class_code: CLASS_MULTIMEDIA,
-        subclass: Some(SUBCLASS_AUDIO),
-        prog_if: None,
-        role_kind: "drv.sound.hda.nvidia",
-    },
     // AMD iGPU (Rembrandt class)
     PciRule {
         name: "amd-rembrandt-igpu",
@@ -78,26 +66,6 @@ const RULES: [PciRule; 12] = [
         subclass: None,
         prog_if: None,
         role_kind: "drv.display.amd",
-    },
-    // AMD display-audio function
-    PciRule {
-        name: "amd-radeon-hd-audio",
-        vendor_id: 0x1002,
-        device_id: Some(0x1640),
-        class_code: CLASS_MULTIMEDIA,
-        subclass: Some(SUBCLASS_AUDIO),
-        prog_if: None,
-        role_kind: "drv.sound.hda.amd",
-    },
-    // AMD platform HD-audio
-    PciRule {
-        name: "amd-platform-hda",
-        vendor_id: 0x1022,
-        device_id: Some(0x15e3),
-        class_code: CLASS_MULTIMEDIA,
-        subclass: Some(SUBCLASS_AUDIO),
-        prog_if: None,
-        role_kind: "drv.sound.hda.amd",
     },
     // AMD Rembrandt USB4 XHCI families (known IDs + class fallback)
     PciRule {

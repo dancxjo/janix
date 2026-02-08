@@ -54,6 +54,7 @@ members = [
     "userspace/anther",
     "userspace/drivers/pci_stubd",
     "userspace/drivers/rtl8168d",
+    "userspace/drivers/hdaudio",
     "userspace/phloem",
     "bulb",
     "libs/fb_common",

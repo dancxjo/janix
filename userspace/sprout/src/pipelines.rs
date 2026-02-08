@@ -533,6 +533,52 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
 pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Setting up audio pipeline...");
 
+    // Prefer native HDA path if present.
+    let mut hda_buf = [ThingId::default(); 1];
+    if let Ok(count) = thingsys::find(kinds::DEV_SOUND_HDA_PCI_STUB, &mut hda_buf) {
+        if count > 0 {
+            let hda = hda_buf[0];
+            info!("SPROUT: Found HDA sound device {:?}", hda);
+
+            match stem::syscall::spawn_process("/hdaudio", 0) {
+                Ok(pid) => {
+                    info!("SPROUT: Spawned hdaudio (PID={})", pid);
+                    let _ = stem::thread::set_priority(pid, 2);
+                    tasks.push(ManagedTask {
+                        name: "/hdaudio".to_string(),
+                        kind: TaskKind::Driver("dev.sound.hda".to_string()),
+                        module_path: "/hdaudio".to_string(),
+                        pid: Some(pid),
+                        restarts: 0,
+                    });
+                }
+                Err(e) => {
+                    warn!("SPROUT: Failed to spawn hdaudio: {:?}", e);
+                    return;
+                }
+            }
+
+            match stem::syscall::spawn_process("/beeper", 0) {
+                Ok(pid) => {
+                    info!("SPROUT: Spawned beeper (PID={})", pid);
+                    let _ = stem::thread::set_priority(pid, 2);
+                    tasks.push(ManagedTask {
+                        name: "/beeper".to_string(),
+                        kind: TaskKind::App,
+                        module_path: "/beeper".to_string(),
+                        pid: Some(pid),
+                        restarts: 0,
+                    });
+                }
+                Err(e) => {
+                    warn!("SPROUT: Failed to spawn beeper: {:?}", e);
+                }
+            }
+
+            return;
+        }
+    }
+
     // Check for VirtIO Sound device
     let mut snd_buf = [ThingId::default(); 1];
     if let Ok(count) = thingsys::find(kinds::DEV_SOUND, &mut snd_buf) {

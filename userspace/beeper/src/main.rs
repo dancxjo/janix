@@ -9,7 +9,7 @@ mod tone;
 
 use alloc::vec::Vec;
 use abi::schema::keys::WRITE_PORT_HANDLE;
-use abi::schema::kinds::DEV_SOUND;
+use abi::schema::kinds::{DEV_SOUND, DEV_SOUND_HDA_PCI_STUB};
 use stem::syscall::port::{port_send, port_wait, PortHandle};
 use stem::{error, info};
 use stem::thing::sys as thingsys;
@@ -25,6 +25,19 @@ fn main(_arg: usize) -> ! {
     let mut write_port_handle = 0;
     
     for _ in 0..50 {
+        // Prefer native HDA path if present.
+        if let Ok(count) = thingsys::find(DEV_SOUND_HDA_PCI_STUB, &mut dev_buf) {
+            if count > 0 {
+                let id = dev_buf[0];
+                if let Ok(h) = thingsys::prop_get(id, WRITE_PORT_HANDLE) {
+                    if h != 0 {
+                        device_id = Some(id);
+                        write_port_handle = h as PortHandle;
+                        break;
+                    }
+                }
+            }
+        }
         if let Ok(count) = thingsys::find(DEV_SOUND, &mut dev_buf) {
             if count > 0 {
                 let id = dev_buf[0];

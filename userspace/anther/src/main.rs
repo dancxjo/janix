@@ -160,6 +160,7 @@ fn route_request(req: &http::Request<'_>, path: &str, body: &[u8], keep_alive: b
     
     match path {
         "/health" => handle_health(is_head, keep_alive),
+        "/top" => handle_top(is_head, keep_alive),
         "/ui" => handle_ui_index(is_head, keep_alive),
         "/ui/event" if req.method == http::Method::Post => handle_ui_event(body, keep_alive),
         "/upload" if req.method == http::Method::Post => {
@@ -304,6 +305,98 @@ fn parse_u64_query(path: &str, key: &str) -> Option<u64> {
 fn handle_health(is_head: bool, keep_alive: bool) -> (Vec<u8>, ResponseBody) {
     let body: &[u8] = if is_head { &[] } else { b"ok" };
     build_response("200 OK", "text/plain", ResponseBody::Static(body), keep_alive)
+}
+
+/// GET /top — JSON task list from the system graph
+fn handle_top(is_head: bool, keep_alive: bool) -> (Vec<u8>, ResponseBody) {
+    use stem::thing::sys::{find, prop_get, describe_symbol};
+    use stem::thing::ThingId;
+    use abi::ids::HandleId;
+
+    let mut json = graph_api::JsonBuilder::new();
+    json.start_object();
+
+    // Find all proc.Thread nodes
+    let mut ids = [ThingId::default(); 128];
+    let count = find("proc.Thread", &mut ids).unwrap_or(0);
+
+    json.key("count");
+    json.number_value(count as u64);
+
+    json.key("tasks");
+    json.start_array();
+
+    for i in 0..count {
+        let id = ids[i];
+
+        json.start_object();
+
+        json.key("thing_id");
+        json.number_value(id.to_u64_lossy());
+
+        // proc.tid
+        if let Ok(tid) = prop_get(id, "proc.tid") {
+            json.key("tid");
+            json.number_value(tid);
+        }
+
+        // proc.name (interned symbol → resolve to string)
+        if let Ok(name_sym) = prop_get(id, "proc.name") {
+            if name_sym != 0 && name_sym <= u32::MAX as u64 {
+                let mut buf = [0u8; 128];
+                if let Ok(len) = describe_symbol(name_sym as u32, &mut buf) {
+                    if len > 0 {
+                        if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                            json.key("name");
+                            json.string_value(s);
+                        }
+                    }
+                }
+            }
+        }
+
+        // proc.state (interned symbol → resolve to string)
+        if let Ok(state_sym) = prop_get(id, "proc.state") {
+            if state_sym != 0 && state_sym <= u32::MAX as u64 {
+                let mut buf = [0u8; 64];
+                if let Ok(len) = describe_symbol(state_sym as u32, &mut buf) {
+                    if len > 0 {
+                        if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                            json.key("state");
+                            json.string_value(s);
+                        }
+                    }
+                }
+            }
+        }
+
+        // proc.priority (raw u64 value)
+        if let Ok(pri) = prop_get(id, "proc.priority") {
+            json.key("priority");
+            json.number_value(pri);
+        }
+
+        // proc.exit_code (raw i32 stored as u64)
+        if let Ok(exit_code) = prop_get(id, "proc.exit_code") {
+            if exit_code != 0 {
+                json.key("exit_code");
+                json.number_value(exit_code);
+            }
+        }
+
+        json.end_object();
+        json.buf.push(b',');
+    }
+
+    json.end_array();
+    json.end_object();
+
+    let body = if is_head {
+        Vec::new()
+    } else {
+        json.into_bytes()
+    };
+    build_response("200 OK", "application/json", ResponseBody::Owned(body), keep_alive)
 }
 
 // Note: Index page is now served from embedded assets (assets.rs)

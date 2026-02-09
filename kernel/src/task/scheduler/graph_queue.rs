@@ -75,9 +75,23 @@ pub struct QueueStats {
 /// Push a work item to the queue.
 /// This is safe to call while holding the scheduler lock.
 /// Non-critical items (UpdateState) may be dropped if queue is full.
+/// UpdateState items are coalesced per TID (latest state wins).
 pub fn push(work: GraphWork) {
     let mut q = WORK_QUEUE.lock();
-    
+
+    // Coalesce: if pushing UpdateState and one already exists for this TID,
+    // overwrite the state in-place so we only flush the latest transition.
+    if let GraphWork::UpdateState { tid, state } = &work {
+        for item in q.iter_mut() {
+            if let GraphWork::UpdateState { tid: existing_tid, state: existing_state } = item {
+                if *existing_tid == *tid {
+                    *existing_state = state;
+                    return;
+                }
+            }
+        }
+    }
+
     // If queue is full, drop non-critical items
     if q.len() >= MAX_QUEUE_SIZE {
         match &work {
@@ -105,10 +119,16 @@ pub fn push(work: GraphWork) {
     }
 }
 
-/// Drain all work items from the queue.
+/// Drain up to `n` work items from the front of the queue.
+/// Limits per-flush wall time by processing in small batches.
 /// Returns the items for processing. Call this WITHOUT holding the scheduler lock.
-pub fn drain() -> VecDeque<GraphWork> {
-    core::mem::take(&mut *WORK_QUEUE.lock())
+pub fn drain_n(n: usize) -> VecDeque<GraphWork> {
+    let mut q = WORK_QUEUE.lock();
+    if q.len() <= n {
+        core::mem::take(&mut *q)
+    } else {
+        q.drain(..n).collect()
+    }
 }
 
 pub fn stats_snapshot() -> QueueStats {

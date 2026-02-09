@@ -141,7 +141,7 @@ fn flush_graph_queue<R: BootRuntime>() {
         None => return,
     };
 
-    let work_items = graph_queue::drain();
+    let work_items = graph_queue::drain_n(32);
     if work_items.is_empty() {
         return;
     }

@@ -70,6 +70,17 @@ pub fn set_affinity_node(tid: TaskId, cpu_index: usize) {
 // Internal implementation - these do the actual graph work (no scheduler lock)
 // ============================================================================
 
+// Cached interned symbol IDs for frequently used state strings.
+// 0 = not yet interned.  After the first IPC round-trip the value is
+// stored and all subsequent lookups are a single atomic load.
+use core::sync::atomic::AtomicU64;
+
+static INTERN_RUNNABLE: AtomicU64 = AtomicU64::new(0);
+static INTERN_BLOCKED:  AtomicU64 = AtomicU64::new(0);
+static INTERN_SLEEPING: AtomicU64 = AtomicU64::new(0);
+static INTERN_DEAD:     AtomicU64 = AtomicU64::new(0);
+static INTERN_RUNNING:  AtomicU64 = AtomicU64::new(0);
+
 /// Intern a string via the Root service (blocking).
 fn intern(s: &str) -> u64 {
     let reply = enqueue(RootOp::Intern {
@@ -85,6 +96,26 @@ fn intern(s: &str) -> u64 {
         }
         core::hint::spin_loop();
     }
+}
+
+/// Intern with per-string caching for the small set of known state strings.
+/// Falls back to the blocking `intern()` IPC for unknown strings.
+fn intern_cached(s: &'static str) -> u64 {
+    let slot = match s {
+        "runnable" => &INTERN_RUNNABLE,
+        "blocked"  => &INTERN_BLOCKED,
+        "sleeping" => &INTERN_SLEEPING,
+        "dead"     => &INTERN_DEAD,
+        "running"  => &INTERN_RUNNING,
+        _          => return intern(s),
+    };
+    let cached = slot.load(Ordering::Relaxed);
+    if cached != 0 {
+        return cached;
+    }
+    let id = intern(s);
+    slot.store(id, Ordering::Relaxed);
+    id
 }
 
 /// Create a graph node with the given kind (blocking).
@@ -165,7 +196,7 @@ pub fn do_create_thread_node(
     set_prop(thing_id, keys::PROC_IS_USER, is_user_val);
     
     // Set initial state to runnable
-    let state_sym = intern("runnable");
+    let state_sym = intern_cached("runnable");
     set_prop(thing_id, keys::PROC_STATE, state_sym);
     
     // Set name if provided
@@ -193,8 +224,8 @@ pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
 }
 
 /// Update the state property of a task's graph node (called from flush_graph_queue).
-pub fn do_update_state(thing_id: u64, state: &str) {
-    let state_sym = intern(state);
+pub fn do_update_state(thing_id: u64, state: &'static str) {
+    let state_sym = intern_cached(state);
     set_prop(thing_id, keys::PROC_STATE, state_sym);
 }
 

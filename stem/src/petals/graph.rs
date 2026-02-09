@@ -246,6 +246,15 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
         Ok(id)
     }
 
+    /// Create a list item with a stable key so selection state persists across rebuilds.
+    pub fn list_item_keyed(&mut self, key: UiKey<'_>, text: &str, icon_color: u32) -> Result<ThingId> {
+        let id = self.create_node(kinds::UI_LIST_ITEM, ui_kind::LIST_ITEM, Some(key.as_str()))?;
+        self.set_string_prop(id, keys::UI_TEXT, text)?;
+        self.graph.prop_set(id, keys::UI_ICON_COLOR, icon_color as u64)?;
+        self.attach_child(self.parent_stack.last().copied(), id)?;
+        Ok(id)
+    }
+
     // ── Style helpers (call after creating a node) ──
 
     /// Set flex gap in pixels on the last-created container node.

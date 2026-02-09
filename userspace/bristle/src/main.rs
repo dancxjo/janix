@@ -256,8 +256,8 @@ fn restart_display_stack() {
             Err(_) => continue,
         };
 
-        // Check if this is bloom or blossom
-        if name == "/bloom" || name == "/blossom" {
+        // Check if this is bloom or blossom (names include full path, e.g. /boot/bloom)
+        if name.ends_with("/bloom") || name.ends_with("/blossom") {
             // Get the TID
             let tid = match thingsys::prop_get(node, keys::PROC_TID) {
                 Ok(v) => v,

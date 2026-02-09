@@ -42,6 +42,7 @@ pub struct UiNode {
     pub visible: bool,
     pub enabled: bool,
     pub icon_color: u32,
+    pub selected: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -225,6 +226,7 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             .or_else(|| graph.get_prop(id, keys::UI_CURSOR_POS))
             .unwrap_or(0) as u32;
         let icon_color = graph.get_prop(id, keys::UI_ICON_COLOR).unwrap_or(0xFF808080) as u32;
+        let selected = graph.get_prop(id, keys::UI_SELECTED).unwrap_or(0) != 0;
 
         let index = nodes.len();
         nodes.push(UiNode {
@@ -244,6 +246,7 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             visible,
             enabled,
             icon_color,
+            selected,
         });
         map.insert(id, index);
 
@@ -591,7 +594,15 @@ fn draw_text_input(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) 
     }
 }
 
+const LIST_ITEM_SELECTED_BG: u32 = 0xFF3078C0;
+const LIST_ITEM_SELECTED_TEXT: u32 = 0xFFFFFFFF;
+
 fn draw_list_item(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) {
+    // Draw selection highlight background
+    if node.selected {
+        builder.fill_rect(rect.x, rect.y, rect.w, rect.h, LIST_ITEM_SELECTED_BG);
+    }
+
     // Draw 16×16 icon square on the left, vertically centered
     let icon_size = 16i32.min(rect.h);
     let icon_y = rect.y + (rect.h - icon_size) / 2;
@@ -599,6 +610,7 @@ fn draw_list_item(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) {
     builder.fill_rect(rect.x, icon_y, icon_size, icon_size, icon_color);
 
     // Draw text label to the right of the icon
+    let text_color = if node.selected { LIST_ITEM_SELECTED_TEXT } else { TEXT_COLOR };
     if let Some(text) = &node.text {
         let text_rect = LayoutRect {
             x: rect.x + icon_size + 6,
@@ -606,7 +618,7 @@ fn draw_list_item(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) {
             w: rect.w.saturating_sub(icon_size + 6),
             h: rect.h,
         };
-        draw_text(text_rect, text, builder);
+        draw_text_colored(text_rect, text, text_color, builder);
     }
 }
 

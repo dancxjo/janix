@@ -640,18 +640,16 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         self.metrics.yields += 1;
 
-        // Don't push idle task back to runq
+        // Don't push idle task or dead tasks back to runq
         if Some(current_id) != self.per_cpu[cpu_idx].idle_task {
-            let priority = self
-                .tasks
-                .iter()
-                .find(|t| t.id == current_id)
-                .map(|t| t.priority)
-                .unwrap_or(TaskPriority::Normal);
-            
-            // Push to LOCAL runq (we are yielding on this CPU)
-            self.per_cpu[cpu_idx].runq[priority as usize].push_back(current_id);
-            self.metrics.pushes += 1;
+            if let Some(task) = self.tasks.iter().find(|t| t.id == current_id) {
+                if task.state != TaskState::Dead {
+                    let priority = task.priority;
+                    // Push to LOCAL runq (we are yielding on this CPU)
+                    self.per_cpu[cpu_idx].runq[priority as usize].push_back(current_id);
+                    self.metrics.pushes += 1;
+                }
+            }
         }
 
         self.prepare_schedule()
@@ -679,11 +677,18 @@ impl<R: BootRuntime> types::Scheduler<R> {
         let pc = self.per_cpu.get_mut(cpu_idx)?;
 
         let mut next_id = None;
-        // Priority scan
+        // Priority scan — skip dead tasks
         for p in (1..5).rev() {
-            if let Some(id) = pc.runq[p].pop_front() {
+            while let Some(id) = pc.runq[p].pop_front() {
                 self.metrics.pops += 1;
+                // Skip dead tasks that were enqueued before kill took effect
+                if self.tasks.iter().find(|t| t.id == id).map_or(true, |t| t.state == TaskState::Dead) {
+                    continue;
+                }
                 next_id = Some(id);
+                break;
+            }
+            if next_id.is_some() {
                 break;
             }
         }
@@ -691,9 +696,17 @@ impl<R: BootRuntime> types::Scheduler<R> {
         let next_id = match next_id {
             Some(id) => id,
             None => {
-                // Check Idle queue
-                if let Some(id) = pc.runq[0].pop_front() {
+                // Check Idle queue — skip dead tasks
+                let mut found_idle_q = None;
+                while let Some(id) = pc.runq[0].pop_front() {
                     self.metrics.pops += 1;
+                    if self.tasks.iter().find(|t| t.id == id).map_or(true, |t| t.state == TaskState::Dead) {
+                        continue;
+                    }
+                    found_idle_q = Some(id);
+                    break;
+                }
+                if let Some(id) = found_idle_q {
                     id
                 } else if let Some(idle) = pc.idle_task {
                     self.metrics.idle_picks += 1;

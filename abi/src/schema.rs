@@ -204,6 +204,8 @@ pub mod keys {
     /// Optional text selection end byte offset
     pub const UI_SELECTION_END: &str = "ui.selection.end";
     pub const UI_ENABLED: &str = "ui.enabled";
+    /// Whether a list item is currently selected (0/1)
+    pub const UI_SELECTED: &str = "ui.selected";
     pub const UI_FOCUSED: &str = "ui.focused";
     pub const UI_RANK: &str = "ui.rank";
     pub const UI_FIXED: &str = "ui.fixed";

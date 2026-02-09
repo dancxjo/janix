@@ -63,6 +63,12 @@ impl UiEventDispatcher {
                         let value_id = prop_get(hit, keys::UI_CHECKBOX_VALUE_ID).unwrap_or(0);
                         emit_toggled(window_id, hit, new_checked != 0, value_id);
                         bump_window_gen(window_id);
+                    } else if hit_kind == HitKind::ListItem {
+                        // Clear selection on all list items under this root, then select clicked one
+                        clear_list_selection(root, self.rel_has_child);
+                        let _ = prop_set(hit, keys::UI_SELECTED, 1);
+                        emit_clicked(window_id, hit, 0);
+                        bump_window_gen(window_id);
                     }
                 } else {
                     self.clear_focus();
@@ -165,6 +171,7 @@ enum HitKind {
     Button,
     Checkbox,
     TextInput,
+    ListItem,
 }
 
 fn hit_test(
@@ -197,10 +204,14 @@ fn hit_test(
                 };
                 return Some((id, hit));
             }
-            if prop_get(id, keys::UI_KIND).unwrap_or(0) == abi::schema::ui_kind::TEXT_INPUT
+            let ui_kind_val = prop_get(id, keys::UI_KIND).unwrap_or(0);
+            if ui_kind_val == abi::schema::ui_kind::TEXT_INPUT
                 && prop_get(id, keys::UI_FOCUSABLE).unwrap_or(1) != 0
             {
                 return Some((id, HitKind::TextInput));
+            }
+            if ui_kind_val == abi::schema::ui_kind::LIST_ITEM {
+                return Some((id, HitKind::ListItem));
             }
             let mut edges = [Edge::default(); 64];
             if let Ok(count) = get_edges(id, &mut edges) {
@@ -213,6 +224,25 @@ fn hit_test(
         }
     }
     None
+}
+
+/// Walk the entire UI subtree under `root` and clear `ui.selected` on every list item.
+fn clear_list_selection(root: ThingId, rel_has_child: u64) {
+    let mut stack = Vec::new();
+    stack.push(root);
+    while let Some(id) = stack.pop() {
+        if prop_get(id, keys::UI_KIND).unwrap_or(0) == abi::schema::ui_kind::LIST_ITEM {
+            let _ = prop_set(id, keys::UI_SELECTED, 0);
+        }
+        let mut edges = [Edge::default(); 64];
+        if let Ok(count) = get_edges(id, &mut edges) {
+            for edge in edges.iter().take(count) {
+                if edge.predicate.to_u64_lossy() == rel_has_child {
+                    stack.push(edge.to);
+                }
+            }
+        }
+    }
 }
 
 fn node_rect(id: ThingId) -> Option<RectI32> {

@@ -688,7 +688,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
             match stem::syscall::spawn_process("/hdaudio", 0) {
                 Ok(pid) => {
                     info!("SPROUT: Spawned hdaudio (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 3); // High — audio driver
+                    let _ = stem::thread::set_priority(pid, 2);
                     tasks.push(ManagedTask {
                         name: "/hdaudio".to_string(),
                         kind: TaskKind::Driver("dev.sound.hda".to_string()),
@@ -707,7 +707,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
             match stem::syscall::spawn_process("/beeper", 0) {
                 Ok(pid) => {
                     info!("SPROUT: Spawned beeper (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 3); // High — audio synthesis
+                    let _ = stem::thread::set_priority(pid, 2);
                     tasks.push(ManagedTask {
                         name: "/beeper".to_string(),
                         kind: TaskKind::App,
@@ -737,7 +737,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
             match stem::syscall::spawn_process("/virtio_sound", snd.to_u64_lossy() as usize) {
                 Ok(pid) => {
                     info!("SPROUT: Spawned virtio_sound (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 3); // High — audio driver
+                    let _ = stem::thread::set_priority(pid, 2);
                     tasks.push(ManagedTask {
                         name: "/virtio_sound".to_string(),
                         kind: TaskKind::Driver("dev.sound.virtio".to_string()),
@@ -757,7 +757,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
             match stem::syscall::spawn_process("/beeper", 0) {
                 Ok(pid) => {
                     info!("SPROUT: Spawned beeper (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 3); // High — audio synthesis
+                    let _ = stem::thread::set_priority(pid, 2);
                     tasks.push(ManagedTask {
                         name: "/beeper".to_string(),
                         kind: TaskKind::App,

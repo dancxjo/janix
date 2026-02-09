@@ -17,6 +17,7 @@ use stem::thing::sys::{
     bytespace_create, bytespace_read, bytespace_write, create_node, describe_thing, find, link,
     prop_get, prop_set,
 };
+use stem::petals::graph::UiKey;
 use stem::thing::ThingId;
 
 /// State color constants (ARGB)
@@ -70,8 +71,11 @@ fn resolve_symbol(sym_id: u64) -> Option<String> {
 }
 
 struct TaskInfo {
+    id: ThingId,
     name: String,
     state: u64,
+    tid: u64,
+    priority: u64,
 }
 
 /// Map task state values to icon colors.
@@ -162,7 +166,9 @@ fn collect_tasks() -> Vec<TaskInfo> {
             if desc.contains(":proc.") {
                 let name = extract_task_name(id, desc);
                 let state = prop_get(id, keys::PROC_STATE).unwrap_or(0);
-                tasks.push(TaskInfo { name, state });
+                let tid = prop_get(id, keys::PROC_TID).unwrap_or(0);
+                let priority = prop_get(id, keys::PROC_PRIORITY).unwrap_or(0);
+                tasks.push(TaskInfo { id, name, state, tid, priority });
             }
         }
 
@@ -210,34 +216,66 @@ fn extract_task_name(id: ThingId, desc: &str) -> String {
 }
 
 /// Build or rebuild the UI tree with the current task list.
-fn render_task_list(window_id: ThingId, tasks: &[TaskInfo]) {
+/// Returns the index of the currently-selected task (if any).
+fn render_task_list(window_id: ThingId, tasks: &[TaskInfo]) -> Option<usize> {
     let mut ui = Petals::begin_window(window_id);
+    let mut selected_index: Option<usize> = None;
 
-    let root = ui.column(|ui| {
-        if tasks.is_empty() {
-            ui.text("No tasks found")?;
-        } else {
-            for task in tasks {
-                let color = state_color(task.state);
-                let label = format!(
-                    "{} [{}]",
-                    task.name,
-                    state_label(task.state)
-                );
-                ui.list_item(&label, color)?;
+    let root = ui.row(|ui| {
+        // ── Left column: task list ──
+        let left = ui.column(|ui| {
+            if tasks.is_empty() {
+                ui.text("No tasks found")?;
+            } else {
+                for (i, task) in tasks.iter().enumerate() {
+                    let color = state_color(task.state);
+                    let label = format!(
+                        "{} [{}]",
+                        task.name,
+                        state_label(task.state)
+                    );
+                    // Stable key based on process ThingId so bloom's selection survives rebuilds
+                    let key_str = format!("task_{}", task.id.to_u64_lossy());
+                    let item_id = ui.list_item_keyed(UiKey(&key_str), &label, color)?;
+                    // Check if this item is selected in the graph
+                    if prop_get(item_id, keys::UI_SELECTED).unwrap_or(0) != 0 {
+                        selected_index = Some(i);
+                    }
+                }
             }
-        }
+            Ok(())
+        })?;
+        let _ = ui.set_gap(left, 2);
+        let _ = ui.set_padding(left, 8);
+
+        // ── Right column: detail pane ──
+        let right = ui.column(|ui| {
+            if let Some(idx) = selected_index {
+                let t = &tasks[idx];
+                ui.text(&format!("Name: {}", t.name))?;
+                ui.text(&format!("State: {}", state_label(t.state)))?;
+                ui.text(&format!("TID: {}", t.tid))?;
+                ui.text(&format!("Priority: {}", t.priority))?;
+            } else {
+                ui.text("Select a process")?;
+            }
+            Ok(())
+        })?;
+        let _ = ui.set_gap(right, 4);
+        let _ = ui.set_padding(right, 8);
+
         Ok(())
     });
 
     if let Ok(root) = root {
-        let _ = ui.set_gap(root, 2);
-        let _ = ui.set_padding(root, 8);
+        let _ = ui.set_gap(root, 4);
     }
 
     if ui.finish().is_err() {
         info!("TASKMAN: Failed to build UI tree");
     }
+
+    selected_index
 }
 
 #[stem::main]
@@ -276,7 +314,7 @@ fn main() -> ! {
     set_string_prop(win, keys::UI_TITLE, "Task Manager");
 
     // Position: top-left using absolute coordinates
-    prop_set(win, keys::UI_WIDTH, 280).ok();
+    prop_set(win, keys::UI_WIDTH, 500).ok();
     prop_set(win, keys::UI_HEIGHT, 400).ok();
     prop_set(win, keys::UI_X, 8).ok();
     prop_set(win, keys::UI_Y, 30).ok();

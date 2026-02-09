@@ -50,9 +50,10 @@ impl Supervisor {
         crate::pipelines::setup_clock_service(&mut self.tasks);
         crate::pipelines::setup_taskman_service(&mut self.tasks);
 
-        // Enter idle loop
-        info!("SPROUT: Startup complete. Entering idle loop.");
+        // Enter monitor loop
+        info!("SPROUT: Startup complete. Entering monitor loop.");
         loop {
+            self.monitor();
             stem::yield_now();
             stem::sleep_ms(100);
         }

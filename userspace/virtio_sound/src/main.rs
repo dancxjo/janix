@@ -163,6 +163,7 @@ fn main(_arg: usize) -> ! {
                              
                              if added {
                                  driver.notify_queue(VIRTIO_SND_VQ_TX);
+                                 stem::yield_now(); // Let lower-priority tasks run
                                  break;
                              } else {
                                  // Queue full. Poll for completions and yield.

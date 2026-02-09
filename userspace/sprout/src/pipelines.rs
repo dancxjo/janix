@@ -607,6 +607,25 @@ pub fn setup_clock_service(tasks: &mut Vec<ManagedTask>) {
     }
 }
 
+pub fn setup_taskman_service(tasks: &mut Vec<ManagedTask>) {
+    match stem::syscall::spawn_process("/taskman", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned taskman (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 1); // Low priority — background UI
+            tasks.push(ManagedTask {
+                name: "/taskman".to_string(),
+                kind: TaskKind::Service("svc.taskman".to_string()),
+                module_path: "/taskman".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn taskman: {:?}", e);
+        }
+    }
+}
+
 pub fn setup_ui_services(tasks: &mut Vec<ManagedTask>) {
     spawn_ui_service(tasks, "/flytrap", "svc.flytrap", 2);
     spawn_ui_service(tasks, "/fontd", "svc.fontd", 2);

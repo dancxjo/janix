@@ -16,6 +16,7 @@ members = [
     "userspace/sprout",
     "userspace/rtc_cmos",
     "userspace/clock",
+    "userspace/taskman",
     "userspace/font_explorer",
     "userspace/ps2_kbd",
     "userspace/bristle",

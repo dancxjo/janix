@@ -20,6 +20,7 @@ pub enum UiNodeKind {
     Checkbox,
     Text,
     TextInput,
+    ListItem,
     Unknown,
 }
 
@@ -40,6 +41,7 @@ pub struct UiNode {
     pub cursor: u32,
     pub visible: bool,
     pub enabled: bool,
+    pub icon_color: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -166,6 +168,8 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             UiNodeKind::Column
         } else if ui_kind_value == ui_kind::TEXT_INPUT {
             UiNodeKind::TextInput
+        } else if ui_kind_value == ui_kind::LIST_ITEM {
+            UiNodeKind::ListItem
         } else {
             UiNodeKind::Unknown
         };
@@ -187,7 +191,7 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
                 }
             });
 
-        let text = if node_kind == UiNodeKind::Text || node_kind == UiNodeKind::TextInput {
+        let text = if node_kind == UiNodeKind::Text || node_kind == UiNodeKind::TextInput || node_kind == UiNodeKind::ListItem {
             let bs = graph
                 .get_prop(id, keys::UI_TEXT)
                 .or_else(|| graph.get_prop(id, keys::UI_INPUT_VALUE))
@@ -220,6 +224,7 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             .get_prop(id, keys::UI_CURSOR)
             .or_else(|| graph.get_prop(id, keys::UI_CURSOR_POS))
             .unwrap_or(0) as u32;
+        let icon_color = graph.get_prop(id, keys::UI_ICON_COLOR).unwrap_or(0xFF808080) as u32;
 
         let index = nodes.len();
         nodes.push(UiNode {
@@ -238,6 +243,7 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             cursor,
             visible,
             enabled,
+            icon_color,
         });
         map.insert(id, index);
 
@@ -301,6 +307,7 @@ const BUTTON_HEIGHT: i32 = 32;
 const CHECKBOX_HEIGHT: i32 = 28;
 const TEXT_HEIGHT: i32 = 20;
 const TEXT_INPUT_HEIGHT: i32 = 32;
+const LIST_ITEM_HEIGHT: i32 = 24;
 const CHECKBOX_BOX: i32 = 16;
 const BUTTON_BG: u32 = 0xFFC0C0C0;
 const BUTTON_BG_PRESSED: u32 = 0xFFB0B0B0;
@@ -357,6 +364,7 @@ fn layout_column(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [Lay
             UiNodeKind::Checkbox => CHECKBOX_HEIGHT,
             UiNodeKind::Text => TEXT_HEIGHT,
             UiNodeKind::TextInput => TEXT_INPUT_HEIGHT,
+            UiNodeKind::ListItem => LIST_ITEM_HEIGHT,
             UiNodeKind::Column => BUTTON_HEIGHT,
             UiNodeKind::Unknown => TEXT_HEIGHT,
         };
@@ -384,6 +392,7 @@ fn emit_node(tree: &UiTree, rects: &[LayoutRect], index: usize, builder: &mut Pa
                 }
             }
         }
+        UiNodeKind::ListItem => draw_list_item(node, rect, builder),
         _ => {}
     }
     for &child in &node.children {
@@ -512,6 +521,25 @@ fn draw_text_input(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) 
         let cursor_x = text_rect.x + cursor.saturating_mul(8);
         let cursor_h = (rect.h - 10).max(1);
         builder.fill_rect(cursor_x, rect.y + 5, 1, cursor_h, TEXT_COLOR);
+    }
+}
+
+fn draw_list_item(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) {
+    // Draw 16×16 icon square on the left, vertically centered
+    let icon_size = 16i32.min(rect.h);
+    let icon_y = rect.y + (rect.h - icon_size) / 2;
+    let icon_color = node.icon_color;
+    builder.fill_rect(rect.x, icon_y, icon_size, icon_size, icon_color);
+
+    // Draw text label to the right of the icon
+    if let Some(text) = &node.text {
+        let text_rect = LayoutRect {
+            x: rect.x + icon_size + 6,
+            y: rect.y,
+            w: rect.w.saturating_sub(icon_size + 6),
+            h: rect.h,
+        };
+        draw_text(text_rect, text, builder);
     }
 }
 

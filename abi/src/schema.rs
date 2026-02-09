@@ -162,6 +162,10 @@ pub mod keys {
     pub const UI_RADIUS: &str = "ui.radius";
     pub const UI_TITLE: &str = "ui.title";
     pub const UI_WINDOW_ICON: &str = "ui.window.icon";
+    /// Bytespace id of icon pixel/SVG data for list items
+    pub const UI_ICON_BYTESPACE: &str = "ui.icon.bytespace";
+    /// Icon color for list items (ARGB u32, used when no bytespace icon)
+    pub const UI_ICON_COLOR: &str = "ui.icon.color";
     pub const UI_WINDOW_SHADED: &str = "ui.window.shaded";
     pub const UI_HIDDEN: &str = "ui.hidden";
     pub const UI_Z_INDEX: &str = "ui.z_index";
@@ -303,6 +307,8 @@ pub mod keys {
     pub const UI_FILL_PARENT: &str = "ui.layout.fill_parent";
     pub const UI_INSET_RIGHT: &str = "ui.layout.inset_right";
     pub const UI_INSET_BOTTOM: &str = "ui.layout.inset_bottom";
+    pub const UI_INSET_LEFT: &str = "ui.layout.inset_left";
+    pub const UI_INSET_TOP: &str = "ui.layout.inset_top";
     pub const UI_SCROLL_X: &str = "ui.scroll.x";
     pub const UI_SCROLL_Y: &str = "ui.scroll.y";
     pub const UI_CLIP: &str = "ui.clip";
@@ -573,6 +579,7 @@ pub mod kinds {
     pub const UI_BUTTON: &str = "ui.Button";
     pub const UI_CHECKBOX: &str = "ui.Checkbox";
     pub const UI_COLUMN: &str = "ui.Container.Column";
+    pub const UI_LIST_ITEM: &str = "ui.ListItem";
     /// Graph-native drawlist (stable identity, packed ops in bytespace).
     pub const UI_DRAWLIST: &str = "ui.DrawList";
 
@@ -713,6 +720,7 @@ pub mod ui_kind {
     pub const TEXT_INPUT: u64 = 7;
     pub const SPACER: u64 = 8;
     pub const SEPARATOR: u64 = 9;
+    pub const LIST_ITEM: u64 = 10;
 }
 
 pub mod rels {

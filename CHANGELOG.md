@@ -4,7 +4,7 @@
 
 The operating system is undergoing a major expansion of its userspace capabilities, with a focus on **structured data management** and **enhanced hardware support**. A new **Graph Database (Phloem)** has been introduced, bringing OpenGQL-subset query capabilities to the system graph. The networking stack has been consolidated into a unified **Network Daemon (Netd)**, and audio support has arrived with the **Virtio Sound** driver.
 
-System orchestration is now handled by **Sprout**, a dedicated supervisor service, while **Cambium** provides a reactive data-binding layer for UI synchronization. The development tooling (`xtask`) has seen significant updates to support **multi-architecture emulation** (x86_64, ARM64, RISC-V, LoongArch) and automated visual verification.
+System orchestration is now handled by **Sprout**, a dedicated supervisor service, while **Cambium** provides a reactive data-binding layer for UI synchronization. The development tooling (`xtask`) has seen significant updates to support **multi-architecture emulation** (x86_64, ARM64, RISC-V, LoongArch) and automated visual verification. In addition, the kernel graph engine now employs **query buffer recycling** to reduce allocations, and the standard UI library has been expanded with new form widgets.
 
 ## Recent Changes
 
@@ -83,6 +83,9 @@ System orchestration is now handled by **Sprout**, a dedicated supervisor servic
 
 *   **Locale Configuration**: Support for locale configuration has been merged, allowing for better internationalization support in the future.
 
+*   **Query Buffer Recycling**: Implemented `QueryScratch` to reuse buffers during graph queries, reducing memory allocations in the hot path.
+    *   *Artifacts*: `kernel/src/root/query.rs`
+
 ### 🎨 Graphics & UI
 
 *   **Framebuffer Stride Heuristics**: The `bulb` crate and `fb_common` library now correctly interpret framebuffer stride as pixels or bytes based on a BPP heuristic. This fixes diagonal shearing issues observed during early boot on certain display backends.
@@ -96,6 +99,9 @@ System orchestration is now handled by **Sprout**, a dedicated supervisor servic
 
 *   **Default Wallpaper**: Updated the default system wallpaper to `linen.bmp`, providing a cleaner aesthetic. The `flytrap` service now automatically seeds this wallpaper for the `photosynthesis` desktop environment, and the build system (`xtask`) explicitly allows this asset in the ISO image.
     *   *Artifacts*: `assets/wallpapers/linen.bmp`, `userspace/flytrap/src/main.rs`, `xtask/src/image.rs`
+
+*   **Blossom Widgets**: Added `TextInput` and `ListItem` widgets to the standard UI library (`userspace/blossom`), enabling basic form input and list views.
+    *   *Artifacts*: `userspace/blossom/src/graph_ui.rs`
 
 ### 🏗️ Infrastructure & Tests
 

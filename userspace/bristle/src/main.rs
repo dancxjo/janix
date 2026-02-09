@@ -218,6 +218,63 @@ fn serialize_pointer_button_up(button: u8, timestamp_ns: u64, buf: &mut [u8]) ->
     22
 }
 
+/// Kill bloom and blossom processes by looking them up in the graph.
+/// Sprout's monitor loop will auto-restart them.
+fn restart_display_stack() {
+    use abi::schema::{keys, kinds};
+    use stem::thing::ThingId;
+
+    // Find all proc.Thread nodes
+    let mut thread_buf = [ThingId::default(); 64];
+    let count = match thingsys::find(kinds::PROC_THREAD, &mut thread_buf) {
+        Ok(c) => c.min(64),
+        Err(_) => {
+            info!("bristle: failed to find proc.Thread nodes");
+            return;
+        }
+    };
+
+    let mut killed = 0u32;
+    for i in 0..count {
+        let node = thread_buf[i];
+
+        // Get the interned name symbol
+        let name_sym = match thingsys::prop_get(node, keys::PROC_NAME) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        // Resolve the symbol to a string
+        let mut name_buf = [0u8; 64];
+        let name_len = match thingsys::describe_symbol(name_sym as u32, &mut name_buf) {
+            Ok(n) => n,
+            Err(_) => continue,
+        };
+
+        let name = match core::str::from_utf8(&name_buf[..name_len]) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        // Check if this is bloom or blossom
+        if name == "/bloom" || name == "/blossom" {
+            // Get the TID
+            let tid = match thingsys::prop_get(node, keys::PROC_TID) {
+                Ok(v) => v,
+                Err(_) => continue,
+            };
+
+            info!("bristle: killing {} (tid={})", name, tid);
+            match stem::syscall::task_kill(tid) {
+                Ok(()) => killed += 1,
+                Err(e) => info!("bristle: failed to kill {}: {:?}", name, e),
+            }
+        }
+    }
+
+    info!("bristle: killed {} display processes", killed);
+}
+
 #[stem::main]
 fn main(packed_handles: usize) -> ! {
     // Layout: kbd_raw_read[63:48] | mouse_raw_read[47:32] | evt_write[31:16] | evt_echo_write[15:0]
@@ -285,6 +342,12 @@ fn main(packed_handles: usize) -> ! {
                             {
                                 info!("bristle: Ctrl+Alt+Del - rebooting system...");
                                 stem::syscall::reboot();
+                            }
+
+                            // Check for F12 (Kill and restart bloom + blossom)
+                            if let KeyEdge::Down { key: Key::F12, .. } = edge {
+                                info!("bristle: F12 pressed - restarting bloom + blossom...");
+                                restart_display_stack();
                             }
 
                             let mut sent = false;

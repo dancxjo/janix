@@ -184,16 +184,16 @@ fn collect_tasks() -> Vec<TaskInfo> {
 
 /// Extract a human-readable name for a task node.
 fn extract_task_name(id: ThingId, desc: &str) -> String {
-    // Try NAME property (interned symbol)
+    // Try proc.name first – this is the actual binary/process name (e.g. "bloom")
+    if let Some(name) = read_string_prop(id, keys::PROC_NAME) {
+        return name;
+    }
+
+    // Fall back to NAME interned symbol
     if let Ok(name_sym) = prop_get(id, keys::NAME) {
         if let Some(name) = resolve_symbol(name_sym) {
             return name;
         }
-    }
-
-    // Try proc.name bytespace string
-    if let Some(name) = read_string_prop(id, keys::PROC_NAME) {
-        return name;
     }
 
     // Extract from description like "(var_ID:proc.Task { ... })"

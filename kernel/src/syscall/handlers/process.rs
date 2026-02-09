@@ -147,3 +147,12 @@ pub fn sys_set_priority(tid: usize, priority: usize) -> SysResult<usize> {
     }
     Ok(0)
 }
+
+pub fn sys_task_kill(tid: usize) -> SysResult<usize> {
+    let killed = unsafe { crate::task::scheduler::kill_by_tid_current(tid as u64) };
+    if killed {
+        Ok(0)
+    } else {
+        Err(Errno::ESRCH)
+    }
+}

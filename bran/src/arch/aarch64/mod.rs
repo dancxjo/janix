@@ -38,6 +38,7 @@ impl ArchRuntime for AArch64Runtime {
     fn putchar(&self, c: u8) {
         self.serial.putchar(c);
     }
+    // getchar: default None (semihosting has no standard getchar)
 
     fn halt(&self) -> ! {
         hcf()

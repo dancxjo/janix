@@ -39,6 +39,16 @@ impl ArchRuntime for LoongArch64Runtime {
             core::ptr::write_volatile(uart, c);
         }
     }
+    fn getchar(&self) -> Option<u8> {
+        unsafe {
+            let lsr = core::ptr::read_volatile(0x1fe001e5 as *const u8);
+            if (lsr & 0x01) != 0 {
+                Some(core::ptr::read_volatile(0x1fe001e0 as *const u8))
+            } else {
+                None
+            }
+        }
+    }
 
     fn halt(&self) -> ! {
         hcf()

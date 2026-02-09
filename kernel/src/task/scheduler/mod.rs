@@ -27,9 +27,9 @@ pub use wait_queue::WaitQueue;
 pub use hooks::{
     add_user_mapping_current, alloc_user_stack_current, check_user_mapping_current,
     current_priority_current, current_tid_current, exit_current, get_user_mapping_at_current,
-    handle_user_stack_fault_current, remove_user_mappings_current, set_priority_current,
-    sleep_ticks_current, spawn_process_current, spawn_user_thread_current, task_status_current,
-    yield_now_current,
+    handle_user_stack_fault_current, kill_by_tid_current, remove_user_mappings_current,
+    set_priority_current, sleep_ticks_current, spawn_process_current, spawn_user_thread_current,
+    task_status_current, yield_now_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -338,6 +338,7 @@ pub fn init<R: BootRuntime>() {
             hooks::CURRENT_PRIORITY_HOOK = Some(current_priority::<R>);
             hooks::ALLOC_USER_STACK_HOOK = Some(stack::alloc_user_stack::<R>);
             hooks::RUN_SCHEDULER_HOOK = Some(crate::task::run_scheduler::<R>);
+            hooks::KILL_BY_TID_HOOK = Some(kill_by_tid::<R>);
             crate::memory::set_map_user_page_hook(stack::map_user_page::<R>);
             crate::memory::set_map_user_page_perms_hook(stack::map_user_page_perms::<R>);
             crate::memory::set_unmap_user_page_hook(stack::unmap_user_page::<R>);
@@ -971,6 +972,64 @@ pub fn exit<R: BootRuntime>(code: i32) {
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
     sched.terminate_current(code)
+}
+
+/// Kill an arbitrary task by TID. Returns true if the task was found and killed.
+/// The task is marked Dead with exit code -9 and removed from all run queues.
+pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+
+    let lock = SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+
+        // Don't allow killing the current task via this path
+        let cpu_idx = current_cpu_index::<R>();
+        if let Some(current_id) = sched.per_cpu.get(cpu_idx).and_then(|pc| pc.current) {
+            if current_id == tid {
+                rt.irq_restore(_irq);
+                return false;
+            }
+        }
+
+        if let Some(idx) = sched.tasks.iter().position(|t| t.id == tid) {
+            if sched.tasks[idx].state == TaskState::Dead {
+                rt.irq_restore(_irq);
+                return false; // Already dead
+            }
+
+            sched.tasks[idx].state = TaskState::Dead;
+            sched.tasks[idx].exit_code = Some(-9);
+
+            // Remove from all run queues
+            for pc in sched.per_cpu.iter_mut() {
+                for q in pc.runq.iter_mut() {
+                    if let Some(pos) = q.iter().position(|&id| id == tid) {
+                        q.remove(pos);
+                    }
+                }
+            }
+
+            // Remove from sleep queue
+            sched.sleep_queue.retain(|e| e.task_id != tid);
+
+            // Queue graph state update
+            graphify::update_task_state(tid, "dead");
+            graphify::set_exit_code(tid, -9);
+
+            // Release any claimed devices
+            crate::device_registry::REGISTRY
+                .lock()
+                .release_all_for_task(tid);
+
+            crate::kinfo!("SCHED: Killed task {} (SIGKILL)", tid);
+            rt.irq_restore(_irq);
+            return true;
+        }
+    }
+    rt.irq_restore(_irq);
+    false
 }
 
 pub fn cpu_online<R: BootRuntime>(cpu_index: usize) {

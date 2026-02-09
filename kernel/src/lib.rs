@@ -222,6 +222,8 @@ pub trait BootTasking {
 
 pub trait BootRuntimeBase: 'static {
     fn putchar(&self, c: u8);
+    /// Non-blocking serial read. Returns `Some(byte)` if data is available.
+    fn getchar(&self) -> Option<u8> { None }
     fn mono_ticks(&self) -> u64;
     fn mono_freq_hz(&self) -> u64 {
         10_000_000
@@ -754,6 +756,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
     contract!("Entering scheduler loop.");
     loop {
+        // Echo any incoming serial characters
+        if let Some(ch) = runtime_base().getchar() {
+            runtime_base().putchar(ch);
+        }
         crate::task::yield_now::<R>();
         // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty
     }

@@ -253,6 +253,22 @@ impl ArchRuntime for X86_64Runtime {
         }
     }
 
+    fn getchar(&self) -> Option<u8> {
+        let lsr: u8;
+        unsafe {
+            core::arch::asm!("in al, dx", out("al") lsr, in("dx") 0x3fdu16, options(nostack, preserves_flags));
+        }
+        if (lsr & 0x01) != 0 {
+            let ch: u8;
+            unsafe {
+                core::arch::asm!("in al, dx", out("al") ch, in("dx") 0x3f8u16, options(nostack, preserves_flags));
+            }
+            Some(ch)
+        } else {
+            None
+        }
+    }
+
     fn halt(&self) -> ! {
         hcf()
     }

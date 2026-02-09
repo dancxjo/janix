@@ -178,6 +178,12 @@ pub fn task_wait(tid: u64) -> Result<i32, Errno> {
     abi::errors::errno(ret).map(|v| v as i32)
 }
 
+/// Kill a task by TID. Returns Ok(()) if the task was killed, Err(ESRCH) if not found.
+pub fn task_kill(tid: u64) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_TASK_KILL, tid as usize, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|_| ())
+}
+
 // ...
 pub fn trace_read(buf: &mut [abi::trace::TraceEvent]) -> Result<usize, Errno> {
     let ret = unsafe {

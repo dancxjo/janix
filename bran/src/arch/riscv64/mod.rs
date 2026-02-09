@@ -39,6 +39,9 @@ impl ArchRuntime for RISCV64Runtime {
     fn putchar(&self, c: u8) {
         self.serial.putchar(c);
     }
+    fn getchar(&self) -> Option<u8> {
+        self.serial.getchar()
+    }
     fn halt(&self) -> ! {
         hcf()
     }

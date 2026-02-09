@@ -9,6 +9,8 @@ pub trait ArchRuntime {
 
     fn init(&self, hhdm_offset: u64);
     fn putchar(&self, c: u8);
+    /// Non-blocking serial read. Returns `Some(byte)` if data is available.
+    fn getchar(&self) -> Option<u8> { None }
     fn halt(&self) -> !;
     fn mono_ticks(&self) -> u64;
     fn mono_freq_hz(&self) -> u64;
@@ -251,6 +253,9 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
         self.arch.putchar(c);
         // DISABLED: Bulb theme disabled for faster boot
         // crate::theme::putchar(c);
+    }
+    fn getchar(&self) -> Option<u8> {
+        self.arch.getchar()
     }
     fn mono_ticks(&self) -> u64 {
         self.arch.mono_ticks()

@@ -24,6 +24,18 @@ impl SerialPort {
         }
     }
 
+    /// Non-blocking read from COM1. Returns `Some(byte)` if data ready.
+    pub fn getchar(&self) -> Option<u8> {
+        unsafe {
+            // Check LSR bit 0 (Data Ready)
+            if (inb(0x3F8 + 5) & 0x01) != 0 {
+                Some(inb(0x3F8))
+            } else {
+                None
+            }
+        }
+    }
+
     /// Calibrate TSC using the PIT (Programmable Interval Timer).
     /// This is a simplified calibration that runs once on the first call to mono_freq_hz.
     pub fn calibrate(&self) -> u64 {

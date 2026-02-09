@@ -282,13 +282,78 @@ pub fn write_bounds(graph: &mut impl UiGraph, tree: &UiTree, rects: &[LayoutRect
     }
 }
 
+// ── Title bar chrome constants ──
+// These MUST match Bloom's BLOSSOM_BORDER and BLOSSOM_TITLE_BAR_HEIGHT.
+const CHROME_BORDER: i32 = 2;
+const CHROME_TITLE_BAR_HEIGHT: i32 = 24;
+
+// Focused title bar gradient (blue-ish)
+const TITLE_FOCUSED_TOP: u32 = 0xFF5B9BD5;    // steel blue
+const TITLE_FOCUSED_BOTTOM: u32 = 0xFF3A6EA5;  // darker blue
+const TITLE_FOCUSED_TEXT: u32 = 0xFFFFFFFF;     // white text
+
+// Unfocused title bar gradient (gray)
+const TITLE_UNFOCUSED_TOP: u32 = 0xFFC0C0C0;    // light gray
+const TITLE_UNFOCUSED_BOTTOM: u32 = 0xFFA0A0A0;  // medium gray
+const TITLE_UNFOCUSED_TEXT: u32 = 0xFF404040;     // dark gray text
+
+// Border color
+const CHROME_BORDER_COLOR: u32 = 0xFF606060;
+
 pub fn emit_paint(
     tree: &UiTree,
     rects: &[LayoutRect],
+    window_w: i32,
+    window_h: i32,
     window_bg: u32,
-    _is_focused: bool,
+    is_focused: bool,
+    title: Option<&str>,
 ) -> Vec<u8> {
     let mut builder = PaintBuilder::new();
+
+    // 1. Draw window border (2px all around)
+    // Top border
+    builder.fill_rect(0, 0, window_w, CHROME_BORDER, CHROME_BORDER_COLOR);
+    // Bottom border
+    builder.fill_rect(0, window_h - CHROME_BORDER, window_w, CHROME_BORDER, CHROME_BORDER_COLOR);
+    // Left border
+    builder.fill_rect(0, CHROME_BORDER, CHROME_BORDER, window_h - CHROME_BORDER * 2, CHROME_BORDER_COLOR);
+    // Right border
+    builder.fill_rect(window_w - CHROME_BORDER, CHROME_BORDER, CHROME_BORDER, window_h - CHROME_BORDER * 2, CHROME_BORDER_COLOR);
+
+    // 2. Draw title bar gradient
+    let tb_x = CHROME_BORDER;
+    let tb_y = CHROME_BORDER;
+    let tb_w = window_w - CHROME_BORDER * 2;
+    let tb_h = CHROME_TITLE_BAR_HEIGHT;
+    let (grad_top, grad_bot, title_color) = if is_focused {
+        (TITLE_FOCUSED_TOP, TITLE_FOCUSED_BOTTOM, TITLE_FOCUSED_TEXT)
+    } else {
+        (TITLE_UNFOCUSED_TOP, TITLE_UNFOCUSED_BOTTOM, TITLE_UNFOCUSED_TEXT)
+    };
+    builder.fill_linear_gradient(tb_x, tb_y, tb_w, tb_h, grad_top, grad_bot);
+
+    // 3. Draw title text (left-aligned with padding)
+    if let Some(text) = title {
+        if !text.is_empty() {
+            let text_x = tb_x + 8;
+            let text_y = tb_y;
+            let text_w = tb_w - 16;
+            let text_h = tb_h;
+            let size = 14;
+            let baseline = text_y + (text_h + size) / 2 - 2;
+            builder.draw_text_run(
+                text_x, text_y, text_w, text_h,
+                baseline,
+                "NotoSans-Regular",
+                size,
+                text,
+                title_color,
+            );
+        }
+    }
+
+    // 4. Fill client area background
     let root_rect = rects[tree.root];
     builder.fill_rect(
         root_rect.x,
@@ -297,6 +362,8 @@ pub fn emit_paint(
         root_rect.h,
         window_bg,
     );
+
+    // 5. Emit app content nodes
     emit_node(tree, rects, tree.root, &mut builder);
     builder.finish()
 }
@@ -846,7 +913,7 @@ mod tests {
             },
         );
         write_bounds(&mut graph, &tree, &rects);
-        let paint = emit_paint(&tree, &rects, 0xFFCCCCCC, false);
+        let paint = emit_paint(&tree, &rects, 220, 140, 0xFFCCCCCC, false, None);
         let mut reader = PaintReader::new(&paint).expect("paint reader");
         assert!(reader.next().is_some());
 

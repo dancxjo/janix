@@ -412,14 +412,32 @@ impl UiPipeline {
         }
         let is_focused = prop_get(window_id, keys::UI_FOCUSED).unwrap_or(0) != 0;
 
+        // Read window title text from the ui.title bytespace
+        let title_text = crate::read_string_prop(window_id, keys::UI_TITLE);
+        let title_ref = title_text.as_deref();
+
         let tree = match graph_ui::build_tree(graph, &self.ui_symbols, root_id) {
             Some(tree) => tree,
             None => return Ok(()),
         };
-        let root_rect = graph_ui::LayoutRect { x: 0, y: 0, w, h };
+
+        // Offset the client content area below the title bar chrome.
+        // These constants must match graph_ui::CHROME_BORDER and CHROME_TITLE_BAR_HEIGHT.
+        let chrome_top = 2 + 24; // border + title bar
+        let chrome_border = 2;
+        let client_x = chrome_border;
+        let client_y = chrome_top;
+        let client_w = w - chrome_border * 2;
+        let client_h = h - chrome_top - chrome_border;
+        let root_rect = graph_ui::LayoutRect {
+            x: client_x,
+            y: client_y,
+            w: client_w.max(0),
+            h: client_h.max(0),
+        };
         let rects = graph_ui::layout_tree(&tree, root_rect);
         graph_ui::write_bounds(graph, &tree, &rects);
-        let paint_bytes = graph_ui::emit_paint(&tree, &rects, window_bg, is_focused);
+        let paint_bytes = graph_ui::emit_paint(&tree, &rects, w, h, window_bg, is_focused, title_ref);
         // Reuse existing paint bytespace when possible to avoid leaking graph nodes.
         // Previously we called bytespace_create() on every repaint, accumulating
         // thousands of abandoned bytespace nodes that overwhelmed the graph service.

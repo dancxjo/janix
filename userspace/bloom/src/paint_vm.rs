@@ -356,6 +356,7 @@ impl PaintPipeline {
                 for r in remaining {
                     let inter = Rect::intersection(&r, &w_rect);
                     if let Some(vis) = inter {
+                        let mut rendered = false;
                         // This part of 'r' is covered by 'win'.
                         // Fetch cached image and blit
                         let cache_key = RasterCacheKey::new(
@@ -382,11 +383,16 @@ impl PaintPipeline {
                                     cached_image.width as usize,
                                     Rect::new(src_x, src_y, vis.width(), vis.height()),
                                 );
+                                rendered = true;
                             }
                         }
 
-                        // Subtract vis from r
-                        next_remaining.extend(subtract_rect(r, vis));
+                        if rendered {
+                            // Only occlude regions we actually painted.
+                            next_remaining.extend(subtract_rect(r, vis));
+                        } else {
+                            next_remaining.push(r);
+                        }
                     } else {
                         next_remaining.push(r);
                     }

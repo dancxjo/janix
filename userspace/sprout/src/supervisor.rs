@@ -42,10 +42,12 @@ impl Supervisor {
         // 3. Setup input pipeline (ps2_kbd, ps2_mouse, bristle, bloom, echo)
         crate::pipelines::setup_input_pipeline(&mut self.tasks, display_handles);
 
+        // 3.25. Core UI services (paint + assets + font), after bloom is up for fast wallpaper.
+        crate::pipelines::setup_ui_services(&mut self.tasks);
+
         // Setup network pipeline (native NIC driver + net stack)
         crate::pipelines::setup_network_pipeline(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
-        crate::pipelines::setup_cambium_service(&mut self.tasks);
 
         // Enter idle loop
         info!("SPROUT: Startup complete. Entering idle loop.");
@@ -85,7 +87,6 @@ impl Supervisor {
         // 3.6. Setup network pipeline
         crate::pipelines::setup_network_pipeline(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
-        crate::pipelines::setup_cambium_service(&mut self.tasks);
 
 
         // 4. Loop

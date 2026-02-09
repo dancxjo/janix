@@ -50,7 +50,9 @@ pub struct UiTree {
 
 pub struct UiSymbols {
     pub rel_has_child: u64,
+    pub rel_child_of: u64,
     pub rel_root_ui: u64,
+    pub kind_window: u64,
     pub kind_button: u64,
     pub kind_checkbox: u64,
     pub kind_text: u64,
@@ -61,7 +63,9 @@ impl UiSymbols {
     pub fn intern_sys() -> Self {
         Self {
             rel_has_child: stem::thing::sys::intern(rels::HAS_CHILD).unwrap_or(0) as u64,
+            rel_child_of: stem::thing::sys::intern(rels::CHILD_OF).unwrap_or(0) as u64,
             rel_root_ui: stem::thing::sys::intern(rels::ROOT_UI).unwrap_or(0) as u64,
+            kind_window: stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0) as u64,
             kind_button: stem::thing::sys::intern(kinds::UI_BUTTON).unwrap_or(0) as u64,
             kind_checkbox: stem::thing::sys::intern(kinds::UI_CHECKBOX).unwrap_or(0) as u64,
             kind_text: stem::thing::sys::intern(kinds::UI_TEXT).unwrap_or(0) as u64,
@@ -107,6 +111,7 @@ pub fn find_root_ui(
     symbols: &UiSymbols,
     window_id: ThingId,
 ) -> Option<ThingId> {
+    // Primary path: explicit window ->ROOT_UI-> root edge.
     let mut edges = [Edge::default(); 64];
     let count = graph.get_edges(window_id, &mut edges);
     for edge in edges.iter().take(count) {
@@ -114,6 +119,28 @@ pub fn find_root_ui(
             return Some(edge.to);
         }
     }
+
+    // Fallback: accept window ->HAS_CHILD-> node where node ->CHILD_OF-> window.
+    // This keeps paint alive if ROOT_UI edges are absent during graph transitions.
+    for edge in edges.iter().take(count) {
+        if edge.predicate.to_u64_lossy() != symbols.rel_has_child {
+            continue;
+        }
+        if graph.get_kind(edge.to) == Some(symbols.kind_window) {
+            continue;
+        }
+
+        let mut child_edges = [Edge::default(); 64];
+        let child_count = graph.get_edges(edge.to, &mut child_edges);
+        for child_edge in child_edges.iter().take(child_count) {
+            if child_edge.predicate.to_u64_lossy() == symbols.rel_child_of
+                && child_edge.to == window_id
+            {
+                return Some(edge.to);
+            }
+        }
+    }
+
     None
 }
 

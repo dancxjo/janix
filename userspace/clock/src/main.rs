@@ -70,7 +70,7 @@ fn find_locale_conf() -> Option<ThingId> {
     None
 }
 
-fn read_locale() -> Option<alloc::string::String> {
+fn read_conf_key(key_prefix: &str) -> Option<alloc::string::String> {
     if let Some(mod_id) = find_locale_conf() {
         if let Ok(bs_id) = prop_get(mod_id, "bytespace") {
             let bs_thing = ThingId::from_u64(bs_id);
@@ -80,7 +80,7 @@ fn read_locale() -> Option<alloc::string::String> {
                 if bytespace_read(bs_thing, 0, &mut buf).is_ok() {
                     let content = alloc::string::String::from_utf8(buf).ok()?;
                     for line in content.lines() {
-                        if let Some(val) = line.strip_prefix("LOCALE=") {
+                        if let Some(val) = line.strip_prefix(key_prefix) {
                             return Some(val.trim().into());
                         }
                     }
@@ -89,6 +89,17 @@ fn read_locale() -> Option<alloc::string::String> {
         }
     }
     None
+}
+
+fn read_locale() -> Option<alloc::string::String> {
+    read_conf_key("LOCALE=")
+}
+
+/// Read timezone offset in hours from locale.conf (e.g. TZ_OFFSET=-8 → -8).
+fn read_timezone_offset_hours() -> i32 {
+    read_conf_key("TZ_OFFSET=")
+        .and_then(|s| s.parse::<i32>().ok())
+        .unwrap_or(0)
 }
 
 /// Print a single tick with both wall clock (if anchored) and monotonic time.
@@ -137,19 +148,34 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
     prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
 }
 
-fn render_window(window_id: ThingId, time_text: &str) -> Result<(), stem::errors::Error> {
+/// Build the initial UI tree for the clock window, returning the text node id.
+fn render_window_init(window_id: ThingId, time_text: &str) -> Option<ThingId> {
     let mut ui = Petals::begin_window(window_id);
+    let mut text_id = None;
     let root = ui.column(|ui| {
         let text = ui.text(time_text)?;
         let _ = ui.set_font_name(text, "DSEG7Classic-Regular");
         let _ = ui.set_font_size(text, 64);
         let _ = ui.set_color(text, 0xFFF04040);
+        text_id = Some(text);
         Ok(())
-    })?;
-    let _ = ui.set_gap(root, 8);
-    let _ = ui.set_padding(root, 16);
-    ui.finish()?;
-    Ok(())
+    });
+    if let Ok(root) = root {
+        let _ = ui.set_gap(root, 8);
+        let _ = ui.set_padding(root, 16);
+    }
+    if ui.finish().is_err() {
+        return None;
+    }
+    text_id
+}
+
+/// Update just the text content and bump scene gen (no new nodes created).
+fn render_window_update(window_id: ThingId, text_node: ThingId, time_text: &str) {
+    set_string_prop(text_node, keys::UI_TEXT, time_text);
+    // Bump scene gen so blossom re-renders
+    let gen = prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0);
+    prop_set(window_id, keys::UI_SCENE_GEN, gen.wrapping_add(1)).ok();
 }
 
 #[stem::main]
@@ -167,6 +193,7 @@ fn main() -> ! {
     // info!("Clock thing created: {}", clock_thing.to_u64_lossy());
 
     let mut window_id: Option<ThingId> = None;
+    let mut text_node_id: Option<ThingId> = None;
 
     // 2. Setup UI
     // info!("Waiting for UI Root (Compositor)...");
@@ -212,8 +239,8 @@ fn main() -> ! {
         link(ui_crown, rels::HAS_CHILD, win).expect("link window has_child");
         window_id = Some(win);
 
-        // Window Style: Black Background (explicit override)
-        prop_set(win, keys::UI_BG_COLOR, 0xFF000000).ok(); // Black
+        // Window Style: White Background
+        prop_set(win, keys::UI_BG_COLOR, 0xFFFFFFFF).ok(); // White
         set_string_prop(win, keys::UI_TITLE, "Clock");
 
         // Window Layout: Bottom-right area (to avoid overlap with font_explorer)
@@ -233,8 +260,9 @@ fn main() -> ! {
         }
 
         // Initial scene publish
-        if let Err(e) = render_window(win, "--:--:--") {
-            info!("CLOCK: initial scene publish failed: {:?}", e);
+        text_node_id = render_window_init(win, "--:--:--");
+        if text_node_id.is_none() {
+            info!("CLOCK: initial scene publish failed");
         }
     }
 
@@ -245,6 +273,7 @@ fn main() -> ! {
 
     let locale = read_locale().unwrap_or_else(|| "en_GB".into());
     let is_12h = locale == "en_US";
+    let tz_offset_secs: i64 = read_timezone_offset_hours() as i64 * 3600;
 
     loop {
         // 1. Get precise system time
@@ -252,13 +281,14 @@ fn main() -> ! {
         let unix = now_ns / 1_000_000_000;
         let mono_ns = stem::monotonic_ns();
 
-        if now_ns > 0 {
-            print_tick(unix, mono_ns);
+        print_tick(unix, mono_ns);
 
-            // 2. Publish State to Graph
-            let dt = OffsetDateTime::from_unix_timestamp(unix as i64).ok();
-            if let Some(dt) = dt {
-                let time_str = if is_12h {
+        // 2. Publish State to Graph and always invalidate UI, even before wall-clock anchor.
+        // Apply timezone offset to convert UTC → local time.
+        let local_unix = (unix as i64).wrapping_add(tz_offset_secs);
+        let time_str = match OffsetDateTime::from_unix_timestamp(local_unix).ok() {
+            Some(dt) => {
+                if is_12h {
                     let (h, am) = if dt.hour() == 0 {
                         (12, true)
                     } else if dt.hour() == 12 {
@@ -277,24 +307,24 @@ fn main() -> ! {
                     )
                 } else {
                     alloc::format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second())
-                };
-
-                if let Some(win) = window_id {
-                    if let Err(e) = render_window(win, &time_str) {
-                        info!("CLOCK: scene publish failed: {:?}", e);
-                    }
-                }
-                // Update clock:tick
-                if prop_set(clock_thing, keys::CLOCK_TICK, mono_ns).is_ok() {
-                    // // info!(
-                    //     "CLOCK PUBLISH: thing={} now_text='{}' tick={}",
-                    //     clock_thing.to_u64_lossy(),
-                    //     time_str,
-                    //     mono_ns
-                    // );
                 }
             }
+            None => {
+                // Monotonic fallback keeps scene_gen moving until RTC/NTP anchoring is ready.
+                let secs = (mono_ns / 1_000_000_000) % 86_400;
+                let h = secs / 3600;
+                let m = (secs % 3600) / 60;
+                let s = secs % 60;
+                alloc::format!("{:02}:{:02}:{:02}", h, m, s)
+            }
+        };
+
+        if let (Some(win), Some(text_node)) = (window_id, text_node_id) {
+            render_window_update(win, text_node, &time_str);
         }
+
+        // Update clock:tick regardless of wall-clock anchoring.
+        let _ = prop_set(clock_thing, keys::CLOCK_TICK, mono_ns);
 
         // 3. Sleep until the next whole second boundary
         let now_ns_recheck = stem::time::now_unix_nanos();

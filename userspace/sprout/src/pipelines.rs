@@ -607,24 +607,36 @@ pub fn setup_clock_service(tasks: &mut Vec<ManagedTask>) {
     }
 }
 
-pub fn setup_cambium_service(tasks: &mut Vec<ManagedTask>) {
-    match stem::syscall::spawn_process("/cambium", 0) {
+pub fn setup_ui_services(tasks: &mut Vec<ManagedTask>) {
+    spawn_ui_service(tasks, "/flytrap", "svc.flytrap", 2);
+    spawn_ui_service(tasks, "/fontd", "svc.fontd", 2);
+    spawn_ui_service(tasks, "/blossom", "svc.blossom", 2);
+}
+
+fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, priority: usize) {
+    if tasks.iter().any(|t| t.name == name && t.pid.is_some()) {
+        return;
+    }
+
+    match stem::syscall::spawn_process(name, 0) {
         Ok(pid) => {
-            info!("SPROUT: Spawned cambium (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2);
+            info!("SPROUT: Spawned {} (PID={})", &name[1..], pid);
+            let _ = stem::thread::set_priority(pid, priority);
             tasks.push(ManagedTask {
-                name: "/cambium".to_string(),
-                kind: TaskKind::Service("svc.cambium".to_string()),
-                module_path: "/cambium".to_string(),
+                name: name.to_string(),
+                kind: TaskKind::Service(service.to_string()),
+                module_path: name.to_string(),
                 pid: Some(pid),
                 restarts: 0,
             });
         }
         Err(e) => {
-            warn!("SPROUT: Failed to spawn cambium: {:?}", e);
+            warn!("SPROUT: Failed to spawn {}: {:?}", &name[1..], e);
         }
     }
 }
+
+
 
 /// Set up audio pipeline - spawn virtio_sound and beeper
 pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {

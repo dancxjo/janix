@@ -280,7 +280,10 @@ impl UiPipeline {
                         let event_len = watch::WATCH_EVENT_HEADER_LEN + value.len();
                         cursor = cursor.saturating_add(event_len);
                         let pred = header.predicate.to_u32_lossy();
-                        if pred == watcher.key {
+                        let is_kind_watcher = watcher.key == PRED_KIND;
+                        // Kind-filtered watches do not carry a stable predicate symbol in all cases,
+                        // so match them by watcher role instead of predicate equality.
+                        if is_kind_watcher || pred == watcher.key {
                             if pred == PRED_KIND {
                                 // Check op type (Upsert=1, Delete=2)
                                 if let Some(op) = watch::WatchOp::from_u8(header.op) {
@@ -304,6 +307,10 @@ impl UiPipeline {
                                         }
                                     }
                                 }
+                            } else if is_kind_watcher {
+                                // Kind watch event: conservatively mark subject dirty so first paint
+                                // happens even if predicate encoding differs.
+                                dirty.insert(header.subject, true);
                             } else {
                                 dirty.insert(header.subject, true);
                             }
@@ -313,6 +320,11 @@ impl UiPipeline {
                     }
                 }
             }
+        }
+
+        // Ensure windows created between watch polls are tracked and painted at least once.
+        for added in self.refresh_windows() {
+            dirty.insert(added, true);
         }
 
         let mut window_ids: Vec<ThingId> = self.windows.keys().copied().collect();
@@ -361,19 +373,27 @@ impl UiPipeline {
         }
     }
 
-    fn refresh_windows(&mut self) {
+    fn refresh_windows(&mut self) -> Vec<ThingId> {
+        let mut added = Vec::new();
         let mut windows = [ThingId::default(); 128];
         let count = find(kinds::UI_WINDOW, &mut windows).unwrap_or(0);
         for win in windows.iter().take(count) {
-            self.windows.entry(*win).or_insert(WindowState {
-                last_gen: 0,
-                last_w: 0,
-                last_h: 0,
-                last_bg: 0,
-                last_title_bs: 0,
-                last_focused: false,
-            });
+            if !self.windows.contains_key(win) {
+                self.windows.insert(
+                    *win,
+                    WindowState {
+                        last_gen: 0,
+                        last_w: 0,
+                        last_h: 0,
+                        last_bg: 0,
+                        last_title_bs: 0,
+                        last_focused: false,
+                    },
+                );
+                added.push(*win);
+            }
         }
+        added
     }
 
     fn process_window(&mut self, window_id: ThingId) -> Result<(), abi::errors::Errno> {

@@ -14,4 +14,6 @@ pub struct ManagedTask {
     pub module_path: String,
     pub pid: Option<u64>,
     pub restarts: u32,
+    /// Original argument passed to spawn_process, preserved for restarts
+    pub spawn_arg: usize,
 }

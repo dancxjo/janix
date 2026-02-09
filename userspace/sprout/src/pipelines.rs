@@ -52,6 +52,7 @@ pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/pci_stubd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -80,6 +81,7 @@ pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/rtc_cmos".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -101,6 +103,7 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
                     module_path: "/ahci_disk".to_string(),
                     pid: Some(pid),
                     restarts: 0,
+                    spawn_arg: 0,
                 });
             }
             Err(e) => {
@@ -121,6 +124,7 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
                     module_path: "/ata_disk".to_string(),
                     pid: Some(pid),
                     restarts: 0,
+                    spawn_arg: 0,
                 });
             }
             Err(e) => {
@@ -265,6 +269,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
             module_path: driver_name.to_string(),
             pid: Some(pid),
             restarts: 0,
+            spawn_arg: driver_arg as usize,
         });
     }
 
@@ -335,6 +340,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/ps2_kbd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -353,6 +359,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/ps2_mouse".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -381,6 +388,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/bristle".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -448,6 +456,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/bloom".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: bloom_arg,
             });
         }
         Err(e) => {
@@ -466,6 +475,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/echo".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -501,6 +511,7 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                             module_path: "/rtl8168d".to_string(),
                             pid: Some(pid),
                             restarts: 0,
+                    spawn_arg: 0,
                         });
                     }
                     Err(e) => {
@@ -534,6 +545,7 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/virtio_netd".to_string(),
                         pid: Some(pid),
                         restarts: 0,
+                    spawn_arg: 0,
                     });
                 }
                 Err(e) => {
@@ -563,6 +575,7 @@ fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/netd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -580,6 +593,7 @@ fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/anther".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -599,6 +613,7 @@ pub fn setup_clock_service(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/clock".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -618,6 +633,7 @@ pub fn setup_taskman_service(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/taskman".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -647,6 +663,7 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
                 module_path: name.to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                    spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -678,6 +695,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/hdaudio".to_string(),
                         pid: Some(pid),
                         restarts: 0,
+                    spawn_arg: 0,
                     });
                 }
                 Err(e) => {
@@ -696,6 +714,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/beeper".to_string(),
                         pid: Some(pid),
                         restarts: 0,
+                    spawn_arg: 0,
                     });
                 }
                 Err(e) => {
@@ -725,6 +744,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/virtio_sound".to_string(),
                         pid: Some(pid),
                         restarts: 0,
+                    spawn_arg: 0,
                     });
                 }
                 Err(e) => {
@@ -744,6 +764,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/beeper".to_string(),
                         pid: Some(pid),
                         restarts: 0,
+                    spawn_arg: 0,
                     });
                 }
                 Err(e) => {

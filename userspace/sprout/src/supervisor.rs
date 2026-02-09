@@ -153,6 +153,7 @@ impl Supervisor {
                     module_path: name,
                     pid: None,
                     restarts: 0,
+                    spawn_arg: 0,
                 });
             } else {
                 // Unknown or Driver in flat dir?
@@ -291,6 +292,7 @@ impl Supervisor {
             module_path: full,
             pid: None,
             restarts: 0,
+            spawn_arg: 0,
         });
     }
 
@@ -320,6 +322,7 @@ impl Supervisor {
                             module_path: driver_name.to_string(), // approximation
                             pid: Some(pid),
                             restarts: 0,
+                    spawn_arg: 0,
                         });
 
                         // Set driver priority to High (3)
@@ -352,34 +355,9 @@ impl Supervisor {
                             task.pid = None; // Reset
                             task.restarts += 1;
 
-                            let arg = if let TaskKind::Driver(ref dk) = task.kind {
-                                // Reconstruct arg for driver?
-                                // Assuming RTC for now.
-                                // We lost the original ID.
-                                // Ideally ManagedTask stores the argument too.
-                                // Quick hack: Re-find RTC
-                                if dk == "dev.rtc.Cmos" {
-                                    let mut buf = [ThingId::default(); 1];
-                                    if let Ok(1) = thingsys::find(
-                                        stem::abi::schema::kinds::DEV_RTC_CMOS,
-                                        &mut buf,
-                                    ) {
-                                        let rtc_id = buf[0];
-                                        let ctx =
-                                            stem::abi::driver_ctx::DriverCtx { device_id: rtc_id };
-                                        ctx.to_raw()
-                                    } else {
-                                        0
-                                    }
-                                } else {
-                                    0
-                                }
-                            } else {
-                                0
-                            };
+                            let arg = task.spawn_arg;
 
-                            // Exponential Backoff? "10 ticks"
-                            // For now just sleep before restart? Or just yield.
+                            // Brief backoff before restart
                             stem::sleep_ms(100 * (task.restarts as u64 + 1));
 
                             match stem::syscall::spawn_process(&task.name, arg) {
@@ -469,6 +447,7 @@ fn spawn_bloom(tasks: &mut Vec<ManagedTask>, dh: &crate::pipelines::DisplayHandl
                 module_path: "/bloom".to_string(),
                 pid: Some(pid),
                 restarts: 0,
+                spawn_arg: bloom_arg,
             });
         }
         Err(e) => {

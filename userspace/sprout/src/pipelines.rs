@@ -600,6 +600,24 @@ fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
             warn!("SPROUT: Failed to spawn anther: {:?}", e);
         }
     }
+
+    match stem::syscall::spawn_process("/fetchd", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned fetchd (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/fetchd".to_string(),
+                kind: TaskKind::App,
+                module_path: "/fetchd".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn fetchd: {:?}", e);
+        }
+    }
 }
 
 pub fn setup_clock_service(tasks: &mut Vec<ManagedTask>) {

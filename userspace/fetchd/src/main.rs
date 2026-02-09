@@ -36,17 +36,17 @@ fn render_window(window_id: ThingId, ip_text: &str, status_text: &str) -> Result
         let label = ui.text("IP Address")?;
         let _ = ui.set_font_name(label, "NotoSans-Regular");
         let _ = ui.set_font_size(label, 16);
-        let _ = ui.set_color(label, 0xFFB4B4B4);
+        let _ = ui.set_color(label, 0xFF505050);
 
         let ip = ui.text(ip_text)?;
         let _ = ui.set_font_name(ip, "DSEG7Classic-Regular");
         let _ = ui.set_font_size(ip, 48);
-        let _ = ui.set_color(ip, 0xFF40F080);
+        let _ = ui.set_color(ip, 0xFF107050);
 
         let status = ui.text(status_text)?;
         let _ = ui.set_font_name(status, "NotoSans-Regular");
         let _ = ui.set_font_size(status, 12);
-        let _ = ui.set_color(status, 0xFF8C8C8C);
+        let _ = ui.set_color(status, 0xFF707070);
         Ok(())
     })?;
     let _ = ui.set_gap(root, 12);
@@ -90,8 +90,8 @@ fn main(_arg: usize) -> ! {
         link(ui_crown, rels::HAS_CHILD, win).expect("link window has_child");
         window_id = Some(win);
 
-        // Window Style: Dark Background
-        prop_set(win, keys::UI_BG_COLOR, 0xFF101820).ok(); // Dark teal-black
+        // Window Style: Light Background
+        prop_set(win, keys::UI_BG_COLOR, 0xFFE8EEF4).ok(); // Light blue-gray
         set_string_prop(win, keys::UI_TITLE, "Network");
 
         // Window Layout: Bottom-left corner (mirroring clock at bottom-right)

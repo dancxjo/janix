@@ -49,6 +49,7 @@ fn main(_arg: usize) -> ! {
             window_id = Some(win);
             info!("NECTAR: Created UI_WINDOW node: {:?}", win);
             thingsys::link(crown_id, "ui.HasWindow", win).ok();
+            thingsys::prop_set(win, keys::UI_BG_COLOR, 0xFFF0EDE8).ok(); // Light warm gray
             
             // Initial scene
             match render_window(win, &hostname) {
@@ -215,12 +216,12 @@ fn render_window(window_id: ThingId, hostname: &str) -> Result<(), stem::errors:
         let label = ui.text("Hostname")?;
         let _ = ui.set_font_name(label, "NotoSans-Regular");
         let _ = ui.set_font_size(label, 14);
-        let _ = ui.set_color(label, 0xFFB4B4B4);
+        let _ = ui.set_color(label, 0xFF505050);
 
         let value = ui.text(hostname)?;
         let _ = ui.set_font_name(value, "NotoSans-Regular");
         let _ = ui.set_font_size(value, 32);
-        let _ = ui.set_color(value, 0xFF64C8FF);
+        let _ = ui.set_color(value, 0xFF1A5080);
         Ok(())
     })?;
     let _ = ui.set_gap(root, 8);

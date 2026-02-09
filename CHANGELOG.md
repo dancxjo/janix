@@ -2,15 +2,49 @@
 
 ## Recent Status
 
-Current development is focused on **refining the build process and developer ergonomics**. The experimental `json-target-spec` flag has been dropped to simplify the build pipeline, and the userspace library (`stem`) now provides first-class `debug!` and `warn!` macros to aid in application development and troubleshooting.
+The operating system is undergoing a major expansion of its userspace capabilities, with a focus on **structured data management** and **enhanced hardware support**. A new **Graph Database (Phloem)** has been introduced, bringing OpenGQL-subset query capabilities to the system graph. The networking stack has been consolidated into a unified **Network Daemon (Netd)**, and audio support has arrived with the **Virtio Sound** driver.
 
-The operating system's userspace capabilities have expanded significantly with the introduction of a **WASM Driver Host**. This new runtime environment allows drivers to be executed as WebAssembly modules, providing a sandboxed and architecture-independent execution model. Crucially, the host includes a **record-and-replay syscall tracing** system, enabling developers to capture driver interactions and replay them deterministically for debugging.
-
-Complementing this, the **Anther** HTTP server has gained **file upload capabilities**. Clients can now push files directly to the system via a `POST /upload` endpoint, which automatically handles bytespace creation, SHA-256 hashing, and metadata extraction (MIME type, size) to populate `fs.File` nodes in the graph.
-
-On the visual front, the default desktop experience has been refreshed with a new wallpaper (`linen.bmp`), automatically seeded by the `flytrap` asset service.
+System orchestration is now handled by **Sprout**, a dedicated supervisor service, while **Cambium** provides a reactive data-binding layer for UI synchronization. The development tooling (`xtask`) has seen significant updates to support **multi-architecture emulation** (x86_64, ARM64, RISC-V, LoongArch) and automated visual verification.
 
 ## Recent Changes
+
+### 🌟 New Services
+
+*   **Phloem (Graph DB)**: Introduced a graph query service that allows applications to query and mutate the system graph using an OpenGQL-subset syntax (e.g., `MATCH`, `MERGE`, `LINKS_TO`). It includes a client library and a TCP-based service.
+    *   *Artifacts*: `userspace/phloem/`
+*   **Netd (Network Daemon)**: A unified network service handling DHCP configuration, DNS resolution, and HTTP requests, consolidating previous network components.
+    *   *Artifacts*: `userspace/netd/`
+*   **Sprout (Supervisor)**: A new process supervisor that manages the lifecycle of core userspace services like `flytrap` and `blossom`.
+    *   *Artifacts*: `userspace/sprout/`
+*   **Cambium (Data Binding)**: A reactive data-binding service that synchronizes properties between graph nodes based on `BINDING` definitions, enabling dynamic UI updates without polling.
+    *   *Artifacts*: `userspace/cambium/`
+*   **Flytrap (Asset Watcher)**: Enhanced the asset watcher service to automatically discover and hash assets from boot modules, ensuring reliable content delivery.
+    *   *Artifacts*: `userspace/flytrap/`
+
+### 🔊 Drivers & Hardware
+
+*   **Virtio Sound**: Added a driver for VirtIO sound devices, supporting PCM playback, queue management, and real-time status monitoring (buffer usage, underruns).
+    *   *Artifacts*: `userspace/virtio_sound/`
+*   **Virtio GPU**: Expanded support for VirtIO GPU devices with a dedicated driver implementation.
+    *   *Artifacts*: `userspace/virtio_gpu/`
+*   **Bristle (Input)**: Enhanced mouse input processing to handle split packets and improve event normalization.
+    *   *Artifacts*: `userspace/bristle/`
+*   **Kernel IRQ Handling**: Updated the kernel IRQ handler to prefer LAPIC ISR-reported vectors for more reliable interrupt processing.
+    *   *Artifacts*: `kernel/src/arch/x86_64/interrupts.rs`
+
+### 🛠️ Tooling & Infrastructure
+
+*   **Multi-Arch QEMU Support**: The `xtask` tool now supports running QEMU for multiple architectures (`x86_64`, `aarch64`, `riscv64`, `loongarch64`) with configurable BIOS/UEFI modes.
+    *   *Artifacts*: `xtask/src/run.rs`
+*   **Image Scanning Tool**: Replaced legacy Python scripts with a Rust-based image scanner (`xtask scan`) for verifying visual outputs (e.g., counting red pixels, finding top colors) during tests.
+    *   *Artifacts*: `xtask/src/scan.rs`
+*   **Phloem Integration Tests**: Added a test harness (`xtask test-phloem`) to verify Graph DB functionality via TCP.
+    *   *Artifacts*: `xtask/src/test_phloem.rs`
+
+### 📱 Applications
+
+*   **New Demo Apps**: Introduced `Font Explorer`, `Fortune` (LLM demo), and `Drawlist Demo` to showcase system capabilities.
+    *   *Artifacts*: `userspace/font_explorer/`, `userspace/fortune/`, `userspace/drawlist_demo/`
 
 ### 🏗️ Infrastructure & Tooling
 

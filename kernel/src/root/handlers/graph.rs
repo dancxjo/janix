@@ -235,8 +235,22 @@ pub fn handle_query(
         let mut stack_buf = [abi::query::QueryRow::default(); STACK_CAP];
         execute_and_copy(graph, plan, &mut stack_buf[..max_rows], out_buffer, scratch)
     } else {
-        let mut krows = alloc::vec![abi::query::QueryRow::default(); max_rows];
-        execute_and_copy(graph, plan, &mut krows, out_buffer, scratch)
+        // Steward Improvement: Reuse scratch buffer for large queries to avoid heap allocations.
+        // We take the buffer out to satisfy borrow checker, ensuring `execute_and_copy`
+        // can mutate `scratch` independently.
+        let mut temp_buf = core::mem::take(&mut scratch.out_buf);
+
+        // Ensure deterministic zero-initialization to avoid leaking stale data
+        temp_buf.clear();
+        temp_buf.resize(max_rows, abi::query::QueryRow::default());
+
+        let slice = &mut temp_buf[..max_rows];
+        let result = execute_and_copy(graph, plan, slice, out_buffer, scratch);
+
+        // Restore the buffer to scratch for reuse
+        scratch.out_buf = temp_buf;
+
+        result
     }
 }
 
@@ -490,5 +504,59 @@ mod tests {
         let mut ids: Vec<u64> = rows.iter().map(|r| r.id).collect();
         ids.sort();
         assert_eq!(ids, expected);
+    }
+
+    #[test]
+    fn test_handle_query_alloc_reuse() {
+        use crate::root::query::PreparedStep;
+        use crate::root::query::QueryScratch;
+        use abi::query::QueryRow;
+
+        let mut graph = Graph::new();
+        let mut interner = Interner::new();
+        let mut scratch = QueryScratch::new();
+
+        let kind = interner.intern("BulkKind");
+
+        // Create 40 nodes (> 32 STACK_CAP)
+        let count_target = 40;
+        for _ in 0..count_target {
+            graph.alloc(kind);
+        }
+
+        let plan = vec![PreparedStep {
+            op: 1, // Scan
+            symbol: kind,
+            arg1: 0,
+            arg2: 0,
+        }];
+
+        let max_rows = 50;
+        let mut buffer = vec![0u8; max_rows * core::mem::size_of::<QueryRow>()];
+        let buf_ptr = buffer.as_mut_ptr() as u64;
+        let buf_len = buffer.len() as u64;
+
+        // Verify initial state
+        assert_eq!(scratch.out_buf.capacity(), 128);
+        // We can't check len() because it's implementation detail of how scratch is used,
+        // but initially it's 0.
+
+        // Run query
+        let (status, count) = handle_query(&graph, &plan, buf_ptr, buf_len, &mut scratch);
+
+        assert_eq!(status, 0);
+        assert_eq!(count, count_target as u64);
+
+        // Verify scratch buffer was used and retained
+        // The scratch buffer should have grown (or been resized) to at least max_rows (50).
+        // Since we initialized with capacity 128, it might not have reallocated, but its length should be affected if we didn't clear it?
+        // Wait, handle_query restores the buffer.
+        // Inside handle_query:
+        // temp_buf.len() < 50 -> resize(50).
+        // scratch.out_buf = temp_buf.
+        // So scratch.out_buf.len() should be 50.
+
+        assert!(scratch.out_buf.len() >= max_rows, "Buffer length should be at least max_rows after reuse");
+        assert!(scratch.out_buf.capacity() >= 128, "Capacity should be preserved");
     }
 }

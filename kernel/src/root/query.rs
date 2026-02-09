@@ -14,6 +14,8 @@ pub struct PreparedStep {
 pub struct QueryScratch {
     pub rows_a: Vec<QueryRow>,
     pub rows_b: Vec<QueryRow>,
+    /// Persistent buffer for query results > 32 rows, avoiding allocations.
+    pub out_buf: Vec<QueryRow>,
 }
 
 impl QueryScratch {
@@ -21,12 +23,17 @@ impl QueryScratch {
         Self {
             rows_a: Vec::with_capacity(128),
             rows_b: Vec::with_capacity(128),
+            out_buf: Vec::with_capacity(128),
         }
     }
 
     pub fn reset(&mut self) {
         self.rows_a.clear();
         self.rows_b.clear();
+        // We don't necessarily need to clear out_buf here as it's used
+        // as a scratch space that is overwritten, but clearing it is safer
+        // to release references if QueryRow ever holds any (it doesn't currently).
+        self.out_buf.clear();
     }
 }
 

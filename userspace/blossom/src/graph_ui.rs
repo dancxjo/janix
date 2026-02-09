@@ -510,7 +510,7 @@ fn emit_node(tree: &UiTree, rects: &[LayoutRect], index: usize, builder: &mut Pa
 
 fn draw_button(
     tree: &UiTree,
-    rects: &[LayoutRect],
+    _rects: &[LayoutRect],
     index: usize,
     rect: LayoutRect,
     builder: &mut PaintBuilder,
@@ -545,7 +545,7 @@ fn draw_button(
 
 fn draw_checkbox(
     tree: &UiTree,
-    rects: &[LayoutRect],
+    _rects: &[LayoutRect],
     index: usize,
     rect: LayoutRect,
     builder: &mut PaintBuilder,
@@ -746,6 +746,7 @@ mod tests {
                 kinds::UI_CHECKBOX => 102,
                 kinds::UI_TEXT => 103,
                 kinds::UI_COLUMN => 104,
+                kinds::UI_WINDOW => 100,
                 _ => 1,
             };
             self.kinds.insert(id.to_u64_lossy(), kind_id);
@@ -879,7 +880,9 @@ mod tests {
 
         let symbols = UiSymbols {
             rel_has_child: 201,
+            rel_child_of: 202,
             rel_root_ui: 203,
+            kind_window: 100,
             kind_button: 101,
             kind_checkbox: 102,
             kind_text: 103,
@@ -920,8 +923,68 @@ mod tests {
     }
 
     #[test]
+    fn row_layout_distributes_width_correctly() {
+        let graph = TestGraph::new();
+        let mut builder = UiTreeBuilder::new(graph, ThingId::from_u64(99));
+        builder
+            .row(|b| {
+                b.button("A", 1)?;
+                b.button("B", 2)?;
+                b.button("C", 3)?;
+                Ok(())
+            })
+            .unwrap();
+        let (root, graph) = builder.finish_with_graph().unwrap();
+
+        let symbols = UiSymbols {
+            rel_has_child: 201,
+            rel_child_of: 202,
+            rel_root_ui: 203,
+            kind_window: 100,
+            kind_button: 101,
+            kind_checkbox: 102,
+            kind_text: 103,
+            kind_column: 104,
+        };
+        let tree = build_tree(&graph, &symbols, root).unwrap();
+
+        let rects = layout_tree(
+            &tree,
+            LayoutRect {
+                x: 0,
+                y: 0,
+                w: 101,
+                h: 50,
+            },
+        );
+
+        let child_rects: Vec<LayoutRect> = tree.nodes[tree.root]
+            .children
+            .iter()
+            .map(|i| rects[*i])
+            .collect();
+
+        assert_eq!(child_rects.len(), 3);
+
+        // Child 0
+        assert_eq!(child_rects[0].x, 0);
+        assert_eq!(child_rects[0].w, 28);
+
+        // Child 1
+        // x = 0 + 28 + 8 = 36
+        assert_eq!(child_rects[1].x, 36);
+        assert_eq!(child_rects[1].w, 28);
+
+        // Child 2
+        // x = 36 + 28 + 8 = 72
+        assert_eq!(child_rects[2].x, 72);
+        // w = 101 - 72 = 29
+        assert_eq!(child_rects[2].w, 29);
+    }
+
+    #[test]
     fn graph_roundtrip_emits_event() {
-        let mut graph = TestGraph::new();
+        let graph = TestGraph::new();
         let window_id = ThingId::from_u64(99);
         let mut builder = UiTreeBuilder::new(graph, window_id);
         let root = builder
@@ -946,7 +1009,9 @@ mod tests {
 
         let symbols = UiSymbols {
             rel_has_child: 201,
+            rel_child_of: 202,
             rel_root_ui: 203,
+            kind_window: 100,
             kind_button: 101,
             kind_checkbox: 102,
             kind_text: 103,

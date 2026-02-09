@@ -347,15 +347,9 @@ impl UiPipeline {
             if bg != entry.last_bg {
                 dirty.insert(*window_id, true);
             }
-            if let Ok(kind) = prop_get(*window_id, keys::UI_KIND) {
-                if kind == ui_kind::WINDOW {
-                    // This branch is likely for handling new windows or changes to window kind
-                    // For existing windows, we just mark them dirty if their kind changes.
-                    // The actual on_window_added logic would be in refresh_windows or similar.
-                    // For now, just marking dirty is sufficient for re-processing.
-                    dirty.insert(*window_id, true);
-                }
-            }
+            // NOTE: Previously this block unconditionally marked every ui.Window
+            // dirty each poll cycle, causing a repaint-every-frame feedback loop.
+            // The gen/size/bg/focus checks above already cover all real change cases.
             let focused = prop_get(*window_id, keys::UI_FOCUSED).unwrap_or(0) != 0;
             if focused != entry.last_focused {
                 dirty.insert(*window_id, true);
@@ -426,7 +420,23 @@ impl UiPipeline {
         let rects = graph_ui::layout_tree(&tree, root_rect);
         graph_ui::write_bounds(graph, &tree, &rects);
         let paint_bytes = graph_ui::emit_paint(&tree, &rects, window_bg, is_focused);
-        let paint_bs = bytespace_create(paint_bytes.len(), 0, 0)?;
+        // Reuse existing paint bytespace when possible to avoid leaking graph nodes.
+        // Previously we called bytespace_create() on every repaint, accumulating
+        // thousands of abandoned bytespace nodes that overwhelmed the graph service.
+        let paint_bs = {
+            let existing = prop_get(window_id, keys::UI_PAINT_BYTESPACE).unwrap_or(0);
+            if existing != 0 {
+                let bs = ThingId::from_u64(existing);
+                let old_size = stem::thing::sys::bytespace_info(bs).unwrap_or(0);
+                if old_size >= paint_bytes.len() {
+                    bs
+                } else {
+                    bytespace_create(paint_bytes.len(), 0, 0)?
+                }
+            } else {
+                bytespace_create(paint_bytes.len(), 0, 0)?
+            }
+        };
         let _ = bytespace_write(paint_bs, 0, &paint_bytes);
         let _ = prop_set(window_id, keys::UI_PAINT_BYTESPACE, paint_bs.to_u64_lossy());
         let current = prop_get(window_id, keys::UI_PAINT_GEN).unwrap_or(0);

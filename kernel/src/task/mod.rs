@@ -79,6 +79,10 @@ pub struct Task<R: BootRuntime> {
     /// Remaining time slice in ticks before preemption
     pub timeslice_remaining: u32,
     pub last_cpu: Option<usize>,
+
+    /// Short human-readable name (e.g. "bristle", "idle/0")
+    pub name: [u8; 32],
+    pub name_len: u8,
 }
 
 pub fn init<R: BootRuntime>() {

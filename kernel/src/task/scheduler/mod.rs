@@ -397,6 +397,12 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         timeslice_remaining: types::DEFAULT_TIMESLICE,
         affinity: crate::task::Affinity::Any,
         last_cpu: Some(0),
+        name: {
+            let mut n = [0u8; 32];
+            n[0] = b'b'; n[1] = b'o'; n[2] = b'o'; n[3] = b't';
+            n
+        },
+        name_len: 4,
     };
     sched.tasks.push(alloc::boxed::Box::new(task));
     
@@ -1071,8 +1077,8 @@ pub fn dump_stats<R: BootRuntime>() {
         sched.total_cpu_count
     );
     crate::kprint!(
-        " {:>5}  {:>10}  {:>4}  {:>3}  {:>4}  {:>7}  {:>6}  {}\n",
-        "TID", "STATE", "PRI", "CPU", "USER", "SLICE", "KSTK", "AFFINITY"
+        " {:>5}  {:>10}  {:>4}  {:>3}  {:>4}  {:>7}  {:>6}  {:>6}  {}\n",
+        "TID", "STATE", "PRI", "CPU", "USER", "SLICE", "KSTK", "AFFIN", "NAME"
     );
 
     let mut runnable_count = 0u32;
@@ -1099,8 +1105,13 @@ pub fn dump_stats<R: BootRuntime>() {
             crate::task::Affinity::Any       => alloc::string::String::from("Any"),
             crate::task::Affinity::Pinned(c) => alloc::format!("Pin({})", c),
         };
+        let name_str = if task.name_len > 0 {
+            core::str::from_utf8(&task.name[..task.name_len as usize]).unwrap_or("?")
+        } else {
+            "-"
+        };
         crate::kprint!(
-            " {:>5}  {:>10}  {:>4}  {:>3}  {:>4}  {:>3}/{:<3}  {:>5}K  {}\n",
+            " {:>5}  {:>10}  {:>4}  {:>3}  {:>4}  {:>3}/{:<3}  {:>5}K  {:>6}  {}\n",
             task.id,
             state_str,
             pri_str,
@@ -1109,7 +1120,8 @@ pub fn dump_stats<R: BootRuntime>() {
             task.timeslice_remaining,
             types::DEFAULT_TIMESLICE,
             task.kstack_size / 1024,
-            aff_str
+            aff_str,
+            name_str
         );
     }
 

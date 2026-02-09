@@ -190,9 +190,11 @@ fn collect_tasks() -> Vec<TaskInfo> {
 
 /// Extract a human-readable name for a task node.
 fn extract_task_name(id: ThingId, desc: &str) -> String {
-    // Try proc.name first – this is the actual binary/process name (e.g. "bloom")
-    if let Some(name) = read_string_prop(id, keys::PROC_NAME) {
-        return name;
+    // Try proc.name first – stored as an interned symbol by the kernel's graphify
+    if let Ok(name_sym) = prop_get(id, keys::PROC_NAME) {
+        if let Some(name) = resolve_symbol(name_sym) {
+            return name;
+        }
     }
 
     // Fall back to NAME interned symbol

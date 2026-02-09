@@ -89,6 +89,8 @@ impl<R: BootRuntime> Scheduler<R> {
             timeslice_remaining: DEFAULT_TIMESLICE,
             affinity,
             last_cpu: Some(safe_cpu),
+            name: [0; 32],
+            name_len: 0,
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
@@ -182,6 +184,8 @@ impl<R: BootRuntime> Scheduler<R> {
             timeslice_remaining: DEFAULT_TIMESLICE,
             affinity,
             last_cpu: Some(safe_cpu),
+            name: [0; 32],
+            name_len: 0,
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
@@ -260,6 +264,8 @@ impl<R: BootRuntime> Scheduler<R> {
             timeslice_remaining: DEFAULT_TIMESLICE,
             affinity,
             last_cpu: Some(safe_cpu),
+            name: [0; 32],
+            name_len: 0,
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
@@ -381,6 +387,14 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
     let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority, affinity)?;
+
+    // Store name on the task struct for F2 dump
+    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
+        let bytes = module.name.as_bytes();
+        let len = bytes.len().min(32);
+        task.name[..len].copy_from_slice(&bytes[..len]);
+        task.name_len = len as u8;
+    }
 
     // Queue setting the process name (processed after scheduler lock released)
     super::graphify::set_name(id, module.name);

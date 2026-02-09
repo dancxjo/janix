@@ -340,22 +340,31 @@ fn handle_top(is_head: bool, keep_alive: bool) -> (Vec<u8>, ResponseBody) {
             json.number_value(tid);
         }
 
-        // proc.name (interned symbol → resolve to string)
-        if let Ok(name_sym) = prop_get(id, "proc.name") {
-            if name_sym != 0 && name_sym <= u32::MAX as u64 {
-                let mut buf = [0u8; 128];
-                if let Ok(len) = describe_symbol(name_sym as u32, &mut buf) {
-                    if len > 0 {
-                        if let Ok(s) = core::str::from_utf8(&buf[..len]) {
-                            json.key("name");
-                            json.string_value(s);
+        // proc.name (interned symbol → string), fall back to "name"
+        let mut got_name = false;
+        for key in &["proc.name", "name"] {
+            if let Ok(name_sym) = prop_get(id, *key) {
+                if name_sym != 0 && name_sym <= u32::MAX as u64 {
+                    let mut buf = [0u8; 128];
+                    if let Ok(len) = describe_symbol(name_sym as u32, &mut buf) {
+                        if len > 0 {
+                            if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                                json.key("name");
+                                json.string_value(s);
+                                got_name = true;
+                                break;
+                            }
                         }
                     }
                 }
             }
         }
+        if !got_name {
+            json.key("name");
+            json.string_value("?");
+        }
 
-        // proc.state (interned symbol → resolve to string)
+        // proc.state (interned symbol → string)
         if let Ok(state_sym) = prop_get(id, "proc.state") {
             if state_sym != 0 && state_sym <= u32::MAX as u64 {
                 let mut buf = [0u8; 64];
@@ -370,13 +379,19 @@ fn handle_top(is_head: bool, keep_alive: bool) -> (Vec<u8>, ResponseBody) {
             }
         }
 
-        // proc.priority (raw u64 value)
+        // proc.priority (raw u64)
         if let Ok(pri) = prop_get(id, "proc.priority") {
             json.key("priority");
             json.number_value(pri);
         }
 
-        // proc.exit_code (raw i32 stored as u64)
+        // proc.is_user
+        if let Ok(is_user) = prop_get(id, "proc.is_user") {
+            json.key("is_user");
+            json.bool_value(is_user != 0);
+        }
+
+        // proc.exit_code (only if non-zero)
         if let Ok(exit_code) = prop_get(id, "proc.exit_code") {
             if exit_code != 0 {
                 json.key("exit_code");

@@ -16,6 +16,7 @@ use alloc::string::ToString;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum UiNodeKind {
     Column,
+    Row,
     Button,
     Checkbox,
     Text,
@@ -171,6 +172,8 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             UiNodeKind::TextInput
         } else if ui_kind_value == ui_kind::LIST_ITEM {
             UiNodeKind::ListItem
+        } else if ui_kind_value == ui_kind::ROW {
+            UiNodeKind::Row
         } else {
             UiNodeKind::Unknown
         };
@@ -399,6 +402,8 @@ fn layout_node(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [Layou
     }
     if node.kind == UiNodeKind::Column {
         layout_column(tree, index, rect, rects);
+    } else if node.kind == UiNodeKind::Row {
+        layout_row(tree, index, rect, rects);
     } else if node.kind == UiNodeKind::Button {
         let label_rect = LayoutRect {
             x: rect.x + 8,
@@ -435,13 +440,46 @@ fn layout_column(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [Lay
             UiNodeKind::Text => TEXT_HEIGHT,
             UiNodeKind::TextInput => TEXT_INPUT_HEIGHT,
             UiNodeKind::ListItem => LIST_ITEM_HEIGHT,
-            UiNodeKind::Column => BUTTON_HEIGHT,
+            UiNodeKind::Column | UiNodeKind::Row => {
+                // Container children fill remaining vertical space
+                (rect.h - (y - rect.y) - COLUMN_PADDING).max(BUTTON_HEIGHT)
+            }
             UiNodeKind::Unknown => TEXT_HEIGHT,
         };
         let child_rect = LayoutRect { x, y, w, h };
         rects[child] = child_rect;
         layout_node(tree, child, child_rect, rects);
         y = y.saturating_add(h).saturating_add(COLUMN_GAP);
+    }
+}
+
+fn layout_row(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [LayoutRect]) {
+    let children = &tree.nodes[index].children;
+    let n = children.len() as i32;
+    if n == 0 {
+        return;
+    }
+    let gap = COLUMN_GAP;
+    let total_gap = gap * (n - 1);
+    let avail_w = (rect.w - total_gap).max(0);
+    let child_w = avail_w / n;
+    let mut x = rect.x;
+    for (i, &child) in children.iter().enumerate() {
+        // Give leftover pixels to the last child
+        let w = if i as i32 == n - 1 {
+            rect.w - (x - rect.x)
+        } else {
+            child_w
+        };
+        let child_rect = LayoutRect {
+            x,
+            y: rect.y,
+            w,
+            h: rect.h,
+        };
+        rects[child] = child_rect;
+        layout_node(tree, child, child_rect, rects);
+        x = x.saturating_add(w).saturating_add(gap);
     }
 }
 

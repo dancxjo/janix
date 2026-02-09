@@ -340,4 +340,32 @@ mod tests {
         // Non-numeric
         assert_eq!(parse_ipv4("a.b.c.d"), Err(()));
     }
+
+    #[test]
+    fn test_find_subsequence() {
+        let sep = b"\r\n\r\n";
+
+        // Found at end (typical header case)
+        let data = b"Hello world\r\n\r\n";
+        assert_eq!(find_subsequence(data, sep), Some(11));
+
+        // Found in middle
+        let data2 = b"Hello\r\n\r\nBody";
+        assert_eq!(find_subsequence(data2, sep), Some(5));
+
+        // Not found
+        let data3 = b"Hello world";
+        assert_eq!(find_subsequence(data3, sep), None);
+
+        // Found at start
+        let data4 = b"\r\n\r\nStart";
+        assert_eq!(find_subsequence(data4, sep), Some(0));
+
+        // Partial match
+        let data5 = b"Partial\r\n\rEnd";
+        assert_eq!(find_subsequence(data5, sep), None);
+
+        // Overlapping needle
+        assert_eq!(find_subsequence(b"aaaaa", b"aa"), Some(0));
+    }
 }

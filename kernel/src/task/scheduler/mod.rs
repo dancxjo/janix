@@ -26,10 +26,10 @@ pub use blocking::{
 pub use wait_queue::WaitQueue;
 pub use hooks::{
     add_user_mapping_current, alloc_user_stack_current, check_user_mapping_current,
-    current_priority_current, current_tid_current, exit_current, get_user_mapping_at_current,
-    handle_user_stack_fault_current, kill_by_tid_current, remove_user_mappings_current,
-    set_priority_current, sleep_ticks_current, spawn_process_current, spawn_user_thread_current,
-    task_status_current, yield_now_current,
+    current_priority_current, current_tid_current, dump_stats_current, exit_current,
+    get_user_mapping_at_current, handle_user_stack_fault_current, kill_by_tid_current,
+    remove_user_mappings_current, set_priority_current, sleep_ticks_current,
+    spawn_process_current, spawn_user_thread_current, task_status_current, yield_now_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -339,6 +339,7 @@ pub fn init<R: BootRuntime>() {
             hooks::ALLOC_USER_STACK_HOOK = Some(stack::alloc_user_stack::<R>);
             hooks::RUN_SCHEDULER_HOOK = Some(crate::task::run_scheduler::<R>);
             hooks::KILL_BY_TID_HOOK = Some(kill_by_tid::<R>);
+            hooks::DUMP_STATS_HOOK = Some(crate::task::dump_stats::<R>);
             crate::memory::set_map_user_page_hook(stack::map_user_page::<R>);
             crate::memory::set_map_user_page_perms_hook(stack::map_user_page_perms::<R>);
             crate::memory::set_unmap_user_page_hook(stack::unmap_user_page::<R>);
@@ -1062,11 +1063,76 @@ pub fn dump_stats<R: BootRuntime>() {
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-    crate::kinfo!(
-        "Sched: tasks={} cpu_current={:?}",
-        sched.task_count(),
-        sched.per_cpu.iter().map(|pc| pc.current).collect::<alloc::vec::Vec<_>>()
+
+    crate::kprint!("\n====== TASK DUMP ======\n");
+    crate::kprint!(
+        "CPUs: {} online / {} total\n",
+        sched.online_cpu_count,
+        sched.total_cpu_count
     );
+    crate::kprint!(
+        " {:>5}  {:>10}  {:>4}  {:>3}  {:>4}  {:>7}  {:>6}  {}\n",
+        "TID", "STATE", "PRI", "CPU", "USER", "SLICE", "KSTK", "AFFINITY"
+    );
+
+    let mut runnable_count = 0u32;
+    for task in sched.tasks.iter() {
+        let state_str = match task.state {
+            TaskState::Runnable => { runnable_count += 1; "Runnable" },
+            TaskState::Running  => { runnable_count += 1; "Running" },
+            TaskState::Blocked  => "Blocked",
+            TaskState::Dead     => "Dead",
+        };
+        let pri_str = match task.priority {
+            crate::task::TaskPriority::Idle     => "Idle",
+            crate::task::TaskPriority::Low      => "Low",
+            crate::task::TaskPriority::Normal   => "Norm",
+            crate::task::TaskPriority::High     => "High",
+            crate::task::TaskPriority::Realtime => "RT",
+        };
+        let cpu_str: alloc::string::String = match task.last_cpu {
+            Some(c) => alloc::format!("{}", c),
+            None    => alloc::string::String::from("-"),
+        };
+        let user_str = if task.is_user { "Y" } else { "N" };
+        let aff_str: alloc::string::String = match task.affinity {
+            crate::task::Affinity::Any       => alloc::string::String::from("Any"),
+            crate::task::Affinity::Pinned(c) => alloc::format!("Pin({})", c),
+        };
+        crate::kprint!(
+            " {:>5}  {:>10}  {:>4}  {:>3}  {:>4}  {:>3}/{:<3}  {:>5}K  {}\n",
+            task.id,
+            state_str,
+            pri_str,
+            cpu_str,
+            user_str,
+            task.timeslice_remaining,
+            types::DEFAULT_TIMESLICE,
+            task.kstack_size / 1024,
+            aff_str
+        );
+    }
+
+    // Per-CPU run-queue summary
+    for (i, pc) in sched.per_cpu.iter().enumerate() {
+        if i >= sched.online_cpu_count { break; }
+        let total: usize = pc.runq.iter().map(|q| q.len()).sum();
+        crate::kprint!(
+            "  CPU {}: current={:?} runq={} idle={:?}\n",
+            i, pc.current, total, pc.idle_task
+        );
+    }
+
+    crate::kprint!(
+        "Sleep queue: {} tasks\n",
+        sched.sleep_queue.len()
+    );
+    crate::kprint!(
+        "=== {} tasks, {} runnable ===\n\n",
+        sched.tasks.len(),
+        runnable_count
+    );
+
     rt.irq_restore(_irq);
 }
 

@@ -156,3 +156,8 @@ pub fn sys_task_kill(tid: usize) -> SysResult<usize> {
         Err(Errno::ESRCH)
     }
 }
+
+pub fn sys_task_dump() -> SysResult<usize> {
+    crate::task::scheduler::dump_stats_current();
+    Ok(0)
+}

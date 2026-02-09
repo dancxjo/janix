@@ -184,6 +184,13 @@ pub fn task_kill(tid: u64) -> Result<(), Errno> {
     abi::errors::errno(ret).map(|_| ())
 }
 
+/// Dump all task information to the kernel serial console (like `top`).
+pub fn task_dump() {
+    unsafe {
+        raw_syscall6(SYS_TASK_DUMP, 0, 0, 0, 0, 0, 0);
+    }
+}
+
 // ...
 pub fn trace_read(buf: &mut [abi::trace::TraceEvent]) -> Result<usize, Errno> {
     let ret = unsafe {

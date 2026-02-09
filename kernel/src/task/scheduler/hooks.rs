@@ -36,6 +36,7 @@ pub(crate) static mut CHECK_USER_MAPPING_HOOK: Option<fn(usize, usize, bool) -> 
 pub(crate) static mut GET_USER_MAPPING_AT_HOOK: Option<fn(usize) -> Option<VmRegionInfo>> = None;
 pub(crate) static mut RUN_SCHEDULER_HOOK: Option<fn() -> !> = None;
 pub(crate) static mut KILL_BY_TID_HOOK: Option<fn(u64) -> bool> = None;
+pub(crate) static mut DUMP_STATS_HOOK: Option<fn()> = None;
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
@@ -73,6 +74,12 @@ pub unsafe fn kill_by_tid_current(tid: u64) -> bool {
         hook(tid)
     } else {
         false
+    }
+}
+
+pub fn dump_stats_current() {
+    if let Some(hook) = unsafe { DUMP_STATS_HOOK } {
+        hook();
     }
 }
 

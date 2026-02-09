@@ -327,6 +327,12 @@ fn main(packed_handles: usize) -> ! {
                             }
                         };
                         if len > 0 {
+                            // Check for F2 (Trigger Task Dump)
+                            if let KeyEdge::Down { key: Key::F2, .. } = edge {
+                                info!("bristle: F2 pressed - dumping tasks...");
+                                stem::syscall::task_dump();
+                            }
+
                             // Check for F10 (Trigger Graph Dump)
                             if let KeyEdge::Down { key: Key::F10, .. } = edge {
                                 info!("bristle: F10 pressed - dumping graph...");

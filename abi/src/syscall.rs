@@ -23,6 +23,7 @@ pub const SYS_SLEEP_NS: u32 = 0x11;
 pub const SYS_SLEEP_MS: u32 = 0x12;
 pub const SYS_TASK_POLL: u32 = 0x13;
 pub const SYS_SET_PRIORITY: u32 = 0x14;
+pub const SYS_TASK_DUMP: u32 = 0x15;
 
 // ============================================================================
 // Block 0x20–0x2F: Time

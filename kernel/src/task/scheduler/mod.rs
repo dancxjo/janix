@@ -147,36 +147,44 @@ fn flush_graph_queue<R: BootRuntime>() {
     }
     let item_count = work_items.len() as u64;
     
+    // We'll collect items to be batched
+    let mut batch_items = alloc::vec::Vec::with_capacity(work_items.len());
+
     for item in work_items {
         match item {
             GraphWork::CreateThread { tid, priority, is_user, name, parent_tid } => {
-                // Create thread node synchronously (safe - no scheduler lock held)
-                if let Some(thing_id) = graphify::do_create_thread_node(
+                // Thread creation is rare and needs the ID, so we use optimized separate calls.
+                if let Some(thing_id) = graphify::do_create_thread_node_optimized(
                     tid, priority, is_user, name.as_deref(), sched_thing
                 ) {
-                    // Store mapping and get parent ThingId (briefly acquire scheduler lock)
                     let parent_thing = {
                         let lock = SCHEDULER.lock();
                         if let Some(ptr) = *lock {
                             let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
                             sched.task_graph.insert(tid, thing_id);
-                            
-                            // Get parent ThingId if available
                             parent_tid.and_then(|ptid| sched.task_graph.get(&ptid).copied())
                         } else {
                             None
                         }
-                        // lock drops here - BEFORE calling blocking operation
                     };
                     
-                    // Link to parent (blocking operation - must not hold scheduler lock)
                     if let Some(parent_thing) = parent_thing {
                         graphify::do_link_parent(thing_id, parent_thing, sched_thing);
                     }
                 }
             }
-            GraphWork::UpdateState { tid, state } => {
-                // Look up ThingId and update state
+            _ => {
+                // For other updates, we need the ThingId first
+                let tid = match &item {
+                    GraphWork::UpdateState { tid, .. } => *tid,
+                    GraphWork::SetExitCode { tid, .. } => *tid,
+                    GraphWork::SetPriority { tid, .. } => *tid,
+                    GraphWork::SetName { tid, .. } => *tid,
+                    GraphWork::SetLocation { tid, .. } => *tid,
+                    GraphWork::SetAffinity { tid, .. } => *tid,
+                    _ => unreachable!(),
+                };
+
                 let thing_id = {
                     let lock = SCHEDULER.lock();
                     if let Some(ptr) = *lock {
@@ -186,81 +194,17 @@ fn flush_graph_queue<R: BootRuntime>() {
                         None
                     }
                 };
+
                 if let Some(id) = thing_id {
-                    graphify::do_update_state(id, state);
-                }
-            }
-            GraphWork::SetExitCode { tid, code } => {
-                let thing_id = {
-                    let lock = SCHEDULER.lock();
-                    if let Some(ptr) = *lock {
-                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-                        sched.task_graph.get(&tid).copied()
-                    } else {
-                        None
-                    }
-                };
-                if let Some(id) = thing_id {
-                    graphify::do_set_exit_code(id, code);
-                }
-            }
-            GraphWork::SetPriority { tid, priority } => {
-                let thing_id = {
-                    let lock = SCHEDULER.lock();
-                    if let Some(ptr) = *lock {
-                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-                        sched.task_graph.get(&tid).copied()
-                    } else {
-                        None
-                    }
-                };
-                if let Some(id) = thing_id {
-                    graphify::do_set_priority(id, priority);
-                }
-            }
-            GraphWork::SetName { tid, name } => {
-                let thing_id = {
-                    let lock = SCHEDULER.lock();
-                    if let Some(ptr) = *lock {
-                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-                        sched.task_graph.get(&tid).copied()
-                    } else {
-                        None
-                    }
-                };
-                if let Some(id) = thing_id {
-                    graphify::do_set_name(id, &name);
-                }
-            }
-            GraphWork::SetLocation { tid, cpu_index } => {
-                let thing_id = {
-                    let lock = SCHEDULER.lock();
-                    if let Some(ptr) = *lock {
-                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-                        sched.task_graph.get(&tid).copied()
-                    } else {
-                        None
-                    }
-                };
-                if let Some(id) = thing_id {
-                    graphify::do_update_task_location(id, cpu_index);
-                }
-            }
-            GraphWork::SetAffinity { tid, cpu_index } => {
-                let thing_id = {
-                    let lock = SCHEDULER.lock();
-                    if let Some(ptr) = *lock {
-                        let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-                        sched.task_graph.get(&tid).copied()
-                    } else {
-                        None
-                    }
-                };
-                if let Some(id) = thing_id {
-                    graphify::do_set_affinity(id, cpu_index);
+                    batch_items.push((id, item));
                 }
             }
         }
+    }
+
+    // Process all collected updates in a single batch
+    if !batch_items.is_empty() {
+        graphify::do_flush_batch(&batch_items);
     }
 
     let elapsed_us = ticks_to_us::<R>(rt.mono_ticks().wrapping_sub(t0));

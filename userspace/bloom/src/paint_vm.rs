@@ -50,6 +50,7 @@ pub struct PaintResult {
 pub struct PaintPipeline {
     windows: BTreeMap<ThingId, WindowPaintState>,
     render_state: crate::render_state::RenderState,
+    icon_symbol_cache: BTreeMap<String, u32>,
 }
 
 impl PaintPipeline {
@@ -57,6 +58,7 @@ impl PaintPipeline {
         Self {
             windows: BTreeMap::new(),
             render_state: crate::render_state::RenderState::new(),
+            icon_symbol_cache: BTreeMap::new(),
         }
     }
 
@@ -173,7 +175,7 @@ impl PaintPipeline {
 
                         // Build and execute local drawlist
                         let local_rect = Rect::new(0, 0, rect.width(), rect.height());
-                        let list = build_drawlist(paint_bs, local_rect);
+                        let list = build_drawlist(paint_bs, local_rect, &mut self.icon_symbol_cache);
                         raster::execute(&mut surface, &list, false);
                         
                         // Insert into cache
@@ -640,7 +642,11 @@ fn window_rect(window_id: ThingId, screen_w: i32, screen_h: i32) -> Rect {
     Rect::new(x, y, w, h)
 }
 
-fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
+fn build_drawlist(
+    paint_bs: u64,
+    rect: Rect,
+    icon_symbol_cache: &mut BTreeMap<String, u32>,
+) -> DrawList {
     let mut list = DrawList::new();
     if paint_bs == 0 {
         return list;
@@ -657,7 +663,7 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
         if size > 0 {
             if let Ok(ptr) = bytespace_map(paint_bs) {
                 let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
-                decode_paint_ops(bytes, origin_x, origin_y, &mut list);
+                decode_paint_ops(bytes, origin_x, origin_y, &mut list, icon_symbol_cache);
                 let _ = bytespace_unmap(paint_bs, ptr);
                 list.commands().push(DrawCmd::PopClip);
                 return list;
@@ -667,13 +673,19 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
 
     // Fallback for platforms/targets where mapping can fail.
     if let Ok(bytes) = read_bytespace(paint_bs) {
-        decode_paint_ops(&bytes, origin_x, origin_y, &mut list);
+        decode_paint_ops(&bytes, origin_x, origin_y, &mut list, icon_symbol_cache);
     }
     list.commands().push(DrawCmd::PopClip);
     list
 }
 
-fn decode_paint_ops(bytes: &[u8], origin_x: i32, origin_y: i32, list: &mut DrawList) {
+fn decode_paint_ops(
+    bytes: &[u8],
+    origin_x: i32,
+    origin_y: i32,
+    list: &mut DrawList,
+    icon_symbol_cache: &mut BTreeMap<String, u32>,
+) {
     let mut reader = match PaintReader::new(bytes) {
         Some(reader) => reader,
         None => return,
@@ -727,12 +739,19 @@ fn decode_paint_ops(bytes: &[u8], origin_x: i32, origin_y: i32, list: &mut DrawL
             }
             PaintOpTag::DrawIcon => {
                 if let Some((x, y, w, h, name)) = decode_icon(op.payload) {
-                    if let Ok(id) = stem::thing::sys::intern(&name) {
-                        list.commands().push(DrawCmd::Icon {
-                            icon_name_id: id,
-                            dest: Rect::new(x + origin_x, y + origin_y, w, h),
-                        });
-                    }
+                    let icon_id = if let Some(id) = icon_symbol_cache.get(name.as_str()) {
+                        *id
+                    } else {
+                        let Ok(id) = stem::thing::sys::intern(&name) else {
+                            continue;
+                        };
+                        icon_symbol_cache.insert(name.clone(), id);
+                        id
+                    };
+                    list.commands().push(DrawCmd::Icon {
+                        icon_name_id: icon_id,
+                        dest: Rect::new(x + origin_x, y + origin_y, w, h),
+                    });
                 }
             }
             PaintOpTag::FillLinearGradient => {

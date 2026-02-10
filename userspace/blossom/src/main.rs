@@ -37,7 +37,7 @@ extern crate stem;
 mod graph_ui;
 
 use abi::root::RootWatchFilter;
-use abi::schema::{keys, kinds, ui_kind};
+use abi::schema::{keys, kinds};
 use abi::svg_protocol::{
     decode_request_tag, encode_error, RasterizeSvgRequest, RasterizeSvgResponse, SvgRequestTag,
     SvgSource, SvgStatus,
@@ -405,8 +405,8 @@ impl UiPipeline {
         graph: &mut graph_ui::SysGraph,
     ) -> Result<(), abi::errors::Errno> {
         let window_bg = prop_get(window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32;
-        let mut w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
-        let mut h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
+        let w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
+        let h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
         if w <= 0 || h <= 0 {
             return Ok(());
         }

@@ -144,7 +144,7 @@ impl ArchRuntime for AArch64Runtime {
         task::init_user_context(spec, kstack_top)
     }
 
-    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context) {
+    unsafe fn switch(&self, from: &mut Self::Context, to: &Self::Context, _to_tid: u64) {
         unsafe { task::switch(from, to) }
     }
 

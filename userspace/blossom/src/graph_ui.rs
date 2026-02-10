@@ -882,6 +882,7 @@ mod tests {
             rel_has_child: 201,
             rel_child_of: 202,
             rel_root_ui: 203,
+            rel_child_of: 202,
             kind_window: 100,
             kind_button: 101,
             kind_checkbox: 102,

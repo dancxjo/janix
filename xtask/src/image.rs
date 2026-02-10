@@ -495,9 +495,15 @@ fn build_userspace_app_with_features(
 ) -> Result<()> {
     println!("Building {} ...", name);
 
+    let extra_flags = if target.ends_with(".json") {
+        vec!["-Z", "json-target-spec"]
+    } else {
+        vec![]
+    };
+
     let mut cmd = cmd!(
         sh,
-        "cargo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem build --target {target} --profile {profile} -p {name}"
+        "cargo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem {extra_flags...} build --target {target} --profile {profile} -p {name}"
     )
     .env("RUSTFLAGS", "-Awarnings");
 

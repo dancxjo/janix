@@ -626,7 +626,8 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
             );
             break;
         }
-        let mut body = Vec::new();
+        let mut body = Vec::with_capacity(content_length.min(4096));
+        let mut pending_overread: Vec<u8> = Vec::new();
 
         if content_length > 0 {
             // Check if we already have the body in request_data
@@ -641,6 +642,10 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                         let remaining = content_length - body.len();
                         let copy_len = remaining.min(data.len());
                         body.extend_from_slice(&data[..copy_len]);
+                        // Preserve any over-read bytes so pipelined requests stay intact.
+                        if copy_len < data.len() {
+                            pending_overread.extend_from_slice(&data[copy_len..]);
+                        }
                         body_attempts = 0;
                     } else {
                         body_attempts += 1;
@@ -657,6 +662,9 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
 
         keep_alive = req.is_keep_alive();
         let (headers, resp_body) = handle_request(&req, &body, keep_alive);
+        if !pending_overread.is_empty() {
+            request_data.extend_from_slice(&pending_overread);
+        }
         
         // Send headers
         net.tcp_send(conn_handle, &headers);

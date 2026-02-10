@@ -99,6 +99,9 @@ pub fn parse_request(buf: &str) -> Result<Request<'_>, ParseError> {
     let method_str = parts.next().ok_or(ParseError::MalformedRequestLine)?;
     let path = parts.next().ok_or(ParseError::MalformedRequestLine)?;
     let version_str = parts.next().ok_or(ParseError::MalformedRequestLine)?;
+    if parts.next().is_some() {
+        return Err(ParseError::MalformedRequestLine);
+    }
     
     let method = parse_method(method_str)?;
     let version = parse_version(version_str)?;
@@ -240,6 +243,12 @@ mod tests {
     fn test_invalid_version() {
         let input = "GET / HTTP/2.0\r\n\r\n";
         assert!(matches!(parse_request(input), Err(ParseError::InvalidVersion)));
+    }
+
+    #[test]
+    fn test_reject_extra_request_line_tokens() {
+        let input = "GET / HTTP/1.1 extra\r\nHost: localhost\r\n\r\n";
+        assert!(matches!(parse_request(input), Err(ParseError::MalformedRequestLine)));
     }
 
     #[test]

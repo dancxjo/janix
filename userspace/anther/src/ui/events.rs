@@ -245,25 +245,68 @@ fn json_i32(body: &str, key: &str) -> Option<i32> {
 }
 
 fn find_value_start(body: &str, key: &str) -> Option<usize> {
-    let mut needle = String::new();
-    needle.push('"');
-    needle.push_str(key);
-    needle.push('"');
-
-    let key_pos = body.find(&needle)?;
-    let after_key = &body[key_pos + needle.len()..];
-    let colon_rel = after_key.find(':')?;
-    let mut idx = key_pos + needle.len() + colon_rel + 1;
     let bytes = body.as_bytes();
-    while idx < body.len() {
-        let b = bytes[idx];
-        if b == b' ' || b == b'\n' || b == b'\r' || b == b'\t' {
-            idx += 1;
+    let mut i = 0;
+    let mut in_string = false;
+    let mut escaped = false;
+
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            i += 1;
             continue;
         }
-        break;
+
+        if b != b'"' {
+            i += 1;
+            continue;
+        }
+
+        let key_start = i + 1;
+        let mut j = key_start;
+        let mut key_escaped = false;
+        while j < bytes.len() {
+            let c = bytes[j];
+            if key_escaped {
+                key_escaped = false;
+            } else if c == b'\\' {
+                key_escaped = true;
+            } else if c == b'"' {
+                break;
+            }
+            j += 1;
+        }
+        if j >= bytes.len() {
+            return None;
+        }
+
+        if &body[key_start..j] == key {
+            let mut k = j + 1;
+            while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b'\n' || bytes[k] == b'\r' || bytes[k] == b'\t') {
+                k += 1;
+            }
+            if k >= bytes.len() || bytes[k] != b':' {
+                i = j + 1;
+                continue;
+            }
+            k += 1;
+            while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b'\n' || bytes[k] == b'\r' || bytes[k] == b'\t') {
+                k += 1;
+            }
+            return Some(k);
+        }
+
+        in_string = false;
+        i = j + 1;
     }
-    Some(idx)
+    None
 }
 
 #[cfg(test)]
@@ -348,6 +391,19 @@ mod tests {
                 assert_eq!(window, 7);
                 assert_eq!(target, 9);
                 assert_eq!(&text[..text_len as usize], b"abc");
+            }
+            _ => panic!("unexpected event"),
+        }
+    }
+
+    #[test]
+    fn parse_ignores_key_names_inside_string_values() {
+        let body = "{\"kind\":\"text_input\",\"text\":\"window:999 target:888\",\"window\":7,\"target\":9}";
+        let parsed = parse_event_json(body).expect("parse");
+        match parsed.event {
+            UiEvent::TextInput { window, target, .. } => {
+                assert_eq!(window, 7);
+                assert_eq!(target, 9);
             }
             _ => panic!("unexpected event"),
         }

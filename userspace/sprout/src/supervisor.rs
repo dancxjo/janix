@@ -25,30 +25,33 @@ impl Supervisor {
     pub fn run_forever(&mut self) -> ! {
         info!("SPROUT: Supervisor starting (minimal mode)...");
 
-        // 1. Discovery - needed for device detection
+        // 1. Discovery + hardware bring-up.
+        // Secondary CPU bring-up is owned by kernel boot before Sprout starts.
         self.discover();
 
-        // 1.25. Spawn hardware stubs for non-virtio PCI devices we can detect.
+        // 2. Spawn hardware stubs for non-virtio PCI devices we can detect.
         crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
         crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
         crate::pipelines::setup_storage_pipeline(&mut self.tasks);
 
-        // 1.5. Setup audio pipeline (PRIORITY: Proof-of-life)
+        // 3. Start audio proof-of-life early and keep it responsive.
         crate::pipelines::setup_audio_pipeline(&mut self.tasks);
 
-        // 2. Setup display pipeline (needed for bloom)
+        // 4. Setup display pipeline (needed for bloom)
         let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
 
-        // 3. Setup input pipeline (ps2_kbd, ps2_mouse, bristle, bloom, echo)
+        // 5. Setup input pipeline (ps2_kbd, ps2_mouse, bristle, bloom, echo)
         crate::pipelines::setup_input_pipeline(&mut self.tasks, display_handles);
 
-        // 3.25. Core UI services (paint + assets + font), after bloom is up for fast wallpaper.
-        crate::pipelines::setup_ui_services(&mut self.tasks);
-
-        // Setup network pipeline (native NIC driver + net stack)
+        // 6. Launch blossom after bloom, then bring up networking in the same startup phase.
+        crate::pipelines::setup_blossom_service(&mut self.tasks);
+        crate::pipelines::setup_font_service(&mut self.tasks);
         crate::pipelines::setup_network_pipeline(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
         crate::pipelines::setup_taskman_service(&mut self.tasks);
+
+        // 7. Start flytrap last so it does not stampede startup dependencies.
+        crate::pipelines::setup_flytrap_service(&mut self.tasks);
 
         // Enter monitor loop
         info!("SPROUT: Startup complete. Entering monitor loop.");

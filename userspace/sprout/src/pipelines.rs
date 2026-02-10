@@ -666,6 +666,18 @@ pub fn setup_ui_services(tasks: &mut Vec<ManagedTask>) {
     spawn_ui_service(tasks, "/blossom", "svc.blossom", 2);
 }
 
+pub fn setup_blossom_service(tasks: &mut Vec<ManagedTask>) {
+    spawn_ui_service(tasks, "/blossom", "svc.blossom", 2);
+}
+
+pub fn setup_font_service(tasks: &mut Vec<ManagedTask>) {
+    spawn_ui_service(tasks, "/fontd", "svc.fontd", 2);
+}
+
+pub fn setup_flytrap_service(tasks: &mut Vec<ManagedTask>) {
+    spawn_ui_service(tasks, "/flytrap", "svc.flytrap", 2);
+}
+
 fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, priority: usize) {
     if tasks.iter().any(|t| t.name == name && t.pid.is_some()) {
         return;

@@ -14,8 +14,6 @@ use bristle::mouse::{MouseState, PointerEvent};
 use bristle::thigmonasty::{KeyEdge, KeyboardState};
 use stem::info;
 use stem::syscall::{PortHandle, port_recv, port_send, port_wait};
-#[cfg(feature = "diagnostic-apps")]
-use stem::syscall::{port_create, spawn_process};
 use stem::thing::sys as thingsys;
 
 /// Register Bristle in the Root graph and return the node ID
@@ -218,30 +216,49 @@ fn serialize_pointer_button_up(button: u8, timestamp_ns: u64, buf: &mut [u8]) ->
     22
 }
 
-/// Kill bloom and blossom processes by looking them up in the graph.
-/// Sprout's monitor loop will auto-restart them.
-fn restart_display_stack() {
+/// Kill all userspace tasks except Bristle, then respawn Sprout.
+fn reset_userspace_and_respawn_sprout() {
     use abi::schema::{keys, kinds};
     use stem::thing::ThingId;
 
     // Find all proc.Thread nodes
-    let mut thread_buf = [ThingId::default(); 64];
+    let mut thread_buf = [ThingId::default(); 256];
     let count = match thingsys::find(kinds::PROC_THREAD, &mut thread_buf) {
-        Ok(c) => c.min(64),
+        Ok(c) => c.min(256),
         Err(_) => {
             info!("bristle: failed to find proc.Thread nodes");
             return;
         }
     };
 
-    let mut killed = 0u32;
+    let mut killed = 0u64;
     for i in 0..count {
         let node = thread_buf[i];
+
+        // Only target userspace tasks.
+        let is_user = match thingsys::prop_get(node, keys::PROC_IS_USER) {
+            Ok(v) => v != 0,
+            Err(_) => false,
+        };
+        if !is_user {
+            continue;
+        }
 
         // Get the interned name symbol
         let name_sym = match thingsys::prop_get(node, keys::PROC_NAME) {
             Ok(v) => v,
-            Err(_) => continue,
+            Err(_) => {
+                // If name is missing, still kill userspace task.
+                let tid = match thingsys::prop_get(node, keys::PROC_TID) {
+                    Ok(v) => v,
+                    Err(_) => continue,
+                };
+                match stem::syscall::task_kill(tid) {
+                    Ok(()) => killed += 1,
+                    Err(e) => info!("bristle: failed to kill unnamed userspace tid={}: {:?}", tid, e),
+                }
+                continue;
+            }
         };
 
         // Resolve the symbol to a string
@@ -256,23 +273,28 @@ fn restart_display_stack() {
             Err(_) => continue,
         };
 
-        // Check if this is bloom or blossom (names include full path, e.g. /boot/bloom)
-        if name.ends_with("/bloom") || name.ends_with("/blossom") {
-            // Get the TID
-            let tid = match thingsys::prop_get(node, keys::PROC_TID) {
-                Ok(v) => v,
-                Err(_) => continue,
-            };
+        // Keep Bristle alive so it can perform the respawn.
+        if name.ends_with("/bristle") || name == "bristle" {
+            continue;
+        }
 
-            info!("bristle: killing {} (tid={})", name, tid);
-            match stem::syscall::task_kill(tid) {
-                Ok(()) => killed += 1,
-                Err(e) => info!("bristle: failed to kill {}: {:?}", name, e),
-            }
+        // Get the TID
+        let tid = match thingsys::prop_get(node, keys::PROC_TID) {
+            Ok(v) => v,
+            Err(_) => continue,
+        };
+
+        info!("bristle: killing userspace task {} (tid={})", name, tid);
+        match stem::syscall::task_kill(tid) {
+            Ok(()) => killed += 1,
+            Err(e) => info!("bristle: failed to kill {}: {:?}", name, e),
         }
     }
 
-    info!("bristle: killed {} display processes", killed);
+    match stem::syscall::spawn_process("/boot/sprout", 0) {
+        Ok(tid) => info!("bristle: userspace reset complete (killed {}), respawned sprout tid={}", killed, tid),
+        Err(e) => info!("bristle: userspace reset killed {}, but failed to respawn sprout: {:?}", killed, e),
+    }
 }
 
 #[stem::main]
@@ -350,10 +372,10 @@ fn main(packed_handles: usize) -> ! {
                                 stem::syscall::reboot();
                             }
 
-                            // Check for F12 (Kill and restart bloom + blossom)
+                            // Check for F12 (Kill all userspace and respawn sprout)
                             if let KeyEdge::Down { key: Key::F12, .. } = edge {
-                                info!("bristle: F12 pressed - restarting bloom + blossom...");
-                                restart_display_stack();
+                                info!("bristle: F12 pressed - resetting userspace and respawning sprout...");
+                                reset_userspace_and_respawn_sprout();
                             }
 
                             let mut sent = false;

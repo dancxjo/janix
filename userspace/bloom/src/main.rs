@@ -258,13 +258,7 @@ fn log_simd_backend() {
 
 
 fn clear_surface(surface: &mut surface::Surface, color: u32) {
-    let w = surface.width();
-    let h = surface.height();
-    for y in 0..h {
-        for x in 0..w {
-            surface.put_px(x, y, color);
-        }
-    }
+    raster::fill_rect_copy(surface, 0, 0, surface.width(), surface.height(), color);
 }
 
 fn clear_damage(surface: &mut surface::Surface, damage: &crate::damage::Damage, color: u32) {

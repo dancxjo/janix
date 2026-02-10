@@ -29,6 +29,15 @@ pub struct WindowHit {
     pub z: i32,
 }
 
+#[derive(Clone, Copy)]
+struct WindowFrameProps {
+    rect: Rect,
+    paint_gen: u64,
+    paint_bs: u64,
+    z: i32,
+    hidden: bool,
+}
+
 /// Internal window paint state with generation tracking.
 ///
 /// This structure tracks the state needed to construct a cache key.
@@ -76,21 +85,16 @@ impl PaintPipeline {
 
         for id in window_ids.iter().take(count) {
             active.insert(*id);
-            let rect = window_rect(*id, screen_w, screen_h);
-            if rect.width() <= 0 || rect.height() <= 0 {
+            let Some(props) = read_window_frame_props(*id, screen_w, screen_h) else {
                 continue;
-            }
-
-            let paint_gen = prop_get(*id, keys::UI_PAINT_GEN).unwrap_or(0);
-            let paint_bs = prop_get(*id, keys::UI_PAINT_BYTESPACE).unwrap_or(0);
-            let z = prop_get(*id, keys::UI_Z_INDEX).unwrap_or(0) as i32;
-            let hidden = prop_get(*id, keys::UI_HIDDEN).unwrap_or(0) != 0;
+            };
+            let rect = props.rect;
             let mut needs_rebuild = false;
             
             let entry = self.windows.entry(*id).or_insert_with(|| WindowPaintState {
                 rect,
-                z,
-                hidden,
+                z: props.z,
+                hidden: props.hidden,
                 paint_gen: 0,
                 paint_bs: 0,
                 geometry_gen: 0,
@@ -98,15 +102,16 @@ impl PaintPipeline {
             });
 
             // Track paint changes
-            if entry.paint_gen != paint_gen || entry.paint_bs != paint_bs {
+            if entry.paint_gen != props.paint_gen || entry.paint_bs != props.paint_bs {
                 needs_rebuild = true;
             }
             
             // Track geometry changes and bump geometry_gen AFTER updating values
-            let geometry_changed = entry.rect != rect || entry.z != z || entry.hidden != hidden;
+            let geometry_changed =
+                entry.rect != rect || entry.z != props.z || entry.hidden != props.hidden;
             if geometry_changed {
                 needs_rebuild = true;
-                if entry.rect != rect || entry.hidden != hidden {
+                if entry.rect != rect || entry.hidden != props.hidden {
                     damage.push(Rect::new(
                         entry.rect.x(),
                         entry.rect.y(),
@@ -118,10 +123,10 @@ impl PaintPipeline {
             
             // Update state before bumping geometry_gen to avoid initial mismatch
             entry.rect = rect;
-            entry.z = z;
-            entry.hidden = hidden;
-            entry.paint_gen = paint_gen;
-            entry.paint_bs = paint_bs;
+            entry.z = props.z;
+            entry.hidden = props.hidden;
+            entry.paint_gen = props.paint_gen;
+            entry.paint_bs = props.paint_bs;
             entry.asset_gen = current_asset_gen;
             
             if geometry_changed {
@@ -175,7 +180,8 @@ impl PaintPipeline {
 
                         // Build and execute local drawlist
                         let local_rect = Rect::new(0, 0, rect.width(), rect.height());
-                        let list = build_drawlist(paint_bs, local_rect, &mut self.icon_symbol_cache);
+                        let list =
+                            build_drawlist(props.paint_bs, local_rect, &mut self.icon_symbol_cache);
                         raster::execute(&mut surface, &list, false);
                         
                         // Insert into cache
@@ -623,11 +629,11 @@ fn blit_wallpaper_tiled(dst: &mut Surface, rect: Rect, wp: &Image) {
     }
 }
 
-fn window_rect(window_id: ThingId, screen_w: i32, screen_h: i32) -> Rect {
-    let mut w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
-    let mut h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
+fn read_window_frame_props(window_id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowFrameProps> {
+    let w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
+    let h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
     if w <= 0 || h <= 0 {
-        return Rect::new(0, 0, 0, 0);
+        return None;
     }
     let mut x = prop_get(window_id, keys::UI_X).unwrap_or(0) as i32;
     let mut y = prop_get(window_id, keys::UI_Y).unwrap_or(0) as i32;
@@ -639,7 +645,14 @@ fn window_rect(window_id: ThingId, screen_w: i32, screen_h: i32) -> Rect {
     if inset_bottom > 0 {
         y = screen_h - inset_bottom - h;
     }
-    Rect::new(x, y, w, h)
+
+    Some(WindowFrameProps {
+        rect: Rect::new(x, y, w, h),
+        paint_gen: prop_get(window_id, keys::UI_PAINT_GEN).unwrap_or(0),
+        paint_bs: prop_get(window_id, keys::UI_PAINT_BYTESPACE).unwrap_or(0),
+        z: prop_get(window_id, keys::UI_Z_INDEX).unwrap_or(0) as i32,
+        hidden: prop_get(window_id, keys::UI_HIDDEN).unwrap_or(0) != 0,
+    })
 }
 
 fn build_drawlist(

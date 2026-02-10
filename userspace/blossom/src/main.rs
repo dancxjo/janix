@@ -189,6 +189,15 @@ struct WindowState {
     last_focused: bool,
 }
 
+#[derive(Clone, Copy)]
+struct WindowProps {
+    scene_gen: u64,
+    w: i32,
+    h: i32,
+    bg: u32,
+    focused: bool,
+}
+
 struct UiWatcher {
     id: usize,
     key: u32,
@@ -269,6 +278,7 @@ impl UiPipeline {
 
     fn poll(&mut self) {
         let mut dirty: BTreeMap<ThingId, bool> = BTreeMap::new();
+        let mut props_by_window: BTreeMap<ThingId, WindowProps> = BTreeMap::new();
 
         for watcher in &mut self.watchers {
             while let Ok(len) =
@@ -329,9 +339,15 @@ impl UiPipeline {
 
         let mut window_ids: Vec<ThingId> = self.windows.keys().copied().collect();
         for window_id in window_ids.iter_mut() {
-            let gen = prop_get(*window_id, keys::UI_SCENE_GEN).unwrap_or(0);
-            let w = prop_get(*window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
-            let h = prop_get(*window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
+            let props = WindowProps {
+                scene_gen: prop_get(*window_id, keys::UI_SCENE_GEN).unwrap_or(0),
+                w: prop_get(*window_id, keys::UI_WIDTH).unwrap_or(0) as i32,
+                h: prop_get(*window_id, keys::UI_HEIGHT).unwrap_or(0) as i32,
+                bg: prop_get(*window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32,
+                focused: prop_get(*window_id, keys::UI_FOCUSED).unwrap_or(0) != 0,
+            };
+            props_by_window.insert(*window_id, props);
+
             let entry = self.windows.get(window_id).cloned().unwrap_or(WindowState {
                 last_gen: 0,
                 last_w: 0,
@@ -340,24 +356,29 @@ impl UiPipeline {
                 last_title_bs: 0,
                 last_focused: false,
             });
-            if gen != entry.last_gen || w != entry.last_w || h != entry.last_h {
+            if props.scene_gen != entry.last_gen || props.w != entry.last_w || props.h != entry.last_h {
                 dirty.insert(*window_id, true);
             }
-            let bg = prop_get(*window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32;
-            if bg != entry.last_bg {
+            if props.bg != entry.last_bg {
                 dirty.insert(*window_id, true);
             }
             // NOTE: Previously this block unconditionally marked every ui.Window
             // dirty each poll cycle, causing a repaint-every-frame feedback loop.
             // The gen/size/bg/focus checks above already cover all real change cases.
-            let focused = prop_get(*window_id, keys::UI_FOCUSED).unwrap_or(0) != 0;
-            if focused != entry.last_focused {
+            if props.focused != entry.last_focused {
                 dirty.insert(*window_id, true);
             }
         }
 
         for (window_id, _) in dirty {
-            if let Err(e) = self.process_window(window_id) {
+            let props = props_by_window.get(&window_id).copied().unwrap_or(WindowProps {
+                scene_gen: prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0),
+                w: prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32,
+                h: prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32,
+                bg: prop_get(window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32,
+                focused: prop_get(window_id, keys::UI_FOCUSED).unwrap_or(0) != 0,
+            });
+            if let Err(e) = self.process_window(window_id, props) {
                 info!(
                     "BLOSSOM: window {} update failed: {:?}",
                     window_id.to_u64_lossy(),
@@ -390,12 +411,16 @@ impl UiPipeline {
         added
     }
 
-    fn process_window(&mut self, window_id: ThingId) -> Result<(), abi::errors::Errno> {
+    fn process_window(
+        &mut self,
+        window_id: ThingId,
+        props: WindowProps,
+    ) -> Result<(), abi::errors::Errno> {
         let mut sys_graph = graph_ui::SysGraph;
         let Some(root_id) = graph_ui::find_root_ui(&sys_graph, &self.ui_symbols, window_id) else {
             return Ok(());
         };
-        self.process_graph_ui(window_id, root_id, &mut sys_graph)
+        self.process_graph_ui(window_id, root_id, &mut sys_graph, props)
     }
 
     fn process_graph_ui(
@@ -403,17 +428,19 @@ impl UiPipeline {
         window_id: ThingId,
         root_id: ThingId,
         graph: &mut graph_ui::SysGraph,
+        props: WindowProps,
     ) -> Result<(), abi::errors::Errno> {
-        let window_bg = prop_get(window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32;
-        let w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
-        let h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
+        let window_bg = props.bg;
+        let w = props.w;
+        let h = props.h;
         if w <= 0 || h <= 0 {
             return Ok(());
         }
-        let is_focused = prop_get(window_id, keys::UI_FOCUSED).unwrap_or(0) != 0;
+        let is_focused = props.focused;
 
         // Read window title text from the ui.title bytespace
-        let title_text = crate::read_string_prop(window_id, keys::UI_TITLE);
+        let title_bs = prop_get(window_id, keys::UI_TITLE).unwrap_or(0);
+        let title_text = read_string_bs(title_bs);
         let title_ref = title_text.as_deref();
 
         let tree = match graph_ui::build_tree(graph, &self.ui_symbols, root_id) {
@@ -463,11 +490,11 @@ impl UiPipeline {
         self.windows.insert(
             window_id,
             WindowState {
-                last_gen: prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0),
+                last_gen: props.scene_gen,
                 last_w: w,
                 last_h: h,
                 last_bg: window_bg,
-                last_title_bs: prop_get(window_id, keys::UI_TITLE).unwrap_or(0),
+                last_title_bs: title_bs,
                 last_focused: is_focused,
             },
         );
@@ -640,6 +667,10 @@ fn read_string_prop(node: ThingId, key: &str) -> Option<String> {
     if bs == 0 {
         return None;
     }
+    read_string_bs(bs)
+}
+
+fn read_string_bs(bs: u64) -> Option<String> {
     let bytes = read_bytespace(ThingId::from_u64(bs)).ok()?;
     core::str::from_utf8(&bytes)
         .ok()

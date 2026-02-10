@@ -491,7 +491,6 @@ fn blit_rect(
         // src_pixels is u32 slice, stride is u32 count
 
         for ix in 0..w {
-            let sx = src_rect.x() + ix;
             let d_x = dx + ix;
 
             if d_x < 0 || d_x >= dw {
@@ -501,16 +500,27 @@ fn blit_rect(
             }
 
             let src_px = src_pixels[s_off];
-            // Blend
-            let output = blend_pixel(src_px, unsafe {
-                // Read current dst
-                let ptr = dst.ptr.add(d_off);
-                let b = *ptr;
-                let g = *ptr.add(1);
-                let r = *ptr.add(2);
-                // DST is BGRX (ignore alpha/assume 255)
-                Color::rgb(r, g, b).to_u32()
-            });
+            let sa = (src_px >> 24) & 0xFF;
+
+            // Fast paths: avoid destination read when not needed.
+            if sa == 0 {
+                d_off += 4;
+                s_off += 1;
+                continue;
+            }
+            let output = if sa == 0xFF {
+                src_px
+            } else {
+                blend_pixel(src_px, unsafe {
+                    // Read current dst only for alpha blend.
+                    let ptr = dst.ptr.add(d_off);
+                    let b = *ptr;
+                    let g = *ptr.add(1);
+                    let r = *ptr.add(2);
+                    // DST is BGRX (ignore alpha/assume 255)
+                    Color::rgb(r, g, b).to_u32()
+                })
+            };
 
             unsafe {
                 let bytes = output.to_le_bytes();

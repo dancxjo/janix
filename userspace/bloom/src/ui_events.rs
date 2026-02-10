@@ -10,7 +10,8 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
 use abi::ui_event::{self, UiEvent};
 use stem::thing::sys::{
-    bytespace_create, bytespace_write, find, get_edges, get_kind, prop_get, prop_set,
+    bytespace_create, bytespace_info, bytespace_read, bytespace_write, find, get_edges, get_kind,
+    prop_get, prop_set,
 };
 use stem::thing::{ThingId, ThingKind};
 
@@ -319,19 +320,32 @@ fn write_event(window_id: ThingId, event: &UiEvent) {
     let Some(written) = ui_event::encode(event, &mut buf) else {
         return;
     };
-    let bs_id = prop_get(window_id, keys::UI_EVENT_QUEUE).unwrap_or(0);
-    let bs = if bs_id == 0 {
+    let existing_log = prop_get(window_id, keys::UI_EVENT_LOG).unwrap_or(0);
+    let (new_log, append_offset) = if existing_log == 0 {
         match bytespace_create(written, 0, 0) {
             Ok(id) => {
-                let _ = prop_set(window_id, keys::UI_EVENT_QUEUE, id.to_u64_lossy());
-                id
+                let _ = prop_set(window_id, keys::UI_EVENT_CURSOR, 0);
+                (id, 0usize)
             }
             Err(_) => return,
         }
     } else {
-        ThingId::from_u64(bs_id)
+        let old_id = ThingId::from_u64(existing_log);
+        let old_len = bytespace_info(old_id).unwrap_or(0);
+        let mut old = alloc::vec![0u8; old_len];
+        if old_len > 0 {
+            let _ = bytespace_read(old_id, 0, &mut old);
+        }
+        let Ok(new_id) = bytespace_create(old_len.saturating_add(written), 0, 0) else {
+            return;
+        };
+        if !old.is_empty() {
+            let _ = bytespace_write(new_id, 0, &old);
+        }
+        (new_id, old_len)
     };
-    let _ = bytespace_write(bs, 0, &buf[..written]);
+    let _ = bytespace_write(new_log, append_offset, &buf[..written]);
+    let _ = prop_set(window_id, keys::UI_EVENT_LOG, new_log.to_u64_lossy());
     let current = prop_get(window_id, keys::UI_EVENT_GEN).unwrap_or(0);
     let _ = prop_set(window_id, keys::UI_EVENT_GEN, current.saturating_add(1));
 }
@@ -572,7 +586,7 @@ mod tests {
             30,
         );
         graph.props.insert(
-            (window_id.to_u64_lossy(), keys::UI_EVENT_QUEUE.to_string()),
+            (window_id.to_u64_lossy(), keys::UI_EVENT_LOG.to_string()),
             0,
         );
         graph.props.insert(
@@ -607,21 +621,30 @@ mod tests {
             })
             .unwrap();
         let (_root, mut graph) = builder.finish_with_graph().unwrap();
-        let queue = graph.prop_get(window_id, keys::UI_EVENT_QUEUE).unwrap();
+        let log = graph.prop_get(window_id, keys::UI_EVENT_LOG).unwrap();
+        let mut append_at = 0usize;
 
         let focus = UiEvent::focus(window_id.to_u64_lossy(), input_id.to_u64_lossy());
         let buf = encode_event(&focus);
-        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
+        graph
+            .bytespace_write(ThingId::from_u64(log), append_at, &buf)
+            .unwrap();
+        append_at += buf.len();
         assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
 
         let insert = UiEvent::text_input(window_id.to_u64_lossy(), input_id.to_u64_lossy(), b"hi");
         let buf = encode_event(&insert);
-        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
+        graph
+            .bytespace_write(ThingId::from_u64(log), append_at, &buf)
+            .unwrap();
+        append_at += buf.len();
         assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
 
         let backspace = UiEvent::text_backspace(window_id.to_u64_lossy(), input_id.to_u64_lossy());
         let buf = encode_event(&backspace);
-        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf).unwrap();
+        graph
+            .bytespace_write(ThingId::from_u64(log), append_at, &buf)
+            .unwrap();
         assert!(reduce_window_events_with_graph(&mut graph, window_id).unwrap());
 
         let text_bs = graph.prop_get(input_id, keys::UI_TEXT).unwrap();

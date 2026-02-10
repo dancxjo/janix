@@ -7,7 +7,11 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
 use core::time::Duration;
 use stem::info;
-use stem::petals::Petals;
+use stem::petals::{
+    add_rule, attach_window_stylesheet, create_stylesheet, set_node_classes, Declarations, Petals,
+    SelectorKind, StyleSelector,
+};
+use stem::petals::graph::UiKey;
 use stem::thing::sys::{
     bytespace_create, bytespace_read, bytespace_write, create_node, describe_thing, find, link,
     prop_get, prop_set,
@@ -150,13 +154,56 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
 
 /// Build the initial UI tree for the clock window, returning the text node id.
 fn render_window_init(window_id: ThingId, time_text: &str) -> Option<ThingId> {
+    if let Ok(stylesheet) = create_stylesheet() {
+        let _ = attach_window_stylesheet(window_id, stylesheet);
+        let _ = add_rule(
+            stylesheet,
+            &StyleSelector {
+                kind: Some(SelectorKind::Text),
+                class: None,
+                key: None,
+                focused: false,
+            },
+            &Declarations {
+                color: Some(0xFF202020),
+                font_size_px: Some(24),
+                ..Default::default()
+            },
+        );
+        let _ = add_rule(
+            stylesheet,
+            &StyleSelector {
+                kind: None,
+                class: Some("clock"),
+                key: None,
+                focused: false,
+            },
+            &Declarations {
+                font_name: Some("DSEG7Classic-Regular"),
+                font_size_px: Some(64),
+                ..Default::default()
+            },
+        );
+        let _ = add_rule(
+            stylesheet,
+            &StyleSelector {
+                kind: None,
+                class: None,
+                key: Some("time"),
+                focused: false,
+            },
+            &Declarations {
+                color: Some(0xFFF04040),
+                ..Default::default()
+            },
+        );
+    }
+
     let mut ui = Petals::begin_window(window_id);
     let mut text_id = None;
     let root = ui.column(|ui| {
         let text = ui.text(time_text)?;
-        let _ = ui.set_font_name(text, "DSEG7Classic-Regular");
-        let _ = ui.set_font_size(text, 64);
-        let _ = ui.set_color(text, 0xFFF04040);
+        let _ = ui.key_node(text, UiKey("time"));
         text_id = Some(text);
         Ok(())
     });
@@ -166,6 +213,9 @@ fn render_window_init(window_id: ThingId, time_text: &str) -> Option<ThingId> {
     }
     if ui.finish().is_err() {
         return None;
+    }
+    if let Some(id) = text_id {
+        let _ = set_node_classes(id, &["clock"]);
     }
     text_id
 }

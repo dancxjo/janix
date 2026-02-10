@@ -145,7 +145,7 @@ fn append_event(graph: &mut impl EventGraph, window_id: ThingId, event: &UiEvent
     let written = ui_event::encode(event, &mut encoded).ok_or(EventError::Internal)?;
 
     let existing_queue = graph
-        .prop_get(window_id, keys::UI_EVENT_QUEUE)
+        .prop_get(window_id, keys::UI_EVENT_LOG)
         .map(ThingId::from_u64)
         .unwrap_or_default();
 
@@ -165,9 +165,10 @@ fn append_event(graph: &mut impl EventGraph, window_id: ThingId, event: &UiEvent
         return Err(EventError::Internal);
     }
 
-    if !graph.prop_set(window_id, keys::UI_EVENT_QUEUE, new_queue.to_u64_lossy()) {
+    if !graph.prop_set(window_id, keys::UI_EVENT_LOG, new_queue.to_u64_lossy()) {
         return Err(EventError::Internal);
     }
+    let _ = graph.prop_set(window_id, keys::UI_EVENT_CURSOR, 0);
 
     let current = graph.prop_get(window_id, keys::UI_EVENT_GEN).unwrap_or(0);
     let next = current.saturating_add(1);
@@ -311,9 +312,10 @@ mod tests {
 
     fn leak(key: &str) -> &'static str {
         match key {
-            keys::UI_EVENT_QUEUE => keys::UI_EVENT_QUEUE,
+            keys::UI_EVENT_LOG => keys::UI_EVENT_LOG,
+            keys::UI_EVENT_CURSOR => keys::UI_EVENT_CURSOR,
             keys::UI_EVENT_GEN => keys::UI_EVENT_GEN,
-            _ => keys::UI_EVENT_QUEUE,
+            _ => keys::UI_EVENT_LOG,
         }
     }
 
@@ -331,7 +333,7 @@ mod tests {
         assert_eq!(gen2, 2);
 
         let queue_id = graph
-            .prop_get(window, keys::UI_EVENT_QUEUE)
+            .prop_get(window, keys::UI_EVENT_LOG)
             .expect("queue id");
         let bytes = graph
             .bytespace_read_all(ThingId::from_u64(queue_id))

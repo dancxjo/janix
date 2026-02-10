@@ -44,12 +44,54 @@ pub struct UiNode {
     pub enabled: bool,
     pub icon_color: u32,
     pub selected: bool,
+    pub key: Option<String>,
+    pub classes: Vec<String>,
+    pub inline_color: Option<u32>,
+    pub inline_background: Option<u32>,
+    pub inline_font_name: Option<String>,
+    pub inline_font_size: Option<i32>,
+    pub inline_padding: Option<i32>,
+    pub inline_gap: Option<i32>,
 }
 
 #[derive(Clone, Debug)]
 pub struct UiTree {
     pub nodes: Vec<UiNode>,
     pub root: usize,
+}
+
+#[derive(Clone, Debug)]
+pub struct ComputedStyle {
+    pub color: u32,
+    pub background: Option<u32>,
+    pub font_name: String,
+    pub font_size: i32,
+    pub padding: i32,
+    pub gap: i32,
+    pub border_width: i32,
+    pub border_color: u32,
+    pub min_width: i32,
+    pub min_height: i32,
+    pub cursor_color: u32,
+}
+
+#[derive(Clone, Debug, Default)]
+struct StyleRule {
+    match_kind: Option<u64>,
+    match_class: Option<String>,
+    match_key: Option<String>,
+    match_focused: bool,
+    color: Option<u32>,
+    background: Option<u32>,
+    font_name: Option<String>,
+    font_size: Option<i32>,
+    padding: Option<i32>,
+    gap: Option<i32>,
+    border_width: Option<i32>,
+    border_color: Option<u32>,
+    min_width: Option<i32>,
+    min_height: Option<i32>,
+    cursor_color: Option<u32>,
 }
 
 pub struct UiSymbols {
@@ -201,8 +243,7 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
                 .or_else(|| graph.get_prop(id, keys::UI_INPUT_VALUE))
                 .unwrap_or(0);
             if bs != 0 {
-                let bytes = graph.read_bytespace(ThingId::from_u64(bs))?;
-                core::str::from_utf8(&bytes).ok().map(|s| s.to_string())
+                read_string_bs(graph, bs)
             } else {
                 None
             }
@@ -215,14 +256,29 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
                 .or_else(|| graph.get_prop(id, keys::UI_PLACEHOLDER))
                 .unwrap_or(0);
             if bs != 0 {
-                let bytes = graph.read_bytespace(ThingId::from_u64(bs))?;
-                core::str::from_utf8(&bytes).ok().map(|s| s.to_string())
+                read_string_bs(graph, bs)
             } else {
                 None
             }
         } else {
             None
         };
+        let key = graph
+            .get_prop(id, keys::UI_KEY)
+            .and_then(|bs| read_string_bs(graph, bs));
+        let classes = graph
+            .get_prop(id, keys::UI_CLASS)
+            .and_then(|bs| read_string_bs(graph, bs))
+            .map(parse_classes)
+            .unwrap_or_else(Vec::new);
+        let inline_font_name = graph
+            .get_prop(id, keys::UI_FONT_NAME)
+            .and_then(|bs| read_string_bs(graph, bs));
+        let inline_color = graph.get_prop(id, keys::UI_COLOR).map(|v| v as u32);
+        let inline_background = graph.get_prop(id, keys::UI_BG_COLOR).map(|v| v as u32);
+        let inline_font_size = graph.get_prop(id, keys::UI_FONT_SIZE).map(|v| v as i32);
+        let inline_padding = graph.get_prop(id, keys::UI_PADDING).map(|v| v as i32);
+        let inline_gap = graph.get_prop(id, keys::UI_GAP).map(|v| v as i32);
         let focused = graph.get_prop(id, keys::UI_FOCUSED).unwrap_or(0) != 0;
         let cursor = graph
             .get_prop(id, keys::UI_CURSOR)
@@ -250,6 +306,14 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             enabled,
             icon_color,
             selected,
+            key,
+            classes,
+            inline_color,
+            inline_background,
+            inline_font_name,
+            inline_font_size,
+            inline_padding,
+            inline_gap,
         });
         map.insert(id, index);
 
@@ -272,9 +336,331 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
     Some(UiTree { nodes, root })
 }
 
-pub fn layout_tree(tree: &UiTree, root_rect: LayoutRect) -> Vec<LayoutRect> {
+fn read_string_bs(graph: &impl UiGraph, bs: u64) -> Option<String> {
+    if bs == 0 {
+        return None;
+    }
+    let bytes = graph.read_bytespace(ThingId::from_u64(bs))?;
+    core::str::from_utf8(&bytes).ok().map(|s| s.to_string())
+}
+
+fn parse_classes(raw: String) -> Vec<String> {
+    raw.split_whitespace().map(|c| c.to_string()).collect()
+}
+
+fn default_style_for(node: &UiNode) -> ComputedStyle {
+    let (padding, gap) = match node.kind {
+        UiNodeKind::Column => (COLUMN_PADDING, COLUMN_GAP),
+        UiNodeKind::Row => (0, COLUMN_GAP),
+        _ => (0, COLUMN_GAP),
+    };
+    let (background, border_width) = match node.kind {
+        UiNodeKind::Button => (Some(BUTTON_BG), 1),
+        UiNodeKind::TextInput => (Some(INPUT_BG), 1),
+        UiNodeKind::Checkbox => (Some(CHECKBOX_FILL), 1),
+        _ => (None, 0),
+    };
+    ComputedStyle {
+        color: TEXT_COLOR,
+        background,
+        font_name: String::from("NotoSans-Regular"),
+        font_size: 16,
+        padding,
+        gap,
+        border_width,
+        border_color: BUTTON_BORDER,
+        min_width: 0,
+        min_height: 0,
+        cursor_color: TEXT_COLOR,
+    }
+}
+
+fn style_specificity(rule: &StyleRule) -> u16 {
+    let mut score = 0u16;
+    if rule.match_kind.is_some() {
+        score = score.saturating_add(1);
+    }
+    if rule.match_class.is_some() {
+        score = score.saturating_add(10);
+    }
+    if rule.match_key.is_some() {
+        score = score.saturating_add(100);
+    }
+    if rule.match_focused {
+        score = score.saturating_add(1);
+    }
+    score
+}
+
+fn rule_matches(rule: &StyleRule, node: &UiNode) -> bool {
+    if let Some(kind) = rule.match_kind {
+        if kind != node_kind_tag(node.kind) {
+            return false;
+        }
+    }
+    if let Some(class) = rule.match_class.as_deref() {
+        if !node.classes.iter().any(|c| c == class) {
+            return false;
+        }
+    }
+    if let Some(key) = rule.match_key.as_deref() {
+        if node.key.as_deref() != Some(key) {
+            return false;
+        }
+    }
+    if rule.match_focused && !node.focused {
+        return false;
+    }
+    true
+}
+
+fn node_kind_tag(kind: UiNodeKind) -> u64 {
+    match kind {
+        UiNodeKind::Text => ui_kind::TEXT,
+        UiNodeKind::Column => ui_kind::COLUMN,
+        UiNodeKind::Row => ui_kind::ROW,
+        UiNodeKind::TextInput => ui_kind::TEXT_INPUT,
+        UiNodeKind::Button => ui_kind::BUTTON,
+        UiNodeKind::Checkbox => ui_kind::CHECKBOX,
+        UiNodeKind::ListItem => ui_kind::LIST_ITEM,
+        UiNodeKind::Unknown => 0,
+    }
+}
+
+fn collect_stylesheet_rules(
+    graph: &impl UiGraph,
+    symbols: &UiSymbols,
+    stylesheet_id: ThingId,
+    out: &mut Vec<StyleRule>,
+) {
+    let mut edges = [Edge::default(); 128];
+    let count = graph.get_edges(stylesheet_id, &mut edges);
+    for edge in edges.iter().take(count) {
+        if edge.predicate.to_u64_lossy() != symbols.rel_has_child {
+            continue;
+        }
+        let rule_id = edge.to;
+        let rule = StyleRule {
+            match_kind: graph.get_prop(rule_id, keys::UI_STYLE_MATCH_KIND),
+            match_class: graph
+                .get_prop(rule_id, keys::UI_STYLE_MATCH_CLASS)
+                .and_then(|bs| read_string_bs(graph, bs)),
+            match_key: graph
+                .get_prop(rule_id, keys::UI_STYLE_MATCH_KEY)
+                .and_then(|bs| read_string_bs(graph, bs)),
+            match_focused: graph.get_prop(rule_id, keys::UI_STYLE_MATCH_FOCUSED).unwrap_or(0) != 0,
+            color: graph.get_prop(rule_id, keys::UI_STYLE_COLOR).map(|v| v as u32),
+            background: graph.get_prop(rule_id, keys::UI_STYLE_BACKGROUND).map(|v| v as u32),
+            font_name: graph
+                .get_prop(rule_id, keys::UI_STYLE_FONT_NAME)
+                .and_then(|bs| read_string_bs(graph, bs)),
+            font_size: graph.get_prop(rule_id, keys::UI_STYLE_FONT_SIZE).map(|v| v as i32),
+            padding: graph.get_prop(rule_id, keys::UI_STYLE_PADDING).map(|v| v as i32),
+            gap: graph.get_prop(rule_id, keys::UI_STYLE_GAP).map(|v| v as i32),
+            border_width: graph
+                .get_prop(rule_id, keys::UI_STYLE_BORDER_WIDTH)
+                .map(|v| v as i32),
+            border_color: graph
+                .get_prop(rule_id, keys::UI_STYLE_BORDER_COLOR)
+                .map(|v| v as u32),
+            min_width: graph.get_prop(rule_id, keys::UI_STYLE_MIN_WIDTH).map(|v| v as i32),
+            min_height: graph
+                .get_prop(rule_id, keys::UI_STYLE_MIN_HEIGHT)
+                .map(|v| v as i32),
+            cursor_color: graph
+                .get_prop(rule_id, keys::UI_STYLE_CURSOR_COLOR)
+                .map(|v| v as u32),
+        };
+        out.push(rule);
+    }
+}
+
+fn load_window_style_rules(
+    graph: &impl UiGraph,
+    symbols: &UiSymbols,
+    window_id: ThingId,
+) -> Vec<StyleRule> {
+    let mut rules = Vec::new();
+
+    // Global default can be set directly on the window as an override path.
+    if let Some(global) = graph.get_prop(window_id, keys::UI_STYLESHEET_DEFAULT) {
+        if global != 0 {
+            collect_stylesheet_rules(graph, symbols, ThingId::from_u64(global), &mut rules);
+        }
+    }
+
+    // Preferred global path: stylesheet default on the parent ui.Crown.
+    let mut edges = [Edge::default(); 16];
+    let count = graph.get_edges(window_id, &mut edges);
+    for edge in edges.iter().take(count) {
+        if edge.predicate.to_u64_lossy() != symbols.rel_child_of {
+            continue;
+        }
+        if let Some(global) = graph.get_prop(edge.to, keys::UI_STYLESHEET_DEFAULT) {
+            if global != 0 {
+                collect_stylesheet_rules(graph, symbols, ThingId::from_u64(global), &mut rules);
+            }
+        }
+    }
+
+    if let Some(local) = graph.get_prop(window_id, keys::UI_STYLESHEET) {
+        if local != 0 {
+            collect_stylesheet_rules(graph, symbols, ThingId::from_u64(local), &mut rules);
+        }
+    }
+
+    rules
+}
+
+pub fn compute_styles(
+    graph: &impl UiGraph,
+    symbols: &UiSymbols,
+    window_id: ThingId,
+    tree: &UiTree,
+) -> Vec<ComputedStyle> {
+    let rules = load_window_style_rules(graph, symbols, window_id);
+    let mut out = vec![ComputedStyle {
+        color: TEXT_COLOR,
+        background: None,
+        font_name: String::new(),
+        font_size: 16,
+        padding: COLUMN_PADDING,
+        gap: COLUMN_GAP,
+        border_width: 0,
+        border_color: BUTTON_BORDER,
+        min_width: 0,
+        min_height: 0,
+        cursor_color: TEXT_COLOR,
+    }; tree.nodes.len()];
+
+    for (idx, node) in tree.nodes.iter().enumerate() {
+        let mut style = default_style_for(node);
+        if let Some(parent) = node.parent {
+            // v1 inheritance list: color + font.*
+            style.color = out[parent].color;
+            style.font_name = out[parent].font_name.clone();
+            style.font_size = out[parent].font_size;
+        }
+
+        let mut color_rank: Option<(u16, usize)> = None;
+        let mut bg_rank: Option<(u16, usize)> = None;
+        let mut font_name_rank: Option<(u16, usize)> = None;
+        let mut font_size_rank: Option<(u16, usize)> = None;
+        let mut padding_rank: Option<(u16, usize)> = None;
+        let mut gap_rank: Option<(u16, usize)> = None;
+        let mut border_width_rank: Option<(u16, usize)> = None;
+        let mut border_color_rank: Option<(u16, usize)> = None;
+        let mut min_width_rank: Option<(u16, usize)> = None;
+        let mut min_height_rank: Option<(u16, usize)> = None;
+        let mut cursor_color_rank: Option<(u16, usize)> = None;
+
+        for (rule_idx, rule) in rules.iter().enumerate() {
+            if !rule_matches(rule, node) {
+                continue;
+            }
+            let rank = (style_specificity(rule), rule_idx);
+            if let Some(value) = rule.color {
+                if color_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.color = value;
+                    color_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.background {
+                if bg_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.background = Some(value);
+                    bg_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.font_name.as_ref() {
+                if font_name_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.font_name = value.clone();
+                    font_name_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.font_size {
+                if font_size_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.font_size = value;
+                    font_size_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.padding {
+                if padding_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.padding = value;
+                    padding_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.gap {
+                if gap_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.gap = value;
+                    gap_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.border_width {
+                if border_width_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.border_width = value.max(0);
+                    border_width_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.border_color {
+                if border_color_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.border_color = value;
+                    border_color_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.min_width {
+                if min_width_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.min_width = value.max(0);
+                    min_width_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.min_height {
+                if min_height_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.min_height = value.max(0);
+                    min_height_rank = Some(rank);
+                }
+            }
+            if let Some(value) = rule.cursor_color {
+                if cursor_color_rank.map(|r| r <= rank).unwrap_or(true) {
+                    style.cursor_color = value;
+                    cursor_color_rank = Some(rank);
+                }
+            }
+        }
+
+        // Inline node props override stylesheet rules for migration safety.
+        if let Some(value) = node.inline_color {
+            style.color = value;
+        }
+        if let Some(value) = node.inline_background {
+            style.background = Some(value);
+        }
+        if let Some(value) = node.inline_font_name.as_ref() {
+            style.font_name = value.clone();
+        }
+        if let Some(value) = node.inline_font_size {
+            style.font_size = value;
+        }
+        if let Some(value) = node.inline_padding {
+            style.padding = value;
+        }
+        if let Some(value) = node.inline_gap {
+            style.gap = value;
+        }
+
+        if style.font_size < 8 {
+            style.font_size = 8;
+        }
+        if style.cursor_color == 0 {
+            style.cursor_color = style.color;
+        }
+        out[idx] = style;
+    }
+    out
+}
+
+pub fn layout_tree(tree: &UiTree, styles: &[ComputedStyle], root_rect: LayoutRect) -> Vec<LayoutRect> {
     let mut rects = vec![LayoutRect::default(); tree.nodes.len()];
-    layout_node(tree, tree.root, root_rect, &mut rects);
+    layout_node(tree, styles, tree.root, root_rect, &mut rects);
     rects
 }
 
@@ -308,6 +694,7 @@ const CHROME_BORDER_COLOR: u32 = 0xFF606060;
 
 pub fn emit_paint(
     tree: &UiTree,
+    styles: &[ComputedStyle],
     rects: &[LayoutRect],
     window_w: i32,
     window_h: i32,
@@ -370,7 +757,7 @@ pub fn emit_paint(
     );
 
     // 5. Emit app content nodes
-    emit_node(tree, rects, tree.root, &mut builder);
+    emit_node(tree, styles, rects, tree.root, &mut builder);
     builder.finish()
 }
 
@@ -394,16 +781,22 @@ const INPUT_BORDER: u32 = 0xFF303030;
 const INPUT_BORDER_FOCUS: u32 = 0xFF1A73E8;
 const INPUT_PLACEHOLDER: u32 = 0xFF6E6E6E;
 
-fn layout_node(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [LayoutRect]) {
+fn layout_node(
+    tree: &UiTree,
+    styles: &[ComputedStyle],
+    index: usize,
+    rect: LayoutRect,
+    rects: &mut [LayoutRect],
+) {
     rects[index] = rect;
     let node = &tree.nodes[index];
     if node.children.is_empty() {
         return;
     }
     if node.kind == UiNodeKind::Column {
-        layout_column(tree, index, rect, rects);
+        layout_column(tree, styles, index, rect, rects);
     } else if node.kind == UiNodeKind::Row {
-        layout_row(tree, index, rect, rects);
+        layout_row(tree, styles, index, rect, rects);
     } else if node.kind == UiNodeKind::Button {
         let label_rect = LayoutRect {
             x: rect.x + 8,
@@ -428,107 +821,150 @@ fn layout_node(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [Layou
     }
 }
 
-fn layout_column(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [LayoutRect]) {
-    let mut y = rect.y + COLUMN_PADDING;
-    let x = rect.x + COLUMN_PADDING;
-    let w = (rect.w - COLUMN_PADDING * 2).max(0);
+fn text_height_for_style(style: &ComputedStyle) -> i32 {
+    (style.font_size + 6).max(TEXT_HEIGHT).max(style.min_height)
+}
+
+fn layout_column(
+    tree: &UiTree,
+    styles: &[ComputedStyle],
+    index: usize,
+    rect: LayoutRect,
+    rects: &mut [LayoutRect],
+) {
+    let padding = styles[index].padding.max(0);
+    let gap = styles[index].gap.max(0);
+    let mut y = rect.y + padding;
+    let x = rect.x + padding;
+    let w = (rect.w - padding * 2).max(0);
     for &child in &tree.nodes[index].children {
         let child_kind = tree.nodes[child].kind;
         let h = match child_kind {
-            UiNodeKind::Button => BUTTON_HEIGHT,
-            UiNodeKind::Checkbox => CHECKBOX_HEIGHT,
-            UiNodeKind::Text => TEXT_HEIGHT,
-            UiNodeKind::TextInput => TEXT_INPUT_HEIGHT,
-            UiNodeKind::ListItem => LIST_ITEM_HEIGHT,
+            UiNodeKind::Button => BUTTON_HEIGHT.max(styles[child].min_height),
+            UiNodeKind::Checkbox => CHECKBOX_HEIGHT.max(styles[child].min_height),
+            UiNodeKind::Text => text_height_for_style(&styles[child]),
+            UiNodeKind::TextInput => TEXT_INPUT_HEIGHT.max(styles[child].min_height),
+            UiNodeKind::ListItem => LIST_ITEM_HEIGHT.max(styles[child].min_height),
             UiNodeKind::Column | UiNodeKind::Row => {
                 // Container children fill remaining vertical space
-                (rect.h - (y - rect.y) - COLUMN_PADDING).max(BUTTON_HEIGHT)
+                (rect.h - (y - rect.y) - padding).max(BUTTON_HEIGHT)
             }
-            UiNodeKind::Unknown => TEXT_HEIGHT,
+            UiNodeKind::Unknown => text_height_for_style(&styles[child]),
         };
-        let child_rect = LayoutRect { x, y, w, h };
+        let child_w = if styles[child].min_width > 0 {
+            w.max(styles[child].min_width)
+        } else {
+            w
+        };
+        let child_rect = LayoutRect {
+            x,
+            y,
+            w: child_w,
+            h,
+        };
         rects[child] = child_rect;
-        layout_node(tree, child, child_rect, rects);
-        y = y.saturating_add(h).saturating_add(COLUMN_GAP);
+        layout_node(tree, styles, child, child_rect, rects);
+        y = y.saturating_add(h).saturating_add(gap);
     }
 }
 
-fn layout_row(tree: &UiTree, index: usize, rect: LayoutRect, rects: &mut [LayoutRect]) {
+fn layout_row(
+    tree: &UiTree,
+    styles: &[ComputedStyle],
+    index: usize,
+    rect: LayoutRect,
+    rects: &mut [LayoutRect],
+) {
     let children = &tree.nodes[index].children;
     let n = children.len() as i32;
     if n == 0 {
         return;
     }
-    let gap = COLUMN_GAP;
+    let gap = styles[index].gap.max(0);
+    let padding = styles[index].padding.max(0);
     let total_gap = gap * (n - 1);
-    let avail_w = (rect.w - total_gap).max(0);
+    let avail_w = (rect.w - padding * 2 - total_gap).max(0);
     let child_w = avail_w / n;
-    let mut x = rect.x;
+    let mut x = rect.x + padding;
     for (i, &child) in children.iter().enumerate() {
         // Give leftover pixels to the last child
         let w = if i as i32 == n - 1 {
-            rect.w - (x - rect.x)
+            (rect.x + rect.w - padding) - x
         } else {
             child_w
         };
         let child_rect = LayoutRect {
             x,
-            y: rect.y,
+            y: rect.y + padding,
             w,
-            h: rect.h,
+            h: (rect.h - padding * 2).max(0),
         };
         rects[child] = child_rect;
-        layout_node(tree, child, child_rect, rects);
+        layout_node(tree, styles, child, child_rect, rects);
         x = x.saturating_add(w).saturating_add(gap);
     }
 }
 
-fn emit_node(tree: &UiTree, rects: &[LayoutRect], index: usize, builder: &mut PaintBuilder) {
+fn emit_node(
+    tree: &UiTree,
+    styles: &[ComputedStyle],
+    rects: &[LayoutRect],
+    index: usize,
+    builder: &mut PaintBuilder,
+) {
     let node = &tree.nodes[index];
     if !node.visible {
         return;
     }
     let rect = rects[index];
+    let style = &styles[index];
+    if let Some(bg) = style.background {
+        builder.fill_rect(rect.x, rect.y, rect.w, rect.h, bg);
+    }
     match node.kind {
-        UiNodeKind::Button => draw_button(tree, rects, index, rect, builder),
-        UiNodeKind::Checkbox => draw_checkbox(tree, rects, index, rect, builder),
-        UiNodeKind::TextInput => draw_text_input(node, rect, builder),
+        UiNodeKind::Button => draw_button(tree, styles, rects, index, rect, builder),
+        UiNodeKind::Checkbox => draw_checkbox(tree, styles, rects, index, rect, builder),
+        UiNodeKind::TextInput => draw_text_input(node, style, rect, builder),
         UiNodeKind::Text => {
             if !is_label_child(tree, index) {
                 if let Some(text) = &node.text {
-                    draw_text(rect, text, builder);
+                    draw_text(style, rect, text, builder);
                 }
             }
         }
-        UiNodeKind::ListItem => draw_list_item(node, rect, builder),
+        UiNodeKind::ListItem => draw_list_item(node, style, rect, builder),
         _ => {}
     }
     for &child in &node.children {
-        emit_node(tree, rects, child, builder);
+        emit_node(tree, styles, rects, child, builder);
     }
 }
 
 fn draw_button(
     tree: &UiTree,
+    styles: &[ComputedStyle],
     _rects: &[LayoutRect],
     index: usize,
     rect: LayoutRect,
     builder: &mut PaintBuilder,
 ) {
     let node = &tree.nodes[index];
+    let style = &styles[index];
     let bg = if !node.enabled {
         BUTTON_BG_DISABLED
     } else if node.pressed {
         BUTTON_BG_PRESSED
     } else {
-        BUTTON_BG
+        style.background.unwrap_or(BUTTON_BG)
     };
     builder.fill_rect(rect.x, rect.y, rect.w, rect.h, bg);
+    let bw = style.border_width.max(1);
+    let bc = style.border_color;
     // Border
-    builder.fill_rect(rect.x, rect.y, rect.w, 1, BUTTON_BORDER);
-    builder.fill_rect(rect.x, rect.y + rect.h - 1, rect.w, 1, BUTTON_BORDER);
-    builder.fill_rect(rect.x, rect.y, 1, rect.h, BUTTON_BORDER);
-    builder.fill_rect(rect.x + rect.w - 1, rect.y, 1, rect.h, BUTTON_BORDER);
+    builder.fill_rect(rect.x, rect.y, rect.w, bw, bc);
+    builder.fill_rect(rect.x, rect.y + rect.h - bw, rect.w, bw, bc);
+    builder.fill_rect(rect.x, rect.y, bw, rect.h, bc);
+    builder.fill_rect(rect.x + rect.w - bw, rect.y, bw, rect.h, bc);
 
     if let Some(label_id) = node.label_id {
         if let Some((_label_idx, text)) = label_text(tree, label_id) {
@@ -538,19 +974,21 @@ fn draw_button(
                 w: rect.w.saturating_sub(16),
                 h: rect.h,
             };
-            draw_text(text_rect, text, builder);
+            draw_text(style, text_rect, text, builder);
         }
     }
 }
 
 fn draw_checkbox(
     tree: &UiTree,
+    styles: &[ComputedStyle],
     _rects: &[LayoutRect],
     index: usize,
     rect: LayoutRect,
     builder: &mut PaintBuilder,
 ) {
     let node = &tree.nodes[index];
+    let style = &styles[index];
     let box_rect = checkbox_box_rect(rect);
     builder.fill_rect(
         box_rect.x,
@@ -559,21 +997,21 @@ fn draw_checkbox(
         box_rect.h,
         CHECKBOX_FILL,
     );
-    builder.fill_rect(box_rect.x, box_rect.y, box_rect.w, 1, CHECKBOX_BORDER);
+    builder.fill_rect(box_rect.x, box_rect.y, box_rect.w, 1, style.border_color);
     builder.fill_rect(
         box_rect.x,
         box_rect.y + box_rect.h - 1,
         box_rect.w,
         1,
-        CHECKBOX_BORDER,
+        style.border_color,
     );
-    builder.fill_rect(box_rect.x, box_rect.y, 1, box_rect.h, CHECKBOX_BORDER);
+    builder.fill_rect(box_rect.x, box_rect.y, 1, box_rect.h, style.border_color);
     builder.fill_rect(
         box_rect.x + box_rect.w - 1,
         box_rect.y,
         1,
         box_rect.h,
-        CHECKBOX_BORDER,
+        style.border_color,
     );
 
     if node.checked {
@@ -583,8 +1021,8 @@ fn draw_checkbox(
         let y2 = box_rect.y + box_rect.h - 4;
         let x3 = box_rect.x + box_rect.w - 3;
         let y3 = box_rect.y + 3;
-        builder.stroke_line(x1, y1, x2, y2, 2, TEXT_COLOR);
-        builder.stroke_line(x2, y2, x3, y3, 2, TEXT_COLOR);
+        builder.stroke_line(x1, y1, x2, y2, 2, style.color);
+        builder.stroke_line(x2, y2, x3, y3, 2, style.color);
     }
 
     if let Some(label_id) = node.label_id {
@@ -595,18 +1033,18 @@ fn draw_checkbox(
                 w: rect.w.saturating_sub(box_rect.w + 8),
                 h: rect.h,
             };
-            draw_text(text_rect, text, builder);
+            draw_text(style, text_rect, text, builder);
         }
     }
 }
 
-fn draw_text_input(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) {
+fn draw_text_input(node: &UiNode, style: &ComputedStyle, rect: LayoutRect, builder: &mut PaintBuilder) {
     let border = if node.focused {
         INPUT_BORDER_FOCUS
     } else {
-        INPUT_BORDER
+        style.border_color
     };
-    builder.fill_rect(rect.x, rect.y, rect.w, rect.h, INPUT_BG);
+    builder.fill_rect(rect.x, rect.y, rect.w, rect.h, style.background.unwrap_or(INPUT_BG));
     builder.fill_rect(rect.x, rect.y, rect.w, 1, border);
     builder.fill_rect(rect.x, rect.y + rect.h - 1, rect.w, 1, border);
     builder.fill_rect(rect.x, rect.y, 1, rect.h, border);
@@ -620,22 +1058,22 @@ fn draw_text_input(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) 
     };
     let content = node.text.as_deref().unwrap_or("");
     if !content.is_empty() {
-        draw_text(text_rect, content, builder);
+        draw_text(style, text_rect, content, builder);
     } else if let Some(placeholder) = node.placeholder.as_deref() {
-        draw_text_colored(text_rect, placeholder, INPUT_PLACEHOLDER, builder);
+        draw_text_colored(style, text_rect, placeholder, INPUT_PLACEHOLDER, builder);
     }
     if node.focused {
         let cursor = core::cmp::min(node.cursor as usize, content.len()) as i32;
         let cursor_x = text_rect.x + cursor.saturating_mul(8);
         let cursor_h = (rect.h - 10).max(1);
-        builder.fill_rect(cursor_x, rect.y + 5, 1, cursor_h, TEXT_COLOR);
+        builder.fill_rect(cursor_x, rect.y + 5, 1, cursor_h, style.cursor_color);
     }
 }
 
 const LIST_ITEM_SELECTED_BG: u32 = 0xFF3078C0;
 const LIST_ITEM_SELECTED_TEXT: u32 = 0xFFFFFFFF;
 
-fn draw_list_item(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) {
+fn draw_list_item(node: &UiNode, style: &ComputedStyle, rect: LayoutRect, builder: &mut PaintBuilder) {
     // Draw selection highlight background
     if node.selected {
         builder.fill_rect(rect.x, rect.y, rect.w, rect.h, LIST_ITEM_SELECTED_BG);
@@ -648,7 +1086,11 @@ fn draw_list_item(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) {
     builder.fill_rect(rect.x, icon_y, icon_size, icon_size, icon_color);
 
     // Draw text label to the right of the icon
-    let text_color = if node.selected { LIST_ITEM_SELECTED_TEXT } else { TEXT_COLOR };
+    let text_color = if node.selected {
+        LIST_ITEM_SELECTED_TEXT
+    } else {
+        style.color
+    };
     if let Some(text) = &node.text {
         let text_rect = LayoutRect {
             x: rect.x + icon_size + 6,
@@ -656,16 +1098,22 @@ fn draw_list_item(node: &UiNode, rect: LayoutRect, builder: &mut PaintBuilder) {
             w: rect.w.saturating_sub(icon_size + 6),
             h: rect.h,
         };
-        draw_text_colored(text_rect, text, text_color, builder);
+        draw_text_colored(style, text_rect, text, text_color, builder);
     }
 }
 
-fn draw_text(rect: LayoutRect, text: &str, builder: &mut PaintBuilder) {
-    draw_text_colored(rect, text, TEXT_COLOR, builder);
+fn draw_text(style: &ComputedStyle, rect: LayoutRect, text: &str, builder: &mut PaintBuilder) {
+    draw_text_colored(style, rect, text, style.color, builder);
 }
 
-fn draw_text_colored(rect: LayoutRect, text: &str, color: u32, builder: &mut PaintBuilder) {
-    let size = 16;
+fn draw_text_colored(
+    style: &ComputedStyle,
+    rect: LayoutRect,
+    text: &str,
+    color: u32,
+    builder: &mut PaintBuilder,
+) {
+    let size = style.font_size.max(8);
     let baseline = rect.y + (rect.h + size) / 2 - 2;
     builder.draw_text_run(
         rect.x,
@@ -673,7 +1121,7 @@ fn draw_text_colored(rect: LayoutRect, text: &str, color: u32, builder: &mut Pai
         rect.w,
         rect.h,
         baseline,
-        "NotoSans-Regular",
+        &style.font_name,
         size,
         text,
         color,
@@ -882,7 +1330,6 @@ mod tests {
             rel_has_child: 201,
             rel_child_of: 202,
             rel_root_ui: 203,
-            rel_child_of: 202,
             kind_window: 100,
             kind_button: 101,
             kind_checkbox: 102,
@@ -890,8 +1337,10 @@ mod tests {
             kind_column: 104,
         };
         let tree = build_tree(&graph, &symbols, root).unwrap();
+        let styles = compute_styles(&graph, &symbols, ThingId::from_u64(99), &tree);
         let rects = layout_tree(
             &tree,
+            &styles,
             LayoutRect {
                 x: 0,
                 y: 0,
@@ -948,9 +1397,11 @@ mod tests {
             kind_column: 104,
         };
         let tree = build_tree(&graph, &symbols, root).unwrap();
+        let styles = compute_styles(&graph, &symbols, ThingId::from_u64(99), &tree);
 
         let rects = layout_tree(
             &tree,
+            &styles,
             LayoutRect {
                 x: 0,
                 y: 0,
@@ -1019,8 +1470,10 @@ mod tests {
             kind_column: 104,
         };
         let tree = build_tree(&graph, &symbols, root).unwrap();
+        let styles = compute_styles(&graph, &symbols, window_id, &tree);
         let rects = layout_tree(
             &tree,
+            &styles,
             LayoutRect {
                 x: 0,
                 y: 0,
@@ -1029,7 +1482,7 @@ mod tests {
             },
         );
         write_bounds(&mut graph, &tree, &rects);
-        let paint = emit_paint(&tree, &rects, 220, 140, 0xFFCCCCCC, false, None);
+        let paint = emit_paint(&tree, &styles, &rects, 220, 140, 0xFFCCCCCC, false, None);
         let mut reader = PaintReader::new(&paint).expect("paint reader");
         assert!(reader.next().is_some());
 
@@ -1066,7 +1519,7 @@ mod tests {
         let n = ui_event::encode(&event, &mut buf).unwrap();
         let queue = graph
             .props
-            .get(&(window_id.to_u64_lossy(), keys::UI_EVENT_QUEUE.to_string()))
+            .get(&(window_id.to_u64_lossy(), keys::UI_EVENT_LOG.to_string()))
             .copied()
             .unwrap();
         graph.bytespaces.insert(queue, buf[..n].to_vec());
@@ -1080,6 +1533,113 @@ mod tests {
             }
             _ => panic!("expected Toggled"),
         }
+    }
+
+    fn set_string_prop(graph: &mut TestGraph, id: ThingId, key: &str, value: &str) {
+        let bs = graph.bytespace_create(value.len()).unwrap();
+        graph.bytespace_write(bs, 0, value.as_bytes()).unwrap();
+        graph.prop_set(id, key, bs.to_u64_lossy()).unwrap();
+    }
+
+    #[test]
+    fn stylesheet_rules_apply_specificity_and_inheritance() {
+        let graph = TestGraph::new();
+        let window_id = ThingId::from_u64(501);
+        let mut builder = UiTreeBuilder::new(graph, window_id);
+        let root = builder
+            .column(|ui| {
+                let t1 = ui.text("A")?;
+                ui.key_node(t1, stem::petals::graph::UiKey("time"))?;
+                let t2 = ui.text("B")?;
+                ui.key_node(t2, stem::petals::graph::UiKey("plain"))?;
+                Ok(())
+            })
+            .unwrap();
+        let (_root, mut graph) = builder.finish_with_graph().unwrap();
+
+        let tree = {
+            let symbols = UiSymbols {
+                rel_has_child: 201,
+                rel_child_of: 202,
+                rel_root_ui: 203,
+                kind_window: 100,
+                kind_button: 101,
+                kind_checkbox: 102,
+                kind_text: 103,
+                kind_column: 104,
+            };
+
+            // Set class tags used by selectors.
+            let text_ids: Vec<ThingId> = graph
+                .edges
+                .iter()
+                .filter(|e| e.from == root && e.predicate.to_u64_lossy() == 201)
+                .map(|e| e.to)
+                .collect();
+            set_string_prop(&mut graph, text_ids[0], keys::UI_CLASS, "clock");
+
+            // Build stylesheet: kind(Text) < class(clock) < key(time)
+            let stylesheet = graph.create_node(kinds::CSS_STYLESHEET).unwrap();
+            graph
+                .prop_set(window_id, keys::UI_STYLESHEET, stylesheet.to_u64_lossy())
+                .unwrap();
+
+            let rule_kind = graph.create_node(kinds::CSS_RULE).unwrap();
+            graph.link(stylesheet, rels::HAS_CHILD, rule_kind).unwrap();
+            graph
+                .prop_set(rule_kind, keys::UI_STYLE_MATCH_KIND, ui_kind::TEXT)
+                .unwrap();
+            graph
+                .prop_set(rule_kind, keys::UI_STYLE_COLOR, 0xFF112233)
+                .unwrap();
+
+            let rule_class = graph.create_node(kinds::CSS_RULE).unwrap();
+            graph.link(stylesheet, rels::HAS_CHILD, rule_class).unwrap();
+            set_string_prop(&mut graph, rule_class, keys::UI_STYLE_MATCH_CLASS, "clock");
+            set_string_prop(&mut graph, rule_class, keys::UI_STYLE_FONT_NAME, "DSEG7Classic-Regular");
+            graph
+                .prop_set(rule_class, keys::UI_STYLE_FONT_SIZE, 64)
+                .unwrap();
+
+            let rule_key = graph.create_node(kinds::CSS_RULE).unwrap();
+            graph.link(stylesheet, rels::HAS_CHILD, rule_key).unwrap();
+            set_string_prop(&mut graph, rule_key, keys::UI_STYLE_MATCH_KEY, "time");
+            graph
+                .prop_set(rule_key, keys::UI_STYLE_COLOR, 0xFFF04040)
+                .unwrap();
+
+            // Parent color should inherit into plain text.
+            let parent_rule = graph.create_node(kinds::CSS_RULE).unwrap();
+            graph.link(stylesheet, rels::HAS_CHILD, parent_rule).unwrap();
+            graph
+                .prop_set(parent_rule, keys::UI_STYLE_MATCH_KIND, ui_kind::COLUMN)
+                .unwrap();
+            graph
+                .prop_set(parent_rule, keys::UI_STYLE_COLOR, 0xFF00AA00)
+                .unwrap();
+
+            let tree = build_tree(&graph, &symbols, root).unwrap();
+            let styles = compute_styles(&graph, &symbols, window_id, &tree);
+
+            let text_a = tree
+                .nodes
+                .iter()
+                .position(|n| n.key.as_deref() == Some("time"))
+                .unwrap();
+            let text_b = tree
+                .nodes
+                .iter()
+                .position(|n| n.key.as_deref() == Some("plain"))
+                .unwrap();
+
+            assert_eq!(styles[text_a].color, 0xFFF04040);
+            assert_eq!(styles[text_a].font_size, 64);
+            assert_eq!(styles[text_a].font_name, "DSEG7Classic-Regular");
+            assert_eq!(styles[text_b].color, 0xFF112233);
+            tree
+        };
+
+        assert_eq!(tree.nodes[tree.root].kind, UiNodeKind::Column);
     }
 }
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

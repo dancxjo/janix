@@ -195,6 +195,12 @@ pub mod keys {
     pub const UI_INPUT_VALUE: &str = "ui.input_value";
     /// Stable UI identity key (bytespace UTF-8 string)
     pub const UI_KEY: &str = "ui.key";
+    /// Optional class list (bytespace UTF-8 string, whitespace-separated)
+    pub const UI_CLASS: &str = "ui.class";
+    /// Optional stylesheet attached to a window (ThingId as u64)
+    pub const UI_STYLESHEET: &str = "ui.stylesheet";
+    /// Global default stylesheet (ThingId as u64), typically set on ui.Crown
+    pub const UI_STYLESHEET_DEFAULT: &str = "ui.stylesheet.default";
     /// Optional UI role/classification string for tooling (bytespace UTF-8 string)
     pub const UI_ROLE: &str = "ui.role";
     /// Whether a node can receive input focus (0/1)
@@ -242,7 +248,12 @@ pub mod keys {
     pub const UI_CHECKBOX_CHECKED: &str = "ui.checkbox.checked";
     pub const UI_CHECKBOX_INDETERMINATE: &str = "ui.checkbox.indeterminate";
     pub const UI_CHECKBOX_VALUE_ID: &str = "ui.checkbox.value_id";
+    /// Deprecated single-slot queue bytespace (superseded by UI_EVENT_LOG/UI_EVENT_CURSOR).
     pub const UI_EVENT_QUEUE: &str = "ui.event.queue";
+    /// Append-only UI event stream bytespace.
+    pub const UI_EVENT_LOG: &str = "ui.event.log";
+    /// Consumer cursor into UI_EVENT_LOG (byte offset).
+    pub const UI_EVENT_CURSOR: &str = "ui.event.cursor";
     pub const UI_EVENT_GEN: &str = "ui.event.gen";
     // DrawList (graph-native vector program) properties
     /// Bytespace id containing packed drawlist commands.
@@ -317,6 +328,23 @@ pub mod keys {
     pub const UI_BG_COLOR: &str = "ui.style.bg_color";
     pub const UI_FG_COLOR: &str = "ui.style.fg_color";
     pub const UI_FONT_SIZE_PX: &str = "ui.style.font_size_px";
+    // Declarative style rule selector fields.
+    pub const UI_STYLE_MATCH_KIND: &str = "ui.style.match.kind";
+    pub const UI_STYLE_MATCH_CLASS: &str = "ui.style.match.class";
+    pub const UI_STYLE_MATCH_KEY: &str = "ui.style.match.key";
+    pub const UI_STYLE_MATCH_FOCUSED: &str = "ui.style.match.focused";
+    // Declarative style rule value fields.
+    pub const UI_STYLE_COLOR: &str = "ui.style.color";
+    pub const UI_STYLE_BACKGROUND: &str = "ui.style.background";
+    pub const UI_STYLE_FONT_NAME: &str = "ui.style.font.name";
+    pub const UI_STYLE_FONT_SIZE: &str = "ui.style.font.size";
+    pub const UI_STYLE_PADDING: &str = "ui.style.padding";
+    pub const UI_STYLE_GAP: &str = "ui.style.gap";
+    pub const UI_STYLE_BORDER_WIDTH: &str = "ui.style.border.width";
+    pub const UI_STYLE_BORDER_COLOR: &str = "ui.style.border.color";
+    pub const UI_STYLE_MIN_WIDTH: &str = "ui.style.min_width";
+    pub const UI_STYLE_MIN_HEIGHT: &str = "ui.style.min_height";
+    pub const UI_STYLE_CURSOR_COLOR: &str = "ui.style.cursor.color";
     /// Snapshot bytespace id containing a view's latest presented pixels.
     ///
     /// Reserved for presenter-owned updates (Blossom).

@@ -447,6 +447,7 @@ impl UiPipeline {
             Some(tree) => tree,
             None => return Ok(()),
         };
+        let styles = graph_ui::compute_styles(graph, &self.ui_symbols, window_id, &tree);
 
         // Offset the client content area below the title bar chrome.
         // These constants must match graph_ui::CHROME_BORDER and CHROME_TITLE_BAR_HEIGHT.
@@ -462,9 +463,10 @@ impl UiPipeline {
             w: client_w.max(0),
             h: client_h.max(0),
         };
-        let rects = graph_ui::layout_tree(&tree, root_rect);
+        let rects = graph_ui::layout_tree(&tree, &styles, root_rect);
         graph_ui::write_bounds(graph, &tree, &rects);
-        let paint_bytes = graph_ui::emit_paint(&tree, &rects, w, h, window_bg, is_focused, title_ref);
+        let paint_bytes =
+            graph_ui::emit_paint(&tree, &styles, &rects, w, h, window_bg, is_focused, title_ref);
         // Reuse existing paint bytespace when possible to avoid leaking graph nodes.
         // Previously we called bytespace_create() on every repaint, accumulating
         // thousands of abandoned bytespace nodes that overwhelmed the graph service.

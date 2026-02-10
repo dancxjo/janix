@@ -406,23 +406,31 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
         Ok(())
     }
 
-    fn ensure_event_queue(&mut self) -> Result<()> {
+    fn ensure_event_log(&mut self) -> Result<()> {
         let existing = self
             .graph
-            .prop_get(self.window_id, keys::UI_EVENT_QUEUE)
+            .prop_get(self.window_id, keys::UI_EVENT_LOG)
             .unwrap_or(0);
         if existing == 0 {
-            let bs_id = self.graph.bytespace_create(128)?;
+            let bs_id = self.graph.bytespace_create(0)?;
             self.graph
-                .prop_set(self.window_id, keys::UI_EVENT_QUEUE, bs_id.to_u64_lossy())?;
+                .prop_set(self.window_id, keys::UI_EVENT_LOG, bs_id.to_u64_lossy())?;
+            self.graph.prop_set(self.window_id, keys::UI_EVENT_CURSOR, 0)?;
             self.graph.prop_set(self.window_id, keys::UI_EVENT_GEN, 0)?;
+        } else if self
+            .graph
+            .prop_get(self.window_id, keys::UI_EVENT_CURSOR)
+            .unwrap_or(0)
+            == 0
+        {
+            self.graph.prop_set(self.window_id, keys::UI_EVENT_CURSOR, 0)?;
         }
         Ok(())
     }
 
     fn finalize(&mut self) -> Result<ThingId> {
         if let Some(root) = self.root {
-            self.ensure_event_queue()?;
+            self.ensure_event_log()?;
             self.graph.link(self.window_id, rels::ROOT_UI, root)?;
             self.graph.link(root, rels::CHILD_OF, self.window_id)?;
             self.graph.link(self.window_id, rels::HAS_CHILD, root)?;
@@ -500,6 +508,24 @@ fn collect_window_nodes<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> R
     Ok(ordered)
 }
 
+fn read_bytespace_all<G: GraphBackend>(graph: &mut G, id: ThingId) -> Result<Vec<u8>> {
+    let len = graph.bytespace_info(id)?;
+    if len == 0 {
+        return Ok(Vec::new());
+    }
+    let mut buf = vec![0u8; len];
+    let mut offset = 0usize;
+    while offset < len {
+        let n = graph.bytespace_read(id, offset, &mut buf[offset..])?;
+        if n == 0 {
+            break;
+        }
+        offset = offset.saturating_add(n);
+    }
+    buf.truncate(offset);
+    Ok(buf)
+}
+
 fn clear_focus_in_window<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> Result<()> {
     for id in collect_window_nodes(graph, window_id)? {
         if graph.prop_get(id, keys::UI_FOCUSABLE).unwrap_or(0) != 0
@@ -544,49 +570,68 @@ fn next_char_end(text: &str, cursor: usize) -> usize {
 pub fn reduce_window_events_with_graph<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> Result<bool> {
     use abi::ui_event::UiEvent;
 
-    let queue_bs = graph.prop_get(window_id, keys::UI_EVENT_QUEUE).unwrap_or(0);
-    if queue_bs == 0 {
+    let event_log_bs = graph
+        .prop_get(window_id, keys::UI_EVENT_LOG)
+        .unwrap_or_else(|_| graph.prop_get(window_id, keys::UI_EVENT_QUEUE).unwrap_or(0));
+    if event_log_bs == 0 {
         return Ok(false);
     }
-    // Read up to 128 bytes (max single-event size in v1).
-    let mut buf = [0u8; 128];
-    let read = graph.bytespace_read(ThingId::from_u64(queue_bs), 0, &mut buf)?;
-    if read < ui_event::HEADER_SIZE {
+    let bytes = read_bytespace_all(graph, ThingId::from_u64(event_log_bs))?;
+    if bytes.len() < ui_event::HEADER_SIZE {
         return Ok(false);
     }
-    let (event, _consumed) = match ui_event::decode_one(&buf[..read]) {
-        Ok(pair) => pair,
-        Err(_) => return Ok(false),
-    };
-    // Extract window and target from the event for routing.
-    let (win, target) = match &event {
-        UiEvent::Focus { window, target } => (*window, *target),
-        UiEvent::Blur { window, target } => (*window, *target),
-        UiEvent::Activate { window, target } => (*window, *target),
-        UiEvent::Submit { window, target } => (*window, *target),
-        UiEvent::TextInput { window, target, .. } => (*window, *target),
-        UiEvent::TextBackspace { window, target } => (*window, *target),
-        UiEvent::TextDelete { window, target } => (*window, *target),
-        UiEvent::CursorMove { window, target, .. } => (*window, *target),
-        UiEvent::CursorSet { window, target, .. } => (*window, *target),
-        UiEvent::Select { window, target, .. } => (*window, *target),
-        UiEvent::Clicked { window, target, .. } => (*window, *target),
-        UiEvent::Toggled { window, target, .. } => (*window, *target),
-        UiEvent::PointerMove { window, .. } => (*window, 0),
-        UiEvent::PointerDown { window, target, .. } => (*window, *target),
-        UiEvent::PointerUp { window, target, .. } => (*window, *target),
-        UiEvent::Scroll { window, target, .. } => (*window, *target),
-        UiEvent::KeyDown { window, .. } => (*window, 0),
-        UiEvent::KeyUp { window, .. } => (*window, 0),
-        UiEvent::Resize { window, .. } => (*window, 0),
-        UiEvent::CloseRequested { window } => (*window, 0),
-        UiEvent::Unknown { .. } => return Ok(false),
-    };
-    if win != window_id.to_u64_lossy() {
+    let mut cursor = graph.prop_get(window_id, keys::UI_EVENT_CURSOR).unwrap_or(0) as usize;
+    if cursor >= bytes.len() {
         return Ok(false);
     }
-    let target = ThingId::from_u64(target);
-    match event {
+
+    let mut consumed_any = false;
+    let mut reduced_any = false;
+
+    while cursor < bytes.len() {
+        let (event, consumed) = match ui_event::decode_one(&bytes[cursor..]) {
+            Ok(pair) => pair,
+            Err(ui_event::DecodeError::Truncated) => break,
+            Err(_) => {
+                cursor = bytes.len();
+                consumed_any = true;
+                break;
+            }
+        };
+        cursor = cursor.saturating_add(consumed);
+        consumed_any = true;
+
+        // Extract window and target from the event for routing.
+        let (win, target) = match &event {
+            UiEvent::Focus { window, target } => (*window, *target),
+            UiEvent::Blur { window, target } => (*window, *target),
+            UiEvent::Activate { window, target } => (*window, *target),
+            UiEvent::Submit { window, target } => (*window, *target),
+            UiEvent::TextInput { window, target, .. } => (*window, *target),
+            UiEvent::TextBackspace { window, target } => (*window, *target),
+            UiEvent::TextDelete { window, target } => (*window, *target),
+            UiEvent::CursorMove { window, target, .. } => (*window, *target),
+            UiEvent::CursorSet { window, target, .. } => (*window, *target),
+            UiEvent::Select { window, target, .. } => (*window, *target),
+            UiEvent::Clicked { window, target, .. } => (*window, *target),
+            UiEvent::Toggled { window, target, .. } => (*window, *target),
+            UiEvent::PointerMove { window, .. } => (*window, 0),
+            UiEvent::PointerDown { window, target, .. } => (*window, *target),
+            UiEvent::PointerUp { window, target, .. } => (*window, *target),
+            UiEvent::Scroll { window, target, .. } => (*window, *target),
+            UiEvent::KeyDown { window, .. } => (*window, 0),
+            UiEvent::KeyUp { window, .. } => (*window, 0),
+            UiEvent::Resize { window, .. } => (*window, 0),
+            UiEvent::CloseRequested { window } => (*window, 0),
+            UiEvent::Unknown { .. } => continue,
+        };
+        if win != window_id.to_u64_lossy() {
+            continue;
+        }
+
+        reduced_any = true;
+        let target = ThingId::from_u64(target);
+        match event {
         UiEvent::Focus { .. } => {
             clear_focus_in_window(graph, window_id)?;
             graph.prop_set(target, keys::UI_FOCUSED, 1)?;
@@ -660,10 +705,16 @@ pub fn reduce_window_events_with_graph<G: GraphBackend>(graph: &mut G, window_id
         | UiEvent::Resize { .. }
         | UiEvent::CloseRequested { .. }
         | UiEvent::Unknown { .. } => {}
+        }
     }
-    let current = graph.prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0);
-    graph.prop_set(window_id, keys::UI_SCENE_GEN, current.saturating_add(1))?;
-    Ok(true)
+    if consumed_any {
+        graph.prop_set(window_id, keys::UI_EVENT_CURSOR, cursor as u64)?;
+    }
+    if reduced_any {
+        let current = graph.prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0);
+        graph.prop_set(window_id, keys::UI_SCENE_GEN, current.saturating_add(1))?;
+    }
+    Ok(reduced_any)
 }
 
 #[cfg(test)]
@@ -900,12 +951,16 @@ mod tests {
             .unwrap();
         let (_root, mut graph) = builder.finish_with_graph().unwrap();
 
-        let queue = graph.prop_get(window, keys::UI_EVENT_QUEUE).unwrap();
+        let log = graph.prop_get(window, keys::UI_EVENT_LOG).unwrap();
+        let mut append_at = 0usize;
 
         let focus = abi::ui_event::UiEvent::focus(window.to_u64_lossy(), input.to_u64_lossy());
         let mut buf = [0u8; 128];
         let n = abi::ui_event::encode(&focus, &mut buf).unwrap();
-        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf[..n]).unwrap();
+        graph
+            .bytespace_write(ThingId::from_u64(log), append_at, &buf[..n])
+            .unwrap();
+        append_at += n;
         assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
 
         let insert = abi::ui_event::UiEvent::text_input(
@@ -914,7 +969,10 @@ mod tests {
             b"hi",
         );
         let n = abi::ui_event::encode(&insert, &mut buf).unwrap();
-        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf[..n]).unwrap();
+        graph
+            .bytespace_write(ThingId::from_u64(log), append_at, &buf[..n])
+            .unwrap();
+        append_at += n;
         assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
 
         let backspace = abi::ui_event::UiEvent::text_backspace(
@@ -922,7 +980,9 @@ mod tests {
             input.to_u64_lossy(),
         );
         let n = abi::ui_event::encode(&backspace, &mut buf).unwrap();
-        graph.bytespace_write(ThingId::from_u64(queue), 0, &buf[..n]).unwrap();
+        graph
+            .bytespace_write(ThingId::from_u64(log), append_at, &buf[..n])
+            .unwrap();
         assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
 
         let text = read_string_prop(&mut graph, input, keys::UI_TEXT)
@@ -930,5 +990,38 @@ mod tests {
             .unwrap_or_default();
         assert_eq!(text, "h");
         assert_eq!(graph.prop_get(input, keys::UI_CURSOR).unwrap(), 1);
+    }
+
+    #[test]
+    fn reducer_consumes_each_event_once_with_cursor() {
+        let graph = FakeGraph::new();
+        let window = ThingId::from_u64(120);
+        let mut builder = UiTreeBuilder::new(graph, window);
+        let mut input = ThingId::default();
+        builder
+            .column(|ui| {
+                input = ui.text_input_keyed(UiKey("query_input"), "", "Search")?;
+                Ok(())
+            })
+            .unwrap();
+        let (_root, mut graph) = builder.finish_with_graph().unwrap();
+
+        let log = graph.prop_get(window, keys::UI_EVENT_LOG).unwrap();
+        let mut buf = [0u8; 128];
+        let event = abi::ui_event::UiEvent::text_input(
+            window.to_u64_lossy(),
+            input.to_u64_lossy(),
+            b"x",
+        );
+        let n = abi::ui_event::encode(&event, &mut buf).unwrap();
+        graph.bytespace_write(ThingId::from_u64(log), 0, &buf[..n]).unwrap();
+
+        assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
+        assert!(!reduce_window_events_with_graph(&mut graph, window).unwrap());
+
+        let text = read_string_prop(&mut graph, input, keys::UI_TEXT)
+            .unwrap()
+            .unwrap_or_default();
+        assert_eq!(text, "x");
     }
 }

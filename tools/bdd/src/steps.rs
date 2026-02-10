@@ -461,7 +461,7 @@ async fn machine_is_started(world: &mut ThingOsWorld) -> Result<(), StepError> {
 
 #[when("I wait for the system to boot")]
 async fn wait_for_boot(world: &mut ThingOsWorld) -> Result<(), StepError> {
-    let found = world.wait_for_serial("[CONTRACT]", 30.0).await;
+    let found = world.wait_for_serial("Entering scheduler loop", 30.0).await;
     if !found {
         capture_failure_diagnostics(world, "Entering scheduler loop").await;
         let log = world.get_serial_log().await;
@@ -845,7 +845,7 @@ async fn wait_for_ready_state(world: &mut ThingOsWorld) -> Result<(), StepError>
     };
 
     // Wait for scheduler loop entry as the primary "ready" signal
-    let found = world.wait_for_serial("[CONTRACT]", timeout).await;
+    let found = world.wait_for_serial("Entering scheduler loop", timeout).await;
 
     if !found {
         capture_failure_diagnostics(world, "system ready state").await;
@@ -1319,7 +1319,7 @@ async fn given_clock_ticking(world: &mut ThingOsWorld) -> Result<(), StepError> 
     }
 
     // Wait for system ready
-    let found = world.wait_for_serial("[CONTRACT]", 120.0).await;
+    let found = world.wait_for_serial("Entering scheduler loop", 120.0).await;
     if !found {
         return Err(StepError("System did not reach ready state".to_string()));
     }
@@ -1430,7 +1430,7 @@ async fn given_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
     }
 
     // Wait for system ready
-    let found = world.wait_for_serial("[CONTRACT]", 120.0).await;
+    let found = world.wait_for_serial("Entering scheduler loop", 120.0).await;
     if !found {
         return Err(StepError("System did not reach ready state".to_string()));
     }

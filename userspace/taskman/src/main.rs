@@ -19,6 +19,9 @@ use stem::thing::sys::{
 };
 use stem::petals::graph::UiKey;
 use stem::thing::ThingId;
+use abi::root::RootWatchFilter;
+use abi::types::{WatchMode, WatchSpec, WATCH_START_LATEST};
+use abi::watch;
 
 /// State color constants (ARGB)
 const COLOR_RUNNING: u32 = 0xFF4CAF50; // Green
@@ -76,6 +79,10 @@ struct TaskInfo {
     state: u64,
     tid: u64,
     priority: u64,
+    is_user: bool,
+    exit_code: Option<i32>,
+    current_cpu: Option<u64>,
+    affinity: Option<u64>,
 }
 
 /// Map task state values to icon colors.
@@ -168,7 +175,47 @@ fn collect_tasks() -> Vec<TaskInfo> {
                 let state = prop_get(id, keys::PROC_STATE).unwrap_or(0);
                 let tid = prop_get(id, keys::PROC_TID).unwrap_or(0);
                 let priority = prop_get(id, keys::PROC_PRIORITY).unwrap_or(0);
-                tasks.push(TaskInfo { id, name, state, tid, priority });
+                let is_user = prop_get(id, keys::PROC_IS_USER).unwrap_or(0) != 0;
+                let exit_val = prop_get(id, keys::PROC_EXIT_CODE).unwrap_or(0);
+                let exit_code = if state == 0 { Some(exit_val as i32) } else { None };
+
+                // Find current CPU (RUNS_ON edge)
+                let mut current_cpu = None;
+                let mut q_buf = [QueryRow::default(); 16];
+                let mut q = RestrictedQuery::new(&mut q_buf);
+                if let Ok(count) = q.get_edges(id, Some(rels::RUNS_ON), 16) {
+                    for i in 0..count {
+                        let cpu_id = ThingId::from_u64(q.buf[i].val_dst);
+                        if let Ok(cpu_idx) = prop_get(cpu_id, keys::PROC_TID) { // dev.Cpu uses proc.tid for CPU index
+                            current_cpu = Some(cpu_idx);
+                            break;
+                        }
+                    }
+                }
+
+                // Find affinity (PINNED_TO edge)
+                let mut affinity = None;
+                if let Ok(count) = q.get_edges(id, Some(rels::PINNED_TO), 16) {
+                    for i in 0..count {
+                        let cpu_id = ThingId::from_u64(q.buf[i].val_dst);
+                        if let Ok(cpu_idx) = prop_get(cpu_id, keys::PROC_TID) {
+                            affinity = Some(cpu_idx);
+                            break;
+                        }
+                    }
+                }
+
+                tasks.push(TaskInfo {
+                    id,
+                    name,
+                    state,
+                    tid,
+                    priority,
+                    is_user,
+                    exit_code,
+                    current_cpu,
+                    affinity,
+                });
             }
         }
 
@@ -217,6 +264,18 @@ fn extract_task_name(id: ThingId, desc: &str) -> String {
     format!("task_{:X}", id.to_u64_lossy())
 }
 
+/// Map task priority values to human-readable labels.
+fn priority_label(priority: u64) -> &'static str {
+    match priority {
+        0 => "Idle",
+        1 => "Low",
+        2 => "Normal",
+        3 => "High",
+        4 => "Realtime",
+        _ => "?",
+    }
+}
+
 /// Build or rebuild the UI tree with the current task list.
 /// Returns the index of the currently-selected task (if any).
 fn render_task_list(window_id: ThingId, tasks: &[TaskInfo]) -> Option<usize> {
@@ -237,7 +296,7 @@ fn render_task_list(window_id: ThingId, tasks: &[TaskInfo]) -> Option<usize> {
                         state_label(task.state)
                     );
                     // Stable key based on process ThingId so bloom's selection survives rebuilds
-                    let key_str = format!("task_{}", task.id.to_u64_lossy());
+                    let key_str = format!("task_{:X}", task.id.to_u64_lossy());
                     let item_id = ui.list_item_keyed(UiKey(&key_str), &label, color)?;
                     // Check if this item is selected in the graph
                     if prop_get(item_id, keys::UI_SELECTED).unwrap_or(0) != 0 {
@@ -255,9 +314,26 @@ fn render_task_list(window_id: ThingId, tasks: &[TaskInfo]) -> Option<usize> {
             if let Some(idx) = selected_index {
                 let t = &tasks[idx];
                 ui.text(&format!("Name: {}", t.name))?;
+                ui.text(&format!("Type: {}", if t.is_user { "User" } else { "System" }))?;
                 ui.text(&format!("State: {}", state_label(t.state)))?;
                 ui.text(&format!("TID: {}", t.tid))?;
-                ui.text(&format!("Priority: {}", t.priority))?;
+                ui.text(&format!("Priority: {}", priority_label(t.priority)))?;
+                
+                if let Some(cpu) = t.current_cpu {
+                    ui.text(&format!("CPU: {}", cpu))?;
+                } else {
+                    ui.text("CPU: -")?;
+                }
+                
+                if let Some(aff) = t.affinity {
+                    ui.text(&format!("Affinity: CPU {}", aff))?;
+                } else {
+                    ui.text("Affinity: Any")?;
+                }
+
+                if let Some(exit) = t.exit_code {
+                    ui.text(&format!("Exit Code: {}", exit))?;
+                }
             } else {
                 ui.text("Select a process")?;
             }
@@ -321,20 +397,69 @@ fn main() -> ! {
     prop_set(win, keys::UI_X, 8).ok();
     prop_set(win, keys::UI_Y, 30).ok();
 
-    // Initial render with empty state
-    let initial_tasks = collect_tasks();
-    render_task_list(win, &initial_tasks);
+    // 4. Initial render
+    let mut tasks = collect_tasks();
+    render_task_list(win, &tasks);
 
     info!(
         "TASKMAN: Window created, found {} initial tasks",
-        initial_tasks.len()
+        tasks.len()
     );
 
-    // 3. Main loop: refresh task list every 2 seconds
-    loop {
-        stem::sleep(Duration::from_secs(2));
+    // 5. Setup watches for reactive updates
+    let mut watchers = Vec::new();
 
-        let tasks = collect_tasks();
-        render_task_list(win, &tasks);
+    // Watch for selection changes (UI_SCENE_GEN on the window)
+    if let Ok(pred) = stem::thing::sys::intern(keys::UI_SCENE_GEN) {
+        let filter = RootWatchFilter::predicate(pred);
+        let spec = WatchSpec {
+            mode: WatchMode::StreamOnly as u32,
+            start_seq: WATCH_START_LATEST,
+            filter_ptr: &filter as *const _ as u64,
+            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+            ..Default::default()
+        };
+        if let Ok(id) = stem::syscall::root_watch_open(&spec) {
+            watchers.push(id);
+        }
+    }
+
+    // Watch for task changes (proc.Thread kind)
+    if let Ok(kind_id) = stem::thing::sys::intern(kinds::PROC_THREAD) {
+        let filter = RootWatchFilter::kind(kind_id);
+        let spec = WatchSpec {
+            mode: WatchMode::StreamOnly as u32,
+            start_seq: WATCH_START_LATEST,
+            filter_ptr: &filter as *const _ as u64,
+            filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+            ..Default::default()
+        };
+        if let Ok(id) = stem::syscall::root_watch_open(&spec) {
+            watchers.push(id);
+        }
+    }
+
+    // 6. Reactive main loop
+    let mut watch_buf = [0u8; 4096];
+    let mut seq = 0u64;
+
+    loop {
+        let mut dirty = false;
+
+        for &watcher in &watchers {
+            // Non-blocking poll of the watch stream
+            if let Ok(len) = stem::syscall::root_watch_next(watcher, &mut seq, &mut watch_buf) {
+                if len > 0 {
+                    dirty = true;
+                }
+            }
+        }
+
+        if dirty {
+            tasks = collect_tasks();
+            render_task_list(win, &tasks);
+        }
+
+        stem::sleep(Duration::from_millis(50));
     }
 }

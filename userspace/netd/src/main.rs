@@ -58,6 +58,37 @@ fn main(_arg: usize) -> ! {
     let mac_addr = EthernetAddress(mac);
     let config = Config::new(mac_addr.into());
     let mut iface = Interface::new(config, &mut device, IpcNicDevice::now());
+
+    // Create socket API port early so it's available in the graph immediately
+    let (api_write_port, api_read_port) = match port_create(8192) {
+        Ok((w, r)) => {
+            info!("NETD: Created socket API port (write={}, read={})", w, r);
+            (w, r)
+        }
+        Err(e) => {
+            error!("NETD: Failed to create socket API port: {:?}", e);
+            loop {
+                stem::time::sleep_ms(1000);
+            }
+        }
+    };
+
+    // Publish network stack node early
+    let net_id = thingsys::create_node("svc.net.Stack").expect("NETD: Failed to create svc.net.Stack node");
+    
+    let mac_packed = {
+        (mac[0] as u64) |
+        ((mac[1] as u64) << 8) |
+        ((mac[2] as u64) << 16) |
+        ((mac[3] as u64) << 24) |
+        ((mac[4] as u64) << 32) |
+        ((mac[5] as u64) << 40)
+    };
+    thingsys::prop_set(net_id, "net.mac", mac_packed).ok();
+    thingsys::prop_set(net_id, "net.socket_api", api_write_port as u64).ok();
+    thingsys::prop_set(net_id, "net.ip", 0).ok(); // Offline initially
+    
+    info!("NETD: Published initial stack node {:?} to graph", net_id);
     
     // Start DHCP
     info!("NETD: Starting DHCP...");
@@ -77,75 +108,37 @@ fn main(_arg: usize) -> ! {
         }
     };
 
-    // Publish network configuration to graph
-    if let Ok(net_id) = thingsys::create_node("svc.net.Stack") {
-        // Pack IP address into u64
-        let ip_packed = {
-            let octets = dhcp_config.ip.as_bytes();
-            (octets[0] as u64) |
-            ((octets[1] as u64) << 8) |
-            ((octets[2] as u64) << 16) |
-            ((octets[3] as u64) << 24)
-        };
-        thingsys::prop_set(net_id, "net.ip", ip_packed).ok();
-        
-        let gw_packed = {
-            let octets = dhcp_config.gateway.as_bytes();
-            (octets[0] as u64) |
-            ((octets[1] as u64) << 8) |
-            ((octets[2] as u64) << 16) |
-            ((octets[3] as u64) << 24)
-        };
-        thingsys::prop_set(net_id, "net.gateway", gw_packed).ok();
-        
-        let dns_packed = {
-            let octets = dhcp_config.dns.as_bytes();
-            (octets[0] as u64) |
-            ((octets[1] as u64) << 8) |
-            ((octets[2] as u64) << 16) |
-            ((octets[3] as u64) << 24)
-        };
-        thingsys::prop_set(net_id, "net.dns", dns_packed).ok();
-        
-        let mac_packed = {
-            (mac[0] as u64) |
-            ((mac[1] as u64) << 8) |
-            ((mac[2] as u64) << 16) |
-            ((mac[3] as u64) << 24) |
-            ((mac[4] as u64) << 32) |
-            ((mac[5] as u64) << 40)
-        };
-        thingsys::prop_set(net_id, "net.mac", mac_packed).ok();
-        
-        info!("NETD: Published network configuration to graph (IP: {}, MAC: {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x})", 
-            dhcp_config.ip, mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    }
+    // Update network configuration in graph
+    let ip_packed = {
+        let octets = dhcp_config.ip.as_bytes();
+        (octets[0] as u64) |
+        ((octets[1] as u64) << 8) |
+        ((octets[2] as u64) << 16) |
+        ((octets[3] as u64) << 24)
+    };
+    thingsys::prop_set(net_id, "net.ip", ip_packed).ok();
+    
+    let gw_packed = {
+        let octets = dhcp_config.gateway.as_bytes();
+        (octets[0] as u64) |
+        ((octets[1] as u64) << 8) |
+        ((octets[2] as u64) << 16) |
+        ((octets[3] as u64) << 24)
+    };
+    thingsys::prop_set(net_id, "net.gateway", gw_packed).ok();
+    
+    let dns_packed = {
+        let octets = dhcp_config.dns.as_bytes();
+        (octets[0] as u64) |
+        ((octets[1] as u64) << 8) |
+        ((octets[2] as u64) << 16) |
+        ((octets[3] as u64) << 24)
+    };
+    thingsys::prop_set(net_id, "net.dns", dns_packed).ok();
+    
+    info!("NETD: Updated network configuration in graph (IP: {})", dhcp_config.ip);
 
     info!("NETD: Network stack ready, entering service loop");
-
-    // Create socket API port
-    let (api_write_port, api_read_port) = match port_create(8192) {
-        Ok((w, r)) => {
-            info!("NETD: Created socket API port (write={}, read={})", w, r);
-            (w, r)
-        }
-        Err(e) => {
-            error!("NETD: Failed to create socket API port: {:?}", e);
-            loop {
-                stem::time::sleep_ms(1000);
-            }
-        }
-    };
-
-    // Publish socket API port to graph
-    let mut net_buf = [ThingId::default(); 1];
-    if let Ok(count) = thingsys::find("svc.net.Stack", &mut net_buf) {
-        if count > 0 {
-            let net_id = net_buf[0];
-            thingsys::prop_set(net_id, "net.socket_api", api_write_port as u64).ok();
-            info!("NETD: Published socket API port {} to graph", api_write_port);
-        }
-    }
 
     // Initialize socket API
     let mut socket_api = SocketApi::new();

@@ -1,6 +1,6 @@
 extern crate alloc;
 
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
@@ -70,10 +70,10 @@ impl PaintPipeline {
         let mut damage = Vec::new();
         let mut window_ids = [ThingId::default(); 128];
         let count = find(kinds::UI_WINDOW, &mut window_ids).unwrap_or(0);
-        let mut active: Vec<ThingId> = Vec::new();
+        let mut active: BTreeSet<ThingId> = BTreeSet::new();
 
         for id in window_ids.iter().take(count) {
-            active.push(*id);
+            active.insert(*id);
             let rect = window_rect(*id, screen_w, screen_h);
             if rect.width() <= 0 || rect.height() <= 0 {
                 continue;

@@ -41,6 +41,10 @@ pub struct AcceptResult {
 }
 
 impl NetClient {
+    /// Maximum data payload to request in a single TCP_RECV to avoid IPC truncation hazards.
+    /// The kernel cap is 4096 bytes. RESP_DATA adds 2 bytes of header.
+    pub const MAX_RECV_LEN: u16 = 4000;
+
     /// Connect to netd's socket API
     pub fn connect() -> Option<Self> {
         // Find the network stack service
@@ -175,7 +179,7 @@ impl NetClient {
         }
 
         // Wait for response (non-blocking)
-        let mut resp_buf = [0u8; 4096];
+        let mut resp_buf = [0u8; 4096 + 32];
         for _ in 0..5 {
             match port_recv(self.our_read_port, &mut resp_buf) {
                 Ok(len) if len >= 2 => {

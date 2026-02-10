@@ -601,6 +601,24 @@ fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
         }
     }
 
+    match stem::syscall::spawn_process("/nectar", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned nectar (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/nectar".to_string(),
+                kind: TaskKind::Service("svc.nectar".to_string()),
+                module_path: "/nectar".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn nectar: {:?}", e);
+        }
+    }
+
     match stem::syscall::spawn_process("/fetchd", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned fetchd (PID={})", pid);

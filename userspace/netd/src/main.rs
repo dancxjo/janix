@@ -335,14 +335,15 @@ fn main(_arg: usize) -> ! {
                         next_conn_buf = next_conn_buf.wrapping_add(1);
                         socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, rx, tx, Some(dhcp_config.dns))
                     } else if msg_type == socket_api::MSG_TCP_ACCEPT {
-                        // TCP_ACCEPT: Use small buffers for respawned listener
-                        let (rx, tx) = match next_listener_buf % 4 {
-                            0 => (&mut LISTENER_RX_0[..], &mut LISTENER_TX_0[..]),
-                            1 => (&mut LISTENER_RX_1[..], &mut LISTENER_TX_1[..]),
-                            2 => (&mut LISTENER_RX_2[..], &mut LISTENER_TX_2[..]),
-                            _ => (&mut LISTENER_RX_3[..], &mut LISTENER_TX_3[..]),
+                        // TCP_ACCEPT: Use large buffers for respawned listener
+                        // This fixes the Buffer Inheritance Hazard (Hazard 54 in Networking KI)
+                        let (rx, tx) = match next_conn_buf % 4 {
+                            0 => (&mut CONN_RX_0[..], &mut CONN_TX_0[..]),
+                            1 => (&mut CONN_RX_1[..], &mut CONN_TX_1[..]),
+                            2 => (&mut CONN_RX_2[..], &mut CONN_TX_2[..]),
+                            _ => (&mut CONN_RX_3[..], &mut CONN_TX_3[..]),
                         };
-                        next_listener_buf = next_listener_buf.wrapping_add(1);
+                        next_conn_buf = next_conn_buf.wrapping_add(1);
                         socket_api.process_message(&mut iface, &mut device, &mut socket_set, msg_body, rx, tx, Some(dhcp_config.dns))
                     } else {
                         // Other operations (SEND, RECV, CLOSE, UDP, DNS)

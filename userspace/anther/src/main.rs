@@ -570,8 +570,8 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
         let mut scan_from = request_data.len().saturating_sub(3);
         let mut attempts = 0;
         
-        while attempts < 100 {
-            if let Some(data) = net.tcp_recv(conn_handle, 4096) {
+        while attempts < 200 {
+            if let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
                 request_data.extend_from_slice(&data);
                 
                 if let Some(pos) = find_header_end(&request_data, scan_from) {
@@ -588,7 +588,7 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                 attempts = 0; // Reset on data
             } else {
                 attempts += 1;
-                stem::time::sleep_ms(10);
+                stem::syscall::yield_now();
             }
         }
 
@@ -637,8 +637,8 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                 body.reserve(content_length);
                 body.extend_from_slice(&request_data[header_len..]);
                 let mut body_attempts = 0;
-                while body.len() < content_length && body_attempts < 20 {
-                    if let Some(data) = net.tcp_recv(conn_handle, 4096) {
+                while body.len() < content_length && body_attempts < 100 {
+                    if let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
                         let remaining = content_length - body.len();
                         let copy_len = remaining.min(data.len());
                         body.extend_from_slice(&data[..copy_len]);

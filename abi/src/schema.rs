@@ -144,6 +144,38 @@ pub mod keys {
     pub const TX_PACKETS: &str = "tx_packets";
     pub const RX_BYTES: &str = "rx_bytes";
     pub const TX_BYTES: &str = "tx_bytes";
+    pub const NET_HOST_NAME: &str = "net.host.name";
+    pub const NET_HOST_LAST_SEEN: &str = "net.host.last_seen";
+    pub const NET_HOST_EXPIRES_AT: &str = "net.host.expires_at";
+    pub const NET_ADDR_FAMILY: &str = "net.addr.family";
+    pub const NET_ADDR_IP: &str = "net.addr.ip";
+    pub const NET_ADDR_LAST_SEEN: &str = "net.addr.last_seen";
+    pub const NET_ADDR_EXPIRES_AT: &str = "net.addr.expires_at";
+    pub const NET_SVC_TYPE_NAME: &str = "net.svc_type.name";
+    pub const NET_SVC_TYPE_DOMAIN: &str = "net.svc_type.domain";
+    pub const NET_INSTANCE_NAME: &str = "net.instance.name";
+    pub const NET_INSTANCE_FQDN: &str = "net.instance.fqdn";
+    pub const NET_INSTANCE_LAST_SEEN: &str = "net.instance.last_seen";
+    pub const NET_INSTANCE_EXPIRES_AT: &str = "net.instance.expires_at";
+    pub const NET_ENDPOINT_PORT: &str = "net.endpoint.port";
+    pub const NET_ENDPOINT_PROTO: &str = "net.endpoint.proto";
+    pub const NET_ENDPOINT_PRIORITY: &str = "net.endpoint.priority";
+    pub const NET_ENDPOINT_WEIGHT: &str = "net.endpoint.weight";
+    pub const NET_TXT_HASH: &str = "net.txt.hash";
+    pub const NET_LAST_SEEN: &str = "net.last_seen";
+    pub const NET_EXPIRES_AT: &str = "net.expires_at";
+    pub const NET_STALE: &str = "net.stale";
+    pub const NET_ID_KEY: &str = "net.id_key";
+    pub const NET_NECTAR_PUBLISH_DISCOVERY_TO_GRAPH: &str =
+        "net.nectar.publish_discovery_to_graph";
+    pub const NET_ADVERTISE_ROOT_INSTANCE: &str = "net.advertise_root.instance";
+    pub const NET_DESIRED_SERVICE_TYPE: &str = "net.desired.service_type";
+    pub const NET_DESIRED_INSTANCE_NAME: &str = "net.desired.instance_name";
+    pub const NET_DESIRED_DOMAIN: &str = "net.desired.domain";
+    pub const NET_DESIRED_PORT: &str = "net.desired.port";
+    pub const NET_DESIRED_PROTO: &str = "net.desired.proto";
+    pub const NET_DESIRED_HOSTNAME: &str = "net.desired.hostname";
+    pub const NET_DESIRED_TXT: &str = "net.desired.txt";
 
     // Audio status
     pub const SOUND_BUFFERED_FRAMES: &str = "sound.buffered_frames";
@@ -576,6 +608,14 @@ pub mod kinds {
     pub const DEV_NET_NIC: &str = "dev.net.Nic";
     pub const DEV_NET_PCI_STUB: &str = "dev.net.PciStub";
     pub const DEV_NET_WLAN_PCI_STUB: &str = "dev.net.WlanPciStub";
+    pub const NET_HOST: &str = "net.Host";
+    pub const NET_ADDRESS: &str = "net.Address";
+    pub const NET_SERVICE_TYPE: &str = "net.ServiceType";
+    pub const NET_SERVICE_INSTANCE: &str = "net.ServiceInstance";
+    pub const NET_ENDPOINT: &str = "net.Endpoint";
+    pub const NET_TXT_RECORD: &str = "net.TxtRecord";
+    pub const NET_ADVERTISE_ROOT: &str = "net.AdvertiseRoot";
+    pub const NET_SERVICE_INSTANCE_DESIRED: &str = "net.ServiceInstanceDesired";
     // Storage
     pub const DEV_STORAGE_DISK: &str = "dev.storage.Disk";
     pub const DEV_STORAGE_PARTITION: &str = "dev.storage.Partition";
@@ -837,6 +877,12 @@ pub mod rels {
 
     /// Host launched a module (dev.Host -> boot.Module)
     pub const LAUNCHED: &str = "LAUNCHED";
+    pub const NET_HOST_HAS_ADDR: &str = "net.host_has_addr";
+    pub const NET_HOST_ADVERTISES: &str = "net.host_advertises";
+    pub const NET_INSTANCE_IS_A: &str = "net.instance_is_a";
+    pub const NET_INSTANCE_REACHABLE_AT: &str = "net.instance_reachable_at";
+    pub const NET_INSTANCE_HAS_TXT: &str = "net.instance_has_txt";
+    pub const NET_WANTS_ADVERTISED: &str = "net.wants_advertised";
 }
 
 // Virtio GPU additions

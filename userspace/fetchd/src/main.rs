@@ -113,13 +113,13 @@ fn main(_arg: usize) -> ! {
 
     loop {
         // Look for the network stack service
-        let mut buf = [ThingId::default(); 1];
+        let mut buf = [ThingId::default(); 16];
         let ip_text;
         let status_text;
 
         match find(KIND_NET_STACK, &mut buf) {
             Ok(count) if count > 0 => {
-                let stack_id = buf[0];
+                let stack_id = pick_best_net_stack(&buf[..count]).unwrap_or(buf[0]);
                 
                 // Get IP address from graph
                 match prop_get(stack_id, "net.ip") {
@@ -153,4 +153,18 @@ fn main(_arg: usize) -> ! {
         // Poll every second
         stem::sleep(Duration::from_secs(1));
     }
+}
+
+fn pick_best_net_stack(nodes: &[ThingId]) -> Option<ThingId> {
+    // Prefer a stack that already has a non-zero IP; otherwise prefer one with socket API handle.
+    let mut socket_ready: Option<ThingId> = None;
+    for &id in nodes {
+        if prop_get(id, "net.ip").ok().unwrap_or(0) != 0 {
+            return Some(id);
+        }
+        if prop_get(id, "net.socket_api").ok().unwrap_or(0) != 0 && socket_ready.is_none() {
+            socket_ready = Some(id);
+        }
+    }
+    socket_ready
 }

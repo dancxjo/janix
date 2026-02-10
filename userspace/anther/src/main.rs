@@ -15,10 +15,12 @@ mod gql_handler;
 mod ui;
 
 use alloc::vec::Vec;
-use stem::{info, warn, error};
+use stem::{info, warn};
 use net_client::NetClient;
 
 const SERVER_NAME: &str = "ThingOS-anther/0.1";
+const MAX_HEADER_BYTES: usize = 16 * 1024;
+const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 
 pub enum ResponseBody {
     Static(&'static [u8]),
@@ -73,12 +75,6 @@ fn build_response(status: &str, content_type: &str, body: ResponseBody, keep_ali
 fn build_redirect(location: &str, is_head: bool, keep_alive: bool) -> (Vec<u8>, ResponseBody) {
     use alloc::format;
     let body: &[u8] = if is_head { &[] } else { b"" };
-    let headers = build_headers("302 Found", "text/html", body.len(), keep_alive);
-    
-    let mut response = headers;
-    // We need to insert the Location header before the final \r\n
-    // This is a bit messy, let's fix build_headers to accept extra headers
-    // Actually, let's just build it manually here for now
     let mut response = Vec::new();
     response.extend_from_slice(b"HTTP/1.1 302 Found\r\n");
     response.extend_from_slice(format!("Server: {}\r\n", SERVER_NAME).as_bytes());
@@ -291,7 +287,9 @@ fn handle_ui_event(body: &[u8], keep_alive: bool) -> (Vec<u8>, ResponseBody) {
 fn parse_u64_query(path: &str, key: &str) -> Option<u64> {
     let q = path.split_once('?')?.1;
     for part in q.split('&') {
-        let (k, v) = part.split_once('=')?;
+        let Some((k, v)) = part.split_once('=') else {
+            continue;
+        };
         if k == key {
             if let Ok(parsed) = v.parse::<u64>() {
                 return Some(parsed);
@@ -568,18 +566,25 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     let mut keep_alive = true;
 
     while keep_alive {
-        let mut header_found = false;
+        let mut header_end = None;
+        let mut scan_from = request_data.len().saturating_sub(3);
         let mut attempts = 0;
         
         while attempts < 100 {
             if let Some(data) = net.tcp_recv(conn_handle, 4096) {
                 request_data.extend_from_slice(&data);
                 
-                // Check if we have a complete request (ends with \r\n\r\n)
-                if request_data.windows(4).any(|w| w == b"\r\n\r\n") {
-                    header_found = true;
+                if let Some(pos) = find_header_end(&request_data, scan_from) {
+                    header_end = Some(pos);
                     break;
                 }
+
+                if request_data.len() > MAX_HEADER_BYTES {
+                    warn!("anther: Request header exceeded {} bytes", MAX_HEADER_BYTES);
+                    break;
+                }
+
+                scan_from = request_data.len().saturating_sub(3);
                 attempts = 0; // Reset on data
             } else {
                 attempts += 1;
@@ -587,15 +592,15 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
             }
         }
 
-        if !header_found {
+        let Some(header_end) = header_end else {
             if !request_data.is_empty() {
                 warn!("anther: Request headers incomplete or timed out");
             }
             break;
-        }
+        };
 
         // Parse headers
-        let request_str = match core::str::from_utf8(&request_data) {
+        let request_str = match core::str::from_utf8(&request_data[..header_end]) {
             Ok(s) => s,
             Err(_) => {
                 warn!("anther: Invalid UTF-8 in request");
@@ -613,6 +618,14 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
 
         let header_len = req.header_len;
         let content_length = http::parse_content_length(&req).unwrap_or(0);
+        if content_length > MAX_BODY_BYTES {
+            warn!(
+                "anther: Request body too large ({} > {})",
+                content_length,
+                MAX_BODY_BYTES
+            );
+            break;
+        }
         let mut body = Vec::new();
 
         if content_length > 0 {
@@ -620,11 +633,14 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
             if request_data.len() >= header_len + content_length {
                 body.extend_from_slice(&request_data[header_len..header_len + content_length]);
             } else {
+                body.reserve(content_length);
                 body.extend_from_slice(&request_data[header_len..]);
                 let mut body_attempts = 0;
                 while body.len() < content_length && body_attempts < 20 {
                     if let Some(data) = net.tcp_recv(conn_handle, 4096) {
-                        body.extend_from_slice(&data);
+                        let remaining = content_length - body.len();
+                        let copy_len = remaining.min(data.len());
+                        body.extend_from_slice(&data[..copy_len]);
                         body_attempts = 0;
                     } else {
                         body_attempts += 1;
@@ -691,6 +707,28 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     net.tcp_close(conn_handle);
     // Minimal post-close delay
     stem::time::sleep_ms(10);
+}
+
+fn find_header_end(buf: &[u8], start: usize) -> Option<usize> {
+    if buf.len() < 2 {
+        return None;
+    }
+    let mut i = start.min(buf.len().saturating_sub(1));
+    while i + 1 < buf.len() {
+        if i + 3 < buf.len()
+            && buf[i] == b'\r'
+            && buf[i + 1] == b'\n'
+            && buf[i + 2] == b'\r'
+            && buf[i + 3] == b'\n'
+        {
+            return Some(i + 4);
+        }
+        if buf[i] == b'\n' && buf[i + 1] == b'\n' {
+            return Some(i + 2);
+        }
+        i += 1;
+    }
+    None
 }
 
 // Magic value to signal stdio mode (for testing)

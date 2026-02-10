@@ -8,7 +8,9 @@ use alloc::vec::Vec;
 use abi::schema::{keys, kinds};
 use abi::types::HandleId;
 use abi::ui_paint::{PaintOpTag, PaintReader};
-use stem::thing::sys::{bytespace_info, bytespace_read, find, prop_get};
+use stem::thing::sys::{
+    bytespace_info, bytespace_map, bytespace_read, bytespace_unmap, find, prop_get,
+};
 use stem::thing::ThingId;
 
 use crate::asset::Image;
@@ -639,14 +641,34 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
     list.commands().push(DrawCmd::PushClip { rect });
     let origin_x = rect.x();
     let origin_y = rect.y();
-    let bytes = match read_bytespace(ThingId::from_u64(paint_bs)) {
-        Ok(bytes) => bytes,
-        Err(_) => return list,
-    };
-    let mut reader = match PaintReader::new(&bytes) {
+
+    let paint_bs = ThingId::from_u64(paint_bs);
+    if let Ok(size) = bytespace_info(paint_bs) {
+        if size > 0 {
+            if let Ok(ptr) = bytespace_map(paint_bs) {
+                let bytes = unsafe { core::slice::from_raw_parts(ptr as *const u8, size) };
+                decode_paint_ops(bytes, origin_x, origin_y, &mut list);
+                let _ = bytespace_unmap(paint_bs, ptr);
+                list.commands().push(DrawCmd::PopClip);
+                return list;
+            }
+        }
+    }
+
+    // Fallback for platforms/targets where mapping can fail.
+    if let Ok(bytes) = read_bytespace(paint_bs) {
+        decode_paint_ops(&bytes, origin_x, origin_y, &mut list);
+    }
+    list.commands().push(DrawCmd::PopClip);
+    list
+}
+
+fn decode_paint_ops(bytes: &[u8], origin_x: i32, origin_y: i32, list: &mut DrawList) {
+    let mut reader = match PaintReader::new(bytes) {
         Some(reader) => reader,
-        None => return list,
+        None => return,
     };
+
     while let Some(op) = reader.next() {
         match op.tag {
             PaintOpTag::PushClip => {
@@ -686,10 +708,7 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
             PaintOpTag::StrokeLine => {
                 if let Some((x1, y1, x2, y2, width, color)) = decode_line(op.payload) {
                     list.commands().push(DrawCmd::Line {
-                        from: crate::isa::PointF::new(
-                            (x1 + origin_x) as f32,
-                            (y1 + origin_y) as f32,
-                        ),
+                        from: crate::isa::PointF::new((x1 + origin_x) as f32, (y1 + origin_y) as f32),
                         to: crate::isa::PointF::new((x2 + origin_x) as f32, (y2 + origin_y) as f32),
                         color: Color::from_u32(color),
                         width: width as f32,
@@ -720,8 +739,6 @@ fn build_drawlist(paint_bs: u64, rect: Rect) -> DrawList {
             _ => {}
         }
     }
-    list.commands().push(DrawCmd::PopClip);
-    list
 }
 
 fn decode_rect(payload: &[u8]) -> Option<(i32, i32, i32, i32)> {

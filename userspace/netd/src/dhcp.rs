@@ -16,6 +16,7 @@ pub enum DhcpError {
 
 pub struct DhcpConfig {
     pub ip: Ipv4Address,
+    pub prefix_len: u8,
     pub gateway: Ipv4Address,
     pub dns: Ipv4Address,
 }
@@ -57,6 +58,7 @@ pub fn run_dhcp(
                         .first()
                         .copied()
                         .unwrap_or(Ipv4Address::UNSPECIFIED);
+                    let prefix_len = config.address.prefix_len();
 
                     // Apply configuration to interface
                     iface.update_ip_addrs(|addrs| {
@@ -71,7 +73,12 @@ pub fn run_dhcp(
                             .ok();
                     }
 
-                    return Ok(DhcpConfig { ip, gateway, dns });
+                    return Ok(DhcpConfig {
+                        ip,
+                        prefix_len,
+                        gateway,
+                        dns,
+                    });
                 }
                 Event::Deconfigured => {
                     stem::warn!("DHCP: Deconfigured");

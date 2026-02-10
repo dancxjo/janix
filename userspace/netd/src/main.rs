@@ -15,14 +15,20 @@ mod dhcp;
 mod dns;
 mod driver_protocol;
 mod ipc_device;
+mod net_mirror;
 mod socket_api;
 
 use alloc::format;
+use alloc::vec;
 use abi::schema::keys;
 use ipc_device::IpcNicDevice;
+use net_mirror::{
+    default_routes_from_gateway, stable_iface_key_from_mac, AddressSnapshot, IfaceSnapshot,
+    NetGraphMirror, NetSnapshot,
+};
 use socket_api::SocketApi;
 use smoltcp::iface::{Config, Interface, SocketSet, SocketStorage};
-use smoltcp::wire::EthernetAddress;
+use smoltcp::wire::{EthernetAddress, IpCidr};
 use stem::syscall::port::{port_create, port_recv, port_send, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
@@ -37,7 +43,7 @@ fn main(_arg: usize) -> ! {
 
     // Wait for virtio_netd to be ready
     info!("NETD: Looking for virtio_netd driver service...");
-    let (tx_port, rx_port, mac) = loop {
+    let (tx_port, rx_port, mac, initial_link_up, iface_mtu) = loop {
         match find_driver_service() {
             Some(result) => break result,
             None => {
@@ -52,7 +58,7 @@ fn main(_arg: usize) -> ! {
     );
 
     // Create IPC-backed smoltcp device
-    let mut device = IpcNicDevice::new(tx_port, rx_port, mac);
+    let mut device = IpcNicDevice::new(tx_port, rx_port, mac, initial_link_up);
     
     // Create smoltcp interface
     let mac_addr = EthernetAddress(mac);
@@ -87,8 +93,38 @@ fn main(_arg: usize) -> ! {
     thingsys::prop_set(net_id, "net.mac", mac_packed).ok();
     thingsys::prop_set(net_id, "net.socket_api", api_write_port as u64).ok();
     thingsys::prop_set(net_id, "net.ip", 0).ok(); // Offline initially
+    thingsys::prop_set(net_id, "net.link_up", if initial_link_up { 1 } else { 0 }).ok();
+    thingsys::prop_set(net_id, "net.mtu", iface_mtu as u64).ok();
     
     info!("NETD: Published initial stack node {:?} to graph", net_id);
+
+    let mut net_mirror = match NetGraphMirror::new() {
+        Ok(m) => m,
+        Err(e) => {
+            warn!("NETD: Failed to initialize net graph mirror: {:?}", e);
+            loop {
+                stem::time::sleep_ms(1000);
+            }
+        }
+    };
+    let mut next_mirror_refresh_ms = 0u64;
+    let bootstrap_snapshot = NetSnapshot {
+        iface: IfaceSnapshot {
+            stable_key: stable_iface_key_from_mac(mac),
+            name: "eth0".into(),
+            mac_packed,
+            mtu: device.mtu(),
+            link_up: device.link_up(),
+            driver: KIND_NET_DRIVER.into(),
+            speed_mbps: None,
+        },
+        addrs: vec![],
+        routes: vec![],
+    };
+    if let Err(e) = net_mirror.apply(&bootstrap_snapshot, stem::time::now().as_millis() as u64) {
+        warn!("NETD: Bootstrap net graph mirror apply failed: {:?}", e);
+    }
+    let mut last_link_state = device.link_up();
     
     // Start DHCP
     info!("NETD: Starting DHCP...");
@@ -138,6 +174,35 @@ fn main(_arg: usize) -> ! {
     
     info!("NETD: Updated network configuration in graph (IP: {})", dhcp_config.ip);
 
+    let gateway = dhcp_config.gateway.as_bytes();
+    let mut routes = default_routes_from_gateway([gateway[0], gateway[1], gateway[2], gateway[3]]);
+    let initial_snapshot = NetSnapshot {
+        iface: IfaceSnapshot {
+            stable_key: stable_iface_key_from_mac(mac),
+            name: "eth0".into(),
+            mac_packed,
+            mtu: device.mtu(),
+            link_up: device.link_up(),
+            driver: KIND_NET_DRIVER.into(),
+            speed_mbps: None,
+        },
+        addrs: vec![AddressSnapshot {
+            family: "ipv4".into(),
+            ip: format!(
+                "{}.{}.{}.{}",
+                dhcp_config.ip.as_bytes()[0],
+                dhcp_config.ip.as_bytes()[1],
+                dhcp_config.ip.as_bytes()[2],
+                dhcp_config.ip.as_bytes()[3]
+            ),
+            prefix: dhcp_config.prefix_len,
+        }],
+        routes: routes.clone(),
+    };
+    if let Err(e) = net_mirror.apply(&initial_snapshot, stem::time::now().as_millis() as u64) {
+        warn!("NETD: Initial net graph mirror apply failed: {:?}", e);
+    }
+
     info!("NETD: Network stack ready, entering service loop");
 
     // Initialize socket API
@@ -186,6 +251,46 @@ fn main(_arg: usize) -> ! {
 
         // Poll the interface to process any pending packets
         iface.poll(now, &mut device, &mut socket_set);
+
+        let now_ms = stem::time::now().as_millis() as u64;
+        let link_changed = device.link_up() != last_link_state;
+        if link_changed || now_ms >= next_mirror_refresh_ms {
+            let mut addrs = alloc::vec::Vec::new();
+            for cidr in iface.ip_addrs() {
+                let v4 = match *cidr {
+                    IpCidr::Ipv4(v4) => v4,
+                };
+                let addr = v4.address();
+                let ip = addr.as_bytes();
+                addrs.push(AddressSnapshot {
+                    family: "ipv4".into(),
+                    ip: format!("{}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3]),
+                    prefix: v4.prefix_len(),
+                });
+            }
+            let gateway = dhcp_config.gateway.as_bytes();
+            routes = default_routes_from_gateway([gateway[0], gateway[1], gateway[2], gateway[3]]);
+            let snapshot = NetSnapshot {
+                iface: IfaceSnapshot {
+                    stable_key: stable_iface_key_from_mac(device.mac()),
+                    name: "eth0".into(),
+                    mac_packed,
+                    mtu: device.mtu(),
+                    link_up: device.link_up(),
+                    driver: KIND_NET_DRIVER.into(),
+                    speed_mbps: None,
+                },
+                addrs,
+                routes: routes.clone(),
+            };
+            if let Err(e) = net_mirror.apply(&snapshot, now_ms) {
+                warn!("NETD: net graph mirror apply failed: {:?}", e);
+            }
+            let link_now = device.link_up();
+            thingsys::prop_set(net_id, "net.link_up", if link_now { 1 } else { 0 }).ok();
+            last_link_state = link_now;
+            next_mirror_refresh_ms = now_ms.saturating_add(1000);
+        }
 
         // Garbage collect closed sockets to prevent SocketSet exhaustion
         socket_api.gc_closed_sockets(&mut socket_set);
@@ -259,7 +364,7 @@ fn main(_arg: usize) -> ! {
 }
 
 /// Find the virtio_netd driver service and get port handles + MAC address
-fn find_driver_service() -> Option<(PortHandle, PortHandle, [u8; 6])> {
+fn find_driver_service() -> Option<(PortHandle, PortHandle, [u8; 6], bool, u32)> {
     // Look for svc.net.Driver node
     let mut buf = [ThingId::default(); 1];
     let count = thingsys::find(KIND_NET_DRIVER, &mut buf).ok()?;
@@ -288,7 +393,13 @@ fn find_driver_service() -> Option<(PortHandle, PortHandle, [u8; 6])> {
         ((mac_packed >> 40) & 0xFF) as u8,
     ];
     
-    info!("NETD: Driver TX port={}, RX port={}", tx_port, rx_port);
+    let link_up = thingsys::prop_get(driver_id, "net.link_up").ok().unwrap_or(1) != 0;
+    let mtu = thingsys::prop_get(driver_id, "net.mtu").ok().unwrap_or(1500) as u32;
+
+    info!(
+        "NETD: Driver TX port={}, RX port={}, link_up={}, mtu={}",
+        tx_port, rx_port, link_up, mtu
+    );
     
-    Some((tx_port, rx_port, mac))
+    Some((tx_port, rx_port, mac, link_up, mtu))
 }

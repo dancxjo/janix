@@ -19,6 +19,7 @@ pub mod i18n;
 pub mod memory;
 /// Platform Abstraction Layer - explicit platform contract
 pub mod pal;
+pub mod net;
 #[cfg(feature = "panic-handler")]
 pub mod panic;
 pub mod pci;

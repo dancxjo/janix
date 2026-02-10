@@ -6,7 +6,7 @@ use alloc::vec::Vec;
 use stem::syscall::port::{port_recv, port_send, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use stem::{info, warn};
+use stem::{info, warn, trace};
 
 // Socket API message types (must match netd's socket_api.rs)
 const MSG_TCP_LISTEN: u16 = 0x0204;
@@ -96,7 +96,7 @@ impl NetClient {
 
         // Wait for response
         let mut resp_buf = [0u8; 64];
-        for _ in 0..100 {
+        for i in 0..100 {
             match port_recv(self.our_read_port, &mut resp_buf) {
                 Ok(len) if len >= 6 => {
                     let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
@@ -109,6 +109,9 @@ impl NetClient {
                     }
                 }
                 _ => {
+                    if i == 0 {
+                        trace!("anther: TCP_LISTEN waiting...");
+                    }
                     stem::time::sleep_ms(10);
                 }
             }
@@ -155,6 +158,7 @@ impl NetClient {
             }
         }
         
+        trace!("anther: TCP_ACCEPT no response yet");
         None
     }
 
@@ -179,9 +183,10 @@ impl NetClient {
                     if resp_type == RESP_DATA && len > 2 {
                         let data = resp_buf[2..len].to_vec();
                         return Some(data);
-                    } else if resp_type == RESP_EMPTY || resp_type == RESP_ERROR || resp_type == RESP_DATA {
-                        // EMPTY: No data yet. ERROR: Connection closed. DATA(len=2): Also empty.
+                    } else if resp_type == RESP_EMPTY || resp_type == RESP_ERROR || (resp_type == RESP_DATA && len == 2) {
                         return None;
+                    } else {
+                        warn!("anther: tcp_recv got unexpected resp_type 0x{:04x} len={}", resp_type, len);
                     }
                 }
                 _ => {
@@ -190,6 +195,9 @@ impl NetClient {
             }
         }
         
+        // Timeout or unexpected response would end up here if we didn't return above.
+        // But wait, the loop above only handles a few iterations. 
+        // If we drained some other message, we might want to log it.
         None
     }
 
@@ -214,6 +222,8 @@ impl NetClient {
                     if resp_type == RESP_OK {
                         let sent = u16::from_le_bytes([resp_buf[2], resp_buf[3]]);
                         return sent as usize;
+                    } else {
+                        warn!("anther: tcp_send got unexpected resp_type 0x{:04x} len={}", resp_type, len);
                     }
                 }
                 _ => {

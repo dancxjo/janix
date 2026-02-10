@@ -7,9 +7,8 @@ use alloc::collections::VecDeque;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
 use stem::syscall::port::{port_recv, port_send, PortHandle};
-use stem::info;
 
-use crate::driver_protocol::{NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX};
+use crate::driver_protocol::{NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_LINK_DOWN, MSG_LINK_UP};
 
 /// Network device that uses IPC to communicate with virtio_netd
 pub struct IpcNicDevice {
@@ -23,17 +22,20 @@ pub struct IpcNicDevice {
     rx_queue: VecDeque<([u8; 2048], usize)>,
     /// Internal RX buffer
     rx_buf: [u8; 2048],
+    /// Current carrier status as reported by driver notifications
+    link_up: bool,
 }
 
 impl IpcNicDevice {
     /// Create a new IPC NIC device
-    pub fn new(tx_port: PortHandle, rx_port: PortHandle, mac: [u8; 6]) -> Self {
+    pub fn new(tx_port: PortHandle, rx_port: PortHandle, mac: [u8; 6], link_up: bool) -> Self {
         Self {
             tx_port,
             rx_port,
             mac,
             rx_queue: VecDeque::new(),
             rx_buf: [0u8; 2048],
+            link_up,
         }
     }
     
@@ -46,6 +48,14 @@ impl IpcNicDevice {
     pub fn mac(&self) -> [u8; 6] {
         self.mac
     }
+
+    pub fn link_up(&self) -> bool {
+        self.link_up
+    }
+
+    pub fn mtu(&self) -> u32 {
+        1500
+    }
     
     /// Poll for RX frames from driver (non-blocking)
     pub fn poll_rx(&mut self) {
@@ -54,12 +64,21 @@ impl IpcNicDevice {
             match port_recv(self.rx_port, &mut self.rx_buf) {
                 Ok(len) if len > 0 => {
                     if let Some(msg) = NetDriverMsg::decode(&self.rx_buf[..len]) {
-                        if msg.msg_type == MSG_FRAME_RX && !msg.payload.is_empty() {
-                            // Queue the frame
-                            let mut frame = [0u8; 2048];
-                            let frame_len = msg.payload.len().min(2048);
-                            frame[..frame_len].copy_from_slice(&msg.payload[..frame_len]);
-                            self.rx_queue.push_back((frame, frame_len));
+                        match msg.msg_type {
+                            MSG_FRAME_RX if !msg.payload.is_empty() => {
+                                // Queue the frame
+                                let mut frame = [0u8; 2048];
+                                let frame_len = msg.payload.len().min(2048);
+                                frame[..frame_len].copy_from_slice(&msg.payload[..frame_len]);
+                                self.rx_queue.push_back((frame, frame_len));
+                            }
+                            MSG_LINK_UP => {
+                                self.link_up = true;
+                            }
+                            MSG_LINK_DOWN => {
+                                self.link_up = false;
+                            }
+                            _ => {}
                         }
                     }
                 }

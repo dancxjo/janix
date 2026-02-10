@@ -21,7 +21,8 @@ pub trait EventGraph {
     fn prop_get(&self, id: ThingId, key: &str) -> Option<u64>;
     fn prop_set(&mut self, id: ThingId, key: &str, value: u64) -> bool;
     fn bytespace_create(&mut self, len: usize) -> Option<ThingId>;
-    fn bytespace_read_all(&self, id: ThingId) -> Option<Vec<u8>>;
+    fn bytespace_len(&self, id: ThingId) -> Option<usize>;
+    fn bytespace_read_range(&self, id: ThingId, offset: usize, len: usize) -> Option<Vec<u8>>;
     fn bytespace_write(&mut self, id: ThingId, offset: usize, data: &[u8]) -> bool;
 }
 
@@ -40,19 +41,25 @@ impl EventGraph for SysEventGraph {
         bytespace_create(len, 0, 0).ok()
     }
 
-    fn bytespace_read_all(&self, id: ThingId) -> Option<Vec<u8>> {
-        let size = bytespace_info(id).ok()?;
-        let mut out = Vec::with_capacity(size);
-        out.resize(size, 0);
-        let mut offset = 0;
-        while offset < size {
-            let n = bytespace_read(id, offset, &mut out[offset..]).ok()?;
+    fn bytespace_len(&self, id: ThingId) -> Option<usize> {
+        bytespace_info(id).ok()
+    }
+
+    fn bytespace_read_range(&self, id: ThingId, offset: usize, len: usize) -> Option<Vec<u8>> {
+        if len == 0 {
+            return Some(Vec::new());
+        }
+        let mut out = Vec::with_capacity(len);
+        out.resize(len, 0);
+        let mut read = 0;
+        while read < len {
+            let n = bytespace_read(id, offset.saturating_add(read), &mut out[read..]).ok()?;
             if n == 0 {
                 break;
             }
-            offset += n;
+            read += n;
         }
-        out.truncate(offset);
+        out.truncate(read);
         Some(out)
     }
 
@@ -148,11 +155,16 @@ fn append_event(graph: &mut impl EventGraph, window_id: ThingId, event: &UiEvent
         .prop_get(window_id, keys::UI_EVENT_LOG)
         .map(ThingId::from_u64)
         .unwrap_or_default();
-
     let existing_bytes = if existing_queue == ThingId::default() {
         Vec::new()
     } else {
-        graph.bytespace_read_all(existing_queue).unwrap_or_default()
+        let full_len = graph.bytespace_len(existing_queue).ok_or(EventError::Internal)?;
+        let raw_cursor = graph.prop_get(window_id, keys::UI_EVENT_CURSOR).unwrap_or(0) as usize;
+        let cursor = raw_cursor.min(full_len);
+        let unread_len = full_len.saturating_sub(cursor);
+        graph
+            .bytespace_read_range(existing_queue, cursor, unread_len)
+            .ok_or(EventError::Internal)?
     };
 
     let new_len = existing_bytes.len().saturating_add(written);
@@ -168,6 +180,7 @@ fn append_event(graph: &mut impl EventGraph, window_id: ThingId, event: &UiEvent
     if !graph.prop_set(window_id, keys::UI_EVENT_LOG, new_queue.to_u64_lossy()) {
         return Err(EventError::Internal);
     }
+    // Rebased queue starts at zero even when we compact consumed prefix.
     let _ = graph.prop_set(window_id, keys::UI_EVENT_CURSOR, 0);
 
     let current = graph.prop_get(window_id, keys::UI_EVENT_GEN).unwrap_or(0);
@@ -337,8 +350,17 @@ mod tests {
             Some(ThingId::from_u64(self.next_id))
         }
 
-        fn bytespace_read_all(&self, id: ThingId) -> Option<Vec<u8>> {
-            self.bytespaces.get(&id.to_u64_lossy()).cloned()
+        fn bytespace_len(&self, id: ThingId) -> Option<usize> {
+            self.bytespaces.get(&id.to_u64_lossy()).map(|b| b.len())
+        }
+
+        fn bytespace_read_range(&self, id: ThingId, offset: usize, len: usize) -> Option<Vec<u8>> {
+            let buf = self.bytespaces.get(&id.to_u64_lossy())?;
+            if offset > buf.len() {
+                return None;
+            }
+            let end = offset.saturating_add(len).min(buf.len());
+            Some(buf[offset..end].to_vec())
         }
 
         fn bytespace_write(&mut self, id: ThingId, offset: usize, data: &[u8]) -> bool {
@@ -379,7 +401,7 @@ mod tests {
             .prop_get(window, keys::UI_EVENT_LOG)
             .expect("queue id");
         let bytes = graph
-            .bytespace_read_all(ThingId::from_u64(queue_id))
+            .bytespace_read_range(ThingId::from_u64(queue_id), 0, usize::MAX)
             .expect("queue bytes");
 
         let (evt1, c1) = ui_event::decode_one(&bytes).expect("decode1");
@@ -407,5 +429,38 @@ mod tests {
             }
             _ => panic!("unexpected event"),
         }
+    }
+
+    #[test]
+    fn append_compacts_consumed_prefix() {
+        let mut graph = MockGraph::default();
+        let window = ThingId::from_u64(7);
+
+        let payload1 = "{\"kind\":\"focus\",\"window\":7,\"target\":9}";
+        let payload2 = "{\"kind\":\"submit\",\"window\":7,\"target\":9}";
+
+        let _ = ingest_event_json_with(&mut graph, payload1).expect("ingest1");
+        let first_log_id = graph
+            .prop_get(window, keys::UI_EVENT_LOG)
+            .expect("first queue id");
+        let first_bytes = graph
+            .bytespace_read_range(ThingId::from_u64(first_log_id), 0, usize::MAX)
+            .expect("first queue bytes");
+        let (_, consumed_first) = ui_event::decode_one(&first_bytes).expect("decode first");
+
+        assert!(graph.prop_set(window, keys::UI_EVENT_CURSOR, consumed_first as u64));
+
+        let _ = ingest_event_json_with(&mut graph, payload2).expect("ingest2");
+        let second_log_id = graph
+            .prop_get(window, keys::UI_EVENT_LOG)
+            .expect("second queue id");
+        let second_bytes = graph
+            .bytespace_read_range(ThingId::from_u64(second_log_id), 0, usize::MAX)
+            .expect("second queue bytes");
+
+        assert_eq!(graph.prop_get(window, keys::UI_EVENT_CURSOR), Some(0));
+        let (evt, consumed) = ui_event::decode_one(&second_bytes).expect("decode second");
+        assert_eq!(consumed, second_bytes.len());
+        assert!(matches!(evt, UiEvent::Submit { window: 7, target: 9 }));
     }
 }

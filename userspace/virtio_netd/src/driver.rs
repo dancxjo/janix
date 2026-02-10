@@ -201,6 +201,26 @@ impl VirtioNetDriver {
     pub fn link_up(&self) -> bool {
         self.link_up
     }
+
+    /// Poll device config and report link-state changes.
+    pub fn poll_link_change(&mut self) -> Option<bool> {
+        let next = if self.device.has_feature(16) {
+            let status = self
+                .device
+                .read_device_config(6)
+                .unwrap_or(if self.link_up { 1 } else { 0 }) as u16;
+            (status & 1) != 0
+        } else {
+            true
+        };
+
+        if next != self.link_up {
+            self.link_up = next;
+            Some(next)
+        } else {
+            None
+        }
+    }
     
     /// Log debug stats for diagnosis
     #[allow(dead_code)]

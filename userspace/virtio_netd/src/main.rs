@@ -117,6 +117,8 @@ fn main(_arg: usize) -> ! {
         ((mac[4] as u64) << 32) |
         ((mac[5] as u64) << 40);
     thingsys::prop_set(svc_id, "net.mac", mac_packed).ok();
+    thingsys::prop_set(svc_id, "net.link_up", if driver.link_up() { 1 } else { 0 }).ok();
+    thingsys::prop_set(svc_id, "net.mtu", 1500).ok();
 
     // Publish port handles
     // TX port: netd writes to this to send frames to hardware
@@ -129,6 +131,17 @@ fn main(_arg: usize) -> ! {
     // Main loop: shuttle frames between hardware and netd
     let mut rx_buf = [0u8; 2048];
     loop {
+        if let Some(link_up) = driver.poll_link_change() {
+            thingsys::prop_set(svc_id, "net.link_up", if link_up { 1 } else { 0 }).ok();
+            let msg_type = if link_up { MSG_LINK_UP } else { MSG_LINK_DOWN };
+            let notif = NetDriverMsg::new(msg_type, &[]);
+            let _ = port_send(rx_write_handle, &notif.encode());
+            info!(
+                "VIRTIO_NETD: Link state changed: {}",
+                if link_up { "UP" } else { "DOWN" }
+            );
+        }
+
         // Poll hardware for received frames
         if let Some(frame) = driver.poll_rx() {
             // Send frame to netd via RX port

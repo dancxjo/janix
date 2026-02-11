@@ -762,8 +762,12 @@ fn run_server_mode(port: u16) -> ! {
             handle_connection(&net, accept.conn_handle);
         }
 
-        // Reduced delay to avoid busy-waiting, but still yields
-        stem::time::sleep_ms(1);
+        // 10ms polling interval keeps response port from filling up:
+        // each tcp_accept sends a request to netd which responds with
+        // RESP_EMPTY (4 bytes) when idle. At 1ms polling, the 8KB
+        // response port fills in ~2 seconds. 10ms gives ~20 seconds
+        // headroom while still accepting connections promptly.
+        stem::time::sleep_ms(10);
     }
 }
 

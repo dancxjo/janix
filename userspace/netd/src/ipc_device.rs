@@ -68,6 +68,10 @@ impl IpcNicDevice {
                     if let Some(msg) = NetDriverMsg::decode(&self.rx_buf[..len]) {
                         match msg.msg_type {
                             MSG_FRAME_RX if !msg.payload.is_empty() => {
+                                stem::info!(
+                                    "IpcNicDevice: RX frame from driver, {} bytes",
+                                    msg.payload.len()
+                                );
                                 // Queue the frame
                                 let mut frame = [0u8; 2048];
                                 let frame_len = msg.payload.len().min(2048);

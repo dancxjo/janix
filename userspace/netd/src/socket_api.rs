@@ -86,6 +86,10 @@ struct ManagedSocket {
     packets_rx: u64,
     last_error_sym: u64,
     last_seen_ms: u64,
+    /// True when graph nodes need (re-)initialization
+    graph_dirty: bool,
+    /// Stable key for graph node creation (consumed on first flush)
+    socket_key: Option<u64>,
 }
 
 impl ManagedSocket {
@@ -124,7 +128,8 @@ impl SocketApi {
             pending_accepts: BTreeMap::new(),
             pending_removal: Vec::new(),
             recv_scratch: Vec::with_capacity(32768), // Large enough for most frames
-            next_graph_flush_ms: 0,
+            // Defer first graph flush to avoid blocking Root IPC during early boot
+            next_graph_flush_ms: (stem::time::now().as_millis() as u64).saturating_add(60_000),
         }
     }
 
@@ -245,42 +250,10 @@ impl SocketApi {
     ) -> ManagedSocket {
         let socket_id = self.alloc_socket_id();
         let socket_key = Self::socket_key(owner_tid, socket_id, kind);
-        let socket_node = conn_graph::ensure_socket_node(socket_key).unwrap_or_default();
 
-        conn_graph::set_sym_if_changed(
-            socket_node,
-            net::props::SOCK_PROTO,
-            match kind {
-                SocketType::Tcp => "tcp",
-                SocketType::Udp => "udp",
-            },
-        )
-        .ok();
-        conn_graph::set_sym_if_changed(
-            socket_node,
-            net::props::SOCK_STATE,
-            if is_listener {
-                "listening"
-            } else if local.is_some() {
-                "bound"
-            } else {
-                "created"
-            },
-        )
-        .ok();
-        conn_graph::set_if_changed(socket_node, net::props::SOCK_FD, api_handle as u64).ok();
-        conn_graph::set_if_changed(socket_node, net::props::SOCK_PID, owner_tid).ok();
-        conn_graph::set_if_changed(socket_node, net::props::SOCK_CREATED_AT, now_ms).ok();
-
-        if owner_tid != 0 {
-            if let Some(owner_node) = conn_graph::find_thread_node_by_tid(owner_tid)
-                .ok()
-                .flatten()
-            {
-                net::ensure_edge(owner_node, net::preds::PROC_OWNS_SOCKET, socket_node).ok();
-            }
-        }
-
+        // DEFERRED: All graph operations are lazy-initialized during flush_graph.
+        // This prevents blocking Root service IPC from stalling the network I/O
+        // hot path. The socket_node will be populated on the first flush_graph pass.
         let managed = ManagedSocket {
             handle: socket_handle,
             kind,
@@ -288,7 +261,7 @@ impl SocketApi {
             local,
             remote: None,
             owner_tid,
-            socket_node,
+            socket_node: ThingId::default(), // Lazily populated in flush_graph
             connection_node: None,
             bytes_tx: 0,
             bytes_rx: 0,
@@ -296,9 +269,10 @@ impl SocketApi {
             packets_rx: 0,
             last_error_sym: 0,
             last_seen_ms: now_ms,
+            graph_dirty: true, // Needs graph initialization
+            socket_key: Some(socket_key),
         };
 
-        Self::sync_local_edge(&managed);
         managed
     }
 
@@ -431,7 +405,7 @@ impl SocketApi {
         if now_ms < self.next_graph_flush_ms {
             return;
         }
-        self.next_graph_flush_ms = now_ms.saturating_add(1000);
+        self.next_graph_flush_ms = now_ms.saturating_add(10_000);
 
         let handles: Vec<u32> = self.sockets.keys().copied().collect();
         for api_handle in handles {
@@ -439,12 +413,73 @@ impl SocketApi {
                 continue;
             };
 
-            Self::sync_local_edge(managed);
-            Self::sync_remote_edge(managed);
-            if managed.kind == SocketType::Tcp {
-                Self::flush_managed_socket_tcp(managed, socket_set, now_ms);
-            } else {
-                Self::flush_managed_socket_udp(managed, now_ms);
+            // Lazily initialize graph nodes for new sockets
+            if managed.graph_dirty {
+                if let Some(key) = managed.socket_key {
+                    if let Ok(node) = conn_graph::ensure_socket_node(key) {
+                        managed.socket_node = node;
+                        conn_graph::set_sym_if_changed(
+                            node,
+                            net::props::SOCK_PROTO,
+                            managed.proto_str(),
+                        )
+                        .ok();
+                        conn_graph::set_sym_if_changed(
+                            node,
+                            net::props::SOCK_STATE,
+                            if managed.is_listener {
+                                "listening"
+                            } else if managed.local.is_some() {
+                                "bound"
+                            } else {
+                                "created"
+                            },
+                        )
+                        .ok();
+                        conn_graph::set_if_changed(node, net::props::SOCK_FD, api_handle as u64)
+                            .ok();
+                        conn_graph::set_if_changed(
+                            node,
+                            net::props::SOCK_PID,
+                            managed.owner_tid,
+                        )
+                        .ok();
+                        conn_graph::set_if_changed(
+                            node,
+                            net::props::SOCK_CREATED_AT,
+                            managed.last_seen_ms,
+                        )
+                        .ok();
+
+                        if managed.owner_tid != 0 {
+                            if let Some(owner_node) =
+                                conn_graph::find_thread_node_by_tid(managed.owner_tid)
+                                    .ok()
+                                    .flatten()
+                            {
+                                net::ensure_edge(
+                                    owner_node,
+                                    net::preds::PROC_OWNS_SOCKET,
+                                    node,
+                                )
+                                .ok();
+                            }
+                        }
+                    }
+                }
+                managed.graph_dirty = false;
+                managed.socket_key = None; // Consumed
+            }
+
+            // Only sync graph edges if the socket node was successfully initialized
+            if managed.socket_node != ThingId::default() {
+                Self::sync_local_edge(managed);
+                Self::sync_remote_edge(managed);
+                if managed.kind == SocketType::Tcp {
+                    Self::flush_managed_socket_tcp(managed, socket_set, now_ms);
+                } else {
+                    Self::flush_managed_socket_udp(managed, now_ms);
+                }
             }
         }
     }
@@ -606,6 +641,15 @@ impl SocketApi {
             };
 
         let socket = socket_set.get_mut::<TcpSocket>(listener_socket_handle);
+
+        // Diagnostic: log the listener socket state on every accept attempt
+        let state = socket.state();
+        if state != TcpState::Listen {
+            info!(
+                "SOCKET_API: TCP_ACCEPT handle={} socket state={:?}",
+                listen_handle, state
+            );
+        }
 
         // Check socket state - if it's established, we have a connection
         if socket.state() == TcpState::Established {

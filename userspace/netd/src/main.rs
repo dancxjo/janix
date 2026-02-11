@@ -30,7 +30,7 @@ use net_mirror::{
 use smoltcp::iface::{Config, Interface, SocketSet, SocketStorage};
 use smoltcp::wire::{EthernetAddress, IpCidr};
 use socket_api::SocketApi;
-use stem::syscall::port::{port_create, port_recv, port_send_all, port_wait, PortHandle};
+use stem::syscall::port::{port_create, port_recv, port_send_all, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::{error, info, warn};
@@ -67,7 +67,7 @@ fn main(_arg: usize) -> ! {
     let mut iface = Interface::new(config, &mut device, IpcNicDevice::now());
 
     // Create socket API port early so it's available in the graph immediately
-    let (api_write_port, api_read_port) = match port_create(8192) {
+    let (api_write_port, api_read_port) = match port_create(32768) {
         Ok((w, r)) => {
             info!("NETD: Created socket API port (write={}, read={})", w, r);
             (w, r)
@@ -109,7 +109,11 @@ fn main(_arg: usize) -> ! {
             }
         }
     };
-    let mut next_mirror_refresh_ms = 0u64;
+    // Defer first graph refresh to allow network I/O to process unimpeded.
+    // Graph operations block on Root service IPC and can stall for 100s+ ms,
+    // which would freeze the entire network stack if triggered early.
+    let boot_ms = stem::time::now().as_millis() as u64;
+    let mut next_mirror_refresh_ms = boot_ms.saturating_add(60_000);
     let bootstrap_snapshot = NetSnapshot {
         iface: IfaceSnapshot {
             stable_key: stable_iface_key_from_mac(mac),
@@ -252,13 +256,213 @@ fn main(_arg: usize) -> ! {
     let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
 
     // Main service loop
+    //
+    // Critical design constraints:
+    // 1. Network I/O (iface.poll + rx_port + API messages) MUST run every iteration
+    //    without being gated by graph operations.
+    // 2. Graph operations (net_mirror.apply, flush_graph, prop_set) make BLOCKING
+    //    IPC calls to the Root service which can stall for 100s+ of ms. These MUST
+    //    be placed AFTER the network hot path and throttled aggressively.
+    // 3. API messages are capped per pass to prevent client flooding from starving
+    //    network frame processing.
+    let mut loop_iter: u64 = 0;
     loop {
-        let now = IpcNicDevice::now();
+        loop_iter += 1;
+        if loop_iter % 1000 == 0 {
+            info!("NETD: loop iter={}", loop_iter);
+        }
+        let mut did_work = false;
 
-        // Poll the interface to process any pending packets
+        // ===== HOT PATH: Network I/O (must never block) =====
+
+        // Always poll the interface first to process pending packets
+        let now = IpcNicDevice::now();
         iface.poll(now, &mut device, &mut socket_set);
 
+        // --- Phase 1: Non-blockingly drain rx_port (network frames from driver) ---
+        // This ensures TCP handshake packets (SYN, ACK) are always ingested
+        // before we process API messages like TCP_ACCEPT.
+        while stem::syscall::port::port_len(rx_port).unwrap_or(0) > 0 {
+            let now = IpcNicDevice::now();
+            iface.poll(now, &mut device, &mut socket_set);
+            did_work = true;
+            break; // One extra poll is enough; more frames will be caught next iteration
+        }
+
+        // --- Phase 2: Process a limited batch of Socket API messages ---
+        // Cap messages per pass to prevent API flooding from starving network I/O.
+        let mut api_msgs_this_pass = 0u32;
+        const MAX_API_MSGS_PER_PASS: u32 = 32;
+
+        while api_msgs_this_pass < MAX_API_MSGS_PER_PASS
+            && stem::syscall::port::port_len(api_read_port).unwrap_or(0) > 0
+        {
+            let space = api_msg_buf.len().saturating_sub(api_buffered);
+            if space == 0 {
+                warn!("NETD: Socket API buffer full (16KB), dropping messages to avoid stall");
+                api_buffered = 0; // Emergency clear
+                break;
+            }
+
+            match stem::syscall::port::port_recv(api_read_port, &mut api_msg_buf[api_buffered..]) {
+                Ok(n) if n > 0 => {
+                    api_buffered += n;
+                    did_work = true;
+
+                    let mut offset = 0;
+                    while api_buffered.saturating_sub(offset) >= 16 {
+                        match decode_socket_api_envelope(&api_msg_buf[offset..api_buffered]) {
+                            EnvelopeDecode::Complete {
+                                client_response_port,
+                                caller_tid,
+                                msg_body,
+                                msg_type,
+                                consumed,
+                            } => {
+                                api_msgs_this_pass += 1;
+
+                                let uses_large_buf = msg_type == socket_api::MSG_TCP_LISTEN
+                                    || msg_type == socket_api::MSG_TCP_CONNECT;
+
+                                let response = if uses_large_buf {
+                                    let (rx, tx) = match next_conn_buf % 4 {
+                                        0 => (
+                                            unsafe { &mut CONN_RX_0[..] },
+                                            unsafe { &mut CONN_TX_0[..] },
+                                        ),
+                                        1 => (
+                                            unsafe { &mut CONN_RX_1[..] },
+                                            unsafe { &mut CONN_TX_1[..] },
+                                        ),
+                                        2 => (
+                                            unsafe { &mut CONN_RX_2[..] },
+                                            unsafe { &mut CONN_TX_2[..] },
+                                        ),
+                                        _ => (
+                                            unsafe { &mut CONN_RX_3[..] },
+                                            unsafe { &mut CONN_TX_3[..] },
+                                        ),
+                                    };
+                                    next_conn_buf = next_conn_buf.wrapping_add(1);
+                                    socket_api.process_message(
+                                        &mut iface,
+                                        &mut device,
+                                        &mut socket_set,
+                                        msg_body,
+                                        caller_tid,
+                                        rx,
+                                        tx,
+                                        Some(dhcp_config.dns),
+                                    )
+                                } else if msg_type == socket_api::MSG_TCP_ACCEPT {
+                                    let (rx, tx) = match next_conn_buf % 4 {
+                                        0 => (
+                                            unsafe { &mut CONN_RX_0[..] },
+                                            unsafe { &mut CONN_TX_0[..] },
+                                        ),
+                                        1 => (
+                                            unsafe { &mut CONN_RX_1[..] },
+                                            unsafe { &mut CONN_TX_1[..] },
+                                        ),
+                                        2 => (
+                                            unsafe { &mut CONN_RX_2[..] },
+                                            unsafe { &mut CONN_TX_2[..] },
+                                        ),
+                                        _ => (
+                                            unsafe { &mut CONN_RX_3[..] },
+                                            unsafe { &mut CONN_TX_3[..] },
+                                        ),
+                                    };
+                                    next_conn_buf = next_conn_buf.wrapping_add(1);
+                                    socket_api.process_message(
+                                        &mut iface,
+                                        &mut device,
+                                        &mut socket_set,
+                                        msg_body,
+                                        caller_tid,
+                                        rx,
+                                        tx,
+                                        Some(dhcp_config.dns),
+                                    )
+                                } else {
+                                    socket_api.process_message(
+                                        &mut iface,
+                                        &mut device,
+                                        &mut socket_set,
+                                        msg_body,
+                                        caller_tid,
+                                        unsafe { &mut CONN_RX_0[..] },
+                                        unsafe { &mut CONN_TX_0[..] },
+                                        Some(dhcp_config.dns),
+                                    )
+                                };
+
+                                // Non-blocking response send: never stall the main loop
+                                // waiting for a client's response port to drain.
+                                match port_send_all(client_response_port, &response) {
+                                    Ok(n) if n == response.len() => {} // success
+                                    Ok(n) => {
+                                        warn!(
+                                            "NETD: short Socket API response to port {} ({}/{})",
+                                            client_response_port, n, response.len()
+                                        );
+                                    }
+                                    Err(_) => {
+                                        // Response port full — drop silently to avoid log spam.
+                                        // Client will retry or timeout.
+                                    }
+                                }
+
+                                offset += consumed;
+                            }
+                            EnvelopeDecode::NeedMore => {
+                                // Valid header but incomplete payload.
+                                break;
+                            }
+                            EnvelopeDecode::Malformed => {
+                                let dropped = api_buffered - offset;
+                                warn!(
+                                    "NETD: Dropping {} buffered Socket API bytes after malformed frame",
+                                    dropped
+                                );
+                                offset = api_buffered;
+                                break;
+                            }
+                        }
+                    }
+
+                    if offset > 0 {
+                        api_msg_buf.copy_within(offset..api_buffered, 0);
+                        api_buffered -= offset;
+                    }
+                }
+                _ => break,
+            }
+        }
+
+        // --- Phase 3: Re-poll interface after API processing ---
+        // This is critical: API messages may have triggered socket operations
+        // (e.g., TCP_SEND), and we need to flush those packets to the wire.
+        // Also, TCP handshake packets (SYN-ACK, ACK) may have arrived during
+        // API processing and need to be ingested before the next accept check.
+        let now = IpcNicDevice::now();
+        iface.poll(now, &mut device, &mut socket_set);
+
+        if api_buffered > 8192 {
+            warn!("NETD: API buffer overflow ({} bytes), clearing", api_buffered);
+            api_buffered = 0;
+        }
+
+        // ===== COLD PATH: Graph operations (blocking IPC, runs infrequently) =====
+        // These call into the Root service via thingsys which can block for 100s+ ms.
+        // They MUST run AFTER network I/O to prevent Root stalls from blocking TCP.
         let now_ms = stem::time::now().as_millis() as u64;
+
+        // Garbage collect closed sockets (local operation, fast)
+        socket_api.gc_closed_sockets(&mut socket_set);
+
+        // Graph mirror refresh: update network state in system graph
+        // Throttled to every 10 seconds to minimize exposure to Root stalls
         let link_changed = device.link_up() != last_link_state;
         if link_changed || now_ms >= next_mirror_refresh_ms {
             let mut addrs = alloc::vec::Vec::new();
@@ -295,177 +499,18 @@ fn main(_arg: usize) -> ! {
             let link_now = device.link_up();
             thingsys::prop_set(net_id, "net.link_up", if link_now { 1 } else { 0 }).ok();
             last_link_state = link_now;
-            next_mirror_refresh_ms = now_ms.saturating_add(1000);
+            // Refresh every 10 seconds to minimize blocking Root IPC exposure
+            next_mirror_refresh_ms = now_ms.saturating_add(10_000);
         }
 
-        // Garbage collect closed sockets to prevent SocketSet exhaustion
-        socket_api.gc_closed_sockets(&mut socket_set);
+        // Socket graph flush (also throttled internally to every 1s)
         socket_api.flush_graph(&mut socket_set, now_ms);
 
-        // Process incoming Socket API requests and driver traffic
-        match stem::syscall::port::port_wait(&[api_read_port, rx_port], abi::syscall::port_wait::READABLE) {
-            Ok(p) if p == api_read_port => {
-                while stem::syscall::port::port_len(api_read_port).unwrap_or(0) > 0 {
-                    let space = api_msg_buf.len().saturating_sub(api_buffered);
-                    if space == 0 {
-                        warn!("NETD: Socket API buffer full (16KB), dropping messages to avoid stall");
-                        api_buffered = 0; // Emergency clear
-                        break;
-                    }
-
-                    match stem::syscall::port::port_recv(api_read_port, &mut api_msg_buf[api_buffered..]) {
-                        Ok(n) if n > 0 => {
-                            api_buffered += n;
-
-                            let mut offset = 0;
-                            while api_buffered.saturating_sub(offset) >= 16 {
-                                match decode_socket_api_envelope(&api_msg_buf[offset..api_buffered]) {
-                                    EnvelopeDecode::Complete {
-                                        client_response_port,
-                                        caller_tid,
-                                        msg_body,
-                                        msg_type,
-                                        consumed,
-                                    } => {
-                                        let uses_large_buf = msg_type == socket_api::MSG_TCP_LISTEN
-                                            || msg_type == socket_api::MSG_TCP_CONNECT;
-
-                                        let response = if uses_large_buf {
-                                            let (rx, tx) = match next_conn_buf % 4 {
-                                                0 => (
-                                                    unsafe { &mut CONN_RX_0[..] },
-                                                    unsafe { &mut CONN_TX_0[..] },
-                                                ),
-                                                1 => (
-                                                    unsafe { &mut CONN_RX_1[..] },
-                                                    unsafe { &mut CONN_TX_1[..] },
-                                                ),
-                                                2 => (
-                                                    unsafe { &mut CONN_RX_2[..] },
-                                                    unsafe { &mut CONN_TX_2[..] },
-                                                ),
-                                                _ => (
-                                                    unsafe { &mut CONN_RX_3[..] },
-                                                    unsafe { &mut CONN_TX_3[..] },
-                                                ),
-                                            };
-                                            next_conn_buf = next_conn_buf.wrapping_add(1);
-                                            socket_api.process_message(
-                                                &mut iface,
-                                                &mut device,
-                                                &mut socket_set,
-                                                msg_body,
-                                                caller_tid,
-                                                rx,
-                                                tx,
-                                                Some(dhcp_config.dns),
-                                            )
-                                        } else if msg_type == socket_api::MSG_TCP_ACCEPT {
-                                            let (rx, tx) = match next_conn_buf % 4 {
-                                                0 => (
-                                                    unsafe { &mut CONN_RX_0[..] },
-                                                    unsafe { &mut CONN_TX_0[..] },
-                                                ),
-                                                1 => (
-                                                    unsafe { &mut CONN_RX_1[..] },
-                                                    unsafe { &mut CONN_TX_1[..] },
-                                                ),
-                                                2 => (
-                                                    unsafe { &mut CONN_RX_2[..] },
-                                                    unsafe { &mut CONN_TX_2[..] },
-                                                ),
-                                                _ => (
-                                                    unsafe { &mut CONN_RX_3[..] },
-                                                    unsafe { &mut CONN_TX_3[..] },
-                                                ),
-                                            };
-                                            next_conn_buf = next_conn_buf.wrapping_add(1);
-                                            socket_api.process_message(
-                                                &mut iface,
-                                                &mut device,
-                                                &mut socket_set,
-                                                msg_body,
-                                                caller_tid,
-                                                rx,
-                                                tx,
-                                                Some(dhcp_config.dns),
-                                            )
-                                        } else {
-                                            socket_api.process_message(
-                                                &mut iface,
-                                                &mut device,
-                                                &mut socket_set,
-                                                msg_body,
-                                                caller_tid,
-                                                unsafe { &mut CONN_RX_0[..] },
-                                                unsafe { &mut CONN_TX_0[..] },
-                                                Some(dhcp_config.dns),
-                                            )
-                                        };
-
-                                        // Non-blocking response send: never stall the main loop
-                                        // waiting for a client's response port to drain.
-                                        match port_send_all(client_response_port, &response) {
-                                            Ok(n) if n == response.len() => {} // success
-                                            Ok(n) => {
-                                                warn!(
-                                                    "NETD: short Socket API response to port {} ({}/{})",
-                                                    client_response_port, n, response.len()
-                                                );
-                                            }
-                                            Err(e) => {
-                                                warn!(
-                                                    "NETD: dropped Socket API response to port {}: {:?}",
-                                                    client_response_port, e
-                                                );
-                                            }
-                                        }
-
-                                        offset += consumed;
-                                    }
-                                    EnvelopeDecode::NeedMore => {
-                                        // Valid header but incomplete payload.
-                                        break;
-                                    }
-                                    EnvelopeDecode::Malformed => {
-                                        // Without a sync marker in the protocol, byte-by-byte
-                                        // re-alignment can produce false-positive decodes from junk.
-                                        // Drop the currently buffered chunk and wait for fresh bytes.
-                                        let dropped = api_buffered - offset;
-                                        warn!(
-                                            "NETD: Dropping {} buffered Socket API bytes after malformed frame",
-                                            dropped
-                                        );
-                                        offset = api_buffered;
-                                        break;
-                                    }
-                                }
-                            }
-
-                            if offset > 0 {
-                                api_msg_buf.copy_within(offset..api_buffered, 0);
-                                api_buffered -= offset;
-                            }
-                        }
-                        _ => break,
-                    }
-                }
-            }
-            Ok(p) if p == rx_port => {
-                // Driver has new frames or link updates.
-                // Just wake up; the next loop iteration will call `iface.poll` which
-                // calls `device.receive()`, draining the driver port.
-            }
-            _ => {}
+        // Only sleep if no work was done, otherwise spin back immediately
+        // to process remaining network frames or API messages.
+        if !did_work {
+            stem::time::sleep_ms(1);
         }
-
-        if api_buffered > 8192 {
-            warn!("NETD: API buffer overflow ({} bytes), clearing", api_buffered);
-            api_buffered = 0;
-        }
-
-        // Minimal sleep for responsive I/O - TX buffers drain faster
-        stem::time::sleep_ms(1);
     }
 }
 

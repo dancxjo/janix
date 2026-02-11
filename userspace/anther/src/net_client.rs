@@ -64,7 +64,7 @@ impl NetClient {
 
         // Create our own port pair for receiving responses
         // We give netd our write port so it can send responses to us
-        let (our_write, our_read) = stem::syscall::port_create(8192).ok()?;
+        let (our_write, our_read) = stem::syscall::port_create(16384).ok()?;
 
         info!(
             "anther: Connected to netd socket API (netd_port={}, our_write={}, our_read={})",

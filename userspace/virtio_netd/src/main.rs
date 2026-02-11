@@ -156,8 +156,20 @@ fn main(_arg: usize) -> ! {
         if let Some(frame) = driver.poll_rx() {
             // Send frame to netd via RX port
             let msg = NetDriverMsg::new(MSG_FRAME_RX, frame);
-            if let Err(e) = port_send(rx_write_handle, &msg.encode()) {
-                warn!("VIRTIO_NETD: Failed to send RX frame to netd: {:?}", e);
+            let encoded = msg.encode();
+            info!(
+                "VIRTIO_NETD: Forwarding {} byte frame ({} encoded) to netd rx_port={}",
+                frame.len(),
+                encoded.len(),
+                rx_write_handle
+            );
+            match port_send(rx_write_handle, &encoded) {
+                Ok(n) => {
+                    info!("VIRTIO_NETD: Frame forwarded successfully ({} bytes sent)", n);
+                }
+                Err(e) => {
+                    warn!("VIRTIO_NETD: Failed to send RX frame to netd: {:?}", e);
+                }
             }
         }
 

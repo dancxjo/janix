@@ -1,6 +1,7 @@
 //! BDD World - holds test state during scenario execution.
 
 use cucumber::World;
+use std::net::TcpListener;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -32,6 +33,12 @@ pub struct ThingOsWorld {
     /// Path to the ISO file created for this scenario
     #[world(skip)]
     pub iso_path: Option<PathBuf>,
+    /// Port forwarded to guest HTTP (80)
+    #[world(skip)]
+    pub http_port: Option<u16>,
+    /// Last HTTP response (status, body)
+    #[world(skip)]
+    pub last_http_response: Option<(u16, String)>,
 }
 
 impl ThingOsWorld {
@@ -97,6 +104,15 @@ impl ThingOsWorld {
         let vnc_display = ((vnc_nanos % 5000) + 1000) as u16;
         self.vnc_display = Some(vnc_display);
 
+        // Find a free port for HTTP forwarding
+        let http_port = TcpListener::bind("127.0.0.1:0")
+            .map(|l| l.local_addr().unwrap().port())
+            .unwrap_or(0);
+        self.http_port = Some(http_port);
+        if http_port > 0 {
+            eprintln!("[bdd] Forwarding HTTP: localhost:{} -> guest:80", http_port);
+        }
+
         let qemu_bin = match arch {
             "x86_64" => "qemu-system-x86_64",
             "aarch64" => "qemu-system-aarch64",
@@ -121,6 +137,13 @@ impl ThingOsWorld {
                     &format!("if=pflash,unit=1,format=raw,file={}", ovmf_vars),
                 ]);
                 cmd.args(["-cdrom", &iso_name]);
+
+                if let Some(port) = self.http_port {
+                    if port > 0 {
+                        cmd.args(["-device", "virtio-net-pci,netdev=n0"]);
+                        cmd.args(["-netdev", &format!("user,id=n0,hostfwd=tcp::{}-:80", port)]);
+                    }
+                }
             }
             "aarch64" => {
                 cmd.args(["-M", "virt"]);

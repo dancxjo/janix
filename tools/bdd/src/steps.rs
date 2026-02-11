@@ -5,6 +5,7 @@
 
 use crate::world::ThingOsWorld;
 use cucumber::{given, then, when};
+use reqwest::Client;
 use std::collections::HashMap;
 
 /// Default timeout for waiting on serial output (seconds).
@@ -1922,4 +1923,156 @@ async fn see_network_window(world: &mut ThingOsWorld) -> Result<(), StepError> {
         }
         tokio::time::sleep(std::time::Duration::from_secs(2)).await;
     }
+}
+
+// ===== HTTP / Anther Steps =====
+
+#[given("the anther server is ready")]
+async fn anther_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    if world.qemu.is_none() {
+        turn_on_machine(world).await?;
+    }
+
+    // 1. Wait for log message
+    check_serial(world, "anther: Listening on port 80", 60.0).await?;
+
+    // 2. Poll for health
+    let port = world
+        .http_port
+        .ok_or(StepError("HTTP port not configured".to_string()))?;
+    if port == 0 {
+        return Err(StepError("HTTP port failed to bind".to_string()));
+    }
+
+    let url = format!("http://127.0.0.1:{}/health", port);
+    let client = Client::builder()
+        .timeout(std::time::Duration::from_secs(1))
+        .build()
+        .map_err(|e| StepError(e.to_string()))?;
+
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(30);
+
+    while start.elapsed() < timeout {
+        if let Ok(resp) = client.get(&url).send().await {
+            if resp.status().is_success() {
+                eprintln!("│  │  │      ✅ Anther is healthy");
+                return Ok(());
+            }
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    Err(StepError(
+        "Timed out waiting for Anther health check".to_string(),
+    ))
+}
+
+#[when(regex = r#"^I make a GET request to "(.+)"$"#)]
+async fn make_get_request(world: &mut ThingOsWorld, path: String) -> Result<(), StepError> {
+    let port = world
+        .http_port
+        .ok_or(StepError("HTTP port not configured".to_string()))?;
+    let url = format!("http://127.0.0.1:{}{}", port, path);
+
+    let client = Client::new();
+    let resp = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| StepError(format!("Request failed: {}", e)))?;
+
+    let status = resp.status().as_u16();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| StepError(format!("Failed to read body: {}", e)))?;
+
+    world.last_http_response = Some((status, body));
+    Ok(())
+}
+
+#[then(regex = r#"^the response status should be (\d+)$"#)]
+async fn check_response_status(world: &mut ThingOsWorld, status: u16) -> Result<(), StepError> {
+    let (last_status, _) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No HTTP response recorded".to_string()))?;
+
+    if *last_status != status {
+        return Err(StepError(format!(
+            "Expected status {}, got {}",
+            status, last_status
+        )));
+    }
+    Ok(())
+}
+
+#[then(regex = r#"^the response body should contain "(.+)"$"#)]
+async fn check_response_body(world: &mut ThingOsWorld, text: String) -> Result<(), StepError> {
+    let (_, body) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No HTTP response recorded".to_string()))?;
+
+    if !body.contains(&text) {
+        return Err(StepError(format!(
+            "Body did not contain '{}'. Body: {}",
+            text, body
+        )));
+    }
+    Ok(())
+}
+
+#[when(regex = r#"^I make (\d+) concurrent GET requests to "(.+)"$"#)]
+async fn make_concurrent_requests(
+    world: &mut ThingOsWorld,
+    count: usize,
+    path: String,
+) -> Result<(), StepError> {
+    let port = world
+        .http_port
+        .ok_or(StepError("HTTP port not configured".to_string()))?;
+    let url = format!("http://127.0.0.1:{}{}", port, path);
+
+    let client = Client::new();
+    let mut tasks = Vec::new();
+
+    for i in 0..count {
+        let c = client.clone();
+        let u = url.clone();
+        tasks.push(tokio::spawn(async move {
+            let start = std::time::Instant::now();
+            match c.get(&u).send().await {
+                Ok(resp) => {
+                    let status = resp.status();
+                    // Read body to ensure full request cycle
+                    let _ = resp.text().await;
+                    (i, true, status.as_u16(), start.elapsed())
+                }
+                Err(_e) => (i, false, 0, start.elapsed()),
+            }
+        }));
+    }
+
+    let mut failures = 0;
+    for t in tasks {
+        let (i, success, status, dur) = t
+            .await
+            .map_err(|e| StepError(format!("Task join error: {}", e)))?;
+        if !success || status != 200 {
+            failures += 1;
+            eprintln!(
+                "│  │  │      ❌ Request {} failed: status={} dur={:?}",
+                i, status, dur
+            );
+        }
+    }
+
+    if failures > 0 {
+        return Err(StepError(format!("{} concurrent requests failed", failures)));
+    }
+
+    eprintln!("│  │  │      ✅ {} concurrent requests succeeded", count);
+    Ok(())
 }

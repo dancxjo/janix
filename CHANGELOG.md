@@ -1,5 +1,36 @@
 # Changelog
 
+## System Monitoring, Storage & WASM Drivers
+
+Recent updates have introduced essential system utilities and laid the groundwork for sandboxed drivers.
+
+### 📊 System Monitoring & Desktop Widgets
+
+*   **Taskman**: A reactive task manager that visualizes the system's process tree. It provides real-time updates on task states (Running, Sleeping, Blocked), CPU affinity, and priority, leveraging `root_watch` to reflect graph changes instantly without polling.
+    *   *Artifacts*: `userspace/taskman/`
+
+*   **Fetchd**: A desktop widget that monitors network connectivity, displaying the system's IP address in the bottom-left corner. It acts as a visual status indicator for the network stack.
+    *   *Artifacts*: `userspace/fetchd/`
+
+*   **Clock**: A digital clock widget that displays the current system time, supporting timezones and locale configuration via `locale.conf`.
+    *   *Artifacts*: `userspace/clock/`
+
+*   **Photosynthesis**: A force-directed graph layout engine. It calculates optimal positions for nodes in a 2D space, designed to visualize the complex relationships within the system graph.
+    *   *Artifacts*: `userspace/photosynthesis/`
+
+### 💾 Storage & Filesystems
+
+*   **ISO 9660 Parser**: A robust, allocation-free ISO9660 filesystem implementation. It supports Level 1/2 interchange and Rock Ridge extensions, enabling the system to read assets and configuration directly from boot media.
+    *   *Artifacts*: `userspace/iso9660/`, `userspace/iso9660d/`
+
+*   **Storage Drivers**: New drivers for AHCI and ATA controllers, along with a disk probing utility, expanding hardware support for storage devices.
+    *   *Artifacts*: `userspace/ahci_disk/`, `userspace/ata_disk/`, `userspace/disk_probe/`
+
+### 🛡️ Sandboxed Drivers (WASM)
+
+*   **WASM Driver Host**: A runtime environment for executing drivers compiled to WebAssembly. This experimental host uses `wasmi` to sandbox drivers, with support for recording and replaying device interactions for debugging and regression testing.
+    *   *Artifacts*: `userspace/driver_wasm_host/`
+
 ## Major Userspace Expansion & Tooling Upgrade
 
 The operating system has undergone a significant architectural expansion, primarily focusing on creating a robust and modular userspace. Key infrastructure components have been introduced to handle graph data management (Phloem), networking (Netd), and service orchestration (Sprout). This shift moves logic out of ad-hoc implementations and into dedicated, queryable services, leveraging the system graph as the central source of truth.

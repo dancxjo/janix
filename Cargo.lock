@@ -150,6 +150,10 @@ name = "anther"
 version = "0.1.0"
 dependencies = [
  "abi",
+ "described",
+ "http 0.1.0",
+ "llm",
+ "ollama",
  "phloem",
  "sha2",
  "stem",

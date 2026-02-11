@@ -408,6 +408,7 @@ mod tests {
                 from: window,
                 predicate: ThingId::from_u64(rel_root_ui),
                 to: root,
+                flags: 0,
             }],
         );
         g.edges.insert(
@@ -417,11 +418,13 @@ mod tests {
                     from: root,
                     predicate: ThingId::from_u64(rel_has_child),
                     to: label,
+                    flags: 0,
                 },
                 Edge {
                     from: root,
                     predicate: ThingId::from_u64(rel_has_child),
                     to: input,
+                    flags: 0,
                 },
             ],
         );

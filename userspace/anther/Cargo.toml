@@ -8,3 +8,7 @@ stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"]
 abi = { path = "../../abi" }
 phloem = { path = "../phloem" }
 sha2 = { version = "0.10", default-features = false }
+described = { path = "../described" }
+ollama = { path = "../../libs/ollama" }
+llm = { path = "../../libs/llm" }
+http = { path = "../../libs/http" }

@@ -4,6 +4,10 @@
 
 #![allow(dead_code)]
 
+extern crate alloc;
+use alloc::boxed::Box;
+use alloc::vec::Vec;
+
 const MAX_REQUEST_LINE: usize = 8192;
 const MAX_HEADER_LINE: usize = 8192;
 const MAX_HEADERS: usize = 64;
@@ -23,6 +27,30 @@ pub enum Method {
 pub enum HttpVersion {
     Http10,
     Http11,
+}
+
+pub enum ResponseBody {
+    Static(&'static [u8]),
+    Owned(Vec<u8>),
+    Stream(Box<dyn llm::ChatStream + Send>),
+}
+
+impl ResponseBody {
+    pub fn as_slice(&self) -> &[u8] {
+        match self {
+            ResponseBody::Static(s) => s,
+            ResponseBody::Owned(o) => o.as_slice(),
+            ResponseBody::Stream(_) => &[],
+        }
+    }
+
+    pub fn len(&self) -> Option<usize> {
+        match self {
+            ResponseBody::Static(s) => Some(s.len()),
+            ResponseBody::Owned(o) => Some(o.len()),
+            ResponseBody::Stream(_) => None,
+        }
+    }
 }
 
 #[derive(Debug)]

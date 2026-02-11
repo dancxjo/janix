@@ -116,7 +116,7 @@ impl TcpStream {
             if resp_type == RESP_OK {
                 let sent = u16::from_le_bytes([response[2], response[3]]);
                 total_sent += sent as usize;
-                if sent as usize < chunk.len() {
+                if (sent as usize) < chunk.len() {
                     // Partial send at TCP level, stop chunking
                     break;
                 }

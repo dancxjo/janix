@@ -423,8 +423,42 @@ mod tests {
         let mut ex = GraphExecutor::with_graph(&g);
         let cmd = parse("MERGE (n:Kind {key: 1}) RETURN count(n)").unwrap();
         let res = ex.execute(cmd);
-        // MERGE is not fully implemented, but should not panic
-        assert!(!res.success || res.success); // Either works or reports error
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        if let Some(crate::ResultValue::Number(n)) = res.rows[0].first() {
+            assert_eq!(*n, 1);
+        } else {
+            panic!("Expected count to be 1");
+        }
+    }
+
+    #[test]
+    fn test_merge_idempotency() {
+        // MERGE twice should result in one node
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // First MERGE
+        let cmd1 = parse("MERGE (n:Kind {key: 2024}) RETURN n").unwrap();
+        let res1 = ex.execute(cmd1);
+        assert!(res1.success);
+        let id1 = if let Some(crate::ResultValue::Node(id)) = res1.rows[0].first() {
+            *id
+        } else {
+            panic!("Expected Node");
+        };
+
+        // Second MERGE
+        let cmd2 = parse("MERGE (n:Kind {key: 2024}) RETURN n").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success);
+        let id2 = if let Some(crate::ResultValue::Node(id)) = res2.rows[0].first() {
+            *id
+        } else {
+            panic!("Expected Node");
+        };
+
+        assert_eq!(id1, id2, "MERGE should return the same node for same properties");
     }
 
     // ===== Parser-level tests for unsupported features =====

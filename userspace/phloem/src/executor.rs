@@ -115,13 +115,10 @@ impl<G: Graph> GraphExecutor<G> {
             Command::Quit => ExecutionResult::message("Bye."),
             Command::Schema => ExecutionResult::error("Schema not implemented."),
             Command::Merge {
-                pattern: _,
-                returns: _,
+                pattern,
+                returns,
                 skip: _,
-            } => {
-                // TODO: Implement MERGE properly (for now it just MATCHes/CREATEs)
-                ExecutionResult::error("MERGE not fully implemented")
-            }
+            } => self.execute_merge(pattern, returns),
             Command::Match {
                 pattern,
                 where_clause,

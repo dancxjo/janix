@@ -691,6 +691,58 @@ pub fn handle_apply_batch_with_scratch(
     (result.status, result.seq)
 }
 
+/// Like `handle_apply_batch_with_scratch` but returns the full `ApplyResult`
+/// including `created_ids`, so callers can retrieve node IDs from batched
+/// CreateNode operations.
+pub fn handle_apply_batch_with_scratch_full(
+    graph: &mut Graph,
+    interner: &mut Interner,
+    batch: &[u8],
+    scratch: &mut RootBatchScratch,
+) -> ApplyResult {
+    // Increment call counter
+    BATCH_CALLS.fetch_add(1, Ordering::Relaxed);
+
+    // Track capacity before parsing for reallocation detection
+    let old_cap = scratch.ops.capacity();
+
+    // Reset scratch for this batch
+    scratch.reset();
+
+    // Parse batch into scratch.ops (validation happens here)
+    if let Err(code) = parse_batch_scratch(batch, interner, scratch) {
+        return ApplyResult {
+            status: code,
+            seq: 0,
+            created_ids: Vec::new(),
+        };
+    }
+
+    // Track ops and detect reallocations
+    BATCH_OPS_TOTAL.fetch_add(scratch.ops.len() as u64, Ordering::Relaxed);
+    if scratch.ops.capacity() != old_cap {
+        BATCH_REALLOCATIONS.fetch_add(1, Ordering::Relaxed);
+    }
+
+    // Apply through canonical commit path
+    let result = apply_ops_and_commit(graph, &scratch.ops);
+
+    // Host fallback links for CreateNode ops in this batch
+    if result.status == 0 && !result.created_ids.is_empty() {
+        let mut created_idx = 0usize;
+        for op in &scratch.ops {
+            if let ValidatedOp::CreateNode { kind, .. } = op {
+                if let Some(id) = result.created_ids.get(created_idx).copied() {
+                    super::graph::maybe_link_host_fallback(graph, interner, id, *kind);
+                }
+                created_idx += 1;
+            }
+        }
+    }
+
+    result
+}
+
 /// Handle SYS_ROOT_APPLY_BATCH (legacy interface without scratch - allocates each call)
 ///
 /// Parses the batch, validates operations, and commits through the canonical path.

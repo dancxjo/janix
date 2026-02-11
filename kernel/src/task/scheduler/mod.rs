@@ -160,8 +160,8 @@ fn flush_graph_queue<R: BootRuntime>() {
                 name,
                 parent_tid,
             } => {
-                // Thread creation is rare and needs the ID, so we use optimized separate calls.
-                if let Some(thing_id) = graphify::do_create_thread_node_optimized(
+                // Thread creation uses a single batched IPC call (CreateNode + PropSets + Link).
+                if let Some(thing_id) = graphify::do_create_thread_node(
                     tid,
                     priority,
                     is_user,

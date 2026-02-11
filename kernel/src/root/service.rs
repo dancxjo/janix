@@ -132,6 +132,26 @@ fn handle_msg<R: BootRuntime>(
     query_scratch: &mut crate::root::query::QueryScratch,
     msg: RootMsg,
 ) {
+    // ApplyBatch gets special handling: we need to return the first created ID
+    // via reply.p0 so callers can batch node creation + property sets in one call.
+    if let RootOp::ApplyBatch { ref batch } = msg.op {
+        let result = root_handlers::batch::handle_apply_batch_with_scratch_full(
+            graph,
+            interner,
+            batch,
+            batch_scratch,
+        );
+        msg.reply.status.store(result.status, Ordering::Relaxed);
+        msg.reply.value.store(result.seq, Ordering::Relaxed);
+        // Return the first created ID (if any) in p0 so callers can
+        // batch CreateNode + PropSet in a single IPC call.
+        if let Some(&first_id) = result.created_ids.first() {
+            msg.reply.p0.store(first_id, Ordering::Relaxed);
+        }
+        msg.reply.done.store(1, Ordering::Release);
+        return;
+    }
+
     let (status, value) = match msg.op {
         // Symbol operations
         RootOp::Intern { name } => root_handlers::handle_intern(interner, &name),
@@ -212,12 +232,8 @@ fn handle_msg<R: BootRuntime>(
         RootOp::WatchNext { id, .. } => root_handlers::handle_watch_next(graph, &msg, id),
         RootOp::WatchClose { id } => root_handlers::handle_watch_close(graph, id),
 
-        RootOp::ApplyBatch { batch } => root_handlers::batch::handle_apply_batch_with_scratch(
-            graph,
-            interner,
-            &batch,
-            batch_scratch,
-        ),
+        // ApplyBatch handled above — this arm is unreachable but needed for exhaustiveness
+        RootOp::ApplyBatch { .. } => unreachable!(),
 
         // Debug/Describe operations
         RootOp::DescribeThing { id, buffer, len } => {

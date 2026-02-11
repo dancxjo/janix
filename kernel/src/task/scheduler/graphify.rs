@@ -7,7 +7,7 @@
 //! and `do_*` functions perform the actual graph operations.
 
 use super::graph_queue::{self, GraphWork};
-use crate::root::{RootOp, SymbolShell, enqueue};
+use crate::root::{RootOp, enqueue};
 use crate::task::TaskId;
 use abi::schema::{keys, kinds, rels};
 use core::sync::atomic::Ordering;
@@ -257,63 +257,10 @@ impl BatchBuilder {
     }
 }
 
-/// Create a graph node with the given kind (blocking).
-fn create_node(kind: &str) -> Option<u64> {
-    let reply = enqueue(RootOp::CreateNode {
-        kind: SymbolShell::Str(alloc::string::String::from(kind)),
-    });
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            let id = reply.value.load(Ordering::Relaxed);
-            return if id != 0 { Some(id) } else { None };
-        }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
-        }
-        core::hint::spin_loop();
-    }
-}
-
-/// Set a property on a graph node (blocking).
-fn set_prop(id: u64, key: &str, value: u64) {
-    let reply = enqueue(RootOp::PropSet {
-        id,
-        key: SymbolShell::Str(alloc::string::String::from(key)),
-        value,
-    });
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            break;
-        }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
-        }
-        core::hint::spin_loop();
-    }
-}
-
-/// Create a link between two graph nodes (blocking).
-fn link(src: u64, rel: &str, dst: u64) {
-    let reply = enqueue(RootOp::Link {
-        src,
-        rel: SymbolShell::Str(alloc::string::String::from(rel)),
-        dst,
-    });
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            break;
-        }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
-        }
-        core::hint::spin_loop();
-    }
-}
-
 /// Actually create a thread node in the graph (called from flush_graph_queue).
+///
+/// Batches CreateNode + all PropSets + Link into a single ApplyBatch IPC call.
+/// The first created ID is returned via reply.p0.
 pub fn do_create_thread_node(
     tid: TaskId,
     priority: u8,
@@ -359,131 +306,9 @@ pub fn do_create_thread_node(
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
-            // ApplyBatch returns the sequence number in value, but handle_apply_batch
-            // doesn't return created IDs in the legacy u64 value slot.
-            // Wait, we need the created ID!
-            // Looking at handle_apply_batch_with_scratch in batch.rs:
-            // returns (result.status, result.seq).
-            // The created IDs are NOT returned to the caller via RootMsg.reply.value.
-            // This is a problem.
-
-            // Actually, we can look up the ID by querying the graph afterward, or
-            // we can modify RootOp::ApplyBatch to return the first created ID if any?
-            // No, the ABI says we can't easily change it without breaking others.
-
-            // Wait, handle_create_node returns the ID!
-            // But Batch doesn't.
-
-            // Let's stick to do_create_thread_node using handle_create_node for now if we need the ID,
-            // OR we can use handle_find to get it.
-            break;
-        }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
-        }
-        core::hint::spin_loop();
-    }
-
-    // Since we need the ID for the caller to store in task_graph,
-    // maybe it's better to NOT batch CreateThread if it's infrequent?
-    // Creation only happens once per task. State updates happen millions of times.
-    // Let's revert CreateThread to use separate calls for now to keep it working,
-    // but optimize it with cached symbols.
-    None
-}
-
-/// Fallback optimized version of do_create_thread_node that returns the ID.
-pub fn do_create_thread_node_optimized(
-    tid: TaskId,
-    priority: u8,
-    is_user: bool,
-    name: Option<&str>,
-    sched_thing: u64,
-) -> Option<u64> {
-    let thing_id = create_node_optimized(kinds::PROC_THREAD, &SYM_KIND_THREAD)?;
-
-    set_prop_optimized(thing_id, keys::PROC_TID, &SYM_PROC_TID, tid as u64);
-    set_prop_optimized(
-        thing_id,
-        keys::PROC_PRIORITY,
-        &SYM_PROC_PRIORITY,
-        priority as u64,
-    );
-    set_prop_optimized(
-        thing_id,
-        keys::PROC_IS_USER,
-        &SYM_PROC_IS_USER,
-        if is_user { 1 } else { 0 },
-    );
-    set_prop_optimized(
-        thing_id,
-        keys::PROC_STATE,
-        &SYM_PROC_STATE,
-        intern_cached("runnable"),
-    );
-
-    if let Some(n) = name {
-        set_prop_optimized(thing_id, keys::PROC_NAME, &SYM_PROC_NAME, intern(n));
-    }
-
-    link_optimized(
-        sched_thing,
-        rels::SCHED_HAS_TASK,
-        &SYM_REL_HAS_TASK,
-        thing_id,
-    );
-
-    Some(thing_id)
-}
-
-fn create_node_optimized(kind_str: &'static str, slot: &AtomicU64) -> Option<u64> {
-    let kind = get_schema_sym(kind_str, slot);
-    let reply = enqueue(RootOp::CreateNode {
-        kind: SymbolShell::Id(kind as u32),
-    });
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            let id = reply.value.load(Ordering::Relaxed);
+            // The first created ID is returned in reply.p0 by the Root service.
+            let id = reply.p0.load(Ordering::Relaxed);
             return if id != 0 { Some(id) } else { None };
-        }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
-        }
-        core::hint::spin_loop();
-    }
-}
-
-fn set_prop_optimized(id: u64, key_str: &'static str, slot: &AtomicU64, value: u64) {
-    let key = get_schema_sym(key_str, slot);
-    let reply = enqueue(RootOp::PropSet {
-        id,
-        key: SymbolShell::Id(key as u32),
-        value,
-    });
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            break;
-        }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
-        }
-        core::hint::spin_loop();
-    }
-}
-
-fn link_optimized(src: u64, rel_str: &'static str, slot: &AtomicU64, dst: u64) {
-    let rel = get_schema_sym(rel_str, slot);
-    let reply = enqueue(RootOp::Link {
-        src,
-        rel: SymbolShell::Id(rel as u32),
-        dst,
-    });
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            break;
         }
         unsafe {
             crate::task::scheduler::yield_now_current();
@@ -601,5 +426,23 @@ pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
 /// Link a task to a bytespace it uses.
 #[allow(dead_code)]
 pub fn link_bytespace(thread_thing: u64, bytespace_thing: u64) {
-    link(thread_thing, rels::THREAD_USES_BYTESPACE, bytespace_thing);
+    static SYM_REL_USES_BYTESPACE: AtomicU64 = AtomicU64::new(0);
+    let mut bb = BatchBuilder::new();
+    bb.put_edge(
+        thread_thing,
+        schema_sym!(rels::THREAD_USES_BYTESPACE, SYM_REL_USES_BYTESPACE),
+        bytespace_thing,
+    );
+
+    let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            break;
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+        core::hint::spin_loop();
+    }
 }

@@ -100,6 +100,7 @@ pub fn errno(ret: isize) -> core::result::Result<usize, Errno> {
             12 => Err(Errno::ENOMEM),
             14 => Err(Errno::EFAULT),
             22 => Err(Errno::EINVAL),
+            32 => Err(Errno::EPIPE),
             38 => Err(Errno::ENOSYS),
             _ => Err(Errno::EINVAL), // Fallback
         }

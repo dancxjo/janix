@@ -169,3 +169,23 @@ pub const SYS_NIC_MAC: u32 = 0x1A0;
 pub const SYS_NIC_LINK_UP: u32 = 0x1A1;
 pub const SYS_NIC_POLL_RX: u32 = 0x1A2;
 pub const SYS_NIC_TX: u32 = 0x1A3;
+
+// ============================================================================
+// Block 0x200–0x20F: Pipes
+// ============================================================================
+/// Create an anonymous pipe. Args: capacity, flags. Returns pipe_id.
+/// Read handle = pipe_id, write handle = pipe_id (distinguished by syscall used).
+pub const SYS_PIPE_CREATE: u32 = 0x200;
+/// Read from a pipe. Args: pipe_id, buf_ptr, buf_len. Returns bytes read.
+pub const SYS_PIPE_READ: u32 = 0x201;
+/// Write to a pipe. Args: pipe_id, buf_ptr, buf_len. Returns bytes written.
+pub const SYS_PIPE_WRITE: u32 = 0x202;
+/// Close one end of a pipe. Args: pipe_id, end (0=read, 1=write).
+pub const SYS_PIPE_CLOSE: u32 = 0x203;
+
+pub mod pipe_flags {
+    /// Non-blocking mode: read/write return EAGAIN instead of blocking.
+    pub const NONBLOCK: u32 = 1 << 0;
+    /// Close-on-exec (stored but no-op until process exec support).
+    pub const CLOEXEC: u32 = 1 << 1;
+}

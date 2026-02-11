@@ -1,5 +1,6 @@
 mod arch;
 pub mod graph;
+pub mod pipe;
 pub mod port;
 pub mod stream;
 

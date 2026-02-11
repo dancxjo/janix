@@ -113,6 +113,11 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_NIC_POLL_RX => handlers::sys_nic_poll_rx(args[0], args[1]),
         SYS_NIC_TX => handlers::sys_nic_tx(args[0], args[1]),
 
+        SYS_PIPE_CREATE => handlers::sys_pipe_create(args[0], args[1]),
+        SYS_PIPE_READ => handlers::sys_pipe_read(args[0], args[1], args[2]),
+        SYS_PIPE_WRITE => handlers::sys_pipe_write(args[0], args[1], args[2]),
+        SYS_PIPE_CLOSE => handlers::sys_pipe_close(args[0], args[1]),
+
         _ => {
             crate::kprintln!("SYSCALL: Unknown syscall #{}", syscall_id);
             Err(abi::errors::Errno::ENOSYS)

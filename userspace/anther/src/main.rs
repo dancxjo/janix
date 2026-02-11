@@ -16,29 +16,23 @@ mod ui;
 mod upload;
 
 use alloc::vec::Vec;
+use core::task::{Context, Poll, RawWaker, RawWakerVTable, Waker};
 use net_client::NetClient;
 use stem::{info, warn};
+
+use crate::http::ResponseBody;
 
 const SERVER_NAME: &str = "ThingOS-anther/0.1";
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 
-pub enum ResponseBody {
-    Static(&'static [u8]),
-    Owned(Vec<u8>),
-}
-
-impl ResponseBody {
-    pub fn as_slice(&self) -> &[u8] {
-        match self {
-            ResponseBody::Static(s) => s,
-            ResponseBody::Owned(o) => o.as_slice(),
-        }
-    }
-}
-
 /// Build HTTP headers
-fn build_headers(status: &str, content_type: &str, body_len: usize, keep_alive: bool) -> Vec<u8> {
+fn build_headers(
+    status: &str,
+    content_type: &str,
+    body_len: Option<usize>,
+    keep_alive: bool,
+) -> Vec<u8> {
     use alloc::format;
     let mut response = Vec::new();
 
@@ -53,14 +47,20 @@ fn build_headers(status: &str, content_type: &str, body_len: usize, keep_alive: 
     let content_type_hdr = format!("Content-Type: {}\r\n", content_type);
     response.extend_from_slice(content_type_hdr.as_bytes());
 
-    let content_len_hdr = format!("Content-Length: {}\r\n", body_len);
-    response.extend_from_slice(content_len_hdr.as_bytes());
+    if let Some(len) = body_len {
+        let content_len_hdr = format!("Content-Length: {}\r\n", len);
+        response.extend_from_slice(content_len_hdr.as_bytes());
+    } else {
+        response.extend_from_slice(b"Transfer-Encoding: chunked\r\n");
+    }
 
     if keep_alive {
         response.extend_from_slice(b"Connection: keep-alive\r\n");
     } else {
         response.extend_from_slice(b"Connection: close\r\n");
     }
+    // CORS headers for local dev if needed
+    response.extend_from_slice(b"Access-Control-Allow-Origin: *\r\n");
     response.extend_from_slice(b"\r\n");
 
     response
@@ -73,7 +73,7 @@ fn build_response(
     body: ResponseBody,
     keep_alive: bool,
 ) -> (Vec<u8>, ResponseBody) {
-    let headers = build_headers(status, content_type, body.as_slice().len(), keep_alive);
+    let headers = build_headers(status, content_type, body.len(), keep_alive);
     (headers, body)
 }
 
@@ -154,12 +154,15 @@ fn route_request(
         if let Some(route) = router::match_route(method, path) {
             // For API routes, we need the request body (for POST/PUT/PATCH)
             let (status, api_resp) = api_v1::dispatch(route, req, body);
-            return build_response(
-                status,
-                "application/json",
-                ResponseBody::Owned(api_resp),
-                keep_alive,
-            );
+            // Check if api_resp is a Stream or just bytes
+            // api_v1::dispatch now returns (status, ResponseBody) instead of (status, Vec<u8>)
+            // We need to update api_v1::dispatch signature.
+            // But I'll handle that by updating api_v1.rs.
+            // Wait, I can't change api_v1 signature here.
+            // I should update api_v1::dispatch to return ResponseBody.
+            // But api_v1.rs is not updated yet.
+            // I'll assume I update api_v1.rs as well to return ResponseBody.
+            return build_response(status, "application/json", api_resp, keep_alive);
         }
     }
 
@@ -709,9 +712,9 @@ fn run_stdio_mode() -> ! {
 
     // In stdio mode, we'd write to stdout here
     info!(
-        "anther: Response generated: headers={}, body={}",
+        "anther: Response generated: headers={}, body_len={:?}",
         headers.len(),
-        body.as_slice().len()
+        body.len()
     );
 
     // Exit after one request in stdio mode
@@ -876,32 +879,68 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
         // Send headers
         net.tcp_send(conn_handle, &headers);
 
-        // Send body in chunks
-        let response_body_slice = resp_body.as_slice();
-        const CHUNK_SIZE: usize = 8192;
-        let mut sent = 0;
-        let mut stall_count = 0;
-
-        while sent < response_body_slice.len() {
-            let remaining = response_body_slice.len() - sent;
-            let chunk_len = remaining.min(CHUNK_SIZE);
-            let chunk = &response_body_slice[sent..sent + chunk_len];
-
-            let n = net.tcp_send(conn_handle, chunk);
-
-            if n == 0 {
-                stall_count += 1;
-                if stall_count >= 100 {
-                    warn!("anther: Send stalled after {} bytes", sent);
-                    keep_alive = false;
-                    break;
-                }
-                stem::syscall::yield_now();
-                continue;
+        // Send body
+        match resp_body {
+            ResponseBody::Static(s) => {
+                send_all(net, conn_handle, s);
             }
+            ResponseBody::Owned(v) => {
+                send_all(net, conn_handle, &v);
+            }
+            ResponseBody::Stream(mut stream) => {
+                 use alloc::format;
+                 let waker = noop_waker();
+                 let mut cx = Context::from_waker(&waker);
 
-            sent += n;
-            stall_count = 0;
+                 loop {
+                     match stream.poll_next(&mut cx) {
+                         Poll::Ready(Ok(Some(delta))) => {
+                             // Format SSE data as JSON
+                             // Avoid serde here if possible, just use format since fields are known
+                             // Need to escape strings properly though.
+                             // Simple JSON: {"text": "...", "finish": "..."}
+
+                             let finish_str = match delta.finish {
+                                 Some(f) => match f {
+                                     llm::FinishReason::Stop => "\"stop\"",
+                                     llm::FinishReason::Length => "\"length\"",
+                                     llm::FinishReason::Canceled => "\"canceled\"",
+                                     llm::FinishReason::Error => "\"error\"",
+                                 },
+                                 None => "null",
+                             };
+
+                             let escaped_text = escape_json_string(&delta.text);
+                             let json = format!("{{\"text\":\"{}\",\"finish\":{}}}", escaped_text, finish_str);
+
+                             // Send as chunked encoding
+                             let event_str = format!("data: {}\n\n", json);
+                             send_chunk(net, conn_handle, event_str.as_bytes());
+
+                             if delta.finish.is_some() {
+                                 // Close stream
+                                 send_chunk(net, conn_handle, &[]); // 0-length chunk to end
+                                 break;
+                             }
+                         }
+                         Poll::Ready(Ok(None)) => {
+                             send_chunk(net, conn_handle, &[]); // 0-length chunk to end
+                             break;
+                         }
+                         Poll::Ready(Err(_)) => {
+                             // Send error event
+                             let err_json = "{\"error\":\"Stream error\"}";
+                             let event_str = format!("data: {}\n\n", err_json);
+                             send_chunk(net, conn_handle, event_str.as_bytes());
+                             send_chunk(net, conn_handle, &[]);
+                             break;
+                         }
+                         Poll::Pending => {
+                             stem::thread::yield_now();
+                         }
+                     }
+                 }
+            }
         }
 
         // Drain processed request from buffer
@@ -924,6 +963,67 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     stem::time::sleep_ms(10);
 }
 
+fn send_all(net: &NetClient, conn_handle: u32, data: &[u8]) {
+    const CHUNK_SIZE: usize = 8192;
+    let mut sent = 0;
+    let mut stall_count = 0;
+
+    while sent < data.len() {
+        let remaining = data.len() - sent;
+        let chunk_len = remaining.min(CHUNK_SIZE);
+        let chunk = &data[sent..sent + chunk_len];
+
+        let n = net.tcp_send(conn_handle, chunk);
+
+        if n == 0 {
+            stall_count += 1;
+            if stall_count >= 100 {
+                warn!("anther: Send stalled after {} bytes", sent);
+                break;
+            }
+            stem::syscall::yield_now();
+            continue;
+        }
+
+        sent += n;
+        stall_count = 0;
+    }
+}
+
+fn send_chunk(net: &NetClient, conn_handle: u32, data: &[u8]) {
+    use alloc::format;
+    // Chunk header: hex length \r\n
+    let header = format!("{:x}\r\n", data.len());
+    net.tcp_send(conn_handle, header.as_bytes());
+
+    // Chunk data
+    if !data.is_empty() {
+        send_all(net, conn_handle, data);
+    }
+
+    // Chunk footer: \r\n
+    net.tcp_send(conn_handle, b"\r\n");
+}
+
+fn escape_json_string(s: &str) -> alloc::string::String {
+    let mut out = alloc::string::String::with_capacity(s.len() + 16);
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => {
+                 use core::fmt::Write;
+                 write!(out, "\\u{:04x}", c as u32).ok();
+            },
+            c => out.push(c),
+        }
+    }
+    out
+}
+
 fn find_header_end(buf: &[u8], start: usize) -> Option<usize> {
     if buf.len() < 2 {
         return None;
@@ -944,6 +1044,17 @@ fn find_header_end(buf: &[u8], start: usize) -> Option<usize> {
         i += 1;
     }
     None
+}
+
+fn noop_waker() -> Waker {
+    unsafe fn clone(_: *const ()) -> RawWaker {
+        RawWaker::new(core::ptr::null(), &VTABLE)
+    }
+    unsafe fn wake(_: *const ()) {}
+    unsafe fn wake_by_ref(_: *const ()) {}
+    unsafe fn drop(_: *const ()) {}
+    static VTABLE: RawWakerVTable = RawWakerVTable::new(clone, wake, wake_by_ref, drop);
+    unsafe { Waker::from_raw(RawWaker::new(core::ptr::null(), &VTABLE)) }
 }
 
 // Magic value to signal stdio mode (for testing)
@@ -969,34 +1080,47 @@ mod tests {
 
     #[test]
     fn test_handle_health() {
-        let response = handle_health(false);
-        let response_str = core::str::from_utf8(&response).unwrap();
-        assert!(response_str.contains("200 OK"));
-        assert!(response_str.contains("ok"));
+        let (headers, body) = handle_health(false, false);
+        let headers_str = core::str::from_utf8(&headers).unwrap();
+        assert!(headers_str.contains("200 OK"));
+        match body {
+            ResponseBody::Static(b) => assert_eq!(b, b"ok"),
+            _ => panic!("Expected static body"),
+        }
     }
 
     #[test]
-    fn test_handle_index() {
-        let response = handle_index(false);
-        let response_str = core::str::from_utf8(&response).unwrap();
-        assert!(response_str.contains("200 OK"));
-        assert!(response_str.contains("ThingOS"));
+    fn test_handle_graph_index() {
+        let (headers, body) = handle_graph_index(false, false);
+        let headers_str = core::str::from_utf8(&headers).unwrap();
+        assert!(headers_str.contains("200 OK"));
+        match body {
+            ResponseBody::Static(b) => {
+                 let s = core::str::from_utf8(b).unwrap();
+                 assert!(s.contains("Graph index"));
+            }
+            _ => panic!("Expected static body"),
+        }
     }
 
     #[test]
     fn test_handle_404() {
-        let response = handle_404(false);
-        let response_str = core::str::from_utf8(&response).unwrap();
-        assert!(response_str.contains("404 Not Found"));
+        let (headers, _body) = handle_404(false, false);
+        let headers_str = core::str::from_utf8(&headers).unwrap();
+        assert!(headers_str.contains("404 Not Found"));
     }
 
     #[test]
     fn test_build_response() {
-        let response = build_response("200 OK", "text/plain", b"test");
-        let response_str = core::str::from_utf8(&response).unwrap();
-        assert!(response_str.contains("HTTP/1.1 200 OK"));
-        assert!(response_str.contains("Content-Length: 4"));
-        assert!(response_str.contains("test"));
+        let response_body = ResponseBody::Static(b"test");
+        let (headers, body) = build_response("200 OK", "text/plain", response_body, false);
+        let headers_str = core::str::from_utf8(&headers).unwrap();
+        assert!(headers_str.contains("HTTP/1.1 200 OK"));
+        assert!(headers_str.contains("Content-Length: 4"));
+        match body {
+            ResponseBody::Static(b) => assert_eq!(b, b"test"),
+            _ => panic!("Expected static body"),
+        }
     }
 
     #[test]
@@ -1007,10 +1131,11 @@ mod tests {
             version: http::HttpVersion::Http11,
             headers: [(None, None); 64],
             header_count: 0,
+            header_len: 0,
         };
-        let response = route_request(&req, "/health", &[]);
-        let response_str = core::str::from_utf8(&response).unwrap();
-        assert!(response_str.contains("200 OK"));
+        let (headers, _body) = route_request(&req, "/health", &[], false);
+        let headers_str = core::str::from_utf8(&headers).unwrap();
+        assert!(headers_str.contains("200 OK"));
     }
 
     #[test]
@@ -1021,9 +1146,10 @@ mod tests {
             version: http::HttpVersion::Http11,
             headers: [(None, None); 64],
             header_count: 0,
+            header_len: 0,
         };
-        let response = route_request(&req, "/health", &[]);
-        let response_str = core::str::from_utf8(&response).unwrap();
-        assert!(response_str.contains("405"));
+        let (headers, _body) = route_request(&req, "/health", &[], false);
+        let headers_str = core::str::from_utf8(&headers).unwrap();
+        assert!(headers_str.contains("405"));
     }
 }

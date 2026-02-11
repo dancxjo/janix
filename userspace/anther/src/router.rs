@@ -44,6 +44,9 @@ pub enum ApiRoute<'a> {
     /// POST /api/v1/things/{id}/launch
     Launch { id: &'a str },
 
+    /// GET /api/v1/things/{id}/explain
+    ExplainThing { id: &'a str },
+
     /// GET /api/v1/path/{path}
     ResolvePath { path: &'a str },
 
@@ -122,6 +125,9 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         (Method::Get, ["things", id, "launch"]) => Some(ApiRoute::GetLaunchInfo { id }),
         (Method::Post, ["things", id, "launch"]) => Some(ApiRoute::Launch { id }),
 
+        // /api/v1/things/{id}/explain
+        (Method::Get, ["things", id, "explain"]) => Some(ApiRoute::ExplainThing { id }),
+
         // /api/v1/path/{path...}
         (Method::Get, ["path", rest @ ..]) if !rest.is_empty() => {
             // Reconstruct the path from remaining segments
@@ -175,6 +181,7 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         | (_, ["things", _, "bytespaces", _])
         | (_, ["things", _, "bytespaces", _, "meta"])
         | (_, ["things", _, "launch"])
+        | (_, ["things", _, "explain"])
         | (_, ["watch"])
         | (_, ["subgraph"])
         | (_, ["layout"])

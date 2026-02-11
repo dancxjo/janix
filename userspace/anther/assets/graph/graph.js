@@ -247,6 +247,7 @@ const state = {
     watchInterval: null,
     lastProps: {},  // Track previous values for change detection
     launchInFlight: false,
+    explainSource: null,
     // Layout
     forceEnabled: true,
     layout: null, // Current active layout
@@ -781,6 +782,11 @@ function selectNode(node) {
     $('inspectorLabel').textContent = data.name || data.label || '-';
     updateInspectorPosition(node);
 
+    // Reset Explain UI
+    resetExplainUI();
+    $('explainBtn').style.display = 'block';
+    $('explainBtn').onclick = () => explainSelected(id);
+
     // Start watching this node's properties
     startWatching(id);
 
@@ -797,6 +803,7 @@ function updateInspectorPosition(node) {
 
 function clearSelection() {
     stopWatching();
+    resetExplainUI(); // Stop any active explanation
     state.selectedNode = null;
     $('inspectorEmpty').style.display = 'block';
     $('inspectorContent').style.display = 'none';
@@ -817,6 +824,67 @@ function resetLaunchUI() {
         status.className = 'launch-status';
     }
     state.launchInFlight = false;
+}
+
+function resetExplainUI() {
+    if (state.explainSource) {
+        state.explainSource.close();
+        state.explainSource = null;
+    }
+    $('explainBtn').style.display = 'none';
+    $('explainStatus').style.display = 'none';
+    $('explainContent').style.display = 'none';
+    $('explainContent').textContent = '';
+}
+
+function explainSelected(thingId) {
+    if (state.explainSource) {
+        state.explainSource.close();
+    }
+
+    $('explainContent').style.display = 'block';
+    $('explainContent').textContent = '';
+    $('explainStatus').style.display = 'block';
+    $('explainStatus').textContent = 'Thinking...';
+    $('explainStatus').className = 'explain-status';
+
+    const url = `/api/v1/things/${encodeURIComponent(thingId)}/explain`;
+    const source = new EventSource(url);
+    state.explainSource = source;
+
+    source.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            if (data.text) {
+                $('explainContent').textContent += data.text;
+            }
+            if (data.finish || data.done || data.error) {
+                source.close();
+                state.explainSource = null;
+                if (data.error) {
+                    $('explainStatus').textContent = 'Error: ' + data.error;
+                    $('explainStatus').classList.add('error');
+                } else {
+                    $('explainStatus').textContent = 'Done';
+                    $('explainStatus').classList.add('success');
+                }
+            }
+        } catch (e) {
+            console.error('SSE Parse Error', e);
+        }
+    };
+
+    source.onerror = (err) => {
+        console.error('SSE Error', err);
+        source.close();
+        state.explainSource = null;
+        if ($('explainContent').textContent.length === 0) {
+             $('explainStatus').textContent = 'Connection failed';
+             $('explainStatus').classList.add('error');
+        } else {
+             $('explainStatus').textContent = 'Done (closed)';
+        }
+    };
 }
 
 function shortModuleName(name) {

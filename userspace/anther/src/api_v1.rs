@@ -12,10 +12,12 @@ use alloc::vec::Vec;
 
 use crate::error::{ApiError, ApiErrorCode};
 use crate::graph_api::{self, GraphError, JsonBuilder};
-use crate::http::{self, Request};
+use crate::http::{self, Request, ResponseBody};
 use crate::router::ApiRoute;
 use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
+use described::{DescribeGraph, DescribeMode, DescriptionService, SysGraph, ViewSpec};
+use ollama::OllamaClient;
 use stem::error;
 use stem::syscall::graph::{find, intern, link, prop_get, prop_set};
 use stem::thing::sys::{get_edges, get_props};
@@ -44,18 +46,21 @@ pub const MAX_SUBGRAPH_NODES: usize = 500;
 /// Default subgraph depth
 pub const DEFAULT_SUBGRAPH_DEPTH: u32 = 2;
 
+/// Default Ollama URL (localhost on host machine via QEMU user networking)
+pub const OLLAMA_URL: &str = "http://10.0.2.2:11434";
+
 // ============================================================================
 // Response Helpers
 // ============================================================================
 
 /// Build HTTP response body with JSON content type
-pub fn json_response(status: &'static str, body: &str) -> (&'static str, Vec<u8>) {
-    (status, body.as_bytes().to_vec())
+pub fn json_response(status: &'static str, body: &str) -> (&'static str, ResponseBody) {
+    (status, ResponseBody::Owned(body.as_bytes().to_vec()))
 }
 
 /// Build error response
-pub fn error_response(err: ApiError) -> (&'static str, Vec<u8>) {
-    (err.http_status(), err.to_json().into_bytes())
+pub fn error_response(err: ApiError) -> (&'static str, ResponseBody) {
+    (err.http_status(), ResponseBody::Owned(err.to_json().into_bytes()))
 }
 
 // ============================================================================
@@ -64,7 +69,7 @@ pub fn error_response(err: ApiError) -> (&'static str, Vec<u8>) {
 
 /// GET /api/v1/
 /// Returns API capabilities and schema versions
-pub fn handle_discovery() -> (&'static str, Vec<u8>) {
+pub fn handle_discovery() -> (&'static str, ResponseBody) {
     let mut json = JsonBuilder::new();
     json.start_object();
 
@@ -91,6 +96,7 @@ pub fn handle_discovery() -> (&'static str, Vec<u8>) {
     json.string_value("/api/v1/things/{id}");
     json.string_value("/api/v1/things/{id}/bytespaces/{key}");
     json.string_value("/api/v1/things/{id}/launch");
+    json.string_value("/api/v1/things/{id}/explain");
     json.string_value("/api/v1/path/{path}");
     json.string_value("/api/v1/watch");
     json.end_array();
@@ -102,7 +108,7 @@ pub fn handle_discovery() -> (&'static str, Vec<u8>) {
 
 /// GET /api/v1/things/{id}
 /// Returns full Thing representation with props and links
-pub fn handle_get_thing(id_str: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_get_thing(id_str: &str) -> (&'static str, ResponseBody) {
     let id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -119,7 +125,7 @@ pub fn handle_get_thing(id_str: &str) -> (&'static str, Vec<u8>) {
 
 /// POST /api/v1/things
 /// Create a new thing
-pub fn handle_create_thing(_body: &[u8]) -> (&'static str, Vec<u8>) {
+pub fn handle_create_thing(_body: &[u8]) -> (&'static str, ResponseBody) {
     // TODO: Parse JSON body for kind_id and initial props
     // For now, return not implemented
     error_response(ApiError::new(
@@ -129,7 +135,7 @@ pub fn handle_create_thing(_body: &[u8]) -> (&'static str, Vec<u8>) {
 }
 
 /// DELETE /api/v1/things/{id}
-pub fn handle_delete_thing(id_str: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_delete_thing(id_str: &str) -> (&'static str, ResponseBody) {
     let _id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -144,7 +150,7 @@ pub fn handle_delete_thing(id_str: &str) -> (&'static str, Vec<u8>) {
 
 /// PATCH /api/v1/things/{id}
 /// Update thing properties
-pub fn handle_patch_thing(id_str: &str, _body: &[u8]) -> (&'static str, Vec<u8>) {
+pub fn handle_patch_thing(id_str: &str, _body: &[u8]) -> (&'static str, ResponseBody) {
     let _id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -159,7 +165,7 @@ pub fn handle_patch_thing(id_str: &str, _body: &[u8]) -> (&'static str, Vec<u8>)
 
 /// GET /api/v1/things/{id}/props
 /// Returns all properties of a Thing as JSON
-pub fn handle_get_thing_props(id_str: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_get_thing_props(id_str: &str) -> (&'static str, ResponseBody) {
     let id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -295,7 +301,7 @@ pub fn handle_get_bytespace(
     thing_id_str: &str,
     key: &str,
     req: &Request<'_>,
-) -> (&'static str, Vec<u8>) {
+) -> (&'static str, ResponseBody) {
     let _thing_id = match parse_thing_id(thing_id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -320,7 +326,7 @@ pub fn handle_get_bytespace(
     };
 
     match graph_api::read_bytespace_ranged(bytespace_id, offset, limit) {
-        Ok(data) => ("200 OK", data),
+        Ok(data) => ("200 OK", ResponseBody::Owned(data)),
         Err(GraphError::NotFound) => {
             error_response(ApiError::not_found(format!("Bytespace {} not found", key)))
         }
@@ -329,7 +335,7 @@ pub fn handle_get_bytespace(
 }
 
 /// GET /api/v1/things/{id}/bytespaces/{key}/meta
-pub fn handle_bytespace_meta(thing_id_str: &str, key: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_bytespace_meta(thing_id_str: &str, key: &str) -> (&'static str, ResponseBody) {
     let _thing_id = match parse_thing_id(thing_id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -364,7 +370,7 @@ pub fn handle_put_bytespace(
     thing_id_str: &str,
     _key: &str,
     body: &[u8],
-) -> (&'static str, Vec<u8>) {
+) -> (&'static str, ResponseBody) {
     let _thing_id = match parse_thing_id(thing_id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -386,7 +392,7 @@ pub fn handle_put_bytespace(
 }
 
 /// GET /api/v1/path/{path}
-pub fn handle_path_resolve(path: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_path_resolve(path: &str) -> (&'static str, ResponseBody) {
     // TODO: Implement path resolution via graph find
     let _ = path;
     error_response(ApiError::new(
@@ -397,7 +403,7 @@ pub fn handle_path_resolve(path: &str) -> (&'static str, Vec<u8>) {
 
 /// GET /api/v1/watch
 /// Returns SSE stream of graph events
-pub fn handle_watch(_req: &Request<'_>) -> (&'static str, Vec<u8>) {
+pub fn handle_watch(_req: &Request<'_>) -> (&'static str, ResponseBody) {
     // TODO: Implement SSE streaming (requires persistent connection)
     error_response(ApiError::new(
         ApiErrorCode::InternalError,
@@ -407,7 +413,7 @@ pub fn handle_watch(_req: &Request<'_>) -> (&'static str, Vec<u8>) {
 
 /// GET /api/v1/things/{id}/launch
 /// Returns whether the Thing is launchable as a process.
-pub fn handle_get_launch_info(id_str: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_get_launch_info(id_str: &str) -> (&'static str, ResponseBody) {
     let id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -445,7 +451,7 @@ pub fn handle_get_launch_info(id_str: &str) -> (&'static str, Vec<u8>) {
 
 /// POST /api/v1/things/{id}/launch
 /// Launch a boot.Module via spawn_process and record a LAUNCHED edge.
-pub fn handle_launch(id_str: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_launch(id_str: &str) -> (&'static str, ResponseBody) {
     let id = match parse_thing_id(id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -527,13 +533,65 @@ pub fn handle_launch(id_str: &str) -> (&'static str, Vec<u8>) {
     json_response("200 OK", &json.as_string().unwrap_or_default())
 }
 
+/// GET /api/v1/things/{id}/explain
+pub fn handle_explain_thing(id_str: &str) -> (&'static str, ResponseBody) {
+    let id = match parse_thing_id(id_str) {
+        Ok(id) => id,
+        Err(err) => return error_response(err),
+    };
+
+    let mut graph = SysGraph;
+
+    // Check if the thing exists
+    if graph.get_kind(ThingId::from_u64(id)).is_none() {
+        return error_response(ApiError::not_found(format!("Thing {} not found", id)));
+    }
+
+    // Configure the view - Neighborhood, 2 hops (MATCH (t)-[*1..2]-(n))
+    let view = ViewSpec::Neighborhood {
+        max_hops: 2,
+        max_edges: 64,
+        edge_whitelist: Vec::new(), // all edges
+    };
+
+    // Build the prompt using described logic
+    let config = described::DescriptionConfig::default();
+    let prompt = match described::build_prompt_packet(&mut graph, ThingId::from_u64(id), &view, &config) {
+        Ok(p) => p,
+        Err(e) => return error_response(ApiError::internal(format!("Failed to build prompt: {:?}", e))),
+    };
+
+    // Connect to Ollama
+    let model = "llama3"; // Default model
+
+    let client = OllamaClient::new(OLLAMA_URL, model);
+
+    // Initiate chat stream
+    let req = llm::ChatRequest {
+        system: Some("You are a system graph explainer. Describe the node and its relationships in plain English.".into()),
+        messages: alloc::vec![llm::Message {
+            role: llm::Role::User,
+            content: prompt.text,
+        }],
+        temperature: Some(0.7),
+        max_tokens: Some(512),
+        stop: Vec::new(),
+        metadata: alloc::collections::BTreeMap::new(),
+    };
+
+    match llm::StreamingLlmClient::chat_stream(&client, req) {
+        Ok(stream) => ("200 OK", ResponseBody::Stream(stream)),
+        Err(e) => error_response(ApiError::internal(format!("LLM error: {:?}", e))),
+    }
+}
+
 /// Handle route not found
-pub fn handle_not_found() -> (&'static str, Vec<u8>) {
+pub fn handle_not_found() -> (&'static str, ResponseBody) {
     error_response(ApiError::not_found("API endpoint not found"))
 }
 
 /// Handle method not allowed
-pub fn handle_method_not_allowed() -> (&'static str, Vec<u8>) {
+pub fn handle_method_not_allowed() -> (&'static str, ResponseBody) {
     error_response(ApiError::method_not_allowed(
         "Method not allowed for this endpoint",
     ))
@@ -544,7 +602,7 @@ pub fn handle_method_not_allowed() -> (&'static str, Vec<u8>) {
 // ============================================================================
 
 /// GET /api/v1/subgraph?root=...&depth=...&max_nodes=...
-pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
     // Parse query parameters
     let mut root_id: Option<u64> = None;
     let mut depth: u32 = DEFAULT_SUBGRAPH_DEPTH;
@@ -862,7 +920,7 @@ const AVAILABLE_VIEWS: &[ViewDef] = &[
 ];
 
 /// GET /api/v1/views
-pub fn handle_list_views() -> (&'static str, Vec<u8>) {
+pub fn handle_list_views() -> (&'static str, ResponseBody) {
     let mut json = JsonBuilder::new();
     json.start_array();
 
@@ -885,7 +943,7 @@ pub fn handle_list_views() -> (&'static str, Vec<u8>) {
 }
 
 /// GET /api/v1/views/{id}
-pub fn handle_get_view(id: &str, query: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_get_view(id: &str, query: &str) -> (&'static str, ResponseBody) {
     let json_body = handle_get_view_body(id, query);
     json_response("200 OK", &json_body)
 }
@@ -1312,7 +1370,7 @@ fn get_symbol_name(sym_id: u32) -> String {
 
 /// PATCH /api/v1/layout
 /// Bulk update node positions (shared with Photosynthesis via LAYOUT_POS_X/Y)
-pub fn handle_patch_layout(body: &[u8]) -> (&'static str, Vec<u8>) {
+pub fn handle_patch_layout(body: &[u8]) -> (&'static str, ResponseBody) {
     // Simple JSON parsing for layout updates
     // Expected: { "space": "graph_ui_v1", "nodes": [{ "id": "...", "x": 1.0, "y": 2.0 }] }
 
@@ -1512,7 +1570,7 @@ fn find_host_id() -> Result<u64, ApiError> {
 
 /// POST /api/v1/query
 /// Execute a GQL query from request body
-pub fn handle_execute_gql_query(body: &[u8]) -> (&'static str, Vec<u8>) {
+pub fn handle_execute_gql_query(body: &[u8]) -> (&'static str, ResponseBody) {
     // Convert body to string
     let query = match core::str::from_utf8(body) {
         Ok(s) => s,
@@ -1523,12 +1581,12 @@ pub fn handle_execute_gql_query(body: &[u8]) -> (&'static str, Vec<u8>) {
     let result = crate::gql_handler::handle_gql_post(query);
 
     // Return as JSON
-    ("200 OK", result)
+    ("200 OK", ResponseBody::Owned(result))
 }
 
 /// GET /api/v1/query?q=...
 /// Execute a GQL query from query parameter
-pub fn handle_execute_gql_query_get(query_string: &str) -> (&'static str, Vec<u8>) {
+pub fn handle_execute_gql_query_get(query_string: &str) -> (&'static str, ResponseBody) {
     // Parse query parameter
     let mut gql_query = "";
     for part in query_string.split('&') {
@@ -1551,7 +1609,7 @@ pub fn handle_execute_gql_query_get(query_string: &str) -> (&'static str, Vec<u8
     let result = crate::gql_handler::handle_gql_get(gql_query);
 
     // Return as JSON
-    ("200 OK", result)
+    ("200 OK", ResponseBody::Owned(result))
 }
 
 // ============================================================================
@@ -1559,7 +1617,7 @@ pub fn handle_execute_gql_query_get(query_string: &str) -> (&'static str, Vec<u8
 // ============================================================================
 
 /// Dispatch a request to the appropriate API handler
-pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> (&'static str, Vec<u8>) {
+pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> (&'static str, ResponseBody) {
     match route {
         ApiRoute::Discovery => handle_discovery(),
         ApiRoute::GetThing { id } => handle_get_thing(id),
@@ -1572,6 +1630,7 @@ pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> (&'stati
         ApiRoute::PutBytespace { thing_id, key } => handle_put_bytespace(thing_id, key, body),
         ApiRoute::GetLaunchInfo { id } => handle_get_launch_info(id),
         ApiRoute::Launch { id } => handle_launch(id),
+        ApiRoute::ExplainThing { id } => handle_explain_thing(id),
         ApiRoute::ResolvePath { path } => handle_path_resolve(path),
         ApiRoute::Watch => handle_watch(req),
         ApiRoute::GetSubgraph { query } => handle_get_subgraph(query),

@@ -941,4 +941,46 @@ mod tests {
         // Test 6: File as dir (ROOTFILE.TXT is a file)
         assert!(iso.open_path(&image, "/ROOTFILE.TXT/SUBFILE").is_none());
     }
+
+    #[test]
+    fn test_parse_dir_entries_multisector_padding() {
+        // Create a 2-sector directory (4096 bytes)
+        let mut buf = alloc::vec![0u8; 4096];
+        let mut offset = 0;
+
+        // Sector 1:
+        // Entry 1: "FILE1.TXT;1"
+        write_dir_record(&mut buf, &mut offset, "FILE1.TXT;1", 100, 1024, 0, None);
+
+        // Force offset to start of sector 2 (2048)
+        // This leaves the rest of sector 1 as 0s (padding)
+        offset = 2048;
+
+        // Sector 2:
+        // Entry 2: "FILE2.TXT;1"
+        write_dir_record(&mut buf, &mut offset, "FILE2.TXT;1", 200, 2048, 0, None);
+
+        let dev = MockDirBlockDevice { dir_data: buf };
+
+        // Minimal IsoFs instance
+        let iso = IsoFs {
+            pvd: PrimaryVolumeDescriptor {
+                system_id: [0; 32],
+                volume_id: [0; 32],
+                volume_space_size: 0,
+                root_dir_extent: 0,
+                root_dir_size: 0,
+                logical_block_size: 2048,
+            },
+            dir_cache: RefCell::new(BTreeMap::new()),
+            #[cfg(feature = "perf")]
+            perf: RefCell::new(PerfCounters::default()),
+        };
+
+        let entries = iso.parse_dir_entries(&dev, 0, 4096);
+
+        assert_eq!(entries.len(), 2, "Should find exactly 2 entries");
+        assert_eq!(entries[0].name, "FILE1.TXT");
+        assert_eq!(entries[1].name, "FILE2.TXT");
+    }
 }

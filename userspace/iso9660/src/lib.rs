@@ -820,4 +820,123 @@ mod tests {
         assert_eq!(e2.size, 5678);
         assert!(!e2.is_directory);
     }
+
+    struct MockIsoImage {
+        sectors: BTreeMap<u64, Vec<u8>>,
+    }
+
+    impl MockIsoImage {
+        fn new() -> Self {
+            Self {
+                sectors: BTreeMap::new(),
+            }
+        }
+
+        fn set_sector(&mut self, lba: u64, data: &[u8]) {
+            let mut sector = alloc::vec![0u8; 2048];
+            sector[..data.len()].copy_from_slice(data);
+            self.sectors.insert(lba, sector);
+        }
+    }
+
+    impl BlockDevice for MockIsoImage {
+        fn read_sectors(
+            &self,
+            lba: u64,
+            count: u64,
+            buf: &mut [u8],
+        ) -> Result<(), stem::block::BlockError> {
+            for i in 0..count {
+                let sector_lba = lba + i;
+                if let Some(sector) = self.sectors.get(&sector_lba) {
+                    let start = (i * 2048) as usize;
+                    let end = start + 2048;
+                    if buf.len() < end {
+                        return Err(stem::block::BlockError::IoError);
+                    }
+                    buf[start..end].copy_from_slice(sector);
+                } else {
+                    return Err(stem::block::BlockError::IoError);
+                }
+            }
+            Ok(())
+        }
+        fn sector_size(&self) -> u64 {
+            2048
+        }
+    }
+
+    #[test]
+    fn test_open_path_nested_structure() {
+        let mut image = MockIsoImage::new();
+
+        // PVD at 16
+        let mut pvd_data = [0u8; 2048];
+        pvd_data[0] = VD_TYPE_PRIMARY;
+        pvd_data[1..6].copy_from_slice(b"CD001");
+        pvd_data[6] = 1;
+
+        let root_lba = 100u32;
+        let root_size = 2048u32;
+        pvd_data[158..162].copy_from_slice(&root_lba.to_le_bytes());
+        pvd_data[166..170].copy_from_slice(&root_size.to_le_bytes());
+        image.set_sector(16, &pvd_data);
+
+        // Root Dir (LBA 100)
+        // Contains: SUBDIR (LBA 200), ROOTFILE.TXT (LBA 300)
+        let mut root_buf = [0u8; 2048];
+        let mut offset = 0;
+        // . and ..
+        write_dir_record(&mut root_buf, &mut offset, "\x00", root_lba, root_size, 2, None);
+        write_dir_record(&mut root_buf, &mut offset, "\x01", root_lba, root_size, 2, None);
+        // SUBDIR
+        write_dir_record(&mut root_buf, &mut offset, "SUBDIR", 200, 2048, 2, None);
+        // ROOTFILE.TXT;1
+        write_dir_record(&mut root_buf, &mut offset, "ROOTFILE.TXT;1", 300, 100, 0, None);
+        image.set_sector(100, &root_buf);
+
+        // SUBDIR (LBA 200)
+        // Contains: SUBFILE.TXT (LBA 400)
+        let mut sub_buf = [0u8; 2048];
+        let mut offset = 0;
+        write_dir_record(&mut sub_buf, &mut offset, "\x00", 200, 2048, 2, None);
+        write_dir_record(&mut sub_buf, &mut offset, "\x01", 100, 2048, 2, None);
+        // SUBFILE.TXT;1
+        write_dir_record(&mut sub_buf, &mut offset, "SUBFILE.TXT;1", 400, 50, 0, None);
+        image.set_sector(200, &sub_buf);
+
+        let iso = IsoFs::probe(&image).expect("Probe failed");
+
+        // Test 1: Root file
+        if let Some(f) = iso.open_path(&image, "/ROOTFILE.TXT") {
+            assert_eq!(f.extent_lba, 300);
+            assert_eq!(f.size, 100);
+        } else {
+            panic!("Root file not found");
+        }
+
+        // Test 2: Nested file
+        if let Some(f) = iso.open_path(&image, "/SUBDIR/SUBFILE.TXT") {
+            assert_eq!(f.extent_lba, 400);
+            assert_eq!(f.size, 50);
+        } else {
+            panic!("Sub file not found");
+        }
+
+        // Test 3: Case insensitivity
+        if let Some(f) = iso.open_path(&image, "/subdir/subfile.txt") {
+            assert_eq!(f.extent_lba, 400);
+        } else {
+            panic!("Sub file case mismatch");
+        }
+
+        // Test 4: Missing file
+        assert!(iso.open_path(&image, "/MISSING.TXT").is_none());
+
+        // Test 5: Missing dir
+        assert!(iso.open_path(&image, "/MISSING/FILE.TXT").is_none());
+
+        // Test 6: File as dir (ROOTFILE.TXT is a file)
+        assert!(iso.open_path(&image, "/ROOTFILE.TXT/SUBFILE").is_none());
+    }
 }

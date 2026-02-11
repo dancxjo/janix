@@ -1,0 +1,253 @@
+diff --git a/library/std/src/sys/alloc/mod.rs b/library/std/src/sys/alloc/mod.rs
+index f2f1d1c7..9cb7e7b6 100644
+--- a/library/std/src/sys/alloc/mod.rs
++++ b/library/std/src/sys/alloc/mod.rs
+@@ -98,6 +98,9 @@ unsafe fn realloc_fallback(
+     target_os = "vexos" => {
+         mod vexos;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++    }
+     target_family = "wasm" => {
+         mod wasm;
+     }
+diff --git a/library/std/src/sys/alloc/thingos.rs b/library/std/src/sys/alloc/thingos.rs
+new file mode 100644
+index 00000000..5d2bec0e
+--- /dev/null
++++ b/library/std/src/sys/alloc/thingos.rs
+@@ -0,0 +1,21 @@
++//! Global Allocator for ThingOS.
++//!
++//! This is a stub — Thing-OS userspace apps use stem's `#[global_allocator]`
++//! which takes precedence over this `System` allocator. These methods should
++//! never actually be called, but they must exist for std to compile.
++
++use crate::alloc::{GlobalAlloc, Layout, System};
++
++#[stable(feature = "alloc_system_type", since = "1.28.0")]
++unsafe impl GlobalAlloc for System {
++    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
++        // stem's global allocator handles all allocations.
++        // If this is ever called, something is wrong.
++        let _ = layout;
++        crate::ptr::null_mut()
++    }
++
++    unsafe fn dealloc(&self, _ptr: *mut u8, _layout: Layout) {
++        // stem's global allocator handles all deallocations.
++    }
++}
+diff --git a/library/std/src/sys/env_consts.rs b/library/std/src/sys/env_consts.rs
+index 573f5404..a01dde20 100644
+--- a/library/std/src/sys/env_consts.rs
++++ b/library/std/src/sys/env_consts.rs
+@@ -312,6 +312,17 @@ pub mod os {
+     pub const EXE_EXTENSION: &str = "";
+ }
+ 
++#[cfg(target_os = "thingos")]
++pub mod os {
++    pub const FAMILY: &str = "";
++    pub const OS: &str = "thingos";
++    pub const DLL_PREFIX: &str = "";
++    pub const DLL_SUFFIX: &str = "";
++    pub const DLL_EXTENSION: &str = "";
++    pub const EXE_SUFFIX: &str = "";
++    pub const EXE_EXTENSION: &str = "";
++}
++
+ #[cfg(target_os = "uefi")]
+ pub mod os {
+     pub const FAMILY: &str = "";
+diff --git a/library/std/src/sys/io/error/mod.rs b/library/std/src/sys/io/error/mod.rs
+index d7a0b9b4..ee0d8cb3 100644
+--- a/library/std/src/sys/io/error/mod.rs
++++ b/library/std/src/sys/io/error/mod.rs
+@@ -41,6 +41,7 @@
+     }
+     any(
+         target_os = "vexos",
++        target_os = "thingos",
+         target_family = "wasm",
+         target_os = "zkvm",
+     ) => {
+diff --git a/library/std/src/sys/pal/mod.rs b/library/std/src/sys/pal/mod.rs
+index 88d9d420..b9ec9655 100644
+--- a/library/std/src/sys/pal/mod.rs
++++ b/library/std/src/sys/pal/mod.rs
+@@ -60,6 +60,10 @@
+         mod zkvm;
+         pub use self::zkvm::*;
+     }
++    target_os = "thingos" => {
++        mod thingos;
++        pub use self::thingos::*;
++    }
+     _ => {
+         mod unsupported;
+         pub use self::unsupported::*;
+diff --git a/library/std/src/sys/pal/thingos/common.rs b/library/std/src/sys/pal/thingos/common.rs
+new file mode 100644
+index 00000000..786681d5
+--- /dev/null
++++ b/library/std/src/sys/pal/thingos/common.rs
+@@ -0,0 +1,26 @@
++//! ThingOS PAL — core platform primitives.
++//!
++//! This is a stub implementation. Functions will be fleshed out as the
++//! Thing-OS userspace runtime (stem) exposes the necessary syscalls.
++
++use crate::io as std_io;
++
++// SAFETY: must be called only once during runtime initialization.
++// NOTE: this is not guaranteed to run, for example when Rust code is called externally.
++pub unsafe fn init(_argc: isize, _argv: *const *const u8, _sigpipe: u8) {}
++
++// SAFETY: must be called only once during runtime cleanup.
++// NOTE: this is not guaranteed to run, for example when the program aborts.
++pub unsafe fn cleanup() {}
++
++pub fn unsupported<T>() -> std_io::Result<T> {
++    Err(unsupported_err())
++}
++
++pub fn unsupported_err() -> std_io::Error {
++    std_io::Error::UNSUPPORTED_PLATFORM
++}
++
++pub fn abort_internal() -> ! {
++    core::intrinsics::abort();
++}
+diff --git a/library/std/src/sys/pal/thingos/mod.rs b/library/std/src/sys/pal/thingos/mod.rs
+new file mode 100644
+index 00000000..0f157819
+--- /dev/null
++++ b/library/std/src/sys/pal/thingos/mod.rs
+@@ -0,0 +1,6 @@
++#![deny(unsafe_op_in_unsafe_fn)]
++
++pub mod os;
++
++mod common;
++pub use common::*;
+diff --git a/library/std/src/sys/pal/thingos/os.rs b/library/std/src/sys/pal/thingos/os.rs
+new file mode 100644
+index 00000000..69a80bea
+--- /dev/null
++++ b/library/std/src/sys/pal/thingos/os.rs
+@@ -0,0 +1,73 @@
++//! ThingOS PAL — OS-level stubs.
++//!
++//! These stubs return `unsupported` for most filesystem/path operations.
++//! They will be fleshed out as Thing-OS gains filesystem and process support.
++
++use super::unsupported;
++use crate::ffi::{OsStr, OsString};
++use crate::marker::PhantomData;
++use crate::path::{self, PathBuf};
++use crate::{fmt, io};
++
++pub fn getcwd() -> io::Result<PathBuf> {
++    unsupported()
++}
++
++pub fn chdir(_: &path::Path) -> io::Result<()> {
++    unsupported()
++}
++
++pub struct SplitPaths<'a>(!, PhantomData<&'a ()>);
++
++pub fn split_paths(_unparsed: &OsStr) -> SplitPaths<'_> {
++    panic!("unsupported")
++}
++
++impl<'a> Iterator for SplitPaths<'a> {
++    type Item = PathBuf;
++    fn next(&mut self) -> Option<PathBuf> {
++        self.0
++    }
++}
++
++#[derive(Debug)]
++pub struct JoinPathsError;
++
++pub fn join_paths<I, T>(_paths: I) -> Result<OsString, JoinPathsError>
++where
++    I: Iterator<Item = T>,
++    T: AsRef<OsStr>,
++{
++    Err(JoinPathsError)
++}
++
++impl fmt::Display for JoinPathsError {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        "not supported on ThingOS yet".fmt(f)
++    }
++}
++
++impl crate::error::Error for JoinPathsError {}
++
++pub fn current_exe() -> io::Result<PathBuf> {
++    unsupported()
++}
++
++pub fn temp_dir() -> PathBuf {
++    panic!("no filesystem on ThingOS yet")
++}
++
++pub fn home_dir() -> Option<PathBuf> {
++    None
++}
++
++pub fn exit(code: i32) -> ! {
++    // TODO: wire to stem::pal::abort::abort(code)
++    let _ = code;
++    crate::intrinsics::abort()
++}
++
++pub fn getpid() -> u32 {
++    // TODO: wire to a real syscall when Thing-OS has PIDs
++    0
++}
+diff --git a/library/std/src/sys/random/mod.rs b/library/std/src/sys/random/mod.rs
+index 91f72d07..24e2f4a3 100644
+--- a/library/std/src/sys/random/mod.rs
++++ b/library/std/src/sys/random/mod.rs
+@@ -106,6 +106,7 @@
+         all(target_family = "wasm", target_os = "unknown"),
+         target_os = "xous",
+         target_os = "vexos",
++        target_os = "thingos",
+     ) => {
+         // FIXME: finally remove std support for wasm32-unknown-unknown
+         // FIXME: add random data generation to xous
+@@ -122,6 +123,7 @@
+     all(target_os = "wasi", not(target_env = "p1")),
+     target_os = "xous",
+     target_os = "vexos",
++    target_os = "thingos",
+ )))]
+ pub fn hashmap_random_keys() -> (u64, u64) {
+     let mut buf = [0; 16];
+diff --git a/library/std/src/sys/thread_local/mod.rs b/library/std/src/sys/thread_local/mod.rs
+index e88011aa..9c9dafae 100644
+--- a/library/std/src/sys/thread_local/mod.rs
++++ b/library/std/src/sys/thread_local/mod.rs
+@@ -30,6 +30,7 @@
+         target_os = "zkvm",
+         target_os = "trusty",
+         target_os = "vexos",
++        target_os = "thingos",
+     ) => {
+         mod no_threads;
+         pub use no_threads::{EagerStorage, LazyStorage, thread_local_inner};
+@@ -100,6 +101,7 @@ pub(crate) mod guard {
+             target_os = "zkvm",
+             target_os = "trusty",
+             target_os = "vexos",
++            target_os = "thingos",
+         ) => {
+             pub(crate) fn enable() {
+                 // FIXME: Right now there is no concept of "thread exit" on

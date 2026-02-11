@@ -180,3 +180,99 @@ check: check-ui-split
 # Run smoke tests (quick boot validation)
 smoke:
     cargo xtask bdd --arch x86_64 --tags @smoke
+
+# --- Vendored Rust Standard Library ---
+
+# The commit hash of rust-lang/rust matching our nightly toolchain
+rust_commit := "9e79395f92bff6a8f536430e42a4beae69f60ff8"
+
+# Fetch (shallow clone) the Rust source tree into vendor/rust/
+fetch-rust:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ -d vendor/rust/.git ]; then
+        echo "vendor/rust already exists, skipping clone."
+        echo "  To re-fetch, run: just rust-reset  (or rm -rf vendor/rust)"
+    else
+        echo "==> Shallow-cloning rust-lang/rust at {{rust_commit}}..."
+        git clone --depth 1 --filter=blob:none --no-checkout \
+            https://github.com/rust-lang/rust.git vendor/rust
+        cd vendor/rust
+        git fetch --depth 1 origin {{rust_commit}}
+        git checkout {{rust_commit}}
+        echo "==> Rust source ready at vendor/rust/"
+    fi
+    # Ensure library submodules needed for std are initialized
+    if [ ! -f vendor/rust/library/backtrace/Cargo.toml ]; then
+        echo "==> Initializing library/backtrace submodule..."
+        cd vendor/rust && git submodule update --init --depth 1 library/backtrace
+    fi
+    echo "  library/std/src/lib.rs exists: $(test -f vendor/rust/library/std/src/lib.rs && echo yes || echo no)"
+
+# Save local modifications in vendor/rust/ as patches
+rust-save-patches:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    mkdir -p patches/rust
+    cd vendor/rust
+    # Stage new (untracked) files so they appear in git diff
+    git add -N .
+    if git diff --quiet && git diff --cached --quiet; then
+        echo "No changes to save."
+        exit 0
+    fi
+    git diff > ../../patches/rust/thingos-pal.patch
+    echo "==> Saved patch to patches/rust/thingos-pal.patch"
+    echo "  $(wc -l < ../../patches/rust/thingos-pal.patch) lines"
+    echo "  Files changed: $(grep -c '^diff' ../../patches/rust/thingos-pal.patch)"
+
+# Hard-reset vendor/rust/ to the pinned commit (discards local changes)
+rust-reset:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -d vendor/rust/.git ]; then
+        echo "vendor/rust does not exist. Run: just fetch-rust"
+        exit 1
+    fi
+    cd vendor/rust
+    # Un-stage any intent-to-add files (from git add -N)
+    git reset HEAD -- . 2>/dev/null || true
+    git checkout -- .
+    git clean -fd
+    echo "==> vendor/rust reset to {{rust_commit}}"
+
+# Apply saved patches from patches/rust/ to vendor/rust/
+rust-apply-patches:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [ ! -d vendor/rust/.git ]; then
+        echo "vendor/rust does not exist. Run: just fetch-rust"
+        exit 1
+    fi
+    if [ ! -f patches/rust/thingos-pal.patch ]; then
+        echo "No patches found in patches/rust/. Nothing to apply."
+        exit 0
+    fi
+    cd vendor/rust
+    git apply ../../patches/rust/thingos-pal.patch
+    echo "==> Applied patches/rust/thingos-pal.patch"
+
+# Build a userspace app with vendored std (experimental)
+rust-build-std app="hello_std" arch=karch:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    TARGET_ARCH="{{arch}}"
+    if [ "$TARGET_ARCH" == "riscv64" ]; then
+        TARGET_JSON="targets/riscv64gc-unknown-thingos.json"
+    else
+        TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
+    fi
+    # Point build-std at our vendored (patchable) Rust library source
+    export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
+    echo "Building {{app}} for $TARGET_ARCH with vendored Rust source..."
+    echo "  std source: $__CARGO_TESTS_ONLY_SRC_ROOT"
+    RUSTFLAGS="-Awarnings" cargo +nightly \
+        -Z build-std=core,alloc,std,panic_abort \
+        -Z build-std-features=compiler-builtins-mem \
+        -Z json-target-spec \
+        build --target "$TARGET_JSON" -p {{app}}

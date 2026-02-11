@@ -11,6 +11,8 @@ pub struct ProgramConfig {
     pub is_init: bool,
     pub boot_module: bool,
     pub features: Vec<&'static str>,
+    /// If true, build with `-Z build-std=core,alloc,std,panic_abort` and vendored Rust source.
+    pub uses_std: bool,
 }
 
 /// Configuration for ISO builds.
@@ -27,168 +29,203 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             is_init: true,
             boot_module: true,
             features: vec!["diagnostic-apps"],
+            uses_std: false,
         },
         ProgramConfig {
             name: "bristle",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "rtc_cmos",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "clock",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "taskman",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "font_explorer",
             is_init: false,
             boot_module: false,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "ps2_kbd",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "echo",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "bloom",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "ps2_mouse",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "display_bootfb",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "display_virtio_gpu",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "fontd",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "blossom",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "flytrap",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "virtio_netd",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "rtl8168d",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "netd",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "fetchd",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "anther",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "photosynthesis",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "ahci_disk",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "iso9660d",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "virtio_sound",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "hdaudio",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "pci_stubd",
             is_init: false,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "beeper",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
         },
         ProgramConfig {
             name: "nectar",
             is_init: true,
             boot_module: true,
             features: vec![],
+            uses_std: false,
+        },
+        ProgramConfig {
+            name: "hello_std",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+            uses_std: true,
         },
     ]
 }
@@ -351,7 +388,7 @@ pub fn build_iso_with_config(
     let target = target_json.to_str().unwrap();
 
     for prog in programs {
-        build_userspace_app_with_features(sh, prog.name, target, "release", &prog.features)?;
+        build_userspace_app_with_features(sh, prog.name, target, "release", &prog.features, prog.uses_std)?;
         copy_userspace_binary(
             sh,
             prog.name,
@@ -492,6 +529,7 @@ fn build_userspace_app_with_features(
     target: &str,
     profile: &str,
     features: &[&str],
+    uses_std: bool,
 ) -> Result<()> {
     println!("Building {} ...", name);
 
@@ -501,11 +539,23 @@ fn build_userspace_app_with_features(
         vec![]
     };
 
+    let build_std_crates = if uses_std {
+        "core,alloc,std,panic_abort"
+    } else {
+        "core,alloc"
+    };
+
     let mut cmd = cmd!(
         sh,
-        "cargo -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem {extra_flags...} build --target {target} --profile {profile} -p {name}"
+        "cargo -Z build-std={build_std_crates} -Z build-std-features=compiler-builtins-mem {extra_flags...} build --target {target} --profile {profile} -p {name}"
     )
     .env("RUSTFLAGS", "-Awarnings");
+
+    if uses_std {
+        let cwd = std::env::current_dir().unwrap();
+        let std_src = cwd.join("vendor/rust/library");
+        cmd = cmd.env("__CARGO_TESTS_ONLY_SRC_ROOT", std_src.to_str().unwrap());
+    }
 
     for f in features {
         cmd = cmd.arg("--features").arg(f);

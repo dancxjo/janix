@@ -53,6 +53,9 @@ impl Supervisor {
         // 7. Start flytrap last so it does not stampede startup dependencies.
         crate::pipelines::setup_flytrap_service(&mut self.tasks);
 
+        // 8. Spawn any discovered apps that weren't started by a pipeline.
+        self.spawn_discovered_apps();
+
         // Enter monitor loop
         info!("SPROUT: Startup complete. Entering monitor loop.");
         loop {
@@ -144,6 +147,7 @@ impl Supervisor {
             } else if name.contains("/apps/")
                 || name.ends_with("/clock")
                 || name.ends_with("/idle")
+                || name.ends_with("/hello_std")
                 || (cfg!(feature = "diagnostic-apps")
                     && (name.ends_with("/threads_demo") || name.ends_with("/scheduler_verify")))
             {
@@ -295,6 +299,25 @@ impl Supervisor {
             restarts: 0,
             spawn_arg: 0,
         });
+    }
+
+    /// Spawn any apps discovered during `discover()` that haven't been started by a pipeline.
+    fn spawn_discovered_apps(&mut self) {
+        for task in self.tasks.iter_mut() {
+            if let TaskKind::App = task.kind {
+                if task.pid.is_some() {
+                    continue;
+                }
+                info!("SPROUT: Launching discovered app '{}'", task.name);
+                match stem::syscall::spawn_process(&task.name, 0) {
+                    Ok(pid) => {
+                        info!("SPROUT: App launched (PID={})", pid);
+                        task.pid = Some(pid);
+                    }
+                    Err(e) => info!("SPROUT: Failed to launch app '{}': {:?}", task.name, e),
+                }
+            }
+        }
     }
 
     fn match_and_spawn_drivers(&mut self) {

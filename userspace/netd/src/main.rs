@@ -403,49 +403,22 @@ fn main(_arg: usize) -> ! {
                                             )
                                         };
 
-                                        let mut sent = false;
-                                        let deadline_ms =
-                                            (stem::time::now().as_millis() as u64).saturating_add(5_000);
-                                        loop {
-                                            match port_send_all(client_response_port, &response) {
-                                                Ok(n) if n == response.len() => {
-                                                    sent = true;
-                                                    break;
-                                                }
-                                                Ok(n) => {
-                                                    warn!(
-                                                        "NETD: short Socket API response write to port {} ({} of {})",
-                                                        client_response_port,
-                                                        n,
-                                                        response.len()
-                                                    );
-                                                    break;
-                                                }
-                                                Err(abi::errors::Errno::EAGAIN) => {
-                                                    if (stem::time::now().as_millis() as u64)
-                                                        >= deadline_ms
-                                                    {
-                                                        break;
-                                                    }
-                                                    let _ = port_wait(
-                                                        &[client_response_port],
-                                                        abi::syscall::port_wait::WRITABLE,
-                                                    );
-                                                }
-                                                Err(e) => {
-                                                    warn!(
-                                                        "NETD: Failed to send API response to port {}: {:?}",
-                                                        client_response_port, e
-                                                    );
-                                                    break;
-                                                }
+                                        // Non-blocking response send: never stall the main loop
+                                        // waiting for a client's response port to drain.
+                                        match port_send_all(client_response_port, &response) {
+                                            Ok(n) if n == response.len() => {} // success
+                                            Ok(n) => {
+                                                warn!(
+                                                    "NETD: short Socket API response to port {} ({}/{})",
+                                                    client_response_port, n, response.len()
+                                                );
                                             }
-                                        }
-                                        if !sent {
-                                            warn!(
-                                                "NETD: dropping Socket API response to port {} after retries",
-                                                client_response_port
-                                            );
+                                            Err(e) => {
+                                                warn!(
+                                                    "NETD: dropped Socket API response to port {}: {:?}",
+                                                    client_response_port, e
+                                                );
+                                            }
                                         }
 
                                         offset += consumed;

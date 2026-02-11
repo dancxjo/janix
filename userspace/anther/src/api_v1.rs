@@ -47,7 +47,7 @@ pub const MAX_SUBGRAPH_NODES: usize = 500;
 pub const DEFAULT_SUBGRAPH_DEPTH: u32 = 2;
 
 /// Default Ollama URL (localhost on host machine via QEMU user networking)
-pub const OLLAMA_URL: &str = "http://10.0.2.2:11434";
+pub const OLLAMA_URL: &str = "http://forebrain.local:11434";
 
 // ============================================================================
 // Response Helpers

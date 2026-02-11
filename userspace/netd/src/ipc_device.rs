@@ -95,6 +95,52 @@ impl IpcNicDevice {
 
     /// Send a frame to the driver for transmission
     fn send_frame(&mut self, data: &[u8]) {
+        // Diagnostic: identify outgoing frame protocol
+        if data.len() >= 14 {
+            let ethertype = u16::from_be_bytes([data[12], data[13]]);
+            let proto_str = match ethertype {
+                0x0800 => {
+                    // IPv4 - check protocol and flags
+                    if data.len() >= 34 {
+                        let ip_proto = data[23];
+                        if ip_proto == 6 && data.len() >= 34 {
+                            // TCP - extract flags
+                            let ip_hdr_len = ((data[14] & 0x0F) as usize) * 4;
+                            let tcp_offset = 14 + ip_hdr_len;
+                            if data.len() > tcp_offset + 13 {
+                                let flags = data[tcp_offset + 13];
+                                let syn = flags & 0x02 != 0;
+                                let ack = flags & 0x10 != 0;
+                                let rst = flags & 0x04 != 0;
+                                let fin = flags & 0x01 != 0;
+                                if rst {
+                                    "TCP RST"
+                                } else if syn && ack {
+                                    "TCP SYN-ACK"
+                                } else if syn {
+                                    "TCP SYN"
+                                } else if fin {
+                                    "TCP FIN"
+                                } else {
+                                    "TCP ACK"
+                                }
+                            } else {
+                                "TCP (short)"
+                            }
+                        } else if ip_proto == 1 {
+                            "ICMP"
+                        } else {
+                            "IPv4 other"
+                        }
+                    } else {
+                        "IPv4 (short)"
+                    }
+                }
+                0x0806 => "ARP",
+                _ => "unknown",
+            };
+            stem::info!("IpcNicDevice: TX {} bytes - {}", data.len(), proto_str);
+        }
         let msg = NetDriverMsg::new(MSG_FRAME_TX, data);
         if let Err(e) = port_send(self.tx_port, &msg.encode()) {
             stem::warn!("IpcNicDevice: Failed to send TX frame: {:?}", e);

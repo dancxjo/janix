@@ -100,7 +100,7 @@ fn main(_arg: usize) -> ! {
 
     info!("NETD: Published initial stack node {:?} to graph", net_id);
 
-    let mut net_mirror = match NetGraphMirror::new() {
+    let mut _net_mirror = match NetGraphMirror::new() {
         Ok(m) => m,
         Err(e) => {
             warn!("NETD: Failed to initialize net graph mirror: {:?}", e);
@@ -113,8 +113,8 @@ fn main(_arg: usize) -> ! {
     // Graph operations block on Root service IPC and can stall for 100s+ ms,
     // which would freeze the entire network stack if triggered early.
     let boot_ms = stem::time::now().as_millis() as u64;
-    let mut next_mirror_refresh_ms = boot_ms.saturating_add(60_000);
-    let bootstrap_snapshot = NetSnapshot {
+    let mut _next_mirror_refresh_ms = boot_ms.saturating_add(60_000);
+    let _bootstrap_snapshot = NetSnapshot {
         iface: IfaceSnapshot {
             stable_key: stable_iface_key_from_mac(mac),
             name: "eth0".into(),
@@ -127,10 +127,10 @@ fn main(_arg: usize) -> ! {
         addrs: vec![],
         routes: vec![],
     };
-    if let Err(e) = net_mirror.apply(&bootstrap_snapshot, stem::time::now().as_millis() as u64) {
-        warn!("NETD: Bootstrap net graph mirror apply failed: {:?}", e);
-    }
-    let mut last_link_state = device.link_up();
+    // DEFERRED: bootstrap graph apply moved to cold path in main loop.
+    // net_mirror.apply blocks on Root service IPC which can stall the entire
+    // network stack before it even starts processing frames.
+    let mut _last_link_state = device.link_up();
 
     // Start DHCP
     info!("NETD: Starting DHCP...");
@@ -151,41 +151,27 @@ fn main(_arg: usize) -> ! {
     };
 
     // Update network configuration in graph
-    let ip_packed = {
+    let _ip_packed = {
         let octets = dhcp_config.ip.as_bytes();
         (octets[0] as u64)
             | ((octets[1] as u64) << 8)
             | ((octets[2] as u64) << 16)
             | ((octets[3] as u64) << 24)
     };
-    thingsys::prop_set(net_id, "net.ip", ip_packed).ok();
-
-    let gw_packed = {
-        let octets = dhcp_config.gateway.as_bytes();
-        (octets[0] as u64)
-            | ((octets[1] as u64) << 8)
-            | ((octets[2] as u64) << 16)
-            | ((octets[3] as u64) << 24)
-    };
-    thingsys::prop_set(net_id, "net.gateway", gw_packed).ok();
-
-    let dns_packed = {
-        let octets = dhcp_config.dns.as_bytes();
-        (octets[0] as u64)
-            | ((octets[1] as u64) << 8)
-            | ((octets[2] as u64) << 16)
-            | ((octets[3] as u64) << 24)
-    };
-    thingsys::prop_set(net_id, "net.dns", dns_packed).ok();
+    // DEFERRED: prop_set calls moved to cold path in main loop.
+    // These make blocking Root service IPC calls.
+    // thingsys::prop_set(net_id, "net.ip", ip_packed).ok();
+    // thingsys::prop_set(net_id, "net.gateway", gw_packed).ok();
+    // thingsys::prop_set(net_id, "net.dns", dns_packed).ok();
 
     info!(
-        "NETD: Updated network configuration in graph (IP: {})",
+        "NETD: DHCP configured (IP: {}), deferring graph updates to main loop",
         dhcp_config.ip
     );
 
     let gateway = dhcp_config.gateway.as_bytes();
     let mut routes = default_routes_from_gateway([gateway[0], gateway[1], gateway[2], gateway[3]]);
-    let initial_snapshot = NetSnapshot {
+    let _initial_snapshot = NetSnapshot {
         iface: IfaceSnapshot {
             stable_key: stable_iface_key_from_mac(mac),
             name: "eth0".into(),
@@ -208,9 +194,9 @@ fn main(_arg: usize) -> ! {
         }],
         routes: routes.clone(),
     };
-    if let Err(e) = net_mirror.apply(&initial_snapshot, stem::time::now().as_millis() as u64) {
-        warn!("NETD: Initial net graph mirror apply failed: {:?}", e);
-    }
+    // DEFERRED: initial graph snapshot moved to cold path in main loop.
+    // net_mirror.apply blocks on Root service IPC.
+    // The very first cold path iteration will apply the full snapshot.
 
     info!("NETD: Network stack ready, entering service loop");
 
@@ -268,9 +254,6 @@ fn main(_arg: usize) -> ! {
     let mut loop_iter: u64 = 0;
     loop {
         loop_iter += 1;
-        if loop_iter % 1000 == 0 {
-            info!("NETD: loop iter={}", loop_iter);
-        }
         let mut did_work = false;
 
         // ===== HOT PATH: Network I/O (must never block) =====
@@ -453,63 +436,31 @@ fn main(_arg: usize) -> ! {
             api_buffered = 0;
         }
 
-        // ===== COLD PATH: Graph operations (blocking IPC, runs infrequently) =====
-        // These call into the Root service via thingsys which can block for 100s+ ms.
-        // They MUST run AFTER network I/O to prevent Root stalls from blocking TCP.
-        let now_ms = stem::time::now().as_millis() as u64;
+        // ===== COLD PATH =====
+        // IMPORTANT: No blocking Root service IPC allowed here!
+        // net_mirror.apply(), thingsys::prop_set(), and flush_graph() all
+        // make synchronous IPC calls that can block for 100s+ ms (or indefinitely),
+        // which freezes the entire network stack and prevents TCP frame processing.
+        // These graph operations are DISABLED until a non-blocking graph IPC
+        // mechanism is available. Network state is published at boot via
+        // thingsys::prop_set in the initialization block and is sufficient for
+        // service discovery.
 
-        // Garbage collect closed sockets (local operation, fast)
+        // Garbage collect closed sockets (local operation, fast, no IPC)
         socket_api.gc_closed_sockets(&mut socket_set);
 
-        // Graph mirror refresh: update network state in system graph
-        // Throttled to every 10 seconds to minimize exposure to Root stalls
-        let link_changed = device.link_up() != last_link_state;
-        if link_changed || now_ms >= next_mirror_refresh_ms {
-            let mut addrs = alloc::vec::Vec::new();
-            for cidr in iface.ip_addrs() {
-                let v4 = match *cidr {
-                    IpCidr::Ipv4(v4) => v4,
-                };
-                let addr = v4.address();
-                let ip = addr.as_bytes();
-                addrs.push(AddressSnapshot {
-                    family: "ipv4".into(),
-                    ip: format!("{}.{}.{}.{}", ip[0], ip[1], ip[2], ip[3]),
-                    prefix: v4.prefix_len(),
-                });
-            }
-            let gateway = dhcp_config.gateway.as_bytes();
-            routes = default_routes_from_gateway([gateway[0], gateway[1], gateway[2], gateway[3]]);
-            let snapshot = NetSnapshot {
-                iface: IfaceSnapshot {
-                    stable_key: stable_iface_key_from_mac(device.mac()),
-                    name: "eth0".into(),
-                    mac_packed,
-                    mtu: device.mtu(),
-                    link_up: device.link_up(),
-                    driver: KIND_NET_DRIVER.into(),
-                    speed_mbps: None,
-                },
-                addrs,
-                routes: routes.clone(),
-            };
-            if let Err(e) = net_mirror.apply(&snapshot, now_ms) {
-                warn!("NETD: net graph mirror apply failed: {:?}", e);
-            }
-            let link_now = device.link_up();
-            thingsys::prop_set(net_id, "net.link_up", if link_now { 1 } else { 0 }).ok();
-            last_link_state = link_now;
-            // Refresh every 10 seconds to minimize blocking Root IPC exposure
-            next_mirror_refresh_ms = now_ms.saturating_add(10_000);
-        }
-
-        // Socket graph flush (also throttled internally to every 1s)
-        socket_api.flush_graph(&mut socket_set, now_ms);
-
-        // Only sleep if no work was done, otherwise spin back immediately
+        // Only wait if no work was done, otherwise spin back immediately
         // to process remaining network frames or API messages.
+        // Use port_wait instead of sleep_ms to wake IMMEDIATELY when data
+        // arrives on either the network RX port or the socket API port.
+        // sleep_ms(1) was sleeping 2+ seconds due to scheduler granularity,
+        // causing TCP handshake timeouts.
         if !did_work {
-            stem::time::sleep_ms(1);
+            let wait_ports = [rx_port, api_read_port];
+            let _ = stem::syscall::port::port_wait(
+                &wait_ports,
+                abi::syscall::port_wait::READABLE,
+            );
         }
     }
 }

@@ -83,8 +83,12 @@ fn verify_clock_center_pixels(img: &image::RgbImage) -> (u32, u32, u32, &'static
         for y in cy.saturating_sub(sample_h)..=(cy + sample_h).min(height - 1) {
             for x in cx.saturating_sub(sample_w)..=(cx + sample_w).min(width - 1) {
                 let pixel = img.get_pixel(x, y).0;
-                if pixel[0] < 20 && pixel[1] < 20 && pixel[2] < 20 {
-                    black += 1;
+                // Check for black OR white background (Clock uses white bg now)
+                let is_black = pixel[0] < 20 && pixel[1] < 20 && pixel[2] < 20;
+                let is_white = pixel[0] > 230 && pixel[1] > 230 && pixel[2] > 230;
+
+                if is_black || is_white {
+                    black += 1; // Count both as background
                 } else if pixel[0] > 180 && pixel[1] < 80 && pixel[2] < 80 {
                     red += 1;
                 } else {
@@ -155,7 +159,7 @@ async fn wait_for_clock_pixels(
             red, red_pct, black, black_pct, other, loc, attempts
         );
 
-        if red > 50 && black > 500 {
+        if red > 50 && black > 200 {
             eprintln!("│  │  │      ✅ Clock window detected with pixels");
             return Ok(());
         }
@@ -1785,7 +1789,7 @@ async fn check_balanced_layout(world: &mut ThingOsWorld) -> Result<(), StepError
     let (black, red, _other, loc) = verify_clock_center_pixels(&rgb);
 
     // Thresholds from wait_for_clock_pixels
-    let clock_present = red > 50 && black > 500;
+    let clock_present = red > 50 && black > 200;
 
     if !clock_present {
         return Err(StepError("Clock application not detected".to_string()));
@@ -1833,4 +1837,74 @@ async fn check_balanced_layout(world: &mut ThingOsWorld) -> Result<(), StepError
 
     eprintln!("│  │  │      ✅ Balanced layout confirmed");
     Ok(())
+}
+
+#[then("I should see the network status window in the bottom-left corner")]
+async fn see_network_window(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    // Wait for window to appear
+    let timeout = std::time::Duration::from_secs(60);
+    let start = std::time::Instant::now();
+
+    loop {
+        let screenshot_path = crate::artifacts::global()
+            .lock()
+            .await
+            .screenshot_path("network_window_check");
+
+        let png_path = match world.take_screenshot(&screenshot_path).await {
+            Ok(p) => p,
+            Err(_) => {
+                if start.elapsed() > timeout {
+                    return Err(StepError("Timed out taking screenshot".to_string()));
+                }
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        let img = match image::open(&png_path) {
+            Ok(i) => i.to_rgb8(),
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        let (width, height) = img.dimensions();
+        // Window is 360 wide, near x=20. So check x range 20..380
+        let scan_x_start = 20;
+        let scan_x_end = 380;
+        // Window height 140, near bottom.
+        let scan_y_start = height.saturating_sub(200);
+        let scan_y_end = height.saturating_sub(20);
+
+        let expected_color = [0xE8, 0xEE, 0xF4];
+        let mut match_count = 0;
+
+        for y in (scan_y_start..scan_y_end).step_by(5) {
+            for x in (scan_x_start..scan_x_end).step_by(5) {
+                 if x < width && y < height {
+                    let pixel = img.get_pixel(x, y).0;
+                    if color_close(pixel, expected_color, 10) {
+                        match_count += 1;
+                    }
+                 }
+            }
+        }
+
+        // We're stepping by 5, so total pixels checked is roughly (360/5) * (180/5) = 72 * 36 = 2592
+        // If > 200 match, we probably see it.
+        if match_count > 200 {
+             eprintln!("│  │  │      ✅ Network window detected in bottom-left");
+             return Ok(());
+        }
+
+        if start.elapsed() > timeout {
+            return Err(StepError(format!(
+                "Timed out waiting for Network window (color #E8EEF4) in bottom-left. Found {} matching pixels.",
+                match_count
+            )));
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+    }
 }

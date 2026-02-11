@@ -122,6 +122,8 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::PropsGetMany { .. } => "PropsGetMany",
         RootOp::BytespaceTruncate { .. } => "BytespaceTruncate",
         RootOp::ResolvePath { .. } => "ResolvePath",
+        RootOp::Unlink { .. } => "Unlink",
+        RootOp::DirList { .. } => "DirList",
     }
 }
 
@@ -220,6 +222,12 @@ fn handle_msg<R: BootRuntime>(
         }
         RootOp::ResolvePath { path } => {
             root_handlers::handle_resolve_path(graph, interner, &path)
+        }
+        RootOp::Unlink { src, rel, dst } => {
+            root_handlers::handle_unlink(graph, interner, src, rel, dst)
+        }
+        RootOp::DirList { id, out_ptr, out_len } => {
+            root_handlers::handle_dir_list(graph, interner, id, out_ptr, out_len)
         }
 
         // Stream/Watch operations

@@ -187,6 +187,16 @@ pub enum RootOp {
     ResolvePath {
         path: alloc::string::String,
     },
+    Unlink {
+        src: u64,
+        rel: u64,
+        dst: u64,
+    },
+    DirList {
+        id: u64,
+        out_ptr: u64,
+        out_len: u64,
+    },
 }
 
 pub struct ReplyCell {

@@ -1074,3 +1074,53 @@ pub fn sys_root_bytespace_truncate(id: usize, new_len: usize) -> SysResult<usize
     })
 }
 
+/// Unlink an edge between two nodes.
+/// Args: src_id, rel_sym, dst_id
+pub fn sys_root_unlink(src: usize, rel: usize, dst: usize) -> SysResult<usize> {
+    root_call(RootOp::Unlink {
+        src: src as u64,
+        rel: rel as u64,
+        dst: dst as u64,
+    })
+}
+
+/// List directory entries for a directory node.
+/// Args: dir_id, out_ptr (userspace buffer), out_len (buffer size in bytes)
+/// Returns: number of entries written
+pub fn sys_root_dir_list(dir_id: usize, out_ptr: usize, out_len: usize) -> SysResult<usize> {
+    validate_user_range(out_ptr, out_len, true)?;
+
+    // DirEntryWire is 264 bytes. Allocate kernel buffer, capped at 4KB.
+    let kbuf_len = core::cmp::min(out_len, 4096);
+    let mut kbuf = alloc::vec![0u8; kbuf_len];
+
+    let reply = root_svc::enqueue(RootOp::DirList {
+        id: dir_id as u64,
+        out_ptr: kbuf.as_mut_ptr() as u64,
+        out_len: kbuf_len as u64,
+    });
+
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            let status = reply.status.load(Ordering::Relaxed);
+            let count = reply.value.load(Ordering::Relaxed) as usize;
+            if status == 0 {
+                // Copy filled entries to userspace
+                let entry_size = 264usize; // DIR_ENTRY_WIRE_SIZE
+                let bytes_to_copy = count * entry_size;
+                if bytes_to_copy > 0 {
+                    unsafe {
+                        copyout(out_ptr, &kbuf[..bytes_to_copy])?;
+                    }
+                }
+                return Ok(count);
+            } else {
+                return Err(Errno::EIO);
+            }
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
+    }
+}

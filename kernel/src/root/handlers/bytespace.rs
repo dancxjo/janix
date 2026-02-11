@@ -336,4 +336,112 @@ pub fn handle_resolve_path(
     (0, current)
 }
 
+/// Remove an edge from src to dst with relation `rel`.
+pub fn handle_unlink(
+    graph: &mut Graph,
+    interner: &mut Interner,
+    src: u64,
+    rel: u64,
+    dst: u64,
+) -> HandlerResult {
+    // rel is a SymbolId
+    let rel_sym = rel as u32;
+    if graph.unlink(src, rel_sym, dst) {
+        // Also remove the node if it's orphaned and is a content node
+        // (for now, just remove the edge; node cleanup is optional)
+        let _ = interner; // used for future diagnostics
+        (0, 0)
+    } else {
+        (-2, 0) // ENOENT
+    }
+}
 
+/// Wire format for a directory entry, written to userspace buffer.
+/// Layout: [thing_id: u64][kind_id: u32][name_len: u16][padding: u16][name: [u8; 248]]
+/// Total: 264 bytes per entry, aligned to 8 bytes.
+const DIR_ENTRY_WIRE_SIZE: usize = 264;
+
+/// List directory entries — enumerates content.contains edges from `id`,
+/// resolves file.name/dir.name for each child, writes DirEntryWire structs
+/// to the output buffer, returns count.
+pub fn handle_dir_list(
+    graph: &mut Graph,
+    interner: &mut Interner,
+    id: u64,
+    out_ptr: u64,
+    out_len: u64,
+) -> HandlerResult {
+    let contains_sym = interner.intern("content.contains");
+    let file_name_sym = interner.intern("file.name");
+    let dir_name_sym = interner.intern("dir.name");
+
+    // Collect targets of content.contains edges
+    let targets: alloc::vec::Vec<u64> = if let Some(node) = graph.get_node_mut(id) {
+        node.edges
+            .iter()
+            .filter(|&&(rel, _)| rel == contains_sym)
+            .map(|&(_, target)| target)
+            .collect()
+    } else {
+        return (-2, 0); // ENOENT
+    };
+
+    let max_entries = (out_len as usize) / DIR_ENTRY_WIRE_SIZE;
+    let out = out_ptr as *mut u8;
+    let mut count = 0usize;
+
+    for target in targets {
+        if count >= max_entries {
+            break;
+        }
+
+        // Get child's name symbol
+        let name_sym = if let Some(node) = graph.get_node_mut(target) {
+            node.props
+                .get(&file_name_sym)
+                .or_else(|| node.props.get(&dir_name_sym))
+                .copied()
+        } else {
+            continue;
+        };
+
+        let name_sym = match name_sym {
+            Some(s) => s as u32,
+            None => continue, // Skip entries without names
+        };
+
+        // Resolve name from symbol
+        let name_bytes: &[u8] = match interner.resolve(name_sym) {
+            Some(s) => s.as_bytes(),
+            None => continue,
+        };
+
+        // Get kind of child
+        let kind_id = graph.get_kind(target).unwrap_or(0);
+
+        // Write entry to buffer
+        let entry_ptr = unsafe { out.add(count * DIR_ENTRY_WIRE_SIZE) };
+        let name_len = name_bytes.len().min(248);
+
+        unsafe {
+            // thing_id (u64, offset 0)
+            core::ptr::write_unaligned(entry_ptr as *mut u64, target);
+            // kind_id (u32, offset 8)
+            core::ptr::write_unaligned(entry_ptr.add(8) as *mut u32, kind_id);
+            // name_len (u16, offset 12)
+            core::ptr::write_unaligned(entry_ptr.add(12) as *mut u16, name_len as u16);
+            // padding (u16, offset 14) — zero it
+            core::ptr::write_unaligned(entry_ptr.add(14) as *mut u16, 0u16);
+            // name bytes (offset 16, max 248 bytes)
+            core::ptr::copy_nonoverlapping(name_bytes.as_ptr(), entry_ptr.add(16), name_len);
+            // Zero remainder
+            if name_len < 248 {
+                core::ptr::write_bytes(entry_ptr.add(16 + name_len), 0, 248 - name_len);
+            }
+        }
+
+        count += 1;
+    }
+
+    (0, count as u64)
+}

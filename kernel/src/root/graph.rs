@@ -423,6 +423,23 @@ impl Graph {
         self.reverse_index.entry(dst).or_default().push((rel, src));
     }
 
+    /// Remove a specific edge from src to dst with the given relation.
+    /// Returns true if an edge was removed, false if not found.
+    pub fn unlink(&mut self, src: ThingId, rel: SymbolId, dst: ThingId) -> bool {
+        let mut removed = false;
+        if let Some(node) = self.nodes.get_mut(&src) {
+            let before = node.edges.len();
+            node.edges.retain(|&(r, d)| !(r == rel && d == dst));
+            removed = node.edges.len() < before;
+        }
+        if removed {
+            if let Some(rev_list) = self.reverse_index.get_mut(&dst) {
+                rev_list.retain(|&(r, s)| !(r == rel && s == src));
+            }
+        }
+        removed
+    }
+
     /// Remove a node from the graph, cleaning up indices.
     /// Used for evicting old log entries.
     pub fn remove_node(&mut self, id: ThingId) {

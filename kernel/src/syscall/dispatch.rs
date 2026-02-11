@@ -105,6 +105,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
             handlers::sys_root_bytespace_truncate(args[0], args[1])
         }
         SYS_ROOT_RESOLVE_PATH => handlers::sys_root_resolve_path(args[0], args[1]),
+        SYS_ROOT_UNLINK => handlers::sys_root_unlink(args[0], args[1], args[2]),
+        SYS_ROOT_DIR_LIST => handlers::sys_root_dir_list(args[0], args[1], args[2]),
 
         SYS_NIC_MAC => handlers::sys_nic_mac(args[0]),
         SYS_NIC_LINK_UP => handlers::sys_nic_link_up(),

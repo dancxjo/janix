@@ -180,6 +180,13 @@ pub enum RootOp {
     ApplyBatch {
         batch: alloc::vec::Vec<u8>,
     },
+    BytespaceTruncate {
+        id: u64,
+        new_len: u64,
+    },
+    ResolvePath {
+        path: alloc::string::String,
+    },
 }
 
 pub struct ReplyCell {

@@ -1043,3 +1043,34 @@ pub fn sys_root_props_get_many(
         }
     }
 }
+
+/// Resolve a filesystem path to a ThingId.
+/// Args: path_ptr, path_len
+pub fn sys_root_resolve_path(ptr: usize, len: usize) -> SysResult<usize> {
+    if len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    validate_user_range(ptr, len, false)?;
+
+    let mut buf = alloc::vec![0u8; len];
+    unsafe {
+        copyin(&mut buf[..len], ptr)?;
+    }
+
+    let s = core::str::from_utf8(&buf[..len]).map_err(|_| Errno::EINVAL)?;
+    let msg = RootOp::ResolvePath {
+        path: String::from(s),
+    };
+
+    root_call(msg)
+}
+
+/// Truncate a bytespace to a new logical length.
+/// Args: bytespace_id, new_len
+pub fn sys_root_bytespace_truncate(id: usize, new_len: usize) -> SysResult<usize> {
+    root_call(RootOp::BytespaceTruncate {
+        id: id as u64,
+        new_len: new_len as u64,
+    })
+}
+

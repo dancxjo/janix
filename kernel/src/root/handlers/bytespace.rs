@@ -239,3 +239,101 @@ pub fn handle_bytespace_phys(graph: &mut Graph, msg: &RootMsg, id: u64) -> Handl
         (-1, 0)
     }
 }
+
+/// Truncate a bytespace to a new length.
+/// For v0, we only support truncating to a smaller size (i.e., updating the logical length).
+pub fn handle_bytespace_truncate(
+    graph: &mut Graph,
+    id: u64,
+    new_len: u64,
+) -> HandlerResult {
+    if let Some(node) = graph.get_node_mut(id) {
+        if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {
+            let mut lock = handle.lock();
+            let new_len = new_len as usize;
+            if new_len <= lock.page_count * 4096 {
+                // Just update the logical length (within allocated pages)
+                lock.len = new_len;
+                (0, 0)
+            } else {
+                (-22, 0) // EINVAL — can't grow beyond allocated pages
+            }
+        } else {
+            (-2, 0) // ENOENT
+        }
+    } else {
+        (-2, 0) // ENOENT
+    }
+}
+
+/// Resolve a `/`-separated path to a ThingId by walking `content.contains` edges.
+///
+/// Starts at the root service node (graph_anchors::root_service()).
+/// For each path segment, looks at outgoing edges with the `content.contains`
+/// relation and checks if the target node has a matching `file.name` or `dir.name`.
+pub fn handle_resolve_path(
+    graph: &mut Graph,
+    interner: &mut Interner,
+    path: &str,
+) -> HandlerResult {
+    let root_id = match crate::root::graph_anchors::root_service() {
+        Some(id) if id != 0 => id,
+        _ => return (-2, 0), // ENOENT
+    };
+
+    let contains_sym = interner.intern("content.contains");
+    let file_name_sym = interner.intern("file.name");
+    let dir_name_sym = interner.intern("dir.name");
+
+    // Strip leading /
+    let path = path.strip_prefix('/').unwrap_or(path);
+    if path.is_empty() {
+        return (0, root_id); // Root itself
+    }
+
+    let mut current = root_id;
+
+    for segment in path.split('/') {
+        if segment.is_empty() {
+            continue;
+        }
+
+        let seg_sym = interner.intern(segment);
+
+        // Collect targets of content.contains edges (avoids double borrow)
+        let targets: alloc::vec::Vec<u64> = if let Some(node) = graph.get_node_mut(current) {
+            node.edges
+                .iter()
+                .filter(|&&(rel, _)| rel == contains_sym)
+                .map(|&(_, target)| target)
+                .collect()
+        } else {
+            return (-2, 0); // ENOENT
+        };
+
+        // Now search targets for matching name
+        let mut found = false;
+        for target in targets {
+            if let Some(target_node) = graph.get_node_mut(target) {
+                let name_match = target_node
+                    .props
+                    .get(&file_name_sym)
+                    .or_else(|| target_node.props.get(&dir_name_sym))
+                    .copied();
+                if name_match == Some(seg_sym as u64) {
+                    current = target;
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        if !found {
+            return (-2, 0); // ENOENT
+        }
+    }
+
+    (0, current)
+}
+
+

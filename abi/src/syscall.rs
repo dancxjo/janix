@@ -145,6 +145,7 @@ pub const SYS_ROOT_BYTESPACE_INFO: u32 = 0x163;
 pub const SYS_ROOT_BYTESPACE_MAP: u32 = 0x164;
 pub const SYS_ROOT_BYTESPACE_UNMAP: u32 = 0x165;
 pub const SYS_ROOT_BYTESPACE_PHYS: u32 = 0x166;
+pub const SYS_ROOT_BYTESPACE_TRUNCATE: u32 = 0x167;
 
 // 0x168-0x16F: Watch/Stream (Root-specific)
 pub const SYS_ROOT_WATCH_SUBSCRIBE: u32 = 0x168;
@@ -153,6 +154,11 @@ pub const SYS_ROOT_STREAM_POLL: u32 = 0x169;
 pub const SYS_ROOT_WATCH_OPEN: u32 = 0x16A;
 pub const SYS_ROOT_WATCH_NEXT: u32 = 0x16B;
 pub const SYS_ROOT_WATCH_CLOSE: u32 = 0x16C;
+
+// ============================================================================
+// Block 0x170–0x17F: Filesystem (path resolution)
+// ============================================================================
+pub const SYS_ROOT_RESOLVE_PATH: u32 = 0x170;
 
 // ============================================================================
 // Block 0x1A0–0x1AF: Network

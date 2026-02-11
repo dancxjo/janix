@@ -120,6 +120,8 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::DumpGraph { .. } => "DumpGraph",
         RootOp::LogEvent { .. } => "LogEvent",
         RootOp::PropsGetMany { .. } => "PropsGetMany",
+        RootOp::BytespaceTruncate { .. } => "BytespaceTruncate",
+        RootOp::ResolvePath { .. } => "ResolvePath",
     }
 }
 
@@ -213,6 +215,12 @@ fn handle_msg<R: BootRuntime>(
             root_handlers::handle_bytespace_unmap(id, user_va, tid)
         }
         RootOp::BytespacePhys { id } => root_handlers::handle_bytespace_phys(graph, &msg, id),
+        RootOp::BytespaceTruncate { id, new_len } => {
+            root_handlers::handle_bytespace_truncate(graph, id, new_len)
+        }
+        RootOp::ResolvePath { path } => {
+            root_handlers::handle_resolve_path(graph, interner, &path)
+        }
 
         // Stream/Watch operations
         RootOp::WatchSubscribe { target_id, mask } => {

@@ -241,6 +241,40 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
         link(root_svc, rels::HAS_MODULE, mod_node);
     }
 
+    // 7b. Filesystem bootstrap — expose boot modules as fs.File under /initrd/
+    {
+        use abi::schema::{keys as abi_keys, kinds as abi_kinds, rels as abi_rels};
+
+        let initrd_dir = create(abi_kinds::CONTENT_DIR);
+        let initrd_name = intern("initrd");
+        set(initrd_dir, abi_keys::DIR_NAME, initrd_name);
+
+        // Link root service -> /initrd/ via content.contains
+        link(root_svc, abi_rels::CONTENT_CONTAINS, initrd_dir);
+
+        for m in info.modules.iter() {
+            let file_node = create(abi_kinds::CONTENT_FILE);
+            let name_id = intern(m.name);
+            set(file_node, abi_keys::FILE_NAME, name_id);
+
+            let len = m.phys_end - m.phys_start;
+            set(file_node, abi_keys::FILE_SIZE, len);
+
+            // Find the corresponding boot module's bytespace by name
+            // The module was just created above and linked from root_svc via HAS_MODULE.
+            // Its "bytespace" prop was set to the bytespace ThingId.
+            // We duplicate that here for the fs.File node.
+            let virt_ptr = m.phys_start.saturating_add(info.hhdm_offset);
+            let bs = bytespace_create_ptr(virt_ptr, len);
+            set(file_node, abi_keys::FILE_BYTESPACE, bs);
+
+            // Link /initrd/ -> file via content.contains
+            link(initrd_dir, abi_rels::CONTENT_CONTAINS, file_node);
+        }
+
+        crate::contract!("ROOT: filesystem bootstrap: /initrd/ with {} files", info.modules.len());
+    }
+
     // 8. Framebuffer
     if let Some(fb) = info.framebuffer.as_ref() {
         let fb_node = create(kinds::DEV_DISPLAY_FRAMEBUFFER);

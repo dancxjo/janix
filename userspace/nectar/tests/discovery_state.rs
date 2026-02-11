@@ -3,9 +3,9 @@ extern crate alloc;
 #[path = "../src/discovery_state.rs"]
 mod discovery_state;
 
-use alloc::vec;
 use alloc::string::ToString;
-use discovery_state::{DiscoveryState, reconcile_desired};
+use alloc::vec;
+use discovery_state::{reconcile_desired, DiscoveryState};
 
 #[test]
 fn ttl_expiry_marks_instance_stale() {

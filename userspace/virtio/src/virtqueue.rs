@@ -1,7 +1,7 @@
 //! Virtqueue implementation for virtio devices
 
-use core::ptr::{read_volatile, write_volatile};
 use crate::constants::{VIRTQ_DESC_F_NEXT, VIRTQ_DESC_F_WRITE};
+use core::ptr::{read_volatile, write_volatile};
 
 /// Virtqueue descriptor entry
 #[repr(C, packed)]
@@ -152,7 +152,7 @@ impl Virtqueue {
         unsafe {
             // Memory barrier to ensure we see device writes
             core::sync::atomic::fence(core::sync::atomic::Ordering::Acquire);
-            
+
             let used_idx = read_volatile(&raw const (*used_ptr).idx);
             if self.last_used_idx == used_idx {
                 return None;
@@ -188,12 +188,12 @@ impl Virtqueue {
             Some((id as u16, len))
         }
     }
-    
+
     /// Get the physical base address of this virtqueue
     pub fn phys_base(&self) -> u64 {
         self.phys_base
     }
-    
+
     /// Get the size (number of descriptors) of this virtqueue
     pub fn size(&self) -> u16 {
         self.size

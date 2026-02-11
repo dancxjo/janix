@@ -34,10 +34,14 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
 
         SYS_PORT_CREATE => handlers::sys_port_create(args[0]),
         SYS_PORT_SEND => handlers::sys_port_send(args[0], args[1], args[2]),
+        SYS_PORT_SEND_ALL => handlers::sys_port_send_all(args[0], args[1], args[2]),
         SYS_PORT_RECV => handlers::sys_port_recv(args[0], args[1], args[2]),
         SYS_PORT_CLOSE => handlers::sys_port_close(args[0]),
         SYS_PORT_WAIT => handlers::sys_port_wait(args[0], args[1], args[2]),
         SYS_PORT_INFO => handlers::sys_port_info(args[0]),
+        SYS_TOPIC_CREATE => handlers::sys_topic_create(),
+        SYS_TOPIC_SUBSCRIBE => handlers::sys_topic_subscribe(args[0], args[1]),
+        SYS_TOPIC_PUBLISH => handlers::sys_topic_publish(args[0], args[1], args[2]),
 
         SYS_TRACE_READ => handlers::sys_trace_read(args[0], args[1]),
         SYS_CONSOLE_DISABLE => handlers::sys_console_disable(),

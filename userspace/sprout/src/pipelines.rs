@@ -52,7 +52,7 @@ pub fn setup_pci_stub_pipeline(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/pci_stubd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -81,7 +81,7 @@ pub fn setup_rtc_pipeline(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/rtc_cmos".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -110,7 +110,6 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
                 warn!("SPROUT: Failed to spawn ahci_disk: {:?}", e);
             }
         }
-        return;
     }
 
     if has_kind(kinds::DEV_BUS_LEGACY_IO) {
@@ -134,6 +133,24 @@ pub fn setup_storage_pipeline(tasks: &mut Vec<ManagedTask>) {
     } else {
         info!("SPROUT: No AHCI or legacy ATA hardware detected, skipping storage drivers");
     }
+
+    match stem::syscall::spawn_process("/iso9660d", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned iso9660d (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/iso9660d".to_string(),
+                kind: TaskKind::Service("svc.iso9660.Mount".to_string()),
+                module_path: "/iso9660d".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn iso9660d: {:?}", e);
+        }
+    }
 }
 
 pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHandles> {
@@ -152,7 +169,7 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     if let Ok(count) = thingsys::find(kinds::DEV_DISPLAY_GPU, &mut gpu_buf) {
         if count > 0 {
             display_device = Some(gpu_buf[0]);
-            
+
             // Read native resolution from boot framebuffer if available
             let mut fb_buf = [ThingId::default(); 1];
             if let Ok(fb_count) = thingsys::find(kinds::DEV_DISPLAY_FRAMEBUFFER, &mut fb_buf) {
@@ -162,18 +179,21 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
                     display_height = thingsys::prop_get(fb, keys::HEIGHT).unwrap_or(768) as u32;
                 }
             }
-            
+
             // Fall back to reasonable default if no bootfb
             if display_width == 0 || display_height == 0 {
                 display_width = 1024;
                 display_height = 768;
             }
-            
+
             display_stride = display_width * 4;
             display_format = 1;
             driver_name = Some("/display_virtio_gpu");
             backend_name = "VirtIO-GPU";
-            info!("SPROUT: Using VirtIO GPU at {}x{}", display_width, display_height);
+            info!(
+                "SPROUT: Using VirtIO GPU at {}x{}",
+                display_width, display_height
+            );
         }
     }
 
@@ -340,7 +360,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/ps2_kbd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -359,7 +379,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/ps2_mouse".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -388,7 +408,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/bristle".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -425,7 +445,10 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
             slice[1] = drv_req_write as u32;
             slice[2] = drv_resp_read as u32;
             slice[3] = evt.1 as u32; // Pass legacy event handle
-            info!("SPROUT: Writing bloom BS: drv_req={}, drv_resp={}, bristle_evt={}", drv_req_write, drv_resp_read, evt.1);
+            info!(
+                "SPROUT: Writing bloom BS: drv_req={}, drv_resp={}, bristle_evt={}",
+                drv_req_write, drv_resp_read, evt.1
+            );
 
             // Display bytespace id (u64 split into two u32s)
             let bs = display_bs_id.to_u64_lossy();
@@ -456,7 +479,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/bloom".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: bloom_arg,
+                spawn_arg: bloom_arg,
             });
         }
         Err(e) => {
@@ -475,7 +498,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
                 module_path: "/echo".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -511,7 +534,7 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                             module_path: "/rtl8168d".to_string(),
                             pid: Some(pid),
                             restarts: 0,
-                    spawn_arg: 0,
+                            spawn_arg: 0,
                         });
                     }
                     Err(e) => {
@@ -521,8 +544,6 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                 }
 
                 spawn_net_stack_services(tasks);
-
-                return;
             }
         }
     }
@@ -545,7 +566,7 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/virtio_netd".to_string(),
                         pid: Some(pid),
                         restarts: 0,
-                    spawn_arg: 0,
+                        spawn_arg: 0,
                     });
                 }
                 Err(e) => {
@@ -565,6 +586,7 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
 }
 
 fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: spawn_net_stack_services start");
     match stem::syscall::spawn_process("/netd", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned netd (PID={})", pid);
@@ -575,7 +597,7 @@ fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/netd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -593,7 +615,7 @@ fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/anther".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -649,7 +671,7 @@ pub fn setup_clock_service(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/clock".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -669,7 +691,7 @@ pub fn setup_taskman_service(tasks: &mut Vec<ManagedTask>) {
                 module_path: "/taskman".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -711,7 +733,7 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
                 module_path: name.to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                    spawn_arg: 0,
+                spawn_arg: 0,
             });
         }
         Err(e) => {
@@ -719,8 +741,6 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
         }
     }
 }
-
-
 
 /// Set up audio pipeline - spawn virtio_sound and beeper
 pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
@@ -743,7 +763,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/hdaudio".to_string(),
                         pid: Some(pid),
                         restarts: 0,
-                    spawn_arg: 0,
+                        spawn_arg: 0,
                     });
                 }
                 Err(e) => {
@@ -762,7 +782,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/beeper".to_string(),
                         pid: Some(pid),
                         restarts: 0,
-                    spawn_arg: 0,
+                        spawn_arg: 0,
                     });
                 }
                 Err(e) => {
@@ -792,7 +812,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/virtio_sound".to_string(),
                         pid: Some(pid),
                         restarts: 0,
-                    spawn_arg: 0,
+                        spawn_arg: 0,
                     });
                 }
                 Err(e) => {
@@ -812,7 +832,7 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                         module_path: "/beeper".to_string(),
                         pid: Some(pid),
                         restarts: 0,
-                    spawn_arg: 0,
+                        spawn_arg: 0,
                     });
                 }
                 Err(e) => {

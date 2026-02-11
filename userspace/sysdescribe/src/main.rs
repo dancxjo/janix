@@ -5,7 +5,10 @@ extern crate alloc;
 extern crate stem;
 
 use abi::ids::HandleId;
-use described::{DescribeMode, DescribeRequest, DescriptionService, DescribeSink, SysGraph, SystemClock, ViewSpec};
+use described::{
+    DescribeMode, DescribeRequest, DescribeSink, DescriptionService, SysGraph, SystemClock,
+    ViewSpec,
+};
 use llm_stub::StubLlmClient;
 use stem::thing::ThingId;
 

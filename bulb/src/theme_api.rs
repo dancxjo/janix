@@ -79,9 +79,13 @@ impl BootPhase {
         } else {
             current
         };
-        
+
         // Only progress forward
-        if new > current { new } else { current }
+        if new > current {
+            new
+        } else {
+            current
+        }
     }
 }
 
@@ -97,13 +101,13 @@ pub struct DisplayInfo {
 pub trait BootTheme {
     /// Initialize theme with display dimensions
     fn init(&mut self, info: DisplayInfo);
-    
+
     /// Called when a log line is received
     fn on_log(&mut self, event: LogEvent<'_>);
-    
+
     /// Called when boot phase changes
     fn on_phase_change(&mut self, phase: BootPhase);
-    
+
     /// Render the current state to framebuffer
     /// Returns true if display was updated
     fn render(&mut self, fb: &mut [u8]) -> bool;

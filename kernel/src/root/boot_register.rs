@@ -367,7 +367,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     let scheduler = create(kinds::SVC_SCHEDULER);
     link(kernel, rels::PROVIDES, scheduler);
     link(root_svc, rels::HAS_SERVICE, scheduler);
-    
+
     // Store well-known ThingIds for scheduler graphification
     super::graph_anchors::set_scheduler_service(scheduler);
     super::graph_anchors::set_kernel_proc(kernel);

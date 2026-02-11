@@ -1,5 +1,5 @@
 use crate::display::BootUpDisplay;
-use crate::framebuffer::{FramebufferTarget, FramebufferInfo, PixelFormat};
+use crate::framebuffer::{FramebufferInfo, FramebufferTarget, PixelFormat};
 use std::vec;
 use std::vec::Vec;
 
@@ -83,7 +83,10 @@ fn test_centered_rendering() {
             }
         }
     }
-    assert!(found_yellow, "Should have rendered yellow text (Source) near center");
+    assert!(
+        found_yellow,
+        "Should have rendered yellow text (Source) near center"
+    );
 
     // Re-create display to test clearing
     let mut display = BootUpDisplay::new(fb);
@@ -108,5 +111,8 @@ fn test_centered_rendering() {
             }
         }
     }
-    assert!(found_red, "Should have rendered red text (Error Message) below center");
+    assert!(
+        found_red,
+        "Should have rendered red text (Error Message) below center"
+    );
 }

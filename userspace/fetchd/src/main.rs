@@ -30,7 +30,11 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
     prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
 }
 
-fn render_window(window_id: ThingId, ip_text: &str, status_text: &str) -> Result<(), stem::errors::Error> {
+fn render_window(
+    window_id: ThingId,
+    ip_text: &str,
+    status_text: &str,
+) -> Result<(), stem::errors::Error> {
     let mut ui = Petals::begin_window(window_id);
     let root = ui.column(|ui| {
         let label = ui.text("IP Address")?;
@@ -97,7 +101,7 @@ fn main(_arg: usize) -> ! {
         // Window Layout: Bottom-left corner (mirroring clock at bottom-right)
         prop_set(win, keys::UI_WIDTH, 360).ok();
         prop_set(win, keys::UI_HEIGHT, 140).ok();
-        prop_set(win, keys::UI_X, 20).ok();  // Left edge offset
+        prop_set(win, keys::UI_X, 20).ok(); // Left edge offset
         prop_set(win, keys::UI_Y, 0).ok();
         prop_set(win, keys::UI_INSET_BOTTOM, 30).ok(); // Match clock's bottom offset
 
@@ -120,7 +124,7 @@ fn main(_arg: usize) -> ! {
         match find(KIND_NET_STACK, &mut buf) {
             Ok(count) if count > 0 => {
                 let stack_id = pick_best_net_stack(&buf[..count]).unwrap_or(buf[0]);
-                
+
                 // Get IP address from graph
                 match prop_get(stack_id, "net.ip") {
                     Ok(ip_packed) if ip_packed != 0 => {
@@ -162,7 +166,7 @@ fn pick_best_net_stack(nodes: &[ThingId]) -> Option<ThingId> {
         if prop_get(id, "net.ip").ok().unwrap_or(0) != 0 {
             return Some(id);
         }
-        if prop_get(id, "net.socket_api").ok().unwrap_or(0) != 0 && socket_ready.is_none() {
+        if prop_get(id, keys::WRITE_PORT_HANDLE).ok().unwrap_or(0) != 0 && socket_ready.is_none() {
             socket_ready = Some(id);
         }
     }

@@ -37,21 +37,21 @@ fn blend_channel(s: u32, d: u32, sa: u32) -> u32 {
 #[target_feature(enable = "neon")]
 unsafe fn apply_div255_neon(t_lo: uint16x8_t, t_hi: uint16x8_t) -> uint8x16_t {
     let one = vdupq_n_u16(1);
-    
+
     // Apply (t + 1 + (t >> 8)) >> 8 to both halves
     let t_shr_lo = vshrq_n_u16(t_lo, 8);
     let t_shr_hi = vshrq_n_u16(t_hi, 8);
-    
+
     let sum_lo = vaddq_u16(vaddq_u16(t_lo, one), t_shr_lo);
     let sum_hi = vaddq_u16(vaddq_u16(t_hi, one), t_shr_hi);
-    
+
     let res_lo = vshrq_n_u16(sum_lo, 8);
     let res_hi = vshrq_n_u16(sum_hi, 8);
-    
+
     // Narrow 16-bit to 8-bit
     let res_lo_u8 = vmovn_u16(res_lo);
     let res_hi_u8 = vmovn_u16(res_hi);
-    
+
     vcombine_u8(res_lo_u8, res_hi_u8)
 }
 
@@ -71,17 +71,17 @@ unsafe fn modulate_by_mask_neon(pixels: uint8x16_t, mask_vec: uint8x16_t) -> uin
     let px_hi = vget_high_u8(pixels);
     let m_lo = vget_low_u8(mask_vec);
     let m_hi = vget_high_u8(mask_vec);
-    
+
     // Widen to 16-bit for multiplication
     let px_lo_16 = vmovl_u8(px_lo);
     let px_hi_16 = vmovl_u8(px_hi);
     let m_lo_16 = vmovl_u8(m_lo);
     let m_hi_16 = vmovl_u8(m_hi);
-    
+
     // Multiply channel * mask
     let t_lo = vmulq_u16(px_lo_16, m_lo_16);
     let t_hi = vmulq_u16(px_hi_16, m_hi_16);
-    
+
     // Apply exact rounding: (t + 1 + (t >> 8)) >> 8
     apply_div255_neon(t_lo, t_hi)
 }
@@ -119,22 +119,22 @@ pub unsafe fn composite_solid_masked_over_neon(
 ) {
     #[cfg(debug_assertions)]
     log_backend_selection("composite_solid_masked_over");
-    
+
     let ca = ((color_premul >> 24) & 0xFF) as u8;
     let cr = ((color_premul >> 16) & 0xFF) as u8;
     let cg = ((color_premul >> 8) & 0xFF) as u8;
     let cb = (color_premul & 0xFF) as u8;
-    
+
     // Broadcast color to 4 pixels
     let color_px = vdupq_n_u32(color_premul);
     let color_u8 = vreinterpretq_u8_u32(color_px);
-    
+
     for y in 0..rect_h {
         let dst_row = &mut dst[y * dst_stride..];
         let mask_row = &mask[y * mask_stride..];
-        
+
         let mut x = 0;
-        
+
         // Process 4 pixels at a time
         while x + 4 <= rect_w {
             // Load 4 mask values
@@ -142,64 +142,62 @@ pub unsafe fn composite_solid_masked_over_neon(
             let m1 = mask_row[x + 1] as u32;
             let m2 = mask_row[x + 2] as u32;
             let m3 = mask_row[x + 3] as u32;
-            
+
             // Check if all masks are zero (early out)
             if (m0 | m1 | m2 | m3) == 0 {
                 x += 4;
                 continue;
             }
-            
+
             // Pack masks into a vector: each mask byte repeated 4 times for RGBA
             // NEON byte order (little-endian): [m0, m0, m0, m0, m1, m1, m1, m1, ...]
             let mask_bytes = [
-                m0 as u8, m0 as u8, m0 as u8, m0 as u8,
-                m1 as u8, m1 as u8, m1 as u8, m1 as u8,
-                m2 as u8, m2 as u8, m2 as u8, m2 as u8,
-                m3 as u8, m3 as u8, m3 as u8, m3 as u8,
+                m0 as u8, m0 as u8, m0 as u8, m0 as u8, m1 as u8, m1 as u8, m1 as u8, m1 as u8,
+                m2 as u8, m2 as u8, m2 as u8, m2 as u8, m3 as u8, m3 as u8, m3 as u8, m3 as u8,
             ];
             let mask_vec = vld1q_u8(mask_bytes.as_ptr());
-            
+
             // Modulate color by mask
             let src_modulated = modulate_by_mask_neon(color_u8, mask_vec);
-            
+
             // Extract modulated pixels to array for scalar processing
             let mut src_array: [u32; 4] = [0; 4];
             vst1q_u8(src_array.as_mut_ptr() as *mut u8, src_modulated);
-            
+
             for i in 0..4 {
                 let src_px = src_array[i];
                 let sa = (src_px >> 24) & 0xFF;
-                
+
                 if sa == 0 {
                     continue;
                 }
-                
+
                 if sa == 255 {
                     dst_row[x + i] = src_px;
                     continue;
                 }
-                
+
                 let sr = (src_px >> 16) & 0xFF;
                 let sg = (src_px >> 8) & 0xFF;
                 let sb = src_px & 0xFF;
-                
+
                 let dv = dst_row[x + i];
                 let da = (dv >> 24) & 0xFF;
                 let dr = (dv >> 16) & 0xFF;
                 let dg = (dv >> 8) & 0xFF;
                 let db = dv & 0xFF;
-                
+
                 let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
                 let out_r = blend_channel(sr, dr, sa);
                 let out_g = blend_channel(sg, dg, sa);
                 let out_b = blend_channel(sb, db, sa);
-                
+
                 dst_row[x + i] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
             }
-            
+
             x += 4;
         }
-        
+
         // Handle remaining pixels with scalar
         while x < rect_w {
             let m = mask_row[x];
@@ -207,12 +205,12 @@ pub unsafe fn composite_solid_masked_over_neon(
                 x += 1;
                 continue;
             }
-            
+
             let sa = scale_ch(ca, m);
             let sr = scale_ch(cr, m);
             let sg = scale_ch(cg, m);
             let sb = scale_ch(cb, m);
-            
+
             if sa == 255 {
                 dst_row[x] = (sa << 24) | (sr << 16) | (sg << 8) | sb;
             } else if sa > 0 {
@@ -221,15 +219,15 @@ pub unsafe fn composite_solid_masked_over_neon(
                 let dr = (dv >> 16) & 0xFF;
                 let dg = (dv >> 8) & 0xFF;
                 let db = dv & 0xFF;
-                
+
                 let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
                 let out_r = blend_channel(sr, dr, sa);
                 let out_g = blend_channel(sg, dg, sa);
                 let out_b = blend_channel(sb, db, sa);
-                
+
                 dst_row[x] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
             }
-            
+
             x += 1;
         }
     }
@@ -269,14 +267,14 @@ pub unsafe fn composite_src_masked_over_neon(
 ) {
     #[cfg(debug_assertions)]
     log_backend_selection("composite_src_masked_over");
-    
+
     for y in 0..rect_h {
         let dst_row = &mut dst[y * dst_stride..];
         let src_row = &src[y * src_stride..];
         let mask_row = &mask[y * mask_stride..];
-        
+
         let mut x = 0;
-        
+
         // Process 4 pixels at a time
         while x + 4 <= rect_w {
             // Load 4 mask values
@@ -284,67 +282,65 @@ pub unsafe fn composite_src_masked_over_neon(
             let m1 = mask_row[x + 1] as u32;
             let m2 = mask_row[x + 2] as u32;
             let m3 = mask_row[x + 3] as u32;
-            
+
             // Check if all masks are zero (early out)
             if (m0 | m1 | m2 | m3) == 0 {
                 x += 4;
                 continue;
             }
-            
+
             // Load 4 source pixels
             let src_ptr = src_row.as_ptr().add(x) as *const u8;
             let src_pixels = vld1q_u8(src_ptr);
-            
+
             // Pack masks into a vector: each mask byte repeated 4 times for RGBA
             let mask_bytes = [
-                m0 as u8, m0 as u8, m0 as u8, m0 as u8,
-                m1 as u8, m1 as u8, m1 as u8, m1 as u8,
-                m2 as u8, m2 as u8, m2 as u8, m2 as u8,
-                m3 as u8, m3 as u8, m3 as u8, m3 as u8,
+                m0 as u8, m0 as u8, m0 as u8, m0 as u8, m1 as u8, m1 as u8, m1 as u8, m1 as u8,
+                m2 as u8, m2 as u8, m2 as u8, m2 as u8, m3 as u8, m3 as u8, m3 as u8, m3 as u8,
             ];
             let mask_vec = vld1q_u8(mask_bytes.as_ptr());
-            
+
             // Modulate source by mask
             let src_modulated = modulate_by_mask_neon(src_pixels, mask_vec);
-            
+
             // Extract modulated pixels to array for scalar processing
             let mut src_array: [u32; 4] = [0; 4];
             vst1q_u8(src_array.as_mut_ptr() as *mut u8, src_modulated);
-            
+
             for i in 0..4 {
                 let src_px = src_array[i];
                 let sa = (src_px >> 24) & 0xFF;
-                
+
                 if sa == 0 {
                     continue;
                 }
-                
+
                 if sa == 255 {
                     dst_row[x + i] = src_px;
                     continue;
                 }
-                
+
                 let sr = (src_px >> 16) & 0xFF;
                 let sg = (src_px >> 8) & 0xFF;
                 let sb = src_px & 0xFF;
-                
+
                 let dv = dst_row[x + i];
                 let da = (dv >> 24) & 0xFF;
                 let dr = (dv >> 16) & 0xFF;
                 let dg = (dv >> 8) & 0xFF;
                 let db = dv & 0xFF;
-                
+
                 let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
                 let out_r = blend_channel(sr, dr, sa);
                 let out_g = blend_channel(sg, dg, sa);
                 let out_b = blend_channel(sb, db, sa);
-                
+
                 dst_row[x + i] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
             }
-            
+
             x += 4;
         }
-        
+
         // Handle remaining pixels with scalar
         while x < rect_w {
             let m = mask_row[x];
@@ -352,18 +348,18 @@ pub unsafe fn composite_src_masked_over_neon(
                 x += 1;
                 continue;
             }
-            
+
             let s = src_row[x];
             let sa_orig = ((s >> 24) & 0xFF) as u8;
             let sr_orig = ((s >> 16) & 0xFF) as u8;
             let sg_orig = ((s >> 8) & 0xFF) as u8;
             let sb_orig = (s & 0xFF) as u8;
-            
+
             let sa = scale_ch(sa_orig, m);
             let sr = scale_ch(sr_orig, m);
             let sg = scale_ch(sg_orig, m);
             let sb = scale_ch(sb_orig, m);
-            
+
             if sa == 255 {
                 dst_row[x] = (sa << 24) | (sr << 16) | (sg << 8) | sb;
             } else if sa > 0 {
@@ -372,15 +368,15 @@ pub unsafe fn composite_src_masked_over_neon(
                 let dr = (dv >> 16) & 0xFF;
                 let dg = (dv >> 8) & 0xFF;
                 let db = dv & 0xFF;
-                
+
                 let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
                 let out_r = blend_channel(sr, dr, sa);
                 let out_g = blend_channel(sg, dg, sa);
                 let out_b = blend_channel(sb, db, sa);
-                
+
                 dst_row[x] = (out_a << 24) | (out_r << 16) | (out_g << 8) | out_b;
             }
-            
+
             x += 1;
         }
     }

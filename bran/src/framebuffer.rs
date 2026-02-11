@@ -52,12 +52,22 @@ impl Framebuffer {
         let bpp = match bits_per_pixel {
             16 => 2,
             24 => {
-                if pitch_bytes_per_pixel >= 4 { 4 } else { 3 }
+                if pitch_bytes_per_pixel >= 4 {
+                    4
+                } else {
+                    3
+                }
             }
             32 => 4,
             _ => {
                 // Fallback: infer from pitch if sane, otherwise assume 4
-                if pitch_bytes_per_pixel >= 4 { 4 } else if pitch_bytes_per_pixel == 3 { 3 } else { 4 }
+                if pitch_bytes_per_pixel >= 4 {
+                    4
+                } else if pitch_bytes_per_pixel == 3 {
+                    3
+                } else {
+                    4
+                }
             }
         };
 
@@ -75,13 +85,11 @@ impl Framebuffer {
     pub fn clear(&mut self, color: u32) {
         // Fast blit clear: fill first row, then copy to remaining rows
         let buf_len = (self.pitch as usize).saturating_mul(self.height as usize);
-        let buffer = unsafe {
-            core::slice::from_raw_parts_mut(self.addr as *mut u8, buf_len)
-        };
+        let buffer = unsafe { core::slice::from_raw_parts_mut(self.addr as *mut u8, buf_len) };
 
         let bpp = self.bpp.max(1) as usize;
         let row_bytes = self.pitch as usize;
-        
+
         if buf_len == 0 || row_bytes == 0 {
             return;
         }
@@ -89,16 +97,14 @@ impl Framebuffer {
         // For 32bpp, use u32 writes for even faster filling
         if bpp == 4 && row_bytes % 4 == 0 {
             // Cast to u32 slice for fast 4-byte writes
-            let buffer_u32 = unsafe {
-                core::slice::from_raw_parts_mut(self.addr, buf_len / 4)
-            };
+            let buffer_u32 = unsafe { core::slice::from_raw_parts_mut(self.addr, buf_len / 4) };
             let pixels_per_row = row_bytes / 4;
-            
+
             // Fill first row with u32 writes
             for i in 0..pixels_per_row.min(self.width as usize) {
                 buffer_u32[i] = color;
             }
-            
+
             // Copy first row to all remaining rows using fast slice copy
             for y in 1..self.height as usize {
                 let dst_start = y * pixels_per_row;
@@ -111,7 +117,7 @@ impl Framebuffer {
             // Fallback for other bpp: fill first row byte-by-byte, then copy
             let color_bytes = color.to_le_bytes();
             let row_payload = (self.width as usize).saturating_mul(bpp).min(row_bytes);
-            
+
             // Fill first row
             for x in 0..self.width as usize {
                 let offset = x * bpp;
@@ -122,7 +128,7 @@ impl Framebuffer {
                     buffer[offset + b] = color_bytes[b];
                 }
             }
-            
+
             // Copy first row to remaining rows
             for y in 1..self.height as usize {
                 let dst_start = y * row_bytes;
@@ -156,9 +162,7 @@ impl bulb::framebuffer::FramebufferTarget for Framebuffer {
 
     fn buffer_mut(&mut self) -> &mut [u8] {
         let buf_len = (self.pitch as usize).saturating_mul(self.height as usize);
-        unsafe {
-            core::slice::from_raw_parts_mut(self.addr as *mut u8, buf_len)
-        }
+        unsafe { core::slice::from_raw_parts_mut(self.addr as *mut u8, buf_len) }
     }
 
     fn clear(&mut self, color: u32) {
@@ -177,11 +181,21 @@ pub fn get_info() -> Option<FramebufferInfo> {
             let bpp = match bits_per_pixel {
                 16 => 2,
                 24 => {
-                    if pitch_bytes_per_pixel >= 4 { 4 } else { 3 }
+                    if pitch_bytes_per_pixel >= 4 {
+                        4
+                    } else {
+                        3
+                    }
                 }
                 32 => 4,
                 _ => {
-                    if pitch_bytes_per_pixel >= 4 { 4 } else if pitch_bytes_per_pixel == 3 { 3 } else { 4 }
+                    if pitch_bytes_per_pixel >= 4 {
+                        4
+                    } else if pitch_bytes_per_pixel == 3 {
+                        3
+                    } else {
+                        4
+                    }
                 }
             };
             let (width, height, pitch) = normalize_geometry(width, height, pitch, bpp);

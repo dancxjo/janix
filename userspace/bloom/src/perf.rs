@@ -238,10 +238,26 @@ fn print_compact_stats(frame: &PerfFrame, frame_no: u64) {
         .unwrap_or(0.0);
     let text_glyphs = frame.counters.get("text.glyphs").copied().unwrap_or(0);
 
-    let blit_rgba_calls = frame.counters.get("raster.blit.rgba.count").copied().unwrap_or(0);
-    let blit_rgba_pixels = frame.counters.get("raster.blit.rgba.pixels").copied().unwrap_or(0);
-    let blit_masked_calls = frame.counters.get("raster.blit.a8_masked.count").copied().unwrap_or(0);
-    let blit_masked_pixels = frame.counters.get("raster.blit.a8_masked.pixels").copied().unwrap_or(0);
+    let blit_rgba_calls = frame
+        .counters
+        .get("raster.blit.rgba.count")
+        .copied()
+        .unwrap_or(0);
+    let blit_rgba_pixels = frame
+        .counters
+        .get("raster.blit.rgba.pixels")
+        .copied()
+        .unwrap_or(0);
+    let blit_masked_calls = frame
+        .counters
+        .get("raster.blit.a8_masked.count")
+        .copied()
+        .unwrap_or(0);
+    let blit_masked_pixels = frame
+        .counters
+        .get("raster.blit.a8_masked.pixels")
+        .copied()
+        .unwrap_or(0);
 
     let ops_fill = frame.counters.get("raster.ops.fill").copied().unwrap_or(0);
     let ops_blit = frame.counters.get("raster.ops.blit").copied().unwrap_or(0)

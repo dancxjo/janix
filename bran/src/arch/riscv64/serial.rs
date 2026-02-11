@@ -36,10 +36,6 @@ impl SerialPort {
                 options(nostack, preserves_flags)
             );
         }
-        if ret >= 0 {
-            Some(ret as u8)
-        } else {
-            None
-        }
+        if ret >= 0 { Some(ret as u8) } else { None }
     }
 }

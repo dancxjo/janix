@@ -162,12 +162,12 @@ trampoline_end:
 
 #[repr(C)]
 pub struct TrampolineData {
-    pub flag: AtomicU64,     // 0x00
-    pub cr3: u64,            // 0x08
-    pub stack_top: u64,      // 0x10
-    pub entry_point: u64,    // 0x18
-    pub cpu_index: u64,      // 0x20
-    pub hhdm: u64,           // 0x28
-    pub gdt_desc: [u8; 16],  // 0x30 (10 bytes used)
-    pub idt_desc: [u8; 16],  // 0x40 (10 bytes used)
+    pub flag: AtomicU64,    // 0x00
+    pub cr3: u64,           // 0x08
+    pub stack_top: u64,     // 0x10
+    pub entry_point: u64,   // 0x18
+    pub cpu_index: u64,     // 0x20
+    pub hhdm: u64,          // 0x28
+    pub gdt_desc: [u8; 16], // 0x30 (10 bytes used)
+    pub idt_desc: [u8; 16], // 0x40 (10 bytes used)
 }

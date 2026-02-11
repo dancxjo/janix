@@ -4,7 +4,6 @@
 //! Each port has a single writer and single reader handle.
 
 use alloc::boxed::Box;
-use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
@@ -25,7 +24,9 @@ pub struct Port {
     tail: AtomicUsize, // Read position (consumer advances)
     waiters_read: crate::task::scheduler::WaitQueue,
     waiters_write: crate::task::scheduler::WaitQueue,
-    
+    send_lock: Mutex<()>,
+    recv_lock: Mutex<()>,
+
     #[cfg(debug_assertions)]
     sender_tid: AtomicU64,
     #[cfg(debug_assertions)]
@@ -44,6 +45,8 @@ impl Port {
             tail: AtomicUsize::new(0),
             waiters_read: crate::task::scheduler::WaitQueue::new(),
             waiters_write: crate::task::scheduler::WaitQueue::new(),
+            send_lock: Mutex::new(()),
+            recv_lock: Mutex::new(()),
             #[cfg(debug_assertions)]
             sender_tid: AtomicU64::new(0),
             #[cfg(debug_assertions)]
@@ -87,6 +90,7 @@ impl Port {
         #[cfg(debug_assertions)]
         self.check_ownership(true);
 
+        let _guard = self.send_lock.lock();
         let available = self.available();
         let to_write = data.len().min(available);
 
@@ -117,6 +121,39 @@ impl Port {
         to_write
     }
 
+    /// Send bytes only if the full payload fits.
+    /// Returns true if all bytes were written, false if no bytes were written.
+    pub fn send_all(&self, data: &[u8]) -> bool {
+        #[cfg(debug_assertions)]
+        self.check_ownership(true);
+
+        let _guard = self.send_lock.lock();
+        let available = self.available();
+        if available < data.len() {
+            return false;
+        }
+
+        if data.is_empty() {
+            return true;
+        }
+
+        let head = self.head.load(Ordering::Relaxed);
+        let mask = self.capacity - 1;
+        for (i, &byte) in data.iter().enumerate() {
+            let idx = (head + i) & mask;
+            // SAFETY: idx is bounded by mask/capacity and send_lock serializes producers.
+            unsafe {
+                let ptr = self.buf.as_ptr() as *mut u8;
+                ptr.add(idx).write(byte);
+            }
+        }
+
+        self.head
+            .store(head.wrapping_add(data.len()), Ordering::Release);
+        self.waiters_read.wake_all();
+        true
+    }
+
     /// Add a reader waiter to the port
     pub fn add_waiter_read(&self, tid: u64) {
         self.waiters_read.push_back(tid);
@@ -145,6 +182,7 @@ impl Port {
         #[cfg(debug_assertions)]
         self.check_ownership(false);
 
+        let _guard = self.recv_lock.lock();
         let available = self.len();
         let to_read = buf.len().min(available);
 
@@ -184,7 +222,8 @@ impl Port {
         };
         let owner = target.load(Ordering::Acquire);
 
-        if let Err(owner) = target.compare_exchange(0, current, Ordering::AcqRel, Ordering::Acquire) {
+        if let Err(owner) = target.compare_exchange(0, current, Ordering::AcqRel, Ordering::Acquire)
+        {
             if owner != current {
                 // In v0 "Single Process Model", multiple tasks might share handles and ports.
                 // This violates strict SPSC but is currently expected in some discovery flows.
@@ -320,5 +359,20 @@ mod tests {
         // Further sends should return 0 (bounded loss)
         let written2 = sender.send(&[0xFF; 4]);
         assert_eq!(written2, 0);
+    }
+
+    #[test]
+    fn test_port_send_all_atomic() {
+        let port = Arc::new(Port::new(16));
+        let receiver = Receiver::new(Arc::clone(&port));
+
+        assert!(port.send_all(&[1, 2, 3, 4]));
+        assert!(!port.send_all(&[9; 13])); // Would overflow; must not partially write
+        assert_eq!(receiver.len(), 4);
+
+        let mut out = [0u8; 16];
+        let n = receiver.recv(&mut out);
+        assert_eq!(n, 4);
+        assert_eq!(&out[..n], &[1, 2, 3, 4]);
     }
 }

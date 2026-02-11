@@ -6,7 +6,9 @@ use alloc::vec::Vec;
 use abi::ids::HandleId;
 use abi::schema::keys;
 use abi::ui_event::{self, UiEvent};
-use stem::thing::sys::{bytespace_create, bytespace_info, bytespace_read, bytespace_write, prop_get, prop_set};
+use stem::thing::sys::{
+    bytespace_create, bytespace_info, bytespace_read, bytespace_write, prop_get, prop_set,
+};
 use stem::thing::ThingId;
 
 const EVENT_BUF_SIZE: usize = 256;
@@ -69,7 +71,8 @@ impl EventGraph for SysEventGraph {
 }
 
 pub fn ingest_event_request(body: &[u8]) -> Result<Vec<u8>, EventError> {
-    let text = core::str::from_utf8(body).map_err(|_| EventError::BadRequest("body must be utf-8 json"))?;
+    let text = core::str::from_utf8(body)
+        .map_err(|_| EventError::BadRequest("body must be utf-8 json"))?;
     let mut graph = SysEventGraph;
     let gen = ingest_event_json_with(&mut graph, text)?;
     Ok(format_ok_json(gen).into_bytes())
@@ -147,7 +150,11 @@ fn parse_event_json(body: &str) -> Result<ParsedEvent, EventError> {
     })
 }
 
-fn append_event(graph: &mut impl EventGraph, window_id: ThingId, event: &UiEvent) -> Result<u64, EventError> {
+fn append_event(
+    graph: &mut impl EventGraph,
+    window_id: ThingId,
+    event: &UiEvent,
+) -> Result<u64, EventError> {
     let mut encoded = [0u8; EVENT_BUF_SIZE];
     let written = ui_event::encode(event, &mut encoded).ok_or(EventError::Internal)?;
 
@@ -158,8 +165,12 @@ fn append_event(graph: &mut impl EventGraph, window_id: ThingId, event: &UiEvent
     let existing_bytes = if existing_queue == ThingId::default() {
         Vec::new()
     } else {
-        let full_len = graph.bytespace_len(existing_queue).ok_or(EventError::Internal)?;
-        let raw_cursor = graph.prop_get(window_id, keys::UI_EVENT_CURSOR).unwrap_or(0) as usize;
+        let full_len = graph
+            .bytespace_len(existing_queue)
+            .ok_or(EventError::Internal)?;
+        let raw_cursor = graph
+            .prop_get(window_id, keys::UI_EVENT_CURSOR)
+            .unwrap_or(0) as usize;
         let cursor = raw_cursor.min(full_len);
         let unread_len = full_len.saturating_sub(cursor);
         graph
@@ -168,7 +179,9 @@ fn append_event(graph: &mut impl EventGraph, window_id: ThingId, event: &UiEvent
     };
 
     let new_len = existing_bytes.len().saturating_add(written);
-    let new_queue = graph.bytespace_create(new_len).ok_or(EventError::Internal)?;
+    let new_queue = graph
+        .bytespace_create(new_len)
+        .ok_or(EventError::Internal)?;
 
     if !existing_bytes.is_empty() && !graph.bytespace_write(new_queue, 0, &existing_bytes) {
         return Err(EventError::Internal);
@@ -302,7 +315,9 @@ fn find_value_start(body: &str, key: &str) -> Option<usize> {
 
         if &body[key_start..j] == key {
             let mut k = j + 1;
-            while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b'\n' || bytes[k] == b'\r' || bytes[k] == b'\t') {
+            while k < bytes.len()
+                && (bytes[k] == b' ' || bytes[k] == b'\n' || bytes[k] == b'\r' || bytes[k] == b'\t')
+            {
                 k += 1;
             }
             if k >= bytes.len() || bytes[k] != b':' {
@@ -310,7 +325,9 @@ fn find_value_start(body: &str, key: &str) -> Option<usize> {
                 continue;
             }
             k += 1;
-            while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b'\n' || bytes[k] == b'\r' || bytes[k] == b'\t') {
+            while k < bytes.len()
+                && (bytes[k] == b' ' || bytes[k] == b'\n' || bytes[k] == b'\r' || bytes[k] == b'\t')
+            {
                 k += 1;
             }
             return Some(k);
@@ -407,9 +424,20 @@ mod tests {
         let (evt1, c1) = ui_event::decode_one(&bytes).expect("decode1");
         let (evt2, _c2) = ui_event::decode_one(&bytes[c1..]).expect("decode2");
 
-        assert!(matches!(evt1, UiEvent::Focus { window: 7, target: 9 }));
+        assert!(matches!(
+            evt1,
+            UiEvent::Focus {
+                window: 7,
+                target: 9
+            }
+        ));
         match evt2 {
-            UiEvent::TextInput { window, target, text_len, text } => {
+            UiEvent::TextInput {
+                window,
+                target,
+                text_len,
+                text,
+            } => {
                 assert_eq!(window, 7);
                 assert_eq!(target, 9);
                 assert_eq!(&text[..text_len as usize], b"abc");
@@ -461,6 +489,12 @@ mod tests {
         assert_eq!(graph.prop_get(window, keys::UI_EVENT_CURSOR), Some(0));
         let (evt, consumed) = ui_event::decode_one(&second_bytes).expect("decode second");
         assert_eq!(consumed, second_bytes.len());
-        assert!(matches!(evt, UiEvent::Submit { window: 7, target: 9 }));
+        assert!(matches!(
+            evt,
+            UiEvent::Submit {
+                window: 7,
+                target: 9
+            }
+        ));
     }
 }

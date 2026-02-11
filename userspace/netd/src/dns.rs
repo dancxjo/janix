@@ -2,7 +2,7 @@
 
 use alloc::vec::Vec;
 use smoltcp::iface::Interface;
-use smoltcp::socket::udp::{self, Socket as UdpSocket, PacketMetadata};
+use smoltcp::socket::udp::{self, PacketMetadata, Socket as UdpSocket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
@@ -25,11 +25,11 @@ pub fn lookup_a(
     let mut rx_data = [0u8; 2048];
     let mut tx_meta = [PacketMetadata::EMPTY; 4];
     let mut tx_data = [0u8; 2048];
-    
+
     let udp_rx_buffer = udp::PacketBuffer::new(&mut rx_meta[..], &mut rx_data[..]);
     let udp_tx_buffer = udp::PacketBuffer::new(&mut tx_meta[..], &mut tx_data[..]);
     let mut udp_socket = UdpSocket::new(udp_rx_buffer, udp_tx_buffer);
-    
+
     // Bind the socket to a local ephemeral port - this is REQUIRED for smoltcp UDP sockets
     // to receive responses. Without binding, the socket has port=0 and won't match incoming packets.
     let local_port = 49152u16; // Ephemeral port in the private range
@@ -38,7 +38,7 @@ pub fn lookup_a(
         return Err(DnsError::Timeout);
     }
     stem::info!("DNS: Socket bound to local port {}", local_port);
-    
+
     let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
     let udp_handle = socket_set.add(udp_socket);
@@ -70,7 +70,11 @@ pub fn lookup_a(
         if !sent && socket.can_send() {
             socket.send_slice(&query, endpoint).ok();
             sent = true;
-            stem::info!("DNS: Query sent to {}:53 (txid=0x1234, {} bytes)", dns_server, query.len());
+            stem::info!(
+                "DNS: Query sent to {}:53 (txid=0x1234, {} bytes)",
+                dns_server,
+                query.len()
+            );
         }
 
         if socket.can_recv() {

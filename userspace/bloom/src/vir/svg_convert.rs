@@ -8,7 +8,10 @@
 //! 4. Emit VIR elements with complete, explicit state
 
 use crate::geometry::{Color, RectF, Transform};
-use crate::svg::ir::{FillRule as SvgFillRule, LineCap as SvgLineCap, LineJoin as SvgLineJoin, Paint as SvgPaint, Path2D, PathCommand, SvgIrDocument, SvgOp};
+use crate::svg::ir::{
+    FillRule as SvgFillRule, LineCap as SvgLineCap, LineJoin as SvgLineJoin, Paint as SvgPaint,
+    Path2D, PathCommand, SvgIrDocument, SvgOp,
+};
 use crate::vir::*;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -16,17 +19,15 @@ use alloc::vec::Vec;
 /// Convert an SVG IR document to VIR
 pub fn svg_to_vir(svg: &SvgIrDocument) -> VirDocument {
     let mut doc = VirDocument::new();
-    
+
     // Transfer metadata
     doc.width = svg.width;
     doc.height = svg.height;
-    doc.view_box = svg.view_box.as_ref().map(|vb| ViewBox::new(
-        vb.x(),
-        vb.y(),
-        vb.width(),
-        vb.height(),
-    ));
-    
+    doc.view_box = svg
+        .view_box
+        .as_ref()
+        .map(|vb| ViewBox::new(vb.x(), vb.y(), vb.width(), vb.height()));
+
     // Convert each operation to VIR elements
     for op in &svg.ops {
         match op {
@@ -41,7 +42,7 @@ pub fn svg_to_vir(svg: &SvgIrDocument) -> VirDocument {
                 let vir_paint = convert_paint(paint);
                 let vir_transform = convert_transform(transform);
                 let vir_fill_rule = convert_fill_rule(fill_rule);
-                
+
                 doc.elements.push(VirElement {
                     path: Arc::new(vir_path),
                     fill: Some(FillStyle {
@@ -68,7 +69,7 @@ pub fn svg_to_vir(svg: &SvgIrDocument) -> VirDocument {
                 let vir_transform = convert_transform(transform);
                 let vir_line_cap = convert_line_cap(line_cap);
                 let vir_line_join = convert_line_join(line_join);
-                
+
                 doc.elements.push(VirElement {
                     path: Arc::new(vir_path),
                     fill: None,
@@ -85,13 +86,13 @@ pub fn svg_to_vir(svg: &SvgIrDocument) -> VirDocument {
             }
         }
     }
-    
+
     doc
 }
 
 fn convert_path(path: &Path2D) -> VirPath {
     let mut vir_path = VirPath::new();
-    
+
     for verb in &path.verbs {
         match verb {
             PathCommand::MoveTo(p) => {
@@ -111,7 +112,7 @@ fn convert_path(path: &Path2D) -> VirPath {
             }
         }
     }
-    
+
     vir_path
 }
 
@@ -167,14 +168,17 @@ mod tests {
 
     #[test]
     fn test_convert_simple_path() {
-        let mut path = Path2D { verbs: alloc::vec![] };
+        let mut path = Path2D {
+            verbs: alloc::vec![],
+        };
         path.verbs.push(PathCommand::MoveTo(PointF::new(0.0, 0.0)));
-        path.verbs.push(PathCommand::LineTo(PointF::new(10.0, 10.0)));
+        path.verbs
+            .push(PathCommand::LineTo(PointF::new(10.0, 10.0)));
         path.verbs.push(PathCommand::Close);
-        
+
         let vir_path = convert_path(&path);
         assert_eq!(vir_path.segments.len(), 3);
-        
+
         match vir_path.segments[0] {
             VirSegment::MoveTo(p) => {
                 assert_eq!(p.x, 0.0);

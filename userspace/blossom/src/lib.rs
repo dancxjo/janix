@@ -6,8 +6,8 @@ pub mod graph_ui;
 
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use stem::thing::{HandleId, ThingId};
 use stem::thing::sys::{bytespace_info, bytespace_read, prop_get};
+use stem::thing::{HandleId, ThingId};
 
 pub fn read_string_prop(node: ThingId, key: &str) -> Option<String> {
     let bs = prop_get(node, key).ok()?;

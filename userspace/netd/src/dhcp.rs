@@ -1,7 +1,7 @@
 //! DHCPv4 client using smoltcp
 
 use smoltcp::iface::Interface;
-use smoltcp::socket::dhcpv4::{Socket as Dhcpv4Socket, Event};
+use smoltcp::socket::dhcpv4::{Event, Socket as Dhcpv4Socket};
 use smoltcp::time::Duration;
 use smoltcp::wire::Ipv4Address;
 
@@ -21,10 +21,7 @@ pub struct DhcpConfig {
     pub dns: Ipv4Address,
 }
 
-pub fn run_dhcp(
-    iface: &mut Interface,
-    device: &mut IpcNicDevice,
-) -> Result<DhcpConfig, DhcpError> {
+pub fn run_dhcp(iface: &mut Interface, device: &mut IpcNicDevice) -> Result<DhcpConfig, DhcpError> {
     let mut sockets_storage: [smoltcp::iface::SocketStorage; 1] = Default::default();
     let mut socket_set = smoltcp::iface::SocketSet::new(&mut sockets_storage[..]);
 
@@ -67,10 +64,7 @@ pub fn run_dhcp(
                     });
 
                     if let Some(route) = config.router {
-                        iface
-                            .routes_mut()
-                            .add_default_ipv4_route(route)
-                            .ok();
+                        iface.routes_mut().add_default_ipv4_route(route).ok();
                     }
 
                     return Ok(DhcpConfig {

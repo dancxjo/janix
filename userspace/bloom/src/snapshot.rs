@@ -100,11 +100,11 @@ fn read_window(id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowSnapsh
     let mode = prop_get(id, keys::UI_SNAPSHOT_MODE).unwrap_or(snapshot_mode::WRITE_ONCE);
     let frozen = prop_get(id, keys::UI_SNAPSHOT_FROZEN).unwrap_or(0) != 0;
     let dirty = prop_get(id, keys::UI_SNAPSHOT_DIRTY).unwrap_or(0);
-    
+
     // Compute generation counters for damage tracking
     // Geometry generation: changes when position or size changes
     let geometry_gen = compute_geometry_generation(x, y, width, height);
-    
+
     // Paint generation: changes when visual properties change (we use epoch for this)
     let paint_gen = epoch;
 
@@ -301,7 +301,7 @@ mod tests {
         let gen1 = compute_geometry_generation(10, 20, 100, 100);
         let gen2 = compute_geometry_generation(11, 20, 100, 100);
         let gen3 = compute_geometry_generation(10, 21, 100, 100);
-        
+
         assert_ne!(gen1, gen2, "Generation should change when x changes");
         assert_ne!(gen1, gen3, "Generation should change when y changes");
     }
@@ -311,7 +311,7 @@ mod tests {
         let gen1 = compute_geometry_generation(10, 20, 100, 100);
         let gen2 = compute_geometry_generation(10, 20, 101, 100);
         let gen3 = compute_geometry_generation(10, 20, 100, 101);
-        
+
         assert_ne!(gen1, gen2, "Generation should change when width changes");
         assert_ne!(gen1, gen3, "Generation should change when height changes");
     }
@@ -320,7 +320,7 @@ mod tests {
     fn test_geometry_generation_stable() {
         let gen1 = compute_geometry_generation(10, 20, 100, 100);
         let gen2 = compute_geometry_generation(10, 20, 100, 100);
-        
+
         assert_eq!(gen1, gen2, "Generation should be stable for same geometry");
     }
 
@@ -328,7 +328,7 @@ mod tests {
     fn test_geometry_generation_negative_coords() {
         let gen1 = compute_geometry_generation(-10, -20, 100, 100);
         let gen2 = compute_geometry_generation(10, 20, 100, 100);
-        
+
         assert_ne!(gen1, gen2, "Generation should handle negative coordinates");
     }
 
@@ -336,7 +336,7 @@ mod tests {
     fn test_geometry_generation_zero_size() {
         let gen1 = compute_geometry_generation(10, 20, 0, 0);
         let gen2 = compute_geometry_generation(10, 20, 1, 1);
-        
+
         assert_ne!(gen1, gen2, "Generation should handle zero dimensions");
     }
 }

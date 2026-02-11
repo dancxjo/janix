@@ -13,17 +13,22 @@ use abi::hid::{
 use bristle::mouse::{MouseState, PointerEvent};
 use bristle::thigmonasty::{KeyEdge, KeyboardState};
 use stem::info;
-use stem::syscall::{PortHandle, port_recv, port_send, port_wait};
+use stem::syscall::{port_recv, port_send, port_wait, topic_create, topic_publish, PortHandle};
 use stem::thing::sys as thingsys;
 
 /// Register Bristle in the Root graph and return the node ID
-fn register_in_graph() -> Option<stem::thing::ThingId> {
+fn register_in_graph(topic_id: Option<u32>) -> Option<stem::thing::ThingId> {
+    use abi::schema::input::INPUT_TOPIC_ID;
     match thingsys::create_node(abi::schema::hid::SVC_INPUT) {
         Ok(node_id) => {
             info!(
                 "bristle: registered in graph as svc.Input (id={})",
                 node_id.to_u64_lossy()
             );
+            // Publish the topic ID so subscribers can find it
+            if let Some(tid) = topic_id {
+                let _ = thingsys::prop_set(node_id, INPUT_TOPIC_ID, tid as u64);
+            }
             Some(node_id)
         }
         Err(e) => {
@@ -80,7 +85,6 @@ fn scan_subscribers(subscribers: &mut [Subscriber; MAX_SUBSCRIBERS]) -> usize {
 fn matches_filter(filter: u64, event_kind: u64) -> bool {
     filter == 0 || (filter & event_kind) != 0
 }
-
 
 /// Serialize a KeyDown event
 fn serialize_key_down(
@@ -255,7 +259,10 @@ fn reset_userspace_and_respawn_sprout() {
                 };
                 match stem::syscall::task_kill(tid) {
                     Ok(()) => killed += 1,
-                    Err(e) => info!("bristle: failed to kill unnamed userspace tid={}: {:?}", tid, e),
+                    Err(e) => info!(
+                        "bristle: failed to kill unnamed userspace tid={}: {:?}",
+                        tid, e
+                    ),
                 }
                 continue;
             }
@@ -292,8 +299,14 @@ fn reset_userspace_and_respawn_sprout() {
     }
 
     match stem::syscall::spawn_process("/boot/sprout", 0) {
-        Ok(tid) => info!("bristle: userspace reset complete (killed {}), respawned sprout tid={}", killed, tid),
-        Err(e) => info!("bristle: userspace reset killed {}, but failed to respawn sprout: {:?}", killed, e),
+        Ok(tid) => info!(
+            "bristle: userspace reset complete (killed {}), respawned sprout tid={}",
+            killed, tid
+        ),
+        Err(e) => info!(
+            "bristle: userspace reset killed {}, but failed to respawn sprout: {:?}",
+            killed, e
+        ),
     }
 }
 
@@ -310,6 +323,20 @@ fn main(packed_handles: usize) -> ! {
         "bristle: online (kbd={}, mouse={}, evt={}, echo={})",
         kbd_read, mouse_read, legacy_evt_write, legacy_evt_echo_write
     );
+
+    // Create the broadcast topic
+    let topic_id = match topic_create() {
+        Ok(id) => {
+            info!("bristle: created broadcast topic {}", id);
+            Some(id)
+        }
+        Err(e) => {
+            info!("bristle: FAILED to create broadcast topic: {:?}", e);
+            None // Fallback to legacy only
+        }
+    };
+
+    let _node_id = register_in_graph(topic_id);
 
     let mut kbd_state = KeyboardState::new();
     let mut mouse_state = MouseState::new();
@@ -337,68 +364,76 @@ fn main(packed_handles: usize) -> ! {
         if ready_handle == kbd_read {
             if let Ok(n) = port_recv(kbd_read, &mut kbd_buf) {
                 if n > 0 {
-                for &byte in &kbd_buf[..n] {
-                    if let Some(edge) = kbd_state.process_ps2(byte) {
-                        let timestamp_ns = stem::monotonic_ns();
-                        let len = match edge {
-                            KeyEdge::Down { key, mods, repeat } => {
-                                serialize_key_down(key, mods, repeat, timestamp_ns, &mut send_buf)
-                            }
-                            KeyEdge::Up { key, mods } => {
-                                serialize_key_up(key, mods, timestamp_ns, &mut send_buf)
-                            }
-                        };
-                        if len > 0 {
-                            // Check for F2 (Trigger Task Dump)
-                            if let KeyEdge::Down { key: Key::F2, .. } = edge {
-                                info!("bristle: F2 pressed - dumping tasks...");
-                                stem::syscall::task_dump();
-                            }
+                    for &byte in &kbd_buf[..n] {
+                        if let Some(edge) = kbd_state.process_ps2(byte) {
+                            let timestamp_ns = stem::monotonic_ns();
+                            let len = match edge {
+                                KeyEdge::Down { key, mods, repeat } => serialize_key_down(
+                                    key,
+                                    mods,
+                                    repeat,
+                                    timestamp_ns,
+                                    &mut send_buf,
+                                ),
+                                KeyEdge::Up { key, mods } => {
+                                    serialize_key_up(key, mods, timestamp_ns, &mut send_buf)
+                                }
+                            };
+                            if len > 0 {
+                                // Check for F2 (Trigger Task Dump)
+                                if let KeyEdge::Down { key: Key::F2, .. } = edge {
+                                    info!("bristle: F2 pressed - dumping tasks...");
+                                    stem::syscall::task_dump();
+                                }
 
-                            // Check for F10 (Trigger Graph Dump)
-                            if let KeyEdge::Down { key: Key::F10, .. } = edge {
-                                info!("bristle: F10 pressed - dumping graph...");
-                                let _ = thingsys::dump_graph(0);
-                            }
+                                // Check for F10 (Trigger Graph Dump)
+                                if let KeyEdge::Down { key: Key::F10, .. } = edge {
+                                    info!("bristle: F10 pressed - dumping graph...");
+                                    let _ = thingsys::dump_graph(0);
+                                }
 
-                            // Check for Ctrl+Alt+Delete (System Reboot)
-                            if kbd_state.is_key_pressed(Key::Delete)
-                                && (kbd_state.is_key_pressed(Key::LeftCtrl)
-                                    || kbd_state.is_key_pressed(Key::RightCtrl))
-                                && (kbd_state.is_key_pressed(Key::LeftAlt)
-                                    || kbd_state.is_key_pressed(Key::RightAlt))
-                            {
-                                info!("bristle: Ctrl+Alt+Del - rebooting system...");
-                                stem::syscall::reboot();
-                            }
+                                // Check for Ctrl+Alt+Delete (System Reboot)
+                                if kbd_state.is_key_pressed(Key::Delete)
+                                    && (kbd_state.is_key_pressed(Key::LeftCtrl)
+                                        || kbd_state.is_key_pressed(Key::RightCtrl))
+                                    && (kbd_state.is_key_pressed(Key::LeftAlt)
+                                        || kbd_state.is_key_pressed(Key::RightAlt))
+                                {
+                                    info!("bristle: Ctrl+Alt+Del - rebooting system...");
+                                    stem::syscall::reboot();
+                                }
 
-                            // Check for F12 (Kill all userspace and respawn sprout)
-                            if let KeyEdge::Down { key: Key::F12, .. } = edge {
-                                info!("bristle: F12 pressed - resetting userspace and respawning sprout...");
-                                reset_userspace_and_respawn_sprout();
-                            }
+                                // Check for F12 (Kill all userspace and respawn sprout)
+                                if let KeyEdge::Down { key: Key::F12, .. } = edge {
+                                    info!(
+                                        "bristle: F12 pressed - resetting userspace and respawning sprout..."
+                                    );
+                                    reset_userspace_and_respawn_sprout();
+                                }
 
-                            let mut sent = false;
-                            if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
-                                sent = true;
-                            } else {
-                                drop_counter += 1;
-                            }
-
-                            if legacy_evt_echo_write != 0 {
-                                if port_send(legacy_evt_echo_write, &send_buf[..len]).is_ok() {
-                                    sent = true;
+                                let mut _sent_to_legacy = false;
+                                if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
+                                    _sent_to_legacy = true;
                                 } else {
                                     drop_counter += 1;
                                 }
-                            }
 
-                            if sent {
+                                if legacy_evt_echo_write != 0 {
+                                    if port_send(legacy_evt_echo_write, &send_buf[..len]).is_ok() {
+                                        _sent_to_legacy = true;
+                                    } else {
+                                        drop_counter += 1;
+                                    }
+                                }
+
                                 event_count += 1;
+                                // Also publish to the topic for new-style subscribers
+                                if let Some(tid) = topic_id {
+                                    let _ = topic_publish(tid, &send_buf[..len]);
+                                }
                             }
                         }
                     }
-                }
                 }
             }
         }
@@ -434,29 +469,37 @@ fn main(packed_handles: usize) -> ! {
                                         abi::schema::input::FILTER_BUTTON,
                                     ),
                                     PointerEvent::ButtonUp { button } => (
-                                        serialize_pointer_button_up(button, timestamp_ns, &mut send_buf),
+                                        serialize_pointer_button_up(
+                                            button,
+                                            timestamp_ns,
+                                            &mut send_buf,
+                                        ),
                                         abi::schema::input::FILTER_BUTTON,
                                     ),
                                 };
 
                                 if len > 0 {
-                                    let mut sent = false;
+                                    let mut _sent_to_legacy = false;
                                     if port_send(legacy_evt_write, &send_buf[..len]).is_ok() {
-                                        sent = true;
+                                        _sent_to_legacy = true;
                                     } else {
                                         drop_counter += 1;
                                     }
 
                                     if legacy_evt_echo_write != 0 {
-                                        if port_send(legacy_evt_echo_write, &send_buf[..len]).is_ok() {
-                                            sent = true;
+                                        if port_send(legacy_evt_echo_write, &send_buf[..len])
+                                            .is_ok()
+                                        {
+                                            _sent_to_legacy = true;
                                         } else {
                                             drop_counter += 1;
                                         }
                                     }
 
-                                    if sent {
-                                        event_count += 1;
+                                    event_count += 1;
+                                    // Also publish to the topic for new-style subscribers
+                                    if let Some(tid) = topic_id {
+                                        let _ = topic_publish(tid, &send_buf[..len]);
                                     }
                                 }
                             }
@@ -470,6 +513,5 @@ fn main(packed_handles: usize) -> ! {
         if drop_counter > 0 && drop_counter % 100 == 0 {
             info!("bristle: dropped {} events (port full)", drop_counter);
         }
-
     }
 }

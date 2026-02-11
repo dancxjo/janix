@@ -340,13 +340,13 @@ fn initialize_iso_content_source() -> Option<ThingId> {
             let kind_sym = thingsys::intern("iso9660_disk").unwrap_or(0);
             let name_sym = thingsys::intern("cdrom0").unwrap_or(0);
             let state_sym = thingsys::intern("ready").unwrap_or(0);
-            
+
             let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_KIND, kind_sym as u64);
             let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_NAME, name_sym as u64);
             let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_PRIORITY, 50u64); // Lower priority than Limine (100)
             let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_STATE, state_sym as u64);
             let _ = thingsys::prop_set(source_id, keys::CONTENT_SOURCE_GEN, 1u64);
-            
+
             info!("ISO_READER: Created ISO ContentSource node");
             Some(source_id)
         }
@@ -399,11 +399,10 @@ fn publish_iso_file(
     let bs = if let Some(ref data_vec) = data {
         let bytespace = thingsys::bytespace_create(size as usize, 0, 0)
             .map_err(|_| "bytespace_create failed")?;
-        thingsys::bytespace_write(bytespace, 0, data_vec)
-            .map_err(|_| "bytespace_write failed")?;
-        
+        thingsys::bytespace_write(bytespace, 0, data_vec).map_err(|_| "bytespace_write failed")?;
+
         stats.bytes_read += size;
-        
+
         thingsys::prop_set(node, keys::BYTESPACE, bytespace.to_u64_lossy()).ok();
         thingsys::link(node, rels::BACKED_BY, bytespace).ok();
         Some(bytespace)
@@ -453,7 +452,7 @@ fn get_mime_type(name: &str) -> Option<&'static str> {
 fn publish_content_file_indexed(
     source_id: ThingId,
     name: &str,
-    data: Option<&[u8]>, // None for metadata-only publish
+    data: Option<&[u8]>,    // None for metadata-only publish
     bs_id: Option<ThingId>, // None for metadata-only publish
     size: usize,
     mime: Option<&str>,
@@ -476,14 +475,21 @@ fn publish_content_file_indexed(
             hasher.update(data_bytes);
             let hash_bytes = hasher.finalize();
             let hash = u64::from_le_bytes([
-                hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
-                hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+                hash_bytes[0],
+                hash_bytes[1],
+                hash_bytes[2],
+                hash_bytes[3],
+                hash_bytes[4],
+                hash_bytes[5],
+                hash_bytes[6],
+                hash_bytes[7],
             ]);
 
             let old_hash = thingsys::prop_get(existing_id, keys::FILE_HASH).unwrap_or(0);
             if old_hash != hash {
                 if let Some(bs) = bs_id {
-                    let _ = thingsys::prop_set(existing_id, keys::FILE_BYTESPACE, bs.to_u64_lossy());
+                    let _ =
+                        thingsys::prop_set(existing_id, keys::FILE_BYTESPACE, bs.to_u64_lossy());
                 }
                 let _ = thingsys::prop_set(existing_id, keys::FILE_HASH, hash);
                 let _ = thingsys::prop_set(existing_id, keys::FILE_SIZE, size as u64);
@@ -507,11 +513,17 @@ fn publish_content_file_indexed(
                 hasher.update(data_bytes);
                 let hash_bytes = hasher.finalize();
                 let hash = u64::from_le_bytes([
-                    hash_bytes[0], hash_bytes[1], hash_bytes[2], hash_bytes[3],
-                    hash_bytes[4], hash_bytes[5], hash_bytes[6], hash_bytes[7],
+                    hash_bytes[0],
+                    hash_bytes[1],
+                    hash_bytes[2],
+                    hash_bytes[3],
+                    hash_bytes[4],
+                    hash_bytes[5],
+                    hash_bytes[6],
+                    hash_bytes[7],
                 ]);
                 let _ = thingsys::prop_set(file_id, keys::FILE_HASH, hash);
-                
+
                 if let Some(bs) = bs_id {
                     let _ = thingsys::prop_set(file_id, keys::FILE_BYTESPACE, bs.to_u64_lossy());
                 }
@@ -541,11 +553,11 @@ fn publish_content_file_indexed(
 fn is_in_hot_set(path: &str) -> bool {
     let path_lower = path.to_lowercase();
     // Load fonts, cursors, and critical UI assets eagerly
-    path_lower.contains("/cursor") ||
-    path_lower.ends_with(".ttf") ||
-    path_lower.ends_with(".otf") ||
-    path_lower.contains("/font") ||
-    path_lower == "/boot.svg" // Boot logo if present
+    path_lower.contains("/cursor")
+        || path_lower.ends_with(".ttf")
+        || path_lower.ends_with(".otf")
+        || path_lower.contains("/font")
+        || path_lower == "/boot.svg" // Boot logo if present
 }
 
 /// Recursively scan a directory and publish files.
@@ -591,10 +603,10 @@ fn scan_and_publish(
         } else {
             stats.files_visited += 1;
             let path_with_slash = alloc::format!("/{}", full_path);
-            
+
             // Check if this file should be in the hot-set (loaded eagerly)
             let in_hot_set = is_in_hot_set(&path_with_slash);
-            
+
             let file = iso9660::IsoFile {
                 extent_lba: entry.extent_lba,
                 size: entry.size,
@@ -646,7 +658,10 @@ fn scan_and_publish(
                         *index += 1;
                     }
                     Err(e) => {
-                        warn!("ISO_READER: Failed to publish metadata for '{}': {}", full_path, e);
+                        warn!(
+                            "ISO_READER: Failed to publish metadata for '{}': {}",
+                            full_path, e
+                        );
                     }
                 }
             }
@@ -719,7 +734,7 @@ fn main(_arg: usize) -> ! {
     };
 
     info!("ISO_READER: Scanning ISO root directory...");
-    
+
     // Initialize ContentSource
     let source_id = match initialize_iso_content_source() {
         Some(id) => id,
@@ -732,14 +747,14 @@ fn main(_arg: usize) -> ! {
             }
         }
     };
-    
+
     // Initialize performance tracking and index
     let mut stats = ScanStats::default();
     let mut publish_index = PublishIndex::new();
     stats.time_scan_start_ns = get_monotonic_ns();
-    
+
     let mut index = 1000; // Start at high index to avoid collision with Limine modules
-    
+
     let start_metadata = get_monotonic_ns();
     let published = scan_and_publish(
         &dev,
@@ -761,7 +776,7 @@ fn main(_arg: usize) -> ! {
     let total_time_ms = total_time_ns / 1_000_000;
     let metadata_time_ms = stats.time_metadata_ns / 1_000_000;
     let bytes_read_kb = stats.bytes_read / 1024;
-    
+
     info!(
         "ISO_READER: Scan complete - {} files, {} dirs in {} ms",
         stats.files_visited, stats.dirs_visited, total_time_ms

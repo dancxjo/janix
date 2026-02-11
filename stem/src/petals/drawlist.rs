@@ -1,14 +1,14 @@
 extern crate alloc;
 
-use alloc::vec::Vec;
-use abi::drawlist::{DrawListBuilder, FillRule, PathVerb, PointF};
-use abi::geometry::RectI32Wire;
-use abi::schema::keys;
 use crate::errors::{Error, Result};
 use crate::thing::sys::{bytespace_create, bytespace_write, prop_get, prop_set};
 use crate::thing::ThingId;
+use abi::drawlist::{DrawListBuilder, FillRule, PathVerb, PointF};
 use abi::errors::Errno;
+use abi::geometry::RectI32Wire;
 use abi::ids::HandleId;
+use abi::schema::keys;
+use alloc::vec::Vec;
 
 /// Helper for creating and updating graph-native drawlists.
 ///
@@ -55,12 +55,8 @@ impl DrawList {
         let bytes = builder.finish();
         let bs = bytespace_create(bytes.len(), 0, 0).map_err(Error::Errno)?;
         bytespace_write(bs, 0, &bytes).map_err(Error::Errno)?;
-        prop_set(
-            self.target,
-            keys::UI_DRAWLIST_BYTESPACE,
-            bs.to_u64_lossy(),
-        )
-        .map_err(Error::Errno)?;
+        prop_set(self.target, keys::UI_DRAWLIST_BYTESPACE, bs.to_u64_lossy())
+            .map_err(Error::Errno)?;
 
         let next_gen = self.next_gen();
         prop_set(self.target, keys::UI_DRAWLIST_GEN, next_gen).map_err(Error::Errno)?;
@@ -70,12 +66,7 @@ impl DrawList {
 
     /// Set the owner property (optional).
     pub fn set_owner(&self, owner: ThingId) -> Result<()> {
-        prop_set(
-            self.target,
-            keys::UI_DRAWLIST_OWNER,
-            owner.to_u64_lossy(),
-        )
-        .map_err(Error::Errno)
+        prop_set(self.target, keys::UI_DRAWLIST_OWNER, owner.to_u64_lossy()).map_err(Error::Errno)
     }
 
     /// Set the bounds property (optional).
@@ -84,12 +75,7 @@ impl DrawList {
         let bytes = rect.as_bytes();
         let bs = bytespace_create(bytes.len(), 0, 0).map_err(Error::Errno)?;
         bytespace_write(bs, 0, &bytes).map_err(Error::Errno)?;
-        prop_set(
-            self.target,
-            keys::UI_DRAWLIST_BOUNDS,
-            bs.to_u64_lossy(),
-        )
-        .map_err(Error::Errno)
+        prop_set(self.target, keys::UI_DRAWLIST_BOUNDS, bs.to_u64_lossy()).map_err(Error::Errno)
     }
 
     /// Set the debug name property (optional).
@@ -100,12 +86,7 @@ impl DrawList {
         }
         let bs = bytespace_create(name.len(), 0, 0).map_err(Error::Errno)?;
         bytespace_write(bs, 0, name.as_bytes()).map_err(Error::Errno)?;
-        prop_set(
-            self.target,
-            keys::UI_DRAWLIST_DEBUG_NAME,
-            bs.to_u64_lossy(),
-        )
-        .map_err(Error::Errno)
+        prop_set(self.target, keys::UI_DRAWLIST_DEBUG_NAME, bs.to_u64_lossy()).map_err(Error::Errno)
     }
 
     /// Get the current generation counter from the graph, or 0 if not set.

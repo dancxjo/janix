@@ -1,5 +1,5 @@
-use wasmi::{StoreLimits};
 use crate::trace::TraceMode;
+use wasmi::StoreLimits;
 
 pub struct HostState {
     pub limits: StoreLimits,
@@ -13,7 +13,7 @@ impl HostState {
         Self {
             limits: StoreLimits::default(),
             device_handle,
-            mmio: vec![0u8; 4096], 
+            mmio: vec![0u8; 4096],
             trace: TraceMode::None,
         }
     }

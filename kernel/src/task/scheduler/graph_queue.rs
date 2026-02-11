@@ -21,35 +21,17 @@ pub enum GraphWork {
         parent_tid: Option<TaskId>,
     },
     /// Update the state property of a task
-    UpdateState {
-        tid: TaskId,
-        state: &'static str,
-    },
+    UpdateState { tid: TaskId, state: &'static str },
     /// Set the exit code on a terminated task
-    SetExitCode {
-        tid: TaskId,
-        code: i32,
-    },
+    SetExitCode { tid: TaskId, code: i32 },
     /// Update the priority property of a task
-    SetPriority {
-        tid: TaskId,
-        priority: u8,
-    },
+    SetPriority { tid: TaskId, priority: u8 },
     /// Set the name property of a task
-    SetName {
-        tid: TaskId,
-        name: String,
-    },
+    SetName { tid: TaskId, name: String },
     /// Set the location (RUNS_ON) of a task
-    SetLocation {
-        tid: TaskId,
-        cpu_index: usize,
-    },
+    SetLocation { tid: TaskId, cpu_index: usize },
     /// Set the affinity (PINNED_TO) of a task
-    SetAffinity {
-        tid: TaskId,
-        cpu_index: usize,
-    },
+    SetAffinity { tid: TaskId, cpu_index: usize },
 }
 
 /// The global work queue for deferred graph operations.
@@ -83,7 +65,11 @@ pub fn push(work: GraphWork) {
     // overwrite the state in-place so we only flush the latest transition.
     if let GraphWork::UpdateState { tid, state } = &work {
         for item in q.iter_mut() {
-            if let GraphWork::UpdateState { tid: existing_tid, state: existing_state } = item {
+            if let GraphWork::UpdateState {
+                tid: existing_tid,
+                state: existing_state,
+            } = item
+            {
                 if *existing_tid == *tid {
                     *existing_state = state;
                     return;
@@ -107,12 +93,13 @@ pub fn push(work: GraphWork) {
             }
         }
     }
-    
+
     q.push_back(work);
     let len = q.len();
     let mut prev = HIGH_WATER_MARK.load(Ordering::Relaxed);
     while len > prev {
-        match HIGH_WATER_MARK.compare_exchange_weak(prev, len, Ordering::Relaxed, Ordering::Relaxed) {
+        match HIGH_WATER_MARK.compare_exchange_weak(prev, len, Ordering::Relaxed, Ordering::Relaxed)
+        {
             Ok(_) => break,
             Err(actual) => prev = actual,
         }

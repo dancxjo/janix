@@ -76,11 +76,11 @@ pub unsafe fn init(cpu_index: usize) {
 
         // 1. Setup GS Base for this specific CPU
         let gs_base = (&raw mut CPU_LOCAL[cpu_index]) as u64;
-        
+
         // Keep both GS base MSRs pointing at CPU_LOCAL for now so swapgs is safe.
         wrmsr(MSR_GS_BASE, gs_base);
         wrmsr(MSR_KERNEL_GS_BASE, gs_base);
-        
+
         // 2. Enable SCE (SysCall Extension) in EFER
         let efer = rdmsr(MSR_EFER);
         wrmsr(MSR_EFER, efer | EFER_SCE);

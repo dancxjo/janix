@@ -159,15 +159,31 @@ pub mod keys {
     pub const NET_INSTANCE_EXPIRES_AT: &str = "net.instance.expires_at";
     pub const NET_ENDPOINT_PORT: &str = "net.endpoint.port";
     pub const NET_ENDPOINT_PROTO: &str = "net.endpoint.proto";
+    pub const NET_ENDPOINT_IP: &str = "net.endpoint.ip";
     pub const NET_ENDPOINT_PRIORITY: &str = "net.endpoint.priority";
     pub const NET_ENDPOINT_WEIGHT: &str = "net.endpoint.weight";
+    pub const NET_SOCK_KEY: &str = "net.sock.key";
+    pub const NET_SOCK_PROTO: &str = "net.sock.proto";
+    pub const NET_SOCK_STATE: &str = "net.sock.state";
+    pub const NET_SOCK_FD: &str = "net.sock.fd";
+    pub const NET_SOCK_PID: &str = "net.sock.pid";
+    pub const NET_SOCK_CREATED_AT: &str = "net.sock.created_at";
+    pub const NET_SOCK_CLOSED_AT: &str = "net.sock.closed_at";
+    pub const NET_CONN_KEY: &str = "net.conn.key";
+    pub const NET_CONN_STATE: &str = "net.conn.state";
+    pub const NET_CONN_BYTES_TX: &str = "net.conn.bytes_tx";
+    pub const NET_CONN_BYTES_RX: &str = "net.conn.bytes_rx";
+    pub const NET_CONN_PACKETS_TX: &str = "net.conn.packets_tx";
+    pub const NET_CONN_PACKETS_RX: &str = "net.conn.packets_rx";
+    pub const NET_CONN_LAST_SEEN: &str = "net.conn.last_seen";
+    pub const NET_CONN_LAST_ERROR: &str = "net.conn.last_error";
+    pub const NET_CONN_RTT_MS: &str = "net.conn.rtt_ms";
     pub const NET_TXT_HASH: &str = "net.txt.hash";
     pub const NET_LAST_SEEN: &str = "net.last_seen";
     pub const NET_EXPIRES_AT: &str = "net.expires_at";
     pub const NET_STALE: &str = "net.stale";
     pub const NET_ID_KEY: &str = "net.id_key";
-    pub const NET_NECTAR_PUBLISH_DISCOVERY_TO_GRAPH: &str =
-        "net.nectar.publish_discovery_to_graph";
+    pub const NET_NECTAR_PUBLISH_DISCOVERY_TO_GRAPH: &str = "net.nectar.publish_discovery_to_graph";
     pub const NET_ADVERTISE_ROOT_INSTANCE: &str = "net.advertise_root.instance";
     pub const NET_DESIRED_SERVICE_TYPE: &str = "net.desired.service_type";
     pub const NET_DESIRED_INSTANCE_NAME: &str = "net.desired.instance_name";
@@ -613,6 +629,8 @@ pub mod kinds {
     pub const NET_SERVICE_TYPE: &str = "net.ServiceType";
     pub const NET_SERVICE_INSTANCE: &str = "net.ServiceInstance";
     pub const NET_ENDPOINT: &str = "net.Endpoint";
+    pub const NET_SOCKET: &str = "net.Socket";
+    pub const NET_CONNECTION: &str = "net.Connection";
     pub const NET_TXT_RECORD: &str = "net.TxtRecord";
     pub const NET_ADVERTISE_ROOT: &str = "net.AdvertiseRoot";
     pub const NET_SERVICE_INSTANCE_DESIRED: &str = "net.ServiceInstanceDesired";
@@ -883,6 +901,12 @@ pub mod rels {
     pub const NET_INSTANCE_REACHABLE_AT: &str = "net.instance_reachable_at";
     pub const NET_INSTANCE_HAS_TXT: &str = "net.instance_has_txt";
     pub const NET_WANTS_ADVERTISED: &str = "net.wants_advertised";
+    pub const PROC_OWNS_SOCKET: &str = "proc.owns_socket";
+    pub const NET_SOCKET_HAS_LOCAL: &str = "net.socket_has_local";
+    pub const NET_SOCKET_HAS_REMOTE: &str = "net.socket_has_remote";
+    pub const NET_SOCKET_HAS_CONNECTION: &str = "net.socket_has_connection";
+    pub const NET_CONNECTION_PEER: &str = "net.connection_peer";
+    pub const NET_CONNECTION_FOR_SERVICE: &str = "net.connection_for_service";
 }
 
 // Virtio GPU additions
@@ -949,6 +973,8 @@ pub mod input {
     pub const SUBSCRIBER_FILTER: &str = "input.subscriber.filter";
     /// Optional: priority for subscriber ordering (higher=earlier; default=0)
     pub const SUBSCRIBER_PRIORITY: &str = "input.subscriber.priority";
+    /// Topic ID for broadcast input events (TopicId as u64)
+    pub const INPUT_TOPIC_ID: &str = "input.topic_id";
 
     // Filter bits
     pub const FILTER_KEYBOARD: u64 = 1;

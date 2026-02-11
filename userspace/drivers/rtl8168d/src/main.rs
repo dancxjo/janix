@@ -79,8 +79,16 @@ fn main(_arg: usize) -> ! {
     let _ = thingsys::prop_set(svc_id, "net.mac", mac_packed);
     let _ = thingsys::prop_set(svc_id, keys::WRITE_PORT_HANDLE, tx_write as u64);
     let _ = thingsys::prop_set(svc_id, "net.rx_port", rx_read as u64);
-    let _ = thingsys::prop_set(svc_id, keys::LINK_STATUS, if driver.link_up() { 1 } else { 0 });
-    let _ = thingsys::prop_set(svc_id, keys::IRQ_MODE, if driver.irq_enabled() { 1 } else { 0 });
+    let _ = thingsys::prop_set(
+        svc_id,
+        keys::LINK_STATUS,
+        if driver.link_up() { 1 } else { 0 },
+    );
+    let _ = thingsys::prop_set(
+        svc_id,
+        keys::IRQ_MODE,
+        if driver.irq_enabled() { 1 } else { 0 },
+    );
 
     info!(
         "RTL8168D: service ready (tx_port={} rx_port={})",

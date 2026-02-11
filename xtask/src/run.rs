@@ -3,8 +3,8 @@
 use crate::common::{Result, image_name};
 use xshell::{Shell, cmd};
 
-use std::path::Path;
 use std::net::TcpListener;
+use std::path::Path;
 
 fn user_netdev_arg() -> String {
     // Optional override:
@@ -25,7 +25,9 @@ fn user_netdev_arg() -> String {
     if TcpListener::bind(("127.0.0.1", 8888)).is_ok() {
         "user,id=n0,hostfwd=tcp::8888-:80".to_string()
     } else {
-        eprintln!("xtask: host port 8888 is busy; running QEMU without hostfwd (set THINGOS_HOSTFWD to override)");
+        eprintln!(
+            "xtask: host port 8888 is busy; running QEMU without hostfwd (set THINGOS_HOSTFWD to override)"
+        );
         "user,id=n0".to_string()
     }
 }
@@ -38,7 +40,10 @@ fn x86_qemu_trace_enabled() -> bool {
         if v.is_empty() {
             return false;
         }
-        !matches!(v.to_ascii_lowercase().as_str(), "0" | "off" | "false" | "no")
+        !matches!(
+            v.to_ascii_lowercase().as_str(),
+            "0" | "off" | "false" | "no"
+        )
     } else {
         false
     }

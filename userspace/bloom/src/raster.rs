@@ -8,16 +8,16 @@ use crate::font_graph::{self, FontStyle};
 use crate::isa::{BlendMode, Color, EdgeAA, FilterMode, Transform2D};
 use crate::lowered::{lower, LowLevelOp, LoweredDraw};
 use crate::surface::Surface;
+use alloc::sync::Arc;
 use alloc::vec;
 use alloc::vec::Vec;
-use alloc::sync::Arc;
 use fontdue::layout::GlyphRasterConfig;
 
 use alloc::collections::BTreeMap;
 
-use stem::thing::{HandleId, ThingId};
+use crate::text_cache::{hash_str, TextCacheEntry, TextCacheKey, TextRasterCache};
 use spin::Mutex;
-use crate::text_cache::{TextRasterCache, TextCacheKey, TextCacheEntry, hash_str};
+use stem::thing::{HandleId, ThingId};
 
 static TEXT_CACHE: Mutex<Option<TextRasterCache>> = Mutex::new(None);
 
@@ -31,7 +31,6 @@ where
     }
     f(guard.as_mut().unwrap())
 }
-
 
 struct MappedBytespace {
     ptr: *mut u8,
@@ -274,14 +273,12 @@ fn get_op_local_bounds(op: &LowLevelOp) -> Option<Rect> {
         LowLevelOp::BlitSnapshot { dst, .. } => Some(*dst),
         LowLevelOp::BlitOpaque { dst, .. } => Some(*dst),
         LowLevelOp::BlitAlpha { dst, .. } => Some(*dst),
-        LowLevelOp::StrokeRect { rect, width, .. } => {
-            Some(Rect::new(
-                rect.x() - width,
-                rect.y() - width,
-                rect.width() + width * 2,
-                rect.height() + width * 2,
-            ))
-        }
+        LowLevelOp::StrokeRect { rect, width, .. } => Some(Rect::new(
+            rect.x() - width,
+            rect.y() - width,
+            rect.width() + width * 2,
+            rect.height() + width * 2,
+        )),
         LowLevelOp::FillCircle { center, radius, .. } => Some(Rect::new(
             center.x - radius,
             center.y - radius,
@@ -417,7 +414,6 @@ pub fn execute_lowered_with_damage(
     }
 }
 
-
 fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
     let start = stem::monotonic_ns();
     crate::trace_span!("raster.execute");
@@ -432,235 +428,226 @@ fn execute_lowered_on_context(ctx: &mut RasterContext, lowered: &LoweredDraw) {
 
 fn execute_single_op(ctx: &mut RasterContext, op: &LowLevelOp) {
     match op {
-
-            LowLevelOp::Clear { color } => {
-                crate::trace_counter!("raster.ops.clear", 1);
-                fill_rect_copy(
-                    ctx.surface,
-                    ctx.current_clip.x(),
-                    ctx.current_clip.y(),
-                    ctx.current_clip.width(),
-                    ctx.current_clip.height(),
-                    color.to_u32(),
-                );
-            }
-            LowLevelOp::PushClip { rect } => ctx.push_clip(*rect),
-            LowLevelOp::PopClip => ctx.pop_clip(),
-            LowLevelOp::PushTransform { t } => ctx.push_transform(*t),
-            LowLevelOp::PopTransform => ctx.pop_transform(),
-            LowLevelOp::FillRect { rect, color, aa: _ } => {
-                crate::trace_counter!("raster.ops.fill", 1);
-                let tr = ctx.current_transform.transform_rect(*rect);
-                if let Some(cl) = ctx.current_clip.intersection(&tr) {
-                    let c = color.to_u32();
-                    if (c >> 24) == 255 {
-                        fill_rect_copy(ctx.surface, cl.x(), cl.y(), cl.width(), cl.height(), c);
-                    } else {
-                        fill_rect_blend(ctx.surface, cl.x(), cl.y(), cl.width(), cl.height(), c);
-                    }
+        LowLevelOp::Clear { color } => {
+            crate::trace_counter!("raster.ops.clear", 1);
+            fill_rect_copy(
+                ctx.surface,
+                ctx.current_clip.x(),
+                ctx.current_clip.y(),
+                ctx.current_clip.width(),
+                ctx.current_clip.height(),
+                color.to_u32(),
+            );
+        }
+        LowLevelOp::PushClip { rect } => ctx.push_clip(*rect),
+        LowLevelOp::PopClip => ctx.pop_clip(),
+        LowLevelOp::PushTransform { t } => ctx.push_transform(*t),
+        LowLevelOp::PopTransform => ctx.pop_transform(),
+        LowLevelOp::FillRect { rect, color, aa: _ } => {
+            crate::trace_counter!("raster.ops.fill", 1);
+            let tr = ctx.current_transform.transform_rect(*rect);
+            if let Some(cl) = ctx.current_clip.intersection(&tr) {
+                let c = color.to_u32();
+                if (c >> 24) == 255 {
+                    fill_rect_copy(ctx.surface, cl.x(), cl.y(), cl.width(), cl.height(), c);
+                } else {
+                    fill_rect_blend(ctx.surface, cl.x(), cl.y(), cl.width(), cl.height(), c);
                 }
             }
-            LowLevelOp::FillLinearGradient {
-                rect,
-                color1,
-                color2,
-            } => {
-                crate::trace_counter!("raster.ops.fill", 1);
-                let tr = ctx.current_transform.transform_rect(*rect);
-                if let Some(cl) = ctx.current_clip.intersection(&tr) {
-                    fill_rect_linear_gradient(ctx.surface, &tr, &cl, *color1, *color2);
+        }
+        LowLevelOp::FillLinearGradient {
+            rect,
+            color1,
+            color2,
+        } => {
+            crate::trace_counter!("raster.ops.fill", 1);
+            let tr = ctx.current_transform.transform_rect(*rect);
+            if let Some(cl) = ctx.current_clip.intersection(&tr) {
+                fill_rect_linear_gradient(ctx.surface, &tr, &cl, *color1, *color2);
+            }
+        }
+        LowLevelOp::BlitSnapshot {
+            bs_id,
+            width,
+            height,
+            stride,
+            src,
+            dst,
+        } => {
+            crate::trace_counter!("raster.ops.blit_snap", 1);
+            let td = ctx.current_transform.transform_rect(*dst);
+            if let Some(cd) = ctx.current_clip.intersection(&td) {
+                let bs = ThingId::from_u64(*bs_id);
+                if let Some(ptr) = ctx.cache.get_or_map(bs, *stride, *height) {
+                    let len = (*stride * *height) as usize;
+                    let src_surf =
+                        unsafe { Surface::new(ptr as *mut u8, len, *width, *height, *stride) };
+                    blit_surface(ctx.surface, &src_surf, src, &td, &cd);
                 }
             }
-            LowLevelOp::BlitSnapshot {
-                bs_id,
-                width,
-                height,
-                stride,
-                src,
-                dst,
-            } => {
-                crate::trace_counter!("raster.ops.blit_snap", 1);
-                let td = ctx.current_transform.transform_rect(*dst);
-                if let Some(cd) = ctx.current_clip.intersection(&td) {
-                    let bs = ThingId::from_u64(*bs_id);
-                    if let Some(ptr) = ctx.cache.get_or_map(bs, *stride, *height) {
-                        let len = (*stride * *height) as usize;
-                        let src_surf =
-                            unsafe { Surface::new(ptr as *mut u8, len, *width, *height, *stride) };
-                        blit_surface(ctx.surface, &src_surf, src, &td, &cd);
-                    }
-                }
+        }
+        LowLevelOp::BlitOpaque {
+            image,
+            src,
+            dst,
+            filter,
+        } => {
+            crate::trace_counter!("raster.ops.blit", 1);
+            let td = ctx.current_transform.transform_rect(*dst);
+            if let Some(cd) = ctx.current_clip.intersection(&td) {
+                blit_opaque(ctx.surface, image, src, &td, &cd, *filter);
             }
-            LowLevelOp::BlitOpaque {
-                image,
-                src,
-                dst,
-                filter,
-            } => {
-                crate::trace_counter!("raster.ops.blit", 1);
-                let td = ctx.current_transform.transform_rect(*dst);
-                if let Some(cd) = ctx.current_clip.intersection(&td) {
-                    blit_opaque(ctx.surface, image, src, &td, &cd, *filter);
-                }
-            }
-            LowLevelOp::BlitAlpha {
-                image,
-                src,
-                dst,
-                filter,
-                blend,
-                const_alpha,
-            } => {
-                crate::trace_counter!("raster.ops.blit_alpha", 1);
-                let td = ctx.current_transform.transform_rect(*dst);
-                if let Some(cd) = ctx.current_clip.intersection(&td) {
-                    blit_alpha(
-                        ctx.surface,
-                        image,
-                        src,
-                        &td,
-                        &cd,
-                        *filter,
-                        *blend,
-                        *const_alpha,
-                    );
-                }
-            }
-            LowLevelOp::TextSpan {
-                text,
-                pos,
-                size,
-                color,
-                font_name,
-                font_debug,
-            } => {
-                crate::trace_counter!("raster.ops.text", 1);
-                let p = ctx.current_transform.transform_point_f(pos.x, pos.y);
-                rasterize_text_locally(
+        }
+        LowLevelOp::BlitAlpha {
+            image,
+            src,
+            dst,
+            filter,
+            blend,
+            const_alpha,
+        } => {
+            crate::trace_counter!("raster.ops.blit_alpha", 1);
+            let td = ctx.current_transform.transform_rect(*dst);
+            if let Some(cd) = ctx.current_clip.intersection(&td) {
+                blit_alpha(
                     ctx.surface,
-                    text,
-                    p.0,
-                    p.1,
-                    *size,
-                    color.to_u32(),
-                    &ctx.current_clip,
-                    font_name.as_deref(),
-                    *font_debug,
-                );
-            }
-            LowLevelOp::StrokeRect { rect, color, width } => {
-                crate::trace_counter!("raster.ops.stroke", 1);
-                let tr = ctx.current_transform.transform_rect(*rect);
-                stroke_rect_clipped_blend(
-                    ctx.surface,
-                    &tr,
-                    *width,
-                    color.to_u32(),
-                    &ctx.current_clip,
-                );
-            }
-            LowLevelOp::Line {
-                from,
-                to,
-                color,
-                width,
-            } => {
-                crate::trace_counter!("raster.ops.stroke", 1);
-                let p0 = ctx.current_transform.transform_point_f(from.x, from.y);
-                let p1 = ctx.current_transform.transform_point_f(to.x, to.y);
-                line(
-                    ctx.surface,
-                    p0.0,
-                    p0.1,
-                    p1.0,
-                    p1.1,
-                    *width,
-                    color.to_u32(),
-                    &ctx.current_clip,
-                );
-            }
-            LowLevelOp::FillCircle {
-                center,
-                radius,
-                color,
-            } => {
-                crate::trace_counter!("raster.ops.fill", 1);
-                let c = ctx.current_transform.transform_point(*center);
-                fill_circle_blend(
-                    ctx.surface,
-                    c.x,
-                    c.y,
-                    *radius,
-                    color.to_u32(),
-                    &ctx.current_clip,
-                );
-            }
-            LowLevelOp::FillArc {
-                center,
-                radius,
-                start_angle,
-                end_angle,
-                color,
-                aa,
-            } => {
-                crate::trace_counter!("raster.ops.fill", 1);
-                let c = ctx.current_transform.transform_point(*center);
-                fill_arc_clipped_blend(
-                    ctx.surface,
-                    c.x,
-                    c.y,
-                    *radius,
-                    *start_angle,
-                    *end_angle,
-                    color.to_u32(),
-                    *aa,
-                    &ctx.current_clip,
-                );
-            }
-            LowLevelOp::FillPath {
-                path,
-                color,
-                fill_rule,
-                aa,
-            } => {
-                crate::trace_counter!("raster.ops.fill", 1);
-                fill_path(
-                    ctx.surface,
-                    path,
-                    &ctx.current_transform,
-                    color.to_u32(),
-                    *fill_rule,
-                    *aa,
-                    &ctx.current_clip,
-                );
-            }
-            LowLevelOp::StrokePath {
-                path,
-                color,
-                width,
-                cap,
-                join,
-                miter_limit,
-                aa,
-            } => {
-                crate::trace_counter!("raster.ops.stroke", 1);
-                stroke_path(
-                    ctx.surface,
-                    path,
-                    &ctx.current_transform,
-                    color.to_u32(),
-                    *width,
-                    *cap,
-                    *join,
-                    *miter_limit,
-                    *aa,
-                    &ctx.current_clip,
+                    image,
+                    src,
+                    &td,
+                    &cd,
+                    *filter,
+                    *blend,
+                    *const_alpha,
                 );
             }
         }
+        LowLevelOp::TextSpan {
+            text,
+            pos,
+            size,
+            color,
+            font_name,
+            font_debug,
+        } => {
+            crate::trace_counter!("raster.ops.text", 1);
+            let p = ctx.current_transform.transform_point_f(pos.x, pos.y);
+            rasterize_text_locally(
+                ctx.surface,
+                text,
+                p.0,
+                p.1,
+                *size,
+                color.to_u32(),
+                &ctx.current_clip,
+                font_name.as_deref(),
+                *font_debug,
+            );
+        }
+        LowLevelOp::StrokeRect { rect, color, width } => {
+            crate::trace_counter!("raster.ops.stroke", 1);
+            let tr = ctx.current_transform.transform_rect(*rect);
+            stroke_rect_clipped_blend(ctx.surface, &tr, *width, color.to_u32(), &ctx.current_clip);
+        }
+        LowLevelOp::Line {
+            from,
+            to,
+            color,
+            width,
+        } => {
+            crate::trace_counter!("raster.ops.stroke", 1);
+            let p0 = ctx.current_transform.transform_point_f(from.x, from.y);
+            let p1 = ctx.current_transform.transform_point_f(to.x, to.y);
+            line(
+                ctx.surface,
+                p0.0,
+                p0.1,
+                p1.0,
+                p1.1,
+                *width,
+                color.to_u32(),
+                &ctx.current_clip,
+            );
+        }
+        LowLevelOp::FillCircle {
+            center,
+            radius,
+            color,
+        } => {
+            crate::trace_counter!("raster.ops.fill", 1);
+            let c = ctx.current_transform.transform_point(*center);
+            fill_circle_blend(
+                ctx.surface,
+                c.x,
+                c.y,
+                *radius,
+                color.to_u32(),
+                &ctx.current_clip,
+            );
+        }
+        LowLevelOp::FillArc {
+            center,
+            radius,
+            start_angle,
+            end_angle,
+            color,
+            aa,
+        } => {
+            crate::trace_counter!("raster.ops.fill", 1);
+            let c = ctx.current_transform.transform_point(*center);
+            fill_arc_clipped_blend(
+                ctx.surface,
+                c.x,
+                c.y,
+                *radius,
+                *start_angle,
+                *end_angle,
+                color.to_u32(),
+                *aa,
+                &ctx.current_clip,
+            );
+        }
+        LowLevelOp::FillPath {
+            path,
+            color,
+            fill_rule,
+            aa,
+        } => {
+            crate::trace_counter!("raster.ops.fill", 1);
+            fill_path(
+                ctx.surface,
+                path,
+                &ctx.current_transform,
+                color.to_u32(),
+                *fill_rule,
+                *aa,
+                &ctx.current_clip,
+            );
+        }
+        LowLevelOp::StrokePath {
+            path,
+            color,
+            width,
+            cap,
+            join,
+            miter_limit,
+            aa,
+        } => {
+            crate::trace_counter!("raster.ops.stroke", 1);
+            stroke_path(
+                ctx.surface,
+                path,
+                &ctx.current_transform,
+                color.to_u32(),
+                *width,
+                *cap,
+                *join,
+                *miter_limit,
+                *aa,
+                &ctx.current_clip,
+            );
+        }
     }
-
-
+}
 
 #[inline(always)]
 fn scale_ch(c: u8, a: u8) -> u32 {
@@ -678,7 +665,7 @@ fn blend_channel(s: u32, d: u32, sa: u32) -> u32 {
 /// Blend a single pixel using premultiplied alpha "over" composition.
 ///
 /// # Remaining Uses
-/// 
+///
 /// This function is still used in several specific cases that don't benefit from
 /// SIMD masked compositor conversion:
 ///
@@ -718,7 +705,7 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa
             *dp = (255 << 24) | ((sr as u32) << 16) | ((sg as u32) << 8) | sb as u32;
             return;
         }
-        
+
         // Read dst
         let dv = *dp;
         let da = (dv >> 24) & 0xFF; // dst alpha
@@ -727,10 +714,10 @@ fn blend_pixel(surface: &mut Surface, x: i32, y: i32, sr: u8, sg: u8, sb: u8, sa
         let db = dv & 0xFF;
 
         let sa = sa as u32;
-        
+
         // Output alpha = sa + da * (1 - sa)
         let out_a = sa + scale_ch(da as u8, (255 - sa) as u8);
-        
+
         // Premultiplied blend approximation for color channels
         // This assumes src is effectively "painted" onto dst.
         let out_r = blend_channel(sr as u32, dr, sa);
@@ -1114,39 +1101,43 @@ fn blit_opaque(
         src.width() as f32 / fd.width() as f32,
         src.height() as f32 / fd.height() as f32,
     );
-     // 1:1 Fast path for opaque blit
+    // 1:1 Fast path for opaque blit
     if (sx_f - 1.0).abs() < 0.001 && (sy_f - 1.0).abs() < 0.001 {
-         let src_x_base = src.x() + (cd.x() - fd.x());
-         let src_y_base = src.y() + (cd.y() - fd.y());
-         
-         let width = cd.width() as usize;
-         let height = cd.height() as usize;
-         let dst_stride = (surface.stride_bytes >> 2) as usize;
-         let img_stride = image.width as usize; // Image is packed
-         
-         unsafe {
-             let dst_base = surface.ptr as *mut u32;
-             let src_base = image.pixels.as_ptr(); // Arc<[u32]> -> *const u32
-             
-             for i in 0..height {
-                 let dy = (cd.y() as usize) + i;
-                 let sy = (src_y_base as usize) + i;
-                 let dx = cd.x() as usize;
-                 let sx = src_x_base as usize;
-                 
-                 if dy >= surface.height() as usize || sy >= image.height as usize { continue; }
-                 if dx + width > surface.width() as usize || sx + width > image.width as usize { continue; }
-                 
-                 let dst_offset = dy * dst_stride + dx;
-                 let src_offset = sy * img_stride + sx; // Image stride = width
-                 
-                 // Direct copy for opaque
-                 let dst_ptr = dst_base.add(dst_offset);
-                 let src_ptr = src_base.add(src_offset);
-                 core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, width);
-             }
-         }
-         return;
+        let src_x_base = src.x() + (cd.x() - fd.x());
+        let src_y_base = src.y() + (cd.y() - fd.y());
+
+        let width = cd.width() as usize;
+        let height = cd.height() as usize;
+        let dst_stride = (surface.stride_bytes >> 2) as usize;
+        let img_stride = image.width as usize; // Image is packed
+
+        unsafe {
+            let dst_base = surface.ptr as *mut u32;
+            let src_base = image.pixels.as_ptr(); // Arc<[u32]> -> *const u32
+
+            for i in 0..height {
+                let dy = (cd.y() as usize) + i;
+                let sy = (src_y_base as usize) + i;
+                let dx = cd.x() as usize;
+                let sx = src_x_base as usize;
+
+                if dy >= surface.height() as usize || sy >= image.height as usize {
+                    continue;
+                }
+                if dx + width > surface.width() as usize || sx + width > image.width as usize {
+                    continue;
+                }
+
+                let dst_offset = dy * dst_stride + dx;
+                let src_offset = sy * img_stride + sx; // Image stride = width
+
+                // Direct copy for opaque
+                let dst_ptr = dst_base.add(dst_offset);
+                let src_ptr = src_base.add(src_offset);
+                core::ptr::copy_nonoverlapping(src_ptr, dst_ptr, width);
+            }
+        }
+        return;
     }
 
     for dy in cd.y()..cd.y() + cd.height() {
@@ -1183,38 +1174,46 @@ fn blit_alpha(
 
     // 1:1 Fast path for alpha blit
     // Only if BlendMode is SrcOver and no extra constant alpha (CAV=255)
-    if (sx_f - 1.0).abs() < 0.001 && (sy_f - 1.0).abs() < 0.001 && blend == BlendMode::SrcOver && cav == 255 {
-         let src_x_base = src.x() + (cd.x() - fd.x());
-         let src_y_base = src.y() + (cd.y() - fd.y());
-         
-         let width = cd.width() as usize;
-         let height = cd.height() as usize;
-         let dst_stride = (surface.stride_bytes >> 2) as usize;
-         let img_stride = image.width as usize;
-         
-         unsafe {
-             let dst_base = surface.ptr as *mut u32;
-             let src_base = image.pixels.as_ptr();
-             
-             for i in 0..height {
-                 let dy = (cd.y() as usize) + i;
-                 let sy = (src_y_base as usize) + i;
-                 let dx = cd.x() as usize;
-                 let sx = src_x_base as usize;
-                 
-                 if dy >= surface.height() as usize || sy >= image.height as usize { continue; }
-                 if dx + width > surface.width() as usize || sx + width > image.width as usize { continue; }
-                 
-                 let dst_offset = dy * dst_stride + dx;
-                 let src_offset = sy * img_stride + sx;
-                 
-                 let dst_slice = core::slice::from_raw_parts_mut(dst_base.add(dst_offset), width);
-                 let src_slice = core::slice::from_raw_parts(src_base.add(src_offset), width);
-                 
-                 crate::blit::blit_rgba8888_over(dst_slice, src_slice);
-             }
-         }
-         return;
+    if (sx_f - 1.0).abs() < 0.001
+        && (sy_f - 1.0).abs() < 0.001
+        && blend == BlendMode::SrcOver
+        && cav == 255
+    {
+        let src_x_base = src.x() + (cd.x() - fd.x());
+        let src_y_base = src.y() + (cd.y() - fd.y());
+
+        let width = cd.width() as usize;
+        let height = cd.height() as usize;
+        let dst_stride = (surface.stride_bytes >> 2) as usize;
+        let img_stride = image.width as usize;
+
+        unsafe {
+            let dst_base = surface.ptr as *mut u32;
+            let src_base = image.pixels.as_ptr();
+
+            for i in 0..height {
+                let dy = (cd.y() as usize) + i;
+                let sy = (src_y_base as usize) + i;
+                let dx = cd.x() as usize;
+                let sx = src_x_base as usize;
+
+                if dy >= surface.height() as usize || sy >= image.height as usize {
+                    continue;
+                }
+                if dx + width > surface.width() as usize || sx + width > image.width as usize {
+                    continue;
+                }
+
+                let dst_offset = dy * dst_stride + dx;
+                let src_offset = sy * img_stride + sx;
+
+                let dst_slice = core::slice::from_raw_parts_mut(dst_base.add(dst_offset), width);
+                let src_slice = core::slice::from_raw_parts(src_base.add(src_offset), width);
+
+                crate::blit::blit_rgba8888_over(dst_slice, src_slice);
+            }
+        }
+        return;
     }
 
     for dy in cd.y()..cd.y() + cd.height() {
@@ -1382,11 +1381,11 @@ fn rasterize_text_simd(
     clip: &Rect,
     rf: Option<&str>,
 ) -> bool {
-    use stem::simd::text::{
-        create_glyph_run, draw_glyph_run, float_to_subpixel, compute_phase, 
-        subpixel_frac, PositionedGlyph, Rect as TextRect,
-    };
     use crate::text_render::convert_placements;
+    use stem::simd::text::{
+        compute_phase, create_glyph_run, draw_glyph_run, float_to_subpixel, subpixel_frac,
+        PositionedGlyph, Rect as TextRect,
+    };
 
     // Check if font client is available
     if !font_client::is_available() {
@@ -1507,9 +1506,7 @@ fn rasterize_text_simd(
         // Get destination buffer
         let dst_stride = (surface.stride_bytes >> 2) as usize;
         let dst_size = dst_stride * surface.height() as usize;
-        let dst = unsafe {
-            core::slice::from_raw_parts_mut(surface.ptr as *mut u32, dst_size)
-        };
+        let dst = unsafe { core::slice::from_raw_parts_mut(surface.ptr as *mut u32, dst_size) };
 
         // Convert clip rect
         let text_clip = TextRect::new(clip.x(), clip.y(), clip.width(), clip.height());
@@ -1610,7 +1607,10 @@ fn rasterize_text_locally(
 
         // Rasterize
         let start_rast = stem::monotonic_ns();
-        let met = match graph.font_for_face(primary_face_id).and_then(|f| f.font.horizontal_line_metrics(size)) {
+        let met = match graph
+            .font_for_face(primary_face_id)
+            .and_then(|f| f.font.horizontal_line_metrics(size))
+        {
             Some(m) => m,
             None => fontdue::LineMetrics {
                 ascent: size * 0.8f32,
@@ -1620,7 +1620,8 @@ fn rasterize_text_locally(
             },
         };
 
-        if let Some(entry) = rasterize_text_to_a8(graph, text, &stack, size, &met, primary_face_id) {
+        if let Some(entry) = rasterize_text_to_a8(graph, text, &stack, size, &met, primary_face_id)
+        {
             let dt = stem::monotonic_ns().saturating_sub(start_rast);
             crate::trace_counter!("raster.text.rasterize.ns_total", dt);
 
@@ -1629,12 +1630,15 @@ fn rasterize_text_locally(
                 let current_bytes = c.byte_count();
                 let added_bytes = entry.alpha.len();
                 let e = c.insert(key, entry);
-                crate::trace_counter!("raster.text.cache_bytes.current", (current_bytes + added_bytes) as u64);
+                crate::trace_counter!(
+                    "raster.text.cache_bytes.current",
+                    (current_bytes + added_bytes) as u64
+                );
                 blit_text_entry(surface, e, x, y, color, clip);
             });
         } else {
-             // Fallback if rasterization failed (e.g. no fonts)
-             rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
+            // Fallback if rasterization failed (e.g. no fonts)
+            rasterize_text_fallback(surface, text, x, y, size, color, clip, rf, fd);
         }
     });
 
@@ -1700,10 +1704,10 @@ fn rasterize_text_to_a8(
         // Try local cache or graph
         let mut cached_result = None;
         {
-             let cache = f.glyph_cache.lock();
-             if let Some(cached) = cache.get(&key) {
-                 cached_result = Some(cached.clone());
-             }
+            let cache = f.glyph_cache.lock();
+            if let Some(cached) = cache.get(&key) {
+                cached_result = Some(cached.clone());
+            }
         }
         if cached_result.is_none() {
             if let Some(gid) = graph.find_glyph(r.face_id, size as u16, ch as u32) {
@@ -1714,39 +1718,39 @@ fn rasterize_text_to_a8(
                 }
             }
         }
-        
+
         // If still missing, request and skip for now (or placeholder?)
-        // The original code draws placeholder immediately. 
+        // The original code draws placeholder immediately.
         // Here we can emit a placeholder rect?
         if cached_result.is_none() {
-             graph.request_glyph(r.face_id, size as u16, ch as u32);
-             return None; 
+            graph.request_glyph(r.face_id, size as u16, ch as u32);
+            return None;
         }
 
         if let Some((m, _)) = cached_result {
-             // (m, b)
-             let gx = (pen_x + m.xmin as f32) as i32;
-             let gy = pen_y as i32 - m.height as i32 - m.ymin;
-             
-             if m.width > 0 && m.height > 0 {
-                 min_x = min_x.min(gx);
-                 min_y = min_y.min(gy);
-                 max_x = max_x.max(gx + m.width as i32);
-                 max_y = max_y.max(gy + m.height as i32);
-             }
-             
-             glyphs.push((gx, gy, r.face_id, key, m)); // Store m (metrics) and key to retrieve bitmap later to save memory? 
-             // Or just store the bitmap?
-             // `cached_result` has `(Metrics, Vec<u8>)`.
-             // `glyphs` needs the bitmap.
+            // (m, b)
+            let gx = (pen_x + m.xmin as f32) as i32;
+            let gy = pen_y as i32 - m.height as i32 - m.ymin;
+
+            if m.width > 0 && m.height > 0 {
+                min_x = min_x.min(gx);
+                min_y = min_y.min(gy);
+                max_x = max_x.max(gx + m.width as i32);
+                max_y = max_y.max(gy + m.height as i32);
+            }
+
+            glyphs.push((gx, gy, r.face_id, key, m)); // Store m (metrics) and key to retrieve bitmap later to save memory?
+                                                      // Or just store the bitmap?
+                                                      // `cached_result` has `(Metrics, Vec<u8>)`.
+                                                      // `glyphs` needs the bitmap.
         }
-        
+
         pen_x += match cached_result {
             Some((m, _)) => m.advance_width,
             None => size * 0.4,
         };
     }
-    
+
     // Check if we have anything
     if glyphs.is_empty() {
         return Some(TextCacheEntry {
@@ -1760,59 +1764,70 @@ fn rasterize_text_to_a8(
     }
 
     if min_x > max_x || min_y > max_y {
-         // Should not happen if glyphs not empty and have dim
-         return None;
+        // Should not happen if glyphs not empty and have dim
+        return None;
     }
 
     // Allocate A8 buffer
     let w = (max_x - min_x) as usize;
     let h = (max_y - min_y) as usize;
     if w == 0 || h == 0 {
-         return Some(TextCacheEntry { w:0, h:0, offset_x:0, offset_y:0, alpha:Vec::new(), last_used_ns:0 });
+        return Some(TextCacheEntry {
+            w: 0,
+            h: 0,
+            offset_x: 0,
+            offset_y: 0,
+            alpha: Vec::new(),
+            last_used_ns: 0,
+        });
     }
-    
+
     let mut alpha = vec![0u8; w * h];
-    
+
     // Pass 2: Blit glyphs into alpha
     // We need to retrieve the bitmap again or have stored it.
     // Iterating `text` again is wasteful.
     // We stored `key` and `face_id` in `glyphs`. And `m`.
     // We need `b`. We can re-fetch from local cache (fast).
-    
+
     for (gx, gy, face_id, key, m) in glyphs {
-         // Re-fetch bitmap
-         let f = graph.font_for_face(face_id)?; // Should match
-         // Local cache lookup
-         let mut bitmap: Option<Arc<[u8]>> = None;
-         {
-             let cache = f.glyph_cache.lock();
-             if let Some((_, b)) = cache.get(&key) {
-                 bitmap = Some(b.clone());
-             }
-         }
-         
-         if let Some(b) = bitmap {
-             let dst_ox = gx - min_x;
-             let dst_oy = gy - min_y;
-             
-             for r in 0..m.height {
-                 let dy = dst_oy + r as i32;
-                 if dy < 0 || dy >= h as i32 { continue; }
-                 for c in 0..m.width {
-                     let dx = dst_ox + c as i32;
-                     if dx < 0 || dx >= w as i32 { continue; }
-                     
-                     let src_val = b[r * (m.width as usize) + c];
-                     if src_val > 0 {
-                         let dst_idx = (dy as usize) * w + (dx as usize);
-                         // Accumulate alpha? Or Max?
-                         // Font rendering usually uses max or add-saturated.
-                         // Simple max is often good enough for avoiding double-darkening overlap.
-                         alpha[dst_idx] = alpha[dst_idx].max(src_val);
-                     }
-                 }
-             }
-         }
+        // Re-fetch bitmap
+        let f = graph.font_for_face(face_id)?; // Should match
+                                               // Local cache lookup
+        let mut bitmap: Option<Arc<[u8]>> = None;
+        {
+            let cache = f.glyph_cache.lock();
+            if let Some((_, b)) = cache.get(&key) {
+                bitmap = Some(b.clone());
+            }
+        }
+
+        if let Some(b) = bitmap {
+            let dst_ox = gx - min_x;
+            let dst_oy = gy - min_y;
+
+            for r in 0..m.height {
+                let dy = dst_oy + r as i32;
+                if dy < 0 || dy >= h as i32 {
+                    continue;
+                }
+                for c in 0..m.width {
+                    let dx = dst_ox + c as i32;
+                    if dx < 0 || dx >= w as i32 {
+                        continue;
+                    }
+
+                    let src_val = b[r * (m.width as usize) + c];
+                    if src_val > 0 {
+                        let dst_idx = (dy as usize) * w + (dx as usize);
+                        // Accumulate alpha? Or Max?
+                        // Font rendering usually uses max or add-saturated.
+                        // Simple max is often good enough for avoiding double-darkening overlap.
+                        alpha[dst_idx] = alpha[dst_idx].max(src_val);
+                    }
+                }
+            }
+        }
     }
 
     Some(TextCacheEntry {
@@ -1836,28 +1851,30 @@ fn blit_text_entry(
     if entry.w == 0 || entry.h == 0 {
         return;
     }
-    
+
     let (sa, sr, sg, sb) = (
         ((color >> 24) & 0xFF) as u8,
         ((color >> 16) & 0xFF) as u8,
         ((color >> 8) & 0xFF) as u8,
         (color & 0xFF) as u8,
     );
-    if sa == 0 { return; }
+    if sa == 0 {
+        return;
+    }
 
     let x_start = (x as i32) + (entry.offset_x as i32);
     let y_start = (y as i32) + (entry.offset_y as i32);
-    
+
     // Intersection with clip
     let rect = Rect::new(x_start, y_start, entry.w as i32, entry.h as i32);
     let common = match rect.intersection(clip) {
         Some(c) => c,
         None => return,
     };
-    
-    let w = entry.w as usize; 
+
+    let w = entry.w as usize;
     let alpha = &entry.alpha;
-    
+
     // Iterate common rect
     crate::trace_counter!("raster.blit.a8.tinted", 1);
     let dst_stride = (surface.stride_bytes >> 2) as usize;
@@ -1869,17 +1886,17 @@ fn blit_text_entry(
         for dy in common.y()..(common.y() + common.height()) {
             let src_y = (dy - y_start) as usize;
             let row_offset = src_y * w;
-            
+
             // Dst offset
             let dst_offset = (dy as usize) * dst_stride + (common.x() as usize);
-            
+
             let dst_slice = core::slice::from_raw_parts_mut(dst_base.add(dst_offset), w_usize);
-            let src_slice = &alpha[row_offset .. row_offset + w_usize];
-            
+            let src_slice = &alpha[row_offset..row_offset + w_usize];
+
             crate::blit::blit_a8_tinted_over(dst_slice, src_slice, color, sa);
         }
-    }}
-
+    }
+}
 
 fn blit_surface(
     dst_surface: &mut Surface,
@@ -1892,39 +1909,45 @@ fn blit_surface(
         src_rect.width() as f32 / fd.width() as f32,
         src_rect.height() as f32 / fd.height() as f32,
     );
-    
+
     // Check for 1:1 fast path
     if (sx_f - 1.0).abs() < 0.001 && (sy_f - 1.0).abs() < 0.001 {
         crate::trace_counter!("raster.blit.rgba.fast", 1);
-        
+
         let src_x_base = src_rect.x() + (cd.x() - fd.x());
         let src_y_base = src_rect.y() + (cd.y() - fd.y());
-        
+
         let width = cd.width() as usize;
         let height = cd.height() as usize;
-        
+
         let dst_stride = (dst_surface.stride_bytes >> 2) as usize;
         let src_stride = (src_surface.stride_bytes >> 2) as usize;
-        
+
         unsafe {
             let dst_base = dst_surface.ptr as *mut u32;
             let src_base = src_surface.ptr as *const u32;
-            
+
             for i in 0..height {
                 let dy = (cd.y() as usize) + i;
                 let sy = (src_y_base as usize) + i;
                 let dx = cd.x() as usize;
                 let sx = src_x_base as usize;
-                
-                if dy >= dst_surface.height() as usize || sy >= src_surface.height() as usize { continue; }
-                if dx + width > dst_surface.width() as usize || sx + width > src_surface.width() as usize { continue; }
-                
+
+                if dy >= dst_surface.height() as usize || sy >= src_surface.height() as usize {
+                    continue;
+                }
+                if dx + width > dst_surface.width() as usize
+                    || sx + width > src_surface.width() as usize
+                {
+                    continue;
+                }
+
                 let dst_offset = dy * dst_stride + dx;
                 let src_offset = sy * src_stride + sx;
-                
+
                 let dst_slice = core::slice::from_raw_parts_mut(dst_base.add(dst_offset), width);
                 let src_slice = core::slice::from_raw_parts(src_base.add(src_offset), width);
-                
+
                 crate::blit::blit_rgba8888_over(dst_slice, src_slice);
             }
         }
@@ -2041,7 +2064,7 @@ fn rasterize_text_fallback(
             (px + m.xmin as f32) as i32,
             py as i32 - m.height as i32 - m.ymin,
         );
-        
+
         // Prepare premultiplied color once per glyph (not per row)
         let color_premul = {
             let pr = scale_ch(sr, sa);
@@ -2049,23 +2072,23 @@ fn rasterize_text_fallback(
             let pb = scale_ch(sb, sa);
             (sa as u32) << 24 | pr << 16 | pg << 8 | pb
         };
-        
+
         for r in 0..m.height {
             let cy = gy + r as i32;
             if cy < clip.y() || cy >= clip.y() + clip.height() {
                 continue;
             }
-            
+
             // Calculate clipped row range
             let cx_start = gx.max(clip.x());
             let cx_end = (gx + m.width as i32).min(clip.x() + clip.width());
             if cx_start >= cx_end {
                 continue;
             }
-            
+
             let row_width = (cx_end - cx_start) as usize;
             let src_offset = (cx_start - gx) as usize;
-            
+
             // Get mask row from glyph bitmap
             let mask_row_start = r * (m.width as usize) + src_offset;
             let mask_row_end = mask_row_start + row_width;
@@ -2073,25 +2096,25 @@ fn rasterize_text_fallback(
                 continue;
             }
             let mask_row = &b[mask_row_start..mask_row_end];
-            
+
             // Get destination row
             let stride = (surface.stride_bytes >> 2) as usize;
             let row_offset = cy as usize * stride + cx_start as usize;
-            
+
             if row_offset >= stride * surface.height() as usize {
                 continue;
             }
-            
+
             let remaining = stride * surface.height() as usize - row_offset;
             if remaining < row_width {
                 continue; // Skip if not enough pixels for this row
             }
-            
+
             let dst_slice = unsafe {
                 let ptr = surface.ptr as *mut u32;
                 core::slice::from_raw_parts_mut(ptr.add(row_offset), remaining)
             };
-            
+
             // Call SIMD masked compositor
             // Note: mask_stride is m.width, not row_width, but we're using a pre-sliced mask_row
             crate::trace_counter!("raster.text_fallback.simd.count", 1);
@@ -2637,49 +2660,49 @@ fn fill_path_aa(
 
     // Use SIMD masked compositor row by row
     crate::trace_counter!("raster.fill_path_aa.simd.count", 1);
-    
+
     // Allocate row mask buffer once (reuse for each row)
     let max_row_width = (px_end - px_start) as usize;
     let mut row_mask = vec![0u8; max_row_width];
-    
+
     for py in p_start..p_end {
         let iy = (py - clip.y()) as usize;
-        
+
         // Scale coverage to create mask for this row
         let row_start_idx = iy * (clip_w as usize) + (px_start - clip.x()) as usize;
         let row_end_idx = iy * (clip_w as usize) + (px_end - clip.x()) as usize;
         let row_width = (px_end - px_start) as usize;
-        
+
         if row_end_idx > coverage.len() {
             continue;
         }
-        
+
         let row_coverage = &coverage[row_start_idx..row_end_idx];
-        
+
         for (i, &cov) in row_coverage.iter().enumerate() {
             // Scale coverage to 0-255 range for mask
             // Note: Source alpha is already in color_premul, so we only scale coverage here
             row_mask[i] = ((cov as u16 * 255) / SUPERSAMPLE_SAMPLES as u16) as u8;
         }
-        
+
         // Get destination row pointer
         let stride = (surface.stride_bytes >> 2) as usize;
         let row_offset = py as usize * stride + px_start as usize;
-        
+
         if row_offset >= stride * surface.height() as usize {
             continue;
         }
-        
+
         let remaining = stride * surface.height() as usize - row_offset;
         if remaining < row_width {
             continue; // Skip if not enough pixels for this row
         }
-        
+
         let dst_slice = unsafe {
             let ptr = surface.ptr as *mut u32;
             core::slice::from_raw_parts_mut(ptr.add(row_offset), remaining)
         };
-        
+
         // Call SIMD masked compositor
         stem::simd::composite_solid_masked_over(
             dst_slice,
@@ -2849,15 +2872,19 @@ mod tests {
         let (mut src, mut src_buf) = make_surface(4, 4);
 
         // Fill src with pattern
-        let src_u32 = unsafe { core::slice::from_raw_parts_mut(src_buf.as_mut_ptr() as *mut u32, 16) };
+        let src_u32 =
+            unsafe { core::slice::from_raw_parts_mut(src_buf.as_mut_ptr() as *mut u32, 16) };
         src_u32[0] = 0x00_000000; // (0,0) Transparent
         src_u32[1] = 0xFF_FF0000; // (1,0) Red Opaque
         src_u32[2] = 0x80_0000FF; // (2,0) Blue Half
         src_u32[3] = 0xFF_00FF00; // (3,0) Green Opaque
 
         // Fill dst with White
-        let dst_u32 = unsafe { core::slice::from_raw_parts_mut(dst_buf.as_mut_ptr() as *mut u32, 16) };
-        for i in 0..16 { dst_u32[i] = 0xFF_FFFFFF; }
+        let dst_u32 =
+            unsafe { core::slice::from_raw_parts_mut(dst_buf.as_mut_ptr() as *mut u32, 16) };
+        for i in 0..16 {
+            dst_u32[i] = 0xFF_FFFFFF;
+        }
 
         let src_rect = Rect::new(0, 0, 4, 1);
         let dst_rect = Rect::new(0, 0, 4, 1);
@@ -2871,7 +2898,7 @@ mod tests {
         assert_eq!(dst_result[0], 0xFF_FFFFFF, "0,0 transparent src failed");
         // (1,0): Opaque Red -> Red
         assert_eq!(dst_result[1], 0xFF_FF0000, "1,0 opaque src failed");
-        
+
         // (2,0): 50% Blue over White
         // out_a = sa + da*(1-sa) = 128 + 255*(127/255) approx 255
         // Color channels: (src*sa + dst*(255-sa))/255
@@ -2894,7 +2921,7 @@ mod tests {
     #[test]
     fn test_blit_a8_tinted_ref() {
         let (mut dst, mut dst_buf) = make_surface(4, 4);
-        
+
         let mut image_pixels = vec![0u32; 16];
         image_pixels[0] = 0x00_000000; // Alpha 0
         image_pixels[1] = 0xFF_000000; // Alpha 255
@@ -2909,23 +2936,35 @@ mod tests {
         };
 
         // Fill dst with White
-        let dst_u32 = unsafe { core::slice::from_raw_parts_mut(dst_buf.as_mut_ptr() as *mut u32, 16) };
-        for i in 0..16 { dst_u32[i] = 0xFF_FFFFFF; }
+        let dst_u32 =
+            unsafe { core::slice::from_raw_parts_mut(dst_buf.as_mut_ptr() as *mut u32, 16) };
+        for i in 0..16 {
+            dst_u32[i] = 0xFF_FFFFFF;
+        }
 
         let src_rect = Rect::new(0, 0, 4, 1);
         let dst_rect = Rect::new(0, 0, 4, 1);
         let clip = Rect::new(0, 0, 4, 1);
-        
+
         // Use blit_alpha which respects alpha.
-        super::blit_alpha(&mut dst, &image, &src_rect, &dst_rect, &clip, crate::isa::FilterMode::Nearest, crate::isa::BlendMode::SrcOver, None);
-        
+        super::blit_alpha(
+            &mut dst,
+            &image,
+            &src_rect,
+            &dst_rect,
+            &clip,
+            crate::isa::FilterMode::Nearest,
+            crate::isa::BlendMode::SrcOver,
+            None,
+        );
+
         let dst_result = unsafe { core::slice::from_raw_parts(dst.ptr as *const u32, 16) };
-        
+
         assert_eq!(dst_result[0], 0xFF_FFFFFF);
         // Image color 0 is Black 0x000000. Alpha 255.
         // Result should be Black.
         assert_eq!(dst_result[1], 0xFF_000000, "Should be opaque black");
-        
+
         // Alpha 128 (0x80). Color Black (0x000000).
         // Over White (0xFFFFFF).
         // Out = (0*128 + 255*127)/255 = 127 = 0x7F

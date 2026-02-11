@@ -72,12 +72,12 @@ impl PaintPipeline {
     }
 
     pub fn process_updates(&mut self, screen_w: i32, screen_h: i32) -> PaintResult {
-        use abi::pixel::PixelFormat;
         use crate::render_state::RasterCacheKey;
-        
+        use abi::pixel::PixelFormat;
+
         // Get current asset generation
         let current_asset_gen = crate::painter_resources::ASSETS.current_generation().0;
-        
+
         let mut damage = Vec::new();
         let mut window_ids = [ThingId::default(); 128];
         let count = find(kinds::UI_WINDOW, &mut window_ids).unwrap_or(0);
@@ -90,7 +90,7 @@ impl PaintPipeline {
             };
             let rect = props.rect;
             let mut needs_rebuild = false;
-            
+
             let entry = self.windows.entry(*id).or_insert_with(|| WindowPaintState {
                 rect,
                 z: props.z,
@@ -105,7 +105,7 @@ impl PaintPipeline {
             if entry.paint_gen != props.paint_gen || entry.paint_bs != props.paint_bs {
                 needs_rebuild = true;
             }
-            
+
             // Track geometry changes and bump geometry_gen AFTER updating values
             let geometry_changed =
                 entry.rect != rect || entry.z != props.z || entry.hidden != props.hidden;
@@ -120,7 +120,7 @@ impl PaintPipeline {
                     ));
                 }
             }
-            
+
             // Update state before bumping geometry_gen to avoid initial mismatch
             entry.rect = rect;
             entry.z = props.z;
@@ -128,25 +128,25 @@ impl PaintPipeline {
             entry.paint_gen = props.paint_gen;
             entry.paint_bs = props.paint_bs;
             entry.asset_gen = current_asset_gen;
-            
+
             if geometry_changed {
                 entry.geometry_gen = entry.geometry_gen.wrapping_add(1);
             }
 
             if needs_rebuild {
                 crate::trace_span!("bloom.window_cache.rebuild");
-                
+
                 // Construct cache key
                 let cache_key = RasterCacheKey::new(
                     *id,
                     entry.paint_gen,
                     entry.geometry_gen,
                     entry.asset_gen,
-                    1.0,  // TODO: Get from UI_SCALE_FACTOR property
+                    1.0, // TODO: Get from UI_SCALE_FACTOR property
                     EdgeAA::None,
                     PixelFormat::Bgra8888,
                 );
-                
+
                 // Try cache lookup
                 if let Some(_cached_image) = self.render_state.get_window_raster(&cache_key) {
                     // Cache hit - nothing to do, image is already cached
@@ -154,7 +154,7 @@ impl PaintPipeline {
                 } else {
                     // Cache miss - need to rasterize
                     crate::trace_counter!("bloom.window_paint.cache_miss", 1);
-                    
+
                     let w = rect.width() as usize;
                     let h = rect.height() as usize;
                     let len = w * h;
@@ -165,7 +165,7 @@ impl PaintPipeline {
                     // Execute drawlist into temporary buffer
                     if w > 0 && h > 0 {
                         let mut buffer = vec![0u32; len];
-                        
+
                         // Create wrapper surface for the buffer
                         // SAFETY: buffer is valid for len, valid dimensions
                         let mut surface = unsafe {
@@ -183,7 +183,7 @@ impl PaintPipeline {
                         let list =
                             build_drawlist(props.paint_bs, local_rect, &mut self.icon_symbol_cache);
                         raster::execute(&mut surface, &list, false);
-                        
+
                         // Insert into cache
                         let image = Arc::new(Image {
                             width: w as u32,
@@ -193,7 +193,7 @@ impl PaintPipeline {
                             name: Arc::from("window"),
                             id: Some(*id),
                         });
-                        
+
                         self.render_state.insert_window_raster(cache_key, image);
                     }
                 }
@@ -262,10 +262,10 @@ impl PaintPipeline {
     }
 
     /// Build a list of GPU quads for all visible windows.
-    /// 
+    ///
     /// Returns a tuple of (quads, texture_info) where texture_info contains
     /// the window ID and rasterized image data needed to upload textures.
-    /// 
+    ///
     /// The caller is responsible for:
     /// 1. Creating GPU textures for each window
     /// 2. Uploading the rasterized window content to those textures
@@ -273,7 +273,7 @@ impl PaintPipeline {
     #[cfg(feature = "gpu")]
     pub fn build_gpu_quads(&self) -> Vec<crate::gpu_compositor::Quad> {
         use crate::gpu_compositor::{Quad, Rect as GpuRect};
-        
+
         let mut quads: Vec<Quad> = self
             .windows
             .iter()
@@ -282,7 +282,7 @@ impl PaintPipeline {
                 // Use window ID as texture ID (lower 32 bits)
                 // The caller must ensure textures are registered with matching IDs
                 let texture_id = id.to_u64_lossy() as u32;
-                
+
                 Quad {
                     texture_id,
                     dst_rect: GpuRect {
@@ -297,25 +297,24 @@ impl PaintPipeline {
                 }
             })
             .collect();
-        
+
         // Sort by z (ascending = back to front for painter's algorithm)
         quads.sort_by_key(|q| q.z);
-        
+
         quads
     }
-    
+
     /// Get window raster info for GPU texture upload.
-    /// 
+    ///
     /// Returns an iterator of (window_id, rect, generation, cached_image_ref).
     /// Use this to determine which window textures need uploading.
     #[cfg(feature = "gpu")]
     pub fn windows_for_gpu_upload(&self) -> impl Iterator<Item = (ThingId, Rect, u64, u64)> + '_ {
         // Returns (window_id, rect, paint_gen, geometry_gen) for texture upload decisions
-        self.windows.iter()
+        self.windows
+            .iter()
             .filter(|(_, w)| !w.hidden && w.rect.width() > 0 && w.rect.height() > 0)
-            .map(move |(id, w)| {
-                (*id, w.rect, w.paint_gen, w.geometry_gen)
-            })
+            .map(move |(id, w)| (*id, w.rect, w.paint_gen, w.geometry_gen))
     }
 
     /// Compose the scene into the framebuffer surface using occlusion culling.
@@ -326,12 +325,12 @@ impl PaintPipeline {
         wallpaper: Option<&Image>,
         bg_color: Color,
     ) {
-        use abi::pixel::PixelFormat;
         use crate::render_state::RasterCacheKey;
-        
+        use abi::pixel::PixelFormat;
+
         // Get current asset generation for cache lookups
         let current_asset_gen = crate::painter_resources::ASSETS.current_generation().0;
-        
+
         // Build list of (window_id, state_ref) for iteration
         let window_list: Vec<(ThingId, &WindowPaintState)> = self
             .windows
@@ -339,7 +338,7 @@ impl PaintPipeline {
             .filter(|(_, w)| !w.hidden)
             .map(|(id, state)| (*id, state))
             .collect();
-        
+
         // Sort by Z descending (top to bottom) for occlusion
         let mut ordered = window_list;
         ordered.sort_by_key(|(_, w)| -w.z);
@@ -378,8 +377,9 @@ impl PaintPipeline {
                             EdgeAA::None,
                             PixelFormat::Bgra8888,
                         );
-                        
-                        if let Some(cached_image) = self.render_state.get_window_raster(&cache_key) {
+
+                        if let Some(cached_image) = self.render_state.get_window_raster(&cache_key)
+                        {
                             if cached_image.width > 0 && cached_image.height > 0 {
                                 // Calculate src rect in window coordinates
                                 let src_x = vis.x() - w_rect.x();
@@ -629,7 +629,11 @@ fn blit_wallpaper_tiled(dst: &mut Surface, rect: Rect, wp: &Image) {
     }
 }
 
-fn read_window_frame_props(window_id: ThingId, screen_w: i32, screen_h: i32) -> Option<WindowFrameProps> {
+fn read_window_frame_props(
+    window_id: ThingId,
+    screen_w: i32,
+    screen_h: i32,
+) -> Option<WindowFrameProps> {
     let w = prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32;
     let h = prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32;
     if w <= 0 || h <= 0 {
@@ -743,7 +747,10 @@ fn decode_paint_ops(
             PaintOpTag::StrokeLine => {
                 if let Some((x1, y1, x2, y2, width, color)) = decode_line(op.payload) {
                     list.commands().push(DrawCmd::Line {
-                        from: crate::isa::PointF::new((x1 + origin_x) as f32, (y1 + origin_y) as f32),
+                        from: crate::isa::PointF::new(
+                            (x1 + origin_x) as f32,
+                            (y1 + origin_y) as f32,
+                        ),
                         to: crate::isa::PointF::new((x2 + origin_x) as f32, (y2 + origin_y) as f32),
                         color: Color::from_u32(color),
                         width: width as f32,
@@ -919,27 +926,33 @@ mod tests {
 
         // Window A: Z=5
         let id_a = make_id(1);
-        windows.insert(id_a, WindowPaintState {
-            rect: Rect::new(0, 0, 100, 100),
-            z: 5,
-            hidden: false,
-            paint_gen: 0,
-            paint_bs: 0,
-            geometry_gen: 0,
-            asset_gen: 0,
-        });
+        windows.insert(
+            id_a,
+            WindowPaintState {
+                rect: Rect::new(0, 0, 100, 100),
+                z: 5,
+                hidden: false,
+                paint_gen: 0,
+                paint_bs: 0,
+                geometry_gen: 0,
+                asset_gen: 0,
+            },
+        );
 
         // Window B: Z=10 (On Top)
         let id_b = make_id(2);
-        windows.insert(id_b, WindowPaintState {
-            rect: Rect::new(0, 0, 100, 100),
-            z: 10,
-            hidden: false,
-            paint_gen: 0,
-            paint_bs: 0,
-            geometry_gen: 0,
-            asset_gen: 0,
-        });
+        windows.insert(
+            id_b,
+            WindowPaintState {
+                rect: Rect::new(0, 0, 100, 100),
+                z: 10,
+                hidden: false,
+                paint_gen: 0,
+                paint_bs: 0,
+                geometry_gen: 0,
+                asset_gen: 0,
+            },
+        );
 
         let hit = pipeline.top_window_at_point(50, 50).expect("Should hit");
         assert_eq!(hit.id, id_b, "Higher Z should win");
@@ -952,27 +965,33 @@ mod tests {
 
         // Window A: ID=1, Z=0
         let id_a = make_id(1);
-        windows.insert(id_a, WindowPaintState {
-            rect: Rect::new(0, 0, 100, 100),
-            z: 0,
-            hidden: false,
-            paint_gen: 0,
-            paint_bs: 0,
-            geometry_gen: 0,
-            asset_gen: 0,
-        });
+        windows.insert(
+            id_a,
+            WindowPaintState {
+                rect: Rect::new(0, 0, 100, 100),
+                z: 0,
+                hidden: false,
+                paint_gen: 0,
+                paint_bs: 0,
+                geometry_gen: 0,
+                asset_gen: 0,
+            },
+        );
 
         // Window B: ID=2, Z=0
         let id_b = make_id(2);
-        windows.insert(id_b, WindowPaintState {
-            rect: Rect::new(0, 0, 100, 100),
-            z: 0,
-            hidden: false,
-            paint_gen: 0,
-            paint_bs: 0,
-            geometry_gen: 0,
-            asset_gen: 0,
-        });
+        windows.insert(
+            id_b,
+            WindowPaintState {
+                rect: Rect::new(0, 0, 100, 100),
+                z: 0,
+                hidden: false,
+                paint_gen: 0,
+                paint_bs: 0,
+                geometry_gen: 0,
+                asset_gen: 0,
+            },
+        );
 
         // In compose(), stable sort by Z descending (stable) followed by iterating keys (ascending).
         // Since key 1 < key 2, key 1 comes first.
@@ -980,6 +999,9 @@ mod tests {
         // So we expect ID 1.
 
         let hit = pipeline.top_window_at_point(50, 50).expect("Should hit");
-        assert_eq!(hit.id, id_a, "Lower ID should win ties (matching render order)");
+        assert_eq!(
+            hit.id, id_a,
+            "Lower ID should win ties (matching render order)"
+        );
     }
 }

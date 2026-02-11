@@ -1,9 +1,9 @@
 use axum::{
+    Router,
     extract::Query,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
-    Router,
 };
 use serde::Deserialize;
 use std::net::SocketAddr;
@@ -23,7 +23,10 @@ async fn async_run(port: u16) -> anyhow::Result<()> {
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
     println!("[GUEST-PROXY] HTTP-to-HTTPS Proxy running on port {}", port);
-    println!("[GUEST-PROXY] Guest should use: http://10.0.2.2:{}/?url=https://...", port);
+    println!(
+        "[GUEST-PROXY] Guest should use: http://10.0.2.2:{}/?url=https://...",
+        port
+    );
 
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
@@ -46,7 +49,13 @@ async fn proxy_handler(Query(params): Query<ProxyParams>) -> Response {
             let headers = resp.headers().clone();
             let body = match resp.bytes().await {
                 Ok(b) => b,
-                Err(e) => return (StatusCode::BAD_GATEWAY, format!("Failed to read body: {}", e)).into_response(),
+                Err(e) => {
+                    return (
+                        StatusCode::BAD_GATEWAY,
+                        format!("Failed to read body: {}", e),
+                    )
+                        .into_response();
+                }
             };
 
             println!("[PROXY] OK: {} bytes", body.len());
@@ -57,7 +66,7 @@ async fn proxy_handler(Query(params): Query<ProxyParams>) -> Response {
             }
             // Handling header value conversion safely
             if let Ok(val) = params.url.parse() {
-                 response_headers.insert("X-Original-URL", val);
+                response_headers.insert("X-Original-URL", val);
             }
 
             (status, response_headers, body).into_response()

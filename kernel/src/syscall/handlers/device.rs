@@ -269,7 +269,10 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
     let phys_base = match crate::memory::alloc_contiguous_frames(page_count) {
         Some(phys) => phys,
         None => {
-            crate::kinfo!("DEVICE: DMA alloc failed ({} pages) - no contiguous memory", page_count);
+            crate::kinfo!(
+                "DEVICE: DMA alloc failed ({} pages) - no contiguous memory",
+                page_count
+            );
             return Err(Errno::ENOMEM);
         }
     };

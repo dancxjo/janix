@@ -6,7 +6,7 @@
 
 use super::HandlerResult;
 use crate::root::graph::{GlobalWatch, Graph, WATCH_SCAN_LIMIT, WatchFilter, commit_matches};
-use crate::root::handlers::watch_payload::{filter_watch_payload, CoalesceEntry};
+use crate::root::handlers::watch_payload::{CoalesceEntry, filter_watch_payload};
 use crate::root::query::PreparedStep;
 use crate::root::resources::{ResourceHandle, stream};
 use crate::root::symbols::Interner;
@@ -317,10 +317,7 @@ mod tests {
         assert_eq!(out_buf[0..3], [10, 20, 30]);
 
         // Check cursor updated to 2
-        let watch = graph
-            .global_watches
-            .get(&watch_id)
-            .expect("Watch missing");
+        let watch = graph.global_watches.get(&watch_id).expect("Watch missing");
         assert_eq!(watch.cursor_seq, 2);
     }
 

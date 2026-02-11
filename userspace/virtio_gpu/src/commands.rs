@@ -174,9 +174,9 @@ pub struct VirtioGpuCtxResource {
 pub struct VirtioGpuResourceCreate3d {
     pub hdr: VirtioGpuCtrlHdr,
     pub resource_id: u32,
-    pub target: u32,        // PIPE_TEXTURE_* 
-    pub format: u32,        // virgl format
-    pub bind: u32,          // PIPE_BIND_* flags
+    pub target: u32, // PIPE_TEXTURE_*
+    pub format: u32, // virgl format
+    pub bind: u32,   // PIPE_BIND_* flags
     pub width: u32,
     pub height: u32,
     pub depth: u32,

@@ -4,21 +4,23 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
-use alloc::string::String;
-use alloc::vec::Vec;
-use alloc::vec;
 use alloc::format;
+use alloc::string::String;
+use alloc::vec;
+use alloc::vec::Vec;
 use core::time::Duration;
 
-use abi::schema::{keys, kinds, rels};
 use abi::ids::HandleId;
+use abi::schema::{keys, kinds, rels};
+use core::task::{RawWaker, RawWakerVTable, Waker};
 use llm::{ChatRequest, Message, Role, StreamingLlmClient};
 use ollama::OllamaClient;
 use stem::info;
 use stem::petals::Petals;
-use stem::thing::sys::{bytespace_read, create_node, describe_thing, find, link, prop_get, prop_set};
+use stem::thing::sys::{
+    bytespace_read, create_node, describe_thing, find, link, prop_get, prop_set,
+};
 use stem::thing::ThingId;
-use core::task::{RawWaker, RawWakerVTable, Waker};
 
 struct OllamaConfig {
     server: String,
@@ -79,7 +81,6 @@ fn read_ollama_config() -> OllamaConfig {
     OllamaConfig { server, model }
 }
 
-
 #[stem::main]
 fn main(_arg: usize) -> ! {
     info!("FORTUNE: Starting...");
@@ -118,7 +119,10 @@ fn main(_arg: usize) -> ! {
 
     // Read Ollama configuration from locale.conf
     let config = read_ollama_config();
-    info!("FORTUNE: Using Ollama server: {}, model: {}", config.server, config.model);
+    info!(
+        "FORTUNE: Using Ollama server: {}, model: {}",
+        config.server, config.model
+    );
 
     // Initialize Ollama
     let client = OllamaClient::new(&config.server, &config.model);

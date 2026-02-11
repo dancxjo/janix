@@ -2,14 +2,14 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use alloc::format;
 use core::task::{Context, Poll};
 use serde::{Deserialize, Serialize};
 
-use llm::{ChatDelta, ChatRequest, ChatStream, FinishReason, LlmError, Role, StreamingLlmClient};
 use http::{HttpClient, Response};
+use llm::{ChatDelta, ChatRequest, ChatStream, FinishReason, LlmError, Role, StreamingLlmClient};
 
 #[derive(Serialize)]
 struct OllamaRequest<'a> {
@@ -51,14 +51,18 @@ impl OllamaClient {
 
 impl StreamingLlmClient for OllamaClient {
     fn chat_stream(&self, req: ChatRequest) -> Result<Box<dyn ChatStream + Send>, LlmError> {
-        let messages: Vec<OllamaMessage> = req.messages.iter().map(|m| OllamaMessage {
-            role: match m.role {
-                Role::System => "system",
-                Role::User => "user",
-                Role::Assistant => "assistant",
-            },
-            content: &m.content,
-        }).collect();
+        let messages: Vec<OllamaMessage> = req
+            .messages
+            .iter()
+            .map(|m| OllamaMessage {
+                role: match m.role {
+                    Role::System => "system",
+                    Role::User => "user",
+                    Role::Assistant => "assistant",
+                },
+                content: &m.content,
+            })
+            .collect();
 
         let ollama_req = OllamaRequest {
             model: &self.model,
@@ -66,7 +70,8 @@ impl StreamingLlmClient for OllamaClient {
             stream: true,
         };
 
-        let body = serde_json::to_string(&ollama_req).map_err(|_| LlmError::Other("Serialize error".to_string()))?;
+        let body = serde_json::to_string(&ollama_req)
+            .map_err(|_| LlmError::Other("Serialize error".to_string()))?;
         let url = format!("{}/api/chat", self.base_url);
 
         let response = HttpClient::post(&url, &body).map_err(|e| LlmError::Transport(e))?;
@@ -88,7 +93,7 @@ struct OllamaChatStream {
 impl ChatStream for OllamaChatStream {
     fn poll_next(&mut self, _cx: &mut Context<'_>) -> Poll<Result<Option<ChatDelta>, LlmError>> {
         if self.done && self.buffer.is_empty() {
-             return Poll::Ready(Ok(None));
+            return Poll::Ready(Ok(None));
         }
 
         // Try to read more data
@@ -97,7 +102,7 @@ impl ChatStream for OllamaChatStream {
                 if chunk.is_empty() {
                     // Check if we have anything pending in buffer that couldn't be parsed
                     if self.buffer.is_empty() {
-                         return Poll::Ready(Ok(None));
+                        return Poll::Ready(Ok(None));
                     }
                     // If we have buffer but stream closed, it might be an error or just incomplete JSON.
                     // We can try to parse one last time or just error/stop.
@@ -111,7 +116,8 @@ impl ChatStream for OllamaChatStream {
         let mut result = None;
 
         {
-            let mut stream = serde_json::Deserializer::from_slice(&self.buffer).into_iter::<OllamaResponse>();
+            let mut stream =
+                serde_json::Deserializer::from_slice(&self.buffer).into_iter::<OllamaResponse>();
 
             while let Some(Ok(resp)) = stream.next() {
                 consumed = stream.byte_offset();
@@ -124,8 +130,8 @@ impl ChatStream for OllamaChatStream {
                     // But we can only return one delta.
                     // Let's assume we return empty text with Stop.
                     result = Some(ChatDelta {
-                         text: String::new(),
-                         finish: Some(FinishReason::Stop),
+                        text: String::new(),
+                        finish: Some(FinishReason::Stop),
                     });
                     break;
                 }
@@ -149,7 +155,7 @@ impl ChatStream for OllamaChatStream {
         }
 
         if self.done {
-             return Poll::Ready(Ok(None));
+            return Poll::Ready(Ok(None));
         }
 
         // If we still have data in buffer but couldn't parse, we need more data.

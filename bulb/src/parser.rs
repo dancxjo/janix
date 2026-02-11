@@ -14,13 +14,13 @@ pub fn parse_log_line(line: &str) -> LogParts<'_> {
     // Parse time
     let time = if rest.starts_with('[') {
         if let Some(end_idx) = rest.find(']') {
-             let content = &rest[1..end_idx];
-             if let Ok(t) = u64::from_str(content) {
-                 rest = rest[end_idx+1..].trim();
-                 Some(t)
-             } else {
-                 None
-             }
+            let content = &rest[1..end_idx];
+            if let Ok(t) = u64::from_str(content) {
+                rest = rest[end_idx + 1..].trim();
+                Some(t)
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -31,9 +31,9 @@ pub fn parse_log_line(line: &str) -> LogParts<'_> {
     // If time was found, we proceed to look for level.
     let level = if time.is_some() && rest.starts_with('[') {
         if let Some(end_idx) = rest.find(']') {
-             let content = &rest[1..end_idx];
-             rest = rest[end_idx+1..].trim();
-             Some(content)
+            let content = &rest[1..end_idx];
+            rest = rest[end_idx + 1..].trim();
+            Some(content)
         } else {
             None
         }
@@ -44,9 +44,9 @@ pub fn parse_log_line(line: &str) -> LogParts<'_> {
     // If level was found, we proceed to look for source.
     let source = if level.is_some() && rest.starts_with('[') {
         if let Some(end_idx) = rest.find(']') {
-             let content = &rest[1..end_idx];
-             rest = rest[end_idx+1..].trim();
-             Some(content)
+            let content = &rest[1..end_idx];
+            rest = rest[end_idx + 1..].trim();
+            Some(content)
         } else {
             None
         }
@@ -70,71 +70,89 @@ mod tests {
     fn test_exact_match() {
         let line = "[12345] [INFO] [kernel::main] Hello World";
         let parts = parse_log_line(line);
-        assert_eq!(parts, LogParts {
-            time: Some(12345),
-            level: Some("INFO"),
-            source: Some("kernel::main"),
-            message: "Hello World"
-        });
+        assert_eq!(
+            parts,
+            LogParts {
+                time: Some(12345),
+                level: Some("INFO"),
+                source: Some("kernel::main"),
+                message: "Hello World"
+            }
+        );
     }
 
     #[test]
     fn test_missing_brackets() {
         let line = "Just a message";
         let parts = parse_log_line(line);
-        assert_eq!(parts, LogParts {
-            time: None,
-            level: None,
-            source: None,
-            message: "Just a message"
-        });
+        assert_eq!(
+            parts,
+            LogParts {
+                time: None,
+                level: None,
+                source: None,
+                message: "Just a message"
+            }
+        );
     }
 
     #[test]
     fn test_non_numeric_time() {
         let line = "[abc] [INFO] [kernel] Message";
         let parts = parse_log_line(line);
-        assert_eq!(parts, LogParts {
-            time: None,
-            level: None,
-            source: None,
-            message: "[abc] [INFO] [kernel] Message"
-        });
+        assert_eq!(
+            parts,
+            LogParts {
+                time: None,
+                level: None,
+                source: None,
+                message: "[abc] [INFO] [kernel] Message"
+            }
+        );
     }
 
     #[test]
     fn test_extra_spaces() {
         let line = "  [100]  [DEBUG]  [source]    Message   ";
         let parts = parse_log_line(line);
-        assert_eq!(parts, LogParts {
-            time: Some(100),
-            level: Some("DEBUG"),
-            source: Some("source"),
-            message: "Message"
-        });
+        assert_eq!(
+            parts,
+            LogParts {
+                time: Some(100),
+                level: Some("DEBUG"),
+                source: Some("source"),
+                message: "Message"
+            }
+        );
     }
 
     #[test]
     fn test_malformed_time_bracket() {
         let line = "[123 [INFO] [source] msg";
         let parts = parse_log_line(line);
-         assert_eq!(parts, LogParts {
-            time: None,
-            level: None,
-            source: None,
-            message: "[123 [INFO] [source] msg"
-        });
+        assert_eq!(
+            parts,
+            LogParts {
+                time: None,
+                level: None,
+                source: None,
+                message: "[123 [INFO] [source] msg"
+            }
+        );
     }
 
     #[test]
     fn test_complex_source() {
-         let line = "[999] [WARN] [a::b::c] Complex source";
-         let parts = parse_log_line(line);
-         assert_eq!(parts, LogParts {
-            time: Some(999),
-            level: Some("WARN"),
-            source: Some("a::b::c"),
-            message: "Complex source"
-        });
+        let line = "[999] [WARN] [a::b::c] Complex source";
+        let parts = parse_log_line(line);
+        assert_eq!(
+            parts,
+            LogParts {
+                time: Some(999),
+                level: Some("WARN"),
+                source: Some("a::b::c"),
+                message: "Complex source"
+            }
+        );
     }
 }

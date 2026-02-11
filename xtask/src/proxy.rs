@@ -1,17 +1,17 @@
+use crate::common::project_root;
 use anyhow::{Context, Result};
 use axum::{
+    Router,
     body::Body,
     extract::State,
-    http::{Method, HeaderMap, StatusCode, Uri},
+    http::{HeaderMap, Method, StatusCode, Uri},
     response::{IntoResponse, Response},
     routing::any,
-    Router,
 };
 use axum_server::tls_rustls::RustlsConfig;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::Arc;
-use crate::common::project_root;
 
 struct ProxyState {
     target_port: u16,
@@ -48,7 +48,12 @@ fn ensure_certificates(cert_dir: &PathBuf, cert_file: &PathBuf, key_file: &PathB
     Ok(())
 }
 
-async fn async_run(port: u16, target_port: u16, cert_file: PathBuf, key_file: PathBuf) -> Result<()> {
+async fn async_run(
+    port: u16,
+    target_port: u16,
+    cert_file: PathBuf,
+    key_file: PathBuf,
+) -> Result<()> {
     let config = RustlsConfig::from_pem_file(cert_file, key_file).await?;
 
     let state = Arc::new(ProxyState {
@@ -61,7 +66,10 @@ async fn async_run(port: u16, target_port: u16, cert_file: PathBuf, key_file: Pa
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    println!("[HTTPS-PROXY] Starting HTTPS reverse proxy on port {}", port);
+    println!(
+        "[HTTPS-PROXY] Starting HTTPS reverse proxy on port {}",
+        port
+    );
     println!("[HTTPS-PROXY] Target: http://localhost:{}", target_port);
     println!("[HTTPS-PROXY] Browser access: https://localhost:{}/", port);
 
@@ -84,7 +92,9 @@ async fn proxy_handler(
 
     let target_uri = format!("http://localhost:{}{}", state.target_port, path_query);
 
-    let resp = state.client.request(method, &target_uri)
+    let resp = state
+        .client
+        .request(method, &target_uri)
         .headers(headers)
         .body(body)
         .send()
@@ -93,7 +103,10 @@ async fn proxy_handler(
 
     let status = resp.status();
     let resp_headers = resp.headers().clone();
-    let resp_body = resp.bytes().await.map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let resp_body = resp
+        .bytes()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mut response = Response::new(Body::from(resp_body));
     *response.status_mut() = status;

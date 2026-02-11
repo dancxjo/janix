@@ -5,14 +5,14 @@ extern crate alloc;
 
 use abi::drawlist::{DrawCmdTag, DrawListError, DrawListReader};
 use abi::geometry::RectI32Wire;
+use abi::ids::HandleId;
 use abi::schema::keys;
+use abi::schema::kinds;
 use alloc::vec::Vec;
+use core::time::Duration;
 use stem::info;
 use stem::thing::sys::{bytespace_info, bytespace_read, find, prop_get};
 use stem::thing::ThingId;
-use abi::ids::HandleId;
-use abi::schema::kinds;
-use core::time::Duration;
 
 /// Validation result for a single drawlist
 #[derive(Debug)]
@@ -91,8 +91,7 @@ fn validate_drawlist(thing_id: ThingId) -> ValidationResult {
                         }
                     }
                     DrawCmdTag::SetClipRect => {
-                        if let Some((x, y, w, h)) =
-                            abi::drawlist::decode_set_clip_rect(cmd.payload)
+                        if let Some((x, y, w, h)) = abi::drawlist::decode_set_clip_rect(cmd.payload)
                         {
                             if w <= 0 || h <= 0 {
                                 warnings.push("SetClipRect has non-positive dimensions");
@@ -160,7 +159,7 @@ fn find_and_validate_drawlists() {
         info!("Found {} windows to check", count);
         for i in 0..count {
             let window = windows[i];
-            
+
             // Check if this window has a drawlist
             if prop_get(window, keys::UI_DRAWLIST_BYTESPACE).is_ok() {
                 validated += 1;
@@ -182,7 +181,11 @@ fn find_and_validate_drawlists() {
                     }
                     ValidationResult::Invalid { thing_id, error } => {
                         invalid += 1;
-                        info!("✗ Window {:X}: INVALID - {}", thing_id.to_u64_lossy(), error);
+                        info!(
+                            "✗ Window {:X}: INVALID - {}",
+                            thing_id.to_u64_lossy(),
+                            error
+                        );
                     }
                 }
             }

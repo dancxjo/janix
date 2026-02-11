@@ -101,8 +101,8 @@ pub fn execute(
         }
     } else if step0.op == abi::query::QueryOpKind::Anchor as u64 {
         // Anchor: initialize with well-known anchor ID
-        use abi::query::{ANCHOR_CPU, ANCHOR_HOST, ANCHOR_KERNEL, ANCHOR_ROOT, ANCHOR_SCHEDULER};
         use crate::root::graph_anchors;
+        use abi::query::{ANCHOR_CPU, ANCHOR_HOST, ANCHOR_KERNEL, ANCHOR_ROOT, ANCHOR_SCHEDULER};
         let anchor_type = step0.arg1;
         let anchor_idx = step0.arg2 as usize;
 
@@ -265,9 +265,24 @@ mod tests {
         // Scenario 1: Scan(Person) -> Filter(Age=30) -> Expand(Authored, Out)
         // Should find P2 -> Post1
         let plan1 = vec![
-            PreparedStep { op: 1, symbol: kind_person, arg1: 0, arg2: 0 },
-            PreparedStep { op: 2, symbol: prop_age, arg1: 30, arg2: 0 },
-            PreparedStep { op: 3, symbol: rel_authored, arg1: 0, arg2: 0 },
+            PreparedStep {
+                op: 1,
+                symbol: kind_person,
+                arg1: 0,
+                arg2: 0,
+            },
+            PreparedStep {
+                op: 2,
+                symbol: prop_age,
+                arg1: 30,
+                arg2: 0,
+            },
+            PreparedStep {
+                op: 3,
+                symbol: rel_authored,
+                arg1: 0,
+                arg2: 0,
+            },
         ];
 
         let mut out = [QueryRow::default(); 10];
@@ -280,8 +295,18 @@ mod tests {
         // Scenario 2: Scan(Post) -> Expand(Authored, In)
         // Should find Post1 -> P2
         let plan2 = vec![
-            PreparedStep { op: 1, symbol: kind_post, arg1: 0, arg2: 0 },
-            PreparedStep { op: 3, symbol: rel_authored, arg1: 1, arg2: 0 }, // In
+            PreparedStep {
+                op: 1,
+                symbol: kind_post,
+                arg1: 0,
+                arg2: 0,
+            },
+            PreparedStep {
+                op: 3,
+                symbol: rel_authored,
+                arg1: 1,
+                arg2: 0,
+            }, // In
         ];
 
         let count = execute(&graph, &plan2, &mut out, &mut scratch).expect("Plan 2 failed");
@@ -300,8 +325,18 @@ mod tests {
         // P1 -> Post1, P2 -> Post2.
         // Should return 2 rows.
         let plan3 = vec![
-            PreparedStep { op: 1, symbol: kind_person, arg1: 0, arg2: 0 },
-            PreparedStep { op: 3, symbol: rel_liked, arg1: 0, arg2: 0 },
+            PreparedStep {
+                op: 1,
+                symbol: kind_person,
+                arg1: 0,
+                arg2: 0,
+            },
+            PreparedStep {
+                op: 3,
+                symbol: rel_liked,
+                arg1: 0,
+                arg2: 0,
+            },
         ];
 
         let count = execute(&graph, &plan3, &mut out, &mut scratch).expect("Plan 3 failed");
@@ -414,7 +449,8 @@ mod tests {
             arg1: n1,
             arg2: 0,
         }];
-        let count = execute(&graph, &plan_start_valid, &mut out, &mut scratch).expect("Start valid failed");
+        let count =
+            execute(&graph, &plan_start_valid, &mut out, &mut scratch).expect("Start valid failed");
         assert_eq!(count, 1);
         assert_eq!(out[0].id, n1);
         assert_eq!(out[0].kind_rel, kind_a as u64);
@@ -426,7 +462,8 @@ mod tests {
             arg1: 999999,
             arg2: 0,
         }];
-        let count = execute(&graph, &plan_start_invalid, &mut out, &mut scratch).expect("Start invalid failed");
+        let count = execute(&graph, &plan_start_invalid, &mut out, &mut scratch)
+            .expect("Start invalid failed");
         assert_eq!(count, 0);
 
         // 3. Test Scan(Op 1) with empty kind
@@ -436,7 +473,8 @@ mod tests {
             arg1: 0,
             arg2: 0,
         }];
-        let count = execute(&graph, &plan_scan_empty, &mut out, &mut scratch).expect("Scan empty failed");
+        let count =
+            execute(&graph, &plan_scan_empty, &mut out, &mut scratch).expect("Scan empty failed");
         assert_eq!(count, 0);
 
         // 4. Test Scan + FilterEq where property is missing on some nodes
@@ -456,7 +494,8 @@ mod tests {
                 arg2: 0,
             },
         ];
-        let count = execute(&graph, &plan_filter_hit, &mut out, &mut scratch).expect("Filter hit failed");
+        let count =
+            execute(&graph, &plan_filter_hit, &mut out, &mut scratch).expect("Filter hit failed");
         assert_eq!(count, 1);
         assert_eq!(out[0].id, n1);
 
@@ -475,7 +514,8 @@ mod tests {
                 arg2: 0,
             },
         ];
-        let count = execute(&graph, &plan_filter_miss_val, &mut out, &mut scratch).expect("Filter miss val failed");
+        let count = execute(&graph, &plan_filter_miss_val, &mut out, &mut scratch)
+            .expect("Filter miss val failed");
         assert_eq!(count, 0);
     }
 
@@ -508,7 +548,8 @@ mod tests {
             symbol: 0,
         }];
 
-        let count = execute(&graph, &plan_host, &mut out, &mut scratch).expect("Anchor Host failed");
+        let count =
+            execute(&graph, &plan_host, &mut out, &mut scratch).expect("Anchor Host failed");
         assert_eq!(count, 1);
         assert_eq!(out[0].id, host_id);
         assert_eq!(out[0].kind_rel, host_kind as u64);
@@ -521,7 +562,8 @@ mod tests {
             symbol: 0,
         }];
 
-        let count = execute(&graph, &plan_root, &mut out, &mut scratch).expect("Anchor Root failed");
+        let count =
+            execute(&graph, &plan_root, &mut out, &mut scratch).expect("Anchor Root failed");
         assert_eq!(count, 1);
         assert_eq!(out[0].id, root_id);
         assert_eq!(out[0].kind_rel, root_kind as u64);
@@ -535,7 +577,8 @@ mod tests {
         }];
 
         // It should return 0 rows if anchor is missing or not in graph
-        let count = execute(&graph, &plan_kernel, &mut out, &mut scratch).expect("Anchor Kernel failed");
+        let count =
+            execute(&graph, &plan_kernel, &mut out, &mut scratch).expect("Anchor Kernel failed");
         assert_eq!(count, 0);
     }
 
@@ -559,9 +602,24 @@ mod tests {
         // 1. Expand In Chaining: Start(C) -> Expand(In) -> Expand(In)
         // Should traverse C -> P -> GP
         let plan_in = vec![
-            PreparedStep { op: 4, symbol: 0, arg1: c, arg2: 0 }, // Start(C)
-            PreparedStep { op: 3, symbol: rel_link, arg1: 1, arg2: 0 }, // Expand In (finds P)
-            PreparedStep { op: 3, symbol: rel_link, arg1: 1, arg2: 0 }, // Expand In (finds GP)
+            PreparedStep {
+                op: 4,
+                symbol: 0,
+                arg1: c,
+                arg2: 0,
+            }, // Start(C)
+            PreparedStep {
+                op: 3,
+                symbol: rel_link,
+                arg1: 1,
+                arg2: 0,
+            }, // Expand In (finds P)
+            PreparedStep {
+                op: 3,
+                symbol: rel_link,
+                arg1: 1,
+                arg2: 0,
+            }, // Expand In (finds GP)
         ];
         let count = execute(&graph, &plan_in, &mut out, &mut scratch).expect("Plan In failed");
         assert_eq!(count, 1);
@@ -575,9 +633,24 @@ mod tests {
         // Next Expand(Out) -> looks at row.id (GP). Finds P again.
         // So we expect 1 row: GP -> P.
         let plan_out = vec![
-            PreparedStep { op: 4, symbol: 0, arg1: gp, arg2: 0 }, // Start(GP)
-            PreparedStep { op: 3, symbol: rel_link, arg1: 0, arg2: 0 }, // Expand Out (finds P)
-            PreparedStep { op: 3, symbol: rel_link, arg1: 0, arg2: 0 }, // Expand Out (finds P again from GP)
+            PreparedStep {
+                op: 4,
+                symbol: 0,
+                arg1: gp,
+                arg2: 0,
+            }, // Start(GP)
+            PreparedStep {
+                op: 3,
+                symbol: rel_link,
+                arg1: 0,
+                arg2: 0,
+            }, // Expand Out (finds P)
+            PreparedStep {
+                op: 3,
+                symbol: rel_link,
+                arg1: 0,
+                arg2: 0,
+            }, // Expand Out (finds P again from GP)
         ];
         let count = execute(&graph, &plan_out, &mut out, &mut scratch).expect("Plan Out failed");
         assert_eq!(count, 1);
@@ -589,11 +662,22 @@ mod tests {
         // Scan(Node) -> Expand(Out). Should find 2 edges (GP->P, P->C).
         // Provide buffer of size 1.
         let plan_scan = vec![
-            PreparedStep { op: 1, symbol: kind_node, arg1: 0, arg2: 0 }, // Scan
-            PreparedStep { op: 3, symbol: rel_link, arg1: 0, arg2: 0 }, // Expand Out
+            PreparedStep {
+                op: 1,
+                symbol: kind_node,
+                arg1: 0,
+                arg2: 0,
+            }, // Scan
+            PreparedStep {
+                op: 3,
+                symbol: rel_link,
+                arg1: 0,
+                arg2: 0,
+            }, // Expand Out
         ];
         let mut small_out = [QueryRow::default(); 1];
-        let count = execute(&graph, &plan_scan, &mut small_out, &mut scratch).expect("Plan Limit failed");
+        let count =
+            execute(&graph, &plan_scan, &mut small_out, &mut scratch).expect("Plan Limit failed");
         assert_eq!(count, 1); // Should be truncated to 1
     }
 }

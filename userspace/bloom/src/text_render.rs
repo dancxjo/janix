@@ -3,17 +3,17 @@
 //! This module bridges fontd's atlas format with stem's glyph rendering primitives.
 
 use abi::font_protocol::GlyphPlacement as FontdPlacement;
-use stem::simd::text::{GlyphPlacement, GlyphRun, PositionedGlyph, Rect, PHASE_COUNT};
 use alloc::vec::Vec;
+use stem::simd::text::{GlyphPlacement, GlyphRun, PositionedGlyph, Rect, PHASE_COUNT};
 
 /// Convert a fontd GlyphPlacement to our internal format.
-/// 
+///
 /// For v0, we use a simple approach: all phases point to the same atlas rect.
 /// This means we don't get true subpixel rendering yet, but the infrastructure
 /// is in place. Future versions can generate phase-shifted masks in the atlas.
 pub fn convert_placement(fp: &FontdPlacement) -> GlyphPlacement {
     let rect = Rect::new(fp.x as i32, fp.y as i32, fp.w as i32, fp.h as i32);
-    
+
     GlyphPlacement {
         glyph_id: fp.glyph_id,
         // For now, all phases use the same rect
@@ -33,7 +33,7 @@ pub fn convert_placements(fps: &[FontdPlacement]) -> Vec<GlyphPlacement> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_convert_placement() {
         let fp = FontdPlacement {
@@ -46,14 +46,14 @@ mod tests {
             bearing_y: 10,
             advance: 9,
         };
-        
+
         let p = convert_placement(&fp);
-        
+
         assert_eq!(p.glyph_id, 42);
         assert_eq!(p.bearing_x, 1);
         assert_eq!(p.bearing_y, 10);
         assert_eq!(p.advance, 9);
-        
+
         // All phases should have the same rect for v0
         for phase in 0..PHASE_COUNT {
             let r = p.phase_rects[phase];

@@ -56,7 +56,10 @@ pub fn log_write(msg: &str, level: usize) -> Result<usize, Errno> {
 }
 
 pub use log_write as debug_write;
-pub use port::{port_close, port_create, port_recv, port_send, port_wait, PortHandle};
+pub use port::{
+    port_close, port_create, port_recv, port_send, port_send_all, port_wait, topic_create,
+    topic_publish, topic_subscribe, PortHandle,
+};
 
 pub fn yield_now() {
     unsafe {
@@ -73,6 +76,11 @@ pub fn sleep_ns(ns: u64) {
 pub fn sleep_ms(ms: u64) {
     // Legacy support, or use ns
     sleep_ns(ms * 1_000_000);
+}
+
+pub fn get_tid() -> Result<u64, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_GET_TID, 0, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u64)
 }
 
 pub fn monotonic_ns() -> u64 {

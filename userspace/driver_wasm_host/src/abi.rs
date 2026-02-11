@@ -1,7 +1,7 @@
-use wasmi::{Linker};
-use anyhow::Result;
 use crate::device::HostState;
 use crate::syscalls;
+use anyhow::Result;
+use wasmi::Linker;
 
 pub fn register_imports(linker: &mut Linker<HostState>) -> Result<()> {
     linker.func_wrap("thing.sys", "log", syscalls::log)?;

@@ -431,14 +431,14 @@ impl Graph {
             if let Some(kind_list) = self.kind_index.get_mut(&node.kind) {
                 kind_list.retain(|&x| x != id);
             }
-            
+
             // Clean up reverse_index for outgoing edges
             for (_, dst) in &node.edges {
                 if let Some(rev_list) = self.reverse_index.get_mut(dst) {
                     rev_list.retain(|(_, src)| *src != id);
                 }
             }
-            
+
             // Remove this node's reverse_index entry
             self.reverse_index.remove(&id);
         }

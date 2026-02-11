@@ -2,10 +2,8 @@
 //!
 //! Demonstrates tree provider RPC protocol for filesystem navigation.
 
-#![no_std]
-#![no_main]
-
 extern crate alloc;
+extern crate stem;
 
 use abi::schema;
 use abi::tree_provider::*;
@@ -40,8 +38,11 @@ fn find_iso_provider() -> Option<(ThingId, u32)> {
             // We need to check if it matches "iso9660_disk" or similar
             // For now, just try to get the tree provider port from any content source
             // In a real impl, we'd check the kind string
-            if let Ok(port_handle) = prop_get(node, "tree.provider.port") {
-                info!("ISO_CAT: Found content source node {:?} with tree provider port {}", node, port_handle);
+            if let Ok(port_handle) = prop_get(node, schema::keys::WRITE_PORT_HANDLE) {
+                info!(
+                    "ISO_CAT: Found content source node {:?} with tree provider port {}",
+                    node, port_handle
+                );
                 return Some((node, port_handle as u32));
             }
         }
@@ -80,7 +81,7 @@ fn tree_rpc(port: u32, request_type: TreeProviderRequest, request_data: &[u8]) -
 /// Get root node ID from tree provider
 fn get_root(port: u32) -> Option<u64> {
     let response = tree_rpc(port, TreeProviderRequest::Root, &[])?;
-    
+
     if response.is_empty() {
         return None;
     }
@@ -97,9 +98,8 @@ fn get_root(port: u32) -> Option<u64> {
         return None;
     }
 
-    let root_resp: RootResponse = unsafe {
-        ptr::read_unaligned(response[1..].as_ptr() as *const RootResponse)
-    };
+    let root_resp: RootResponse =
+        unsafe { ptr::read_unaligned(response[1..].as_ptr() as *const RootResponse) };
 
     Some(root_resp.node_id)
 }
@@ -108,7 +108,10 @@ fn get_root(port: u32) -> Option<u64> {
 fn list_children(port: u32, node_id: u64) -> Option<Vec<(u64, String, NodeKind, u64)>> {
     let req = ListRequest { node_id };
     let req_bytes = unsafe {
-        core::slice::from_raw_parts(&req as *const _ as *const u8, core::mem::size_of::<ListRequest>())
+        core::slice::from_raw_parts(
+            &req as *const _ as *const u8,
+            core::mem::size_of::<ListRequest>(),
+        )
     };
 
     let response = tree_rpc(port, TreeProviderRequest::List, req_bytes)?;
@@ -129,9 +132,8 @@ fn list_children(port: u32, node_id: u64) -> Option<Vec<(u64, String, NodeKind, 
         return None;
     }
 
-    let header: ListResponseHeader = unsafe {
-        ptr::read_unaligned(response[1..].as_ptr() as *const ListResponseHeader)
-    };
+    let header: ListResponseHeader =
+        unsafe { ptr::read_unaligned(response[1..].as_ptr() as *const ListResponseHeader) };
 
     let mut children = Vec::new();
     let mut offset = 1 + core::mem::size_of::<ListResponseHeader>();
@@ -141,9 +143,8 @@ fn list_children(port: u32, node_id: u64) -> Option<Vec<(u64, String, NodeKind, 
             break;
         }
 
-        let entry: ChildEntry = unsafe {
-            ptr::read_unaligned(response[offset..].as_ptr() as *const ChildEntry)
-        };
+        let entry: ChildEntry =
+            unsafe { ptr::read_unaligned(response[offset..].as_ptr() as *const ChildEntry) };
 
         offset += core::mem::size_of::<ChildEntry>();
 
@@ -173,7 +174,7 @@ fn list_children(port: u32, node_id: u64) -> Option<Vec<(u64, String, NodeKind, 
 /// Navigate to a path by walking the tree
 fn navigate_path(port: u32, root: u64, path: &str) -> Option<(u64, NodeKind, u64)> {
     let mut current = root;
-    
+
     // Split path and filter empty segments
     let segments: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
 
@@ -184,7 +185,7 @@ fn navigate_path(port: u32, root: u64, path: &str) -> Option<(u64, NodeKind, u64
     let num_segments = segments.len();
     for (idx, segment) in segments.iter().enumerate() {
         let children = list_children(port, current)?;
-        
+
         // Find matching child (case-insensitive)
         let mut found = None;
         for (child_id, child_name, child_kind, child_size) in children {
@@ -196,7 +197,7 @@ fn navigate_path(port: u32, root: u64, path: &str) -> Option<(u64, NodeKind, u64
 
         if let Some((child_id, child_kind, child_size)) = found {
             current = child_id;
-            
+
             // If this is the last segment, return it
             if idx == num_segments - 1 {
                 return Some((current, child_kind, child_size));
@@ -212,9 +213,16 @@ fn navigate_path(port: u32, root: u64, path: &str) -> Option<(u64, NodeKind, u64
 
 /// Read data from a file node
 fn read_file(port: u32, node_id: u64, offset: u64, length: u32) -> Option<Vec<u8>> {
-    let req = ReadRequest { node_id, offset, length };
+    let req = ReadRequest {
+        node_id,
+        offset,
+        length,
+    };
     let req_bytes = unsafe {
-        core::slice::from_raw_parts(&req as *const _ as *const u8, core::mem::size_of::<ReadRequest>())
+        core::slice::from_raw_parts(
+            &req as *const _ as *const u8,
+            core::mem::size_of::<ReadRequest>(),
+        )
     };
 
     let response = tree_rpc(port, TreeProviderRequest::Read, req_bytes)?;
@@ -235,9 +243,8 @@ fn read_file(port: u32, node_id: u64, offset: u64, length: u32) -> Option<Vec<u8
         return None;
     }
 
-    let read_resp: ReadResponse = unsafe {
-        ptr::read_unaligned(response[1..].as_ptr() as *const ReadResponse)
-    };
+    let read_resp: ReadResponse =
+        unsafe { ptr::read_unaligned(response[1..].as_ptr() as *const ReadResponse) };
 
     let data_offset = 1 + core::mem::size_of::<ReadResponse>();
     let data_len = read_resp.data_len as usize;
@@ -252,17 +259,17 @@ fn read_file(port: u32, node_id: u64, offset: u64, length: u32) -> Option<Vec<u8
 /// Print hex dump with ASCII preview
 fn print_hexdump(data: &[u8], max_bytes: usize) {
     let len = core::cmp::min(data.len(), max_bytes);
-    
+
     for offset in (0..len).step_by(16) {
         let mut hex_part = alloc::string::String::new();
         let mut ascii_part = alloc::string::String::new();
-        
+
         for i in 0..16 {
             if offset + i < len {
                 let byte = data[offset + i];
                 use core::fmt::Write;
                 let _ = write!(&mut hex_part, "{:02x} ", byte);
-                
+
                 if byte >= 0x20 && byte <= 0x7e {
                     ascii_part.push(byte as char);
                 } else {
@@ -272,7 +279,7 @@ fn print_hexdump(data: &[u8], max_bytes: usize) {
                 hex_part.push_str("   ");
             }
         }
-        
+
         info!("{:08x}  {}  |{}|", offset, hex_part, ascii_part);
     }
 }
@@ -306,7 +313,10 @@ fn main(_arg: usize) -> ! {
         }
     };
 
-    info!("ISO_CAT: Found ISO9660 mount (node={:?}, port={})", node_id, port_handle);
+    info!(
+        "ISO_CAT: Found ISO9660 mount (node={:?}, port={})",
+        node_id, port_handle
+    );
 
     // Get root node
     let root_id = match get_root(port_handle) {
@@ -323,13 +333,13 @@ fn main(_arg: usize) -> ! {
     let mut found_file = false;
     for test_path in TEST_PATHS {
         info!("ISO_CAT: Trying to read {}", test_path);
-        
+
         if let Some((file_id, kind, size)) = navigate_path(port_handle, root_id, test_path) {
             match kind {
                 NodeKind::File => {
                     info!("ISO_CAT: Found file {} ({} bytes)", test_path, size);
                     found_file = true;
-                    
+
                     // Read first 512 bytes
                     let read_len = core::cmp::min(512, size as u32);
                     if let Some(data) = read_file(port_handle, file_id, 0, read_len) {
@@ -338,7 +348,7 @@ fn main(_arg: usize) -> ! {
                     } else {
                         info!("ISO_CAT: Failed to read file data");
                     }
-                    
+
                     break;
                 }
                 NodeKind::Directory => {

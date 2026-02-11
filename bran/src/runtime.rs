@@ -10,7 +10,9 @@ pub trait ArchRuntime {
     fn init(&self, hhdm_offset: u64);
     fn putchar(&self, c: u8);
     /// Non-blocking serial read. Returns `Some(byte)` if data is available.
-    fn getchar(&self) -> Option<u8> { None }
+    fn getchar(&self) -> Option<u8> {
+        None
+    }
     fn halt(&self) -> !;
     fn mono_ticks(&self) -> u64;
     fn mono_freq_hz(&self) -> u64;
@@ -60,7 +62,10 @@ pub trait ArchRuntime {
     }
 
     /// Deprecated: use start_cpu for lazy bring-up.
-    fn start_secondary_cpus(&self, _entry: extern "C" fn(usize) -> !) -> Result<(), abi::errors::Errno> {
+    fn start_secondary_cpus(
+        &self,
+        _entry: extern "C" fn(usize) -> !,
+    ) -> Result<(), abi::errors::Errno> {
         Err(abi::errors::Errno::NotSupported)
     }
     fn current_cpu_index(&self) -> usize {
@@ -69,7 +74,6 @@ pub trait ArchRuntime {
     /// Per-CPU initialization for secondary cores.
     /// Called on each secondary CPU after it starts.
     fn init_secondary_cpu(&self, cpu_index: usize) {}
-
 
     /// Send an Inter-Processor Interrupt (IPI) to a specific CPU.
     fn send_ipi(&self, _cpu_index: usize, _vector: u8) {}
@@ -85,7 +89,9 @@ pub trait ArchRuntime {
 
     /// Reboot the system. Architecture-specific implementation required.
     fn reboot(&self) -> ! {
-        loop { core::hint::spin_loop(); }
+        loop {
+            core::hint::spin_loop();
+        }
     }
 
     // Tasking - defaults
@@ -294,7 +300,7 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
     fn simd_init_cpu(&self) {
         self.arch.simd_init_cpu()
     }
-    
+
     fn wait_for_interrupt(&self) {
         self.arch.wait_for_interrupt()
     }
@@ -399,7 +405,10 @@ impl<A: ArchRuntime + 'static> BootRuntime for Runtime<A> {
     fn cpu_ids(&self) -> &'static [CpuId] {
         self.arch.cpu_ids()
     }
-    fn start_secondary_cpus(&self, entry: extern "C" fn(usize) -> !) -> Result<(), abi::errors::Errno> {
+    fn start_secondary_cpus(
+        &self,
+        entry: extern "C" fn(usize) -> !,
+    ) -> Result<(), abi::errors::Errno> {
         self.arch.start_secondary_cpus(entry)
     }
 

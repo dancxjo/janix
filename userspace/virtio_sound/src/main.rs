@@ -1,4 +1,3 @@
-
 #![no_std]
 #![no_main]
 
@@ -6,17 +5,17 @@ extern crate alloc;
 
 mod spec;
 
-use alloc::vec::Vec;
-use alloc::vec;
 use abi::ids::HandleId;
 use abi::schema::kinds;
-use stem::thing::sys as thingsys;
-use stem::{info, warn, error};
-use stem::thing::ThingId;
-use virtio::device::VirtioDevice;
+use alloc::vec;
+use alloc::vec::Vec;
+use core::mem::size_of;
 use spec::*;
 use stem::syscall::{device_alloc_dma, device_dma_phys};
-use core::mem::size_of;
+use stem::thing::sys as thingsys;
+use stem::thing::ThingId;
+use stem::{error, info, warn};
+use virtio::device::VirtioDevice;
 
 // Device driver for VirtIO Sound
 //
@@ -38,13 +37,17 @@ fn main(_arg: usize) -> ! {
         Ok(c) => c,
         Err(e) => {
             error!("SND: Failed to find device: {:?}", e);
-            loop { stem::yield_now(); }
+            loop {
+                stem::yield_now();
+            }
         }
     };
 
     if count == 0 {
         error!("SND: No VirtIO sound device found");
-        loop { stem::yield_now(); }
+        loop {
+            stem::yield_now();
+        }
     }
 
     let device_id = dev_buf[0].to_u64_lossy();
@@ -55,24 +58,30 @@ fn main(_arg: usize) -> ! {
         Ok(d) => d,
         Err(e) => {
             error!("SND: Failed to claim device: {:?}", e);
-            loop { stem::yield_now(); }
+            loop {
+                stem::yield_now();
+            }
         }
     };
 
     // Negotiate features
     if let Err(e) = driver.init(VIRTIO_SND_F_CTLS) {
         error!("SND: Failed to init device: {}", e);
-        loop { stem::yield_now(); }
+        loop {
+            stem::yield_now();
+        }
     }
 
     // Setup queues
     for q in 0..4 {
         if let Err(e) = driver.setup_queue(q, QUEUE_SIZE) {
             error!("SND: Failed to setup queue {}: {}", q, e);
-            loop { stem::yield_now(); }
+            loop {
+                stem::yield_now();
+            }
         }
     }
-    
+
     driver.driver_ok();
     info!("SND: Device initialized and active");
 
@@ -85,7 +94,9 @@ fn main(_arg: usize) -> ! {
         Some(id) => id,
         None => {
             error!("SND: No output stream found");
-            loop { stem::yield_now(); }
+            loop {
+                stem::yield_now();
+            }
         }
     };
     info!("SND: Using Stream ID {}", stream_id);
@@ -100,12 +111,21 @@ fn main(_arg: usize) -> ! {
     // 7. Receive Loop (Port + TX Queue)
     // Create a port to receive PCM data from userspace apps
     // 64KB buffer (~700ms of audio) to prevent underruns
-    let (write_handle, read_handle) = stem::syscall::port::port_create(65536).expect("Failed to create port");
-    
+    let (write_handle, read_handle) =
+        stem::syscall::port::port_create(65536).expect("Failed to create port");
+
     // Publish port handle (quick hack: print it for now, usually publish to graph)
-    info!("SND: Listening for audio on port handles: W={} R={}", write_handle, read_handle);
+    info!(
+        "SND: Listening for audio on port handles: W={} R={}",
+        write_handle, read_handle
+    );
     // Publish to the device node so 'beeper' can find it
-    thingsys::prop_set(ThingId::from_u64(device_id), abi::schema::keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
+    thingsys::prop_set(
+        ThingId::from_u64(device_id),
+        abi::schema::keys::WRITE_PORT_HANDLE,
+        write_handle as u64,
+    )
+    .ok();
 
     let mut buf = [0u8; 4096]; // Max packet size (matched to beeper)
     let dma_dev_handle = driver.claim_handle(); // Pre-fetch handle
@@ -119,62 +139,79 @@ fn main(_arg: usize) -> ! {
             underruns_total += 1;
             warn!("SND: PCM Underrun detected by device!");
         }
-        
+
         // 2. Recycle TX Descriptors (CRITICAL: Free up space in ring!)
         process_tx_queue(&mut driver);
-        
+
         // 3. Update Status Properties (every ~100ms)
         let now = stem::time::monotonic_ns();
         if now - last_status_update > 100_000_000 {
             use abi::schema::keys::*;
-            
+
             let port_len = stem::syscall::port::port_len(read_handle).unwrap_or(0);
             let port_cap = stem::syscall::port::port_capacity(read_handle).unwrap_or(1);
-            
-            thingsys::prop_set(ThingId::from_u64(device_id), SOUND_BUFFERED_FRAMES, (port_len / 4) as u64).ok();
-            thingsys::prop_set(ThingId::from_u64(device_id), SOUND_FREE_FRAMES, ((port_cap - port_len) / 4) as u64).ok();
-            thingsys::prop_set(ThingId::from_u64(device_id), SOUND_UNDERRUNS, underruns_total).ok();
+
+            thingsys::prop_set(
+                ThingId::from_u64(device_id),
+                SOUND_BUFFERED_FRAMES,
+                (port_len / 4) as u64,
+            )
+            .ok();
+            thingsys::prop_set(
+                ThingId::from_u64(device_id),
+                SOUND_FREE_FRAMES,
+                ((port_cap - port_len) / 4) as u64,
+            )
+            .ok();
+            thingsys::prop_set(
+                ThingId::from_u64(device_id),
+                SOUND_UNDERRUNS,
+                underruns_total,
+            )
+            .ok();
             last_status_update = now;
         }
 
         // 4. Process Audio Data
         match stem::syscall::port::port_recv(read_handle, &mut buf) {
             Ok(len) if len > 0 => {
-                match device_alloc_dma(dma_dev_handle, 2) { // 8KB pages (Need >4KB for 4K data + header)
-                     Ok(dma_addr) => {
-                         let phys = device_dma_phys(dma_addr).unwrap();
-                         let ptr = dma_addr as *mut u8;
-                         
-                         // Prepare Header
-                         let hdr = VirtioSndPcmXfer { stream_id };
-                         let hdr_size = size_of::<VirtioSndPcmXfer>();
-                         
-                         unsafe {
-                             *(ptr as *mut VirtioSndPcmXfer) = hdr;
-                             let data_ptr = ptr.add(hdr_size);
-                             core::ptr::copy_nonoverlapping(buf.as_ptr(), data_ptr, len);
-                         }
-                         
-                         loop {
-                             let added = {
-                                 let q = driver.queue_mut(VIRTIO_SND_VQ_TX).unwrap();
-                                 q.add_buffer_single(phys, (hdr_size + len) as u32, false).is_some()
-                             };
-                             
-                             if added {
-                                 driver.notify_queue(VIRTIO_SND_VQ_TX);
-                                 stem::yield_now(); // Let lower-priority tasks run
-                                 break;
-                             } else {
-                                 // Queue full. Poll for completions and yield.
-                                 process_tx_queue(&mut driver);
-                                 stem::yield_now();
-                             }
-                         }
-                     },
-                     Err(_) => {
-                         warn!("SND: DMA alloc failed, dropping frame");
-                     }
+                match device_alloc_dma(dma_dev_handle, 2) {
+                    // 8KB pages (Need >4KB for 4K data + header)
+                    Ok(dma_addr) => {
+                        let phys = device_dma_phys(dma_addr).unwrap();
+                        let ptr = dma_addr as *mut u8;
+
+                        // Prepare Header
+                        let hdr = VirtioSndPcmXfer { stream_id };
+                        let hdr_size = size_of::<VirtioSndPcmXfer>();
+
+                        unsafe {
+                            *(ptr as *mut VirtioSndPcmXfer) = hdr;
+                            let data_ptr = ptr.add(hdr_size);
+                            core::ptr::copy_nonoverlapping(buf.as_ptr(), data_ptr, len);
+                        }
+
+                        loop {
+                            let added = {
+                                let q = driver.queue_mut(VIRTIO_SND_VQ_TX).unwrap();
+                                q.add_buffer_single(phys, (hdr_size + len) as u32, false)
+                                    .is_some()
+                            };
+
+                            if added {
+                                driver.notify_queue(VIRTIO_SND_VQ_TX);
+                                stem::yield_now(); // Let lower-priority tasks run
+                                break;
+                            } else {
+                                // Queue full. Poll for completions and yield.
+                                process_tx_queue(&mut driver);
+                                stem::yield_now();
+                            }
+                        }
+                    }
+                    Err(_) => {
+                        warn!("SND: DMA alloc failed, dropping frame");
+                    }
                 }
             }
             _ => {
@@ -218,7 +255,7 @@ fn process_event_queue(driver: &mut VirtioDevice) -> bool {
         let q = driver.queue_mut(VIRTIO_SND_VQ_EVENT).unwrap();
         while let Some((desc_id, _len)) = q.poll_used() {
             // The buffer contains a VirtioSndEvent
-            // For now, we don't bother reading the DMA buffer because any event 
+            // For now, we don't bother reading the DMA buffer because any event
             // on the PCM stream is likely an xrun in this simple driver.
             // But let's be technically correct if possible.
             underrun_seen = true;
@@ -241,18 +278,18 @@ fn send_pcm_command(driver: &mut VirtioDevice, cmd: u32, stream_id: u32) {
     // We need two buffers: Request (Read) and Response (Write)
     let dma_req = device_alloc_dma(driver.claim_handle(), 1).unwrap();
     let phys_req = device_dma_phys(dma_req).unwrap();
-    
+
     let dma_resp = device_alloc_dma(driver.claim_handle(), 1).unwrap();
     let phys_resp = device_dma_phys(dma_resp).unwrap();
-    
+
     unsafe {
         *(dma_req as *mut VirtioSndPcmHdr) = VirtioSndPcmHdr {
             hdr: VirtioSndHdr { code: cmd },
             stream_id,
         };
-        *(dma_resp as *mut VirtioSndHdr) = VirtioSndHdr { code: 0 }; 
+        *(dma_resp as *mut VirtioSndHdr) = VirtioSndHdr { code: 0 };
     }
-    
+
     let bufs = [
         (phys_req, size_of::<VirtioSndPcmHdr>() as u32, false), // Device Read
         (phys_resp, size_of::<VirtioSndHdr>() as u32, true),    // Device Write
@@ -263,7 +300,7 @@ fn send_pcm_command(driver: &mut VirtioDevice, cmd: u32, stream_id: u32) {
         q.add_buffer(&bufs);
     }
     driver.notify_queue(VIRTIO_SND_VQ_CONTROL);
-    
+
     // Simplistic polling for completion
     loop {
         let done = {
@@ -281,13 +318,15 @@ fn configure_stream(driver: &mut VirtioDevice, stream_id: u32) {
     // 1. Set Params
     let dma_req = device_alloc_dma(driver.claim_handle(), 1).unwrap();
     let phys_req = device_dma_phys(dma_req).unwrap();
-    
+
     let dma_resp = device_alloc_dma(driver.claim_handle(), 1).unwrap();
     let phys_resp = device_dma_phys(dma_resp).unwrap();
 
     unsafe {
         *(dma_req as *mut VirtioSndPcmSetParams) = VirtioSndPcmSetParams {
-            hdr: VirtioSndHdr { code: VIRTIO_SND_R_PCM_SET_PARAMS },
+            hdr: VirtioSndHdr {
+                code: VIRTIO_SND_R_PCM_SET_PARAMS,
+            },
             buffer_bytes: 65536, // Increased to 64KB
             period_bytes: 4096,
             features: 0,
@@ -297,7 +336,7 @@ fn configure_stream(driver: &mut VirtioDevice, stream_id: u32) {
             padding: 0,
         };
     }
-    
+
     let bufs = [
         (phys_req, size_of::<VirtioSndPcmSetParams>() as u32, false),
         (phys_resp, size_of::<VirtioSndHdr>() as u32, true),
@@ -308,7 +347,7 @@ fn configure_stream(driver: &mut VirtioDevice, stream_id: u32) {
         q.add_buffer(&bufs);
     }
     driver.notify_queue(VIRTIO_SND_VQ_CONTROL);
-    
+
     // Wait for completion
     loop {
         let done = {
@@ -320,10 +359,9 @@ fn configure_stream(driver: &mut VirtioDevice, stream_id: u32) {
         }
         stem::yield_now();
     }
-    
+
     // 2. Prepare
     send_pcm_command(driver, VIRTIO_SND_R_PCM_PREPARE, stream_id);
-
 }
 
 fn find_output_stream(_driver: &mut VirtioDevice) -> Option<u32> {

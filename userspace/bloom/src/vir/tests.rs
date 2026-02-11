@@ -2,8 +2,8 @@
 
 #[cfg(test)]
 mod tests {
+    use crate::tessellate::{tessellate_fill, TessellateConfig};
     use crate::vir::*;
-    use crate::tessellate::{TessellateConfig, tessellate_fill};
     use alloc::sync::Arc;
 
     #[test]
@@ -112,7 +112,7 @@ mod tests {
 
         // Check that vertices are scaled
         assert!(!tessellated.vertices.is_empty());
-        
+
         // The second point should be at (20, 0) after 2x scale
         if tessellated.vertices.len() > 1 {
             let p = tessellated.vertices[1];
@@ -123,9 +123,12 @@ mod tests {
 
     #[test]
     fn test_svg_to_vir_conversion() {
-        use crate::svg::ir::{SvgIrDocument, SvgOp, Path2D, PathCommand as SvgPathCommand, PointF, Paint as SvgPaint, FillRule as SvgFillRule};
         use crate::geometry::{Color, Transform};
-        
+        use crate::svg::ir::{
+            FillRule as SvgFillRule, Paint as SvgPaint, Path2D, PathCommand as SvgPathCommand,
+            PointF, SvgIrDocument, SvgOp,
+        };
+
         // Create a simple SVG IR
         let mut svg = SvgIrDocument {
             width: Some(100.0),
@@ -134,10 +137,18 @@ mod tests {
             ops: alloc::vec![],
         };
 
-        let mut svg_path = Path2D { verbs: alloc::vec![] };
-        svg_path.verbs.push(SvgPathCommand::MoveTo(PointF::new(0.0, 0.0)));
-        svg_path.verbs.push(SvgPathCommand::LineTo(PointF::new(10.0, 0.0)));
-        svg_path.verbs.push(SvgPathCommand::LineTo(PointF::new(10.0, 10.0)));
+        let mut svg_path = Path2D {
+            verbs: alloc::vec![],
+        };
+        svg_path
+            .verbs
+            .push(SvgPathCommand::MoveTo(PointF::new(0.0, 0.0)));
+        svg_path
+            .verbs
+            .push(SvgPathCommand::LineTo(PointF::new(10.0, 0.0)));
+        svg_path
+            .verbs
+            .push(SvgPathCommand::LineTo(PointF::new(10.0, 10.0)));
         svg_path.verbs.push(SvgPathCommand::Close);
 
         svg.ops.push(SvgOp::FillPath {
@@ -168,7 +179,7 @@ mod tests {
             tolerance: 0.5,
             apply_transform: true,
         };
-        
+
         let tessellated = tessellate_fill(&path, &transform, &config);
 
         // Should have multiple segments (flattened curve)
@@ -187,7 +198,7 @@ mod tests {
             tolerance: 0.5,
             apply_transform: true,
         };
-        
+
         let tessellated = tessellate_fill(&path, &transform, &config);
 
         // Should have multiple segments (flattened curve)

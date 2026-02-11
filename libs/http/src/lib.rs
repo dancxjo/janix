@@ -2,11 +2,11 @@
 extern crate alloc;
 
 use alloc::boxed::Box;
+use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use alloc::format;
-use core::str::FromStr;
 use core::fmt::Write;
+use core::str::FromStr;
 
 use stem::syscall::port::{port_create, port_recv, port_send, PortHandle};
 use stem::thing::sys as thingsys;
@@ -40,7 +40,8 @@ impl TcpStream {
             return Err("Net stack not found".to_string());
         }
         let net_id = buf[0];
-        let netd_port = thingsys::prop_get(net_id, "net.socket_api").map_err(|_| "Socket API port not found")? as PortHandle;
+        let netd_port = thingsys::prop_get(net_id, "net.socket_api")
+            .map_err(|_| "Socket API port not found")? as PortHandle;
 
         // Create my response port
         let (my_port, _) = port_create(8192).map_err(|_| "Failed to create response port")?;
@@ -73,7 +74,11 @@ impl TcpStream {
         }
     }
 
-    fn resolve_dns(netd_port: PortHandle, my_port: PortHandle, host: &str) -> Result<[u8; 4], String> {
+    fn resolve_dns(
+        netd_port: PortHandle,
+        my_port: PortHandle,
+        host: &str,
+    ) -> Result<[u8; 4], String> {
         let mut msg = Vec::new();
         msg.extend_from_slice(&MSG_DNS_QUERY.to_le_bytes());
         msg.extend_from_slice(host.as_bytes());
@@ -82,41 +87,59 @@ impl TcpStream {
         let resp_type = u16::from_le_bytes([response[0], response[1]]);
 
         if resp_type == RESP_DATA {
-             if response.len() >= 6 {
-                 Ok([response[2], response[3], response[4], response[5]])
-             } else {
-                 Err("Invalid DNS response".to_string())
-             }
+            if response.len() >= 6 {
+                Ok([response[2], response[3], response[4], response[5]])
+            } else {
+                Err("Invalid DNS response".to_string())
+            }
         } else {
             Err("DNS resolution failed".to_string())
         }
     }
 
     pub fn write(&mut self, data: &[u8]) -> Result<usize, String> {
-        let mut msg = Vec::with_capacity(6 + data.len());
-        msg.extend_from_slice(&MSG_TCP_SEND.to_le_bytes());
-        msg.extend_from_slice(&self.socket_handle.to_le_bytes());
-        msg.extend_from_slice(data);
+        let mut total_sent = 0;
+        // Chunk the data to avoid the 4KB kernel IPC cap.
+        // V2 header [12 bytes] + msg_type [2 bytes] + handle [4 bytes] = 18 bytes overhead.
+        for chunk in data.chunks(4000) {
+            let mut msg = Vec::with_capacity(6 + chunk.len());
+            msg.extend_from_slice(&MSG_TCP_SEND.to_le_bytes());
+            msg.extend_from_slice(&self.socket_handle.to_le_bytes());
+            msg.extend_from_slice(chunk);
 
-        let response = send_recv(self.netd_port, self.my_port, &msg)?;
-        let resp_type = u16::from_le_bytes([response[0], response[1]]);
+            let response = send_recv(self.netd_port, self.my_port, &msg)?;
+            if response.len() < 4 {
+                return Err("Invalid response length from netd".to_string());
+            }
+            let resp_type = u16::from_le_bytes([response[0], response[1]]);
 
-        if resp_type == RESP_OK {
-             let sent = u16::from_le_bytes([response[2], response[3]]);
-             Ok(sent as usize)
-        } else {
-            Err("Write failed".to_string())
+            if resp_type == RESP_OK {
+                let sent = u16::from_le_bytes([response[2], response[3]]);
+                total_sent += sent as usize;
+                if sent as usize < chunk.len() {
+                    // Partial send at TCP level, stop chunking
+                    break;
+                }
+            } else {
+                return Err("Write failed at netd".to_string());
+            }
         }
+        Ok(total_sent)
     }
 
     pub fn read(&mut self, buf: &mut [u8]) -> Result<usize, String> {
-        let mut msg = Vec::with_capacity(8);
+        let mut msg = Vec::with_capacity(10);
         msg.extend_from_slice(&MSG_TCP_RECV.to_le_bytes());
         msg.extend_from_slice(&self.socket_handle.to_le_bytes());
-        let len = (buf.len() as u16).min(8192); // Max read size
+        // Use a safe max read size to avoid RESP_DATA ghosting hazard.
+        // Kernel cap is 4096. RESP_DATA header is 2 bytes.
+        let len = (buf.len() as u16).min(4000);
         msg.extend_from_slice(&len.to_le_bytes());
 
         let response = send_recv(self.netd_port, self.my_port, &msg)?;
+        if response.len() < 2 {
+            return Ok(0);
+        }
         let resp_type = u16::from_le_bytes([response[0], response[1]]);
 
         if resp_type == RESP_DATA {
@@ -125,7 +148,7 @@ impl TcpStream {
             buf[..copy_len].copy_from_slice(&data[..copy_len]);
             Ok(copy_len)
         } else {
-             Ok(0) // Return 0 on error/close to indicate EOF?
+            Ok(0)
         }
     }
 }
@@ -140,20 +163,40 @@ impl Drop for TcpStream {
 }
 
 fn send_recv(netd_port: PortHandle, my_port: PortHandle, msg: &[u8]) -> Result<Vec<u8>, String> {
-    let mut packet = Vec::with_capacity(4 + msg.len());
-    packet.extend_from_slice(&my_port.to_le_bytes()); // u32
-    packet.extend_from_slice(msg);
+    if msg.len() < 2 {
+        return Err("Invalid message".to_string());
+    }
+    let msg_type = u16::from_le_bytes([msg[0], msg[1]]);
+    let payload = &msg[2..];
+
+    // V2 Robust format: [4: response_port][8: caller_tid][2: msg_type][2: payload_len][payload...]
+    let mut packet = Vec::with_capacity(16 + payload.len());
+    packet.extend_from_slice(&(my_port as u32).to_le_bytes());
+    let tid = stem::syscall::get_tid().unwrap_or(0);
+    packet.extend_from_slice(&tid.to_le_bytes());
+    packet.extend_from_slice(&msg_type.to_le_bytes());
+    packet.extend_from_slice(&(payload.len() as u16).to_le_bytes());
+    packet.extend_from_slice(payload);
+
+    // Kernel IPC is capped at 4096 bytes.
+    if packet.len() > 4096 {
+        stem::warn!(
+            "http: IPC message too large (len={}), will likely be truncated by kernel",
+            packet.len()
+        );
+    }
 
     port_send(netd_port, &packet).map_err(|_| "Send failed")?;
 
-    let mut buf = [0u8; 8192];
+    let mut buf = [0u8; 8192]; // Large enough for response
     let start = stem::time::monotonic_ns();
     loop {
         match port_recv(my_port, &mut buf) {
             Ok(len) if len > 0 => return Ok(buf[..len].to_vec()),
             _ => {
-                if stem::time::monotonic_ns() - start > 5_000_000_000 { // 5s timeout
-                     return Err("Timeout".to_string());
+                if stem::time::monotonic_ns() - start > 5_000_000_000 {
+                    // 5s timeout
+                    return Err("Timeout waiting for netd response".to_string());
                 }
                 stem::thread::yield_now();
             }
@@ -167,7 +210,9 @@ fn parse_ipv4(s: &str) -> Result<[u8; 4], ()> {
     let b = parts.next().ok_or(())?.parse::<u8>().map_err(|_| ())?;
     let c = parts.next().ok_or(())?.parse::<u8>().map_err(|_| ())?;
     let d = parts.next().ok_or(())?.parse::<u8>().map_err(|_| ())?;
-    if parts.next().is_some() { return Err(()); }
+    if parts.next().is_some() {
+        return Err(());
+    }
     Ok([a, b, c, d])
 }
 
@@ -193,7 +238,12 @@ impl HttpClient {
             };
 
             let (host, port) = if let Some(idx) = host_port.find(':') {
-                (&host_port[..idx], host_port[idx+1..].parse::<u16>().map_err(|_| "Invalid port")?)
+                (
+                    &host_port[..idx],
+                    host_port[idx + 1..]
+                        .parse::<u16>()
+                        .map_err(|_| "Invalid port")?,
+                )
             } else {
                 (host_port, 80)
             };
@@ -214,7 +264,7 @@ impl HttpClient {
         write!(req, "Host: {}\r\n", host).ok();
         write!(req, "Connection: close\r\n").ok();
         if host == "10.0.2.2" {
-             write!(req, "X-Original-URL: {}\r\n", final_url).ok();
+            write!(req, "X-Original-URL: {}\r\n", final_url).ok();
         }
         if let Some(b) = body {
             write!(req, "Content-Length: {}\r\n", b.len()).ok();
@@ -233,20 +283,23 @@ impl HttpClient {
         let mut headers_done = false;
 
         // Initial read loop to find headers
-        for _ in 0..20 { // Limit tries
-             let n = stream.read(&mut temp_buf)?;
-             if n == 0 { break; }
-             buffer.extend_from_slice(&temp_buf[..n]);
+        for _ in 0..20 {
+            // Limit tries
+            let n = stream.read(&mut temp_buf)?;
+            if n == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&temp_buf[..n]);
 
-             if let Some(idx) = find_subsequence(&buffer, b"\r\n\r\n") {
+            if let Some(idx) = find_subsequence(&buffer, b"\r\n\r\n") {
                 body_start = idx + 4;
                 headers_done = true;
                 break;
-             }
+            }
         }
 
         if !headers_done {
-             // Maybe no body or something weird, but let's assume we have what we have
+            // Maybe no body or something weird, but let's assume we have what we have
         }
 
         Ok(Response {
@@ -281,7 +334,9 @@ impl Response {
 }
 
 fn find_subsequence(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn url_encode(s: &str) -> String {

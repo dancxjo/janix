@@ -19,11 +19,11 @@ pub const MSG_OFFER_FRAMEBUFFER: u16 = 9;
 pub const MSG_ACCEPT_FRAMEBUFFER: u16 = 10;
 pub const MSG_ACQUIRE: u16 = 11;
 pub const MSG_ACQUIRED: u16 = 12;
-pub const MSG_SUBMIT_3D: u16 = 13;  // Virgl 3D command submission
-pub const MSG_CREATE_TEXTURE_3D: u16 = 14;  // Create GPU texture
-pub const MSG_UPLOAD_TEXTURE_3D: u16 = 15;  // Upload pixel data to texture
-pub const MSG_DESTROY_TEXTURE_3D: u16 = 16;  // Destroy GPU texture
-pub const MSG_TEXTURE_CREATED: u16 = 17;  // Response with texture resource ID
+pub const MSG_SUBMIT_3D: u16 = 13; // Virgl 3D command submission
+pub const MSG_CREATE_TEXTURE_3D: u16 = 14; // Create GPU texture
+pub const MSG_UPLOAD_TEXTURE_3D: u16 = 15; // Upload pixel data to texture
+pub const MSG_DESTROY_TEXTURE_3D: u16 = 16; // Destroy GPU texture
+pub const MSG_TEXTURE_CREATED: u16 = 17; // Response with texture resource ID
 
 pub const PROTO_MAJOR: u16 = 1;
 pub const PROTO_MINOR: u16 = 0;
@@ -32,7 +32,7 @@ pub const CAP_DIRTY_RECTS: u32 = 1 << 0;
 pub const CAP_FULLFRAME: u32 = 1 << 1;
 pub const CAP_MULTI_DISPLAY: u32 = 1 << 2;
 pub const CAP_FENCE: u32 = 1 << 3;
-pub const CAP_3D: u32 = 1 << 4;  // Virgl 3D support (driver has submit_3d capability)
+pub const CAP_3D: u32 = 1 << 4; // Virgl 3D support (driver has submit_3d capability)
 
 pub const PRESENT_FLAG_FULLFRAME: u32 = 1 << 0;
 
@@ -212,10 +212,10 @@ pub const ERR_RESP_WIRE_SIZE: usize = 4;
 pub const OFFER_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 24; // 8 + 4 + 4 + 4 + 4
 pub const ACCEPT_FRAMEBUFFER_PAYLOAD_WIRE_SIZE: usize = 8; // 4 + 4
 pub const ACQUIRED_PAYLOAD_WIRE_SIZE: usize = 32; // 8 + 4 + 4 + 4 + 4 + 4 + 4
-pub const SUBMIT_3D_HEADER_WIRE_SIZE: usize = 8;  // 4 + 4 (ctx_id + cmd_len)
-pub const CREATE_TEXTURE_3D_HEADER_WIRE_SIZE: usize = 24;  // 8 + 4 + 4 + 4 + 4
-pub const UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE: usize = 32;  // 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4
-pub const TEXTURE_CREATED_RESPONSE_WIRE_SIZE: usize = 16;  // 8 + 4 + 4
+pub const SUBMIT_3D_HEADER_WIRE_SIZE: usize = 8; // 4 + 4 (ctx_id + cmd_len)
+pub const CREATE_TEXTURE_3D_HEADER_WIRE_SIZE: usize = 24; // 8 + 4 + 4 + 4 + 4
+pub const UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE: usize = 32; // 4 + 4 + 4 + 4 + 4 + 4 + 4 + 4
+pub const TEXTURE_CREATED_RESPONSE_WIRE_SIZE: usize = 16; // 8 + 4 + 4
 
 pub fn encode_message(buf: &mut [u8], msg_type: u16, payload: &[u8]) -> Option<usize> {
     let total = HEADER_SIZE + payload.len();
@@ -566,10 +566,7 @@ pub fn decode_acquired_payload_le(buf: &[u8]) -> Option<AcquiredPayload> {
 
 /// Encode Submit3dHeader for virgl 3D command submission.
 /// The virgl command buffer should be appended after this header.
-pub fn encode_submit_3d_header_le(
-    header: &Submit3dHeader,
-    out: &mut [u8],
-) -> Option<usize> {
+pub fn encode_submit_3d_header_le(header: &Submit3dHeader, out: &mut [u8]) -> Option<usize> {
     if out.len() < SUBMIT_3D_HEADER_WIRE_SIZE {
         return None;
     }

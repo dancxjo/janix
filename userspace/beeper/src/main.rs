@@ -1,4 +1,3 @@
-
 #![no_std]
 #![no_main]
 
@@ -7,23 +6,23 @@ extern crate alloc;
 mod chime;
 mod tone;
 
-use alloc::vec::Vec;
 use abi::schema::keys::WRITE_PORT_HANDLE;
 use abi::schema::kinds::{DEV_SOUND, DEV_SOUND_HDA_PCI_STUB};
+use alloc::vec::Vec;
 use stem::syscall::port::{port_send, port_wait, PortHandle};
-use stem::{error, info};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
+use stem::{error, info};
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
     let tone_freq: Option<f64> = None; // Args not supported yet in stem
     let seconds = 10.0;
-    
+
     let mut dev_buf = [ThingId::default(); 1];
     let mut device_id = None;
     let mut write_port_handle = 0;
-    
+
     for _ in 0..50 {
         // Prefer native HDA path if present.
         if let Ok(count) = thingsys::find(DEV_SOUND_HDA_PCI_STUB, &mut dev_buf) {
@@ -54,7 +53,9 @@ fn main(_arg: usize) -> ! {
     }
     if write_port_handle == 0 {
         error!("Beeper: Device has no write port handle");
-        loop { stem::yield_now(); }
+        loop {
+            stem::yield_now();
+        }
     }
 
     let sample_rate = 44100;
@@ -65,7 +66,7 @@ fn main(_arg: usize) -> ! {
         let mut v_i16 = Vec::with_capacity(count * 2);
         unsafe { v_i16.set_len(count * 2) };
         gen.fill_buffer(&mut v_i16);
-        
+
         let mut v_u8 = Vec::with_capacity(count * 4);
         for s in v_i16 {
             v_u8.extend_from_slice(&s.to_le_bytes());
@@ -79,7 +80,7 @@ fn main(_arg: usize) -> ! {
     info!("Beeper: Playback started ({} bytes)", samples.len());
 
     let chunk_size = 4096;
-    
+
     let mut offset = 0;
     while offset < samples.len() {
         let remaining = samples.len() - offset;
@@ -98,11 +99,13 @@ fn main(_arg: usize) -> ! {
                 }
             }
         }
-        
+
         offset += to_write;
         stem::yield_now(); // Let lower-priority tasks run between chunks
     }
 
     info!("Beeper: Finished.");
-    loop { stem::time::sleep_ms(1000); }
+    loop {
+        stem::time::sleep_ms(1000);
+    }
 }

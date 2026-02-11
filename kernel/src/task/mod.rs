@@ -153,7 +153,8 @@ pub fn preempt_enable<R: BootRuntime>() {
         scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+            rt.tasking()
+                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
     }
 
@@ -208,7 +209,8 @@ pub fn resched_if_needed<R: BootRuntime>() {
         scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+            rt.tasking()
+                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
     }
 
@@ -224,20 +226,24 @@ pub fn dump_stats<R: BootRuntime>() {
 fn bootstrap_cpu<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
-    
+
     let lock = scheduler::SCHEDULER.lock();
     if let Some(ptr) = *lock {
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
         let cpu_idx = scheduler::current_cpu_index::<R>();
-        
+
         if let Some(pc) = sched.per_cpu.get_mut(cpu_idx) {
             if pc.current.is_none() {
                 // CPU hasn't been bootstrapped yet. Set current to idle task.
                 if let Some(idle_id) = pc.idle_task {
                     pc.current = Some(idle_id);
                     rt.set_current_tid(idle_id);
-                    crate::kinfo!("SMP: CPU {} bootstrapped with idle task {}", cpu_idx, idle_id);
-                    
+                    crate::kinfo!(
+                        "SMP: CPU {} bootstrapped with idle task {}",
+                        cpu_idx,
+                        idle_id
+                    );
+
                     // Mark the idle task as running
                     if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == idle_id) {
                         task.state = TaskState::Running;
@@ -248,14 +254,14 @@ fn bootstrap_cpu<R: BootRuntime>() {
             }
         }
     }
-    
+
     rt.irq_restore(_irq);
 }
 
 pub fn run_scheduler<R: BootRuntime>() -> ! {
     // Bootstrap this CPU if needed (sets current task for secondary CPUs)
     bootstrap_cpu::<R>();
-    
+
     // Enable interrupts so this CPU can be preempted or woken from idle (HLT)
     crate::runtime::<R>().irq_restore(crate::IrqState(1));
 
@@ -264,4 +270,3 @@ pub fn run_scheduler<R: BootRuntime>() -> ! {
         core::hint::spin_loop();
     }
 }
-

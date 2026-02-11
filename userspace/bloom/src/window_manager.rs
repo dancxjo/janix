@@ -447,8 +447,10 @@ impl WindowManager {
 
         if new_rect != current_rect {
             // Add damage for both old and new positions
-            self.pending_damage.push((current_rect, DamageCause::GeometryChanged, Some(drag.wid)));
-            self.pending_damage.push((new_rect, DamageCause::GeometryChanged, Some(drag.wid)));
+            self.pending_damage
+                .push((current_rect, DamageCause::GeometryChanged, Some(drag.wid)));
+            self.pending_damage
+                .push((new_rect, DamageCause::GeometryChanged, Some(drag.wid)));
             Some(new_rect)
         } else {
             None
@@ -481,7 +483,13 @@ impl WindowManager {
     }
 
     /// Add damage with an explicit cause.
-    pub fn add_damage_with_cause(&mut self, old_rect: Rect, new_rect: Rect, cause: DamageCause, source: Option<ThingId>) {
+    pub fn add_damage_with_cause(
+        &mut self,
+        old_rect: Rect,
+        new_rect: Rect,
+        cause: DamageCause,
+        source: Option<ThingId>,
+    ) {
         self.pending_damage.push((old_rect, cause, source));
         self.pending_damage.push((new_rect, cause, source));
     }
@@ -492,7 +500,12 @@ impl WindowManager {
         if window.is_maximized {
             // Restore to pre-maximize rect
             let restored = window.pre_maximize_rect.unwrap_or(window.rect);
-            self.add_damage_with_cause(window.rect, restored, DamageCause::GeometryChanged, Some(window.id));
+            self.add_damage_with_cause(
+                window.rect,
+                restored,
+                DamageCause::GeometryChanged,
+                Some(window.id),
+            );
             window.is_maximized = false;
             window.pre_maximize_rect = None;
             restored
@@ -500,7 +513,12 @@ impl WindowManager {
             // Save current rect and maximize
             window.pre_maximize_rect = Some(window.rect);
             let maximized = Rect::new(0, 0, self.screen_w, self.screen_h);
-            self.add_damage_with_cause(window.rect, maximized, DamageCause::GeometryChanged, Some(window.id));
+            self.add_damage_with_cause(
+                window.rect,
+                maximized,
+                DamageCause::GeometryChanged,
+                Some(window.id),
+            );
             window.is_maximized = true;
             maximized
         }

@@ -14,8 +14,8 @@ use crate::thing::ThingId;
 use abi::errors::Errno;
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels, ui_kind};
-use abi::ui_event;
 use abi::types::Edge;
+use abi::ui_event;
 
 pub trait GraphBackend {
     fn create_node(&mut self, kind: &str) -> Result<ThingId>;
@@ -241,16 +241,23 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
     pub fn list_item(&mut self, text: &str, icon_color: u32) -> Result<ThingId> {
         let id = self.create_node(kinds::UI_LIST_ITEM, ui_kind::LIST_ITEM, None)?;
         self.set_string_prop(id, keys::UI_TEXT, text)?;
-        self.graph.prop_set(id, keys::UI_ICON_COLOR, icon_color as u64)?;
+        self.graph
+            .prop_set(id, keys::UI_ICON_COLOR, icon_color as u64)?;
         self.attach_child(self.parent_stack.last().copied(), id)?;
         Ok(id)
     }
 
     /// Create a list item with a stable key so selection state persists across rebuilds.
-    pub fn list_item_keyed(&mut self, key: UiKey<'_>, text: &str, icon_color: u32) -> Result<ThingId> {
+    pub fn list_item_keyed(
+        &mut self,
+        key: UiKey<'_>,
+        text: &str,
+        icon_color: u32,
+    ) -> Result<ThingId> {
         let id = self.create_node(kinds::UI_LIST_ITEM, ui_kind::LIST_ITEM, Some(key.as_str()))?;
         self.set_string_prop(id, keys::UI_TEXT, text)?;
-        self.graph.prop_set(id, keys::UI_ICON_COLOR, icon_color as u64)?;
+        self.graph
+            .prop_set(id, keys::UI_ICON_COLOR, icon_color as u64)?;
         self.attach_child(self.parent_stack.last().copied(), id)?;
         Ok(id)
     }
@@ -415,7 +422,8 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
             let bs_id = self.graph.bytespace_create(0)?;
             self.graph
                 .prop_set(self.window_id, keys::UI_EVENT_LOG, bs_id.to_u64_lossy())?;
-            self.graph.prop_set(self.window_id, keys::UI_EVENT_CURSOR, 0)?;
+            self.graph
+                .prop_set(self.window_id, keys::UI_EVENT_CURSOR, 0)?;
             self.graph.prop_set(self.window_id, keys::UI_EVENT_GEN, 0)?;
         } else if self
             .graph
@@ -423,7 +431,8 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
             .unwrap_or(0)
             == 0
         {
-            self.graph.prop_set(self.window_id, keys::UI_EVENT_CURSOR, 0)?;
+            self.graph
+                .prop_set(self.window_id, keys::UI_EVENT_CURSOR, 0)?;
         }
         Ok(())
     }
@@ -450,7 +459,11 @@ impl<G: GraphBackend> UiTreeBuilder<G> {
     }
 }
 
-fn read_string_prop<G: GraphBackend>(graph: &mut G, id: ThingId, key: &str) -> Result<Option<String>> {
+fn read_string_prop<G: GraphBackend>(
+    graph: &mut G,
+    id: ThingId,
+    key: &str,
+) -> Result<Option<String>> {
     let bs = graph.prop_get(id, key).unwrap_or(0);
     if bs == 0 {
         return Ok(None);
@@ -470,7 +483,12 @@ fn read_string_prop<G: GraphBackend>(graph: &mut G, id: ThingId, key: &str) -> R
     Ok(Some(text))
 }
 
-fn write_string_prop<G: GraphBackend>(graph: &mut G, id: ThingId, key: &str, value: &str) -> Result<()> {
+fn write_string_prop<G: GraphBackend>(
+    graph: &mut G,
+    id: ThingId,
+    key: &str,
+    value: &str,
+) -> Result<()> {
     if value.is_empty() {
         graph.prop_set(id, key, 0)?;
         return Ok(());
@@ -490,7 +508,10 @@ fn window_root_nodes<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> Resu
     Ok(roots)
 }
 
-fn collect_window_nodes<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> Result<Vec<ThingId>> {
+fn collect_window_nodes<G: GraphBackend>(
+    graph: &mut G,
+    window_id: ThingId,
+) -> Result<Vec<ThingId>> {
     let mut visited = BTreeSet::new();
     let mut ordered = Vec::new();
     let mut stack = window_root_nodes(graph, window_id)?;
@@ -567,7 +588,10 @@ fn next_char_end(text: &str, cursor: usize) -> usize {
     text.len()
 }
 
-pub fn reduce_window_events_with_graph<G: GraphBackend>(graph: &mut G, window_id: ThingId) -> Result<bool> {
+pub fn reduce_window_events_with_graph<G: GraphBackend>(
+    graph: &mut G,
+    window_id: ThingId,
+) -> Result<bool> {
     use abi::ui_event::UiEvent;
 
     let event_log_bs = graph
@@ -580,7 +604,9 @@ pub fn reduce_window_events_with_graph<G: GraphBackend>(graph: &mut G, window_id
     if bytes.len() < ui_event::HEADER_SIZE {
         return Ok(false);
     }
-    let mut cursor = graph.prop_get(window_id, keys::UI_EVENT_CURSOR).unwrap_or(0) as usize;
+    let mut cursor = graph
+        .prop_get(window_id, keys::UI_EVENT_CURSOR)
+        .unwrap_or(0) as usize;
     if cursor >= bytes.len() {
         return Ok(false);
     }
@@ -632,79 +658,95 @@ pub fn reduce_window_events_with_graph<G: GraphBackend>(graph: &mut G, window_id
         reduced_any = true;
         let target = ThingId::from_u64(target);
         match event {
-        UiEvent::Focus { .. } => {
-            clear_focus_in_window(graph, window_id)?;
-            graph.prop_set(target, keys::UI_FOCUSED, 1)?;
-            if graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) == 0 {
-                let current_text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
-                let cursor = current_text.len() as u64;
-                graph.prop_set(target, keys::UI_CURSOR, cursor)?;
-                graph.prop_set(target, keys::UI_CURSOR_POS, cursor)?;
+            UiEvent::Focus { .. } => {
+                clear_focus_in_window(graph, window_id)?;
+                graph.prop_set(target, keys::UI_FOCUSED, 1)?;
+                if graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) == 0 {
+                    let current_text =
+                        read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+                    let cursor = current_text.len() as u64;
+                    graph.prop_set(target, keys::UI_CURSOR, cursor)?;
+                    graph.prop_set(target, keys::UI_CURSOR_POS, cursor)?;
+                }
             }
-        }
-        UiEvent::Blur { .. } => {
-            graph.prop_set(target, keys::UI_FOCUSED, 0)?;
-        }
-        UiEvent::TextInput { ref text, text_len, .. } => {
-            let mut current = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
-            let cursor = clamp_cursor(&current, graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize);
-            let insert = core::str::from_utf8(&text[..text_len as usize]).unwrap_or("");
-            if !insert.is_empty() {
-                current.insert_str(cursor, insert);
-                let next_cursor = cursor.saturating_add(insert.len()) as u64;
-                write_string_prop(graph, target, keys::UI_TEXT, &current)?;
-                write_string_prop(graph, target, keys::UI_INPUT_VALUE, &current)?;
-                graph.prop_set(target, keys::UI_CURSOR, next_cursor)?;
-                graph.prop_set(target, keys::UI_CURSOR_POS, next_cursor)?;
+            UiEvent::Blur { .. } => {
+                graph.prop_set(target, keys::UI_FOCUSED, 0)?;
             }
-        }
-        UiEvent::TextBackspace { .. } => {
-            let mut text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
-            let cursor = clamp_cursor(&text, graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize);
-            if cursor > 0 {
-                let prev = previous_char_start(&text, cursor);
-                text.replace_range(prev..cursor, "");
-                write_string_prop(graph, target, keys::UI_TEXT, &text)?;
-                write_string_prop(graph, target, keys::UI_INPUT_VALUE, &text)?;
-                graph.prop_set(target, keys::UI_CURSOR, prev as u64)?;
-                graph.prop_set(target, keys::UI_CURSOR_POS, prev as u64)?;
+            UiEvent::TextInput {
+                ref text, text_len, ..
+            } => {
+                let mut current =
+                    read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+                let cursor = clamp_cursor(
+                    &current,
+                    graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize,
+                );
+                let insert = core::str::from_utf8(&text[..text_len as usize]).unwrap_or("");
+                if !insert.is_empty() {
+                    current.insert_str(cursor, insert);
+                    let next_cursor = cursor.saturating_add(insert.len()) as u64;
+                    write_string_prop(graph, target, keys::UI_TEXT, &current)?;
+                    write_string_prop(graph, target, keys::UI_INPUT_VALUE, &current)?;
+                    graph.prop_set(target, keys::UI_CURSOR, next_cursor)?;
+                    graph.prop_set(target, keys::UI_CURSOR_POS, next_cursor)?;
+                }
             }
-        }
-        UiEvent::TextDelete { .. } => {
-            let mut text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
-            let cursor = clamp_cursor(&text, graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize);
-            let next = next_char_end(&text, cursor);
-            if next > cursor {
-                text.replace_range(cursor..next, "");
-                write_string_prop(graph, target, keys::UI_TEXT, &text)?;
-                write_string_prop(graph, target, keys::UI_INPUT_VALUE, &text)?;
-                graph.prop_set(target, keys::UI_CURSOR, cursor as u64)?;
-                graph.prop_set(target, keys::UI_CURSOR_POS, cursor as u64)?;
+            UiEvent::TextBackspace { .. } => {
+                let mut text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+                let cursor = clamp_cursor(
+                    &text,
+                    graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize,
+                );
+                if cursor > 0 {
+                    let prev = previous_char_start(&text, cursor);
+                    text.replace_range(prev..cursor, "");
+                    write_string_prop(graph, target, keys::UI_TEXT, &text)?;
+                    write_string_prop(graph, target, keys::UI_INPUT_VALUE, &text)?;
+                    graph.prop_set(target, keys::UI_CURSOR, prev as u64)?;
+                    graph.prop_set(target, keys::UI_CURSOR_POS, prev as u64)?;
+                }
             }
-        }
-        UiEvent::CursorMove { delta, .. } => {
-            let text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
-            let cursor = clamp_cursor(&text, graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize);
-            let mut next = cursor as i64 + delta as i64;
-            next = next.clamp(0, text.len() as i64);
-            graph.prop_set(target, keys::UI_CURSOR, next as u64)?;
-            graph.prop_set(target, keys::UI_CURSOR_POS, next as u64)?;
-        }
-        UiEvent::Submit { .. }
-        | UiEvent::Clicked { .. }
-        | UiEvent::Toggled { .. }
-        | UiEvent::Activate { .. }
-        | UiEvent::PointerMove { .. }
-        | UiEvent::PointerDown { .. }
-        | UiEvent::PointerUp { .. }
-        | UiEvent::Scroll { .. }
-        | UiEvent::KeyDown { .. }
-        | UiEvent::KeyUp { .. }
-        | UiEvent::CursorSet { .. }
-        | UiEvent::Select { .. }
-        | UiEvent::Resize { .. }
-        | UiEvent::CloseRequested { .. }
-        | UiEvent::Unknown { .. } => {}
+            UiEvent::TextDelete { .. } => {
+                let mut text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+                let cursor = clamp_cursor(
+                    &text,
+                    graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize,
+                );
+                let next = next_char_end(&text, cursor);
+                if next > cursor {
+                    text.replace_range(cursor..next, "");
+                    write_string_prop(graph, target, keys::UI_TEXT, &text)?;
+                    write_string_prop(graph, target, keys::UI_INPUT_VALUE, &text)?;
+                    graph.prop_set(target, keys::UI_CURSOR, cursor as u64)?;
+                    graph.prop_set(target, keys::UI_CURSOR_POS, cursor as u64)?;
+                }
+            }
+            UiEvent::CursorMove { delta, .. } => {
+                let text = read_string_prop(graph, target, keys::UI_TEXT)?.unwrap_or_default();
+                let cursor = clamp_cursor(
+                    &text,
+                    graph.prop_get(target, keys::UI_CURSOR).unwrap_or(0) as usize,
+                );
+                let mut next = cursor as i64 + delta as i64;
+                next = next.clamp(0, text.len() as i64);
+                graph.prop_set(target, keys::UI_CURSOR, next as u64)?;
+                graph.prop_set(target, keys::UI_CURSOR_POS, next as u64)?;
+            }
+            UiEvent::Submit { .. }
+            | UiEvent::Clicked { .. }
+            | UiEvent::Toggled { .. }
+            | UiEvent::Activate { .. }
+            | UiEvent::PointerMove { .. }
+            | UiEvent::PointerDown { .. }
+            | UiEvent::PointerUp { .. }
+            | UiEvent::Scroll { .. }
+            | UiEvent::KeyDown { .. }
+            | UiEvent::KeyUp { .. }
+            | UiEvent::CursorSet { .. }
+            | UiEvent::Select { .. }
+            | UiEvent::Resize { .. }
+            | UiEvent::CloseRequested { .. }
+            | UiEvent::Unknown { .. } => {}
         }
     }
     if consumed_any {
@@ -767,7 +809,8 @@ mod tests {
         }
 
         fn prop_set(&mut self, id: ThingId, key: &str, value: u64) -> Result<()> {
-            self.props.insert((id.to_u64_lossy(), String::from(key)), value);
+            self.props
+                .insert((id.to_u64_lossy(), String::from(key)), value);
             Ok(())
         }
 
@@ -963,11 +1006,8 @@ mod tests {
         append_at += n;
         assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
 
-        let insert = abi::ui_event::UiEvent::text_input(
-            window.to_u64_lossy(),
-            input.to_u64_lossy(),
-            b"hi",
-        );
+        let insert =
+            abi::ui_event::UiEvent::text_input(window.to_u64_lossy(), input.to_u64_lossy(), b"hi");
         let n = abi::ui_event::encode(&insert, &mut buf).unwrap();
         graph
             .bytespace_write(ThingId::from_u64(log), append_at, &buf[..n])
@@ -975,10 +1015,8 @@ mod tests {
         append_at += n;
         assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
 
-        let backspace = abi::ui_event::UiEvent::text_backspace(
-            window.to_u64_lossy(),
-            input.to_u64_lossy(),
-        );
+        let backspace =
+            abi::ui_event::UiEvent::text_backspace(window.to_u64_lossy(), input.to_u64_lossy());
         let n = abi::ui_event::encode(&backspace, &mut buf).unwrap();
         graph
             .bytespace_write(ThingId::from_u64(log), append_at, &buf[..n])
@@ -1008,13 +1046,12 @@ mod tests {
 
         let log = graph.prop_get(window, keys::UI_EVENT_LOG).unwrap();
         let mut buf = [0u8; 128];
-        let event = abi::ui_event::UiEvent::text_input(
-            window.to_u64_lossy(),
-            input.to_u64_lossy(),
-            b"x",
-        );
+        let event =
+            abi::ui_event::UiEvent::text_input(window.to_u64_lossy(), input.to_u64_lossy(), b"x");
         let n = abi::ui_event::encode(&event, &mut buf).unwrap();
-        graph.bytespace_write(ThingId::from_u64(log), 0, &buf[..n]).unwrap();
+        graph
+            .bytespace_write(ThingId::from_u64(log), 0, &buf[..n])
+            .unwrap();
 
         assert!(reduce_window_events_with_graph(&mut graph, window).unwrap());
         assert!(!reduce_window_events_with_graph(&mut graph, window).unwrap());

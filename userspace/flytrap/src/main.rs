@@ -654,13 +654,13 @@ fn ingest_content_source(source_id: ThingId, index: &mut AssetIndex) {
         };
 
     // Get tree provider port handle
-    let port_handle = match prop_get(source_id, "tree_provider_port") {
+    let port_handle = match prop_get(source_id, keys::WRITE_PORT_HANDLE) {
         Ok(handle) => handle as PortHandle,
         Err(_) => {
             // Some content sources (like Limine modules) don't use tree providers
             // They expose files directly via other mechanisms (e.g., BOOT_MODULE nodes)
             info!(
-                "FLYTRAP: CONTENT_SOURCE (kind={}) has no tree_provider_port, skipping tree scan",
+                "FLYTRAP: CONTENT_SOURCE (kind={}) has no WRITE_PORT_HANDLE, skipping tree scan",
                 source_kind
             );
             return;

@@ -1,5 +1,5 @@
-use kernel::CpuId;
 use core::sync::atomic::Ordering;
+use kernel::CpuId;
 
 #[cfg(target_arch = "aarch64")]
 pub mod aarch64;
@@ -116,9 +116,15 @@ fn init_x86_64_ioapic() {
         for i in 0..madt_info.cpu_count {
             ids[i] = CpuId(madt_info.local_apic_ids[i]);
         }
-        unsafe { x86_64::CPU_IDS = ids; }
+        unsafe {
+            x86_64::CPU_IDS = ids;
+        }
         x86_64::CPU_COUNT.store(madt_info.cpu_count as u64, Ordering::SeqCst);
-        kinfo!("SMP: Found {} CPUs (CPU_COUNT now = {})", madt_info.cpu_count, x86_64::CPU_COUNT.load(Ordering::SeqCst));
+        kinfo!(
+            "SMP: Found {} CPUs (CPU_COUNT now = {})",
+            madt_info.cpu_count,
+            x86_64::CPU_COUNT.load(Ordering::SeqCst)
+        );
     }
 
     if madt_info.ioapic_count == 0 {

@@ -56,7 +56,11 @@ fn indicate_progress() {
             let bpp_bytes = (bpp as u64 + 7) / 8;
             let stride = if pitch > 0 {
                 let min_stride = width.saturating_mul(4);
-                if pitch < min_stride { min_stride } else { pitch }
+                if pitch < min_stride {
+                    min_stride
+                } else {
+                    pitch
+                }
             } else {
                 width.saturating_mul(4)
             };
@@ -71,7 +75,7 @@ fn indicate_progress() {
                 stride
             );
             let _display = Framebuffer::new(&framebuffer);
-            
+
             // Register disable callback (no-op now but keep for compatibility)
             kernel::syscall::handlers::register_console_disable(theme::disable);
         }
@@ -81,17 +85,17 @@ fn indicate_progress() {
 #[alloc_error_handler]
 fn alloc_error_handler(layout: core::alloc::Layout) -> ! {
     unsafe { kernel::logging::force_unlock() };
-    
+
     // Get current task info for debugging
     let tid = unsafe { kernel::task::scheduler::current_tid_current() };
-    
+
     kernel::kerror!(
         "OOM: allocation of {} bytes (align={}) failed in task {}",
         layout.size(),
         layout.align(),
         tid
     );
-    
+
     // Log allocator stats if available (use try_lock to avoid deadlock)
     if let Some(heap) = kernel::memory::kheap::kernel_heap().try_lock() {
         let stats = heap.stats();
@@ -104,7 +108,7 @@ fn alloc_error_handler(layout: core::alloc::Layout) -> ! {
     } else {
         kernel::kerror!("OOM: heap lock held, cannot get stats");
     }
-    
+
     hcf()
 }
 

@@ -31,7 +31,7 @@ impl ApiErrorCode {
             Self::InternalError => "INTERNAL_ERROR",
         }
     }
-    
+
     pub fn http_status(&self) -> &'static str {
         match self {
             Self::BadRequest => "400 Bad Request",
@@ -59,35 +59,35 @@ impl ApiError {
             message: message.into(),
         }
     }
-    
+
     pub fn bad_request(msg: impl Into<String>) -> Self {
         Self::new(ApiErrorCode::BadRequest, msg)
     }
-    
+
     pub fn not_found(msg: impl Into<String>) -> Self {
         Self::new(ApiErrorCode::NotFound, msg)
     }
-    
+
     pub fn method_not_allowed(msg: impl Into<String>) -> Self {
         Self::new(ApiErrorCode::MethodNotAllowed, msg)
     }
-    
+
     pub fn conflict(msg: impl Into<String>) -> Self {
         Self::new(ApiErrorCode::Conflict, msg)
     }
-    
+
     pub fn payload_too_large(msg: impl Into<String>) -> Self {
         Self::new(ApiErrorCode::PayloadTooLarge, msg)
     }
-    
+
     pub fn unprocessable(msg: impl Into<String>) -> Self {
         Self::new(ApiErrorCode::UnprocessableEntity, msg)
     }
-    
+
     pub fn internal(msg: impl Into<String>) -> Self {
         Self::new(ApiErrorCode::InternalError, msg)
     }
-    
+
     /// Convert to JSON error response body
     pub fn to_json(&self) -> String {
         // Escape message for JSON
@@ -98,7 +98,7 @@ impl ApiError {
             escaped_msg
         )
     }
-    
+
     /// Get HTTP status line
     pub fn http_status(&self) -> &'static str {
         self.code.http_status()

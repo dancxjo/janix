@@ -146,7 +146,13 @@ fn has_prog_if(prog_if: u8, rule_prog_if: Option<u8>) -> bool {
     }
 }
 
-fn find_rule(vendor_id: u16, device_id: u16, class_code: u8, subclass: u8, prog_if: u8) -> Option<PciRule> {
+fn find_rule(
+    vendor_id: u16,
+    device_id: u16,
+    class_code: u8,
+    subclass: u8,
+    prog_if: u8,
+) -> Option<PciRule> {
     for rule in RULES {
         if vendor_id != rule.vendor_id {
             continue;
@@ -168,7 +174,11 @@ fn find_rule(vendor_id: u16, device_id: u16, class_code: u8, subclass: u8, prog_
     None
 }
 
-fn already_claimed(id: ThingId, tracked: &[ClaimedDevice; MAX_TRACKED], tracked_len: usize) -> bool {
+fn already_claimed(
+    id: ThingId,
+    tracked: &[ClaimedDevice; MAX_TRACKED],
+    tracked_len: usize,
+) -> bool {
     tracked[..tracked_len].iter().any(|entry| entry.id == id)
 }
 
@@ -197,7 +207,11 @@ fn publish_binding(id: ThingId, rule: PciRule, claim: usize) {
     let _ = thingsys::link(id, "MANAGED_BY", drv_id);
 }
 
-fn scan_once(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut usize, funcs: &mut [ThingId; MAX_FUNCTIONS]) {
+fn scan_once(
+    tracked: &mut [ClaimedDevice; MAX_TRACKED],
+    tracked_len: &mut usize,
+    funcs: &mut [ThingId; MAX_FUNCTIONS],
+) {
     let count = thingsys::find(kinds::DEV_PCI_FUNCTION, funcs).unwrap_or(0);
     for &id in funcs.iter().take(count) {
         if already_claimed(id, tracked, *tracked_len) {
@@ -238,13 +252,7 @@ fn scan_once(tracked: &mut [ClaimedDevice; MAX_TRACKED], tracked_len: &mut usize
             Err(e) => {
                 warn!(
                     "pci_stubd: failed bind {} {:04x}:{:04x} at {:02x}:{:02x}.{}: {:?}",
-                    rule.name,
-                    vendor_id,
-                    device_id,
-                    bus as u8,
-                    dev as u8,
-                    func as u8,
-                    e
+                    rule.name, vendor_id, device_id, bus as u8, dev as u8, func as u8, e
                 );
             }
         }

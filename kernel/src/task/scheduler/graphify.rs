@@ -6,11 +6,11 @@
 //! Uses a deferred work queue to avoid deadlock: public functions queue work,
 //! and `do_*` functions perform the actual graph operations.
 
+use super::graph_queue::{self, GraphWork};
 use crate::root::{RootOp, SymbolShell, enqueue};
 use crate::task::TaskId;
 use abi::schema::{keys, kinds, rels};
 use core::sync::atomic::Ordering;
-use super::graph_queue::{self, GraphWork};
 
 // ============================================================================
 // Public API - these queue work items (safe to call with scheduler lock held)
@@ -76,10 +76,10 @@ pub fn set_affinity_node(tid: TaskId, cpu_index: usize) {
 use core::sync::atomic::AtomicU64;
 
 static INTERN_RUNNABLE: AtomicU64 = AtomicU64::new(0);
-static INTERN_BLOCKED:  AtomicU64 = AtomicU64::new(0);
+static INTERN_BLOCKED: AtomicU64 = AtomicU64::new(0);
 static INTERN_SLEEPING: AtomicU64 = AtomicU64::new(0);
-static INTERN_DEAD:     AtomicU64 = AtomicU64::new(0);
-static INTERN_RUNNING:  AtomicU64 = AtomicU64::new(0);
+static INTERN_DEAD: AtomicU64 = AtomicU64::new(0);
+static INTERN_RUNNING: AtomicU64 = AtomicU64::new(0);
 
 /// Intern a string via the Root service (blocking).
 fn intern(s: &str) -> u64 {
@@ -103,11 +103,11 @@ fn intern(s: &str) -> u64 {
 fn intern_cached(s: &'static str) -> u64 {
     let slot = match s {
         "runnable" => &INTERN_RUNNABLE,
-        "blocked"  => &INTERN_BLOCKED,
+        "blocked" => &INTERN_BLOCKED,
         "sleeping" => &INTERN_SLEEPING,
-        "dead"     => &INTERN_DEAD,
-        "running"  => &INTERN_RUNNING,
-        _          => return intern(s),
+        "dead" => &INTERN_DEAD,
+        "running" => &INTERN_RUNNING,
+        _ => return intern(s),
     };
     let cached = slot.load(Ordering::Relaxed);
     if cached != 0 {
@@ -322,23 +322,39 @@ pub fn do_create_thread_node(
     sched_thing: u64,
 ) -> Option<u64> {
     let mut bb = BatchBuilder::new();
-    
+
     // Create the proc.Thread node at local index 0
     bb.create_node(schema_sym!(kinds::PROC_THREAD, SYM_KIND_THREAD), 0);
-    
+
     // Set properties on local 0
     bb.set_prop_local(0, schema_sym!(keys::PROC_TID, SYM_PROC_TID), tid as u64);
-    bb.set_prop_local(0, schema_sym!(keys::PROC_PRIORITY, SYM_PROC_PRIORITY), priority as u64);
-    bb.set_prop_local(0, schema_sym!(keys::PROC_IS_USER, SYM_PROC_IS_USER), if is_user { 1 } else { 0 });
-    bb.set_prop_local(0, schema_sym!(keys::PROC_STATE, SYM_PROC_STATE), intern_cached("runnable"));
-    
+    bb.set_prop_local(
+        0,
+        schema_sym!(keys::PROC_PRIORITY, SYM_PROC_PRIORITY),
+        priority as u64,
+    );
+    bb.set_prop_local(
+        0,
+        schema_sym!(keys::PROC_IS_USER, SYM_PROC_IS_USER),
+        if is_user { 1 } else { 0 },
+    );
+    bb.set_prop_local(
+        0,
+        schema_sym!(keys::PROC_STATE, SYM_PROC_STATE),
+        intern_cached("runnable"),
+    );
+
     if let Some(n) = name {
         bb.set_prop_local(0, schema_sym!(keys::PROC_NAME, SYM_PROC_NAME), intern(n));
     }
-    
+
     // Link to scheduler service
-    bb.link_abs_to_local(sched_thing, schema_sym!(rels::SCHED_HAS_TASK, SYM_REL_HAS_TASK), 0);
-    
+    bb.link_abs_to_local(
+        sched_thing,
+        schema_sym!(rels::SCHED_HAS_TASK, SYM_REL_HAS_TASK),
+        0,
+    );
+
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
     loop {
         let done = reply.done.load(Ordering::Acquire);
@@ -350,23 +366,25 @@ pub fn do_create_thread_node(
             // returns (result.status, result.seq).
             // The created IDs are NOT returned to the caller via RootMsg.reply.value.
             // This is a problem.
-            
+
             // Actually, we can look up the ID by querying the graph afterward, or
             // we can modify RootOp::ApplyBatch to return the first created ID if any?
             // No, the ABI says we can't easily change it without breaking others.
-            
+
             // Wait, handle_create_node returns the ID!
             // But Batch doesn't.
-            
+
             // Let's stick to do_create_thread_node using handle_create_node for now if we need the ID,
             // OR we can use handle_find to get it.
             break;
         }
-        unsafe { crate::task::scheduler::yield_now_current(); }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
         core::hint::spin_loop();
     }
-    
-    // Since we need the ID for the caller to store in task_graph, 
+
+    // Since we need the ID for the caller to store in task_graph,
     // maybe it's better to NOT batch CreateThread if it's infrequent?
     // Creation only happens once per task. State updates happen millions of times.
     // Let's revert CreateThread to use separate calls for now to keep it working,
@@ -383,18 +401,38 @@ pub fn do_create_thread_node_optimized(
     sched_thing: u64,
 ) -> Option<u64> {
     let thing_id = create_node_optimized(kinds::PROC_THREAD, &SYM_KIND_THREAD)?;
-    
+
     set_prop_optimized(thing_id, keys::PROC_TID, &SYM_PROC_TID, tid as u64);
-    set_prop_optimized(thing_id, keys::PROC_PRIORITY, &SYM_PROC_PRIORITY, priority as u64);
-    set_prop_optimized(thing_id, keys::PROC_IS_USER, &SYM_PROC_IS_USER, if is_user { 1 } else { 0 });
-    set_prop_optimized(thing_id, keys::PROC_STATE, &SYM_PROC_STATE, intern_cached("runnable"));
-    
+    set_prop_optimized(
+        thing_id,
+        keys::PROC_PRIORITY,
+        &SYM_PROC_PRIORITY,
+        priority as u64,
+    );
+    set_prop_optimized(
+        thing_id,
+        keys::PROC_IS_USER,
+        &SYM_PROC_IS_USER,
+        if is_user { 1 } else { 0 },
+    );
+    set_prop_optimized(
+        thing_id,
+        keys::PROC_STATE,
+        &SYM_PROC_STATE,
+        intern_cached("runnable"),
+    );
+
     if let Some(n) = name {
         set_prop_optimized(thing_id, keys::PROC_NAME, &SYM_PROC_NAME, intern(n));
     }
-    
-    link_optimized(sched_thing, rels::SCHED_HAS_TASK, &SYM_REL_HAS_TASK, thing_id);
-    
+
+    link_optimized(
+        sched_thing,
+        rels::SCHED_HAS_TASK,
+        &SYM_REL_HAS_TASK,
+        thing_id,
+    );
+
     Some(thing_id)
 }
 
@@ -409,7 +447,9 @@ fn create_node_optimized(kind_str: &'static str, slot: &AtomicU64) -> Option<u64
             let id = reply.value.load(Ordering::Relaxed);
             return if id != 0 { Some(id) } else { None };
         }
-        unsafe { crate::task::scheduler::yield_now_current(); }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
         core::hint::spin_loop();
     }
 }
@@ -423,8 +463,12 @@ fn set_prop_optimized(id: u64, key_str: &'static str, slot: &AtomicU64, value: u
     });
     loop {
         let done = reply.done.load(Ordering::Acquire);
-        if done != 0 { break; }
-        unsafe { crate::task::scheduler::yield_now_current(); }
+        if done != 0 {
+            break;
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
         core::hint::spin_loop();
     }
 }
@@ -438,40 +482,70 @@ fn link_optimized(src: u64, rel_str: &'static str, slot: &AtomicU64, dst: u64) {
     });
     loop {
         let done = reply.done.load(Ordering::Acquire);
-        if done != 0 { break; }
-        unsafe { crate::task::scheduler::yield_now_current(); }
+        if done != 0 {
+            break;
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
         core::hint::spin_loop();
     }
 }
 
 pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
-    if items.is_empty() { return; }
-    
+    if items.is_empty() {
+        return;
+    }
+
     let mut bb = BatchBuilder::new();
-    
+
     for (thing_id, work) in items {
         let tid_node = *thing_id;
         match work {
             GraphWork::UpdateState { state, .. } => {
-                bb.set_prop(tid_node, schema_sym!(keys::PROC_STATE, SYM_PROC_STATE), intern_cached(state));
+                bb.set_prop(
+                    tid_node,
+                    schema_sym!(keys::PROC_STATE, SYM_PROC_STATE),
+                    intern_cached(state),
+                );
             }
             GraphWork::SetExitCode { code, .. } => {
-                bb.set_prop(tid_node, schema_sym!(keys::PROC_EXIT_CODE, SYM_PROC_EXIT_CODE), *code as u64);
+                bb.set_prop(
+                    tid_node,
+                    schema_sym!(keys::PROC_EXIT_CODE, SYM_PROC_EXIT_CODE),
+                    *code as u64,
+                );
             }
             GraphWork::SetPriority { priority, .. } => {
-                bb.set_prop(tid_node, schema_sym!(keys::PROC_PRIORITY, SYM_PROC_PRIORITY), *priority as u64);
+                bb.set_prop(
+                    tid_node,
+                    schema_sym!(keys::PROC_PRIORITY, SYM_PROC_PRIORITY),
+                    *priority as u64,
+                );
             }
             GraphWork::SetName { name, .. } => {
-                bb.set_prop(tid_node, schema_sym!(keys::PROC_NAME, SYM_PROC_NAME), intern(name));
+                bb.set_prop(
+                    tid_node,
+                    schema_sym!(keys::PROC_NAME, SYM_PROC_NAME),
+                    intern(name),
+                );
             }
             GraphWork::SetLocation { cpu_index, .. } => {
                 if let Some(cpu_thing) = crate::root::graph_anchors::cpu_thing(*cpu_index) {
-                    bb.put_edge(tid_node, schema_sym!(rels::RUNS_ON, SYM_REL_RUNS_ON), cpu_thing);
+                    bb.put_edge(
+                        tid_node,
+                        schema_sym!(rels::RUNS_ON, SYM_REL_RUNS_ON),
+                        cpu_thing,
+                    );
                 }
             }
             GraphWork::SetAffinity { cpu_index, .. } => {
                 if let Some(cpu_thing) = crate::root::graph_anchors::cpu_thing(*cpu_index) {
-                    bb.put_edge(tid_node, schema_sym!(rels::PINNED_TO, SYM_REL_PINNED_TO), cpu_thing);
+                    bb.put_edge(
+                        tid_node,
+                        schema_sym!(rels::PINNED_TO, SYM_REL_PINNED_TO),
+                        cpu_thing,
+                    );
                 }
             }
             GraphWork::CreateThread { .. } => {
@@ -480,33 +554,49 @@ pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
             }
         }
     }
-    
-    if bb.op_count == 0 { return; }
-    
+
+    if bb.op_count == 0 {
+        return;
+    }
+
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
     loop {
         let done = reply.done.load(Ordering::Acquire);
-        if done != 0 { break; }
-        unsafe { crate::task::scheduler::yield_now_current(); }
+        if done != 0 {
+            break;
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
         core::hint::spin_loop();
     }
 }
 
 pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
     let mut bb = BatchBuilder::new();
-    bb.put_edge(thing_id, schema_sym!(rels::TASK_CHILD_OF, SYM_REL_CHILD_OF), parent_thing);
-    bb.put_edge(parent_thing, schema_sym!(rels::TASK_SPAWNED, SYM_REL_SPAWNED), thing_id);
-    
+    bb.put_edge(
+        thing_id,
+        schema_sym!(rels::TASK_CHILD_OF, SYM_REL_CHILD_OF),
+        parent_thing,
+    );
+    bb.put_edge(
+        parent_thing,
+        schema_sym!(rels::TASK_SPAWNED, SYM_REL_SPAWNED),
+        thing_id,
+    );
+
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
     loop {
         let done = reply.done.load(Ordering::Acquire);
-        if done != 0 { break; }
-        unsafe { crate::task::scheduler::yield_now_current(); }
+        if done != 0 {
+            break;
+        }
+        unsafe {
+            crate::task::scheduler::yield_now_current();
+        }
         core::hint::spin_loop();
     }
 }
-
-
 
 /// Link a task to a bytespace it uses.
 #[allow(dead_code)]

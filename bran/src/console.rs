@@ -3,8 +3,8 @@
 //! Wraps `bulb::display::BootUpDisplay` to provide a character-oriented interface.
 
 use crate::framebuffer::Framebuffer;
-use spin::Mutex;
 use core::sync::atomic::{AtomicBool, Ordering};
+use spin::Mutex;
 
 /// Global console instance
 pub static CONSOLE: Mutex<Option<FbConsole>> = Mutex::new(None);
@@ -35,14 +35,15 @@ impl FbConsole {
                 self.display.render_log_line(s);
             }
             self.line_len = 0;
-        } else if c >= 0x20 || c == b'\t' { // Skip control chars except tab (treated as space?)
-             // Simple tab handling: just add a space or multiple?
-             // Bud parser expects structured logs mostly.
-             // Just treat as char.
-             if self.line_len < self.line_buf.len() {
-                 self.line_buf[self.line_len] = c;
-                 self.line_len += 1;
-             }
+        } else if c >= 0x20 || c == b'\t' {
+            // Skip control chars except tab (treated as space?)
+            // Simple tab handling: just add a space or multiple?
+            // Bud parser expects structured logs mostly.
+            // Just treat as char.
+            if self.line_len < self.line_buf.len() {
+                self.line_buf[self.line_len] = c;
+                self.line_len += 1;
+            }
         }
     }
 }

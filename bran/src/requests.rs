@@ -45,7 +45,13 @@ pub fn get_modules() -> &'static [BootModuleDesc] {
                     // Name
                     let name = file.path().to_str().unwrap_or("unknown");
                     let cmdline = core::str::from_utf8(file.cmdline()).unwrap_or("");
-                    kernel::kinfo!("  [{}] {} (cmdline='{}') size={}", i, name, cmdline, file.size());
+                    kernel::kinfo!(
+                        "  [{}] {} (cmdline='{}') size={}",
+                        i,
+                        name,
+                        cmdline,
+                        file.size()
+                    );
 
                     // Data
                     let ptr = file.addr();

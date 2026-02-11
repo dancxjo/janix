@@ -3,8 +3,8 @@
 //! Transforms use f64 internally to avoid precision loss during
 //! composition, then convert to f32 for final application.
 
-use serde::{Deserialize, Serialize};
 use super::VirPoint;
+use serde::{Deserialize, Serialize};
 
 /// 2D affine transform with high precision
 ///
@@ -16,12 +16,12 @@ use super::VirPoint;
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct VirTransform {
-    pub a: f64,  // scale_x / cos(rotation)
-    pub b: f64,  // sin(rotation)
-    pub c: f64,  // -sin(rotation)
-    pub d: f64,  // scale_y / cos(rotation)
-    pub e: f64,  // translate_x
-    pub f: f64,  // translate_y
+    pub a: f64, // scale_x / cos(rotation)
+    pub b: f64, // sin(rotation)
+    pub c: f64, // -sin(rotation)
+    pub d: f64, // scale_y / cos(rotation)
+    pub e: f64, // translate_x
+    pub f: f64, // translate_y
 }
 
 impl VirTransform {
@@ -112,7 +112,11 @@ impl VirTransform {
     pub fn max_scale(&self) -> f64 {
         let sx = libm::sqrt(self.a * self.a + self.b * self.b);
         let sy = libm::sqrt(self.c * self.c + self.d * self.d);
-        if sx > sy { sx } else { sy }
+        if sx > sy {
+            sx
+        } else {
+            sy
+        }
     }
 
     /// Check if this is the identity transform

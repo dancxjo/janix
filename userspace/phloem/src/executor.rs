@@ -1,12 +1,12 @@
+use crate::gql::{Command, NodePattern, Pattern, ReturnExpression, Value};
+use crate::{ExecutionResult, ResultValue};
 use alloc::collections::{BTreeMap, BTreeSet, VecDeque};
+use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use alloc::format;
-use crate::gql::{Command, Pattern, Value, NodePattern, ReturnExpression};
-use stem::thing::sys as graph;
 use stem::abi::ids::HandleId;
+use stem::thing::sys as graph;
 use stem::thing::ThingId;
-use crate::{ExecutionResult, ResultValue};
 
 pub trait Graph {
     fn get_kind(&self, id: ThingId) -> Result<stem::thing::ThingKind, stem::errors::Errno>;
@@ -15,9 +15,21 @@ pub trait Graph {
     fn prop_set(&self, id: ThingId, key: &str, value: u64) -> Result<(), stem::errors::Errno>;
     fn create_node(&self, kind: &str) -> Result<ThingId, stem::errors::Errno>;
     fn link(&self, src: ThingId, rel: &str, dst: ThingId) -> Result<(), stem::errors::Errno>;
-    fn get_edges(&self, id: ThingId, out: &mut [stem::abi::types::Edge]) -> Result<usize, stem::errors::Errno>;
-    fn describe_symbol(&self, id: stem::abi::symbols::SymbolId, out: &mut [u8]) -> Result<usize, stem::errors::Errno>;
-    fn prop_get(&self, id: ThingId, key: stem::abi::symbols::SymbolId) -> Result<u64, stem::errors::Errno>;
+    fn get_edges(
+        &self,
+        id: ThingId,
+        out: &mut [stem::abi::types::Edge],
+    ) -> Result<usize, stem::errors::Errno>;
+    fn describe_symbol(
+        &self,
+        id: stem::abi::symbols::SymbolId,
+        out: &mut [u8],
+    ) -> Result<usize, stem::errors::Errno>;
+    fn prop_get(
+        &self,
+        id: ThingId,
+        key: stem::abi::symbols::SymbolId,
+    ) -> Result<u64, stem::errors::Errno>;
     fn yield_now(&self);
 }
 
@@ -42,13 +54,25 @@ impl Graph for SystemGraph {
     fn link(&self, src: ThingId, rel: &str, dst: ThingId) -> Result<(), stem::errors::Errno> {
         graph::link(src, rel, dst)
     }
-    fn get_edges(&self, id: ThingId, out: &mut [stem::abi::types::Edge]) -> Result<usize, stem::errors::Errno> {
+    fn get_edges(
+        &self,
+        id: ThingId,
+        out: &mut [stem::abi::types::Edge],
+    ) -> Result<usize, stem::errors::Errno> {
         graph::get_edges(id, out)
     }
-    fn describe_symbol(&self, id: stem::abi::symbols::SymbolId, out: &mut [u8]) -> Result<usize, stem::errors::Errno> {
+    fn describe_symbol(
+        &self,
+        id: stem::abi::symbols::SymbolId,
+        out: &mut [u8],
+    ) -> Result<usize, stem::errors::Errno> {
         graph::describe_symbol(id, out)
     }
-    fn prop_get(&self, id: ThingId, key: stem::abi::symbols::SymbolId) -> Result<u64, stem::errors::Errno> {
+    fn prop_get(
+        &self,
+        id: ThingId,
+        key: stem::abi::symbols::SymbolId,
+    ) -> Result<u64, stem::errors::Errno> {
         graph::prop_get(id, key)
     }
     fn yield_now(&self) {
@@ -90,13 +114,22 @@ impl<G: Graph> GraphExecutor<G> {
             Command::Help => self.help(),
             Command::Quit => ExecutionResult::message("Bye."),
             Command::Schema => ExecutionResult::error("Schema not implemented."),
-            Command::Merge { pattern: _, returns: _, skip: _ } => {
+            Command::Merge {
+                pattern: _,
+                returns: _,
+                skip: _,
+            } => {
                 // TODO: Implement MERGE properly (for now it just MATCHes/CREATEs)
                 ExecutionResult::error("MERGE not fully implemented")
             }
-            Command::Match { pattern, where_clause, returns, order_by, limit, skip } => {
-                self.execute_match(pattern, where_clause, returns, order_by, limit, skip)
-            }
+            Command::Match {
+                pattern,
+                where_clause,
+                returns,
+                order_by,
+                limit,
+                skip,
+            } => self.execute_match(pattern, where_clause, returns, order_by, limit, skip),
             Command::Set { var, key, value } => self.execute_set(var, key, value),
         }
     }
@@ -110,11 +143,15 @@ impl<G: Graph> GraphExecutor<G> {
              MATCH (a)-[:REL]->(b) RETURN a, b\n\
              SET n.key = \"val\"\n\
              HELP\n\
-             QUIT"
+             QUIT",
         )
     }
 
-    fn execute_merge(&mut self, pattern: Pattern, returns: Vec<ReturnExpression>) -> ExecutionResult {
+    fn execute_merge(
+        &mut self,
+        pattern: Pattern,
+        returns: Vec<ReturnExpression>,
+    ) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
                 let id = match self.ensure_node(&node_pat) {
@@ -131,17 +168,34 @@ impl<G: Graph> GraphExecutor<G> {
                     return self.format_results_structured(&returns);
                 }
             }
-            Pattern::Edge { src, rel_var, rel_kind, dst } => {
+            Pattern::Edge {
+                src,
+                rel_var,
+                rel_kind,
+                dst,
+            } => {
                 let src_id = match src.var.as_ref().and_then(|v| self.bindings.get(v)) {
                     Some(&id) => id,
-                    None => return ExecutionResult::error(&format!("variable '{:?}' not bound", src.var)),
+                    None => {
+                        return ExecutionResult::error(&format!(
+                            "variable '{:?}' not bound",
+                            src.var
+                        ))
+                    }
                 };
                 let dst_id = match dst.var.as_ref().and_then(|v| self.bindings.get(v)) {
                     Some(&id) => id,
-                    None => return ExecutionResult::error(&format!("variable '{:?}' not bound", dst.var)),
+                    None => {
+                        return ExecutionResult::error(&format!(
+                            "variable '{:?}' not bound",
+                            dst.var
+                        ))
+                    }
                 };
 
-                let rel_kind_str = rel_kind.as_deref().ok_or_else(|| "MERGE edge requires a relationship type".to_string());
+                let rel_kind_str = rel_kind
+                    .as_deref()
+                    .ok_or_else(|| "MERGE edge requires a relationship type".to_string());
                 let rel = match rel_kind_str {
                     Ok(r) => r,
                     Err(e) => return ExecutionResult::error(&e),
@@ -150,10 +204,13 @@ impl<G: Graph> GraphExecutor<G> {
                 match self.ensure_edge(src_id, rel, dst_id) {
                     Ok(_) => {
                         if returns.is_empty() {
-                            ExecutionResult::success(&format!("ok: merged edge ({})-[:{}]->({})", src_id, rel, dst_id))
+                            ExecutionResult::success(&format!(
+                                "ok: merged edge ({})-[:{}]->({})",
+                                src_id, rel, dst_id
+                            ))
                         } else {
                             if let Some(_rv) = rel_var {
-                                // Bind the relationship if possible? 
+                                // Bind the relationship if possible?
                                 // Actually we don't have a good way to bind "edge IDs" yet as they are just predicates.
                                 // For now we'll just return results.
                             }
@@ -166,7 +223,15 @@ impl<G: Graph> GraphExecutor<G> {
         }
     }
 
-    fn execute_match(&self, pattern: Pattern, where_clause: Option<crate::gql::Expression>, returns: Vec<ReturnExpression>, order_by: Option<crate::gql::OrderBy>, limit: usize, skip: usize) -> ExecutionResult {
+    fn execute_match(
+        &self,
+        pattern: Pattern,
+        where_clause: Option<crate::gql::Expression>,
+        returns: Vec<ReturnExpression>,
+        order_by: Option<crate::gql::OrderBy>,
+        limit: usize,
+        skip: usize,
+    ) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
                 let limit_total = limit + skip;
@@ -176,11 +241,19 @@ impl<G: Graph> GraphExecutor<G> {
                 if let Some(ref expr) = where_clause {
                     if let crate::gql::Expression::Eq(left, right) = expr {
                         let mut target_id = None;
-                        if let (crate::gql::Expression::IdFunc(var), crate::gql::Expression::Value(val)) = (&**left, &**right) {
+                        if let (
+                            crate::gql::Expression::IdFunc(var),
+                            crate::gql::Expression::Value(val),
+                        ) = (&**left, &**right)
+                        {
                             if Some(var) == node_pat.var.as_ref() {
                                 target_id = self.resolve_value_as_u64(val);
                             }
-                        } else if let (crate::gql::Expression::Value(val), crate::gql::Expression::IdFunc(var)) = (&**left, &**right) {
+                        } else if let (
+                            crate::gql::Expression::Value(val),
+                            crate::gql::Expression::IdFunc(var),
+                        ) = (&**left, &**right)
+                        {
                             if Some(var) == node_pat.var.as_ref() {
                                 target_id = self.resolve_value_as_u64(val);
                             }
@@ -191,7 +264,9 @@ impl<G: Graph> GraphExecutor<G> {
                             let matches_kind = match &node_pat.kind {
                                 Some(k) => match self.graph.get_kind(ThingId::from_u64(id)) {
                                     Ok(kind_id) => {
-                                        let kind_name = self.resolve_symbol(kind_id.0 as u32).unwrap_or_default();
+                                        let kind_name = self
+                                            .resolve_symbol(kind_id.0 as u32)
+                                            .unwrap_or_default();
                                         &kind_name == k
                                     }
                                     Err(_) => false,
@@ -202,9 +277,16 @@ impl<G: Graph> GraphExecutor<G> {
                             if matches_kind && self.matches_props(id, &node_pat.props) {
                                 matched_ids.push(id);
                             }
-                            
+
                             // Skip discovery since we had a direct ID lookup
-                            return self.format_match_results(&node_pat, matched_ids, returns, order_by, limit, skip);
+                            return self.format_match_results(
+                                &node_pat,
+                                matched_ids,
+                                returns,
+                                order_by,
+                                limit,
+                                skip,
+                            );
                         }
                     }
                 }
@@ -216,8 +298,8 @@ impl<G: Graph> GraphExecutor<G> {
                             Ok(c) => c,
                             Err(e) => {
                                 stem::info!("phloem: find failed for kind {}: {:?}", _k, e);
-                                return ExecutionResult::error("find syscall failed")
-                            },
+                                return ExecutionResult::error("find syscall failed");
+                            }
                         };
                         stem::info!("phloem: find returned {} candidates", count);
 
@@ -236,26 +318,49 @@ impl<G: Graph> GraphExecutor<G> {
                         }
                     }
                     None => {
-                        matched_ids = self.discover_nodes(&node_pat.props, None, limit_total, where_clause.as_ref(), node_pat.var.as_deref());
+                        matched_ids = self.discover_nodes(
+                            &node_pat.props,
+                            None,
+                            limit_total,
+                            where_clause.as_ref(),
+                            node_pat.var.as_deref(),
+                        );
                     }
                 }
                 stem::info!("phloem: discovered {} nodes", matched_ids.len());
                 self.format_match_results(&node_pat, matched_ids, returns, order_by, limit, skip)
             }
-            Pattern::Edge { src, rel_var, rel_kind, dst } => {
-                stem::info!("phloem: edge match starting. rel_var: {:?}, rel_kind: {:?}", rel_var, rel_kind);
+            Pattern::Edge {
+                src,
+                rel_var,
+                rel_kind,
+                dst,
+            } => {
+                stem::info!(
+                    "phloem: edge match starting. rel_var: {:?}, rel_kind: {:?}",
+                    rel_var,
+                    rel_kind
+                );
                 let limit_total = limit + skip;
 
                 // Check if we have any aggregate functions
-                let has_aggregate = returns.iter().any(|r| matches!(r, ReturnExpression::Count(_)));
+                let has_aggregate = returns
+                    .iter()
+                    .any(|r| matches!(r, ReturnExpression::Count(_)));
 
                 // We'll collect edge match data first
                 // Each entry is (src_id, rel_symbol_id, dst_id)
                 let mut edge_matches: Vec<(u64, u64, u64)> = Vec::new();
 
                 let src_id_opt = if let Some(ref props) = src.props.first() {
-                    if props.0 == "id" { self.resolve_value_as_u64(&props.1) } else { None }
-                } else { None };
+                    if props.0 == "id" {
+                        self.resolve_value_as_u64(&props.1)
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
 
                 let source_nodes = if let Some(id) = src_id_opt {
                     stem::info!("phloem: using fixed src_id: {}", id);
@@ -264,13 +369,22 @@ impl<G: Graph> GraphExecutor<G> {
                     stem::info!("phloem: discovering source nodes for edge...");
                     self.discover_nodes(&src.props, src.kind.as_deref(), 1000, None, None)
                 };
-                stem::info!("phloem: found {} potential source nodes", source_nodes.len());
-                stem::info!("phloem: edge match starting. source_nodes count: {}. limit_total: {}", source_nodes.len(), limit_total);
+                stem::info!(
+                    "phloem: found {} potential source nodes",
+                    source_nodes.len()
+                );
+                stem::info!(
+                    "phloem: edge match starting. source_nodes count: {}. limit_total: {}",
+                    source_nodes.len(),
+                    limit_total
+                );
 
                 for src_id in source_nodes {
                     self.graph.yield_now();
                     // For count, we may need all matches; for rows, respect limit
-                    if !has_aggregate && edge_matches.len() >= limit_total { break; }
+                    if !has_aggregate && edge_matches.len() >= limit_total {
+                        break;
+                    }
 
                     let edges = match self.get_outbound_edges(src_id) {
                         Ok(e) => e,
@@ -279,25 +393,36 @@ impl<G: Graph> GraphExecutor<G> {
 
                     for (rel_symbol_id, dst_id) in edges {
                         self.graph.yield_now();
-                        if !has_aggregate && edge_matches.len() >= limit_total { break; }
-                        
+                        if !has_aggregate && edge_matches.len() >= limit_total {
+                            break;
+                        }
+
                         stem::trace!("phloem: checking edge {} -> {}", src_id, dst_id);
 
                         // Check rel_kind if present
                         if let Some(ref kind) = rel_kind {
-                            let rel_name = self.resolve_symbol(rel_symbol_id as u32).unwrap_or_default();
-                            if &rel_name != kind { continue; }
+                            let rel_name = self
+                                .resolve_symbol(rel_symbol_id as u32)
+                                .unwrap_or_default();
+                            if &rel_name != kind {
+                                continue;
+                            }
                         }
 
                         // Check dst node pattern
-                        if !self.matches_props(dst_id, &dst.props) { continue; }
+                        if !self.matches_props(dst_id, &dst.props) {
+                            continue;
+                        }
                         if let Some(ref kind) = dst.kind {
                             let d_kind_id = match self.graph.get_kind(ThingId::from_u64(dst_id)) {
                                 Ok(k) => k.0,
                                 Err(_) => continue,
                             };
-                            let d_kind_name = self.resolve_symbol(d_kind_id as u32).unwrap_or_default();
-                            if &d_kind_name != kind { continue; }
+                            let d_kind_name =
+                                self.resolve_symbol(d_kind_id as u32).unwrap_or_default();
+                            if &d_kind_name != kind {
+                                continue;
+                            }
                         }
 
                         // Match!
@@ -312,10 +437,10 @@ impl<G: Graph> GraphExecutor<G> {
                         match expr {
                             ReturnExpression::Count(var) => {
                                 // count(*), count(a), count(b), or count(e) should all count edge matches
-                                if var == "*" 
-                                    || Some(var) == src.var.as_ref() 
+                                if var == "*"
+                                    || Some(var) == src.var.as_ref()
                                     || Some(var) == dst.var.as_ref()
-                                    || Some(var) == rel_var.as_ref() 
+                                    || Some(var) == rel_var.as_ref()
                                 {
                                     row.push(ResultValue::Number(edge_matches.len() as u64));
                                 } else {
@@ -330,10 +455,15 @@ impl<G: Graph> GraphExecutor<G> {
                                     } else if Some(var) == dst.var.as_ref() {
                                         row.push(ResultValue::Node(d));
                                     } else if Some(var) == rel_var.as_ref() {
-                                        let rel_name = self.resolve_symbol(r as u32).unwrap_or_else(|| format!("{}", r));
+                                        let rel_name = self
+                                            .resolve_symbol(r as u32)
+                                            .unwrap_or_else(|| format!("{}", r));
                                         row.push(ResultValue::String(rel_name));
                                     } else {
-                                        row.push(ResultValue::String(format!("unsupported: {}", var)));
+                                        row.push(ResultValue::String(format!(
+                                            "unsupported: {}",
+                                            var
+                                        )));
                                     }
                                 } else {
                                     row.push(ResultValue::Number(0));
@@ -359,17 +489,23 @@ impl<G: Graph> GraphExecutor<G> {
                                         } else if Some(var) == dst.var.as_ref() {
                                             row.push(ResultValue::Node(d));
                                         } else if Some(var) == rel_var.as_ref() {
-                                            let rel_name = self.resolve_symbol(r as u32).unwrap_or_else(|| format!("{}", r));
+                                            let rel_name = self
+                                                .resolve_symbol(r as u32)
+                                                .unwrap_or_else(|| format!("{}", r));
                                             row.push(ResultValue::String(rel_name));
                                         } else {
-                                            row.push(ResultValue::String(format!("unsupported: {}", var)));
+                                            row.push(ResultValue::String(format!(
+                                                "unsupported: {}",
+                                                var
+                                            )));
                                         }
                                     }
                                     ReturnExpression::Count(_) => unreachable!(),
                                 }
                             }
                             row
-                        }).collect();
+                        })
+                        .collect();
 
                     let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
                     ExecutionResult::rows(cols, rows)
@@ -378,7 +514,14 @@ impl<G: Graph> GraphExecutor<G> {
         }
     }
 
-    fn discover_nodes(&self, props: &[(String, Value)], kind: Option<&str>, limit_total: usize, where_clause: Option<&crate::gql::Expression>, var_name: Option<&str>) -> Vec<u64> {
+    fn discover_nodes(
+        &self,
+        props: &[(String, Value)],
+        kind: Option<&str>,
+        limit_total: usize,
+        where_clause: Option<&crate::gql::Expression>,
+        var_name: Option<&str>,
+    ) -> Vec<u64> {
         stem::info!("phloem: entering discover_nodes");
         let mut matched_ids = Vec::new();
 
@@ -426,13 +569,42 @@ impl<G: Graph> GraphExecutor<G> {
 
             // Exhaustive kinds to seed from
             let fallback_kinds = [
-                "fs.File", "content.Source", "Asset", "ui.Window", "proc.Process", "dev.bus.Pci",
-                "dev.pci.Function", "dev.net.Nic", "dev.storage.Disk", "dev.display.Gpu",
-                "dev.Cpu", "ui.Crown", "font.Family", "font.Face", "boot.Module",
-                "svc.net.Stack", "svc.net.Driver", "Bytespace", "mem.Range", "proc.Thread",
-                "proc.Task", "proc.Kernel", "svc.Root", "svc.Scheduler", "dev.Host",
-                "mem.Page", "mem.Stack", "mem.Heap", "ui.Panel", "ui.Text", "font.Family",
-                "font.Face", "font.File", "xml.Document", "html.Document", "css.Stylesheet"
+                "fs.File",
+                "content.Source",
+                "Asset",
+                "ui.Window",
+                "proc.Process",
+                "dev.bus.Pci",
+                "dev.pci.Function",
+                "dev.net.Nic",
+                "dev.storage.Disk",
+                "dev.display.Gpu",
+                "dev.Cpu",
+                "ui.Crown",
+                "font.Family",
+                "font.Face",
+                "boot.Module",
+                "svc.net.Stack",
+                "svc.net.Driver",
+                "Bytespace",
+                "mem.Range",
+                "proc.Thread",
+                "proc.Task",
+                "proc.Kernel",
+                "svc.Root",
+                "svc.Scheduler",
+                "dev.Host",
+                "mem.Page",
+                "mem.Stack",
+                "mem.Heap",
+                "ui.Panel",
+                "ui.Text",
+                "font.Family",
+                "font.Face",
+                "font.File",
+                "xml.Document",
+                "html.Document",
+                "css.Stylesheet",
             ];
             for &k in &fallback_kinds {
                 self.graph.yield_now();
@@ -499,19 +671,25 @@ impl<G: Graph> GraphExecutor<G> {
                 Err(_) => return ExecutionResult::error("intern value failed"),
             },
             Value::Number(n) => n,
-            Value::Parameter(name) => {
-                match self.parameters.get(&name) {
-                    Some(Value::Number(n)) => *n,
-                    Some(Value::String(s)) => match self.graph.intern(s) {
-                        Ok(id) => id as u64,
-                        Err(_) => return ExecutionResult::error("intern parameter value failed"),
-                    },
-                    _ => return ExecutionResult::error(&format!("parameter '{}' not found or invalid type", name)),
+            Value::Parameter(name) => match self.parameters.get(&name) {
+                Some(Value::Number(n)) => *n,
+                Some(Value::String(s)) => match self.graph.intern(s) {
+                    Ok(id) => id as u64,
+                    Err(_) => return ExecutionResult::error("intern parameter value failed"),
+                },
+                _ => {
+                    return ExecutionResult::error(&format!(
+                        "parameter '{}' not found or invalid type",
+                        name
+                    ))
                 }
-            }
+            },
         };
 
-        match self.graph.prop_set(ThingId::from_u64(id), key.as_str(), val_u64) {
+        match self
+            .graph
+            .prop_set(ThingId::from_u64(id), key.as_str(), val_u64)
+        {
             Ok(_) => ExecutionResult::success("ok: property set"),
             Err(e) => ExecutionResult::error(&format!("prop_set failed {:?}", e)),
         }
@@ -522,7 +700,10 @@ impl<G: Graph> GraphExecutor<G> {
 
         // 1. Try to find
         let mut candidates = [ThingId::from_u64(0); 128];
-        let count = self.graph.find(kind.as_str(), &mut candidates).map_err(|_| "find failed")?;
+        let count = self
+            .graph
+            .find(kind.as_str(), &mut candidates)
+            .map_err(|_| "find failed")?;
 
         for i in 0..count {
             let id = candidates[i].to_u64_lossy();
@@ -532,7 +713,10 @@ impl<G: Graph> GraphExecutor<G> {
         }
 
         // 2. Create
-        let id_new = self.graph.create_node(kind.as_str()).map_err(|_| "create_node failed")?;
+        let id_new = self
+            .graph
+            .create_node(kind.as_str())
+            .map_err(|_| "create_node failed")?;
         let id = id_new.to_u64_lossy();
 
         // Set props
@@ -540,15 +724,17 @@ impl<G: Graph> GraphExecutor<G> {
             let val_u64 = match v {
                 Value::String(s) => self.graph.intern(s).map_err(|_| "intern val failed")? as u64,
                 Value::Number(n) => *n,
-                Value::Parameter(p) => {
-                    match self.parameters.get(p) {
-                        Some(Value::Number(n)) => *n,
-                        Some(Value::String(s)) => self.graph.intern(s).map_err(|_| "intern val failed")? as u64,
-                        _ => return Err(format!("parameter '{}' not found", p)),
+                Value::Parameter(p) => match self.parameters.get(p) {
+                    Some(Value::Number(n)) => *n,
+                    Some(Value::String(s)) => {
+                        self.graph.intern(s).map_err(|_| "intern val failed")? as u64
                     }
-                }
+                    _ => return Err(format!("parameter '{}' not found", p)),
+                },
             };
-            self.graph.prop_set(id_new, k.as_str(), val_u64).map_err(|_| "prop_set failed")?;
+            self.graph
+                .prop_set(id_new, k.as_str(), val_u64)
+                .map_err(|_| "prop_set failed")?;
         }
 
         Ok(id)
@@ -556,7 +742,9 @@ impl<G: Graph> GraphExecutor<G> {
 
     fn ensure_edge(&mut self, src: u64, rel: &str, dst: u64) -> Result<(), String> {
         // Check existing edges to ensure idempotence
-        let edges = self.get_outbound_edges(src).map_err(|_| "failed to scan edges")?;
+        let edges = self
+            .get_outbound_edges(src)
+            .map_err(|_| "failed to scan edges")?;
         for (e_rel_id, e_dst) in edges {
             let rel_name = self.resolve_symbol(e_rel_id as u32).unwrap_or_default();
             if rel_name == rel && e_dst == dst {
@@ -565,7 +753,9 @@ impl<G: Graph> GraphExecutor<G> {
             }
         }
 
-        self.graph.link(ThingId::from_u64(src), rel, ThingId::from_u64(dst)).map_err(|_| "link failed")?;
+        self.graph
+            .link(ThingId::from_u64(src), rel, ThingId::from_u64(dst))
+            .map_err(|_| "link failed")?;
         Ok(())
     }
 
@@ -575,7 +765,10 @@ impl<G: Graph> GraphExecutor<G> {
             Ok(count) => {
                 let mut res = Vec::new();
                 for i in 0..count {
-                    res.push((edges[i].predicate.to_u64_lossy() as u32, edges[i].to.to_u64_lossy()));
+                    res.push((
+                        edges[i].predicate.to_u64_lossy() as u32,
+                        edges[i].to.to_u64_lossy(),
+                    ));
                 }
                 Ok(res)
             }
@@ -597,28 +790,34 @@ impl<G: Graph> GraphExecutor<G> {
 
             match v {
                 Value::Number(n) => {
-                    if val_id != *n { return false; }
-                }
-                Value::String(s) => {
-                    match self.graph.intern(s) {
-                        Ok(s_id) => {
-                            if (s_id as u64) != val_id { return false; }
-                        }
-                        Err(_) => return false,
+                    if val_id != *n {
+                        return false;
                     }
                 }
-                Value::Parameter(p) => {
-                    match self.parameters.get(p) {
-                        Some(Value::Number(n)) => { if val_id != *n { return false; } }
-                        Some(Value::String(s)) => {
-                            match self.graph.intern(s) {
-                                Ok(s_id) => { if (s_id as u64) != val_id { return false; } }
-                                Err(_) => return false,
+                Value::String(s) => match self.graph.intern(s) {
+                    Ok(s_id) => {
+                        if (s_id as u64) != val_id {
+                            return false;
+                        }
+                    }
+                    Err(_) => return false,
+                },
+                Value::Parameter(p) => match self.parameters.get(p) {
+                    Some(Value::Number(n)) => {
+                        if val_id != *n {
+                            return false;
+                        }
+                    }
+                    Some(Value::String(s)) => match self.graph.intern(s) {
+                        Ok(s_id) => {
+                            if (s_id as u64) != val_id {
+                                return false;
                             }
                         }
-                        _ => return false,
-                    }
-                }
+                        Err(_) => return false,
+                    },
+                    _ => return false,
+                },
             }
         }
         true
@@ -655,7 +854,9 @@ impl<G: Graph> GraphExecutor<G> {
             Err(_) => return format!("(id:{})", id),
         };
 
-        let kind_name = self.resolve_symbol(kind_id as u32).unwrap_or_else(|| format!("{}", kind_id));
+        let kind_name = self
+            .resolve_symbol(kind_id as u32)
+            .unwrap_or_else(|| format!("{}", kind_id));
         format!("(id:{} :{})", id, kind_name)
     }
 
@@ -666,16 +867,28 @@ impl<G: Graph> GraphExecutor<G> {
                 if len > buf.len() {
                     Some("...".to_string())
                 } else {
-                    core::str::from_utf8(&buf[..len]).ok().map(|s| s.to_string())
+                    core::str::from_utf8(&buf[..len])
+                        .ok()
+                        .map(|s| s.to_string())
                 }
             }
             Err(_) => None,
         }
     }
 
-    fn format_match_results(&self, node_pat: &NodePattern, mut matched_ids: Vec<u64>, returns: Vec<ReturnExpression>, order_by: Option<crate::gql::OrderBy>, limit: usize, skip: usize) -> ExecutionResult {
+    fn format_match_results(
+        &self,
+        node_pat: &NodePattern,
+        mut matched_ids: Vec<u64>,
+        returns: Vec<ReturnExpression>,
+        order_by: Option<crate::gql::OrderBy>,
+        limit: usize,
+        skip: usize,
+    ) -> ExecutionResult {
         // Check if we have any aggregate functions
-        let has_aggregate = returns.iter().any(|r| matches!(r, ReturnExpression::Count(_)));
+        let has_aggregate = returns
+            .iter()
+            .any(|r| matches!(r, ReturnExpression::Count(_)));
 
         // Apply ORDER BY if present (before limit/skip)
         if let Some(ref order) = order_by {
@@ -722,21 +935,22 @@ impl<G: Graph> GraphExecutor<G> {
                 .skip(skip)
                 .take(limit)
                 .map(|id| {
-                let mut row = Vec::new();
-                for expr in &returns {
-                    match expr {
-                        ReturnExpression::Variable(col) => {
-                            if Some(col) == node_pat.var.as_ref() {
-                                row.push(ResultValue::Node(id));
-                            } else {
-                                row.push(ResultValue::String(format!("unsupported: {}", col)));
+                    let mut row = Vec::new();
+                    for expr in &returns {
+                        match expr {
+                            ReturnExpression::Variable(col) => {
+                                if Some(col) == node_pat.var.as_ref() {
+                                    row.push(ResultValue::Node(id));
+                                } else {
+                                    row.push(ResultValue::String(format!("unsupported: {}", col)));
+                                }
                             }
+                            ReturnExpression::Count(_) => unreachable!(),
                         }
-                        ReturnExpression::Count(_) => unreachable!(),
                     }
-                }
-                row
-            }).collect();
+                    row
+                })
+                .collect();
 
             let cols = returns.iter().map(|r| r.to_string()).collect();
             ExecutionResult::rows(cols, rows)
@@ -746,17 +960,20 @@ impl<G: Graph> GraphExecutor<G> {
     fn resolve_value_as_u64(&self, val: &Value) -> Option<u64> {
         match val {
             Value::Number(n) => Some(*n),
-            Value::Parameter(name) => {
-                match self.parameters.get(name) {
-                    Some(Value::Number(n)) => Some(*n),
-                    _ => None,
-                }
-            }
+            Value::Parameter(name) => match self.parameters.get(name) {
+                Some(Value::Number(n)) => Some(*n),
+                _ => None,
+            },
             Value::String(_) => None,
         }
     }
 
-    fn evaluate_expression(&self, expr: &crate::gql::Expression, node_id: u64, node_var: &str) -> bool {
+    fn evaluate_expression(
+        &self,
+        expr: &crate::gql::Expression,
+        node_id: u64,
+        node_var: &str,
+    ) -> bool {
         match expr {
             crate::gql::Expression::Eq(left, right) => {
                 let l_val = self.evaluate_primary(left, node_id, node_var);
@@ -767,7 +984,12 @@ impl<G: Graph> GraphExecutor<G> {
         }
     }
 
-    fn evaluate_primary(&self, expr: &crate::gql::Expression, node_id: u64, node_var: &str) -> Option<Value> {
+    fn evaluate_primary(
+        &self,
+        expr: &crate::gql::Expression,
+        node_id: u64,
+        node_var: &str,
+    ) -> Option<Value> {
         match expr {
             crate::gql::Expression::IdFunc(var) => {
                 if var == node_var {
@@ -776,12 +998,10 @@ impl<G: Graph> GraphExecutor<G> {
                     None
                 }
             }
-            crate::gql::Expression::Value(v) => {
-                match v {
-                    Value::Parameter(name) => self.parameters.get(name).cloned(),
-                    _ => Some(v.clone()),
-                }
-            }
+            crate::gql::Expression::Value(v) => match v {
+                Value::Parameter(name) => self.parameters.get(name).cloned(),
+                _ => Some(v.clone()),
+            },
             crate::gql::Expression::CountEdges(var) => {
                 // count((var)-[]->()) - count outgoing edges from the node if var matches
                 if var == node_var {
@@ -815,22 +1035,28 @@ mod tests {
     fn test_resolve_value_as_u64() {
         let mut ex = GraphExecutor::new();
         ex.set_parameter("pid".to_string(), Value::Number(100));
-        
+
         assert_eq!(ex.resolve_value_as_u64(&Value::Number(50)), Some(50));
-        assert_eq!(ex.resolve_value_as_u64(&Value::Parameter("pid".to_string())), Some(100));
-        assert_eq!(ex.resolve_value_as_u64(&Value::Parameter("unknown".to_string())), None);
+        assert_eq!(
+            ex.resolve_value_as_u64(&Value::Parameter("pid".to_string())),
+            Some(100)
+        );
+        assert_eq!(
+            ex.resolve_value_as_u64(&Value::Parameter("unknown".to_string())),
+            None
+        );
     }
 
     #[test]
     fn test_evaluate_expression() {
         let mut ex = GraphExecutor::new();
         ex.set_parameter("target".to_string(), Value::Number(123));
-        
+
         let expr = Expression::Eq(
             Box::new(Expression::IdFunc("n".to_string())),
-            Box::new(Expression::Value(Value::Parameter("target".to_string())))
+            Box::new(Expression::Value(Value::Parameter("target".to_string()))),
         );
-        
+
         // n = 123 -> true
         assert!(ex.evaluate_expression(&expr, 123, "n"));
         // n = 456 -> false

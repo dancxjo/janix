@@ -13,12 +13,15 @@ use abi::errors::Errno;
 use abi::ids::HandleId;
 use abi::types::{Edge, GraphProp};
 use abi::PredicateId;
-use llm::{ChatDelta, ChatRequest, ChatStream, FinishReason, LlmError, Message, Role, StreamingLlmClient};
+use llm::{
+    ChatDelta, ChatRequest, ChatStream, FinishReason, LlmError, Message, Role, StreamingLlmClient,
+};
 use stem::thing::ThingId;
 
 const DEFAULT_PROMPT_ID: &str = "describe:v1";
 const DEFAULT_MODEL_ID: &str = "stub:something";
-const DEFAULT_SYSTEM_PROMPT: &str = "You are a description engine. Describe the Thing based on the provided graph view.";
+const DEFAULT_SYSTEM_PROMPT: &str =
+    "You are a description engine. Describe the Thing based on the provided graph view.";
 const DEFAULT_MAX_DESCRIPTION_BYTES: usize = 16 * 1024;
 const DEFAULT_MAX_PROMPT_BYTES: usize = 4 * 1024;
 const DEFAULT_MAX_PROMPT_PROPS: usize = 64;
@@ -268,7 +271,11 @@ impl<'a, C: StreamingLlmClient, Clk: Clock> DescriptionService<'a, C, Clk> {
     }
 
     pub fn with_config(client: &'a C, clock: &'a Clk, config: DescriptionConfig) -> Self {
-        Self { client, clock, config }
+        Self {
+            client,
+            clock,
+            config,
+        }
     }
 
     pub fn describe<G: DescribeGraph>(
@@ -309,11 +316,7 @@ impl<'a, C: StreamingLlmClient, Clk: Clock> DescriptionService<'a, C, Clk> {
         };
 
         let mut stream = self.client.chat_stream(chat_req)?;
-        let (text, _finish) = drain_stream(
-            &mut *stream,
-            self.config.max_description_bytes,
-            sink,
-        )?;
+        let (text, _finish) = drain_stream(&mut *stream, self.config.max_description_bytes, sink)?;
 
         let created_at = self.clock.monotonic_ns();
         let description_id = persist_description(
@@ -365,7 +368,11 @@ pub fn build_prompt_packet<G: DescribeGraph>(
             max_edges,
             edge_whitelist,
         } => {
-            let _ = writeln!(text, "view neighborhood hops={} max_edges={}", max_hops, max_edges);
+            let _ = writeln!(
+                text,
+                "view neighborhood hops={} max_edges={}",
+                max_hops, max_edges
+            );
             append_neighborhood(
                 graph,
                 thing_id,
@@ -659,7 +666,9 @@ fn read_string_prop<G: DescribeGraph>(
         return Ok(None);
     }
     let bytes = graph.read_bytespace(ThingId::from_u64(bs))?;
-    let s = core::str::from_utf8(&bytes).ok().map(|v| v.trim_end_matches('\0'));
+    let s = core::str::from_utf8(&bytes)
+        .ok()
+        .map(|v| v.trim_end_matches('\0'));
     Ok(s.map(|v| v.to_string()))
 }
 
@@ -903,7 +912,12 @@ mod tests {
             Ok(id)
         }
 
-        fn bytespace_write(&mut self, id: ThingId, offset: usize, data: &[u8]) -> Result<usize, Errno> {
+        fn bytespace_write(
+            &mut self,
+            id: ThingId,
+            offset: usize,
+            data: &[u8],
+        ) -> Result<usize, Errno> {
             let buf = self.bytespaces.get_mut(&id).ok_or(Errno::ENOENT)?;
             let end = core::cmp::min(offset + data.len(), buf.len());
             let count = end.saturating_sub(offset);
@@ -915,7 +929,12 @@ mod tests {
             Ok(self.bytespaces.get(&id).map(|v| v.len()).unwrap_or(0))
         }
 
-        fn bytespace_read(&self, id: ThingId, offset: usize, out: &mut [u8]) -> Result<usize, Errno> {
+        fn bytespace_read(
+            &self,
+            id: ThingId,
+            offset: usize,
+            out: &mut [u8],
+        ) -> Result<usize, Errno> {
             let buf = self.bytespaces.get(&id).ok_or(Errno::ENOENT)?;
             if offset >= buf.len() {
                 return Ok(0);
@@ -971,7 +990,9 @@ mod tests {
         };
 
         let mut sink1 = RecordingSink::default();
-        let resp1 = service.describe(&mut graph, req.clone(), Some(&mut sink1)).unwrap();
+        let resp1 = service
+            .describe(&mut graph, req.clone(), Some(&mut sink1))
+            .unwrap();
         assert_eq!(sink1.chunks.len(), 3);
 
         let mut sink2 = RecordingSink::default();

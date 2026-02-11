@@ -1,5 +1,5 @@
-use abi::errors::Errno;
 use abi::device::{PCI_IRQ_MODE_MSI, PCI_IRQ_MODE_MSIX};
+use abi::errors::Errno;
 use abi::schema::{keys, kinds};
 use core::mem::size_of;
 use core::ptr::{read_volatile, write_volatile};
@@ -327,14 +327,20 @@ impl Rtl8168Driver {
                         );
                     }
                     Err(e) => {
-                        warn!("RTL8168: irq subscribe failed after {} setup: {:?}", mode, e);
+                        warn!(
+                            "RTL8168: irq subscribe failed after {} setup: {:?}",
+                            mode, e
+                        );
                         self.irq_enabled = false;
                         self.write_u16(REG_IMR, 0);
                     }
                 }
             }
             Err(e) => {
-                warn!("RTL8168: MSI/MSI-X unavailable, using polling mode: {:?}", e);
+                warn!(
+                    "RTL8168: MSI/MSI-X unavailable, using polling mode: {:?}",
+                    e
+                );
                 self.irq_enabled = false;
                 self.write_u16(REG_IMR, 0);
             }

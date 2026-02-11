@@ -33,19 +33,23 @@ pub enum ScanCommand {
         exclude_top_right: bool,
     },
     /// Scan a specific hardcoded region (legacy support for scan_region.py)
-    LegacyRegion {
-        image: PathBuf,
-    },
+    LegacyRegion { image: PathBuf },
 }
 
 pub fn run(args: ScanArgs) -> Result<()> {
     match args.cmd {
-        ScanCommand::TopColors { image, count, x, y, w, h } => {
-            top_colors(&image, count, x, y, w, h)
-        }
-        ScanCommand::CountRed { image, exclude_top_right } => {
-            count_red(&image, exclude_top_right)
-        }
+        ScanCommand::TopColors {
+            image,
+            count,
+            x,
+            y,
+            w,
+            h,
+        } => top_colors(&image, count, x, y, w, h),
+        ScanCommand::CountRed {
+            image,
+            exclude_top_right,
+        } => count_red(&image, exclude_top_right),
         ScanCommand::LegacyRegion { image } => {
             // Replicates scan_region.py: x=800, y=600, w=480, h=120
             top_colors(&image, 100, Some(800), Some(600), Some(480), Some(120))
@@ -53,7 +57,14 @@ pub fn run(args: ScanArgs) -> Result<()> {
     }
 }
 
-fn top_colors(path: &PathBuf, limit: usize, x: Option<u32>, y: Option<u32>, w: Option<u32>, h: Option<u32>) -> Result<()> {
+fn top_colors(
+    path: &PathBuf,
+    limit: usize,
+    x: Option<u32>,
+    y: Option<u32>,
+    w: Option<u32>,
+    h: Option<u32>,
+) -> Result<()> {
     let img = image::open(path).context("Failed to open image")?;
     let (width, height) = img.dimensions();
 

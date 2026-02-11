@@ -1,7 +1,7 @@
 //! Core VIR types for vector graphics
 
-use serde::{Deserialize, Serialize};
 use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 
 /// A 2D point with floating point coordinates
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
@@ -177,6 +177,11 @@ pub struct ViewBox {
 
 impl ViewBox {
     pub const fn new(x: f32, y: f32, width: f32, height: f32) -> Self {
-        Self { x, y, width, height }
+        Self {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 }

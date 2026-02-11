@@ -8,7 +8,9 @@ use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
 use stem::syscall::port::{port_recv, port_send, PortHandle};
 
-use crate::driver_protocol::{NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_LINK_DOWN, MSG_LINK_UP};
+use crate::driver_protocol::{
+    NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_LINK_DOWN, MSG_LINK_UP,
+};
 
 /// Network device that uses IPC to communicate with virtio_netd
 pub struct IpcNicDevice {
@@ -38,12 +40,12 @@ impl IpcNicDevice {
             link_up,
         }
     }
-    
+
     /// Get current timestamp for smoltcp
     pub fn now() -> Instant {
         Instant::from_millis(stem::time::now().as_millis() as i64)
     }
-    
+
     /// Get MAC address
     pub fn mac(&self) -> [u8; 6] {
         self.mac
@@ -56,7 +58,7 @@ impl IpcNicDevice {
     pub fn mtu(&self) -> u32 {
         1500
     }
-    
+
     /// Poll for RX frames from driver (non-blocking)
     pub fn poll_rx(&mut self) {
         // Try to receive frames from driver
@@ -86,7 +88,7 @@ impl IpcNicDevice {
             }
         }
     }
-    
+
     /// Send a frame to the driver for transmission
     fn send_frame(&mut self, data: &[u8]) {
         let msg = NetDriverMsg::new(MSG_FRAME_TX, data);
@@ -97,19 +99,22 @@ impl IpcNicDevice {
 }
 
 impl Device for IpcNicDevice {
-    type RxToken<'a> = IpcRxToken where Self: 'a;
-    type TxToken<'a> = IpcTxToken<'a> where Self: 'a;
+    type RxToken<'a>
+        = IpcRxToken
+    where
+        Self: 'a;
+    type TxToken<'a>
+        = IpcTxToken<'a>
+    where
+        Self: 'a;
 
     fn receive(&mut self, _timestamp: Instant) -> Option<(Self::RxToken<'_>, Self::TxToken<'_>)> {
         // Poll for new frames
         self.poll_rx();
-        
+
         // Return a frame if available
         if let Some((frame, len)) = self.rx_queue.pop_front() {
-            Some((
-                IpcRxToken { frame, len },
-                IpcTxToken { device: self },
-            ))
+            Some((IpcRxToken { frame, len }, IpcTxToken { device: self }))
         } else {
             None
         }

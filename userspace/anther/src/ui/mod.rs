@@ -4,8 +4,8 @@ use alloc::fmt::Write;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use abi::schema::{keys, kinds};
 use abi::ids::HandleId;
+use abi::schema::{keys, kinds};
 use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 
@@ -20,9 +20,13 @@ pub enum UiError {
     Internal,
 }
 
-pub fn render_window_html(window_id_raw: u64, if_scene_gen: Option<u64>) -> Result<Option<Vec<u8>>, UiError> {
+pub fn render_window_html(
+    window_id_raw: u64,
+    if_scene_gen: Option<u64>,
+) -> Result<Option<Vec<u8>>, UiError> {
     let window_id = ThingId::from_u64(window_id_raw);
-    let (tree, scene_gen) = graph_decode::decode_window_tree(window_id).map_err(map_decode_error)?;
+    let (tree, scene_gen) =
+        graph_decode::decode_window_tree(window_id).map_err(map_decode_error)?;
 
     if let Some(prev) = if_scene_gen {
         if prev == scene_gen {
@@ -36,7 +40,8 @@ pub fn render_window_html(window_id_raw: u64, if_scene_gen: Option<u64>) -> Resu
 
 pub fn render_window_json(window_id_raw: u64) -> Result<Vec<u8>, UiError> {
     let window_id = ThingId::from_u64(window_id_raw);
-    let (tree, scene_gen) = graph_decode::decode_window_tree(window_id).map_err(map_decode_error)?;
+    let (tree, scene_gen) =
+        graph_decode::decode_window_tree(window_id).map_err(map_decode_error)?;
     let json = render_html::render_tree_json(&tree, scene_gen);
     Ok(json.into_bytes())
 }

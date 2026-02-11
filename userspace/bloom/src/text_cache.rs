@@ -14,7 +14,7 @@ pub struct TextCacheKey {
 pub struct TextCacheEntry {
     pub w: u16,
     pub h: u16,
-    pub offset_x: i16, 
+    pub offset_x: i16,
     pub offset_y: i16,
     pub alpha: Vec<u8>,
     pub last_used_ns: u64,
@@ -40,7 +40,7 @@ impl TextRasterCache {
         }
         None
     }
-    
+
     pub fn insert(&mut self, key: TextCacheKey, entry: TextCacheEntry) -> &TextCacheEntry {
         let size = entry.alpha.len();
         self.bytes += size;
@@ -53,10 +53,12 @@ impl TextRasterCache {
             return;
         }
 
-        let mut entries: Vec<(u64, TextCacheKey)> = self.map.iter()
+        let mut entries: Vec<(u64, TextCacheKey)> = self
+            .map
+            .iter()
             .map(|(k, v)| (v.last_used_ns, k.clone()))
             .collect();
-        
+
         entries.sort_by_key(|(t, _)| *t);
 
         for (_t, key) in entries {
@@ -68,7 +70,7 @@ impl TextRasterCache {
             }
         }
     }
-    
+
     pub fn byte_count(&self) -> usize {
         self.bytes
     }

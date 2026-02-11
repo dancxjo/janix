@@ -92,7 +92,10 @@ mod tests {
     }
 
     impl ChatStream for TestStream {
-        fn poll_next(&mut self, _cx: &mut Context<'_>) -> Poll<Result<Option<ChatDelta>, LlmError>> {
+        fn poll_next(
+            &mut self,
+            _cx: &mut Context<'_>,
+        ) -> Poll<Result<Option<ChatDelta>, LlmError>> {
             let item = match self.idx {
                 0 => Some("h"),
                 1 => Some("i"),

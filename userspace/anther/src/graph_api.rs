@@ -6,9 +6,9 @@
 
 extern crate alloc;
 
-use alloc::vec::Vec;
 use alloc::format;
 use alloc::string::String;
+use alloc::vec::Vec;
 use stem::syscall::graph::{find, get_kind, prop_get};
 use stem::syscall::root_bytespace_read;
 
@@ -133,27 +133,27 @@ pub fn thing_to_json(thing_id: u64) -> Result<String, GraphError> {
 
     let mut json = JsonBuilder::new();
     json.start_object();
-    
+
     json.key("thing_id");
     json.number_value(thing_id);
-    
+
     json.key("kind_id");
     json.number_value(kind_id);
-    
+
     // TODO: Add properties and links when we have a way to enumerate them
     // For now, just return the basic info
-    
+
     json.key("props");
     json.start_object();
     json.end_object();
     json.buf.push(b',');
-    
+
     json.key("links");
     json.start_array();
     json.end_array();
-    
+
     json.end_object();
-    
+
     json.as_string().map_err(|_| GraphError::InvalidId)
 }
 
@@ -161,29 +161,29 @@ pub fn thing_to_json(thing_id: u64) -> Result<String, GraphError> {
 pub fn list_things_by_kind(kind_id: u64, limit: usize) -> Result<String, GraphError> {
     let mut ids = Vec::new();
     ids.resize(limit, 0u64);
-    
+
     let count = find(kind_id, &mut ids).map_err(|_| GraphError::SyscallFailed)?;
-    
+
     let mut json = JsonBuilder::new();
     json.start_object();
-    
+
     json.key("kind_id");
     json.number_value(kind_id);
-    
+
     json.key("count");
     json.number_value(count as u64);
-    
+
     json.key("things");
     json.start_array();
-    
+
     for i in 0..count.min(limit) {
         json.number_value(ids[i]);
     }
-    
+
     json.end_array();
-    
+
     json.end_object();
-    
+
     json.as_string().map_err(|_| GraphError::InvalidId)
 }
 
@@ -197,7 +197,7 @@ pub fn read_bytespace(bytespace_id: u64, max_size: usize) -> Result<Vec<u8>, Gra
     let limit = max_size.min(MAX_BYTESPACE_SIZE);
     let mut buffer = Vec::new();
     buffer.resize(limit, 0);
-    
+
     match root_bytespace_read(bytespace_id as usize, 0, &mut buffer) {
         Ok(n) => {
             buffer.truncate(n);
@@ -208,11 +208,15 @@ pub fn read_bytespace(bytespace_id: u64, max_size: usize) -> Result<Vec<u8>, Gra
 }
 
 /// Read bytespace data with offset and limit (for Range header support)
-pub fn read_bytespace_ranged(bytespace_id: u64, offset: usize, max_len: usize) -> Result<Vec<u8>, GraphError> {
+pub fn read_bytespace_ranged(
+    bytespace_id: u64,
+    offset: usize,
+    max_len: usize,
+) -> Result<Vec<u8>, GraphError> {
     let limit = max_len.min(MAX_BYTESPACE_SIZE);
     let mut buffer = Vec::new();
     buffer.resize(limit, 0);
-    
+
     match root_bytespace_read(bytespace_id as usize, offset, &mut buffer) {
         Ok(n) => {
             buffer.truncate(n);
@@ -232,7 +236,7 @@ pub fn bytespace_meta(bytespace_id: u64) -> Result<BytespaceMeta, GraphError> {
     use abi::ids::HandleId;
     use stem::thing::sys::bytespace_info;
     use stem::thing::ThingId;
-    
+
     let thing_id = ThingId::from_u64(bytespace_id);
     match bytespace_info(thing_id) {
         Ok(size) => Ok(BytespaceMeta { size }),
@@ -253,7 +257,7 @@ mod tests {
         json.key("value");
         json.number_value(42);
         json.end_object();
-        
+
         let result = json.as_string().unwrap();
         assert!(result.contains("\"name\":\"test\""));
         assert!(result.contains("\"value\":42"));
@@ -267,7 +271,7 @@ mod tests {
         json.number_value(2);
         json.number_value(3);
         json.end_array();
-        
+
         let result = json.as_string().unwrap();
         assert_eq!(result, "[1,2,3]");
     }
@@ -282,7 +286,7 @@ mod tests {
         json.number_value(2);
         json.end_array();
         json.end_object();
-        
+
         let result = json.as_string().unwrap();
         assert!(result.contains("\"items\":[1,2]"));
     }
@@ -294,7 +298,7 @@ mod tests {
         json.key("text");
         json.string_value("Hello \"world\"\nNew line");
         json.end_object();
-        
+
         let result = json.as_string().unwrap();
         assert!(result.contains("\\\""));
         assert!(result.contains("\\n"));
@@ -307,7 +311,7 @@ mod tests {
         json.key("ctrl");
         json.string_value("test\x01\x02");
         json.end_object();
-        
+
         let result = json.as_string().unwrap();
         assert!(result.contains("\\u"));
     }

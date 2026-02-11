@@ -10,25 +10,25 @@
 //! - Deterministic (same input → same output)
 //! - Renderer-agnostic (no pixel assumptions)
 
-use serde::{Deserialize, Serialize};
-use alloc::vec::Vec;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
+use serde::{Deserialize, Serialize};
 
-pub mod types;
-pub mod transform;
 pub mod dump;
-pub mod svg_convert;
-pub mod shapes;
-pub mod render;
 pub mod examples;
+pub mod render;
+pub mod shapes;
+pub mod svg_convert;
+pub mod transform;
+pub mod types;
 
 #[cfg(test)]
 mod tests;
 
-pub use types::*;
-pub use transform::*;
-pub use svg_convert::svg_to_vir;
 pub use render::vir_to_drawlist;
+pub use svg_convert::svg_to_vir;
+pub use transform::*;
+pub use types::*;
 
 /// A complete vector document ready for tessellation and rendering
 #[derive(Debug, Clone, Serialize, Deserialize)]

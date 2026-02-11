@@ -7,7 +7,7 @@ use crate::vir::{VirPath, VirPoint};
 /// Expand a rectangle into a path
 pub fn rect_to_path(x: f32, y: f32, width: f32, height: f32, rx: f32, ry: f32) -> VirPath {
     let mut path = VirPath::new();
-    
+
     if rx <= 0.0 && ry <= 0.0 {
         // Simple rectangle (no rounded corners)
         path.move_to(x, y);
@@ -20,54 +20,59 @@ pub fn rect_to_path(x: f32, y: f32, width: f32, height: f32, rx: f32, ry: f32) -
         // Clamp rx and ry to half dimensions
         let rx = rx.min(width / 2.0);
         let ry = ry.min(height / 2.0);
-        
+
         // Start at top-left after the corner
         path.move_to(x + rx, y);
-        
+
         // Top edge
         path.line_to(x + width - rx, y);
-        
+
         // Top-right corner (approximate with cubic bezier)
         let cp = 0.55228; // Magic number for circular arc approximation
         path.cubic_to(
-            x + width - rx + cp * rx, y,
-            x + width, y + ry - cp * ry,
-            x + width, y + ry,
+            x + width - rx + cp * rx,
+            y,
+            x + width,
+            y + ry - cp * ry,
+            x + width,
+            y + ry,
         );
-        
+
         // Right edge
         path.line_to(x + width, y + height - ry);
-        
+
         // Bottom-right corner
         path.cubic_to(
-            x + width, y + height - ry + cp * ry,
-            x + width - rx + cp * rx, y + height,
-            x + width - rx, y + height,
+            x + width,
+            y + height - ry + cp * ry,
+            x + width - rx + cp * rx,
+            y + height,
+            x + width - rx,
+            y + height,
         );
-        
+
         // Bottom edge
         path.line_to(x + rx, y + height);
-        
+
         // Bottom-left corner
         path.cubic_to(
-            x + rx - cp * rx, y + height,
-            x, y + height - ry + cp * ry,
-            x, y + height - ry,
+            x + rx - cp * rx,
+            y + height,
+            x,
+            y + height - ry + cp * ry,
+            x,
+            y + height - ry,
         );
-        
+
         // Left edge
         path.line_to(x, y + ry);
-        
+
         // Top-left corner
-        path.cubic_to(
-            x, y + ry - cp * ry,
-            x + rx - cp * rx, y,
-            x + rx, y,
-        );
-        
+        path.cubic_to(x, y + ry - cp * ry, x + rx - cp * rx, y, x + rx, y);
+
         path.close();
     }
-    
+
     path
 }
 
@@ -79,45 +84,29 @@ pub fn circle_to_path(cx: f32, cy: f32, r: f32) -> VirPath {
 /// Expand an ellipse into a path using cubic bezier approximation
 pub fn ellipse_to_path(cx: f32, cy: f32, rx: f32, ry: f32) -> VirPath {
     let mut path = VirPath::new();
-    
+
     // Use 4 cubic beziers to approximate a circle/ellipse
     // The magic constant for circular arc approximation: 4/3 * (√2 - 1)
     let k = 0.5522847498;
-    
+
     let kx = k * rx;
     let ky = k * ry;
-    
+
     // Start at rightmost point
     path.move_to(cx + rx, cy);
-    
+
     // Top-right quadrant
-    path.cubic_to(
-        cx + rx, cy - ky,
-        cx + kx, cy - ry,
-        cx, cy - ry,
-    );
-    
+    path.cubic_to(cx + rx, cy - ky, cx + kx, cy - ry, cx, cy - ry);
+
     // Top-left quadrant
-    path.cubic_to(
-        cx - kx, cy - ry,
-        cx - rx, cy - ky,
-        cx - rx, cy,
-    );
-    
+    path.cubic_to(cx - kx, cy - ry, cx - rx, cy - ky, cx - rx, cy);
+
     // Bottom-left quadrant
-    path.cubic_to(
-        cx - rx, cy + ky,
-        cx - kx, cy + ry,
-        cx, cy + ry,
-    );
-    
+    path.cubic_to(cx - rx, cy + ky, cx - kx, cy + ry, cx, cy + ry);
+
     // Bottom-right quadrant
-    path.cubic_to(
-        cx + kx, cy + ry,
-        cx + rx, cy + ky,
-        cx + rx, cy,
-    );
-    
+    path.cubic_to(cx + kx, cy + ry, cx + rx, cy + ky, cx + rx, cy);
+
     path.close();
     path
 }
@@ -133,15 +122,15 @@ pub fn line_to_path(x1: f32, y1: f32, x2: f32, y2: f32) -> VirPath {
 /// Expand a polyline into a path
 pub fn polyline_to_path(points: &[VirPoint]) -> VirPath {
     let mut path = VirPath::new();
-    
+
     if let Some(first) = points.first() {
         path.move_to(first.x, first.y);
-        
+
         for point in points.iter().skip(1) {
             path.line_to(point.x, point.y);
         }
     }
-    
+
     path
 }
 
@@ -161,7 +150,7 @@ mod tests {
     fn test_simple_rect() {
         let path = rect_to_path(10.0, 20.0, 30.0, 40.0, 0.0, 0.0);
         assert_eq!(path.segments.len(), 5); // M, L, L, L, Z
-        
+
         match path.segments[0] {
             VirSegment::MoveTo(p) => {
                 assert_eq!(p.x, 10.0);
@@ -176,7 +165,7 @@ mod tests {
         let path = circle_to_path(50.0, 50.0, 25.0);
         // Circle uses 4 cubic beziers + close
         assert_eq!(path.segments.len(), 5);
-        
+
         match path.segments[0] {
             VirSegment::MoveTo(p) => {
                 // Starts at rightmost point

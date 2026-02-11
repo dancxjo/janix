@@ -209,8 +209,8 @@ impl VirtioPciDevice {
             self.select_queue(queue_index);
             self.read_common_u32(COMMON_CFG_QUEUE_NOTIFY_OFF) as u64
         };
-        let notify_addr = self.bar_virt + cap.offset as u64 
-            + queue_notify_off * cap.notify_off_multiplier as u64;
+        let notify_addr =
+            self.bar_virt + cap.offset as u64 + queue_notify_off * cap.notify_off_multiplier as u64;
         unsafe {
             write_volatile(notify_addr as *mut u16, queue_index);
         }

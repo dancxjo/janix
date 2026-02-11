@@ -6,7 +6,7 @@
 //! - Stroke expansion (converting strokes to filled outlines)
 //! - Fill rule application
 
-use crate::vir::{VirPath, VirPoint, VirSegment, VirTransform, StrokeStyle, LineCap, LineJoin};
+use crate::vir::{LineCap, LineJoin, StrokeStyle, VirPath, VirPoint, VirSegment, VirTransform};
 use alloc::vec::Vec;
 
 pub mod flatten;
@@ -21,7 +21,7 @@ pub struct TessellateConfig {
     /// Tolerance for curve flattening in internal units
     /// Smaller = more segments = higher quality
     pub tolerance: f32,
-    
+
     /// Whether to apply transform before tessellation
     pub apply_transform: bool,
 }
@@ -88,11 +88,11 @@ pub fn tessellate_fill(
 ) -> TessellatedPath {
     let adjusted_config = config.adjust_for_transform(transform);
     let mut result = TessellatedPath::new();
-    
+
     let mut current_contour_start = 0;
     let mut contour_has_points = false;
     let mut current_point = VirPoint::new(0.0, 0.0);
-    
+
     for segment in &path.segments {
         match segment {
             VirSegment::MoveTo(p) => {
@@ -104,7 +104,7 @@ pub fn tessellate_fill(
                         count,
                     });
                 }
-                
+
                 // Start new contour
                 current_contour_start = result.vertices.len();
                 let tp = if adjusted_config.apply_transform {
@@ -137,7 +137,7 @@ pub fn tessellate_fill(
                 } else {
                     *p
                 };
-                
+
                 flatten_quad(
                     current_point,
                     tcp,
@@ -164,7 +164,7 @@ pub fn tessellate_fill(
                 } else {
                     *p
                 };
-                
+
                 flatten_cubic(
                     current_point,
                     tcp1,
@@ -181,7 +181,7 @@ pub fn tessellate_fill(
             }
         }
     }
-    
+
     // Close final contour if needed
     if contour_has_points {
         let count = result.vertices.len() - current_contour_start;
@@ -190,7 +190,7 @@ pub fn tessellate_fill(
             count,
         });
     }
-    
+
     result
 }
 
@@ -203,10 +203,10 @@ pub fn tessellate_stroke(
     config: &TessellateConfig,
 ) -> TessellatedPath {
     let adjusted_config = config.adjust_for_transform(transform);
-    
+
     // First, flatten the path
     let flattened = tessellate_fill(path, transform, &adjusted_config);
-    
+
     // Then expand to stroke outline
     expand_stroke(&flattened, stroke, &adjusted_config)
 }
@@ -224,12 +224,12 @@ mod tests {
         path.line_to(10.0, 10.0);
         path.line_to(0.0, 10.0);
         path.close();
-        
+
         let transform = VirTransform::identity();
         let config = TessellateConfig::default();
-        
+
         let result = tessellate_fill(&path, &transform, &config);
-        
+
         assert_eq!(result.contours.len(), 1);
         assert_eq!(result.vertices.len(), 4);
     }
@@ -239,12 +239,12 @@ mod tests {
         let mut path = VirPath::new();
         path.move_to(0.0, 0.0);
         path.line_to(10.0, 0.0);
-        
+
         let transform = VirTransform::scale(2.0, 2.0);
         let config = TessellateConfig::default();
-        
+
         let result = tessellate_fill(&path, &transform, &config);
-        
+
         // Check that transform was applied
         assert_eq!(result.vertices[1].x, 20.0); // 10 * 2
         assert_eq!(result.vertices[1].y, 0.0);

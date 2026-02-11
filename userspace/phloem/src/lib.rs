@@ -6,15 +6,15 @@
 
 extern crate alloc;
 
-pub mod gql;
 pub mod executor;
+pub mod gql;
 #[cfg(test)]
 pub mod query_tests;
 
-use alloc::string::String;
 use crate::alloc::string::ToString;
-use alloc::vec::Vec;
 use alloc::format;
+use alloc::string::String;
+use alloc::vec::Vec;
 
 #[derive(Debug, Clone)]
 pub enum ResultValue {
@@ -69,8 +69,8 @@ impl ExecutionResult {
     }
 }
 
-pub use gql::{Command, Pattern, Value, NodePattern, ReturnExpression, parse};
 pub use executor::GraphExecutor;
+pub use gql::{parse, Command, NodePattern, Pattern, ReturnExpression, Value};
 
 #[cfg(test)]
 mod tests {
@@ -92,7 +92,10 @@ mod tests {
         assert_eq!(res.message, "hello");
 
         let cols = alloc::vec!["a".to_string(), "b".to_string()];
-        let rows = alloc::vec![alloc::vec![ResultValue::Number(1), ResultValue::String("x".to_string())]];
+        let rows = alloc::vec![alloc::vec![
+            ResultValue::Number(1),
+            ResultValue::String("x".to_string())
+        ]];
         let res = ExecutionResult::rows(cols, rows);
         assert!(res.success);
         assert_eq!(res.columns.len(), 2);

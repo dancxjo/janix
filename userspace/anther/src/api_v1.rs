@@ -14,13 +14,13 @@ use crate::error::{ApiError, ApiErrorCode};
 use crate::graph_api::{self, GraphError, JsonBuilder};
 use crate::http::{self, Request};
 use crate::router::ApiRoute;
-use stem::error;
-use stem::syscall::graph::{prop_get, prop_set, intern, link, find};
-use stem::thing::sys::{get_edges, get_props};
-use stem::thing::ThingId;
-use stem::thing::HandleId; // for from_u64
-use abi::types::Edge;
 use abi::schema::{keys, kinds, rels};
+use abi::types::Edge;
+use stem::error;
+use stem::syscall::graph::{find, intern, link, prop_get, prop_set};
+use stem::thing::sys::{get_edges, get_props};
+use stem::thing::HandleId; // for from_u64
+use stem::thing::ThingId;
 
 // ============================================================================
 // API Limits (constants)
@@ -67,13 +67,13 @@ pub fn error_response(err: ApiError) -> (&'static str, Vec<u8>) {
 pub fn handle_discovery() -> (&'static str, Vec<u8>) {
     let mut json = JsonBuilder::new();
     json.start_object();
-    
+
     json.key("api_version");
     json.string_value(API_VERSION);
-    
+
     json.key("schema_version");
     json.string_value("0.2.0");
-    
+
     json.key("limits");
     json.start_object();
     json.key("max_json_body");
@@ -84,7 +84,7 @@ pub fn handle_discovery() -> (&'static str, Vec<u8>) {
     json.number_value(MAX_BYTESPACE_STREAM as u64);
     json.end_object();
     json.buf.push(b',');
-    
+
     json.key("endpoints");
     json.start_array();
     json.string_value("/api/v1/things");
@@ -94,9 +94,9 @@ pub fn handle_discovery() -> (&'static str, Vec<u8>) {
     json.string_value("/api/v1/path/{path}");
     json.string_value("/api/v1/watch");
     json.end_array();
-    
+
     json.end_object();
-    
+
     json_response("200 OK", &json.as_string().unwrap_or_default())
 }
 
@@ -107,15 +107,13 @@ pub fn handle_get_thing(id_str: &str) -> (&'static str, Vec<u8>) {
         Ok(id) => id,
         Err(err) => return error_response(err),
     };
-    
+
     match graph_api::thing_to_json(id) {
         Ok(json) => json_response("200 OK", &json),
         Err(GraphError::NotFound) => {
             error_response(ApiError::not_found(format!("Thing {} not found", id)))
         }
-        Err(_) => {
-            error_response(ApiError::internal("Failed to fetch thing"))
-        }
+        Err(_) => error_response(ApiError::internal("Failed to fetch thing")),
     }
 }
 
@@ -136,7 +134,7 @@ pub fn handle_delete_thing(id_str: &str) -> (&'static str, Vec<u8>) {
         Ok(id) => id,
         Err(err) => return error_response(err),
     };
-    
+
     // TODO: Implement thing deletion when kernel supports it
     error_response(ApiError::new(
         ApiErrorCode::InternalError,
@@ -151,7 +149,7 @@ pub fn handle_patch_thing(id_str: &str, _body: &[u8]) -> (&'static str, Vec<u8>)
         Ok(id) => id,
         Err(err) => return error_response(err),
     };
-    
+
     // TODO: Parse JSON body for set/clear operations
     error_response(ApiError::new(
         ApiErrorCode::InternalError,
@@ -166,7 +164,7 @@ pub fn handle_get_thing_props(id_str: &str) -> (&'static str, Vec<u8>) {
         Ok(id) => id,
         Err(err) => return error_response(err),
     };
-    
+
     // Check if the thing exists by getting its kind
     let kind_id = match stem::syscall::graph::get_kind(id) {
         Ok(k) if k != 0 => k,
@@ -195,23 +193,23 @@ pub fn handle_get_thing_props(id_str: &str) -> (&'static str, Vec<u8>) {
 
     use alloc::collections::BTreeMap;
     let mut symbol_cache: BTreeMap<u32, String> = BTreeMap::new();
-    
+
     let mut json = JsonBuilder::new();
     json.start_object();
-    
+
     // Thing ID
     json.key("thing_id");
     json.number_value(id);
-    
+
     // Kind
     json.key("kind_id");
     json.number_value(kind_id);
-    
+
     // Resolve kind name
     json.key("kind_name");
     let kind_name = get_symbol_name_cached(kind_id as u32, &mut symbol_cache);
     json.string_value(&kind_name);
-    
+
     // Properties object
     json.key("props");
     json.start_object();
@@ -288,17 +286,21 @@ pub fn handle_get_thing_props(id_str: &str) -> (&'static str, Vec<u8>) {
     }
 
     json.end_object();
-    
+
     json_response("200 OK", &json.as_string().unwrap_or_default())
 }
 
 /// GET /api/v1/things/{id}/bytespaces/{key}
-pub fn handle_get_bytespace(thing_id_str: &str, key: &str, req: &Request<'_>) -> (&'static str, Vec<u8>) {
+pub fn handle_get_bytespace(
+    thing_id_str: &str,
+    key: &str,
+    req: &Request<'_>,
+) -> (&'static str, Vec<u8>) {
     let _thing_id = match parse_thing_id(thing_id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
     };
-    
+
     let bytespace_id = match parse_thing_id(key) {
         Ok(id) => id,
         Err(err) => return error_response(err),
@@ -309,21 +311,20 @@ pub fn handle_get_bytespace(thing_id_str: &str, key: &str, req: &Request<'_>) ->
     let (offset, limit) = match range {
         Some(r) => {
             let end = r.end.unwrap_or(MAX_BYTESPACE_STREAM + r.start);
-            (r.start, end.saturating_sub(r.start).min(MAX_BYTESPACE_STREAM))
+            (
+                r.start,
+                end.saturating_sub(r.start).min(MAX_BYTESPACE_STREAM),
+            )
         }
         None => (0, MAX_BYTESPACE_STREAM),
     };
-    
+
     match graph_api::read_bytespace_ranged(bytespace_id, offset, limit) {
-        Ok(data) => {
-            ("200 OK", data)
-        }
+        Ok(data) => ("200 OK", data),
         Err(GraphError::NotFound) => {
             error_response(ApiError::not_found(format!("Bytespace {} not found", key)))
         }
-        Err(_) => {
-            error_response(ApiError::internal("Failed to read bytespace"))
-        }
+        Err(_) => error_response(ApiError::internal("Failed to read bytespace")),
     }
 }
 
@@ -333,12 +334,12 @@ pub fn handle_bytespace_meta(thing_id_str: &str, key: &str) -> (&'static str, Ve
         Ok(id) => id,
         Err(err) => return error_response(err),
     };
-    
+
     let bytespace_id = match parse_thing_id(key) {
         Ok(id) => id,
         Err(err) => return error_response(err),
     };
-    
+
     match graph_api::bytespace_meta(bytespace_id) {
         Ok(meta) => {
             let mut json = JsonBuilder::new();
@@ -348,31 +349,35 @@ pub fn handle_bytespace_meta(thing_id_str: &str, key: &str) -> (&'static str, Ve
             json.key("content_type");
             json.string_value("application/octet-stream");
             json.end_object();
-            
+
             json_response("200 OK", &json.as_string().unwrap_or_default())
         }
         Err(GraphError::NotFound) => {
             error_response(ApiError::not_found(format!("Bytespace {} not found", key)))
         }
-        Err(_) => {
-            error_response(ApiError::internal("Failed to get bytespace info"))
-        }
+        Err(_) => error_response(ApiError::internal("Failed to get bytespace info")),
     }
 }
 
 /// PUT /api/v1/things/{id}/bytespaces/{key}
-pub fn handle_put_bytespace(thing_id_str: &str, _key: &str, body: &[u8]) -> (&'static str, Vec<u8>) {
+pub fn handle_put_bytespace(
+    thing_id_str: &str,
+    _key: &str,
+    body: &[u8],
+) -> (&'static str, Vec<u8>) {
     let _thing_id = match parse_thing_id(thing_id_str) {
         Ok(id) => id,
         Err(err) => return error_response(err),
     };
-    
+
     if body.len() > MAX_BYTESPACE_UPLOAD {
-        return error_response(ApiError::payload_too_large(
-            format!("Bytespace size {} exceeds limit {}", body.len(), MAX_BYTESPACE_UPLOAD)
-        ));
+        return error_response(ApiError::payload_too_large(format!(
+            "Bytespace size {} exceeds limit {}",
+            body.len(),
+            MAX_BYTESPACE_UPLOAD
+        )));
     }
-    
+
     // TODO: Implement bytespace create/write
     error_response(ApiError::new(
         ApiErrorCode::InternalError,
@@ -472,10 +477,7 @@ pub fn handle_launch(id_str: &str) -> (&'static str, Vec<u8>) {
     let pid = match stem::syscall::spawn_process(&name, 0) {
         Ok(pid) => pid,
         Err(e) => {
-            return error_response(ApiError::internal(format!(
-                "spawn_process failed: {:?}",
-                e
-            )))
+            return error_response(ApiError::internal(format!("spawn_process failed: {:?}", e)))
         }
     };
 
@@ -532,7 +534,9 @@ pub fn handle_not_found() -> (&'static str, Vec<u8>) {
 
 /// Handle method not allowed
 pub fn handle_method_not_allowed() -> (&'static str, Vec<u8>) {
-    error_response(ApiError::method_not_allowed("Method not allowed for this endpoint"))
+    error_response(ApiError::method_not_allowed(
+        "Method not allowed for this endpoint",
+    ))
 }
 
 // ============================================================================
@@ -545,18 +549,23 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
     let mut root_id: Option<u64> = None;
     let mut depth: u32 = DEFAULT_SUBGRAPH_DEPTH;
     let mut max_nodes: usize = MAX_SUBGRAPH_NODES;
-    
+
     for part in query.split('&') {
         if let Some((key, value)) = part.split_once('=') {
             match key {
                 "root" => root_id = value.parse().ok(),
                 "depth" => depth = value.parse().unwrap_or(DEFAULT_SUBGRAPH_DEPTH).min(10),
-                "max_nodes" => max_nodes = value.parse().unwrap_or(MAX_SUBGRAPH_NODES).min(MAX_SUBGRAPH_NODES),
+                "max_nodes" => {
+                    max_nodes = value
+                        .parse()
+                        .unwrap_or(MAX_SUBGRAPH_NODES)
+                        .min(MAX_SUBGRAPH_NODES)
+                }
                 _ => {}
             }
         }
     }
-    
+
     // Pre-intern all symbols we'll need - avoids syscalls in hot loops
     let layout_x_sym = intern("layout.pos.x").unwrap_or(0);
     let layout_y_sym = intern("layout.pos.y").unwrap_or(0);
@@ -566,59 +575,59 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
         intern("asset.name").unwrap_or(0),
         intern("file.name").unwrap_or(0),
     ];
-    
+
     // BFS traversal - use BTreeSet for O(log n) membership checks
     use alloc::collections::BTreeSet;
     let mut visited_set: BTreeSet<u64> = BTreeSet::new();
-    let mut visited_order: alloc::vec::Vec<u64> = alloc::vec::Vec::new();  // Preserve order for JSON
+    let mut visited_order: alloc::vec::Vec<u64> = alloc::vec::Vec::new(); // Preserve order for JSON
     let mut edges_out: alloc::vec::Vec<(u64, u64, u64)> = alloc::vec::Vec::new(); // (from, to, rel_sym)
     let mut queue: alloc::collections::VecDeque<(u64, u32)> = alloc::collections::VecDeque::new();
     let mut truncated = false;
-    
+
     // Symbol cache for relationship names (avoids redundant describe_symbol calls)
     use alloc::collections::BTreeMap;
     let mut symbol_cache: BTreeMap<u32, String> = BTreeMap::new();
-    
+
     // If root is specified, use it. Otherwise, auto-discover from interesting kinds (like Photosynthesis)
     if let Some(root) = root_id {
         queue.push_back((root, 0));
     } else {
         // Auto-discovery mode: seed from diverse system nodes to show full graph variety
-        use stem::thing::sys::find;
         use abi::schema::kinds;
-        
+        use stem::thing::sys::find;
+
         // Comprehensive list of interesting kinds to seed from
         // This ensures the subgraph shows all types of nodes, not just mem.Range
         let interesting_kinds = [
             // Core system
-            kinds::SVC_ROOT,              // System root node
-            kinds::PROC_KERNEL,           // Kernel process
-            kinds::SVC_SCHEDULER,         // Scheduler service
+            kinds::SVC_ROOT,      // System root node
+            kinds::PROC_KERNEL,   // Kernel process
+            kinds::SVC_SCHEDULER, // Scheduler service
             // Device/Hardware
-            kinds::DEV_HOST,              // Host device
-            kinds::DEV_BUS_PCI,           // PCI bus
-            kinds::DEV_PCI_FUNCTION,      // PCI devices
-            kinds::DEV_NET_NIC,           // Network cards
-            kinds::DEV_STORAGE_DISK,      // Disks
-            kinds::DEV_DISPLAY_GPU,       // GPU
-            kinds::DEV_CPU,               // CPUs
+            kinds::DEV_HOST,         // Host device
+            kinds::DEV_BUS_PCI,      // PCI bus
+            kinds::DEV_PCI_FUNCTION, // PCI devices
+            kinds::DEV_NET_NIC,      // Network cards
+            kinds::DEV_STORAGE_DISK, // Disks
+            kinds::DEV_DISPLAY_GPU,  // GPU
+            kinds::DEV_CPU,          // CPUs
             // UI
-            kinds::UI_CROWN,              // UI crown (desktop)
-            kinds::UI_WINDOW,             // Windows
+            kinds::UI_CROWN,  // UI crown (desktop)
+            kinds::UI_WINDOW, // Windows
             // Fonts
-            kinds::FONT_FAMILY,           // Font families
-            kinds::FONT_FACE,             // Font faces
+            kinds::FONT_FAMILY, // Font families
+            kinds::FONT_FACE,   // Font faces
             // Content/Files
-            kinds::CONTENT_SOURCE,        // Content sources
-            kinds::CONTENT_FILE,          // Files
-            kinds::BOOT_MODULE,           // Boot modules
+            kinds::CONTENT_SOURCE, // Content sources
+            kinds::CONTENT_FILE,   // Files
+            kinds::BOOT_MODULE,    // Boot modules
             // Services
-            "svc.net.Stack",              // Network stack
-            "svc.net.Driver",             // Network driver
+            "svc.net.Stack",  // Network stack
+            "svc.net.Driver", // Network driver
             // Assets
-            kinds::ASSET,                 // Assets
+            kinds::ASSET, // Assets
         ];
-        
+
         for kind_name in &interesting_kinds {
             let mut ids = [ThingId::default(); 32];
             if let Ok(count) = find(*kind_name, &mut ids) {
@@ -631,7 +640,7 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
             }
         }
     }
-    
+
     while let Some((node_id, node_depth)) = queue.pop_front() {
         if visited_set.contains(&node_id) {
             continue;
@@ -642,7 +651,7 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
         }
         visited_set.insert(node_id);
         visited_order.push(node_id);
-        
+
         // Get outgoing edges if we haven't reached max depth
         if node_depth < depth {
             let mut edge_buf = [Edge::default(); 64];
@@ -660,11 +669,11 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
             }
         }
     }
-    
+
     // Build JSON response
     let mut json = JsonBuilder::new();
     json.start_object();
-    
+
     // Root field - either the specified root or null for auto-discovery
     json.key("root");
     if let Some(root) = root_id {
@@ -672,7 +681,7 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
     } else {
         json.buf.extend_from_slice(b"null,");
     }
-    
+
     // Nodes array
     json.key("nodes");
     json.start_array();
@@ -680,17 +689,17 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
         json.start_object();
         json.key("id");
         json.number_value(*node_id);
-        
+
         // Get kind
         let kind_id = stem::syscall::graph::get_kind(*node_id).unwrap_or(0);
         json.key("kind");
         json.number_value(kind_id);
-        
+
         // Resolve kind to string name (cached)
         let kind_name = get_symbol_name_cached(kind_id as u32, &mut symbol_cache);
         json.key("kind_name");
         json.string_value(&kind_name);
-        
+
         // Label heuristic - try NAME first, then shortened ID (using pre-interned symbols)
         let label = get_node_label_fast(*node_id, &name_syms);
         json.key("label");
@@ -707,10 +716,13 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
                 }
             }
         }
-        
+
         // Layout positions from existing LAYOUT_POS_X/Y (shared with Photosynthesis)
         if layout_x_sym != 0 && layout_y_sym != 0 {
-            if let (Ok(x_bits), Ok(y_bits)) = (prop_get(*node_id, layout_x_sym), prop_get(*node_id, layout_y_sym)) {
+            if let (Ok(x_bits), Ok(y_bits)) = (
+                prop_get(*node_id, layout_x_sym),
+                prop_get(*node_id, layout_y_sym),
+            ) {
                 if x_bits != 0 || y_bits != 0 {
                     // Stored as f32 bits
                     let x = f32::from_bits(x_bits as u32);
@@ -722,13 +734,13 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
                 }
             }
         }
-        
+
         json.end_object();
         json.buf.push(b',');
     }
     json.end_array();
     json.buf.push(b',');
-    
+
     // Edges array
     json.key("edges");
     json.start_array();
@@ -736,33 +748,33 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
         // Only include edges where both endpoints are in visited set (O(log n) check)
         if visited_set.contains(from) && visited_set.contains(to) {
             json.start_object();
-            
+
             // Edge ID
             json.key("id");
             let edge_id = format!("e:{}->{}:{}", from, to, rel_sym);
             json.string_value(&edge_id);
-            
+
             json.key("from");
             json.number_value(*from);
-            
+
             json.key("to");
             json.number_value(*to);
-            
+
             json.key("rel");
             json.number_value(*rel_sym);
-            
+
             // Resolve relationship name (cached)
             let rel_name = get_symbol_name_cached(*rel_sym as u32, &mut symbol_cache);
             json.key("rel_name");
             json.string_value(&rel_name);
-            
+
             json.end_object();
             json.buf.push(b',');
         }
     }
     json.end_array();
     json.buf.push(b',');
-    
+
     // Truncated flag
     json.key("truncated");
     if truncated {
@@ -770,7 +782,7 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
     } else {
         json.buf.extend_from_slice(b"false,");
     }
-    
+
     // Stats
     json.key("stats");
     json.start_object();
@@ -781,16 +793,18 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, Vec<u8>) {
     json.key("edges");
     json.number_value(edges_out.len() as u64);
     json.end_object();
-    
+
     json.end_object();
-    
+
     json_response("200 OK", &json.as_string().unwrap_or_default())
 }
 
 /// Fast label lookup using pre-interned symbols
 fn get_node_label_fast(node_id: u64, name_syms: &[u64; 4]) -> String {
     for &sym in name_syms {
-        if sym == 0 { continue; }
+        if sym == 0 {
+            continue;
+        }
         if let Ok(val) = prop_get(node_id, sym) {
             if val != 0 {
                 // Try to resolve as interned string
@@ -805,11 +819,11 @@ fn get_node_label_fast(node_id: u64, name_syms: &[u64; 4]) -> String {
             }
         }
     }
-    
+
     // Fallback: shortened ID
     let id_str = format!("{}", node_id);
     if id_str.len() > 8 {
-        format!("...{}", &id_str[id_str.len()-8..])
+        format!("...{}", &id_str[id_str.len() - 8..])
     } else {
         id_str
     }
@@ -851,7 +865,7 @@ const AVAILABLE_VIEWS: &[ViewDef] = &[
 pub fn handle_list_views() -> (&'static str, Vec<u8>) {
     let mut json = JsonBuilder::new();
     json.start_array();
-    
+
     for view in AVAILABLE_VIEWS {
         json.start_object();
         json.key("id");
@@ -865,7 +879,7 @@ pub fn handle_list_views() -> (&'static str, Vec<u8>) {
         json.end_object();
         json.buf.push(b',');
     }
-    
+
     json.end_array();
     json_response("200 OK", &json.as_string().unwrap_or_default())
 }
@@ -889,17 +903,17 @@ pub fn handle_get_view_body(id: &str, query: &str) -> String {
             json.string_value(&alloc::format!("View '{}' not found", id));
             json.end_object();
             json.as_string().unwrap_or_default()
-        },
+        }
     }
 }
 
 fn handle_view_task_monitor(_query: &str) -> String {
     // Task Monitor: Scheduler -> CPUs -> Tasks -> Threads
     // Layout: LR
-    
+
     let mut json = JsonBuilder::new();
     json.start_object();
-    
+
     json.key("view");
     json.start_object();
     json.key("id");
@@ -925,19 +939,27 @@ fn handle_view_task_monitor(_query: &str) -> String {
     // Collect seeds
     let mut seeds = Vec::new();
     let mut ids = [0u64; 32];
-    
+
     // Debug logging
     error!("VIEW[task_monitor]: collecting seeds...");
 
     if let Ok(kind) = intern(kinds::SVC_SCHEDULER) {
         if let Ok(count) = find(kind, &mut ids) {
-            if count > 0 { seeds.push(ids[0]); }
-        } else { error!("find(SVC_SCHEDULER) failed"); }
-    } else { error!("intern(SVC_SCHEDULER) failed"); }
+            if count > 0 {
+                seeds.push(ids[0]);
+            }
+        } else {
+            error!("find(SVC_SCHEDULER) failed");
+        }
+    } else {
+        error!("intern(SVC_SCHEDULER) failed");
+    }
 
     if let Ok(kind) = intern(kinds::PROC_KERNEL) {
         if let Ok(count) = find(kind, &mut ids) {
-             if count > 0 { seeds.push(ids[0]); }
+            if count > 0 {
+                seeds.push(ids[0]);
+            }
         }
     }
     if let Ok(kind) = intern(kinds::DEV_CPU) {
@@ -951,8 +973,12 @@ fn handle_view_task_monitor(_query: &str) -> String {
     error!("VIEW[task_monitor]: seeds count = {}", seeds.len());
 
     let (nodes, edges) = traverse_view(seeds, 3, 200);
-    error!("VIEW[task_monitor]: nodes={} edges={}", nodes.len(), edges.len());
-    
+    error!(
+        "VIEW[task_monitor]: nodes={} edges={}",
+        nodes.len(),
+        edges.len()
+    );
+
     write_graph_json(&mut json, nodes, edges);
     json.end_object();
     json.as_string().unwrap_or_default()
@@ -961,10 +987,10 @@ fn handle_view_task_monitor(_query: &str) -> String {
 fn handle_view_device_census(_query: &str) -> String {
     // Device Census: Host -> Buses -> Devices -> Drivers
     // Layout: TB
-    
+
     let mut json = JsonBuilder::new();
     json.start_object();
-    
+
     json.key("view");
     json.start_object();
     json.key("id");
@@ -989,13 +1015,15 @@ fn handle_view_device_census(_query: &str) -> String {
 
     let mut seeds = Vec::new();
     let mut ids = [0u64; 32];
-    
+
     if let Ok(kind) = intern(kinds::DEV_HOST) {
         if let Ok(count) = find(kind, &mut ids) {
-            if count > 0 { seeds.push(ids[0]); }
+            if count > 0 {
+                seeds.push(ids[0]);
+            }
         }
     }
-    
+
     let (nodes, edges) = traverse_view(seeds, 4, 300);
     write_graph_json(&mut json, nodes, edges);
     json.end_object();
@@ -1011,7 +1039,7 @@ fn handle_view_graph_islands(query: &str) -> String {
             }
         }
     }
-    
+
     let mut seeds = Vec::new();
     if root != 0 {
         seeds.push(root);
@@ -1019,11 +1047,13 @@ fn handle_view_graph_islands(query: &str) -> String {
         let mut ids = [0u64; 1];
         if let Ok(kind) = intern(kinds::SVC_ROOT) {
             if let Ok(count) = find(kind, &mut ids) {
-               if count > 0 { seeds.push(ids[0]); }
+                if count > 0 {
+                    seeds.push(ids[0]);
+                }
             }
         }
     }
-    
+
     let mut json = JsonBuilder::new();
     json.start_object();
     json.key("view");
@@ -1034,7 +1064,7 @@ fn handle_view_graph_islands(query: &str) -> String {
     json.string_value("Graph Islands");
     json.end_object();
     json.buf.push(b',');
-    
+
     json.key("hints");
     json.start_object();
     json.end_object();
@@ -1060,7 +1090,11 @@ struct GraphEdge {
     rel: u64,
 }
 
-fn traverse_view(seeds: Vec<u64>, depth: u32, max_nodes: usize) -> (Vec<GraphNode>, Vec<GraphEdge>) {
+fn traverse_view(
+    seeds: Vec<u64>,
+    depth: u32,
+    max_nodes: usize,
+) -> (Vec<GraphNode>, Vec<GraphEdge>) {
     let layout_x_sym = intern("layout.pos.x").unwrap_or(0);
     let layout_y_sym = intern("layout.pos.y").unwrap_or(0);
     let name_syms: [u64; 4] = [
@@ -1069,19 +1103,19 @@ fn traverse_view(seeds: Vec<u64>, depth: u32, max_nodes: usize) -> (Vec<GraphNod
         intern("asset.name").unwrap_or(0),
         intern("file.name").unwrap_or(0),
     ];
-    
+
     use alloc::collections::BTreeSet;
     let mut visited_set: BTreeSet<u64> = BTreeSet::new();
     let mut visited_order: Vec<u64> = Vec::new();
     let mut edges_out: Vec<GraphEdge> = Vec::new();
     let mut queue: alloc::collections::VecDeque<(u64, u32)> = alloc::collections::VecDeque::new();
-    
+
     for seed in seeds {
         if !visited_set.contains(&seed) {
             queue.push_back((seed, 0));
         }
     }
-    
+
     while let Some((node_id, node_depth)) = queue.pop_front() {
         if visited_set.contains(&node_id) {
             continue;
@@ -1091,7 +1125,7 @@ fn traverse_view(seeds: Vec<u64>, depth: u32, max_nodes: usize) -> (Vec<GraphNod
         }
         visited_set.insert(node_id);
         visited_order.push(node_id);
-        
+
         if node_depth < depth {
             let mut edge_buf = [Edge::default(); 64];
             let thing_id = ThingId::from_u64(node_id);
@@ -1100,8 +1134,12 @@ fn traverse_view(seeds: Vec<u64>, depth: u32, max_nodes: usize) -> (Vec<GraphNod
                     let e = &edge_buf[i];
                     let dst = e.to.to_u64_lossy();
                     let rel = e.predicate.to_u64_lossy();
-                    
-                    edges_out.push(GraphEdge { from: node_id, to: dst, rel });
+
+                    edges_out.push(GraphEdge {
+                        from: node_id,
+                        to: dst,
+                        rel,
+                    });
                     if !visited_set.contains(&dst) {
                         queue.push_back((dst, node_depth + 1));
                     }
@@ -1109,32 +1147,42 @@ fn traverse_view(seeds: Vec<u64>, depth: u32, max_nodes: usize) -> (Vec<GraphNod
             }
         }
     }
-    
+
     let mut nodes = Vec::new();
     for node_id in visited_order {
         let kind_id = stem::syscall::graph::get_kind(node_id).unwrap_or(0);
         let label = get_node_label_fast(node_id, &name_syms);
-        
+
         let mut x = None;
         let mut y = None;
-        
+
         if layout_x_sym != 0 && layout_y_sym != 0 {
-            if let (Ok(x_bits), Ok(y_bits)) = (prop_get(node_id, layout_x_sym), prop_get(node_id, layout_y_sym)) {
+            if let (Ok(x_bits), Ok(y_bits)) = (
+                prop_get(node_id, layout_x_sym),
+                prop_get(node_id, layout_y_sym),
+            ) {
                 if x_bits != 0 || y_bits != 0 {
                     x = Some(f32::from_bits(x_bits as u32));
                     y = Some(f32::from_bits(y_bits as u32));
                 }
             }
         }
-        
-        nodes.push(GraphNode { id: node_id, kind: kind_id, label, x, y });
+
+        nodes.push(GraphNode {
+            id: node_id,
+            kind: kind_id,
+            label,
+            x,
+            y,
+        });
     }
-    
+
     // Filter edges to ensure both ends exist in our node set
-    let valid_edges = edges_out.into_iter()
+    let valid_edges = edges_out
+        .into_iter()
         .filter(|e| visited_set.contains(&e.from) && visited_set.contains(&e.to))
         .collect();
-        
+
     (nodes, valid_edges)
 }
 
@@ -1150,14 +1198,14 @@ fn write_graph_json(json: &mut JsonBuilder, nodes: Vec<GraphNode>, edges: Vec<Gr
         json.number_value(node.id);
         json.key("kind");
         json.number_value(node.kind);
-        
+
         let kind_name = get_symbol_name_cached(node.kind as u32, &mut symbol_cache);
         json.key("kind_name");
         json.string_value(&kind_name);
-        
+
         json.key("label");
         json.string_value(&node.label);
-        
+
         if let Some(v) = node.x {
             json.key("x");
             json.float_value(v);
@@ -1171,7 +1219,7 @@ fn write_graph_json(json: &mut JsonBuilder, nodes: Vec<GraphNode>, edges: Vec<Gr
     }
     json.end_array();
     json.buf.push(b',');
-    
+
     json.key("edges");
     json.start_array();
     for edge in edges {
@@ -1185,20 +1233,23 @@ fn write_graph_json(json: &mut JsonBuilder, nodes: Vec<GraphNode>, edges: Vec<Gr
         json.number_value(edge.to);
         json.key("rel");
         json.number_value(edge.rel);
-        
+
         let rel_name = get_symbol_name_cached(edge.rel as u32, &mut symbol_cache);
         json.key("rel_name");
         json.string_value(&rel_name);
-        
+
         json.end_object();
         json.buf.push(b',');
     }
-    
+
     json.end_array();
 }
 
 /// Cached symbol name resolution
-fn get_symbol_name_cached(sym_id: u32, cache: &mut alloc::collections::BTreeMap<u32, String>) -> String {
+fn get_symbol_name_cached(
+    sym_id: u32,
+    cache: &mut alloc::collections::BTreeMap<u32, String>,
+) -> String {
     if sym_id == 0 {
         return String::from("unknown");
     }
@@ -1230,11 +1281,11 @@ fn get_node_label(node_id: u64) -> String {
             }
         }
     }
-    
+
     // Fallback: shortened ID
     let id_str = format!("{}", node_id);
     if id_str.len() > 8 {
-        format!("...{}", &id_str[id_str.len()-8..])
+        format!("...{}", &id_str[id_str.len() - 8..])
     } else {
         id_str
     }
@@ -1264,12 +1315,12 @@ fn get_symbol_name(sym_id: u32) -> String {
 pub fn handle_patch_layout(body: &[u8]) -> (&'static str, Vec<u8>) {
     // Simple JSON parsing for layout updates
     // Expected: { "space": "graph_ui_v1", "nodes": [{ "id": "...", "x": 1.0, "y": 2.0 }] }
-    
+
     let body_str = match core::str::from_utf8(body) {
         Ok(s) => s,
         Err(_) => return error_response(ApiError::bad_request("Invalid UTF-8 in body")),
     };
-    
+
     // Get layout key symbols (use existing Photosynthesis keys)
     let layout_x_sym = match intern("layout.pos.x") {
         Ok(s) => s,
@@ -1279,10 +1330,10 @@ pub fn handle_patch_layout(body: &[u8]) -> (&'static str, Vec<u8>) {
         Ok(s) => s,
         Err(_) => return error_response(ApiError::internal("Failed to intern layout.pos.y")),
     };
-    
+
     // Parse nodes from JSON (simple extraction)
     let mut saved = 0u64;
-    
+
     // Find "nodes" array and parse each entry
     if let Some(nodes_start) = body_str.find("\"nodes\":") {
         let rest = &body_str[nodes_start..];
@@ -1296,7 +1347,7 @@ pub fn handle_patch_layout(body: &[u8]) -> (&'static str, Vec<u8>) {
                     let obj_pos = pos + obj_start;
                     if let Some(obj_end) = arr_content[obj_pos..].find('}') {
                         let obj = &arr_content[obj_pos..obj_pos + obj_end + 1];
-                        
+
                         // Extract id, x, y from object
                         if let (Some(id), Some(x), Some(y)) = (
                             extract_json_string(obj, "id").and_then(|s| s.parse::<u64>().ok()),
@@ -1306,13 +1357,14 @@ pub fn handle_patch_layout(body: &[u8]) -> (&'static str, Vec<u8>) {
                             // Store as f32 bits in u64
                             let x_bits = (x as f32).to_bits() as u64;
                             let y_bits = (y as f32).to_bits() as u64;
-                            
-                            if prop_set(id, layout_x_sym, x_bits).is_ok() 
-                               && prop_set(id, layout_y_sym, y_bits).is_ok() {
+
+                            if prop_set(id, layout_x_sym, x_bits).is_ok()
+                                && prop_set(id, layout_y_sym, y_bits).is_ok()
+                            {
                                 saved += 1;
                             }
                         }
-                        
+
                         pos = obj_pos + obj_end + 1;
                     } else {
                         break;
@@ -1323,13 +1375,13 @@ pub fn handle_patch_layout(body: &[u8]) -> (&'static str, Vec<u8>) {
             }
         }
     }
-    
+
     let mut json = JsonBuilder::new();
     json.start_object();
     json.key("saved");
     json.number_value(saved);
     json.end_object();
-    
+
     json_response("200 OK", &json.as_string().unwrap_or_default())
 }
 
@@ -1446,8 +1498,8 @@ fn find_host_id() -> Result<u64, ApiError> {
     let host_kind = intern(kinds::DEV_HOST)
         .map_err(|_| ApiError::internal("Failed to resolve dev.Host kind"))?;
     let mut ids = [0u64; 4];
-    let count = find(host_kind, &mut ids)
-        .map_err(|_| ApiError::internal("Failed to find dev.Host"))?;
+    let count =
+        find(host_kind, &mut ids).map_err(|_| ApiError::internal("Failed to find dev.Host"))?;
     if count == 0 {
         return Err(ApiError::not_found("dev.Host not found"));
     }
@@ -1466,10 +1518,10 @@ pub fn handle_execute_gql_query(body: &[u8]) -> (&'static str, Vec<u8>) {
         Ok(s) => s,
         Err(_) => return error_response(ApiError::bad_request("Invalid UTF-8 in request body")),
     };
-    
+
     // Execute the query
     let result = crate::gql_handler::handle_gql_post(query);
-    
+
     // Return as JSON
     ("200 OK", result)
 }
@@ -1487,21 +1539,20 @@ pub fn handle_execute_gql_query_get(query_string: &str) -> (&'static str, Vec<u8
             }
         }
     }
-    
+
     if gql_query.is_empty() {
         return error_response(ApiError::bad_request("Missing 'q' query parameter"));
     }
-    
+
     // URL decode would go here if needed
     // For now, assume it's already decoded
-    
+
     // Execute the query
     let result = crate::gql_handler::handle_gql_get(gql_query);
-    
+
     // Return as JSON
     ("200 OK", result)
 }
-
 
 // ============================================================================
 // Dispatch

@@ -73,22 +73,29 @@ impl VirtioGpu {
         let gpu_node = ThingId::from_u64(device_id);
 
         // Read VirtIO capability offsets from graph properties (set by kernel PCI enumeration)
-        let common_bar = thingsys::prop_get(gpu_node, keys::VIRTIO_COMMON_BAR).unwrap_or(0) as usize;
+        let common_bar =
+            thingsys::prop_get(gpu_node, keys::VIRTIO_COMMON_BAR).unwrap_or(0) as usize;
         let common_offset = thingsys::prop_get(gpu_node, keys::VIRTIO_COMMON_OFFSET).unwrap_or(0);
-        let notify_bar = thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_BAR).unwrap_or(0) as usize;
+        let notify_bar =
+            thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_BAR).unwrap_or(0) as usize;
         let notify_offset = thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_OFFSET).unwrap_or(0);
-        let notify_multiplier = thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_MULTIPLIER).unwrap_or(4) as u32;
+        let notify_multiplier =
+            thingsys::prop_get(gpu_node, keys::VIRTIO_NOTIFY_MULTIPLIER).unwrap_or(4) as u32;
 
         stem::info!(
             "virtio_gpu: caps from graph - common BAR{} off=0x{:x}, notify BAR{} off=0x{:x} mult={}",
-            common_bar, common_offset, notify_bar, notify_offset, notify_multiplier
+            common_bar,
+            common_offset,
+            notify_bar,
+            notify_offset,
+            notify_multiplier
         );
 
         // Map the BAR containing common config
         let common_bar_base = device_map_mmio(claim_handle, common_bar)?;
         let common_cfg = common_bar_base + common_offset;
 
-        // Map notify BAR (may be same as common BAR)  
+        // Map notify BAR (may be same as common BAR)
         let notify_cfg = if notify_bar == common_bar {
             common_bar_base + notify_offset
         } else {
@@ -144,7 +151,11 @@ impl VirtioGpu {
 
         // Check for virgl 3D support
         self.virgl_supported = (device_features & (1 << virtio::VIRTIO_GPU_F_VIRGL)) != 0;
-        stem::info!("virtio_gpu: device features=0x{:08x} virgl={}", device_features, self.virgl_supported);
+        stem::info!(
+            "virtio_gpu: device features=0x{:08x} virgl={}",
+            device_features,
+            self.virgl_supported
+        );
 
         // 5. Write driver features - request virgl if available
         self.write_common(virtio::VIRTIO_COMMON_DRIVER_FEATURE_SELECT, 0);
@@ -306,7 +317,7 @@ impl VirtioGpu {
         // Format is BGRA32 (4 bytes per pixel)
         const BPP: u32 = 4;
         let offset = (rect.y as u64) * (self.fb_stride as u64) + (rect.x as u64) * (BPP as u64);
-        
+
         let cmd = VirtioGpuTransferToHost2d {
             hdr: VirtioGpuCtrlHdr {
                 type_: VIRTIO_GPU_CMD_TRANSFER_TO_HOST_2D,
@@ -489,7 +500,11 @@ impl VirtioGpu {
     }
 
     /// Attach a resource to a 3D context
-    pub fn ctx_attach_resource(&mut self, ctx_id: u32, resource_id: u32) -> Result<(), &'static str> {
+    pub fn ctx_attach_resource(
+        &mut self,
+        ctx_id: u32,
+        resource_id: u32,
+    ) -> Result<(), &'static str> {
         let cmd = VirtioGpuCtxResource {
             hdr: VirtioGpuCtrlHdr {
                 type_: VIRTIO_GPU_CMD_CTX_ATTACH_RESOURCE,
@@ -533,15 +548,13 @@ impl VirtioGpu {
 
         let header_size = core::mem::size_of::<VirtioGpuCmdSubmit3d>();
         let total_size = header_size + commands.len();
-        
+
         // Copy header and command data to DMA buffer
         let cmd_ptr = self.cmd_buf as *mut u8;
         unsafe {
             // Write header
-            let header_bytes = core::slice::from_raw_parts(
-                &header as *const _ as *const u8,
-                header_size,
-            );
+            let header_bytes =
+                core::slice::from_raw_parts(&header as *const _ as *const u8, header_size);
             for (i, byte) in header_bytes.iter().enumerate() {
                 core::ptr::write_volatile(cmd_ptr.add(i), *byte);
             }

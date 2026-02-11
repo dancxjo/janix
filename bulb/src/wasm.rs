@@ -5,7 +5,7 @@
 //! and emit draw commands via the command buffer interface.
 
 #[cfg(feature = "wasm")]
-use wasmi::{Engine, Linker, Module, Store, Instance, Func, Caller, TypedFunc};
+use wasmi::{Caller, Engine, Func, Instance, Linker, Module, Store, TypedFunc};
 
 use crate::boot_state::BootStateWire;
 use crate::draw_commands::{CommandBuffer, MAX_COMMAND_BUFFER_SIZE};
@@ -71,25 +71,24 @@ impl BulbModule {
     pub fn new(wasm_bytes: &[u8]) -> Result<Self, BulbError> {
         let mut config = wasmi::Config::default();
         config.consume_fuel(true);
-        
+
         let engine = Engine::new(&config);
-        let module = Module::new(&engine, wasm_bytes)
-            .map_err(|_| BulbError::InvalidModule)?;
-        
+        let module = Module::new(&engine, wasm_bytes).map_err(|_| BulbError::InvalidModule)?;
+
         let mut store = Store::new(&engine, BulbHostState::default());
         store.set_fuel(DEFAULT_FUEL_BUDGET).ok();
-        
+
         let mut linker = Linker::new(&engine);
-        
+
         // Register host functions
         Self::register_host_functions(&mut linker)?;
-        
+
         let instance = linker
             .instantiate(&mut store, &module)
             .map_err(|_| BulbError::InstantiationFailed)?
             .start(&mut store)
             .map_err(|_| BulbError::StartFailed)?;
-        
+
         // Look up exported functions
         let fn_init = instance
             .get_typed_func::<u64, u32>(&store, "bulb_init")
@@ -103,7 +102,7 @@ impl BulbModule {
         let fn_render = instance
             .get_typed_func::<(), ()>(&store, "bulb_render")
             .ok();
-        
+
         Ok(Self {
             engine,
             store,
@@ -114,62 +113,74 @@ impl BulbModule {
             fn_render,
         })
     }
-    
+
     fn register_host_functions(linker: &mut Linker<BulbHostState>) -> Result<(), BulbError> {
         // cmd_submit(ptr: u32, len: u32) - submit command buffer
         linker
-            .func_wrap("env", "cmd_submit", |_caller: Caller<'_, BulbHostState>, _ptr: u32, _len: u32| {
-                // Commands are already in linear memory; host will read them
-            })
+            .func_wrap(
+                "env",
+                "cmd_submit",
+                |_caller: Caller<'_, BulbHostState>, _ptr: u32, _len: u32| {
+                    // Commands are already in linear memory; host will read them
+                },
+            )
             .map_err(|_| BulbError::LinkFailed)?;
-        
+
         // host_get_boot_state(ptr: u32, len: u32) -> u32
         linker
-            .func_wrap("env", "host_get_boot_state", |caller: Caller<'_, BulbHostState>, ptr: u32, len: u32| -> u32 {
-                let bytes = caller.data().boot_state.to_bytes();
-                let copy_len = (len as usize).min(bytes.len());
-                // Would write to Wasm memory at ptr
-                copy_len as u32
-            })
+            .func_wrap(
+                "env",
+                "host_get_boot_state",
+                |caller: Caller<'_, BulbHostState>, ptr: u32, len: u32| -> u32 {
+                    let bytes = caller.data().boot_state.to_bytes();
+                    let copy_len = (len as usize).min(bytes.len());
+                    // Would write to Wasm memory at ptr
+                    copy_len as u32
+                },
+            )
             .map_err(|_| BulbError::LinkFailed)?;
-        
+
         // host_get_display_info(ptr: u32) -> u32
         linker
-            .func_wrap("env", "host_get_display_info", |caller: Caller<'_, BulbHostState>, _ptr: u32| -> u32 {
-                let w = caller.data().display_width as u32;
-                let h = caller.data().display_height as u32;
-                (w << 16) | h
-            })
+            .func_wrap(
+                "env",
+                "host_get_display_info",
+                |caller: Caller<'_, BulbHostState>, _ptr: u32| -> u32 {
+                    let w = caller.data().display_width as u32;
+                    let h = caller.data().display_height as u32;
+                    (w << 16) | h
+                },
+            )
             .map_err(|_| BulbError::LinkFailed)?;
-        
+
         Ok(())
     }
-    
+
     /// Initialize the module with a seed value
     pub fn init(&mut self, seed: u64) -> BulbResult {
         let Some(ref fn_init) = self.fn_init else {
             return BulbResult::NotLoaded;
         };
-        
+
         self.store.set_fuel(DEFAULT_FUEL_BUDGET).ok();
-        
+
         match fn_init.call(&mut self.store, seed) {
             Ok(_) => BulbResult::Ok,
             Err(e) if e.to_string().contains("fuel") => BulbResult::OutOfFuel,
             Err(_) => BulbResult::Trapped,
         }
     }
-    
+
     /// Notify module of boot state change
     pub fn on_boot(&mut self, state: BootStateWire) -> BulbResult {
         self.store.data_mut().boot_state = state;
-        
+
         let Some(ref fn_on_boot) = self.fn_on_boot else {
             return BulbResult::NotLoaded;
         };
-        
+
         self.store.set_fuel(DEFAULT_FUEL_BUDGET).ok();
-        
+
         // Pass pointer to boot state in Wasm memory (would need memory write)
         match fn_on_boot.call(&mut self.store, (0, 8)) {
             Ok(_) => BulbResult::Ok,
@@ -177,38 +188,38 @@ impl BulbModule {
             Err(_) => BulbResult::Trapped,
         }
     }
-    
+
     /// Tick the animation
     pub fn on_tick(&mut self, now_ms: u64) -> BulbResult {
         let Some(ref fn_on_tick) = self.fn_on_tick else {
             return BulbResult::Ok; // Optional function
         };
-        
+
         self.store.set_fuel(DEFAULT_FUEL_BUDGET).ok();
-        
+
         match fn_on_tick.call(&mut self.store, now_ms) {
             Ok(_) => BulbResult::Ok,
             Err(e) if e.to_string().contains("fuel") => BulbResult::OutOfFuel,
             Err(_) => BulbResult::Trapped,
         }
     }
-    
+
     /// Render the current frame
     pub fn render(&mut self) -> BulbResult {
         let Some(ref fn_render) = self.fn_render else {
             return BulbResult::NotLoaded;
         };
-        
+
         self.store.data_mut().commands.clear();
         self.store.set_fuel(DEFAULT_FUEL_BUDGET).ok();
-        
+
         match fn_render.call(&mut self.store, ()) {
             Ok(_) => BulbResult::Ok,
             Err(e) if e.to_string().contains("fuel") => BulbResult::OutOfFuel,
             Err(_) => BulbResult::Trapped,
         }
     }
-    
+
     /// Get the command buffer after rendering
     pub fn commands(&self) -> &[u8] {
         self.store.data().commands.as_bytes()

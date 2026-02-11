@@ -25,7 +25,11 @@ pub fn blit_a8_tinted_over_scalar_row(dst: &mut [u32], src_a8: &[u8], color: u32
             continue;
         }
 
-        let ea = if tint_a == 255 { sa as u32 } else { scale_ch(sa, tint_a) };
+        let ea = if tint_a == 255 {
+            sa as u32
+        } else {
+            scale_ch(sa, tint_a)
+        };
 
         if ea == 255 {
             dst[i] = (255 << 24) | (tr << 16) | (tg << 8) | tb;

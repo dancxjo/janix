@@ -42,9 +42,9 @@ pub struct QuantizationSettings {
 impl Default for QuantizationSettings {
     fn default() -> Self {
         Self {
-            zoom_threshold_log2: 0.1,    // ~7% zoom change
-            pan_threshold_world: 10.0,   // 10 world units
-            debounce_ms: 150,            // 150ms after input settles
+            zoom_threshold_log2: 0.1,  // ~7% zoom change
+            pan_threshold_world: 10.0, // 10 world units
+            debounce_ms: 150,          // 150ms after input settles
         }
     }
 }

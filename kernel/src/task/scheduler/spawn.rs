@@ -1,7 +1,6 @@
-
 //! Task and thread spawning functions.
 
-use crate::task::{StartupArg, Task, TaskId, TaskPriority, TaskState, Affinity};
+use crate::task::{Affinity, StartupArg, Task, TaskId, TaskPriority, TaskState};
 use crate::{BootRuntime, BootTasking, UserEntry};
 
 use super::SCHEDULER;
@@ -60,14 +59,18 @@ impl<R: BootRuntime> Scheduler<R> {
             .tasking()
             .init_kernel_context(entry, stack_top, arg.to_raw());
 
-        // Determine target CPU: Balanced among online CPUs. 
+        // Determine target CPU: Balanced among online CPUs.
         // Kernel threads do NOT trigger bring-up by default unless balanced carefully.
         let target_cpu = self.pick_cpu_and_bringup(affinity, false);
         crate::kdebug!("SCHED: Task {} assigned to CPU {}", id, target_cpu);
 
         // Push to target CPU's run queue
         let cpu_count = self.per_cpu.len(); // Should match rt.cpu_count()
-        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
+        let safe_cpu = if target_cpu < cpu_count {
+            target_cpu
+        } else {
+            0
+        };
 
         let task: Task<R> = Task {
             id,
@@ -106,7 +109,7 @@ impl<R: BootRuntime> Scheduler<R> {
         super::graphify::create_thread_node(id, priority as u8, false, None, parent_tid);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
-             super::graphify::set_affinity_node(id, cpu);
+            super::graphify::set_affinity_node(id, cpu);
         }
         // Initial location matches target runq
         super::graphify::update_task_location(id, safe_cpu);
@@ -137,7 +140,9 @@ impl<R: BootRuntime> Scheduler<R> {
         let aspace = rt.tasking().active_address_space();
 
         // Inherit mappings from current task
-        let mappings = if let Some(current_id) = self.per_cpu[super::current_cpu_index::<R>()].current {
+        let mappings = if let Some(current_id) =
+            self.per_cpu[super::current_cpu_index::<R>()].current
+        {
             if let Some(parent) = self.tasks.iter().find(|t| t.id == current_id) {
                 parent.mappings.clone()
             } else {
@@ -160,11 +165,19 @@ impl<R: BootRuntime> Scheduler<R> {
             Affinity::Pinned(cpu) => cpu,
             Affinity::Any => super::current_cpu_index::<R>(),
         };
-        crate::kdebug!("SCHED: Task {} (user thread) assigned to CPU {}", id, target_cpu);
+        crate::kdebug!(
+            "SCHED: Task {} (user thread) assigned to CPU {}",
+            id,
+            target_cpu
+        );
 
         // Push to target CPU's run queue
         let cpu_count = self.per_cpu.len();
-        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
+        let safe_cpu = if target_cpu < cpu_count {
+            target_cpu
+        } else {
+            0
+        };
 
         let task: Task<R> = Task {
             id,
@@ -201,7 +214,7 @@ impl<R: BootRuntime> Scheduler<R> {
         super::graphify::create_thread_node(id, priority as u8, true, None, parent_tid);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
-             super::graphify::set_affinity_node(id, cpu);
+            super::graphify::set_affinity_node(id, cpu);
         }
         // Initial location matches target runq
         super::graphify::update_task_location(id, safe_cpu);
@@ -240,11 +253,19 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // Determine target CPU: New processes trigger bring-up of offline CPUs
         let target_cpu = self.pick_cpu_and_bringup(affinity, true);
-        crate::kdebug!("SCHED: Task {} (user task/process) assigned to CPU {}", id, target_cpu);
+        crate::kdebug!(
+            "SCHED: Task {} (user task/process) assigned to CPU {}",
+            id,
+            target_cpu
+        );
 
         // Push to target CPU's run queue
         let cpu_count = self.per_cpu.len();
-        let safe_cpu = if target_cpu < cpu_count { target_cpu } else { 0 };
+        let safe_cpu = if target_cpu < cpu_count {
+            target_cpu
+        } else {
+            0
+        };
 
         let task: Task<R> = Task {
             id,
@@ -281,7 +302,7 @@ impl<R: BootRuntime> Scheduler<R> {
         super::graphify::create_thread_node(id, priority as u8, true, None, parent_tid);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
-             super::graphify::set_affinity_node(id, cpu);
+            super::graphify::set_affinity_node(id, cpu);
         }
         // Initial location matches target runq
         super::graphify::update_task_location(id, safe_cpu);
@@ -326,7 +347,14 @@ pub unsafe fn spawn_user_thread<R: BootRuntime>(
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    let id = sched.spawn_user_thread(entry, stack, arg, stack_info, priority, crate::task::Affinity::Any);
+    let id = sched.spawn_user_thread(
+        entry,
+        stack,
+        arg,
+        stack_info,
+        priority,
+        crate::task::Affinity::Any,
+    );
     rt.irq_restore(_irq);
     id
 }
@@ -343,7 +371,14 @@ pub unsafe fn spawn_user_task_full<R: BootRuntime>(
     let lock = SCHEDULER.lock();
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-    let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority, crate::task::Affinity::Any);
+    let id = sched.spawn_user_task(
+        entry,
+        aspace,
+        stack_info,
+        regions,
+        priority,
+        crate::task::Affinity::Any,
+    );
     rt.irq_restore(_irq);
     id
 }
@@ -367,7 +402,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     entry.arg0 = arg.to_raw();
 
     let _irq = rt.irq_disable();
-    
+
     // Audio pipeline: Pin to CPU 0 to avoid waiting for SMP bring-up
     let affinity = if name.contains("virtio_sound") || name.contains("beeper") {
         // Audio proof-of-life: Run on CPU 0 immediately, don't trigger SMP bring-up

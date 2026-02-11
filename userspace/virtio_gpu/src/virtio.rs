@@ -36,11 +36,11 @@ pub const VIRTIO_STATUS_FAILED: u32 = 128;
 pub const VIRTIO_F_VERSION_1: u64 = 1 << 32;
 
 // VirtIO GPU feature bits
-pub const VIRTIO_GPU_F_VIRGL: u32 = 0;     // 3D virgl rendering support
-pub const VIRTIO_GPU_F_EDID: u32 = 1;      // EDID support
+pub const VIRTIO_GPU_F_VIRGL: u32 = 0; // 3D virgl rendering support
+pub const VIRTIO_GPU_F_EDID: u32 = 1; // EDID support
 pub const VIRTIO_GPU_F_RESOURCE_UUID: u32 = 2; // Resource UUID support
 pub const VIRTIO_GPU_F_RESOURCE_BLOB: u32 = 3; // Resource blob support
-pub const VIRTIO_GPU_F_CONTEXT_INIT: u32 = 4;  // Context initialization support
+pub const VIRTIO_GPU_F_CONTEXT_INIT: u32 = 4; // Context initialization support
 
 // Note: Feature selector and feature data offsets defined above (0x00-0x0C)
 

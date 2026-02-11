@@ -8,7 +8,6 @@ use super::SCHEDULER;
 use super::graphify;
 use super::types::Scheduler;
 
-
 static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> =
     core::sync::atomic::AtomicPtr::new(core::ptr::null_mut());
 pub(crate) static WAKE_TASK_HOOK: core::sync::atomic::AtomicPtr<()> =
@@ -40,7 +39,7 @@ pub fn block_current<R: BootRuntime>() {
                 return;
             }
             sched.tasks[idx].state = TaskState::Blocked;
-            
+
             // Queue graph state update
             graphify::update_task_state(current_id, "blocked");
         }
@@ -58,7 +57,7 @@ pub fn block_current<R: BootRuntime>() {
         rt.tasking().activate_address_space(switch.to_aspace);
 
         let cr3_after = rt.debug_active_aspace_root();
-        
+
         {
             let lock = SCHEDULER.lock();
             let ptr = lock.expect("Scheduler not initialized");
@@ -67,7 +66,8 @@ pub fn block_current<R: BootRuntime>() {
         }
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+            rt.tasking()
+                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
     }
 
@@ -103,25 +103,31 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
             sched.tasks[idx].state = TaskState::Runnable;
             let priority = sched.tasks[idx].priority;
             let affinity = sched.tasks[idx].affinity;
-            
+
             let target_cpu = match affinity {
                 crate::task::Affinity::Pinned(cpu) => cpu,
                 crate::task::Affinity::Any => {
                     // Try to wake to the last CPU it ran on to avoid immediate migration
-                    sched.tasks[idx].last_cpu.unwrap_or_else(|| super::current_cpu_index::<R>())
+                    sched.tasks[idx]
+                        .last_cpu
+                        .unwrap_or_else(|| super::current_cpu_index::<R>())
                 }
             };
-            
-            let safe_cpu = if target_cpu < sched.per_cpu.len() { target_cpu } else { 0 };
+
+            let safe_cpu = if target_cpu < sched.per_cpu.len() {
+                target_cpu
+            } else {
+                0
+            };
             sched.per_cpu[safe_cpu].runq[priority as usize].push_back(tid);
-            
+
             // If the target CPU is not the current one, send an IPI to wake it up
             if safe_cpu != super::current_cpu_index::<R>() {
                 rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
             }
-            
+
             sched.tasks[idx].wake_pending = false;
-            
+
             // Queue graph state update
             graphify::update_task_state(tid, "runnable");
         } else {

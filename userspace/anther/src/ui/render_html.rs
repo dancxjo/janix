@@ -83,7 +83,11 @@ fn render_node(tree: &UiTree, idx: usize, window: u64, out: &mut String) {
     let id = node.id.to_u64_lossy();
     let style = node_style(node);
     match node.kind {
-        UiNodeKind::Window | UiNodeKind::Column | UiNodeKind::Row | UiNodeKind::Box | UiNodeKind::Unknown => {
+        UiNodeKind::Window
+        | UiNodeKind::Column
+        | UiNodeKind::Row
+        | UiNodeKind::Box
+        | UiNodeKind::Unknown => {
             let _ = write!(
                 out,
                 "<div class=\"petals-node petals-{}\" data-window=\"{}\" data-target=\"{}\"{} style=\"{}\">",

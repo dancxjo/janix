@@ -400,7 +400,7 @@ pub unsafe fn init() {
             0,
             0x8E,
         );
-        
+
         // Dedicated Mouse Vector (0x2C) - Bypass Common Shim/ISR lookup
         IDT.entries[0x2C].set_handler(
             irq_mouse_handler_shim as *const () as u64,
@@ -446,8 +446,7 @@ pub struct InterruptStackFrame {
 pub extern "C" fn rust_irq_handler(vector: u64) {
     // Prefer the LAPIC ISR-reported in-service vector when available.
     // This matches the historical path and avoids relying on shim-passed constants.
-    let resolved =
-        crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
+    let resolved = crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
 
     if resolved == 0x2C {
         let count = IRQ12_COUNT.fetch_add(1, Ordering::Relaxed) + 1;

@@ -34,6 +34,22 @@ pub fn port_send(handle: PortHandle, data: &[u8]) -> Result<usize, Errno> {
     abi::errors::errno(ret)
 }
 
+/// Send bytes atomically: either all bytes are written or EAGAIN is returned.
+pub fn port_send_all(handle: PortHandle, data: &[u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_PORT_SEND_ALL,
+            handle as usize,
+            data.as_ptr() as usize,
+            data.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
 /// Receive bytes from a port via handle
 /// Returns number of bytes read
 pub fn port_recv(handle: PortHandle, buf: &mut [u8]) -> Result<usize, Errno> {
@@ -84,4 +100,43 @@ pub fn port_len(handle: PortHandle) -> Result<usize, Errno> {
 pub fn port_capacity(handle: PortHandle) -> Result<usize, Errno> {
     let ret = unsafe { raw_syscall6(SYS_PORT_INFO, handle as usize, 0, 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|v| (v >> 32) as usize)
+}
+
+/// Create a broadcast topic and return its topic id.
+pub fn topic_create() -> Result<u32, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_TOPIC_CREATE, 0, 0, 0, 0, 0, 0) };
+    abi::errors::errno(ret).map(|v| v as u32)
+}
+
+/// Subscribe a write port handle to a topic.
+pub fn topic_subscribe(topic_id: u32, write_handle: PortHandle) -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_TOPIC_SUBSCRIBE,
+            topic_id as usize,
+            write_handle as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Publish a payload to all subscribers of a topic.
+/// Returns number of subscribers that accepted the payload.
+pub fn topic_publish(topic_id: u32, data: &[u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_TOPIC_PUBLISH,
+            topic_id as usize,
+            data.as_ptr() as usize,
+            data.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
 }

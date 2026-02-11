@@ -2,11 +2,11 @@
 //! Provides scalar reference and architecture backends with identical math.
 //! The scalar implementation is the canonical truth; SIMD backends must match it exactly.
 
-#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
-mod x86;
 #[cfg(target_arch = "aarch64")]
 mod neon;
 mod scalar;
+#[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
+mod x86;
 
 pub mod text;
 
@@ -52,17 +52,29 @@ pub fn composite_solid_masked_over(
         if x86::is_avx2_available() {
             unsafe {
                 x86::composite_solid_masked_over_avx2(
-                    dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+                    dst,
+                    dst_stride,
+                    mask,
+                    mask_stride,
+                    rect_w,
+                    rect_h,
+                    color_premul,
                 );
                 return;
             }
         }
-        
+
         // Fall back to SSE2 if available
         #[cfg(target_feature = "sse2")]
         unsafe {
             x86::composite_solid_masked_over_sse2(
-                dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+                dst,
+                dst_stride,
+                mask,
+                mask_stride,
+                rect_w,
+                rect_h,
+                color_premul,
             );
             return;
         }
@@ -72,13 +84,25 @@ pub fn composite_solid_masked_over(
     #[cfg(target_feature = "neon")]
     unsafe {
         neon::composite_solid_masked_over_neon(
-            dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+            dst,
+            dst_stride,
+            mask,
+            mask_stride,
+            rect_w,
+            rect_h,
+            color_premul,
         );
         return;
     }
 
     scalar::composite_solid_masked_over_scalar(
-        dst, dst_stride, mask, mask_stride, rect_w, rect_h, color_premul,
+        dst,
+        dst_stride,
+        mask,
+        mask_stride,
+        rect_w,
+        rect_h,
+        color_premul,
     );
 }
 
@@ -104,17 +128,31 @@ pub fn composite_src_masked_over(
         if x86::is_avx2_available() {
             unsafe {
                 x86::composite_src_masked_over_avx2(
-                    dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+                    dst,
+                    dst_stride,
+                    src,
+                    src_stride,
+                    mask,
+                    mask_stride,
+                    rect_w,
+                    rect_h,
                 );
                 return;
             }
         }
-        
+
         // Fall back to SSE2 if available
         #[cfg(target_feature = "sse2")]
         unsafe {
             x86::composite_src_masked_over_sse2(
-                dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+                dst,
+                dst_stride,
+                src,
+                src_stride,
+                mask,
+                mask_stride,
+                rect_w,
+                rect_h,
             );
             return;
         }
@@ -124,13 +162,27 @@ pub fn composite_src_masked_over(
     #[cfg(target_feature = "neon")]
     unsafe {
         neon::composite_src_masked_over_neon(
-            dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+            dst,
+            dst_stride,
+            src,
+            src_stride,
+            mask,
+            mask_stride,
+            rect_w,
+            rect_h,
         );
         return;
     }
 
     scalar::composite_src_masked_over_scalar(
-        dst, dst_stride, src, src_stride, mask, mask_stride, rect_w, rect_h,
+        dst,
+        dst_stride,
+        src,
+        src_stride,
+        mask,
+        mask_stride,
+        rect_w,
+        rect_h,
     );
 }
 

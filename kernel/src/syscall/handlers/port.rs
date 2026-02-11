@@ -50,6 +50,37 @@ pub fn sys_port_send(handle: usize, ptr: usize, len: usize) -> SysResult<usize> 
     Ok(written)
 }
 
+pub fn sys_port_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
+    let len = len.min(4096);
+    if len == 0 {
+        return Ok(0);
+    }
+
+    validate_user_range(ptr, len, false)?;
+
+    let handle = crate::ipc::Handle(handle as u32);
+    let entry = {
+        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        table
+            .get(handle, crate::ipc::HandleMode::Write)
+            .copied()
+            .ok_or(Errno::EBADF)?
+    };
+
+    let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+
+    let mut buf = [0u8; 4096];
+    unsafe {
+        copyin(&mut buf[..len], ptr)?;
+    }
+
+    if port.send_all(&buf[..len]) {
+        Ok(len)
+    } else {
+        Err(Errno::EAGAIN)
+    }
+}
+
 pub fn sys_port_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
     let len = len.min(4096);
     if len == 0 {
@@ -192,10 +223,38 @@ pub fn sys_port_info(handle: usize) -> SysResult<usize> {
         .ok_or(Errno::EBADF)?;
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
-    
+
     let len = port.len();
     let cap = port.capacity(); // Need to expose capacity
-    
+
     // Return packed: top 32 bits capacity, bottom 32 bits length
     Ok((cap << 32) | (len & 0xFFFFFFFF))
+}
+
+pub fn sys_topic_create() -> SysResult<usize> {
+    let topic = crate::ipc::create_topic();
+    Ok(topic.0 as usize)
+}
+
+pub fn sys_topic_subscribe(topic_id: usize, handle: usize) -> SysResult<usize> {
+    let topic_id = crate::ipc::TopicId(topic_id as u32);
+    let handle = crate::ipc::Handle(handle as u32);
+    crate::ipc::subscribe_topic(topic_id, handle)?;
+    Ok(0)
+}
+
+pub fn sys_topic_publish(topic_id: usize, ptr: usize, len: usize) -> SysResult<usize> {
+    let len = len.min(4096);
+    if len == 0 {
+        return Ok(0);
+    }
+
+    validate_user_range(ptr, len, false)?;
+    let mut buf = [0u8; 4096];
+    unsafe {
+        copyin(&mut buf[..len], ptr)?;
+    }
+
+    let topic_id = crate::ipc::TopicId(topic_id as u32);
+    crate::ipc::publish_topic(topic_id, &buf[..len])
 }

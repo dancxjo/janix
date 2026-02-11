@@ -7,7 +7,6 @@ use super::SCHEDULER;
 use super::graphify;
 use super::types::{ScheduleReason, Scheduler};
 
-
 pub fn yield_now<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
@@ -32,7 +31,8 @@ pub fn yield_now<R: BootRuntime>() {
         }
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+            rt.tasking()
+                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
     }
 
@@ -60,9 +60,14 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             let cpu = super::current_cpu_index::<R>();
             match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
                 Some(id) => {
-                    crate::ktrace!("SCHED: CPU {} task {} sleeping for {} ticks", cpu, id, ticks);
+                    crate::ktrace!(
+                        "SCHED: CPU {} task {} sleeping for {} ticks",
+                        cpu,
+                        id,
+                        ticks
+                    );
                     id
-                },
+                }
                 None => {
                     // No current task (shouldn't happen)
                     crate::kerror!("SCHED: CPU {} sleeping without current task!", cpu);
@@ -92,7 +97,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         rt.tasking().activate_address_space(switch.to_aspace);
 
         let cr3_after = rt.debug_active_aspace_root();
-        
+
         {
             let lock = SCHEDULER.lock();
             let ptr = lock.expect("Scheduler not initialized");
@@ -101,7 +106,8 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         }
 
         unsafe {
-            rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+            rt.tasking()
+                .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
         crate::ktrace!("SCHED: task woke up on CPU");
     }
@@ -132,7 +138,7 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
                 let cr3_before = rt.debug_active_aspace_root();
                 rt.tasking().activate_address_space(switch.to_aspace);
                 let cr3_after = rt.debug_active_aspace_root();
-                
+
                 {
                     let lock = SCHEDULER.lock();
                     let ptr = lock.expect("Scheduler not initialized");
@@ -140,7 +146,8 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
                     sched.log_context_switch(&switch, cr3_before, cr3_after);
                 }
 
-                rt.tasking().switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
+                rt.tasking()
+                    .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
                 rt.irq_restore(_irq);
             }
         } else {

@@ -231,10 +231,10 @@ pub fn init_root_service<R: crate::BootRuntime>() {
 
 pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
     let reply = Arc::new(ReplyCell::new());
-    
+
     // Check if this is a droppable message type (LogEvent can be dropped under pressure)
     let is_log_event = matches!(op, RootOp::LogEvent { .. });
-    
+
     let msg = RootMsg {
         op,
         reply: reply.clone(),
@@ -254,7 +254,7 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
                 q.pop_front();
             }
         }
-        
+
         q.push_back(msg);
         let tid = ROOT_TID.load(Ordering::Relaxed);
         if tid != 0 {

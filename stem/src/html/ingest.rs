@@ -23,7 +23,9 @@ pub enum HtmlIngestError {
 impl From<crate::xml::ingest::XmlIngestError> for HtmlIngestError {
     fn from(e: crate::xml::ingest::XmlIngestError) -> Self {
         match e {
-            crate::xml::ingest::XmlIngestError::CreateNodeFailed => HtmlIngestError::CreateNodeFailed,
+            crate::xml::ingest::XmlIngestError::CreateNodeFailed => {
+                HtmlIngestError::CreateNodeFailed
+            }
             crate::xml::ingest::XmlIngestError::LinkFailed => HtmlIngestError::LinkFailed,
             crate::xml::ingest::XmlIngestError::SetPropFailed => HtmlIngestError::SetPropFailed,
             crate::xml::ingest::XmlIngestError::InternFailed => HtmlIngestError::InternFailed,
@@ -46,7 +48,7 @@ impl Default for HtmlIngestOptions<'_> {
             source_name: "",
             attach_under: None,
             keep_whitespace_text: false,
-            max_depth: 64,  // HTML can be deeper than XML
+            max_depth: 64,   // HTML can be deeper than XML
             max_nodes: 4096, // HTML pages are typically larger
         }
     }

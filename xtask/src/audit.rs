@@ -14,14 +14,8 @@ const ALLOWED_STD_CRATES: &[&str] = &[
     "stem-macros",
 ];
 
-const REQUIRED_NOSTD_CRATES: &[&str] = &[
-    "kernel",
-    "stem",
-    "stem-macros",
-    "abi",
-    "abi-macros",
-    "bran",
-];
+const REQUIRED_NOSTD_CRATES: &[&str] =
+    &["kernel", "stem", "stem-macros", "abi", "abi-macros", "bran"];
 
 pub fn audit() -> Result<()> {
     println!("🔍 Platform Boundary Audit");
@@ -52,7 +46,9 @@ pub fn audit() -> Result<()> {
 
         let manifest_path = package.manifest_path.as_std_path();
         // Check if it's in userspace (heuristic: path contains "userspace")
-        let is_userspace = manifest_path.components().any(|c| c.as_os_str() == "userspace");
+        let is_userspace = manifest_path
+            .components()
+            .any(|c| c.as_os_str() == "userspace");
         let is_kernel_or_core = required_nostd.contains(name);
 
         if is_userspace || is_kernel_or_core {
@@ -66,7 +62,7 @@ pub fn audit() -> Result<()> {
                 errors.push(msg);
             }
         } else {
-             println!("- {:30} [skipped]", name);
+            println!("- {:30} [skipped]", name);
         }
     }
 
@@ -95,7 +91,9 @@ fn is_nostd_crate(crate_path: &Path) -> bool {
             if let Ok(content) = fs::read_to_string(&file_path) {
                 // Check first 20 lines
                 for line in content.lines().take(20) {
-                    if line.contains("#![no_std]") || line.contains("#![cfg_attr(not(test), no_std)]") {
+                    if line.contains("#![no_std]")
+                        || line.contains("#![cfg_attr(not(test), no_std)]")
+                    {
                         return true;
                     }
                 }

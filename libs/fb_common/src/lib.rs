@@ -4,11 +4,11 @@
 /// framebuffer helpers. Byte order is little-endian in memory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PixelFormat {
-    Rgb888,     // [R, G, B]
-    Bgr888,     // [B, G, R]
-    Bgrx8888,   // [B, G, R, X]
-    Rgbx8888,   // [R, G, B, X]
-    Rgb565,     // 16-bit 5:6:5, little-endian
+    Rgb888,   // [R, G, B]
+    Bgr888,   // [B, G, R]
+    Bgrx8888, // [B, G, R, X]
+    Rgbx8888, // [R, G, B, X]
+    Rgb565,   // 16-bit 5:6:5, little-endian
     Unknown,
 }
 

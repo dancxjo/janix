@@ -227,11 +227,11 @@ impl DrawListBuilder {
     }
 
     /// Set a rectangular clipping region.
-    /// 
+    ///
     /// **Important**: This command should be used within a Save/Restore pair
     /// to ensure proper state management. The renderer will push a new clip
     /// onto the clip stack, which must be balanced with a Restore.
-    /// 
+    ///
     /// # Example
     /// ```
     /// # use abi::drawlist::DrawListBuilder;
@@ -252,11 +252,11 @@ impl DrawListBuilder {
 
     /// Set an affine 2D transform matrix [a, b, c, d, tx, ty].
     /// The transform maps points as: x' = a*x + c*y + tx, y' = b*x + d*y + ty
-    /// 
+    ///
     /// **Important**: This command should be used within a Save/Restore pair
     /// to ensure proper state management. The renderer will push a new transform
     /// onto the transform stack, which must be balanced with a Restore.
-    /// 
+    ///
     /// # Example
     /// ```
     /// # use abi::drawlist::DrawListBuilder;

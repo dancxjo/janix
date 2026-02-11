@@ -34,10 +34,10 @@ unsafe impl GlobalAlloc for TracingAllocator {
         use core::sync::atomic::AtomicUsize;
         static TOTAL_ALLOC: AtomicUsize = AtomicUsize::new(0);
         static MEDIUM_COUNT: AtomicU64 = AtomicU64::new(0);
-        
+
         let size = layout.size();
         let total = TOTAL_ALLOC.fetch_add(size, Ordering::Relaxed) + size;
-        
+
         // Track largest allocation
         let mut current = LARGEST_ALLOC.load(Ordering::Relaxed);
         while size as u64 > current {
@@ -51,14 +51,15 @@ unsafe impl GlobalAlloc for TracingAllocator {
                 Err(c) => current = c,
             }
         }
-        
+
         // Log medium allocations (100KB-1MB) to see what's building up
         const MEDIUM_THRESHOLD: usize = 100 * 1024;
         const LARGE_THRESHOLD: usize = 1024 * 1024;
-        
+
         if size >= MEDIUM_THRESHOLD && size < LARGE_THRESHOLD {
             let count = MEDIUM_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
-            if count <= 20 { // Only log first 20 medium allocs
+            if count <= 20 {
+                // Only log first 20 medium allocs
                 crate::logging::_log_contract(
                     "alloc",
                     format_args!(
@@ -71,7 +72,7 @@ unsafe impl GlobalAlloc for TracingAllocator {
                 );
             }
         }
-        
+
         if size >= LARGE_THRESHOLD {
             let count = LARGE_ALLOC_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
             // Use raw serial output to avoid recursion through the logging system
@@ -86,9 +87,8 @@ unsafe impl GlobalAlloc for TracingAllocator {
                     total / (1024 * 1024)
                 ),
             );
-            
         }
-        
+
         unsafe { INNER_ALLOCATOR.alloc(layout) }
     }
 

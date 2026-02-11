@@ -300,14 +300,16 @@ impl UiPipeline {
                                     match op {
                                         watch::WatchOp::Upsert => {
                                             // New window created: start tracking it
-                                            self.windows.entry(header.subject).or_insert(WindowState {
-                                                last_gen: 0,
-                                                last_w: 0,
-                                                last_h: 0,
-                                                last_bg: 0,
-                                                last_title_bs: 0,
-                                                last_focused: false,
-                                            });
+                                            self.windows.entry(header.subject).or_insert(
+                                                WindowState {
+                                                    last_gen: 0,
+                                                    last_w: 0,
+                                                    last_h: 0,
+                                                    last_bg: 0,
+                                                    last_title_bs: 0,
+                                                    last_focused: false,
+                                                },
+                                            );
                                             dirty.insert(header.subject, true);
                                         }
                                         watch::WatchOp::Delete => {
@@ -356,7 +358,10 @@ impl UiPipeline {
                 last_title_bs: 0,
                 last_focused: false,
             });
-            if props.scene_gen != entry.last_gen || props.w != entry.last_w || props.h != entry.last_h {
+            if props.scene_gen != entry.last_gen
+                || props.w != entry.last_w
+                || props.h != entry.last_h
+            {
                 dirty.insert(*window_id, true);
             }
             if props.bg != entry.last_bg {
@@ -371,13 +376,16 @@ impl UiPipeline {
         }
 
         for (window_id, _) in dirty {
-            let props = props_by_window.get(&window_id).copied().unwrap_or(WindowProps {
-                scene_gen: prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0),
-                w: prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32,
-                h: prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32,
-                bg: prop_get(window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32,
-                focused: prop_get(window_id, keys::UI_FOCUSED).unwrap_or(0) != 0,
-            });
+            let props = props_by_window
+                .get(&window_id)
+                .copied()
+                .unwrap_or(WindowProps {
+                    scene_gen: prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0),
+                    w: prop_get(window_id, keys::UI_WIDTH).unwrap_or(0) as i32,
+                    h: prop_get(window_id, keys::UI_HEIGHT).unwrap_or(0) as i32,
+                    bg: prop_get(window_id, keys::UI_BG_COLOR).unwrap_or(0) as u32,
+                    focused: prop_get(window_id, keys::UI_FOCUSED).unwrap_or(0) != 0,
+                });
             if let Err(e) = self.process_window(window_id, props) {
                 info!(
                     "BLOSSOM: window {} update failed: {:?}",
@@ -465,8 +473,9 @@ impl UiPipeline {
         };
         let rects = graph_ui::layout_tree(&tree, &styles, root_rect);
         graph_ui::write_bounds(graph, &tree, &rects);
-        let paint_bytes =
-            graph_ui::emit_paint(&tree, &styles, &rects, w, h, window_bg, is_focused, title_ref);
+        let paint_bytes = graph_ui::emit_paint(
+            &tree, &styles, &rects, w, h, window_bg, is_focused, title_ref,
+        );
         // Reuse existing paint bytespace when possible to avoid leaking graph nodes.
         // Previously we called bytespace_create() on every repaint, accumulating
         // thousands of abandoned bytespace nodes that overwhelmed the graph service.

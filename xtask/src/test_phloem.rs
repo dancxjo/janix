@@ -15,9 +15,11 @@ pub fn run() -> Result<()> {
     // Read banner (best effort)
     let _ = read_response(&mut stream, false);
 
-    run_cmd(&mut stream, "MERGE (n:TestNode {val: \"hello\"}) RETURN n", |res| {
-        res.contains("ok:") && res.contains("(id:")
-    })?;
+    run_cmd(
+        &mut stream,
+        "MERGE (n:TestNode {val: \"hello\"}) RETURN n",
+        |res| res.contains("ok:") && res.contains("(id:"),
+    )?;
 
     run_cmd(&mut stream, "MATCH (n:TestNode) RETURN n", |res| {
         res.contains("ok:") && res.contains("TestNode")
@@ -30,13 +32,17 @@ pub fn run() -> Result<()> {
     run_cmd(&mut stream, "MERGE (a:NodeA {name: \"A\"})", |_| true)?;
     run_cmd(&mut stream, "MERGE (b:NodeB {name: \"B\"})", |_| true)?;
 
-    run_cmd(&mut stream, "MERGE (a)-[:LINKS_TO]->(b) RETURN a, b", |res| {
-        res.contains("ok: merged edge")
-    })?;
+    run_cmd(
+        &mut stream,
+        "MERGE (a)-[:LINKS_TO]->(b) RETURN a, b",
+        |res| res.contains("ok: merged edge"),
+    )?;
 
-    run_cmd(&mut stream, "MATCH (a)-[:LINKS_TO]->(b) RETURN a, b", |res| {
-        res.contains("ok:") && res.contains("NodeA") && res.contains("NodeB")
-    })?;
+    run_cmd(
+        &mut stream,
+        "MATCH (a)-[:LINKS_TO]->(b) RETURN a, b",
+        |res| res.contains("ok:") && res.contains("NodeA") && res.contains("NodeB"),
+    )?;
 
     run_cmd(&mut stream, "QUIT", |_| true)?;
 
@@ -95,11 +101,13 @@ fn read_response(stream: &mut TcpStream, wait_for_prompt: bool) -> Result<String
                     break;
                 }
                 if !wait_for_prompt {
-                     break;
+                    break;
                 }
             }
             Err(e) => {
-                if e.kind() == std::io::ErrorKind::WouldBlock || e.kind() == std::io::ErrorKind::TimedOut {
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut
+                {
                     break;
                 }
                 return Err(e.into());

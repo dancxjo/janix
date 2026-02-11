@@ -56,8 +56,12 @@ pub fn create_stylesheet() -> Result<ThingId> {
 }
 
 pub fn set_default_stylesheet(ui_crown: ThingId, stylesheet: ThingId) -> Result<()> {
-    prop_set(ui_crown, keys::UI_STYLESHEET_DEFAULT, stylesheet.to_u64_lossy())
-        .map_err(crate::errors::Error::Errno)
+    prop_set(
+        ui_crown,
+        keys::UI_STYLESHEET_DEFAULT,
+        stylesheet.to_u64_lossy(),
+    )
+    .map_err(crate::errors::Error::Errno)
 }
 
 pub fn attach_window_stylesheet(window_id: ThingId, stylesheet: ThingId) -> Result<()> {

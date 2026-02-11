@@ -1,9 +1,9 @@
 #![allow(dead_code)]
 
+use crate::root::pci_stub::{PciClassInfo, classify_stub, publish_stub_device};
 use abi::schema::{confidence, keys, kinds, rels, source};
 use alloc::format;
 use stem::pci;
-use crate::root::pci_stub::{classify_stub, publish_stub_device, PciClassInfo};
 
 // Wrappers for BootRuntime PCI access
 // 0xFFFFFFFF is returned on error to simulate "not present"
@@ -398,22 +398,8 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         prog_if,
     }) {
         publish_stub_device(
-            node,
-            bus,
-            dev,
-            func,
-            vendor_id,
-            device_id,
-            class_code,
-            subclass,
-            prog_if,
-            spec,
-            &bar_addrs,
-            &bar_sizes,
-            create,
-            set,
-            link,
-            intern,
+            node, bus, dev, func, vendor_id, device_id, class_code, subclass, prog_if, spec,
+            &bar_addrs, &bar_sizes, create, set, link, intern,
         );
     }
 }
@@ -490,7 +476,7 @@ const VIRTIO_PCI_CAP_DEVICE_CFG: u8 = 4;
 /// Parse VirtIO PCI capabilities and publish offsets as graph properties
 fn parse_virtio_capabilities(
     bus: u8,
-    dev: u8, 
+    dev: u8,
     func: u8,
     gpu_node: u64,
     set: &mut impl FnMut(u64, &str, u64),
@@ -505,10 +491,10 @@ fn parse_virtio_capabilities(
 
     let mut cap_ptr = pci_read_config_u8(bus, dev, func, 0x34) & 0xFC;
     let mut limit = 0;
-    
+
     while cap_ptr != 0 && limit < 48 {
         let cap_id = pci_read_config_u8(bus, dev, func, cap_ptr);
-        
+
         // Vendor-specific capability (VirtIO uses this)
         if cap_id == 0x09 {
             // VirtIO PCI capability structure:
@@ -522,11 +508,11 @@ fn parse_virtio_capabilities(
             // +12-15: length (u32)
             // For notify cap:
             // +16-19: notify_off_multiplier (u32)
-            
+
             let cfg_type = pci_read_config_u8(bus, dev, func, cap_ptr + 3);
             let bar = pci_read_config_u8(bus, dev, func, cap_ptr + 4);
             let offset = unsafe { pci_read_config(bus, dev, func, cap_ptr + 8) };
-            
+
             match cfg_type {
                 VIRTIO_PCI_CAP_COMMON_CFG => {
                     set(gpu_node, keys::VIRTIO_COMMON_BAR, bar as u64);
@@ -538,7 +524,12 @@ fn parse_virtio_capabilities(
                     set(gpu_node, keys::VIRTIO_NOTIFY_BAR, bar as u64);
                     set(gpu_node, keys::VIRTIO_NOTIFY_OFFSET, offset as u64);
                     set(gpu_node, keys::VIRTIO_NOTIFY_MULTIPLIER, multiplier as u64);
-                    crate::kinfo!("PCI: VirtIO notify_cfg BAR{} offset=0x{:x} mult={}", bar, offset, multiplier);
+                    crate::kinfo!(
+                        "PCI: VirtIO notify_cfg BAR{} offset=0x{:x} mult={}",
+                        bar,
+                        offset,
+                        multiplier
+                    );
                 }
                 VIRTIO_PCI_CAP_ISR_CFG => {
                     set(gpu_node, keys::VIRTIO_ISR_BAR, bar as u64);
@@ -551,7 +542,7 @@ fn parse_virtio_capabilities(
                 _ => {} // Ignore other types (5=PCI_CFG)
             }
         }
-        
+
         cap_ptr = pci_read_config_u8(bus, dev, func, cap_ptr + 1) & 0xFC;
         limit += 1;
     }
@@ -700,14 +691,14 @@ struct ParsedVirtioCaps {
 /// Parse VirtIO PCI capabilities and return them
 fn get_virtio_capabilities(bus: u8, dev: u8, func: u8) -> ParsedVirtioCaps {
     use crate::virtio::pci::VirtioCapability;
-    
+
     let mut caps = ParsedVirtioCaps {
         common_cfg: None,
         notify_cfg: None,
         isr_cfg: None,
         device_cfg: None,
     };
-    
+
     // Check for capabilities list
     let status = unsafe { pci_read_config(bus, dev, func, 0x04) };
     let status_bits = ((status >> 16) & 0xFFFF) as u16;
@@ -717,17 +708,17 @@ fn get_virtio_capabilities(bus: u8, dev: u8, func: u8) -> ParsedVirtioCaps {
 
     let mut cap_ptr = pci_read_config_u8(bus, dev, func, 0x34) & 0xFC;
     let mut limit = 0;
-    
+
     while cap_ptr != 0 && limit < 48 {
         let cap_id = pci_read_config_u8(bus, dev, func, cap_ptr);
-        
+
         // Vendor-specific capability (VirtIO uses this)
         if cap_id == 0x09 {
             let cfg_type = pci_read_config_u8(bus, dev, func, cap_ptr + 3);
             let bar = pci_read_config_u8(bus, dev, func, cap_ptr + 4);
             let offset = unsafe { pci_read_config(bus, dev, func, cap_ptr + 8) };
             let length = unsafe { pci_read_config(bus, dev, func, cap_ptr + 12) };
-            
+
             let mut cap = VirtioCapability {
                 cap_type: cfg_type,
                 bar,
@@ -735,13 +726,14 @@ fn get_virtio_capabilities(bus: u8, dev: u8, func: u8) -> ParsedVirtioCaps {
                 length,
                 notify_off_multiplier: 0,
             };
-            
+
             match cfg_type {
                 VIRTIO_PCI_CAP_COMMON_CFG => {
                     caps.common_cfg = Some(cap);
                 }
                 VIRTIO_PCI_CAP_NOTIFY_CFG => {
-                    cap.notify_off_multiplier = unsafe { pci_read_config(bus, dev, func, cap_ptr + 16) };
+                    cap.notify_off_multiplier =
+                        unsafe { pci_read_config(bus, dev, func, cap_ptr + 16) };
                     caps.notify_cfg = Some(cap);
                 }
                 VIRTIO_PCI_CAP_ISR_CFG => {
@@ -753,11 +745,11 @@ fn get_virtio_capabilities(bus: u8, dev: u8, func: u8) -> ParsedVirtioCaps {
                 _ => {}
             }
         }
-        
+
         cap_ptr = pci_read_config_u8(bus, dev, func, cap_ptr + 1) & 0xFC;
         limit += 1;
     }
-    
+
     caps
 }
 
@@ -813,7 +805,7 @@ fn register_virtio_net(
 
         let location = PciLocation { bus, dev, func };
         reg.set_pci_info(idx, location, msi_info, msix_info);
-        
+
         // Find which BAR has the VirtIO config (from common_cfg capability)
         let caps = get_virtio_capabilities(bus, dev, func);
         let config_bar = if let Some(ref common) = caps.common_cfg {
@@ -821,7 +813,7 @@ fn register_virtio_net(
         } else {
             0
         };
-        
+
         crate::kinfo!(
             "PCI: Registered virtio network (graph_id={}, idx={}) BAR{}=0x{:x}",
             graph_id,
@@ -834,7 +826,7 @@ fn register_virtio_net(
         return;
     }
     drop(reg);
-    
+
     // VirtIO-NET is now handled by userspace netd driver
     // The device is registered and properties are published via parse_virtio_capabilities
     // Userspace netd will claim the device and do feature negotiation directly
@@ -892,7 +884,7 @@ fn register_virtio_sound(
 
         let location = PciLocation { bus, dev, func };
         reg.set_pci_info(idx, location, msi_info, msix_info);
-        
+
         // Find which BAR has the VirtIO config (from common_cfg capability)
         let caps = get_virtio_capabilities(bus, dev, func);
         let config_bar = if let Some(ref common) = caps.common_cfg {
@@ -900,7 +892,7 @@ fn register_virtio_sound(
         } else {
             0
         };
-        
+
         crate::kinfo!(
             "PCI: Registered virtio sound (graph_id={}, idx={}) BAR{}=0x{:x}",
             graph_id,

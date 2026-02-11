@@ -7,11 +7,11 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
 use core::time::Duration;
 use stem::info;
+use stem::petals::graph::UiKey;
 use stem::petals::{
     add_rule, attach_window_stylesheet, create_stylesheet, set_node_classes, Declarations, Petals,
     SelectorKind, StyleSelector,
 };
-use stem::petals::graph::UiKey;
 use stem::thing::sys::{
     bytespace_create, bytespace_read, bytespace_write, create_node, describe_thing, find, link,
     prop_get, prop_set,

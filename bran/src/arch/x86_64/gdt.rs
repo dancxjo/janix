@@ -120,8 +120,8 @@ impl Gdt {
             kcode: GdtEntry::new(0, 0, 0x9A, 0xA0), // Present, Ring 0, Code, Exec/Read, Long Mode
             kdata: GdtEntry::new(0, 0, 0x92, 0xC0), // Present, Ring 0, Data, Read/Write
             ucode32: GdtEntry::new(0, 0xFFFFF, 0xFA, 0xCF), // Present, Ring 3, Code, 32-bit (DB=1, L=0)
-            udata: GdtEntry::new(0, 0, 0xF2, 0xC0), // Present, Ring 3, Data, Read/Write
-            ucode64: GdtEntry::new(0, 0, 0xFA, 0xA0), // Present, Ring 3, Code, 64-bit (L=1)
+            udata: GdtEntry::new(0, 0, 0xF2, 0xC0),         // Present, Ring 3, Data, Read/Write
+            ucode64: GdtEntry::new(0, 0, 0xFA, 0xA0),       // Present, Ring 3, Code, 64-bit (L=1)
             tss: GdtSystemEntry {
                 limit_low: 0,
                 base_low: 0,
@@ -161,8 +161,8 @@ struct GdtDescriptor {
 pub unsafe fn init() {
     // BSP uses CPU 0. At this point GS_BASE might not be set yet!
     // But we know we are CPU 0.
-    let cpu_index = 0; 
-    
+    let cpu_index = 0;
+
     unsafe {
         GDT_ARRAY[cpu_index].setup_tss(cpu_index);
     }

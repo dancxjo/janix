@@ -31,7 +31,7 @@ fn test_content_keys_exist() {
     assert_eq!(keys::CONTENT_SOURCE_PRIORITY, "content.source.priority");
     assert_eq!(keys::CONTENT_SOURCE_STATE, "content.source.state");
     assert_eq!(keys::CONTENT_SOURCE_GEN, "content.source.gen");
-    
+
     // File properties
     assert_eq!(keys::FILE_NAME, "file.name");
     assert_eq!(keys::FILE_SIZE, "file.size");
@@ -39,7 +39,7 @@ fn test_content_keys_exist() {
     assert_eq!(keys::FILE_MIME, "file.mime");
     assert_eq!(keys::FILE_BYTESPACE, "file.bytespace");
     assert_eq!(keys::FILE_SOURCE, "file.source");
-    
+
     // Directory properties
     assert_eq!(keys::DIR_NAME, "dir.name");
     assert_eq!(keys::DIR_PATH, "dir.path");
@@ -50,7 +50,9 @@ fn test_content_priority_ordering() {
     // Limine should have higher priority than ISO
     let limine_priority = 100u64;
     let iso_priority = 50u64;
-    
-    assert!(limine_priority > iso_priority, 
-        "Limine modules should have higher priority than ISO for overlay resolution");
+
+    assert!(
+        limine_priority > iso_priority,
+        "Limine modules should have higher priority than ISO for overlay resolution"
+    );
 }

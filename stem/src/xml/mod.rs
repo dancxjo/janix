@@ -254,9 +254,9 @@ mod tests {
     fn parses_rotate_with_pivot() {
         let input = "rotate(90, 10, 20)";
         let cmds = parse_transform(input);
-        
+
         assert_eq!(cmds.len(), 3);
-        
+
         match &cmds[0] {
             TransformCmd::Translate(x, y) => {
                 assert_eq!(*x, 10.0);
@@ -264,14 +264,14 @@ mod tests {
             }
             _ => panic!("Expected Translate first"),
         }
-        
+
         match &cmds[1] {
             TransformCmd::Rotate(a) => {
                 assert_eq!(*a, 90.0);
             }
             _ => panic!("Expected Rotate second"),
         }
-        
+
         match &cmds[2] {
             TransformCmd::Translate(x, y) => {
                 assert_eq!(*x, -10.0);
@@ -281,4 +281,3 @@ mod tests {
         }
     }
 }
-

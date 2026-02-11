@@ -1,10 +1,10 @@
+use crate::font::{SimpleFont, CHAR_HEIGHT, CHAR_WIDTH};
+use crate::framebuffer::{FramebufferTarget, PixelFormat};
+use crate::parser::parse_log_line;
 use core::str;
 use embedded_graphics::pixelcolor::{Rgb888, RgbColor};
 use embedded_graphics::prelude::Point;
 use fb_common::calc_stride_bytes;
-use crate::framebuffer::{FramebufferTarget, PixelFormat};
-use crate::font::{SimpleFont, CHAR_WIDTH, CHAR_HEIGHT};
-use crate::parser::parse_log_line;
 
 // Colors
 const COLOR_BG: Rgb888 = Rgb888::BLACK;
@@ -101,9 +101,9 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
 
         // 1. Timestamp (Top)
         if let Some(t) = parts.time {
-             let s = u64_to_str_buf(t, &mut time_buf);
-             lines_to_draw[line_count] = Some((s, COLOR_TIME));
-             line_count += 1;
+            let s = u64_to_str_buf(t, &mut time_buf);
+            lines_to_draw[line_count] = Some((s, COLOR_TIME));
+            line_count += 1;
         }
 
         // 2. Source (Middle)
@@ -119,7 +119,10 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
             let mut found = false;
             for i in 0..self.source_count {
                 let existing = &self.sources[i];
-                let len = existing.iter().position(|&b| b == 0).unwrap_or(SOURCE_NAME_LEN);
+                let len = existing
+                    .iter()
+                    .position(|&b| b == 0)
+                    .unwrap_or(SOURCE_NAME_LEN);
                 if &existing[..len] == domain_bytes {
                     found = true;
                     break;
@@ -142,8 +145,8 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
         // Draw dashboard
         Self::draw_dashboard(&self.sources, self.source_count, &mut drawer);
 
-        let total_h = (line_count as i32 * CHAR_HEIGHT as i32) +
-                      ((line_count as i32 - 1).max(0) * TEXT_PAD);
+        let total_h =
+            (line_count as i32 * CHAR_HEIGHT as i32) + ((line_count as i32 - 1).max(0) * TEXT_PAD);
 
         let start_y = center_y - (total_h / 2);
 
@@ -166,23 +169,23 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
 
                 bounding_box = match bounding_box {
                     Some(bb) => {
-                         let min_x = bb.x.min(line_rect.x);
-                         let min_y = bb.y.min(line_rect.y);
-                         let bb_right = bb.x + bb.w as i32;
-                         let bb_bottom = bb.y + bb.h as i32;
-                         let lr_right = line_rect.x + line_rect.w as i32;
-                         let lr_bottom = line_rect.y + line_rect.h as i32;
+                        let min_x = bb.x.min(line_rect.x);
+                        let min_y = bb.y.min(line_rect.y);
+                        let bb_right = bb.x + bb.w as i32;
+                        let bb_bottom = bb.y + bb.h as i32;
+                        let lr_right = line_rect.x + line_rect.w as i32;
+                        let lr_bottom = line_rect.y + line_rect.h as i32;
 
-                         let max_x = bb_right.max(lr_right);
-                         let max_y = bb_bottom.max(lr_bottom);
+                        let max_x = bb_right.max(lr_right);
+                        let max_y = bb_bottom.max(lr_bottom);
 
-                         Some(Rect {
-                             x: min_x,
-                             y: min_y,
-                             w: (max_x - min_x) as u32,
-                             h: (max_y - min_y) as u32,
-                         })
-                    },
+                        Some(Rect {
+                            x: min_x,
+                            y: min_y,
+                            w: (max_x - min_x) as u32,
+                            h: (max_y - min_y) as u32,
+                        })
+                    }
                     None => Some(line_rect),
                 };
 
@@ -193,7 +196,11 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
         self.last_msg_area = bounding_box;
     }
 
-    fn draw_dashboard(sources: &[[u8; SOURCE_NAME_LEN]; MAX_SOURCES], count: usize, drawer: &mut FbDrawer<'_, F>) {
+    fn draw_dashboard(
+        sources: &[[u8; SOURCE_NAME_LEN]; MAX_SOURCES],
+        count: usize,
+        drawer: &mut FbDrawer<'_, F>,
+    ) {
         let info = drawer.fb.info();
         let total_w = DASHBOARD_COLS * DASHBOARD_COL_WIDTH;
         let start_x = (info.width as i32 - total_w) / 2;
@@ -206,7 +213,10 @@ impl<F: FramebufferTarget> BootUpDisplay<F> {
             let y = DASHBOARD_Y + (row * (CHAR_HEIGHT as i32 + TEXT_PAD));
 
             let name_bytes = &sources[i];
-            let len = name_bytes.iter().position(|&b| b == 0).unwrap_or(SOURCE_NAME_LEN);
+            let len = name_bytes
+                .iter()
+                .position(|&b| b == 0)
+                .unwrap_or(SOURCE_NAME_LEN);
             if let Ok(name) = str::from_utf8(&name_bytes[..len]) {
                 draw_string(drawer, x, y, name, COLOR_DASHBOARD_TEXT, COLOR_BG);
             }
@@ -230,11 +240,18 @@ fn u64_to_str_buf(val: u64, buf: &mut [u8]) -> &str {
     core::str::from_utf8(&buf[i..]).unwrap()
 }
 
-fn draw_string<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, s: &str, color: Rgb888, bg_color: Rgb888) {
+fn draw_string<F: FramebufferTarget>(
+    drawer: &mut FbDrawer<F>,
+    x: i32,
+    y: i32,
+    s: &str,
+    color: Rgb888,
+    bg_color: Rgb888,
+) {
     let mut cur_x = x;
     for c in s.bytes() {
-         draw_char(drawer, cur_x, y, c, color, bg_color);
-         cur_x += CHAR_WIDTH as i32;
+        draw_char(drawer, cur_x, y, c, color, bg_color);
+        cur_x += CHAR_WIDTH as i32;
     }
 }
 
@@ -248,17 +265,24 @@ fn get_level_color(level: Option<&str>) -> Rgb888 {
     }
 }
 
-fn draw_char<F: FramebufferTarget>(drawer: &mut FbDrawer<F>, x: i32, y: i32, c: u8, color: Rgb888, _bg_color: Rgb888) {
+fn draw_char<F: FramebufferTarget>(
+    drawer: &mut FbDrawer<F>,
+    x: i32,
+    y: i32,
+    c: u8,
+    color: Rgb888,
+    _bg_color: Rgb888,
+) {
     let glyph = SimpleFont::get_glyph(c);
     for gy in 0..CHAR_HEIGHT {
         let row_byte = glyph[gy];
         for gx in 0..CHAR_WIDTH {
-             let px = x + gx as i32;
-             let py = y + gy as i32;
-             if (row_byte >> (7 - gx)) & 1 != 0 {
-                 drawer.put_pixel(Point::new(px, py), color);
-             }
-             // Additive drawing: Skip background pixels
+            let px = x + gx as i32;
+            let py = y + gy as i32;
+            if (row_byte >> (7 - gx)) & 1 != 0 {
+                drawer.put_pixel(Point::new(px, py), color);
+            }
+            // Additive drawing: Skip background pixels
         }
     }
 }
@@ -364,7 +388,11 @@ impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
 
     fn put_pixel(&mut self, point: Point, color: Rgb888) {
         let info = self.fb.info();
-        if point.x < 0 || point.y < 0 || point.x >= info.width as i32 || point.y >= info.height as i32 {
+        if point.x < 0
+            || point.y < 0
+            || point.x >= info.width as i32
+            || point.y >= info.height as i32
+        {
             return;
         }
 
@@ -397,7 +425,7 @@ impl<'a, F: FramebufferTarget> FbDrawer<'a, F> {
                 buffer[offset + 2] = color.b();
                 buffer[offset + 3] = 0;
             }
-             PixelFormat::Bgr888 => {
+            PixelFormat::Bgr888 => {
                 buffer[offset] = color.b();
                 buffer[offset + 1] = color.g();
                 buffer[offset + 2] = color.r();

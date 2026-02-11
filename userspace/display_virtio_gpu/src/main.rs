@@ -90,7 +90,8 @@ struct TextureEntry {
 }
 
 /// Next resource ID for texture allocation
-static NEXT_TEXTURE_RESOURCE_ID: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(1000);
+static NEXT_TEXTURE_RESOURCE_ID: core::sync::atomic::AtomicU32 =
+    core::sync::atomic::AtomicU32::new(1000);
 
 impl PresentStats {
     const fn new(frame_pool: bool) -> Self {
@@ -104,7 +105,7 @@ impl PresentStats {
             using_frame_pool: frame_pool,
         }
     }
-    
+
     fn log_and_reset(&mut self) {
         if self.frame_count > 0 {
             info!(
@@ -223,12 +224,12 @@ fn main(arg: usize) -> ! {
     // =========================================================================
     let (disp_width, disp_height, disp_stride, disp_format) = get_display_dimensions();
     let disp_size = (disp_height as usize) * (disp_stride as usize);
-    
+
     info!(
         "display_virtio_gpu: creating frame pool 1x {}x{} stride={} format={}",
         disp_width, disp_height, disp_stride, disp_format
     );
-    
+
     // Single buffer for now - multi-buffer requires cross-process bytespace access
     let frame_pool_count = 1;
     let mut frame_pool_buffers = alloc::vec::Vec::new();
@@ -237,15 +238,19 @@ fn main(arg: usize) -> ! {
             Ok(id) => id,
             Err(e) => {
                 info!("display_virtio_gpu: bytespace_create failed: {:?}", e);
-                loop { stem::yield_now(); }
+                loop {
+                    stem::yield_now();
+                }
             }
         };
-        
+
         let phys = match thingsys::bytespace_phys(bs_id) {
             Ok(phys) => phys,
             Err(e) => {
                 info!("display_virtio_gpu: bytespace_phys failed: {:?}", e);
-                loop { stem::yield_now(); }
+                loop {
+                    stem::yield_now();
+                }
             }
         };
 
@@ -256,11 +261,15 @@ fn main(arg: usize) -> ! {
         gpu.set_dimensions(disp_width, disp_height);
         if let Err(e) = gpu.create_resource_2d(res_id) {
             info!("display_virtio_gpu: create_resource_2d failed: {}", e);
-            loop { stem::yield_now(); }
+            loop {
+                stem::yield_now();
+            }
         }
         if let Err(e) = gpu.attach_backing(res_id, phys, disp_size, disp_stride) {
             info!("display_virtio_gpu: attach_backing failed: {}", e);
-            loop { stem::yield_now(); }
+            loop {
+                stem::yield_now();
+            }
         }
 
         frame_pool_buffers.push(Buffer {
@@ -274,15 +283,17 @@ fn main(arg: usize) -> ! {
     // Set initial scanout to first buffer
     if let Err(e) = gpu.set_scanout(frame_pool_buffers[0].res_id, disp_width, disp_height) {
         info!("display_virtio_gpu: set_scanout failed: {}", e);
-        loop { stem::yield_now(); }
+        loop {
+            stem::yield_now();
+        }
     }
-    
+
     info!(
         "display_virtio_gpu: frame pool ready ({} buffer{})",
         frame_pool_count,
         if frame_pool_count == 1 { "" } else { "s" }
     );
-    
+
     // Send MSG_REGISTER
     let register = drvproto::RegisterPayload {
         driver_kind: drvproto::DRIVER_KIND_VIRTIO_GPU,
@@ -299,18 +310,19 @@ fn main(arg: usize) -> ! {
 
     let mut buf = [0u8; 512];
     let mut frames = FrameReader::<4096>::new();
-    
+
     let mut current_bs_id: Option<ThingId> = None;
     let mut current_res_id: u32 = 1;
     let mut next_buffer_idx = 0;
     let mut present_seq: u64 = 0;
     let mut last_presented_idx: Option<usize> = None;
-    
+
     let mut stats = PresentStats::new(true);
     const STATS_LOG_INTERVAL: u32 = 120;
 
     // Texture registry for 3D textures (client_id → TextureEntry)
-    let mut texture_registry: alloc::collections::BTreeMap<u64, TextureEntry> = alloc::collections::BTreeMap::new();
+    let mut texture_registry: alloc::collections::BTreeMap<u64, TextureEntry> =
+        alloc::collections::BTreeMap::new();
 
     loop {
         if let Ok(n) = port_recv(drv_req_read, &mut buf) {
@@ -343,9 +355,10 @@ fn main(arg: usize) -> ! {
                 drvproto::MSG_ACQUIRE => {
                     let mut buffer_age = 0;
                     let idx = next_buffer_idx;
-                    
+
                     if let Some(last_idx) = last_presented_idx {
-                        let age = present_seq.saturating_sub(frame_pool_buffers[idx].last_present_seq);
+                        let age =
+                            present_seq.saturating_sub(frame_pool_buffers[idx].last_present_seq);
                         buffer_age = if frame_pool_buffers[idx].last_present_seq == 0 {
                             0 // Never presented
                         } else {
@@ -354,7 +367,7 @@ fn main(arg: usize) -> ! {
                     }
 
                     next_buffer_idx = (next_buffer_idx + 1) % frame_pool_buffers.len();
-                    
+
                     let acquired = drvproto::AcquiredPayload {
                         bytespace_id: frame_pool_buffers[idx].bs_id.to_u64_lossy(),
                         width: disp_width,
@@ -364,12 +377,14 @@ fn main(arg: usize) -> ! {
                         buffer_age,
                         _pad: 0,
                     };
-                    
+
                     current_bs_id = Some(frame_pool_buffers[idx].bs_id);
                     current_res_id = frame_pool_buffers[idx].res_id;
-                    
+
                     let mut acq_bytes = [0u8; drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE];
-                    if let Some(len) = drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes) {
+                    if let Some(len) =
+                        drvproto::encode_acquired_payload_le(&acquired, &mut acq_bytes)
+                    {
                         send_msg(drv_resp_write, drvproto::MSG_ACQUIRED, &acq_bytes[..len]);
                     }
                 }
@@ -399,7 +414,7 @@ fn main(arg: usize) -> ! {
 
                     if let Some(present) = drvproto::decode_present_header_le(payload) {
                         let rects_payload = &payload[drvproto::PRESENT_HEADER_WIRE_SIZE..];
-                        
+
                         // Handle full-frame present (rect_count==0 or FULLFRAME flag)
                         if present.rect_count == 0
                             || (present._pad & drvproto::PRESENT_FLAG_FULLFRAME != 0)
@@ -418,11 +433,11 @@ fn main(arg: usize) -> ! {
                             // ============================================================
                             // GPU-Fast Present Path: batch transfers, smart flush
                             // ============================================================
-                            
+
                             // Phase 1: Decode and clamp all rects, skip empty ones
                             let mut valid_rects: alloc::vec::Vec<Rect> = alloc::vec::Vec::new();
                             let rect_size = drvproto::RECT_WIRE_SIZE;
-                            
+
                             for i in 0..present.rect_count as usize {
                                 let off = i * rect_size;
                                 if rects_payload.len() < off + rect_size {
@@ -438,22 +453,23 @@ fn main(arg: usize) -> ! {
                                         h: rect.h,
                                     };
                                     // Clamp to screen bounds and skip empty rects
-                                    let clamped = rect_clamp_to_bounds(gpu_rect, disp_width, disp_height);
+                                    let clamped =
+                                        rect_clamp_to_bounds(gpu_rect, disp_width, disp_height);
                                     if !rect_is_empty(clamped) {
                                         valid_rects.push(clamped);
                                     }
                                 }
                             }
-                            
+
                             stats.total_rects_in += valid_rects.len() as u32;
-                            
+
                             if !valid_rects.is_empty() {
                                 // Phase 2: Transfer all rects (bandwidth follows true damage)
                                 for &rect in &valid_rects {
                                     let _ = gpu.transfer_to_host(current_res_id, rect);
                                 }
                                 stats.total_transfers += valid_rects.len() as u32;
-                                
+
                                 // Phase 3: Compute union and sum of areas for flush policy
                                 let mut union_rect = valid_rects[0];
                                 let mut sum_area: u64 = 0;
@@ -462,7 +478,7 @@ fn main(arg: usize) -> ! {
                                     sum_area += rect_area(rect);
                                 }
                                 let union_area = rect_area(union_rect);
-                                
+
                                 // Phase 4: Smart flush policy
                                 // If union is much larger than sum of individual rects,
                                 // flush each rect separately to avoid giant flush area
@@ -482,14 +498,14 @@ fn main(arg: usize) -> ! {
                             }
                             stats.frame_count += 1;
                         }
-                        
+
                         // ============================================================
                         // FLIP SCANOUT
                         // ============================================================
                         // Now that transfers and flushes for THIS resource are done,
                         // flip the hardware scanout to this resource ID.
                         let _ = gpu.set_scanout(current_res_id, disp_width, disp_height);
-                        
+
                         // Update sequence and age bookkeeping
                         present_seq += 1;
                         let mut presented_idx = 0;
@@ -522,8 +538,14 @@ fn main(arg: usize) -> ! {
                                 Err(_e) => {
                                     let err = drvproto::ErrResp { code: 3 };
                                     let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                    if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
-                                        send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                    if let Some(len) =
+                                        drvproto::encode_err_resp_le(&err, &mut err_bytes)
+                                    {
+                                        send_msg(
+                                            drv_resp_write,
+                                            drvproto::MSG_ERR,
+                                            &err_bytes[..len],
+                                        );
                                     }
                                 }
                             }
@@ -540,14 +562,15 @@ fn main(arg: usize) -> ! {
                 drvproto::MSG_CREATE_TEXTURE_3D => {
                     // Create a GPU texture resource
                     if let Some(hdr) = drvproto::decode_create_texture_3d_header_le(payload) {
-                        let resource_id = NEXT_TEXTURE_RESOURCE_ID.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
-                        
+                        let resource_id = NEXT_TEXTURE_RESOURCE_ID
+                            .fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+
                         // Create 3D resource via VirtIO GPU
                         // target=0 (PIPE_TEXTURE_2D), format=2 (B8G8R8X8), bind=2 (RENDER_TARGET) | 8 (SAMPLER)
                         let tex_target = 0; // PIPE_TEXTURE_2D
                         let tex_format = hdr.format; // Usually 2 for BGRA
                         let tex_bind = 2 | 8; // RENDER_TARGET | SAMPLER_VIEW
-                        
+
                         let result = gpu.create_resource_3d(
                             resource_id,
                             tex_target,
@@ -557,16 +580,19 @@ fn main(arg: usize) -> ! {
                             hdr.height,
                             1, // depth
                         );
-                        
+
                         let status = if result.is_ok() {
                             // Attach resource to virgl context
                             let ctx_id = 1; // Main virgl context
                             if gpu.ctx_attach_resource(ctx_id, resource_id).is_ok() {
-                                texture_registry.insert(hdr.client_id, TextureEntry {
-                                    resource_id,
-                                    width: hdr.width,
-                                    height: hdr.height,
-                                });
+                                texture_registry.insert(
+                                    hdr.client_id,
+                                    TextureEntry {
+                                        resource_id,
+                                        width: hdr.width,
+                                        height: hdr.height,
+                                    },
+                                );
                                 0 // Success
                             } else {
                                 2 // Attach failed
@@ -574,7 +600,7 @@ fn main(arg: usize) -> ! {
                         } else {
                             1 // Create failed
                         };
-                        
+
                         // Send response
                         let resp = drvproto::TextureCreatedResponse {
                             client_id: hdr.client_id,
@@ -582,8 +608,14 @@ fn main(arg: usize) -> ! {
                             status,
                         };
                         let mut resp_bytes = [0u8; drvproto::TEXTURE_CREATED_RESPONSE_WIRE_SIZE];
-                        if let Some(len) = drvproto::encode_texture_created_response_le(&resp, &mut resp_bytes) {
-                            send_msg(drv_resp_write, drvproto::MSG_TEXTURE_CREATED, &resp_bytes[..len]);
+                        if let Some(len) =
+                            drvproto::encode_texture_created_response_le(&resp, &mut resp_bytes)
+                        {
+                            send_msg(
+                                drv_resp_write,
+                                drvproto::MSG_TEXTURE_CREATED,
+                                &resp_bytes[..len],
+                            );
                         }
                     }
                 }
@@ -591,10 +623,10 @@ fn main(arg: usize) -> ! {
                     // Upload pixel data to an existing texture
                     if let Some(hdr) = drvproto::decode_upload_texture_3d_header_le(payload) {
                         let pixel_data = &payload[drvproto::UPLOAD_TEXTURE_3D_HEADER_WIRE_SIZE..];
-                        
+
                         if pixel_data.len() >= hdr.data_len as usize {
                             let data_slice = &pixel_data[..hdr.data_len as usize];
-                            
+
                             // Allocate DMA-accessible memory for texture data
                             match thingsys::bytespace_create(hdr.data_len as usize, 0, 0) {
                                 Ok(bs_id) => {
@@ -609,34 +641,83 @@ fn main(arg: usize) -> ! {
                                                     hdr.data_len as usize,
                                                 );
                                             }
-                                            
+
                                             // Get physical address for attach_backing_3d
                                             match thingsys::bytespace_phys(bs_id) {
                                                 Ok(phys_addr) => {
                                                     // Attach backing and transfer
-                                                    if gpu.attach_backing_3d(hdr.resource_id, phys_addr, hdr.data_len as usize).is_ok() {
-                                                        if gpu.transfer_to_host_3d(1, hdr.resource_id, hdr.width, hdr.height, hdr.x as u64, hdr.stride).is_ok() {
-                                                            send_msg(drv_resp_write, drvproto::MSG_ACK, &[]);
+                                                    if gpu
+                                                        .attach_backing_3d(
+                                                            hdr.resource_id,
+                                                            phys_addr,
+                                                            hdr.data_len as usize,
+                                                        )
+                                                        .is_ok()
+                                                    {
+                                                        if gpu
+                                                            .transfer_to_host_3d(
+                                                                1,
+                                                                hdr.resource_id,
+                                                                hdr.width,
+                                                                hdr.height,
+                                                                hdr.x as u64,
+                                                                hdr.stride,
+                                                            )
+                                                            .is_ok()
+                                                        {
+                                                            send_msg(
+                                                                drv_resp_write,
+                                                                drvproto::MSG_ACK,
+                                                                &[],
+                                                            );
                                                         } else {
                                                             let err = drvproto::ErrResp { code: 4 };
-                                                            let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                                            if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
-                                                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                                            let mut err_bytes =
+                                                                [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                                            if let Some(len) =
+                                                                drvproto::encode_err_resp_le(
+                                                                    &err,
+                                                                    &mut err_bytes,
+                                                                )
+                                                            {
+                                                                send_msg(
+                                                                    drv_resp_write,
+                                                                    drvproto::MSG_ERR,
+                                                                    &err_bytes[..len],
+                                                                );
                                                             }
                                                         }
                                                     } else {
                                                         let err = drvproto::ErrResp { code: 5 };
-                                                        let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                                        if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
-                                                            send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                                        let mut err_bytes =
+                                                            [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                                        if let Some(len) =
+                                                            drvproto::encode_err_resp_le(
+                                                                &err,
+                                                                &mut err_bytes,
+                                                            )
+                                                        {
+                                                            send_msg(
+                                                                drv_resp_write,
+                                                                drvproto::MSG_ERR,
+                                                                &err_bytes[..len],
+                                                            );
                                                         }
                                                     }
                                                 }
                                                 Err(_) => {
                                                     let err = drvproto::ErrResp { code: 6 };
-                                                    let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                                    if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
-                                                        send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                                    let mut err_bytes =
+                                                        [0u8; drvproto::ERR_RESP_WIRE_SIZE];
+                                                    if let Some(len) = drvproto::encode_err_resp_le(
+                                                        &err,
+                                                        &mut err_bytes,
+                                                    ) {
+                                                        send_msg(
+                                                            drv_resp_write,
+                                                            drvproto::MSG_ERR,
+                                                            &err_bytes[..len],
+                                                        );
                                                     }
                                                 }
                                             }
@@ -644,8 +725,14 @@ fn main(arg: usize) -> ! {
                                         Err(_) => {
                                             let err = drvproto::ErrResp { code: 7 };
                                             let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                            if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
-                                                send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                            if let Some(len) =
+                                                drvproto::encode_err_resp_le(&err, &mut err_bytes)
+                                            {
+                                                send_msg(
+                                                    drv_resp_write,
+                                                    drvproto::MSG_ERR,
+                                                    &err_bytes[..len],
+                                                );
                                             }
                                         }
                                     }
@@ -653,8 +740,14 @@ fn main(arg: usize) -> ! {
                                 Err(_) => {
                                     let err = drvproto::ErrResp { code: 8 };
                                     let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
-                                    if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
-                                        send_msg(drv_resp_write, drvproto::MSG_ERR, &err_bytes[..len]);
+                                    if let Some(len) =
+                                        drvproto::encode_err_resp_le(&err, &mut err_bytes)
+                                    {
+                                        send_msg(
+                                            drv_resp_write,
+                                            drvproto::MSG_ERR,
+                                            &err_bytes[..len],
+                                        );
                                     }
                                 }
                             }

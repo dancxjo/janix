@@ -4,8 +4,8 @@ use alloc::vec;
 use alloc::vec::Vec;
 use stem::errors::Errno;
 use stem::net;
-use stem::thing::ThingId;
 use stem::thing::sys::{find, get_edges, intern, prop_get, prop_set};
+use stem::thing::ThingId;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IfaceSnapshot {

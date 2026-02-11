@@ -3,12 +3,12 @@
 //! Mutation handlers (create_node, link, prop_set) now route through
 //! the canonical batch pipeline for consistent watch delivery.
 
-use crate::root::{SymbolShell, graph_anchors};
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
 use crate::root::symbols::Interner;
-use abi::symbols::SymbolId;
+use crate::root::{SymbolShell, graph_anchors};
 use abi::schema::{kinds, rels};
+use abi::symbols::SymbolId;
 #[allow(unused_imports)]
 use core::sync::atomic::Ordering;
 
@@ -97,7 +97,13 @@ pub(super) fn maybe_link_host_fallback(
     };
 
     // Attach with a generic relationship so higher-fidelity links can still be added.
-    let _ = handle_link(graph, interner, host, SymbolShell::Static(rels::HAS_RESOURCE), id);
+    let _ = handle_link(
+        graph,
+        interner,
+        host,
+        SymbolShell::Static(rels::HAS_RESOURCE),
+        id,
+    );
 }
 
 pub fn handle_prop_get(
@@ -107,16 +113,16 @@ pub fn handle_prop_get(
     key: SymbolShell,
 ) -> HandlerResult {
     let kid = resolve_shell(key, interner);
-    
+
     // Intern the special "kind" key to check for virtual property
     let kind_key = interner.intern("kind");
-    
+
     if let Some(node) = graph.get_node_mut(id) {
         // Virtual "kind" property: return node.kind field
         if kid == kind_key {
             return (0, node.kind as u64);
         }
-        
+
         // Regular property lookup
         if let Some(val) = node.props.get(&kid) {
             (0, *val)
@@ -360,11 +366,11 @@ pub fn handle_props_get_many(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::root::SymbolShell;
     use crate::root::graph::Graph;
     use crate::root::symbols::Interner;
-    use crate::root::SymbolShell;
-    use abi::types::ThingId;
     use abi::ids::HandleId;
+    use abi::types::ThingId;
 
     #[test]
     fn test_handle_find_correctness() {
@@ -393,16 +399,15 @@ mod tests {
             &mut interner,
             SymbolShell::Id(kind_a),
             buf_ptr,
-            buf_len
+            buf_len,
         );
 
         assert_eq!(status, 0);
         assert_eq!(count, 3);
 
         // Verify IDs
-        let ids_slice = unsafe {
-            core::slice::from_raw_parts(buf_ptr as *const ThingId, count as usize)
-        };
+        let ids_slice =
+            unsafe { core::slice::from_raw_parts(buf_ptr as *const ThingId, count as usize) };
 
         let mut found_ids = ids_slice.to_vec();
         found_ids.sort_by_key(|t| t.0);
@@ -418,15 +423,14 @@ mod tests {
             &mut interner,
             SymbolShell::Id(kind_b),
             buf_ptr,
-            buf_len
+            buf_len,
         );
 
         assert_eq!(status, 0);
         assert_eq!(count, 2);
 
-        let ids_slice = unsafe {
-            core::slice::from_raw_parts(buf_ptr as *const ThingId, count as usize)
-        };
+        let ids_slice =
+            unsafe { core::slice::from_raw_parts(buf_ptr as *const ThingId, count as usize) };
         assert!(ids_slice.contains(&ThingId::from_u64(b1)));
         assert!(ids_slice.contains(&ThingId::from_u64(b2)));
 
@@ -437,7 +441,7 @@ mod tests {
             &mut interner,
             SymbolShell::Id(kind_c),
             buf_ptr,
-            buf_len
+            buf_len,
         );
         assert_eq!(status, 0);
         assert_eq!(count, 0);
@@ -478,9 +482,8 @@ mod tests {
         assert_eq!(count, 3);
 
         // Verify content
-        let rows = unsafe {
-            core::slice::from_raw_parts(buf_ptr as *const QueryRow, count as usize)
-        };
+        let rows =
+            unsafe { core::slice::from_raw_parts(buf_ptr as *const QueryRow, count as usize) };
         let mut ids: Vec<u64> = rows.iter().map(|r| r.id).collect();
         ids.sort();
         let mut expected = vec![id1, id2, id3];
@@ -498,9 +501,8 @@ mod tests {
         assert_eq!(status, 0);
         assert_eq!(count, 3);
 
-        let rows = unsafe {
-            core::slice::from_raw_parts(buf_ptr_heap as *const QueryRow, count as usize)
-        };
+        let rows =
+            unsafe { core::slice::from_raw_parts(buf_ptr_heap as *const QueryRow, count as usize) };
         let mut ids: Vec<u64> = rows.iter().map(|r| r.id).collect();
         ids.sort();
         assert_eq!(ids, expected);
@@ -556,7 +558,13 @@ mod tests {
         // scratch.out_buf = temp_buf.
         // So scratch.out_buf.len() should be 50.
 
-        assert!(scratch.out_buf.len() >= max_rows, "Buffer length should be at least max_rows after reuse");
-        assert!(scratch.out_buf.capacity() >= 128, "Capacity should be preserved");
+        assert!(
+            scratch.out_buf.len() >= max_rows,
+            "Buffer length should be at least max_rows after reuse"
+        );
+        assert!(
+            scratch.out_buf.capacity() >= 128,
+            "Capacity should be preserved"
+        );
     }
 }

@@ -10,9 +10,7 @@ use core::ptr::write_volatile;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use stem::abi::module_manifest::{MANIFEST_MAGIC, ManifestHeader, ModuleKind};
 use stem::device::device_enable_msi;
-use stem::syscall::{
-    device_alloc_dma, device_dma_phys, device_irq_subscribe, device_irq_wait,
-};
+use stem::syscall::{device_alloc_dma, device_dma_phys, device_irq_subscribe, device_irq_wait};
 use stem::thing::sys as thingsys;
 use stem::thread;
 use stem::{error, info, warn};
@@ -119,12 +117,7 @@ fn main(arg: usize) -> ! {
         }
 
         // Flush to display
-        let full_rect = Rect {
-            x: 0,
-            y: 0,
-            w,
-            h,
-        };
+        let full_rect = Rect { x: 0, y: 0, w, h };
         let _ = gpu.present_rect(full_rect);
 
         if frame % 60 == 0 {
@@ -149,8 +142,8 @@ fn create_demo_framebuffer(gpu: &mut VirtioGpu) -> Result<u64, &'static str> {
     let fb_size = (width * height * 4) as usize;
     let pages = (fb_size + 4095) / 4096;
 
-    let framebuffer = device_alloc_dma(gpu.claim_handle(), pages)
-        .map_err(|_| "Failed to alloc framebuffer")?;
+    let framebuffer =
+        device_alloc_dma(gpu.claim_handle(), pages).map_err(|_| "Failed to alloc framebuffer")?;
     let fb_phys = device_dma_phys(framebuffer).map_err(|_| "Failed to get fb phys")?;
 
     info!(

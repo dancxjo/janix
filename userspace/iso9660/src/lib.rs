@@ -227,10 +227,12 @@ impl IsoFs {
         }
 
         let entries = self.parse_dir_entries(dev, extent_lba, size);
-        
+
         // Cache the parsed entries and return a clone from the cache
-        self.dir_cache.borrow_mut().insert(key, DirIndex { entries });
-        
+        self.dir_cache
+            .borrow_mut()
+            .insert(key, DirIndex { entries });
+
         // Return a clone of the cached entries
         self.dir_cache.borrow().get(&key).unwrap().entries.clone()
     }
@@ -335,15 +337,15 @@ impl IsoFs {
                         let _flags = buf[sys_use_offset + 4];
                         let name_start = sys_use_offset + 5;
                         let name_end = sys_use_offset + len;
-                        
+
                         if name_end > name_start {
-                             if let Ok(nm_part) = core::str::from_utf8(&buf[name_start..name_end]) {
-                                 rock_ridge_name.push_str(nm_part);
-                                 found_nm = true;
-                             }
+                            if let Ok(nm_part) = core::str::from_utf8(&buf[name_start..name_end]) {
+                                rock_ridge_name.push_str(nm_part);
+                                found_nm = true;
+                            }
                         }
-                        
-                        // If CONTINUE bit (0) or others are not set, we might be done, 
+
+                        // If CONTINUE bit (0) or others are not set, we might be done,
                         // but NM entries can be split. We just append them all.
                     } else if sig == b"CE" {
                         // Continuation Area (implied TODO: simple NM parsing normally resides in the record itself)

@@ -5,9 +5,9 @@ extern crate alloc;
 extern crate stem; // Force linkage
 
 mod asset;
+mod blit;
 mod blossom_client;
 mod bmp;
-mod blit;
 mod bristle;
 mod compositor;
 mod cursor;
@@ -37,9 +37,9 @@ pub mod snapshot;
 mod state;
 mod surface;
 mod svg;
+mod tessellate;
 mod text_cache;
 mod text_render;
-mod tessellate;
 mod ui;
 mod ui_events;
 mod vir;
@@ -53,11 +53,11 @@ use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 
 use abi::display_driver_protocol::BindPayload;
-use abi::schema::input::{SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER, FILTER_POINTER, FILTER_BUTTON};
+use abi::schema::input::{
+    FILTER_BUTTON, FILTER_POINTER, SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER,
+};
 use abi::schema::{keys, kinds};
-use stem::syscall::{port_create, PortHandle};
-
-
+use stem::syscall::{port_create, topic_subscribe, PortHandle};
 
 use crate::asset::AssetBank;
 use crate::bristle::{poll_bristle, MouseAccelConfig, MouseAccelState};
@@ -210,7 +210,8 @@ fn restore_cursor_underlay(surface: &mut surface::Surface, underlay: &CursorUnde
     unsafe {
         let src = underlay.pixels.as_ptr() as *const u8;
         for row in 0..h {
-            let dst_off = (rect.y() as usize + row) * surface.stride_bytes + (rect.x() as usize * 4);
+            let dst_off =
+                (rect.y() as usize + row) * surface.stride_bytes + (rect.x() as usize * 4);
             core::ptr::copy_nonoverlapping(
                 src.add(row * row_bytes),
                 surface.ptr.add(dst_off),
@@ -255,7 +256,6 @@ fn log_simd_backend() {
         crate::trace_event!("bloom.simd.backend", "Scalar");
     }
 }
-
 
 fn clear_surface(surface: &mut surface::Surface, color: u32) {
     raster::fill_rect_copy(surface, 0, 0, surface.width(), surface.height(), color);
@@ -510,7 +510,12 @@ fn main(arg: usize) -> ! {
         bristle_evt = unpack_handle(arg, 2) as u32;
     }
 
-    stem::info!("[bloom] EARLY boot args: bristle_evt={} arg_req={} arg_resp={}", bristle_evt, arg_req, arg_resp);
+    stem::info!(
+        "[bloom] EARLY boot args: bristle_evt={} arg_req={} arg_resp={}",
+        bristle_evt,
+        arg_req,
+        arg_resp
+    );
     let target = if display_bs_id != 0 {
         CompositorTarget::map_from_bytespace(ThingId::from_u64(display_bs_id), (arg_req, arg_resp))
             .or_else(|_| CompositorTarget::discover_and_map((arg_req, arg_resp), 2000))
@@ -520,30 +525,68 @@ fn main(arg: usize) -> ! {
     .expect("compositor discover");
     let _ = target.backend;
 
+    // Buffer mapping cache for swapchain - maps bytespace IDs to their virtual addresses
+    let mut buffer_cache: BTreeMap<ThingId, *mut u8> = BTreeMap::new();
+
+    let (
+        mut final_ptr,
+        mut final_size,
+        mut final_width,
+        mut final_height,
+        mut final_stride,
+        mut final_bs_id,
+        mut using_zero_copy,
+        mut final_age,
+    ) = (
+        target.ptr,
+        target.size_bytes,
+        target.width,
+        target.height,
+        target.stride_bytes,
+        target.bs_id,
+        false,
+        0u32,
+    );
+
     let mut presenter = if target.driver_req != 0 {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
         d.start_handshake();
-        
+
         // Pump a few times to receive MSG_WELCOME (use yield_now, not sleep which can hang)
-        for i in 0..10 {
+        for _ in 0..10 {
             d.pump();
             stem::yield_now();
         }
-        
-        PresenterImpl::Driver(d)
+
+        // Immediate acquire to satisfy driver's need for a bound context before first present
+        let mut d_presenter = PresenterImpl::Driver(d);
+        let (acq_id, acq_w, acq_h, acq_s, _f, acq_age) = d_presenter.acquire_buffer();
+
+        // Map the initial buffer
+        if let Ok(ptr) = stem::thing::sys::bytespace_map(acq_id) {
+            buffer_cache.insert(acq_id, ptr);
+            final_ptr = ptr;
+            final_size = (acq_h * acq_s) as usize;
+            final_width = acq_w;
+            final_height = acq_h;
+            final_stride = acq_s;
+            final_bs_id = acq_id;
+            final_age = acq_age;
+            stem::info!(
+                "[bloom] ACQUIRED initial driver buffer: {:p} (bs_id={:?})",
+                ptr,
+                acq_id
+            );
+        } else {
+            stem::error!("[bloom] FAILED to map initial driver buffer");
+        }
+
+        d_presenter
     } else {
         PresenterImpl::Null(present::NullPresenter)
     };
 
-    // Buffer mapping cache for swapchain - maps bytespace IDs to their virtual addresses
-    let mut buffer_cache: BTreeMap<ThingId, *mut u8> = BTreeMap::new();
-
-    // Use fallback framebuffer initially - swapchain buffers acquired dynamically in frame loop
-    // This avoids blocking during init when the display driver may still be initializing
-    let (final_ptr, final_size, mut final_width, mut final_height, mut final_stride, mut final_bs_id, using_zero_copy, mut final_age) = 
-        (target.ptr, target.size_bytes, target.width, target.height, target.stride_bytes, target.bs_id, false, 0u32);
-    
-    let _ = (final_bs_id, using_zero_copy); // Suppress unused warnings for now
+    let _ = using_zero_copy; // Suppress unused warning
 
     let mut surface = unsafe {
         surface::Surface::new(
@@ -554,7 +597,6 @@ fn main(arg: usize) -> ! {
             final_stride,
         )
     };
-
 
     // UI Root
     let mut roots = [ThingId::default(); 1];
@@ -585,9 +627,33 @@ fn main(arg: usize) -> ! {
     let (screen_w, screen_h) = (target.width as i32, target.height as i32);
 
     // Cursor state
-    // Input handle: use legacy handle from bootstrap
-    let bristle_evt_handle = bristle_evt as PortHandle;
-    stem::info!("[bloom] bristle_evt_handle = {} (from bristle_evt={})", bristle_evt_handle, bristle_evt);
+    // Input handle: try to use the broadcast topic, fallback to legacy handle
+    let mut bristle_evt_handle = bristle_evt as PortHandle;
+    
+    let mut input_nodes = [ThingId::default(); 1];
+    if let Ok(count) = find(abi::schema::hid::SVC_INPUT, &mut input_nodes) {
+        if count > 0 {
+            let input_node = input_nodes[0];
+            if let Ok(topic_id) = prop_get(input_node, abi::schema::input::INPUT_TOPIC_ID) {
+                if let Ok((write, read)) = port_create(4096) {
+                    if topic_subscribe(topic_id as u32, write).is_ok() {
+                        stem::info!(
+                            "[bloom] dynamically subscribed to input topic {} via port {}",
+                            topic_id,
+                            read
+                        );
+                        bristle_evt_handle = read;
+                    }
+                }
+            }
+        }
+    }
+
+    stem::info!(
+        "[bloom] bristle_evt_handle = {} (legacy was {})",
+        bristle_evt_handle,
+        bristle_evt
+    );
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
     let mut cursor_rasterizer = CursorRasterizer::new();
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
@@ -629,7 +695,11 @@ fn main(arg: usize) -> ! {
     #[cfg(feature = "gpu")]
     let mut gpu_compositor = if composition_mode == CompositionMode::Gpu {
         let mut gc = gpu_compositor::GpuCompositor::new();
-        gc.set_scanout_resource(/* will be set later from driver */ 0, target.width, target.height);
+        gc.set_scanout_resource(
+            /* will be set later from driver */ 0,
+            target.width,
+            target.height,
+        );
         gc.mark_initialized();
         Some(gc)
     } else {
@@ -719,14 +789,38 @@ fn main(arg: usize) -> ! {
 
         // 0. Update surface if buffer changed
         if let PresenterImpl::Driver(ref mut d) = presenter {
-             if current_bs_id != final_bs_id {
-                 // Remap surface for new buffer
-                 let (bs_id, w, h, s, _f, age) = (final_bs_id, final_width, final_height, final_stride, 0, current_age);
-                 let ptr = stem::thing::sys::bytespace_map(bs_id).unwrap();
-                 let size = (h * s) as usize;
-                 surface = unsafe { surface::Surface::new(ptr, size, w, h, s) };
-                 current_bs_id = bs_id;
-             }
+            if current_bs_id != final_bs_id {
+                // Remap surface for new buffer
+                let (bs_id, w, h, s, _f, age) = (
+                    final_bs_id,
+                    final_width,
+                    final_height,
+                    final_stride,
+                    0,
+                    current_age,
+                );
+                
+                // Use cached pointer or map if new
+                let ptr = if let Some(&ptr) = buffer_cache.get(&bs_id) {
+                    ptr
+                } else {
+                    match stem::thing::sys::bytespace_map(bs_id) {
+                        Ok(p) => {
+                            buffer_cache.insert(bs_id, p);
+                            p
+                        }
+                        Err(e) => {
+                            stem::error!("[bloom] FAILED to map buffer {:?}: {:?}", bs_id, e);
+                            // Fallback to current pointer if possible, though this may lead to corruption
+                            surface.ptr
+                        }
+                    }
+                };
+
+                let size = (h * s) as usize;
+                surface = unsafe { surface::Surface::new(ptr, size, w, h, s) };
+                current_bs_id = bs_id;
+            }
         }
 
         // Poll font client for IPC responses
@@ -1122,7 +1216,7 @@ fn main(arg: usize) -> ! {
         if !first_frame_rendered {
             damage = damage::Damage::full_with_cause(bounds, damage::DamageCause::ForceFull, None);
         }
-        
+
         // Add damage from paint pipeline with appropriate causes
         for rect in &paint_res.damage {
             damage.add_rect_with_cause(*rect, damage::DamageCause::ContentChanged, None);
@@ -1154,7 +1248,7 @@ fn main(arg: usize) -> ! {
 
         if let Some(asset) = cursor_asset {
             let (snapshot_opt, rasterized) = cursor_rasterizer.get_snapshot(&asset);
-            
+
             // Track rasterization
             if rasterized {
                 cursor_metrics.record_rasterization();
@@ -1181,13 +1275,13 @@ fn main(arg: usize) -> ! {
                     )
                     .expand(2)
                     .clip(bounds);
-                    
+
                     let cause = if cursor_changed {
                         damage::DamageCause::CursorShapeChanged
                     } else {
                         damage::DamageCause::CursorMoved
                     };
-                    
+
                     if !old_rect.is_empty() {
                         damage.add_rect_with_cause(old_rect, cause, None);
                     }
@@ -1209,10 +1303,18 @@ fn main(arg: usize) -> ! {
                         .expand(2)
                         .clip(bounds);
                     if !old_rect.is_empty() {
-                        damage.add_rect_with_cause(old_rect, damage::DamageCause::CursorMoved, None);
+                        damage.add_rect_with_cause(
+                            old_rect,
+                            damage::DamageCause::CursorMoved,
+                            None,
+                        );
                     }
                     if !new_rect.is_empty() {
-                        damage.add_rect_with_cause(new_rect, damage::DamageCause::CursorMoved, None);
+                        damage.add_rect_with_cause(
+                            new_rect,
+                            damage::DamageCause::CursorMoved,
+                            None,
+                        );
                     }
                     prev_cursor_x = cursor.x;
                     prev_cursor_y = cursor.y;
@@ -1259,7 +1361,7 @@ fn main(arg: usize) -> ! {
         if debug_flags.force_full_damage {
             damage = damage::Damage::full_with_cause(bounds, damage::DamageCause::ForceFull, None);
         }
-        
+
         if debug_flags.disable_damage_tracking {
             // Disable damage tracking means always render full frame
             damage = damage::Damage::full_with_cause(bounds, damage::DamageCause::ForceFull, None);
@@ -1291,8 +1393,9 @@ fn main(arg: usize) -> ! {
             let mut all_cursor_damage = true;
             for record in damage.iter_records() {
                 // Accept both cursor movement and cursor shape changes
-                if record.cause != damage::DamageCause::CursorMoved 
-                    && record.cause != damage::DamageCause::CursorShapeChanged {
+                if record.cause != damage::DamageCause::CursorMoved
+                    && record.cause != damage::DamageCause::CursorShapeChanged
+                {
                     all_cursor_damage = false;
                     break;
                 }
@@ -1334,7 +1437,7 @@ fn main(arg: usize) -> ! {
         builder.prepare_present_damage();
         let snapshot = builder.present_damage();
         let strategy = evaluate_present_strategy(presenter.negotiation_info(), snapshot);
-        
+
         // Use consolidated rects for BOTH rasterization and GPU present
         // This ensures we draw exactly what we tell the GPU to transfer
         // IMPORTANT: Don't use add_rect() as it would re-consolidate the already-consolidated rects
@@ -1343,7 +1446,7 @@ fn main(arg: usize) -> ! {
         } else {
             damage::Damage::from_rects(bounds, snapshot.rects())
         };
-        
+
         overlay_state.update(
             snapshot.rects(),
             snapshot.raw_rects(),
@@ -1351,25 +1454,31 @@ fn main(arg: usize) -> ! {
             &invalidation_causes,
             snapshot.overflowed(),
         );
-        
+
         // Record damage in journal (debug builds only)
         #[cfg(debug_assertions)]
         {
             overlay_state.journal.record_frame(&damage);
         }
-        
-        append_damage_overlay(&mut list, &overlay_state, &debug_flags, Some(&damage), screen_w, screen_h);
-        
+
+        append_damage_overlay(
+            &mut list,
+            &overlay_state,
+            &debug_flags,
+            Some(&damage),
+            screen_w,
+            screen_h,
+        );
+
         // Cursor-only fast path: restore old cursor underlay and skip scene composition.
         // Only valid when the current buffer is stable (age=1) and we captured underlay for
         // this exact bytespace on the previous frame.
-        let cursor_only_fast_path =
-            is_cursor_only_frame
+        let cursor_only_fast_path = is_cursor_only_frame
             && current_age == 1
             && cursor_underlay.valid
             && cursor_underlay.bs_id == current_bs_id
             && list.commands_ref().is_empty();
-        
+
         if !cursor_only_fast_path {
             // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
             let rects: alloc::vec::Vec<_> = damage.iter().collect();
@@ -1413,26 +1522,36 @@ fn main(arg: usize) -> ! {
                     // Upload textures for windows that need it
                     if let PresenterImpl::Driver(ref mut driver_presenter) = presenter {
                         // Collect windows that need texture upload
-                        let windows: alloc::vec::Vec<_> = paint_pipeline.windows_for_gpu_upload()
+                        let windows: alloc::vec::Vec<_> = paint_pipeline
+                            .windows_for_gpu_upload()
                             .map(|(id, rect, paint_gen, geom_gen)| {
-                                (id.to_u64_lossy(), rect.width().max(0) as u32, rect.height().max(0) as u32, paint_gen + geom_gen)
+                                (
+                                    id.to_u64_lossy(),
+                                    rect.width().max(0) as u32,
+                                    rect.height().max(0) as u32,
+                                    paint_gen + geom_gen,
+                                )
                             })
                             .collect();
-                        
+
                         for (window_id, width, height, generation) in windows {
                             // Check if texture needs creation or update
                             if gc.texture_needs_update(window_id, generation) {
                                 // Look up cached raster from render_state
                                 // For now, create/update the texture registration
                                 // (full pixel upload requires render_state access)
-                                
+
                                 // Check if texture exists
                                 let resource_id = if gc.get_texture(window_id).is_none() {
                                     // Create new texture via presenter
                                     // client_id = window_id, format = 2 (BGRA)
-                                    match driver_presenter.send_create_texture_3d(window_id, width, height, 2) {
+                                    match driver_presenter
+                                        .send_create_texture_3d(window_id, width, height, 2)
+                                    {
                                         Some(res_id) => {
-                                            gc.register_texture(window_id, res_id, width, height, generation);
+                                            gc.register_texture(
+                                                window_id, res_id, width, height, generation,
+                                            );
                                             Some(res_id)
                                         }
                                         None => None,
@@ -1441,27 +1560,29 @@ fn main(arg: usize) -> ! {
                                     // Already have texture, just update generation
                                     gc.get_texture(window_id).map(|t| t.resource_id)
                                 };
-                                
+
                                 // If we have a valid resource, we could upload pixels here
                                 // This requires access to the rasterized window content from render_state
                                 // For now, the texture is registered for BLIT commands
                                 if let Some(res_id) = resource_id {
-                                    gc.register_texture(window_id, res_id, width, height, generation);
+                                    gc.register_texture(
+                                        window_id, res_id, width, height, generation,
+                                    );
                                     crate::trace_counter!("bloom.gpu.texture_upload", 1);
                                 }
                             }
                         }
                     }
-                    
+
                     // === QUAD SUBMISSION PHASE ===
                     let quads = paint_pipeline.build_gpu_quads();
                     if !quads.is_empty() {
                         // Extract ctx_id before mutable borrow
                         let ctx_id = gc.context_id();
-                        
+
                         // Build BLIT commands for each quad
                         let cmd_bytes = gc.render_quads(&quads);
-                        
+
                         // Submit 3D commands via driver presenter
                         if !cmd_bytes.is_empty() {
                             // Copy bytes to avoid lifetime issue with gc borrow
@@ -1470,7 +1591,7 @@ fn main(arg: usize) -> ! {
                                 driver_presenter.send_submit_3d(ctx_id, &cmd_vec);
                             }
                         }
-                        
+
                         crate::trace_counter!("bloom.gpu.quads", quads.len() as u64);
                     }
                 }
@@ -1494,7 +1615,7 @@ fn main(arg: usize) -> ! {
         // This architecture ensures the cursor feels "butter smooth" even when
         // the UI is busy with expensive repaints.
         // ============================================================================
-        
+
         let cursor_bounds = crate::geometry::Rect::full(surface.width(), surface.height());
         let mut cursor_rect =
             crate::geometry::Rect::new(cursor.x - 8, cursor.y - 8, 17, 17).clip(cursor_bounds);
@@ -1503,7 +1624,7 @@ fn main(arg: usize) -> ! {
         let cursor_drawn = if let Some(asset) = ASSETS.get_cursor() {
             let (snapshot_opt, _rasterized) = cursor_rasterizer.get_snapshot(&asset);
             // Note: rasterization tracking already done in damage section above
-            
+
             if let Some(snapshot) = snapshot_opt {
                 let cx = cursor.x - snapshot.hotspot_x;
                 let cy = cursor.y - snapshot.hotspot_y;
@@ -1538,7 +1659,7 @@ fn main(arg: usize) -> ! {
             // Acquire NEXT buffer for the next frame
             if let PresenterImpl::Driver(_) = presenter {
                 let (next_bs_id, next_w, next_h, next_s, _f, next_age) = presenter.acquire_buffer();
-                
+
                 // Use cached pointer or map if new
                 let next_ptr = if let Some(&ptr) = buffer_cache.get(&next_bs_id) {
                     ptr
@@ -1548,12 +1669,12 @@ fn main(arg: usize) -> ! {
                     ptr
                 };
                 let next_size = (next_h * next_s) as usize;
-                
+
                 // Update surface to point to the new buffer
                 unsafe {
                     surface.update_buffer(next_ptr, next_size, next_w, next_h, next_s);
                 }
-                
+
                 final_bs_id = next_bs_id;
                 final_width = next_w;
                 final_height = next_h;
@@ -1578,7 +1699,11 @@ fn append_damage_overlay(
     screen_w: i32,
     _screen_h: i32,
 ) {
-    if !flags.show_damage_rects && !flags.show_raw_damage_rects && !flags.show_damage_stats && !flags.show_damage_causes {
+    if !flags.show_damage_rects
+        && !flags.show_raw_damage_rects
+        && !flags.show_damage_stats
+        && !flags.show_damage_causes
+    {
         return;
     }
 
@@ -1600,7 +1725,7 @@ fn append_damage_overlay(
             draw_rect_outline(list, *rect, MERGED_COLOR);
         }
     }
-    
+
     if flags.show_raw_damage_rects {
         for rect in overlay_state.raw() {
             draw_rect_outline(list, *rect, RAW_COLOR);

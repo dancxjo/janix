@@ -109,10 +109,10 @@ impl PanZoomController {
             let dx = screen_x - last_x;
             let dy = screen_y - last_y;
             self.pan_by_screen(dx, dy);
-            
+
             // Update drag anchor
             self.drag_anchor = Some((screen_x, screen_y, timestamp_ns));
-            
+
             // Track position history for velocity calculation
             if self.drag_history_len < 3 {
                 self.drag_history[self.drag_history_len] = (screen_x, screen_y, timestamp_ns);
@@ -123,7 +123,7 @@ impl PanZoomController {
                 self.drag_history[1] = self.drag_history[2];
                 self.drag_history[2] = (screen_x, screen_y, timestamp_ns);
             }
-            
+
             true
         } else {
             false
@@ -137,19 +137,19 @@ impl PanZoomController {
         if self.drag_anchor.is_none() {
             return;
         }
-        
+
         // Calculate velocity from drag history
         if self.drag_history_len >= 2 {
             // Use the last two samples for velocity
             let (x1, y1, t1) = self.drag_history[self.drag_history_len - 2];
             let (x2, y2, t2) = self.drag_history[self.drag_history_len - 1];
-            
+
             let dt_ns = t2.saturating_sub(t1);
             if dt_ns > 0 {
                 let dt_sec = dt_ns as f32 / 1_000_000_000.0;
                 let vx = (x2 - x1) / dt_sec;
                 let vy = (y2 - y1) / dt_sec;
-                
+
                 // Apply velocity impulse for kinetic scrolling
                 // Only if velocity is significant and dt is reasonable (not too long)
                 if dt_sec < 0.1 && (vx.abs() > 10.0 || vy.abs() > 10.0) {
@@ -157,7 +157,7 @@ impl PanZoomController {
                 }
             }
         }
-        
+
         self.drag_anchor = None;
         self.drag_history_len = 0;
     }
@@ -376,20 +376,23 @@ mod tests {
 
         // Simulate a fast drag
         ctrl.begin_drag(100.0, 100.0, 0);
-        ctrl.update_drag(150.0, 100.0, 16_666_667);  // 60fps, moved 50px right
-        ctrl.update_drag(200.0, 100.0, 33_333_334);  // Another frame, another 50px
-        
+        ctrl.update_drag(150.0, 100.0, 16_666_667); // 60fps, moved 50px right
+        ctrl.update_drag(200.0, 100.0, 33_333_334); // Another frame, another 50px
+
         let before_end = ctrl.viewport.center_world;
         ctrl.end_drag();
-        
+
         // Should have applied velocity impulse
         assert!(ctrl.inertia.pan_velocity.0.abs() > 0.0 || ctrl.inertia.pan_velocity.1.abs() > 0.0);
-        
+
         // Tick should continue moving
         let updated = ctrl.tick(1.0 / 60.0);
         assert!(updated);
-        
+
         // Position should have changed due to inertia
-        assert!(ctrl.viewport.center_world.0 != before_end.0 || ctrl.viewport.center_world.1 != before_end.1);
+        assert!(
+            ctrl.viewport.center_world.0 != before_end.0
+                || ctrl.viewport.center_world.1 != before_end.1
+        );
     }
 }

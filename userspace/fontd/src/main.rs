@@ -117,7 +117,11 @@ fn main() -> ! {
     let import_watch = open_watch(kinds::FONT_IMPORT_REQUEST);
     // Watch for new font assets (auto-import path)
     let asset_watch = open_watch(kinds::ASSET);
-    info!("FONTD: Opened ASSET watch (handle={}) for kind '{}'", asset_watch, kinds::ASSET);
+    info!(
+        "FONTD: Opened ASSET watch (handle={}) for kind '{}'",
+        asset_watch,
+        kinds::ASSET
+    );
 
     info!("FONTD: Service ready");
 
@@ -400,16 +404,16 @@ fn process_asset_events(payload: &[u8], state: &mut FontD) {
     if font_kind_sym == 0 {
         return;
     }
-    
+
     let mut cursor = 0usize;
     let mut event_count = 0usize;
     let mut font_count = 0usize;
-    
+
     while cursor < payload.len() {
         if let Ok((header, value)) = watch::decode_event(&payload[cursor..]) {
             cursor += watch::WATCH_EVENT_HEADER_LEN + value.len();
             event_count += 1;
-            
+
             if WatchOp::from_u8(header.op) == Some(WatchOp::Upsert) {
                 // Check if this asset is a font
                 let asset_kind = prop_get(header.subject, keys::ASSET_KIND).unwrap_or(0);
@@ -426,16 +430,19 @@ fn process_asset_events(payload: &[u8], state: &mut FontD) {
             break;
         }
     }
-    
+
     if event_count > 0 {
-        info!("FONTD: Processed {} ASSET events ({} fonts)", event_count, font_count);
+        info!(
+            "FONTD: Processed {} ASSET events ({} fonts)",
+            event_count, font_count
+        );
     }
 }
 
 /// Directly import a font from an asset's bytespace (auto-import path).
 fn handle_font_asset_import(asset_id: ThingId, bs_id: ThingId, _state: &mut FontD) {
     info!("FONTD: Auto-importing font asset {:?}", asset_id);
-    
+
     let size = match bytespace_info(bs_id) {
         Ok(s) => s,
         Err(_) => return,

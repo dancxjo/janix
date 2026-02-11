@@ -124,17 +124,46 @@ fn parse_and_print_event(buf: &[u8]) {
 
 #[stem::main]
 fn main(arg: usize) -> ! {
+    use abi::schema::hid::SVC_INPUT;
+    use abi::schema::input::INPUT_TOPIC_ID;
+    use stem::syscall::topic_subscribe;
+    use stem::thing::sys::{find, prop_get};
+    use stem::thing::ThingId;
+
     info!("echo: starting up");
 
-    let handle = arg as PortHandle;
+    // Input handle: try to use the broadcast topic, fallback to legacy handle
+    let mut handle = arg as PortHandle;
+
+    let mut input_nodes = [ThingId::default(); 1];
+    if let Ok(count) = find(SVC_INPUT, &mut input_nodes) {
+        if count > 0 {
+            let input_node = input_nodes[0];
+            if let Ok(topic_id) = prop_get(input_node, INPUT_TOPIC_ID) {
+                if let Ok((write, read)) = port_create(4096) {
+                    if topic_subscribe(topic_id as u32, write).is_ok() {
+                        info!(
+                            "echo: dynamically subscribed to input topic {} via port {}",
+                            topic_id, read
+                        );
+                        handle = read;
+                    }
+                }
+            }
+        }
+    }
+
     if handle == 0 {
-        info!("echo: no input handle provided, exiting");
+        info!("echo: no input handle provided or topic found, exiting");
         loop {
             stem::yield_now();
         }
     }
 
-    info!("echo: ready for Bristle events (keyboard + mouse)");
+    info!(
+        "echo: ready for Bristle events (main loop using handle {})",
+        handle
+    );
 
     let mut buf = [0u8; 256];
 

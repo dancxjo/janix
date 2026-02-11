@@ -30,22 +30,11 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
     crate::contract!("ROOT: Entering main loop");
     loop {
         iteration = iteration.wrapping_add(1);
-        let mut processed = 0;
+        let mut processed_this_round = 0;
 
-        // Periodic memory stats (every 500 iterations)
-        if iteration % 10000 == 0 {
-            let node_count = graph.nodes.len();
-            let watch_count = graph.global_watches.len();
-            let history_len = graph.commit_history.len();
-            let journal_len = journal.entries.len();
-            let symbol_count = interner.names.len();
-            crate::kinfo!(
-                "ROOT STATS: iter={} nodes={} watches={} history={} journal={} symbols={}",
-                iteration, node_count, watch_count, history_len, journal_len, symbol_count
-            );
-        }
-
-        while processed < 16 {
+        // Process messages until queue is empty or we hit a safety limit.
+        // We use a larger limit (128) than before to improve throughput for logging storms.
+        while processed_this_round < 128 {
             if let Some(msg) = super::pop_msg() {
                 handle_msg::<R>(
                     &mut graph,
@@ -56,14 +45,42 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
                     &mut query_scratch,
                     msg,
                 );
-                processed += 1;
+                processed_this_round += 1;
             } else {
                 break;
             }
         }
 
-        unsafe {
-            crate::task::block_current_erased();
+        // Periodic memory stats (check once per round if it's time)
+        if iteration % 1000 == 0 {
+            let node_count = graph.nodes.len();
+            let watch_count = graph.global_watches.len();
+            let history_len = graph.commit_history.len();
+            let journal_len = journal.entries.len();
+            let symbol_count = interner.names.len();
+            crate::kinfo!(
+                "ROOT STATS: iter={} nodes={} watches={} history={} journal={} symbols={} drops={}",
+                iteration,
+                node_count,
+                watch_count,
+                history_len,
+                journal_len,
+                symbol_count,
+                super::inbox_drop_count()
+            );
+        }
+
+        if processed_this_round == 0 {
+            // Only block if we truly ran out of work
+            unsafe {
+                crate::task::block_current_erased();
+            }
+        } else if processed_this_round >= 128 {
+            // If we hit the limit, there might be more but we should yield to let other
+            // high-priority tasks run (like the compositor or driver) then resume.
+            unsafe {
+                crate::task::scheduler::yield_now_current();
+            }
         }
     }
 }

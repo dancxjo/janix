@@ -223,7 +223,9 @@ pub trait BootTasking {
 pub trait BootRuntimeBase: 'static {
     fn putchar(&self, c: u8);
     /// Non-blocking serial read. Returns `Some(byte)` if data is available.
-    fn getchar(&self) -> Option<u8> { None }
+    fn getchar(&self) -> Option<u8> {
+        None
+    }
     fn mono_ticks(&self) -> u64;
     fn mono_freq_hz(&self) -> u64 {
         10_000_000
@@ -251,13 +253,15 @@ pub trait BootRuntimeBase: 'static {
     }
 
     fn simd_init_cpu(&self) {}
-    
+
     /// Wait for interrupt - low-power idle until next IRQ
     fn wait_for_interrupt(&self) {}
 
     /// Reboot the system. This should never return.
     fn reboot(&self) -> ! {
-        loop { core::hint::spin_loop(); }
+        loop {
+            core::hint::spin_loop();
+        }
     }
 
     /// Send an Inter-Processor Interrupt (IPI) to a specific CPU.
@@ -352,10 +356,7 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
 
     /// Start all non-boot CPUs and run `entry` on each of them.
     /// Deprecated: use start_cpu for lazy bring-up.
-    fn start_secondary_cpus(
-        &self,
-        _entry: extern "C" fn(usize) -> !,
-    ) -> Result<(), Errno> {
+    fn start_secondary_cpus(&self, _entry: extern "C" fn(usize) -> !) -> Result<(), Errno> {
         Err(Errno::NotSupported)
     }
 
@@ -404,7 +405,8 @@ pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
 // Per-CPU generic tracking
 // In a full implementation, this should be a per-cpu structure or array.
 // For now, we only trust this for the boot CPU or rely on atomic updates.
-static CPU_ONLINE: once_cell::OnceCell<&'static core::sync::atomic::AtomicUsize> = once_cell::OnceCell::new();
+static CPU_ONLINE: once_cell::OnceCell<&'static core::sync::atomic::AtomicUsize> =
+    once_cell::OnceCell::new();
 
 static RUNTIME: once_cell::OnceCell<&'static dyn core::any::Any> = once_cell::OnceCell::new();
 static RUNTIME_BASE: once_cell::OnceCell<&'static dyn BootRuntimeBase> = once_cell::OnceCell::new();
@@ -426,7 +428,10 @@ pub fn runtime<R: BootRuntime>() -> &'static R {
     if let Some(rt) = any_ref.downcast_ref::<R>() {
         rt
     } else {
-        panic!("Runtime type mismatch: expected {}", core::any::type_name::<R>());
+        panic!(
+            "Runtime type mismatch: expected {}",
+            core::any::type_name::<R>()
+        );
     }
 }
 
@@ -604,7 +609,13 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     let modules = runtime.modules();
     contract!("Kernel: Enumerating {} boot modules...", modules.len());
     for (i, m) in modules.iter().enumerate() {
-        contract!("  [{}] name='{}' cmdline='{}' size={}", i, m.name, m.cmdline, m.bytes.len());
+        contract!(
+            "  [{}] name='{}' cmdline='{}' size={}",
+            i,
+            m.name,
+            m.cmdline,
+            m.bytes.len()
+        );
     }
 
     // Look for module with "init" in cmdline, otherwise fallback to "sprout" by name
@@ -744,9 +755,19 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             if runtime.threads_supported() {
                 kinfo!("Spawning initial threads...");
                 kinfo!("Spawning Thread A...");
-                crate::task::spawn::<R>(thread_a, StartupArg::Raw(1), crate::task::TaskPriority::Normal, crate::task::Affinity::Any);
+                crate::task::spawn::<R>(
+                    thread_a,
+                    StartupArg::Raw(1),
+                    crate::task::TaskPriority::Normal,
+                    crate::task::Affinity::Any,
+                );
                 kinfo!("Spawning Thread B...");
-                crate::task::spawn::<R>(thread_b, StartupArg::Raw(2), crate::task::TaskPriority::Normal, crate::task::Affinity::Any);
+                crate::task::spawn::<R>(
+                    thread_b,
+                    StartupArg::Raw(2),
+                    crate::task::TaskPriority::Normal,
+                    crate::task::Affinity::Any,
+                );
             }
         }
     }
@@ -809,7 +830,7 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
     let base = unsafe { RAW_RUNTIME_BASE.expect("RAW_RUNTIME_BASE not initialized") };
     base.init_secondary_cpu(cpu_index);
     // Verification done via base properties later if needed
- 
+
     crate::kinfo!("SMP: Entering kernel_secondary_entry for CPU {}", cpu_index);
 
     // Per-CPU init

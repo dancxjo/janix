@@ -4,24 +4,24 @@
 
 pub mod virtio_net;
 
-use spin::Mutex;
 use crate::once_cell::OnceCell;
+use spin::Mutex;
 
 /// Network interface card (NIC) trait
 pub trait Nic {
     /// Get the MAC address
     fn mac(&self) -> [u8; 6];
-    
+
     /// Check if link is up
     fn link_up(&self) -> bool;
-    
+
     /// Poll for received frames (non-blocking)
     /// Returns Some(frame_bytes) if a frame is available
     fn poll_rx(&mut self) -> Option<&[u8]>;
-    
+
     /// Transmit a frame
     fn tx(&mut self, bytes: &[u8]) -> Result<(), TxError>;
-    
+
     /// Get statistics
     fn stats(&self) -> NicStats;
 }
@@ -61,7 +61,7 @@ impl EthernetFrame {
             len: 0,
         }
     }
-    
+
     pub fn as_slice(&self) -> &[u8] {
         &self.data[..self.len]
     }

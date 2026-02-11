@@ -182,13 +182,16 @@ impl Translator {
     /// Initialize the translator with default catalogs.
     pub fn init(&self) {
         let mut catalogs = self.catalogs.lock();
-        
+
         // English catalog (mostly empty, uses fallbacks)
         catalogs.insert(LocaleId::EN_US, Catalog::from_table(LocaleId::EN_US, &[]));
-        
+
         // Latin catalog
-        catalogs.insert(LocaleId::LA, Catalog::from_table(LocaleId::LA, &LATIN_CATALOG));
-        
+        catalogs.insert(
+            LocaleId::LA,
+            Catalog::from_table(LocaleId::LA, &LATIN_CATALOG),
+        );
+
         // Syriac catalog (placeholder for future)
         catalogs.insert(LocaleId::SYC, Catalog::from_table(LocaleId::SYC, &[]));
     }
@@ -215,7 +218,7 @@ impl Translator {
             // Unknown locale - default to EN_US
             0
         };
-        
+
         if self.current_locale.load(Ordering::Relaxed) != index {
             self.current_locale.store(index, Ordering::Relaxed);
             self.generation.fetch_add(1, Ordering::Relaxed);
@@ -244,14 +247,14 @@ impl Translator {
     pub fn translate(&self, key: TextKey) -> Option<&'static str> {
         let locale = self.current_locale();
         let catalogs = self.catalogs.lock();
-        
+
         // Try current locale
         if let Some(catalog) = catalogs.get(&locale) {
             if let Some(translation) = catalog.get(key) {
                 return Some(translation);
             }
         }
-        
+
         // Try default locale (EN_US)
         if locale != LocaleId::EN_US {
             if let Some(catalog) = catalogs.get(&LocaleId::EN_US) {
@@ -260,7 +263,7 @@ impl Translator {
                 }
             }
         }
-        
+
         None
     }
 }
@@ -310,17 +313,17 @@ const LATIN_CATALOG: &[(&str, &str)] = &[
     ("ui.fonts.title", "Litterae"),
     ("ui.fonts.explorer", "Explorator Litterarum"),
     ("ui.fonts.count", "Litterae"),
-    
     // Photosynthesis
     ("ui.photosynthesis.title", "Photosynthesis"),
-    
     // Common UI
     ("ui.window.close", "Claudere"),
     ("ui.window.minimize", "Minuere"),
     ("ui.window.maximize", "Augere"),
-    
     // Sample text for font display
-    ("ui.fonts.sample", "Sphinx Iovis dura lex sed lex. 0123456789"),
+    (
+        "ui.fonts.sample",
+        "Sphinx Iovis dura lex sed lex. 0123456789",
+    ),
 ];
 
 #[cfg(test)]
@@ -349,12 +352,9 @@ mod tests {
 
     #[test]
     fn test_catalog() {
-        let table = [
-            ("key1", "Translation 1"),
-            ("key2", "Translation 2"),
-        ];
+        let table = [("key1", "Translation 1"), ("key2", "Translation 2")];
         let catalog = Catalog::from_table(LocaleId::LA, &table);
-        
+
         assert_eq!(catalog.get(TextKey::new("key1")), Some("Translation 1"));
         assert_eq!(catalog.get(TextKey::new("key2")), Some("Translation 2"));
         assert_eq!(catalog.get(TextKey::new("key3")), None);
@@ -364,12 +364,12 @@ mod tests {
     fn test_translator_locale_switching() {
         let translator = Translator::new();
         translator.init();
-        
+
         assert_eq!(translator.current_locale(), LocaleId::EN_US);
-        
+
         translator.set_locale(LocaleId::LA);
         assert_eq!(translator.current_locale(), LocaleId::LA);
-        
+
         translator.set_locale(LocaleId::SYC);
         assert_eq!(translator.current_locale(), LocaleId::SYC);
     }
@@ -378,15 +378,15 @@ mod tests {
     fn test_translator_cycle() {
         let translator = Translator::new();
         translator.init();
-        
+
         assert_eq!(translator.current_locale(), LocaleId::EN_US);
-        
+
         translator.cycle_locale();
         assert_eq!(translator.current_locale(), LocaleId::LA);
-        
+
         translator.cycle_locale();
         assert_eq!(translator.current_locale(), LocaleId::SYC);
-        
+
         translator.cycle_locale();
         assert_eq!(translator.current_locale(), LocaleId::EN_US);
     }
@@ -395,11 +395,11 @@ mod tests {
     fn test_translator_generation() {
         let translator = Translator::new();
         translator.init();
-        
+
         let gen1 = translator.generation();
         translator.set_locale(LocaleId::LA);
         let gen2 = translator.generation();
-        
+
         assert!(gen2 > gen1);
     }
 
@@ -407,13 +407,16 @@ mod tests {
     fn test_translation() {
         let translator = Translator::new();
         translator.init();
-        
+
         // English (no translation, returns None)
         translator.set_locale(LocaleId::EN_US);
         assert_eq!(translator.translate(TextKey::new("ui.fonts.title")), None);
-        
+
         // Latin (has translation)
         translator.set_locale(LocaleId::LA);
-        assert_eq!(translator.translate(TextKey::new("ui.fonts.title")), Some("Litterae"));
+        assert_eq!(
+            translator.translate(TextKey::new("ui.fonts.title")),
+            Some("Litterae")
+        );
     }
 }

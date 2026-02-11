@@ -16,14 +16,16 @@ extern crate alloc;
 mod driver;
 mod protocol;
 
-use alloc::vec::Vec;
 use abi::schema::keys;
+use alloc::vec::Vec;
 use driver::VirtioNetDriver;
-use protocol::{NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_LINK_DOWN, MSG_LINK_UP, MSG_MAC_REQ, MSG_MAC_RESP};
+use protocol::{
+    NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_LINK_DOWN, MSG_LINK_UP, MSG_MAC_REQ, MSG_MAC_RESP,
+};
 use stem::syscall::port::{port_create, port_recv, port_send, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use stem::{info, warn, error};
+use stem::{error, info, warn};
 
 /// Graph kind for the network driver service
 const KIND_NET_DRIVER: &str = "svc.net.Driver";
@@ -68,7 +70,10 @@ fn main(_arg: usize) -> ! {
     // read_handle is used by us to receive TX requests from netd
     let (write_handle, read_handle) = match port_create(65536) {
         Ok(handles) => {
-            info!("VIRTIO_NETD: Created port (write={}, read={})", handles.0, handles.1);
+            info!(
+                "VIRTIO_NETD: Created port (write={}, read={})",
+                handles.0, handles.1
+            );
             handles
         }
         Err(e) => {
@@ -83,7 +88,10 @@ fn main(_arg: usize) -> ! {
     // We publish this read handle so netd can receive RX frames
     let (rx_write_handle, rx_read_handle) = match port_create(65536) {
         Ok(handles) => {
-            info!("VIRTIO_NETD: Created RX port (write={}, read={})", handles.0, handles.1);
+            info!(
+                "VIRTIO_NETD: Created RX port (write={}, read={})",
+                handles.0, handles.1
+            );
             handles
         }
         Err(e) => {
@@ -109,13 +117,12 @@ fn main(_arg: usize) -> ! {
     };
 
     // Publish MAC address as property (packed into u64)
-    let mac_packed = 
-        (mac[0] as u64) |
-        ((mac[1] as u64) << 8) |
-        ((mac[2] as u64) << 16) |
-        ((mac[3] as u64) << 24) |
-        ((mac[4] as u64) << 32) |
-        ((mac[5] as u64) << 40);
+    let mac_packed = (mac[0] as u64)
+        | ((mac[1] as u64) << 8)
+        | ((mac[2] as u64) << 16)
+        | ((mac[3] as u64) << 24)
+        | ((mac[4] as u64) << 32)
+        | ((mac[5] as u64) << 40);
     thingsys::prop_set(svc_id, "net.mac", mac_packed).ok();
     thingsys::prop_set(svc_id, "net.link_up", if driver.link_up() { 1 } else { 0 }).ok();
     thingsys::prop_set(svc_id, "net.mtu", 1500).ok();
@@ -125,8 +132,11 @@ fn main(_arg: usize) -> ! {
     thingsys::prop_set(svc_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
     // RX port: netd reads from this to receive frames from hardware
     thingsys::prop_set(svc_id, "net.rx_port", rx_read_handle as u64).ok();
-    
-    info!("VIRTIO_NETD: Published service - TX port={}, RX port={}", write_handle, rx_read_handle);
+
+    info!(
+        "VIRTIO_NETD: Published service - TX port={}, RX port={}",
+        write_handle, rx_read_handle
+    );
 
     // Main loop: shuttle frames between hardware and netd
     let mut rx_buf = [0u8; 2048];

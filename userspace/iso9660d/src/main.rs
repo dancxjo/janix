@@ -55,25 +55,34 @@ struct PortBlockDevice {
     port: PortHandle,
     sector_size: u32,
     sector_count: u64,
+    resp_w: PortHandle,
+    resp_r: PortHandle,
 }
 
 impl PortBlockDevice {
     fn new(port: PortHandle) -> Option<Self> {
+        // Create a response port pair for this device
+        // Use a large buffer to accommodate multi-sector reads
+        let (resp_w, resp_r) = port_create(128 * 1024).ok()?;
+
         // For ISO9660, we expect 2048-byte sectors
         // We don't need to identify the device since ISO9660 has fixed sector size
         Some(Self {
             port,
             sector_size: ISO_SECTOR_SIZE as u32,
             sector_count: 0, // Unknown, not needed for ISO9660
+            resp_w,
+            resp_r,
         })
     }
 }
 
 impl BlockDevice for PortBlockDevice {
     fn read_sectors(&self, lba: u64, count: u64, buf: &mut [u8]) -> Result<(), BlockError> {
-        // Build read request
-        let mut req = [0u8; 1 + core::mem::size_of::<ReadRequest>()];
-        req[0] = BlockDeviceRequest::Read as u8;
+        // Build read request: [4: resp_w][1: request_type][payload...]
+        let mut req = [0u8; 4 + 1 + core::mem::size_of::<ReadRequest>()];
+        req[0..4].copy_from_slice(&(self.resp_w as u32).to_le_bytes());
+        req[4] = BlockDeviceRequest::Read as u8;
 
         let read_req = ReadRequest {
             lba,
@@ -87,19 +96,20 @@ impl BlockDevice for PortBlockDevice {
                 core::mem::size_of::<ReadRequest>(),
             )
         };
-        req[1..].copy_from_slice(req_bytes);
+        req[5..].copy_from_slice(req_bytes);
 
         // Send request
         if port_send(self.port, &req).is_err() {
             return Err(BlockError::IoError);
         }
 
-        // Receive response
-        let expected_size = core::mem::size_of::<ReadResponse>() + (count as usize * self.sector_size as usize);
+        // Receive response from our private response port
+        let expected_size =
+            core::mem::size_of::<ReadResponse>() + (count as usize * self.sector_size as usize) + 1;
         let mut resp_buf = alloc::vec![0u8; expected_size];
 
-        let n = port_recv(self.port, &mut resp_buf).map_err(|_| BlockError::IoError)?;
-        if n < core::mem::size_of::<ReadResponse>() {
+        let n = port_recv(self.resp_r, &mut resp_buf).map_err(|_| BlockError::IoError)?;
+        if n < core::mem::size_of::<ReadResponse>() + 1 {
             return Err(BlockError::IoError);
         }
 
@@ -194,7 +204,8 @@ fn handle_tree_request(mount: &Mount, req_buf: &[u8]) {
     match req_type {
         x if x == TreeProviderRequest::Root as u8 => {
             // Return root directory node ID
-            let root_node_id = encode_node_id(mount.fs.pvd.root_dir_extent, mount.fs.pvd.root_dir_size);
+            let root_node_id =
+                encode_node_id(mount.fs.pvd.root_dir_extent, mount.fs.pvd.root_dir_size);
 
             let mut resp = [0u8; 1 + core::mem::size_of::<RootResponse>()];
             resp[0] = TreeProviderResponse::Ok as u8;
@@ -222,8 +233,14 @@ fn handle_tree_request(mount: &Mount, req_buf: &[u8]) {
 
             let req_bytes = &req_buf[1..];
             let node_id = u64::from_le_bytes([
-                req_bytes[0], req_bytes[1], req_bytes[2], req_bytes[3],
-                req_bytes[4], req_bytes[5], req_bytes[6], req_bytes[7],
+                req_bytes[0],
+                req_bytes[1],
+                req_bytes[2],
+                req_bytes[3],
+                req_bytes[4],
+                req_bytes[5],
+                req_bytes[6],
+                req_bytes[7],
             ]);
 
             let (extent_lba, extent_size) = decode_node_id(node_id);
@@ -276,16 +293,28 @@ fn handle_tree_request(mount: &Mount, req_buf: &[u8]) {
 
             let req_bytes = &req_buf[1..];
             let node_id = u64::from_le_bytes([
-                req_bytes[0], req_bytes[1], req_bytes[2], req_bytes[3],
-                req_bytes[4], req_bytes[5], req_bytes[6], req_bytes[7],
+                req_bytes[0],
+                req_bytes[1],
+                req_bytes[2],
+                req_bytes[3],
+                req_bytes[4],
+                req_bytes[5],
+                req_bytes[6],
+                req_bytes[7],
             ]);
             let offset = u64::from_le_bytes([
-                req_bytes[8], req_bytes[9], req_bytes[10], req_bytes[11],
-                req_bytes[12], req_bytes[13], req_bytes[14], req_bytes[15],
+                req_bytes[8],
+                req_bytes[9],
+                req_bytes[10],
+                req_bytes[11],
+                req_bytes[12],
+                req_bytes[13],
+                req_bytes[14],
+                req_bytes[15],
             ]);
-            let length = u32::from_le_bytes([
-                req_bytes[16], req_bytes[17], req_bytes[18], req_bytes[19],
-            ]) as usize;
+            let length =
+                u32::from_le_bytes([req_bytes[16], req_bytes[17], req_bytes[18], req_bytes[19]])
+                    as usize;
 
             let (extent_lba, extent_size) = decode_node_id(node_id);
 
@@ -330,14 +359,22 @@ fn handle_tree_request(mount: &Mount, req_buf: &[u8]) {
 
             let req_bytes = &req_buf[1..];
             let node_id = u64::from_le_bytes([
-                req_bytes[0], req_bytes[1], req_bytes[2], req_bytes[3],
-                req_bytes[4], req_bytes[5], req_bytes[6], req_bytes[7],
+                req_bytes[0],
+                req_bytes[1],
+                req_bytes[2],
+                req_bytes[3],
+                req_bytes[4],
+                req_bytes[5],
+                req_bytes[6],
+                req_bytes[7],
             ]);
 
             let (extent_lba, extent_size) = decode_node_id(node_id);
 
             // For root directory, return metadata directly
-            if extent_lba == mount.fs.pvd.root_dir_extent && extent_size == mount.fs.pvd.root_dir_size {
+            if extent_lba == mount.fs.pvd.root_dir_extent
+                && extent_size == mount.fs.pvd.root_dir_size
+            {
                 let mut resp_data = Vec::new();
                 resp_data.push(TreeProviderResponse::Ok as u8);
                 resp_data.push(NodeKind::Directory as u8);
@@ -427,9 +464,12 @@ fn main(_arg: usize) -> ! {
                 };
 
                 // Publish port handle
-                let _ = prop_set(mount_node, "tree_provider_port", tree_read as u64);
+                let _ = prop_set(mount_node, keys::WRITE_PORT_HANDLE, tree_read as u64);
 
-                info!("ISO9660D: Mounted ISO9660 at node {:?}, tree port {}", mount_node, tree_read);
+                info!(
+                    "ISO9660D: Mounted ISO9660 at node {:?}, tree port {}",
+                    mount_node, tree_read
+                );
 
                 mounts.push(Mount {
                     fs,
@@ -451,7 +491,10 @@ fn main(_arg: usize) -> ! {
     }
 
     // 3. Service loop - wait on all tree provider ports
-    info!("ISO9660D: Entering service loop with {} mounts", mounts.len());
+    info!(
+        "ISO9660D: Entering service loop with {} mounts",
+        mounts.len()
+    );
 
     let mut req_buf = [0u8; 8192];
 

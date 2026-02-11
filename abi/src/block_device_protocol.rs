@@ -4,6 +4,9 @@
 //! Drivers implement this protocol to expose block-level read/write operations.
 
 /// Request types for block device RPC
+///
+/// All requests must be prefixed with a 4-byte response port (u32, little-endian).
+/// Message format: [u32: response_port][u8: request_type][payload...]
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BlockDeviceRequest {

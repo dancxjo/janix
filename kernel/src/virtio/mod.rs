@@ -9,7 +9,7 @@
 pub mod pci;
 pub mod queue;
 
-pub use pci::{VirtioPciDevice, VirtioCapability};
+pub use pci::{VirtioCapability, VirtioPciDevice};
 pub use queue::{Virtqueue, VirtqueueDescriptor};
 
 /// VirtIO device status bits

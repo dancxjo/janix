@@ -412,18 +412,13 @@ impl WindowRasterCache {
 
     fn insert(&mut self, key: RasterCacheKey, image: Arc<Image>) {
         let bytes = bytes_for_image(&image);
-        
+
         if let Some(existing) = self.entries.get(&key) {
             self.total_bytes = self.total_bytes.saturating_sub(existing.bytes);
         }
 
-        self.entries.insert(
-            key.clone(),
-            WindowCacheEntry {
-                image,
-                bytes,
-            },
-        );
+        self.entries
+            .insert(key.clone(), WindowCacheEntry { image, bytes });
         self.total_bytes = self.total_bytes.saturating_add(bytes);
         self.touch(key);
         self.evict_to_budget();
@@ -500,13 +495,12 @@ impl WindowRasterCache {
     }
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::frame::AssetGeneration;
     use alloc::sync::Arc;
     use alloc::vec;
-    use crate::frame::AssetGeneration;
 
     fn image_of_size(w: u32, h: u32) -> Arc<Image> {
         Arc::new(Image {
@@ -578,7 +572,7 @@ mod tests {
             EdgeAA::None,
             PixelFormat::Bgra8888,
         );
-        
+
         state.insert_window_raster(key1.clone(), image_of_size(4, 4));
         assert!(state.get_window_raster(&key1).is_some());
         // Different paint_gen should not find cached entry
@@ -587,33 +581,33 @@ mod tests {
     */
     */
 
-//     #[test]
-//     fn window_cache_invalidates_on_geometry_gen() {
-//         let mut state = RenderState::with_cache_limit(1024);
-//         let thing = ThingId::from_u64(1);
-//         let key1 = RasterCacheKey::new(
-//             thing,
-//             0,
-//             1,  // geometry_gen
-//             0,
-//             1.0,
-//             EdgeAA::None,
-//             PixelFormat::Bgra8888,
-//         );
-//         let key2 = RasterCacheKey::new(
-//             thing,
-//             0,
-//             2,  // geometry_gen changed
-//             0,
-//             1.0,
-//             EdgeAA::None,
-//             PixelFormat::Bgra8888,
-//         );
-//         
-//         state.insert_window_raster(key1.clone(), image_of_size(4, 4));
-//         assert!(state.get_window_raster(&key1).is_some());
-//         assert!(state.get_window_raster(&key2).is_none());
-//     }
+    //     #[test]
+    //     fn window_cache_invalidates_on_geometry_gen() {
+    //         let mut state = RenderState::with_cache_limit(1024);
+    //         let thing = ThingId::from_u64(1);
+    //         let key1 = RasterCacheKey::new(
+    //             thing,
+    //             0,
+    //             1,  // geometry_gen
+    //             0,
+    //             1.0,
+    //             EdgeAA::None,
+    //             PixelFormat::Bgra8888,
+    //         );
+    //         let key2 = RasterCacheKey::new(
+    //             thing,
+    //             0,
+    //             2,  // geometry_gen changed
+    //             0,
+    //             1.0,
+    //             EdgeAA::None,
+    //             PixelFormat::Bgra8888,
+    //         );
+    //
+    //         state.insert_window_raster(key1.clone(), image_of_size(4, 4));
+    //         assert!(state.get_window_raster(&key1).is_some());
+    //         assert!(state.get_window_raster(&key2).is_none());
+    //     }
 
     /*
     #[test]
@@ -638,7 +632,7 @@ mod tests {
             EdgeAA::None,
             PixelFormat::Bgra8888,
         );
-        
+
         state.insert_window_raster(key1.clone(), image_of_size(4, 4));
         assert!(state.get_window_raster(&key1).is_some());
         assert!(state.get_window_raster(&key2).is_none());
@@ -668,7 +662,7 @@ mod tests {
             EdgeAA::None,
             PixelFormat::Bgra8888,
         );
-        
+
         state.insert_window_raster(key1.clone(), image_of_size(4, 4));
         assert!(state.get_window_raster(&key1).is_some());
         assert!(state.get_window_raster(&key2).is_none());
@@ -698,15 +692,14 @@ mod tests {
             EdgeAA::None,
             PixelFormat::Bgra8888,
         );
-        
+
         // Insert two 2x2 images (16 bytes each)
         state.insert_window_raster(key_a.clone(), image_of_size(2, 2));
         state.insert_window_raster(key_b.clone(), image_of_size(2, 2));
-        
+
         // key_a should be evicted (LRU)
         assert!(state.get_window_raster(&key_a).is_none());
         assert!(state.get_window_raster(&key_b).is_some());
     }
     */
 }
-

@@ -202,7 +202,6 @@ pub fn send_eoi() {
     }
 }
 
-
 /// Calibrate LAPIC timer against PIT to determine ticks per second.
 pub fn calibrate_lapic_timer(hz: u32) -> (u32, u64) {
     let lapic_base = LOCAL_APIC_BASE.load(Ordering::SeqCst);
@@ -229,7 +228,9 @@ pub fn calibrate_lapic_timer(hz: u32) -> (u32, u64) {
         while (ioport_read_u8(0x61) & 0x20) == 0 {
             core::hint::spin_loop();
             timeout -= 1;
-            if timeout == 0 { break; }
+            if timeout == 0 {
+                break;
+            }
         }
 
         let end_lapic = ptr::read_volatile((base + 0x390) as *const u32);
@@ -323,7 +324,7 @@ pub fn enable_local_apic() {
         // Set to 0 to accept all priorities
         ptr::write_volatile((base + 0x80) as *mut u32, 0);
 
-        // 3. Logical Destination Register (0xD0) 
+        // 3. Logical Destination Register (0xD0)
         // Set ID to 1 (Logical ID for this CPU in Flat Mode)
         // This assumes Flat Model. For Physical mode routing (which we use), this is less critical
         // but good for sanity.
@@ -333,7 +334,7 @@ pub fn enable_local_apic() {
         // 4. Destination Format Register (0xE0)
         // Set to Flat Model (0xFFFFFFFF)
         ptr::write_volatile((base + 0xE0) as *mut u32, 0xFFFFFFFF);
-         
+
         // 5. Acknowledge any pending EOI just in case
         ptr::write_volatile((base + 0xB0) as *mut u32, 0);
     }

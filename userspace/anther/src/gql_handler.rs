@@ -1,7 +1,7 @@
+use crate::graph_api::JsonBuilder;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
-use phloem::{GraphExecutor, parse, ExecutionResult, ResultValue};
-use crate::graph_api::JsonBuilder;
+use phloem::{parse, ExecutionResult, GraphExecutor, ResultValue};
 
 /// Execute a GQL query and return the result as a JSON string
 pub fn execute_gql_query(query: &str) -> String {
@@ -16,27 +16,29 @@ pub fn execute_gql_query(query: &str) -> String {
             json.key("error");
             json.string_value(&e);
             json.end_object();
-            return json.as_string().unwrap_or_else(|_| "{\"success\":false}".to_string());
+            return json
+                .as_string()
+                .unwrap_or_else(|_| "{\"success\":false}".to_string());
         }
     };
-    
+
     // Execute the command
     let mut executor = GraphExecutor::new();
     let result = executor.execute(command);
-    
+
     execution_result_to_json(result)
 }
 
 fn execution_result_to_json(res: ExecutionResult) -> String {
     let mut json = JsonBuilder::new();
     json.start_object();
-    
+
     json.key("success");
     json.bool_value(res.success);
-    
+
     json.key("message");
     json.string_value(&res.message);
-    
+
     if !res.columns.is_empty() {
         json.key("columns");
         json.start_array();
@@ -45,7 +47,7 @@ fn execution_result_to_json(res: ExecutionResult) -> String {
         }
         json.end_array();
         json.buf.push(b',');
-        
+
         json.key("rows");
         json.start_array();
         for row in res.rows {
@@ -70,9 +72,10 @@ fn execution_result_to_json(res: ExecutionResult) -> String {
         }
         json.end_array();
     }
-    
+
     json.end_object();
-    json.as_string().unwrap_or_else(|_| "{\"success\":false}".to_string())
+    json.as_string()
+        .unwrap_or_else(|_| "{\"success\":false}".to_string())
 }
 
 /// Handle a GQL query from HTTP request body

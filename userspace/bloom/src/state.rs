@@ -1,7 +1,7 @@
-use crate::geometry::Rect;
-use crate::snapshot::SnapshotInvalidation;
 #[cfg(debug_assertions)]
 use crate::damage::DamageJournal;
+use crate::geometry::Rect;
+use crate::snapshot::SnapshotInvalidation;
 use alloc::vec::Vec;
 
 pub const MAX_OVERLAY_RECTS: usize = 256;

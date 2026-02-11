@@ -1,20 +1,20 @@
 use crate::executor::{Graph, GraphExecutor};
 use crate::gql::{parse, Value};
-use stem::thing::{ThingId, ThingKind};
-use stem::errors::Errno;
-use stem::abi::symbols::SymbolId;
-use stem::abi::types::Edge;
+use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
-use alloc::vec::Vec;
 use alloc::vec;
-use abi::ids::HandleId;
+use alloc::vec::Vec;
 use core::cell::RefCell;
+use stem::abi::symbols::SymbolId;
+use stem::abi::types::Edge;
+use stem::errors::Errno;
+use stem::thing::{ThingId, ThingKind};
 
 pub struct MockGraphState {
-    pub nodes: BTreeMap<u64, String>, 
-    pub props: BTreeMap<u64, BTreeMap<u32, u64>>, 
-    pub edges: BTreeMap<u64, Vec<(u32, u64)>>, 
+    pub nodes: BTreeMap<u64, String>,
+    pub props: BTreeMap<u64, BTreeMap<u32, u64>>,
+    pub edges: BTreeMap<u64, Vec<(u32, u64)>>,
     pub symbols: BTreeMap<String, u32>,
     pub symbol_names: BTreeMap<u32, String>,
     pub next_symbol_id: u32,
@@ -104,7 +104,10 @@ impl Graph for &MockGraph {
     fn prop_set(&self, id: ThingId, key: &str, value: u64) -> Result<(), Errno> {
         let mut s = self.state.borrow_mut();
         let key_id = self.intern_internal(&mut s, key);
-        s.props.entry(id.to_u64_lossy()).or_default().insert(key_id, value);
+        s.props
+            .entry(id.to_u64_lossy())
+            .or_default()
+            .insert(key_id, value);
         Ok(())
     }
 
@@ -120,7 +123,10 @@ impl Graph for &MockGraph {
     fn link(&self, src: ThingId, rel: &str, dst: ThingId) -> Result<(), Errno> {
         let mut s = self.state.borrow_mut();
         let rel_id = self.intern_internal(&mut s, rel);
-        s.edges.entry(src.to_u64_lossy()).or_default().push((rel_id, dst.to_u64_lossy()));
+        s.edges
+            .entry(src.to_u64_lossy())
+            .or_default()
+            .push((rel_id, dst.to_u64_lossy()));
         Ok(())
     }
 
@@ -179,7 +185,7 @@ mod tests {
         let g = MockGraph::new();
         // Nodes
         g.add_node(1, "proc.Process");
-        g.set_prop(1, "name", 12345); 
+        g.set_prop(1, "name", 12345);
         g.set_prop(1, "state", 100); // "running" symbol
         g.add_node(2, "proc.Process");
         g.set_prop(2, "name", 67890);
@@ -188,7 +194,7 @@ mod tests {
         g.add_node(4, "Kind"); // A Kind node for introspection
         g.add_node(5, "fs.File");
         g.set_prop(5, "name", 11111);
-        
+
         // Edges
         g.add_edge(1, "CHILD", 2);
         g.add_edge(1, "PARENT", 3);
@@ -268,8 +274,16 @@ mod tests {
         if res.rows.len() >= 2 {
             // Verify ascending order
             for i in 1..res.rows.len() {
-                let prev_id = if let crate::ResultValue::Node(id) = res.rows[i-1][0] { id } else { 0 };
-                let curr_id = if let crate::ResultValue::Node(id) = res.rows[i][0] { id } else { 0 };
+                let prev_id = if let crate::ResultValue::Node(id) = res.rows[i - 1][0] {
+                    id
+                } else {
+                    0
+                };
+                let curr_id = if let crate::ResultValue::Node(id) = res.rows[i][0] {
+                    id
+                } else {
+                    0
+                };
                 assert!(prev_id <= curr_id, "Expected ascending order");
             }
         }
@@ -392,7 +406,10 @@ mod tests {
                 // We have 4 edges in setup_mock
                 assert_eq!(*n, 4);
             } else {
-                panic!("Expected a Number result for count(), got: {:?}", row.first());
+                panic!(
+                    "Expected a Number result for count(), got: {:?}",
+                    row.first()
+                );
             }
         }
     }

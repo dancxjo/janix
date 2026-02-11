@@ -30,7 +30,13 @@ impl DiscoveryState {
         self.touch(instance_fqdn, now_s, ttl_s, |s| s.saw_txt = true);
     }
 
-    fn touch<F: FnOnce(&mut InstanceState)>(&mut self, instance_fqdn: &str, now_s: u64, ttl_s: u32, f: F) {
+    fn touch<F: FnOnce(&mut InstanceState)>(
+        &mut self,
+        instance_fqdn: &str,
+        now_s: u64,
+        ttl_s: u32,
+        f: F,
+    ) {
         let item = self.instances.entry(instance_fqdn.into()).or_default();
         item.last_seen = now_s;
         item.expires_at = now_s.saturating_add(ttl_s as u64);
@@ -58,10 +64,7 @@ impl DiscoveryState {
     }
 }
 
-pub fn reconcile_desired(
-    desired: &[String],
-    active: &[String],
-) -> (Vec<String>, Vec<String>) {
+pub fn reconcile_desired(desired: &[String], active: &[String]) -> (Vec<String>, Vec<String>) {
     let desired_set: BTreeSet<_> = desired.iter().cloned().collect();
     let active_set: BTreeSet<_> = active.iter().cloned().collect();
 

@@ -1,7 +1,7 @@
-use alloc::vec::Vec;
-use alloc::string::{String, ToString};
-use alloc::format;
 use alloc::boxed::Box;
+use alloc::format;
+use alloc::string::{String, ToString};
+use alloc::vec::Vec;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
@@ -87,7 +87,10 @@ pub fn parse(input: &str) -> Result<Command, String> {
     let mut parser = Parser { tokens, pos: 0 };
     let cmd = parser.parse_command()?;
     if parser.pos < parser.tokens.len() {
-        return Err(format!("Trailing tokens after command: {:?}", &parser.tokens[parser.pos..]));
+        return Err(format!(
+            "Trailing tokens after command: {:?}",
+            &parser.tokens[parser.pos..]
+        ));
     }
     Ok(cmd)
 }
@@ -105,11 +108,11 @@ enum Token {
     RBracket,
     Colon,
     Comma,
-    Arrow, // ->
-    Dash,  // -
-    Eq,    // =
-    Dot,   // .
-    Dollar, // $
+    Arrow,           // ->
+    Dash,            // -
+    Eq,              // =
+    Dot,             // .
+    Dollar,          // $
     Keyword(String), // MERGE, MATCH, RETURN, SET, LIMIT, HELP, QUIT, SCHEMA, SKIP, WHERE
 }
 
@@ -122,17 +125,50 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
             ' ' | '\t' | '\r' | '\n' => {
                 chars.next();
             }
-            '(' => { chars.next(); tokens.push(Token::LParen); }
-            ')' => { chars.next(); tokens.push(Token::RParen); }
-            '{' => { chars.next(); tokens.push(Token::LBrace); }
-            '}' => { chars.next(); tokens.push(Token::RBrace); }
-            '[' => { chars.next(); tokens.push(Token::LBracket); }
-            ']' => { chars.next(); tokens.push(Token::RBracket); }
-            ':' => { chars.next(); tokens.push(Token::Colon); }
-            ',' => { chars.next(); tokens.push(Token::Comma); }
-            '.' => { chars.next(); tokens.push(Token::Dot); }
-            '=' => { chars.next(); tokens.push(Token::Eq); }
-            '$' => { chars.next(); tokens.push(Token::Dollar); }
+            '(' => {
+                chars.next();
+                tokens.push(Token::LParen);
+            }
+            ')' => {
+                chars.next();
+                tokens.push(Token::RParen);
+            }
+            '{' => {
+                chars.next();
+                tokens.push(Token::LBrace);
+            }
+            '}' => {
+                chars.next();
+                tokens.push(Token::RBrace);
+            }
+            '[' => {
+                chars.next();
+                tokens.push(Token::LBracket);
+            }
+            ']' => {
+                chars.next();
+                tokens.push(Token::RBracket);
+            }
+            ':' => {
+                chars.next();
+                tokens.push(Token::Colon);
+            }
+            ',' => {
+                chars.next();
+                tokens.push(Token::Comma);
+            }
+            '.' => {
+                chars.next();
+                tokens.push(Token::Dot);
+            }
+            '=' => {
+                chars.next();
+                tokens.push(Token::Eq);
+            }
+            '$' => {
+                chars.next();
+                tokens.push(Token::Dollar);
+            }
             '-' => {
                 chars.next();
                 if let Some(&'>') = chars.peek() {
@@ -170,7 +206,8 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     }
                 }
                 match s.to_uppercase().as_str() {
-                    "MERGE" | "MATCH" | "WHERE" | "RETURN" | "SET" | "LIMIT" | "SKIP" | "HELP" | "QUIT" | "EXIT" | "SCHEMA" | "COUNT" | "ORDER" | "BY" | "ASC" | "DESC" => {
+                    "MERGE" | "MATCH" | "WHERE" | "RETURN" | "SET" | "LIMIT" | "SKIP" | "HELP"
+                    | "QUIT" | "EXIT" | "SCHEMA" | "COUNT" | "ORDER" | "BY" | "ASC" | "DESC" => {
                         tokens.push(Token::Keyword(s.to_uppercase()));
                     }
                     _ => tokens.push(Token::Ident(s)),
@@ -242,9 +279,18 @@ impl Parser {
     fn parse_command(&mut self) -> Result<Command, String> {
         if let Some(Token::Keyword(k)) = self.peek() {
             match k.as_str() {
-                "HELP" => { self.consume(); Ok(Command::Help) }
-                "QUIT" | "EXIT" => { self.consume(); Ok(Command::Quit) }
-                "SCHEMA" => { self.consume(); Ok(Command::Schema) }
+                "HELP" => {
+                    self.consume();
+                    Ok(Command::Help)
+                }
+                "QUIT" | "EXIT" => {
+                    self.consume();
+                    Ok(Command::Quit)
+                }
+                "SCHEMA" => {
+                    self.consume();
+                    Ok(Command::Schema)
+                }
                 "MERGE" => {
                     self.consume();
                     let pattern = self.parse_pattern()?;
@@ -258,12 +304,16 @@ impl Parser {
                             skip = *n as usize;
                         }
                     }
-                    Ok(Command::Merge { pattern, returns, skip })
+                    Ok(Command::Merge {
+                        pattern,
+                        returns,
+                        skip,
+                    })
                 }
                 "MATCH" => {
                     self.consume();
                     let pattern = self.parse_pattern()?;
-                    
+
                     let mut where_clause = None;
                     if self.expect_keyword("WHERE") {
                         where_clause = Some(self.parse_expression()?);
@@ -309,7 +359,9 @@ impl Parser {
                                 }
                                 let var = self.parse_ident()?;
                                 if self.consume() != Some(&Token::RParen) {
-                                    return Err("Expected ')' after id(var) in ORDER BY".to_string());
+                                    return Err(
+                                        "Expected ')' after id(var) in ORDER BY".to_string()
+                                    );
                                 }
                                 // Check for ASC/DESC
                                 if self.expect_keyword("DESC") {
@@ -343,7 +395,14 @@ impl Parser {
                         break;
                     }
 
-                    Ok(Command::Match { pattern, where_clause, returns, order_by, limit, skip })
+                    Ok(Command::Match {
+                        pattern,
+                        where_clause,
+                        returns,
+                        order_by,
+                        limit,
+                        skip,
+                    })
                 }
                 "SET" => {
                     self.consume();
@@ -360,7 +419,11 @@ impl Parser {
                         return Err("Expected '=' in SET".to_string());
                     }
                     let val = self.parse_value()?;
-                    Ok(Command::Set { var, key, value: val })
+                    Ok(Command::Set {
+                        var,
+                        key,
+                        value: val,
+                    })
                 }
                 _ => Err(format!("Unknown command: {}", k)),
             }
@@ -379,7 +442,7 @@ impl Parser {
         // Check for edge
         if let Some(Token::Dash) = self.peek() {
             self.consume(); // -
-            
+
             let mut rel_var = None;
             let mut rel_kind = None;
 
@@ -544,7 +607,7 @@ impl Parser {
                 return Ok(Expression::IdFunc(var));
             }
         }
-        
+
         // Handle count((n)-[]->()) for outgoing edge count
         if let Some(Token::Keyword(kw)) = self.peek() {
             if kw == "COUNT" {
@@ -588,7 +651,7 @@ impl Parser {
                 return Ok(Expression::CountEdges(var));
             }
         }
-        
+
         Ok(Expression::Value(self.parse_value()?))
     }
 }
@@ -602,7 +665,7 @@ mod tests {
     fn test_tokenize_basic() {
         let input = "MATCH (n:proc.Process {id: 123}) RETURN n";
         let _tokens = tokenize(input).unwrap();
-        
+
         let _expected = vec![
             Token::Keyword("MATCH".to_string()),
             Token::LParen,
@@ -623,13 +686,20 @@ mod tests {
     #[test]
     fn test_parse_match_simple() {
         let cmd = parse("MATCH (n) RETURN n").unwrap();
-        if let Command::Match { pattern, returns, .. } = cmd {
+        if let Command::Match {
+            pattern, returns, ..
+        } = cmd
+        {
             if let Pattern::Node(pat) = pattern {
                 assert_eq!(pat.var.as_deref(), Some("n"));
-            } else { panic!("Wrong pattern"); }
+            } else {
+                panic!("Wrong pattern");
+            }
             assert_eq!(returns.len(), 1);
             assert_eq!(returns[0], ReturnExpression::Variable("n".to_string()));
-        } else { panic!("Expected Match"); }
+        } else {
+            panic!("Expected Match");
+        }
     }
 
     #[test]
@@ -643,7 +713,9 @@ mod tests {
                 assert_eq!(pat.props[0].0, "name");
                 if let Value::String(ref s) = pat.props[0].1 {
                     assert_eq!(s, "init");
-                } else { panic!("Wrong prop value type"); }
+                } else {
+                    panic!("Wrong prop value type");
+                }
             }
         }
     }
@@ -651,13 +723,24 @@ mod tests {
     #[test]
     fn test_parse_match_edge() {
         let cmd = parse("MATCH (a)-[:PARENT]->(b) RETURN a, b").unwrap();
-        if let Command::Match { pattern, returns, .. } = cmd {
-            if let Pattern::Edge { src, rel_var, rel_kind, dst } = pattern {
+        if let Command::Match {
+            pattern, returns, ..
+        } = cmd
+        {
+            if let Pattern::Edge {
+                src,
+                rel_var,
+                rel_kind,
+                dst,
+            } = pattern
+            {
                 assert_eq!(src.var.as_deref(), Some("a"));
                 assert_eq!(rel_var, None);
                 assert_eq!(rel_kind.as_deref(), Some("PARENT"));
                 assert_eq!(dst.var.as_deref(), Some("b"));
-            } else { panic!("Wrong pattern"); }
+            } else {
+                panic!("Wrong pattern");
+            }
             assert_eq!(returns.len(), 2);
         }
     }
@@ -665,13 +748,18 @@ mod tests {
     #[test]
     fn test_parse_merge() {
         let cmd = parse("MERGE (n:Kind {key: 1}) RETURN count(n)").unwrap();
-        if let Command::Merge { pattern, returns, .. } = cmd {
+        if let Command::Merge {
+            pattern, returns, ..
+        } = cmd
+        {
             if let Pattern::Node(pat) = pattern {
                 assert_eq!(pat.kind.as_deref(), Some("Kind"));
             }
             assert_eq!(returns.len(), 1);
             assert_eq!(returns[0], ReturnExpression::Count("n".to_string()));
-        } else { panic!("Expected Merge"); }
+        } else {
+            panic!("Expected Merge");
+        }
     }
 
     #[test]
@@ -682,8 +770,12 @@ mod tests {
             assert_eq!(key, "priority");
             if let Value::Number(n) = value {
                 assert_eq!(n, 10);
-            } else { panic!("Wrong value"); }
-        } else { panic!("Expected Set"); }
+            } else {
+                panic!("Wrong value");
+            }
+        } else {
+            panic!("Expected Set");
+        }
     }
 
     #[test]
@@ -692,7 +784,9 @@ mod tests {
         if let Command::Match { limit, skip, .. } = cmd {
             assert_eq!(skip, 10);
             assert_eq!(limit, 5);
-        } else { panic!("Expected Match"); }
+        } else {
+            panic!("Expected Match");
+        }
 
         // Test interleaved
         let cmd = parse("MATCH (n) LIMIT 20 SKIP 5 RETURN n").unwrap();
@@ -717,7 +811,9 @@ mod tests {
             if let Pattern::Node(pat) = pattern {
                 if let Value::Parameter(p) = &pat.props[0].1 {
                     assert_eq!(p, "target");
-                } else { panic!("Expected parameter"); }
+                } else {
+                    panic!("Expected parameter");
+                }
             }
         }
     }
@@ -750,15 +846,28 @@ mod tests {
     #[test]
     fn test_parse_match_anonymous_edge() {
         let cmd = parse("MATCH ()-[e]->() RETURN e").unwrap();
-        if let Command::Match { pattern, returns, .. } = cmd {
-            if let Pattern::Edge { src, rel_var, rel_kind, dst } = pattern {
+        if let Command::Match {
+            pattern, returns, ..
+        } = cmd
+        {
+            if let Pattern::Edge {
+                src,
+                rel_var,
+                rel_kind,
+                dst,
+            } = pattern
+            {
                 assert!(src.var.is_none());
                 assert_eq!(rel_var.as_deref(), Some("e"));
                 assert!(rel_kind.is_none());
                 assert!(dst.var.is_none());
-            } else { panic!("Wrong pattern"); }
+            } else {
+                panic!("Wrong pattern");
+            }
             assert_eq!(returns.len(), 1);
             assert_eq!(returns[0], ReturnExpression::Variable("e".to_string()));
-        } else { panic!("Expected Match"); }
+        } else {
+            panic!("Expected Match");
+        }
     }
 }

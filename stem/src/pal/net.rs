@@ -18,16 +18,14 @@ pub fn nic_mac(out: &mut [u8; 6]) -> SysResult<()> {
             0,
         )
     };
-    
+
     errno(result).map(|_| ())
 }
 
 /// Check if the link is up.
 pub fn nic_link_up() -> SysResult<bool> {
-    let result = unsafe {
-        syscall::syscall6(abi::syscall::SYS_NIC_LINK_UP, 0, 0, 0, 0, 0, 0)
-    };
-    
+    let result = unsafe { syscall::syscall6(abi::syscall::SYS_NIC_LINK_UP, 0, 0, 0, 0, 0, 0) };
+
     errno(result).map(|v| v != 0)
 }
 
@@ -46,7 +44,7 @@ pub fn nic_poll_rx(buffer: &mut [u8]) -> SysResult<usize> {
             0,
         )
     };
-    
+
     errno(result)
 }
 
@@ -63,6 +61,6 @@ pub fn nic_tx(frame: &[u8]) -> SysResult<()> {
             0,
         )
     };
-    
+
     errno(result).map(|_| ())
 }

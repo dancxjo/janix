@@ -246,10 +246,7 @@ fn child_ids_ordered(graph: &impl GraphRead, symbols: &Symbols, parent: ThingId)
         rows.push((order, child.to_u64_lossy(), child));
     }
 
-    rows.sort_by(|a, b| {
-        a.0.cmp(&b.0)
-            .then_with(|| a.1.cmp(&b.1))
-    });
+    rows.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
 
     rows.into_iter().map(|(_, _, id)| id).collect()
 }
@@ -389,12 +386,17 @@ mod tests {
         g.kinds.insert(label.to_u64_lossy(), 102);
         g.kinds.insert(input.to_u64_lossy(), 103);
 
-        g.props.insert((root.to_u64_lossy(), keys::UI_KIND), ui_kind::COLUMN);
-        g.props.insert((label.to_u64_lossy(), keys::UI_KIND), ui_kind::TEXT);
-        g.props.insert((input.to_u64_lossy(), keys::UI_KIND), ui_kind::TEXT_INPUT);
+        g.props
+            .insert((root.to_u64_lossy(), keys::UI_KIND), ui_kind::COLUMN);
+        g.props
+            .insert((label.to_u64_lossy(), keys::UI_KIND), ui_kind::TEXT);
+        g.props
+            .insert((input.to_u64_lossy(), keys::UI_KIND), ui_kind::TEXT_INPUT);
         g.props.insert((label.to_u64_lossy(), keys::UI_TEXT), 50);
-        g.props.insert((input.to_u64_lossy(), keys::UI_INPUT_VALUE), 51);
-        g.props.insert((input.to_u64_lossy(), keys::UI_PLACEHOLDER_TEXT), 52);
+        g.props
+            .insert((input.to_u64_lossy(), keys::UI_INPUT_VALUE), 51);
+        g.props
+            .insert((input.to_u64_lossy(), keys::UI_PLACEHOLDER_TEXT), 52);
 
         g.bytes.insert(50, "Query".to_string());
         g.bytes.insert(51, "abc".to_string());

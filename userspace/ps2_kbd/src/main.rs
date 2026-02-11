@@ -1,9 +1,9 @@
 #![no_std]
 #![no_main]
 
-use stem::{info, warn};
 use stem::syscall::{ioport_read, irq_subscribe, irq_wait, port_send, PortHandle};
 use stem::thing::sys as thingsys;
+use stem::{info, warn};
 
 /// PS/2 controller status register
 const PS2_STATUS: usize = 0x64;
@@ -108,7 +108,10 @@ fn drain_keyboard_data(handle: PortHandle) {
 
 /// Fallback polling loop (if IRQ subscribe fails)
 fn polling_loop(handle: PortHandle) -> ! {
-    info!("ps2_kbd: using polling mode ({}ms interval)", POLLING_INTERVAL_MS);
+    info!(
+        "ps2_kbd: using polling mode ({}ms interval)",
+        POLLING_INTERVAL_MS
+    );
     loop {
         let status = ioport_read(PS2_STATUS, 1);
 

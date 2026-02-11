@@ -69,7 +69,7 @@ pub fn blit_a8_tinted_over(dst: &mut [u32], mask: &[u8], color: u32, tint_a: u8)
         // Check for all-zero or all-255 masks in a single pass
         let mut all_zero = true;
         let mut all_255 = true;
-        
+
         for &m in &mask[..len] {
             if m != 0 {
                 all_zero = false;
@@ -82,7 +82,7 @@ pub fn blit_a8_tinted_over(dst: &mut [u32], mask: &[u8], color: u32, tint_a: u8)
                 break;
             }
         }
-        
+
         // Check if mask is all zeros (common for anti-aliased edges outside the glyph)
         if all_zero {
             crate::trace_counter!("raster.blit.a8_masked.fast_all_zero", 1);

@@ -94,7 +94,6 @@ impl Supervisor {
         crate::pipelines::setup_clock_service(&mut self.tasks);
         crate::pipelines::setup_taskman_service(&mut self.tasks);
 
-
         // 4. Loop
         info!("SPROUT: Entering supervisor loop.");
 
@@ -218,7 +217,7 @@ impl Supervisor {
         self.ensure_app("/fontd");
         self.ensure_app("/blossom");
         // netd is spawned by setup_network_pipeline, not here
-        
+
         // Storage
         self.ensure_app("/ahci_disk");
         self.ensure_app("/iso_reader");
@@ -324,7 +323,7 @@ impl Supervisor {
                             module_path: driver_name.to_string(), // approximation
                             pid: Some(pid),
                             restarts: 0,
-                    spawn_arg: 0,
+                            spawn_arg: 0,
                         });
 
                         // Set driver priority to High (3)
@@ -422,7 +421,7 @@ fn spawn_bloom(tasks: &mut Vec<ManagedTask>, dh: &crate::pipelines::DisplayHandl
             slice[1] = dh.drv_req_write as u32;
             slice[2] = dh.drv_resp_read as u32;
             slice[3] = 0; // No bristle event handle (input disabled)
-            
+
             // Display bytespace id (u64 split into two u32s)
             let bs = dh.bs_id.to_u64_lossy();
             slice[4] = bs as u32;

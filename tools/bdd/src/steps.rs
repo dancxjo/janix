@@ -325,7 +325,9 @@ async fn turn_on_machine(world: &mut ThingOsWorld) -> Result<(), StepError> {
     Ok(())
 }
 
-#[then(regex = r#"^I should see a rectangle at (\d+), (\d+) with size (\d+)x(\d+) and color "(.+)"$"#)]
+#[then(
+    regex = r#"^I should see a rectangle at (\d+), (\d+) with size (\d+)x(\d+) and color "(.+)"$"#
+)]
 async fn check_rect_color(
     world: &mut ThingOsWorld,
     x: u32,
@@ -408,9 +410,13 @@ async fn check_rect_color(
     );
 
     if match_pct < 80.0 {
-         return Err(StepError(format!(
+        return Err(StepError(format!(
             "Rectangle at ({}, {}) does not match color {:?} (matches: {:.1}%). Center pixel was {:?}",
-            x, y, expected_color, match_pct, rgb.get_pixel(cx, cy).0
+            x,
+            y,
+            expected_color,
+            match_pct,
+            rgb.get_pixel(cx, cy).0
         )));
     }
 
@@ -1716,7 +1722,7 @@ async fn see_graph_nodes(world: &mut ThingOsWorld) -> Result<(), StepError> {
     let scan_h = 540;
 
     if scan_x + scan_w > width || scan_y + scan_h > height {
-         return Err(StepError("Window area out of screen bounds".to_string()));
+        return Err(StepError("Window area out of screen bounds".to_string()));
     }
 
     let bg_color = [0xF5, 0xF5, 0xF0];
@@ -1755,7 +1761,7 @@ async fn see_graph_nodes(world: &mut ThingOsWorld) -> Result<(), StepError> {
 
     // Also expect some text/borders
     if dark_pixels < 100 {
-         return Err(StepError(format!(
+        return Err(StepError(format!(
             "No node borders or text detected. Found {} dark pixels.",
             dark_pixels
         )));
@@ -1798,10 +1804,13 @@ async fn check_balanced_layout(world: &mut ThingOsWorld) -> Result<(), StepError
     // We prefer it in bottom-right for "balance", but center is technically "visible"
     // For this test, let's enforce bottom-right to ensure layout engine placed it there.
     if loc != "bottom-right" {
-         eprintln!("│  │  │      ⚠️ Clock found at '{}' instead of bottom-right", loc);
-         // We won't fail hard if it's center (fallback), but we note it.
+        eprintln!(
+            "│  │  │      ⚠️ Clock found at '{}' instead of bottom-right",
+            loc
+        );
+        // We won't fail hard if it's center (fallback), but we note it.
     } else {
-         eprintln!("│  │  │      ✅ Clock found in bottom-right quadrant");
+        eprintln!("│  │  │      ✅ Clock found in bottom-right quadrant");
     }
 
     // 3. Check Main App (Photosynthesis or Font Explorer)
@@ -1825,14 +1834,20 @@ async fn check_balanced_layout(world: &mut ThingOsWorld) -> Result<(), StepError
             let pixel = rgb.get_pixel(px, py).0;
             if color_close(pixel, main_app_color, 10) {
                 main_app_found = true;
-                eprintln!("│  │  │      ✅ Main App background detected at ({}, {})", px, py);
+                eprintln!(
+                    "│  │  │      ✅ Main App background detected at ({}, {})",
+                    px, py
+                );
                 break;
             }
         }
     }
 
     if !main_app_found {
-         return Err(StepError("Main application (Photosynthesis/Font Explorer) not detected (checked #F5F5F0)".to_string()));
+        return Err(StepError(
+            "Main application (Photosynthesis/Font Explorer) not detected (checked #F5F5F0)"
+                .to_string(),
+        ));
     }
 
     eprintln!("│  │  │      ✅ Balanced layout confirmed");

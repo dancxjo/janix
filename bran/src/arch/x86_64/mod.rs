@@ -53,8 +53,8 @@ impl X86_64Runtime {
 
     pub fn current_cpu_id(&self) -> CpuId {
         match self.lapic_id() {
-             Ok(id) => CpuId(id),
-             Err(_) => CpuId(0),
+            Ok(id) => CpuId(id),
+            Err(_) => CpuId(0),
         }
     }
 }
@@ -212,7 +212,7 @@ impl ArchRuntime for X86_64Runtime {
             idt::init();
         }
         paging::init(hhdm_offset);
-        
+
         // Map the LAPIC MMIO region into the HHDM.
         // The LAPIC is at 0xfee00000 and is not part of the normal memory map,
         // so we need to map it explicitly.
@@ -228,9 +228,15 @@ impl ArchRuntime for X86_64Runtime {
                     kernel::memory::alloc_frame()
                 }
             }
-            
+
             // Map as uncacheable device memory
-            let perms = kernel::MapPerms { read: true, write: true, exec: false, user: false, kind: kernel::MapKind::Device };
+            let perms = kernel::MapPerms {
+                read: true,
+                write: true,
+                exec: false,
+                user: false,
+                kind: kernel::MapKind::Device,
+            };
             let _ = paging::map_page(
                 aspace,
                 lapic_virt,
@@ -281,7 +287,9 @@ impl ArchRuntime for X86_64Runtime {
             while attempts < 100_000 {
                 let status: u8;
                 core::arch::asm!("in al, dx", out("al") status, in("dx") 0x64u16, options(nostack, preserves_flags));
-                if status & 0x02 == 0 { break; }
+                if status & 0x02 == 0 {
+                    break;
+                }
                 attempts += 1;
             }
             // Send the reset command (0xFE = pulse reset line)
@@ -468,9 +476,11 @@ impl ArchRuntime for X86_64Runtime {
 
     fn setup_preemption_timer(&self, hz: u32) {
         let (init_cnt, ticks_per_sec) = ioapic::calibrate_lapic_timer(hz);
-        
-        self.timer_vector.store(idt::IRQ_TIMER_VECTOR as usize, Ordering::SeqCst);
-        self.timer_init_cnt.store(init_cnt as usize, Ordering::SeqCst);
+
+        self.timer_vector
+            .store(idt::IRQ_TIMER_VECTOR as usize, Ordering::SeqCst);
+        self.timer_init_cnt
+            .store(init_cnt as usize, Ordering::SeqCst);
 
         ioapic::set_lapic_timer_periodic(idt::IRQ_TIMER_VECTOR, init_cnt);
 
@@ -553,7 +563,6 @@ impl ArchRuntime for X86_64Runtime {
         Ok(BOOT_TEMP_MAP_BASE + offset)
     }
 
-
     fn cpu_ids(&self) -> &'static [CpuId] {
         let count = CPU_COUNT.load(Ordering::SeqCst) as usize;
         unsafe { &CPU_IDS[..count] }
@@ -612,13 +621,13 @@ impl ArchRuntime for X86_64Runtime {
 
     fn init_secondary_cpu(&self, cpu_index: usize) {
         // Load the kernel's GDT and IDT on this secondary CPU
-        
+
         // The trampoline already set up CS=0x08 and DS/SS=0x10 with compatible descriptors.
         // We still need to load the kernel's GDT pointer so the TSS is available.
         unsafe {
             gdt::load_on_secondary(cpu_index);
         }
-        
+
         // Load the IDT so we can handle exceptions
         unsafe {
             idt::load_on_secondary();
@@ -653,7 +662,7 @@ impl ArchRuntime for X86_64Runtime {
     fn tlb_shootdown_broadcast(&self) {
         let current_cpu = self.current_cpu_index();
         let cpu_count = CPU_COUNT.load(Ordering::SeqCst) as usize;
-        
+
         for i in 0..cpu_count {
             if i != current_cpu {
                 self.send_ipi(i, idt::IRQ_TLB_SHOOTDOWN_VECTOR);
@@ -667,8 +676,8 @@ impl ArchRuntime for X86_64Runtime {
         entry: extern "C" fn(usize) -> !,
         cpu_index: usize,
     ) -> Result<(), abi::errors::Errno> {
-        use kernel::{kinfo, kerror, kwarn, MapKind, MapPerms};
         use core::sync::atomic::Ordering;
+        use kernel::{MapKind, MapPerms, kerror, kinfo, kwarn};
 
         let hhdm = self.hhdm_offset.load(Ordering::SeqCst);
         let aspace = self.active_address_space();
@@ -676,9 +685,13 @@ impl ArchRuntime for X86_64Runtime {
         let trampoline_addr = trampoline_base + hhdm;
 
         // 1. One-time trampoline setup
-        if self.trampoline_ready.compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst).is_ok() {
+        if self
+            .trampoline_ready
+            .compare_exchange(0, 1, Ordering::SeqCst, Ordering::SeqCst)
+            .is_ok()
+        {
             kinfo!("SMP: Initializing trampoline at 0x{:x}", trampoline_base);
-            
+
             self.map_page(
                 aspace,
                 trampoline_base,
@@ -692,7 +705,8 @@ impl ArchRuntime for X86_64Runtime {
                 },
                 MapKind::Device,
                 &ProxyAllocator,
-            ).map_err(|_| {
+            )
+            .map_err(|_| {
                 kerror!("SMP: Failed to identity-map trampoline");
                 abi::errors::Errno::ENOMEM
             })?;
@@ -702,11 +716,11 @@ impl ArchRuntime for X86_64Runtime {
                 let start = &smp::trampoline_start as *const _ as *const u8;
                 let end = &smp::trampoline_end as *const _ as *const u8;
                 let len = end.offset_from(start) as usize;
-                
+
                 if len > 4096 {
                     panic!("SMP: Trampoline too large!");
                 }
-                
+
                 core::ptr::copy_nonoverlapping(start, trampoline_addr as *mut u8, len);
             }
             self.trampoline_ready.store(2, Ordering::SeqCst); // 2 means fully ready
@@ -722,15 +736,19 @@ impl ArchRuntime for X86_64Runtime {
         kinfo!("SMP: Starting CPU {} (APIC {})", cpu_index, apic_id);
 
         let write_trampoline_data = |offset: usize, val: u64| unsafe {
-             core::ptr::write_volatile((trampoline_addr + offset as u64) as *mut u64, val);
+            core::ptr::write_volatile((trampoline_addr + offset as u64) as *mut u64, val);
         };
-        
-        let lapic_base = self.lapic_base_phys().unwrap(); 
+
+        let lapic_base = self.lapic_base_phys().unwrap();
         let lapic_virt = lapic_base + hhdm;
 
         let write_icr = |high: u32, low: u32| unsafe {
             if !self.wait_lapic_icr_idle(lapic_virt, Self::LAPIC_ICR_DELIVERY_TIMEOUT_US) {
-                kwarn!("SMP: LAPIC ICR busy before IPI to CPU {} (APIC {})", cpu_index, apic_id);
+                kwarn!(
+                    "SMP: LAPIC ICR busy before IPI to CPU {} (APIC {})",
+                    cpu_index,
+                    apic_id
+                );
             }
             core::ptr::write_volatile((lapic_virt + 0x310) as *mut u32, high);
             core::ptr::write_volatile((lapic_virt + 0x300) as *mut u32, low);
@@ -785,7 +803,7 @@ impl ArchRuntime for X86_64Runtime {
 
         // INIT IPI
         write_icr(apic_id << 24, 0x0000C500);
-        
+
         // Wait 10ms (Intel spec: 10ms after INIT before first SIPI)
         self.delay_us(10_000);
 
@@ -798,7 +816,7 @@ impl ArchRuntime for X86_64Runtime {
 
         // Wait for come up (bounded)
         let came_up = self.wait_for_ap_flag(hhdm, Self::AP_STARTUP_TIMEOUT_US);
-        
+
         if came_up {
             kinfo!("SMP: CPU {} (APIC {}) is online", cpu_index, apic_id);
             self.started_cpu_count.fetch_add(1, Ordering::SeqCst);

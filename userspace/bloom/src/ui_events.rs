@@ -357,55 +357,337 @@ fn bump_window_gen(window_id: ThingId) {
 
 fn key_to_ascii(key: Key, shift: bool) -> Option<char> {
     let ch = match key {
-        Key::A => if shift { 'A' } else { 'a' },
-        Key::B => if shift { 'B' } else { 'b' },
-        Key::C => if shift { 'C' } else { 'c' },
-        Key::D => if shift { 'D' } else { 'd' },
-        Key::E => if shift { 'E' } else { 'e' },
-        Key::F => if shift { 'F' } else { 'f' },
-        Key::G => if shift { 'G' } else { 'g' },
-        Key::H => if shift { 'H' } else { 'h' },
-        Key::I => if shift { 'I' } else { 'i' },
-        Key::J => if shift { 'J' } else { 'j' },
-        Key::K => if shift { 'K' } else { 'k' },
-        Key::L => if shift { 'L' } else { 'l' },
-        Key::M => if shift { 'M' } else { 'm' },
-        Key::N => if shift { 'N' } else { 'n' },
-        Key::O => if shift { 'O' } else { 'o' },
-        Key::P => if shift { 'P' } else { 'p' },
-        Key::Q => if shift { 'Q' } else { 'q' },
-        Key::R => if shift { 'R' } else { 'r' },
-        Key::S => if shift { 'S' } else { 's' },
-        Key::T => if shift { 'T' } else { 't' },
-        Key::U => if shift { 'U' } else { 'u' },
-        Key::V => if shift { 'V' } else { 'v' },
-        Key::W => if shift { 'W' } else { 'w' },
-        Key::X => if shift { 'X' } else { 'x' },
-        Key::Y => if shift { 'Y' } else { 'y' },
-        Key::Z => if shift { 'Z' } else { 'z' },
-        Key::Num1 => if shift { '!' } else { '1' },
-        Key::Num2 => if shift { '@' } else { '2' },
-        Key::Num3 => if shift { '#' } else { '3' },
-        Key::Num4 => if shift { '$' } else { '4' },
-        Key::Num5 => if shift { '%' } else { '5' },
-        Key::Num6 => if shift { '^' } else { '6' },
-        Key::Num7 => if shift { '&' } else { '7' },
-        Key::Num8 => if shift { '*' } else { '8' },
-        Key::Num9 => if shift { '(' } else { '9' },
-        Key::Num0 => if shift { ')' } else { '0' },
+        Key::A => {
+            if shift {
+                'A'
+            } else {
+                'a'
+            }
+        }
+        Key::B => {
+            if shift {
+                'B'
+            } else {
+                'b'
+            }
+        }
+        Key::C => {
+            if shift {
+                'C'
+            } else {
+                'c'
+            }
+        }
+        Key::D => {
+            if shift {
+                'D'
+            } else {
+                'd'
+            }
+        }
+        Key::E => {
+            if shift {
+                'E'
+            } else {
+                'e'
+            }
+        }
+        Key::F => {
+            if shift {
+                'F'
+            } else {
+                'f'
+            }
+        }
+        Key::G => {
+            if shift {
+                'G'
+            } else {
+                'g'
+            }
+        }
+        Key::H => {
+            if shift {
+                'H'
+            } else {
+                'h'
+            }
+        }
+        Key::I => {
+            if shift {
+                'I'
+            } else {
+                'i'
+            }
+        }
+        Key::J => {
+            if shift {
+                'J'
+            } else {
+                'j'
+            }
+        }
+        Key::K => {
+            if shift {
+                'K'
+            } else {
+                'k'
+            }
+        }
+        Key::L => {
+            if shift {
+                'L'
+            } else {
+                'l'
+            }
+        }
+        Key::M => {
+            if shift {
+                'M'
+            } else {
+                'm'
+            }
+        }
+        Key::N => {
+            if shift {
+                'N'
+            } else {
+                'n'
+            }
+        }
+        Key::O => {
+            if shift {
+                'O'
+            } else {
+                'o'
+            }
+        }
+        Key::P => {
+            if shift {
+                'P'
+            } else {
+                'p'
+            }
+        }
+        Key::Q => {
+            if shift {
+                'Q'
+            } else {
+                'q'
+            }
+        }
+        Key::R => {
+            if shift {
+                'R'
+            } else {
+                'r'
+            }
+        }
+        Key::S => {
+            if shift {
+                'S'
+            } else {
+                's'
+            }
+        }
+        Key::T => {
+            if shift {
+                'T'
+            } else {
+                't'
+            }
+        }
+        Key::U => {
+            if shift {
+                'U'
+            } else {
+                'u'
+            }
+        }
+        Key::V => {
+            if shift {
+                'V'
+            } else {
+                'v'
+            }
+        }
+        Key::W => {
+            if shift {
+                'W'
+            } else {
+                'w'
+            }
+        }
+        Key::X => {
+            if shift {
+                'X'
+            } else {
+                'x'
+            }
+        }
+        Key::Y => {
+            if shift {
+                'Y'
+            } else {
+                'y'
+            }
+        }
+        Key::Z => {
+            if shift {
+                'Z'
+            } else {
+                'z'
+            }
+        }
+        Key::Num1 => {
+            if shift {
+                '!'
+            } else {
+                '1'
+            }
+        }
+        Key::Num2 => {
+            if shift {
+                '@'
+            } else {
+                '2'
+            }
+        }
+        Key::Num3 => {
+            if shift {
+                '#'
+            } else {
+                '3'
+            }
+        }
+        Key::Num4 => {
+            if shift {
+                '$'
+            } else {
+                '4'
+            }
+        }
+        Key::Num5 => {
+            if shift {
+                '%'
+            } else {
+                '5'
+            }
+        }
+        Key::Num6 => {
+            if shift {
+                '^'
+            } else {
+                '6'
+            }
+        }
+        Key::Num7 => {
+            if shift {
+                '&'
+            } else {
+                '7'
+            }
+        }
+        Key::Num8 => {
+            if shift {
+                '*'
+            } else {
+                '8'
+            }
+        }
+        Key::Num9 => {
+            if shift {
+                '('
+            } else {
+                '9'
+            }
+        }
+        Key::Num0 => {
+            if shift {
+                ')'
+            } else {
+                '0'
+            }
+        }
         Key::Space => ' ',
         Key::Tab => '\t',
-        Key::Minus => if shift { '_' } else { '-' },
-        Key::Equal => if shift { '+' } else { '=' },
-        Key::LeftBracket => if shift { '{' } else { '[' },
-        Key::RightBracket => if shift { '}' } else { ']' },
-        Key::Backslash => if shift { '|' } else { '\\' },
-        Key::Semicolon => if shift { ':' } else { ';' },
-        Key::Quote => if shift { '"' } else { '\'' },
-        Key::Grave => if shift { '~' } else { '`' },
-        Key::Comma => if shift { '<' } else { ',' },
-        Key::Period => if shift { '>' } else { '.' },
-        Key::Slash => if shift { '?' } else { '/' },
+        Key::Minus => {
+            if shift {
+                '_'
+            } else {
+                '-'
+            }
+        }
+        Key::Equal => {
+            if shift {
+                '+'
+            } else {
+                '='
+            }
+        }
+        Key::LeftBracket => {
+            if shift {
+                '{'
+            } else {
+                '['
+            }
+        }
+        Key::RightBracket => {
+            if shift {
+                '}'
+            } else {
+                ']'
+            }
+        }
+        Key::Backslash => {
+            if shift {
+                '|'
+            } else {
+                '\\'
+            }
+        }
+        Key::Semicolon => {
+            if shift {
+                ':'
+            } else {
+                ';'
+            }
+        }
+        Key::Quote => {
+            if shift {
+                '"'
+            } else {
+                '\''
+            }
+        }
+        Key::Grave => {
+            if shift {
+                '~'
+            } else {
+                '`'
+            }
+        }
+        Key::Comma => {
+            if shift {
+                '<'
+            } else {
+                ','
+            }
+        }
+        Key::Period => {
+            if shift {
+                '>'
+            } else {
+                '.'
+            }
+        }
+        Key::Slash => {
+            if shift {
+                '?'
+            } else {
+                '/'
+            }
+        }
         _ => return None,
     };
     Some(ch)
@@ -426,7 +708,9 @@ mod tests {
     use alloc::collections::BTreeMap;
     use alloc::string::String;
     use stem::errors::{Error, Result};
-    use stem::petals::graph::{reduce_window_events_with_graph, GraphBackend, UiKey, UiTreeBuilder};
+    use stem::petals::graph::{
+        reduce_window_events_with_graph, GraphBackend, UiKey, UiTreeBuilder,
+    };
 
     #[derive(Default)]
     struct TestGraph {
@@ -506,7 +790,8 @@ mod tests {
         fn bytespace_create(&mut self, len: usize) -> Result<ThingId> {
             let id = ThingId::from_u64(self.next_id);
             self.next_id += 1;
-            self.bytespaces.insert(id.to_u64_lossy(), alloc::vec![0u8; len]);
+            self.bytespaces
+                .insert(id.to_u64_lossy(), alloc::vec![0u8; len]);
             Ok(id)
         }
 

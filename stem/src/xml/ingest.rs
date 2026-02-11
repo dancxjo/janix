@@ -322,14 +322,16 @@ mod tests {
 
         // Exactly one document
         assert_eq!(res.document.to_u64_lossy(), 1);
-        
+
         // Exactly one root element
         assert_eq!(res.element_count, 1);
         assert_eq!(res.root_element.to_u64_lossy(), 2);
-        
+
         // Root element has XML_ORDER = 0
         assert_eq!(
-            graph.props.get(&(res.root_element, "xml.order".to_string())),
+            graph
+                .props
+                .get(&(res.root_element, "xml.order".to_string())),
             Some(&"0".to_string())
         );
     }
@@ -343,32 +345,34 @@ mod tests {
 
         // 3 elements: svg, g, path
         assert_eq!(res.element_count, 3);
-        
+
         // Find g element (should be child of svg with order 0)
         // Nodes: 1=doc, 2=svg, 3=svg.attr(d), wait no - svg has no attrs here
         // Actually: 1=doc, 2=svg, 3=g, 4=path, 5=path.attr(d)
         let g_id = ThingId::from_u64(3);
         let path_id = ThingId::from_u64(4);
-        
+
         // g has order 0 (first child of svg)
         assert_eq!(
             graph.props.get(&(g_id, "xml.order".to_string())),
             Some(&"0".to_string())
         );
-        
+
         // path has order 0 (first child of g)
         assert_eq!(
             graph.props.get(&(path_id, "xml.order".to_string())),
             Some(&"0".to_string())
         );
-        
+
         // Verify HAS_CHILD edges exist
-        assert!(graph.edges.iter().any(|(s, r, d)| 
-            s.to_u64_lossy() == 2 && r == "HAS_CHILD" && d.to_u64_lossy() == 3
-        ));
-        assert!(graph.edges.iter().any(|(s, r, d)| 
-            s.to_u64_lossy() == 3 && r == "HAS_CHILD" && d.to_u64_lossy() == 4
-        ));
+        assert!(graph
+            .edges
+            .iter()
+            .any(|(s, r, d)| s.to_u64_lossy() == 2 && r == "HAS_CHILD" && d.to_u64_lossy() == 3));
+        assert!(graph
+            .edges
+            .iter()
+            .any(|(s, r, d)| s.to_u64_lossy() == 3 && r == "HAS_CHILD" && d.to_u64_lossy() == 4));
     }
 
     #[test]
@@ -379,32 +383,31 @@ mod tests {
             keep_whitespace_text: false, // Default, but explicit
             ..XmlIngestOptions::default()
         };
-        let res = ingest_xml_to_graph(xml.as_bytes(), opts, &mut graph)
-            .expect("ingest failed");
+        let res = ingest_xml_to_graph(xml.as_bytes(), opts, &mut graph).expect("ingest failed");
 
         // 2 elements: a, b
         assert_eq!(res.element_count, 2);
-        
+
         // 2 text nodes: "Hello " and "world"
         assert_eq!(res.text_count, 2);
-        
+
         // Nodes: 1=doc, 2=a, 3="Hello " text, 4=b, 5="world" text
         let text1_id = ThingId::from_u64(3);
         let b_id = ThingId::from_u64(4);
         let text2_id = ThingId::from_u64(5);
-        
+
         // "Hello " text has order 0 (first child of a)
         assert_eq!(
             graph.props.get(&(text1_id, "xml.order".to_string())),
             Some(&"0".to_string())
         );
-        
+
         // b element has order 1 (second child of a)
         assert_eq!(
             graph.props.get(&(b_id, "xml.order".to_string())),
             Some(&"1".to_string())
         );
-        
+
         // "world" text has order 0 (first child of b)
         assert_eq!(
             graph.props.get(&(text2_id, "xml.order".to_string())),
@@ -422,12 +425,12 @@ mod tests {
         // 1 element, 3 attributes
         assert_eq!(res.element_count, 1);
         assert_eq!(res.attribute_count, 3);
-        
+
         // Nodes: 1=doc, 2=x, 3=attr(a), 4=attr(b), 5=attr(c)
         let attr_a = ThingId::from_u64(3);
         let attr_b = ThingId::from_u64(4);
         let attr_c = ThingId::from_u64(5);
-        
+
         // Attributes have XML_ORDER 0, 1, 2 in encounter order
         assert_eq!(
             graph.props.get(&(attr_a, "xml.order".to_string())),
@@ -441,16 +444,19 @@ mod tests {
             graph.props.get(&(attr_c, "xml.order".to_string())),
             Some(&"2".to_string())
         );
-        
+
         // Verify HAS_ATTR edges
-        assert!(graph.edges.iter().any(|(s, r, d)| 
-            s.to_u64_lossy() == 2 && r == "HAS_ATTR" && d.to_u64_lossy() == 3
-        ));
-        assert!(graph.edges.iter().any(|(s, r, d)| 
-            s.to_u64_lossy() == 2 && r == "HAS_ATTR" && d.to_u64_lossy() == 4
-        ));
-        assert!(graph.edges.iter().any(|(s, r, d)| 
-            s.to_u64_lossy() == 2 && r == "HAS_ATTR" && d.to_u64_lossy() == 5
-        ));
+        assert!(graph
+            .edges
+            .iter()
+            .any(|(s, r, d)| s.to_u64_lossy() == 2 && r == "HAS_ATTR" && d.to_u64_lossy() == 3));
+        assert!(graph
+            .edges
+            .iter()
+            .any(|(s, r, d)| s.to_u64_lossy() == 2 && r == "HAS_ATTR" && d.to_u64_lossy() == 4));
+        assert!(graph
+            .edges
+            .iter()
+            .any(|(s, r, d)| s.to_u64_lossy() == 2 && r == "HAS_ATTR" && d.to_u64_lossy() == 5));
     }
 }

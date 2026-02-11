@@ -11,7 +11,7 @@
 //! Virglrenderer errors are logged by QEMU to the **host console**, not the guest.
 //! If you see "Illegal command buffer" or similar errors in the QEMU output,
 //! check the command buffer diagnostics logged on the first frame.
-//! 
+//!
 //! Common issues:
 //! - Incorrect command header format (cmd, obj_type, length)
 //! - Surface handles not created before use
@@ -133,7 +133,7 @@ impl VirglCommandBuilder {
         let depth_bits = depth.to_bits();
         let depth_lo = depth_bits as u32;
         let depth_hi = (depth_bits >> 32) as u32;
-        
+
         self.cmds.push(cmd_header(virgl_cmd::CLEAR, 0, 8));
         self.cmds.push(buffers);
         self.cmds.push(r.to_bits());
@@ -146,10 +146,18 @@ impl VirglCommandBuilder {
     }
 
     /// Set framebuffer state (minimal: just bind a surface)
-    fn set_framebuffer_state(&mut self, width: u32, height: u32, nr_cbufs: u32, zsurf_handle: u32, cbuf_handles: &[u32]) {
+    fn set_framebuffer_state(
+        &mut self,
+        width: u32,
+        height: u32,
+        nr_cbufs: u32,
+        zsurf_handle: u32,
+        cbuf_handles: &[u32],
+    ) {
         // VIRGL_CCMD_SET_FRAMEBUFFER_STATE
         let len = 2 + nr_cbufs;
-        self.cmds.push(cmd_header(virgl_cmd::SET_FRAMEBUFFER_STATE, 0, len));
+        self.cmds
+            .push(cmd_header(virgl_cmd::SET_FRAMEBUFFER_STATE, 0, len));
         self.cmds.push(nr_cbufs);
         self.cmds.push(zsurf_handle);
         for handle in cbuf_handles {
@@ -158,15 +166,26 @@ impl VirglCommandBuilder {
     }
 
     /// Create a surface object pointing to a resource
-    fn create_surface(&mut self, handle: u32, res_handle: u32, format: u32, first_element: u32, last_element: u32) {
+    fn create_surface(
+        &mut self,
+        handle: u32,
+        res_handle: u32,
+        format: u32,
+        first_element: u32,
+        last_element: u32,
+    ) {
         // CREATE_OBJECT with type=SURFACE
         // Payload: res_handle, format, val0 (first_element | level<<16), val1 (last_element | first_layer<<16)
-        self.cmds.push(cmd_header(virgl_cmd::CREATE_OBJECT, virgl_object::SURFACE, 5));
+        self.cmds.push(cmd_header(
+            virgl_cmd::CREATE_OBJECT,
+            virgl_object::SURFACE,
+            5,
+        ));
         self.cmds.push(handle);
         self.cmds.push(res_handle);
         self.cmds.push(format);
         self.cmds.push(first_element); // first_element | (level << 16)
-        self.cmds.push(last_element);  // last_element | (first_layer << 16)
+        self.cmds.push(last_element); // last_element | (first_layer << 16)
     }
 
     /// Get command bytes for SUBMIT_3D
@@ -177,12 +196,7 @@ impl VirglCommandBuilder {
     /// Get command bytes as u8 slice
     fn as_bytes(&self) -> &[u8] {
         // Safe: u32 slice to u8 slice
-        unsafe {
-            core::slice::from_raw_parts(
-                self.cmds.as_ptr() as *const u8,
-                self.cmds.len() * 4,
-            )
-        }
+        unsafe { core::slice::from_raw_parts(self.cmds.as_ptr() as *const u8, self.cmds.len() * 4) }
     }
 }
 
@@ -199,7 +213,7 @@ fn main() -> ! {
         use abi::schema::kinds;
         use stem::thing::sys::find;
         use stem::thing::ThingId;
-        
+
         let mut devs = [ThingId::default(); 1];
         if let Ok(1) = find(kinds::DEV_DISPLAY_GPU, &mut devs) {
             break devs[0].to_u64_lossy();
@@ -214,13 +228,17 @@ fn main() -> ! {
         Ok(g) => g,
         Err(e) => {
             info!("virgl_demo: Failed to create GPU driver: {:?}", e);
-            loop { stem::sleep(Duration::from_secs(1)); }
+            loop {
+                stem::sleep(Duration::from_secs(1));
+            }
         }
     };
 
     if let Err(e) = gpu.init_virtio() {
         info!("virgl_demo: Failed to init virtio: {}", e);
-        loop { stem::sleep(Duration::from_secs(1)); }
+        loop {
+            stem::sleep(Duration::from_secs(1));
+        }
     }
 
     // Check for virgl support
@@ -236,19 +254,25 @@ fn main() -> ! {
 /// 2D fallback - just clear the framebuffer with CPU composition
 fn demo_2d_clear(gpu: &mut VirtioGpu) -> ! {
     info!("virgl_demo: 2D fallback - displaying solid color");
-    
+
     // Use default display dimensions (driver initializes to 800x600 if not set)
     let (width, height) = gpu.get_dimensions();
-    let (width, height) = if width == 0 { (1920, 1080) } else { (width, height) };
+    let (width, height) = if width == 0 {
+        (1920, 1080)
+    } else {
+        (width, height)
+    };
     info!("virgl_demo: Display size {}x{}", width, height);
 
     // Create a resource and fill with solid color
     let resource_id = 1;
     gpu.set_dimensions(width, height);
-    
+
     if let Err(e) = gpu.create_resource_2d(resource_id) {
         info!("virgl_demo: Failed to create resource: {}", e);
-        loop { stem::sleep(Duration::from_secs(1)); }
+        loop {
+            stem::sleep(Duration::from_secs(1));
+        }
     }
 
     // We would need backing memory to actually draw - for now just loop
@@ -266,20 +290,27 @@ fn demo_3d_clear(gpu: &mut VirtioGpu) -> ! {
     let ctx_id = 1;
     if let Err(e) = gpu.create_context(ctx_id, b"virgl_demo") {
         info!("virgl_demo: Failed to create context: {}", e);
-        loop { stem::sleep(Duration::from_secs(1)); }
+        loop {
+            stem::sleep(Duration::from_secs(1));
+        }
     }
     info!("virgl_demo: Context created successfully!");
 
     // Use display dimensions (or reasonable default)
     let (width, height) = gpu.get_dimensions();
-    let (width, height) = if width == 0 { (1920, 1080) } else { (width, height) };
+    let (width, height) = if width == 0 {
+        (1920, 1080)
+    } else {
+        (width, height)
+    };
     info!("virgl_demo: Display {}x{}", width, height);
 
     // Create a 3D render target resource
     let rt_resource_id = 100;
     let format = 2; // PIPE_FORMAT_B8G8R8X8_UNORM
-    let bind = virtio_gpu::commands::PIPE_BIND_RENDER_TARGET | virtio_gpu::commands::PIPE_BIND_SCANOUT;
-    
+    let bind =
+        virtio_gpu::commands::PIPE_BIND_RENDER_TARGET | virtio_gpu::commands::PIPE_BIND_SCANOUT;
+
     if let Err(e) = gpu.create_resource_3d(
         rt_resource_id,
         virtio_gpu::commands::PIPE_TEXTURE_2D,
@@ -290,14 +321,18 @@ fn demo_3d_clear(gpu: &mut VirtioGpu) -> ! {
         1, // depth
     ) {
         info!("virgl_demo: Failed to create 3D resource: {}", e);
-        loop { stem::sleep(Duration::from_secs(1)); }
+        loop {
+            stem::sleep(Duration::from_secs(1));
+        }
     }
     info!("virgl_demo: 3D render target created!");
 
     // Attach resource to context
     if let Err(e) = gpu.ctx_attach_resource(ctx_id, rt_resource_id) {
         info!("virgl_demo: Failed to attach resource: {}", e);
-        loop { stem::sleep(Duration::from_secs(1)); }
+        loop {
+            stem::sleep(Duration::from_secs(1));
+        }
     }
     info!("virgl_demo: Resource attached to context!");
 
@@ -324,9 +359,19 @@ fn demo_3d_clear(gpu: &mut VirtioGpu) -> ! {
         if frame == 0 {
             let cmd_words = cmds.finish();
             info!("virgl_demo: Submitting virgl command stream:");
-            info!("  - ctx_id={}, resource_id={}, format={}", ctx_id, rt_resource_id, format);
-            info!("  - command count={} words ({} bytes)", cmd_words.len(), cmds.as_bytes().len());
-            info!("  - First 8 command words: {:08x?}", &cmd_words[..8.min(cmd_words.len())]);
+            info!(
+                "  - ctx_id={}, resource_id={}, format={}",
+                ctx_id, rt_resource_id, format
+            );
+            info!(
+                "  - command count={} words ({} bytes)",
+                cmd_words.len(),
+                cmds.as_bytes().len()
+            );
+            info!(
+                "  - First 8 command words: {:08x?}",
+                &cmd_words[..8.min(cmd_words.len())]
+            );
         }
 
         // Submit command stream
@@ -340,11 +385,20 @@ fn demo_3d_clear(gpu: &mut VirtioGpu) -> ! {
                 let cmd_words = cmds.finish();
                 info!("virgl_demo: FAIL - submit_3d returned error: {}", e);
                 info!("virgl_demo: Command buffer details:");
-                info!("  - ctx_id={}, resource_id={}, format={}", ctx_id, rt_resource_id, format);
+                info!(
+                    "  - ctx_id={}, resource_id={}, format={}",
+                    ctx_id, rt_resource_id, format
+                );
                 // Limit output to first 32 words to avoid spam
                 let words_to_show = 32.min(cmd_words.len());
-                info!("  - First {} command words: {:08x?}", words_to_show, &cmd_words[..words_to_show]);
-                loop { stem::sleep(Duration::from_secs(1)); }
+                info!(
+                    "  - First {} command words: {:08x?}",
+                    words_to_show,
+                    &cmd_words[..words_to_show]
+                );
+                loop {
+                    stem::sleep(Duration::from_secs(1));
+                }
             }
         }
 
@@ -356,7 +410,12 @@ fn demo_3d_clear(gpu: &mut VirtioGpu) -> ! {
         }
 
         // Flush to display
-        let rect = virtio_gpu::Rect { x: 0, y: 0, w: width, h: height };
+        let rect = virtio_gpu::Rect {
+            x: 0,
+            y: 0,
+            w: width,
+            h: height,
+        };
         if let Err(e) = gpu.flush_resource(rt_resource_id, rect) {
             if frame == 0 {
                 info!("virgl_demo: flush failed: {}", e);
@@ -364,7 +423,10 @@ fn demo_3d_clear(gpu: &mut VirtioGpu) -> ! {
         }
 
         if frame % 60 == 0 {
-            info!("virgl_demo: Frame {} - color ({:.2}, {:.2}, {:.2})", frame, r, g, b);
+            info!(
+                "virgl_demo: Frame {} - color ({:.2}, {:.2}, {:.2})",
+                frame, r, g, b
+            );
         }
 
         frame = frame.wrapping_add(1);

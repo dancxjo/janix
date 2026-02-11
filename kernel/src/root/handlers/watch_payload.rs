@@ -231,8 +231,8 @@ pub(crate) fn filter_watch_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi::watch::{self, WatchEvent, WatchOp, ValueEncoding, encode_event, decode_event};
-    use abi::wire::{ThingId, PredicateId};
+    use abi::watch::{self, ValueEncoding, WatchEvent, WatchOp, decode_event, encode_event};
+    use abi::wire::{PredicateId, ThingId};
 
     fn run_filter(payload: &[u8], filter: &WatchFilter) -> Result<Vec<u8>, DecodeError> {
         let mut out = Vec::new();
@@ -258,7 +258,7 @@ mod tests {
         predicate: PredicateId,
         encoding: ValueEncoding,
         value: &[u8],
-        buf: &mut Vec<u8>
+        buf: &mut Vec<u8>,
     ) {
         let event = WatchEvent {
             op: WatchOp::Upsert,
@@ -281,10 +281,22 @@ mod tests {
         let pred = make_pred(10);
 
         // 1. Update 1: value = 100
-        encode_test_event(subj, pred, ValueEncoding::U64LE, &100u64.to_le_bytes(), &mut payload);
+        encode_test_event(
+            subj,
+            pred,
+            ValueEncoding::U64LE,
+            &100u64.to_le_bytes(),
+            &mut payload,
+        );
 
         // 2. Update 2: value = 200 (Should coalesce)
-        encode_test_event(subj, pred, ValueEncoding::U64LE, &200u64.to_le_bytes(), &mut payload);
+        encode_test_event(
+            subj,
+            pred,
+            ValueEncoding::U64LE,
+            &200u64.to_le_bytes(),
+            &mut payload,
+        );
 
         let filter = WatchFilter::default();
         let filtered = run_filter(&payload, &filter).expect("filter failed");
@@ -307,10 +319,22 @@ mod tests {
         let pred = make_pred(10);
 
         // 1. Bytes: len 4
-        encode_test_event(subj, pred, ValueEncoding::Bytes, &[1, 2, 3, 4], &mut payload);
+        encode_test_event(
+            subj,
+            pred,
+            ValueEncoding::Bytes,
+            &[1, 2, 3, 4],
+            &mut payload,
+        );
 
         // 2. Bytes: len 5 (Should NOT coalesce)
-        encode_test_event(subj, pred, ValueEncoding::Bytes, &[1, 2, 3, 4, 5], &mut payload);
+        encode_test_event(
+            subj,
+            pred,
+            ValueEncoding::Bytes,
+            &[1, 2, 3, 4, 5],
+            &mut payload,
+        );
 
         let filter = WatchFilter::default();
         let filtered = run_filter(&payload, &filter).expect("filter failed");
@@ -337,8 +361,20 @@ mod tests {
         let subj2 = make_thing(20);
         let pred = make_pred(5);
 
-        encode_test_event(subj1, pred, ValueEncoding::U64LE, &0u64.to_le_bytes(), &mut payload);
-        encode_test_event(subj2, pred, ValueEncoding::U64LE, &0u64.to_le_bytes(), &mut payload);
+        encode_test_event(
+            subj1,
+            pred,
+            ValueEncoding::U64LE,
+            &0u64.to_le_bytes(),
+            &mut payload,
+        );
+        encode_test_event(
+            subj2,
+            pred,
+            ValueEncoding::U64LE,
+            &0u64.to_le_bytes(),
+            &mut payload,
+        );
 
         let mut filter = WatchFilter::default();
         filter.flags |= WATCH_F_SUBJECT;
@@ -358,8 +394,20 @@ mod tests {
         let pred1 = make_pred(100);
         let pred2 = make_pred(200);
 
-        encode_test_event(subj, pred1, ValueEncoding::U64LE, &0u64.to_le_bytes(), &mut payload);
-        encode_test_event(subj, pred2, ValueEncoding::U64LE, &0u64.to_le_bytes(), &mut payload);
+        encode_test_event(
+            subj,
+            pred1,
+            ValueEncoding::U64LE,
+            &0u64.to_le_bytes(),
+            &mut payload,
+        );
+        encode_test_event(
+            subj,
+            pred2,
+            ValueEncoding::U64LE,
+            &0u64.to_le_bytes(),
+            &mut payload,
+        );
 
         let mut filter = WatchFilter::default();
         filter.flags |= WATCH_F_PREDICATE;
@@ -382,15 +430,33 @@ mod tests {
         let other_pred = make_pred(999);
 
         // 1. CreateNode (Kind=50) -> Keep
-        encode_test_event(subj1, kind_pred, ValueEncoding::Bytes, &50u32.to_le_bytes(), &mut payload);
+        encode_test_event(
+            subj1,
+            kind_pred,
+            ValueEncoding::Bytes,
+            &50u32.to_le_bytes(),
+            &mut payload,
+        );
 
         // 2. CreateNode (Kind=60) -> Drop
-        encode_test_event(subj2, kind_pred, ValueEncoding::Bytes, &60u32.to_le_bytes(), &mut payload);
+        encode_test_event(
+            subj2,
+            kind_pred,
+            ValueEncoding::Bytes,
+            &60u32.to_le_bytes(),
+            &mut payload,
+        );
 
         // 3. Other Predicate -> Drop (because Kind filter implies we only want that Kind creation event?
         //    Wait, logic says: if flag set, header.predicate MUST be WATCH_PRED_KIND AND value must match.
         //    So yes, non-kind predicates are dropped.)
-        encode_test_event(subj1, other_pred, ValueEncoding::U64LE, &0u64.to_le_bytes(), &mut payload);
+        encode_test_event(
+            subj1,
+            other_pred,
+            ValueEncoding::U64LE,
+            &0u64.to_le_bytes(),
+            &mut payload,
+        );
 
         let mut filter = WatchFilter::default();
         filter.flags |= WATCH_F_KIND;
@@ -415,11 +481,41 @@ mod tests {
         let pred_b = make_pred(20);
         let pred_c = make_pred(30);
 
-        encode_test_event(subj, pred_a, ValueEncoding::U64LE, &1u64.to_le_bytes(), &mut payload);
-        encode_test_event(subj, pred_b, ValueEncoding::U64LE, &2u64.to_le_bytes(), &mut payload);
-        encode_test_event(subj, pred_a, ValueEncoding::U64LE, &3u64.to_le_bytes(), &mut payload); // Update A
-        encode_test_event(subj, pred_c, ValueEncoding::U64LE, &4u64.to_le_bytes(), &mut payload);
-        encode_test_event(subj, pred_b, ValueEncoding::U64LE, &5u64.to_le_bytes(), &mut payload); // Update B
+        encode_test_event(
+            subj,
+            pred_a,
+            ValueEncoding::U64LE,
+            &1u64.to_le_bytes(),
+            &mut payload,
+        );
+        encode_test_event(
+            subj,
+            pred_b,
+            ValueEncoding::U64LE,
+            &2u64.to_le_bytes(),
+            &mut payload,
+        );
+        encode_test_event(
+            subj,
+            pred_a,
+            ValueEncoding::U64LE,
+            &3u64.to_le_bytes(),
+            &mut payload,
+        ); // Update A
+        encode_test_event(
+            subj,
+            pred_c,
+            ValueEncoding::U64LE,
+            &4u64.to_le_bytes(),
+            &mut payload,
+        );
+        encode_test_event(
+            subj,
+            pred_b,
+            ValueEncoding::U64LE,
+            &5u64.to_le_bytes(),
+            &mut payload,
+        ); // Update B
 
         let filter = WatchFilter::default();
         let filtered = run_filter(&payload, &filter).expect("filter failed");

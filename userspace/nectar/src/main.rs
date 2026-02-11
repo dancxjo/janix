@@ -7,22 +7,22 @@ extern crate stem;
 mod discovery_state;
 mod dns_packet;
 
-use abi::schema::{keys, kinds, rels};
 use abi::ids::HandleId;
+use abi::schema::{keys, kinds, rels};
 use alloc::collections::{BTreeMap, BTreeSet};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 use discovery_state::reconcile_desired;
 use dns_packet::{
-    DnsPacket, DnsResourceRecord, encode_ptr_rdata, encode_srv_rdata, encode_txt_rdata, parse_a,
-    parse_aaaa, parse_ptr_target, parse_srv, parse_txt_kvs,
+    encode_ptr_rdata, encode_srv_rdata, encode_txt_rdata, parse_a, parse_aaaa, parse_ptr_target,
+    parse_srv, parse_txt_kvs, DnsPacket, DnsResourceRecord,
 };
 use stem::info;
 use stem::petals::Petals;
-use stem::syscall::port::{PortHandle, port_create, port_recv, port_send};
-use stem::thing::ThingId;
+use stem::syscall::port::{port_create, port_recv, port_send_all, port_wait, PortHandle};
 use stem::thing::sys as thingsys;
+use stem::thing::ThingId;
 
 const MSG_UDP_BIND: u16 = 0x0300;
 const MSG_UDP_SEND_TO: u16 = 0x0301;
@@ -96,8 +96,10 @@ impl DiscoveryGraph {
         self.observe_service_type(type_fqdn, ttl);
         let instance_key = format!("instance:{}", canonical_name(instance_fqdn));
         let instance_id = self.upsert_node_by_key(kinds::NET_SERVICE_INSTANCE, &instance_key);
-        let type_id =
-            self.upsert_node_by_key(kinds::NET_SERVICE_TYPE, &format!("type:{}", canonical_name(type_fqdn)));
+        let type_id = self.upsert_node_by_key(
+            kinds::NET_SERVICE_TYPE,
+            &format!("type:{}", canonical_name(type_fqdn)),
+        );
         let instance_name = instance_fqdn
             .split('.')
             .next()
@@ -123,7 +125,8 @@ impl DiscoveryGraph {
         priority: u16,
         weight: u16,
     ) {
-        let type_fqdn = infer_type_fqdn_from_instance(instance_fqdn).unwrap_or("_unknown._tcp.local");
+        let type_fqdn =
+            infer_type_fqdn_from_instance(instance_fqdn).unwrap_or("_unknown._tcp.local");
         self.observe_instance(instance_fqdn, type_fqdn, ttl);
         let instance_id = self.upsert_node_by_key(
             kinds::NET_SERVICE_INSTANCE,
@@ -148,8 +151,15 @@ impl DiscoveryGraph {
         self.touch(endpoint_id, ttl, keys::NET_LAST_SEEN, keys::NET_EXPIRES_AT);
     }
 
-    fn observe_txt(&mut self, instance_fqdn: &str, raw_txt: &[u8], _kvs: &[(String, String)], ttl: u32) {
-        let type_fqdn = infer_type_fqdn_from_instance(instance_fqdn).unwrap_or("_unknown._tcp.local");
+    fn observe_txt(
+        &mut self,
+        instance_fqdn: &str,
+        raw_txt: &[u8],
+        _kvs: &[(String, String)],
+        ttl: u32,
+    ) {
+        let type_fqdn =
+            infer_type_fqdn_from_instance(instance_fqdn).unwrap_or("_unknown._tcp.local");
         self.observe_instance(instance_fqdn, type_fqdn, ttl);
 
         let txt_hash = hash64_bytes(raw_txt);
@@ -174,14 +184,24 @@ impl DiscoveryGraph {
         set_string_prop(addr_id, keys::NET_ADDR_FAMILY, family);
         set_string_prop(addr_id, keys::NET_ADDR_IP, ip);
         ensure_edge(host_id, rels::NET_HOST_HAS_ADDR, addr_id);
-        self.touch(addr_id, ttl, keys::NET_ADDR_LAST_SEEN, keys::NET_ADDR_EXPIRES_AT);
+        self.touch(
+            addr_id,
+            ttl,
+            keys::NET_ADDR_LAST_SEEN,
+            keys::NET_ADDR_EXPIRES_AT,
+        );
     }
 
     fn observe_host(&mut self, host: &str, ttl: u32) -> ThingId {
         let host_key = format!("host:{}", canonical_name(host));
         let host_id = self.upsert_node_by_key(kinds::NET_HOST, &host_key);
         set_string_prop(host_id, keys::NET_HOST_NAME, host);
-        self.touch(host_id, ttl, keys::NET_HOST_LAST_SEEN, keys::NET_HOST_EXPIRES_AT);
+        self.touch(
+            host_id,
+            ttl,
+            keys::NET_HOST_LAST_SEEN,
+            keys::NET_HOST_EXPIRES_AT,
+        );
         host_id
     }
 
@@ -236,7 +256,8 @@ impl DiscoveryGraph {
 fn main(_arg: usize) -> ! {
     info!("NECTAR: Started.");
 
-    let nectar_svc_id = ensure_singleton_node("svc.Nectar", keys::NET_ID_KEY, hash64(b"svc.Nectar"));
+    let nectar_svc_id =
+        ensure_singleton_node("svc.Nectar", keys::NET_ID_KEY, hash64(b"svc.Nectar"));
     if thingsys::prop_get(nectar_svc_id, keys::NET_NECTAR_PUBLISH_DISCOVERY_TO_GRAPH).is_err() {
         thingsys::prop_set(
             nectar_svc_id,
@@ -292,12 +313,10 @@ fn main(_arg: usize) -> ! {
 
     loop {
         let now_ns = stem::monotonic_ns();
-        let publish_to_graph = thingsys::prop_get(
-            nectar_svc_id,
-            keys::NET_NECTAR_PUBLISH_DISCOVERY_TO_GRAPH,
-        )
-        .unwrap_or(1)
-            != 0;
+        let publish_to_graph =
+            thingsys::prop_get(nectar_svc_id, keys::NET_NECTAR_PUBLISH_DISCOVERY_TO_GRAPH)
+                .unwrap_or(1)
+                != 0;
 
         if udp_handle != 0 {
             let mut pkt_buf = [0u8; 1500];
@@ -312,14 +331,7 @@ fn main(_arg: usize) -> ! {
                                 let host_ip = net_ipv4_from_stack(net_stack);
                                 let ads = active_ads.values().cloned().collect::<Vec<_>>();
                                 maybe_respond_to_query(
-                                    api,
-                                    resp_w,
-                                    resp_r,
-                                    udp_handle,
-                                    &pkt,
-                                    &ads,
-                                    host_ip,
-                                    src_ip,
+                                    api, resp_w, resp_r, udp_handle, &pkt, &ads, host_ip, src_ip,
                                 );
                             }
                         }
@@ -352,7 +364,10 @@ fn main(_arg: usize) -> ! {
         if now_ns.saturating_sub(last_ad_reconcile) > 2_000_000_000 {
             last_ad_reconcile = now_ns;
             let desired = load_desired_advertisements(advertise_root, &hostname);
-            let desired_keys = desired.iter().map(DesiredService::stable_key).collect::<Vec<_>>();
+            let desired_keys = desired
+                .iter()
+                .map(DesiredService::stable_key)
+                .collect::<Vec<_>>();
             let active_keys = active_ads.keys().cloned().collect::<Vec<_>>();
             let (to_publish, to_unpublish) = reconcile_desired(&desired_keys, &active_keys);
 
@@ -533,7 +548,15 @@ fn maybe_respond_to_query(
 
     if !resp.answers.is_empty() {
         let data = resp.encode();
-        let _ = udp_send_to(api, resp_w, resp_r, udp_handle, [224, 0, 0, 251], MDNS_PORT, &data);
+        let _ = udp_send_to(
+            api,
+            resp_w,
+            resp_r,
+            udp_handle,
+            [224, 0, 0, 251],
+            MDNS_PORT,
+            &data,
+        );
     }
 }
 
@@ -588,7 +611,15 @@ fn send_announcement(
     }
 
     let data = packet.encode();
-    let _ = udp_send_to(api, resp_w, resp_r, udp_handle, [224, 0, 0, 251], MDNS_PORT, &data);
+    let _ = udp_send_to(
+        api,
+        resp_w,
+        resp_r,
+        udp_handle,
+        [224, 0, 0, 251],
+        MDNS_PORT,
+        &data,
+    );
 }
 
 fn load_desired_advertisements(root: ThingId, default_hostname: &str) -> Vec<DesiredService> {
@@ -652,7 +683,7 @@ fn find_netd_and_mac() -> Option<(PortHandle, [u8; 6], ThingId)> {
         return None;
     }
     let net_id = choose_best_net_stack(&buf[..n]).unwrap_or(buf[0]);
-    let api_port = thingsys::prop_get(net_id, "net.socket_api").ok()? as PortHandle;
+    let api_port = thingsys::prop_get(net_id, keys::WRITE_PORT_HANDLE).ok()? as PortHandle;
     let mac_packed = thingsys::prop_get(net_id, "net.mac").ok()?;
     let mac = [
         (mac_packed & 0xFF) as u8,
@@ -668,7 +699,7 @@ fn find_netd_and_mac() -> Option<(PortHandle, [u8; 6], ThingId)> {
 fn choose_best_net_stack(nodes: &[ThingId]) -> Option<ThingId> {
     let mut best: Option<ThingId> = None;
     for &id in nodes {
-        let socket_api = thingsys::prop_get(id, "net.socket_api").ok().unwrap_or(0);
+        let socket_api = thingsys::prop_get(id, keys::WRITE_PORT_HANDLE).ok().unwrap_or(0);
         let ip = thingsys::prop_get(id, "net.ip").ok().unwrap_or(0);
         if socket_api == 0 {
             continue;
@@ -710,8 +741,7 @@ fn get_or_generate_hostname(mac: [u8; 6]) -> String {
         "blooming",
     ];
     let plants = [
-        "moss", "fern", "ivy", "clover", "petal", "thistle", "willow", "cedar", "birch",
-        "maple",
+        "moss", "fern", "ivy", "clover", "petal", "thistle", "willow", "cedar", "birch", "maple",
     ];
     let seed = mac.iter().fold(0u32, |acc, &x| acc.wrapping_add(x as u32));
     let d_idx = (seed as usize) % descriptors.len();
@@ -823,12 +853,48 @@ fn read_string_prop(id: ThingId, key_name: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
+fn append_socket_api_header(msg: &mut Vec<u8>, resp_w: PortHandle, msg_type: u16, payload_len: u16) {
+    msg.extend_from_slice(&(resp_w as u32).to_le_bytes());
+    let caller_tid = stem::syscall::get_tid().unwrap_or(0);
+    msg.extend_from_slice(&caller_tid.to_le_bytes());
+    msg.extend_from_slice(&msg_type.to_le_bytes());
+    msg.extend_from_slice(&payload_len.to_le_bytes());
+}
+
+fn send_socket_api_msg(api: PortHandle, msg: &[u8]) -> Result<(), ()> {
+    let deadline_ms = (stem::time::now().as_millis() as u64).saturating_add(5_000);
+    loop {
+        match port_send_all(api, msg) {
+            Ok(n) if n == msg.len() => return Ok(()),
+            Ok(n) => {
+                stem::warn!(
+                    "NECTAR: partial Socket API write (wrote {} of {} bytes), dropping request",
+                    n,
+                    msg.len()
+                );
+                return Err(());
+            }
+            Err(abi::errors::Errno::EAGAIN) => {
+                if (stem::time::now().as_millis() as u64) >= deadline_ms {
+                    break;
+                }
+                let _ = port_wait(&[api], abi::syscall::port_wait::WRITABLE);
+            }
+            Err(_) => return Err(()),
+        }
+    }
+    stem::warn!(
+        "NECTAR: timeout waiting for Socket API port space (need {} bytes)",
+        msg.len()
+    );
+    Err(())
+}
+
 fn udp_bind(api: PortHandle, resp_w: PortHandle, resp_r: PortHandle, port: u16) -> Result<u32, ()> {
     let mut msg = Vec::new();
-    msg.extend_from_slice(&(resp_w as u32).to_le_bytes());
-    msg.extend_from_slice(&MSG_UDP_BIND.to_le_bytes());
+    append_socket_api_header(&mut msg, resp_w, MSG_UDP_BIND, 2);
     msg.extend_from_slice(&port.to_le_bytes());
-    port_send(api, &msg).map_err(|_| ())?;
+    send_socket_api_msg(api, &msg)?;
     let mut resp = [0u8; 128];
     for _ in 0..100 {
         if let Ok(len) = port_recv(resp_r, &mut resp) {
@@ -848,10 +914,9 @@ fn net_join_multicast(
     ip: [u8; 4],
 ) -> Result<(), ()> {
     let mut msg = Vec::new();
-    msg.extend_from_slice(&(resp_w as u32).to_le_bytes());
-    msg.extend_from_slice(&MSG_NET_JOIN_MULTICAST.to_le_bytes());
+    append_socket_api_header(&mut msg, resp_w, MSG_NET_JOIN_MULTICAST, 4);
     msg.extend_from_slice(&ip);
-    port_send(api, &msg).map_err(|_| ())?;
+    send_socket_api_msg(api, &msg)?;
     let mut resp = [0u8; 64];
     for _ in 0..10 {
         if port_recv(resp_r, &mut resp).is_ok() {
@@ -870,10 +935,9 @@ fn udp_recv_from(
     buf: &mut [u8],
 ) -> Result<Option<([u8; 4], u16, usize)>, ()> {
     let mut msg = Vec::new();
-    msg.extend_from_slice(&(resp_w as u32).to_le_bytes());
-    msg.extend_from_slice(&MSG_UDP_RECV_FROM.to_le_bytes());
+    append_socket_api_header(&mut msg, resp_w, MSG_UDP_RECV_FROM, 4);
     msg.extend_from_slice(&handle.to_le_bytes());
-    let _ = port_send(api, &msg);
+    let _ = send_socket_api_msg(api, &msg);
 
     let mut resp = [0u8; 2048];
     match port_recv(resp_r, &mut resp) {
@@ -908,13 +972,18 @@ fn udp_send_to(
     data: &[u8],
 ) -> Result<(), ()> {
     let mut msg = Vec::new();
-    msg.extend_from_slice(&(resp_w as u32).to_le_bytes());
-    msg.extend_from_slice(&MSG_UDP_SEND_TO.to_le_bytes());
+    append_socket_api_header(&mut msg, resp_w, MSG_UDP_SEND_TO, 6 + data.len() as u16);
     msg.extend_from_slice(&handle.to_le_bytes());
     msg.extend_from_slice(&ip);
     msg.extend_from_slice(&port.to_le_bytes());
     msg.extend_from_slice(data);
-    port_send(api, &msg).map_err(|_| ())?;
+
+    if msg.len() > 4096 {
+        stem::warn!("NECTAR: UDP IPC message too large (len={}), would be truncated", msg.len());
+        return Err(());
+    }
+
+    send_socket_api_msg(api, &msg)?;
 
     let mut resp = [0u8; 64];
     for _ in 0..20 {

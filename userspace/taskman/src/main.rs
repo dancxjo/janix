@@ -4,24 +4,24 @@
 extern crate alloc;
 
 use abi::query::QueryRow;
+use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, rels};
 use abi::types::HandleId;
+use abi::types::{WatchMode, WatchSpec, WATCH_START_LATEST};
+use abi::watch;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use core::time::Duration;
 use stem::info;
+use stem::petals::graph::UiKey;
 use stem::petals::Petals;
 use stem::thing::query::{query_nodes_by_kind, RestrictedQuery};
 use stem::thing::sys::{
     bytespace_create, bytespace_read, bytespace_write, create_node, describe_thing, find, link,
     prop_get, prop_set,
 };
-use stem::petals::graph::UiKey;
 use stem::thing::ThingId;
-use abi::root::RootWatchFilter;
-use abi::types::{WatchMode, WatchSpec, WATCH_START_LATEST};
-use abi::watch;
 
 /// State color constants (ARGB)
 const COLOR_RUNNING: u32 = 0xFF4CAF50; // Green
@@ -177,7 +177,11 @@ fn collect_tasks() -> Vec<TaskInfo> {
                 let priority = prop_get(id, keys::PROC_PRIORITY).unwrap_or(0);
                 let is_user = prop_get(id, keys::PROC_IS_USER).unwrap_or(0) != 0;
                 let exit_val = prop_get(id, keys::PROC_EXIT_CODE).unwrap_or(0);
-                let exit_code = if state == 0 { Some(exit_val as i32) } else { None };
+                let exit_code = if state == 0 {
+                    Some(exit_val as i32)
+                } else {
+                    None
+                };
 
                 // Find current CPU (RUNS_ON edge)
                 let mut current_cpu = None;
@@ -186,7 +190,8 @@ fn collect_tasks() -> Vec<TaskInfo> {
                 if let Ok(count) = q.get_edges(id, Some(rels::RUNS_ON), 16) {
                     for i in 0..count {
                         let cpu_id = ThingId::from_u64(q.buf[i].val_dst);
-                        if let Ok(cpu_idx) = prop_get(cpu_id, keys::PROC_TID) { // dev.Cpu uses proc.tid for CPU index
+                        if let Ok(cpu_idx) = prop_get(cpu_id, keys::PROC_TID) {
+                            // dev.Cpu uses proc.tid for CPU index
                             current_cpu = Some(cpu_idx);
                             break;
                         }
@@ -290,11 +295,7 @@ fn render_task_list(window_id: ThingId, tasks: &[TaskInfo]) -> Option<usize> {
             } else {
                 for (i, task) in tasks.iter().enumerate() {
                     let color = state_color(task.state);
-                    let label = format!(
-                        "{} [{}]",
-                        task.name,
-                        state_label(task.state)
-                    );
+                    let label = format!("{} [{}]", task.name, state_label(task.state));
                     // Stable key based on process ThingId so bloom's selection survives rebuilds
                     let key_str = format!("task_{:X}", task.id.to_u64_lossy());
                     let item_id = ui.list_item_keyed(UiKey(&key_str), &label, color)?;
@@ -314,17 +315,20 @@ fn render_task_list(window_id: ThingId, tasks: &[TaskInfo]) -> Option<usize> {
             if let Some(idx) = selected_index {
                 let t = &tasks[idx];
                 ui.text(&format!("Name: {}", t.name))?;
-                ui.text(&format!("Type: {}", if t.is_user { "User" } else { "System" }))?;
+                ui.text(&format!(
+                    "Type: {}",
+                    if t.is_user { "User" } else { "System" }
+                ))?;
                 ui.text(&format!("State: {}", state_label(t.state)))?;
                 ui.text(&format!("TID: {}", t.tid))?;
                 ui.text(&format!("Priority: {}", priority_label(t.priority)))?;
-                
+
                 if let Some(cpu) = t.current_cpu {
                     ui.text(&format!("CPU: {}", cpu))?;
                 } else {
                     ui.text("CPU: -")?;
                 }
-                
+
                 if let Some(aff) = t.affinity {
                     ui.text(&format!("Affinity: CPU {}", aff))?;
                 } else {

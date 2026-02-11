@@ -7,12 +7,12 @@
 //!
 //! The genie's gift to ThingOS! ✨
 
-use bulb::theme_api::{BootPhase, LogLevel};
-use bulb::font::{SimpleFont, CHAR_WIDTH, CHAR_HEIGHT};
+use bulb::font::{CHAR_HEIGHT, CHAR_WIDTH, SimpleFont};
 use bulb::framebuffer::FramebufferTarget;
+use bulb::theme_api::{BootPhase, LogLevel};
 use core::sync::atomic::{AtomicBool, Ordering};
-use spin::Mutex;
 use embedded_graphics::pixelcolor::{Rgb888, RgbColor};
+use spin::Mutex;
 
 /// Flag to disable theme when compositor takes over
 pub static THEME_DISABLED: AtomicBool = AtomicBool::new(false);
@@ -33,16 +33,16 @@ static mut BACK_BUFFER: [u8; BACK_BUFFER_SIZE] = [0; BACK_BUFFER_SIZE];
 
 // Colors - A genie's palette ✨
 const COLOR_BG: Rgb888 = Rgb888::new(0x08, 0x08, 0x12);
-const COLOR_SPARK: Rgb888 = Rgb888::new(0x44, 0x88, 0xFF);     // Blue
-const COLOR_MEMORY: Rgb888 = Rgb888::new(0x44, 0xFF, 0x88);    // Green
-const COLOR_CPU: Rgb888 = Rgb888::new(0xFF, 0xDD, 0x44);       // Yellow/Gold
-const COLOR_SERVICES: Rgb888 = Rgb888::new(0xFF, 0x88, 0xDD);  // Pink
-const COLOR_AWAKE: Rgb888 = Rgb888::new(0xFF, 0xFF, 0xFF);     // White
-const COLOR_DIM: Rgb888 = Rgb888::new(0x28, 0x28, 0x38);       // Dim circles
-const COLOR_LINE: Rgb888 = Rgb888::new(0x40, 0x40, 0x50);      // Connecting line
+const COLOR_SPARK: Rgb888 = Rgb888::new(0x44, 0x88, 0xFF); // Blue
+const COLOR_MEMORY: Rgb888 = Rgb888::new(0x44, 0xFF, 0x88); // Green
+const COLOR_CPU: Rgb888 = Rgb888::new(0xFF, 0xDD, 0x44); // Yellow/Gold
+const COLOR_SERVICES: Rgb888 = Rgb888::new(0xFF, 0x88, 0xDD); // Pink
+const COLOR_AWAKE: Rgb888 = Rgb888::new(0xFF, 0xFF, 0xFF); // White
+const COLOR_DIM: Rgb888 = Rgb888::new(0x28, 0x28, 0x38); // Dim circles
+const COLOR_LINE: Rgb888 = Rgb888::new(0x40, 0x40, 0x50); // Connecting line
 const COLOR_LINE_ACTIVE: Rgb888 = Rgb888::new(0x80, 0xA0, 0xFF); // Active line
-const COLOR_TEXT: Rgb888 = Rgb888::new(0xCC, 0xCC, 0xCC);      // Regular text
-const COLOR_SOURCE: Rgb888 = Rgb888::new(0x44, 0xCC, 0xCC);    // Cyan sources
+const COLOR_TEXT: Rgb888 = Rgb888::new(0xCC, 0xCC, 0xCC); // Regular text
+const COLOR_SOURCE: Rgb888 = Rgb888::new(0x44, 0xCC, 0xCC); // Cyan sources
 const COLOR_PHASE_NAME: Rgb888 = Rgb888::new(0xAA, 0xAA, 0xFF); // Phase name
 const COLOR_ERROR: Rgb888 = Rgb888::new(0xFF, 0x44, 0x44);
 const COLOR_WARN: Rgb888 = Rgb888::new(0xFF, 0xAA, 0x44);
@@ -101,7 +101,7 @@ unsafe impl Send for GenieCirclesTheme {}
 impl GenieCirclesTheme {
     pub fn new(fb: crate::framebuffer::Framebuffer) -> Self {
         let info = fb.info();
-        
+
         let mut theme = Self {
             fb,
             width: info.width,
@@ -120,12 +120,12 @@ impl GenieCirclesTheme {
             pending_lens: [0; 8],
             pending_count: 0,
         };
-        
+
         // Initial render
         theme.render_full();
         theme
     }
-    
+
     /// Called when a structured log event arrives (replaces put_char)
     pub fn on_log_event(&mut self, event: bulb::theme_api::LogEvent<'_>) {
         // Detect phase change from message content
@@ -133,7 +133,7 @@ impl GenieCirclesTheme {
         if new_phase != self.phase {
             self.phase = new_phase;
         }
-        
+
         // Add to log buffer (ring buffer)
         let idx = (self.log_head + self.log_count) % MAX_LOG_LINES;
         if self.log_count < MAX_LOG_LINES {
@@ -141,9 +141,9 @@ impl GenieCirclesTheme {
         } else {
             self.log_head = (self.log_head + 1) % MAX_LOG_LINES;
         }
-        
+
         let log = &mut self.logs[idx];
-        
+
         // Copy source
         if let Some(src) = event.source {
             let bytes = src.as_bytes();
@@ -153,17 +153,17 @@ impl GenieCirclesTheme {
         } else {
             log.source_len = 0;
         }
-        
+
         // Copy message
         let msg_bytes = event.message.as_bytes();
         let msg_len = msg_bytes.len().min(80);
         log.message[..msg_len].copy_from_slice(&msg_bytes[..msg_len]);
         log.message_len = msg_len;
         log.level = event.level;
-        
+
         self.dirty = true;
     }
-    
+
     /// Receive a single character - buffer internally, queue completed lines
     /// Does NOT render or parse - that happens on tick()
     pub fn putchar(&mut self, c: u8) {
@@ -186,7 +186,7 @@ impl GenieCirclesTheme {
             }
         }
     }
-    
+
     /// Process any pending lines (called from tick)
     fn process_pending_lines(&mut self) {
         // Copy count out first to avoid borrow issues
@@ -196,12 +196,14 @@ impl GenieCirclesTheme {
             let mut line_buf = [0u8; 256];
             let len = self.pending_lens[i];
             line_buf[..len].copy_from_slice(&self.pending_lines[i][..len]);
-            
+
             if let Ok(line) = core::str::from_utf8(&line_buf[..len]) {
                 let parts = bulb::parser::parse_log_line(line);
                 let event = bulb::theme_api::LogEvent {
                     timestamp: None,
-                    level: parts.level.map(bulb::theme_api::LogLevel::from_str)
+                    level: parts
+                        .level
+                        .map(bulb::theme_api::LogLevel::from_str)
                         .unwrap_or(bulb::theme_api::LogLevel::Unknown),
                     source: parts.source,
                     cpu: None,
@@ -212,18 +214,18 @@ impl GenieCirclesTheme {
         }
         self.pending_count = 0;
     }
-    
+
     /// Called on timer tick for animation (~30Hz recommended)
     /// NOTE: Rendering disabled during boot to avoid slowing down startup.
     /// The theme buffers log lines but doesn't update the display.
     pub fn tick(&mut self, _now_ticks: u64) {
         self.tick_count = self.tick_count.wrapping_add(1);
-        
+
         // Process any pending lines (just updates internal log buffer)
         if self.pending_count > 0 {
             self.process_pending_lines();
         }
-        
+
         // DISABLED: Rendering in timer ISR context is too expensive and slows boot.
         // The theme animation could be enabled later via a dedicated render thread
         // or by explicitly triggering renders at key boot milestones.
@@ -232,33 +234,33 @@ impl GenieCirclesTheme {
         //     self.dirty = false;
         // }
     }
-    
+
     fn render_full(&mut self) {
         let bpp: usize = 4;
         let stride = fb_common::calc_stride_bytes(self.width, bpp as u32, self.stride) as usize;
         let width = self.width as i32;
         let height = self.height as i32;
-        
+
         // Copy state we need for rendering
         let phase = self.phase;
         let logs: [LogLine; MAX_LOG_LINES] = self.logs.clone();
         let log_count = self.log_count;
         let log_head = self.log_head;
-        
+
         // Render to back buffer first (tear-free)
         let back_buf = unsafe { &mut BACK_BUFFER[..] };
         let back_size = (height as usize * stride).min(BACK_BUFFER_SIZE);
         let back = &mut back_buf[..back_size];
-        
+
         // Clear back buffer
         fill_rect(back, stride, width, height, 0, 0, width, height, COLOR_BG);
-        
+
         // Draw circles and connecting lines
         draw_header(back, stride, width, height, phase);
-        
+
         // Draw log area
         draw_logs(back, stride, width, height, &logs, log_count, log_head);
-        
+
         // Fast blit: copy back buffer to framebuffer in one go
         let fb_buf = self.fb.buffer_mut();
         let copy_len = back_size.min(fb_buf.len());
@@ -268,7 +270,17 @@ impl GenieCirclesTheme {
 
 // Standalone drawing functions (to avoid borrow conflicts)
 
-fn fill_rect(buf: &mut [u8], stride: usize, max_w: i32, max_h: i32, x: i32, y: i32, w: i32, h: i32, color: Rgb888) {
+fn fill_rect(
+    buf: &mut [u8],
+    stride: usize,
+    max_w: i32,
+    max_h: i32,
+    x: i32,
+    y: i32,
+    w: i32,
+    h: i32,
+    color: Rgb888,
+) {
     let bpp: usize = 4;
     for py in y.max(0)..(y + h).min(max_h) {
         for px in x.max(0)..(x + w).min(max_w) {
@@ -282,7 +294,16 @@ fn fill_rect(buf: &mut [u8], stride: usize, max_w: i32, max_h: i32, x: i32, y: i
     }
 }
 
-fn draw_filled_circle(buf: &mut [u8], stride: usize, max_w: i32, max_h: i32, cx: i32, cy: i32, r: i32, color: Rgb888) {
+fn draw_filled_circle(
+    buf: &mut [u8],
+    stride: usize,
+    max_w: i32,
+    max_h: i32,
+    cx: i32,
+    cy: i32,
+    r: i32,
+    color: Rgb888,
+) {
     let bpp: usize = 4;
     let r2 = r * r;
     for dy in -r..=r {
@@ -303,7 +324,16 @@ fn draw_filled_circle(buf: &mut [u8], stride: usize, max_w: i32, max_h: i32, cx:
     }
 }
 
-fn draw_circle_outline(buf: &mut [u8], stride: usize, max_w: i32, max_h: i32, cx: i32, cy: i32, r: i32, color: Rgb888) {
+fn draw_circle_outline(
+    buf: &mut [u8],
+    stride: usize,
+    max_w: i32,
+    max_h: i32,
+    cx: i32,
+    cy: i32,
+    r: i32,
+    color: Rgb888,
+) {
     let bpp: usize = 4;
     let r2_outer = r * r;
     let r2_inner = (r - 1) * (r - 1);
@@ -326,9 +356,19 @@ fn draw_circle_outline(buf: &mut [u8], stride: usize, max_w: i32, max_h: i32, cx
     }
 }
 
-fn draw_line(buf: &mut [u8], stride: usize, max_w: i32, max_h: i32, x1: i32, y1: i32, x2: i32, thickness: i32, color: Rgb888) {
+fn draw_line(
+    buf: &mut [u8],
+    stride: usize,
+    max_w: i32,
+    max_h: i32,
+    x1: i32,
+    y1: i32,
+    x2: i32,
+    thickness: i32,
+    color: Rgb888,
+) {
     let bpp: usize = 4;
-    for py in (y1 - thickness/2)..=(y1 + thickness/2) {
+    for py in (y1 - thickness / 2)..=(y1 + thickness / 2) {
         for px in x1.min(x2)..=x1.max(x2) {
             if px >= 0 && px < max_w && py >= 0 && py < max_h {
                 let offset = (py as usize * stride) + (px as usize * bpp);
@@ -342,7 +382,16 @@ fn draw_line(buf: &mut [u8], stride: usize, max_w: i32, max_h: i32, x1: i32, y1:
     }
 }
 
-fn draw_text(buf: &mut [u8], stride: usize, max_w: i32, max_h: i32, x: i32, y: i32, text: &str, color: Rgb888) {
+fn draw_text(
+    buf: &mut [u8],
+    stride: usize,
+    max_w: i32,
+    max_h: i32,
+    x: i32,
+    y: i32,
+    text: &str,
+    color: Rgb888,
+) {
     let bpp: usize = 4;
     let mut cur_x = x;
     for c in text.bytes() {
@@ -374,7 +423,7 @@ fn draw_header(buf: &mut [u8], stride: usize, width: i32, height: i32, phase: Bo
     let spacing: i32 = 70;
     let total_width = 5 * spacing;
     let start_x = (width - total_width) / 2 + spacing / 2;
-    
+
     let phases = [
         (BootPhase::Spark, COLOR_SPARK),
         (BootPhase::Memory, COLOR_MEMORY),
@@ -382,7 +431,7 @@ fn draw_header(buf: &mut [u8], stride: usize, width: i32, height: i32, phase: Bo
         (BootPhase::Services, COLOR_SERVICES),
         (BootPhase::Awake, COLOR_AWAKE),
     ];
-    
+
     // Draw connecting lines first
     for i in 0..4 {
         let x1 = start_x + (i as i32) * spacing + radius + 2;
@@ -394,44 +443,70 @@ fn draw_header(buf: &mut [u8], stride: usize, width: i32, height: i32, phase: Bo
         };
         draw_line(buf, stride, width, height, x1, center_y, x2, 2, line_color);
     }
-    
+
     // Draw circles
     for (i, (p, color)) in phases.iter().enumerate() {
         let cx = start_x + (i as i32) * spacing;
         let circle_color = if *p <= phase { *color } else { COLOR_DIM };
-        draw_filled_circle(buf, stride, width, height, cx, center_y, radius, circle_color);
-        
+        draw_filled_circle(
+            buf,
+            stride,
+            width,
+            height,
+            cx,
+            center_y,
+            radius,
+            circle_color,
+        );
+
         // Add glow for current phase
         if *p == phase {
             draw_circle_outline(buf, stride, width, height, cx, center_y, radius + 3, *color);
         }
     }
-    
+
     // Draw phase name below circles
     let phase_name = phase.name();
     let text_x = (width - (phase_name.len() as i32 * CHAR_WIDTH as i32)) / 2;
     let text_y = center_y + radius + 8;
-    draw_text(buf, stride, width, height, text_x, text_y, phase_name, COLOR_PHASE_NAME);
+    draw_text(
+        buf,
+        stride,
+        width,
+        height,
+        text_x,
+        text_y,
+        phase_name,
+        COLOR_PHASE_NAME,
+    );
 }
 
-fn draw_logs(buf: &mut [u8], stride: usize, width: i32, height: i32, logs: &[LogLine; MAX_LOG_LINES], log_count: usize, log_head: usize) {
+fn draw_logs(
+    buf: &mut [u8],
+    stride: usize,
+    width: i32,
+    height: i32,
+    logs: &[LogLine; MAX_LOG_LINES],
+    log_count: usize,
+    log_head: usize,
+) {
     let log_x = 20;
     let mut y = LOG_AREA_TOP as i32;
-    
+
     for i in 0..log_count {
         let idx = (log_head + i) % MAX_LOG_LINES;
         let log = &logs[idx];
-        
+
         // Draw arrow indicator
         draw_text(buf, stride, width, height, log_x, y, ">", COLOR_DIM);
-        
+
         // Draw source in cyan
         if log.source_len > 0 {
             if let Ok(src) = core::str::from_utf8(&log.source[..log.source_len]) {
                 draw_text(buf, stride, width, height, log_x + 12, y, src, COLOR_SOURCE);
             }
         }
-        
+
         // Draw message with level color
         let msg_x = log_x + 12 + 20 * CHAR_WIDTH as i32;
         let msg_color = match log.level {
@@ -440,15 +515,19 @@ fn draw_logs(buf: &mut [u8], stride: usize, width: i32, height: i32, logs: &[Log
             LogLevel::Debug => COLOR_DEBUG,
             _ => COLOR_TEXT,
         };
-        
+
         if log.message_len > 0 {
             if let Ok(msg) = core::str::from_utf8(&log.message[..log.message_len]) {
                 let max_chars = ((width - msg_x - 20) / CHAR_WIDTH as i32).max(0) as usize;
-                let display_msg = if msg.len() > max_chars { &msg[..max_chars] } else { msg };
+                let display_msg = if msg.len() > max_chars {
+                    &msg[..max_chars]
+                } else {
+                    msg
+                };
                 draw_text(buf, stride, width, height, msg_x, y, display_msg, msg_color);
             }
         }
-        
+
         y += LOG_LINE_HEIGHT as i32;
     }
 }

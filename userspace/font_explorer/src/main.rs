@@ -97,7 +97,7 @@ fn list_fonts(kind_id: u32) -> Vec<FontEntry> {
 fn main() -> ! {
     // Initialize i18n system
     stem::i18n::init();
-    
+
     let mut ui_crown = ThingId::default();
     let mut attempts = 0;
     while attempts < 120 {
@@ -124,7 +124,10 @@ fn main() -> ! {
     use stem::i18n::LocalizedText;
     const EXPLORER: LocalizedText = stem::t!("ui.fonts.explorer", "Font Explorer");
     const COUNT_LABEL: LocalizedText = stem::t!("ui.fonts.count", "Fonts");
-    const SAMPLE: LocalizedText = stem::t!("ui.fonts.sample", "Sphinx of black quartz, judge my vow. 0123456789 😀 ܐܠܦ ܒܝܬÕøØœ");
+    const SAMPLE: LocalizedText = stem::t!(
+        "ui.fonts.sample",
+        "Sphinx of black quartz, judge my vow. 0123456789 😀 ܐܠܦ ܒܝܬÕøØœ"
+    );
 
     let win = create_node(kinds::UI_WINDOW).expect("create UI_WINDOW");
     link(win, rels::CHILD_OF, ui_crown).expect("link window");
@@ -158,14 +161,14 @@ fn main() -> ! {
         let now = stem::monotonic_ns();
 
         let mut dirty = last_font_count == usize::MAX;
-        
+
         // Check if locale changed
         let current_i18n_gen = stem::i18n::generation();
         if current_i18n_gen != last_i18n_gen {
             dirty = true;
             last_i18n_gen = current_i18n_gen;
         }
-        
+
         if let Some(watch_id) = font_watch {
             let mut seq = 0u64;
             let mut buf = [0u8; 1024];

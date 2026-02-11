@@ -1,6 +1,5 @@
-
-use bulb::framebuffer::{FramebufferTarget, FramebufferInfo, PixelFormat};
 use bulb::display::BootUpDisplay;
+use bulb::framebuffer::{FramebufferInfo, FramebufferTarget, PixelFormat};
 use std::cell::RefCell;
 use std::rc::Rc;
 
@@ -160,7 +159,10 @@ fn test_stride_zero_fallback() {
 
     let b_zero = buf[zero_offset];
     // If stride was 0, text would be here.
-    assert_ne!(b_zero, 255, "Should NOT have text pixel at zero stride offset");
+    assert_ne!(
+        b_zero, 255,
+        "Should NOT have text pixel at zero stride offset"
+    );
 }
 
 #[test]
@@ -200,12 +202,18 @@ fn test_put_pixel_respects_stride_in_pixels() {
     for y in 40..60 {
         for x in 90..110 {
             let off = (y as usize * expected_stride as usize) + (x * bpp as usize);
-            if off + 2 < buf.len() && buf[off] == 255 && buf[off + 1] == 255 && buf[off + 2] == 255 {
+            if off + 2 < buf.len() && buf[off] == 255 && buf[off + 1] == 255 && buf[off + 2] == 255
+            {
                 found = true;
                 break;
             }
         }
-        if found { break; }
+        if found {
+            break;
+        }
     }
-    assert!(found, "Should have rendered text at correct row with normalized stride");
+    assert!(
+        found,
+        "Should have rendered text at correct row with normalized stride"
+    );
 }

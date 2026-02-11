@@ -156,14 +156,10 @@ pub fn draw_glyph_run(
     color_premul: u32,
 ) {
     crate::perf::counter("simd.text.glyph_run.count", 1);
-    
+
     for glyph in &run.glyphs {
         // Find placement for this glyph
-        let placement = match run
-            .placements
-            .iter()
-            .find(|p| p.glyph_id == glyph.glyph_id)
-        {
+        let placement = match run.placements.iter().find(|p| p.glyph_id == glyph.glyph_id) {
             Some(p) => p,
             None => continue, // Glyph not in atlas
         };
@@ -199,7 +195,7 @@ pub fn draw_glyph_run(
         let dst_y = clipped.y as usize;
         let atlas_src_x = (atlas_rect.x + src_offset_x) as usize;
         let atlas_src_y = (atlas_rect.y + src_offset_y) as usize;
-        
+
         if dst_x + clipped.w as usize > dst_stride {
             continue;
         }
@@ -217,11 +213,11 @@ pub fn draw_glyph_run(
         for row in 0..clipped.h as usize {
             let dst_row_offset = (dst_y + row) * dst_stride + dst_x;
             let mask_row_offset = (atlas_src_y + row) * atlas_stride + atlas_src_x;
-            
+
             // Check that we have enough pixels available for this row
             let dst_available = dst.len() - dst_row_offset;
             let mask_available = atlas_mask.len() - mask_row_offset;
-            
+
             // Prefer SIMD compositor when we have enough buffer space for the assertion
             if dst_available >= dst_stride && mask_available >= atlas_stride {
                 // Use SIMD compositor for optimal performance
@@ -417,7 +413,7 @@ mod tests {
         // Position glyph partially outside clip rect
         let glyph = PositionedGlyph {
             x_subpixel: float_to_subpixel(14.0), // Will be clipped on right
-            y: 14,                                // Will be clipped on bottom
+            y: 14,                               // Will be clipped on bottom
             glyph_id: 1,
             phase: 0,
         };
@@ -547,7 +543,7 @@ mod tests {
     }
 
     /// Example demonstrating how to use the SIMD glyph rendering API.
-    /// 
+    ///
     /// This test serves as both documentation and validation.
     #[test]
     fn example_render_hello() {
@@ -558,12 +554,8 @@ mod tests {
 
         // Simple 6x6 'H' glyph at (0,0)
         let h_mask = [
-            255, 0, 0, 0, 0, 255,
-            255, 0, 0, 0, 0, 255,
-            255, 255, 255, 255, 255, 255,
-            255, 0, 0, 0, 0, 255,
-            255, 0, 0, 0, 0, 255,
-            255, 0, 0, 0, 0, 255,
+            255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255, 255, 255, 255, 255, 255, 255, 255, 0, 0, 0,
+            0, 255, 255, 0, 0, 0, 0, 255, 255, 0, 0, 0, 0, 255,
         ];
         for y in 0..6 {
             for x in 0..6 {
@@ -619,4 +611,3 @@ mod tests {
         assert_eq!(phase, 1, "0.25 fractional position should select phase 1");
     }
 }
-

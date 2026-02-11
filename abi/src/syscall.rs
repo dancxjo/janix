@@ -59,7 +59,15 @@ pub const SYS_PORT_SEND: u32 = 0x81;
 pub const SYS_PORT_RECV: u32 = 0x82;
 pub const SYS_PORT_CLOSE: u32 = 0x83;
 pub const SYS_PORT_WAIT: u32 = 0x84;
+/// Send full buffer atomically (all-or-nothing). Returns EAGAIN if insufficient space.
+pub const SYS_PORT_SEND_ALL: u32 = 0x85;
 pub const SYS_PORT_INFO: u32 = 0x86;
+/// Create a broadcast topic. Returns topic id.
+pub const SYS_TOPIC_CREATE: u32 = 0x87;
+/// Subscribe a write port handle to a topic. Args: topic_id, write_port_handle.
+pub const SYS_TOPIC_SUBSCRIBE: u32 = 0x88;
+/// Publish a payload to all topic subscribers. Returns delivered subscriber count.
+pub const SYS_TOPIC_PUBLISH: u32 = 0x89;
 
 pub mod port_wait {
     pub const READABLE: u32 = 1 << 0;

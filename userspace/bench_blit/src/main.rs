@@ -114,7 +114,7 @@ fn bench_contiguous_buffers() {
     // Warmup
     for _ in 0..WARMUP_ITERATIONS {
         stem::simd::composite_solid_masked_over(
-            &mut dst, width, &mask, width, width, height, color
+            &mut dst, width, &mask, width, width, height, color,
         );
     }
 
@@ -122,20 +122,27 @@ fn bench_contiguous_buffers() {
     let start = stem::time::monotonic_ns();
     for _ in 0..BENCHMARK_ITERATIONS {
         stem::simd::composite_solid_masked_over(
-            &mut dst, width, &mask, width, width, height, color
+            &mut dst, width, &mask, width, width, height, color,
         );
     }
     let elapsed = stem::time::monotonic_ns() - start;
 
     let pixels_processed = (width * height * BENCHMARK_ITERATIONS) as u64;
     let avg_ns_per_pixel = elapsed as f64 / pixels_processed as f64;
-    let mpixels_per_sec = (pixels_processed as f64 / (elapsed as f64 / 1_000_000_000.0)) / 1_000_000.0;
+    let mpixels_per_sec =
+        (pixels_processed as f64 / (elapsed as f64 / 1_000_000_000.0)) / 1_000_000.0;
 
     stem::info!("  Iterations: {}", BENCHMARK_ITERATIONS);
-    stem::info!("  Total time: {} ns ({:.2} ms)", elapsed, elapsed as f64 / 1_000_000.0);
-    stem::info!("  Avg per iteration: {:.2} ns ({:.3} μs)",
-                elapsed as f64 / BENCHMARK_ITERATIONS as f64,
-                elapsed as f64 / (BENCHMARK_ITERATIONS as f64 * 1000.0));
+    stem::info!(
+        "  Total time: {} ns ({:.2} ms)",
+        elapsed,
+        elapsed as f64 / 1_000_000.0
+    );
+    stem::info!(
+        "  Avg per iteration: {:.2} ns ({:.3} μs)",
+        elapsed as f64 / BENCHMARK_ITERATIONS as f64,
+        elapsed as f64 / (BENCHMARK_ITERATIONS as f64 * 1000.0)
+    );
     stem::info!("  Avg per pixel: {:.2} ns", avg_ns_per_pixel);
     stem::info!("  Throughput: {:.2} Mpixels/sec", mpixels_per_sec);
     println!();
@@ -162,7 +169,7 @@ fn bench_strided_buffers() {
     // Warmup
     for _ in 0..WARMUP_ITERATIONS {
         stem::simd::composite_solid_masked_over(
-            &mut dst, stride, &mask, stride, width, height, color
+            &mut dst, stride, &mask, stride, width, height, color,
         );
     }
 
@@ -170,20 +177,27 @@ fn bench_strided_buffers() {
     let start = stem::time::monotonic_ns();
     for _ in 0..BENCHMARK_ITERATIONS {
         stem::simd::composite_solid_masked_over(
-            &mut dst, stride, &mask, stride, width, height, color
+            &mut dst, stride, &mask, stride, width, height, color,
         );
     }
     let elapsed = stem::time::monotonic_ns() - start;
 
     let pixels_processed = (width * height * BENCHMARK_ITERATIONS) as u64;
     let avg_ns_per_pixel = elapsed as f64 / pixels_processed as f64;
-    let mpixels_per_sec = (pixels_processed as f64 / (elapsed as f64 / 1_000_000_000.0)) / 1_000_000.0;
+    let mpixels_per_sec =
+        (pixels_processed as f64 / (elapsed as f64 / 1_000_000_000.0)) / 1_000_000.0;
 
     stem::info!("  Iterations: {}", BENCHMARK_ITERATIONS);
-    stem::info!("  Total time: {} ns ({:.2} ms)", elapsed, elapsed as f64 / 1_000_000.0);
-    stem::info!("  Avg per iteration: {:.2} ns ({:.3} μs)",
-                elapsed as f64 / BENCHMARK_ITERATIONS as f64,
-                elapsed as f64 / (BENCHMARK_ITERATIONS as f64 * 1000.0));
+    stem::info!(
+        "  Total time: {} ns ({:.2} ms)",
+        elapsed,
+        elapsed as f64 / 1_000_000.0
+    );
+    stem::info!(
+        "  Avg per iteration: {:.2} ns ({:.3} μs)",
+        elapsed as f64 / BENCHMARK_ITERATIONS as f64,
+        elapsed as f64 / (BENCHMARK_ITERATIONS as f64 * 1000.0)
+    );
     stem::info!("  Avg per pixel: {:.2} ns", avg_ns_per_pixel);
     stem::info!("  Throughput: {:.2} Mpixels/sec", mpixels_per_sec);
     println!();
@@ -209,7 +223,7 @@ fn bench_small_spans() {
     // Warmup
     for _ in 0..WARMUP_ITERATIONS {
         stem::simd::composite_solid_masked_over(
-            &mut dst, width, &mask, width, width, height, color
+            &mut dst, width, &mask, width, width, height, color,
         );
     }
 
@@ -220,20 +234,27 @@ fn bench_small_spans() {
     let start = stem::time::monotonic_ns();
     for _ in 0..iterations {
         stem::simd::composite_solid_masked_over(
-            &mut dst, width, &mask, width, width, height, color
+            &mut dst, width, &mask, width, width, height, color,
         );
     }
     let elapsed = stem::time::monotonic_ns() - start;
 
     let pixels_processed = (width * height * iterations) as u64;
     let avg_ns_per_pixel = elapsed as f64 / pixels_processed as f64;
-    let mpixels_per_sec = (pixels_processed as f64 / (elapsed as f64 / 1_000_000_000.0)) / 1_000_000.0;
+    let mpixels_per_sec =
+        (pixels_processed as f64 / (elapsed as f64 / 1_000_000_000.0)) / 1_000_000.0;
 
     stem::info!("  Iterations: {}", iterations);
-    stem::info!("  Total time: {} ns ({:.2} ms)", elapsed, elapsed as f64 / 1_000_000.0);
-    stem::info!("  Avg per iteration: {:.2} ns ({:.3} μs)",
-                elapsed as f64 / iterations as f64,
-                elapsed as f64 / (iterations as f64 * 1000.0));
+    stem::info!(
+        "  Total time: {} ns ({:.2} ms)",
+        elapsed,
+        elapsed as f64 / 1_000_000.0
+    );
+    stem::info!(
+        "  Avg per iteration: {:.2} ns ({:.3} μs)",
+        elapsed as f64 / iterations as f64,
+        elapsed as f64 / (iterations as f64 * 1000.0)
+    );
     stem::info!("  Avg per pixel: {:.2} ns", avg_ns_per_pixel);
     stem::info!("  Throughput: {:.2} Mpixels/sec", mpixels_per_sec);
     println!();
@@ -259,7 +280,7 @@ fn bench_large_spans() {
     // Warmup
     for _ in 0..WARMUP_ITERATIONS {
         stem::simd::composite_solid_masked_over(
-            &mut dst, width, &mask, width, width, height, color
+            &mut dst, width, &mask, width, width, height, color,
         );
     }
 
@@ -270,20 +291,27 @@ fn bench_large_spans() {
     let start = stem::time::monotonic_ns();
     for _ in 0..iterations {
         stem::simd::composite_solid_masked_over(
-            &mut dst, width, &mask, width, width, height, color
+            &mut dst, width, &mask, width, width, height, color,
         );
     }
     let elapsed = stem::time::monotonic_ns() - start;
 
     let pixels_processed = (width * height * iterations) as u64;
     let avg_ns_per_pixel = elapsed as f64 / pixels_processed as f64;
-    let mpixels_per_sec = (pixels_processed as f64 / (elapsed as f64 / 1_000_000_000.0)) / 1_000_000.0;
+    let mpixels_per_sec =
+        (pixels_processed as f64 / (elapsed as f64 / 1_000_000_000.0)) / 1_000_000.0;
 
     stem::info!("  Iterations: {}", iterations);
-    stem::info!("  Total time: {} ns ({:.2} ms)", elapsed, elapsed as f64 / 1_000_000.0);
-    stem::info!("  Avg per iteration: {:.2} ns ({:.3} μs)",
-                elapsed as f64 / iterations as f64,
-                elapsed as f64 / (iterations as f64 * 1000.0));
+    stem::info!(
+        "  Total time: {} ns ({:.2} ms)",
+        elapsed,
+        elapsed as f64 / 1_000_000.0
+    );
+    stem::info!(
+        "  Avg per iteration: {:.2} ns ({:.3} μs)",
+        elapsed as f64 / iterations as f64,
+        elapsed as f64 / (iterations as f64 * 1000.0)
+    );
     stem::info!("  Avg per pixel: {:.2} ns", avg_ns_per_pixel);
     stem::info!("  Throughput: {:.2} Mpixels/sec", mpixels_per_sec);
     println!();

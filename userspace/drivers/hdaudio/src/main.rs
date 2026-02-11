@@ -471,10 +471,8 @@ impl HdaController {
         verb: u16,
         payload: u8,
     ) -> Result<u32, abi::errors::Errno> {
-        let cmd = ((cad as u32) << 28)
-            | ((nid as u32) << 20)
-            | ((verb as u32) << 8)
-            | (payload as u32);
+        let cmd =
+            ((cad as u32) << 28) | ((nid as u32) << 20) | ((verb as u32) << 8) | (payload as u32);
 
         let next_wp = ((self.corb_wp as usize + 1) % CORB_ENTRIES) as u16;
         unsafe {
@@ -583,5 +581,9 @@ fn find_hda_device() -> Option<ThingId> {
             return Some(id);
         }
     }
-    if count > 0 { Some(devs[0]) } else { None }
+    if count > 0 {
+        Some(devs[0])
+    } else {
+        None
+    }
 }

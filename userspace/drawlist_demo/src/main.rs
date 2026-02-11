@@ -120,7 +120,11 @@ fn main() -> ! {
         frame += 1;
 
         // Cycle through different states to demonstrate features
-        let color = if frame % 4 < 2 { 0xff22aa66 } else { 0xffaa2244 };
+        let color = if frame % 4 < 2 {
+            0xff22aa66
+        } else {
+            0xffaa2244
+        };
         let use_clip = (frame / 2) % 2 == 0;
         let scale = if frame % 8 < 4 { 1.0 } else { 0.8 };
 
@@ -128,7 +132,10 @@ fn main() -> ! {
         dl.publish(builder).expect("publish");
 
         if frame % 4 == 0 {
-            info!("Frame {}: color cycle, clip={}, scale={}", frame, use_clip, scale);
+            info!(
+                "Frame {}: color cycle, clip={}, scale={}",
+                frame, use_clip, scale
+            );
         }
     }
 }

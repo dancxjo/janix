@@ -27,7 +27,7 @@
 //!
 //! ```rust,ignore
 //! use abi::service_contract::ServiceContract;
-//! 
+//!
 //! const FLYTRAP_CONTRACT: ServiceContract = ServiceContract {
 //!     name: "flytrap",
 //!     watched_kinds: &["boot.Module", "content.Source"],
@@ -40,7 +40,7 @@
 //!     idempotent: true,
 //!     boot_assumptions: &[],
 //! };
-//! 
+//!
 //! // At service startup:
 //! fn main() {
 //!     FLYTRAP_CONTRACT.validate().expect("Invalid contract");
@@ -63,25 +63,25 @@ use crate::schema::{keys, kinds, rels};
 pub struct ServiceContract {
     /// Canonical service name (e.g., "flytrap", "blossom")
     pub name: &'static str,
-    
+
     /// Node kinds this service watches (input dependencies)
     ///
     /// Service MUST NOT watch kinds not declared here.
     /// Empty array means service doesn't watch any nodes (clock-driven, etc.)
     pub watched_kinds: &'static [&'static str],
-    
+
     /// Node kinds this service publishes (output)
     ///
     /// Service MUST NOT create nodes of kinds not declared here.
     /// Empty array means service doesn't create nodes (pure transformer, etc.)
     pub published_kinds: &'static [&'static str],
-    
+
     /// Property keys this service sets on published nodes
     ///
     /// Service MUST NOT set properties not declared here on its published kinds.
     /// May also set properties on watched nodes (transformations).
     pub published_properties: &'static [&'static str],
-    
+
     /// Whether this service's operations are idempotent
     ///
     /// `true` means:
@@ -94,7 +94,7 @@ pub struct ServiceContract {
     /// - Duplicate events may cause incorrect behavior
     /// - Special recovery procedures needed on restart
     pub idempotent: bool,
-    
+
     /// Boot-time assumptions that MUST exist before service starts
     ///
     /// For graph-native services, this MUST be empty!
@@ -119,30 +119,30 @@ impl ServiceContract {
         if self.name.is_empty() {
             return Err("Service name cannot be empty");
         }
-        
+
         // Graph-native services MUST NOT have boot assumptions
         if !self.boot_assumptions.is_empty() {
             return Err("Graph-native services MUST NOT have boot assumptions");
         }
-        
+
         // Service must either watch or publish (or both)
         if self.watched_kinds.is_empty() && self.published_kinds.is_empty() {
             return Err("Service must watch and/or publish nodes");
         }
-        
+
         Ok(())
     }
-    
+
     /// Check if this service watches a given node kind
     pub fn watches_kind(&self, kind: &str) -> bool {
         self.watched_kinds.iter().any(|k| *k == kind)
     }
-    
+
     /// Check if this service publishes a given node kind
     pub fn publishes_kind(&self, kind: &str) -> bool {
         self.published_kinds.iter().any(|k| *k == kind)
     }
-    
+
     /// Check if this service publishes a given property
     pub fn publishes_property(&self, property: &str) -> bool {
         self.published_properties.iter().any(|p| *p == property)
@@ -152,7 +152,7 @@ impl ServiceContract {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[test]
     fn test_valid_contract() {
         let contract = ServiceContract {
@@ -163,10 +163,10 @@ mod tests {
             idempotent: true,
             boot_assumptions: &[],
         };
-        
+
         assert!(contract.validate().is_ok());
     }
-    
+
     #[test]
     fn test_empty_name() {
         let contract = ServiceContract {
@@ -177,10 +177,10 @@ mod tests {
             idempotent: true,
             boot_assumptions: &[],
         };
-        
+
         assert!(contract.validate().is_err());
     }
-    
+
     #[test]
     fn test_boot_assumptions_forbidden() {
         let contract = ServiceContract {
@@ -191,13 +191,13 @@ mod tests {
             idempotent: true,
             boot_assumptions: &["Framebuffer exists"],
         };
-        
+
         assert_eq!(
             contract.validate(),
             Err("Graph-native services MUST NOT have boot assumptions")
         );
     }
-    
+
     #[test]
     fn test_must_watch_or_publish() {
         let contract = ServiceContract {
@@ -208,13 +208,13 @@ mod tests {
             idempotent: true,
             boot_assumptions: &[],
         };
-        
+
         assert_eq!(
             contract.validate(),
             Err("Service must watch and/or publish nodes")
         );
     }
-    
+
     #[test]
     fn test_watches_kind() {
         let contract = ServiceContract {
@@ -225,12 +225,12 @@ mod tests {
             idempotent: true,
             boot_assumptions: &[],
         };
-        
+
         assert!(contract.watches_kind("boot.Module"));
         assert!(contract.watches_kind("Asset"));
         assert!(!contract.watches_kind("Unknown"));
     }
-    
+
     #[test]
     fn test_publishes_kind() {
         let contract = ServiceContract {
@@ -241,12 +241,12 @@ mod tests {
             idempotent: true,
             boot_assumptions: &[],
         };
-        
+
         assert!(contract.publishes_kind("Asset"));
         assert!(contract.publishes_kind("Font"));
         assert!(!contract.publishes_kind("Unknown"));
     }
-    
+
     #[test]
     fn test_publishes_property() {
         let contract = ServiceContract {
@@ -257,7 +257,7 @@ mod tests {
             idempotent: true,
             boot_assumptions: &[],
         };
-        
+
         assert!(contract.publishes_property("asset.name"));
         assert!(contract.publishes_property("asset.hash"));
         assert!(!contract.publishes_property("unknown.prop"));

@@ -88,13 +88,13 @@ pub fn parse_version(s: &str) -> Result<HttpVersion, ParseError> {
 /// Parse a single HTTP request from a buffer
 pub fn parse_request(buf: &str) -> Result<Request<'_>, ParseError> {
     let mut lines = buf.lines();
-    
+
     // Parse request line
     let request_line = lines.next().ok_or(ParseError::MalformedRequestLine)?;
     if request_line.len() > MAX_REQUEST_LINE {
         return Err(ParseError::TooLong);
     }
-    
+
     let mut parts = request_line.split_whitespace();
     let method_str = parts.next().ok_or(ParseError::MalformedRequestLine)?;
     let path = parts.next().ok_or(ParseError::MalformedRequestLine)?;
@@ -102,28 +102,28 @@ pub fn parse_request(buf: &str) -> Result<Request<'_>, ParseError> {
     if parts.next().is_some() {
         return Err(ParseError::MalformedRequestLine);
     }
-    
+
     let method = parse_method(method_str)?;
     let version = parse_version(version_str)?;
-    
+
     // Parse headers
     let mut headers = [(None, None); MAX_HEADERS];
     let mut header_count = 0;
-    
+
     for line in lines {
         if line.is_empty() {
             // End of headers
             break;
         }
-        
+
         if line.len() > MAX_HEADER_LINE {
             return Err(ParseError::TooLong);
         }
-        
+
         if header_count >= MAX_HEADERS {
             return Err(ParseError::TooManyHeaders);
         }
-        
+
         if let Some(colon_pos) = line.find(':') {
             let key = line[..colon_pos].trim();
             let value = line[colon_pos + 1..].trim();
@@ -133,7 +133,7 @@ pub fn parse_request(buf: &str) -> Result<Request<'_>, ParseError> {
             return Err(ParseError::MalformedHeader);
         }
     }
-    
+
     // Calculate header length (offset to end of \r\n\r\n)
     let header_len = if let Some(pos) = buf.find("\r\n\r\n") {
         pos + 4
@@ -142,7 +142,7 @@ pub fn parse_request(buf: &str) -> Result<Request<'_>, ParseError> {
     } else {
         buf.len()
     };
-    
+
     Ok(Request {
         method,
         path,
@@ -160,7 +160,7 @@ pub fn decode_path(path: &str) -> Option<&str> {
     if path.contains("..") {
         return None;
     }
-    
+
     // For now, we don't do full percent decoding to keep it simple
     // and avoid allocations. Just validate and return the path.
     // A full implementation would decode %XX sequences.
@@ -184,17 +184,17 @@ pub struct ByteRange {
 /// Format: "bytes=start-end" or "bytes=start-"
 pub fn parse_range_header(req: &Request<'_>) -> Option<ByteRange> {
     let value = req.get_header("Range")?;
-    
+
     // Must start with "bytes="
     let rest = value.strip_prefix("bytes=")?;
-    
+
     // Find the hyphen separator
     let hyphen_pos = rest.find('-')?;
-    
+
     // Parse start
     let start_str = &rest[..hyphen_pos];
     let start: usize = start_str.parse().ok()?;
-    
+
     // Parse end (optional)
     let end_str = &rest[hyphen_pos + 1..];
     let end = if end_str.is_empty() {
@@ -202,7 +202,7 @@ pub fn parse_range_header(req: &Request<'_>) -> Option<ByteRange> {
     } else {
         Some(end_str.parse().ok()?)
     };
-    
+
     Some(ByteRange { start, end })
 }
 
@@ -242,13 +242,19 @@ mod tests {
     #[test]
     fn test_invalid_version() {
         let input = "GET / HTTP/2.0\r\n\r\n";
-        assert!(matches!(parse_request(input), Err(ParseError::InvalidVersion)));
+        assert!(matches!(
+            parse_request(input),
+            Err(ParseError::InvalidVersion)
+        ));
     }
 
     #[test]
     fn test_reject_extra_request_line_tokens() {
         let input = "GET / HTTP/1.1 extra\r\nHost: localhost\r\n\r\n";
-        assert!(matches!(parse_request(input), Err(ParseError::MalformedRequestLine)));
+        assert!(matches!(
+            parse_request(input),
+            Err(ParseError::MalformedRequestLine)
+        ));
     }
 
     #[test]

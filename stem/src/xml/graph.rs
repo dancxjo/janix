@@ -5,8 +5,8 @@
 //! symbol resolution, edge traversal, and provides ordered access to
 //! children and attributes.
 
-use crate::thing::ThingId;
 use crate::thing::sys;
+use crate::thing::ThingId;
 use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
 use alloc::string::String;
@@ -41,7 +41,7 @@ impl XmlGraph {
     pub fn get_children(elem: ThingId) -> Vec<ThingId> {
         let mut children: Vec<(u64, ThingId)> = Vec::new();
         let mut edges = [Edge::default(); 128];
-        
+
         if let Ok(count) = sys::get_edges(elem, &mut edges) {
             for i in 0..count {
                 let e = &edges[i];
@@ -51,7 +51,7 @@ impl XmlGraph {
                 }
             }
         }
-        
+
         // Sort by XML_ORDER
         children.sort_by_key(|(order, _)| *order);
         children.into_iter().map(|(_, id)| id).collect()
@@ -63,14 +63,14 @@ impl XmlGraph {
     pub fn get_attributes(elem: ThingId) -> Vec<(String, String)> {
         let mut attrs: Vec<(u64, String, String)> = Vec::new();
         let mut edges = [Edge::default(); 64];
-        
+
         if let Ok(count) = sys::get_edges(elem, &mut edges) {
             for i in 0..count {
                 let e = &edges[i];
                 if Self::edge_has_relation(e, rels::HAS_ATTR) {
                     let attr_node = e.to;
                     let order = sys::prop_get(attr_node, keys::XML_ORDER).unwrap_or(u64::MAX);
-                    
+
                     if let (Some(name), Some(value)) = (
                         Self::get_prop_str(attr_node, keys::ATTR_NAME),
                         Self::get_prop_str(attr_node, keys::ATTR_VALUE),
@@ -80,7 +80,7 @@ impl XmlGraph {
                 }
             }
         }
-        
+
         // Sort by XML_ORDER
         attrs.sort_by_key(|(order, _, _)| *order);
         attrs.into_iter().map(|(_, n, v)| (n, v)).collect()
@@ -134,9 +134,7 @@ impl XmlGraph {
         // Support up to 4KB for long SVG path data and style attributes
         let mut buf = alloc::vec![0u8; 4096];
         match sys::describe_symbol(sym_id as u32, &mut buf) {
-            Ok(len) if len > 0 => {
-                core::str::from_utf8(&buf[..len]).ok().map(String::from)
-            }
+            Ok(len) if len > 0 => core::str::from_utf8(&buf[..len]).ok().map(String::from),
             _ => None,
         }
     }

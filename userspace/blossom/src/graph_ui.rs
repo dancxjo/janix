@@ -237,7 +237,10 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
                 }
             });
 
-        let text = if node_kind == UiNodeKind::Text || node_kind == UiNodeKind::TextInput || node_kind == UiNodeKind::ListItem {
+        let text = if node_kind == UiNodeKind::Text
+            || node_kind == UiNodeKind::TextInput
+            || node_kind == UiNodeKind::ListItem
+        {
             let bs = graph
                 .get_prop(id, keys::UI_TEXT)
                 .or_else(|| graph.get_prop(id, keys::UI_INPUT_VALUE))
@@ -284,7 +287,9 @@ pub fn build_tree(graph: &impl UiGraph, symbols: &UiSymbols, root_id: ThingId) -
             .get_prop(id, keys::UI_CURSOR)
             .or_else(|| graph.get_prop(id, keys::UI_CURSOR_POS))
             .unwrap_or(0) as u32;
-        let icon_color = graph.get_prop(id, keys::UI_ICON_COLOR).unwrap_or(0xFF808080) as u32;
+        let icon_color = graph
+            .get_prop(id, keys::UI_ICON_COLOR)
+            .unwrap_or(0xFF808080) as u32;
         let selected = graph.get_prop(id, keys::UI_SELECTED).unwrap_or(0) != 0;
 
         let index = nodes.len();
@@ -448,22 +453,37 @@ fn collect_stylesheet_rules(
             match_key: graph
                 .get_prop(rule_id, keys::UI_STYLE_MATCH_KEY)
                 .and_then(|bs| read_string_bs(graph, bs)),
-            match_focused: graph.get_prop(rule_id, keys::UI_STYLE_MATCH_FOCUSED).unwrap_or(0) != 0,
-            color: graph.get_prop(rule_id, keys::UI_STYLE_COLOR).map(|v| v as u32),
-            background: graph.get_prop(rule_id, keys::UI_STYLE_BACKGROUND).map(|v| v as u32),
+            match_focused: graph
+                .get_prop(rule_id, keys::UI_STYLE_MATCH_FOCUSED)
+                .unwrap_or(0)
+                != 0,
+            color: graph
+                .get_prop(rule_id, keys::UI_STYLE_COLOR)
+                .map(|v| v as u32),
+            background: graph
+                .get_prop(rule_id, keys::UI_STYLE_BACKGROUND)
+                .map(|v| v as u32),
             font_name: graph
                 .get_prop(rule_id, keys::UI_STYLE_FONT_NAME)
                 .and_then(|bs| read_string_bs(graph, bs)),
-            font_size: graph.get_prop(rule_id, keys::UI_STYLE_FONT_SIZE).map(|v| v as i32),
-            padding: graph.get_prop(rule_id, keys::UI_STYLE_PADDING).map(|v| v as i32),
-            gap: graph.get_prop(rule_id, keys::UI_STYLE_GAP).map(|v| v as i32),
+            font_size: graph
+                .get_prop(rule_id, keys::UI_STYLE_FONT_SIZE)
+                .map(|v| v as i32),
+            padding: graph
+                .get_prop(rule_id, keys::UI_STYLE_PADDING)
+                .map(|v| v as i32),
+            gap: graph
+                .get_prop(rule_id, keys::UI_STYLE_GAP)
+                .map(|v| v as i32),
             border_width: graph
                 .get_prop(rule_id, keys::UI_STYLE_BORDER_WIDTH)
                 .map(|v| v as i32),
             border_color: graph
                 .get_prop(rule_id, keys::UI_STYLE_BORDER_COLOR)
                 .map(|v| v as u32),
-            min_width: graph.get_prop(rule_id, keys::UI_STYLE_MIN_WIDTH).map(|v| v as i32),
+            min_width: graph
+                .get_prop(rule_id, keys::UI_STYLE_MIN_WIDTH)
+                .map(|v| v as i32),
             min_height: graph
                 .get_prop(rule_id, keys::UI_STYLE_MIN_HEIGHT)
                 .map(|v| v as i32),
@@ -519,19 +539,22 @@ pub fn compute_styles(
     tree: &UiTree,
 ) -> Vec<ComputedStyle> {
     let rules = load_window_style_rules(graph, symbols, window_id);
-    let mut out = vec![ComputedStyle {
-        color: TEXT_COLOR,
-        background: None,
-        font_name: String::new(),
-        font_size: 16,
-        padding: COLUMN_PADDING,
-        gap: COLUMN_GAP,
-        border_width: 0,
-        border_color: BUTTON_BORDER,
-        min_width: 0,
-        min_height: 0,
-        cursor_color: TEXT_COLOR,
-    }; tree.nodes.len()];
+    let mut out = vec![
+        ComputedStyle {
+            color: TEXT_COLOR,
+            background: None,
+            font_name: String::new(),
+            font_size: 16,
+            padding: COLUMN_PADDING,
+            gap: COLUMN_GAP,
+            border_width: 0,
+            border_color: BUTTON_BORDER,
+            min_width: 0,
+            min_height: 0,
+            cursor_color: TEXT_COLOR,
+        };
+        tree.nodes.len()
+    ];
 
     for (idx, node) in tree.nodes.iter().enumerate() {
         let mut style = default_style_for(node);
@@ -658,7 +681,11 @@ pub fn compute_styles(
     out
 }
 
-pub fn layout_tree(tree: &UiTree, styles: &[ComputedStyle], root_rect: LayoutRect) -> Vec<LayoutRect> {
+pub fn layout_tree(
+    tree: &UiTree,
+    styles: &[ComputedStyle],
+    root_rect: LayoutRect,
+) -> Vec<LayoutRect> {
     let mut rects = vec![LayoutRect::default(); tree.nodes.len()];
     layout_node(tree, styles, tree.root, root_rect, &mut rects);
     rects
@@ -680,14 +707,14 @@ const CHROME_BORDER: i32 = 2;
 const CHROME_TITLE_BAR_HEIGHT: i32 = 24;
 
 // Focused title bar gradient (blue-ish)
-const TITLE_FOCUSED_TOP: u32 = 0xFF5B9BD5;    // steel blue
-const TITLE_FOCUSED_BOTTOM: u32 = 0xFF3A6EA5;  // darker blue
-const TITLE_FOCUSED_TEXT: u32 = 0xFFFFFFFF;     // white text
+const TITLE_FOCUSED_TOP: u32 = 0xFF5B9BD5; // steel blue
+const TITLE_FOCUSED_BOTTOM: u32 = 0xFF3A6EA5; // darker blue
+const TITLE_FOCUSED_TEXT: u32 = 0xFFFFFFFF; // white text
 
 // Unfocused title bar gradient (gray)
-const TITLE_UNFOCUSED_TOP: u32 = 0xFFC0C0C0;    // light gray
-const TITLE_UNFOCUSED_BOTTOM: u32 = 0xFFA0A0A0;  // medium gray
-const TITLE_UNFOCUSED_TEXT: u32 = 0xFF404040;     // dark gray text
+const TITLE_UNFOCUSED_TOP: u32 = 0xFFC0C0C0; // light gray
+const TITLE_UNFOCUSED_BOTTOM: u32 = 0xFFA0A0A0; // medium gray
+const TITLE_UNFOCUSED_TEXT: u32 = 0xFF404040; // dark gray text
 
 // Border color
 const CHROME_BORDER_COLOR: u32 = 0xFF606060;
@@ -708,11 +735,29 @@ pub fn emit_paint(
     // Top border
     builder.fill_rect(0, 0, window_w, CHROME_BORDER, CHROME_BORDER_COLOR);
     // Bottom border
-    builder.fill_rect(0, window_h - CHROME_BORDER, window_w, CHROME_BORDER, CHROME_BORDER_COLOR);
+    builder.fill_rect(
+        0,
+        window_h - CHROME_BORDER,
+        window_w,
+        CHROME_BORDER,
+        CHROME_BORDER_COLOR,
+    );
     // Left border
-    builder.fill_rect(0, CHROME_BORDER, CHROME_BORDER, window_h - CHROME_BORDER * 2, CHROME_BORDER_COLOR);
+    builder.fill_rect(
+        0,
+        CHROME_BORDER,
+        CHROME_BORDER,
+        window_h - CHROME_BORDER * 2,
+        CHROME_BORDER_COLOR,
+    );
     // Right border
-    builder.fill_rect(window_w - CHROME_BORDER, CHROME_BORDER, CHROME_BORDER, window_h - CHROME_BORDER * 2, CHROME_BORDER_COLOR);
+    builder.fill_rect(
+        window_w - CHROME_BORDER,
+        CHROME_BORDER,
+        CHROME_BORDER,
+        window_h - CHROME_BORDER * 2,
+        CHROME_BORDER_COLOR,
+    );
 
     // 2. Draw title bar gradient
     let tb_x = CHROME_BORDER;
@@ -722,7 +767,11 @@ pub fn emit_paint(
     let (grad_top, grad_bot, title_color) = if is_focused {
         (TITLE_FOCUSED_TOP, TITLE_FOCUSED_BOTTOM, TITLE_FOCUSED_TEXT)
     } else {
-        (TITLE_UNFOCUSED_TOP, TITLE_UNFOCUSED_BOTTOM, TITLE_UNFOCUSED_TEXT)
+        (
+            TITLE_UNFOCUSED_TOP,
+            TITLE_UNFOCUSED_BOTTOM,
+            TITLE_UNFOCUSED_TEXT,
+        )
     };
     builder.fill_linear_gradient(tb_x, tb_y, tb_w, tb_h, grad_top, grad_bot);
 
@@ -736,7 +785,10 @@ pub fn emit_paint(
             let size = 14;
             let baseline = text_y + (text_h + size) / 2 - 2;
             builder.draw_text_run(
-                text_x, text_y, text_w, text_h,
+                text_x,
+                text_y,
+                text_w,
+                text_h,
                 baseline,
                 "NotoSans-Regular",
                 size,
@@ -1038,13 +1090,24 @@ fn draw_checkbox(
     }
 }
 
-fn draw_text_input(node: &UiNode, style: &ComputedStyle, rect: LayoutRect, builder: &mut PaintBuilder) {
+fn draw_text_input(
+    node: &UiNode,
+    style: &ComputedStyle,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
     let border = if node.focused {
         INPUT_BORDER_FOCUS
     } else {
         style.border_color
     };
-    builder.fill_rect(rect.x, rect.y, rect.w, rect.h, style.background.unwrap_or(INPUT_BG));
+    builder.fill_rect(
+        rect.x,
+        rect.y,
+        rect.w,
+        rect.h,
+        style.background.unwrap_or(INPUT_BG),
+    );
     builder.fill_rect(rect.x, rect.y, rect.w, 1, border);
     builder.fill_rect(rect.x, rect.y + rect.h - 1, rect.w, 1, border);
     builder.fill_rect(rect.x, rect.y, 1, rect.h, border);
@@ -1073,7 +1136,12 @@ fn draw_text_input(node: &UiNode, style: &ComputedStyle, rect: LayoutRect, build
 const LIST_ITEM_SELECTED_BG: u32 = 0xFF3078C0;
 const LIST_ITEM_SELECTED_TEXT: u32 = 0xFFFFFFFF;
 
-fn draw_list_item(node: &UiNode, style: &ComputedStyle, rect: LayoutRect, builder: &mut PaintBuilder) {
+fn draw_list_item(
+    node: &UiNode,
+    style: &ComputedStyle,
+    rect: LayoutRect,
+    builder: &mut PaintBuilder,
+) {
     // Draw selection highlight background
     if node.selected {
         builder.fill_rect(rect.x, rect.y, rect.w, rect.h, LIST_ITEM_SELECTED_BG);
@@ -1527,7 +1595,9 @@ mod tests {
         let (decoded, _) = ui_event::decode_one(&buf[..n]).unwrap();
         assert_eq!(decoded.kind(), Some(UiEventKind::Toggled));
         match decoded {
-            UiEvent::Toggled { target, checked, .. } => {
+            UiEvent::Toggled {
+                target, checked, ..
+            } => {
                 assert_eq!(target, checkbox_id.to_u64_lossy());
                 assert_eq!(checked != 0, new_checked != 0);
             }
@@ -1596,7 +1666,12 @@ mod tests {
             let rule_class = graph.create_node(kinds::CSS_RULE).unwrap();
             graph.link(stylesheet, rels::HAS_CHILD, rule_class).unwrap();
             set_string_prop(&mut graph, rule_class, keys::UI_STYLE_MATCH_CLASS, "clock");
-            set_string_prop(&mut graph, rule_class, keys::UI_STYLE_FONT_NAME, "DSEG7Classic-Regular");
+            set_string_prop(
+                &mut graph,
+                rule_class,
+                keys::UI_STYLE_FONT_NAME,
+                "DSEG7Classic-Regular",
+            );
             graph
                 .prop_set(rule_class, keys::UI_STYLE_FONT_SIZE, 64)
                 .unwrap();
@@ -1610,7 +1685,9 @@ mod tests {
 
             // Parent color should inherit into plain text.
             let parent_rule = graph.create_node(kinds::CSS_RULE).unwrap();
-            graph.link(stylesheet, rels::HAS_CHILD, parent_rule).unwrap();
+            graph
+                .link(stylesheet, rels::HAS_CHILD, parent_rule)
+                .unwrap();
             graph
                 .prop_set(parent_rule, keys::UI_STYLE_MATCH_KIND, ui_kind::COLUMN)
                 .unwrap();

@@ -24,7 +24,9 @@ pub enum CssIngestError {
 impl From<crate::xml::ingest::XmlIngestError> for CssIngestError {
     fn from(e: crate::xml::ingest::XmlIngestError) -> Self {
         match e {
-            crate::xml::ingest::XmlIngestError::CreateNodeFailed => CssIngestError::CreateNodeFailed,
+            crate::xml::ingest::XmlIngestError::CreateNodeFailed => {
+                CssIngestError::CreateNodeFailed
+            }
             crate::xml::ingest::XmlIngestError::LinkFailed => CssIngestError::LinkFailed,
             crate::xml::ingest::XmlIngestError::SetPropFailed => CssIngestError::SetPropFailed,
             crate::xml::ingest::XmlIngestError::InternFailed => CssIngestError::InternFailed,
@@ -187,7 +189,7 @@ fn skip_whitespace_and_comments<I: Iterator<Item = char>>(chars: &mut core::iter
             chars.next();
             if chars.peek() == Some(&'*') {
                 chars.next(); // Skip '*'
-                // Now skip until we see '*/'
+                              // Now skip until we see '*/'
                 loop {
                     match chars.next() {
                         Some('*') if chars.peek() == Some(&'/') => {

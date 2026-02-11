@@ -10,16 +10,18 @@ pub mod arch;
 pub mod bitset;
 pub mod block;
 pub mod console;
+pub mod css;
 pub mod device;
 pub mod errors;
 #[cfg(feature = "global-alloc")]
 pub mod heap;
+pub mod html;
 pub mod i18n;
 #[cfg(feature = "rt")]
 pub mod memory;
+pub mod net;
 /// Platform Abstraction Layer - explicit platform contract
 pub mod pal;
-pub mod net;
 #[cfg(feature = "panic-handler")]
 pub mod panic;
 pub mod pci;
@@ -36,8 +38,6 @@ pub mod ui;
 pub mod utils;
 pub mod vm;
 pub mod xml;
-pub mod html;
-pub mod css;
 
 // Re-export time types for convenience
 pub use time::{Duration, Instant};

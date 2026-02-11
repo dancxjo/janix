@@ -1,8 +1,8 @@
 //! VirtIO Sound Device Specification (v1.2)
 //! https://docs.oasis-open.org/virtio/virtio/v1.2/csd01/virtio-v1.2-csd01.pdf
 
-use core::mem::size_of;
 use alloc::vec::Vec;
+use core::mem::size_of;
 
 // Feature bits
 pub const VIRTIO_SND_F_CTLS: u32 = 0; // Device supports control elements
@@ -108,7 +108,7 @@ pub struct VirtioSndQueryInfo {
 #[derive(Debug, Clone, Copy)]
 pub struct VirtioSndPcmInfo {
     pub hdr: VirtioSndHdr, // h.code = VIRTIO_SND_R_PCM_INFO
-    pub features: u32, 
+    pub features: u32,
     pub formats: u64,
     pub rates: u64,
     pub direction: u8,

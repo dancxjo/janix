@@ -32,7 +32,7 @@ impl Journal {
         while self.entries.len() >= MAX_JOURNAL_ENTRIES {
             self.entries.pop_front();
         }
-        
+
         let seq = self.next_seq;
         self.next_seq += 1;
         self.entries.push_back(JournalEntry { seq, op }); // In-memory only

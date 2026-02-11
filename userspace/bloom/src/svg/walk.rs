@@ -54,9 +54,7 @@ impl SysSvgGraph {
         // Support up to 4KB for long SVG path data and style attributes
         let mut buf = alloc::vec![0u8; 4096];
         match sys::describe_symbol(sym_id as u32, &mut buf) {
-            Ok(len) if len > 0 => {
-                core::str::from_utf8(&buf[..len]).ok().map(String::from)
-            }
+            Ok(len) if len > 0 => core::str::from_utf8(&buf[..len]).ok().map(String::from),
             _ => None,
         }
     }
@@ -76,7 +74,7 @@ impl SvgGraph for SysSvgGraph {
         // Filter to only XML_ELEMENT nodes, already sorted by XML_ORDER
         let all_children = XmlGraph::get_children(elem);
         let mut elements = Vec::with_capacity(all_children.len());
-        
+
         for id in all_children {
             if XmlGraph::is_element(id) {
                 elements.push(id);
@@ -86,7 +84,7 @@ impl SvgGraph for SysSvgGraph {
             }
             // Text nodes are silently filtered - expected for SVG
         }
-        
+
         elements
     }
 
@@ -198,7 +196,7 @@ mod tests {
                 })
                 .collect();
             children.sort_by_key(|(order, _)| *order);
-            
+
             // Filter to elements only (check if node has "tag" property)
             children
                 .into_iter()
@@ -262,7 +260,10 @@ mod tests {
         let g_children = graph.get_children(g_elem);
         assert_eq!(g_children.len(), 1);
         let path_elem = g_children[0];
-        assert_eq!(graph.get_prop_str(path_elem, "tag"), Some("path".to_string()));
+        assert_eq!(
+            graph.get_prop_str(path_elem, "tag"),
+            Some("path".to_string())
+        );
     }
 
     /// Test B: Attributes visible

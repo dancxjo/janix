@@ -3,6 +3,7 @@
 //! Organized into focused modules by function category.
 
 mod device;
+mod futex;
 mod logging;
 mod memory;
 mod net;
@@ -15,6 +16,7 @@ mod trace;
 
 // Re-export all syscall handlers
 pub use device::*;
+pub use futex::*;
 pub use logging::*;
 pub use memory::*;
 pub use net::*;

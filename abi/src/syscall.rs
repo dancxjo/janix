@@ -24,6 +24,8 @@ pub const SYS_SLEEP_MS: u32 = 0x12;
 pub const SYS_TASK_POLL: u32 = 0x13;
 pub const SYS_SET_PRIORITY: u32 = 0x14;
 pub const SYS_TASK_DUMP: u32 = 0x15;
+pub const SYS_FUTEX_WAIT: u32 = 0x16;
+pub const SYS_FUTEX_WAKE: u32 = 0x17;
 
 // ============================================================================
 // Block 0x20–0x2F: Time

@@ -318,10 +318,17 @@ impl<G: Graph> GraphExecutor<G> {
                         }
                     }
                     None => {
+                        // If we are sorting, we must find ALL matching nodes, not just the limit.
+                        // Then we sort and apply limit/skip.
+                        let effective_limit = if order_by.is_some() {
+                            usize::MAX
+                        } else {
+                            limit_total
+                        };
                         matched_ids = self.discover_nodes(
                             &node_pat.props,
                             None,
-                            limit_total,
+                            effective_limit,
                             where_clause.as_ref(),
                             node_pat.var.as_deref(),
                         );
@@ -569,6 +576,7 @@ impl<G: Graph> GraphExecutor<G> {
 
             // Exhaustive kinds to seed from
             let fallback_kinds = [
+                "Kind",
                 "fs.File",
                 "content.Source",
                 "Asset",

@@ -42,7 +42,7 @@ run arch=karch:
 # Start HTTPS proxy for guest (runs on port 8081)
 # Guest accesses via: http://10.0.2.2:8081/?url=https://example.com/
 proxy port="8081":
-    python3 scripts/https_proxy.py {{port}}
+    cargo xtask guest-proxy --port {{port}}
 
 # Start HTTPS reverse proxy for host browser access to guest anther
 # Wraps guest's HTTP server (port 8888) with self-signed HTTPS
@@ -54,7 +54,7 @@ https-proxy port="8443" target="8888":
 run-with-proxy arch=karch port="8081":
     #!/usr/bin/env bash
     echo "Starting HTTPS proxy on port {{port}}..."
-    python3 scripts/https_proxy.py {{port}} &
+    cargo xtask guest-proxy --port {{port}} &
     PROXY_PID=$!
     trap "kill $PROXY_PID 2>/dev/null" EXIT
     echo "Proxy PID: $PROXY_PID"

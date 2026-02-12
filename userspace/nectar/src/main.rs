@@ -269,7 +269,8 @@ fn main(_arg: usize) -> ! {
 
     let mut window_id = None;
     let mut hostname = String::from("thing-os");
-    window_id = maybe_create_window(window_id, &hostname);
+    let mut last_ip: Option<[u8; 4]> = None;
+    window_id = maybe_create_window(window_id, &hostname, last_ip);
 
     let (api, mac, net_stack) = loop {
         if let Some(res) = find_netd_and_mac() {
@@ -296,7 +297,7 @@ fn main(_arg: usize) -> ! {
     if let Ok(1) = thingsys::find(kinds::DEV_HOST, &mut buf) {
         set_string_prop(buf[0], keys::NAME, &hostname);
     }
-    window_id = maybe_create_window(window_id, &hostname);
+    window_id = maybe_create_window(window_id, &hostname, last_ip);
 
     let mut graph = DiscoveryGraph::new();
     let advertise_root = ensure_singleton_node(
@@ -344,12 +345,14 @@ fn main(_arg: usize) -> ! {
 
         if now_ns.saturating_sub(last_sync_check) > 1_000_000_000 {
             last_sync_check = now_ns;
-            window_id = maybe_create_window(window_id, &hostname);
+            window_id = maybe_create_window(window_id, &hostname, last_ip);
             let current_hostname = get_or_generate_hostname(mac);
-            if current_hostname != hostname {
+            let current_ip = net_ipv4_from_stack(net_stack);
+            if current_hostname != hostname || current_ip != last_ip {
                 hostname = current_hostname;
+                last_ip = current_ip;
                 if let Some(win) = window_id {
-                    let _ = render_window(win, &hostname);
+                    let _ = render_window(win, &hostname, last_ip);
                 }
             }
         }
@@ -749,7 +752,7 @@ fn get_or_generate_hostname(mac: [u8; 6]) -> String {
     format!("{}-{}", descriptors[d_idx], plants[p_idx])
 }
 
-fn maybe_create_window(current: Option<ThingId>, hostname: &str) -> Option<ThingId> {
+fn maybe_create_window(current: Option<ThingId>, hostname: &str, ip: Option<[u8; 4]>) -> Option<ThingId> {
     if current.is_some() {
         return current;
     }
@@ -775,11 +778,15 @@ fn maybe_create_window(current: Option<ThingId>, hostname: &str) -> Option<Thing
     thingsys::prop_set(win, keys::UI_INSET_RIGHT, 16).ok();
     thingsys::prop_set(win, keys::UI_INSET_TOP, 16).ok();
     thingsys::prop_set(win, keys::UI_MANUAL_POSITION, 1).ok();
-    let _ = render_window(win, hostname);
+    let _ = render_window(win, hostname, ip);
     Some(win)
 }
 
-fn render_window(window_id: ThingId, hostname: &str) -> Result<(), stem::errors::Error> {
+fn render_window(window_id: ThingId, hostname: &str, ip: Option<[u8; 4]>) -> Result<(), stem::errors::Error> {
+    let ip_str = match ip {
+        Some([a, b, c, d]) => format!("{}.{}.{}.{}", a, b, c, d),
+        None => "Acquiring…".into(),
+    };
     let mut ui = Petals::begin_window(window_id);
     let root = ui.column(|ui| {
         let label = ui.text("Hostname")?;
@@ -788,11 +795,20 @@ fn render_window(window_id: ThingId, hostname: &str) -> Result<(), stem::errors:
         let _ = ui.set_color(label, 0xFF505050);
         let value = ui.text(hostname)?;
         let _ = ui.set_font_name(value, "NotoSans-Regular");
-        let _ = ui.set_font_size(value, 32);
+        let _ = ui.set_font_size(value, 24);
         let _ = ui.set_color(value, 0xFF1A5080);
+
+        let ip_label = ui.text("IP Address")?;
+        let _ = ui.set_font_name(ip_label, "NotoSans-Regular");
+        let _ = ui.set_font_size(ip_label, 14);
+        let _ = ui.set_color(ip_label, 0xFF505050);
+        let ip_value = ui.text(&ip_str)?;
+        let _ = ui.set_font_name(ip_value, "NotoSans-Regular");
+        let _ = ui.set_font_size(ip_value, 24);
+        let _ = ui.set_color(ip_value, 0xFF1A5080);
         Ok(())
     })?;
-    let _ = ui.set_gap(root, 8);
+    let _ = ui.set_gap(root, 6);
     let _ = ui.set_padding(root, 16);
     ui.finish()?;
     Ok(())

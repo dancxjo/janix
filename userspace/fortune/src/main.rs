@@ -54,7 +54,7 @@ fn find_locale_conf() -> Option<ThingId> {
 }
 
 fn read_ollama_config() -> OllamaConfig {
-    let mut server = String::from("https://forebrain.local:11434");
+    let mut server = String::from("https://10.0.2.2:11434");
     let mut model = String::from("tinyllama");
 
     if let Some(mod_id) = find_locale_conf() {

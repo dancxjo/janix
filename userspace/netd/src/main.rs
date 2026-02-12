@@ -151,22 +151,36 @@ fn main(_arg: usize) -> ! {
     };
 
     // Update network configuration in graph
-    let _ip_packed = {
+    let ip_packed = {
         let octets = dhcp_config.ip.as_bytes();
         (octets[0] as u64)
             | ((octets[1] as u64) << 8)
             | ((octets[2] as u64) << 16)
             | ((octets[3] as u64) << 24)
     };
-    // DEFERRED: prop_set calls moved to cold path in main loop.
-    // These make blocking Root service IPC calls.
-    // thingsys::prop_set(net_id, "net.ip", ip_packed).ok();
-    // thingsys::prop_set(net_id, "net.gateway", gw_packed).ok();
-    // thingsys::prop_set(net_id, "net.dns", dns_packed).ok();
+    let gw_packed = {
+        let octets = dhcp_config.gateway.as_bytes();
+        (octets[0] as u64)
+            | ((octets[1] as u64) << 8)
+            | ((octets[2] as u64) << 16)
+            | ((octets[3] as u64) << 24)
+    };
+    let dns_packed = {
+        let octets = dhcp_config.dns.as_bytes();
+        (octets[0] as u64)
+            | ((octets[1] as u64) << 8)
+            | ((octets[2] as u64) << 16)
+            | ((octets[3] as u64) << 24)
+    };
+    // Publish IP/gateway/DNS to graph immediately after DHCP.
+    // This is a one-time cost; DHCP itself already blocked.
+    thingsys::prop_set(net_id, "net.ip", ip_packed).ok();
+    thingsys::prop_set(net_id, "net.gateway", gw_packed).ok();
+    thingsys::prop_set(net_id, "net.dns", dns_packed).ok();
 
     info!(
-        "NETD: DHCP configured (IP: {}), deferring graph updates to main loop",
-        dhcp_config.ip
+        "NETD: DHCP configured — IP: {}, GW: {}, DNS: {}",
+        dhcp_config.ip, dhcp_config.gateway, dhcp_config.dns
     );
 
     let gateway = dhcp_config.gateway.as_bytes();

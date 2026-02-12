@@ -1,8 +1,20 @@
 # Changelog
 
+## Kernel Security & Entropy
+
+Recent updates have focused on strengthening the kernel's security posture with a new entropy subsystem, providing userspace with a source of cryptographically secure randomness.
+
+### 🎲 Entropy Subsystem
+
+*   **Kernel Entropy Pool**: A hash-based accumulator (`kernel/src/entropy.rs`) that mixes entropy from hardware sources. It maintains internal state protected by a seeded flag to ensure high-quality output.
+*   **Hardware RNG Support**: On x86_64 platforms, the pool is seeded using hardware random number generators (RDRAND/RDSEED) via the `BootRuntimeBase` trait.
+*   **Weak Entropy Fallback**: In the absence of hardware RNG, the system falls back to using high-resolution timer ticks to ensure non-blocking operation, while logging the use of weak entropy.
+*   **SYS_GETRANDOM**: A new syscall (`0x210`) allowing userspace to request random bytes. It fills a user-provided buffer (up to 256 bytes per call) from the kernel pool.
+    *   *Artifacts*: `kernel/src/syscall/handlers/random.rs`, `abi/src/syscall.rs`
+
 ## System Monitoring, Storage & WASM Drivers
 
-Recent updates have introduced essential system utilities and laid the groundwork for sandboxed drivers.
+Prior updates introduced essential system utilities and laid the groundwork for sandboxed drivers.
 
 ### 📊 System Monitoring & Desktop Widgets
 

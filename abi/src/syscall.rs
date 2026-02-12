@@ -14,6 +14,16 @@ pub const SYS_SPAWN_PROCESS: u32 = 0x04;
 pub const SYS_TASK_WAIT: u32 = 0x05;
 pub const SYS_REBOOT: u32 = 0x06;
 pub const SYS_TASK_KILL: u32 = 0x07;
+pub const SYS_GETPID: u32 = 0x08;
+pub const SYS_GETPPID: u32 = 0x09;
+pub const SYS_ARGV_GET: u32 = 0x0A;
+pub const SYS_ENV_GET: u32 = 0x0B;
+pub const SYS_ENV_SET: u32 = 0x0C;
+pub const SYS_ENV_UNSET: u32 = 0x0D;
+pub const SYS_ENV_LIST: u32 = 0x0E;
+/// Enhanced process spawn with argv, env, and stdio specification.
+/// Args: req_ptr (SpawnProcessExReq), resp_ptr (SpawnProcessExResp).
+pub const SYS_SPAWN_PROCESS_EX: u32 = 0x0F;
 
 // ============================================================================
 // Block 0x10–0x1F: Scheduling + sleep/yield

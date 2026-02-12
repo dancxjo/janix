@@ -1,10 +1,14 @@
 //! Static hook system for type-erased scheduler access.
 
 use super::types::StackFaultResult;
-use crate::task::{TaskId, TaskState};
+use crate::task::{ProcessInfo, TaskId, TaskState};
+use crate::task::scheduler::spawn::{SpawnExResult, StdioSpec};
 use abi::errors::Errno;
 use abi::vm::VmRegionInfo;
+use alloc::collections::BTreeMap;
+use alloc::sync::Arc;
 use alloc::vec::Vec;
+use spin::Mutex;
 
 pub(crate) static mut YIELD_HOOK: Option<fn()> = None;
 pub(crate) static mut EXIT_HOOK: Option<fn(i32)> = None;
@@ -37,6 +41,7 @@ pub(crate) static mut GET_USER_MAPPING_AT_HOOK: Option<fn(usize) -> Option<VmReg
 pub(crate) static mut RUN_SCHEDULER_HOOK: Option<fn() -> !> = None;
 pub(crate) static mut KILL_BY_TID_HOOK: Option<fn(u64) -> bool> = None;
 pub(crate) static mut DUMP_STATS_HOOK: Option<fn()> = None;
+pub(crate) static mut PROCESS_INFO_HOOK: Option<fn() -> Option<Arc<Mutex<ProcessInfo>>>> = None;
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
@@ -173,5 +178,39 @@ pub unsafe fn check_user_mapping_current(addr: usize, len: usize, write: bool) -
         Some(hook(addr, len, write))
     } else {
         None
+    }
+}
+
+pub fn process_info_current() -> Option<Arc<Mutex<ProcessInfo>>> {
+    if let Some(hook) = unsafe { PROCESS_INFO_HOOK } {
+        hook()
+    } else {
+        None
+    }
+}
+
+pub(crate) static mut SPAWN_PROCESS_EX_HOOK: Option<
+    unsafe fn(
+        &str,
+        Vec<Vec<u8>>,
+        BTreeMap<Vec<u8>, Vec<u8>>,
+        StdioSpec,
+        StdioSpec,
+        StdioSpec,
+    ) -> Result<SpawnExResult, Errno>,
+> = None;
+
+pub unsafe fn spawn_process_ex_current(
+    name: &str,
+    argv: Vec<Vec<u8>>,
+    env: BTreeMap<Vec<u8>, Vec<u8>>,
+    stdin: StdioSpec,
+    stdout: StdioSpec,
+    stderr: StdioSpec,
+) -> Result<SpawnExResult, Errno> {
+    if let Some(hook) = unsafe { SPAWN_PROCESS_EX_HOOK } {
+        unsafe { hook(name, argv, env, stdin, stdout, stderr) }
+    } else {
+        Err(Errno::ENOSYS)
     }
 }

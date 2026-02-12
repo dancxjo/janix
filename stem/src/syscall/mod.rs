@@ -84,6 +84,88 @@ pub fn get_tid() -> Result<u64, Errno> {
     abi::errors::errno(ret).map(|v| v as u64)
 }
 
+/// Get the current process ID.
+pub fn getpid() -> u32 {
+    let ret = unsafe { raw_syscall6(SYS_GETPID, 0, 0, 0, 0, 0, 0) };
+    ret as u32
+}
+
+/// Get the parent process ID.
+pub fn getppid() -> u32 {
+    let ret = unsafe { raw_syscall6(SYS_GETPPID, 0, 0, 0, 0, 0, 0) };
+    ret as u32
+}
+
+/// Retrieve the process argv into `buf`. Returns total bytes needed.
+/// First call with an empty/small buffer to learn the size, then retry.
+pub fn argv_get(buf: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ARGV_GET,
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0, 0, 0, 0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
+/// Get a single environment variable by key. Returns value length needed.
+pub fn env_get(key: &[u8], val: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ENV_GET,
+            key.as_ptr() as usize,
+            key.len(),
+            val.as_mut_ptr() as usize,
+            val.len(),
+            0, 0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
+/// Set an environment variable.
+pub fn env_set(key: &[u8], val: &[u8]) -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ENV_SET,
+            key.as_ptr() as usize,
+            key.len(),
+            val.as_ptr() as usize,
+            val.len(),
+            0, 0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Remove an environment variable.
+pub fn env_unset(key: &[u8]) -> Result<(), Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ENV_UNSET,
+            key.as_ptr() as usize,
+            key.len(),
+            0, 0, 0, 0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// List all environment variables. Returns total bytes needed.
+pub fn env_list(buf: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ENV_LIST,
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0, 0, 0, 0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
 pub fn monotonic_ns() -> u64 {
     let ret = unsafe { raw_syscall6(SYS_TIME_MONOTONIC, 0, 0, 0, 0, 0, 0) };
     if ret < 0 {

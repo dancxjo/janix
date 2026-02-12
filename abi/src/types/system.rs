@@ -192,3 +192,65 @@ impl Default for BulkPropsResponse {
         }
     }
 }
+
+// ============================================================================
+// Enhanced Process Spawn (SYS_SPAWN_PROCESS_EX)
+// ============================================================================
+
+/// Stdio mode for child streams in SpawnProcessExReq.
+pub mod stdio_mode {
+    /// Inherit the parent's handle for this stream.
+    pub const INHERIT: u32 = 0;
+    /// Attach to a null sink/source (discard output, empty input).
+    pub const NULL: u32 = 1;
+    /// Create a kernel pipe; parent gets the opposite end.
+    pub const PIPE: u32 = 2;
+}
+
+/// Request payload for SYS_SPAWN_PROCESS_EX.
+///
+/// Passed by pointer from userspace.  All pointer/length fields reference
+/// userspace memory and are copied-in by the kernel.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SpawnProcessExReq {
+    /// Pointer to program name bytes (NOT null-terminated).
+    pub name_ptr: u64,
+    /// Length of program name in bytes.
+    pub name_len: u32,
+    pub _pad0: u32,
+    /// Pointer to serialized argv blob.
+    /// Format: count:u32, then for each arg: len:u32, bytes...
+    pub argv_ptr: u64,
+    /// Length of argv blob in bytes (0 = no argv override).
+    pub argv_len: u32,
+    pub _pad1: u32,
+    /// Pointer to serialized env blob.
+    /// Format: count:u32, then for each: klen:u32, key, vlen:u32, val
+    pub env_ptr: u64,
+    /// Length of env blob in bytes (0 = no env override).
+    pub env_len: u32,
+    pub _pad2: u32,
+    /// Stdio modes (see `stdio_mode`).
+    pub stdin_mode: u32,
+    pub stdout_mode: u32,
+    pub stderr_mode: u32,
+    pub _reserved: u32,
+}
+
+/// Response payload for SYS_SPAWN_PROCESS_EX.
+///
+/// Written by the kernel into userspace via `resp_ptr`.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct SpawnProcessExResp {
+    /// Child task/process ID.
+    pub child_tid: u64,
+    /// Pipe IDs for piped stdio (0 = not piped).
+    /// stdin_pipe: parent's WRITE end.
+    pub stdin_pipe: u64,
+    /// stdout_pipe: parent's READ end.
+    pub stdout_pipe: u64,
+    /// stderr_pipe: parent's READ end.
+    pub stderr_pipe: u64,
+}

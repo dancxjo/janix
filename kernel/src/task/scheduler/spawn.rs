@@ -2,6 +2,8 @@
 
 use crate::task::{Affinity, StartupArg, Task, TaskId, TaskPriority, TaskState};
 use crate::{BootRuntime, BootTasking, UserEntry};
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use super::SCHEDULER;
 use super::types::{DEFAULT_TIMESLICE, Scheduler};
@@ -94,6 +96,7 @@ impl<R: BootRuntime> Scheduler<R> {
             last_cpu: Some(safe_cpu),
             name: [0; 32],
             name_len: 0,
+            process_info: None,
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
@@ -139,17 +142,17 @@ impl<R: BootRuntime> Scheduler<R> {
 
         let aspace = rt.tasking().active_address_space();
 
-        // Inherit mappings from current task
-        let mappings = if let Some(current_id) =
+        // Inherit mappings and process_info from current task
+        let (mappings, parent_pinfo) = if let Some(current_id) =
             self.per_cpu[super::current_cpu_index::<R>()].current
         {
             if let Some(parent) = self.tasks.iter().find(|t| t.id == current_id) {
-                parent.mappings.clone()
+                (parent.mappings.clone(), parent.process_info.clone())
             } else {
-                alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new()))
+                (alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new())), None)
             }
         } else {
-            alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new()))
+            (alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new())), None)
         };
 
         let spec = crate::UserTaskSpec {
@@ -199,6 +202,7 @@ impl<R: BootRuntime> Scheduler<R> {
             last_cpu: Some(safe_cpu),
             name: [0; 32],
             name_len: 0,
+            process_info: parent_pinfo,
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
@@ -287,6 +291,7 @@ impl<R: BootRuntime> Scheduler<R> {
             last_cpu: Some(safe_cpu),
             name: [0; 32],
             name_len: 0,
+            process_info: None,
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
@@ -423,12 +428,32 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
 
     let id = sched.spawn_user_task(entry, aspace, stack_info, regions, priority, affinity)?;
 
-    // Store name on the task struct for F2 dump
+    // Determine parent PID from the current task's ProcessInfo
+    let cpu_idx = super::current_cpu_index::<R>();
+    let ppid = sched
+        .per_cpu
+        .get(cpu_idx)
+        .and_then(|pc| pc.current)
+        .and_then(|ctid| sched.tasks.iter().find(|t| t.id == ctid))
+        .and_then(|t| t.process_info.as_ref())
+        .map(|pi| pi.lock().pid)
+        .unwrap_or(0);
+
+    // Create per-process identity
+    let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+        pid: id as u32,
+        ppid,
+        argv: alloc::vec![module.name.as_bytes().to_vec()],
+        env: alloc::collections::BTreeMap::new(),
+    }));
+
+    // Store name and process_info on the task struct
     if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
         let bytes = module.name.as_bytes();
         let len = bytes.len().min(32);
         task.name[..len].copy_from_slice(&bytes[..len]);
         task.name_len = len as u8;
+        task.process_info = Some(pinfo);
     }
 
     // Queue setting the process name (processed after scheduler lock released)
@@ -436,6 +461,127 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
 
     rt.irq_restore(_irq);
     Some(id)
+}
+
+/// Stdio specification for a single stream.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdioSpec {
+    /// Inherit parent's handle (no-op for v1; child gets kernel console).
+    Inherit,
+    /// Attach to null sink/source.
+    Null,
+    /// Create a pipe; returns the pipe_id for the parent's end.
+    Pipe,
+}
+
+/// Result of an enhanced spawn: child tid + pipe IDs for piped stdio.
+#[derive(Debug, Clone)]
+pub struct SpawnExResult {
+    pub child_tid: TaskId,
+    /// Pipe ID for stdin (parent writes). 0 if not piped.
+    pub stdin_pipe: u64,
+    /// Pipe ID for stdout (parent reads). 0 if not piped.
+    pub stdout_pipe: u64,
+    /// Pipe ID for stderr (parent reads). 0 if not piped.
+    pub stderr_pipe: u64,
+}
+
+/// Enhanced process spawn with explicit argv, env, and stdio piping.
+///
+/// # Safety
+/// Must be called with scheduler lock expectations satisfied.
+pub unsafe fn spawn_process_ex<R: BootRuntime>(
+    name: &str,
+    argv: Vec<Vec<u8>>,
+    env: BTreeMap<Vec<u8>, Vec<u8>>,
+    stdin_spec: StdioSpec,
+    stdout_spec: StdioSpec,
+    stderr_spec: StdioSpec,
+) -> Result<SpawnExResult, abi::errors::Errno> {
+    let rt = crate::runtime::<R>();
+    let modules = rt.modules();
+    let module = modules.iter().find(|m| m.name.contains(name))
+        .ok_or(abi::errors::Errno::ENOENT)?;
+
+    let aspace = rt.tasking().make_user_address_space();
+
+    let (mut entry, stack_info, regions) = crate::task::loader::load_module(rt, aspace, module)
+        .ok_or(abi::errors::Errno::ENOEXEC)?;
+    entry.arg0 = 0; // No raw arg for ex spawn
+
+    // Create pipes for piped stdio
+    let mut stdin_pipe: u64 = 0;
+    let mut stdout_pipe: u64 = 0;
+    let mut stderr_pipe: u64 = 0;
+
+    if stdin_spec == StdioSpec::Pipe {
+        stdin_pipe = crate::ipc::pipe::create(4096, 0);
+    }
+    if stdout_spec == StdioSpec::Pipe {
+        stdout_pipe = crate::ipc::pipe::create(4096, 0);
+    }
+    if stderr_spec == StdioSpec::Pipe {
+        stderr_pipe = crate::ipc::pipe::create(4096, 0);
+    }
+
+    let _irq = rt.irq_disable();
+
+    let lock = SCHEDULER.lock();
+    let ptr = lock.expect("Scheduler not initialized");
+    let sched = unsafe { &mut *(ptr as *mut super::types::Scheduler<R>) };
+
+    let id = sched.spawn_user_task(
+        entry, aspace, stack_info, regions,
+        crate::task::TaskPriority::Normal,
+        crate::task::Affinity::Any,
+    ).ok_or(abi::errors::Errno::EAGAIN)?;
+
+    // Determine parent PID
+    let cpu_idx = super::current_cpu_index::<R>();
+    let ppid = sched
+        .per_cpu
+        .get(cpu_idx)
+        .and_then(|pc| pc.current)
+        .and_then(|ctid| sched.tasks.iter().find(|t| t.id == ctid))
+        .and_then(|t| t.process_info.as_ref())
+        .map(|pi| pi.lock().pid)
+        .unwrap_or(0);
+
+    // Use provided argv, or fall back to module name
+    let final_argv = if argv.is_empty() {
+        alloc::vec![module.name.as_bytes().to_vec()]
+    } else {
+        argv
+    };
+
+    // Create per-process identity with provided argv & env
+    let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+        pid: id as u32,
+        ppid,
+        argv: final_argv,
+        env,
+    }));
+
+    // Store name and process_info on the task struct
+    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
+        let bytes = module.name.as_bytes();
+        let len = bytes.len().min(32);
+        task.name[..len].copy_from_slice(&bytes[..len]);
+        task.name_len = len as u8;
+        task.process_info = Some(pinfo);
+    }
+
+    // Queue setting the process name
+    super::graphify::set_name(id, module.name);
+
+    rt.irq_restore(_irq);
+
+    Ok(SpawnExResult {
+        child_tid: id,
+        stdin_pipe,
+        stdout_pipe,
+        stderr_pipe,
+    })
 }
 
 pub extern "C" fn user_thread_trampoline<R: BootRuntime>(arg: usize) -> ! {

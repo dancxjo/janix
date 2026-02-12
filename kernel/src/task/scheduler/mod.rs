@@ -27,13 +27,14 @@ pub use hooks::{
     add_user_mapping_current, alloc_user_stack_current, check_user_mapping_current,
     current_priority_current, current_tid_current, dump_stats_current, exit_current,
     get_user_mapping_at_current, handle_user_stack_fault_current, kill_by_tid_current,
-    remove_user_mappings_current, set_priority_current, sleep_ticks_current, spawn_process_current,
+    process_info_current, remove_user_mappings_current, set_priority_current,
+    sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
     spawn_user_thread_current, task_status_current, yield_now_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
     spawn, spawn_process, spawn_user_task_full, spawn_user_thread, spawn_with_priority,
-    user_thread_trampoline,
+    user_thread_trampoline, SpawnExResult, StdioSpec,
 };
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
 pub use types::{
@@ -304,6 +305,8 @@ pub fn init<R: BootRuntime>() {
             hooks::REMOVE_USER_MAPPINGS_HOOK = Some(vm::remove_user_mappings::<R>);
             hooks::CHECK_USER_MAPPING_HOOK = Some(vm::check_user_mapping::<R>);
             hooks::GET_USER_MAPPING_AT_HOOK = Some(vm::get_user_mapping_at::<R>);
+            hooks::PROCESS_INFO_HOOK = Some(process_info::<R>);
+            hooks::SPAWN_PROCESS_EX_HOOK = Some(spawn::spawn_process_ex::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
@@ -361,6 +364,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
             n
         },
         name_len: 4,
+        process_info: None,
     };
     sched.tasks.push(alloc::boxed::Box::new(task));
 
@@ -982,6 +986,31 @@ pub fn current_priority<R: BootRuntime>() -> TaskPriority {
 
 pub fn current_tid<R: BootRuntime>() -> u64 {
     crate::runtime::<R>().current_tid()
+}
+
+/// Get the current task's ProcessInfo Arc, if any.
+pub fn process_info<R: BootRuntime>() -> Option<alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>> {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+
+    let result = {
+        let lock = SCHEDULER.lock();
+        if let Some(ptr) = *lock {
+            let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+            let cpu_idx = current_cpu_index::<R>();
+            sched
+                .per_cpu
+                .get(cpu_idx)
+                .and_then(|pc| pc.current)
+                .and_then(|tid| sched.tasks.iter().find(|t| t.id == tid))
+                .and_then(|t| t.process_info.clone())
+        } else {
+            None
+        }
+    };
+
+    rt.irq_restore(_irq);
+    result
 }
 
 pub fn exit<R: BootRuntime>(code: i32) {

@@ -7,7 +7,9 @@ use crate::BootRuntime;
 use crate::BootTasking;
 use crate::simd::SimdState;
 use abi::types::StackInfo;
+use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use spin::Mutex;
 
 pub type TaskId = u64;
@@ -54,6 +56,18 @@ pub enum TaskState {
     Dead,
 }
 
+/// Per-process identity and storage.
+///
+/// Shared by all threads within a process via `Arc<Mutex<ProcessInfo>>`.
+/// Kernel tasks typically have `None` — only user processes created
+/// by `spawn_process` get one.
+pub struct ProcessInfo {
+    pub pid: u32,
+    pub ppid: u32,
+    pub argv: Vec<Vec<u8>>,
+    pub env: BTreeMap<Vec<u8>, Vec<u8>>,
+}
+
 pub struct Task<R: BootRuntime> {
     pub id: TaskId,
     pub state: TaskState,
@@ -83,6 +97,9 @@ pub struct Task<R: BootRuntime> {
     /// Short human-readable name (e.g. "bristle", "idle/0")
     pub name: [u8; 32],
     pub name_len: u8,
+
+    /// Per-process identity and storage (shared across threads).
+    pub process_info: Option<Arc<Mutex<ProcessInfo>>>,
 }
 
 pub fn init<R: BootRuntime>() {

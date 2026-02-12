@@ -186,9 +186,13 @@ impl IsoFs {
         // If direct match failed, try stripping version suffix from search path `b`
         // (to handle looking up "FILE;1" against "FILE")
         if let Some(pos) = b.rfind(';') {
-            let b_stripped = &b[..pos];
-            if a.eq_ignore_ascii_case(b_stripped) {
-                return true;
+            let suffix = &b[pos + 1..];
+            // Only strip if suffix is numeric (version number)
+            if !suffix.is_empty() && suffix.chars().all(|c| c.is_ascii_digit()) {
+                let b_stripped = &b[..pos];
+                if a.eq_ignore_ascii_case(b_stripped) {
+                    return true;
+                }
             }
         }
 
@@ -520,6 +524,14 @@ mod tests {
         // if they are part of the filename.
         // Current implementation blindly strips everything after ';'.
         assert!(!IsoFs::ascii_eq_ignore_case("foo;bar", "foo;baz"));
+    }
+
+    #[test]
+    fn test_ascii_eq_ignore_case_false_positive_stripping() {
+        // If we look for "foo;bar" (e.g. a Rock Ridge name), we should NOT match "foo".
+        // The semicolon in the search path might be part of the name, not a version separator.
+        // Currently this fails (returns true) because we blindly strip from the last semicolon.
+        assert!(!IsoFs::ascii_eq_ignore_case("foo", "foo;bar"));
     }
 
     struct MockBlockDevice {

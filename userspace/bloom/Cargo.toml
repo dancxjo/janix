@@ -11,7 +11,7 @@ surface-poison = []
 gpu = []  # Enable GPU-accelerated composition via virgl
 
 [dependencies]
-stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
+stem = { path = "../../stem", features = ["rt", "global-alloc"] }
 abi = { path = "../../abi" }
 fontdue = { version = "0.9", default-features = false, features = ["hashbrown"] }
 serde = { version = "1.0", default-features = false, features = ["derive", "alloc", "rc"] }

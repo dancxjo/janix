@@ -1,4 +1,7 @@
-#![no_std]
+// When targeting the kernel (target_os = "none"), stem is no_std.
+// When targeting userspace (target_os = "thingos"), stem uses std.
+#![cfg_attr(target_os = "none", no_std)]
+#![cfg_attr(target_os = "thingos", feature(restricted_std))]
 #![allow(unexpected_cfgs)]
 extern crate alloc;
 
@@ -22,7 +25,6 @@ pub mod memory;
 pub mod net;
 /// Platform Abstraction Layer - explicit platform contract
 pub mod pal;
-#[cfg(feature = "panic-handler")]
 pub mod panic;
 pub mod pci;
 pub mod perf;

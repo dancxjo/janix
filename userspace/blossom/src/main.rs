@@ -1,4 +1,4 @@
-#![no_std]
+#![feature(restricted_std)]
 #![no_main]
 
 //! # Blossom - Layout and Paint Service

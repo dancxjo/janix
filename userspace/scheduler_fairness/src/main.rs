@@ -3,7 +3,7 @@
 //! Verifies that the scheduler properly preempts CPU-bound threads so that
 //! all runnable threads make progress. Fails loudly if starvation is detected.
 
-#![no_std]
+#![feature(restricted_std)]
 #![no_main]
 
 use core::sync::atomic::{AtomicBool, AtomicU64, Ordering};

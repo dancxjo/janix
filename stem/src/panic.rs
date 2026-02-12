@@ -1,37 +1,5 @@
-#[cfg(all(not(test), any(target_os = "none", target_os = "thingos")))]
-use crate::pal;
-#[cfg(all(not(test), any(target_os = "none", target_os = "thingos")))]
-use core::panic::PanicInfo;
-
-#[cfg(all(not(test), any(target_os = "none", target_os = "thingos")))]
-#[panic_handler]
-fn panic(info: &PanicInfo) -> ! {
-    struct BufWriter {
-        buf: [u8; 256],
-        len: usize,
-    }
-
-    impl core::fmt::Write for BufWriter {
-        fn write_str(&mut self, s: &str) -> core::fmt::Result {
-            let bytes = s.as_bytes();
-            let remaining = self.buf.len().saturating_sub(self.len);
-            let to_copy = bytes.len().min(remaining);
-            if to_copy == 0 {
-                return Ok(());
-            }
-            self.buf[self.len..self.len + to_copy].copy_from_slice(&bytes[..to_copy]);
-            self.len += to_copy;
-            Ok(())
-        }
-    }
-
-    let mut writer = BufWriter {
-        buf: [0u8; 256],
-        len: 0,
-    };
-    let _ = core::fmt::write(&mut writer, format_args!("STEM PANIC: {}\n", info));
-    pal::abort::debug_write_str(
-        core::str::from_utf8(&writer.buf[..writer.len]).unwrap_or("STEM PANIC\n"),
-    );
-    pal::abort::abort(101)
-}
+// Panic handling is now provided externally:
+// - Kernel (target_os = "none"): bran provides its own #[panic_handler]
+// - Userspace (target_os = "thingos"): std's panic_abort handles it
+//
+// stem no longer needs to provide a panic handler in either case.

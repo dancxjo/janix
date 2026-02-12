@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-stem = { path = "../../stem", features = ["rt", "global-alloc", "panic-handler"] }
+stem = { path = "../../stem", features = ["rt", "global-alloc"] }
 abi = { path = "../../abi" }
 iso9660 = { path = "../iso9660" }

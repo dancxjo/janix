@@ -1,4 +1,4 @@
-#![no_std]
+#![feature(restricted_std)]
 #![no_main]
 
 use abi::schema::{keys, kinds, source};

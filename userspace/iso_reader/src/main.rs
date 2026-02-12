@@ -3,7 +3,7 @@
 //! Scans boot CD-ROM for ISO9660 filesystem and publishes discovered files
 //! to the System Graph with the same schema as Limine modules.
 
-#![no_std]
+#![feature(restricted_std)]
 #![no_main]
 
 extern crate alloc;

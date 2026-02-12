@@ -1,4 +1,4 @@
-#![no_std]
+#![feature(restricted_std)]
 #![no_main]
 
 use stem::syscall::{ioport_read, irq_subscribe, irq_wait, port_send, PortHandle};

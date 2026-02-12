@@ -2,7 +2,7 @@
 //!
 //! Provides parsing and execution of OpenGQL-subset queries against the system graph.
 
-#![no_std]
+#![feature(restricted_std)]
 
 extern crate alloc;
 

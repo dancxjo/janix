@@ -117,7 +117,7 @@ bench-smoke:
 die:
     cargo xtask kill
 
-# Build sprout user app (uses build-std for bare metal)
+# Build sprout user app
 sprout arch=karch:
     #!/usr/bin/env bash
     TARGET_ARCH="{{arch}}"
@@ -126,8 +126,9 @@ sprout arch=karch:
     else
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
+    export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     echo "Building sprout for $TARGET_ARCH using $TARGET_JSON..."
-    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p sprout
+    RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p sprout
 
 # Build rtc_cmos user app
 rtc_cmos arch=karch:
@@ -138,8 +139,9 @@ rtc_cmos arch=karch:
     else
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
+    export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     echo "Building rtc_cmos for $TARGET_ARCH using $TARGET_JSON..."
-    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p rtc_cmos
+    RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p rtc_cmos
 
 # Build clock user app
 clock arch=karch:
@@ -150,8 +152,9 @@ clock arch=karch:
     else
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
+    export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     echo "Building clock for $TARGET_ARCH using $TARGET_JSON..."
-    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p clock
+    RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p clock
 
 # Build bristle user app
 bristle arch=karch:
@@ -162,8 +165,9 @@ bristle arch=karch:
     else
         TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
     fi
+    export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     echo "Building bristle for $TARGET_ARCH using $TARGET_JSON..."
-    cargo +nightly build -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target "$TARGET_JSON" -p bristle
+    RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p bristle
 
 # Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
 fetch:
@@ -175,7 +179,8 @@ test *args:
 
 # Check everything (compilation + UI split)
 check: check-ui-split
-    cargo +nightly check -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem --target targets/x86_64-unknown-thingos.json -p bloom -p blossom
+    export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
+    cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec check --target targets/x86_64-unknown-thingos.json -p bloom -p blossom
 
 # Run smoke tests (quick boot validation)
 smoke:
@@ -257,22 +262,4 @@ rust-apply-patches:
     git apply ../../patches/rust/thingos-pal.patch
     echo "==> Applied patches/rust/thingos-pal.patch"
 
-# Build a userspace app with vendored std (experimental)
-rust-build-std app="hello_std" arch=karch:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    TARGET_ARCH="{{arch}}"
-    if [ "$TARGET_ARCH" == "riscv64" ]; then
-        TARGET_JSON="targets/riscv64gc-unknown-thingos.json"
-    else
-        TARGET_JSON="targets/${TARGET_ARCH}-unknown-thingos.json"
-    fi
-    # Point build-std at our vendored (patchable) Rust library source
-    export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
-    echo "Building {{app}} for $TARGET_ARCH with vendored Rust source..."
-    echo "  std source: $__CARGO_TESTS_ONLY_SRC_ROOT"
-    RUSTFLAGS="-Awarnings" cargo +nightly \
-        -Z build-std=core,alloc,std,panic_abort \
-        -Z build-std-features=compiler-builtins-mem \
-        -Z json-target-spec \
-        build --target "$TARGET_JSON" -p {{app}}
+

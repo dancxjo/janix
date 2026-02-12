@@ -15,8 +15,8 @@ const CONFIG = {
     // D3 Force Layout
     D3_ALPHA: 1,
     D3_ALPHA_MIN: 0.001,
-    D3_ALPHA_DECAY: 0.0228,
-    D3_VELOCITY_DECAY: 0.4,
+    D3_ALPHA_DECAY: 0.05,
+    D3_VELOCITY_DECAY: 0.6,
     D3_LINK_DISTANCE: 80,
     D3_MANY_BODY_STRENGTH: -300,
     D3_COLLIDE_RADIUS: 50,
@@ -366,11 +366,10 @@ function initCytoscape() {
 
     // Drag handlers
     state.cy.on('grab', 'node', (evt) => {
-        // Option: if simulation is running, we might want to ensure it feels responsive
-        // cytoscape-d3-force usually handles drag if ungrabifyWhileSimulating: false
-        // But we might want to "wake up" the simulation if it settled
+        // Unlock the grabbed node so it can move, and gently warm the sim
+        evt.target.unlock();
         if (state.layout && state.layout.force) {
-            state.layout.force.alphaTarget(0.3).restart();
+            state.layout.force.alphaTarget(0.05).restart();
         }
     });
 
@@ -378,10 +377,12 @@ function initCytoscape() {
         const node = evt.target;
         state.movedNodes.add(node.id());
 
-        // Wake simulation
+        // Lock the dragged node at its new position
+        node.lock();
+
+        // Let simulation cool down
         if (state.layout && state.layout.force && state.forceEnabled) {
             state.layout.force.alphaTarget(0).restart();
-            // alphaTarget 0 lets it cool down again
         }
 
         if (state.selectedNode && state.selectedNode.id() === node.id()) {
@@ -574,6 +575,9 @@ function runD3Layout(fit = false) {
         state.layout.stop();
     }
 
+    // Unlock all nodes so the fresh layout can position them
+    state.cy.nodes().forEach(n => n.unlock());
+
     // Configure d3-force layout
     const options = {
         name: 'd3-force',
@@ -596,7 +600,9 @@ function runD3Layout(fit = false) {
             setStatus('Relative stability', '');
         },
         stop: function () {
-            // Stopped
+            // Freeze all node positions once the simulation ends
+            state.cy.nodes().forEach(n => n.lock());
+            setStatus('Layout settled', '');
         }
     };
 
@@ -630,8 +636,8 @@ function runD3Layout(fit = false) {
         // 3. svc.Root centered
         sim.force('root_center', window.d3.forceRadial(0, 0, 0).strength(d => d.id === 'svc.Root' ? 0.8 : 0));
 
-        // Restart to apply new forces
-        sim.alpha(1).restart();
+        // Forces are already active; let the current alpha drive convergence
+        // without re-heating the simulation.
     }
 }
 
@@ -677,10 +683,9 @@ function zapToCenter(nodeId) {
         easing: 'ease-out-cubic'
     });
 
-    // 2. Reheat simulation
+    // 2. Gently nudge the simulation
     if (state.layout && state.layout.force) {
-        // "Zap": high alpha to shake things up
-        state.layout.force.alpha(0.8).restart();
+        state.layout.force.alpha(0.15).restart();
     } else {
         // Fallback if direct force access fails
         runD3Layout(false);
@@ -879,10 +884,10 @@ function explainSelected(thingId) {
         source.close();
         state.explainSource = null;
         if ($('explainContent').textContent.length === 0) {
-             $('explainStatus').textContent = 'Connection failed';
-             $('explainStatus').classList.add('error');
+            $('explainStatus').textContent = 'Connection failed';
+            $('explainStatus').classList.add('error');
         } else {
-             $('explainStatus').textContent = 'Done (closed)';
+            $('explainStatus').textContent = 'Done (closed)';
         }
     };
 }
@@ -1260,6 +1265,8 @@ function bindEvents() {
     $('relaxToggle').addEventListener('change', (e) => {
         state.forceEnabled = e.target.checked;
         if (state.forceEnabled) {
+            // Unlock all nodes so the simulation can reposition them
+            state.cy.nodes().forEach(n => n.unlock());
             runD3Layout(false);
         } else {
             if (state.layout) state.layout.stop();

@@ -9,6 +9,7 @@ use kernel::{CpuId, FrameAllocatorHook, IrqState, MapKind, MapPerms, UserEntry, 
 pub mod acpi;
 pub mod apic;
 pub mod cmos;
+pub mod entropy;
 pub mod gdt;
 pub mod idt;
 pub mod ioapic;
@@ -668,6 +669,10 @@ impl ArchRuntime for X86_64Runtime {
                 self.send_ipi(i, idt::IRQ_TLB_SHOOTDOWN_VECTOR);
             }
         }
+    }
+
+    fn fill_entropy(&self, dst: &mut [u8]) -> usize {
+        entropy::fill_entropy(dst)
     }
 
     unsafe fn start_cpu(

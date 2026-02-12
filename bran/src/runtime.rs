@@ -196,6 +196,12 @@ pub trait ArchRuntime {
     }
 
     fn unmap_phys_temp(&self, _virt: u64, _size: usize) {}
+
+    /// Fill buffer with hardware entropy bytes.
+    /// Returns the number of bytes actually filled (0 = no HW RNG available).
+    fn fill_entropy(&self, _dst: &mut [u8]) -> usize {
+        0
+    }
 }
 
 // --- Generic Runtime ---
@@ -352,6 +358,10 @@ impl<A: ArchRuntime + 'static> BootRuntimeBase for Runtime<A> {
 
     fn tlb_shootdown_broadcast(&self) {
         self.arch.tlb_shootdown_broadcast()
+    }
+
+    fn fill_entropy(&self, dst: &mut [u8]) -> usize {
+        self.arch.fill_entropy(dst)
     }
 }
 

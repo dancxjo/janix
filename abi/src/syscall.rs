@@ -199,3 +199,10 @@ pub mod pipe_flags {
     /// Close-on-exec (stored but no-op until process exec support).
     pub const CLOEXEC: u32 = 1 << 1;
 }
+
+// ============================================================================
+// Block 0x210–0x21F: Entropy
+// ============================================================================
+/// Fill a user buffer with random bytes from the kernel entropy pool.
+/// Args: buf_ptr, buf_len. Returns 0 on success.
+pub const SYS_GETRANDOM: u32 = 0x210;

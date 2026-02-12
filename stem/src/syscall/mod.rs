@@ -555,3 +555,35 @@ pub fn root_link(src: usize, rel_ptr: usize, dst: usize) -> Result<usize, Errno>
     };
     Ok(ret)
 }
+
+// ============================================================================
+// Entropy / Random
+// ============================================================================
+
+/// Fill `buf` with random bytes from the kernel entropy pool.
+pub fn getrandom(buf: &mut [u8]) -> Result<(), Errno> {
+    let mut offset = 0;
+    while offset < buf.len() {
+        let chunk = &mut buf[offset..];
+        let ret = unsafe {
+            raw_syscall6(
+                SYS_GETRANDOM,
+                chunk.as_mut_ptr() as usize,
+                chunk.len(),
+                0,
+                0,
+                0,
+                0,
+            )
+        };
+        if ret < 0 {
+            return Err(unsafe { core::mem::transmute(-(ret as i32)) });
+        }
+        // Kernel caps at 256 bytes per call, advance by the amount requested
+        // (we know the kernel filled min(len, 256))
+        let filled = chunk.len().min(256);
+        offset += filled;
+    }
+    Ok(())
+}
+

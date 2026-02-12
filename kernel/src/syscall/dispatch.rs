@@ -126,6 +126,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_PIPE_WRITE => handlers::sys_pipe_write(args[0], args[1], args[2]),
         SYS_PIPE_CLOSE => handlers::sys_pipe_close(args[0], args[1]),
 
+        SYS_GETRANDOM => handlers::sys_getrandom(args[0], args[1]),
+
         _ => {
             crate::kprintln!("SYSCALL: Unknown syscall #{}", syscall_id);
             Err(abi::errors::Errno::ENOSYS)

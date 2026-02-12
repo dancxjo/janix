@@ -3,6 +3,7 @@
 extern crate alloc;
 
 pub mod device_registry;
+pub mod entropy;
 pub mod ipc;
 pub mod irq;
 pub mod logging;
@@ -307,6 +308,12 @@ pub trait BootRuntimeBase: 'static {
     ) -> Result<(), Errno> {
         Err(Errno::NotSupported)
     }
+
+    /// Fill buffer with hardware entropy bytes.
+    /// Returns the number of bytes actually filled (0 = no HW RNG available).
+    fn fill_entropy(&self, _dst: &mut [u8]) -> usize {
+        0
+    }
 }
 
 pub trait BootRuntime: BootRuntimeBase + Sized + 'static {
@@ -540,6 +547,9 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     memory::init(runtime);
     contract!("Initializing global allocator...");
     memory::global_alloc::init(runtime);
+
+    contract!("Seeding entropy pool...");
+    crate::entropy::seed_from_hardware();
 
     contract!("Initializing SIMD...");
     runtime.simd_init_cpu();

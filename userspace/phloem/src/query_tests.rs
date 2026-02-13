@@ -423,8 +423,8 @@ mod tests {
         let mut ex = GraphExecutor::with_graph(&g);
         let cmd = parse("MERGE (n:Kind {key: 1}) RETURN count(n)").unwrap();
         let res = ex.execute(cmd);
-        // MERGE is not fully implemented, but should not panic
-        assert!(!res.success || res.success); // Either works or reports error
+        // MERGE should succeed now
+        assert!(res.success);
     }
 
     // ===== Parser-level tests for unsupported features =====

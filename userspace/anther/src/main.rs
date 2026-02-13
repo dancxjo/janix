@@ -759,15 +759,35 @@ fn run_server_mode(port: u16) -> ! {
         port, listen_handle
     );
 
+    // Global slot for passing conn_handle to the worker trampoline.
+    // Protected by sequential spawning: we store before spawn, worker reads
+    // before we can spawn again (single accept loop on the main thread).
+    static CONN_HANDLE_SLOT: core::sync::atomic::AtomicU32 =
+        core::sync::atomic::AtomicU32::new(0);
+
+    extern "C" fn worker_trampoline() -> ! {
+        let conn = CONN_HANDLE_SLOT.load(core::sync::atomic::Ordering::Acquire);
+        handle_connection(conn);
+        // Exit thread
+        stem::syscall::exit(0);
+    }
+
     // Main server loop — accept connections and spawn a thread per connection.
-    // The main thread only does accept; each worker thread creates its own
-    // NetClient (isolated IPC port pair) so responses never interleave.
+    // Uses stem::thread::spawn because std::thread::spawn hangs on ThingOS
+    // (PAL's Thread::new stack allocation or SYS_SPAWN_THREAD issue).
     loop {
         if let Some(accept) = net.tcp_accept(listen_handle) {
             let conn = accept.conn_handle;
-            std::thread::spawn(move || {
-                handle_connection(conn);
-            });
+            info!("anther: Accepted connection, spawning thread for conn_handle={}", conn);
+            CONN_HANDLE_SLOT.store(conn, core::sync::atomic::Ordering::Release);
+            match stem::thread::spawn(worker_trampoline) {
+                Ok(tid) => {
+                    info!("anther: Thread spawned TID={} for conn_handle={}", tid, conn);
+                }
+                Err(e) => {
+                    warn!("anther: Thread spawn FAILED for conn_handle={}: {:?}", conn, e);
+                }
+            }
             continue;
         }
 
@@ -779,10 +799,16 @@ fn run_server_mode(port: u16) -> ! {
 /// Handle a single HTTP connection (runs in its own thread).
 /// Creates a per-thread NetClient so IPC responses never interleave.
 fn handle_connection(conn_handle: u32) {
+    let tid = stem::syscall::get_tid().unwrap_or(0);
+    info!("anther: Worker thread TID={} starting for conn_handle={}", tid, conn_handle);
+
     let net = match NetClient::connect() {
-        Some(n) => n,
+        Some(n) => {
+            info!("anther: Worker TID={} connected to netd OK", tid);
+            n
+        }
         None => {
-            warn!("anther: Worker thread failed to connect to netd, dropping connection");
+            warn!("anther: Worker TID={} failed to connect to netd, dropping connection", tid);
             return;
         }
     };
@@ -794,9 +820,15 @@ fn handle_connection(conn_handle: u32) {
         let mut header_end = None;
         let mut scan_from = request_data.len().saturating_sub(3);
         let mut attempts = 0;
+        let mut got_any_data = false;
 
         while attempts < 200 {
             if let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
+                if !got_any_data {
+                    info!("anther: Worker TID={} got first {} bytes on conn_handle={}",
+                          tid, data.len(), conn_handle);
+                    got_any_data = true;
+                }
                 request_data.extend_from_slice(&data);
 
                 if let Some(pos) = find_header_end(&request_data, scan_from) {
@@ -819,7 +851,10 @@ fn handle_connection(conn_handle: u32) {
 
         let Some(header_end) = header_end else {
             if !request_data.is_empty() {
-                warn!("anther: Request headers incomplete or timed out");
+                warn!("anther: TID={} headers incomplete ({} bytes so far)", tid, request_data.len());
+            } else {
+                warn!("anther: TID={} conn_handle={} recv timed out with no data (200 attempts)",
+                      tid, conn_handle);
             }
             break;
         };

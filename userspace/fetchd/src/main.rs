@@ -30,12 +30,22 @@ fn set_string_prop(id: ThingId, key_name: &str, value: &str) {
     prop_set(id, key_name, bs_id.to_u64_lossy()).ok();
 }
 
-fn render_window(
+/// Holds the node IDs for the fetchd UI tree so we can update text without recreating nodes.
+struct FetchdUiNodes {
+    ip_node: ThingId,
+    status_node: ThingId,
+}
+
+/// Build the initial UI tree for the network window. Returns the node IDs for later updates.
+fn render_window_init(
     window_id: ThingId,
     ip_text: &str,
     status_text: &str,
-) -> Result<(), stem::errors::Error> {
+) -> Option<FetchdUiNodes> {
     let mut ui = Petals::begin_window(window_id);
+    let mut ip_node = None;
+    let mut status_node = None;
+
     let root = ui.column(|ui| {
         let label = ui.text("IP Address")?;
         let _ = ui.set_font_name(label, "NotoSans-Regular");
@@ -46,17 +56,39 @@ fn render_window(
         let _ = ui.set_font_name(ip, "DSEG7Classic-Regular");
         let _ = ui.set_font_size(ip, 48);
         let _ = ui.set_color(ip, 0xFF107050);
+        ip_node = Some(ip);
 
         let status = ui.text(status_text)?;
         let _ = ui.set_font_name(status, "NotoSans-Regular");
         let _ = ui.set_font_size(status, 12);
         let _ = ui.set_color(status, 0xFF707070);
+        status_node = Some(status);
+
         Ok(())
-    })?;
-    let _ = ui.set_gap(root, 12);
-    let _ = ui.set_padding(root, 20);
-    ui.finish()?;
-    Ok(())
+    });
+    if let Ok(root) = root {
+        let _ = ui.set_gap(root, 12);
+        let _ = ui.set_padding(root, 20);
+    }
+    if ui.finish().is_err() {
+        return None;
+    }
+    match (ip_node, status_node) {
+        (Some(ip), Some(status)) => Some(FetchdUiNodes {
+            ip_node: ip,
+            status_node: status,
+        }),
+        _ => None,
+    }
+}
+
+/// Update just the text content on existing nodes and bump scene gen (no new nodes created).
+fn render_window_update(window_id: ThingId, nodes: &FetchdUiNodes, ip_text: &str, status_text: &str) {
+    set_string_prop(nodes.ip_node, keys::UI_TEXT, ip_text);
+    set_string_prop(nodes.status_node, keys::UI_TEXT, status_text);
+    // Bump scene gen so Bloom re-renders
+    let gen = prop_get(window_id, keys::UI_SCENE_GEN).unwrap_or(0);
+    prop_set(window_id, keys::UI_SCENE_GEN, gen.wrapping_add(1)).ok();
 }
 
 /// Unpack IP address from u64 to dotted decimal string
@@ -73,6 +105,7 @@ fn main(_arg: usize) -> ! {
     info!("FETCHD: Starting IP address display...");
 
     let mut window_id: Option<ThingId> = None;
+    let mut ui_nodes: Option<FetchdUiNodes> = None;
 
     // Wait for UI Root (Compositor) - like Bloom / Photosynthesis pattern
     info!("FETCHD: Waiting for UI Root (Compositor)...");
@@ -105,9 +138,14 @@ fn main(_arg: usize) -> ! {
         prop_set(win, keys::UI_Y, 0).ok();
         prop_set(win, keys::UI_INSET_BOTTOM, 30).ok(); // Match clock's bottom offset
 
-        // Initial scene publish
-        if let Err(e) = render_window(win, "-.-.-.--", "Waiting for network...") {
-            info!("FETCHD: initial scene publish failed: {:?}", e);
+        // Initial scene publish — create the tree once
+        match render_window_init(win, "-.-.-.--", "Waiting for network...") {
+            Some(nodes) => {
+                ui_nodes = Some(nodes);
+            }
+            None => {
+                info!("FETCHD: initial scene publish failed");
+            }
         }
     }
 
@@ -147,11 +185,9 @@ fn main(_arg: usize) -> ! {
             }
         }
 
-        // Update window if we have one
-        if let Some(win) = window_id {
-            if let Err(e) = render_window(win, &ip_text, &status_text) {
-                info!("FETCHD: scene publish failed: {:?}", e);
-            }
+        // Update existing UI nodes (no new graph nodes created)
+        if let (Some(win), Some(ref nodes)) = (window_id, &ui_nodes) {
+            render_window_update(win, nodes, &ip_text, &status_text);
         }
 
         // Poll every second

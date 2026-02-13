@@ -53,6 +53,9 @@ pub enum ApiRoute<'a> {
     /// GET /api/v1/watch
     Watch,
 
+    /// GET /api/v1/things/{id}/watch — SSE stream of property changes
+    WatchThing { id: &'a str },
+
     /// GET /api/v1/subgraph?root=...&depth=...
     GetSubgraph { query: &'a str },
 
@@ -121,6 +124,9 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
             Some(ApiRoute::GetBytespaceMetadata { thing_id, key })
         }
 
+        // /api/v1/things/{id}/watch
+        (Method::Get, ["things", id, "watch"]) => Some(ApiRoute::WatchThing { id }),
+
         // /api/v1/things/{id}/launch
         (Method::Get, ["things", id, "launch"]) => Some(ApiRoute::GetLaunchInfo { id }),
         (Method::Post, ["things", id, "launch"]) => Some(ApiRoute::Launch { id }),
@@ -180,6 +186,7 @@ pub fn match_route<'a>(method: Method, path: &'a str) -> Option<ApiRoute<'a>> {
         | (_, ["things", _, "props"])
         | (_, ["things", _, "bytespaces", _])
         | (_, ["things", _, "bytespaces", _, "meta"])
+        | (_, ["things", _, "watch"])
         | (_, ["things", _, "launch"])
         | (_, ["things", _, "explain"])
         | (_, ["watch"])

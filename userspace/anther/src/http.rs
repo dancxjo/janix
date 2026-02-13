@@ -33,6 +33,9 @@ pub enum ResponseBody {
     Static(&'static [u8]),
     Owned(Vec<u8>),
     Stream(Box<dyn llm::ChatStream + Send>),
+    /// SSE watch stream for a specific Thing's properties.
+    /// The connection handler drives the kernel watch loop.
+    WatchStream { thing_id: u64 },
 }
 
 impl ResponseBody {
@@ -41,6 +44,7 @@ impl ResponseBody {
             ResponseBody::Static(s) => s,
             ResponseBody::Owned(o) => o.as_slice(),
             ResponseBody::Stream(_) => &[],
+            ResponseBody::WatchStream { .. } => &[],
         }
     }
 
@@ -49,6 +53,7 @@ impl ResponseBody {
             ResponseBody::Static(s) => Some(s.len()),
             ResponseBody::Owned(o) => Some(o.len()),
             ResponseBody::Stream(_) => None,
+            ResponseBody::WatchStream { .. } => None,
         }
     }
 }

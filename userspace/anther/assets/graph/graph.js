@@ -244,7 +244,7 @@ const state = {
     lastLayoutMs: 0,
     loadSeq: 0,
     // Property watching
-    watchInterval: null,
+    watchEs: null,
     lastProps: {},  // Track previous values for change detection
     launchInFlight: false,
     explainSource: null,
@@ -966,42 +966,48 @@ async function launchSelected(thingId) {
 }
 
 // =============================================================================
-// Property Watching
+// Property Watching (SSE)
 // =============================================================================
 
-const WATCH_POLL_INTERVAL_MS = 1000;  // Poll every 1 second
-
-async function fetchProps(thingId) {
-    try {
-        const r = await fetchWithTimeout(`/api/v1/things/${thingId}/props`);
-        if (!r.ok) {
-            return null;
-        }
-        return r.json();
-    } catch (err) {
-        console.warn('[Watch] Fetch failed:', err);
-        return null;
-    }
-}
-
 function startWatching(thingId) {
-    // Clear previous props
+    stopWatching();
+
+    // Clear previous props and show loading state
     state.lastProps = {};
-    renderProps(null, true);  // Show loading state
+    renderProps(null, true);
 
-    // Fetch immediately
-    pollProps(thingId, true);
+    const url = `/api/v1/things/${thingId}/watch`;
+    const es = new EventSource(url);
+    state.watchEs = es;
 
-    // Set up interval for subsequent polls
-    state.watchInterval = setInterval(() => {
-        pollProps(thingId, false);
-    }, WATCH_POLL_INTERVAL_MS);
+    es.addEventListener('props', (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            $('propsLoading').style.display = 'none';
+            renderProps(data, false);
+        } catch (err) {
+            console.warn('[Watch] Parse error:', err);
+        }
+    });
+
+    es.addEventListener('error', (e) => {
+        try {
+            const data = JSON.parse(e.data);
+            console.error('[Watch] Server error:', data.error);
+        } catch {
+            // Connection error — EventSource will auto-reconnect
+        }
+    });
+
+    es.onerror = () => {
+        // EventSource reconnects automatically on transient errors
+    };
 }
 
 function stopWatching() {
-    if (state.watchInterval) {
-        clearInterval(state.watchInterval);
-        state.watchInterval = null;
+    if (state.watchEs) {
+        state.watchEs.close();
+        state.watchEs = null;
     }
     state.lastProps = {};
     // Reset props list to empty state
@@ -1009,24 +1015,6 @@ function stopWatching() {
     $('propsLoading').style.display = 'none';
 }
 
-async function pollProps(thingId, isInitial) {
-    if (isInitial) {
-        $('propsLoading').style.display = 'inline';
-    }
-
-    const data = await fetchProps(thingId);
-
-    $('propsLoading').style.display = 'none';
-
-    if (!data) {
-        if (isInitial) {
-            renderProps({ props: {} }, false);
-        }
-        return;
-    }
-
-    renderProps(data, false);
-}
 
 function renderProps(data, isLoading) {
     const container = $('propsList');

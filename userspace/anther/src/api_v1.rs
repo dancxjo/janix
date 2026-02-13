@@ -411,6 +411,24 @@ pub fn handle_watch(_req: &Request<'_>) -> (&'static str, ResponseBody) {
     ))
 }
 
+/// GET /api/v1/things/{id}/watch
+/// Returns an SSE stream of property changes for a specific Thing.
+pub fn handle_watch_thing(id_str: &str) -> (&'static str, ResponseBody) {
+    let id = match parse_thing_id(id_str) {
+        Ok(id) => id,
+        Err(err) => return error_response(err),
+    };
+
+    // Verify the thing exists
+    match stem::syscall::graph::get_kind(id) {
+        Ok(k) if k != 0 => {},
+        _ => return error_response(ApiError::not_found(format!("Thing {} not found", id))),
+    };
+
+    // Return a WatchStream marker — the actual SSE loop is driven by handle_connection
+    ("200 OK", ResponseBody::WatchStream { thing_id: id })
+}
+
 /// GET /api/v1/things/{id}/launch
 /// Returns whether the Thing is launchable as a process.
 pub fn handle_get_launch_info(id_str: &str) -> (&'static str, ResponseBody) {
@@ -1633,6 +1651,7 @@ pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> (&'stati
         ApiRoute::ExplainThing { id } => handle_explain_thing(id),
         ApiRoute::ResolvePath { path } => handle_path_resolve(path),
         ApiRoute::Watch => handle_watch(req),
+        ApiRoute::WatchThing { id } => handle_watch_thing(id),
         ApiRoute::GetSubgraph { query } => handle_get_subgraph(query),
         ApiRoute::PatchLayout => handle_patch_layout(body),
         ApiRoute::ExecuteGqlQuery => handle_execute_gql_query(body),

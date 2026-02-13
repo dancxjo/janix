@@ -154,15 +154,12 @@ fn route_request(
         if let Some(route) = router::match_route(method, path) {
             // For API routes, we need the request body (for POST/PUT/PATCH)
             let (status, api_resp) = api_v1::dispatch(route, req, body);
-            // Check if api_resp is a Stream or just bytes
-            // api_v1::dispatch now returns (status, ResponseBody) instead of (status, Vec<u8>)
-            // We need to update api_v1::dispatch signature.
-            // But I'll handle that by updating api_v1.rs.
-            // Wait, I can't change api_v1 signature here.
-            // I should update api_v1::dispatch to return ResponseBody.
-            // But api_v1.rs is not updated yet.
-            // I'll assume I update api_v1.rs as well to return ResponseBody.
-            return build_response(status, "application/json", api_resp, keep_alive);
+            // WatchStream needs SSE headers, not JSON
+            let content_type = match &api_resp {
+                ResponseBody::WatchStream { .. } => "text/event-stream",
+                _ => "application/json",
+            };
+            return build_response(status, content_type, api_resp, keep_alive);
         }
     }
 
@@ -899,11 +896,6 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                  loop {
                      match stream.poll_next(&mut cx) {
                          Poll::Ready(Ok(Some(delta))) => {
-                             // Format SSE data as JSON
-                             // Avoid serde here if possible, just use format since fields are known
-                             // Need to escape strings properly though.
-                             // Simple JSON: {"text": "...", "finish": "..."}
-
                              let finish_str = match delta.finish {
                                  Some(f) => match f {
                                      llm::FinishReason::Stop => "\"stop\"",
@@ -944,6 +936,88 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                          }
                      }
                  }
+            }
+            ResponseBody::WatchStream { thing_id } => {
+                use alloc::format;
+                use abi::root::RootWatchFilter;
+                use abi::types::{WatchSpec, WATCH_START_LATEST};
+
+                // Reuse the existing props handler for consistent JSON output
+                let fetch_props_json = |tid: u64| -> Option<Vec<u8>> {
+                    let id_str = format!("{}", tid);
+                    let (status, body) = api_v1::handle_get_thing_props(&id_str);
+                    if status == "200 OK" {
+                        match body {
+                            ResponseBody::Owned(v) => Some(v),
+                            _ => None,
+                        }
+                    } else {
+                        None
+                    }
+                };
+
+                // 1. Send initial props
+                if let Some(initial_json) = fetch_props_json(thing_id) {
+                    let event = format!("event: props\ndata: {}\n\n", core::str::from_utf8(&initial_json).unwrap_or("{}"));
+                    send_chunk(net, conn_handle, event.as_bytes());
+                }
+
+                // 2. Open kernel watch filtered to this subject
+                let filter = RootWatchFilter::subject(thing_id);
+                let spec = WatchSpec {
+                    query_ptr: 0,
+                    query_len: 0,
+                    mode: 1, // StreamOnly
+                    _padding: 0,
+                    start_seq: WATCH_START_LATEST,
+                    filter_ptr: &filter as *const _ as u64,
+                    filter_len: RootWatchFilter::SIZE as u64,
+                };
+
+                let watch_handle = match stem::syscall::root_watch_open(&spec) {
+                    Ok(h) => h,
+                    Err(_) => {
+                        let err_event = "event: error\ndata: {\"error\":\"Failed to open watch\"}\n\n";
+                        send_chunk(net, conn_handle, err_event.as_bytes());
+                        send_chunk(net, conn_handle, &[]); // End chunked stream
+                        break;
+                    }
+                };
+
+                // 3. Stream loop
+                let mut watch_buf = alloc::vec![0u8; 4096];
+                let mut seq_out = 0u64;
+                let mut stall_count = 0u32;
+
+                loop {
+                    match stem::syscall::root_watch_next(watch_handle, &mut seq_out, &mut watch_buf) {
+                        Ok(_len) => {
+                            // Something changed — re-fetch props and send
+                            stall_count = 0;
+                            if let Some(json) = fetch_props_json(thing_id) {
+                                let event = format!("event: props\ndata: {}\n\n", core::str::from_utf8(&json).unwrap_or("{}"));
+                                send_chunk(net, conn_handle, event.as_bytes());
+                            }
+                        }
+                        Err(abi::errors::Errno::EAGAIN) => {
+                            // No pending events — send a keep-alive comment every ~30s
+                            stall_count += 1;
+                            if stall_count % 600 == 0 {
+                                send_chunk(net, conn_handle, b": keepalive\n\n");
+                            }
+                            stem::syscall::sleep_ms(50);
+                        }
+                        Err(abi::errors::Errno::EOVERFLOW) => {
+                            continue; // Skip overflow events
+                        }
+                        Err(_) => {
+                            break; // Fatal watch error
+                        }
+                    }
+                }
+
+                // 4. Cleanup
+                let _ = stem::syscall::root_watch_close(watch_handle);
             }
         }
 

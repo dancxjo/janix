@@ -1,5 +1,40 @@
 # Changelog
 
+## AI-Powered Services, Font Architecture & Driver Decoupling
+
+This update introduces significant capabilities to the userspace, marking the arrival of AI integration and a major refactoring of core driver services.
+
+### 🤖 AI & Web Services
+
+*   **Anther**: A new, robust HTTP server acting as the system's web interface and AI gateway. It integrates with `Ollama` to provide LLM capabilities via a REST API and Server-Sent Events (SSE).
+    *   *Features*: Process monitoring (`/top`), Graph inspection (`/graph`), UI rendering (`/ui`), and file uploads.
+    *   *Architecture*: Now employs a thread-per-connection model with isolated `NetClient` instances, ensuring stable concurrent request handling.
+    *   *Artifacts*: `userspace/anther/`
+
+### 🅰️ Graphics & Media
+
+*   **Fontd (Graph-Native Font Service)**: A completely new font service replacing legacy handling. It implements an efficient Atlas-based IPC protocol for glyph sharing while maintaining backward compatibility with watch-based requests.
+    *   *Key Tech*: Uses `fontdue` for high-quality rasterization and manages dynamic glyph atlases.
+    *   *Artifacts*: `userspace/fontd/`
+
+*   **Beeper**: A versatile sound generation utility capable of playing sine waves or system chimes directly to audio hardware.
+    *   *Artifacts*: `userspace/beeper/`
+
+### 🔌 Networking & Drivers
+
+*   **Virtio Netd**: The network driver logic has been decoupled from the stack into a dedicated service (`svc.net.Driver`). It owns the hardware device and exposes TX/RX ports, improving modularity and stability.
+    *   *Artifacts*: `userspace/virtio_netd/`
+
+### 🛠️ System Utilities & Conformance
+
+*   **Hello Std**: A comprehensive conformance suite verifying the Rust standard library implementation on ThingOS, covering threads, filesystem, networking, and synchronization primitives.
+    *   *Artifacts*: `userspace/hello_std/`
+
+*   **System Tools**:
+    *   **Hogger**: A CPU stress-testing tool.
+    *   **Irqdump**: A utility for inspecting interrupt statistics.
+    *   **ISO Tools**: `iso_cat` and `iso_reader` for inspecting boot media.
+
 ## System Monitoring, Storage & WASM Drivers
 
 Recent updates have introduced essential system utilities and laid the groundwork for sandboxed drivers.

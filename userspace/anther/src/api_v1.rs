@@ -18,7 +18,7 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
 use described::{DescribeGraph, DescribeMode, DescriptionService, SysGraph, ViewSpec};
 use ollama::OllamaClient;
-use stem::error;
+use stem::{error, trace};
 use stem::syscall::graph::{find, intern, link, prop_get, prop_set};
 use stem::thing::sys::{get_edges, get_props};
 use stem::thing::HandleId; // for from_u64
@@ -56,6 +56,12 @@ pub const OLLAMA_URL: &str = "http://10.0.2.2:11434";
 /// Build HTTP response body with JSON content type
 pub fn json_response(status: &'static str, body: &str) -> (&'static str, ResponseBody) {
     (status, ResponseBody::Owned(body.as_bytes().to_vec()))
+}
+
+/// Build HTTP response body directly from pre-built JSON bytes,
+/// avoiding the intermediate String allocation that `json_response` requires.
+pub fn json_response_bytes(status: &'static str, body: Vec<u8>) -> (&'static str, ResponseBody) {
+    (status, ResponseBody::Owned(body))
 }
 
 /// Build error response
@@ -103,7 +109,7 @@ pub fn handle_discovery() -> (&'static str, ResponseBody) {
 
     json.end_object();
 
-    json_response("200 OK", &json.as_string().unwrap_or_default())
+    json_response_bytes("200 OK", json.into_bytes())
 }
 
 /// GET /api/v1/things/{id}
@@ -293,7 +299,7 @@ pub fn handle_get_thing_props(id_str: &str) -> (&'static str, ResponseBody) {
 
     json.end_object();
 
-    json_response("200 OK", &json.as_string().unwrap_or_default())
+    json_response_bytes("200 OK", json.into_bytes())
 }
 
 /// GET /api/v1/things/{id}/bytespaces/{key}
@@ -872,7 +878,7 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
 
     json.end_object();
 
-    json_response("200 OK", &json.as_string().unwrap_or_default())
+    json_response_bytes("200 OK", json.into_bytes())
 }
 
 /// Fast label lookup using pre-interned symbols
@@ -1017,7 +1023,7 @@ fn handle_view_task_monitor(_query: &str) -> String {
     let mut ids = [0u64; 32];
 
     // Debug logging
-    error!("VIEW[task_monitor]: collecting seeds...");
+    trace!("VIEW[task_monitor]: collecting seeds...");
 
     if let Ok(kind) = intern(kinds::SVC_SCHEDULER) {
         if let Ok(count) = find(kind, &mut ids) {
@@ -1025,10 +1031,10 @@ fn handle_view_task_monitor(_query: &str) -> String {
                 seeds.push(ids[0]);
             }
         } else {
-            error!("find(SVC_SCHEDULER) failed");
+            trace!("find(SVC_SCHEDULER) failed");
         }
     } else {
-        error!("intern(SVC_SCHEDULER) failed");
+        trace!("intern(SVC_SCHEDULER) failed");
     }
 
     if let Ok(kind) = intern(kinds::PROC_KERNEL) {
@@ -1046,10 +1052,10 @@ fn handle_view_task_monitor(_query: &str) -> String {
         }
     }
 
-    error!("VIEW[task_monitor]: seeds count = {}", seeds.len());
+    trace!("VIEW[task_monitor]: seeds count = {}", seeds.len());
 
     let (nodes, edges) = traverse_view(seeds, 3, 200);
-    error!(
+    trace!(
         "VIEW[task_monitor]: nodes={} edges={}",
         nodes.len(),
         edges.len()

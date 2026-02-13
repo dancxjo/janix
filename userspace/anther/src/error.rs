@@ -106,7 +106,7 @@ impl ApiError {
 }
 
 /// Simple JSON string escaping
-fn escape_json_string(s: &str) -> String {
+pub fn escape_json_string(s: &str) -> String {
     let mut result = String::with_capacity(s.len());
     for ch in s.chars() {
         match ch {

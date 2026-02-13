@@ -26,30 +26,37 @@ const SERVER_NAME: &str = "ThingOS-anther/0.1";
 const MAX_HEADER_BYTES: usize = 16 * 1024;
 const MAX_BODY_BYTES: usize = 8 * 1024 * 1024;
 
-/// Build HTTP headers
+/// Adapter to let `write!` output directly into a `Vec<u8>` without
+/// allocating intermediate `String`s.
+struct VecWriter<'a>(&'a mut Vec<u8>);
+
+impl<'a> core::fmt::Write for VecWriter<'a> {
+    fn write_str(&mut self, s: &str) -> core::fmt::Result {
+        self.0.extend_from_slice(s.as_bytes());
+        Ok(())
+    }
+}
+
+/// Build HTTP headers — writes directly into a pre-sized Vec to avoid
+/// per-header temporary String allocations.
 fn build_headers(
     status: &str,
     content_type: &str,
     body_len: Option<usize>,
     keep_alive: bool,
 ) -> Vec<u8> {
-    use alloc::format;
-    let mut response = Vec::new();
+    use core::fmt::Write;
+    let mut response = Vec::with_capacity(256);
 
-    // Status line
-    let status_line = format!("HTTP/1.1 {}\r\n", status);
-    response.extend_from_slice(status_line.as_bytes());
-
-    // Headers
-    let server_hdr = format!("Server: {}\r\n", SERVER_NAME);
-    response.extend_from_slice(server_hdr.as_bytes());
-
-    let content_type_hdr = format!("Content-Type: {}\r\n", content_type);
-    response.extend_from_slice(content_type_hdr.as_bytes());
+    // Status line + Server + Content-Type in one write
+    write!(
+        VecWriter(&mut response),
+        "HTTP/1.1 {}\r\nServer: {}\r\nContent-Type: {}\r\n",
+        status, SERVER_NAME, content_type
+    ).ok();
 
     if let Some(len) = body_len {
-        let content_len_hdr = format!("Content-Length: {}\r\n", len);
-        response.extend_from_slice(content_len_hdr.as_bytes());
+        write!(VecWriter(&mut response), "Content-Length: {}\r\n", len).ok();
     } else {
         response.extend_from_slice(b"Transfer-Encoding: chunked\r\n");
     }
@@ -79,13 +86,14 @@ fn build_response(
 
 /// Build HTTP redirect response
 fn build_redirect(location: &str, is_head: bool, keep_alive: bool) -> (Vec<u8>, ResponseBody) {
-    use alloc::format;
+    use core::fmt::Write;
     let body: &[u8] = if is_head { &[] } else { b"" };
-    let mut response = Vec::new();
-    response.extend_from_slice(b"HTTP/1.1 302 Found\r\n");
-    response.extend_from_slice(format!("Server: {}\r\n", SERVER_NAME).as_bytes());
-    response.extend_from_slice(format!("Location: {}\r\n", location).as_bytes());
-    response.extend_from_slice(format!("Content-Length: {}\r\n", body.len()).as_bytes());
+    let mut response = Vec::with_capacity(192);
+    write!(
+        VecWriter(&mut response),
+        "HTTP/1.1 302 Found\r\nServer: {}\r\nLocation: {}\r\nContent-Length: {}\r\n",
+        SERVER_NAME, location, body.len()
+    ).ok();
     if keep_alive {
         response.extend_from_slice(b"Connection: keep-alive\r\n");
     } else {
@@ -757,6 +765,8 @@ fn run_server_mode(port: u16) -> ! {
         if let Some(accept) = net.tcp_accept(listen_handle) {
             // Handle this connection
             handle_connection(&net, accept.conn_handle);
+            // Immediately try next accept for burst traffic
+            continue;
         }
 
         // 10ms polling interval keeps response port from filling up:
@@ -1028,6 +1038,10 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
         } else {
             request_data.clear();
         }
+        // Prevent unbounded growth on long keep-alive sessions
+        if request_data.is_empty() && request_data.capacity() > 8192 {
+            request_data.shrink_to(4096);
+        }
 
         if !keep_alive {
             break;
@@ -1070,9 +1084,10 @@ fn send_all(net: &NetClient, conn_handle: u32, data: &[u8]) {
 
 fn send_chunk(net: &NetClient, conn_handle: u32, data: &[u8]) {
     use alloc::format;
-    // Chunk header: hex length \r\n
+    // Chunk header: hex length \r\n — use send_all to prevent partial
+    // writes from corrupting the chunked transfer encoding framing.
     let header = format!("{:x}\r\n", data.len());
-    net.tcp_send(conn_handle, header.as_bytes());
+    send_all(net, conn_handle, header.as_bytes());
 
     // Chunk data
     if !data.is_empty() {
@@ -1080,26 +1095,12 @@ fn send_chunk(net: &NetClient, conn_handle: u32, data: &[u8]) {
     }
 
     // Chunk footer: \r\n
-    net.tcp_send(conn_handle, b"\r\n");
+    send_all(net, conn_handle, b"\r\n");
 }
 
+/// Re-export the canonical escape function from the error module.
 fn escape_json_string(s: &str) -> alloc::string::String {
-    let mut out = alloc::string::String::with_capacity(s.len() + 16);
-    for c in s.chars() {
-        match c {
-            '"' => out.push_str("\\\""),
-            '\\' => out.push_str("\\\\"),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            c if c.is_control() => {
-                 use core::fmt::Write;
-                 write!(out, "\\u{:04x}", c as u32).ok();
-            },
-            c => out.push(c),
-        }
-    }
-    out
+    crate::error::escape_json_string(s)
 }
 
 fn find_header_end(buf: &[u8], start: usize) -> Option<usize> {

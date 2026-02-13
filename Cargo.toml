@@ -59,7 +59,6 @@ members = [
     "libs/fb_common",
     "libs/llm",
     "libs/llm_stub",
-    "libs/http",
     "libs/ollama",
     "userspace/described",
     "userspace/sysdescribe",

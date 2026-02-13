@@ -1,12 +1,7 @@
-#![no_std]
+#![feature(restricted_std)]
 
-extern crate alloc;
-
-use alloc::boxed::Box;
-use alloc::collections::BTreeMap;
-use alloc::string::String;
-use alloc::vec::Vec;
-use core::task::{Context, Poll};
+use std::collections::BTreeMap;
+use std::task::{Context, Poll};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Role {
@@ -74,7 +69,7 @@ pub trait StreamingLlmClient {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::task::{RawWaker, RawWakerVTable, Waker};
+    use std::task::{RawWaker, RawWakerVTable, Waker};
 
     fn noop_waker() -> Waker {
         unsafe fn clone(_: *const ()) -> RawWaker {

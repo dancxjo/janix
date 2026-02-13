@@ -1,18 +1,12 @@
 #![feature(restricted_std)]
 #![no_main]
 
-extern crate alloc;
 
-use alloc::boxed::Box;
-use alloc::format;
-use alloc::string::String;
-use alloc::vec;
-use alloc::vec::Vec;
 use core::time::Duration;
 
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
-use core::task::{RawWaker, RawWakerVTable, Waker};
+use std::task::{RawWaker, RawWakerVTable, Waker};
 use llm::{ChatRequest, Message, Role, StreamingLlmClient};
 use ollama::OllamaClient;
 use stem::info;
@@ -54,7 +48,7 @@ fn find_locale_conf() -> Option<ThingId> {
 }
 
 fn read_ollama_config() -> OllamaConfig {
-    let mut server = String::from("https://10.0.2.2:11434");
+    let mut server = String::from("http://10.0.2.2:11434");
     let mut model = String::from("tinyllama");
 
     if let Some(mod_id) = find_locale_conf() {
@@ -62,9 +56,9 @@ fn read_ollama_config() -> OllamaConfig {
             let bs_thing = ThingId::from_u64(bs_id);
             let len = stem::thing::sys::bytespace_info(bs_thing).unwrap_or(0);
             if len > 0 {
-                let mut buf = alloc::vec![0u8; len];
+                let mut buf = vec![0u8; len];
                 if bytespace_read(bs_thing, 0, &mut buf).is_ok() {
-                    if let Ok(content) = alloc::string::String::from_utf8(buf) {
+                    if let Ok(content) = String::from_utf8(buf) {
                         for line in content.lines() {
                             if let Some(val) = line.strip_prefix("OLLAMA_SERVER=") {
                                 server = val.trim().into();
@@ -141,22 +135,22 @@ fn main(_arg: usize) -> ! {
             update_ui(win, &fortune_text);
 
             let waker = noop_waker();
-            let mut cx = core::task::Context::from_waker(&waker);
+            let mut cx = std::task::Context::from_waker(&waker);
 
             loop {
                 match stream.poll_next(&mut cx) {
-                    core::task::Poll::Ready(Ok(Some(delta))) => {
+                    std::task::Poll::Ready(Ok(Some(delta))) => {
                         fortune_text.push_str(&delta.text);
                         update_ui(win, &fortune_text);
                         stem::sleep(Duration::from_millis(10));
                     }
-                    core::task::Poll::Ready(Ok(None)) => break,
-                    core::task::Poll::Ready(Err(e)) => {
+                    std::task::Poll::Ready(Ok(None)) => break,
+                    std::task::Poll::Ready(Err(e)) => {
                         fortune_text.push_str(&format!("\n[Error: {:?}]", e));
                         update_ui(win, &fortune_text);
                         break;
                     }
-                    core::task::Poll::Pending => {
+                    std::task::Poll::Pending => {
                         stem::sleep(Duration::from_millis(10));
                     }
                 }

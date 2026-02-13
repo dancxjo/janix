@@ -759,27 +759,34 @@ fn run_server_mode(port: u16) -> ! {
         port, listen_handle
     );
 
-    // Main server loop
+    // Main server loop — accept connections and spawn a thread per connection.
+    // The main thread only does accept; each worker thread creates its own
+    // NetClient (isolated IPC port pair) so responses never interleave.
     loop {
-        // Try to accept a connection
         if let Some(accept) = net.tcp_accept(listen_handle) {
-            // Handle this connection
-            handle_connection(&net, accept.conn_handle);
-            // Immediately try next accept for burst traffic
+            let conn = accept.conn_handle;
+            std::thread::spawn(move || {
+                handle_connection(conn);
+            });
             continue;
         }
 
-        // 10ms polling interval keeps response port from filling up:
-        // each tcp_accept sends a request to netd which responds with
-        // RESP_EMPTY (4 bytes) when idle. At 1ms polling, the 8KB
-        // response port fills in ~2 seconds. 10ms gives ~20 seconds
-        // headroom while still accepting connections promptly.
+        // 10ms polling interval keeps response port from filling up.
         stem::time::sleep_ms(10);
     }
 }
 
-/// Handle a single HTTP connection
-fn handle_connection(net: &NetClient, conn_handle: u32) {
+/// Handle a single HTTP connection (runs in its own thread).
+/// Creates a per-thread NetClient so IPC responses never interleave.
+fn handle_connection(conn_handle: u32) {
+    let net = match NetClient::connect() {
+        Some(n) => n,
+        None => {
+            warn!("anther: Worker thread failed to connect to netd, dropping connection");
+            return;
+        }
+    };
+    let net = &net;
     let mut request_data = Vec::with_capacity(4096);
     let mut keep_alive = true;
 
@@ -994,12 +1001,14 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                     }
                 };
 
-                // 3. Stream loop
+                // 3. Stream loop — runs in its own thread so the accept
+                //    loop is never blocked.
                 let mut watch_buf = alloc::vec![0u8; 4096];
                 let mut seq_out = 0u64;
                 let mut stall_count = 0u32;
 
                 loop {
+
                     match stem::syscall::root_watch_next(watch_handle, &mut seq_out, &mut watch_buf) {
                         Ok(_len) => {
                             // Something changed — re-fetch props and send
@@ -1010,7 +1019,7 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                             }
                         }
                         Err(abi::errors::Errno::EAGAIN) => {
-                            // No pending events — send a keep-alive comment every ~30s
+                            // No pending events — send keepalive every ~30s
                             stall_count += 1;
                             if stall_count % 600 == 0 {
                                 send_chunk(net, conn_handle, b": keepalive\n\n");

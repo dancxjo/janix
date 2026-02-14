@@ -1,5 +1,43 @@
 # Changelog
 
+## AI Integration, Networking & Conformance
+
+Recent developments have introduced `anther`, a unified AI gateway and HTTP server, acting as the system's intelligent interface. Networking support has been bolstered with a native Realtek 8168 driver and a comprehensive standard library conformance suite (`hello_std`) to ensure robust application behavior.
+
+### 🧠 AI Services & Web Infrastructure
+
+*   **Anther (AI Gateway)**: A multi-purpose HTTP server that hosts the system UI, exposes the graph via API, and acts as an inference gateway for local LLMs (via `ollama` integration), supporting streaming responses.
+    *   *Artifacts*: `userspace/anther/`
+
+### ✅ Conformance & Testing
+
+*   **Standard Library Conformance**: The `hello_std` suite provides a rigorous smoke test for the standard library, verifying stdio, filesystem, threading, and networking subsystems against expected behavior.
+    *   *Artifacts*: `userspace/hello_std/`
+
+### 🔊 New Drivers
+
+*   **RTL8168d**: A native driver for Realtek 8168/8111 gigabit ethernet controllers.
+    *   *Artifacts*: `userspace/drivers/rtl8168d/`
+
+*   **HDAudio**: Intel High Definition Audio driver for native sound output, supporting playback streams and codec configuration.
+    *   *Artifacts*: `userspace/drivers/hdaudio/`
+
+*   **PCI Stub**: A driver stub for PCI device enumeration and testing.
+    *   *Artifacts*: `userspace/drivers/pci_stubd/`
+
+### 🛠️ System Utilities
+
+*   **ISO Tools**: `iso_cat` and `iso_reader` for inspecting and extracting files from ISO9660 images.
+    *   *Artifacts*: `userspace/iso_cat/`, `userspace/iso_reader/`
+
+*   **Input Tools**: Low-level debugging tools `ps2_kbd` and `ps2_mouse` for validating input device behavior.
+    *   *Artifacts*: `userspace/ps2_kbd/`, `userspace/ps2_mouse/`
+
+*   **Debugging**: `irqdump` for interrupt analysis and `tick_printer` for high-resolution timer validation.
+    *   *Artifacts*: `userspace/irqdump/`, `userspace/tick_printer/`
+
+
+
 ## System Monitoring, Storage & WASM Drivers
 
 Recent updates have introduced essential system utilities and laid the groundwork for sandboxed drivers.

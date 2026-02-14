@@ -423,8 +423,17 @@ mod tests {
         let mut ex = GraphExecutor::with_graph(&g);
         let cmd = parse("MERGE (n:Kind {key: 1}) RETURN count(n)").unwrap();
         let res = ex.execute(cmd);
-        // MERGE is not fully implemented, but should not panic
-        assert!(!res.success || res.success); // Either works or reports error
+        assert!(res.success, "MERGE command failed: {:?}", res.message);
+
+        // Check that we got a result
+        assert!(!res.rows.is_empty());
+        if let Some(row) = res.rows.first() {
+            if let Some(crate::ResultValue::Number(n)) = row.first() {
+                assert_eq!(*n, 1);
+            } else {
+                panic!("Expected number result");
+            }
+        }
     }
 
     // ===== Parser-level tests for unsupported features =====

@@ -115,13 +115,10 @@ impl<G: Graph> GraphExecutor<G> {
             Command::Quit => ExecutionResult::message("Bye."),
             Command::Schema => ExecutionResult::error("Schema not implemented."),
             Command::Merge {
-                pattern: _,
-                returns: _,
-                skip: _,
-            } => {
-                // TODO: Implement MERGE properly (for now it just MATCHes/CREATEs)
-                ExecutionResult::error("MERGE not fully implemented")
-            }
+                pattern,
+                returns,
+                skip,
+            } => self.execute_merge(pattern, returns, skip),
             Command::Match {
                 pattern,
                 where_clause,
@@ -151,6 +148,7 @@ impl<G: Graph> GraphExecutor<G> {
         &mut self,
         pattern: Pattern,
         returns: Vec<ReturnExpression>,
+        skip: usize,
     ) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
@@ -163,8 +161,12 @@ impl<G: Graph> GraphExecutor<G> {
                 }
 
                 if returns.is_empty() {
-                    return ExecutionResult::success(&format!("ok: merged node (id:{})", id));
+                    return ExecutionResult::success(&format!("ok: merged node {}", self.format_node(id)));
                 } else {
+                    if skip > 0 {
+                        let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
+                        return ExecutionResult::rows(cols, Vec::new());
+                    }
                     return self.format_results_structured(&returns);
                 }
             }
@@ -213,6 +215,10 @@ impl<G: Graph> GraphExecutor<G> {
                                 // Bind the relationship if possible?
                                 // Actually we don't have a good way to bind "edge IDs" yet as they are just predicates.
                                 // For now we'll just return results.
+                            }
+                            if skip > 0 {
+                                let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
+                                return ExecutionResult::rows(cols, Vec::new());
                             }
                             self.format_results_structured(&returns)
                         }

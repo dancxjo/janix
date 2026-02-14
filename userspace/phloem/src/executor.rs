@@ -234,7 +234,12 @@ impl<G: Graph> GraphExecutor<G> {
     ) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
-                let limit_total = limit + skip;
+                // If we need to order results, we must fetch all matching nodes first
+                let limit_total = if order_by.is_some() {
+                    usize::MAX
+                } else {
+                    limit + skip
+                };
                 let mut matched_ids = Vec::new();
 
                 // OPTIMIZATION: If WHERE id(n) = $id or id(n) = 123, just look up that node

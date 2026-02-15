@@ -1,5 +1,35 @@
 # Changelog
 
+## AI Integration, Native Drivers & Enhanced Standard Library
+
+The operating system has expanded its capabilities with a new AI gateway service (`Anther`), native drivers for audio and networking, and a comprehensive standard library conformance suite. These additions mark a shift towards a more feature-rich and self-hosted environment, enabling advanced applications and rigorous testing.
+
+### 🤖 AI & Web Services
+
+*   **Anther**: A new HTTP server and AI gateway that integrates with `Ollama`. It provides a REST API for LLM inference and serves the system UI, bridging the gap between local AI models and web-based applications.
+    *   *Artifacts*: `userspace/anther/`
+
+### 🔊 Native Hardware Drivers
+
+*   **VirtIO Netd**: A dedicated driver daemon for VirtIO network devices, separating hardware management from the `netd` stack for better isolation and performance.
+    *   *Artifacts*: `userspace/virtio_netd/`
+
+*   **HDAudio & Realtek 8168**: Initial native driver support for High Definition Audio controllers and Realtek 8168 network adapters, expanding hardware compatibility beyond VirtIO.
+    *   *Artifacts*: `userspace/drivers/hdaudio/`, `userspace/drivers/rtl8168d/`
+
+### 🔠 Core Services
+
+*   **Fontd**: A graph-native font rasterization service. It handles font parsing and glyph generation, offloading complex text rendering tasks from individual applications.
+    *   *Artifacts*: `userspace/fontd/`
+
+### ✅ Testing & Validation
+
+*   **Hello Std**: A comprehensive conformance smoke test for the ThingOS standard library (`std`). It verifies the correctness of stdio, memory allocation, threading, filesystem operations, and networking, ensuring a reliable foundation for Rust applications.
+    *   *Artifacts*: `userspace/hello_std/`
+
+*   **Beeper**: A simple audio test utility for the HDAudio driver and PC speaker emulation.
+    *   *Artifacts*: `userspace/beeper/`
+
 ## System Monitoring, Storage & WASM Drivers
 
 Recent updates have introduced essential system utilities and laid the groundwork for sandboxed drivers.

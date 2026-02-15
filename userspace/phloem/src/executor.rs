@@ -115,13 +115,10 @@ impl<G: Graph> GraphExecutor<G> {
             Command::Quit => ExecutionResult::message("Bye."),
             Command::Schema => ExecutionResult::error("Schema not implemented."),
             Command::Merge {
-                pattern: _,
-                returns: _,
-                skip: _,
-            } => {
-                // TODO: Implement MERGE properly (for now it just MATCHes/CREATEs)
-                ExecutionResult::error("MERGE not fully implemented")
-            }
+                pattern,
+                returns,
+                skip,
+            } => self.execute_merge(pattern, returns, skip),
             Command::Match {
                 pattern,
                 where_clause,
@@ -151,6 +148,7 @@ impl<G: Graph> GraphExecutor<G> {
         &mut self,
         pattern: Pattern,
         returns: Vec<ReturnExpression>,
+        skip: usize,
     ) -> ExecutionResult {
         match pattern {
             Pattern::Node(node_pat) => {
@@ -165,6 +163,10 @@ impl<G: Graph> GraphExecutor<G> {
                 if returns.is_empty() {
                     return ExecutionResult::success(&format!("ok: merged node (id:{})", id));
                 } else {
+                    if skip > 0 {
+                        let cols: Vec<String> = returns.iter().map(|r| r.to_string()).collect();
+                        return ExecutionResult::rows(cols, Vec::new());
+                    }
                     return self.format_results_structured(&returns);
                 }
             }
@@ -209,6 +211,11 @@ impl<G: Graph> GraphExecutor<G> {
                                 src_id, rel, dst_id
                             ))
                         } else {
+                            if skip > 0 {
+                                let cols: Vec<String> =
+                                    returns.iter().map(|r| r.to_string()).collect();
+                                return ExecutionResult::rows(cols, Vec::new());
+                            }
                             if let Some(_rv) = rel_var {
                                 // Bind the relationship if possible?
                                 // Actually we don't have a good way to bind "edge IDs" yet as they are just predicates.
@@ -846,18 +853,6 @@ impl<G: Graph> GraphExecutor<G> {
             }
         }
         ExecutionResult::rows(col_names, alloc::vec![row])
-    }
-
-    fn format_node(&self, id: u64) -> String {
-        let kind_id = match self.graph.get_kind(ThingId::from_u64(id)) {
-            Ok(k) => k.0,
-            Err(_) => return format!("(id:{})", id),
-        };
-
-        let kind_name = self
-            .resolve_symbol(kind_id as u32)
-            .unwrap_or_else(|| format!("{}", kind_id));
-        format!("(id:{} :{})", id, kind_name)
     }
 
     fn resolve_symbol(&self, id: u32) -> Option<String> {

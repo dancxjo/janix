@@ -870,4 +870,51 @@ mod tests {
             panic!("Expected Match");
         }
     }
+
+    #[test]
+    fn test_parse_order_by() {
+        // Case 1: ORDER BY id(n) (default ASC)
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n)").unwrap();
+        if let Command::Match { order_by, .. } = cmd {
+            if let Some(OrderBy::IdAsc(var)) = order_by {
+                assert_eq!(var, "n");
+            } else {
+                panic!("Expected OrderBy::IdAsc");
+            }
+        } else {
+            panic!("Expected Match");
+        }
+
+        // Case 2: ORDER BY id(n) ASC
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) ASC").unwrap();
+        if let Command::Match { order_by, .. } = cmd {
+            if let Some(OrderBy::IdAsc(var)) = order_by {
+                assert_eq!(var, "n");
+            } else {
+                panic!("Expected OrderBy::IdAsc");
+            }
+        } else {
+            panic!("Expected Match");
+        }
+
+        // Case 3: ORDER BY id(n) DESC
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) DESC").unwrap();
+        if let Command::Match { order_by, .. } = cmd {
+            if let Some(OrderBy::IdDesc(var)) = order_by {
+                assert_eq!(var, "n");
+            } else {
+                panic!("Expected OrderBy::IdDesc");
+            }
+        } else {
+            panic!("Expected Match");
+        }
+
+        // Case 4: Error cases
+        // ORDER with missing BY
+        assert!(parse("MATCH (n) RETURN n ORDER").is_err());
+        // ORDER BY missing variable/id
+        assert!(parse("MATCH (n) RETURN n ORDER BY n").is_err());
+        // ORDER BY invalid direction
+        assert!(parse("MATCH (n) RETURN n ORDER BY id(n) INVALID").is_err());
+    }
 }

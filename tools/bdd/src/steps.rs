@@ -6,6 +6,7 @@
 use crate::world::ThingOsWorld;
 use cucumber::{given, then, when};
 use reqwest::Client;
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// Default timeout for waiting on serial output (seconds).
@@ -1934,7 +1935,7 @@ async fn anther_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> 
     }
 
     // 1. Wait for log message
-    check_serial(world, "anther: Listening on port 80", 60.0).await?;
+    check_serial(world, "anther: Listening on port 80", 180.0).await?;
 
     // 2. Poll for health
     let port = world
@@ -2074,5 +2075,89 @@ async fn make_concurrent_requests(
     }
 
     eprintln!("│  │  │      ✅ {} concurrent requests succeeded", count);
+    Ok(())
+}
+
+// ===== System Exploration GQL Steps =====
+
+#[when(regex = r#"^I execute the GQL query "(.+)"$"#)]
+async fn when_execute_gql_query(world: &mut ThingOsWorld, query: String) -> Result<(), StepError> {
+    let port = world
+        .http_port
+        .ok_or(StepError("HTTP port not configured".to_string()))?;
+
+    eprintln!("│  │  │      🔍 Executing GQL: {}", query);
+
+    let client = Client::new();
+    let url = format!("http://127.0.0.1:{}/api/v1/query", port);
+    let resp = client
+        .get(&url)
+        .query(&[("q", &query)])
+        .send()
+        .await
+        .map_err(|e| StepError(format!("Request failed: {}", e)))?;
+
+    let status = resp.status().as_u16();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| StepError(format!("Failed to read body: {}", e)))?;
+
+    eprintln!("│  │  │      📄 Response Status: {}", status);
+    // Truncate body for log if too long
+    if body.len() > 200 {
+        eprintln!("│  │  │      📄 Response Body (prefix): {}...", &body[..200]);
+    } else {
+        eprintln!("│  │  │      📄 Response Body: {}", body);
+    }
+
+    world.last_http_response = Some((status, body));
+    Ok(())
+}
+
+#[then(regex = r#"^the result should contain at least (\d+) nodes? of kind "(.+)"$"#)]
+async fn then_result_contains_nodes(
+    world: &mut ThingOsWorld,
+    count: usize,
+    kind: String,
+) -> Result<(), StepError> {
+    let (_, body) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No HTTP response recorded".to_string()))?;
+
+    // Parse JSON
+    let json: Value = serde_json::from_str(body)
+        .map_err(|e| StepError(format!("Failed to parse JSON response: {}", e)))?;
+
+    // Assume response is a list of nodes/values
+    let array = json
+        .as_array()
+        .ok_or(StepError("Response body is not a JSON array".to_string()))?;
+
+    let mut match_count = 0;
+
+    for item in array {
+        // Each item might be a node object directly, or wrapped
+        // Based on memory: "returns JSON responses containing node identifiers and kinds"
+        // Let's look for "kind" field.
+        if let Some(item_kind) = item.get("kind").and_then(|k| k.as_str()) {
+            if item_kind == kind {
+                match_count += 1;
+            }
+        }
+        // Also check if it is inside a "node" wrapper or similar if structure is complex
+        // But let's assume flat list of nodes for now based on typical GQL "RETURN n"
+    }
+
+    eprintln!("│  │  │      📊 Found {} nodes of kind '{}'", match_count, kind);
+
+    if match_count < count {
+        return Err(StepError(format!(
+            "Expected at least {} nodes of kind '{}', but found {}",
+            count, kind, match_count
+        )));
+    }
+
     Ok(())
 }

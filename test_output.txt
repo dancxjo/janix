@@ -1,0 +1,492 @@
+RUSTFLAGS="-Awarnings" cargo xtask bdd --feature system_exploration --arch x86_64
+   Compiling ring v0.17.14
+   Compiling rustls v0.21.12
+   Compiling rustls-webpki v0.101.7
+   Compiling sct v0.7.1
+   Compiling rcgen v0.12.1
+   Compiling tokio-rustls v0.24.1
+   Compiling hyper-rustls v0.24.2
+   Compiling axum-server v0.5.1
+   Compiling reqwest v0.11.27
+   Compiling xtask v0.1.0 (/app/xtask)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.93s
+     Running `target/debug/xtask bdd --feature system_exploration --arch x86_64`
+Ensuring rustup target x86_64-unknown-none is installed...
+$ rustup target add x86_64-unknown-none
+info: component 'rust-std' for target 'x86_64-unknown-none' is up to date
+
+=== Building for x86_64 ===
+
+==> Fetching Limine...
+    Limine repo already exists, skipping clone.
+    Limine artifacts and tool already present, skipping build.
+    Limine ready.
+==> Fetching OVMF...
+    OVMF artifacts already present, skipping.
+==> Fetching Fonts...
+==> Fetching Icons (Tango)...
+    Tango icon set already exists.
+==> Fetching Cursors...
+    Plain Cursors already exist.
+==> Fetching Future Cursors (SVG)...
+    Future-cursors repo already exists.
+    Future SVG cursors copied to assets.
+==> Fetching pci.ids...
+    pci.ids already exists.
+Limine already present, skipping clone.
+Building bran kernel for x86_64 (dev profile)...
+$ cargo build --target x86_64-unknown-none --profile dev -p bran
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
+Kernel built: bran/bin-x86_64/kernel
+Building ISO thing-os-x86_64-1771276015-3686766.iso...
+$ cp -r assets iso_root/
+Building userspace programs...
+Building sprout ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p sprout --features diagnostic-apps
+    Finished `release` profile [optimized] target(s) in 0.23s
+$ cp target/x86_64-unknown-thingos/release/sprout iso_root/boot/sprout
+Building bristle ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p bristle
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/bristle iso_root/boot/bristle
+Building rtc_cmos ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p rtc_cmos
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/rtc_cmos iso_root/boot/rtc_cmos
+Building clock ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p clock
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/clock iso_root/boot/clock
+Building taskman ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p taskman
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/taskman iso_root/boot/taskman
+Building font_explorer ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p font_explorer
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/font_explorer iso_root/boot/font_explorer
+Building ps2_kbd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p ps2_kbd
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/ps2_kbd iso_root/boot/ps2_kbd
+Building echo ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p echo
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/echo iso_root/boot/echo
+Building bloom ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p bloom
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/bloom iso_root/boot/bloom
+Building ps2_mouse ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p ps2_mouse
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/ps2_mouse iso_root/boot/ps2_mouse
+Building display_bootfb ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p display_bootfb
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/display_bootfb iso_root/boot/display_bootfb
+Building display_virtio_gpu ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p display_virtio_gpu
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/display_virtio_gpu iso_root/boot/display_virtio_gpu
+Building fontd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p fontd
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/fontd iso_root/boot/fontd
+Building blossom ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p blossom
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/blossom iso_root/boot/blossom
+Building flytrap ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p flytrap
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/flytrap iso_root/boot/flytrap
+Building virtio_netd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p virtio_netd
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/virtio_netd iso_root/boot/virtio_netd
+Building rtl8168d ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p rtl8168d
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/rtl8168d iso_root/boot/rtl8168d
+Building netd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p netd
+    Finished `release` profile [optimized] target(s) in 0.24s
+$ cp target/x86_64-unknown-thingos/release/netd iso_root/boot/netd
+Building fetchd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p fetchd
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/fetchd iso_root/boot/fetchd
+Building anther ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p anther
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/anther iso_root/boot/anther
+Building photosynthesis ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p photosynthesis
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/photosynthesis iso_root/boot/photosynthesis
+Building ahci_disk ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p ahci_disk
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/ahci_disk iso_root/boot/ahci_disk
+Building iso9660d ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p iso9660d
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/iso9660d iso_root/boot/iso9660d
+Building virtio_sound ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p virtio_sound
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/virtio_sound iso_root/boot/virtio_sound
+Building hdaudio ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p hdaudio
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/hdaudio iso_root/boot/hdaudio
+Building pci_stubd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p pci_stubd
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/pci_stubd iso_root/boot/pci_stubd
+Building beeper ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p beeper
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/beeper iso_root/boot/beeper
+Building nectar ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p nectar
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/nectar iso_root/boot/nectar
+Building hello_std ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p hello_std
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/hello_std iso_root/boot/hello_std
+$ xorriso -as mkisofs -R -J -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o thing-os-x86_64-1771276015-3686766.iso
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Drive current: -outdev 'stdio:thing-os-x86_64-1771276015-3686766.iso'
+Media current: stdio file, overwriteable
+Media status : is blank
+Media summary: 0 sessions, 0 data blocks, 0 data, 81.6g free
+Added to ISO image: directory '/'='/app/iso_root'
+xorriso : UPDATE :    1236 files added in 1 seconds
+xorriso : UPDATE :    1236 files added in 1 seconds
+xorriso : UPDATE :  87.95% done
+ISO image produced: 27342 sectors
+Written to medium : 27342 sectors at LBA 0
+Writing to 'stdio:thing-os-x86_64-1771276015-3686766.iso' completed successfully.
+
+$ ./vendor/limine/limine bios-install thing-os-x86_64-1771276015-3686766.iso
+Physical block size of 512 bytes.
+Installing to GPT. Logical block size of 512 bytes.
+Secondary header at LBA 0x1ab37.
+Secondary header valid.
+Detected ISOHYBRID with a GUID partition table (GPT).
+Converting to MBR for improved compatibility...
+Conversion successful.
+No active partition found, some systems may not boot.
+Setting partition 1 as active to work around the issue...
+Installing to MBR.
+Stage 2 to be located at byte offset 0x200.
+Reminder: Remember to copy the limine-bios.sys file in either
+          the root, /boot, /limine, or /boot/limine directories of
+          one of the partitions on the device, or boot will fail!
+Limine BIOS stages installed successfully.
+ISO created: thing-os-x86_64-1771276015-3686766.iso
+
+=== Running BDD tests for x86_64 ===
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.30s
+     Running `target/debug/bdd`
+[bdd] Running tests for architecture: x86_64
+[bdd] CARGO_MANIFEST_DIR: /app/tools/bdd
+[bdd] Features path: "/app/docs/behavior/features/system_exploration.feature"
+[bdd] Building ISO thing-os-bdd-x86_64-26065-873461091.iso with resolution 1920x1080...
+   Compiling ring v0.17.14
+   Compiling rustls v0.21.12
+   Compiling rustls-webpki v0.101.7
+   Compiling sct v0.7.1
+   Compiling rcgen v0.12.1
+   Compiling tokio-rustls v0.24.1
+   Compiling hyper-rustls v0.24.2
+   Compiling axum-server v0.5.1
+   Compiling reqwest v0.11.27
+   Compiling xtask v0.1.0 (/app/xtask)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 12.16s
+     Running `target/debug/xtask iso --resolution 1920x1080 --output thing-os-bdd-x86_64-26065-873461091.iso`
+Limine already present, skipping clone.
+Building bran kernel for x86_64 (dev profile)...
+$ cargo build --target x86_64-unknown-none --profile dev -p bran
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.17s
+Kernel built: bran/bin-x86_64/kernel
+Building ISO thing-os-bdd-x86_64-26065-873461091.iso...
+$ cp -r assets iso_root/
+Building userspace programs...
+Building sprout ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p sprout --features diagnostic-apps
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/sprout iso_root/boot/sprout
+Building bristle ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p bristle
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/bristle iso_root/boot/bristle
+Building rtc_cmos ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p rtc_cmos
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/rtc_cmos iso_root/boot/rtc_cmos
+Building clock ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p clock
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/clock iso_root/boot/clock
+Building taskman ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p taskman
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/taskman iso_root/boot/taskman
+Building font_explorer ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p font_explorer
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/font_explorer iso_root/boot/font_explorer
+Building ps2_kbd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p ps2_kbd
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/ps2_kbd iso_root/boot/ps2_kbd
+Building echo ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p echo
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/echo iso_root/boot/echo
+Building bloom ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p bloom
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/bloom iso_root/boot/bloom
+Building ps2_mouse ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p ps2_mouse
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/ps2_mouse iso_root/boot/ps2_mouse
+Building display_bootfb ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p display_bootfb
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/display_bootfb iso_root/boot/display_bootfb
+Building display_virtio_gpu ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p display_virtio_gpu
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/display_virtio_gpu iso_root/boot/display_virtio_gpu
+Building fontd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p fontd
+    Finished `release` profile [optimized] target(s) in 0.23s
+$ cp target/x86_64-unknown-thingos/release/fontd iso_root/boot/fontd
+Building blossom ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p blossom
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/blossom iso_root/boot/blossom
+Building flytrap ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p flytrap
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/flytrap iso_root/boot/flytrap
+Building virtio_netd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p virtio_netd
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/virtio_netd iso_root/boot/virtio_netd
+Building rtl8168d ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p rtl8168d
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/rtl8168d iso_root/boot/rtl8168d
+Building netd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p netd
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/netd iso_root/boot/netd
+Building fetchd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p fetchd
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/fetchd iso_root/boot/fetchd
+Building anther ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p anther
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/anther iso_root/boot/anther
+Building photosynthesis ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p photosynthesis
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/photosynthesis iso_root/boot/photosynthesis
+Building ahci_disk ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p ahci_disk
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/ahci_disk iso_root/boot/ahci_disk
+Building iso9660d ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p iso9660d
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/iso9660d iso_root/boot/iso9660d
+Building virtio_sound ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p virtio_sound
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/virtio_sound iso_root/boot/virtio_sound
+Building hdaudio ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p hdaudio
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/hdaudio iso_root/boot/hdaudio
+Building pci_stubd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p pci_stubd
+    Finished `release` profile [optimized] target(s) in 0.21s
+$ cp target/x86_64-unknown-thingos/release/pci_stubd iso_root/boot/pci_stubd
+Building beeper ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p beeper
+    Finished `release` profile [optimized] target(s) in 0.22s
+$ cp target/x86_64-unknown-thingos/release/beeper iso_root/boot/beeper
+Building nectar ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p nectar
+    Finished `release` profile [optimized] target(s) in 0.26s
+$ cp target/x86_64-unknown-thingos/release/nectar iso_root/boot/nectar
+Building hello_std ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /app/targets/x86_64-unknown-thingos.json --profile release -p hello_std
+    Finished `release` profile [optimized] target(s) in 0.23s
+$ cp target/x86_64-unknown-thingos/release/hello_std iso_root/boot/hello_std
+$ xorriso -as mkisofs -R -J -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o thing-os-bdd-x86_64-26065-873461091.iso
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Drive current: -outdev 'stdio:thing-os-bdd-x86_64-26065-873461091.iso'
+Media current: stdio file, overwriteable
+Media status : is blank
+Media summary: 0 sessions, 0 data blocks, 0 data, 81.4g free
+Added to ISO image: directory '/'='/app/iso_root'
+xorriso : UPDATE :    1236 files added in 1 seconds
+xorriso : UPDATE :    1236 files added in 1 seconds
+xorriso : UPDATE :  81.52% done
+ISO image produced: 27342 sectors
+Written to medium : 27342 sectors at LBA 0
+Writing to 'stdio:thing-os-bdd-x86_64-26065-873461091.iso' completed successfully.
+
+$ ./vendor/limine/limine bios-install thing-os-bdd-x86_64-26065-873461091.iso
+Physical block size of 512 bytes.
+Installing to GPT. Logical block size of 512 bytes.
+Secondary header at LBA 0x1ab37.
+Secondary header valid.
+Detected ISOHYBRID with a GUID partition table (GPT).
+Converting to MBR for improved compatibility...
+Conversion successful.
+No active partition found, some systems may not boot.
+Setting partition 1 as active to work around the issue...
+Installing to MBR.
+Stage 2 to be located at byte offset 0x200.
+Reminder: Remember to copy the limine-bios.sys file in either
+          the root, /boot, /limine, or /boot/limine directories of
+          one of the partitions on the device, or boot will fail!
+Limine BIOS stages installed successfully.
+ISO created: thing-os-bdd-x86_64-26065-873461091.iso
+ISO generated at: thing-os-bdd-x86_64-26065-873461091.iso
+[bdd] ISO built: thing-os-bdd-x86_64-26065-873461091.iso
+[bdd] Forwarding HTTP: localhost:33425 -> guest:80
+
+╔══════════════════════════════════════════════════════════════╗
+║             Thing-OS BDD Test Suite                          ║
+╚══════════════════════════════════════════════════════════════╝
+
+┌─ Feature: System Exploration
+│  ├─ Scenario: Discovering the CPU topology
+│  │  ├─ Given the anther server is ready
+[qemu-stderr] [W][01566.916801] pw.conf      | [          conf.c: 1031 try_load_conf()] can't load config client.conf: No such file or directory
+[qemu-stderr] [E][01566.916936] pw.conf      | [          conf.c: 1060 pw_conf_load_conf_for_context()] can't load config client.conf: No such file or directory
+│  │  │      ⏱️ Timeout waiting for: anther: Listening on port 80
+│  │  │      📸 Timeout screenshot: docs/behavior/x86_64/system-exploration/discovering-the-cpu-topology/01/timeout.png
+│  │  │      📋 Registers: docs/behavior/x86_64/system-exploration/discovering-the-cpu-topology/01/registers.txt
+
+=== Serial Log (last 100 lines) ===
+[25320002589] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] SCHED: Task 20 (user task/process) assigned to CPU 0
+[25334051976] [INFO] [bloom] [CPU0] [bloom] EARLY boot args: bristle_evt=12 arg_req=1 arg_resp=4
+[25341381965] [INFO] [echo] [CPU0] echo: dynamically subscribed to input topic 0 via port 20
+[25342533574] [INFO] [echo] [CPU0] echo: ready for Bristle events (main loop using handle 20)
+[25381854515] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] Trampoline entered. Arg: 0xffffffffb0004638
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x12e
+[25383161383] [INFO] [bran::arch::x86_64::enter_user] [CPU0] Entering user mode tid=17 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562090061 RSP_BEFORE=18446744072369160144 RFLAGS_BEFORE=130 CR3_BEFORE=70549504 fs_base=0 gs_base=18446744071564425128
+[25387721844] [INFO] [virtio_netd] [CPU0] VIRTIO_NETD: Starting VirtIO-NET driver service...
+[25389122181] [INFO] [virtio_netd::driver] [CPU0] VirtIO-NET: Searching for NIC device...
+[25391524132] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] Trampoline entered. Arg: 0xffffffffb00707a0
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
+[25392543374] [INFO] [bran::arch::x86_64::enter_user] [CPU0] Entering user mode tid=18 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562090061 RSP_BEFORE=18446744072369226240 RFLAGS_BEFORE=134 CR3_BEFORE=70684672 fs_base=0 gs_base=18446744071564425128
+[25396609565] [INFO] [netd] [CPU0] NETD: Starting network stack service...
+[25397738291] [INFO] [netd] [CPU0] NETD: Looking for virtio_netd driver service...
+[25400061423] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] Trampoline entered. Arg: 0xffffffffb0082048
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
+[25401200170] [INFO] [bran::arch::x86_64::enter_user] [CPU0] Entering user mode tid=19 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562090061 RSP_BEFORE=18446744072369292336 RFLAGS_BEFORE=134 CR3_BEFORE=71081984 fs_base=0 gs_base=18446744071564425128
+[25406841835] [INFO] [anther] [CPU0] anther: Starting HTTP server (ThingOS anther v0.1)
+[25409234260] [INFO] [anther] [CPU0] anther: Starting server mode on port 80...
+[25411698342] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] Trampoline entered. Arg: 0xffffffffb0082fc0
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
+[25413074772] [INFO] [bran::arch::x86_64::enter_user] [CPU0] Entering user mode tid=20 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562090061 RSP_BEFORE=18446744072369358432 RFLAGS_BEFORE=134 CR3_BEFORE=71720960 fs_base=0 gs_base=18446744071564425128
+[25416239274] [INFO] [nectar] [CPU0] NECTAR: Started.
+[25420048433] [INFO] [sprout::pipelines] [CPU0] SPROUT: Spawned nectar (PID=20)
+[25422167406] [INFO] [kernel::task::loader] [CPU0] Loading module: /boot/fetchd
+[25422656953] [DEBUG] [kernel::task::loader] [CPU0]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25423692613] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=200000 exec=true
+[25431036058] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=206000 exec=false
+[25434107164] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=209000 exec=false
+[25443649657] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] SCHED: Task 21 (user task/process) assigned to CPU 0
+[25446253551] [INFO] [sprout::pipelines] [CPU0] SPROUT: Spawned fetchd (PID=21)
+[25448238670] [INFO] [kernel::task::loader] [CPU0] Loading module: /boot/clock
+[25449083308] [DEBUG] [kernel::task::loader] [CPU0]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25450052594] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=200000 exec=true
+[25459811540] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=209000 exec=false
+[25464519601] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=20e000 exec=false
+[25474293892] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] SCHED: Task 22 (user task/process) assigned to CPU 0
+[25476775722] [INFO] [sprout::pipelines] [CPU0] SPROUT: Spawned clock (PID=22)
+[25479513346] [INFO] [kernel::task::loader] [CPU0] Loading module: /boot/taskman
+[25480002042] [DEBUG] [kernel::task::loader] [CPU0]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25481136396] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=200000 exec=true
+[25493304059] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=20c000 exec=false
+[25497520327] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=210000 exec=false
+[25506216369] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] SCHED: Task 23 (user task/process) assigned to CPU 0
+[25508863270] [INFO] [sprout::pipelines] [CPU0] SPROUT: Spawned taskman (PID=23)
+[25511056520] [INFO] [kernel::task::loader] [CPU0] Loading module: /boot/flytrap
+[25511558518] [DEBUG] [kernel::task::loader] [CPU0]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25512406659] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=200000 exec=true
+[25562149448] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=237000 exec=false
+[25575749534] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=246000 exec=false
+[25585418813] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] SCHED: Task 24 (user task/process) assigned to CPU 0
+[25588065969] [INFO] [sprout::pipelines] [CPU0] SPROUT: Spawned flytrap (PID=24)
+[25589563878] [INFO] [sprout::supervisor] [CPU0] SPROUT: Launching discovered app '/boot/clock'
+[25591131280] [INFO] [kernel::task::loader] [CPU0] Loading module: /boot/clock
+[25591676437] [DEBUG] [kernel::task::loader] [CPU0]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25592553798] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=200000 exec=true
+[25602242483] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=209000 exec=false
+[25606431180] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=20e000 exec=false
+[25615698576] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] SCHED: Task 25 (user task/process) assigned to CPU 0
+[25618427822] [INFO] [sprout::supervisor] [CPU0] SPROUT: App launched (PID=25)
+[25619448412] [INFO] [sprout::supervisor] [CPU0] SPROUT: Launching discovered app '/boot/hello_std'
+[25620684880] [INFO] [kernel::task::loader] [CPU0] Loading module: /boot/hello_std
+[25621196390] [DEBUG] [kernel::task::loader] [CPU0]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[25622232451] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=200000 exec=true
+[25625382898] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=202000 exec=false
+[25626424289] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=203000 exec=false
+[25634336466] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] SCHED: Task 26 (user task/process) assigned to CPU 0
+[25636444871] [INFO] [sprout::supervisor] [CPU0] SPROUT: App launched (PID=26)
+[25637729827] [INFO] [sprout::supervisor] [CPU0] SPROUT: Startup complete. Entering monitor loop.
+[25648839758] [INFO] [kernel::syscall::handlers::root_handlers] [CPU0] sys_root_watch_open: ptr=0x7fbfb0
+[25649511830] [INFO] [kernel::syscall::handlers::root_handlers] [CPU0] sys_root_watch_open: validating range len=48
+[25650183190] [INFO] [kernel::syscall::handlers::root_handlers] [CPU0] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[25650896079] [INFO] [kernel::syscall::handlers::root_handlers] [CPU0] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=240 subj_lo=0
+[25658185315] [INFO] [fontd] [CPU0] FONTD: Service node created, req=15, resp=18
+[25662668036] [INFO] [virtio_netd::driver] [CPU0] VirtIO-NET: Found NIC device t12e
+[25663898711] [INFO] [virtio::device] [CPU0] VirtIO: device::new(0x12e) - claiming...
+[25664811833] [INFO] [kernel::syscall::handlers::device] [CPU0] DEVICE: task 17 claimed device 302 (handle 2)
+[25666146641] [INFO] [virtio::device] [CPU0] VirtIO: claimed, handle=2
+[25669797187] [INFO] [anther::net_client] [CPU0] anther: Network stack not found
+[25670806678] [INFO] [anther] [CPU0] anther: Waiting for network stack...
+[25675642528] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] Trampoline entered. Arg: 0xffffffffb0004638
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
+[25676769666] [INFO] [bran::arch::x86_64::enter_user] [CPU0] Entering user mode tid=21 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562090061 RSP_BEFORE=18446744072369433296 RFLAGS_BEFORE=130 CR3_BEFORE=72249344 fs_base=0 gs_base=18446744071564425128
+[25681511279] [INFO] [fetchd] [CPU0] FETCHD: Starting IP address display...
+[25682408557] [INFO] [fetchd] [CPU0] FETCHD: Waiting for UI Root (Compositor)...
+[25685017737] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] Trampoline entered. Arg: 0xffffffffb00707a0
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
+[25686204086] [INFO] [bran::arch::x86_64::enter_user] [CPU0] Entering user mode tid=22 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562090061 RSP_BEFORE=18446744072369498832 RFLAGS_BEFORE=130 CR3_BEFORE=72376320 fs_base=0 gs_base=18446744071564425128
+[25690547417] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] Trampoline entered. Arg: 0xffffffffb0084c20
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
+[25691543873] [INFO] [bran::arch::x86_64::enter_user] [CPU0] Entering user mode tid=24 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562090061 RSP_BEFORE=18446744072369630864 RFLAGS_BEFORE=134 CR3_BEFORE=72679424 fs_base=0 gs_base=18446744071564425128
+[25695852337] [INFO] [flytrap] [CPU0] FLYTRAP: Starting unified content provider service...
+[25696984164] [INFO] [flytrap] [CPU0] FLYTRAP: Service contract validated - graph-native asset watcher
+[25698023824] [INFO] [flytrap] [CPU0] FLYTRAP: Initializing Limine module content source...
+[25700408714] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] Trampoline entered. Arg: 0xffffffffb0110f70
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
+[25701964123] [INFO] [bran::arch::x86_64::enter_user] [CPU0] Entering user mode tid=25 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562090061 RSP_BEFORE=18446744072369696960 RFLAGS_BEFORE=134 CR3_BEFORE=73056256 fs_base=0 gs_base=18446744071564425128
+[25706893313] [DEBUG] [kernel::task::scheduler::spawn] [CPU0] Trampoline entered. Arg: 0xffffffffb0082ad0
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
+[25707906309] [INFO] [bran::arch::x86_64::enter_user] [CPU0] Entering user mode tid=26 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562090061 RSP_BEFORE=18446744072369763312 RFLAGS_BEFORE=134 CR3_BEFORE=73203712 fs_base=0 gs_base=18446744071564425128
+=== End Serial Log ===
+
+Tests failed for x86_64: Tests failed for: x86_64
+Generated: docs/behavior/README.md
+Error: "Tests failed for: x86_64"
+error: Recipe `behave` failed on line 98 with exit code 1

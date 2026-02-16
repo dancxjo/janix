@@ -1,5 +1,24 @@
 # Changelog
 
+## SVG Graphics, Concurrency & Networking
+
+This update brings native SVG rendering capabilities, significant improvements to service concurrency, and a more robust network stack.
+
+### 🎨 SVG & Vector Graphics
+
+*   **Native SVG Support**: The `bloom` compositor now supports parsing and rendering SVG content directly. This is powered by a new lightweight XML parser and CSS-subset engine in the `stem` library, enabling scalable vector graphics for UI elements and icons.
+    *   *Artifacts*: `userspace/bloom/src/svg/`, `stem/src/xml/`
+
+### ⚡ Concurrency & Stability
+
+*   **Service Threading Model**: The `anther` service (and others) has transitioned to using `stem::thread::spawn` with a trampoline mechanism. This resolves previous instability with standard library threading on the platform, ensuring reliable concurrent handling of HTTP and UI requests.
+    *   *Artifacts*: `userspace/anther/src/main.rs`
+
+### 🌐 Networking
+
+*   **Network Stack Robustness**: The `netd` service has been enhanced with improved connection lifecycle management and detailed logging. This includes better handling of TCP states and driver interaction, making network services more resilient.
+    *   *Artifacts*: `userspace/netd/`
+
 ## System Monitoring, Storage & WASM Drivers
 
 Recent updates have introduced essential system utilities and laid the groundwork for sandboxed drivers.

@@ -1,5 +1,42 @@
 # Changelog
 
+## System Services Unification & Hardware Abstraction
+
+Recent development has focused on unifying userspace services and abstracting hardware drivers into dedicated daemons. The most significant addition is **Anther**, a comprehensive HTTP server and AI gateway that acts as the primary interface for system interaction and graph data access. This release also introduces **Fontd**, a font rasterization service, and further decouples network and display drivers for better system modularity.
+
+### 🌟 Unified System Interface (Anther)
+
+*   **Anther (AI Gateway & Web Server)**: A new flagship service that integrates HTTP serving, Graph DB queries (`Phloem`), and LLM capabilities (`Ollama`). It powers the system UI, offering real-time updates via Server-Sent Events (SSE) and exposing a rich API for application development.
+    *   *Artifacts*: `userspace/anther/`
+
+### 🎨 Font Rasterization
+
+*   **Fontd (Font Service)**: A dedicated font rasterization daemon using `fontdue`. By centralizing font processing, it ensures consistent text rendering across applications and reduces the complexity of individual clients.
+    *   *Artifacts*: `userspace/fontd/`
+
+### ⚙️ Driver Decoupling & Hardware Support
+
+*   **VirtIO Netd**: Decoupled the VirtIO network driver from the main networking stack, improving stability and paving the way for supporting multiple network interfaces.
+    *   *Artifacts*: `userspace/virtio_netd/`
+
+*   **Display Drivers**: Introduced `display_bootfb` for boot-time framebuffer support and `display_virtio_gpu` for accelerated graphics, ensuring a seamless visual experience from startup.
+    *   *Artifacts*: `userspace/display_bootfb/`
+
+*   **RTC CMOS**: Added a driver for the Real-Time Clock (RTC), essential for accurate system timekeeping and scheduling.
+    *   *Artifacts*: `userspace/rtc_cmos/`
+
+### 🛠️ Utilities
+
+*   **Beeper**: A system utility for generating audio tones and chimes, utilizing both PC speaker emulation and HDA audio paths.
+    *   *Artifacts*: `userspace/beeper/`
+
+*   **ISO Tools**: New command-line tools `iso_cat` and `iso_reader` for inspecting and extracting content from ISO 9660 images directly from userspace.
+    *   *Artifacts*: `userspace/iso_cat/`, `userspace/iso_reader/`
+
+### 🔧 Core Enhancements
+
+*   **Thread Spawning**: Enhanced `stem::thread::spawn` implementation to robustly handle worker thread creation, critical for the concurrency requirements of `anther` and other multi-threaded services.
+
 ## System Monitoring, Storage & WASM Drivers
 
 Recent updates have introduced essential system utilities and laid the groundwork for sandboxed drivers.

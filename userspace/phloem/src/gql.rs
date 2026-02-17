@@ -840,9 +840,52 @@ mod tests {
         if let Token::String(s) = &tokens[0] {
             assert_eq!(s, "hello world");
         }
-        // Note: our current tokenize doesn't actually handle backslash escapes based on view_file
-        // Let's check that.
+        if let Token::String(s) = &tokens[1] {
+            assert_eq!(s, "escaped \" quote");
+        }
     }
+
+    #[test]
+    fn test_parse_order_by() {
+        // Test default (implicit ASC)
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n)").unwrap();
+        if let Command::Match { order_by, .. } = cmd {
+            match order_by {
+                Some(OrderBy::IdAsc(var)) => assert_eq!(var, "n"),
+                _ => panic!("Expected IdAsc"),
+            }
+        } else {
+            panic!("Expected Match");
+        }
+
+        // Test explicit ASC
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) ASC").unwrap();
+        if let Command::Match { order_by, .. } = cmd {
+            match order_by {
+                Some(OrderBy::IdAsc(var)) => assert_eq!(var, "n"),
+                _ => panic!("Expected IdAsc"),
+            }
+        }
+
+        // Test explicit DESC
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) DESC").unwrap();
+        if let Command::Match { order_by, .. } = cmd {
+            match order_by {
+                Some(OrderBy::IdDesc(var)) => assert_eq!(var, "n"),
+                _ => panic!("Expected IdDesc"),
+            }
+        }
+
+        // Test error: missing BY
+        assert!(parse("MATCH (n) RETURN n ORDER id(n)").is_err());
+
+        // Test error: missing id()
+        assert!(parse("MATCH (n) RETURN n ORDER BY n").is_err());
+
+        // Test error: invalid id syntax
+        assert!(parse("MATCH (n) RETURN n ORDER BY id n").is_err());
+    }
+
     #[test]
     fn test_parse_match_anonymous_edge() {
         let cmd = parse("MATCH ()-[e]->() RETURN e").unwrap();

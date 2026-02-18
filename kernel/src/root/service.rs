@@ -124,6 +124,8 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::ResolvePath { .. } => "ResolvePath",
         RootOp::Unlink { .. } => "Unlink",
         RootOp::DirList { .. } => "DirList",
+        RootOp::OrphanThing { .. } => "OrphanThing",
+        RootOp::CleanupTaskThings { .. } => "CleanupTaskThings",
     }
 }
 
@@ -162,8 +164,8 @@ fn handle_msg<R: BootRuntime>(
 
         // Graph core operations
         RootOp::GetKind { id } => root_handlers::handle_get_kind(graph, id),
-        RootOp::CreateNode { kind } => {
-            root_handlers::handle_create_node(graph, journal, interner, kind)
+        RootOp::CreateNode { kind, creator_tid, owner_thing_id } => {
+            root_handlers::handle_create_node(graph, journal, interner, kind, creator_tid, owner_thing_id)
         }
         RootOp::Link { src, rel, dst } => {
             root_handlers::handle_link(graph, interner, src, rel, dst)
@@ -228,6 +230,12 @@ fn handle_msg<R: BootRuntime>(
         }
         RootOp::DirList { id, out_ptr, out_len } => {
             root_handlers::handle_dir_list(graph, interner, id, out_ptr, out_len)
+        }
+        RootOp::OrphanThing { thing_id } => {
+            root_handlers::handle_orphan_thing(graph, thing_id)
+        }
+        RootOp::CleanupTaskThings { owner_thing_id } => {
+            root_handlers::handle_cleanup_task_things(graph, owner_thing_id)
         }
 
         // Stream/Watch operations

@@ -45,6 +45,8 @@ pub fn handle_create_node(
     journal: &mut Journal,
     interner: &mut Interner,
     kind: SymbolShell,
+    creator_tid: u64,
+    owner_thing_id: Option<u64>,
 ) -> HandlerResult {
     let kid = resolve_shell(kind, interner);
 
@@ -64,6 +66,12 @@ pub fn handle_create_node(
             id,
             kind: kid as u64,
         });
+        
+        // Set the owner if we have an owner_thing_id
+        if let Some(owner_id) = owner_thing_id {
+            graph.set_owner(id, Some(owner_id));
+        }
+        
         maybe_link_host_fallback(graph, interner, id, kid);
         (0, id)
     } else {
@@ -104,6 +112,28 @@ pub(super) fn maybe_link_host_fallback(
         SymbolShell::Static(rels::HAS_RESOURCE),
         id,
     );
+}
+
+pub fn handle_orphan_thing(graph: &mut Graph, thing_id: u64) -> HandlerResult {
+    if graph.orphan_thing(thing_id) {
+        (0, 0)
+    } else {
+        // Thing not found
+        (-1, 0)
+    }
+}
+
+pub fn handle_cleanup_task_things(graph: &mut Graph, owner_thing_id: u64) -> HandlerResult {
+    // Get all things owned by this owner
+    let owned_things = graph.get_owned_things(owner_thing_id);
+    let count = owned_things.len();
+    
+    // Remove all owned things
+    for thing_id in owned_things {
+        graph.remove_node(thing_id);
+    }
+    
+    (0, count as u64)
 }
 
 pub fn handle_prop_get(

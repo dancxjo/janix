@@ -148,3 +148,14 @@ pub fn get_kind(node: u64) -> Result<u64, Errno> {
         Ok(ret as u64)
     }
 }
+
+/// Transfer ownership of a thing to the kernel (orphan it).
+///
+/// This removes the thing from the ownership of the calling process, transferring
+/// it to the kernel. The thing will no longer be cleaned up when the process exits.
+///
+/// Returns Ok(()) if successful, Err if the thing doesn't exist.
+pub fn orphan_thing(thing_id: u64) -> Result<(), Errno> {
+    let ret = unsafe { raw_syscall6(SYS_ROOT_ORPHAN_THING, thing_id as usize, 0, 0, 0, 0, 0) };
+    errno(ret).map(|_| ())
+}

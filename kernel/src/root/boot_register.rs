@@ -30,6 +30,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     let create = |kind: &str| -> u64 {
         let reply = enqueue(RootOp::CreateNode {
             kind: SymbolShell::Str(alloc::string::String::from(kind)),
+            creator_tid: 0, // Boot process, no creator
+            owner_thing_id: None, // Boot-created things are kernel-owned
         });
         loop {
             let done = reply.done.load(core::sync::atomic::Ordering::Acquire);

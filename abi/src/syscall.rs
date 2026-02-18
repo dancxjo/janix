@@ -171,6 +171,7 @@ pub const SYS_ROOT_WATCH_CLOSE: u32 = 0x16C;
 pub const SYS_ROOT_RESOLVE_PATH: u32 = 0x170;
 pub const SYS_ROOT_UNLINK: u32 = 0x171;
 pub const SYS_ROOT_DIR_LIST: u32 = 0x172;
+pub const SYS_ROOT_ORPHAN_THING: u32 = 0x173;
 
 // ============================================================================
 // Block 0x1A0–0x1AF: Network

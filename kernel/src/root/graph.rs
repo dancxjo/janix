@@ -15,6 +15,9 @@ pub struct Node {
     pub watches: Vec<(u64, ThingId)>,
     // Edges: list of (RelKind, Target)
     pub edges: Vec<(SymbolId, ThingId)>,
+    /// Owner of this thing (ThingId of the process/task that created it).
+    /// None means kernel-owned or orphaned.
+    pub owner: Option<ThingId>,
 }
 
 // ============================================================================
@@ -386,6 +389,10 @@ impl Graph {
     }
 
     pub fn alloc(&mut self, kind: SymbolId) -> ThingId {
+        self.alloc_with_owner(kind, None)
+    }
+
+    pub fn alloc_with_owner(&mut self, kind: SymbolId, owner: Option<ThingId>) -> ThingId {
         let id = self.next_id;
         self.next_id += 1;
         self.nodes.insert(
@@ -396,6 +403,7 @@ impl Graph {
                 resource: None,
                 watches: Vec::new(),
                 edges: Vec::new(),
+                owner,
             },
         );
 
@@ -458,6 +466,41 @@ impl Graph {
 
             // Remove this node's reverse_index entry
             self.reverse_index.remove(&id);
+        }
+    }
+
+    /// Get all things owned by a specific process/task.
+    pub fn get_owned_things(&self, owner_id: ThingId) -> Vec<ThingId> {
+        self.nodes
+            .iter()
+            .filter_map(|(&id, node)| {
+                if node.owner == Some(owner_id) {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Transfer ownership of a thing to the kernel (orphan it).
+    /// Returns true if the thing existed and was orphaned.
+    pub fn orphan_thing(&mut self, thing_id: ThingId) -> bool {
+        if let Some(node) = self.nodes.get_mut(&thing_id) {
+            node.owner = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the owner of a thing.
+    pub fn set_owner(&mut self, thing_id: ThingId, owner: Option<ThingId>) -> bool {
+        if let Some(node) = self.nodes.get_mut(&thing_id) {
+            node.owner = owner;
+            true
+        } else {
+            false
         }
     }
 }
@@ -705,5 +748,47 @@ mod tests {
         assert!(!history.contains(2));
         assert!(history.contains(3));
         assert!(history.contains(4));
+    }
+
+    #[test]
+    fn test_ownership_tracking() {
+        let mut graph = Graph::new();
+        
+        // Create some nodes with different owners
+        let owner1_id = 1000;
+        let owner2_id = 2000;
+        
+        let thing1 = graph.alloc_with_owner(100, Some(owner1_id));
+        let thing2 = graph.alloc_with_owner(101, Some(owner1_id));
+        let thing3 = graph.alloc_with_owner(102, Some(owner2_id));
+        let thing4 = graph.alloc_with_owner(103, None); // kernel-owned
+        
+        // Check ownership
+        assert_eq!(graph.nodes.get(&thing1).unwrap().owner, Some(owner1_id));
+        assert_eq!(graph.nodes.get(&thing2).unwrap().owner, Some(owner1_id));
+        assert_eq!(graph.nodes.get(&thing3).unwrap().owner, Some(owner2_id));
+        assert_eq!(graph.nodes.get(&thing4).unwrap().owner, None);
+        
+        // Get owned things
+        let owned_by_1 = graph.get_owned_things(owner1_id);
+        assert_eq!(owned_by_1.len(), 2);
+        assert!(owned_by_1.contains(&thing1));
+        assert!(owned_by_1.contains(&thing2));
+        
+        let owned_by_2 = graph.get_owned_things(owner2_id);
+        assert_eq!(owned_by_2.len(), 1);
+        assert!(owned_by_2.contains(&thing3));
+        
+        // Test orphaning
+        assert!(graph.orphan_thing(thing1));
+        assert_eq!(graph.nodes.get(&thing1).unwrap().owner, None);
+        
+        let owned_by_1_after = graph.get_owned_things(owner1_id);
+        assert_eq!(owned_by_1_after.len(), 1);
+        assert!(!owned_by_1_after.contains(&thing1));
+        
+        // Test set_owner
+        assert!(graph.set_owner(thing1, Some(owner2_id)));
+        assert_eq!(graph.nodes.get(&thing1).unwrap().owner, Some(owner2_id));
     }
 }

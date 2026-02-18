@@ -26,8 +26,8 @@ pub use blocking::{
 pub use hooks::{
     add_user_mapping_current, alloc_user_stack_current, check_user_mapping_current,
     current_priority_current, current_tid_current, dump_stats_current, exit_current,
-    get_user_mapping_at_current, handle_user_stack_fault_current, kill_by_tid_current,
-    process_info_current, remove_user_mappings_current, set_priority_current,
+    get_user_mapping_at_current, graph_thing_for_current, handle_user_stack_fault_current, 
+    kill_by_tid_current, process_info_current, remove_user_mappings_current, set_priority_current,
     sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
     spawn_user_thread_current, task_status_current, yield_now_current,
 };
@@ -307,6 +307,7 @@ pub fn init<R: BootRuntime>() {
             hooks::GET_USER_MAPPING_AT_HOOK = Some(vm::get_user_mapping_at::<R>);
             hooks::PROCESS_INFO_HOOK = Some(process_info::<R>);
             hooks::SPAWN_PROCESS_EX_HOOK = Some(spawn::spawn_process_ex::<R>);
+            hooks::GRAPH_THING_FOR_CURRENT_HOOK = Some(graph_thing_for_current_impl::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
@@ -790,6 +791,11 @@ impl<R: BootRuntime> types::Scheduler<R> {
             // Queue graph state update and exit code
             graphify::update_task_state(current_id, "dead");
             graphify::set_exit_code(current_id, code);
+            
+            // Cleanup owned things
+            if let Some(owner_thing_id) = self.graph_thing_for_tid(current_id) {
+                crate::root::enqueue(crate::root::RootOp::CleanupTaskThings { owner_thing_id });
+            }
         }
 
         // Release any claimed devices
@@ -1013,6 +1019,26 @@ pub fn process_info<R: BootRuntime>() -> Option<alloc::sync::Arc<spin::Mutex<cra
     result
 }
 
+/// Get the graph ThingId for the current task, if any.
+fn graph_thing_for_current_impl<R: BootRuntime>() -> Option<u64> {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+
+    let result = {
+        let lock = SCHEDULER.lock();
+        if let Some(ptr) = *lock {
+            let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+            let tid = rt.current_tid();
+            sched.graph_thing_for_tid(tid)
+        } else {
+            None
+        }
+    };
+
+    rt.irq_restore(_irq);
+    result
+}
+
 pub fn exit<R: BootRuntime>(code: i32) {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
@@ -1066,6 +1092,11 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
             // Queue graph state update
             graphify::update_task_state(tid, "dead");
             graphify::set_exit_code(tid, -9);
+            
+            // Cleanup owned things
+            if let Some(owner_thing_id) = sched.graph_thing_for_tid(tid) {
+                crate::root::enqueue(crate::root::RootOp::CleanupTaskThings { owner_thing_id });
+            }
 
             // Release any claimed devices
             crate::device_registry::REGISTRY

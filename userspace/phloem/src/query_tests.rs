@@ -1,9 +1,8 @@
 use crate::executor::{Graph, GraphExecutor};
-use crate::gql::{parse, Value};
+use crate::gql::parse;
 use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
-use alloc::vec;
 use alloc::vec::Vec;
 use core::cell::RefCell;
 use stem::abi::symbols::SymbolId;
@@ -423,8 +422,13 @@ mod tests {
         let mut ex = GraphExecutor::with_graph(&g);
         let cmd = parse("MERGE (n:Kind {key: 1}) RETURN count(n)").unwrap();
         let res = ex.execute(cmd);
-        // MERGE is not fully implemented, but should not panic
-        assert!(!res.success || res.success); // Either works or reports error
+        assert!(res.success, "MERGE command failed");
+        assert_eq!(res.rows.len(), 1, "Expected 1 row result");
+        if let crate::ResultValue::Number(n) = res.rows[0][0] {
+            assert_eq!(n, 1, "Expected count(n) to be 1");
+        } else {
+            panic!("Expected Number result");
+        }
     }
 
     // ===== Parser-level tests for unsupported features =====

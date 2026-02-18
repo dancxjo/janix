@@ -749,4 +749,46 @@ mod tests {
         assert!(history.contains(3));
         assert!(history.contains(4));
     }
+
+    #[test]
+    fn test_ownership_tracking() {
+        let mut graph = Graph::new();
+        
+        // Create some nodes with different owners
+        let owner1_id = 1000;
+        let owner2_id = 2000;
+        
+        let thing1 = graph.alloc_with_owner(100, Some(owner1_id));
+        let thing2 = graph.alloc_with_owner(101, Some(owner1_id));
+        let thing3 = graph.alloc_with_owner(102, Some(owner2_id));
+        let thing4 = graph.alloc_with_owner(103, None); // kernel-owned
+        
+        // Check ownership
+        assert_eq!(graph.nodes.get(&thing1).unwrap().owner, Some(owner1_id));
+        assert_eq!(graph.nodes.get(&thing2).unwrap().owner, Some(owner1_id));
+        assert_eq!(graph.nodes.get(&thing3).unwrap().owner, Some(owner2_id));
+        assert_eq!(graph.nodes.get(&thing4).unwrap().owner, None);
+        
+        // Get owned things
+        let owned_by_1 = graph.get_owned_things(owner1_id);
+        assert_eq!(owned_by_1.len(), 2);
+        assert!(owned_by_1.contains(&thing1));
+        assert!(owned_by_1.contains(&thing2));
+        
+        let owned_by_2 = graph.get_owned_things(owner2_id);
+        assert_eq!(owned_by_2.len(), 1);
+        assert!(owned_by_2.contains(&thing3));
+        
+        // Test orphaning
+        assert!(graph.orphan_thing(thing1));
+        assert_eq!(graph.nodes.get(&thing1).unwrap().owner, None);
+        
+        let owned_by_1_after = graph.get_owned_things(owner1_id);
+        assert_eq!(owned_by_1_after.len(), 1);
+        assert!(!owned_by_1_after.contains(&thing1));
+        
+        // Test set_owner
+        assert!(graph.set_owner(thing1, Some(owner2_id)));
+        assert_eq!(graph.nodes.get(&thing1).unwrap().owner, Some(owner2_id));
+    }
 }

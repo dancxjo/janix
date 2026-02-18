@@ -39,3 +39,39 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 *   `task/`: Scheduler and process management.
 *   `memory/`: Virtual and physical memory management.
 *   `syscall/`: System call handlers (interface for **Stem**).
+
+## Thing Ownership and Lifecycle
+
+ThingOS implements automatic resource management for things (nodes in the graph) through ownership tracking:
+
+### Ownership Model
+
+- **Each thing can have an owner**: When a process creates a thing, it becomes the owner of that thing.
+- **Owner tracking**: The graph maintains an `owner` field in each `Node` that stores the ThingId of the owning process's graph node.
+- **Kernel-owned things**: Things created during boot or explicitly orphaned have `owner = None` (kernel-owned).
+
+### Automatic Cleanup
+
+When a process terminates (either via `exit()` or being killed):
+1. The scheduler identifies the process's graph thing ID
+2. All things owned by that process are automatically destroyed via `CleanupTaskThings` operation
+3. This prevents resource leaks and ensures cleanup happens even on abnormal termination
+
+### Orphaning Things
+
+Processes can explicitly transfer ownership to the kernel using the `SYS_ROOT_ORPHAN_THING` syscall:
+```rust
+stem::syscall::graph::orphan_thing(thing_id)?;
+```
+
+This is useful for:
+- Creating long-lived resources that should outlive the creating process
+- Implementing daemon services that manage shared resources
+- Transferring ownership to the kernel before process exit
+
+### Implementation Details
+
+- **Owner field**: Added to `Node` structure in `kernel/src/root/graph.rs`
+- **Syscall**: `SYS_ROOT_ORPHAN_THING` (0x173)
+- **Cleanup**: Triggered in `terminate_current()` and `kill_by_tid()` in the scheduler
+- **Graph operations**: `get_owned_things()`, `orphan_thing()`, `set_owner()` methods on `Graph`

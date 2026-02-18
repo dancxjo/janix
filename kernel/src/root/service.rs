@@ -10,6 +10,10 @@ use crate::root::handlers::batch::RootBatchScratch;
 use core::sync::atomic::Ordering;
 
 pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
+    // DIAG: raw serial marker - bypasses log infrastructure entirely
+    crate::runtime_base().putchar(b'R');
+    crate::runtime_base().putchar(b'M');
+    crate::runtime_base().putchar(b'\n');
     crate::kinfo!("ROOT: started once");
 
     crate::contract!("ROOT: Initializing components...");

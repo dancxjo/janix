@@ -13,20 +13,49 @@ use super::types::{ScheduleReason, Scheduler};
 /// in the queues (i.e. the CPU should stay awake). Returns `false` when all
 /// queues are empty and the caller may safely halt (HLT / WFI).
 pub fn yield_now<R: BootRuntime>() -> bool {
+    use core::sync::atomic::{AtomicU64, Ordering};
+    // Per-CPU diagnostic counters so each CPU gets 20 calls of logging
+    static DIAG_CPU: [AtomicU64; 8] = [
+        AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+        AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+    ];
+
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
+
+    let cpu_idx = super::current_cpu_index::<R>();
 
     let (switch_params, has_work) = {
         let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
         let sp = sched.schedule_point(ScheduleReason::CooperativeYield);
-        let cpu_idx = super::current_cpu_index::<R>();
         let work = sched.has_runnable_work(cpu_idx);
         (sp, work)
     };
 
+    let diag_n = if cpu_idx < 8 {
+        DIAG_CPU[cpu_idx].fetch_add(1, Ordering::Relaxed)
+    } else { 999 };
+    if diag_n < 20 {
+        crate::kdebug!(
+            "DIAG yield_now: cpu={} switch={} has_work={}",
+            cpu_idx,
+            switch_params.is_some(),
+            has_work
+        );
+    }
+
     if let Some(switch) = switch_params {
+        if diag_n < 20 {
+            crate::kdebug!(
+                "DIAG ctx_switch: cpu={} from={} to={}",
+                cpu_idx,
+                switch.from_tid,
+                switch.to_tid
+            );
+        }
+
         let cr3_before = rt.debug_active_aspace_root();
         rt.tasking().activate_address_space(switch.to_aspace);
         let cr3_after = rt.debug_active_aspace_root();

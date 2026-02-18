@@ -64,6 +64,11 @@ static PROF_GRAPH_FLUSH_MAX_US: AtomicU64 = AtomicU64::new(0);
 static PROF_RESCHED_TRYLOCK_MISS: AtomicU64 = AtomicU64::new(0);
 static PROF_LAST_LOG_TICKS: AtomicU64 = AtomicU64::new(0);
 
+// Diagnostic counters for IPI delivery chain
+pub static DIAG_IPI_SENT: AtomicU64 = AtomicU64::new(0);
+pub static DIAG_IPI_HANDLER: AtomicU64 = AtomicU64::new(0);
+pub static DIAG_HLT_WAKE: AtomicU64 = AtomicU64::new(0);
+
 /// Lock-skip self-healing: when try_resched_if_needed() fails to acquire
 /// the scheduler lock, set this flag so the next safe-point yields.
 static GLOBAL_NEED_RESCHED: AtomicBool = AtomicBool::new(false);
@@ -93,6 +98,7 @@ fn update_max_u64(slot: &AtomicU64, val: u64) {
 /// Uses try_resched_if_needed to avoid deadlock when SCHEDULER is held by main code
 pub fn on_tick<R: BootRuntime>() {
     TICK_COUNT.fetch_add(1, Ordering::Relaxed);
+    DIAG_IPI_HANDLER.fetch_add(1, Ordering::Relaxed);
     try_resched_if_needed::<R>();
 }
 
@@ -274,8 +280,11 @@ fn maybe_log_scheduler_profile<R: BootRuntime>() {
     let q = graph_queue::stats_snapshot();
     let avg_us = if calls > 0 { total_us / calls } else { 0 };
 
+    let ipi_tx = DIAG_IPI_SENT.swap(0, Ordering::Relaxed);
+    let ipi_rx = DIAG_IPI_HANDLER.swap(0, Ordering::Relaxed);
+    let hlt_w = DIAG_HLT_WAKE.swap(0, Ordering::Relaxed);
     crate::kinfo!(
-        "PROF: sched 2s: graph_flush calls={} items={} avg_us={} max_us={} slow={} trylock_miss={} qlen={} q_hwm={} q_drop_state={} q_evict={}",
+        "PROF: sched 2s: graph_flush calls={} items={} avg_us={} max_us={} slow={} trylock_miss={} qlen={} q_hwm={} q_drop_state={} q_evict={} ipi_tx={} ipi_rx={} hlt_wake={}",
         calls,
         items,
         avg_us,
@@ -285,7 +294,10 @@ fn maybe_log_scheduler_profile<R: BootRuntime>() {
         q.current_len,
         q.high_water_mark,
         q.dropped_update_state,
-        q.evicted_critical
+        q.evicted_critical,
+        ipi_tx,
+        ipi_rx,
+        hlt_w
     );
 }
 

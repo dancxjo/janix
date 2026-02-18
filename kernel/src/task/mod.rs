@@ -280,6 +280,7 @@ pub fn run_scheduler<R: BootRuntime>() -> ! {
         if !yield_now::<R>() {
             // No runnable work — halt until next IRQ (timer tick, device, IPI)
             crate::runtime::<R>().wait_for_interrupt();
+            scheduler::DIAG_HLT_WAKE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         }
     }
 }

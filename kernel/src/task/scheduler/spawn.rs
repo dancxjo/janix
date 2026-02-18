@@ -106,6 +106,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
+            super::DIAG_IPI_SENT.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
             rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
         }
 

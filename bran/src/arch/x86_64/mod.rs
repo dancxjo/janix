@@ -642,6 +642,13 @@ impl ArchRuntime for X86_64Runtime {
             idt::load_on_secondary();
         }
 
+        // Enable the Local APIC on this secondary CPU.
+        // The BSP enables its LAPIC in init_ioapic(), but secondary CPUs
+        // need explicit enable too — without this, the SVR enable bit or
+        // TPR may be in BIOS default state, silently masking IPIs like
+        // the resched vector (0x30) and preventing task scheduling.
+        ioapic::enable_local_apic();
+
         // Initialize preemption timer using cached BSP calibration
         let vector = self.timer_vector.load(Ordering::SeqCst);
         let init_cnt = self.timer_init_cnt.load(Ordering::SeqCst);
@@ -651,12 +658,13 @@ impl ArchRuntime for X86_64Runtime {
     }
 
     fn send_ipi(&self, cpu_index: usize, vector: u8) {
-        if self.cpu_ids.is_initialized() {
-            let ids = *self.cpu_ids.get();
-            if let Some(cpu_id) = ids.get(cpu_index) {
-                // APIC ID is same as CpuId in this platform's enumeration
-                ioapic::send_fixed_ipi(cpu_id.0, vector);
-            }
+        // Read CPU_IDS/CPU_COUNT directly — don't use self.cpu_ids OnceCell
+        // which is never initialized (the ArchRuntime trait's cpu_ids() method
+        // at line 567 bypasses the inherent method that would initialize it).
+        let count = CPU_COUNT.load(Ordering::SeqCst) as usize;
+        if cpu_index < count {
+            let apic_id = unsafe { CPU_IDS[cpu_index].0 };
+            ioapic::send_fixed_ipi(apic_id, vector);
         }
     }
 

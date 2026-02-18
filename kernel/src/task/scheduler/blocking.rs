@@ -121,6 +121,21 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
             };
             sched.per_cpu[safe_cpu].runq[priority as usize].push_back(tid);
 
+            // If the woken task has higher priority than the currently running
+            // task on the target CPU, request a reschedule so we preempt
+            // mid-slice rather than waiting for timeslice expiry.
+            let current_prio = sched.per_cpu[safe_cpu]
+                .current
+                .and_then(|cid| sched.tasks.iter().find(|t| t.id == cid))
+                .map(|t| t.priority as usize)
+                .unwrap_or(0);
+
+            if (priority as usize) > current_prio {
+                if safe_cpu == super::current_cpu_index::<R>() {
+                    sched.need_resched = true;
+                }
+            }
+
             // If the target CPU is not the current one, send an IPI to wake it up
             if safe_cpu != super::current_cpu_index::<R>() {
                 rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR

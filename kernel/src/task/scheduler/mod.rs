@@ -453,6 +453,13 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 // Apply priority aging to prevent starvation
                 self.apply_priority_aging(cpu_idx);
 
+                // If a higher-priority task became runnable (e.g. via wake_task),
+                // preempt immediately rather than waiting for timeslice expiry.
+                if self.need_resched {
+                    self.need_resched = false;
+                    return self.prepare_yield();
+                }
+
                 // Decrement current task's time slice
                 if let Some(current_id) = self.per_cpu.get(cpu_idx).and_then(|pc| pc.current) {
                     if let Some(task) = self.tasks.iter_mut().find(|t| t.id == current_id) {
@@ -663,21 +670,34 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 cpu_idx
             );
         }
-        let pc = self.per_cpu.get_mut(cpu_idx)?;
+        if cpu_idx >= self.per_cpu.len() {
+            return None;
+        }
+        let per_cpu_len = self.per_cpu.len();
+
+        // Collect tasks pinned to a different CPU so we can requeue them after scanning.
+        let mut misrouted: Vec<(usize, usize, TaskId)> = Vec::new(); // (priority, target_cpu, id)
 
         let mut next_id = None;
-        // Priority scan — skip dead tasks
+        // Priority scan — skip dead and misrouted tasks
         for p in (1..5).rev() {
-            while let Some(id) = pc.runq[p].pop_front() {
+            while let Some(id) = self.per_cpu[cpu_idx].runq[p].pop_front() {
                 self.metrics.pops += 1;
                 // Skip dead tasks that were enqueued before kill took effect
-                if self
+                let task_ref = self
                     .tasks
                     .iter()
-                    .find(|t| t.id == id)
-                    .map_or(true, |t| t.state == TaskState::Dead)
-                {
+                    .find(|t| t.id == id);
+                if task_ref.map_or(true, |t| t.state == TaskState::Dead) {
                     continue;
+                }
+                // Skip tasks pinned to a different CPU — collect for requeue
+                let task = task_ref.unwrap();
+                if let crate::task::Affinity::Pinned(target) = task.affinity {
+                    if target != cpu_idx && target < per_cpu_len {
+                        misrouted.push((task.priority as usize, target, id));
+                        continue;
+                    }
                 }
                 next_id = Some(id);
                 break;
@@ -690,33 +710,48 @@ impl<R: BootRuntime> types::Scheduler<R> {
         let next_id = match next_id {
             Some(id) => id,
             None => {
-                // Check Idle queue — skip dead tasks
+                // Check Idle queue — skip dead and misrouted tasks
                 let mut found_idle_q = None;
-                while let Some(id) = pc.runq[0].pop_front() {
+                while let Some(id) = self.per_cpu[cpu_idx].runq[0].pop_front() {
                     self.metrics.pops += 1;
-                    if self
+                    let task_ref = self
                         .tasks
                         .iter()
-                        .find(|t| t.id == id)
-                        .map_or(true, |t| t.state == TaskState::Dead)
-                    {
+                        .find(|t| t.id == id);
+                    if task_ref.map_or(true, |t| t.state == TaskState::Dead) {
                         continue;
+                    }
+                    let task = task_ref.unwrap();
+                    if let crate::task::Affinity::Pinned(target) = task.affinity {
+                        if target != cpu_idx && target < per_cpu_len {
+                            misrouted.push((task.priority as usize, target, id));
+                            continue;
+                        }
                     }
                     found_idle_q = Some(id);
                     break;
                 }
                 if let Some(id) = found_idle_q {
                     id
-                } else if let Some(idle) = pc.idle_task {
+                } else if let Some(idle) = self.per_cpu[cpu_idx].idle_task {
                     self.metrics.idle_picks += 1;
                     idle
                 } else {
+                    // Flush misrouted tasks before returning
+                    for (prio, target_cpu, id) in misrouted {
+                        self.per_cpu[target_cpu].runq[prio].push_back(id);
+                    }
                     return None;
                 }
             }
         };
 
-        let current_id = pc
+        // Flush misrouted tasks to their correct CPU queues
+        for (prio, target_cpu, id) in misrouted {
+            self.per_cpu[target_cpu].runq[prio].push_back(id);
+        }
+
+        let current_id = self.per_cpu[cpu_idx]
             .current
             .expect("prepare_schedule called without current task");
 
@@ -726,7 +761,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             return None;
         }
 
-        pc.current = Some(next_id);
+        self.per_cpu[cpu_idx].current = Some(next_id);
 
         let old_idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
         let new_idx = self.tasks.iter().position(|t| t.id == next_id).unwrap();
@@ -749,19 +784,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
             // Reset wait time and priority for the newly scheduled task (anti-starvation)
             new_task.wait_ticks = 0;
             new_task.priority = new_task.base_priority;
-
-            // STRICT AFFINITY CHECK
-            if let crate::task::Affinity::Pinned(pinned_cpu) = new_task.affinity {
-                if pinned_cpu != cpu_idx {
-                    crate::kprintln!(
-                        "FATAL SCHED BUG: CPU {} picked Task {} which is pinned to CPU {}!",
-                        cpu_idx,
-                        new_task.id,
-                        pinned_cpu
-                    );
-                    // For now, just log it, but we could panic here if we are sure.
-                }
-            }
 
             // Hot-path graph emissions disabled — see comment above.
             // graphify::update_task_state(new_task.id, "running");
@@ -878,39 +900,54 @@ impl<R: BootRuntime> types::Scheduler<R> {
     /// and wait_ticks is reset to 0.
     fn apply_priority_aging(&mut self, cpu_idx: usize) {
         use crate::task::TaskPriority;
-        
-        let pc = &self.per_cpu[cpu_idx];
-        
-        // For each priority level (except Realtime which should never be starved)
+        use alloc::collections::VecDeque;
+
+        // Process each base-priority level (skip Realtime = index 4)
         for base_priority in 0..4 {
-            // Check each task in this queue
-            let queue_ids: Vec<TaskId> = pc.runq[base_priority].iter().copied().collect();
-            
-            for task_id in queue_ids {
-                if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
-                    // Calculate priority boost based on wait time
-                    let boost_levels = (task.wait_ticks / types::AGING_THRESHOLD_TICKS) as usize;
-                    let boost_levels = boost_levels.min(types::MAX_PRIORITY_BOOST);
-                    
-                    // Calculate effective priority (capped at Realtime)
-                    let base_prio = task.base_priority as usize;
-                    let effective_prio = (base_prio + boost_levels).min(TaskPriority::Realtime as usize);
-                    let effective_priority = match effective_prio {
-                        0 => TaskPriority::Idle,
-                        1 => TaskPriority::Low,
-                        2 => TaskPriority::Normal,
-                        3 => TaskPriority::High,
-                        4 => TaskPriority::Realtime,
-                        _ => TaskPriority::Idle,
-                    };
-                    
-                    // If priority should be boosted, move task to higher queue
-                    if effective_priority != task.priority {
-                        task.priority = effective_priority;
-                        // Note: task will be moved to correct queue in next scheduling cycle
-                        // by prepare_schedule logic
+            // Phase 1: Drain the queue and classify each task.
+            //   - keep:       IDs whose effective priority == base_priority (stay here)
+            //   - promotions: (target_queue_index, id) for boosted tasks
+            let queue = &mut self.per_cpu[cpu_idx].runq[base_priority];
+            let len = queue.len();
+            let mut keep = VecDeque::with_capacity(len);
+            let mut promotions: Vec<(usize, TaskId)> = Vec::new();
+
+            for _ in 0..len {
+                let id = queue.pop_front().unwrap();
+
+                if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+                    let boost = (task.wait_ticks / types::AGING_THRESHOLD_TICKS) as usize;
+                    let boost = boost.min(types::MAX_PRIORITY_BOOST);
+                    let eff = (task.base_priority as usize + boost)
+                        .min(TaskPriority::Realtime as usize);
+
+                    if eff != base_priority {
+                        // Update the task's effective priority and record the move
+                        task.priority = match eff {
+                            0 => TaskPriority::Idle,
+                            1 => TaskPriority::Low,
+                            2 => TaskPriority::Normal,
+                            3 => TaskPriority::High,
+                            4 => TaskPriority::Realtime,
+                            _ => TaskPriority::Idle,
+                        };
+                        promotions.push((eff, id));
+                    } else {
+                        keep.push_back(id);
                     }
+                } else {
+                    // Unknown task ID — keep it in place so it gets cleaned up
+                    // by the dead-task skip in prepare_schedule
+                    keep.push_back(id);
                 }
+            }
+
+            // Phase 2: Put un-promoted IDs back, then push promoted IDs into
+            // their target queues.
+            self.per_cpu[cpu_idx].runq[base_priority] = keep;
+
+            for (target, id) in promotions {
+                self.per_cpu[cpu_idx].runq[target].push_back(id);
             }
         }
     }
@@ -1525,6 +1562,18 @@ mod tests {
         let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
         assert!(task.priority > TaskPriority::Low, "Priority should be boosted");
         assert_eq!(task.base_priority, TaskPriority::Low, "Base priority should remain unchanged");
+
+        // Verify the task was physically moved between queues
+        assert!(
+            sched.per_cpu[0].runq[TaskPriority::Low as usize].is_empty(),
+            "Task should have been removed from the Low queue"
+        );
+        assert!(
+            sched.per_cpu[0].runq[task.priority as usize]
+                .iter()
+                .any(|&id| id == 1),
+            "Task should be in the boosted priority queue"
+        );
     }
 
     #[test]

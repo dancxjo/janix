@@ -44,6 +44,7 @@ pub use wait_queue::WaitQueue;
 
 use crate::task::{StartupArg, Task, TaskId, TaskPriority, TaskState};
 use crate::{BootRuntime, BootTasking};
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
 
@@ -366,6 +367,8 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         },
         name_len: 4,
         process_info: None,
+        wait_ticks: 0,
+        base_priority: TaskPriority::Normal,
     };
     sched.tasks.push(alloc::boxed::Box::new(task));
 
@@ -443,8 +446,14 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     return None;
                 }
 
-                // Decrement current task's time slice
+                // Increment wait times for starving tasks (anti-starvation mechanism)
                 let cpu_idx = current_cpu_index::<R>();
+                self.increment_wait_times(cpu_idx);
+                
+                // Apply priority aging to prevent starvation
+                self.apply_priority_aging(cpu_idx);
+
+                // Decrement current task's time slice
                 if let Some(current_id) = self.per_cpu.get(cpu_idx).and_then(|pc| pc.current) {
                     if let Some(task) = self.tasks.iter_mut().find(|t| t.id == current_id) {
                         if task.timeslice_remaining > 0 {
@@ -737,6 +746,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
             new_task.state = TaskState::Running;
             new_task.last_cpu = Some(cpu_idx);
 
+            // Reset wait time and priority for the newly scheduled task (anti-starvation)
+            new_task.wait_ticks = 0;
+            new_task.priority = new_task.base_priority;
+
             // STRICT AFFINITY CHECK
             if let crate::task::Affinity::Pinned(pinned_cpu) = new_task.affinity {
                 if pinned_cpu != cpu_idx {
@@ -825,6 +838,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
         if let Some(idx) = self.tasks.iter().position(|t| t.id == id) {
             let old_priority = self.tasks[idx].priority;
             self.tasks[idx].priority = priority;
+            self.tasks[idx].base_priority = priority; // Update base priority for anti-starvation
 
             // Queue graph priority property update
             graphify::update_task_priority(id, priority as u8);
@@ -844,6 +858,99 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     }
                 }
             }
+        }
+    }
+
+    /// Apply priority aging to prevent starvation.
+    ///
+    /// This anti-starvation mechanism temporarily boosts the priority of tasks that
+    /// have been waiting too long. The algorithm:
+    ///
+    /// 1. For each task in run queues (except Realtime), calculate boost based on wait time
+    /// 2. Boost level = wait_ticks / AGING_THRESHOLD_TICKS (capped at MAX_PRIORITY_BOOST)
+    /// 3. effective_priority = base_priority + boost_levels (capped at Realtime)
+    /// 4. Update task.priority to reflect the boost
+    ///
+    /// Example: A Low-priority task waiting for 1000 ticks (2 aging periods at 500 ticks each)
+    /// gets boosted by 2 levels: Low -> Normal -> High
+    ///
+    /// When the task is eventually scheduled, its priority is restored to base_priority
+    /// and wait_ticks is reset to 0.
+    fn apply_priority_aging(&mut self, cpu_idx: usize) {
+        use crate::task::TaskPriority;
+        
+        let pc = &self.per_cpu[cpu_idx];
+        
+        // For each priority level (except Realtime which should never be starved)
+        for base_priority in 0..4 {
+            // Check each task in this queue
+            let queue_ids: Vec<TaskId> = pc.runq[base_priority].iter().copied().collect();
+            
+            for task_id in queue_ids {
+                if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                    // Calculate priority boost based on wait time
+                    let boost_levels = (task.wait_ticks / types::AGING_THRESHOLD_TICKS) as usize;
+                    let boost_levels = boost_levels.min(types::MAX_PRIORITY_BOOST);
+                    
+                    // Calculate effective priority (capped at Realtime)
+                    let base_prio = task.base_priority as usize;
+                    let effective_prio = (base_prio + boost_levels).min(TaskPriority::Realtime as usize);
+                    let effective_priority = match effective_prio {
+                        0 => TaskPriority::Idle,
+                        1 => TaskPriority::Low,
+                        2 => TaskPriority::Normal,
+                        3 => TaskPriority::High,
+                        4 => TaskPriority::Realtime,
+                        _ => TaskPriority::Idle,
+                    };
+                    
+                    // If priority should be boosted, move task to higher queue
+                    if effective_priority != task.priority {
+                        task.priority = effective_priority;
+                        // Note: task will be moved to correct queue in next scheduling cycle
+                        // by prepare_schedule logic
+                    }
+                }
+            }
+        }
+    }
+
+    /// Increment wait time for all runnable tasks except the currently running one.
+    ///
+    /// Called on each timer tick as part of the anti-starvation mechanism. This tracks
+    /// how long each task has been waiting in run queues, which is used by apply_priority_aging()
+    /// to determine if a task should receive a temporary priority boost.
+    fn increment_wait_times(&mut self, cpu_idx: usize) {
+        let current_id = self.per_cpu[cpu_idx].current;
+        
+        for pc in self.per_cpu.iter() {
+            for queue in pc.runq.iter() {
+                for &task_id in queue {
+                    if Some(task_id) != current_id {
+                        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                            if task.state == TaskState::Runnable {
+                                task.wait_ticks = task.wait_ticks.saturating_add(1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Reset wait time for a task that just got scheduled.
+    ///
+    /// Part of the anti-starvation mechanism. When a task is scheduled to run, we:
+    /// 1. Reset wait_ticks to 0 (it's no longer waiting)
+    /// 2. Restore priority to base_priority (remove any aging boost)
+    ///
+    /// This ensures that aging only provides temporary priority boosts and doesn't
+    /// permanently change a task's priority.
+    fn reset_wait_time(&mut self, task_id: TaskId) {
+        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+            task.wait_ticks = 0;
+            // Reset priority to base priority (remove any aging boost)
+            task.priority = task.base_priority;
         }
     }
 
@@ -1269,3 +1376,200 @@ pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
         crate::runtime_base().wait_for_interrupt();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::{Affinity, TaskPriority, TaskState};
+    use crate::{BootRuntime, BootRuntimeBase, BootTasking, MapKind, MapPerms, UserEntry, UserTaskSpec};
+
+    // Mock types for testing - copy from spawn.rs tests
+    #[derive(Default, Copy, Clone)]
+    struct MockContext(usize);
+    #[derive(Clone, Copy, Default)]
+    struct MockAddressSpace(u64);
+
+    struct MockRuntime;
+    impl BootRuntimeBase for MockRuntime {
+        fn putchar(&self, _c: u8) {}
+        fn mono_ticks(&self) -> u64 { 0 }
+        fn mono_freq_hz(&self) -> u64 { 1 }
+        fn init_secondary_cpu(&self, _cpu_index: usize) {}
+    }
+    impl BootRuntime for MockRuntime {
+        type Tasking = MockRuntime;
+        fn tasking(&self) -> &Self { self }
+        fn halt(&self) -> ! { loop {} }
+        fn irq_disable(&self) -> crate::IrqState { crate::IrqState(0) }
+        fn irq_restore(&self, _state: crate::IrqState) {}
+        fn phys_memory_map(&self) -> &'static [crate::PhysRange] { &[] }
+        fn phys_to_virt_offset(&self) -> u64 { 0 }
+        fn modules(&self) -> &'static [crate::BootModuleDesc] { &[] }
+        fn framebuffer(&self) -> Option<crate::FramebufferInfo> { None }
+        fn simd_state_layout(&self) -> (usize, usize) { (0, 1) }
+        unsafe fn simd_save(&self, _ptr: *mut u8) {}
+        unsafe fn simd_restore(&self, _ptr: *const u8) {}
+    }
+    impl BootTasking for MockRuntime {
+        type Runtime = MockRuntime;
+        type Context = MockContext;
+        type AddressSpace = MockAddressSpace;
+        fn init(&self, _hhdm: u64) {}
+        fn init_kernel_context(&self, _entry: extern "C" fn(usize) -> !, _st: u64, _arg: usize) -> Self::Context {
+            MockContext(_arg)
+        }
+        fn init_user_context(&self, _spec: UserTaskSpec<Self::AddressSpace>, _kst: u64) -> Self::Context {
+            MockContext(_spec.arg)
+        }
+        unsafe fn switch(&self, _f: &mut Self::Context, _t: &Self::Context, _tid: u64) {}
+        unsafe fn enter_user(&self, _e: UserEntry) -> ! { loop {} }
+        fn make_user_address_space(&self) -> Self::AddressSpace { MockAddressSpace(0) }
+        fn active_address_space(&self) -> Self::AddressSpace { MockAddressSpace(0) }
+        fn activate_address_space(&self, _as: Self::AddressSpace) {}
+        fn map_page(&self, _as: Self::AddressSpace, _v: u64, _p: u64, _pr: MapPerms, _k: MapKind, _a: &dyn crate::FrameAllocatorHook) -> Result<(), ()> { Ok(()) }
+        fn unmap_page(&self, _as: Self::AddressSpace, _v: u64) -> Result<Option<u64>, ()> { Ok(None) }
+        fn translate(&self, _as: Self::AddressSpace, _v: u64) -> Option<u64> { None }
+        fn tlb_flush_page(&self, _v: u64) {}
+    }
+
+    #[test]
+    fn test_wait_ticks_increment() {
+        static RUNTIME: MockRuntime = MockRuntime;
+        // Test that wait_ticks increments for waiting tasks
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.per_cpu.push(types::PerCpu::new());
+        
+        // Create a mock task with low priority
+        let task = crate::task::Task {
+            id: 1,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Low,
+            base_priority: TaskPriority::Low,
+            wait_ticks: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+        
+        sched.tasks.push(alloc::boxed::Box::new(task));
+        sched.per_cpu[0].runq[TaskPriority::Low as usize].push_back(1);
+        sched.per_cpu[0].current = Some(0); // Different task is running
+        
+        // Increment wait times
+        sched.increment_wait_times(0);
+        
+        // Verify wait_ticks incremented
+        let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
+        assert_eq!(task.wait_ticks, 1);
+    }
+
+    #[test]
+    fn test_priority_aging_boost() {
+        static RUNTIME: MockRuntime = MockRuntime;
+        // Test that tasks waiting too long get priority boost
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.per_cpu.push(types::PerCpu::new());
+        
+        // Create a low-priority task that has been waiting
+        let task = crate::task::Task {
+            id: 1,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Low,
+            base_priority: TaskPriority::Low,
+            wait_ticks: types::AGING_THRESHOLD_TICKS, // Waited long enough for boost
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+        
+        sched.tasks.push(alloc::boxed::Box::new(task));
+        sched.per_cpu[0].runq[TaskPriority::Low as usize].push_back(1);
+        sched.per_cpu[0].current = Some(0);
+        
+        // Apply aging
+        sched.apply_priority_aging(0);
+        
+        // Verify priority was boosted
+        let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
+        assert!(task.priority > TaskPriority::Low, "Priority should be boosted");
+        assert_eq!(task.base_priority, TaskPriority::Low, "Base priority should remain unchanged");
+    }
+
+    #[test]
+    fn test_reset_wait_time_on_schedule() {
+        static RUNTIME: MockRuntime = MockRuntime;
+        // Test that wait_ticks resets when task is scheduled
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        
+        // Create a task that has been waiting
+        let task = crate::task::Task {
+            id: 1,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Low,
+            wait_ticks: 100, // Has been waiting
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+        
+        sched.tasks.push(alloc::boxed::Box::new(task));
+        
+        // Reset wait time
+        sched.reset_wait_time(1);
+        
+        // Verify wait_ticks reset and priority restored
+        let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
+        assert_eq!(task.wait_ticks, 0);
+        assert_eq!(task.priority, task.base_priority);
+    }
+}
+

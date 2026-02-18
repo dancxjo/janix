@@ -97,6 +97,8 @@ impl<R: BootRuntime> Scheduler<R> {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            wait_ticks: 0,
+            base_priority: priority,
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
@@ -203,6 +205,8 @@ impl<R: BootRuntime> Scheduler<R> {
             name: [0; 32],
             name_len: 0,
             process_info: parent_pinfo,
+            wait_ticks: 0,
+            base_priority: priority,
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));
@@ -292,6 +296,8 @@ impl<R: BootRuntime> Scheduler<R> {
             name: [0; 32],
             name_len: 0,
             process_info: None,
+            wait_ticks: 0,
+            base_priority: priority,
         };
 
         self.tasks.push(alloc::boxed::Box::new(task));

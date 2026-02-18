@@ -12,6 +12,21 @@ pub const DEFAULT_TIMESLICE: u32 = 10;
 /// Maximum number of CPUs supported
 pub const MAX_CPUS: usize = 32;
 
+/// Anti-starvation: ticks to wait before boosting priority by one level
+/// At 100Hz, 500 ticks = ~5 seconds
+/// 
+/// This ensures low-priority tasks don't starve even when high-priority tasks
+/// are continuously runnable. After waiting for AGING_THRESHOLD_TICKS, a task's
+/// priority is temporarily boosted by one level until it gets scheduled.
+pub const AGING_THRESHOLD_TICKS: u64 = 500;
+
+/// Anti-starvation: maximum priority boost levels (prevents excessive boosting)
+/// 
+/// Limits how many priority levels a task can be boosted. For example, with
+/// MAX_PRIORITY_BOOST = 2, a Low priority task can be boosted to at most High
+/// priority (Low -> Normal -> High), but never to Realtime.
+pub const MAX_PRIORITY_BOOST: usize = 2;
+
 pub struct PerCpu {
     pub runq: [VecDeque<TaskId>; 5],
     pub idle_task: Option<TaskId>,

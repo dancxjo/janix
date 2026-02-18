@@ -100,6 +100,18 @@ pub struct Task<R: BootRuntime> {
 
     /// Per-process identity and storage (shared across threads).
     pub process_info: Option<Arc<Mutex<ProcessInfo>>>,
+
+    /// Anti-starvation: tracks ticks since task last ran (for aging).
+    /// This counter is incremented on each timer tick while the task is waiting
+    /// in a run queue. When it exceeds AGING_THRESHOLD_TICKS, the task's effective
+    /// priority is boosted to prevent starvation. Reset to 0 when task is scheduled.
+    pub wait_ticks: u64,
+    
+    /// Anti-starvation: base priority before any aging boost.
+    /// When a task is created or its priority is changed via set_priority(), both
+    /// `priority` and `base_priority` are updated. The scheduler temporarily modifies
+    /// `priority` for aging, but always restores it to `base_priority` when scheduled.
+    pub base_priority: TaskPriority,
 }
 
 pub fn init<R: BootRuntime>() {

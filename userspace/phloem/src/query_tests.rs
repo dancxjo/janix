@@ -462,4 +462,61 @@ mod tests {
         // Should fail because 'n' is not bound
         assert!(!res.success);
     }
+
+    // ===== 8) Pagination and Ordering =====
+
+    #[test]
+    fn test_pagination() {
+        // MATCH (n) RETURN n ORDER BY id(n) ASC SKIP 1 LIMIT 2
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) ASC SKIP 1 LIMIT 2").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        // Expecting nodes 2, 3
+        assert_eq!(res.rows.len(), 2);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 2);
+        } else {
+            panic!("Expected Node ID");
+        }
+        if let crate::ResultValue::Node(id) = res.rows[1][0] {
+            assert_eq!(id, 3);
+        } else {
+            panic!("Expected Node ID");
+        }
+    }
+
+    #[test]
+    fn test_skip_overflow() {
+        // MATCH (n) RETURN n SKIP 100
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) RETURN n SKIP 100").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert!(res.rows.is_empty());
+    }
+
+    #[test]
+    fn test_order_desc() {
+        // MATCH (n) RETURN n ORDER BY id(n) DESC LIMIT 2
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) DESC LIMIT 2").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        // Expecting nodes 5, 4 (reverse ID order)
+        assert_eq!(res.rows.len(), 2);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 5);
+        } else {
+            panic!("Expected Node ID");
+        }
+        if let crate::ResultValue::Node(id) = res.rows[1][0] {
+            assert_eq!(id, 4);
+        } else {
+            panic!("Expected Node ID");
+        }
+    }
 }

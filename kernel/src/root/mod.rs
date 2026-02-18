@@ -42,6 +42,8 @@ pub enum RootOp {
     },
     CreateNode {
         kind: SymbolShell,
+        creator_tid: u64,
+        owner_thing_id: Option<u64>,
     },
     BytespaceCreate {
         len: u64,
@@ -196,6 +198,12 @@ pub enum RootOp {
         id: u64,
         out_ptr: u64,
         out_len: u64,
+    },
+    OrphanThing {
+        thing_id: u64,
+    },
+    CleanupTaskThings {
+        owner_thing_id: u64,
     },
 }
 

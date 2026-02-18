@@ -42,6 +42,7 @@ pub(crate) static mut RUN_SCHEDULER_HOOK: Option<fn() -> !> = None;
 pub(crate) static mut KILL_BY_TID_HOOK: Option<fn(u64) -> bool> = None;
 pub(crate) static mut DUMP_STATS_HOOK: Option<fn()> = None;
 pub(crate) static mut PROCESS_INFO_HOOK: Option<fn() -> Option<Arc<Mutex<ProcessInfo>>>> = None;
+pub(crate) static mut GRAPH_THING_FOR_CURRENT_HOOK: Option<fn() -> Option<u64>> = None;
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
@@ -212,5 +213,13 @@ pub unsafe fn spawn_process_ex_current(
         unsafe { hook(name, argv, env, stdin, stdout, stderr) }
     } else {
         Err(Errno::ENOSYS)
+    }
+}
+
+pub unsafe fn graph_thing_for_current() -> Option<u64> {
+    if let Some(hook) = unsafe { GRAPH_THING_FOR_CURRENT_HOOK } {
+        hook()
+    } else {
+        None
     }
 }

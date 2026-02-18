@@ -34,7 +34,13 @@ pub fn sys_root_intern(ptr: usize, len: usize) -> SysResult<usize> {
 
 pub fn sys_root_create_node(kind_ptr: usize) -> SysResult<usize> {
     let sym = read_symbol(kind_ptr)?;
-    root_call(RootOp::CreateNode { kind: sym })
+    let creator_tid = unsafe { crate::task::scheduler::current_tid_current() };
+    let owner_thing_id = unsafe { crate::task::scheduler::graph_thing_for_current() };
+    root_call(RootOp::CreateNode { 
+        kind: sym, 
+        creator_tid,
+        owner_thing_id,
+    })
 }
 
 pub fn sys_root_link(src: usize, rel_ptr: usize, dst: usize) -> SysResult<usize> {
@@ -1123,4 +1129,8 @@ pub fn sys_root_dir_list(dir_id: usize, out_ptr: usize, out_len: usize) -> SysRe
             crate::task::scheduler::yield_now_current();
         }
     }
+}
+
+pub fn sys_root_orphan_thing(thing_id: usize) -> SysResult<usize> {
+    root_call(RootOp::OrphanThing { thing_id: thing_id as u64 })
 }

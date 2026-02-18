@@ -15,6 +15,9 @@ pub struct Node {
     pub watches: Vec<(u64, ThingId)>,
     // Edges: list of (RelKind, Target)
     pub edges: Vec<(SymbolId, ThingId)>,
+    /// Owner of this thing (ThingId of the process/task that created it).
+    /// None means kernel-owned or orphaned.
+    pub owner: Option<ThingId>,
 }
 
 // ============================================================================
@@ -386,6 +389,10 @@ impl Graph {
     }
 
     pub fn alloc(&mut self, kind: SymbolId) -> ThingId {
+        self.alloc_with_owner(kind, None)
+    }
+
+    pub fn alloc_with_owner(&mut self, kind: SymbolId, owner: Option<ThingId>) -> ThingId {
         let id = self.next_id;
         self.next_id += 1;
         self.nodes.insert(
@@ -396,6 +403,7 @@ impl Graph {
                 resource: None,
                 watches: Vec::new(),
                 edges: Vec::new(),
+                owner,
             },
         );
 
@@ -458,6 +466,41 @@ impl Graph {
 
             // Remove this node's reverse_index entry
             self.reverse_index.remove(&id);
+        }
+    }
+
+    /// Get all things owned by a specific process/task.
+    pub fn get_owned_things(&self, owner_id: ThingId) -> Vec<ThingId> {
+        self.nodes
+            .iter()
+            .filter_map(|(&id, node)| {
+                if node.owner == Some(owner_id) {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Transfer ownership of a thing to the kernel (orphan it).
+    /// Returns true if the thing existed and was orphaned.
+    pub fn orphan_thing(&mut self, thing_id: ThingId) -> bool {
+        if let Some(node) = self.nodes.get_mut(&thing_id) {
+            node.owner = None;
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Set the owner of a thing.
+    pub fn set_owner(&mut self, thing_id: ThingId, owner: Option<ThingId>) -> bool {
+        if let Some(node) = self.nodes.get_mut(&thing_id) {
+            node.owner = owner;
+            true
+        } else {
+            false
         }
     }
 }

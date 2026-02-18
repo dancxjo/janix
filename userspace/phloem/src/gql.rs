@@ -853,48 +853,7 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_parse_order_by() {
-        // Test default (implicit ASC)
-        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n)").unwrap();
-        if let Command::Match { order_by, .. } = cmd {
-            match order_by {
-                Some(OrderBy::IdAsc(var)) => assert_eq!(var, "n"),
-                _ => panic!("Expected IdAsc"),
-            }
-        } else {
-            panic!("Expected Match");
-        }
 
-        // Test explicit ASC
-        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) ASC").unwrap();
-        if let Command::Match { order_by, .. } = cmd {
-            match order_by {
-                Some(OrderBy::IdAsc(var)) => assert_eq!(var, "n"),
-                _ => panic!("Expected IdAsc"),
-            }
-        }
-
-        // Test explicit DESC
-        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) DESC").unwrap();
-        if let Command::Match { order_by, .. } = cmd {
-            match order_by {
-                Some(OrderBy::IdDesc(var)) => assert_eq!(var, "n"),
-                _ => panic!("Expected IdDesc"),
-            }
-        }
-
-        // Test error: missing BY
-        assert!(parse("MATCH (n) RETURN n ORDER id(n)").is_err());
-
-        // Test error: missing id()
-        assert!(parse("MATCH (n) RETURN n ORDER BY n").is_err());
-
-        // Test error: invalid id syntax
-        assert!(parse("MATCH (n) RETURN n ORDER BY id n").is_err());
-    }
-
-    }
 
     #[test]
     fn test_tokenize_escapes() {

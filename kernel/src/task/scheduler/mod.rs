@@ -45,7 +45,7 @@ pub use wait_queue::WaitQueue;
 use crate::task::{StartupArg, Task, TaskId, TaskPriority, TaskState};
 use crate::{BootRuntime, BootTasking};
 use alloc::vec::Vec;
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
 
 #[cfg(any(feature = "sched_debug", debug_assertions))]
@@ -63,6 +63,13 @@ static PROF_GRAPH_FLUSH_SLOW: AtomicU64 = AtomicU64::new(0);
 static PROF_GRAPH_FLUSH_MAX_US: AtomicU64 = AtomicU64::new(0);
 static PROF_RESCHED_TRYLOCK_MISS: AtomicU64 = AtomicU64::new(0);
 static PROF_LAST_LOG_TICKS: AtomicU64 = AtomicU64::new(0);
+
+/// Lock-skip self-healing: when try_resched_if_needed() fails to acquire
+/// the scheduler lock, set this flag so the next safe-point yields.
+static GLOBAL_NEED_RESCHED: AtomicBool = AtomicBool::new(false);
+
+/// If trylock misses exceed this count in a 2-second window, emit a warning.
+const TRYLOCK_MISS_WARN_THRESHOLD: u64 = 50;
 
 #[inline]
 fn ticks_to_us<R: BootRuntime>(ticks: u64) -> u64 {
@@ -118,6 +125,8 @@ fn try_resched_if_needed<R: BootRuntime>() {
         }
     } else {
         PROF_RESCHED_TRYLOCK_MISS.fetch_add(1, Ordering::Relaxed);
+        // Self-healing: tell the next safe point to reschedule
+        GLOBAL_NEED_RESCHED.store(true, Ordering::Release);
     }
     // If try_lock failed, skip rescheduling this tick - not a problem, next tick will try again
 
@@ -253,6 +262,15 @@ fn maybe_log_scheduler_profile<R: BootRuntime>() {
     let slow = PROF_GRAPH_FLUSH_SLOW.swap(0, Ordering::Relaxed);
     let max_us = PROF_GRAPH_FLUSH_MAX_US.swap(0, Ordering::Relaxed);
     let trylock_miss = PROF_RESCHED_TRYLOCK_MISS.swap(0, Ordering::Relaxed);
+
+    // Threshold warning: if misses are pathological, emit a diagnostic
+    if trylock_miss >= TRYLOCK_MISS_WARN_THRESHOLD {
+        crate::kwarn!(
+            "SCHED: scheduler lock held too long — {} trylock misses in 2s window (threshold {})",
+            trylock_miss,
+            TRYLOCK_MISS_WARN_THRESHOLD,
+        );
+    }
     let q = graph_queue::stats_snapshot();
     let avg_us = if calls > 0 { total_us / calls } else { 0 };
 
@@ -483,7 +501,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     self.need_resched = true;
                     return None;
                 }
-                if self.need_resched {
+                // Also drain the global atomic flag (set by trylock-miss fallback)
+                let global = GLOBAL_NEED_RESCHED.swap(false, Ordering::Acquire);
+                if self.need_resched || global {
                     self.need_resched = false;
                     return self.prepare_yield();
                 }

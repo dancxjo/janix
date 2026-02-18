@@ -1934,7 +1934,8 @@ async fn anther_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> 
     }
 
     // 1. Wait for log message
-    check_serial(world, "anther: Listening on port 80", 60.0).await?;
+    // Increased timeout to 180s due to slow emulated network stack
+    check_serial(world, "anther: Listening on port 80", 180.0).await?;
 
     // 2. Poll for health
     let port = world
@@ -2074,5 +2075,131 @@ async fn make_concurrent_requests(
     }
 
     eprintln!("│  │  │      ✅ {} concurrent requests succeeded", count);
+    Ok(())
+}
+
+// ===== GQL Steps =====
+
+#[when(regex = r#"^I execute the GQL query \"(.+)\"$"#)]
+async fn execute_gql_query(world: &mut ThingOsWorld, query: String) -> Result<(), StepError> {
+    let port = world
+        .http_port
+        .ok_or(StepError("HTTP port not configured".to_string()))?;
+    let url = format!("http://127.0.0.1:{}/api/v1/query", port);
+
+    let client = Client::new();
+    let resp = client
+        .post(&url)
+        .body(query)
+        .send()
+        .await
+        .map_err(|e| StepError(format!("Request failed: {}", e)))?;
+
+    let status = resp.status().as_u16();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| StepError(format!("Failed to read body: {}", e)))?;
+
+    world.last_http_response = Some((status, body));
+    Ok(())
+}
+
+#[then(regex = r#"^the GQL result should have at least (\d+) rows$"#)]
+async fn gql_result_rows(world: &mut ThingOsWorld, min_rows: usize) -> Result<(), StepError> {
+    let (_, body) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No HTTP response recorded".to_string()))?;
+
+    let json: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| StepError(format!("Failed to parse JSON: {}", e)))?;
+
+    let success = json
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+
+    if !success {
+        let msg = json
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or("Unknown error");
+        return Err(StepError(format!("GQL query failed: {}", msg)));
+    }
+
+    let rows = json
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .ok_or(StepError("Missing 'rows' array in response".to_string()))?;
+
+    if rows.len() < min_rows {
+        return Err(StepError(format!(
+            "Expected at least {} rows, found {}",
+            min_rows,
+            rows.len()
+        )));
+    }
+
+    eprintln!("│  │  │      ✅ GQL result has {} rows", rows.len());
+    Ok(())
+}
+
+#[then(regex = r#"^row (\d+) column (\d+) of the GQL result should be a node$"#)]
+async fn gql_result_cell_is_node(
+    world: &mut ThingOsWorld,
+    row_idx: usize,
+    col_idx: usize,
+) -> Result<(), StepError> {
+    let (_, body) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No HTTP response recorded".to_string()))?;
+
+    let json: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| StepError(format!("Failed to parse JSON: {}", e)))?;
+
+    let rows = json
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .ok_or(StepError("Missing 'rows' array".to_string()))?;
+
+    let row = rows.get(row_idx).ok_or(StepError(format!(
+        "Row index {} out of bounds (len={})",
+        row_idx,
+        rows.len()
+    )))?;
+
+    let row_arr = row
+        .as_array()
+        .ok_or(StepError("Row is not an array".to_string()))?;
+
+    let cell = row_arr.get(col_idx).ok_or(StepError(format!(
+        "Column index {} out of bounds (len={})",
+        col_idx,
+        row_arr.len()
+    )))?;
+
+    let type_field = cell
+        .get("type")
+        .and_then(|v| v.as_str())
+        .ok_or(StepError("Cell is not an object with 'type' field".to_string()))?;
+
+    if type_field != "node" {
+        return Err(StepError(format!(
+            "Expected cell to be a node, found type '{}'",
+            type_field
+        )));
+    }
+
+    let id = cell
+        .get("id")
+        .and_then(|v| v.as_u64())
+        .ok_or(StepError("Node object missing 'id'".to_string()))?;
+
+    eprintln!(
+        "│  │  │      ✅ Cell ({}, {}) is a node with ID {}",
+        row_idx, col_idx, id
+    );
     Ok(())
 }

@@ -288,6 +288,21 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_order_by_id_desc_limit() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) DESC LIMIT 1").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 5);
+        } else {
+            panic!("Expected Node ID");
+        }
+    }
+
     // ===== 1) Identity and direct lookup =====
 
     #[test]

@@ -214,4 +214,28 @@ mod tests {
             assert_eq!(PixelFormat::from_wire(fmt.to_wire()), fmt);
         }
     }
+
+    #[test]
+    fn test_premultiply() {
+        // Opaque - no change
+        let opaque = Color::from_rgba(100, 150, 200, 255);
+        assert_eq!(opaque.premultiply(), opaque);
+
+        // Transparent - becomes transparent black
+        let transparent = Color::from_rgba(100, 150, 200, 0);
+        assert_eq!(transparent.premultiply(), Color::TRANSPARENT);
+
+        // Semi-transparent
+        let semi = Color::from_rgba(255, 128, 64, 128); // approx 50% opacity
+        let premul = semi.premultiply();
+
+        // 255 * 128 / 255 = 128
+        assert_eq!(premul.red(), 128);
+        // 128 * 128 / 255 = 64
+        assert_eq!(premul.green(), 64);
+        // 64 * 128 / 255 = 32
+        assert_eq!(premul.blue(), 32);
+        // Alpha remains 128
+        assert_eq!(premul.alpha(), 128);
+    }
 }

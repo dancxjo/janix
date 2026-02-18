@@ -776,6 +776,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         self.per_cpu[cpu_idx].current = Some(next_id);
 
+        // Reset wait time and priority for the newly scheduled task (anti-starvation)
+        self.reset_wait_time(next_id);
+
         let old_idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
         let new_idx = self.tasks.iter().position(|t| t.id == next_id).unwrap();
 
@@ -793,10 +796,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
             }
             new_task.state = TaskState::Running;
             new_task.last_cpu = Some(cpu_idx);
-
-            // Reset wait time and priority for the newly scheduled task (anti-starvation)
-            new_task.wait_ticks = 0;
-            new_task.priority = new_task.base_priority;
 
             // Hot-path graph emissions disabled — see comment above.
             // graphify::update_task_state(new_task.id, "running");

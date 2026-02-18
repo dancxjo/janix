@@ -100,6 +100,11 @@ pub struct Task<R: BootRuntime> {
 
     /// Per-process identity and storage (shared across threads).
     pub process_info: Option<Arc<Mutex<ProcessInfo>>>,
+
+    /// Anti-starvation: tracks ticks since task last ran (for aging)
+    pub wait_ticks: u64,
+    /// Anti-starvation: base priority before any aging boost
+    pub base_priority: TaskPriority,
 }
 
 pub fn init<R: BootRuntime>() {

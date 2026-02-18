@@ -44,6 +44,7 @@ pub use wait_queue::WaitQueue;
 
 use crate::task::{StartupArg, Task, TaskId, TaskPriority, TaskState};
 use crate::{BootRuntime, BootTasking};
+use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
 
@@ -366,6 +367,8 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         },
         name_len: 4,
         process_info: None,
+        wait_ticks: 0,
+        base_priority: TaskPriority::Normal,
     };
     sched.tasks.push(alloc::boxed::Box::new(task));
 
@@ -443,8 +446,14 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     return None;
                 }
 
-                // Decrement current task's time slice
+                // Increment wait times for starving tasks (anti-starvation mechanism)
                 let cpu_idx = current_cpu_index::<R>();
+                self.increment_wait_times(cpu_idx);
+                
+                // Apply priority aging to prevent starvation
+                self.apply_priority_aging(cpu_idx);
+
+                // Decrement current task's time slice
                 if let Some(current_id) = self.per_cpu.get(cpu_idx).and_then(|pc| pc.current) {
                     if let Some(task) = self.tasks.iter_mut().find(|t| t.id == current_id) {
                         if task.timeslice_remaining > 0 {
@@ -737,6 +746,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
             new_task.state = TaskState::Running;
             new_task.last_cpu = Some(cpu_idx);
 
+            // Reset wait time and priority for the newly scheduled task (anti-starvation)
+            new_task.wait_ticks = 0;
+            new_task.priority = new_task.base_priority;
+
             // STRICT AFFINITY CHECK
             if let crate::task::Affinity::Pinned(pinned_cpu) = new_task.affinity {
                 if pinned_cpu != cpu_idx {
@@ -825,6 +838,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
         if let Some(idx) = self.tasks.iter().position(|t| t.id == id) {
             let old_priority = self.tasks[idx].priority;
             self.tasks[idx].priority = priority;
+            self.tasks[idx].base_priority = priority; // Update base priority for anti-starvation
 
             // Queue graph priority property update
             graphify::update_task_priority(id, priority as u8);
@@ -844,6 +858,75 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     }
                 }
             }
+        }
+    }
+
+    /// Apply priority aging: tasks that have waited too long get a temporary priority boost
+    /// This prevents starvation of lower-priority tasks
+    fn apply_priority_aging(&mut self, cpu_idx: usize) {
+        use crate::task::TaskPriority;
+        
+        let pc = &self.per_cpu[cpu_idx];
+        
+        // For each priority level (except Realtime which should never be starved)
+        for base_priority in 0..4 {
+            // Check each task in this queue
+            let queue_ids: Vec<TaskId> = pc.runq[base_priority].iter().copied().collect();
+            
+            for task_id in queue_ids {
+                if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                    // Calculate priority boost based on wait time
+                    let boost_levels = (task.wait_ticks / types::AGING_THRESHOLD_TICKS) as usize;
+                    let boost_levels = boost_levels.min(types::MAX_PRIORITY_BOOST);
+                    
+                    // Calculate effective priority (capped at Realtime)
+                    let base_prio = task.base_priority as usize;
+                    let effective_prio = (base_prio + boost_levels).min(TaskPriority::Realtime as usize);
+                    let effective_priority = match effective_prio {
+                        0 => TaskPriority::Idle,
+                        1 => TaskPriority::Low,
+                        2 => TaskPriority::Normal,
+                        3 => TaskPriority::High,
+                        4 => TaskPriority::Realtime,
+                        _ => TaskPriority::Idle,
+                    };
+                    
+                    // If priority should be boosted, move task to higher queue
+                    if effective_priority != task.priority {
+                        task.priority = effective_priority;
+                        // Note: task will be moved to correct queue in next scheduling cycle
+                        // by prepare_schedule logic
+                    }
+                }
+            }
+        }
+    }
+
+    /// Increment wait time for all runnable tasks except the currently running one
+    fn increment_wait_times(&mut self, cpu_idx: usize) {
+        let current_id = self.per_cpu[cpu_idx].current;
+        
+        for pc in self.per_cpu.iter() {
+            for queue in pc.runq.iter() {
+                for &task_id in queue {
+                    if Some(task_id) != current_id {
+                        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                            if task.state == TaskState::Runnable {
+                                task.wait_ticks = task.wait_ticks.saturating_add(1);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Reset wait time for a task that just got scheduled
+    fn reset_wait_time(&mut self, task_id: TaskId) {
+        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+            task.wait_ticks = 0;
+            // Reset priority to base priority (remove any aging boost)
+            task.priority = task.base_priority;
         }
     }
 

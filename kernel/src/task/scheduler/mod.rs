@@ -1352,3 +1352,200 @@ pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
         crate::runtime_base().wait_for_interrupt();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::task::{Affinity, TaskPriority, TaskState};
+    use crate::{BootRuntime, BootRuntimeBase, BootTasking, MapKind, MapPerms, UserEntry, UserTaskSpec};
+
+    // Mock types for testing - copy from spawn.rs tests
+    #[derive(Default, Copy, Clone)]
+    struct MockContext(usize);
+    #[derive(Clone, Copy, Default)]
+    struct MockAddressSpace(u64);
+
+    struct MockRuntime;
+    impl BootRuntimeBase for MockRuntime {
+        fn putchar(&self, _c: u8) {}
+        fn mono_ticks(&self) -> u64 { 0 }
+        fn mono_freq_hz(&self) -> u64 { 1 }
+        fn init_secondary_cpu(&self, _cpu_index: usize) {}
+    }
+    impl BootRuntime for MockRuntime {
+        type Tasking = MockRuntime;
+        fn tasking(&self) -> &Self { self }
+        fn halt(&self) -> ! { loop {} }
+        fn irq_disable(&self) -> crate::IrqState { crate::IrqState(0) }
+        fn irq_restore(&self, _state: crate::IrqState) {}
+        fn phys_memory_map(&self) -> &'static [crate::PhysRange] { &[] }
+        fn phys_to_virt_offset(&self) -> u64 { 0 }
+        fn modules(&self) -> &'static [crate::BootModuleDesc] { &[] }
+        fn framebuffer(&self) -> Option<crate::FramebufferInfo> { None }
+        fn simd_state_layout(&self) -> (usize, usize) { (0, 1) }
+        unsafe fn simd_save(&self, _ptr: *mut u8) {}
+        unsafe fn simd_restore(&self, _ptr: *const u8) {}
+    }
+    impl BootTasking for MockRuntime {
+        type Runtime = MockRuntime;
+        type Context = MockContext;
+        type AddressSpace = MockAddressSpace;
+        fn init(&self, _hhdm: u64) {}
+        fn init_kernel_context(&self, _entry: extern "C" fn(usize) -> !, _st: u64, _arg: usize) -> Self::Context {
+            MockContext(_arg)
+        }
+        fn init_user_context(&self, _spec: UserTaskSpec<Self::AddressSpace>, _kst: u64) -> Self::Context {
+            MockContext(_spec.arg)
+        }
+        unsafe fn switch(&self, _f: &mut Self::Context, _t: &Self::Context, _tid: u64) {}
+        unsafe fn enter_user(&self, _e: UserEntry) -> ! { loop {} }
+        fn make_user_address_space(&self) -> Self::AddressSpace { MockAddressSpace(0) }
+        fn active_address_space(&self) -> Self::AddressSpace { MockAddressSpace(0) }
+        fn activate_address_space(&self, _as: Self::AddressSpace) {}
+        fn map_page(&self, _as: Self::AddressSpace, _v: u64, _p: u64, _pr: MapPerms, _k: MapKind, _a: &dyn crate::FrameAllocatorHook) -> Result<(), ()> { Ok(()) }
+        fn unmap_page(&self, _as: Self::AddressSpace, _v: u64) -> Result<Option<u64>, ()> { Ok(None) }
+        fn translate(&self, _as: Self::AddressSpace, _v: u64) -> Option<u64> { None }
+        fn tlb_flush_page(&self, _v: u64) {}
+    }
+
+    #[test]
+    fn test_wait_ticks_increment() {
+        static RUNTIME: MockRuntime = MockRuntime;
+        // Test that wait_ticks increments for waiting tasks
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.per_cpu.push(types::PerCpu::new());
+        
+        // Create a mock task with low priority
+        let task = crate::task::Task {
+            id: 1,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Low,
+            base_priority: TaskPriority::Low,
+            wait_ticks: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+        
+        sched.tasks.push(alloc::boxed::Box::new(task));
+        sched.per_cpu[0].runq[TaskPriority::Low as usize].push_back(1);
+        sched.per_cpu[0].current = Some(0); // Different task is running
+        
+        // Increment wait times
+        sched.increment_wait_times(0);
+        
+        // Verify wait_ticks incremented
+        let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
+        assert_eq!(task.wait_ticks, 1);
+    }
+
+    #[test]
+    fn test_priority_aging_boost() {
+        static RUNTIME: MockRuntime = MockRuntime;
+        // Test that tasks waiting too long get priority boost
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.per_cpu.push(types::PerCpu::new());
+        
+        // Create a low-priority task that has been waiting
+        let task = crate::task::Task {
+            id: 1,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Low,
+            base_priority: TaskPriority::Low,
+            wait_ticks: types::AGING_THRESHOLD_TICKS, // Waited long enough for boost
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+        
+        sched.tasks.push(alloc::boxed::Box::new(task));
+        sched.per_cpu[0].runq[TaskPriority::Low as usize].push_back(1);
+        sched.per_cpu[0].current = Some(0);
+        
+        // Apply aging
+        sched.apply_priority_aging(0);
+        
+        // Verify priority was boosted
+        let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
+        assert!(task.priority > TaskPriority::Low, "Priority should be boosted");
+        assert_eq!(task.base_priority, TaskPriority::Low, "Base priority should remain unchanged");
+    }
+
+    #[test]
+    fn test_reset_wait_time_on_schedule() {
+        static RUNTIME: MockRuntime = MockRuntime;
+        // Test that wait_ticks resets when task is scheduled
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        
+        // Create a task that has been waiting
+        let task = crate::task::Task {
+            id: 1,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Low,
+            wait_ticks: 100, // Has been waiting
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+        
+        sched.tasks.push(alloc::boxed::Box::new(task));
+        
+        // Reset wait time
+        sched.reset_wait_time(1);
+        
+        // Verify wait_ticks reset and priority restored
+        let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
+        assert_eq!(task.wait_ticks, 0);
+        assert_eq!(task.priority, task.base_priority);
+    }
+}
+

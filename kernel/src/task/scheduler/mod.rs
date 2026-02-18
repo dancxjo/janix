@@ -861,8 +861,21 @@ impl<R: BootRuntime> types::Scheduler<R> {
         }
     }
 
-    /// Apply priority aging: tasks that have waited too long get a temporary priority boost
-    /// This prevents starvation of lower-priority tasks
+    /// Apply priority aging to prevent starvation.
+    ///
+    /// This anti-starvation mechanism temporarily boosts the priority of tasks that
+    /// have been waiting too long. The algorithm:
+    ///
+    /// 1. For each task in run queues (except Realtime), calculate boost based on wait time
+    /// 2. Boost level = wait_ticks / AGING_THRESHOLD_TICKS (capped at MAX_PRIORITY_BOOST)
+    /// 3. effective_priority = base_priority + boost_levels (capped at Realtime)
+    /// 4. Update task.priority to reflect the boost
+    ///
+    /// Example: A Low-priority task waiting for 1000 ticks (2 aging periods at 500 ticks each)
+    /// gets boosted by 2 levels: Low -> Normal -> High
+    ///
+    /// When the task is eventually scheduled, its priority is restored to base_priority
+    /// and wait_ticks is reset to 0.
     fn apply_priority_aging(&mut self, cpu_idx: usize) {
         use crate::task::TaskPriority;
         
@@ -902,7 +915,11 @@ impl<R: BootRuntime> types::Scheduler<R> {
         }
     }
 
-    /// Increment wait time for all runnable tasks except the currently running one
+    /// Increment wait time for all runnable tasks except the currently running one.
+    ///
+    /// Called on each timer tick as part of the anti-starvation mechanism. This tracks
+    /// how long each task has been waiting in run queues, which is used by apply_priority_aging()
+    /// to determine if a task should receive a temporary priority boost.
     fn increment_wait_times(&mut self, cpu_idx: usize) {
         let current_id = self.per_cpu[cpu_idx].current;
         
@@ -921,7 +938,14 @@ impl<R: BootRuntime> types::Scheduler<R> {
         }
     }
 
-    /// Reset wait time for a task that just got scheduled
+    /// Reset wait time for a task that just got scheduled.
+    ///
+    /// Part of the anti-starvation mechanism. When a task is scheduled to run, we:
+    /// 1. Reset wait_ticks to 0 (it's no longer waiting)
+    /// 2. Restore priority to base_priority (remove any aging boost)
+    ///
+    /// This ensures that aging only provides temporary priority boosts and doesn't
+    /// permanently change a task's priority.
     fn reset_wait_time(&mut self, task_id: TaskId) {
         if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
             task.wait_ticks = 0;

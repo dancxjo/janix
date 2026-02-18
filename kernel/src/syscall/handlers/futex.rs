@@ -99,7 +99,7 @@ pub fn sys_futex_wake(uaddr: usize, count: u32) -> SysResult<usize> {
         while woken < count {
             if let Some(tid) = waiters.pop() {
                 unsafe {
-                    crate::task::scheduler::wake_task_erased(tid as usize);
+                    crate::task::scheduler::wake_task_erased(tid);
                 }
                 woken += 1;
             } else {

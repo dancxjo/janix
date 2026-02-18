@@ -74,7 +74,7 @@ pub fn block_current<R: BootRuntime>() {
     rt.irq_restore(_irq);
 }
 
-pub fn wake_task<R: BootRuntime>(id: usize) {
+pub fn wake_task<R: BootRuntime>(id: u64) {
     use crate::task::TaskId;
 
     let rt = crate::runtime::<R>();
@@ -90,7 +90,7 @@ pub fn wake_task<R: BootRuntime>(id: usize) {
     };
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
-    let tid = id as TaskId;
+    let tid = id;
 
     // Remove from wait queue if present
     if let Some(pos) = sched.wait_queue.iter().position(|&wid| wid == tid) {
@@ -163,10 +163,10 @@ pub unsafe fn block_current_erased() {
 }
 
 /// Type-erased wake for use from IRQ module
-pub unsafe fn wake_task_erased(id: usize) {
+pub unsafe fn wake_task_erased(id: u64) {
     let ptr = WAKE_TASK_HOOK.load(core::sync::atomic::Ordering::SeqCst);
     if !ptr.is_null() {
-        let hook: fn(usize) = unsafe { core::mem::transmute(ptr) };
+        let hook: fn(u64) = unsafe { core::mem::transmute(ptr) };
         hook(id);
     }
 }

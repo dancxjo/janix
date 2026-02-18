@@ -284,7 +284,7 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
         let tid = ROOT_TID.load(Ordering::Relaxed);
         if tid != 0 {
             unsafe {
-                crate::task::scheduler::wake_task_erased(tid as usize);
+                crate::task::scheduler::wake_task_erased(tid);
             }
         }
     } else {

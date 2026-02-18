@@ -141,7 +141,7 @@ pub unsafe fn block_current_erased() {
     }
 }
 
-pub unsafe fn wake_task_erased(tid: usize) {
+pub unsafe fn wake_task_erased(tid: u64) {
     unsafe {
         scheduler::wake_task_erased(tid);
     }

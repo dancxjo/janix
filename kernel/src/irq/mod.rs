@@ -2,7 +2,7 @@
 //!
 //! Manages interrupt routing and userspace IRQ subscriptions.
 
-use core::sync::atomic::{AtomicU32, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
 
 pub mod msi;
@@ -17,7 +17,7 @@ pub const MAX_SUBSCRIBERS_PER_VECTOR: usize = 4;
 /// IRQ slot for a single vector
 struct IrqSlot {
     /// Task IDs subscribed to this vector (0 means empty)
-    subscribers: [AtomicUsize; MAX_SUBSCRIBERS_PER_VECTOR],
+    subscribers: [AtomicU64; MAX_SUBSCRIBERS_PER_VECTOR],
     /// Pending interrupt counts per subscriber
     pending_counts: [AtomicU32; MAX_SUBSCRIBERS_PER_VECTOR],
 }
@@ -25,7 +25,7 @@ struct IrqSlot {
 impl IrqSlot {
     const fn new() -> Self {
         Self {
-            subscribers: [const { AtomicUsize::new(0) }; MAX_SUBSCRIBERS_PER_VECTOR],
+            subscribers: [const { AtomicU64::new(0) }; MAX_SUBSCRIBERS_PER_VECTOR],
             pending_counts: [const { AtomicU32::new(0) }; MAX_SUBSCRIBERS_PER_VECTOR],
         }
     }
@@ -44,7 +44,7 @@ impl IrqRegistry {
     }
 
     /// Subscribe a task to receive interrupts for a vector
-    pub fn subscribe(&self, vector: u8, task_id: usize) -> Result<(), ()> {
+    pub fn subscribe(&self, vector: u8, task_id: u64) -> Result<(), ()> {
         let _lock = REGISTRY_MUTEX.lock();
         let slot = &self.slots[vector as usize];
 
@@ -69,7 +69,7 @@ impl IrqRegistry {
     }
 
     /// Unsubscribe a task from a vector
-    pub fn unsubscribe(&self, vector: u8, task_id: usize) {
+    pub fn unsubscribe(&self, vector: u8, task_id: u64) {
         let _lock = REGISTRY_MUTEX.lock();
         let slot = &self.slots[vector as usize];
         for i in 0..MAX_SUBSCRIBERS_PER_VECTOR {
@@ -97,7 +97,7 @@ impl IrqRegistry {
     }
 
     /// Wait for interrupt - returns pending count and resets it
-    pub fn try_wait(&self, vector: u8, task_id: usize) -> u32 {
+    pub fn try_wait(&self, vector: u8, task_id: u64) -> u32 {
         let slot = &self.slots[vector as usize];
         for i in 0..MAX_SUBSCRIBERS_PER_VECTOR {
             if slot.subscribers[i].load(Ordering::Acquire) == task_id {
@@ -186,14 +186,14 @@ pub fn vector_owner(vector: u8) -> Option<(u64, u8)> {
 
 /// Subscribe current task to a vector
 pub fn subscribe(vector: u8) -> Result<(), ()> {
-    let task_id = unsafe { crate::task::scheduler::current_tid_current() } as usize;
+    let task_id = unsafe { crate::task::scheduler::current_tid_current() };
     IRQ_REGISTRY.subscribe(vector, task_id)
 }
 
 /// Wait for IRQ - blocks until interrupt fires
 /// Returns number of pending interrupts
 pub fn wait(vector: u8) -> u32 {
-    let task_id = unsafe { crate::task::scheduler::current_tid_current() } as usize;
+    let task_id = unsafe { crate::task::scheduler::current_tid_current() };
 
     loop {
         let count = IRQ_REGISTRY.try_wait(vector, task_id);
@@ -215,7 +215,7 @@ mod tests {
 
     static WAKE_COUNT: AtomicU32 = AtomicU32::new(0);
 
-    fn mock_wake(id: usize) {
+    fn mock_wake(id: u64) {
         let _ = id;
         WAKE_COUNT.fetch_add(1, Ordering::Relaxed);
     }

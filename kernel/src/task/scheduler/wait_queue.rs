@@ -33,7 +33,7 @@ impl WaitQueue {
 
         if let Some(tid) = tid {
             unsafe {
-                crate::task::scheduler::wake_task_erased(tid as usize);
+                crate::task::scheduler::wake_task_erased(tid);
             }
         }
     }
@@ -43,7 +43,7 @@ impl WaitQueue {
         let mut waiters = self.waiters.lock();
         while let Some(tid) = waiters.pop_front() {
             unsafe {
-                crate::task::scheduler::wake_task_erased(tid as usize);
+                crate::task::scheduler::wake_task_erased(tid);
             }
         }
     }

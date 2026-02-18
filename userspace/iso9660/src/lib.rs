@@ -941,4 +941,52 @@ mod tests {
         // Test 6: File as dir (ROOTFILE.TXT is a file)
         assert!(iso.open_path(&image, "/ROOTFILE.TXT/SUBFILE").is_none());
     }
+
+    #[test]
+    fn test_parse_dir_entries_sector_boundary_padding() {
+        // Allocate 2 sectors (4096 bytes)
+        let mut buf = alloc::vec![0u8; 4096];
+        let mut offset = 0;
+
+        // 1. Write an entry in the first sector
+        write_dir_record(&mut buf, &mut offset, "FILE1.TXT;1", 100, 1024, 0, None);
+
+        // 2. Simulate padding by advancing to the next sector boundary.
+        // The parser encounters 0 (record_len) at the current offset and skips to the next sector.
+        // We ensure the rest of sector 1 is 0 (which it is by default).
+        offset = 2048;
+
+        // 3. Write an entry at the start of the second sector
+        write_dir_record(&mut buf, &mut offset, "FILE2.TXT;1", 200, 2048, 0, None);
+
+        let dev = MockDirBlockDevice { dir_data: buf };
+
+        let iso = IsoFs {
+            pvd: PrimaryVolumeDescriptor {
+                system_id: [0; 32],
+                volume_id: [0; 32],
+                volume_space_size: 0,
+                root_dir_extent: 0,
+                root_dir_size: 0,
+                logical_block_size: 2048,
+            },
+            dir_cache: RefCell::new(BTreeMap::new()),
+            #[cfg(feature = "perf")]
+            perf: RefCell::new(PerfCounters::default()),
+        };
+
+        // Parse 4096 bytes (2 sectors)
+        let entries = iso.parse_dir_entries(&dev, 0, 4096);
+
+        // Verify results
+        assert_eq!(entries.len(), 2, "Should find 2 entries, skipping padding");
+
+        let e1 = &entries[0];
+        assert_eq!(e1.name, "FILE1.TXT");
+        assert_eq!(e1.extent_lba, 100);
+
+        let e2 = &entries[1];
+        assert_eq!(e2.name, "FILE2.TXT");
+        assert_eq!(e2.extent_lba, 200);
+    }
 }

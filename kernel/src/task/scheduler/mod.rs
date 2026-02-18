@@ -542,13 +542,27 @@ impl<R: BootRuntime> types::Scheduler<R> {
                         idx % self.online_cpu_count
                     };
 
-                    if let Some(pc) = self.per_cpu.get_mut(target_cpu) {
+                    let actual_cpu = if let Some(pc) = self.per_cpu.get_mut(target_cpu) {
                         pc.runq[priority as usize].push_back(entry.task_id);
+                        target_cpu
                     } else {
                         // Fallback to CPU 0 if invalid target
                         if let Some(pc) = self.per_cpu.get_mut(0) {
                             pc.runq[priority as usize].push_back(entry.task_id);
                         }
+                        0
+                    };
+
+                    // If the woken task has higher priority than what's running
+                    // on the target CPU, request a reschedule so we preempt
+                    // mid-slice rather than waiting for timeslice expiry.
+                    let current_prio = self.per_cpu.get(actual_cpu)
+                        .and_then(|pc| pc.current)
+                        .and_then(|cid| self.tasks.iter().find(|t| t.id == cid))
+                        .map(|t| t.priority as usize)
+                        .unwrap_or(0);
+                    if (priority as usize) > current_prio {
+                        self.need_resched = true;
                     }
 
                     // Queue graph state update from sleeping to runnable
@@ -1632,5 +1646,111 @@ mod tests {
         assert_eq!(task.wait_ticks, 0);
         assert_eq!(task.priority, task.base_priority);
     }
-}
 
+    #[test]
+    fn test_wake_preempts_lower_priority() {
+        use core::sync::atomic::Ordering;
+
+        static RUNTIME: MockRuntime = MockRuntime;
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.per_cpu.push(types::PerCpu::new());
+
+        // Task 1: Normal priority, currently running
+        let normal_task = crate::task::Task {
+            id: 1,
+            state: TaskState::Running,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            wait_ticks: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        // Task 2: Realtime priority, sleeping (about to wake)
+        let rt_task = crate::task::Task {
+            id: 2,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Realtime,
+            base_priority: TaskPriority::Realtime,
+            wait_ticks: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        sched.tasks.push(alloc::boxed::Box::new(normal_task));
+        sched.tasks.push(alloc::boxed::Box::new(rt_task));
+        sched.per_cpu[0].current = Some(1); // Normal task is running
+
+        // Put RT task in sleep queue with wake_tick in the past
+        TICK_COUNT.store(100, Ordering::Relaxed);
+        sched.sleep_queue.push_back(types::SleepEntry {
+            task_id: 2,
+            wake_tick: 50, // already expired
+        });
+
+        // Before: need_resched should be false
+        assert!(!sched.need_resched, "need_resched should start false");
+
+        // Wake sleepers — should detect RT > Normal and set need_resched
+        sched.wake_sleepers();
+
+        // Verify need_resched was set
+        assert!(
+            sched.need_resched,
+            "need_resched should be true after waking a higher-priority task"
+        );
+
+        // Verify RT task was enqueued to the Realtime runq
+        assert!(
+            sched.per_cpu[0].runq[TaskPriority::Realtime as usize]
+                .iter()
+                .any(|&id| id == 2),
+            "RT task should be in the Realtime run queue"
+        );
+
+        // Now simulate schedule: prepare_yield should pick the RT task
+        sched.need_resched = false; // clear so prepare_yield runs clean
+        let switch = sched.prepare_yield();
+        assert!(switch.is_some(), "Should produce a context switch");
+        let switch = switch.unwrap();
+        assert_eq!(switch.to_tid, 2, "Scheduler should switch to the RT task");
+        assert_eq!(
+            switch.from_tid, 1,
+            "Scheduler should switch away from the Normal task"
+        );
+    }
+}

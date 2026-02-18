@@ -476,6 +476,19 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 }
                 return None; // Not expired yet
             }
+            ScheduleReason::SafePoint | ScheduleReason::ReschedIfNeeded => {
+                // No tick bookkeeping, no timeslice decrement.
+                // Simply yield if a reschedule was requested.
+                if self.preempt_disable_depth > 0 {
+                    self.need_resched = true;
+                    return None;
+                }
+                if self.need_resched {
+                    self.need_resched = false;
+                    return self.prepare_yield();
+                }
+                return None;
+            }
             _ => {}
         }
 
@@ -617,7 +630,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         if self.preempt_disable_depth == 0 && self.need_resched {
             self.need_resched = false;
-            return self.schedule_point(ScheduleReason::PreemptTick);
+            return self.schedule_point(ScheduleReason::SafePoint);
         }
         None
     }

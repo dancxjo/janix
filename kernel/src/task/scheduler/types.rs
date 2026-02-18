@@ -60,10 +60,18 @@ pub enum StackFaultResult {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduleReason {
+    /// Timer ISR path only — runs tick bookkeeping (wake sleepers, watchdog,
+    /// wait-time aging, timeslice decrement).
     PreemptTick,
     CooperativeYield,
     SleepWait,
     BlockedOnIo,
+    /// Used by preempt_enable(). Yields if need_resched is set but does NOT
+    /// run tick bookkeeping or decrement timeslices.
+    SafePoint,
+    /// Used by explicit resched_if_needed() checks at syscall-return or other
+    /// safe points. Same behaviour as SafePoint, semantically distinct.
+    ReschedIfNeeded,
 }
 
 /// Entry in the sleep queue tracking when a task should wake

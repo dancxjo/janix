@@ -185,7 +185,15 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     if nc == '\\' {
                         chars.next();
                         if let Some(ec) = chars.next() {
-                            s.push(ec);
+                            match ec {
+                                'n' => s.push('\n'),
+                                'r' => s.push('\r'),
+                                't' => s.push('\t'),
+                                '0' => s.push('\0'),
+                                '\\' => s.push('\\'),
+                                '"' => s.push('"'),
+                                _ => s.push(ec),
+                            }
                         }
                     } else if nc == '"' {
                         chars.next(); // skip closing
@@ -884,6 +892,25 @@ mod tests {
 
         // Test error: invalid id syntax
         assert!(parse("MATCH (n) RETURN n ORDER BY id n").is_err());
+    }
+
+    }
+
+    #[test]
+    fn test_tokenize_escapes() {
+        let tokens = tokenize("\"line\\nbreak\"").unwrap();
+        if let Token::String(s) = &tokens[0] {
+            assert_eq!(s, "line\nbreak");
+        } else {
+            panic!("Expected string token");
+        }
+
+        let tokens = tokenize("\"tab\\tcharacter\"").unwrap();
+        if let Token::String(s) = &tokens[0] {
+            assert_eq!(s, "tab\tcharacter");
+        } else {
+            panic!("Expected string token");
+        }
     }
 
     #[test]

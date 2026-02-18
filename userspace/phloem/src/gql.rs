@@ -185,7 +185,15 @@ fn tokenize(input: &str) -> Result<Vec<Token>, String> {
                     if nc == '\\' {
                         chars.next();
                         if let Some(ec) = chars.next() {
-                            s.push(ec);
+                            match ec {
+                                'n' => s.push('\n'),
+                                'r' => s.push('\r'),
+                                't' => s.push('\t'),
+                                '0' => s.push('\0'),
+                                '\\' => s.push('\\'),
+                                '"' => s.push('"'),
+                                _ => s.push(ec),
+                            }
                         }
                     } else if nc == '"' {
                         chars.next(); // skip closing
@@ -840,9 +848,25 @@ mod tests {
         if let Token::String(s) = &tokens[0] {
             assert_eq!(s, "hello world");
         }
-        // Note: our current tokenize doesn't actually handle backslash escapes based on view_file
-        // Let's check that.
     }
+
+    #[test]
+    fn test_tokenize_escapes() {
+        let tokens = tokenize("\"line\\nbreak\"").unwrap();
+        if let Token::String(s) = &tokens[0] {
+            assert_eq!(s, "line\nbreak");
+        } else {
+            panic!("Expected string token");
+        }
+
+        let tokens = tokenize("\"tab\\tcharacter\"").unwrap();
+        if let Token::String(s) = &tokens[0] {
+            assert_eq!(s, "tab\tcharacter");
+        } else {
+            panic!("Expected string token");
+        }
+    }
+
     #[test]
     fn test_parse_match_anonymous_edge() {
         let cmd = parse("MATCH ()-[e]->() RETURN e").unwrap();

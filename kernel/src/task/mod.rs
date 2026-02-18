@@ -152,11 +152,16 @@ pub fn yield_now<R: BootRuntime>() {
 }
 
 pub fn preempt_disable<R: BootRuntime>() {
-    let lock = scheduler::SCHEDULER.lock();
-    if let Some(ptr) = *lock {
-        let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        sched.preempt_disable();
+    let rt = crate::runtime::<R>();
+    let irq = rt.irq_disable();
+    {
+        let lock = scheduler::SCHEDULER.lock();
+        if let Some(ptr) = *lock {
+            let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
+            sched.preempt_disable();
+        }
     }
+    rt.irq_restore(irq);
 }
 
 pub fn preempt_enable<R: BootRuntime>() {

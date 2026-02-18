@@ -1,5 +1,32 @@
 # Changelog
 
+## Process Ownership & Graph Database Improvements
+
+This update introduces significant improvements to system stability and data management. A new "Process Ownership" mechanism in the kernel ensures that graph nodes created by a process are automatically cleaned up when that process exits, preventing resource leaks. The Phloem graph database has also been enhanced with `ORDER BY` support, improved tokenizer handling for escape sequences, and expanded test coverage. Additionally, the ISO 9660 filesystem implementation has received fixes for filename handling.
+
+### 🧹 Process Ownership & Graph Hygiene
+
+*   **Automatic Resource Cleanup**: The kernel now tracks the "owner" of each graph node. When a process (task) terminates or is killed, the system automatically identifies and removes all graph nodes owned by that task. This prevents "zombie" nodes from cluttering the system graph and ensures resources are released reliably.
+    *   *Artifacts*: `kernel/src/root/handlers/graph.rs`, `kernel/src/task/scheduler/mod.rs`
+
+### 🌿 Phloem (Graph DB) Enhancements
+
+*   **ORDER BY Support**: GQL queries now support the `ORDER BY` clause, allowing results to be sorted by node ID. This is critical for deterministic query results and pagination.
+    *   *Artifacts*: `userspace/phloem/src/gql.rs`, `userspace/phloem/src/planner.rs`
+
+*   **Tokenizer Improvements**: The GQL tokenizer now correctly handles standard escape sequences (e.g., `\n`, `\t`, `\"`) in string literals, enabling more robust data insertion and querying.
+    *   *Artifacts*: `userspace/phloem/src/gql.rs`
+
+### 💾 Storage & Filesystems
+
+*   **ISO 9660 Fixes**: Resolved issues with filename stripping in the ISO 9660 parser, ensuring correct file access for names with version suffixes.
+    *   *Artifacts*: `userspace/iso9660/`
+
+### 🧪 Testing & Verification
+
+*   **System Exploration Scenarios**: New BDD scenarios have been added to verify the presence and state of critical system components (e.g., CPU, Task, Service roots) using GQL queries.
+    *   *Artifacts*: `docs/behavior/features/system_exploration.feature`
+
 ## System Services Unification & Hardware Abstraction
 
 Recent development has focused on unifying userspace services and abstracting hardware drivers into dedicated daemons. The most significant addition is **Anther**, a comprehensive HTTP server and AI gateway that acts as the primary interface for system interaction and graph data access. This release also introduces **Fontd**, a font rasterization service, and further decouples network and display drivers for better system modularity.

@@ -18,7 +18,7 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
 use described::{DescribeGraph, DescribeMode, DescriptionService, SysGraph, ViewSpec};
 use ollama::OllamaClient;
-use stem::{error, trace};
+use stem::{error, info, trace};
 use stem::syscall::graph::{find, intern, link, prop_get, prop_set};
 use stem::thing::sys::{get_edges, get_props};
 use stem::thing::HandleId; // for from_u64
@@ -627,6 +627,9 @@ pub fn handle_method_not_allowed() -> (&'static str, ResponseBody) {
 
 /// GET /api/v1/subgraph?root=...&depth=...&max_nodes=...
 pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
+    let t0 = stem::time::monotonic_ns();
+    info!("SUBGRAPH: enter query='{}'", query);
+
     // Parse query parameters
     let mut root_id: Option<u64> = None;
     let mut depth: u32 = DEFAULT_SUBGRAPH_DEPTH;
@@ -647,6 +650,7 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
             }
         }
     }
+    info!("SUBGRAPH: parsed root={:?} depth={} max_nodes={}", root_id, depth, max_nodes);
 
     // Pre-intern all symbols we'll need - avoids syscalls in hot loops
     let layout_x_sym = intern("layout.pos.x").unwrap_or(0);
@@ -722,6 +726,9 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
             }
         }
     }
+    let t1 = stem::time::monotonic_ns();
+    info!("SUBGRAPH: seed phase done, queue={} seeds, took {} us",
+          queue.len(), (t1 - t0) / 1000);
 
     while let Some((node_id, node_depth)) = queue.pop_front() {
         if visited_set.contains(&node_id) {
@@ -733,6 +740,11 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
         }
         visited_set.insert(node_id);
         visited_order.push(node_id);
+        if visited_order.len() % 50 == 0 {
+            let tn = stem::time::monotonic_ns();
+            info!("SUBGRAPH: BFS progress {} nodes, queue={}, {} us elapsed",
+                  visited_order.len(), queue.len(), (tn - t0) / 1000);
+        }
 
         // Get outgoing edges if we haven't reached max depth
         if node_depth < depth {
@@ -751,6 +763,9 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
             }
         }
     }
+    let t2 = stem::time::monotonic_ns();
+    info!("SUBGRAPH: BFS done, {} nodes, {} edges, truncated={}, took {} us",
+          visited_order.len(), edges_out.len(), truncated, (t2 - t0) / 1000);
 
     // Build JSON response
     let mut json = JsonBuilder::new();
@@ -878,7 +893,11 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
 
     json.end_object();
 
-    json_response_bytes("200 OK", json.into_bytes())
+    let t3 = stem::time::monotonic_ns();
+    let bytes = json.into_bytes();
+    info!("SUBGRAPH: JSON built, {} bytes, total {} us",
+          bytes.len(), (t3 - t0) / 1000);
+    json_response_bytes("200 OK", bytes)
 }
 
 /// Fast label lookup using pre-interned symbols

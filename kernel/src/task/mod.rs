@@ -147,8 +147,8 @@ pub unsafe fn wake_task_erased(tid: usize) {
     }
 }
 
-pub fn yield_now<R: BootRuntime>() {
-    scheduler::yield_now::<R>();
+pub fn yield_now<R: BootRuntime>() -> bool {
+    scheduler::yield_now::<R>()
 }
 
 pub fn preempt_disable<R: BootRuntime>() {
@@ -277,7 +277,9 @@ pub fn run_scheduler<R: BootRuntime>() -> ! {
     crate::runtime::<R>().irq_restore(crate::IrqState(1));
 
     loop {
-        yield_now::<R>();
-        core::hint::spin_loop();
+        if !yield_now::<R>() {
+            // No runnable work — halt until next IRQ (timer tick, device, IPI)
+            crate::runtime::<R>().wait_for_interrupt();
+        }
     }
 }

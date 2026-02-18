@@ -10,7 +10,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-pub(crate) static mut YIELD_HOOK: Option<fn()> = None;
+pub(crate) static mut YIELD_HOOK: Option<fn() -> bool> = None;
 pub(crate) static mut EXIT_HOOK: Option<fn(i32)> = None;
 pub(crate) static mut SPAWN_USER_HOOK: Option<
     unsafe fn(
@@ -46,7 +46,7 @@ pub(crate) static mut GRAPH_THING_FOR_CURRENT_HOOK: Option<fn() -> Option<u64>> 
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
-        hook();
+        let _ = hook();
     }
 }
 

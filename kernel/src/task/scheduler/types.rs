@@ -195,4 +195,16 @@ impl<R: BootRuntime> Scheduler<R> {
     pub fn remove_graph_thing_for_tid(&mut self, tid: TaskId) -> Option<u64> {
         self.task_graph.remove(&tid)
     }
+
+    /// Returns `true` if there is at least one task in a non-idle run queue
+    /// (priority levels 1–4) for the given CPU. Used by `run_scheduler` to
+    /// decide whether to halt or keep spinning.
+    pub fn has_runnable_work(&self, cpu_idx: usize) -> bool {
+        if let Some(pc) = self.per_cpu.get(cpu_idx) {
+            // Check priority queues 1 (Low) through 4 (Realtime)
+            pc.runq[1..].iter().any(|q| !q.is_empty())
+        } else {
+            false
+        }
+    }
 }

@@ -7,15 +7,23 @@ use super::SCHEDULER;
 use super::graphify;
 use super::types::{ScheduleReason, Scheduler};
 
-pub fn yield_now<R: BootRuntime>() {
+/// Cooperative yield: attempt to switch to the next runnable task.
+///
+/// Returns `true` if a context switch occurred **or** there is runnable work
+/// in the queues (i.e. the CPU should stay awake). Returns `false` when all
+/// queues are empty and the caller may safely halt (HLT / WFI).
+pub fn yield_now<R: BootRuntime>() -> bool {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
-    let switch_params = {
+    let (switch_params, has_work) = {
         let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        sched.schedule_point(ScheduleReason::CooperativeYield)
+        let sp = sched.schedule_point(ScheduleReason::CooperativeYield);
+        let cpu_idx = super::current_cpu_index::<R>();
+        let work = sched.has_runnable_work(cpu_idx);
+        (sp, work)
     };
 
     if let Some(switch) = switch_params {
@@ -34,9 +42,13 @@ pub fn yield_now<R: BootRuntime>() {
             rt.tasking()
                 .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
+
+        rt.irq_restore(_irq);
+        return true; // switched
     }
 
     rt.irq_restore(_irq);
+    has_work
 }
 
 /// True blocking sleep - puts task in sleep queue and reschedules

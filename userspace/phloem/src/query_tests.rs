@@ -224,6 +224,11 @@ mod tests {
         assert!(res.success);
         // Should have rows with count
         assert!(!res.rows.is_empty());
+        if let crate::ResultValue::Number(n) = res.rows[0][0] {
+            assert_eq!(n, 5);
+        } else {
+            panic!("Expected Number result");
+        }
     }
 
     #[test]
@@ -246,6 +251,11 @@ mod tests {
         let cmd = parse("MATCH (n:proc.Process) RETURN count(n)").unwrap();
         let res = ex.execute(cmd);
         assert!(res.success);
+        if let crate::ResultValue::Number(n) = res.rows[0][0] {
+            assert_eq!(n, 2);
+        } else {
+            panic!("Expected Number result");
+        }
     }
 
     #[test]
@@ -325,6 +335,11 @@ mod tests {
         let res = ex.execute(cmd);
         assert!(res.success);
         // Count should be 1
+        if let crate::ResultValue::Number(n) = res.rows[0][0] {
+            assert_eq!(n, 1);
+        } else {
+            panic!("Expected Number result");
+        }
     }
 
     #[test]
@@ -432,18 +447,33 @@ mod tests {
 
     #[test]
     fn test_merge_node() {
-        // MERGE (n:Kind {key: 1}) RETURN count(n)
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
-        let cmd = parse("MERGE (n:Kind {key: 1}) RETURN count(n)").unwrap();
-        let res = ex.execute(cmd);
-        assert!(res.success, "MERGE command failed");
-        assert_eq!(res.rows.len(), 1, "Expected 1 row result");
-        if let crate::ResultValue::Number(n) = res.rows[0][0] {
-            assert_eq!(n, 1, "Expected count(n) to be 1");
+
+        // 1. Merge a new node
+        let cmd1 = parse("MERGE (n:Kind {key: 1}) RETURN n").unwrap();
+        let res1 = ex.execute(cmd1);
+        assert!(res1.success, "First MERGE failed");
+        assert_eq!(res1.rows.len(), 1);
+        let id1 = if let crate::ResultValue::Node(id) = res1.rows[0][0] {
+            id
         } else {
-            panic!("Expected Number result");
-        }
+            panic!("Expected Node ID");
+        };
+
+        // 2. Merge the same node again
+        let cmd2 = parse("MERGE (n:Kind {key: 1}) RETURN n").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success, "Second MERGE failed");
+        assert_eq!(res2.rows.len(), 1);
+        let id2 = if let crate::ResultValue::Node(id) = res2.rows[0][0] {
+            id
+        } else {
+            panic!("Expected Node ID");
+        };
+
+        // 3. IDs should be identical (idempotence)
+        assert_eq!(id1, id2, "MERGE should be idempotent");
     }
 
     // ===== Parser-level tests for unsupported features =====

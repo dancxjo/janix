@@ -1,5 +1,20 @@
 # Changelog
 
+## Multi-Core Scheduling & Kernel Hardening
+
+A major milestone in kernel development has been reached with the stabilization of multi-core scheduling and Inter-Processor Interrupt (IPI) handling. The scheduler now robustly manages task distribution across available cores, using LAPIC for precise inter-core signaling. This update also introduces comprehensive diagnostic counters to track scheduler health and fairness, ensuring that the system scales linearly with hardware resources.
+
+### ⚡ SMP & Scheduler
+
+*   **SMP & IPI Handling**: Enabled Local APIC (LAPIC) on secondary CPUs to support true symmetric multi-processing (SMP). Implemented correct IPI delivery for cross-core task wakeups, allowing threads to be spawned and scheduled on any available core.
+    *   *Artifacts*: `kernel/src/task/scheduler/`
+
+*   **Scheduler Diagnostics**: Added atomic counters for tracking IPIs sent/received, context switches, and run-queue states. These metrics are exposed via the `sched.activity` event, providing visibility into system load and balancing.
+    *   *Artifacts*: `kernel/src/task/scheduler/mod.rs`
+
+*   **Anti-Starvation Mechanisms**: Enhanced the scheduler with priority aging and wait-time tracking to prevent thread starvation in high-load scenarios. Tasks that wait too long in the run queue receive temporary priority boosts.
+    *   *Artifacts*: `kernel/src/task/scheduler/mod.rs`
+
 ## System Services Unification & Hardware Abstraction
 
 Recent development has focused on unifying userspace services and abstracting hardware drivers into dedicated daemons. The most significant addition is **Anther**, a comprehensive HTTP server and AI gateway that acts as the primary interface for system interaction and graph data access. This release also introduces **Fontd**, a font rasterization service, and further decouples network and display drivers for better system modularity.

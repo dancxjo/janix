@@ -534,4 +534,34 @@ mod tests {
             panic!("Expected Node ID");
         }
     }
+
+    #[test]
+    fn test_merge_existing_node() {
+        // MERGE (n:proc.Process {name: 12345}) RETURN n
+        // This should match the existing node 1 created in setup_mock
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MERGE (n:proc.Process {name: 12345}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+
+        assert!(res.success, "MERGE command failed");
+        assert_eq!(res.rows.len(), 1, "Expected 1 row result");
+
+        // It should be the existing node 1
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1, "Expected to merge with existing node 1");
+        } else {
+            panic!("Expected Node result");
+        }
+
+        // Verify no new node was created (total count of proc.Process should be 2)
+        let cmd_count = parse("MATCH (n:proc.Process) RETURN count(n)").unwrap();
+        let res_count = ex.execute(cmd_count);
+        assert!(res_count.success);
+        if let crate::ResultValue::Number(n) = res_count.rows[0][0] {
+            assert_eq!(n, 2, "Expected still only 2 proc.Process nodes");
+        } else {
+            panic!("Expected Number result for count");
+        }
+    }
 }

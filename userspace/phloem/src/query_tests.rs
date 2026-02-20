@@ -344,15 +344,19 @@ mod tests {
     #[test]
     fn test_lookup_nonexistent() {
         // MATCH (n) WHERE id(n) = 9999 RETURN n
-        // NOTE: The ID lookup optimization directly uses the ID without checking existence.
-        // This is by design - the graph treats all IDs as valid (lazy lookup).
+        // NOTE: The executor now validates existence, preventing phantom nodes.
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
         let cmd = parse("MATCH (n) WHERE id(n) = 9999 RETURN n").unwrap();
         let res = ex.execute(cmd);
         assert!(res.success);
-        // The executor returns the ID regardless of existence (optimization behavior)
-        // This is acceptable - real usage validates nodes via kind/property checks
+        // Should be empty if we properly check existence
+        assert_eq!(
+            res.rows.len(),
+            0,
+            "Expected 0 rows for nonexistent node, got {}",
+            res.rows.len()
+        );
     }
 
     // ===== 3) Edges and neighborhood traversal =====
@@ -435,14 +439,40 @@ mod tests {
         // MERGE (n:Kind {key: 1}) RETURN count(n)
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
-        let cmd = parse("MERGE (n:Kind {key: 1}) RETURN count(n)").unwrap();
-        let res = ex.execute(cmd);
-        assert!(res.success, "MERGE command failed");
-        assert_eq!(res.rows.len(), 1, "Expected 1 row result");
-        if let crate::ResultValue::Number(n) = res.rows[0][0] {
+
+        // 1. First merge: should CREATE
+        let cmd1 = parse("MERGE (n:Kind {key: 1}) RETURN count(n)").unwrap();
+        let res1 = ex.execute(cmd1);
+        assert!(res1.success, "First MERGE command failed");
+        assert_eq!(res1.rows.len(), 1, "Expected 1 row result");
+        if let crate::ResultValue::Number(n) = res1.rows[0][0] {
             assert_eq!(n, 1, "Expected count(n) to be 1");
         } else {
             panic!("Expected Number result");
+        }
+
+        // 2. Verify existence
+        let check_cmd = parse("MATCH (n:Kind {key: 1}) RETURN count(n)").unwrap();
+        let res_check = ex.execute(check_cmd);
+        assert!(res_check.success);
+        if let crate::ResultValue::Number(n) = res_check.rows[0][0] {
+            assert_eq!(n, 1, "Node should exist");
+        }
+
+        // 3. Second merge: should MATCH (idempotent)
+        // Using same Kind/properties should find the existing node
+        let cmd2 = parse("MERGE (n:Kind {key: 1}) RETURN count(n)").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success, "Second MERGE command failed");
+        if let crate::ResultValue::Number(n) = res2.rows[0][0] {
+            assert_eq!(n, 1, "Expected count(n) to be 1 (matched existing)");
+        }
+
+        // 4. Verify no duplicates created
+        let check_cmd2 = parse("MATCH (n:Kind {key: 1}) RETURN count(n)").unwrap();
+        let res_check2 = ex.execute(check_cmd2);
+        if let crate::ResultValue::Number(n) = res_check2.rows[0][0] {
+            assert_eq!(n, 1, "Should still be exactly 1 node");
         }
     }
 

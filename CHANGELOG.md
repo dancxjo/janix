@@ -1,5 +1,22 @@
 # Changelog
 
+## Multi-Core SMP & Scheduler Diagnostics
+
+This release marks a major milestone with the activation of **Symmetric Multi-Processing (SMP)**. The kernel now fully utilizes secondary CPU cores, managed by an enhanced scheduler with improved fairness and diagnostic capabilities.
+
+### ⚡ SMP & Core Scheduling
+
+*   **Multi-Core Activation**: Enabled Local APIC (LAPIC) on secondary processors to distribute workload across all available hardware threads.
+*   **IPI Delivery**: Implemented Inter-Processor Interrupts (IPI) to coordinate task wakeups and cross-core signaling.
+*   **Per-CPU Runqueues**: The scheduler now maintains dedicated runqueues for each core, reducing lock contention and improving cache locality.
+    *   *Artifacts*: `kernel/src/task/scheduler/`
+
+### 🔍 Diagnostics & Anti-Starvation
+
+*   **Scheduler Diagnostics**: New real-time counters track IPI transmission (`DIAG_IPI_SENT`), interrupt handling (`DIAG_IPI_HANDLER`), and lock contention events (`PROF_RESCHED_TRYLOCK_MISS`), visible via system logs.
+*   **Priority Aging**: Implemented a dynamic priority aging mechanism. Tasks waiting in the runqueue for extended periods receive temporary priority boosts to prevent starvation.
+    *   *Artifacts*: `kernel/src/task/scheduler/mod.rs`
+
 ## System Services Unification & Hardware Abstraction
 
 Recent development has focused on unifying userspace services and abstracting hardware drivers into dedicated daemons. The most significant addition is **Anther**, a comprehensive HTTP server and AI gateway that acts as the primary interface for system interaction and graph data access. This release also introduces **Fontd**, a font rasterization service, and further decouples network and display drivers for better system modularity.
@@ -94,6 +111,12 @@ Simultaneously, the developer experience has been upgraded with powerful new too
     *   *Artifacts*: `userspace/flytrap/`
 
 ### 🛠️ Developer Tooling & Testing
+
+*   **Masked Compositing Benchmark**: A microbenchmark suite (`bench_blit`) for measuring the performance of SIMD-accelerated masked compositing operations, critical for UI responsiveness.
+    *   *Artifacts*: `userspace/bench_blit/`
+
+*   **Root Batch Benchmark**: A benchmarking tool (`root_batch_bench`) to measure the throughput of batched graph operations, ensuring the graph database can handle high-load scenarios.
+    *   *Artifacts*: `userspace/root_batch_bench/`
 
 *   **SysDescribe (LLM System Description)**: A new utility that leverages Large Language Models (LLMs) to generate human-readable descriptions of system resources and graph nodes.
     *   *Artifacts*: `userspace/sysdescribe/`

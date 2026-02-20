@@ -684,7 +684,7 @@ pub fn setup_taskman_service(tasks: &mut Vec<ManagedTask>) {
     match stem::syscall::spawn_process("/taskman", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned taskman (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 1); // Low priority — background UI
+            let _ = stem::thread::set_priority(pid, 2); // Normal priority
             tasks.push(ManagedTask {
                 name: "/taskman".to_string(),
                 kind: TaskKind::Service("svc.taskman".to_string()),

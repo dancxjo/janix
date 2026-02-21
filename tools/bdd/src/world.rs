@@ -39,6 +39,9 @@ pub struct ThingOsWorld {
     /// Last HTTP response (status, body)
     #[world(skip)]
     pub last_http_response: Option<(u16, String)>,
+    /// Saved variables from GQL queries
+    #[world(skip)]
+    pub gql_variables: std::collections::HashMap<String, String>,
 }
 
 impl ThingOsWorld {

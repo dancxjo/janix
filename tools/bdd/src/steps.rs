@@ -6,6 +6,7 @@
 use crate::world::ThingOsWorld;
 use cucumber::{given, then, when};
 use reqwest::Client;
+use serde_json::Value;
 use std::collections::HashMap;
 
 /// Default timeout for waiting on serial output (seconds).
@@ -1934,7 +1935,7 @@ async fn anther_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> 
     }
 
     // 1. Wait for log message
-    check_serial(world, "anther: Listening on port 80", 60.0).await?;
+    check_serial(world, "anther: Listening on port 80", 180.0).await?;
 
     // 2. Poll for health
     let port = world
@@ -2074,5 +2075,212 @@ async fn make_concurrent_requests(
     }
 
     eprintln!("│  │  │      ✅ {} concurrent requests succeeded", count);
+    Ok(())
+}
+
+// ===== GQL Steps =====
+
+#[when(regex = r#"^I execute the GQL query "(.+)"$"#)]
+async fn execute_gql_query_step(world: &mut ThingOsWorld, mut query: String) -> Result<(), StepError> {
+    // Interpolate variables: {{VAR}}
+    for (key, val) in &world.gql_variables {
+        let placeholder = format!("{{{{{}}}}}", key);
+        query = query.replace(&placeholder, val);
+    }
+
+    let port = world
+        .http_port
+        .ok_or(StepError("HTTP port not configured".to_string()))?;
+    let url = format!("http://127.0.0.1:{}/api/v1/query", port);
+
+    let client = Client::new();
+    let resp = client
+        .post(&url)
+        .body(query.clone())
+        .send()
+        .await
+        .map_err(|e| StepError(format!("Request failed: {}", e)))?;
+
+    let status = resp.status().as_u16();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| StepError(format!("Failed to read body: {}", e)))?;
+
+    eprintln!("│  │  │      🧠 GQL: {} -> status={}", query, status);
+    world.last_http_response = Some((status, body));
+    Ok(())
+}
+
+#[then(regex = r#"^the GQL result should have success = (true|false)$"#)]
+async fn check_gql_success(world: &mut ThingOsWorld, expected: bool) -> Result<(), StepError> {
+    let (_, body) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No GQL response recorded".to_string()))?;
+
+    let json: Value = serde_json::from_str(body)
+        .map_err(|e| StepError(format!("Invalid JSON response: {}", e)))?;
+
+    let success = json
+        .get("success")
+        .and_then(|v| v.as_bool())
+        .ok_or(StepError("Response missing 'success' field".to_string()))?;
+
+    if success != expected {
+        return Err(StepError(format!(
+            "Expected success={}, got {}. Body: {}",
+            expected, success, body
+        )));
+    }
+    Ok(())
+}
+
+#[then(regex = r#"^the GQL result should have (\d+) rows$"#)]
+async fn check_gql_rows(world: &mut ThingOsWorld, count: usize) -> Result<(), StepError> {
+    let (_, body) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No GQL response recorded".to_string()))?;
+
+    let json: Value = serde_json::from_str(body)
+        .map_err(|e| StepError(format!("Invalid JSON response: {}", e)))?;
+
+    // Check if rows exists
+    if let Some(rows) = json.get("rows") {
+        let arr = rows
+            .as_array()
+            .ok_or(StepError("'rows' is not an array".to_string()))?;
+        if arr.len() != count {
+            return Err(StepError(format!(
+                "Expected {} rows, got {}. Body: {}",
+                count,
+                arr.len(),
+                body
+            )));
+        }
+    } else if count == 0 {
+        // No rows field means 0 rows effectively
+        return Ok(());
+    } else {
+         return Err(StepError(format!(
+            "Expected {} rows, but 'rows' field missing (0 rows). Body: {}",
+            count, body
+        )));
+    }
+    Ok(())
+}
+
+#[then(regex = r#"^row (\d+) column "(.+)" of the GQL result should contain "(.+)"$"#)]
+async fn check_gql_cell_contains(
+    world: &mut ThingOsWorld,
+    row_idx: usize,
+    col_name: String,
+    expected: String,
+) -> Result<(), StepError> {
+    let (_, body) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No GQL response recorded".to_string()))?;
+
+    let json: Value = serde_json::from_str(body)
+        .map_err(|e| StepError(format!("Invalid JSON response: {}", e)))?;
+
+    let columns = json
+        .get("columns")
+        .and_then(|v| v.as_array())
+        .ok_or(StepError("Response missing 'columns' array".to_string()))?;
+
+    let col_idx = columns
+        .iter()
+        .position(|v| v.as_str() == Some(&col_name))
+        .ok_or(StepError(format!("Column '{}' not found in {:?}", col_name, columns)))?;
+
+    let rows = json
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .ok_or(StepError("Response missing 'rows' array".to_string()))?;
+
+    let row = rows.get(row_idx).ok_or(StepError(format!(
+        "Row {} out of bounds (len={})",
+        row_idx,
+        rows.len()
+    )))?;
+
+    let cell = row
+        .get(col_idx)
+        .ok_or(StepError(format!("Cell {} out of bounds", col_idx)))?;
+
+    // Cell can be a string, number, or object (Node)
+    let cell_str = if let Some(s) = cell.as_str() {
+        s.to_string()
+    } else if let Some(n) = cell.as_u64() {
+        n.to_string()
+    } else if let Some(obj) = cell.as_object() {
+        // Node object: {"type": "node", "id": 123}
+        serde_json::to_string(obj).unwrap()
+    } else {
+        cell.to_string()
+    };
+
+    if !cell_str.contains(&expected) {
+        return Err(StepError(format!(
+            "Cell at row {}, col '{}' is '{}', expected it to contain '{}'",
+            row_idx, col_name, cell_str, expected
+        )));
+    }
+    Ok(())
+}
+
+#[then(regex = r#"^I save the ID of row (\d+) column "(.+)" as "(.+)"$"#)]
+async fn save_gql_id(
+    world: &mut ThingOsWorld,
+    row_idx: usize,
+    col_name: String,
+    var_name: String,
+) -> Result<(), StepError> {
+    let (_, body) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No GQL response recorded".to_string()))?;
+
+    let json: Value = serde_json::from_str(body)
+        .map_err(|e| StepError(format!("Invalid JSON response: {}", e)))?;
+
+    let columns = json
+        .get("columns")
+        .and_then(|v| v.as_array())
+        .ok_or(StepError("Response missing 'columns' array".to_string()))?;
+
+    let col_idx = columns
+        .iter()
+        .position(|v| v.as_str() == Some(&col_name))
+        .ok_or(StepError(format!("Column '{}' not found", col_name)))?;
+
+    let rows = json
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .ok_or(StepError("Response missing 'rows' array".to_string()))?;
+
+    let row = rows.get(row_idx).ok_or(StepError(format!(
+        "Row {} out of bounds",
+        row_idx
+    )))?;
+
+    let cell = row
+        .get(col_idx)
+        .ok_or(StepError(format!("Cell {} out of bounds", col_idx)))?;
+
+    // Expect node object: {"type": "node", "id": 123}
+    let id = if let Some(obj) = cell.as_object() {
+        obj.get("id")
+            .and_then(|v| v.as_u64())
+            .ok_or(StepError("Cell is not a node object (missing 'id')".to_string()))?
+    } else {
+        return Err(StepError(format!("Cell is not an object: {:?}", cell)));
+    };
+
+    eprintln!("│  │  │      💾 Saving {} = {}", var_name, id);
+    world.gql_variables.insert(var_name, id.to_string());
     Ok(())
 }

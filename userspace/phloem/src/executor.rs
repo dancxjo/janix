@@ -283,7 +283,10 @@ impl<G: Graph> GraphExecutor<G> {
                                     }
                                     Err(_) => false,
                                 },
-                                None => true,
+                                None => match self.graph.get_kind(ThingId::from_u64(id)) {
+                                    Ok(_) => true,
+                                    Err(_) => false,
+                                },
                             };
 
                             if matches_kind && self.matches_props(id, &node_pat.props) {

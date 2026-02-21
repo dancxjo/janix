@@ -534,4 +534,74 @@ mod tests {
             panic!("Expected Node ID");
         }
     }
+
+    #[test]
+    fn test_merge_existing_and_new() {
+        // 1. Verify that MERGE matches an existing node
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // Node 1 is proc.Process with name=12345
+        let cmd = parse("MERGE (n:proc.Process {name: 12345}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1, "MERGE should match existing node 1");
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // Verify count hasn't changed (should still be 5 initial nodes)
+        // MATCH (n) RETURN count(n)
+        let cmd_count = parse("MATCH (n) RETURN count(n)").unwrap();
+        let res_count = ex.execute(cmd_count);
+        if let crate::ResultValue::Number(count) = res_count.rows[0][0] {
+            assert_eq!(count, 5, "MERGE of existing node should not increase count");
+        } else {
+            panic!("Expected Number");
+        }
+
+        // 2. Verify that MERGE creates a new node if not found
+        // MERGE (n:proc.Process {name: 99999}) RETURN n
+        let cmd_new = parse("MERGE (n:proc.Process {name: 99999}) RETURN n").unwrap();
+        let res_new = ex.execute(cmd_new);
+        assert!(res_new.success);
+        assert_eq!(res_new.rows.len(), 1);
+        let new_id = if let crate::ResultValue::Node(id) = res_new.rows[0][0] {
+            assert!(id >= 1000, "New node should have ID >= 1000");
+            id
+        } else {
+            panic!("Expected Node ID");
+        };
+
+        // Verify count has increased
+        let res_count_2 = ex.execute(parse("MATCH (n) RETURN count(n)").unwrap());
+        if let crate::ResultValue::Number(count) = res_count_2.rows[0][0] {
+            assert_eq!(count, 6, "MERGE of new node should increase count");
+        }
+
+        // Verify property was set on the new node
+        let cmd_verify_prop = parse("MATCH (n {name: 99999}) RETURN n").unwrap();
+        let res_verify_prop = ex.execute(cmd_verify_prop);
+        assert!(res_verify_prop.success);
+        assert_eq!(res_verify_prop.rows.len(), 1);
+        if let crate::ResultValue::Node(id) = res_verify_prop.rows[0][0] {
+            assert_eq!(id, new_id);
+        }
+
+        // 3. Verify that repeating the MERGE matches the newly created node
+        let cmd_repeat = parse("MERGE (n:proc.Process {name: 99999}) RETURN n").unwrap();
+        let res_repeat = ex.execute(cmd_repeat);
+        assert!(res_repeat.success);
+        if let crate::ResultValue::Node(id) = res_repeat.rows[0][0] {
+            assert_eq!(id, new_id, "MERGE should match the previously created node");
+        }
+
+        // Verify count is stable
+        let res_count_3 = ex.execute(parse("MATCH (n) RETURN count(n)").unwrap());
+        if let crate::ResultValue::Number(count) = res_count_3.rows[0][0] {
+            assert_eq!(count, 6, "Repeated MERGE should not increase count");
+        }
+    }
 }

@@ -42,6 +42,11 @@ static WORK_QUEUE: Mutex<VecDeque<GraphWork>> = Mutex::new(VecDeque::new());
 /// (context switches generate more work items which cause more context switches)
 const MAX_QUEUE_SIZE: usize = 256;
 
+/// Pre-allocate the queue to prevent memory allocations inside the ISR
+pub fn init() {
+    WORK_QUEUE.lock().reserve(MAX_QUEUE_SIZE);
+}
+
 static DROPPED_UPDATE_STATE: AtomicUsize = AtomicUsize::new(0);
 static EVICTED_CRITICAL: AtomicUsize = AtomicUsize::new(0);
 static HIGH_WATER_MARK: AtomicUsize = AtomicUsize::new(0);

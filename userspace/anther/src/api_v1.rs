@@ -64,6 +64,52 @@ pub fn json_response_bytes(status: &'static str, body: Vec<u8>) -> (&'static str
     (status, ResponseBody::Owned(body))
 }
 
+// ============================================================================
+// Subgraph Response Cache
+// ============================================================================
+
+mod subgraph_cache {
+    extern crate alloc;
+    use alloc::string::String;
+    use alloc::vec::Vec;
+    use std::sync::Mutex;
+
+    /// TTL in nanoseconds (10 seconds)
+    const CACHE_TTL_NS: u64 = 10_000_000_000;
+
+    struct CacheEntry {
+        query: String,
+        timestamp_ns: u64,
+        json_bytes: Vec<u8>,
+    }
+
+    static CACHE: Mutex<Option<CacheEntry>> = Mutex::new(None);
+
+    /// Try to get a cached response for this query. Returns Some(bytes) on hit.
+    pub fn get(query: &str, now_ns: u64) -> Option<Vec<u8>> {
+        if let Ok(guard) = CACHE.lock() {
+            if let Some(entry) = guard.as_ref() {
+                if entry.query == query && now_ns.saturating_sub(entry.timestamp_ns) < CACHE_TTL_NS {
+                    return Some(entry.json_bytes.clone());
+                }
+            }
+        }
+        None
+    }
+
+    /// Store a response in the cache.
+    pub fn put(query: String, now_ns: u64, json_bytes: Vec<u8>) {
+        if let Ok(mut guard) = CACHE.lock() {
+            *guard = Some(CacheEntry {
+                query,
+                timestamp_ns: now_ns,
+                json_bytes,
+            });
+        }
+    }
+}
+
+
 /// Build error response
 pub fn error_response(err: ApiError) -> (&'static str, ResponseBody) {
     (err.http_status(), ResponseBody::Owned(err.to_json().into_bytes()))
@@ -628,6 +674,13 @@ pub fn handle_method_not_allowed() -> (&'static str, ResponseBody) {
 /// GET /api/v1/subgraph?root=...&depth=...&max_nodes=...
 pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
     let t0 = stem::time::monotonic_ns();
+    
+    // Check cache first
+    if let Some(cached_bytes) = subgraph_cache::get(query, t0) {
+        info!("SUBGRAPH: cache hit for query='{}'", query);
+        return json_response_bytes("200 OK", cached_bytes);
+    }
+
     info!("SUBGRAPH: enter query='{}'", query);
 
     // Parse query parameters
@@ -797,39 +850,110 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
         json.key("kind_name");
         json.string_value(&kind_name);
 
-        // Label heuristic - try NAME first, then shortened ID (using pre-interned symbols)
-        let label = get_node_label_fast(*node_id, &name_syms);
-        json.key("label");
-        json.string_value(&label);
-
         // Explicit name property if available
-        if name_syms[0] != 0 {
-            if let Ok(val) = prop_get(*node_id, name_syms[0]) {
-                if val != 0 {
-                    if let Some(name) = resolve_symbol_value(val) {
-                        json.key("name");
-                        json.string_value(&name);
+        let mut name_val = 0;
+        let mut explicit_name = false;
+
+        // Build a list of keys we want fetched in batch
+        // We want all valid name_syms, plus layout_x and layout_y
+        let mut batch_keys = alloc::vec::Vec::with_capacity(6);
+        for i in 0..4 {
+            if name_syms[i] != 0 {
+                batch_keys.push(name_syms[i] as u32);
+            }
+        }
+        let layout_x_idx = if layout_x_sym != 0 {
+            batch_keys.push(layout_x_sym as u32);
+            Some(batch_keys.len() - 1)
+        } else { None };
+        
+        let layout_y_idx = if layout_y_sym != 0 {
+            batch_keys.push(layout_y_sym as u32);
+            Some(batch_keys.len() - 1)
+        } else { None };
+
+        let mut label = String::new();
+        let mut layout_x_val = 0;
+        let mut layout_y_val = 0;
+
+        // Fetch all properties in one syscall
+        if !batch_keys.is_empty() {
+            if let Ok(resp) = stem::thing::sys::props_get_many(ThingId::from_u64(*node_id), &batch_keys) {
+                // Try to find a label from the name_syms in order
+                for i in 0..4 {
+                    if name_syms[i] == 0 { continue; }
+                    // Find where this key was in the batch_keys array
+                    if let Some(idx) = batch_keys.iter().position(|&k| k == name_syms[i] as u32) {
+                        if (resp.present_mask & (1 << idx)) != 0 {
+                            let val = resp.values[idx];
+                            if val != 0 {
+                                // If this is name_syms[0], it's the explicit name
+                                if i == 0 {
+                                    name_val = val;
+                                    explicit_name = true;
+                                }
+                                // If we don't have a label yet, try to decode this one
+                                if label.is_empty() {
+                                    let mut buf = [0u8; 64];
+                                    if let Ok(len) = stem::thing::sys::describe_symbol(val as u32, &mut buf) {
+                                        if len > 0 {
+                                            if let Ok(s) = core::str::from_utf8(&buf[..len]) {
+                                                label = String::from(s);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Extract layout X
+                if let Some(idx) = layout_x_idx {
+                    if (resp.present_mask & (1 << idx)) != 0 {
+                        layout_x_val = resp.values[idx];
+                    }
+                }
+                
+                // Extract layout Y
+                if let Some(idx) = layout_y_idx {
+                    if (resp.present_mask & (1 << idx)) != 0 {
+                        layout_y_val = resp.values[idx];
                     }
                 }
             }
         }
 
-        // Layout positions from existing LAYOUT_POS_X/Y (shared with Photosynthesis)
-        if layout_x_sym != 0 && layout_y_sym != 0 {
-            if let (Ok(x_bits), Ok(y_bits)) = (
-                prop_get(*node_id, layout_x_sym),
-                prop_get(*node_id, layout_y_sym),
-            ) {
-                if x_bits != 0 || y_bits != 0 {
-                    // Stored as f32 bits
-                    let x = f32::from_bits(x_bits as u32);
-                    let y = f32::from_bits(y_bits as u32);
-                    json.key("x");
-                    json.float_value(x);
-                    json.key("y");
-                    json.float_value(y);
-                }
+        // Fallback label if none found
+        if label.is_empty() {
+            let id_str = format!("{}", node_id);
+            if id_str.len() > 8 {
+                label = format!("...{}", &id_str[id_str.len() - 8..]);
+            } else {
+                label = id_str;
             }
+        }
+
+        json.key("label");
+        json.string_value(&label);
+
+        // Explicit name property if available
+        if explicit_name {
+            if let Some(name) = resolve_symbol_value(name_val) {
+                json.key("name");
+                json.string_value(&name);
+            }
+        }
+
+        // Layout positions
+        if layout_x_val != 0 || layout_y_val != 0 {
+            // Stored as f32 bits
+            let x = f32::from_bits(layout_x_val as u32);
+            let y = f32::from_bits(layout_y_val as u32);
+            json.key("x");
+            json.float_value(x);
+            json.key("y");
+            json.float_value(y);
         }
 
         json.end_object();
@@ -897,6 +1021,9 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
     let bytes = json.into_bytes();
     info!("SUBGRAPH: JSON built, {} bytes, total {} us",
           bytes.len(), (t3 - t0) / 1000);
+          
+    // Store in cache
+    subgraph_cache::put(query.to_string(), t3, bytes.clone());
     json_response_bytes("200 OK", bytes)
 }
 

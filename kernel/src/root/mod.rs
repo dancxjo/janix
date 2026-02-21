@@ -241,6 +241,7 @@ const MAX_INBOX_SIZE: usize = 4096;
 
 static ROOT_INBOX: Mutex<Option<VecDeque<RootMsg>>> = Mutex::new(None);
 static ROOT_TID: AtomicU64 = AtomicU64::new(0);
+pub static ROOT_ASLEEP: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 static INBOX_DROP_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_root_service<R: crate::BootRuntime>() {
@@ -283,8 +284,11 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
         q.push_back(msg);
         let tid = ROOT_TID.load(Ordering::Relaxed);
         if tid != 0 {
-            unsafe {
-                crate::task::scheduler::wake_task_erased(tid);
+            // Only acquire scheduler lock and wake if the root service is actually sleeping
+            if ROOT_ASLEEP.swap(false, Ordering::Acquire) {
+                unsafe {
+                    crate::task::scheduler::wake_task_erased(tid);
+                }
             }
         }
     } else {

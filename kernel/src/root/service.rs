@@ -75,6 +75,17 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         }
 
         if processed_this_round == 0 {
+            // Signal intent to sleep
+            super::ROOT_ASLEEP.store(true, Ordering::Release);
+            
+            // Double check queue to avoid missed wakeups race condition
+            // (a message could have arrived just *after* we finished pop_msg 
+            // but *before* we set ROOT_ASLEEP)
+            if super::queue_len() > 0 {
+                super::ROOT_ASLEEP.store(false, Ordering::Release);
+                continue;
+            }
+
             // Only block if we truly ran out of work
             unsafe {
                 crate::task::block_current_erased();
@@ -142,6 +153,7 @@ fn handle_msg<R: BootRuntime>(
     query_scratch: &mut crate::root::query::QueryScratch,
     msg: RootMsg,
 ) {
+    crate::ktrace!("ROOT_TRACE: handle_msg: {}", msg_type_name(&msg.op));
     // ApplyBatch gets special handling: we need to return the first created ID
     // via reply.p0 so callers can batch node creation + property sets in one call.
     if let RootOp::ApplyBatch { ref batch } = msg.op {

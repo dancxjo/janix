@@ -22,9 +22,9 @@ const CONFIG = {
     D3_COLLIDE_RADIUS: 50,
     D3_MAX_ITERATIONS: 0, // Infinite simulation
     // Network
-    API_TIMEOUT_MS: 8000,
-    SUBGRAPH_RETRIES: 3,
-    SUBGRAPH_RETRY_BASE_MS: 250,
+    API_TIMEOUT_MS: 30000,
+    SUBGRAPH_RETRIES: 1,
+    SUBGRAPH_RETRY_BASE_MS: 1000,
 };
 
 // =============================================================================

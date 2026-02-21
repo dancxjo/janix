@@ -86,15 +86,21 @@ fn intern(s: &str) -> u64 {
     let reply = enqueue(RootOp::Intern {
         name: alloc::string::String::from(s),
     });
+    let mut spins = 0;
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
             return reply.value.load(Ordering::Relaxed);
         }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
+        spins += 1;
+        if spins < 10000 {
+            core::hint::spin_loop();
+        } else {
+            unsafe {
+                crate::task::scheduler::sleep_ticks_current(1);
+            }
+            spins = 0;
         }
-        core::hint::spin_loop();
     }
 }
 
@@ -303,6 +309,7 @@ pub fn do_create_thread_node(
     );
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
+    let mut spins = 0;
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
@@ -310,10 +317,15 @@ pub fn do_create_thread_node(
             let id = reply.p0.load(Ordering::Relaxed);
             return if id != 0 { Some(id) } else { None };
         }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
+        spins += 1;
+        if spins < 10000 {
+            core::hint::spin_loop();
+        } else {
+            unsafe {
+                crate::task::scheduler::sleep_ticks_current(1);
+            }
+            spins = 0;
         }
-        core::hint::spin_loop();
     }
 }
 
@@ -385,15 +397,21 @@ pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
     }
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
+    let mut spins = 0;
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
             break;
         }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
+        spins += 1;
+        if spins < 10000 {
+            core::hint::spin_loop();
+        } else {
+            unsafe {
+                crate::task::scheduler::sleep_ticks_current(1);
+            }
+            spins = 0;
         }
-        core::hint::spin_loop();
     }
 }
 
@@ -411,15 +429,21 @@ pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
     );
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
+    let mut spins = 0;
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
             break;
         }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
+        spins += 1;
+        if spins < 10000 {
+            core::hint::spin_loop();
+        } else {
+            unsafe {
+                crate::task::scheduler::sleep_ticks_current(1);
+            }
+            spins = 0;
         }
-        core::hint::spin_loop();
     }
 }
 
@@ -435,14 +459,20 @@ pub fn link_bytespace(thread_thing: u64, bytespace_thing: u64) {
     );
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
+    let mut spins = 0;
     loop {
         let done = reply.done.load(Ordering::Acquire);
         if done != 0 {
             break;
         }
-        unsafe {
-            crate::task::scheduler::yield_now_current();
+        spins += 1;
+        if spins < 10000 {
+            core::hint::spin_loop();
+        } else {
+            unsafe {
+                crate::task::scheduler::sleep_ticks_current(1);
+            }
+            spins = 0;
         }
-        core::hint::spin_loop();
     }
 }

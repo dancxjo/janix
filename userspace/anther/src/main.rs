@@ -774,7 +774,6 @@ fn run_server_mode(port: u16) -> ! {
 
     // Main server loop — accept connections and spawn a thread per connection.
     // Uses stem::thread::spawn because std::thread::spawn hangs on ThingOS
-    // (PAL's Thread::new stack allocation or SYS_SPAWN_THREAD issue).
     loop {
         if let Some(accept) = net.tcp_accept(listen_handle) {
             let conn = accept.conn_handle;
@@ -1185,7 +1184,16 @@ const STDIO_MODE_MAGIC: usize = 0xDEADBEEF;
 
 #[stem::main]
 fn main(arg: usize) -> ! {
-    info!("anther: Starting HTTP server (ThingOS anther v0.1)");
+    stem::info!("anther: Starting HTTP server (ThingOS anther v0.1)");
+
+    crate::info!("anther: Spawning test thread that exits in 5s");
+    extern "C" fn test_thread_exit() -> ! {
+        crate::info!("anther: test_thread_exit ENTERED!");
+        stem::time::sleep_ms(5000);
+        crate::info!("anther: Test thread exiting with code 0! Does OS die?");
+        stem::syscall::exit(0);
+    }
+    let _ = stem::thread::spawn(test_thread_exit);
 
     // Default to server mode when spawned as a service (arg=0)
     // stdio mode is only for testing (requires magic value)

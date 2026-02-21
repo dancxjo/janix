@@ -6,6 +6,30 @@ use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 
+/// Separate lock for TaskId→ThingId graph mappings.
+///
+/// This is intentionally **not** inside `Scheduler` so that
+/// `flush_graph_queue` can look up / insert graph IDs without
+/// acquiring the main `SCHEDULER` spinlock, which is the primary
+/// source of trylock-miss contention on the timer ISR path.
+pub(crate) static TASK_GRAPH: spin::Mutex<BTreeMap<TaskId, u64>> =
+    spin::Mutex::new(BTreeMap::new());
+
+/// Look up the graph ThingId for a task (lock-free w.r.t. SCHEDULER).
+pub(crate) fn graph_thing_for_tid(tid: TaskId) -> Option<u64> {
+    TASK_GRAPH.lock().get(&tid).copied()
+}
+
+/// Set the graph ThingId for a task.
+pub(crate) fn set_graph_thing_for_tid(tid: TaskId, thing_id: u64) {
+    TASK_GRAPH.lock().insert(tid, thing_id);
+}
+
+/// Remove the graph ThingId for a task (e.g., when task is cleaned up).
+pub(crate) fn remove_graph_thing_for_tid(tid: TaskId) -> Option<u64> {
+    TASK_GRAPH.lock().remove(&tid)
+}
+
 /// Default time slice in ticks (~100ms at 100Hz timer)
 pub const DEFAULT_TIMESLICE: u32 = 10;
 
@@ -38,11 +62,11 @@ impl PerCpu {
     pub fn new() -> Self {
         PerCpu {
             runq: [
-                VecDeque::new(),
-                VecDeque::new(),
-                VecDeque::new(),
-                VecDeque::new(),
-                VecDeque::new(),
+                VecDeque::with_capacity(1024),
+                VecDeque::with_capacity(1024),
+                VecDeque::with_capacity(1024),
+                VecDeque::with_capacity(1024),
+                VecDeque::with_capacity(1024),
             ],
             idle_task: None,
             current: None,
@@ -116,8 +140,6 @@ pub struct Scheduler<R: BootRuntime> {
     pub(crate) bringup_in_progress: bool,
 
     pub(crate) metrics: SchedulerMetrics,
-    /// Maps TaskId -> ThingId for graph node lookups
-    pub(crate) task_graph: BTreeMap<TaskId, u64>,
 }
 
 impl SchedulerMetrics {
@@ -135,10 +157,10 @@ impl SchedulerMetrics {
 impl<R: BootRuntime> Scheduler<R> {
     pub fn new() -> Self {
         Scheduler {
-            tasks: Vec::new(),
-            wait_queue: VecDeque::new(),
-            sleep_queue: VecDeque::new(),
-            per_cpu: Vec::new(),
+            tasks: Vec::with_capacity(1024),
+            wait_queue: VecDeque::with_capacity(1024),
+            sleep_queue: VecDeque::with_capacity(1024),
+            per_cpu: Vec::with_capacity(32),
             next_id: 1,
             preempt_disable_depth: 0,
             preempt_disable_since: 0,
@@ -148,7 +170,6 @@ impl<R: BootRuntime> Scheduler<R> {
             online_cpu_count: 1,
             bringup_in_progress: false,
             metrics: SchedulerMetrics::new(),
-            task_graph: BTreeMap::new(),
         }
     }
 
@@ -181,20 +202,7 @@ impl<R: BootRuntime> Scheduler<R> {
         self.tasks.iter().find(|t| t.id == tid).map(|t| t.priority)
     }
 
-    /// Get the graph ThingId for a task
-    pub fn graph_thing_for_tid(&self, tid: TaskId) -> Option<u64> {
-        self.task_graph.get(&tid).copied()
-    }
 
-    /// Set the graph ThingId for a task
-    pub fn set_graph_thing_for_tid(&mut self, tid: TaskId, thing_id: u64) {
-        self.task_graph.insert(tid, thing_id);
-    }
-
-    /// Remove the graph ThingId for a task (e.g., when task is cleaned up)
-    pub fn remove_graph_thing_for_tid(&mut self, tid: TaskId) -> Option<u64> {
-        self.task_graph.remove(&tid)
-    }
 
     /// Returns `true` if there is at least one task in a non-idle run queue
     /// (priority levels 1–4) for the given CPU. Used by `run_scheduler` to

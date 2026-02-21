@@ -23,37 +23,46 @@ impl Supervisor {
     }
 
     pub fn run_forever(&mut self) -> ! {
-        info!("SPROUT: Supervisor starting (minimal mode)...");
+        info!("SPROUT: Supervisor starting (phased mode)...");
 
-        // 1. Discovery + hardware bring-up.
-        // Secondary CPU bring-up is owned by kernel boot before Sprout starts.
+        // --- STAGE 1: Discovery & Core Drivers ---
+        info!("SPROUT: [Stage 1] Hardware Discovery and Core Drivers");
         self.discover();
 
-        // 2. Spawn hardware stubs for non-virtio PCI devices we can detect.
         crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
         crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
         crate::pipelines::setup_storage_pipeline(&mut self.tasks);
-
-        // 3. Start audio proof-of-life early and keep it responsive.
-        crate::pipelines::setup_audio_pipeline(&mut self.tasks);
-
-        // 4. Setup display pipeline (needed for bloom)
+        crate::pipelines::setup_audio_driver(&mut self.tasks);
         let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
+        let input_handles = crate::pipelines::setup_input_broker(&mut self.tasks);
+        crate::pipelines::setup_network_stack(&mut self.tasks);
 
-        // 5. Setup input pipeline (ps2_kbd, ps2_mouse, bristle, bloom, echo)
-        crate::pipelines::setup_input_pipeline(&mut self.tasks, display_handles);
+        // Settle hardware phase
+        stem::sleep_ms(100);
 
-        // 6. Launch blossom after bloom, then bring up networking in the same startup phase.
-        crate::pipelines::setup_blossom_service(&mut self.tasks);
-        crate::pipelines::setup_font_service(&mut self.tasks);
-        crate::pipelines::setup_network_pipeline(&mut self.tasks);
+        // --- STAGE 2: Network & Core Services ---
+        info!("SPROUT: [Stage 2] Starting Network Apps and Services");
+        crate::pipelines::setup_network_apps(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
         crate::pipelines::setup_taskman_service(&mut self.tasks);
-
-        // 7. Start flytrap last so it does not stampede startup dependencies.
+        crate::pipelines::setup_font_service(&mut self.tasks);
+        crate::pipelines::setup_blossom_service(&mut self.tasks);
         crate::pipelines::setup_flytrap_service(&mut self.tasks);
 
-        // 8. Spawn any discovered apps that weren't started by a pipeline.
+        stem::sleep_ms(100);
+
+        // --- STAGE 3: Compositor ---
+        info!("SPROUT: [Stage 3] Starting Compositor");
+        crate::pipelines::setup_compositor(&mut self.tasks, display_handles, input_handles);
+        
+        stem::sleep_ms(200);
+
+        // --- STAGE 4: Final Polish (Beeper) ---
+        info!("SPROUT: [Stage 4] Proof of life (Beeper)");
+        crate::pipelines::spawn_beeper(&mut self.tasks);
+
+        // --- STAGE 5: User Apps ---
+        info!("SPROUT: [Stage 5] Starting Discovered User Apps");
         self.spawn_discovered_apps();
 
         // Enter monitor loop
@@ -69,35 +78,26 @@ impl Supervisor {
     fn run_forever_full(&mut self) -> ! {
         info!("SPROUT: Supervisor starting...");
 
-        // 1. Discovery
         self.discover();
-
-        // 1.25. Spawn hardware stubs for non-virtio PCI devices we can detect.
         crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
         crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
         crate::pipelines::setup_storage_pipeline(&mut self.tasks);
+        crate::pipelines::setup_audio_driver(&mut self.tasks);
 
-        // 1.5. Setup audio pipeline (PRIORITY: Proof-of-life)
-        crate::pipelines::setup_audio_pipeline(&mut self.tasks);
-
-        // 2. Spawn Apps
         self.spawn_apps();
 
-        // 2.5. Setup display pipeline
         let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
-
-        // 3. Match and Spawn Drivers
         self.match_and_spawn_drivers();
+        let input_handles = crate::pipelines::setup_input_broker(&mut self.tasks);
+        crate::pipelines::setup_compositor(&mut self.tasks, display_handles, input_handles);
 
-        // 3.5. Setup keyboard pipeline
-        crate::pipelines::setup_input_pipeline(&mut self.tasks, display_handles);
-
-        // 3.6. Setup network pipeline
-        crate::pipelines::setup_network_pipeline(&mut self.tasks);
+        crate::pipelines::setup_network_stack(&mut self.tasks);
+        crate::pipelines::setup_network_apps(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
         crate::pipelines::setup_taskman_service(&mut self.tasks);
 
-        // 4. Loop
+        crate::pipelines::spawn_beeper(&mut self.tasks);
+
         info!("SPROUT: Entering supervisor loop.");
 
         loop {

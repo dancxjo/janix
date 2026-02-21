@@ -98,7 +98,7 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
     }
 
     // Update state to Runnable and add to runq
-    if let Some(idx) = sched.tasks.iter().position(|t| t.id == tid) {
+    if let Ok(idx) = sched.tasks.binary_search_by_key(&tid, |t| t.id) {
         if sched.tasks[idx].state == TaskState::Blocked {
             sched.tasks[idx].state = TaskState::Runnable;
             let priority = sched.tasks[idx].priority;
@@ -126,8 +126,8 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
             // mid-slice rather than waiting for timeslice expiry.
             let current_prio = sched.per_cpu[safe_cpu]
                 .current
-                .and_then(|cid| sched.tasks.iter().find(|t| t.id == cid))
-                .map(|t| t.priority as usize)
+                .and_then(|cid| sched.tasks.binary_search_by_key(&cid, |t| t.id).ok())
+                .map(|t_idx| sched.tasks[t_idx].priority as usize)
                 .unwrap_or(0);
 
             if (priority as usize) > current_prio {

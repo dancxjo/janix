@@ -149,7 +149,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let (mappings, parent_pinfo) = if let Some(current_id) =
             self.per_cpu[super::current_cpu_index::<R>()].current
         {
-            if let Some(parent) = self.tasks.iter().find(|t| t.id == current_id) {
+            if let Some(parent) = self.get_task(current_id) {
                 (parent.mappings.clone(), parent.process_info.clone())
             } else {
                 (alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new())), None)
@@ -441,7 +441,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         .per_cpu
         .get(cpu_idx)
         .and_then(|pc| pc.current)
-        .and_then(|ctid| sched.tasks.iter().find(|t| t.id == ctid))
+        .and_then(|ctid| sched.get_task(ctid))
         .and_then(|t| t.process_info.as_ref())
         .map(|pi| pi.lock().pid)
         .unwrap_or(0);
@@ -549,7 +549,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         .per_cpu
         .get(cpu_idx)
         .and_then(|pc| pc.current)
-        .and_then(|ctid| sched.tasks.iter().find(|t| t.id == ctid))
+        .and_then(|ctid| sched.get_task(ctid))
         .and_then(|t| t.process_info.as_ref())
         .map(|pi| pi.lock().pid)
         .unwrap_or(0);
@@ -734,7 +734,7 @@ mod tests {
 
         for (arg, expected) in cases {
             let id = sched.spawn(mock_entry, arg, TaskPriority::Normal, Affinity::Any);
-            let task = sched.tasks.iter().find(|t| t.id == id).unwrap();
+            let task = sched.get_task(id).unwrap();
 
             // In our MockTasking.init_kernel_context, we store arg in MockContext.0
             assert_eq!(task.ctx.0, expected);

@@ -81,19 +81,14 @@ static INTERN_SLEEPING: AtomicU64 = AtomicU64::new(0);
 static INTERN_DEAD: AtomicU64 = AtomicU64::new(0);
 static INTERN_RUNNING: AtomicU64 = AtomicU64::new(0);
 
-/// Intern a string via the Root service (blocking).
-fn intern(s: &str) -> u64 {
-    let reply = enqueue(RootOp::Intern {
-        name: alloc::string::String::from(s),
-    });
+fn wait_for_reply(reply: &alloc::sync::Arc<crate::root::ReplyCell>) -> u64 {
     let mut spins = 0;
     loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
+        if reply.done.load(Ordering::Acquire) != 0 {
             return reply.value.load(Ordering::Relaxed);
         }
         spins += 1;
-        if spins < 10000 {
+        if spins < 1000000 {
             core::hint::spin_loop();
         } else {
             unsafe {
@@ -102,6 +97,14 @@ fn intern(s: &str) -> u64 {
             spins = 0;
         }
     }
+}
+
+/// Intern a string via the Root service (blocking).
+fn intern(s: &str) -> u64 {
+    let reply = enqueue(RootOp::Intern {
+        name: alloc::string::String::from(s),
+    });
+    wait_for_reply(&reply)
 }
 
 /// Intern with per-string caching for the small set of known state strings.
@@ -309,24 +312,11 @@ pub fn do_create_thread_node(
     );
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
-    let mut spins = 0;
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            // The first created ID is returned in reply.p0 by the Root service.
-            let id = reply.p0.load(Ordering::Relaxed);
-            return if id != 0 { Some(id) } else { None };
-        }
-        spins += 1;
-        if spins < 10000 {
-            core::hint::spin_loop();
-        } else {
-            unsafe {
-                crate::task::scheduler::sleep_ticks_current(1);
-            }
-            spins = 0;
-        }
-    }
+    wait_for_reply(&reply);
+    
+    // The first created ID is returned in reply.p0 by the Root service.
+    let id = reply.p0.load(Ordering::Relaxed);
+    return if id != 0 { Some(id) } else { None };
 }
 
 pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
@@ -397,22 +387,7 @@ pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
     }
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
-    let mut spins = 0;
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            break;
-        }
-        spins += 1;
-        if spins < 10000 {
-            core::hint::spin_loop();
-        } else {
-            unsafe {
-                crate::task::scheduler::sleep_ticks_current(1);
-            }
-            spins = 0;
-        }
-    }
+    wait_for_reply(&reply);
 }
 
 pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
@@ -429,22 +404,7 @@ pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
     );
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
-    let mut spins = 0;
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            break;
-        }
-        spins += 1;
-        if spins < 10000 {
-            core::hint::spin_loop();
-        } else {
-            unsafe {
-                crate::task::scheduler::sleep_ticks_current(1);
-            }
-            spins = 0;
-        }
-    }
+    wait_for_reply(&reply);
 }
 
 /// Link a task to a bytespace it uses.
@@ -459,20 +419,5 @@ pub fn link_bytespace(thread_thing: u64, bytespace_thing: u64) {
     );
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
-    let mut spins = 0;
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            break;
-        }
-        spins += 1;
-        if spins < 10000 {
-            core::hint::spin_loop();
-        } else {
-            unsafe {
-                crate::task::scheduler::sleep_ticks_current(1);
-            }
-            spins = 0;
-        }
-    }
+    wait_for_reply(&reply);
 }

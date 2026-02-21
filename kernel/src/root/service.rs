@@ -153,7 +153,6 @@ fn handle_msg<R: BootRuntime>(
     query_scratch: &mut crate::root::query::QueryScratch,
     msg: RootMsg,
 ) {
-    crate::ktrace!("ROOT_TRACE: handle_msg: {}", msg_type_name(&msg.op));
     // ApplyBatch gets special handling: we need to return the first created ID
     // via reply.p0 so callers can batch node creation + property sets in one call.
     if let RootOp::ApplyBatch { ref batch } = msg.op {

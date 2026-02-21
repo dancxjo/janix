@@ -122,6 +122,10 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             wake_tick,
         });
 
+        if let Ok(idx) = sched.tasks.binary_search_by_key(&current_id, |t| t.id) {
+            sched.tasks[idx].state = crate::task::TaskState::Blocked;
+        }
+
         // Queue graph state update to sleeping
         graphify::update_task_state(current_id, "sleeping");
 

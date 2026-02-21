@@ -485,7 +485,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
                 // Decrement current task's time slice
                 if let Some(current_id) = self.per_cpu.get(cpu_idx).and_then(|pc| pc.current) {
-                    if let Some(task) = self.tasks.iter_mut().find(|t| t.id == current_id) {
+                    if let Some(task) = self.get_task_mut(current_id) {
                         if task.timeslice_remaining > 0 {
                             task.timeslice_remaining -= 1;
                         }
@@ -543,14 +543,16 @@ impl<R: BootRuntime> types::Scheduler<R> {
         let mut i = 0;
         while i < self.sleep_queue.len() {
             if self.sleep_queue[i].wake_tick <= now {
-                let entry = self.sleep_queue.remove(i).unwrap();
+                let entry = self.sleep_queue.swap_remove_back(i).unwrap();
 
                 // Task should wake up - add back to run queue
-                if let Some(task) = self.tasks.iter().find(|t| t.id == entry.task_id) {
-                    let priority = task.priority;
-                    let target_cpu = if let crate::task::Affinity::Pinned(cpu) = task.affinity {
+                if let Ok(task_idx) = self.tasks.binary_search_by_key(&entry.task_id, |t| t.id) {
+                    self.tasks[task_idx].state = TaskState::Runnable;
+                    let task_ref = &self.tasks[task_idx];
+                    let priority = task_ref.priority;
+                    let target_cpu = if let crate::task::Affinity::Pinned(cpu) = task_ref.affinity {
                         cpu
-                    } else if let Some(last) = task.last_cpu {
+                    } else if let Some(last) = task_ref.last_cpu {
                         last
                     } else {
                         let idx = spawn::RR_IDX.fetch_add(1, Ordering::Relaxed);
@@ -569,8 +571,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
                     let current_prio = self.per_cpu.get(actual_cpu)
                         .and_then(|pc| pc.current)
-                        .and_then(|cid| self.tasks.iter().find(|t| t.id == cid))
-                        .map(|t| t.priority as usize)
+                        .and_then(|cid| self.tasks.binary_search_by_key(&cid, |t| t.id).ok())
+                        .map(|idx| self.tasks[idx].priority as usize)
                         .unwrap_or(0);
                     if (priority as usize) > current_prio {
                         self.need_resched = true;
@@ -671,7 +673,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         // Don't push idle task or dead tasks back to runq
         if Some(current_id) != self.per_cpu[cpu_idx].idle_task {
-            if let Some(task) = self.tasks.iter().find(|t| t.id == current_id) {
+            if let Some(task) = self.get_task(current_id) {
                 if task.state != TaskState::Dead {
                     let priority = task.priority;
                     // Push to LOCAL runq (we are yielding on this CPU)
@@ -718,10 +720,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             while let Some(id) = self.per_cpu[cpu_idx].runq[p].pop_front() {
                 self.metrics.pops += 1;
                 // Skip dead tasks that were enqueued before kill took effect
-                let task_ref = self
-                    .tasks
-                    .iter()
-                    .find(|t| t.id == id);
+                let task_ref = self.get_task(id);
                 if task_ref.map_or(true, |t| t.state == TaskState::Dead) {
                     continue;
                 }
@@ -1153,7 +1152,7 @@ pub fn current_priority<R: BootRuntime>() -> TaskPriority {
                 .per_cpu
                 .get(cpu)
                 .and_then(|pc| pc.current)
-                .and_then(|tid| sched.tasks.iter().find(|t| t.id == tid))
+                .and_then(|tid| sched.get_task(tid))
                 .map(|t| t.priority)
                 .unwrap_or(TaskPriority::Normal)
         } else {
@@ -1184,7 +1183,7 @@ pub fn process_info<R: BootRuntime>() -> Option<alloc::sync::Arc<spin::Mutex<cra
                 .per_cpu
                 .get(cpu_idx)
                 .and_then(|pc| pc.current)
-                .and_then(|tid| sched.tasks.iter().find(|t| t.id == tid))
+                .and_then(|tid| sched.get_task(tid))
                 .and_then(|t| t.process_info.clone())
         } else {
             None
@@ -1552,7 +1551,7 @@ mod tests {
         sched.increment_wait_times(0);
         
         // Verify wait_ticks incremented
-        let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
+        let task = sched.get_task(1).unwrap();
         assert_eq!(task.wait_ticks, 1);
     }
 
@@ -1599,7 +1598,7 @@ mod tests {
         sched.apply_priority_aging(0);
         
         // Verify priority was boosted
-        let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
+        let task = sched.get_task(1).unwrap();
         assert!(task.priority > TaskPriority::Low, "Priority should be boosted");
         assert_eq!(task.base_priority, TaskPriority::Low, "Base priority should remain unchanged");
 
@@ -1656,7 +1655,7 @@ mod tests {
         sched.reset_wait_time(1);
         
         // Verify wait_ticks reset and priority restored
-        let task = sched.tasks.iter().find(|t| t.id == 1).unwrap();
+        let task = sched.get_task(1).unwrap();
         assert_eq!(task.wait_ticks, 0);
         assert_eq!(task.priority, task.base_priority);
     }

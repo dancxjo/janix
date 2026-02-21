@@ -214,6 +214,7 @@ pub struct ReplyCell {
     pub p1: AtomicU64,
     pub p2: AtomicU64,
     pub done: AtomicU64,
+    pub waiting_task: AtomicU64,
 }
 
 impl ReplyCell {
@@ -225,6 +226,7 @@ impl ReplyCell {
             p1: AtomicU64::new(0),
             p2: AtomicU64::new(0),
             done: AtomicU64::new(0),
+            waiting_task: AtomicU64::new(0),
         }
     }
 }

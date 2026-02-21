@@ -177,6 +177,14 @@ impl<R: BootRuntime> Scheduler<R> {
         self.tasks.len()
     }
 
+    pub fn get_task(&self, id: TaskId) -> Option<&Task<R>> {
+        self.tasks.binary_search_by_key(&id, |t| t.id).ok().map(|idx| &*self.tasks[idx])
+    }
+
+    pub fn get_task_mut(&mut self, id: TaskId) -> Option<&mut Task<R>> {
+        self.tasks.binary_search_by_key(&id, |t| t.id).ok().map(move |idx| &mut *self.tasks[idx])
+    }
+
     pub fn current_id(&self) -> Option<TaskId> {
         // This is tricky without knowing which CPU we are asking about.
         // For backwards compat logging, valid use mainly inside scheduler or per-cpu hooks.
@@ -199,7 +207,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
     pub fn current_priority_on_cpu(&self, cpu: usize) -> Option<crate::task::TaskPriority> {
         let tid = self.current_id_on_cpu(cpu)?;
-        self.tasks.iter().find(|t| t.id == tid).map(|t| t.priority)
+        self.get_task(tid).map(|t| t.priority)
     }
 
 

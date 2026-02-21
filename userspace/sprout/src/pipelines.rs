@@ -317,7 +317,12 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
     })
 }
 
-pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<DisplayHandles>) {
+pub struct InputHandles {
+    pub evt_read: PortHandle,
+    pub evt_echo_read: PortHandle,
+}
+
+pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
     info!("SPROUT: Setting up input pipeline (keyboard + mouse)...");
 
     // Create kbd_raw port (ps2_kbd -> bristle)
@@ -328,7 +333,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
         Err(e) => {
             stem::error!("SPROUT: Failed to create kbd_raw port: {:?}", e);
-            return;
+            return InputHandles { evt_read: 0, evt_echo_read: 0 };
         }
     };
 
@@ -343,7 +348,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
         Err(e) => {
             stem::error!("SPROUT: Failed to create mouse_raw port: {:?}", e);
-            return;
+            return InputHandles { evt_read: 0, evt_echo_read: 0 };
         }
     };
 
@@ -418,6 +423,18 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
 
     // Font handling is now integrated into Bloom. No standalone fontd service.
 
+    info!("SPROUT: Input broker ready (keyboard + mouse)");
+    InputHandles {
+        evt_read: evt.1,
+        evt_echo_read: evt_echo.1,
+    }
+}
+
+pub fn setup_compositor(
+    tasks: &mut Vec<ManagedTask>,
+    display: Option<DisplayHandles>,
+    input: InputHandles,
+) {
     // Extract display handles early for bloom compositor
     let (drv_req_write, drv_resp_read, display_bs_id) = display
         .as_ref()
@@ -444,10 +461,10 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
             slice[0] = 0xB100AA01; // Magic
             slice[1] = drv_req_write as u32;
             slice[2] = drv_resp_read as u32;
-            slice[3] = evt.1 as u32; // Pass legacy event handle
+            slice[3] = input.evt_read as u32; // Pass legacy event handle
             info!(
                 "SPROUT: Writing bloom BS: drv_req={}, drv_resp={}, bristle_evt={}",
-                drv_req_write, drv_resp_read, evt.1
+                drv_req_write, drv_resp_read, input.evt_read
             );
 
             // Display bytespace id (u64 split into two u32s)
@@ -488,7 +505,7 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
     }
 
     // Spawn echo with legacy port handle
-    match stem::syscall::spawn_process("/echo", evt_echo.1 as usize) {
+    match stem::syscall::spawn_process("/echo", input.evt_echo_read as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned echo (PID={})", pid);
             let _ = stem::thread::set_priority(pid, 2);
@@ -506,12 +523,12 @@ pub fn setup_input_pipeline(tasks: &mut Vec<ManagedTask>, display: Option<Displa
         }
     }
 
-    info!("SPROUT: Input pipeline ready (keyboard + mouse)");
+    info!("SPROUT: Compositor ready");
 }
 
 /// Set up network pipeline - spawn virtio_netd (driver) then netd (stack)
-pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: Setting up network pipeline...");
+pub fn setup_network_stack(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: Setting up network stack...");
 
     // Prefer native RTL8168 driver if present.
     let mut rtl_buf = [ThingId::default(); 1];
@@ -543,7 +560,7 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                     }
                 }
 
-                spawn_net_stack_services(tasks);
+                spawn_netd(tasks);
             }
         }
     }
@@ -574,19 +591,19 @@ pub fn setup_network_pipeline(tasks: &mut Vec<ManagedTask>) {
                 }
             }
 
-            spawn_net_stack_services(tasks);
+            spawn_netd(tasks);
         } else {
             info!("SPROUT: No NIC device found, starting net services without NIC driver");
-            spawn_net_stack_services(tasks);
+            spawn_netd(tasks);
         }
     } else {
         info!("SPROUT: No NIC device found, starting net services without NIC driver");
-        spawn_net_stack_services(tasks);
+        spawn_netd(tasks);
     }
 }
 
-fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: spawn_net_stack_services start");
+fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: spawn_netd start");
     match stem::syscall::spawn_process("/netd", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned netd (PID={})", pid);
@@ -604,6 +621,10 @@ fn spawn_net_stack_services(tasks: &mut Vec<ManagedTask>) {
             warn!("SPROUT: Failed to spawn netd: {:?}", e);
         }
     }
+}
+
+pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: Setting up network apps...");
 
     match stem::syscall::spawn_process("/anther", 0) {
         Ok(pid) => {
@@ -742,9 +763,9 @@ fn spawn_ui_service(tasks: &mut Vec<ManagedTask>, name: &str, service: &str, pri
     }
 }
 
-/// Set up audio pipeline - spawn virtio_sound and beeper
-pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
-    info!("SPROUT: Setting up audio pipeline...");
+/// Set up audio driver - spawn virtio_sound or hdaudio
+pub fn setup_audio_driver(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: Setting up audio driver...");
 
     // Prefer native HDA path if present.
     let mut hda_buf = [ThingId::default(); 1];
@@ -769,24 +790,6 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                 Err(e) => {
                     warn!("SPROUT: Failed to spawn hdaudio: {:?}", e);
                     return;
-                }
-            }
-
-            match stem::syscall::spawn_process("/beeper", 0) {
-                Ok(pid) => {
-                    info!("SPROUT: Spawned beeper (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 2);
-                    tasks.push(ManagedTask {
-                        name: "/beeper".to_string(),
-                        kind: TaskKind::App,
-                        module_path: "/beeper".to_string(),
-                        pid: Some(pid),
-                        restarts: 0,
-                        spawn_arg: 0,
-                    });
-                }
-                Err(e) => {
-                    warn!("SPROUT: Failed to spawn beeper: {:?}", e);
                 }
             }
 
@@ -820,29 +823,31 @@ pub fn setup_audio_pipeline(tasks: &mut Vec<ManagedTask>) {
                     return;
                 }
             }
-
-            // Spawn beeper demo
-            match stem::syscall::spawn_process("/beeper", 0) {
-                Ok(pid) => {
-                    info!("SPROUT: Spawned beeper (PID={})", pid);
-                    let _ = stem::thread::set_priority(pid, 2);
-                    tasks.push(ManagedTask {
-                        name: "/beeper".to_string(),
-                        kind: TaskKind::App,
-                        module_path: "/beeper".to_string(),
-                        pid: Some(pid),
-                        restarts: 0,
-                        spawn_arg: 0,
-                    });
-                }
-                Err(e) => {
-                    warn!("SPROUT: Failed to spawn beeper: {:?}", e);
-                }
-            }
         } else {
             info!("SPROUT: No Sound device found");
         }
     } else {
         info!("SPROUT: No Sound device found");
+    }
+}
+
+pub fn spawn_beeper(tasks: &mut Vec<ManagedTask>) {
+    info!("SPROUT: Spawning beeper...");
+    match stem::syscall::spawn_process("/beeper", 0) {
+        Ok(pid) => {
+            info!("SPROUT: Spawned beeper (PID={})", pid);
+            let _ = stem::thread::set_priority(pid, 2);
+            tasks.push(ManagedTask {
+                name: "/beeper".to_string(),
+                kind: TaskKind::App,
+                module_path: "/beeper".to_string(),
+                pid: Some(pid),
+                restarts: 0,
+                spawn_arg: 0,
+            });
+        }
+        Err(e) => {
+            warn!("SPROUT: Failed to spawn beeper: {:?}", e);
+        }
     }
 }

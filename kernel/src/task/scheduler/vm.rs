@@ -28,7 +28,7 @@ pub fn add_user_mapping<R: BootRuntime>(region: VmRegionInfo) -> Result<(), Errn
             None => return Err(Errno::ESRCH),
         };
 
-        if let Some(task) = sched.tasks.iter().find(|t| t.id == current_id) {
+        if let Some(task) = sched.get_task(current_id) {
             let mut mappings = task.mappings.lock();
             mappings.insert(region);
             Ok(())
@@ -59,7 +59,7 @@ pub fn remove_user_mappings<R: BootRuntime>(
             None => return Err(Errno::ESRCH),
         };
 
-        if let Some(task) = sched.tasks.iter().find(|t| t.id == current_id) {
+        if let Some(task) = sched.get_task(current_id) {
             let mut mappings = task.mappings.lock();
             Ok(mappings.remove(addr, len))
         } else {
@@ -105,7 +105,7 @@ pub unsafe fn translate_user_page<R: BootRuntime>(addr: u64) -> Option<u64> {
             }
         };
 
-        if let Some(task) = sched.tasks.iter().find(|t| t.id == current_id) {
+        if let Some(task) = sched.get_task(current_id) {
             rt.tasking().translate(task.aspace, addr)
         } else {
             None

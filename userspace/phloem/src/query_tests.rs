@@ -344,15 +344,13 @@ mod tests {
     #[test]
     fn test_lookup_nonexistent() {
         // MATCH (n) WHERE id(n) = 9999 RETURN n
-        // NOTE: The ID lookup optimization directly uses the ID without checking existence.
-        // This is by design - the graph treats all IDs as valid (lazy lookup).
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
         let cmd = parse("MATCH (n) WHERE id(n) = 9999 RETURN n").unwrap();
         let res = ex.execute(cmd);
         assert!(res.success);
-        // The executor returns the ID regardless of existence (optimization behavior)
-        // This is acceptable - real usage validates nodes via kind/property checks
+        // The executor should verify existence even with direct ID lookup
+        assert!(res.rows.is_empty(), "Expected no rows for non-existent node ID");
     }
 
     // ===== 3) Edges and neighborhood traversal =====

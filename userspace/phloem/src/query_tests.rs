@@ -534,4 +534,47 @@ mod tests {
             panic!("Expected Node ID");
         }
     }
+
+    #[test]
+    fn test_merge_edge_idempotence() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // 1. Merge nodes to bind variables
+        let cmd1 = parse("MERGE (a:TestNodeA {val: 1})").unwrap();
+        assert!(ex.execute(cmd1).success);
+
+        let cmd2 = parse("MERGE (b:TestNodeB {val: 2})").unwrap();
+        assert!(ex.execute(cmd2).success);
+
+        // 2. Merge edge between them
+        let cmd3 = parse("MERGE (a)-[:CONNECTED_TO]->(b)").unwrap();
+        let res3 = ex.execute(cmd3);
+        assert!(res3.success, "First MERGE edge should succeed");
+
+        // 3. Verify edge exists
+        let cmd_check = parse("MATCH (a:TestNodeA)-[:CONNECTED_TO]->(b:TestNodeB) RETURN count(b)").unwrap();
+        let res_check = ex.execute(cmd_check);
+        assert!(res_check.success);
+        if let crate::ResultValue::Number(n) = res_check.rows[0][0] {
+            assert_eq!(n, 1, "Should have 1 edge");
+        } else {
+            panic!("Expected Number, got {:?}", res_check.rows[0][0]);
+        }
+
+        // 4. Merge same edge again (idempotence)
+        let cmd4 = parse("MERGE (a)-[:CONNECTED_TO]->(b)").unwrap();
+        let res4 = ex.execute(cmd4);
+        assert!(res4.success, "Second MERGE edge should succeed");
+
+        // 5. Verify still only 1 edge
+        let cmd_check2 = parse("MATCH (a:TestNodeA)-[:CONNECTED_TO]->(b:TestNodeB) RETURN count(b)").unwrap();
+        let res_check2 = ex.execute(cmd_check2);
+        assert!(res_check2.success);
+        if let crate::ResultValue::Number(n) = res_check2.rows[0][0] {
+            assert_eq!(n, 1, "Should still have 1 edge after second MERGE");
+        } else {
+            panic!("Expected Number");
+        }
+    }
 }

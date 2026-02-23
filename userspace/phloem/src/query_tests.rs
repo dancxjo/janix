@@ -534,4 +534,22 @@ mod tests {
             panic!("Expected Node ID");
         }
     }
+
+    #[test]
+    fn test_merge_edge_inline_creation() {
+        // MERGE (p:Project {name: "P1"})-[:CONTAINS]->(i:Idea {title: "I1"}) RETURN p
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MERGE (p:Project {name: \"P1\"})-[:CONTAINS]->(i:Idea {title: \"I1\"}) RETURN p").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success, "MERGE command failed: {}", res.message);
+        assert_eq!(res.rows.len(), 1, "Expected 1 row result");
+
+        // Use another query to verify existence and link
+        // MATCH (p:Project {name: "P1"})-[:CONTAINS]->(i:Idea {title: "I1"}) RETURN i
+        let cmd2 = parse("MATCH (p:Project {name: \"P1\"})-[:CONTAINS]->(i:Idea {title: \"I1\"}) RETURN i").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success, "Verification MATCH failed");
+        assert_eq!(res2.rows.len(), 1, "Expected to find the created pattern");
+    }
 }

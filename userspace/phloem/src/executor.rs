@@ -176,22 +176,31 @@ impl<G: Graph> GraphExecutor<G> {
                 rel_kind,
                 dst,
             } => {
-                let src_id = match src.var.as_ref().and_then(|v| self.bindings.get(v)) {
-                    Some(&id) => id,
-                    None => {
-                        return ExecutionResult::error(&format!(
-                            "variable '{:?}' not bound",
-                            src.var
-                        ))
+                let src_id = if let Some(&id) = src.var.as_ref().and_then(|v| self.bindings.get(v)) {
+                    id
+                } else {
+                    match self.ensure_node(&src) {
+                        Ok(id) => {
+                            if let Some(var) = &src.var {
+                                self.bindings.insert(var.clone(), id);
+                            }
+                            id
+                        }
+                        Err(e) => return ExecutionResult::error(&e),
                     }
                 };
-                let dst_id = match dst.var.as_ref().and_then(|v| self.bindings.get(v)) {
-                    Some(&id) => id,
-                    None => {
-                        return ExecutionResult::error(&format!(
-                            "variable '{:?}' not bound",
-                            dst.var
-                        ))
+
+                let dst_id = if let Some(&id) = dst.var.as_ref().and_then(|v| self.bindings.get(v)) {
+                    id
+                } else {
+                    match self.ensure_node(&dst) {
+                        Ok(id) => {
+                            if let Some(var) = &dst.var {
+                                self.bindings.insert(var.clone(), id);
+                            }
+                            id
+                        }
+                        Err(e) => return ExecutionResult::error(&e),
                     }
                 };
 

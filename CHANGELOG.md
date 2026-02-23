@@ -1,5 +1,51 @@
 # Changelog
 
+## Supervisor Phasing, Graph Hardening & System Verification
+
+This release marks a significant maturity point for the system's initialization and data integrity. The `Sprout` supervisor now employs a 5-stage phased startup sequence, ensuring hardware drivers and core services are fully operational before the graphical environment and user applications are launched. Simultaneously, the `Phloem` graph database has received critical hardening: the `MERGE` command now robustly handles idempotency, queries support `COUNT` in `WHERE` clauses, and existence checks prevent "phantom" nodes.
+
+To verify these complex interactions, we've introduced a suite of diagnostic tools (`Bench Blit`, `IrqDump`) and comprehensive BDD scenarios for "System Exploration", ensuring that the visual desktop state accurately reflects the underlying system graph.
+
+### 🚀 Process Supervision (Sprout)
+
+*   **Phased Initialization**: `Sprout` now initializes the system in 5 explicit stages:
+    1.  **Discovery & Core Drivers**: PCI, RTC, Storage, Audio, Display, Input, Network Stack.
+    2.  **Network & Core Services**: Network Apps, Clock, Taskman, Font, Blossom, Flytrap.
+    3.  **Compositor**: The `Bloom` compositor is started once display and input are ready.
+    4.  **Final Polish**: System beep/chime.
+    5.  **User Apps**: Any other discovered applications.
+    *   *Artifacts*: `userspace/sprout/src/supervisor.rs`, `userspace/sprout/src/pipelines.rs`
+
+### 🌳 Phloem (Graph DB) Hardening
+
+*   **MERGE Command**: Added robust support for the `MERGE` command, ensuring idempotent node creation (match existing or create new) and correct edge handling.
+*   **COUNT & Existence Checks**: Queries now support `COUNT` expressions within `WHERE` clauses for advanced filtering, and node lookups strictly validate existence to prevent returning invalid handles.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/gql.rs`
+
+### 🕵️ System Exploration & BDD
+
+*   **System Exploration**: New BDD scenarios verify the correlation between visual desktop elements (windows, wallpaper, widgets) and the system graph state, bridging the gap between user perception and system reality.
+*   **Graph Personalization**: Tests to ensure user-specific graph mutations (e.g., setting a wallpaper) persist correctly.
+    *   *Artifacts*: `docs/behavior/features/system_exploration.feature`
+
+### 📊 Benchmarking & Diagnostics
+
+*   **Bench Blit**: A microbenchmark tool for measuring masked compositing performance across different backends (Scalar, SSE2, NEON).
+    *   *Artifacts*: `userspace/bench_blit/`
+
+*   **Root Batch Bench**: A benchmark for measuring the throughput of graph mutation batches applied to the kernel graph.
+    *   *Artifacts*: `userspace/root_batch_bench/`
+
+*   **Hogger**: A CPU stress test utility that runs a tight loop to verify scheduler fairness and preemption.
+    *   *Artifacts*: `userspace/hogger/`
+
+*   **IrqDump**: A diagnostic tool that traces interrupt delivery latency and frequency (specifically Timer and Mouse IRQs).
+    *   *Artifacts*: `userspace/irqdump/`
+
+*   **Echo**: A simple input event sink that subscribes to Bristle events and prints them to the console, useful for debugging input pipeline issues.
+    *   *Artifacts*: `userspace/echo/`
+
+
 ## System Services Unification & Hardware Abstraction
 
 Recent development has focused on unifying userspace services and abstracting hardware drivers into dedicated daemons. The most significant addition is **Anther**, a comprehensive HTTP server and AI gateway that acts as the primary interface for system interaction and graph data access. This release also introduces **Fontd**, a font rasterization service, and further decouples network and display drivers for better system modularity.

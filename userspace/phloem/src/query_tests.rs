@@ -357,6 +357,30 @@ mod tests {
     }
 
     #[test]
+    fn test_where_count_edges_exact() {
+        // MATCH (n) WHERE count((n)-[]->()) = 2 RETURN n
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) WHERE count((n)-[]->()) = 2 RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+
+        // In our mock:
+        // Node 1 has CHILD(2), PARENT(3) -> 2 edges
+        // Node 3 has OWNS(1), OWNS(2) -> 2 edges
+        // We expect exactly these two nodes
+
+        let mut ids = Vec::new();
+        for row in res.rows {
+            if let crate::ResultValue::Node(id) = row[0] {
+                ids.push(id);
+            }
+        }
+        ids.sort();
+        assert_eq!(ids, vec![1, 3]);
+    }
+
+    #[test]
     fn test_lookup_nonexistent() {
         // MATCH (n) WHERE id(n) = 9999 RETURN n
         // NOTE: The ID lookup optimization now checks existence.

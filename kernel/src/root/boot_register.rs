@@ -45,22 +45,6 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     };
 
     let set = |id: u64, key: &str, val: u64| {
-        crate::root::enqueue(RootOp::LogEvent {
-            level: 3,
-            event: SymbolShell::Str(alloc::string::String::from("boot.trace")),
-            message: alloc::string::String::from("set(...)"),
-            timestamp: 0,
-            provenance: crate::root::LogProvenance {
-                tid: 0,
-                cpu: 0,
-                module: "boot_register",
-                file: file!(),
-                line: line!(),
-            },
-            fields: alloc::vec::Vec::new(),
-            about: alloc::vec::Vec::new()
-        });
-        crate::ktrace!("ROOT_TRACE: set({}, {})", id, key);
         let reply = enqueue(RootOp::PropSet {
             id,
             key: SymbolShell::Str(alloc::string::String::from(key)),
@@ -78,7 +62,6 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     };
 
     let link = |src: u64, rel: &str, dst: u64| {
-        crate::ktrace!("ROOT_TRACE: link({}, {}, {})", src, rel, dst);
         let reply = enqueue(RootOp::Link {
             src,
             rel: SymbolShell::Str(alloc::string::String::from(rel)),

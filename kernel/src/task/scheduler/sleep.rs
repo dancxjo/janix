@@ -101,15 +101,17 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             let cpu = super::current_cpu_index::<R>();
             match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
                 Some(id) => {
-                    // crate::ktrace!(
-                    //     "SCHED: CPU {} task {} sleeping for {} ticks",
-                    //     cpu, id, ticks
-                    // );
+                    crate::ktrace!(
+                        "SCHED: CPU {} task {} sleeping for {} ticks",
+                        cpu,
+                        id,
+                        ticks
+                    );
                     id
                 }
                 None => {
                     // No current task (shouldn't happen)
-                    // crate::kerror!("SCHED: CPU {} sleeping without current task!", cpu);
+                    crate::kerror!("SCHED: CPU {} sleeping without current task!", cpu);
                     return;
                 }
             }
@@ -121,10 +123,6 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             task_id: current_id,
             wake_tick,
         });
-
-        if let Ok(idx) = sched.tasks.binary_search_by_key(&current_id, |t| t.id) {
-            sched.tasks[idx].state = crate::task::TaskState::Blocked;
-        }
 
         // Queue graph state update to sleeping
         graphify::update_task_state(current_id, "sleeping");
@@ -152,7 +150,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             rt.tasking()
                 .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
-        // crate::ktrace!("SCHED: task woke up on CPU");
+        crate::ktrace!("SCHED: task woke up on CPU");
     }
 
     rt.irq_restore(_irq);

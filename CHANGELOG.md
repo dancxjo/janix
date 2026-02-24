@@ -1,5 +1,30 @@
 # Changelog
 
+## Multi-Core Scheduling & GQL Enhancements
+
+This update introduces Symmetric Multi-Processing (SMP) support in the kernel, enabling the scheduler to utilize multiple CPU cores for improved performance and responsiveness. Additionally, the Phloem graph database has received significant GQL enhancements, including inline node creation in MERGE commands and stricter ID validation.
+
+### ⚡ Kernel & Scheduling
+
+*   **Multi-Core Scheduling (SMP)**: Refactored the kernel scheduler to support multiple CPUs. Implemented per-CPU runqueues, Inter-Processor Interrupts (IPI) for cross-core wakeups, and improved load balancing logic.
+    *   *Artifacts*: `kernel/src/task/scheduler/mod.rs`
+
+### 🌿 Phloem (Graph DB)
+
+*   **Inline Node Creation**: The `MERGE` command now supports creating nodes inline within edge patterns (e.g., `MERGE (a)-[:REL]->(b)`), simplifying graph construction queries.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`
+
+*   **ID Validation**: Fixed a consistency issue where `MATCH` by ID could return stale or nonexistent nodes. The executor now explicitly validates node existence.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`
+
+*   **Exact Edge Counting**: Extended `COUNT` support in `WHERE` clauses to handle exact edge counts (e.g., `WHERE count((n)-[]->()) = 2`).
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🧪 Testing & Verification
+
+*   **System Investigation (BDD)**: Added new BDD scenarios for investigating system processes and their relationships, enhancing the test coverage for system introspection.
+    *   *Artifacts*: `docs/behavior/features/process_investigation.feature`, `tools/bdd/src/steps.rs`
+
 ## System Services Unification & Hardware Abstraction
 
 Recent development has focused on unifying userspace services and abstracting hardware drivers into dedicated daemons. The most significant addition is **Anther**, a comprehensive HTTP server and AI gateway that acts as the primary interface for system interaction and graph data access. This release also introduces **Fontd**, a font rasterization service, and further decouples network and display drivers for better system modularity.

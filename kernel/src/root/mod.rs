@@ -214,7 +214,6 @@ pub struct ReplyCell {
     pub p1: AtomicU64,
     pub p2: AtomicU64,
     pub done: AtomicU64,
-    pub waiting_task: AtomicU64,
 }
 
 impl ReplyCell {
@@ -226,7 +225,6 @@ impl ReplyCell {
             p1: AtomicU64::new(0),
             p2: AtomicU64::new(0),
             done: AtomicU64::new(0),
-            waiting_task: AtomicU64::new(0),
         }
     }
 }
@@ -243,7 +241,6 @@ const MAX_INBOX_SIZE: usize = 4096;
 
 static ROOT_INBOX: Mutex<Option<VecDeque<RootMsg>>> = Mutex::new(None);
 static ROOT_TID: AtomicU64 = AtomicU64::new(0);
-pub static ROOT_ASLEEP: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
 static INBOX_DROP_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_root_service<R: crate::BootRuntime>() {
@@ -286,11 +283,8 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
         q.push_back(msg);
         let tid = ROOT_TID.load(Ordering::Relaxed);
         if tid != 0 {
-            // Only acquire scheduler lock and wake if the root service is actually sleeping
-            if ROOT_ASLEEP.swap(false, Ordering::Acquire) {
-                unsafe {
-                    crate::task::scheduler::wake_task_erased(tid);
-                }
+            unsafe {
+                crate::task::scheduler::wake_task_erased(tid);
             }
         }
     } else {

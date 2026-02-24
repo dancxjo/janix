@@ -342,17 +342,39 @@ mod tests {
     }
 
     #[test]
+    fn test_where_count_edges_exact() {
+        // MATCH (n) WHERE count((n)-[]->()) = 2 RETURN n
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) WHERE count((n)-[]->()) = 2 RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+
+        // In our mock:
+        // Node 1 has CHILD(2), PARENT(3) -> 2 edges
+        // Node 3 has OWNS(1), OWNS(2) -> 2 edges
+        // We expect exactly these two nodes
+
+        let mut ids = Vec::new();
+        for row in res.rows {
+            if let crate::ResultValue::Node(id) = row[0] {
+                ids.push(id);
+            }
+        }
+        ids.sort();
+        assert_eq!(ids, vec![1, 3]);
+    }
+
+    #[test]
     fn test_lookup_nonexistent() {
         // MATCH (n) WHERE id(n) = 9999 RETURN n
-        // NOTE: The ID lookup optimization directly uses the ID without checking existence.
-        // This is by design - the graph treats all IDs as valid (lazy lookup).
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
         let cmd = parse("MATCH (n) WHERE id(n) = 9999 RETURN n").unwrap();
         let res = ex.execute(cmd);
         assert!(res.success);
-        // The executor returns the ID regardless of existence (optimization behavior)
-        // This is acceptable - real usage validates nodes via kind/property checks
+        // The executor should verify existence even with direct ID lookup
+        assert!(res.rows.is_empty(), "Expected no rows for non-existent node ID");
     }
 
     // ===== 3) Edges and neighborhood traversal =====
@@ -533,5 +555,23 @@ mod tests {
         } else {
             panic!("Expected Node ID");
         }
+    }
+
+    #[test]
+    fn test_merge_edge_inline_creation() {
+        // MERGE (p:Project {name: "P1"})-[:CONTAINS]->(i:Idea {title: "I1"}) RETURN p
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MERGE (p:Project {name: \"P1\"})-[:CONTAINS]->(i:Idea {title: \"I1\"}) RETURN p").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success, "MERGE command failed: {}", res.message);
+        assert_eq!(res.rows.len(), 1, "Expected 1 row result");
+
+        // Use another query to verify existence and link
+        // MATCH (p:Project {name: "P1"})-[:CONTAINS]->(i:Idea {title: "I1"}) RETURN i
+        let cmd2 = parse("MATCH (p:Project {name: \"P1\"})-[:CONTAINS]->(i:Idea {title: \"I1\"}) RETURN i").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success, "Verification MATCH failed");
+        assert_eq!(res2.rows.len(), 1, "Expected to find the created pattern");
     }
 }

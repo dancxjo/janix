@@ -1275,20 +1275,33 @@ mod tests {
         fn tlb_flush_page(&self, _v: u64) {}
     }
 
+    static INIT_TESTS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+    fn init_test_env() {
+        if !INIT_TESTS.swap(true, core::sync::atomic::Ordering::SeqCst) {
+            crate::task::registry::init::<MockRuntime>();
+        } else {
+            // Need to clear registry between tests if they run sequentially, 
+            // but for concurrent tests, clearing might race. 
+            // Better to just ensure task IDs are unique in tests.
+        }
+    }
+
     #[test]
     fn test_priority_aging_boost() {
+        init_test_env();
         static RUNTIME: MockRuntime = MockRuntime;
-        // Test that tasks waiting too long get priority boost
+        // Test that tasks waiting too long get priority boost when scheduling
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
-        
-        // Create a low-priority task that has been waiting
-        let task = crate::task::Task {
-            id: 1,
+        sched.state.per_cpu[0].current = Some(0); // Dummy current task
+
+        // Create a normal-priority task enqueued recently
+        let task_normal = crate::task::Task {
+            id: 1001,
             state: TaskState::Runnable,
-            priority: TaskPriority::Low,
-            base_priority: TaskPriority::Low,
-            enqueued_at_tick: 0, // Enqueued at tick 0
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 500, // Recent
             exit_code: None,
             is_user: false,
             wake_pending: false,
@@ -1310,45 +1323,97 @@ mod tests {
             process_info: None,
         };
         
-        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
-        sched.state.per_cpu[0].runq[TaskPriority::Low as usize].push_back(1);
-        sched.state.per_cpu[0].current = Some(0);
+        // Create a low-priority task enqueued a long time ago
+        let task_low = crate::task::Task {
+            id: 1002,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Low,
+            base_priority: TaskPriority::Low,
+            enqueued_at_tick: 0, // Very old
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
         
-        // Apply aging
-        TICK_COUNT.store(types::AGING_THRESHOLD_TICKS, core::sync::atomic::Ordering::Relaxed);
-        sched.apply_priority_aging(0);
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task_normal));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task_low));
         
-        // Verify priority was boosted
-        let task = crate::task::registry::get_task::<R>(1).unwrap();
-        assert!(task.priority > TaskPriority::Low, "Priority should be boosted");
-        assert_eq!(task.base_priority, TaskPriority::Low, "Base priority should remain unchanged");
-
-        // Verify the task was physically moved between queues
-        assert!(
-            sched.state.per_cpu[0].runq[TaskPriority::Low as usize].is_empty(),
-            "Task should have been removed from the Low queue"
-        );
-        assert!(
-            sched.state.per_cpu[0].runq[task.priority as usize]
-                .iter()
-                .any(|&id| id == 1),
-            "Task should be in the boosted priority queue"
-        );
+        sched.state.per_cpu[0].runq[TaskPriority::Normal as usize].push_back(1001);
+        sched.state.per_cpu[0].runq[TaskPriority::Low as usize].push_back(1002);
+        
+        // Simulate time advancing enough to give the Low task a boost of +2 (effective priority 3 = High)
+        let now = types::AGING_THRESHOLD_TICKS * 2;
+        TICK_COUNT.store(now, core::sync::atomic::Ordering::Relaxed);
+        
+        // Request schedule. The Low task should be selected because its effective priority is higher 
+        // than Normal due to wait time.
+        let next_switch = sched.prepare_schedule().expect("Should find a task");
+        assert_eq!(next_switch.to_tid, 1002, "Low priority task with aging should preempt normal task");
+        
+        // Verify it was popped from the Low queue, not moved to High queue
+        assert!(sched.state.per_cpu[0].runq[TaskPriority::Low as usize].is_empty());
+        assert!(!sched.state.per_cpu[0].runq[TaskPriority::Normal as usize].is_empty());
     }
 
     #[test]
     fn test_reset_priority_aging_on_schedule() {
+        init_test_env();
         static RUNTIME: MockRuntime = MockRuntime;
-        // Test that priority resets when task is scheduled
+        // Test that enqueued_at_tick resets when task is preempted/yields
         let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
         
-        // Create a task that has been waiting
-        let task = crate::task::Task {
-            id: 1,
+        // Task 1 is running
+        let mut task1 = crate::task::Task {
+            id: 2001,
+            state: TaskState::Running,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0, // Very old
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: 0, // timeslice expired
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+        
+        // Task 2 is runnable
+        let task2 = crate::task::Task {
+            id: 2002,
             state: TaskState::Runnable,
             priority: TaskPriority::Normal,
-            base_priority: TaskPriority::Low,
-            enqueued_at_tick: 0,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 500, // Newer
             exit_code: None,
             is_user: false,
             wake_pending: false,
@@ -1370,18 +1435,28 @@ mod tests {
             process_info: None,
         };
         
-        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task1));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task2));
         
-        // Reset wait time
-        sched.reset_wait_time(1);
+        sched.state.per_cpu[0].current = Some(2001);
+        sched.state.per_cpu[0].runq[TaskPriority::Normal as usize].push_back(2002);
         
-        // Verify priority restored
-        let task = crate::task::registry::get_task::<R>(1).unwrap();
-        assert_eq!(task.priority, task.base_priority);
+        // Time moves forward
+        TICK_COUNT.store(1000, core::sync::atomic::Ordering::Relaxed);
+        
+        // Trigger a timer tick to cause preemption
+        let switch = sched.prepare_yield().expect("Should preempt to task2");
+        assert_eq!(switch.to_tid, 2002);
+        
+        // Verify task1 was placed back in runq and its enqueued_at_tick was updated to TICK_COUNT
+        let t1 = crate::task::registry::get_task::<MockRuntime>(2001).unwrap();
+        assert_eq!(t1.enqueued_at_tick, 1000);
+        assert_eq!(t1.state, TaskState::Runnable);
     }
 
     #[test]
     fn test_wake_preempts_lower_priority() {
+        init_test_env();
         use core::sync::atomic::Ordering;
 
         static RUNTIME: MockRuntime = MockRuntime;
@@ -1390,7 +1465,7 @@ mod tests {
 
         // Task 1: Normal priority, currently running
         let normal_task = crate::task::Task {
-            id: 1,
+            id: 3001,
             state: TaskState::Running,
             priority: TaskPriority::Normal,
             base_priority: TaskPriority::Normal,
@@ -1418,7 +1493,7 @@ mod tests {
 
         // Task 2: Realtime priority, sleeping (about to wake)
         let rt_task = crate::task::Task {
-            id: 2,
+            id: 3002,
             state: TaskState::Runnable,
             priority: TaskPriority::Realtime,
             base_priority: TaskPriority::Realtime,
@@ -1444,16 +1519,13 @@ mod tests {
             process_info: None,
         };
 
-        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(normal_task));
-        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(rt_task));
-        sched.state.per_cpu[0].current = Some(1); // Normal task is running
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(normal_task));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(rt_task));
+        sched.state.per_cpu[0].current = Some(3001); // Normal task is running
 
         // Put RT task in sleep queue with wake_tick in the past
         TICK_COUNT.store(100, Ordering::Relaxed);
-        sched.state.sleep_queue.push_back(types::SleepEntry {
-            task_id: 2,
-            wake_tick: 50, // already expired
-        });
+        sched.state.sleep_queue.entry(50).or_default().push(3002);
 
         // Before: need_resched should be false
         assert!(!sched.state.need_resched, "need_resched should start false");
@@ -1471,7 +1543,7 @@ mod tests {
         assert!(
             sched.state.per_cpu[0].runq[TaskPriority::Realtime as usize]
                 .iter()
-                .any(|&id| id == 2),
+                .any(|&id| id == 3002),
             "RT task should be in the Realtime run queue"
         );
 
@@ -1480,15 +1552,16 @@ mod tests {
         let switch = sched.prepare_yield();
         assert!(switch.is_some(), "Should produce a context switch");
         let switch = switch.unwrap();
-        assert_eq!(switch.to_tid, 2, "Scheduler should switch to the RT task");
+        assert_eq!(switch.to_tid, 3002, "Scheduler should switch to the RT task");
         assert_eq!(
-            switch.from_tid, 1,
+            switch.from_tid, 3001,
             "Scheduler should switch away from the Normal task"
         );
     }
 
     #[test]
     fn test_sorted_insertion() {
+        init_test_env();
         static RUNTIME: MockRuntime = MockRuntime;
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -1524,22 +1597,22 @@ mod tests {
         };
 
         // Insert tasks out of order
-        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(make_task(10)));
-        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(make_task(5)));
-        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(make_task(20)));
-        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(make_task(1)));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(make_task(4010)));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(make_task(4005)));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(make_task(4020)));
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(make_task(4001)));
 
         // Verify sorted order internally
-        assert_eq!(crate::task::registry::get_registry::<R>().tasks.len(), 4);
-        assert_eq!(crate::task::registry::get_registry::<R>().tasks[0].id, 1);
-        assert_eq!(crate::task::registry::get_registry::<R>().tasks[1].id, 5);
-        assert_eq!(crate::task::registry::get_registry::<R>().tasks[2].id, 10);
-        assert_eq!(crate::task::registry::get_registry::<R>().tasks[3].id, 20);
+        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks.len(), 4);
+        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks[0].id, 4001);
+        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks[1].id, 4005);
+        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks[2].id, 4010);
+        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks[3].id, 4020);
 
         // Verify lookups work
-        assert!(crate::task::registry::get_task::<R>(10).is_some());
-        assert!(crate::task::registry::get_task::<R>(5).is_some());
-        assert!(crate::task::registry::get_task::<R>(1).is_some());
-        assert!(crate::task::registry::get_task::<R>(99).is_none());
+        assert!(crate::task::registry::get_task::<MockRuntime>(4010).is_some());
+        assert!(crate::task::registry::get_task::<MockRuntime>(4005).is_some());
+        assert!(crate::task::registry::get_task::<MockRuntime>(4001).is_some());
+        assert!(crate::task::registry::get_task::<MockRuntime>(4099).is_none());
     }
 }

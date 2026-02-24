@@ -739,16 +739,22 @@ mod tests {
         fn tlb_flush_page(&self, _v: u64) {}
     }
 
+    static INIT_TESTS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+
     #[test]
     fn test_spawn_arg_semantics() {
+        if !INIT_TESTS.swap(true, core::sync::atomic::Ordering::SeqCst) {
+            crate::task::registry::init::<MockRuntime>();
+        }
         // Mock runtime pointer for the SCHEDULER lock expectation if needed?
         // Scheduler::new() doesn't need the runtime, but Scheduler<R>::spawn needs rt.tasking()
         // We need to set up the global RUNTIME for current() etc to work if used.
         // But here we call sched.spawn directly.
 
         let mut sched = Scheduler::<MockRuntime>::new();
+        sched.next_id = 5000;
         // Manually initialize PerCpu state for the mock
-        sched.state.per_cpu.push(super::crate::sched::state::PerCpu::new());
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
         sched.state.per_cpu[0].current = Some(0); // Set a dummy current task ID for parent linking
 
         // We need a way to mock crate::runtime::<MockRuntime>()
@@ -767,7 +773,7 @@ mod tests {
 
         for (arg, expected) in cases {
             let id = sched.spawn(mock_entry, arg, TaskPriority::Normal, Affinity::Any);
-            let task = crate::task::registry::get_task::<R>(id).unwrap();
+            let task = crate::task::registry::get_task::<MockRuntime>(id).unwrap();
 
             // In our MockTasking.init_kernel_context, we store arg in MockContext.0
             assert_eq!(task.ctx.0, expected);

@@ -273,6 +273,7 @@ impl<G: Graph> GraphExecutor<G> {
 
                         if let Some(id) = target_id {
                             // Verify kind and other props
+                            // NOTE: We must check existence even if kind is None!
                             let matches_kind = match &node_pat.kind {
                                 Some(k) => match self.graph.get_kind(ThingId::from_u64(id)) {
                                     Ok(kind_id) => {
@@ -283,7 +284,7 @@ impl<G: Graph> GraphExecutor<G> {
                                     }
                                     Err(_) => false,
                                 },
-                                None => true,
+                                None => self.graph.get_kind(ThingId::from_u64(id)).is_ok(),
                             };
 
                             if matches_kind && self.matches_props(id, &node_pat.props) {

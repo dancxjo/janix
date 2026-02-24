@@ -78,12 +78,7 @@ pub enum ScheduleReason {
     ReschedIfNeeded,
 }
 
-/// Entry in the sleep queue tracking when a task should wake
-#[derive(Debug, Clone, Copy)]
-pub struct SleepEntry {
-    pub task_id: TaskId,
-    pub wake_tick: u64, // absolute tick count when task should wake
-}
+
 
 pub struct SwitchParams<Ctx, AS> {
     pub from_ctx: *mut Ctx,

@@ -41,7 +41,7 @@ pub use spawn::{
 };
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
 pub use types::{
-    DEFAULT_TIMESLICE, ScheduleReason, Scheduler, SleepEntry, StackFaultResult, SwitchParams,
+    DEFAULT_TIMESLICE, ScheduleReason, Scheduler, StackFaultResult, SwitchParams,
 };
 pub use wait_queue::WaitQueue;
 
@@ -395,49 +395,50 @@ impl<R: BootRuntime> types::Scheduler<R> {
     fn wake_sleepers(&mut self) {
         let now = TICK_COUNT.load(Ordering::Relaxed);
 
-        let mut i = 0;
-        while i < self.state.sleep_queue.len() {
-            if self.state.sleep_queue[i].wake_tick <= now {
-                let entry = self.state.sleep_queue.swap_remove_back(i).unwrap();
+        while let Some((&wake_tick, _)) = self.state.sleep_queue.first_key_value() {
+            if wake_tick <= now {
+                let (_, tids) = self.state.sleep_queue.pop_first().unwrap();
 
-                // Task should wake up - add back to run queue
-                if let Some(task) = crate::task::registry::get_task_mut::<R>(entry.tid) {
-                    task.state = TaskState::Runnable;
-                    task.enqueued_at_tick = TICK_COUNT.load(Ordering::Relaxed);
-                    let task_ref = &*task;
-                    let priority = task_ref.priority;
-                    let target_cpu = if let crate::task::Affinity::Pinned(cpu) = task_ref.affinity {
-                        cpu
-                    } else if let Some(last) = task_ref.last_cpu {
-                        last
-                    } else {
-                        let idx = spawn::RR_IDX.fetch_add(1, Ordering::Relaxed);
-                        idx % self.state.online_cpu_count
-                    };
+                for tid in tids {
+                    // Task should wake up - add back to run queue
+                    if let Some(task) = crate::task::registry::get_task_mut::<R>(tid) {
+                        task.state = TaskState::Runnable;
+                        task.enqueued_at_tick = TICK_COUNT.load(Ordering::Relaxed);
+                        let task_ref = &*task;
+                        let priority = task_ref.priority;
+                        let target_cpu = if let crate::task::Affinity::Pinned(cpu) = task_ref.affinity {
+                            cpu
+                        } else if let Some(last) = task_ref.last_cpu {
+                            last
+                        } else {
+                            let idx = spawn::RR_IDX.fetch_add(1, Ordering::Relaxed);
+                            idx % self.state.online_cpu_count
+                        };
 
-                    let actual_cpu = if let Some(pc) = self.state.per_cpu.get_mut(target_cpu) {
-                        pc.runq[priority as usize].push_back(entry.tid);
-                        target_cpu
-                    } else {
-                        if let Some(pc) = self.state.per_cpu.get_mut(0) {
-                            pc.runq[priority as usize].push_back(entry.tid);
+                        let actual_cpu = if let Some(pc) = self.state.per_cpu.get_mut(target_cpu) {
+                            pc.runq[priority as usize].push_back(tid);
+                            target_cpu
+                        } else {
+                            if let Some(pc) = self.state.per_cpu.get_mut(0) {
+                                pc.runq[priority as usize].push_back(tid);
+                            }
+                            0
+                        };
+
+                        let current_prio = self.state.per_cpu.get(actual_cpu)
+                            .and_then(|pc| pc.current)
+                            .and_then(|cid| crate::task::registry::get_task::<R>(cid))
+                            .map(|t| t.priority as usize)
+                            .unwrap_or(0);
+                        if (priority as usize) > current_prio {
+                            self.state.need_resched = true;
                         }
-                        0
-                    };
 
-                    let current_prio = self.state.per_cpu.get(actual_cpu)
-                        .and_then(|pc| pc.current)
-                        .and_then(|cid| crate::task::registry::get_task::<R>(cid))
-                        .map(|t| t.priority as usize)
-                        .unwrap_or(0);
-                    if (priority as usize) > current_prio {
-                        self.state.need_resched = true;
+                        crate::sched::ring::push_task_state::<R>(tid, "runnable");
                     }
-
-                    crate::sched::ring::push_task_state::<R>(entry.tid, "runnable");
                 }
             } else {
-                i += 1;
+                break;
             }
         }
     }
@@ -1047,7 +1048,10 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
             }
 
             // Remove from sleep queue
-            sched.state.sleep_queue.retain(|e| e.tid != tid);
+            sched.state.sleep_queue.retain(|_, tids| {
+                tids.retain(|&t| t != tid);
+                !tids.is_empty()
+            });
 
             // Queue graph state update
             crate::sched::ring::push_task_state::<R>(tid, "dead");

@@ -117,10 +117,10 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
 
         // Calculate wake time and add to sleep queue
         let wake_tick = super::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed) + ticks;
-        sched.state.sleep_queue.push_back(crate::sched::state::SleepEntry {
-            tid: current_id,
-            wake_tick,
-        });
+        sched.state.sleep_queue
+            .entry(wake_tick)
+            .or_default()
+            .push(current_id);
 
         if let Some(task) = crate::task::registry::get_task_mut::<R>(current_id) {
             task.state = crate::task::TaskState::Blocked;

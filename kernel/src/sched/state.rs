@@ -71,7 +71,7 @@ impl PerCpu {
 pub struct SchedState {
     pub tasks: Vec<TaskSchedFields>,
     pub per_cpu: Vec<PerCpu>,
-    pub sleep_queue: VecDeque<SleepEntry>,
+    pub sleep_queue: BTreeMap<u64, Vec<TaskId>>,
     pub wait_queue: VecDeque<TaskId>,
     pub online_cpu_count: usize,
     pub need_resched: bool,
@@ -82,7 +82,7 @@ impl SchedState {
         SchedState {
             tasks: Vec::with_capacity(1024),
             per_cpu: Vec::with_capacity(32),
-            sleep_queue: VecDeque::with_capacity(1024),
+            sleep_queue: BTreeMap::new(),
             wait_queue: VecDeque::with_capacity(1024),
             online_cpu_count: 1,
             need_resched: false,

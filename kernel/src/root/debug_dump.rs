@@ -30,7 +30,7 @@ pub fn dump_all_to_console() {
             break;
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }

@@ -466,7 +466,7 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
 
     // IRQ_TIMER_VECTOR or IRQ_RESCHED_VECTOR is our preemption heartbeat
     if resolved == IRQ_TIMER_VECTOR || resolved == IRQ_RESCHED_VECTOR {
-        kernel::task::scheduler::on_tick::<crate::arch::CurrentRuntime>();
+        kernel::sched::on_tick::<crate::arch::CurrentRuntime>();
         // DISABLED: Bulb theme disabled for faster boot
         // let now_ticks: u64;
         // unsafe {

@@ -218,7 +218,7 @@ pub fn _log_event(
     // 2. Graph Persistence (Best Effort) - skip TRACE to reduce noise
     if can_log_to_graph(meta.level) {
         if !IN_GRAPH_LOG.swap(true, Ordering::Acquire) {
-            let tid = unsafe { crate::task::scheduler::current_tid_current() };
+            let tid = unsafe { crate::sched::current_tid_current() };
             let timestamp = crate::runtime_base().mono_ticks();
             let message = format!("{}", msg_fmt);
 

@@ -23,12 +23,12 @@ pub fn add_user_mapping<R: BootRuntime>(region: VmRegionInfo) -> Result<(), Errn
         };
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
         let cpu = super::current_cpu_index::<R>();
-        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
+        let current_id = match sched.state.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => return Err(Errno::ESRCH),
         };
 
-        if let Some(task) = sched.get_task(current_id) {
+        if let Some(task) = crate::task::registry::get_task::<R>(current_id) {
             let mut mappings = task.mappings.lock();
             mappings.insert(region);
             Ok(())
@@ -54,12 +54,12 @@ pub fn remove_user_mappings<R: BootRuntime>(
         };
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
         let cpu = super::current_cpu_index::<R>();
-        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
+        let current_id = match sched.state.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => return Err(Errno::ESRCH),
         };
 
-        if let Some(task) = sched.get_task(current_id) {
+        if let Some(task) = crate::task::registry::get_task::<R>(current_id) {
             let mut mappings = task.mappings.lock();
             Ok(mappings.remove(addr, len))
         } else {
@@ -97,7 +97,7 @@ pub unsafe fn translate_user_page<R: BootRuntime>(addr: u64) -> Option<u64> {
     let res = if let Some(ptr) = *lock {
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
         let cpu = super::current_cpu_index::<R>();
-        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
+        let current_id = match sched.state.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => {
                 rt.irq_restore(_irq);
@@ -105,7 +105,7 @@ pub unsafe fn translate_user_page<R: BootRuntime>(addr: u64) -> Option<u64> {
             }
         };
 
-        if let Some(task) = sched.get_task(current_id) {
+        if let Some(task) = crate::task::registry::get_task::<R>(current_id) {
             rt.tasking().translate(task.aspace, addr)
         } else {
             None

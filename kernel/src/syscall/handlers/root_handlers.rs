@@ -34,8 +34,8 @@ pub fn sys_root_intern(ptr: usize, len: usize) -> SysResult<usize> {
 
 pub fn sys_root_create_node(kind_ptr: usize) -> SysResult<usize> {
     let sym = read_symbol(kind_ptr)?;
-    let creator_tid = unsafe { crate::task::scheduler::current_tid_current() };
-    let owner_thing_id = unsafe { crate::task::scheduler::graph_thing_for_current() };
+    let creator_tid = unsafe { crate::sched::current_tid_current() };
+    let owner_thing_id = unsafe { crate::sched::graph_thing_for_current() };
     root_call(RootOp::CreateNode { 
         kind: sym, 
         creator_tid,
@@ -61,7 +61,7 @@ pub fn sys_root_link(src: usize, rel_ptr: usize, dst: usize) -> SysResult<usize>
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -223,7 +223,7 @@ pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResu
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -254,7 +254,7 @@ pub fn sys_root_describe_symbol(id: usize, out_ptr: usize, len: usize) -> SysRes
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -294,7 +294,7 @@ pub fn sys_root_describe_edge(
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -324,7 +324,7 @@ pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<u
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -362,7 +362,7 @@ pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<us
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -403,7 +403,7 @@ pub fn sys_root_get_props(id: usize, out_ptr: usize, len: usize) -> SysResult<us
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -527,7 +527,7 @@ pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysRes
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -594,14 +594,14 @@ pub fn sys_root_bytespace_info(id: usize) -> SysResult<usize> {
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
 
 pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
     // Get caller's TID
-    let tid = unsafe { crate::task::scheduler::current_tid_current() };
+    let tid = unsafe { crate::sched::current_tid_current() };
 
     let reply = root_svc::enqueue(RootOp::BytespaceMap { id: id as u64, tid });
 
@@ -634,7 +634,7 @@ pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
                     _reserved: [0; 7],
                 };
                 unsafe {
-                    crate::task::scheduler::add_user_mapping_current(region).ok();
+                    crate::sched::add_user_mapping_current(region).ok();
                 }
 
                 return Ok(user_va as usize);
@@ -643,13 +643,13 @@ pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
 
 pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
-    let tid = unsafe { crate::task::scheduler::current_tid_current() };
+    let tid = unsafe { crate::sched::current_tid_current() };
 
     let reply = root_svc::enqueue(RootOp::BytespaceUnmap {
         id: id as u64,
@@ -664,12 +664,12 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
             if status == 0 {
                 // Unmap pages
                 if let Some(region) =
-                    unsafe { crate::task::scheduler::get_user_mapping_at_current(user_va) }
+                    unsafe { crate::sched::get_user_mapping_at_current(user_va) }
                 {
                     let len = region.end - region.start;
                     unsafe {
                         if let Ok(removed) =
-                            crate::task::scheduler::remove_user_mappings_current(user_va, len)
+                            crate::sched::remove_user_mappings_current(user_va, len)
                         {
                             for (start, end) in removed {
                                 let mut virt = start as u64;
@@ -688,7 +688,7 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -708,7 +708,7 @@ pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -931,7 +931,7 @@ pub fn sys_root_watch_next(
                     -9 => return Err(Errno::EBADF),   // Bad/stale watch descriptor
                     _ => {
                         // Log unexpected status for debugging
-                        let tid = unsafe { crate::task::scheduler::current_tid_current() };
+                        let tid = unsafe { crate::sched::current_tid_current() };
                         crate::kinfo!(
                             "watch_next: UNEXPECTED status={} wid={} tid={}",
                             status,
@@ -944,7 +944,7 @@ pub fn sys_root_watch_next(
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -973,7 +973,7 @@ pub fn sys_root_apply_batch(ptr: usize, len: usize) -> SysResult<usize> {
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -1045,7 +1045,7 @@ pub fn sys_root_props_get_many(
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -1126,7 +1126,7 @@ pub fn sys_root_dir_list(dir_id: usize, out_ptr: usize, out_len: usize) -> SysRe
             }
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }

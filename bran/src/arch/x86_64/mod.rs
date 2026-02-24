@@ -395,7 +395,7 @@ impl ArchRuntime for X86_64Runtime {
         let rflags: u64 = 0x202; // IF + reserved
         #[cfg(debug_assertions)]
         {
-            let tid = unsafe { kernel::task::scheduler::current_tid_current() };
+            let tid = unsafe { kernel::sched::current_tid_current() };
             let (cs, ss, rsp, rip, rflags_before, cr3, fs_base, gs_base) = capture_entry_state();
             let cpl = (cs & 0x3) as u64;
             kernel::log_event!(

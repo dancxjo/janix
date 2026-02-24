@@ -2,8 +2,9 @@
 
 use super::copyin;
 use crate::syscall::validate::validate_user_range;
-use crate::task::scheduler;
-use crate::task::scheduler::StdioSpec;
+use crate::sched;
+use crate::sched as scheduler;
+use crate::sched::StdioSpec;
 use crate::task::StartupArg;
 use abi::errors::{Errno, SysResult};
 use alloc::collections::BTreeMap;
@@ -12,7 +13,7 @@ use alloc::vec::Vec;
 pub fn sys_exit(code: i32) -> SysResult<usize> {
     crate::kprintln!("SYSCALL EXIT: code={}", code);
     unsafe {
-        crate::task::scheduler::exit_current(code);
+        crate::sched::exit_current(code);
     }
     Ok(0)
 }
@@ -23,7 +24,7 @@ pub fn sys_reboot() -> SysResult<usize> {
 }
 
 pub fn sys_get_tid() -> SysResult<usize> {
-    unsafe { Ok(crate::task::scheduler::current_tid_current() as usize) }
+    unsafe { Ok(crate::sched::current_tid_current() as usize) }
 }
 
 pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
@@ -58,10 +59,10 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
         return Err(Errno::EINVAL);
     }
 
-    let current_p = unsafe { crate::task::scheduler::current_priority_current() };
+    let current_p = unsafe { crate::sched::current_priority_current() };
 
     let tid = unsafe {
-        crate::task::scheduler::spawn_user_thread_current(
+        crate::sched::spawn_user_thread_current(
             req.entry,
             req.sp,
             StartupArg::None,
@@ -86,7 +87,7 @@ pub fn sys_spawn_process(name_ptr: usize, name_len: usize, arg: usize) -> SysRes
         copyin(&mut buf[..name_len], name_ptr)?;
     }
     let name = core::str::from_utf8(&buf[..name_len]).map_err(|_| Errno::EINVAL)?;
-    let tid = unsafe { crate::task::scheduler::spawn_process_current(name, StartupArg::Raw(arg)) };
+    let tid = unsafe { crate::sched::spawn_process_current(name, StartupArg::Raw(arg)) };
     if let Some(tid) = tid {
         Ok(tid as usize)
     } else {
@@ -97,7 +98,7 @@ pub fn sys_spawn_process(name_ptr: usize, name_len: usize, arg: usize) -> SysRes
 pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
     use abi::types::TaskStatus;
 
-    let status_opt = unsafe { crate::task::scheduler::task_status_current(pid as u64) };
+    let status_opt = unsafe { crate::sched::task_status_current(pid as u64) };
 
     if let Some((state, exit_code)) = status_opt {
         let (st, code) = match state {
@@ -116,7 +117,7 @@ pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
 
 pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
     loop {
-        let status_opt = unsafe { crate::task::scheduler::task_status_current(tid as u64) };
+        let status_opt = unsafe { crate::sched::task_status_current(tid as u64) };
 
         match status_opt {
             Some((state, exit_code)) => {
@@ -124,7 +125,7 @@ pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
                     return Ok(exit_code.unwrap_or(0) as usize);
                 }
                 unsafe {
-                    crate::task::scheduler::yield_now_current();
+                    crate::sched::yield_now_current();
                 }
             }
             None => {
@@ -147,29 +148,29 @@ pub fn sys_set_priority(tid: usize, priority: usize) -> SysResult<usize> {
         _ => unreachable!(),
     };
     unsafe {
-        crate::task::scheduler::set_priority_current(tid as u64, p);
+        crate::sched::set_priority_current(tid as u64, p);
     }
     Ok(0)
 }
 
 pub fn sys_task_kill(tid: usize) -> SysResult<usize> {
-    let killed = unsafe { crate::task::scheduler::kill_by_tid_current(tid as u64) };
+    let killed = unsafe { crate::sched::kill_by_tid_current(tid as u64) };
     if killed { Ok(0) } else { Err(Errno::ESRCH) }
 }
 
 pub fn sys_task_dump() -> SysResult<usize> {
-    crate::task::scheduler::dump_stats_current();
+    crate::sched::dump_stats_current();
     Ok(0)
 }
 
 pub fn sys_getpid() -> SysResult<usize> {
-    let pinfo = crate::task::scheduler::process_info_current();
+    let pinfo = crate::sched::process_info_current();
     let pid = pinfo.map(|p| p.lock().pid).unwrap_or(0);
     Ok(pid as usize)
 }
 
 pub fn sys_getppid() -> SysResult<usize> {
-    let pinfo = crate::task::scheduler::process_info_current();
+    let pinfo = crate::sched::process_info_current();
     let ppid = pinfo.map(|p| p.lock().ppid).unwrap_or(0);
     Ok(ppid as usize)
 }
@@ -178,7 +179,7 @@ pub fn sys_getppid() -> SysResult<usize> {
 /// Format: count: u32, then for each arg: len: u32, bytes...
 /// Returns: total bytes needed (caller can retry with bigger buffer if it was too small).
 pub fn sys_argv_get(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
-    let pinfo = crate::task::scheduler::process_info_current();
+    let pinfo = crate::sched::process_info_current();
     let pinfo = pinfo.ok_or(Errno::ENOENT)?;
     let lock = pinfo.lock();
 
@@ -240,7 +241,7 @@ pub fn sys_env_get(
     let mut key = alloc::vec![0u8; key_len];
     unsafe { copyin(&mut key, key_ptr)?; }
 
-    let pinfo = crate::task::scheduler::process_info_current();
+    let pinfo = crate::sched::process_info_current();
     let pinfo = pinfo.ok_or(Errno::ENOENT)?;
     let lock = pinfo.lock();
 
@@ -274,7 +275,7 @@ pub fn sys_env_set(
         copyin(&mut val, val_ptr)?;
     }
 
-    let pinfo = crate::task::scheduler::process_info_current();
+    let pinfo = crate::sched::process_info_current();
     let pinfo = pinfo.ok_or(Errno::ENOENT)?;
     pinfo.lock().env.insert(key, val);
     Ok(0)
@@ -288,7 +289,7 @@ pub fn sys_env_unset(key_ptr: usize, key_len: usize) -> SysResult<usize> {
     let mut key = alloc::vec![0u8; key_len];
     unsafe { copyin(&mut key, key_ptr)?; }
 
-    let pinfo = crate::task::scheduler::process_info_current();
+    let pinfo = crate::sched::process_info_current();
     let pinfo = pinfo.ok_or(Errno::ENOENT)?;
     pinfo.lock().env.remove(&key);
     Ok(0)

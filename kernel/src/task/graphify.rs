@@ -6,7 +6,7 @@
 //! Uses a deferred work queue to avoid deadlock: public functions queue work,
 //! and `do_*` functions perform the actual graph operations.
 
-use super::graph_queue::{self, GraphWork};
+use crate::task::graph_queue::{self, GraphWork};
 use crate::root::{RootOp, enqueue};
 use crate::task::TaskId;
 use abi::schema::{keys, kinds, rels};
@@ -92,7 +92,7 @@ fn wait_for_reply(reply: &alloc::sync::Arc<crate::root::ReplyCell>) -> u64 {
             core::hint::spin_loop();
         } else {
             unsafe {
-                crate::task::scheduler::sleep_ticks_current(1);
+                crate::sched::sleep_ticks_current(1);
             }
             spins = 0;
         }

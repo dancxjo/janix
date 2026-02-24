@@ -90,7 +90,7 @@ impl IrqRegistry {
                 slot.pending_counts[i].fetch_add(1, Ordering::Relaxed);
                 // Wake the task using type-erased hook
                 unsafe {
-                    crate::task::scheduler::wake_task_erased(task_id);
+                    crate::sched::wake_task_erased(task_id);
                 }
             }
         }
@@ -186,14 +186,14 @@ pub fn vector_owner(vector: u8) -> Option<(u64, u8)> {
 
 /// Subscribe current task to a vector
 pub fn subscribe(vector: u8) -> Result<(), ()> {
-    let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+    let task_id = unsafe { crate::sched::current_tid_current() };
     IRQ_REGISTRY.subscribe(vector, task_id)
 }
 
 /// Wait for IRQ - blocks until interrupt fires
 /// Returns number of pending interrupts
 pub fn wait(vector: u8) -> u32 {
-    let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+    let task_id = unsafe { crate::sched::current_tid_current() };
 
     loop {
         let count = IRQ_REGISTRY.try_wait(vector, task_id);
@@ -203,7 +203,7 @@ pub fn wait(vector: u8) -> u32 {
 
         // Block until woken by interrupt
         unsafe {
-            crate::task::scheduler::block_current_erased();
+            crate::sched::block_current_erased();
         }
     }
 }
@@ -227,7 +227,7 @@ mod tests {
 
         WAKE_COUNT.store(0, Ordering::Relaxed);
         unsafe {
-            crate::task::scheduler::blocking::WAKE_TASK_HOOK
+            crate::sched::blocking::WAKE_TASK_HOOK
                 .store(mock_wake as *mut (), Ordering::SeqCst);
         }
 

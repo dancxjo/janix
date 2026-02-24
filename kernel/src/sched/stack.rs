@@ -137,22 +137,22 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
     };
     let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
     let cpu = super::current_cpu_index::<R>();
-    let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
+    let current_id = match sched.state.per_cpu.get(cpu).and_then(|pc| pc.current) {
         Some(id) => id,
         None => {
             rt.irq_restore(_irq);
             return StackFaultResult::NotStack;
         }
     };
-    let idx = match sched.tasks.iter().position(|t| t.id == current_id) {
-        Some(i) => i,
+    let task = match crate::task::registry::get_task_mut::<R>(current_id) {
+        Some(t) => t,
         None => {
             rt.irq_restore(_irq);
             return StackFaultResult::NotStack;
         }
     };
 
-    let info = match sched.tasks[idx].stack_info {
+    let info = match task.stack_info {
         Some(info) => info,
         None => {
             rt.irq_restore(_irq);
@@ -221,7 +221,7 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
         virt += page_size;
     }
 
-    sched.tasks[idx].stack_info = Some(abi::types::StackInfo {
+    task.stack_info = Some(abi::types::StackInfo {
         committed_start: new_commit_start as usize,
         ..info
     });

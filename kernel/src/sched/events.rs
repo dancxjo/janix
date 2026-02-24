@@ -132,6 +132,12 @@ pub enum SchedEvent {
         state_ptr: u64,
         timestamp: u64,
     },
+    /// Task name changed
+    NameSet {
+        tid: u64,
+        name: [u8; 24],
+        timestamp: u64,
+    },
 }
 
 /// Pack a task name (up to 24 bytes) into a fixed-size array.

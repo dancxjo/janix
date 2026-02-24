@@ -5,11 +5,11 @@
 //! (never from ISR). It respects a tick budget to avoid starving
 //! other kernel work.
 
-use super::events::SchedEvent;
-use super::graphify;
+use crate::sched::events::SchedEvent;
+
 use super::graph_queue::{self, GraphWork};
-use super::ring;
-use super::types;
+use crate::sched::ring;
+use crate::sched::types;
 use alloc::string::String;
 use core::sync::atomic::{AtomicU64, Ordering};
 
@@ -163,7 +163,7 @@ fn translate_event(event: &SchedEvent) {
             });
         }
         SchedEvent::TaskDequeued { tid, reason, .. } => {
-            use super::events::DequeueReason;
+            use crate::sched::events::DequeueReason;
             let state = match reason {
                 DequeueReason::Scheduled => "running",
                 DequeueReason::Killed => "dead",
@@ -218,6 +218,16 @@ fn translate_event(event: &SchedEvent) {
                 tid: *tid,
                 state,
             });
+        }
+        SchedEvent::NameSet { tid, name, .. } => {
+            let name_len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+            let name_str = core::str::from_utf8(&name[..name_len]).unwrap_or("");
+            if name_len > 0 {
+                graph_queue::push(GraphWork::SetName {
+                    tid: *tid,
+                    name: String::from(name_str),
+                });
+            }
         }
     }
 }

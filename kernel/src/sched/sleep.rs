@@ -4,7 +4,7 @@ use crate::BootRuntime;
 use crate::BootTasking;
 
 use super::SCHEDULER;
-use super::graphify;
+
 use super::types::{ScheduleReason, Scheduler};
 
 /// Cooperative yield: attempt to switch to the next runnable task.
@@ -99,7 +99,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
         // Get current task ID
         let current_id = {
             let cpu = super::current_cpu_index::<R>();
-            match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
+            match sched.state.per_cpu.get(cpu).and_then(|pc| pc.current) {
                 Some(id) => {
                     // crate::ktrace!(
                     //     "SCHED: CPU {} task {} sleeping for {} ticks",
@@ -117,17 +117,17 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
 
         // Calculate wake time and add to sleep queue
         let wake_tick = super::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed) + ticks;
-        sched.sleep_queue.push_back(super::types::SleepEntry {
-            task_id: current_id,
+        sched.state.sleep_queue.push_back(crate::sched::state::SleepEntry {
+            tid: current_id,
             wake_tick,
         });
 
-        if let Some(task) = sched.get_task_mut(current_id) {
+        if let Some(task) = crate::task::registry::get_task_mut::<R>(current_id) {
             task.state = crate::task::TaskState::Blocked;
         }
 
         // Queue graph state update to sleeping
-        graphify::update_task_state(current_id, "sleeping");
+        crate::sched::ring::push_task_state::<R>(current_id, "sleeping");
 
         // Do NOT push current task to runq - it's now sleeping
         // Just call prepare_schedule to pick next task

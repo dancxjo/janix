@@ -87,7 +87,7 @@ fn alloc_error_handler(layout: core::alloc::Layout) -> ! {
     unsafe { kernel::logging::force_unlock() };
 
     // Get current task info for debugging
-    let tid = unsafe { kernel::task::scheduler::current_tid_current() };
+    let tid = unsafe { kernel::sched::current_tid_current() };
 
     kernel::kerror!(
         "OOM: allocation of {} bytes (align={}) failed in task {}",

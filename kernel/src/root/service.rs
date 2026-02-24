@@ -94,7 +94,7 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
             // If we hit the limit, there might be more but we should yield to let other
             // high-priority tasks run (like the compositor or driver) then resume.
             unsafe {
-                crate::task::scheduler::yield_now_current();
+                crate::sched::yield_now_current();
             }
         }
     }

@@ -1,7 +1,12 @@
 pub mod loader;
-pub mod scheduler;
+pub mod registry;
+pub mod graph;
+pub mod graphify;
+pub mod graph_queue;
+pub mod flusher;
+use crate::sched as scheduler;
 
-pub use scheduler::Scheduler;
+pub use crate::sched::Scheduler;
 
 use crate::BootRuntime;
 use crate::BootTasking;
@@ -12,7 +17,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
 
-pub type TaskId = u64;
+pub type TaskId = crate::sched::state::TaskId;
+pub use crate::sched::state::{TaskPriority, Affinity, TaskState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartupArg {
@@ -31,29 +37,6 @@ impl StartupArg {
             StartupArg::Raw(val) => val,
         }
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum TaskPriority {
-    Idle = 0,
-    Low = 1,
-    Normal = 2,
-    High = 3,
-    Realtime = 4,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Affinity {
-    Any,
-    Pinned(usize),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum TaskState {
-    Runnable,
-    Running,
-    Blocked,
-    Dead,
 }
 
 /// Per-process identity and storage.
@@ -115,7 +98,18 @@ pub struct Task<R: BootRuntime> {
 }
 
 pub fn init<R: BootRuntime>() {
-    scheduler::init::<R>();
+    crate::sched::init::<R>();
+
+    crate::task::graph_queue::init();
+
+    // Spawn graph worker task
+    crate::kinfo!("  Creating graph worker task...");
+    let _graph_worker_id = spawn::<R>(
+        crate::task::graph::graph_worker_task::<R>,
+        StartupArg::None,
+        TaskPriority::Normal,
+        Affinity::Any,
+    );
 }
 
 pub fn spawn<R: BootRuntime>(
@@ -124,7 +118,7 @@ pub fn spawn<R: BootRuntime>(
     priority: TaskPriority,
     affinity: Affinity,
 ) -> TaskId {
-    scheduler::spawn::<R>(entry, arg, priority, affinity)
+    crate::sched::spawn::<R>(entry, arg, priority, affinity)
 }
 
 pub fn spawn_with_priority<R: BootRuntime>(
@@ -132,30 +126,30 @@ pub fn spawn_with_priority<R: BootRuntime>(
     arg: StartupArg,
     priority: TaskPriority,
 ) -> TaskId {
-    scheduler::spawn_with_priority::<R>(entry, arg, priority)
+    crate::sched::spawn_with_priority::<R>(entry, arg, priority)
 }
 
 pub unsafe fn block_current_erased() {
     unsafe {
-        scheduler::block_current_erased();
+        crate::sched::block_current_erased();
     }
 }
 
 pub unsafe fn wake_task_erased(tid: u64) {
     unsafe {
-        scheduler::wake_task_erased(tid);
+        crate::sched::wake_task_erased(tid);
     }
 }
 
 pub fn yield_now<R: BootRuntime>() -> bool {
-    scheduler::yield_now::<R>()
+    crate::sched::yield_now::<R>()
 }
 
 pub fn preempt_disable<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
     let irq = rt.irq_disable();
     {
-        let lock = scheduler::SCHEDULER.lock();
+        let lock = crate::sched::SCHEDULER.lock();
         if let Some(ptr) = *lock {
             let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
             sched.preempt_disable();
@@ -169,7 +163,7 @@ pub fn preempt_enable<R: BootRuntime>() {
     let irq = rt.irq_disable();
 
     let switch_params = {
-        let lock = scheduler::SCHEDULER.lock();
+        let lock = crate::sched::SCHEDULER.lock();
         if let Some(ptr) = *lock {
             let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
             sched.preempt_enable()
@@ -184,7 +178,7 @@ pub fn preempt_enable<R: BootRuntime>() {
         rt.tasking().activate_address_space(switch.to_aspace);
 
         let cr3_after = rt.debug_active_aspace_root();
-        scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
+        crate::sched::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
             rt.tasking()
@@ -202,10 +196,10 @@ pub fn resched_if_needed<R: BootRuntime>() {
     let irq = rt.irq_disable();
 
     let switch_params = {
-        let lock = scheduler::SCHEDULER.lock();
+        let lock = crate::sched::SCHEDULER.lock();
         if let Some(ptr) = *lock {
             let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-            sched.schedule_point(scheduler::ScheduleReason::ReschedIfNeeded)
+            sched.schedule_point(crate::sched::ScheduleReason::ReschedIfNeeded)
         } else {
             None
         }
@@ -217,7 +211,7 @@ pub fn resched_if_needed<R: BootRuntime>() {
         rt.tasking().activate_address_space(switch.to_aspace);
 
         let cr3_after = rt.debug_active_aspace_root();
-        scheduler::log_context_switch::<R>(&switch, cr3_before, cr3_after);
+        crate::sched::log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
         unsafe {
             rt.tasking()
@@ -229,7 +223,7 @@ pub fn resched_if_needed<R: BootRuntime>() {
 }
 
 pub fn dump_stats<R: BootRuntime>() {
-    scheduler::dump_stats::<R>();
+    crate::sched::dump_stats::<R>();
 }
 
 /// Bootstrap a CPU for scheduling. Must be called before the first yield
@@ -238,12 +232,12 @@ fn bootstrap_cpu<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
-    let lock = scheduler::SCHEDULER.lock();
+    let lock = crate::sched::SCHEDULER.lock();
     if let Some(ptr) = *lock {
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-        let cpu_idx = scheduler::current_cpu_index::<R>();
+        let cpu_idx = crate::sched::current_cpu_index::<R>();
 
-        if let Some(pc) = sched.per_cpu.get_mut(cpu_idx) {
+        if let Some(pc) = sched.state.per_cpu.get_mut(cpu_idx) {
             if pc.current.is_none() {
                 // CPU hasn't been bootstrapped yet. Set current to idle task.
                 if let Some(idle_id) = pc.idle_task {
@@ -256,7 +250,7 @@ fn bootstrap_cpu<R: BootRuntime>() {
                     );
 
                     // Mark the idle task as running
-                    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == idle_id) {
+                    if let Some(task) = crate::task::registry::get_task_mut::<R>(idle_id) {
                         task.state = TaskState::Running;
                     }
                 } else {
@@ -280,7 +274,7 @@ pub fn run_scheduler<R: BootRuntime>() -> ! {
         if !yield_now::<R>() {
             // No runnable work — halt until next IRQ (timer tick, device, IPI)
             crate::runtime::<R>().wait_for_interrupt();
-            scheduler::DIAG_HLT_WAKE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
+            crate::sched::DIAG_HLT_WAKE.fetch_add(1, core::sync::atomic::Ordering::Relaxed);
         }
     }
 }

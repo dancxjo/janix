@@ -9,7 +9,7 @@ use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
 
-use crate::task::scheduler::wait_queue::WaitQueue;
+use crate::sched::wait_queue::WaitQueue;
 
 // ---------------------------------------------------------------------------
 // Ring buffer
@@ -137,7 +137,7 @@ pub fn read(pipe_id: u64, dst: &mut [u8]) -> Result<usize, abi::errors::Errno> {
 
     loop {
         // Get current TID for wait queue registration
-        let tid = unsafe { crate::task::scheduler::current_tid_current() };
+        let tid = unsafe { crate::sched::current_tid_current() };
 
         {
             let mut inner = pipe.lock();
@@ -180,7 +180,7 @@ pub fn write(pipe_id: u64, src: &[u8]) -> Result<usize, abi::errors::Errno> {
     let pipe = get_pipe(pipe_id)?;
 
     loop {
-        let tid = unsafe { crate::task::scheduler::current_tid_current() };
+        let tid = unsafe { crate::sched::current_tid_current() };
 
         {
             let mut inner = pipe.lock();

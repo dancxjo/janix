@@ -5,7 +5,7 @@ use crate::BootTasking;
 use crate::task::TaskState;
 
 use super::SCHEDULER;
-use super::graphify;
+
 use super::types::Scheduler;
 
 static BLOCK_CURRENT_HOOK: core::sync::atomic::AtomicPtr<()> =
@@ -23,7 +23,7 @@ pub fn block_current<R: BootRuntime>() {
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
         let cpu = super::current_cpu_index::<R>();
-        let current_id = match sched.per_cpu.get(cpu).and_then(|pc| pc.current) {
+        let current_id = match sched.state.per_cpu.get(cpu).and_then(|pc| pc.current) {
             Some(id) => id,
             None => {
                 rt.irq_restore(_irq);
@@ -32,20 +32,20 @@ pub fn block_current<R: BootRuntime>() {
         };
 
         // Move current from Running to Blocked
-        if let Some(idx) = sched.tasks.iter().position(|t| t.id == current_id) {
-            if sched.tasks[idx].wake_pending {
-                sched.tasks[idx].wake_pending = false;
+        if let Some(task) = crate::task::registry::get_task_mut::<R>(current_id) {
+            if task.wake_pending {
+                task.wake_pending = false;
                 rt.irq_restore(_irq);
                 return;
             }
-            sched.tasks[idx].state = TaskState::Blocked;
+            task.state = TaskState::Blocked;
 
             // Queue graph state update
-            graphify::update_task_state(current_id, "blocked");
+            crate::sched::ring::push_task_state::<R>(current_id, "blocked");
         }
 
         // Add to wait queue
-        sched.wait_queue.push_back(current_id);
+        sched.state.wait_queue.push_back(current_id);
 
         // Schedule next
         sched.prepare_schedule()
@@ -93,46 +93,46 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
     let tid = id;
 
     // Remove from wait queue if present
-    if let Some(pos) = sched.wait_queue.iter().position(|&wid| wid == tid) {
-        sched.wait_queue.remove(pos);
+    if let Some(pos) = sched.state.wait_queue.iter().position(|&wid| wid == tid) {
+        sched.state.wait_queue.remove(pos);
     }
 
     // Update state to Runnable and add to runq
-    if let Ok(idx) = sched.tasks.binary_search_by_key(&tid, |t| t.id) {
-        if sched.tasks[idx].state == TaskState::Blocked {
-            sched.tasks[idx].state = TaskState::Runnable;
-            let priority = sched.tasks[idx].priority;
-            let affinity = sched.tasks[idx].affinity;
+    let mut was_blocked = false;
+    if let Some(task) = crate::task::registry::get_task_mut::<R>(tid) {
+        if task.state == TaskState::Blocked {
+            task.state = TaskState::Runnable;
+            let priority = task.priority;
+            let affinity = task.affinity;
 
             let target_cpu = match affinity {
                 crate::task::Affinity::Pinned(cpu) => cpu,
                 crate::task::Affinity::Any => {
                     // Try to wake to the last CPU it ran on to avoid immediate migration
-                    sched.tasks[idx]
-                        .last_cpu
+                    task.last_cpu
                         .unwrap_or_else(|| super::current_cpu_index::<R>())
                 }
             };
 
-            let safe_cpu = if target_cpu < sched.per_cpu.len() {
+            let safe_cpu = if target_cpu < sched.state.per_cpu.len() {
                 target_cpu
             } else {
                 0
             };
-            sched.per_cpu[safe_cpu].runq[priority as usize].push_back(tid);
+            sched.state.per_cpu[safe_cpu].runq[priority as usize].push_back(tid);
 
             // If the woken task has higher priority than the currently running
             // task on the target CPU, request a reschedule so we preempt
             // mid-slice rather than waiting for timeslice expiry.
-            let current_prio = sched.per_cpu[safe_cpu]
+            let current_prio = sched.state.per_cpu[safe_cpu]
                 .current
-                .and_then(|cid| sched.tasks.binary_search_by_key(&cid, |t| t.id).ok())
-                .map(|t_idx| sched.tasks[t_idx].priority as usize)
+                .and_then(|cid| crate::task::registry::get_task::<R>(cid))
+                .map(|t| t.priority as usize)
                 .unwrap_or(0);
 
             if (priority as usize) > current_prio {
                 if safe_cpu == super::current_cpu_index::<R>() {
-                    sched.need_resched = true;
+                    sched.state.need_resched = true;
                 }
             }
 
@@ -141,12 +141,20 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
                 rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
             }
 
-            sched.tasks[idx].wake_pending = false;
+            was_blocked = true;
+        }
+    }
 
-            // Queue graph state update
-            graphify::update_task_state(tid, "runnable");
-        } else {
-            sched.tasks[idx].wake_pending = true;
+    if was_blocked {
+        // Queue graph state update
+        crate::sched::ring::push_task_state::<R>(tid, "runnable");
+    } else {
+        // If the task wasn't blocked, it means it was already runnable or running.
+        // In this case, we just set wake_pending to true so it doesn't block
+        // if it tries to block immediately after this wake.
+        // This handles cases where a task is woken multiple times or woken while running.
+        if let Some(task) = crate::task::registry::get_task_mut::<R>(tid) {
+            task.wake_pending = true;
         }
     }
 

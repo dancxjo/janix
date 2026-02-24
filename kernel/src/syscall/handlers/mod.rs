@@ -41,7 +41,7 @@ use core::sync::atomic::Ordering;
 /// Blocking call to Root service
 pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
     let reply = root_svc::enqueue(op);
-    let tid = unsafe { crate::task::scheduler::current_tid_current() };
+    let tid = unsafe { crate::sched::current_tid_current() };
     let mut spins = 0;
 
     loop {
@@ -65,7 +65,7 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
             core::hint::spin_loop();
         } else {
             unsafe {
-                crate::task::scheduler::sleep_ticks_current(1);
+                crate::sched::sleep_ticks_current(1);
             }
             spins = 0;
         }

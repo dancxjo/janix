@@ -199,7 +199,7 @@ fn update_graph_irq(graph_id: u64, mode: IrqMode, vector: u8) {
     });
     while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
     let mode_sym = reply.value.load(core::sync::atomic::Ordering::Relaxed);
@@ -211,7 +211,7 @@ fn update_graph_irq(graph_id: u64, mode: IrqMode, vector: u8) {
     });
     while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 
@@ -222,7 +222,7 @@ fn update_graph_irq(graph_id: u64, mode: IrqMode, vector: u8) {
     });
     while reply.done.load(core::sync::atomic::Ordering::Acquire) == 0 {
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }

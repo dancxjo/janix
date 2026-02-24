@@ -39,7 +39,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                 return reply.value.load(core::sync::atomic::Ordering::Relaxed);
             }
             unsafe {
-                crate::task::scheduler::yield_now_current();
+                crate::sched::yield_now_current();
             }
         }
     };
@@ -72,7 +72,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                 break;
             }
             unsafe {
-                crate::task::scheduler::yield_now_current();
+                crate::sched::yield_now_current();
             }
         }
     };
@@ -90,7 +90,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                 break;
             }
             unsafe {
-                crate::task::scheduler::yield_now_current();
+                crate::sched::yield_now_current();
             }
         }
     };
@@ -105,7 +105,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                 return reply.value.load(core::sync::atomic::Ordering::Relaxed);
             }
             unsafe {
-                crate::task::scheduler::yield_now_current();
+                crate::sched::yield_now_current();
             }
         }
     };
@@ -122,7 +122,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                 return reply.value.load(core::sync::atomic::Ordering::Relaxed);
             }
             unsafe {
-                crate::task::scheduler::yield_now_current();
+                crate::sched::yield_now_current();
             }
         }
     };
@@ -140,7 +140,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                 break;
             }
             unsafe {
-                crate::task::scheduler::yield_now_current();
+                crate::sched::yield_now_current();
             }
         }
     };
@@ -232,7 +232,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                 return reply.value.load(core::sync::atomic::Ordering::Relaxed);
             }
             unsafe {
-                crate::task::scheduler::yield_now_current();
+                crate::sched::yield_now_current();
             }
         }
     };

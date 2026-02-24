@@ -2,6 +2,8 @@
 
 use crate::BootRuntime;
 use crate::task::{Task, TaskId};
+use core::sync::atomic::{AtomicUsize, Ordering};
+use core::marker::PhantomData;
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
@@ -51,29 +53,7 @@ pub const AGING_THRESHOLD_TICKS: u64 = 500;
 /// priority (Low -> Normal -> High), but never to Realtime.
 pub const MAX_PRIORITY_BOOST: usize = 2;
 
-pub struct PerCpu {
-    pub runq: [VecDeque<TaskId>; 5],
-    pub idle_task: Option<TaskId>,
-    pub current: Option<TaskId>,
-    pub last_switch: u64,
-}
-
-impl PerCpu {
-    pub fn new() -> Self {
-        PerCpu {
-            runq: [
-                VecDeque::with_capacity(1024),
-                VecDeque::with_capacity(1024),
-                VecDeque::with_capacity(1024),
-                VecDeque::with_capacity(1024),
-                VecDeque::with_capacity(1024),
-            ],
-            idle_task: None,
-            current: None,
-            last_switch: 0,
-        }
-    }
-}
+// PerCpu is now in state.rs
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StackFaultResult {
@@ -125,21 +105,15 @@ pub(crate) struct SchedulerMetrics {
 }
 
 pub struct Scheduler<R: BootRuntime> {
-    pub(crate) tasks: Vec<alloc::boxed::Box<Task<R>>>,
-    pub(crate) wait_queue: VecDeque<TaskId>,
-    pub(crate) sleep_queue: VecDeque<SleepEntry>, // tasks sleeping with wake times
-    pub(crate) per_cpu: Vec<PerCpu>,
+    pub(crate) state: crate::sched::state::SchedState,
     pub(crate) next_id: TaskId,
     pub(crate) preempt_disable_depth: usize,
     pub(crate) preempt_disable_since: u64,
     pub(crate) watchdog_warned: bool,
-    pub(crate) need_resched: bool,
-
     pub(crate) total_cpu_count: usize,
-    pub(crate) online_cpu_count: usize,
     pub(crate) bringup_in_progress: bool,
-
     pub(crate) metrics: SchedulerMetrics,
+    _phantom: core::marker::PhantomData<R>,
 }
 
 impl SchedulerMetrics {
@@ -157,48 +131,16 @@ impl SchedulerMetrics {
 impl<R: BootRuntime> Scheduler<R> {
     pub fn new() -> Self {
         Scheduler {
-            tasks: Vec::with_capacity(1024),
-            wait_queue: VecDeque::with_capacity(1024),
-            sleep_queue: VecDeque::with_capacity(1024),
-            per_cpu: Vec::with_capacity(32),
+            state: crate::sched::state::SchedState::new(),
             next_id: 1,
             preempt_disable_depth: 0,
             preempt_disable_since: 0,
             watchdog_warned: false,
-            need_resched: false,
             total_cpu_count: 1,
-            online_cpu_count: 1,
             bringup_in_progress: false,
             metrics: SchedulerMetrics::new(),
+            _phantom: PhantomData,
         }
-    }
-
-    pub fn task_count(&self) -> usize {
-        self.tasks.len()
-    }
-
-    pub fn get_task_index(&self, id: TaskId) -> Option<usize> {
-        self.tasks.binary_search_by_key(&id, |t| t.id).ok()
-    }
-
-    pub fn get_task_index_mut(&mut self, id: TaskId) -> Option<usize> {
-        self.tasks.binary_search_by_key(&id, |t| t.id).ok()
-    }
-
-    pub fn insert_task(&mut self, task: alloc::boxed::Box<Task<R>>) {
-        let id = task.id;
-        match self.tasks.binary_search_by_key(&id, |t| t.id) {
-            Ok(_) => panic!("Task ID {} already exists", id),
-            Err(idx) => self.tasks.insert(idx, task),
-        }
-    }
-
-    pub fn get_task(&self, id: TaskId) -> Option<&Task<R>> {
-        self.get_task_index(id).map(|idx| &*self.tasks[idx])
-    }
-
-    pub fn get_task_mut(&mut self, id: TaskId) -> Option<&mut Task<R>> {
-        self.get_task_index(id).map(move |idx| &mut *self.tasks[idx])
     }
 
     pub fn current_id(&self) -> Option<TaskId> {
@@ -213,7 +155,7 @@ impl<R: BootRuntime> Scheduler<R> {
     }
 
     pub fn current_id_on_cpu(&self, cpu: usize) -> Option<TaskId> {
-        self.per_cpu.get(cpu).and_then(|pc| pc.current)
+        self.state.per_cpu.get(cpu).and_then(|pc| pc.current)
     }
 
     pub fn current_priority(&self) -> Option<crate::task::TaskPriority> {
@@ -223,7 +165,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
     pub fn current_priority_on_cpu(&self, cpu: usize) -> Option<crate::task::TaskPriority> {
         let tid = self.current_id_on_cpu(cpu)?;
-        self.get_task(tid).map(|t| t.priority)
+        crate::task::registry::get_task::<R>(tid).map(|t| t.priority)
     }
 
 
@@ -232,7 +174,7 @@ impl<R: BootRuntime> Scheduler<R> {
     /// (priority levels 1–4) for the given CPU. Used by `run_scheduler` to
     /// decide whether to halt or keep spinning.
     pub fn has_runnable_work(&self, cpu_idx: usize) -> bool {
-        if let Some(pc) = self.per_cpu.get(cpu_idx) {
+        if let Some(pc) = self.state.per_cpu.get(cpu_idx) {
             // Check priority queues 1 (Low) through 4 (Realtime)
             pc.runq[1..].iter().any(|q| !q.is_empty())
         } else {

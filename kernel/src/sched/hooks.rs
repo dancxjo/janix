@@ -2,7 +2,7 @@
 
 use super::types::StackFaultResult;
 use crate::task::{ProcessInfo, TaskId, TaskState};
-use crate::task::scheduler::spawn::{SpawnExResult, StdioSpec};
+use crate::sched::spawn::{SpawnExResult, StdioSpec};
 use abi::errors::Errno;
 use abi::vm::VmRegionInfo;
 use alloc::collections::BTreeMap;

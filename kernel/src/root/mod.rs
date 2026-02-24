@@ -289,7 +289,7 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
             // Only acquire scheduler lock and wake if the root service is actually sleeping
             if ROOT_ASLEEP.swap(false, Ordering::Acquire) {
                 unsafe {
-                    crate::task::scheduler::wake_task_erased(tid);
+                    crate::sched::wake_task_erased(tid);
                 }
             }
         }
@@ -356,7 +356,7 @@ pub mod debug {
                     return f.write_str("<timeout>");
                 }
                 unsafe {
-                    crate::task::scheduler::yield_now_current();
+                    crate::sched::yield_now_current();
                 }
             }
         }
@@ -391,7 +391,7 @@ pub mod debug {
                     }
                 }
                 unsafe {
-                    crate::task::scheduler::yield_now_current();
+                    crate::sched::yield_now_current();
                 }
             }
         }

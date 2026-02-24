@@ -134,7 +134,7 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResul
         copyin(dest, handles_ptr)?;
     }
 
-    let tid = unsafe { crate::task::scheduler::current_tid_current() };
+    let tid = unsafe { crate::sched::current_tid_current() };
     let flags = flags as u32;
 
     // Cleanup helper to ensure we don't leave stale entries in any port's wait queue
@@ -209,7 +209,7 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResul
 
         // 3. Block current task
         unsafe {
-            crate::task::scheduler::block_current_erased();
+            crate::sched::block_current_erased();
         }
     }
 }

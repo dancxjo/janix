@@ -11,6 +11,7 @@ pub mod memory;
 pub mod net;
 pub mod once_cell;
 pub mod root;
+pub mod sched;
 pub mod simd;
 pub mod syscall;
 pub mod task;
@@ -32,11 +33,11 @@ pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
     let instr_fetch = (err & 0x10) != 0;
 
     let stack_result = if user {
-        unsafe { crate::task::scheduler::handle_user_stack_fault_current(addr) }
+        unsafe { crate::sched::handle_user_stack_fault_current(addr) }
     } else {
-        crate::task::scheduler::StackFaultResult::NotStack
+        crate::sched::StackFaultResult::NotStack
     };
-    if stack_result == crate::task::scheduler::StackFaultResult::Grew {
+    if stack_result == crate::sched::StackFaultResult::Grew {
         return;
     }
 
@@ -54,12 +55,12 @@ pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
         instr_fetch as u8
     );
 
-    if stack_result == crate::task::scheduler::StackFaultResult::Overflow {
+    if stack_result == crate::sched::StackFaultResult::Overflow {
         crate::kprintln!("STACK: overflow at va=0x{:x}", addr);
     }
 
     unsafe {
-        crate::task::scheduler::exit_current(-1);
+        crate::sched::exit_current(-1);
     }
 }
 
@@ -727,7 +728,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             let mut entry = user_entry;
             entry.arg0 = StartupArg::BootRegistry.to_raw(); // arg0 = registry ptr
             // Spawn at Normal priority - all tasks share the same priority for fair scheduling
-            crate::task::scheduler::spawn_user_task_full::<R>(
+            crate::sched::spawn_user_task_full::<R>(
                 entry,
                 aspace,
                 stack_info,
@@ -748,7 +749,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
                     crate::task::loader::load_module(runtime, aspace, mod_desc)
                         .expect("Failed to load threads_demo");
                 unsafe {
-                    crate::task::scheduler::spawn_user_task_full::<R>(
+                    crate::sched::spawn_user_task_full::<R>(
                         user_entry,
                         aspace,
                         stack_info,
@@ -809,7 +810,7 @@ extern "C" fn thread_a(arg: usize) -> ! {
             core::hint::black_box(());
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -827,7 +828,7 @@ extern "C" fn thread_b(arg: usize) -> ! {
             core::hint::black_box(());
         }
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     }
 }
@@ -850,7 +851,7 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
 
     // Then:
     unsafe {
-        crate::task::scheduler::cpu_online::<R>(cpu_index);
-        crate::task::scheduler::enter_secondary(cpu_index);
+        crate::sched::cpu_online::<R>(cpu_index);
+        crate::sched::enter_secondary(cpu_index);
     }
 }

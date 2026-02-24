@@ -15,7 +15,7 @@ pub(crate) static RR_IDX: AtomicUsize = AtomicUsize::new(0);
 impl<R: BootRuntime> Scheduler<R> {
     fn pick_cpu_and_bringup(&mut self, affinity: Affinity, _trigger_smp: bool) -> usize {
         let rt = crate::runtime::<R>();
-        let count = self.online_cpu_count;
+        let count = self.state.online_cpu_count;
         let idx = RR_IDX.fetch_add(1, Ordering::Relaxed);
 
         match affinity {
@@ -23,7 +23,7 @@ impl<R: BootRuntime> Scheduler<R> {
             Affinity::Any => {
                 // NOTE: Automatic SMP bring-up disabled for now. Additional processors
                 // will be brought up manually when needed.
-                // if trigger_smp && self.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
+                // if trigger_smp && self.state.online_cpu_count < self.total_cpu_count && !self.bringup_in_progress {
                 //     if let Some(next_cpu_id) = rt.next_offline_cpu() {
                 //         let target_cpu = next_cpu_id.0 as usize;
                 //         self.bringup_in_progress = true;
@@ -67,7 +67,7 @@ impl<R: BootRuntime> Scheduler<R> {
         crate::kdebug!("SCHED: Task {} assigned to CPU {}", id, target_cpu);
 
         // Push to target CPU's run queue
-        let cpu_count = self.per_cpu.len(); // Should match rt.cpu_count()
+        let cpu_count = self.state.per_cpu.len(); // Should match rt.cpu_count()
         let safe_cpu = if target_cpu < cpu_count {
             target_cpu
         } else {
@@ -101,8 +101,19 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: priority,
         };
 
-        self.insert_task(alloc::boxed::Box::new(task));
-        self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
+        let sched_fields = crate::sched::state::TaskSchedFields {
+            tid: task.id,
+            state: task.state,
+            priority: task.priority,
+            base_priority: task.base_priority,
+            timeslice_remaining: task.timeslice_remaining,
+            affinity: task.affinity,
+            wait_ticks: task.wait_ticks,
+            last_cpu: task.last_cpu,
+        };
+        self.state.insert_task(sched_fields);
+        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
+        self.state.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
@@ -111,14 +122,14 @@ impl<R: BootRuntime> Scheduler<R> {
         }
 
         // Queue graph node creation (processed after scheduler lock released)
-        let parent_tid = self.per_cpu[super::current_cpu_index::<R>()].current;
-        super::graphify::create_thread_node(id, priority as u8, false, None, parent_tid);
+        let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
+        crate::sched::ring::push_task_created::<R>(id, priority as u8, false, None, parent_tid);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
-            super::graphify::set_affinity_node(id, cpu);
+            crate::sched::ring::push_task_affinity::<R>(id, cpu);
         }
         // Initial location matches target runq
-        super::graphify::update_task_location(id, safe_cpu);
+        crate::sched::ring::push_task_location::<R>(id, safe_cpu);
 
         id
     }
@@ -147,9 +158,9 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // Inherit mappings and process_info from current task
         let (mappings, parent_pinfo) = if let Some(current_id) =
-            self.per_cpu[super::current_cpu_index::<R>()].current
+            self.state.per_cpu[super::current_cpu_index::<R>()].current
         {
-            if let Some(parent) = self.get_task(current_id) {
+            if let Some(parent) = crate::task::registry::get_task::<R>(current_id) {
                 (parent.mappings.clone(), parent.process_info.clone())
             } else {
                 (alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new())), None)
@@ -178,7 +189,7 @@ impl<R: BootRuntime> Scheduler<R> {
         );
 
         // Push to target CPU's run queue
-        let cpu_count = self.per_cpu.len();
+        let cpu_count = self.state.per_cpu.len();
         let safe_cpu = if target_cpu < cpu_count {
             target_cpu
         } else {
@@ -210,8 +221,19 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: priority,
         };
 
-        self.insert_task(alloc::boxed::Box::new(task));
-        self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
+        let sched_fields = crate::sched::state::TaskSchedFields {
+            tid: task.id,
+            state: task.state,
+            priority: task.priority,
+            base_priority: task.base_priority,
+            timeslice_remaining: task.timeslice_remaining,
+            affinity: task.affinity,
+            wait_ticks: task.wait_ticks,
+            last_cpu: task.last_cpu,
+        };
+        self.state.insert_task(sched_fields);
+        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
+        self.state.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
@@ -219,14 +241,14 @@ impl<R: BootRuntime> Scheduler<R> {
         }
 
         // Queue graph node creation (processed after scheduler lock released)
-        let parent_tid = self.per_cpu[super::current_cpu_index::<R>()].current;
-        super::graphify::create_thread_node(id, priority as u8, true, None, parent_tid);
+        let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
+        crate::sched::ring::push_task_created::<R>(id, priority as u8, true, None, parent_tid);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
-            super::graphify::set_affinity_node(id, cpu);
+            crate::sched::ring::push_task_affinity::<R>(id, cpu);
         }
         // Initial location matches target runq
-        super::graphify::update_task_location(id, safe_cpu);
+        crate::sched::ring::push_task_location::<R>(id, safe_cpu);
 
         id
     }
@@ -269,7 +291,7 @@ impl<R: BootRuntime> Scheduler<R> {
         );
 
         // Push to target CPU's run queue
-        let cpu_count = self.per_cpu.len();
+        let cpu_count = self.state.per_cpu.len();
         let safe_cpu = if target_cpu < cpu_count {
             target_cpu
         } else {
@@ -301,8 +323,19 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: priority,
         };
 
-        self.insert_task(alloc::boxed::Box::new(task));
-        self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
+        let sched_fields = crate::sched::state::TaskSchedFields {
+            tid: task.id,
+            state: task.state,
+            priority: task.priority,
+            base_priority: task.base_priority,
+            timeslice_remaining: task.timeslice_remaining,
+            affinity: task.affinity,
+            wait_ticks: task.wait_ticks,
+            last_cpu: task.last_cpu,
+        };
+        self.state.insert_task(sched_fields);
+        crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
+        self.state.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
@@ -310,14 +343,14 @@ impl<R: BootRuntime> Scheduler<R> {
         }
 
         // Queue graph node creation (processed after scheduler lock released)
-        let parent_tid = self.per_cpu[super::current_cpu_index::<R>()].current;
-        super::graphify::create_thread_node(id, priority as u8, true, None, parent_tid);
+        let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
+        crate::sched::ring::push_task_created::<R>(id, priority as u8, true, None, parent_tid);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
-            super::graphify::set_affinity_node(id, cpu);
+            crate::sched::ring::push_task_affinity::<R>(id, cpu);
         }
         // Initial location matches target runq
-        super::graphify::update_task_location(id, safe_cpu);
+        crate::sched::ring::push_task_location::<R>(id, safe_cpu);
 
         Some(id)
     }
@@ -438,10 +471,10 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     // Determine parent PID from the current task's ProcessInfo
     let cpu_idx = super::current_cpu_index::<R>();
     let ppid = sched
-        .per_cpu
+        .state.per_cpu
         .get(cpu_idx)
         .and_then(|pc| pc.current)
-        .and_then(|ctid| sched.get_task(ctid))
+        .and_then(|ctid| crate::task::registry::get_task::<R>(ctid))
         .and_then(|t| t.process_info.as_ref())
         .map(|pi| pi.lock().pid)
         .unwrap_or(0);
@@ -455,7 +488,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     }));
 
     // Store name and process_info on the task struct
-    if let Some(task) = sched.get_task_mut(id) {
+    if let Some(task) = crate::task::registry::get_task_mut::<R>(id) {
         let bytes = module.name.as_bytes();
         let len = bytes.len().min(32);
         task.name[..len].copy_from_slice(&bytes[..len]);
@@ -464,7 +497,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     }
 
     // Queue setting the process name (processed after scheduler lock released)
-    super::graphify::set_name(id, module.name);
+    crate::sched::ring::push_task_name::<R>(id, Some(module.name));
 
     rt.irq_restore(_irq);
     Some(id)
@@ -546,10 +579,10 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     // Determine parent PID
     let cpu_idx = super::current_cpu_index::<R>();
     let ppid = sched
-        .per_cpu
+        .state.per_cpu
         .get(cpu_idx)
         .and_then(|pc| pc.current)
-        .and_then(|ctid| sched.get_task(ctid))
+        .and_then(|ctid| crate::task::registry::get_task::<R>(ctid))
         .and_then(|t| t.process_info.as_ref())
         .map(|pi| pi.lock().pid)
         .unwrap_or(0);
@@ -570,7 +603,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     }));
 
     // Store name and process_info on the task struct
-    if let Some(task) = sched.get_task_mut(id) {
+    if let Some(task) = crate::task::registry::get_task_mut::<R>(id) {
         let bytes = module.name.as_bytes();
         let len = bytes.len().min(32);
         task.name[..len].copy_from_slice(&bytes[..len]);
@@ -579,7 +612,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     }
 
     // Queue setting the process name
-    super::graphify::set_name(id, module.name);
+    crate::sched::ring::push_task_name::<R>(id, Some(module.name));
 
     rt.irq_restore(_irq);
 
@@ -715,8 +748,8 @@ mod tests {
 
         let mut sched = Scheduler::<MockRuntime>::new();
         // Manually initialize PerCpu state for the mock
-        sched.per_cpu.push(super::super::types::PerCpu::new());
-        sched.per_cpu[0].current = Some(0); // Set a dummy current task ID for parent linking
+        sched.state.per_cpu.push(super::crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(0); // Set a dummy current task ID for parent linking
 
         // We need a way to mock crate::runtime::<MockRuntime>()
         // In kernel/src/lib.rs:
@@ -734,7 +767,7 @@ mod tests {
 
         for (arg, expected) in cases {
             let id = sched.spawn(mock_entry, arg, TaskPriority::Normal, Affinity::Any);
-            let task = sched.get_task(id).unwrap();
+            let task = crate::task::registry::get_task::<R>(id).unwrap();
 
             // In our MockTasking.init_kernel_context, we store arg in MockContext.0
             assert_eq!(task.ctx.0, expected);

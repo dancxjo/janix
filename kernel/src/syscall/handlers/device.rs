@@ -27,7 +27,7 @@ pub fn sys_device_call(call_ptr: usize) -> SysResult<usize> {
 pub fn sys_device_claim(graph_id: usize) -> SysResult<usize> {
     use crate::device_registry::REGISTRY;
 
-    let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+    let task_id = unsafe { crate::sched::current_tid_current() };
 
     let mut reg = REGISTRY.lock();
 
@@ -58,7 +58,7 @@ pub fn sys_device_map_mmio(claim_handle: usize, bar_index: usize) -> SysResult<u
         return Err(Errno::EINVAL);
     }
 
-    let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+    let task_id = unsafe { crate::sched::current_tid_current() };
     let mut reg = REGISTRY.lock();
 
     if !reg.verify_claim(claim_handle, task_id) {
@@ -130,7 +130,7 @@ pub fn sys_device_irq_subscribe(arg0: usize, arg1: usize, mode: usize) -> SysRes
         DEVICE_IRQ_SUBSCRIBE_DEVICE => {
             let claim_handle = arg0;
             let irq_index = arg1;
-            let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+            let task_id = unsafe { crate::sched::current_tid_current() };
             let (irq_mode, vector) = {
                 let reg = crate::device_registry::REGISTRY.lock();
                 if !reg.verify_claim(claim_handle, task_id) {
@@ -170,7 +170,7 @@ pub fn sys_device_irq_wait(arg0: usize, arg1: usize, mode: usize) -> SysResult<u
         DEVICE_IRQ_SUBSCRIBE_DEVICE => {
             let claim_handle = arg0;
             let irq_index = arg1;
-            let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+            let task_id = unsafe { crate::sched::current_tid_current() };
             let (_mode, vector) = {
                 let reg = crate::device_registry::REGISTRY.lock();
                 if !reg.verify_claim(claim_handle, task_id) {
@@ -256,7 +256,7 @@ pub fn sys_device_alloc_dma(claim_handle: usize, page_count: usize) -> SysResult
         return Err(Errno::EINVAL);
     }
 
-    let task_id = unsafe { crate::task::scheduler::current_tid_current() };
+    let task_id = unsafe { crate::sched::current_tid_current() };
 
     {
         let reg = REGISTRY.lock();

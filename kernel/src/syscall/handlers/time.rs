@@ -4,7 +4,7 @@ use abi::errors::SysResult;
 
 pub fn sys_yield() -> SysResult<usize> {
     unsafe {
-        crate::task::scheduler::yield_now_current();
+        crate::sched::yield_now_current();
     }
     Ok(0)
 }
@@ -16,11 +16,11 @@ pub fn sys_sleep_ns(ns: u64) -> SysResult<usize> {
     if ticks == 0 {
         // Very short sleep, just yield once
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     } else {
         // Use true blocking sleep
-        crate::task::scheduler::sleep_ticks_current(ticks);
+        crate::sched::sleep_ticks_current(ticks);
     }
     Ok(0)
 }
@@ -32,11 +32,11 @@ pub fn sys_sleep_ms(ms: u64) -> SysResult<usize> {
     if ticks == 0 {
         // Very short sleep, just yield once
         unsafe {
-            crate::task::scheduler::yield_now_current();
+            crate::sched::yield_now_current();
         }
     } else {
         // Use true blocking sleep
-        crate::task::scheduler::sleep_ticks_current(ticks);
+        crate::sched::sleep_ticks_current(ticks);
     }
     Ok(0)
 }

@@ -22,8 +22,8 @@ pub struct Port {
     capacity: usize,
     head: AtomicUsize, // Write position (producer advances)
     tail: AtomicUsize, // Read position (consumer advances)
-    waiters_read: crate::task::scheduler::WaitQueue,
-    waiters_write: crate::task::scheduler::WaitQueue,
+    waiters_read: crate::sched::WaitQueue,
+    waiters_write: crate::sched::WaitQueue,
     send_lock: Mutex<()>,
     recv_lock: Mutex<()>,
 
@@ -43,8 +43,8 @@ impl Port {
             capacity,
             head: AtomicUsize::new(0),
             tail: AtomicUsize::new(0),
-            waiters_read: crate::task::scheduler::WaitQueue::new(),
-            waiters_write: crate::task::scheduler::WaitQueue::new(),
+            waiters_read: crate::sched::WaitQueue::new(),
+            waiters_write: crate::sched::WaitQueue::new(),
             send_lock: Mutex::new(()),
             recv_lock: Mutex::new(()),
             #[cfg(debug_assertions)]
@@ -210,7 +210,7 @@ impl Port {
     #[cfg(debug_assertions)]
     fn check_ownership(&self, is_sender: bool) {
         // We use the erased hook to avoid generic param requirements
-        let current = unsafe { crate::task::scheduler::current_tid_current() };
+        let current = unsafe { crate::sched::current_tid_current() };
         if current == 0 {
             return; // Allow kernel/idle access
         }

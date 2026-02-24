@@ -42,7 +42,7 @@ pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult
         return Err(Errno::EAGAIN);
     }
 
-    let tid = unsafe { crate::task::scheduler::current_tid_current() };
+    let tid = unsafe { crate::sched::current_tid_current() };
 
     // Add ourselves to the wait queue.
     {
@@ -53,7 +53,7 @@ pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult
     if timeout_ns == 0 {
         // Indefinite wait — block until woken.
         unsafe {
-            crate::task::scheduler::block_current_erased();
+            crate::sched::block_current_erased();
         }
     } else {
         // Timed wait — use sleep, which blocks for up to the given duration.
@@ -62,10 +62,10 @@ pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult
         let ticks = (timeout_ns + 9_999_999) / 10_000_000;
         if ticks == 0 {
             unsafe {
-                crate::task::scheduler::yield_now_current();
+                crate::sched::yield_now_current();
             }
         } else {
-            crate::task::scheduler::sleep_ticks_current(ticks);
+            crate::sched::sleep_ticks_current(ticks);
         }
 
         // After waking, remove ourselves from the wait queue if still there
@@ -99,7 +99,7 @@ pub fn sys_futex_wake(uaddr: usize, count: u32) -> SysResult<usize> {
         while woken < count {
             if let Some(tid) = waiters.pop() {
                 unsafe {
-                    crate::task::scheduler::wake_task_erased(tid);
+                    crate::sched::wake_task_erased(tid);
                 }
                 woken += 1;
             } else {

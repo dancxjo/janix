@@ -946,4 +946,27 @@ mod tests {
         // ORDER BY invalid direction
         assert!(parse("MATCH (n) RETURN n ORDER BY id(n) INVALID").is_err());
     }
+
+    #[test]
+    fn test_parse_where_count_edges() {
+        let cmd = parse("MATCH (n) WHERE COUNT((n)-[]->()) = 5 RETURN n").unwrap();
+        if let Command::Match { where_clause, .. } = cmd {
+            if let Some(Expression::Eq(left, right)) = where_clause {
+                if let Expression::CountEdges(var) = *left {
+                    assert_eq!(var, "n");
+                } else {
+                    panic!("Expected CountEdges on left side");
+                }
+                if let Expression::Value(Value::Number(n)) = *right {
+                    assert_eq!(n, 5);
+                } else {
+                    panic!("Expected Number on right side");
+                }
+            } else {
+                panic!("Expected Eq expression");
+            }
+        } else {
+            panic!("Expected Match command");
+        }
+    }
 }

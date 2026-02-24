@@ -331,9 +331,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
                 let cpu_idx = current_cpu_index::<R>();
                 
-                // Apply priority aging to prevent starvation
-                self.apply_priority_aging(cpu_idx);
-
                 // If a higher-priority task became runnable (e.g. via wake_task),
                 // preempt immediately rather than waiting for timeslice expiry.
                 if self.state.need_resched {
@@ -576,21 +573,43 @@ impl<R: BootRuntime> types::Scheduler<R> {
         let mut misrouted_count = 0;
 
         let mut next_id = None;
-        // Priority scan — skip dead and misrouted tasks
-        for p in (1..5).rev() {
-            while let Some(id) = self.state.per_cpu[cpu_idx].runq[p].pop_front() {
+        // Priority scan — skip dead and misrouted tasks, evaluating aging on-pick
+        loop {
+            let mut best_q = None;
+            let mut best_eff = 0;
+
+            for p in (1..5).rev() {
+                if let Some(&id) = self.state.per_cpu[cpu_idx].runq[p].front() {
+                    let mut eff = p; // Start with base priority (queue index)
+                    if p < 4 { // aging only applies up to High
+                        if let Some(task) = crate::task::registry::get_task::<R>(id) {
+                            let now = TICK_COUNT.load(Ordering::Relaxed);
+                            let wait_ticks = now.saturating_sub(task.enqueued_at_tick);
+                            let boost = (wait_ticks / types::AGING_THRESHOLD_TICKS) as usize;
+                            let boost = boost.min(types::MAX_PRIORITY_BOOST);
+                            eff = (p + boost).min(4);
+                        }
+                    }
+                    if eff > best_eff || best_q.is_none() {
+                        best_eff = eff;
+                        best_q = Some(p);
+                    }
+                }
+            }
+
+            if let Some(p) = best_q {
+                let id = self.state.per_cpu[cpu_idx].runq[p].pop_front().unwrap();
                 self.metrics.pops += 1;
-                // Skip dead tasks that were enqueued before kill took effect
+                
                 let task_ref = crate::task::registry::get_task::<R>(id);
                 if task_ref.map_or(true, |t| t.state == TaskState::Dead) {
                     continue;
                 }
-                // Skip tasks pinned to a different CPU — collect for requeue
                 let task = task_ref.unwrap();
                 if let crate::task::Affinity::Pinned(target) = task.affinity {
                     if target != cpu_idx && target < per_cpu_len {
                         if misrouted_count < MAX_MISROUTED {
-                            misrouted[misrouted_count] = (task.priority as usize, target, id);
+                            misrouted[misrouted_count] = (task.base_priority as usize, target, id);
                             misrouted_count += 1;
                         }
                         continue;
@@ -598,8 +617,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 }
                 next_id = Some(id);
                 break;
-            }
-            if next_id.is_some() {
+            } else {
                 break;
             }
         }
@@ -659,9 +677,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
         }
 
         self.state.per_cpu[cpu_idx].current = Some(next_id);
-
-        // Reset wait time and priority for the newly scheduled task (anti-starvation)
-        self.reset_wait_time(next_id);
 
         let old_idx = self.state.get_task_index(current_id).unwrap_or_else(|| { crate::kerror!("SchedTasks: {:?}", self.state.tasks.iter().map(|f| f.tid).collect::<alloc::vec::Vec<_>>()); panic!("failed to find current_id {} in get_task_index", current_id) });
         let new_idx = self.state.get_task_index(next_id).unwrap_or_else(|| { crate::kerror!("SchedTasks: {:?}", self.state.tasks.iter().map(|f| f.tid).collect::<alloc::vec::Vec<_>>()); panic!("failed to find next_id {} in get_task_index", next_id) });
@@ -779,94 +794,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     }
                 }
             }
-        }
-    }
-
-    /// Apply priority aging to prevent starvation.
-    ///
-    /// This anti-starvation mechanism temporarily boosts the priority of tasks that
-    /// have been waiting too long. The algorithm:
-    ///
-    /// 1. For each task in run queues (except Realtime), calculate boost based on wait time
-    /// 2. Boost level = wait_ticks / AGING_THRESHOLD_TICKS (capped at MAX_PRIORITY_BOOST)
-    /// 3. effective_priority = base_priority + boost_levels (capped at Realtime)
-    /// 4. Update task.priority to reflect the boost
-    ///
-    /// Example: A Low-priority task waiting for 1000 ticks (2 aging periods at 500 ticks each)
-    /// gets boosted by 2 levels: Low -> Normal -> High
-    ///
-    /// When the task is eventually scheduled, its priority is restored to base_priority
-    /// and wait_ticks is reset to 0.
-    fn apply_priority_aging(&mut self, cpu_idx: usize) {
-        use crate::task::TaskPriority;
-
-        // Collect promoted tasks with a fixed-size buffer to avoid allocations
-        // Realistically, very few tasks are promoted at once per CPU run queue.
-        // If we exceed this, we just drop the promotion for this tick.
-        const MAX_PROMOTIONS: usize = 32;
-        let mut promotions: [(usize, TaskId); MAX_PROMOTIONS] = [(0, 0); MAX_PROMOTIONS];
-        let mut promo_count = 0;
-
-        // Process each base-priority level (skip Realtime = index 4)
-        for base_priority in 0..4 {
-            let mut i = 0;
-            while i < self.state.per_cpu[cpu_idx].runq[base_priority].len() {
-                let id = self.state.per_cpu[cpu_idx].runq[base_priority][i];
-                let mut promoted = false;
-
-                if let Some(task) = crate::task::registry::get_task_mut::<R>(id) {
-                    let now = TICK_COUNT.load(Ordering::Relaxed);
-                    let wait_ticks = now.saturating_sub(task.enqueued_at_tick);
-                    let boost = (wait_ticks / types::AGING_THRESHOLD_TICKS) as usize;
-                    let boost = boost.min(types::MAX_PRIORITY_BOOST);
-                    let eff = (task.base_priority as usize + boost)
-                        .min(TaskPriority::Realtime as usize);
-
-                    if eff != base_priority {
-                        if promo_count < MAX_PROMOTIONS {
-                            task.priority = match eff {
-                                0 => TaskPriority::Idle,
-                                1 => TaskPriority::Low,
-                                2 => TaskPriority::Normal,
-                                3 => TaskPriority::High,
-                                4 => TaskPriority::Realtime,
-                                _ => TaskPriority::Idle,
-                            };
-                            promotions[promo_count] = (eff, id);
-                            promo_count += 1;
-                            promoted = true;
-                        }
-                    }
-                }
-
-                if promoted {
-                    // Remove from original queue
-                    self.state.per_cpu[cpu_idx].runq[base_priority].remove(i);
-                    // Do not advance i, since everything shifted left
-                } else {
-                    i += 1;
-                }
-            }
-        }
-
-        // Apply promotions
-        for idx in 0..promo_count {
-            let (target, id) = promotions[idx];
-            self.state.per_cpu[cpu_idx].runq[target].push_back(id);
-        }
-    }
-
-    /// Reset priority for a task that just got scheduled.
-    ///
-    /// Part of the anti-starvation mechanism. When a task is scheduled to run, we
-    /// restore priority to base_priority (remove any aging boost).
-    ///
-    /// This ensures that aging only provides temporary priority boosts and doesn't
-    /// permanently change a task's priority.
-    fn reset_wait_time(&mut self, task_id: TaskId) {
-        if let Some(task) = crate::task::registry::get_task_mut::<R>(task_id) {
-            // Reset priority to base priority (remove any aging boost)
-            task.priority = task.base_priority;
         }
     }
 

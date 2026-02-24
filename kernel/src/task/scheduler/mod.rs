@@ -7,11 +7,17 @@
 //! - `spawn`: Task and thread spawning
 //! - `stack`: User stack allocation and fault handling
 //! - `sleep`: Timing and yield functions
+//! - `events`: Lock-free scheduler event types
+//! - `ring`: SPSC ring buffer for scheduler events
+//! - `flusher`: Budgeted event-to-graph translator
 
 pub(crate) mod blocking;
+pub(crate) mod events;
+pub(crate) mod flusher;
 pub(crate) mod graph_queue;
 pub(crate) mod graphify;
 mod hooks;
+pub(crate) mod ring;
 mod sleep;
 mod spawn;
 mod stack;
@@ -275,8 +281,10 @@ fn maybe_log_scheduler_profile<R: BootRuntime>() {
     let ipi_tx = DIAG_IPI_SENT.swap(0, Ordering::Relaxed);
     let ipi_rx = DIAG_IPI_HANDLER.swap(0, Ordering::Relaxed);
     let hlt_w = DIAG_HLT_WAKE.swap(0, Ordering::Relaxed);
+    let rm = ring::aggregate_metrics();
+    let fm = flusher::metrics_snapshot_and_reset();
     crate::kinfo!(
-        "PROF: sched 2s: graph_flush calls={} items={} avg_us={} max_us={} slow={} trylock_miss={} qlen={} q_hwm={} q_drop_state={} q_evict={} ipi_tx={} ipi_rx={} hlt_wake={}",
+        "PROF: sched 2s: graph_flush calls={} items={} avg_us={} max_us={} slow={} trylock_miss={} qlen={} q_hwm={} q_drop_state={} q_evict={} ipi_tx={} ipi_rx={} hlt_wake={} ring_push={} ring_drop={} ring_pend={} flush_ev={} flush_tmax={}",
         calls,
         items,
         avg_us,
@@ -289,7 +297,12 @@ fn maybe_log_scheduler_profile<R: BootRuntime>() {
         q.evicted_critical,
         ipi_tx,
         ipi_rx,
-        hlt_w
+        hlt_w,
+        rm.total_pushed,
+        rm.total_dropped,
+        rm.total_pending,
+        fm.flush_events,
+        fm.flush_ticks_max
     );
 }
 
@@ -335,6 +348,17 @@ pub fn init<R: BootRuntime>() {
         }
         blocking::init_blocking_hooks::<R>();
         graph_queue::init();
+        // Initialize per-CPU event rings
+        let cpu_total = if let Some(ptr) = *lock {
+            let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
+            sched.total_cpu_count
+        } else {
+            1
+        };
+        for cpu in 0..cpu_total {
+            ring::init_ring(cpu);
+        }
+        crate::kinfo!("  Initialized {} event ring(s)", cpu_total);
         crate::contract!("Scheduler initialized");
     }
 }
@@ -809,10 +833,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;
-                // Hot-path graph emission disabled — fires on every context
-                // switch and overwhelms the queue.  Lifecycle events (block,
-                // sleep, exit) still update the graph.
-                // graphify::update_task_state(old_task.id, "runnable");
+                // Hot-path emission re-enabled via event ring (lock-free push)
+                ring::push_event(cpu_idx, events::SchedEvent::StateChanged {
+                    tid: old_task.id,
+                    state_ptr: "runnable".as_ptr() as u64,
+                    timestamp: crate::runtime::<R>().mono_ticks(),
+                });
             }
             new_task.state = TaskState::Running;
             new_task.last_cpu = Some(cpu_idx);
@@ -821,9 +847,13 @@ impl<R: BootRuntime> types::Scheduler<R> {
             *crate::task::scheduler::vm::CURRENT_MAPPINGS[cpu_idx].lock() = 
                 Some(new_task.mappings.clone());
 
-            // Hot-path graph emissions disabled — see comment above.
-            // graphify::update_task_state(new_task.id, "running");
-            // graphify::update_task_location(new_task.id, cpu_idx);
+            // Hot-path emissions re-enabled via lock-free event ring
+            ring::push_event(cpu_idx, events::SchedEvent::TaskRan {
+                tid: new_task.id,
+                cpu: cpu_idx as u16,
+                ticks: 0,
+                timestamp: crate::runtime::<R>().mono_ticks(),
+            });
 
             old_task.simd.save(crate::runtime::<R>());
             new_task.simd.restore(crate::runtime::<R>());
@@ -1414,14 +1444,25 @@ extern "C" fn idle_task<R: BootRuntime>(_: usize) -> ! {
 
 /// Dedicated task for processing deferred graph work.
 /// Runs at low priority and yields after each flush.
+///
+/// Phase 1: drain per-CPU event rings via the budgeted flusher
+/// Phase 2: drain legacy GraphWork queue
 extern "C" fn graph_worker_task<R: BootRuntime>(_: usize) -> ! {
     loop {
-        // Process any pending graph work
+        let rt = crate::runtime::<R>();
+        // Budget: up to 64 events or 2ms worth of ticks
+        let budget_ticks = 2 * rt.mono_freq_hz() / 1000;
+        let start = rt.mono_ticks();
+        let result = flusher::flush(64, budget_ticks, start);
+
+        // Process any legacy graph work items (including those just
+        // pushed by the flusher's translate_event calls)
         flush_graph_queue::<R>();
         maybe_log_scheduler_profile::<R>();
-        // Sleep between flushes — more frequent, smaller batches reduce
-        // per-call latency and contention.
-        sleep::sleep_ms::<R>(50);
+
+        // Adaptive sleep: shorter when there's work, longer when idle
+        let sleep_ms = if result.applied > 0 { 10 } else { 50 };
+        sleep::sleep_ms::<R>(sleep_ms);
     }
 }
 

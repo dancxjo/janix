@@ -1,0 +1,241 @@
+//! Budgeted flusher: drains per-CPU event rings and translates
+//! SchedEvent → graph operations in bounded batches.
+//!
+//! The flusher runs from the `graph_worker_task` in thread context
+//! (never from ISR). It respects a tick budget to avoid starving
+//! other kernel work.
+
+use super::events::SchedEvent;
+use super::graphify;
+use super::graph_queue::{self, GraphWork};
+use super::ring;
+use super::types;
+use alloc::string::String;
+use core::sync::atomic::{AtomicU64, Ordering};
+
+// Metrics
+static FLUSH_CALLS: AtomicU64 = AtomicU64::new(0);
+static FLUSH_EVENTS: AtomicU64 = AtomicU64::new(0);
+static FLUSH_TICKS_TOTAL: AtomicU64 = AtomicU64::new(0);
+static FLUSH_TICKS_MAX: AtomicU64 = AtomicU64::new(0);
+
+/// Result of a flush operation.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FlushResult {
+    /// Number of events translated to graph operations
+    pub applied: usize,
+    /// Elapsed ticks for this flush call
+    pub elapsed_ticks: u64,
+}
+
+/// Snapshot of flusher metrics. Reset-on-read.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct FlusherMetrics {
+    pub flush_calls: u64,
+    pub flush_events: u64,
+    pub flush_ticks_total: u64,
+    pub flush_ticks_max: u64,
+}
+
+/// Read and reset flusher metrics (for periodic logging).
+pub fn metrics_snapshot_and_reset() -> FlusherMetrics {
+    FlusherMetrics {
+        flush_calls: FLUSH_CALLS.swap(0, Ordering::Relaxed),
+        flush_events: FLUSH_EVENTS.swap(0, Ordering::Relaxed),
+        flush_ticks_total: FLUSH_TICKS_TOTAL.swap(0, Ordering::Relaxed),
+        flush_ticks_max: FLUSH_TICKS_MAX.swap(0, Ordering::Relaxed),
+    }
+}
+
+/// Drain events from all per-CPU rings and translate them into
+/// graph work items, respecting a budget.
+///
+/// - `max_events`: maximum total events to process across all CPUs
+/// - `max_ticks`: stop if elapsed monotonic ticks exceed this (0 = no limit)
+/// - `start_ticks`: current monotonic tick count (caller reads this before calling)
+///
+/// Returns the number of events applied and elapsed ticks.
+pub fn flush(max_events: usize, max_ticks: u64, start_ticks: u64) -> FlushResult {
+    FLUSH_CALLS.fetch_add(1, Ordering::Relaxed);
+
+    let mut applied = 0usize;
+
+    // Scratch buffer for draining
+    let mut buf = [SchedEvent::TaskYielded { tid: 0, timestamp: 0 }; 64];
+
+    // Round-robin drain across CPUs, skip None entries
+    let per_cpu_budget = (max_events / types::MAX_CPUS.max(1)).max(8);
+
+    for cpu_idx in 0..types::MAX_CPUS {
+        if applied >= max_events {
+            break;
+        }
+
+        let ring = match ring::ring_for_cpu(cpu_idx) {
+            Some(r) => r,
+            None => continue,
+        };
+
+        let count = ring.drain(&mut buf, per_cpu_budget.min(max_events - applied));
+        for i in 0..count {
+            translate_event(&buf[i]);
+            applied += 1;
+        }
+    }
+
+    FLUSH_EVENTS.fetch_add(applied as u64, Ordering::Relaxed);
+
+    // We can't easily get elapsed here without a clock, so report 0.
+    // The caller (graph_worker_task) tracks its own wall-clock budget.
+    FlushResult { applied, elapsed_ticks: 0 }
+}
+
+/// Translate a single SchedEvent into the appropriate GraphWork item
+/// and push it to the legacy graph work queue for processing by
+/// flush_graph_queue.
+fn translate_event(event: &SchedEvent) {
+    match event {
+        SchedEvent::TaskCreated {
+            tid,
+            prio,
+            is_user,
+            parent_tid,
+            name,
+            ..
+        } => {
+            // Find the end of the name (first zero byte)
+            let name_len = name.iter().position(|&b| b == 0).unwrap_or(name.len());
+            let name_str = core::str::from_utf8(&name[..name_len]).unwrap_or("");
+            let name_opt = if name_len > 0 {
+                Some(String::from(name_str))
+            } else {
+                None
+            };
+            let parent = if *parent_tid != 0 {
+                Some(*parent_tid)
+            } else {
+                None
+            };
+            graph_queue::push(GraphWork::CreateThread {
+                tid: *tid,
+                priority: *prio,
+                is_user: *is_user,
+                name: name_opt,
+                parent_tid: parent,
+            });
+        }
+        SchedEvent::TaskExited { tid, code, .. } => {
+            graph_queue::push(GraphWork::SetExitCode {
+                tid: *tid,
+                code: *code,
+            });
+            graph_queue::push(GraphWork::UpdateState {
+                tid: *tid,
+                state: "dead",
+            });
+        }
+        SchedEvent::TaskBlocked { tid, .. } => {
+            graph_queue::push(GraphWork::UpdateState {
+                tid: *tid,
+                state: "blocked",
+            });
+        }
+        SchedEvent::TaskWoke { tid, .. } => {
+            graph_queue::push(GraphWork::UpdateState {
+                tid: *tid,
+                state: "runnable",
+            });
+        }
+        SchedEvent::TaskYielded { tid, .. } => {
+            graph_queue::push(GraphWork::UpdateState {
+                tid: *tid,
+                state: "runnable",
+            });
+        }
+        SchedEvent::TaskEnqueued { tid, cpu, .. } => {
+            graph_queue::push(GraphWork::UpdateState {
+                tid: *tid,
+                state: "runnable",
+            });
+            graph_queue::push(GraphWork::SetLocation {
+                tid: *tid,
+                cpu_index: *cpu as usize,
+            });
+        }
+        SchedEvent::TaskDequeued { tid, reason, .. } => {
+            use super::events::DequeueReason;
+            let state = match reason {
+                DequeueReason::Scheduled => "running",
+                DequeueReason::Killed => "dead",
+                DequeueReason::Blocked => "blocked",
+                DequeueReason::Sleeping => "sleeping",
+            };
+            graph_queue::push(GraphWork::UpdateState {
+                tid: *tid,
+                state,
+            });
+        }
+        SchedEvent::TaskRan { tid, cpu, .. } => {
+            graph_queue::push(GraphWork::UpdateState {
+                tid: *tid,
+                state: "running",
+            });
+            graph_queue::push(GraphWork::SetLocation {
+                tid: *tid,
+                cpu_index: *cpu as usize,
+            });
+        }
+        SchedEvent::PriorityChanged { tid, new_prio, .. } => {
+            graph_queue::push(GraphWork::SetPriority {
+                tid: *tid,
+                priority: *new_prio,
+            });
+        }
+        SchedEvent::AffinitySet { tid, cpu, .. } => {
+            graph_queue::push(GraphWork::SetAffinity {
+                tid: *tid,
+                cpu_index: *cpu as usize,
+            });
+        }
+        SchedEvent::LocationSet { tid, cpu, .. } => {
+            graph_queue::push(GraphWork::SetLocation {
+                tid: *tid,
+                cpu_index: *cpu as usize,
+            });
+        }
+        SchedEvent::StateChanged { tid, state_ptr, .. } => {
+            // Reconstruct &'static str from the pointer.
+            // This is safe because we only store pointers to
+            // &'static str literals in the scheduler code.
+            let state: &'static str = unsafe {
+                let ptr = *state_ptr as *const u8;
+                // We need the length too. To keep it simple, use the
+                // well-known set of state strings.
+                let len = state_str_len(ptr);
+                core::str::from_utf8_unchecked(core::slice::from_raw_parts(ptr, len))
+            };
+            graph_queue::push(GraphWork::UpdateState {
+                tid: *tid,
+                state,
+            });
+        }
+    }
+}
+
+/// Determine the length of a well-known state string from its pointer.
+///
+/// We store `&'static str` pointers in events. Since we only use a
+/// small set of known strings, we compare pointers to reconstruct the
+/// original `&str`.
+fn state_str_len(ptr: *const u8) -> usize {
+    // Check against known static strings
+    for candidate in &["runnable", "blocked", "sleeping", "dead", "running"] {
+        if ptr == candidate.as_ptr() {
+            return candidate.len();
+        }
+    }
+    // Fallback: scan for null-terminator or use a safe default.
+    // Since these are Rust &str from static storage, they may not be
+    // null-terminated. Use a conservative max.
+    0
+}

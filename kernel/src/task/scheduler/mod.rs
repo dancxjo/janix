@@ -393,7 +393,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         wait_ticks: 0,
         base_priority: TaskPriority::Normal,
     };
-    sched.tasks.push(alloc::boxed::Box::new(task));
+    sched.insert_task(alloc::boxed::Box::new(task));
 
     // Boot task runs on CPU 0
     sched.per_cpu[0].current = Some(0);
@@ -427,8 +427,8 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         sched.per_cpu[i].idle_task = Some(idle_id);
 
         // Pin idle task to its CPU
-        if let Some(t) = sched.tasks.iter_mut().find(|t| t.id == idle_id) {
-            (**t).affinity = crate::task::Affinity::Pinned(i);
+        if let Some(t) = sched.get_task_mut(idle_id) {
+            t.affinity = crate::task::Affinity::Pinned(i);
         }
         graphify::set_affinity_node(idle_id, i);
         graphify::set_name(idle_id, &alloc::format!("idle/{}", i));
@@ -789,7 +789,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             .expect("prepare_schedule called without current task");
 
         if next_id == current_id {
-            let idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
+            let idx = self.get_task_index(current_id).unwrap();
             self.tasks[idx].state = TaskState::Running;
             return None;
         }
@@ -799,8 +799,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
         // Reset wait time and priority for the newly scheduled task (anti-starvation)
         self.reset_wait_time(next_id);
 
-        let old_idx = self.tasks.iter().position(|t| t.id == current_id).unwrap();
-        let new_idx = self.tasks.iter().position(|t| t.id == next_id).unwrap();
+        let old_idx = self.get_task_index(current_id).unwrap();
+        let new_idx = self.get_task_index(next_id).unwrap();
 
         let tasks_ptr = self.tasks.as_mut_ptr();
         unsafe {
@@ -858,7 +858,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             .and_then(|pc| pc.current)
             .expect("terminate_current called with no current task");
 
-        if let Some(idx) = self.tasks.iter().position(|t| t.id == current_id) {
+        if let Some(idx) = self.get_task_index(current_id) {
             self.tasks[idx].state = TaskState::Dead;
             self.tasks[idx].exit_code = Some(code);
 
@@ -885,7 +885,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
     }
 
     pub fn set_priority(&mut self, id: TaskId, priority: TaskPriority) {
-        if let Some(idx) = self.tasks.iter().position(|t| t.id == id) {
+        if let Some(idx) = self.get_task_index(id) {
             let old_priority = self.tasks[idx].priority;
             self.tasks[idx].priority = priority;
             self.tasks[idx].base_priority = priority; // Update base priority for anti-starvation
@@ -943,7 +943,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 let id = self.per_cpu[cpu_idx].runq[base_priority][i];
                 let mut promoted = false;
 
-                if let Some(task) = self.tasks.iter_mut().find(|t| t.id == id) {
+                if let Some(task) = self.get_task_mut(id) {
                     let boost = (task.wait_ticks / types::AGING_THRESHOLD_TICKS) as usize;
                     let boost = boost.min(types::MAX_PRIORITY_BOOST);
                     let eff = (task.base_priority as usize + boost)
@@ -996,7 +996,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             for i in 0..len {
                 let task_id = self.per_cpu[cpu_idx].runq[priority][i];
                 if Some(task_id) != current_id {
-                    if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+                    if let Some(task) = self.get_task_mut(task_id) {
                         if task.state == TaskState::Runnable {
                             task.wait_ticks = task.wait_ticks.saturating_add(1);
                         }
@@ -1015,7 +1015,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
     /// This ensures that aging only provides temporary priority boosts and doesn't
     /// permanently change a task's priority.
     fn reset_wait_time(&mut self, task_id: TaskId) {
-        if let Some(task) = self.tasks.iter_mut().find(|t| t.id == task_id) {
+        if let Some(task) = self.get_task_mut(task_id) {
             task.wait_ticks = 0;
             // Reset priority to base priority (remove any aging boost)
             task.priority = task.base_priority;
@@ -1051,8 +1051,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
         self.per_cpu[i].idle_task = Some(idle_id);
 
         // Pin idle task to its CPU
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == idle_id) {
-            (**t).affinity = crate::task::Affinity::Pinned(i);
+        if let Some(t) = self.get_task_mut(idle_id) {
+            t.affinity = crate::task::Affinity::Pinned(i);
         }
         graphify::set_affinity_node(idle_id, i);
         graphify::set_name(idle_id, &alloc::format!("idle/{}", i));
@@ -1130,9 +1130,7 @@ pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>
     let res = if let Some(ptr) = *lock {
         let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
         sched
-            .tasks
-            .iter()
-            .find(|t| t.id == id)
+            .get_task(id)
             .map(|t| (t.state, t.exit_code))
     } else {
         None
@@ -1251,7 +1249,7 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
             }
         }
 
-        if let Some(idx) = sched.tasks.iter().position(|t| t.id == tid) {
+        if let Some(idx) = sched.get_task_index(tid) {
             if sched.tasks[idx].state == TaskState::Dead {
                 rt.irq_restore(_irq);
                 return false; // Already dead
@@ -1543,7 +1541,7 @@ mod tests {
             process_info: None,
         };
         
-        sched.tasks.push(alloc::boxed::Box::new(task));
+        sched.insert_task(alloc::boxed::Box::new(task));
         sched.per_cpu[0].runq[TaskPriority::Low as usize].push_back(1);
         sched.per_cpu[0].current = Some(0); // Different task is running
         
@@ -1590,7 +1588,7 @@ mod tests {
             process_info: None,
         };
         
-        sched.tasks.push(alloc::boxed::Box::new(task));
+        sched.insert_task(alloc::boxed::Box::new(task));
         sched.per_cpu[0].runq[TaskPriority::Low as usize].push_back(1);
         sched.per_cpu[0].current = Some(0);
         
@@ -1649,7 +1647,7 @@ mod tests {
             process_info: None,
         };
         
-        sched.tasks.push(alloc::boxed::Box::new(task));
+        sched.insert_task(alloc::boxed::Box::new(task));
         
         // Reset wait time
         sched.reset_wait_time(1);
@@ -1724,8 +1722,8 @@ mod tests {
             process_info: None,
         };
 
-        sched.tasks.push(alloc::boxed::Box::new(normal_task));
-        sched.tasks.push(alloc::boxed::Box::new(rt_task));
+        sched.insert_task(alloc::boxed::Box::new(normal_task));
+        sched.insert_task(alloc::boxed::Box::new(rt_task));
         sched.per_cpu[0].current = Some(1); // Normal task is running
 
         // Put RT task in sleep queue with wake_tick in the past
@@ -1765,5 +1763,61 @@ mod tests {
             switch.from_tid, 1,
             "Scheduler should switch away from the Normal task"
         );
+    }
+
+    #[test]
+    fn test_sorted_insertion() {
+        static RUNTIME: MockRuntime = MockRuntime;
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.per_cpu.push(types::PerCpu::new());
+
+        // Helper to create dummy task
+        let make_task = |id: TaskId| {
+            crate::task::Task {
+                id,
+                state: TaskState::Runnable,
+                priority: TaskPriority::Normal,
+                base_priority: TaskPriority::Normal,
+                wait_ticks: 0,
+                exit_code: None,
+                is_user: false,
+                wake_pending: false,
+                affinity: Affinity::Any,
+                kstack_base: core::ptr::null_mut(),
+                kstack_size: 0,
+                kstack_top: 0,
+                ctx: Default::default(),
+                aspace: MockAddressSpace(0),
+                simd: crate::simd::SimdState::new(&RUNTIME),
+                stack_info: None,
+                mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                    crate::memory::mappings::MappingList::new(),
+                )),
+                timeslice_remaining: types::DEFAULT_TIMESLICE,
+                last_cpu: None,
+                name: [0; 32],
+                name_len: 0,
+                process_info: None,
+            }
+        };
+
+        // Insert tasks out of order
+        sched.insert_task(alloc::boxed::Box::new(make_task(10)));
+        sched.insert_task(alloc::boxed::Box::new(make_task(5)));
+        sched.insert_task(alloc::boxed::Box::new(make_task(20)));
+        sched.insert_task(alloc::boxed::Box::new(make_task(1)));
+
+        // Verify sorted order internally
+        assert_eq!(sched.tasks.len(), 4);
+        assert_eq!(sched.tasks[0].id, 1);
+        assert_eq!(sched.tasks[1].id, 5);
+        assert_eq!(sched.tasks[2].id, 10);
+        assert_eq!(sched.tasks[3].id, 20);
+
+        // Verify lookups work
+        assert!(sched.get_task(10).is_some());
+        assert!(sched.get_task(5).is_some());
+        assert!(sched.get_task(1).is_some());
+        assert!(sched.get_task(99).is_none());
     }
 }

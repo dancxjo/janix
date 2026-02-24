@@ -101,7 +101,7 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: priority,
         };
 
-        self.tasks.push(alloc::boxed::Box::new(task));
+        self.insert_task(alloc::boxed::Box::new(task));
         self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
 
         // If the target CPU is not the current one, send an IPI to wake it up
@@ -210,7 +210,7 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: priority,
         };
 
-        self.tasks.push(alloc::boxed::Box::new(task));
+        self.insert_task(alloc::boxed::Box::new(task));
         self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
 
         // If the target CPU is not the current one, send an IPI to wake it up
@@ -301,7 +301,7 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: priority,
         };
 
-        self.tasks.push(alloc::boxed::Box::new(task));
+        self.insert_task(alloc::boxed::Box::new(task));
         self.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
 
         // If the target CPU is not the current one, send an IPI to wake it up
@@ -455,7 +455,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     }));
 
     // Store name and process_info on the task struct
-    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
+    if let Some(task) = sched.get_task_mut(id) {
         let bytes = module.name.as_bytes();
         let len = bytes.len().min(32);
         task.name[..len].copy_from_slice(&bytes[..len]);
@@ -570,7 +570,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     }));
 
     // Store name and process_info on the task struct
-    if let Some(task) = sched.tasks.iter_mut().find(|t| t.id == id) {
+    if let Some(task) = sched.get_task_mut(id) {
         let bytes = module.name.as_bytes();
         let len = bytes.len().min(32);
         task.name[..len].copy_from_slice(&bytes[..len]);

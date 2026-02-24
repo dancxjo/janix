@@ -189,7 +189,7 @@ smoke:
 # --- Vendored Rust Standard Library ---
 
 # The commit hash of rust-lang/rust matching our nightly toolchain
-rust_commit := "9e79395f92bff6a8f536430e42a4beae69f60ff8"
+rust_commit := "18d13b5332916ffca8eadb9106d54b5b434e9978"
 
 # Fetch (shallow clone) the Rust source tree into vendor/rust/
 fetch-rust:

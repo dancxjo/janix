@@ -34,7 +34,7 @@ pub struct TaskSchedFields {
     pub base_priority: TaskPriority,
     pub timeslice_remaining: u32,
     pub affinity: Affinity,
-    pub wait_ticks: u64,
+    pub enqueued_at_tick: u64,
     pub last_cpu: Option<usize>,
 }
 

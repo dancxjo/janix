@@ -102,6 +102,7 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
     if let Some(task) = crate::task::registry::get_task_mut::<R>(tid) {
         if task.state == TaskState::Blocked {
             task.state = TaskState::Runnable;
+            task.enqueued_at_tick = super::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed);
             let priority = task.priority;
             let affinity = task.affinity;
 

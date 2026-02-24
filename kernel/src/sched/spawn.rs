@@ -97,7 +97,7 @@ impl<R: BootRuntime> Scheduler<R> {
             name: [0; 32],
             name_len: 0,
             process_info: None,
-            wait_ticks: 0,
+            enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
         };
 
@@ -108,7 +108,7 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: task.base_priority,
             timeslice_remaining: task.timeslice_remaining,
             affinity: task.affinity,
-            wait_ticks: task.wait_ticks,
+            enqueued_at_tick: task.enqueued_at_tick,
             last_cpu: task.last_cpu,
         };
         self.state.insert_task(sched_fields);
@@ -217,7 +217,7 @@ impl<R: BootRuntime> Scheduler<R> {
             name: [0; 32],
             name_len: 0,
             process_info: parent_pinfo,
-            wait_ticks: 0,
+            enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
         };
 
@@ -228,7 +228,7 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: task.base_priority,
             timeslice_remaining: task.timeslice_remaining,
             affinity: task.affinity,
-            wait_ticks: task.wait_ticks,
+            enqueued_at_tick: task.enqueued_at_tick,
             last_cpu: task.last_cpu,
         };
         self.state.insert_task(sched_fields);
@@ -319,7 +319,7 @@ impl<R: BootRuntime> Scheduler<R> {
             name: [0; 32],
             name_len: 0,
             process_info: None,
-            wait_ticks: 0,
+            enqueued_at_tick: super::TICK_COUNT.load(Ordering::Relaxed),
             base_priority: priority,
         };
 
@@ -330,7 +330,7 @@ impl<R: BootRuntime> Scheduler<R> {
             base_priority: task.base_priority,
             timeslice_remaining: task.timeslice_remaining,
             affinity: task.affinity,
-            wait_ticks: task.wait_ticks,
+            enqueued_at_tick: task.enqueued_at_tick,
             last_cpu: task.last_cpu,
         };
         self.state.insert_task(sched_fields);

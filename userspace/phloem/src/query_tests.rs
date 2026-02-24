@@ -617,4 +617,34 @@ mod tests {
             panic!("Expected Number result for count");
         }
     }
+
+    #[test]
+    fn test_merge_edge_inline() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // 1. Merge two new nodes with an edge between them
+        let cmd1 = parse("MERGE (u:User {name: \"Alice\"})-[:KNOWS]->(v:User {name: \"Bob\"}) RETURN u, v").unwrap();
+        let res1 = ex.execute(cmd1);
+
+        // This is expected to fail initially until the executor is updated
+        assert!(res1.success, "Inline MERGE failed: {:?}", res1.rows);
+        assert_eq!(res1.rows.len(), 1);
+
+        let u_id = if let crate::ResultValue::Node(id) = res1.rows[0][0] { id } else { panic!("Expected Node ID for u") };
+        let v_id = if let crate::ResultValue::Node(id) = res1.rows[0][1] { id } else { panic!("Expected Node ID for v") };
+
+        assert_ne!(u_id, v_id);
+
+        // 2. Run the same command again (idempotence)
+        let cmd2 = parse("MERGE (u:User {name: \"Alice\"})-[:KNOWS]->(v:User {name: \"Bob\"}) RETURN u, v").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success);
+
+        let u_id_2 = if let crate::ResultValue::Node(id) = res2.rows[0][0] { id } else { panic!("Expected Node ID for u") };
+        let v_id_2 = if let crate::ResultValue::Node(id) = res2.rows[0][1] { id } else { panic!("Expected Node ID for v") };
+
+        assert_eq!(u_id, u_id_2);
+        assert_eq!(v_id, v_id_2);
+    }
 }

@@ -607,9 +607,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 let mut found_idle_q = None;
                 while let Some(id) = self.state.per_cpu[cpu_idx].runq[0].pop_front() {
                     self.metrics.pops += 1;
-                    let task_ref = crate::task::registry::get_registry::<R>().tasks
-                        .iter()
-                        .find(|t| t.id == id);
+                    let task_ref = crate::task::registry::get_task::<R>(id);
                     if task_ref.map_or(true, |t| t.state == TaskState::Dead) {
                         continue;
                     }

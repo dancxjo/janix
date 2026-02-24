@@ -122,8 +122,8 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             wake_tick,
         });
 
-        if let Ok(idx) = sched.tasks.binary_search_by_key(&current_id, |t| t.id) {
-            sched.tasks[idx].state = crate::task::TaskState::Blocked;
+        if let Some(task) = sched.get_task_mut(current_id) {
+            task.state = crate::task::TaskState::Blocked;
         }
 
         // Queue graph state update to sleeping

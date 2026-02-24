@@ -177,12 +177,28 @@ impl<R: BootRuntime> Scheduler<R> {
         self.tasks.len()
     }
 
+    pub fn get_task_index(&self, id: TaskId) -> Option<usize> {
+        self.tasks.binary_search_by_key(&id, |t| t.id).ok()
+    }
+
+    pub fn get_task_index_mut(&mut self, id: TaskId) -> Option<usize> {
+        self.tasks.binary_search_by_key(&id, |t| t.id).ok()
+    }
+
+    pub fn insert_task(&mut self, task: alloc::boxed::Box<Task<R>>) {
+        let id = task.id;
+        match self.tasks.binary_search_by_key(&id, |t| t.id) {
+            Ok(_) => panic!("Task ID {} already exists", id),
+            Err(idx) => self.tasks.insert(idx, task),
+        }
+    }
+
     pub fn get_task(&self, id: TaskId) -> Option<&Task<R>> {
-        self.tasks.binary_search_by_key(&id, |t| t.id).ok().map(|idx| &*self.tasks[idx])
+        self.get_task_index(id).map(|idx| &*self.tasks[idx])
     }
 
     pub fn get_task_mut(&mut self, id: TaskId) -> Option<&mut Task<R>> {
-        self.tasks.binary_search_by_key(&id, |t| t.id).ok().map(move |idx| &mut *self.tasks[idx])
+        self.get_task_index(id).map(move |idx| &mut *self.tasks[idx])
     }
 
     pub fn current_id(&self) -> Option<TaskId> {

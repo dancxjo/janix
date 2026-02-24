@@ -251,6 +251,17 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         wait_ticks: 0,
         base_priority: TaskPriority::Normal,
     };
+    let sched_fields = crate::sched::state::TaskSchedFields {
+        tid: task.id,
+        state: task.state,
+        priority: task.priority,
+        base_priority: task.base_priority,
+        timeslice_remaining: task.timeslice_remaining,
+        affinity: task.affinity,
+        wait_ticks: task.wait_ticks,
+        last_cpu: task.last_cpu,
+    };
+    sched.state.insert_task(sched_fields);
     crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
 
     // Boot task runs on CPU 0
@@ -637,7 +648,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             .expect("prepare_schedule called without current task");
 
         if next_id == current_id {
-            let idx = self.state.get_task_index(current_id).unwrap();
+            let idx = self.state.get_task_index(current_id).unwrap_or_else(|| { crate::kerror!("SchedTasks: {:?}", self.state.tasks.iter().map(|f| f.tid).collect::<alloc::vec::Vec<_>>()); panic!("failed to find current_id {} in get_task_index", current_id) });
             crate::task::registry::get_registry::<R>().tasks[idx].state = TaskState::Running;
             return None;
         }
@@ -647,8 +658,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
         // Reset wait time and priority for the newly scheduled task (anti-starvation)
         self.reset_wait_time(next_id);
 
-        let old_idx = self.state.get_task_index(current_id).unwrap();
-        let new_idx = self.state.get_task_index(next_id).unwrap();
+        let old_idx = self.state.get_task_index(current_id).unwrap_or_else(|| { crate::kerror!("SchedTasks: {:?}", self.state.tasks.iter().map(|f| f.tid).collect::<alloc::vec::Vec<_>>()); panic!("failed to find current_id {} in get_task_index", current_id) });
+        let new_idx = self.state.get_task_index(next_id).unwrap_or_else(|| { crate::kerror!("SchedTasks: {:?}", self.state.tasks.iter().map(|f| f.tid).collect::<alloc::vec::Vec<_>>()); panic!("failed to find next_id {} in get_task_index", next_id) });
 
         let tasks_ptr = crate::task::registry::get_registry::<R>().tasks.as_mut_ptr();
         unsafe {

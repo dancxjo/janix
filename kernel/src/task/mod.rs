@@ -98,6 +98,7 @@ pub struct Task<R: BootRuntime> {
 }
 
 pub fn init<R: BootRuntime>() {
+    crate::task::registry::init::<R>();
     crate::sched::init::<R>();
 
     crate::task::graph_queue::init();

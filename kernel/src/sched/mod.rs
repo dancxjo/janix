@@ -572,7 +572,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
         let per_cpu_len = self.state.per_cpu.len();
 
         // Collect tasks pinned to a different CPU so we can requeue them after scanning.
-        let mut misrouted: Vec<(usize, usize, TaskId)> = Vec::new(); // (priority, target_cpu, id)
+        const MAX_MISROUTED: usize = 32;
+        let mut misrouted: [(usize, usize, TaskId); MAX_MISROUTED] = [(0, 0, 0); MAX_MISROUTED];
+        let mut misrouted_count = 0;
 
         let mut next_id = None;
         // Priority scan — skip dead and misrouted tasks
@@ -588,7 +590,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 let task = task_ref.unwrap();
                 if let crate::task::Affinity::Pinned(target) = task.affinity {
                     if target != cpu_idx && target < per_cpu_len {
-                        misrouted.push((task.priority as usize, target, id));
+                        if misrouted_count < MAX_MISROUTED {
+                            misrouted[misrouted_count] = (task.priority as usize, target, id);
+                            misrouted_count += 1;
+                        }
                         continue;
                     }
                 }
@@ -614,7 +619,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     let task = task_ref.unwrap();
                     if let crate::task::Affinity::Pinned(target) = task.affinity {
                         if target != cpu_idx && target < per_cpu_len {
-                            misrouted.push((task.priority as usize, target, id));
+                            if misrouted_count < MAX_MISROUTED {
+                                misrouted[misrouted_count] = (task.priority as usize, target, id);
+                                misrouted_count += 1;
+                            }
                             continue;
                         }
                     }
@@ -628,7 +636,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                     idle
                 } else {
                     // Flush misrouted tasks before returning
-                    for (prio, target_cpu, id) in misrouted {
+                    for &(prio, target_cpu, id) in &misrouted[..misrouted_count] {
                         self.state.per_cpu[target_cpu].runq[prio].push_back(id);
                     }
                     return None;
@@ -637,7 +645,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
         };
 
         // Flush misrouted tasks to their correct CPU queues
-        for (prio, target_cpu, id) in misrouted {
+        for &(prio, target_cpu, id) in &misrouted[..misrouted_count] {
             self.state.per_cpu[target_cpu].runq[prio].push_back(id);
         }
 

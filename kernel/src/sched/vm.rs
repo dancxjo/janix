@@ -8,9 +8,11 @@ use alloc::sync::Arc;
 use spin::Mutex;
 use crate::memory::mappings::MappingList;
 
+use core::sync::atomic::{AtomicPtr, Ordering};
+
 #[allow(clippy::declare_interior_mutable_const)]
-const EMPTY_MAPPING: Mutex<Option<Arc<Mutex<MappingList>>>> = Mutex::new(None);
-pub static CURRENT_MAPPINGS: [Mutex<Option<Arc<Mutex<MappingList>>>>; 32] = [EMPTY_MAPPING; 32];
+const EMPTY_MAPPING: AtomicPtr<Mutex<MappingList>> = AtomicPtr::new(core::ptr::null_mut());
+pub static CURRENT_MAPPINGS: [AtomicPtr<Mutex<MappingList>>; 32] = [EMPTY_MAPPING; 32];
 
 pub fn add_user_mapping<R: BootRuntime>(region: VmRegionInfo) -> Result<(), Errno> {
     let rt = crate::runtime::<R>();
@@ -72,21 +74,21 @@ pub fn remove_user_mappings<R: BootRuntime>(
 
 pub fn check_user_mapping<R: BootRuntime>(addr: usize, len: usize, write: bool) -> bool {
     let cpu = super::current_cpu_index::<R>();
-    let mappings = CURRENT_MAPPINGS[cpu].lock().clone();
-    if let Some(m) = mappings {
-        m.lock().check(addr, len, write)
-    } else {
+    let ptr = CURRENT_MAPPINGS[cpu].load(Ordering::Acquire);
+    if ptr.is_null() {
         false
+    } else {
+        unsafe { (*ptr).lock().check(addr, len, write) }
     }
 }
 
 pub fn get_user_mapping_at<R: BootRuntime>(addr: usize) -> Option<VmRegionInfo> {
     let cpu = super::current_cpu_index::<R>();
-    let mappings = CURRENT_MAPPINGS[cpu].lock().clone();
-    if let Some(m) = mappings {
-        m.lock().find_at(addr)
-    } else {
+    let ptr = CURRENT_MAPPINGS[cpu].load(Ordering::Acquire);
+    if ptr.is_null() {
         None
+    } else {
+        unsafe { (*ptr).lock().find_at(addr) }
     }
 }
 

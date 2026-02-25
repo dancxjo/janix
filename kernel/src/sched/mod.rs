@@ -701,8 +701,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
             new_task.last_cpu = Some(cpu_idx);
 
             // Update the lock-free mapping cache for this CPU so check_user_mapping is fast
-            *crate::sched::vm::CURRENT_MAPPINGS[cpu_idx].lock() = 
-                Some(new_task.mappings.clone());
+            crate::sched::vm::CURRENT_MAPPINGS[cpu_idx].store(
+                alloc::sync::Arc::as_ptr(&new_task.mappings) as *mut _,
+                core::sync::atomic::Ordering::Release,
+            );
 
             // Hot-path emissions re-enabled via lock-free event ring
             ring::push_event(cpu_idx, crate::sched::events::SchedEvent::TaskRan {

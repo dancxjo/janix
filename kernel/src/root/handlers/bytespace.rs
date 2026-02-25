@@ -179,10 +179,10 @@ pub fn handle_bytespace_info(graph: &mut Graph, msg: &RootMsg, id: u64) -> Handl
         if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {
             let lock = handle.lock();
             // Return size in value, page_count in p0, flags in p1
-            msg.reply
-                .p0
-                .store(lock.page_count as u64, Ordering::Relaxed);
-            msg.reply.p1.store(lock.flags, Ordering::Relaxed);
+            if let Some(reply) = msg.reply.as_ref() {
+                reply.p0.store(lock.phys_base, Ordering::Relaxed);
+                reply.p1.store(lock.flags, Ordering::Relaxed);
+            }
             (0, lock.len as u64)
         } else {
             (-1, 0)
@@ -203,10 +203,10 @@ pub fn handle_bytespace_map(graph: &mut Graph, msg: &RootMsg, id: u64, tid: u64)
             bytespace::record_mapping(id, tid, user_va, lock.len);
 
             // Store phys_base in p0 for syscall handler to do actual mapping
-            msg.reply.p0.store(lock.phys_base, Ordering::Relaxed);
-            msg.reply
-                .p1
-                .store(lock.page_count as u64, Ordering::Relaxed);
+            if let Some(reply) = msg.reply.as_ref() {
+                reply.p0.store(lock.phys_base, Ordering::Relaxed);
+                reply.p1.store(lock.page_count as u64, Ordering::Relaxed);
+            }
 
             (0, user_va)
         } else {
@@ -230,7 +230,9 @@ pub fn handle_bytespace_phys(graph: &mut Graph, msg: &RootMsg, id: u64) -> Handl
         if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {
             let lock = handle.lock();
             // Return phys_base in value, len in p0
-            msg.reply.p0.store(lock.len as u64, Ordering::Relaxed);
+            if let Some(reply) = msg.reply.as_ref() {
+                reply.p0.store(lock.len as u64, Ordering::Relaxed);
+            }
             (0, lock.phys_base)
         } else {
             (-1, 0)

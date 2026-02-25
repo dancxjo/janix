@@ -211,7 +211,9 @@ pub fn handle_watch_next(graph: &mut Graph, msg: &crate::root::RootMsg, id: u64)
             core::ptr::copy_nonoverlapping(src, dst, payload.len());
         }
 
-        msg.reply.p0.store(match_cursor, Ordering::Relaxed);
+    if let Some(reply) = msg.reply.as_ref() {
+        reply.p0.store(match_cursor, Ordering::Relaxed);
+    }
 
         if let Some(watch) = graph.global_watches.get_mut(&id) {
             watch.cursor_seq = match_cursor + 1;

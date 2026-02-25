@@ -47,13 +47,13 @@ pub fn init() {
     WORK_QUEUE.lock().reserve(MAX_QUEUE_SIZE);
 }
 
-static DROPPED_UPDATE_STATE: AtomicUsize = AtomicUsize::new(0);
+static DROPPED_NON_CRITICAL: AtomicUsize = AtomicUsize::new(0);
 static EVICTED_CRITICAL: AtomicUsize = AtomicUsize::new(0);
 static HIGH_WATER_MARK: AtomicUsize = AtomicUsize::new(0);
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct QueueStats {
-    pub dropped_update_state: usize,
+    pub dropped_non_critical: usize,
     pub evicted_critical: usize,
     pub high_water_mark: usize,
     pub current_len: usize,
@@ -66,29 +66,94 @@ pub struct QueueStats {
 pub fn push(work: GraphWork) {
     let mut q = WORK_QUEUE.lock();
 
-    // Coalesce: if pushing UpdateState and one already exists for this TID,
-    // overwrite the state in-place so we only flush the latest transition.
-    if let GraphWork::UpdateState { tid, state } = &work {
-        for item in q.iter_mut() {
-            if let GraphWork::UpdateState {
-                tid: existing_tid,
-                state: existing_state,
-            } = item
-            {
-                if *existing_tid == *tid {
-                    *existing_state = state;
-                    return;
+    // Coalesce: if pushing a property update and one already exists for this TID,
+    // overwrite the property in-place so we only flush the latest transition.
+    let mut coalesced = false;
+    match &work {
+        GraphWork::UpdateState { tid, state } => {
+            for item in q.iter_mut() {
+                if let GraphWork::UpdateState { tid: existing_tid, state: existing_state } = item {
+                    if *existing_tid == *tid {
+                        *existing_state = *state;
+                        coalesced = true;
+                        break;
+                    }
                 }
             }
         }
+        GraphWork::SetExitCode { tid, code } => {
+            for item in q.iter_mut() {
+                if let GraphWork::SetExitCode { tid: existing_tid, code: existing_code } = item {
+                    if *existing_tid == *tid {
+                        *existing_code = *code;
+                        coalesced = true;
+                        break;
+                    }
+                }
+            }
+        }
+        GraphWork::SetPriority { tid, priority } => {
+            for item in q.iter_mut() {
+                if let GraphWork::SetPriority { tid: existing_tid, priority: existing_priority } = item {
+                    if *existing_tid == *tid {
+                        *existing_priority = *priority;
+                        coalesced = true;
+                        break;
+                    }
+                }
+            }
+        }
+        GraphWork::SetName { tid, name } => {
+            for item in q.iter_mut() {
+                if let GraphWork::SetName { tid: existing_tid, name: existing_name } = item {
+                    if *existing_tid == *tid {
+                        *existing_name = name.clone();
+                        coalesced = true;
+                        break;
+                    }
+                }
+            }
+        }
+        GraphWork::SetLocation { tid, cpu_index } => {
+            for item in q.iter_mut() {
+                if let GraphWork::SetLocation { tid: existing_tid, cpu_index: existing_cpu_index } = item {
+                    if *existing_tid == *tid {
+                        *existing_cpu_index = *cpu_index;
+                        coalesced = true;
+                        break;
+                    }
+                }
+            }
+        }
+        GraphWork::SetAffinity { tid, cpu_index } => {
+            for item in q.iter_mut() {
+                if let GraphWork::SetAffinity { tid: existing_tid, cpu_index: existing_cpu_index } = item {
+                    if *existing_tid == *tid {
+                        *existing_cpu_index = *cpu_index;
+                        coalesced = true;
+                        break;
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+
+    if coalesced {
+        return;
     }
 
     // If queue is full, drop non-critical items
     if q.len() >= MAX_QUEUE_SIZE {
         match &work {
-            GraphWork::UpdateState { .. } => {
-                // State updates are non-critical - drop silently
-                DROPPED_UPDATE_STATE.fetch_add(1, Ordering::Relaxed);
+            GraphWork::UpdateState { .. }
+            | GraphWork::SetExitCode { .. }
+            | GraphWork::SetPriority { .. }
+            | GraphWork::SetName { .. }
+            | GraphWork::SetLocation { .. }
+            | GraphWork::SetAffinity { .. } => {
+                // Property updates are non-critical - drop silently
+                DROPPED_NON_CRITICAL.fetch_add(1, Ordering::Relaxed);
                 return;
             }
             _ => {
@@ -126,7 +191,7 @@ pub fn drain_n(n: usize) -> VecDeque<GraphWork> {
 pub fn stats_snapshot() -> QueueStats {
     let len = WORK_QUEUE.lock().len();
     QueueStats {
-        dropped_update_state: DROPPED_UPDATE_STATE.load(Ordering::Relaxed),
+        dropped_non_critical: DROPPED_NON_CRITICAL.load(Ordering::Relaxed),
         evicted_critical: EVICTED_CRITICAL.load(Ordering::Relaxed),
         high_water_mark: HIGH_WATER_MARK.load(Ordering::Relaxed),
         current_len: len,

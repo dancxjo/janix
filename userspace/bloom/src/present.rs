@@ -607,9 +607,16 @@ impl Presenter for DriverPresenter {
 
     fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
         let mut buf = [0u8; 128];
-        if let Some(total) = drvproto::encode_message(&mut buf, drvproto::MSG_ACQUIRE, &[]) {
-            let _ = port_send(self.req_write, &buf[..total]);
-        }
+        let mut wait_ticks = 0;
+
+        let send_acquire = |req_write: stem::syscall::PortHandle| {
+            let mut buf = [0u8; 128];
+            if let Some(total) = drvproto::encode_message(&mut buf, drvproto::MSG_ACQUIRE, &[]) {
+                let _ = port_send(req_write, &buf[..total]);
+            }
+        };
+
+        send_acquire(self.req_write);
 
         // Synchronous wait for ACQUIRED
         loop {
@@ -637,6 +644,14 @@ impl Presenter for DriverPresenter {
                     self.handle_message(msg_type, &payload_vec);
                 }
             }
+            
+            wait_ticks += 1;
+            if wait_ticks == 60 {
+                wait_ticks = 0;
+                stem::info!("bloom: presenter stuck waiting for ACQUIRED, resending ACQUIRE...");
+                send_acquire(self.req_write);
+            }
+            
             stem::yield_now();
         }
     }

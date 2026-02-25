@@ -31,7 +31,7 @@ macro_rules! wait_reply_spin {
                 core::hint::spin_loop();
             } else {
                 unsafe {
-                    crate::sched::sleep_ticks_current(1);
+                    crate::sched::yield_now_current();
                 }
                 spins = 0;
             }

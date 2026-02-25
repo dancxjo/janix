@@ -565,7 +565,9 @@ fn main(arg: usize) -> ! {
 
         // Immediate acquire to satisfy driver's need for a bound context before first present
         let mut d_presenter = PresenterImpl::Driver(d);
+        stem::info!("[bloom] Requesting initial driver buffer...");
         let (acq_id, acq_w, acq_h, acq_s, _f, acq_age) = d_presenter.acquire_buffer();
+        stem::info!("[bloom] ACQUIRED RETURNED!");
 
         // Map the initial buffer
         if let Ok(ptr) = stem::thing::sys::bytespace_map(acq_id) {

@@ -159,11 +159,15 @@ fn maybe_log_profile<R: BootRuntime>() {
     let hlt_w = crate::sched::DIAG_HLT_WAKE.swap(0, Ordering::Relaxed);
     let rm = crate::sched::ring::aggregate_metrics();
     let fm = flusher::metrics_snapshot_and_reset();
+
+    let wait_blocks = graphify::WAIT_FOR_REPLY_BLOCKS.swap(0, Ordering::Relaxed);
+    let wait_wakes = graphify::WAIT_FOR_REPLY_WAKES.swap(0, Ordering::Relaxed);
+    let no_reply_batches = graphify::NO_REPLY_BATCHES_SENT.swap(0, Ordering::Relaxed);
     
     crate::kinfo!(
-        "PROF: sched 2s: graph_flush calls={} items={} avg_us={} max_us={} slow={} trylock_miss={} qlen={} q_hwm={} q_drop_state={} q_evict={} ipi_tx={} ipi_rx={} hlt_wake={} ring_push={} ring_drop={} ring_pend={} flush_ev={} flush_tmax={}",
-        calls, items, avg_us, max_us, slow, trylock_miss,
-        q.current_len, q.high_water_mark, q.dropped_update_state, q.evicted_critical,
+        "PROF: sched 2s: graph_flush calls={} items={} avg_us={} max_us={} slow={} trylock_miss={} waits={} wakes={} no_replies={} qlen={} q_hwm={} q_drop_props={} q_evict={} ipi_tx={} ipi_rx={} hlt_wake={} ring_push={} ring_drop={} ring_pend={} flush_ev={} flush_tmax={}",
+        calls, items, avg_us, max_us, slow, trylock_miss, wait_blocks, wait_wakes, no_reply_batches,
+        q.current_len, q.high_water_mark, q.dropped_non_critical, q.evicted_critical,
         ipi_tx, ipi_rx, hlt_w,
         rm.total_pushed, rm.total_dropped, rm.total_pending,
         fm.flush_events, fm.flush_ticks_max

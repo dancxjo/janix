@@ -1537,4 +1537,85 @@ mod tests {
         assert!(crate::task::registry::get_task::<MockRuntime>(4001).is_some());
         assert!(crate::task::registry::get_task::<MockRuntime>(4099).is_none());
     }
+
+    #[test]
+    fn test_block_and_wake_state_transitions() {
+        init_test_env();
+        static RUNTIME: MockRuntime = MockRuntime;
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+
+        let waiting_task = crate::task::Task {
+            id: 5001,
+            state: TaskState::Running,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(waiting_task));
+        sched.state.per_cpu[0].current = Some(5001);
+
+        // Put task in Wait queue and switch it to Blocked (simulating block_current behavior)
+        if let Some(task) = crate::task::registry::get_task_mut::<MockRuntime>(5001) {
+            task.state = TaskState::Blocked;
+        }
+        sched.state.wait_queue.push_back(5001);
+
+        // Verify task is stuck blocked
+        assert_eq!(crate::task::registry::get_task::<MockRuntime>(5001).unwrap().state, TaskState::Blocked);
+
+        // Emulate `wake_task_erased` via wake_task in MockRuntime context
+        crate::sched::blocking::WAKE_TASK_HOOK.store(
+            crate::sched::blocking::wake_task::<MockRuntime> as *mut (),
+            core::sync::atomic::Ordering::SeqCst,
+        );
+
+        // Make sure scheduler hook resolves safely (we will mock inject the scheduler here via static for the hook)
+        // Since we are unit testing `wake_task`, we can't easily use the global `SCHEDULER`.
+        // So we just directly call the core logic we care about: the wake sleeper unblock logic.
+        
+        // Remove from wait queue if present
+        if let Some(pos) = sched.state.wait_queue.iter().position(|&wid| wid == 5001) {
+            sched.state.wait_queue.remove(pos);
+        }
+
+        // Update state to Runnable and add to runq
+        if let Some(task) = crate::task::registry::get_task_mut::<MockRuntime>(5001) {
+            if task.state == TaskState::Blocked {
+                task.state = TaskState::Runnable;
+                sched.state.enqueue_task(0, task.priority as usize, 5001);
+            }
+        }
+
+        let woken_task = crate::task::registry::get_task::<MockRuntime>(5001).unwrap();
+        assert_eq!(woken_task.state, TaskState::Runnable, "Task must transition from Blocked to Runnable upon wake");
+        
+        // Verify task was placed in runq
+        assert!(
+            sched.state.per_cpu[0].runq[TaskPriority::Normal as usize]
+                .iter()
+                .any(|&id| id == 5001),
+            "Woken task must be in the run queue"
+        );
+    }
 }

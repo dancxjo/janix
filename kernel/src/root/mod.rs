@@ -233,7 +233,7 @@ impl ReplyCell {
 
 pub struct RootMsg {
     pub op: RootOp,
-    pub reply: Arc<ReplyCell>,
+    pub reply: Option<Arc<ReplyCell>>,
 }
 
 /// Maximum inbox size to prevent OOM from unbounded queue growth.
@@ -265,7 +265,7 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
 
     let msg = RootMsg {
         op,
-        reply: reply.clone(),
+        reply: Some(reply.clone()),
     };
 
     if let Some(q) = ROOT_INBOX.lock().as_mut() {
@@ -297,6 +297,39 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
         panic!("Root inbox not initialized");
     }
     reply
+}
+
+pub fn enqueue_no_reply(op: RootOp) {
+    let is_log_event = matches!(op, RootOp::LogEvent { .. });
+
+    let msg = RootMsg {
+        op,
+        reply: None,
+    };
+
+    if let Some(q) = ROOT_INBOX.lock().as_mut() {
+        if q.len() >= MAX_INBOX_SIZE {
+            if is_log_event {
+                INBOX_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
+                return;
+            }
+            while q.len() >= MAX_INBOX_SIZE {
+                q.pop_front();
+            }
+        }
+
+        q.push_back(msg);
+        let tid = ROOT_TID.load(Ordering::Relaxed);
+        if tid != 0 {
+            if ROOT_ASLEEP.swap(false, Ordering::Acquire) {
+                unsafe {
+                    crate::sched::wake_task_erased(tid);
+                }
+            }
+        }
+    } else {
+        panic!("Root inbox not initialized");
+    }
 }
 
 /// Get count of dropped messages due to inbox overflow

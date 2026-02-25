@@ -162,14 +162,20 @@ fn handle_msg<R: BootRuntime>(
             batch,
             batch_scratch,
         );
-        msg.reply.status.store(result.status, Ordering::Relaxed);
-        msg.reply.value.store(result.seq, Ordering::Relaxed);
-        // Return the first created ID (if any) in p0 so callers can
-        // batch CreateNode + PropSet in a single IPC call.
-        if let Some(&first_id) = result.created_ids.first() {
-            msg.reply.p0.store(first_id, Ordering::Relaxed);
+        if let Some(reply) = msg.reply {
+            reply.status.store(result.status, Ordering::Relaxed);
+            reply.value.store(result.seq, Ordering::Relaxed);
+            // Return the first created ID (if any) in p0 so callers can
+            // batch CreateNode + PropSet in a single IPC call.
+            if let Some(&first_id) = result.created_ids.first() {
+                reply.p0.store(first_id, Ordering::Relaxed);
+            }
+            reply.done.store(1, Ordering::Release);
+            let waiter = reply.waiting_task.load(Ordering::Acquire);
+            if waiter != 0 {
+                unsafe { crate::sched::wake_task_erased(waiter); }
+            }
         }
-        msg.reply.done.store(1, Ordering::Release);
         return;
     }
 
@@ -322,7 +328,14 @@ fn handle_msg<R: BootRuntime>(
         ),
     };
 
-    msg.reply.status.store(status, Ordering::Relaxed);
-    msg.reply.value.store(value, Ordering::Relaxed);
-    msg.reply.done.store(1, Ordering::Release);
+    if let Some(reply) = msg.reply {
+        reply.status.store(status, Ordering::Relaxed);
+        reply.value.store(value, Ordering::Relaxed);
+        reply.done.store(1, Ordering::Release);
+
+        let waiter = reply.waiting_task.load(Ordering::Acquire);
+        if waiter != 0 {
+            unsafe { crate::sched::wake_task_erased(waiter); }
+        }
+    }
 }

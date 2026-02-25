@@ -7,7 +7,7 @@
 //! and `do_*` functions perform the actual graph operations.
 
 use crate::task::graph_queue::{self, GraphWork};
-use crate::root::{RootOp, enqueue};
+use crate::root::{RootOp, enqueue, enqueue_no_reply};
 use crate::task::TaskId;
 use abi::schema::{keys, kinds, rels};
 use core::sync::atomic::Ordering;
@@ -81,25 +81,36 @@ static INTERN_SLEEPING: AtomicU64 = AtomicU64::new(0);
 static INTERN_DEAD: AtomicU64 = AtomicU64::new(0);
 static INTERN_RUNNING: AtomicU64 = AtomicU64::new(0);
 
+pub static WAIT_FOR_REPLY_BLOCKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static WAIT_FOR_REPLY_WAKES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static NO_REPLY_BATCHES_SENT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
 fn wait_for_reply(reply: &alloc::sync::Arc<crate::root::ReplyCell>) -> u64 {
     let mut spins = 0;
-    let mut yields = 0u32;
     loop {
         if reply.done.load(Ordering::Acquire) != 0 {
             return reply.value.load(Ordering::Relaxed);
         }
         spins += 1;
-        if spins < 10_000 {
+        if spins < 100 {
             core::hint::spin_loop();
         } else {
-            unsafe {
-                crate::sched::yield_now_current();
-                if yields & 0x0f == 0x0f {
-                    crate::sched::sleep_ticks_current(1);
-                }
-            }
-            yields = yields.wrapping_add(1);
-            spins = 0;
+            break;
+        }
+    }
+
+    let my_tid = unsafe { crate::sched::current_tid_current() };
+    reply.waiting_task.store(my_tid, Ordering::Release);
+    WAIT_FOR_REPLY_BLOCKS.fetch_add(1, Ordering::Relaxed);
+
+    loop {
+        if reply.done.load(Ordering::Acquire) != 0 {
+            reply.waiting_task.store(0, Ordering::Relaxed);
+            WAIT_FOR_REPLY_WAKES.fetch_add(1, Ordering::Relaxed);
+            return reply.value.load(Ordering::Relaxed);
+        }
+        unsafe {
+            crate::sched::block_current_erased();
         }
     }
 }
@@ -391,8 +402,8 @@ pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
         return;
     }
 
-    let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
-    wait_for_reply(&reply);
+    enqueue_no_reply(RootOp::ApplyBatch { batch: bb.finish() });
+    NO_REPLY_BATCHES_SENT.fetch_add(1, Ordering::Relaxed);
 }
 
 pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
@@ -408,8 +419,7 @@ pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
         thing_id,
     );
 
-    let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
-    wait_for_reply(&reply);
+    enqueue_no_reply(RootOp::ApplyBatch { batch: bb.finish() });
 }
 
 /// Link a task to a bytespace it uses.
@@ -423,6 +433,5 @@ pub fn link_bytespace(thread_thing: u64, bytespace_thing: u64) {
         bytespace_thing,
     );
 
-    let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
-    wait_for_reply(&reply);
+    enqueue_no_reply(RootOp::ApplyBatch { batch: bb.finish() });
 }

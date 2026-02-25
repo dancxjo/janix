@@ -713,8 +713,6 @@ pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
         }
     }
 }
-use crate::kinfo;
-
 pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     use crate::root::graph::WatchFilter;
     use crate::root::query::PreparedStep;
@@ -722,7 +720,7 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     use abi::root::RootWatchFilter;
     use abi::types::WatchSpec;
 
-    kinfo!("sys_root_watch_open: ptr={:#x}", spec_ptr);
+    crate::kdebug!("sys_root_watch_open: ptr={:#x}", spec_ptr);
     let mut spec = WatchSpec::default();
     let spec_slice = unsafe {
         core::slice::from_raw_parts_mut(
@@ -730,13 +728,13 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
             core::mem::size_of::<WatchSpec>(),
         )
     };
-    kinfo!(
+    crate::kdebug!(
         "sys_root_watch_open: validating range len={}",
         spec_slice.len()
     );
     validate_user_range(spec_ptr, spec_slice.len(), false)?;
     unsafe { copyin(spec_slice, spec_ptr)? };
-    kinfo!(
+    crate::kdebug!(
         "sys_root_watch_open: copyin success. mode={} start_seq={}",
         spec.mode,
         spec.start_seq
@@ -755,7 +753,7 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
                 )
             };
             if unsafe { copyin(filter_slice, filter_ptr) }.is_ok() {
-                kinfo!(
+                crate::kdebug!(
                     "sys_root_watch_open: DECODED FILTER: flags={:#x} kind={} pred={} subj_lo={}",
                     abi_filter.flags,
                     abi_filter.kind_id,
@@ -765,7 +763,7 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
             }
         }
     } else {
-        kinfo!(
+        crate::kdebug!(
             "sys_root_watch_open: NO FILTER (filter_ptr={:#x} filter_len={})",
             spec.filter_ptr,
             spec.filter_len
@@ -774,7 +772,7 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
 
     // Validate mode enum (must be 0=QueryThenStream or 1=StreamOnly)
     if abi::types::WatchMode::from_u32(spec.mode).is_none() {
-        kinfo!("sys_root_watch_open: invalid mode={}", spec.mode);
+        crate::kdebug!("sys_root_watch_open: invalid mode={}", spec.mode);
         return Err(Errno::EINVAL);
     }
 
@@ -844,7 +842,7 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
 
         // Validate filter flags - reject unknown bits
         if (abi_filter.flags & !abi::root::WATCH_F_KNOWN_MASK) != 0 {
-            kinfo!(
+            crate::kdebug!(
                 "sys_root_watch_open: unknown filter flags={:#x}",
                 abi_filter.flags
             );

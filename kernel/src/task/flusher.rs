@@ -146,17 +146,11 @@ fn translate_event(event: &SchedEvent) {
                 state: "runnable",
             });
         }
-        SchedEvent::TaskYielded { tid, .. } => {
-            graph_queue::push(GraphWork::UpdateState {
-                tid: *tid,
-                state: "runnable",
-            });
+        SchedEvent::TaskYielded { .. } => {
+            // Yields are extremely high-frequency and don't represent a durable
+            // state transition. Skip graph updates here to reduce queue pressure.
         }
         SchedEvent::TaskEnqueued { tid, cpu, .. } => {
-            graph_queue::push(GraphWork::UpdateState {
-                tid: *tid,
-                state: "runnable",
-            });
             graph_queue::push(GraphWork::SetLocation {
                 tid: *tid,
                 cpu_index: *cpu as usize,

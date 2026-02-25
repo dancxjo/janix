@@ -83,17 +83,22 @@ static INTERN_RUNNING: AtomicU64 = AtomicU64::new(0);
 
 fn wait_for_reply(reply: &alloc::sync::Arc<crate::root::ReplyCell>) -> u64 {
     let mut spins = 0;
+    let mut yields = 0u32;
     loop {
         if reply.done.load(Ordering::Acquire) != 0 {
             return reply.value.load(Ordering::Relaxed);
         }
         spins += 1;
-        if spins < 1000000 {
+        if spins < 10_000 {
             core::hint::spin_loop();
         } else {
             unsafe {
-                crate::sched::sleep_ticks_current(1);
+                crate::sched::yield_now_current();
+                if yields & 0x0f == 0x0f {
+                    crate::sched::sleep_ticks_current(1);
+                }
             }
+            yields = yields.wrapping_add(1);
             spins = 0;
         }
     }

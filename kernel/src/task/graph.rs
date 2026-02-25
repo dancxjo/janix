@@ -1,5 +1,4 @@
 use crate::BootRuntime;
-use alloc::sync::Arc;
 
 use crate::task::{flusher, graph_queue, graphify};
 

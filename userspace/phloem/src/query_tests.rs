@@ -617,4 +617,18 @@ mod tests {
             panic!("Expected Number result for count");
         }
     }
+
+    #[test]
+    fn test_merge_edge_inline_nodes() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101})
+        // This should create 'a', 'b', and the edge 'REL'.
+        let cmd = parse("MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101}) RETURN a, b").unwrap();
+        let res = ex.execute(cmd);
+
+        assert!(res.success, "MERGE edge with inline nodes failed: {}", res.message);
+        assert_eq!(res.rows.len(), 1);
+    }
 }

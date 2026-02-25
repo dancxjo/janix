@@ -381,9 +381,28 @@ impl<G: Graph> GraphExecutor<G> {
                 // Each entry is (src_id, rel_symbol_id, dst_id)
                 let mut edge_matches: Vec<(u64, u64, u64)> = Vec::new();
 
-                let src_id_opt = if let Some(ref props) = src.props.first() {
-                    if props.0 == "id" {
-                        self.resolve_value_as_u64(&props.1)
+                // OPTIMIZATION: If WHERE id(src) = $id or id(src) = 123, just look up that node
+                let src_id_opt = if let Some(ref expr) = where_clause {
+                    if let crate::gql::Expression::Eq(left, right) = expr {
+                        let mut target_id = None;
+                        if let (
+                            crate::gql::Expression::IdFunc(var),
+                            crate::gql::Expression::Value(val),
+                        ) = (&**left, &**right)
+                        {
+                            if Some(var) == src.var.as_ref() {
+                                target_id = self.resolve_value_as_u64(val);
+                            }
+                        } else if let (
+                            crate::gql::Expression::Value(val),
+                            crate::gql::Expression::IdFunc(var),
+                        ) = (&**left, &**right)
+                        {
+                            if Some(var) == src.var.as_ref() {
+                                target_id = self.resolve_value_as_u64(val);
+                            }
+                        }
+                        target_id
                     } else {
                         None
                     }

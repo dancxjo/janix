@@ -631,4 +631,23 @@ mod tests {
         assert!(res.success, "MERGE edge with inline nodes failed: {}", res.message);
         assert_eq!(res.rows.len(), 1);
     }
+
+    #[test]
+    fn test_match_edge_with_id_property_confusion() {
+        let g = setup_mock();
+        // Node 1 has internal ID 1. Let's give it a property "id" = 999.
+        g.set_prop(1, "id", 999);
+
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // MATCH (a {id: 999})-[]->(b)
+        // This should find node 1 (because it has prop id=999) and its edges.
+        // But if the optimization kicks in, it might look for internal node 999!
+        let cmd = parse("MATCH (a {id: 999})-[]->(b) RETURN a, b").unwrap();
+        let res = ex.execute(cmd);
+
+        assert!(res.success);
+        // Should find edges from node 1.
+        assert!(!res.rows.is_empty(), "Expected edges from node 1, but got empty result. The executor likely confused property 'id' with internal Node ID.");
+    }
 }

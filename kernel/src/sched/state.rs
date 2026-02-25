@@ -36,6 +36,7 @@ pub struct TaskSchedFields {
     pub affinity: Affinity,
     pub enqueued_at_tick: u64,
     pub last_cpu: Option<usize>,
+    pub runq_location: Option<(usize, usize)>,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -106,6 +107,45 @@ impl SchedState {
             Ok(_) => panic!("Task ID {} already exists in sched", fields.tid),
             Err(idx) => self.tasks.insert(idx, fields),
         }
+    }
+
+    pub fn enqueue_task(&mut self, cpu: usize, prio: usize, tid: TaskId) {
+        if let Some(pc) = self.per_cpu.get_mut(cpu) {
+            pc.runq[prio].push_back(tid);
+        }
+        if let Some(task) = self.get_task_mut(tid) {
+            task.runq_location = Some((cpu, prio));
+        }
+    }
+
+    pub fn dequeue_task_front(&mut self, cpu: usize, prio: usize) -> Option<TaskId> {
+        if let Some(pc) = self.per_cpu.get_mut(cpu) {
+            if let Some(tid) = pc.runq[prio].pop_front() {
+                if let Some(task) = self.get_task_mut(tid) {
+                    task.runq_location = None;
+                }
+                return Some(tid);
+            }
+        }
+        None
+    }
+
+    pub fn remove_task_from_runq(&mut self, tid: TaskId) -> bool {
+        let (cpu, prio) = match self.get_task(tid) {
+            Some(task) if task.runq_location.is_some() => task.runq_location.unwrap(),
+            _ => return false,
+        };
+
+        if let Some(pc) = self.per_cpu.get_mut(cpu) {
+            if let Some(pos) = pc.runq[prio].iter().position(|&id| id == tid) {
+                pc.runq[prio].remove(pos);
+                if let Some(task) = self.get_task_mut(tid) {
+                    task.runq_location = None;
+                }
+                return true;
+            }
+        }
+        false
     }
 }
 

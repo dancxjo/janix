@@ -120,7 +120,7 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
             } else {
                 0
             };
-            sched.state.per_cpu[safe_cpu].runq[priority as usize].push_back(tid);
+            sched.state.enqueue_task(safe_cpu, priority as usize, tid);
 
             // If the woken task has higher priority than the currently running
             // task on the target CPU, request a reschedule so we preempt

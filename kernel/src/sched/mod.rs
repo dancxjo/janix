@@ -260,6 +260,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         affinity: task.affinity,
         enqueued_at_tick: task.enqueued_at_tick,
         last_cpu: task.last_cpu,
+        runq_location: None,
     };
     sched.state.insert_task(sched_fields);
     crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
@@ -415,15 +416,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
                             idx % self.state.online_cpu_count
                         };
 
-                        let actual_cpu = if let Some(pc) = self.state.per_cpu.get_mut(target_cpu) {
-                            pc.runq[priority as usize].push_back(tid);
+                        let actual_cpu = if target_cpu < self.state.per_cpu.len() {
                             target_cpu
                         } else {
-                            if let Some(pc) = self.state.per_cpu.get_mut(0) {
-                                pc.runq[priority as usize].push_back(tid);
-                            }
                             0
                         };
+                        self.state.enqueue_task(actual_cpu, priority as usize, tid);
 
                         let current_prio = self.state.per_cpu.get(actual_cpu)
                             .and_then(|pc| pc.current)
@@ -534,7 +532,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 if task.state != TaskState::Dead {
                     let priority = task.priority;
                     // Push to LOCAL runq (we are yielding on this CPU)
-                    self.state.per_cpu[cpu_idx].runq[priority as usize].push_back(current_id);
+                    self.state.enqueue_task(cpu_idx, priority as usize, current_id);
                     self.metrics.pushes += 1;
                 }
             }
@@ -599,7 +597,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             }
 
             if let Some(p) = best_q {
-                let id = self.state.per_cpu[cpu_idx].runq[p].pop_front().unwrap();
+                let id = self.state.dequeue_task_front(cpu_idx, p).unwrap();
                 self.metrics.pops += 1;
                 
                 let task_ref = crate::task::registry::get_task::<R>(id);
@@ -628,7 +626,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             None => {
                 // Check Idle queue — skip dead and misrouted tasks
                 let mut found_idle_q = None;
-                while let Some(id) = self.state.per_cpu[cpu_idx].runq[0].pop_front() {
+                while let Some(id) = self.state.dequeue_task_front(cpu_idx, 0) {
                     self.metrics.pops += 1;
                     let task_ref = crate::task::registry::get_task::<R>(id);
                     if task_ref.map_or(true, |t| t.state == TaskState::Dead) {
@@ -655,7 +653,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 } else {
                     // Flush misrouted tasks before returning
                     for &(prio, target_cpu, id) in &misrouted[..misrouted_count] {
-                        self.state.per_cpu[target_cpu].runq[prio].push_back(id);
+                        self.state.enqueue_task(target_cpu, prio, id);
                     }
                     return None;
                 }
@@ -664,7 +662,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         // Flush misrouted tasks to their correct CPU queues
         for &(prio, target_cpu, id) in &misrouted[..misrouted_count] {
-            self.state.per_cpu[target_cpu].runq[prio].push_back(id);
+            self.state.enqueue_task(target_cpu, prio, id);
         }
 
         let current_id = self.state.per_cpu[cpu_idx]
@@ -784,17 +782,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
             // If it's runnable and in a runq, move it to the new runq
             if crate::task::registry::get_registry::<R>().tasks[idx].state == TaskState::Runnable {
-                // We need to find WHICH runq it is in if we don't track it.
-                // Brute force: check ALL per_cpu runqs? Or check affinity?
-                for pc in self.state.per_cpu.iter_mut() {
-                    if let Some(pos) = pc.runq[old_priority as usize]
-                        .iter()
-                        .position(|&rid| rid == id)
-                    {
-                        pc.runq[old_priority as usize].remove(pos);
-                        pc.runq[priority as usize].push_back(id);
-                        break;
-                    }
+                let loc = self.state.get_task(id).and_then(|t| t.runq_location);
+                if let Some((cpu, _)) = loc {
+                    self.state.remove_task_from_runq(id);
+                    self.state.enqueue_task(cpu, priority as usize, id);
                 }
             }
         }
@@ -819,11 +810,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
         );
 
         // Remove from run queues - idle tasks are special
-        for q in self.state.per_cpu.iter_mut().flat_map(|pc| pc.runq.iter_mut()) {
-            if let Some(pos) = q.iter().position(|&id| id == idle_id) {
-                q.remove(pos);
-            }
-        }
+        self.state.remove_task_from_runq(idle_id);
 
         // Set as this CPU's idle task
         self.state.per_cpu[i].idle_task = Some(idle_id);
@@ -845,10 +832,6 @@ impl<R: BootRuntime> types::Scheduler<R> {
         cr3_before: u64,
         cr3_after: u64,
     ) {
-        let idx = SWITCH_LOG_COUNT.fetch_add(1, Ordering::Relaxed);
-        if idx >= 20000 {
-            return;
-        }
 
         let cpu_idx = current_cpu_index::<R>();
         let pair = ((switch.from_tid as u64) << 32) | (switch.to_tid as u64);
@@ -1041,13 +1024,7 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
             rt.irq_restore(_irq);
             return false;
         }            // Remove from all run queues
-            for pc in sched.state.per_cpu.iter_mut() {
-                for q in pc.runq.iter_mut() {
-                    if let Some(pos) = q.iter().position(|&id| id == tid) {
-                        q.remove(pos);
-                    }
-                }
-            }
+            sched.state.remove_task_from_runq(tid);
 
             // Remove from sleep queue
             sched.state.sleep_queue.retain(|_, tids| {
@@ -1356,8 +1333,8 @@ mod tests {
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task_normal));
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task_low));
         
-        sched.state.per_cpu[0].runq[TaskPriority::Normal as usize].push_back(1001);
-        sched.state.per_cpu[0].runq[TaskPriority::Low as usize].push_back(1002);
+        sched.state.enqueue_task(0, TaskPriority::Normal as usize, 1001);
+        sched.state.enqueue_task(0, TaskPriority::Low as usize, 1002);
         
         // Simulate time advancing enough to give the Low task a boost of +2 (effective priority 3 = High)
         let now = types::AGING_THRESHOLD_TICKS * 2;
@@ -1441,7 +1418,7 @@ mod tests {
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task2));
         
         sched.state.per_cpu[0].current = Some(2001);
-        sched.state.per_cpu[0].runq[TaskPriority::Normal as usize].push_back(2002);
+        sched.state.enqueue_task(0, TaskPriority::Normal as usize, 2002);
         
         // Time moves forward
         TICK_COUNT.store(1000, core::sync::atomic::Ordering::Relaxed);

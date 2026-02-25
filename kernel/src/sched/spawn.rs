@@ -110,10 +110,11 @@ impl<R: BootRuntime> Scheduler<R> {
             affinity: task.affinity,
             enqueued_at_tick: task.enqueued_at_tick,
             last_cpu: task.last_cpu,
+            runq_location: None,
         };
         self.state.insert_task(sched_fields);
         crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
-        self.state.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
+        self.state.enqueue_task(safe_cpu, priority as usize, id);
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
@@ -230,10 +231,11 @@ impl<R: BootRuntime> Scheduler<R> {
             affinity: task.affinity,
             enqueued_at_tick: task.enqueued_at_tick,
             last_cpu: task.last_cpu,
+            runq_location: None,
         };
         self.state.insert_task(sched_fields);
         crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
-        self.state.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
+        self.state.enqueue_task(safe_cpu, priority as usize, id);
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {
@@ -332,10 +334,11 @@ impl<R: BootRuntime> Scheduler<R> {
             affinity: task.affinity,
             enqueued_at_tick: task.enqueued_at_tick,
             last_cpu: task.last_cpu,
+            runq_location: None,
         };
         self.state.insert_task(sched_fields);
         crate::task::registry::get_registry::<R>().insert(alloc::boxed::Box::new(task));
-        self.state.per_cpu[safe_cpu].runq[priority as usize].push_back(id);
+        self.state.enqueue_task(safe_cpu, priority as usize, id);
 
         // If the target CPU is not the current one, send an IPI to wake it up
         if safe_cpu != super::current_cpu_index::<R>() {

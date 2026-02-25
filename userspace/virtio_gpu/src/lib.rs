@@ -582,7 +582,7 @@ impl VirtioGpu {
         self.notify_queue(0);
 
         // Wait for response
-        for _ in 0..1000 {
+        for i in 0..10_000_000 {
             let completed = {
                 let vq = self.controlq.as_mut().ok_or("No controlq")?;
                 vq.poll_used().is_some()
@@ -606,7 +606,11 @@ impl VirtioGpu {
                     return Err("Submit 3D command failed");
                 }
             }
-            core::hint::spin_loop();
+            if i % 100 == 0 {
+                stem::yield_now();
+            } else {
+                core::hint::spin_loop();
+            }
         }
 
         Err("Submit 3D command timeout")
@@ -835,7 +839,7 @@ impl VirtioGpu {
         self.notify_queue(0);
 
         // Wait for response (poll used ring)
-        for _ in 0..1000 {
+        for i in 0..10_000_000 {
             let completed = {
                 let vq = self.controlq.as_mut().ok_or("No controlq")?;
                 vq.poll_used().is_some()
@@ -860,7 +864,11 @@ impl VirtioGpu {
                     return Err("Command failed");
                 }
             }
-            core::hint::spin_loop();
+            if i % 100 == 0 {
+                stem::yield_now();
+            } else {
+                core::hint::spin_loop();
+            }
         }
 
         Err("Command timeout")

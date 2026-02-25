@@ -180,3 +180,37 @@ Simultaneously, the developer experience has been upgraded with powerful new too
 
 *   **Root Registry Links**: Core system nodes (scheduler, host) are now directly linked from the root, allowing O(1) access and bypassing expensive traversals.
     *   *Artifacts*: `kernel/src/root/boot_register.rs`
+
+## Scheduler Modernization & Graph Integrity
+
+This update represents a major refactoring of the kernel scheduler, moving from a monolithic implementation to a modular, event-driven architecture. Key improvements include dynamic priority aging to prevent starvation, lock-free ring buffers for high-performance tracing, and a centralized run queue management system. These changes significantly improve system responsiveness under load and provide granular visibility into scheduling decisions. Concurrently, the Phloem graph database has been hardened with stricter test verification and fixes for `MERGE`, `COUNT`, and `WHERE` clauses, ensuring absolute data integrity for system state. New BDD scenarios (System Tour, Graph Exploration) have been added to validate these complex behaviors end-to-end.
+
+### 🚀 Scheduler Overhaul
+
+*   **Modular Architecture**: The scheduler has been decomposed into dedicated modules (`kernel/src/sched/`), separating concerns like sleep queues (`sleep.rs`), task spawning (`spawn.rs`), and event tracing (`events.rs`).
+    *   *Artifacts*: `kernel/src/sched/`
+
+*   **Dynamic Priority Aging**: Implemented a timestamp-based aging mechanism that dynamically calculates effective priority, eliminating manual aging passes and ensuring fair CPU time distribution.
+    *   *Artifacts*: `kernel/src/sched/state.rs`
+
+*   **Lock-Free Tracing**: Introduced a lock-free ring buffer for scheduler events, enabling low-overhead diagnostics without impacting system performance.
+    *   *Artifacts*: `kernel/src/sched/events.rs`
+
+*   **Sleep Queue Optimization**: Replaced linear scans with a `BTreeMap`-based sleep queue for O(log n) insertions and wakeups.
+    *   *Artifacts*: `kernel/src/sched/sleep.rs`
+
+### 🌿 Phloem (Graph DB) Hardening
+
+*   **Strict Query Verification**: Enhanced test infrastructure to strictly verify query results, including exact row counts and node properties, preventing "false positive" successes.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+*   **Complex Query Support**: Fixed and validated `MERGE` operations with inline edge creation, and added support for `COUNT` aggregates within `WHERE` clauses.
+    *   *Artifacts*: `userspace/phloem/src/planner.rs`
+
+### 🧪 System Verification
+
+*   **System Tour**: A comprehensive BDD scenario that validates the user's initial interaction with the system, ensuring critical UI elements and services are responsive.
+    *   *Artifacts*: `docs/behavior/features/system_tour.feature`
+
+*   **Graph Exploration**: New scenarios that verify the ability to traverse complex graph structures, ensuring the query engine correctly interprets deep relationships.
+    *   *Artifacts*: `docs/behavior/features/graph_exploration_journey.feature`

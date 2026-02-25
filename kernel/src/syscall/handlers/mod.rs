@@ -41,8 +41,8 @@ use core::sync::atomic::Ordering;
 /// Blocking call to Root service
 pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
     let reply = root_svc::enqueue(op);
-    let tid = unsafe { crate::sched::current_tid_current() };
     let mut spins = 0;
+    let mut sleep_count = 0;
 
     loop {
         let done = reply.done.load(Ordering::Acquire);
@@ -64,6 +64,10 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
         if spins < 1000000 {
             core::hint::spin_loop();
         } else {
+            sleep_count += 1;
+            if sleep_count % 1000 == 0 {
+                crate::kprintln!("root_call still blocked after {} sleeps! done={}", sleep_count, done);
+            }
             unsafe {
                 crate::sched::sleep_ticks_current(1);
             }

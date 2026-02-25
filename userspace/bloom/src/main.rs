@@ -494,14 +494,19 @@ fn main(arg: usize) -> ! {
     use stem::thing::sys::{bytespace_map, bytespace_unmap};
     let bs_id = ThingId::from_u64(arg as u64);
     let (mut arg_req, mut arg_resp, mut bristle_evt) = (0, 0, 0);
-    let mut display_bs_id = 0u64;
+    let mut display_bs_id = stem::thing::ThingId::default();
     if let Ok(ptr) = bytespace_map(bs_id) {
         let slice = unsafe { core::slice::from_raw_parts(ptr as *const u32, 16) };
         if slice[0] == 0xB100AA01 {
             arg_req = slice[1];
             arg_resp = slice[2];
             bristle_evt = slice[3];
-            display_bs_id = (slice[5] as u64) << 32 | (slice[4] as u64);
+            let mut id_bytes = [0u8; 16];
+            id_bytes[0..4].copy_from_slice(&slice[4].to_le_bytes());
+            id_bytes[4..8].copy_from_slice(&slice[5].to_le_bytes());
+            id_bytes[8..12].copy_from_slice(&slice[6].to_le_bytes());
+            id_bytes[12..16].copy_from_slice(&slice[7].to_le_bytes());
+            display_bs_id = stem::thing::ThingId(id_bytes);
         }
         let _ = bytespace_unmap(bs_id, ptr);
     } else {
@@ -516,8 +521,8 @@ fn main(arg: usize) -> ! {
         arg_req,
         arg_resp
     );
-    let target = if display_bs_id != 0 {
-        CompositorTarget::map_from_bytespace(ThingId::from_u64(display_bs_id), (arg_req, arg_resp))
+    let target = if display_bs_id.to_u64_lossy() != 0 {
+        CompositorTarget::map_from_bytespace(display_bs_id, (arg_req, arg_resp))
             .or_else(|_| CompositorTarget::discover_and_map((arg_req, arg_resp), 2000))
     } else {
         CompositorTarget::discover_and_map((arg_req, arg_resp), 2000)
@@ -588,6 +593,7 @@ fn main(arg: usize) -> ! {
 
     let _ = using_zero_copy; // Suppress unused warning
 
+    stem::info!("bloom: creating surface...");
     let mut surface = unsafe {
         surface::Surface::new(
             final_ptr,
@@ -597,13 +603,22 @@ fn main(arg: usize) -> ! {
             final_stride,
         )
     };
+    stem::info!("bloom: surface created!");
 
     // UI Root
     let mut roots = [ThingId::default(); 1];
+    stem::info!("bloom: finding UI CROWN...");
     let ui_crown = match stem::thing::sys::find(abi::schema::kinds::UI_CROWN, &mut roots) {
-        Ok(count) if count > 0 => roots[0],
-        _ => stem::ui::UiBuilder::create_root(),
+        Ok(count) if count > 0 => {
+            stem::info!("bloom: found existing UI CROWN");
+            roots[0]
+        },
+        _ => {
+            stem::info!("bloom: creating new UI CROWN");
+            stem::ui::UiBuilder::create_root()
+        },
     };
+    stem::info!("bloom: UI CROWN initialized!");
 
     let _ = ui_crown;
     let mut paint_pipeline = PaintPipeline::new();

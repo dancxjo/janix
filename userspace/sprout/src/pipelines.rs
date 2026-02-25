@@ -467,10 +467,12 @@ pub fn setup_compositor(
                 drv_req_write, drv_resp_read, input.evt_read
             );
 
-            // Display bytespace id (u64 split into two u32s)
-            let bs = display_bs_id.to_u64_lossy();
-            slice[4] = bs as u32;
-            slice[5] = (bs >> 32) as u32;
+            // Display bytespace id (128-bit)
+            let bs_bytes = display_bs_id.0;
+            slice[4] = u32::from_le_bytes(bs_bytes[0..4].try_into().unwrap());
+            slice[5] = u32::from_le_bytes(bs_bytes[4..8].try_into().unwrap());
+            slice[6] = u32::from_le_bytes(bs_bytes[8..12].try_into().unwrap());
+            slice[7] = u32::from_le_bytes(bs_bytes[12..16].try_into().unwrap());
 
             let _ = bytespace_unmap(boot_bs, ptr);
         }

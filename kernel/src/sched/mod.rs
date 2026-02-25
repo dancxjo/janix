@@ -429,7 +429,13 @@ impl<R: BootRuntime> types::Scheduler<R> {
                             .map(|t| t.priority as usize)
                             .unwrap_or(0);
                         if (priority as usize) > current_prio {
-                            self.state.need_resched = true;
+                            if actual_cpu == current_cpu_index::<R>() {
+                                self.state.need_resched = true;
+                            }
+                        }
+
+                        if actual_cpu != current_cpu_index::<R>() {
+                            crate::runtime::<R>().send_ipi(actual_cpu, 0x30);
                         }
 
                         crate::sched::ring::push_task_state::<R>(tid, "runnable");

@@ -25,6 +25,7 @@ pub fn sys_root_intern(ptr: usize, len: usize) -> SysResult<usize> {
     }
 
     let s = core::str::from_utf8(&buf[..len]).map_err(|_| Errno::EINVAL)?;
+    crate::ktrace!("ROOT_INTERN: '{}'", s);
     let msg = RootOp::Intern {
         name: String::from(s),
     };

@@ -20,3 +20,5 @@ iso_root/
 
 # Bran binaries
 /bran/bin-*
+
+*_log*.txt

@@ -334,6 +334,7 @@ fn main(arg: usize) -> ! {
         while let Some((header, payload)) = frames.next_message() {
             match header.msg_type {
                 drvproto::MSG_HELLO => {
+                    info!("display_virtio_gpu: received MSG_HELLO");
                     let want_caps = drvproto::decode_hello_payload_le(payload)
                         .map(|hello| hello.want_caps)
                         .unwrap_or(0);
@@ -353,6 +354,7 @@ fn main(arg: usize) -> ! {
                     }
                 }
                 drvproto::MSG_ACQUIRE => {
+                    info!("display_virtio_gpu: received MSG_ACQUIRE");
                     let mut buffer_age = 0;
                     let idx = next_buffer_idx;
 

@@ -56,16 +56,7 @@ pub fn yield_now<R: BootRuntime>() -> bool {
             );
         }
 
-        let cr3_before = rt.debug_active_aspace_root();
         rt.tasking().activate_address_space(switch.to_aspace);
-        let cr3_after = rt.debug_active_aspace_root();
-
-        {
-            let lock = SCHEDULER.lock();
-            let ptr = lock.expect("Scheduler not initialized");
-            let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-            sched.log_context_switch(&switch, cr3_before, cr3_after);
-        }
 
         unsafe {
             rt.tasking()
@@ -135,18 +126,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
     };
 
     if let Some(switch) = switch_params {
-        let cr3_before = rt.debug_active_aspace_root();
-
         rt.tasking().activate_address_space(switch.to_aspace);
-
-        let cr3_after = rt.debug_active_aspace_root();
-
-        {
-            let lock = SCHEDULER.lock();
-            let ptr = lock.expect("Scheduler not initialized");
-            let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-            sched.log_context_switch(&switch, cr3_before, cr3_after);
-        }
 
         unsafe {
             rt.tasking()
@@ -178,16 +158,7 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
         if let Some(switch) = switch_params {
             unsafe {
                 let _irq = rt.irq_disable();
-                let cr3_before = rt.debug_active_aspace_root();
                 rt.tasking().activate_address_space(switch.to_aspace);
-                let cr3_after = rt.debug_active_aspace_root();
-
-                {
-                    let lock = SCHEDULER.lock();
-                    let ptr = lock.expect("Scheduler not initialized");
-                    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-                    sched.log_context_switch(&switch, cr3_before, cr3_after);
-                }
 
                 rt.tasking()
                     .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);

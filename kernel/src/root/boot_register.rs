@@ -18,6 +18,27 @@ pub struct BootInfo<'a> {
     pub platform_profile: &'static str,
 }
 
+macro_rules! wait_reply_spin {
+    ($reply:expr) => {{
+        let mut spins = 0;
+        loop {
+            let done = $reply.done.load(core::sync::atomic::Ordering::Acquire);
+            if done != 0 {
+                break;
+            }
+            spins += 1;
+            if spins < 100_000 {
+                core::hint::spin_loop();
+            } else {
+                unsafe {
+                    crate::sched::sleep_ticks_current(1);
+                }
+                spins = 0;
+            }
+        }
+    }};
+}
+
 pub struct BootInventory {
     pub host: ThingId,
     pub kernel: ThingId,
@@ -33,15 +54,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             creator_tid: 0, // Boot process, no creator
             owner_thing_id: None, // Boot-created things are kernel-owned
         });
-        loop {
-            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-            if done != 0 {
-                return reply.value.load(core::sync::atomic::Ordering::Relaxed);
-            }
-            unsafe {
-                crate::sched::yield_now_current();
-            }
-        }
+        wait_reply_spin!(reply);
+        reply.value.load(core::sync::atomic::Ordering::Relaxed)
     };
 
     let set = |id: u64, key: &str, val: u64| {
@@ -66,15 +80,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             key: SymbolShell::Str(alloc::string::String::from(key)),
             value: val,
         });
-        loop {
-            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-            if done != 0 {
-                break;
-            }
-            unsafe {
-                crate::sched::yield_now_current();
-            }
-        }
+        wait_reply_spin!(reply);
     };
 
     let link = |src: u64, rel: &str, dst: u64| {
@@ -84,30 +90,15 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             rel: SymbolShell::Str(alloc::string::String::from(rel)),
             dst,
         });
-        loop {
-            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-            if done != 0 {
-                break;
-            }
-            unsafe {
-                crate::sched::yield_now_current();
-            }
-        }
+        wait_reply_spin!(reply);
     };
 
     let intern = |s: &str| -> u64 {
         let reply = enqueue(RootOp::Intern {
             name: alloc::string::String::from(s),
         });
-        loop {
-            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-            if done != 0 {
-                return reply.value.load(core::sync::atomic::Ordering::Relaxed);
-            }
-            unsafe {
-                crate::sched::yield_now_current();
-            }
-        }
+        wait_reply_spin!(reply);
+        reply.value.load(core::sync::atomic::Ordering::Relaxed)
     };
 
     let bytespace_create = |len: u64| -> u64 {
@@ -116,15 +107,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             flags: 0,
             format: 0,
         });
-        loop {
-            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-            if done != 0 {
-                return reply.value.load(core::sync::atomic::Ordering::Relaxed);
-            }
-            unsafe {
-                crate::sched::yield_now_current();
-            }
-        }
+        wait_reply_spin!(reply);
+        reply.value.load(core::sync::atomic::Ordering::Relaxed)
     };
 
     let bytespace_write = |id: u64, offset: u64, ptr: u64, len: u64| {
@@ -134,15 +118,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             ptr,
             len,
         });
-        loop {
-            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-            if done != 0 {
-                break;
-            }
-            unsafe {
-                crate::sched::yield_now_current();
-            }
-        }
+        wait_reply_spin!(reply);
     };
 
     // Use consistent numeric provenance (u8 -> u64)
@@ -226,15 +202,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     // 7. Modules
     let bytespace_create_ptr = |ptr: u64, len: u64| -> u64 {
         let reply = enqueue(RootOp::BytespaceCreateFromPtr { ptr, len });
-        loop {
-            let done = reply.done.load(core::sync::atomic::Ordering::Acquire);
-            if done != 0 {
-                return reply.value.load(core::sync::atomic::Ordering::Relaxed);
-            }
-            unsafe {
-                crate::sched::yield_now_current();
-            }
-        }
+        wait_reply_spin!(reply);
+        reply.value.load(core::sync::atomic::Ordering::Relaxed)
     };
 
     for (i, m) in info.modules.iter().enumerate() {

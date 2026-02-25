@@ -177,26 +177,33 @@ unsafe impl Send for EventRing {}
 // Per-CPU ring access
 // ============================================================================
 
-use super::types::MAX_CPUS;
-use spin::Mutex;
+use core::sync::atomic::AtomicPtr;
 
 /// Per-CPU event ring storage. Initialized during `scheduler::init()`.
-/// Each entry is `Some(&'static EventRing)` for online (or allocated) CPUs.
-static EVENT_RINGS: Mutex<[Option<&'static EventRing>; MAX_CPUS]> =
-    Mutex::new([None; MAX_CPUS]);
+/// Each entry is an `AtomicPtr<EventRing>`.
+static EVENT_RINGS: [AtomicPtr<EventRing>; super::types::MAX_CPUS] = {
+    // Array init workaround for non-Copy types in statics:
+    const PTR: AtomicPtr<EventRing> = AtomicPtr::new(core::ptr::null_mut());
+    [PTR; super::types::MAX_CPUS]
+};
 
 /// Initialize the event ring for a CPU. Allocates a ring on the heap
 /// and leaks it to get a `'static` reference.
 pub fn init_ring(cpu_index: usize) {
     let ring = alloc::boxed::Box::new(EventRing::new());
-    let ring_ref: &'static EventRing = alloc::boxed::Box::leak(ring);
-    EVENT_RINGS.lock()[cpu_index] = Some(ring_ref);
+    let ring_ptr = alloc::boxed::Box::into_raw(ring);
+    EVENT_RINGS[cpu_index].store(ring_ptr, Ordering::Release);
 }
 
 /// Get the event ring for a CPU, if initialized.
 #[inline]
 pub fn ring_for_cpu(cpu_index: usize) -> Option<&'static EventRing> {
-    EVENT_RINGS.lock()[cpu_index]
+    let ptr = EVENT_RINGS[cpu_index].load(Ordering::Acquire);
+    if ptr.is_null() {
+        None
+    } else {
+        Some(unsafe { &*ptr })
+    }
 }
 
 /// Push an event to the current CPU's ring buffer.
@@ -220,10 +227,9 @@ pub struct RingMetrics {
 
 /// Collect aggregate metrics across all CPU rings.
 pub fn aggregate_metrics() -> RingMetrics {
-    let rings = EVENT_RINGS.lock();
     let mut m = RingMetrics::default();
-    for ring_opt in rings.iter() {
-        if let Some(ring) = ring_opt {
+    for i in 0..super::types::MAX_CPUS {
+        if let Some(ring) = ring_for_cpu(i) {
             m.total_pushed += ring.events_pushed();
             m.total_dropped += ring.events_dropped();
             m.total_pending += ring.len();

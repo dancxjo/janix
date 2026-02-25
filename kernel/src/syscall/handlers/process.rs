@@ -116,6 +116,7 @@ pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
 }
 
 pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
+    let mut spins = 0;
     loop {
         let status_opt = unsafe { crate::sched::task_status_current(tid as u64) };
 
@@ -124,8 +125,14 @@ pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
                 if state == crate::task::TaskState::Dead {
                     return Ok(exit_code.unwrap_or(0) as usize);
                 }
-                unsafe {
-                    crate::sched::yield_now_current();
+                spins += 1;
+                if spins < 100_000 {
+                    core::hint::spin_loop();
+                } else {
+                    unsafe {
+                        crate::sched::sleep_ticks_current(1);
+                    }
+                    spins = 0;
                 }
             }
             None => {

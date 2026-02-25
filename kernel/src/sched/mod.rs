@@ -113,12 +113,7 @@ fn try_resched_if_needed<R: BootRuntime>() {
                 // Must drop lock before context switch!
                 drop(lock);
 
-                let cr3_before = rt.debug_active_aspace_root();
                 rt.tasking().activate_address_space(switch.to_aspace);
-                let cr3_after = rt.debug_active_aspace_root();
-
-                // Note: log_context_switch also uses lock internally but that's OK since we dropped ours
-                log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
                 unsafe {
                     rt.tasking()
@@ -825,58 +820,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
         if let Some(t) = crate::task::registry::get_task_mut::<R>(idle_id) {
             t.affinity = crate::task::Affinity::Pinned(i);
         }
-        crate::sched::ring::push_task_affinity::<R>(idle_id, i);
-        crate::sched::ring::push_task_name::<R>(idle_id, Some(&alloc::format!("idle/{}", i)));
     }
-
-    pub(crate) fn log_context_switch(
-        &mut self,
-        switch: &SwitchParams<
-            <R::Tasking as BootTasking>::Context,
-            <R::Tasking as BootTasking>::AddressSpace,
-        >,
-        cr3_before: u64,
-        cr3_after: u64,
-    ) {
-
-        let cpu_idx = current_cpu_index::<R>();
-        let pair = ((switch.from_tid as u64) << 32) | (switch.to_tid as u64);
-
-        if let Some(pc) = self.state.per_cpu.get_mut(cpu_idx) {
-            if pc.last_switch == pair {
-                return;
-            }
-            pc.last_switch = pair;
-        }
-
-        // crate::contract!(
-        //     "sched.switch: from={} to={} u_from={} u_to={} cr3_b={:#x} cr3_a={:#x}",
-        //     switch.from_tid,
-        //     switch.to_tid,
-        //     switch.from_user,
-        //     switch.to_user,
-        //     cr3_before,
-        //     cr3_after
-        // );
-    }
-}
-
-pub(crate) fn log_context_switch<R: BootRuntime>(
-    switch: &SwitchParams<
-        <R::Tasking as BootTasking>::Context,
-        <R::Tasking as BootTasking>::AddressSpace,
-    >,
-    cr3_before: u64,
-    cr3_after: u64,
-) {
-    let rt = crate::runtime::<R>();
-    let _irq = rt.irq_disable();
-    let lock = SCHEDULER.lock();
-    if let Some(ptr) = *lock {
-        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
-        sched.log_context_switch(switch, cr3_before, cr3_after);
-    }
-    rt.irq_restore(_irq);
 }
 
 pub fn set_priority<R: BootRuntime>(id: TaskId, priority: TaskPriority) {
@@ -977,16 +921,9 @@ pub fn exit<R: BootRuntime>(code: i32) {
         sched.terminate_current(code)
     };
 
-    #[cfg(any(feature = "sched_debug", debug_assertions))]
-    let cr3_before = rt.debug_active_aspace_root();
     unsafe {
         rt.tasking().activate_address_space(switch.to_aspace);
     }
-    #[cfg(any(feature = "sched_debug", debug_assertions))]
-    let cr3_after = rt.debug_active_aspace_root();
-    
-    #[cfg(any(feature = "sched_debug", debug_assertions))]
-    log_context_switch::<R>(&switch, cr3_before, cr3_after);
 
     unsafe {
         rt.tasking()

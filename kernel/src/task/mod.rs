@@ -177,8 +177,7 @@ pub fn preempt_enable<R: BootRuntime>() {
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
-        let cr3_after = rt.debug_active_aspace_root();
-        crate::sched::log_context_switch::<R>(&switch, cr3_before, cr3_after);
+        let _cr3_after = rt.debug_active_aspace_root();
 
         unsafe {
             rt.tasking()
@@ -210,8 +209,7 @@ pub fn resched_if_needed<R: BootRuntime>() {
 
         rt.tasking().activate_address_space(switch.to_aspace);
 
-        let cr3_after = rt.debug_active_aspace_root();
-        crate::sched::log_context_switch::<R>(&switch, cr3_before, cr3_after);
+        let _cr3_after = rt.debug_active_aspace_root();
 
         unsafe {
             rt.tasking()

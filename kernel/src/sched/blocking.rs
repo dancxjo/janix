@@ -52,18 +52,7 @@ pub fn block_current<R: BootRuntime>() {
     };
 
     if let Some(switch) = switch_params {
-        let cr3_before = rt.debug_active_aspace_root();
-
         rt.tasking().activate_address_space(switch.to_aspace);
-
-        let cr3_after = rt.debug_active_aspace_root();
-
-        {
-            let lock = SCHEDULER.lock();
-            let ptr = lock.expect("Scheduler not initialized");
-            let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-            sched.log_context_switch(&switch, cr3_before, cr3_after);
-        }
 
         unsafe {
             rt.tasking()

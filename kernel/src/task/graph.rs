@@ -3,38 +3,45 @@ use crate::BootRuntime;
 use crate::task::{flusher, graph_queue, graphify};
 
 // Flusher batch size
-const FLUSH_BATCH_SIZE: usize = 64;
+const FLUSH_BATCH_SIZE: usize = 2048;
 
-/// Background task that runs periodically to drain the lock-free event rings
-/// and execute synchronous graph operations.
-pub extern "C" fn graph_worker_task<R: BootRuntime>(_: usize) -> ! {
-    crate::kinfo!("SCHED: Graph worker task started");
+pub extern "C" fn ring_drain_task<R: BootRuntime>(_: usize) -> ! {
     let rt = crate::runtime::<R>();
-
     loop {
-        // Track time taken to enforce a budget (don't starve other tasks)
         let start = rt.mono_ticks();
         let budget_ticks = rt.mono_freq_hz() / 100; // 10ms budget
-
         let result = flusher::flush(FLUSH_BATCH_SIZE, budget_ticks, start);
-
-        flush_graph_queue::<R>();
-        maybe_log_profile::<R>();
-
         let actual_ticks = rt.mono_ticks().saturating_sub(start);
-
-        // Calculate sleep time based on whether we hit the batch limit or budget
-        let yield_time = if result.applied >= FLUSH_BATCH_SIZE || actual_ticks > budget_ticks {
-            // We have more work, yield briefly to avoid hogging CPU
-            // (1ms or next tick)
-            1
+        
+        let sleep_time = if result.applied >= FLUSH_BATCH_SIZE || actual_ticks > budget_ticks {
+            0
         } else {
-            // Ring was drained or mostly empty, sleep for a while (10ms)
             10
         };
 
-        crate::task::yield_now::<R>(); // just let the scheduler run
-        crate::sched::sleep_ms::<R>(yield_time);
+        crate::task::yield_now::<R>();
+        if sleep_time > 0 {
+            crate::sched::sleep_ms::<R>(sleep_time);
+        }
+    }
+}
+
+pub extern "C" fn graph_worker_task<R: BootRuntime>(_: usize) -> ! {
+    crate::kinfo!("SCHED: Graph worker task started");
+    loop {
+        let items_processed = flush_graph_queue::<R>();
+        maybe_log_profile::<R>();
+
+        let sleep_time = if items_processed >= 32 {
+            0
+        } else {
+            10
+        };
+
+        crate::task::yield_now::<R>();
+        if sleep_time > 0 {
+            crate::sched::sleep_ms::<R>(sleep_time);
+        }
     }
 }
 
@@ -48,7 +55,7 @@ static PROF_GRAPH_FLUSH_MAX_US: AtomicU64 = AtomicU64::new(0);
 static PROF_LAST_LOG_TICKS: AtomicU64 = AtomicU64::new(0);
 
 #[inline]
-fn update_max_u64(slot: &AtomicU64, val: u64) {
+pub(crate) fn update_max_u64(slot: &AtomicU64, val: u64) {
     let mut prev = slot.load(Ordering::Relaxed);
     while val > prev {
         match slot.compare_exchange_weak(prev, val, Ordering::Relaxed, Ordering::Relaxed) {
@@ -59,14 +66,13 @@ fn update_max_u64(slot: &AtomicU64, val: u64) {
 }
 
 #[inline]
-fn ticks_to_us<R: BootRuntime>(ticks: u64) -> u64 {
+pub(crate) fn ticks_to_us<R: BootRuntime>(ticks: u64) -> u64 {
     let rt = crate::runtime::<R>();
     let freq = rt.mono_freq_hz().max(1);
     ticks.saturating_mul(1_000_000) / freq
 }
 
-/// Process pending graph work items.
-fn flush_graph_queue<R: BootRuntime>() {
+fn flush_graph_queue<R: BootRuntime>() -> usize {
     use crate::root::graph_anchors;
     use crate::sched::types;
     use crate::task::graph_queue::GraphWork;
@@ -78,11 +84,11 @@ fn flush_graph_queue<R: BootRuntime>() {
 
     let sched_thing = match graph_anchors::scheduler_service() {
         Some(id) => id,
-        None => return,
+        None => return 0,
     };
 
     let work_items = graph_queue::drain_n(32);
-    if work_items.is_empty() { return; }
+    if work_items.is_empty() { return 0; }
     let item_count = work_items.len() as u64;
 
     let mut batch_items = alloc::vec::Vec::with_capacity(work_items.len());
@@ -92,13 +98,13 @@ fn flush_graph_queue<R: BootRuntime>() {
 
         match item {
             GraphWork::CreateThread { tid, priority, is_user, name, parent_tid } => {
-                if let Some(thing_id) = graphify::do_create_thread_node(
+                if let Some(thing_id) = graphify::do_create_thread_node::<R>(
                     tid, priority, is_user, name.as_deref(), sched_thing,
                 ) {
                     types::set_graph_thing_for_tid(tid, thing_id);
                     let parent_thing = parent_tid.and_then(|ptid| types::graph_thing_for_tid(ptid));
                     if let Some(parent_thing) = parent_thing {
-                        graphify::do_link_parent(thing_id, parent_thing, sched_thing);
+                        graphify::do_link_parent::<R>(thing_id, parent_thing, sched_thing);
                     }
                 }
             }
@@ -120,7 +126,7 @@ fn flush_graph_queue<R: BootRuntime>() {
     }
 
     if !batch_items.is_empty() {
-        graphify::do_flush_batch(&batch_items);
+        graphify::do_flush_batch::<R>(&batch_items);
     }
 
     let elapsed_us = ticks_to_us::<R>(rt.mono_ticks().wrapping_sub(t0));
@@ -131,6 +137,8 @@ fn flush_graph_queue<R: BootRuntime>() {
     if elapsed_us >= 5_000 {
         PROF_GRAPH_FLUSH_SLOW.fetch_add(1, Ordering::Relaxed);
     }
+    
+    item_count as usize
 }
 
 fn maybe_log_profile<R: BootRuntime>() {
@@ -162,11 +170,16 @@ fn maybe_log_profile<R: BootRuntime>() {
 
     let wait_blocks = graphify::WAIT_FOR_REPLY_BLOCKS.swap(0, Ordering::Relaxed);
     let wait_wakes = graphify::WAIT_FOR_REPLY_WAKES.swap(0, Ordering::Relaxed);
+    let wait_calls = graphify::WAIT_FOR_REPLY_CALLS.swap(0, Ordering::Relaxed);
+    let wait_us = graphify::WAIT_FOR_REPLY_US_TOTAL.swap(0, Ordering::Relaxed);
+    let wait_max = graphify::WAIT_FOR_REPLY_US_MAX.swap(0, Ordering::Relaxed);
     let no_reply_batches = graphify::NO_REPLY_BATCHES_SENT.swap(0, Ordering::Relaxed);
     
+    let wait_avg = if wait_calls > 0 { wait_us / wait_calls } else { 0 };
+    
     crate::kinfo!(
-        "PROF: sched 2s: graph_flush calls={} items={} avg_us={} max_us={} slow={} trylock_miss={} waits={} wakes={} no_replies={} qlen={} q_hwm={} q_drop_props={} q_evict={} ipi_tx={} ipi_rx={} hlt_wake={} ring_push={} ring_drop={} ring_pend={} flush_ev={} flush_tmax={}",
-        calls, items, avg_us, max_us, slow, trylock_miss, wait_blocks, wait_wakes, no_reply_batches,
+        "PROF: sched 2s: graph_flush calls={} items={} avg_us={} max_us={} slow={} wait=[{}us avg, {}us max] trylock_miss={} waits={} wakes={} no_replies={} qlen={} q_hwm={} q_drop_props={} q_evict={} ipi_tx={} ipi_rx={} hlt_wake={} ring_push={} ring_drop={} ring_pend={} flush_ev={} flush_tmax={}",
+        calls, items, avg_us, max_us, slow, wait_avg, wait_max, trylock_miss, wait_blocks, wait_wakes, no_reply_batches,
         q.current_len, q.high_water_mark, q.dropped_non_critical, q.evicted_critical,
         ipi_tx, ipi_rx, hlt_w,
         rm.total_pushed, rm.total_dropped, rm.total_pending,

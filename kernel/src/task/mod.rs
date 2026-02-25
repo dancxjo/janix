@@ -102,8 +102,13 @@ pub fn init<R: BootRuntime>() {
 
     crate::task::graph_queue::init();
 
-    // Spawn graph worker task
-    crate::kinfo!("  Creating graph worker task...");
+    crate::kinfo!("  Creating graph worker tasks...");
+    let _ring_drain_id = spawn::<R>(
+        crate::task::graph::ring_drain_task::<R>,
+        StartupArg::None,
+        TaskPriority::High,
+        Affinity::Any,
+    );
     let _graph_worker_id = spawn::<R>(
         crate::task::graph::graph_worker_task::<R>,
         StartupArg::None,

@@ -38,12 +38,14 @@ pub fn yield_now<R: BootRuntime>() -> bool {
         DIAG_CPU[cpu_idx].fetch_add(1, Ordering::Relaxed)
     } else { 999 };
     if diag_n < 20 {
+        /*
         crate::kdebug!(
             "DIAG yield_now: cpu={} switch={} has_work={}",
-            cpu_idx,
-            switch_params.is_some(),
+            crate::sched::current_cpu_index::<R>(),
+            yield_occurred,
             has_work
         );
+        */
     }
 
     if let Some(switch) = switch_params {

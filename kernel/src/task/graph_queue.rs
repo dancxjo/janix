@@ -40,7 +40,7 @@ static WORK_QUEUE: Mutex<VecDeque<GraphWork>> = Mutex::new(VecDeque::new());
 
 /// Maximum work queue size to prevent OOM from feedback loops
 /// (context switches generate more work items which cause more context switches)
-const MAX_QUEUE_SIZE: usize = 256;
+const MAX_QUEUE_SIZE: usize = 4096;
 
 /// Pre-allocate the queue to prevent memory allocations inside the ISR
 pub fn init() {

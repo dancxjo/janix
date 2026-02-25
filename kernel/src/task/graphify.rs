@@ -85,10 +85,21 @@ pub static WAIT_FOR_REPLY_BLOCKS: core::sync::atomic::AtomicU64 = core::sync::at
 pub static WAIT_FOR_REPLY_WAKES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 pub static NO_REPLY_BATCHES_SENT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
 
-fn wait_for_reply(reply: &alloc::sync::Arc<crate::root::ReplyCell>) -> u64 {
+pub static WAIT_FOR_REPLY_CALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static WAIT_FOR_REPLY_US_TOTAL: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static WAIT_FOR_REPLY_US_MAX: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+
+fn wait_for_reply<R: crate::BootRuntime>(reply: &alloc::sync::Arc<crate::root::ReplyCell>) -> u64 {
+    let rt = crate::runtime::<R>();
+    let t0 = rt.mono_ticks();
     let mut spins = 0;
     loop {
         if reply.done.load(Ordering::Acquire) != 0 {
+            let elapsed = rt.mono_ticks().wrapping_sub(t0);
+            let us = crate::task::graph::ticks_to_us::<R>(elapsed);
+            WAIT_FOR_REPLY_CALLS.fetch_add(1, Ordering::Relaxed);
+            WAIT_FOR_REPLY_US_TOTAL.fetch_add(us, Ordering::Relaxed);
+            crate::task::graph::update_max_u64(&WAIT_FOR_REPLY_US_MAX, us);
             return reply.value.load(Ordering::Relaxed);
         }
         spins += 1;
@@ -107,6 +118,13 @@ fn wait_for_reply(reply: &alloc::sync::Arc<crate::root::ReplyCell>) -> u64 {
         if reply.done.load(Ordering::Acquire) != 0 {
             reply.waiting_task.store(0, Ordering::Relaxed);
             WAIT_FOR_REPLY_WAKES.fetch_add(1, Ordering::Relaxed);
+            
+            let elapsed = rt.mono_ticks().wrapping_sub(t0);
+            let us = crate::task::graph::ticks_to_us::<R>(elapsed);
+            WAIT_FOR_REPLY_CALLS.fetch_add(1, Ordering::Relaxed);
+            WAIT_FOR_REPLY_US_TOTAL.fetch_add(us, Ordering::Relaxed);
+            crate::task::graph::update_max_u64(&WAIT_FOR_REPLY_US_MAX, us);
+            
             return reply.value.load(Ordering::Relaxed);
         }
         unsafe {
@@ -116,29 +134,29 @@ fn wait_for_reply(reply: &alloc::sync::Arc<crate::root::ReplyCell>) -> u64 {
 }
 
 /// Intern a string via the Root service (blocking).
-fn intern(s: &str) -> u64 {
+fn intern<R: crate::BootRuntime>(s: &str) -> u64 {
     let reply = enqueue(RootOp::Intern {
         name: alloc::string::String::from(s),
     });
-    wait_for_reply(&reply)
+    wait_for_reply::<R>(&reply)
 }
 
 /// Intern with per-string caching for the small set of known state strings.
 /// Falls back to the blocking `intern()` IPC for unknown strings.
-fn intern_cached(s: &'static str) -> u64 {
+fn intern_cached<R: crate::BootRuntime>(s: &'static str) -> u64 {
     let slot = match s {
         "runnable" => &INTERN_RUNNABLE,
         "blocked" => &INTERN_BLOCKED,
         "sleeping" => &INTERN_SLEEPING,
         "dead" => &INTERN_DEAD,
         "running" => &INTERN_RUNNING,
-        _ => return intern(s),
+        _ => return intern::<R>(s),
     };
     let cached = slot.load(Ordering::Relaxed);
     if cached != 0 {
         return cached;
     }
-    let id = intern(s);
+    let id = intern::<R>(s);
     slot.store(id, Ordering::Relaxed);
     id
 }
@@ -157,19 +175,19 @@ static SYM_REL_PINNED_TO: AtomicU64 = AtomicU64::new(0);
 static SYM_REL_CHILD_OF: AtomicU64 = AtomicU64::new(0);
 static SYM_REL_SPAWNED: AtomicU64 = AtomicU64::new(0);
 
-fn get_schema_sym(s: &'static str, slot: &AtomicU64) -> u64 {
+fn get_schema_sym<R: crate::BootRuntime>(s: &'static str, slot: &AtomicU64) -> u64 {
     let cached = slot.load(Ordering::Relaxed);
     if cached != 0 {
         return cached;
     }
-    let id = intern(s);
+    let id = intern::<R>(s);
     slot.store(id, Ordering::Relaxed);
     id
 }
 
 macro_rules! schema_sym {
     ($s:expr, $slot:ident) => {
-        get_schema_sym($s, &$slot)
+        get_schema_sym::<R>($s, &$slot)
     };
 }
 
@@ -286,7 +304,7 @@ impl BatchBuilder {
 ///
 /// Batches CreateNode + all PropSets + Link into a single ApplyBatch IPC call.
 /// The first created ID is returned via reply.p0.
-pub fn do_create_thread_node(
+pub fn do_create_thread_node<R: crate::BootRuntime>(
     tid: TaskId,
     priority: u8,
     is_user: bool,
@@ -313,11 +331,11 @@ pub fn do_create_thread_node(
     bb.set_prop_local(
         0,
         schema_sym!(keys::PROC_STATE, SYM_PROC_STATE),
-        intern_cached("runnable"),
+        intern_cached::<R>("runnable"),
     );
 
     if let Some(n) = name {
-        bb.set_prop_local(0, schema_sym!(keys::PROC_NAME, SYM_PROC_NAME), intern(n));
+        bb.set_prop_local(0, schema_sym!(keys::PROC_NAME, SYM_PROC_NAME), intern::<R>(n));
     }
 
     // Link to scheduler service
@@ -328,14 +346,14 @@ pub fn do_create_thread_node(
     );
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
-    wait_for_reply(&reply);
+    wait_for_reply::<R>(&reply);
     
     // The first created ID is returned in reply.p0 by the Root service.
     let id = reply.p0.load(Ordering::Relaxed);
     return if id != 0 { Some(id) } else { None };
 }
 
-pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
+pub fn do_flush_batch<R: crate::BootRuntime>(items: &[(u64, GraphWork)]) {
     if items.is_empty() {
         return;
     }
@@ -349,7 +367,7 @@ pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
                 bb.set_prop(
                     tid_node,
                     schema_sym!(keys::PROC_STATE, SYM_PROC_STATE),
-                    intern_cached(state),
+                    intern_cached::<R>(state),
                 );
             }
             GraphWork::SetExitCode { code, .. } => {
@@ -370,7 +388,7 @@ pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
                 bb.set_prop(
                     tid_node,
                     schema_sym!(keys::PROC_NAME, SYM_PROC_NAME),
-                    intern(name),
+                    intern::<R>(name),
                 );
             }
             GraphWork::SetLocation { cpu_index, .. } => {
@@ -406,7 +424,7 @@ pub fn do_flush_batch(items: &[(u64, GraphWork)]) {
     NO_REPLY_BATCHES_SENT.fetch_add(1, Ordering::Relaxed);
 }
 
-pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
+pub fn do_link_parent<R: crate::BootRuntime>(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
     let mut bb = BatchBuilder::new();
     bb.put_edge(
         thing_id,
@@ -424,7 +442,7 @@ pub fn do_link_parent(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
 
 /// Link a task to a bytespace it uses.
 #[allow(dead_code)]
-pub fn link_bytespace(thread_thing: u64, bytespace_thing: u64) {
+pub fn link_bytespace<R: crate::BootRuntime>(thread_thing: u64, bytespace_thing: u64) {
     static SYM_REL_USES_BYTESPACE: AtomicU64 = AtomicU64::new(0);
     let mut bb = BatchBuilder::new();
     bb.put_edge(

@@ -2203,3 +2203,61 @@ async fn gql_result_cell_is_node(
     );
     Ok(())
 }
+
+#[then(regex = r#"^row (\d+) column (\d+) of the GQL result should be string \"(.+)\"$"#)]
+async fn gql_result_cell_is_string(
+    world: &mut ThingOsWorld,
+    row_idx: usize,
+    col_idx: usize,
+    expected_val: String,
+) -> Result<(), StepError> {
+    let (_, body) = world
+        .last_http_response
+        .as_ref()
+        .ok_or(StepError("No HTTP response recorded".to_string()))?;
+
+    let json: serde_json::Value = serde_json::from_str(body)
+        .map_err(|e| StepError(format!("Failed to parse JSON: {}", e)))?;
+
+    let rows = json
+        .get("rows")
+        .and_then(|v| v.as_array())
+        .ok_or(StepError("Missing 'rows' array".to_string()))?;
+
+    let row = rows.get(row_idx).ok_or(StepError(format!(
+        "Row index {} out of bounds (len={})",
+        row_idx,
+        rows.len()
+    )))?;
+
+    let row_arr = row
+        .as_array()
+        .ok_or(StepError("Row is not an array".to_string()))?;
+
+    let cell = row_arr.get(col_idx).ok_or(StepError(format!(
+        "Column index {} out of bounds (len={})",
+        col_idx,
+        row_arr.len()
+    )))?;
+
+    // Handle different JSON types
+    if let Some(s) = cell.as_str() {
+        if s != expected_val {
+            return Err(StepError(format!(
+                "Expected string '{}', found '{}'",
+                expected_val, s
+            )));
+        }
+    } else {
+        return Err(StepError(format!(
+            "Expected string, found: {:?}",
+            cell
+        )));
+    }
+
+    eprintln!(
+        "│  │  │      ✅ Cell ({}, {}) is string '{}'",
+        row_idx, col_idx, expected_val
+    );
+    Ok(())
+}

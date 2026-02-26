@@ -650,4 +650,46 @@ mod tests {
         // Should find edges from node 1.
         assert!(!res.rows.is_empty(), "Expected edges from node 1, but got empty result. The executor likely confused property 'id' with internal Node ID.");
     }
+    #[test]
+    fn test_merge_with_params() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // Parameter for property value
+        ex.set_parameter("p_key".to_string(), crate::gql::Value::Number(999));
+
+        // MERGE using the parameter
+        let cmd = parse("MERGE (n:Kind {key: $p_key}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+
+        assert!(res.success, "MERGE with params failed: {}", res.message);
+        assert_eq!(res.rows.len(), 1);
+
+        let id = if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            id
+        } else {
+            panic!("Expected Node ID");
+        };
+
+        // Verify the node was created with the correct property value by querying it back
+        // We use the literal value here to ensure the parameter was correctly resolved during MERGE
+        let cmd_check = parse("MATCH (n:Kind {key: 999}) RETURN n").unwrap();
+        let res_check = ex.execute(cmd_check);
+
+        assert!(res_check.success);
+        assert_eq!(
+            res_check.rows.len(),
+            1,
+            "Should find the node with property key=999"
+        );
+
+        if let crate::ResultValue::Node(id_check) = res_check.rows[0][0] {
+            assert_eq!(
+                id, id_check,
+                "The found node should be the same as the merged one"
+            );
+        } else {
+            panic!("Expected Node ID");
+        }
+    }
 }

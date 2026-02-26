@@ -1,5 +1,26 @@
 # Changelog
 
+## Unified Event Loop & Graph Integration Refinement
+
+This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.
+
+### 🔄 Centralized Event Processing
+
+*   **Dedicated Ring Drain Task**: Introduced a new kernel task (`ring_drain_task`) that continuously drains scheduler event rings and translates them into graph work items. This offloads the scheduler tick and ensures event processing does not block critical paths.
+    *   *Artifacts*: `kernel/src/task/graph.rs`, `kernel/src/task/flusher.rs`
+
+*   **Graph Profiling**: Added comprehensive profiling metrics for the graph integration layer, tracking lock contention, wait times, queue depths, and processing latency. These metrics are logged periodically to assist in performance tuning.
+    *   *Artifacts*: `kernel/src/task/graph.rs`
+
+### ⌨️ Input Handling (Bristle)
+
+*   **Thigmonasty (Keyboard State Engine)**: Implemented a new keyboard state machine ("Thigmonasty") that robustly tracks key presses, modifiers (Shift, Ctrl, Alt), and repeat events. This ensures reliable input handling even during rapid typing or complex key combinations.
+    *   *Artifacts*: `userspace/bristle/src/thigmonasty.rs`
+
+### 🏗️ Userspace Maturation
+
+*   **General Improvements**: Significant updates across core userspace applications including `clock`, `taskman`, and `sprout` to improve stability and responsiveness, aligning with the new event loop architecture.
+
 ## Process Ownership & Graph Database Improvements
 
 This update introduces significant improvements to system stability and data management. A new "Process Ownership" mechanism in the kernel ensures that graph nodes created by a process are automatically cleaned up when that process exits, preventing resource leaks. The Phloem graph database has also been enhanced with `ORDER BY` support, improved tokenizer handling for escape sequences, and expanded test coverage. Additionally, the ISO 9660 filesystem implementation has received fixes for filename handling.

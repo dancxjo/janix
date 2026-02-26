@@ -1993,6 +1993,31 @@ async fn make_get_request(world: &mut ThingOsWorld, path: String) -> Result<(), 
     Ok(())
 }
 
+#[when(regex = r#"^I execute the GQL query "(.+)"$"#)]
+async fn execute_gql_query(world: &mut ThingOsWorld, query: String) -> Result<(), StepError> {
+    let port = world
+        .http_port
+        .ok_or(StepError("HTTP port not configured".to_string()))?;
+    let url = format!("http://127.0.0.1:{}/api/v1/query", port);
+
+    let client = Client::new();
+    let resp = client
+        .post(&url)
+        .body(query)
+        .send()
+        .await
+        .map_err(|e| StepError(format!("Request failed: {}", e)))?;
+
+    let status = resp.status().as_u16();
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| StepError(format!("Failed to read body: {}", e)))?;
+
+    world.last_http_response = Some((status, body));
+    Ok(())
+}
+
 #[then(regex = r#"^the response status should be (\d+)$"#)]
 async fn check_response_status(world: &mut ThingOsWorld, status: u16) -> Result<(), StepError> {
     let (last_status, _) = world

@@ -590,6 +590,7 @@ fn main(arg: usize) -> ! {
 
         d_presenter
     } else {
+        stem::warn!("[bloom] WARNING: No display driver found! Using NullPresenter (headless mode). Screen will be black.");
         PresenterImpl::Null(present::NullPresenter)
     };
 

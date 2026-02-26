@@ -215,6 +215,17 @@ pub fn setup_display_pipeline(tasks: &mut Vec<ManagedTask>) -> Option<DisplayHan
         }
     }
 
+    // Fallback to display_fake if no other display found (ensures Bloom launches)
+    if driver_name.is_none() {
+        warn!("SPROUT: No display device found! Using display_fake (headless mode)");
+        display_width = 1024;
+        display_height = 768;
+        display_stride = 1024 * 4;
+        display_format = 1; // BGRA8888
+        driver_name = Some("/display_fake");
+        backend_name = "Fake";
+    }
+
     let driver_name = match driver_name {
         Some(name) => name,
         None => {

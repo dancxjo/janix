@@ -1,5 +1,14 @@
 # Changelog
 
+## Phloem Query Optimization & Correctness Fixes
+
+This update addresses a critical correctness issue in the Phloem graph database query optimizer. Previously, queries utilizing the `WHERE id(n) = ...` optimization path could bypass property and label constraints, potentially returning nodes that matched the ID but failed other criteria. The executor has been updated to strictly validate that nodes retrieved via internal ID lookups also satisfy all specified pattern constraints (e.g., `(n:Kind {prop: val})`). This ensures data integrity and predictable query behavior, especially for complex graph traversals.
+
+### 🌿 Graph Database Correctness
+
+*   **Strict ID Optimization Validation**: The graph executor now verifies that nodes fetched via the direct ID optimization path (`WHERE id(n) = ...`) correctly match the node pattern's label and property requirements. This prevents "phantom" matches where a node exists but does not match the user's specified criteria.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

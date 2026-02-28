@@ -18,7 +18,7 @@
 //! - Resource IDs not attached to context
 //! - Format mismatches between resources and surfaces
 
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
 
 extern crate alloc;

@@ -689,6 +689,12 @@ impl<R: BootRuntime> types::Scheduler<R> {
             if old_task.state == TaskState::Running {
                 old_task.state = TaskState::Runnable;
                 old_task.enqueued_at_tick = TICK_COUNT.load(Ordering::Relaxed);
+                // Hot-path emission re-enabled via event ring (lock-free push)
+                ring::push_event(cpu_idx, crate::sched::events::SchedEvent::StateChanged {
+                    tid: old_task.id,
+                    state_ptr: "runnable".as_ptr() as u64,
+                    timestamp: crate::runtime::<R>().mono_ticks(),
+                });
             }
             new_task.state = TaskState::Running;
             new_task.last_cpu = Some(cpu_idx);
@@ -698,6 +704,14 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 alloc::sync::Arc::as_ptr(&new_task.mappings) as *mut _,
                 core::sync::atomic::Ordering::Release,
             );
+
+            // Hot-path emissions re-enabled via lock-free event ring
+            ring::push_event(cpu_idx, crate::sched::events::SchedEvent::TaskRan {
+                tid: new_task.id,
+                cpu: cpu_idx as u16,
+                ticks: 0,
+                timestamp: crate::runtime::<R>().mono_ticks(),
+            });
 
             old_task.simd.save(crate::runtime::<R>());
             new_task.simd.restore(crate::runtime::<R>());

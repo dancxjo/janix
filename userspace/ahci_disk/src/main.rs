@@ -9,7 +9,7 @@
 //! - SATAPI (CD-ROM) support via PACKET commands
 //! - Block Device RPC Service (port-based, headless operation)
 
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
 
 extern crate alloc;

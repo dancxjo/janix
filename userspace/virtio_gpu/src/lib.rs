@@ -3,7 +3,7 @@
 //! This module provides a reusable VirtioGpu driver that can be used by
 //! display_virtio_gpu or as a standalone program.
 
-#![feature(restricted_std)]
+#![no_std]
 
 extern crate alloc;
 

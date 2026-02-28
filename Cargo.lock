@@ -155,6 +155,7 @@ dependencies = [
  "ollama",
  "phloem",
  "sha2",
+ "spin",
  "stem",
 ]
 

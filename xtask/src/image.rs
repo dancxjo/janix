@@ -4,6 +4,7 @@ use crate::common::{Result, image_name};
 use xshell::{Shell, cmd};
 
 use std::path::{Path, PathBuf};
+use std::process::Command;
 use walkdir::WalkDir;
 
 pub struct ProgramConfig {
@@ -221,13 +222,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         ProgramConfig {
             name: "nectar",
             is_init: true,
-            boot_module: true,
-            features: vec![],
-
-        },
-        ProgramConfig {
-            name: "hello_std",
-            is_init: false,
             boot_module: true,
             features: vec![],
 
@@ -543,10 +537,11 @@ fn build_userspace_app_with_features(
         vec![]
     };
 
-    let build_std_crates = "core,alloc,std,panic_abort";
+    // Thing-OS targets are no_std; building `std` for custom `os = "none"` targets fails on modern nightlies.
+    let build_std_crates = "core,alloc,panic_abort";
 
     let cwd = std::env::current_dir().unwrap();
-    let std_src = cwd.join("vendor/rust/library");
+    let std_src = resolve_std_source_root(&cwd)?;
 
     let mut cmd = cmd!(
         sh,
@@ -561,6 +556,26 @@ fn build_userspace_app_with_features(
 
     cmd.run()?;
     Ok(())
+}
+
+fn resolve_std_source_root(cwd: &Path) -> Result<PathBuf> {
+    let vendored_std = cwd.join("vendor/rust/library");
+    if vendored_std.exists() {
+        return Ok(vendored_std);
+    }
+
+    let rustc = Command::new("rustc").args(["--print", "sysroot"]).output()?;
+    if !rustc.status.success() {
+        return Err("Failed to query rustc sysroot while resolving build-std source root".into());
+    }
+
+    let sysroot = String::from_utf8(rustc.stdout)?;
+    let rustup_std = Path::new(sysroot.trim()).join("lib/rustlib/src/rust/library");
+    if rustup_std.exists() {
+        return Ok(rustup_std);
+    }
+
+    Err("Could not find Rust standard library sources at vendor/rust/library or rustup sysroot path lib/rustlib/src/rust/library. Install rust-src with `rustup component add rust-src` or vendor Rust sources in vendor/rust/library.".into())
 }
 
 /// Copy and objcopy a userspace binary
@@ -683,4 +698,45 @@ pub fn build_hdd(sh: &Shell, arch: &str, programs: &[ProgramConfig]) -> Result<P
 
     println!("HDD image created: {}", hdd);
     Ok(PathBuf::from(hdd))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::resolve_std_source_root;
+    use std::fs;
+    use std::path::Path;
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    fn unique_temp_dir(prefix: &str) -> std::path::PathBuf {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time should be after unix epoch")
+            .as_nanos();
+        let dir = std::env::temp_dir().join(format!("thingos-{prefix}-{nonce}"));
+        fs::create_dir_all(&dir).expect("temp dir should be creatable");
+        dir
+    }
+
+    #[test]
+    fn resolve_std_source_root_prefers_vendored_std_sources() {
+        let temp = unique_temp_dir("vendored-std");
+        let vendored = temp.join("vendor/rust/library");
+        fs::create_dir_all(&vendored).expect("vendored std dir should be creatable");
+
+        let resolved = resolve_std_source_root(&temp).expect("vendored std path should resolve");
+        assert_eq!(resolved, vendored);
+
+        fs::remove_dir_all(temp).expect("temp dir should be removable");
+    }
+
+    #[test]
+    fn resolve_std_source_root_falls_back_to_rustup_sysroot() {
+        let temp = unique_temp_dir("sysroot-fallback");
+
+        let resolved = resolve_std_source_root(&temp)
+            .expect("rustup sysroot should provide std sources in CI/dev env");
+        assert!(resolved.ends_with(Path::new("lib/rustlib/src/rust/library")) || resolved.ends_with(Path::new("vendor/rust/library")));
+
+        fs::remove_dir_all(temp).expect("temp dir should be removable");
+    }
 }

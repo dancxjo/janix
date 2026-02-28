@@ -1,4 +1,4 @@
-#![feature(restricted_std)]
+#![no_std]
 extern crate alloc;
 extern crate stem;
 

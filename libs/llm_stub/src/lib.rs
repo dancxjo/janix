@@ -1,6 +1,11 @@
-#![feature(restricted_std)]
+#![no_std]
 
-use std::task::{Context, Poll};
+extern crate alloc;
+
+use alloc::boxed::Box;
+use alloc::string::String;
+use alloc::vec::Vec;
+use core::task::{Context, Poll};
 
 use llm::{ChatDelta, ChatRequest, ChatStream, FinishReason, LlmError, StreamingLlmClient};
 
@@ -65,6 +70,8 @@ impl ChatStream for StubChatStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    extern crate std;
+
     use std::task::{RawWaker, RawWakerVTable, Waker};
 
     fn noop_waker() -> Waker {

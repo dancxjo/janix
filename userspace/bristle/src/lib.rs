@@ -1,4 +1,4 @@
-#![feature(restricted_std)]
+#![no_std]
 
 pub mod mouse;
 pub mod normalizer;

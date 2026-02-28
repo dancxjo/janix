@@ -2,7 +2,7 @@
 //!
 //! Subscribes to IRQ12 via IOAPIC, reads mouse packets on interrupt, sends to Bristle.
 
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
 
 use stem::info;

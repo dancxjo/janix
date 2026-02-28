@@ -8,7 +8,7 @@
 //! - netd: Network stack (smoltcp, DHCP, DNS, socket API)
 //! - fetchd: Demo app (HTTP client, document parsing)
 
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
 
 extern crate alloc;

@@ -7,7 +7,7 @@
 extern crate alloc;
 
 use alloc::format;
-use alloc::string::String;
+use alloc::string::{String, ToString};
 use alloc::vec::Vec;
 
 use crate::error::{ApiError, ApiErrorCode};
@@ -70,9 +70,9 @@ pub fn json_response_bytes(status: &'static str, body: Vec<u8>) -> (&'static str
 
 mod subgraph_cache {
     extern crate alloc;
-    use alloc::string::String;
+    use alloc::string::{String, ToString};
     use alloc::vec::Vec;
-    use std::sync::Mutex;
+    use spin::Mutex;
 
     /// TTL in nanoseconds (10 seconds)
     const CACHE_TTL_NS: u64 = 10_000_000_000;
@@ -87,11 +87,10 @@ mod subgraph_cache {
 
     /// Try to get a cached response for this query. Returns Some(bytes) on hit.
     pub fn get(query: &str, now_ns: u64) -> Option<Vec<u8>> {
-        if let Ok(guard) = CACHE.lock() {
-            if let Some(entry) = guard.as_ref() {
-                if entry.query == query && now_ns.saturating_sub(entry.timestamp_ns) < CACHE_TTL_NS {
-                    return Some(entry.json_bytes.clone());
-                }
+        let guard = CACHE.lock();
+        if let Some(entry) = guard.as_ref() {
+            if entry.query == query && now_ns.saturating_sub(entry.timestamp_ns) < CACHE_TTL_NS {
+                return Some(entry.json_bytes.clone());
             }
         }
         None
@@ -99,13 +98,12 @@ mod subgraph_cache {
 
     /// Store a response in the cache.
     pub fn put(query: String, now_ns: u64, json_bytes: Vec<u8>) {
-        if let Ok(mut guard) = CACHE.lock() {
-            *guard = Some(CacheEntry {
-                query,
-                timestamp_ns: now_ns,
-                json_bytes,
-            });
-        }
+        let mut guard = CACHE.lock();
+        *guard = Some(CacheEntry {
+            query,
+            timestamp_ns: now_ns,
+            json_bytes,
+        });
     }
 }
 

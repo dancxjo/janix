@@ -109,16 +109,8 @@ fn wait_for_reply<R: crate::BootRuntime>(reply: &alloc::sync::Arc<crate::root::R
             break;
         }
     }
-
-    let my_tid = unsafe { crate::sched::current_tid_current() };
-    reply.waiting_task.store(my_tid, Ordering::Release);
-    WAIT_FOR_REPLY_BLOCKS.fetch_add(1, Ordering::Relaxed);
-
     loop {
         if reply.done.load(Ordering::Acquire) != 0 {
-            reply.waiting_task.store(0, Ordering::Relaxed);
-            WAIT_FOR_REPLY_WAKES.fetch_add(1, Ordering::Relaxed);
-            
             let elapsed = rt.mono_ticks().wrapping_sub(t0);
             let us = crate::task::graph::ticks_to_us::<R>(elapsed);
             WAIT_FOR_REPLY_CALLS.fetch_add(1, Ordering::Relaxed);
@@ -127,8 +119,13 @@ fn wait_for_reply<R: crate::BootRuntime>(reply: &alloc::sync::Arc<crate::root::R
             
             return reply.value.load(Ordering::Relaxed);
         }
-        unsafe {
-            crate::sched::block_current_erased();
+        spins += 1;
+        if spins < 1000 {
+            core::hint::spin_loop();
+        } else if spins < 1500 {
+            crate::task::yield_now::<R>();
+        } else {
+            crate::sched::sleep_ms::<R>(1);
         }
     }
 }

@@ -1,4 +1,4 @@
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
 
 use stem::info;

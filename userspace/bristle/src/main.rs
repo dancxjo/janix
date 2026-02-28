@@ -3,7 +3,7 @@
 //! The sole input authority. Drivers send raw reports, apps receive
 //! normalized events. Apps never see scancodes, drivers never see apps.
 
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
 
 use abi::hid::{

@@ -3,7 +3,7 @@
 //! Lists all detected disks in the system graph and displays their properties.
 //! This is a diagnostic tool to verify disk discovery is working.
 
-#![feature(restricted_std)]
+#![no_std]
 #![no_main]
 
 extern crate alloc;

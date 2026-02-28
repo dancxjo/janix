@@ -4,7 +4,7 @@
 //! Reads BristleEvents and prints them to the console.
 //! Demonstrates normalized input - keys and pointer events.
 
-#![no_std]
+#![feature(restricted_std)]
 #![no_main]
 
 use abi::hid::{

@@ -3,7 +3,7 @@
 //! Userspace driver that detects ATA devices on legacy ports and registers
 //! them in the System Graph. Uses ioport_read/write syscalls for PIO access.
 
-#![no_std]
+#![feature(restricted_std)]
 #![no_main]
 
 extern crate alloc;

@@ -1,5 +1,7 @@
-// stem is the platform boundary for both kernel and userspace, so it is always `no_std`.
-#![no_std]
+// When targeting the kernel (target_os = "none"), stem is no_std.
+// When targeting userspace (target_os = "thingos"), stem uses std.
+#![cfg_attr(target_os = "none", no_std)]
+#![cfg_attr(target_os = "thingos", feature(restricted_std))]
 #![allow(unexpected_cfgs)]
 extern crate alloc;
 

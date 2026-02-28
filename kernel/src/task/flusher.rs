@@ -11,27 +11,13 @@ use super::graph_queue::{self, GraphWork};
 use crate::sched::ring;
 use crate::sched::types;
 use alloc::string::String;
-use core::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use core::sync::atomic::{AtomicU64, Ordering};
 
 // Metrics
 static FLUSH_CALLS: AtomicU64 = AtomicU64::new(0);
 static FLUSH_EVENTS: AtomicU64 = AtomicU64::new(0);
 static FLUSH_TICKS_TOTAL: AtomicU64 = AtomicU64::new(0);
 static FLUSH_TICKS_MAX: AtomicU64 = AtomicU64::new(0);
-
-static EVENT_CREATED: AtomicUsize = AtomicUsize::new(0);
-static EVENT_EXITED: AtomicUsize = AtomicUsize::new(0);
-static EVENT_STATE: AtomicUsize = AtomicUsize::new(0);
-static EVENT_PRIO: AtomicUsize = AtomicUsize::new(0);
-static EVENT_AFF: AtomicUsize = AtomicUsize::new(0);
-static EVENT_LOC: AtomicUsize = AtomicUsize::new(0);
-static EVENT_NAME: AtomicUsize = AtomicUsize::new(0);
-static EVENT_RAN: AtomicUsize = AtomicUsize::new(0);
-static EVENT_BLOCKED: AtomicUsize = AtomicUsize::new(0);
-static EVENT_WOKE: AtomicUsize = AtomicUsize::new(0);
-static EVENT_YIELDED: AtomicUsize = AtomicUsize::new(0);
-static EVENT_ENQ: AtomicUsize = AtomicUsize::new(0);
-static EVENT_DEQ: AtomicUsize = AtomicUsize::new(0);
 
 /// Result of a flush operation.
 #[derive(Clone, Copy, Debug, Default)]
@@ -53,26 +39,6 @@ pub struct FlusherMetrics {
 
 /// Read and reset flusher metrics (for periodic logging).
 pub fn metrics_snapshot_and_reset() -> FlusherMetrics {
-    let c_created = EVENT_CREATED.swap(0, Ordering::Relaxed);
-    let c_exited = EVENT_EXITED.swap(0, Ordering::Relaxed);
-    let c_state = EVENT_STATE.swap(0, Ordering::Relaxed);
-    let c_prio = EVENT_PRIO.swap(0, Ordering::Relaxed);
-    let c_aff = EVENT_AFF.swap(0, Ordering::Relaxed);
-    let c_loc = EVENT_LOC.swap(0, Ordering::Relaxed);
-    let c_name = EVENT_NAME.swap(0, Ordering::Relaxed);
-    let c_ran = EVENT_RAN.swap(0, Ordering::Relaxed);
-    let c_blk = EVENT_BLOCKED.swap(0, Ordering::Relaxed);
-    let c_wok = EVENT_WOKE.swap(0, Ordering::Relaxed);
-    let c_yld = EVENT_YIELDED.swap(0, Ordering::Relaxed);
-    let c_enq = EVENT_ENQ.swap(0, Ordering::Relaxed);
-    let c_deq = EVENT_DEQ.swap(0, Ordering::Relaxed);
-
-    let total = c_created + c_exited + c_state + c_prio + c_aff + c_loc + c_name + c_ran + c_blk + c_wok + c_yld + c_enq + c_deq;
-    if total > 0 {
-        crate::kinfo!("FLUSH_SPAM: tot={} cr={} ex={} st={} pr={} af={} lc={} nm={} blk={} wok={} yld={} enq={} deq={}",
-            total, c_created, c_exited, c_state, c_prio, c_aff, c_loc, c_name, c_blk, c_wok, c_yld, c_enq, c_deq);
-    }
-
     FlusherMetrics {
         flush_calls: FLUSH_CALLS.swap(0, Ordering::Relaxed),
         flush_events: FLUSH_EVENTS.swap(0, Ordering::Relaxed),
@@ -128,22 +94,6 @@ pub fn flush(max_events: usize, max_ticks: u64, start_ticks: u64) -> FlushResult
 /// and push it to the legacy graph work queue for processing by
 /// flush_graph_queue.
 fn translate_event(event: &SchedEvent) {
-    match event {
-        SchedEvent::TaskCreated { .. } => { EVENT_CREATED.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::TaskExited { .. } => { EVENT_EXITED.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::StateChanged { .. } => { EVENT_STATE.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::PriorityChanged { .. } => { EVENT_PRIO.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::AffinitySet { .. } => { EVENT_AFF.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::LocationSet { .. } => { EVENT_LOC.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::NameSet { .. } => { EVENT_NAME.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::TaskRan { .. } => { EVENT_RAN.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::TaskBlocked { .. } => { EVENT_BLOCKED.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::TaskWoke { .. } => { EVENT_WOKE.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::TaskYielded { .. } => { EVENT_YIELDED.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::TaskEnqueued { .. } => { EVENT_ENQ.fetch_add(1, Ordering::Relaxed); }
-        SchedEvent::TaskDequeued { .. } => { EVENT_DEQ.fetch_add(1, Ordering::Relaxed); }
-    }
-
     match event {
         SchedEvent::TaskCreated {
             tid,

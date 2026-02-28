@@ -16,7 +16,7 @@
 //! - `node_id = (extent_lba << 32) | extent_size`
 //! - This allows O(1) lookup without maintaining a separate ID-to-extent map
 
-#![no_std]
+#![feature(restricted_std)]
 #![no_main]
 
 extern crate alloc;

@@ -12,5 +12,3 @@ described = { path = "../described" }
 ollama = { path = "../../libs/ollama" }
 llm = { path = "../../libs/llm" }
 
-
-spin = { version = "0.9", default-features = false, features = ["mutex", "spin_mutex"] }

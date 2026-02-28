@@ -4,7 +4,7 @@
 //! Default tests run in <1s. Use flags to enable slow/external tests:
 //!   --net, --dns, --spawn, --stress, --all
 
-#![no_std]
+#![feature(restricted_std)]
 #![no_main]
 
 extern crate std;

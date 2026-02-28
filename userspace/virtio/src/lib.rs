@@ -13,7 +13,7 @@
 //! dev.driver_ok();
 //! ```
 
-#![no_std]
+#![feature(restricted_std)]
 
 extern crate alloc;
 

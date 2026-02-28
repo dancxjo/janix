@@ -31,7 +31,7 @@
 //! - Order-of-magnitude improvement in asset scan time
 //! - Zero heap allocations during filename matching
 
-#![no_std]
+#![feature(restricted_std)]
 
 extern crate alloc;
 

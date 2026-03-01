@@ -692,4 +692,51 @@ mod tests {
             panic!("Expected Node ID");
         }
     }
+
+    #[test]
+    fn test_variable_binding_lifecycle() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // 1. MATCH does not bind variables across statements
+        let cmd_match = parse("MATCH (n:proc.Process {name: 12345}) RETURN n").unwrap();
+        let res_match = ex.execute(cmd_match);
+        assert!(res_match.success, "MATCH failed");
+        assert_eq!(res_match.rows.len(), 1, "Expected to find node 1");
+
+        let cmd_set_fail = parse("SET n.priority = 10").unwrap();
+        let res_set_fail = ex.execute(cmd_set_fail);
+        assert!(!res_set_fail.success, "SET should fail because 'n' is not bound by MATCH");
+        assert!(res_set_fail.message.contains("not bound"), "Expected not bound message, got: {}", res_set_fail.message);
+
+        // 2. MERGE binds variables across statements
+        let cmd_merge = parse("MERGE (m:proc.Process {name: 12345}) RETURN m").unwrap();
+        let res_merge = ex.execute(cmd_merge);
+        assert!(res_merge.success, "MERGE failed");
+        assert_eq!(res_merge.rows.len(), 1, "Expected to return node 1");
+
+        // Let's verify it actually returned node 1
+        if let crate::ResultValue::Node(id) = res_merge.rows[0][0] {
+            assert_eq!(id, 1, "Expected node 1");
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // 3. SET on a bound variable should succeed
+        let cmd_set_success = parse("SET m.priority = 10").unwrap();
+        let res_set_success = ex.execute(cmd_set_success);
+        assert!(res_set_success.success, "SET should succeed because 'm' was bound by MERGE. Message: {}", res_set_success.message);
+
+        // 4. Verify the property was set correctly
+        let cmd_verify = parse("MATCH (x:proc.Process {priority: 10}) RETURN x").unwrap();
+        let res_verify = ex.execute(cmd_verify);
+        assert!(res_verify.success, "MATCH for verification failed");
+        assert_eq!(res_verify.rows.len(), 1, "Expected to find 1 node with priority 10");
+
+        if let crate::ResultValue::Node(id) = res_verify.rows[0][0] {
+            assert_eq!(id, 1, "Expected the modified node to be node 1");
+        } else {
+            panic!("Expected Node ID");
+        }
+    }
 }

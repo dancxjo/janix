@@ -17,8 +17,9 @@ use alloc::vec::Vec;
 ///
 /// # Example
 /// ```no_run
-/// use stem::petals::DrawList;
-/// use stem::thing::ThingId;
+/// use stem::petals::drawlist::DrawList;
+/// use abi::wire::ThingId;
+/// use abi::ids::HandleId;
 /// use abi::drawlist::{DrawListBuilder, FillRule, PathVerb, PointF};
 ///
 /// let window_id = ThingId::from_u64(42);

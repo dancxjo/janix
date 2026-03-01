@@ -1,5 +1,30 @@
 # Changelog
 
+## BDD Enhancements & Phloem Hardening
+
+Recent updates have focused on expanding Behavior-Driven Development (BDD) testing capabilities and further hardening the Phloem graph database. New BDD scenarios have been added to test developer workflows and system applications. In Phloem, edge cases related to ID property confusion and parameterized MERGE queries have been resolved. A minor issue with graphics initialization on headless setups has also been addressed.
+
+### 🧪 System Verification & BDD
+
+*   **Developer Workflow Scenario**: Added a new BDD scenario validating the developer workflow using GQL commands to query system state.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`
+
+*   **Daily Inspiration Feature**: Implemented the "Daily Inspiration" BDD feature alongside a new `fortune` application that displays inspirational messages on startup.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/fortune/`
+
+### 🌿 Phloem (Graph DB) Hardening
+
+*   **MATCH ID Optimization Fix**: Resolved an issue where the GQL executor confused internal Node IDs with user-defined properties named "id" during `MATCH` optimization.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`
+
+*   **Parameterized MERGE Support**: Added comprehensive unit tests and support for executing `MERGE` queries with parameterized variables.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🎨 Graphics & UI
+
+*   **Headless Startup Fix**: Corrected a crash in the graphics pipeline initialization when no display (hardware or fake) was found, ensuring stable startup on headless systems.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

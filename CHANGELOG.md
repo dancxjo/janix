@@ -1,5 +1,30 @@
 # Changelog
 
+## Phloem Enhancements, System Reliability & New Features
+
+Recent updates focus on refining the core graph database (Phloem) query execution, improving the robustness of the display pipeline during startup, and expanding the user experience with new features like Daily Inspiration and better testing infrastructure.
+
+### 🐛 Phloem & Graph Enhancements
+
+*   **MATCH ID Optimization Fix**: Addressed an issue in the Phloem graph database where a property named 'id' was incorrectly treated as an internal Node ID for optimization purposes. The optimization now correctly targets the `WHERE id(n) = value` predicate syntax.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+*   **MERGE with Parameters**: Added a unit test validating that MERGE commands correctly utilize parameters when setting properties for created or matched nodes.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### ✨ New Features & Applications
+
+*   **Daily Inspiration**: Added a new "Daily Inspiration" feature with the `fortune` application, demonstrating an LLM text generation demo. BDD tests have been added to verify this user scenario.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`
+
+### 🛠️ System Reliability & Testing
+
+*   **Graphics Fallback Pipeline**: Fixed an issue where the graphics system could fail on startup without a physical display. The system now safely falls back to a fake display (`display_fake`) to ensure the compositor remains active.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`, `userspace/sprout/src/pipelines.rs`
+
+*   **Developer Workflow Tests**: Introduced a new `developer_workflow.feature` BDD test. This includes new graph query steps (`GQL`) via the testing framework to ensure developers can seamlessly query system properties using `anther`. The Rust toolchain has also been pinned for consistency.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `rust-toolchain.toml`, `tools/bdd/src/steps.rs`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

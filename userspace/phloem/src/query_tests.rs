@@ -692,4 +692,16 @@ mod tests {
             panic!("Expected Node ID");
         }
     }
+
+    #[test]
+    fn test_count_with_no_matches() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:NonExistent) RETURN count(n)").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        assert_eq!(res.rows[0].len(), 1);
+        assert!(matches!(res.rows[0][0], crate::ResultValue::Number(0)));
+    }
 }

@@ -651,6 +651,32 @@ mod tests {
         assert!(!res.rows.is_empty(), "Expected edges from node 1, but got empty result. The executor likely confused property 'id' with internal Node ID.");
     }
     #[test]
+    fn test_match_multiple_properties() {
+        let g = setup_mock();
+        // Give node 5 a second property
+        g.set_prop(5, "owner", 99999);
+
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // Match with multiple properties that exist
+        let cmd = parse("MATCH (n:fs.File {name: 11111, owner: 99999}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 5);
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // Match with conflicting properties
+        let cmd_conflict = parse("MATCH (n:fs.File {name: 11111, owner: 88888}) RETURN n").unwrap();
+        let res_conflict = ex.execute(cmd_conflict);
+        assert!(res_conflict.success);
+        assert!(res_conflict.rows.is_empty(), "Expected empty result for conflicting properties");
+    }
+
+    #[test]
     fn test_merge_with_params() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);

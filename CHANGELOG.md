@@ -1,5 +1,33 @@
 # Changelog
 
+## Expanded Features, Developer Tooling, and Robustness
+
+This update introduces new user-facing features, enhances developer workflow testing, and significantly improves system robustness under various hardware configurations. A new `fortune` application has been added, bringing a "Daily Inspiration" feature to the operating system. Developer tooling has been expanded with HTTP-based GQL queries in the BDD framework. Critical bugs in the Phloem graph database have been resolved, and the system now gracefully handles headless environments with a new graphics fallback mechanism. Additionally, significant progress was made in migrating userspace applications to a `no_std` environment.
+
+### 🌟 New Applications & System Features
+
+*   **Fortune Application**: Introduced the `fortune` application, which provides users with a daily thought-provoking message. This application is now part of the default system image and is automatically launched by the Sprout supervisor.
+    *   *Artifacts*: `xtask/src/image.rs`, `userspace/sprout/src/supervisor.rs`, `docs/behavior/features/daily_inspiration.feature`
+
+### 🛠️ Developer Tooling & Testing
+
+*   **HTTP GQL BDD Testing**: Expanded the Behavior-Driven Development (BDD) testing framework to support executing GQL queries directly over HTTP. This enables rigorous end-to-end testing of the system graph and services via the Anther gateway.
+    *   *Artifacts*: `tools/bdd/src/steps.rs`, `docs/behavior/features/developer_workflow.feature`
+
+### 🌿 Phloem (Graph DB) Enhancements
+
+*   **Internal ID vs. Property Bugfix**: Fixed a critical issue in the `MATCH` optimization logic where the query executor incorrectly confused a user-defined property named `id` with the internal Node ID. The executor now correctly distinguishes between the two, ensuring accurate query results.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+*   **Parameterized MERGE**: Added comprehensive test coverage to ensure that `MERGE` operations correctly support parameterized variables, enhancing the reliability of dynamic graph mutations.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### ⚙️ System Robustness & Architecture
+
+*   **Headless Graphics Fallback**: The system now gracefully handles environments without a physical display or accelerated graphics. If no hardware display driver is found, the Sprout supervisor automatically falls back to `display_fake`, and the Bloom compositor uses a `NullPresenter`, allowing the OS to boot entirely in a headless mode without crashing.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+*   **Userspace `no_std` Migration**: Continued efforts to migrate core userspace applications to a `#![no_std]` environment, replacing `std::sync::Mutex` with `spin::Mutex` for lower-level concurrency control, and simplifying kernel task reply waiting mechanisms.
+    *   *Artifacts*: `userspace/*`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

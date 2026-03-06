@@ -1,5 +1,34 @@
 # Changelog
 
+## Developer Experience, Graph Database Optimization, and System Reliability
+
+This update brings significant improvements to the developer workflow with the introduction of new BDD tests and GQL validation steps, ensuring a smoother experience when interacting with the system graph via OpenGQL. Concurrently, the Phloem graph database has seen critical bug fixes resolving confusion between inline node properties and internal node IDs during MATCH operations. We have also enhanced the stability of the system's display pipeline by introducing a seamless fallback to a "fake" display when no hardware graphics are detected, preventing startup failures in headless environments. Lastly, this release introduces a new "Daily Inspiration" feature utilizing the Fortune application, further expanding the userspace ecosystem.
+
+### 🛠️ Developer Workflow & Tooling
+
+*   **Developer Workflow BDD Tests**: A new comprehensive test suite (`developer_workflow.feature`) has been added to document and validate the process of inspecting the system graph via GQL, ensuring tools like `anther` properly expose core nodes such as `proc.Task`, `dev.Cpu`, and `svc.Root`.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+*   **Toolchain Synchronization**: Pinned the rust-toolchain to `nightly-2026-02-10` to guarantee compatibility with vendored Rust source code, resolving `#[rustc_const_unstable]` errors during `build-std` operations.
+    *   *Artifacts*: `rust-toolchain.toml`
+
+### 🌿 Phloem (Graph DB) Optimization and Reliability
+
+*   **MATCH Optimization Fix**: Resolved a critical bug where the `GraphExecutor` confused a user-defined property named `id` with the internal Node ID during edge `MATCH` optimizations. The optimization now correctly relies on explicit `WHERE id(n) = value` predicates, ensuring accurate query results.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+*   **MERGE with Parameters**: Enhanced test coverage for `MERGE` operations to verify that property maps correctly handle parameterized variables, ensuring secure and dynamic queries are accurately executed and persisted.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🎨 System Graphics Reliability
+
+*   **Headless Display Fallback**: Improved the `sprout` supervisor's display pipeline to automatically fall back to `display_fake` if primary display drivers (`display_bootfb`, `display_virtio_gpu`) fail to initialize. This prevents the compositor (`bloom`) from crashing or silently failing in headless setups.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+
+### ✨ New Applications and Features
+
+*   **Daily Inspiration & Fortune App**: Introduced a new "Daily Inspiration" feature accompanied by the `fortune` application. This application is now integrated into the standard image and supervised by `sprout`, demonstrating continued expansion of userspace utilities.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`
+
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

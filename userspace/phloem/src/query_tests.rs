@@ -651,6 +651,34 @@ mod tests {
         assert!(!res.rows.is_empty(), "Expected edges from node 1, but got empty result. The executor likely confused property 'id' with internal Node ID.");
     }
     #[test]
+    fn test_set_with_params() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // Bind the node 'n' with MERGE
+        // Note: The GraphExecutor persists variable bindings across execute calls.
+        // Since compound queries (like MATCH ... SET) are not supported by the parser,
+        // we must run these as separate commands.
+        let cmd = parse("MERGE (n:Kind {key: 100}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success, "MERGE failed");
+
+        // Set the parameter for the new value
+        ex.set_parameter("p_val".to_string(), crate::gql::Value::Number(200));
+
+        // Use SET to update the property with the parameter on the previously bound variable 'n'
+        let cmd_set = parse("SET n.key = $p_val").unwrap();
+        let res_set = ex.execute(cmd_set);
+        assert!(res_set.success, "SET with params failed: {}", res_set.message);
+
+        // Verify the property was updated
+        let cmd_check = parse("MATCH (n:Kind {key: 200}) RETURN n").unwrap();
+        let res_check = ex.execute(cmd_check);
+        assert!(res_check.success);
+        assert_eq!(res_check.rows.len(), 1, "Should find the node with property key=200");
+    }
+
+    #[test]
     fn test_merge_with_params() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);

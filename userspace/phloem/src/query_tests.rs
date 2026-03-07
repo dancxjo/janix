@@ -531,6 +531,29 @@ mod tests {
         assert!(!res.success);
     }
 
+    #[test]
+    fn test_set_command_with_bound_var() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // First, bind 'n' via MERGE
+        let cmd1 = parse("MERGE (n:Kind {key: 123}) RETURN n").unwrap();
+        let res1 = ex.execute(cmd1);
+        assert!(res1.success, "MERGE failed: {}", res1.message);
+
+        // Now, set a property on the bound node 'n'
+        let cmd2 = parse("SET n.state = 42").unwrap();
+        let res2 = ex.execute(cmd2);
+        // Should succeed because 'n' is bound
+        assert!(res2.success, "SET failed: {}", res2.message);
+
+        // Verify that the property was actually updated by matching the node
+        let cmd3 = parse("MATCH (n:Kind {key: 123, state: 42}) RETURN n").unwrap();
+        let res3 = ex.execute(cmd3);
+        assert!(res3.success, "MATCH failed: {}", res3.message);
+        assert_eq!(res3.rows.len(), 1, "Should find exactly 1 node with the updated property");
+    }
+
     // ===== 8) Pagination and Ordering =====
 
     #[test]

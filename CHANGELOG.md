@@ -1,5 +1,33 @@
 # Changelog
 
+## Graph Database Hardening & UI/Testing Expansions
+
+This update brings critical bug fixes to the Phloem graph database query optimizer, preventing confusion between property names and internal node IDs. A new "Daily Inspiration" widget (Fortune) has been added to the desktop UI. System robustness is improved with fixes for graphics startup in headless environments, and test coverage is expanded with new Developer Workflow BDD scenarios and additional Phloem unit tests. Additionally, the rust toolchain has been explicitly pinned to ensure reproducible builds.
+
+### 🌿 Phloem Graph DB Fixes & Tests
+
+*   **MATCH Optimization Fix**: Fixed an issue in `MATCH` optimization where the query executor confused a user-defined property named "id" with the internal system Node ID.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+*   **Parameterized MERGE**: Added unit tests for parameterized `MERGE` operations, ensuring they correctly handle parameters in property maps.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 💡 Daily Inspiration (Fortune App)
+
+*   **New Desktop Widget**: Implemented a new "Daily Inspiration" feature utilizing the `fortune` application to display quotes or messages on the desktop. It is supervised by `sprout` and bundled in the ISO.
+    *   *Artifacts*: `userspace/fortune/`, `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`, `docs/behavior/features/daily_inspiration.feature`
+
+### 🖥️ Graphics & Display Robustness
+
+*   **Headless Fallback**: Fixed a critical startup failure in the graphics system that occurred when no physical or virtual display hardware was detected. `sprout` now gracefully falls back to `display_fake` in headless modes, ensuring the compositor `bloom` receives valid handles.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+
+### 🧪 Developer Workflow & Tooling
+
+*   **BDD Scenarios**: Added a new BDD scenario to validate the developer workflow, specifically ensuring core system nodes (`proc.Task`, `dev.Cpu`, `svc.Root`) are queryable via GQL over HTTP using the `anther` service.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+*   **Toolchain Pinning**: Explicitly pinned the Rust toolchain to `nightly-2026-02-10` in `rust-toolchain.toml` to ensure compatibility with vendored sources and avoid unstable feature errors.
+    *   *Artifacts*: `rust-toolchain.toml`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

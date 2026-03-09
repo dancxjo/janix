@@ -692,4 +692,51 @@ mod tests {
             panic!("Expected Node ID");
         }
     }
+
+    #[test]
+    fn test_execute_match_count_variables() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // 1. Valid variable
+        let cmd_valid = parse("MATCH (n:proc.Process) RETURN count(n)").unwrap();
+        let res_valid = ex.execute(cmd_valid);
+        assert!(res_valid.success);
+        assert_eq!(res_valid.rows.len(), 1);
+        assert_eq!(res_valid.columns, vec!["count(n)"]);
+        if let crate::ResultValue::Number(n) = res_valid.rows[0][0] {
+            assert_eq!(n, 2); // 2 proc.Process nodes in mock
+        } else {
+            panic!("Expected Number result");
+        }
+
+        // 2. Unbound variable for count
+        let cmd_unbound = parse("MATCH (n:proc.Process) RETURN count(x)").unwrap();
+        let res_unbound = ex.execute(cmd_unbound);
+        assert!(res_unbound.success);
+        assert_eq!(res_unbound.rows.len(), 1);
+        assert_eq!(res_unbound.columns, vec!["count(x)"]);
+        if let crate::ResultValue::Number(n) = res_unbound.rows[0][0] {
+            assert_eq!(n, 0); // count(unbound) should be 0
+        } else {
+            panic!("Expected Number result");
+        }
+
+        // 3. Return both
+        let cmd_both = parse("MATCH (n:proc.Process) RETURN count(n), count(x)").unwrap();
+        let res_both = ex.execute(cmd_both);
+        assert!(res_both.success);
+        assert_eq!(res_both.rows.len(), 1);
+        assert_eq!(res_both.columns, vec!["count(n)", "count(x)"]);
+        if let crate::ResultValue::Number(n) = res_both.rows[0][0] {
+            assert_eq!(n, 2);
+        } else {
+            panic!("Expected Number result");
+        }
+        if let crate::ResultValue::Number(n) = res_both.rows[0][1] {
+            assert_eq!(n, 0);
+        } else {
+            panic!("Expected Number result");
+        }
+    }
 }

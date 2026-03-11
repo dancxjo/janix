@@ -1,5 +1,40 @@
 # Changelog
 
+## Graph Engine Reliability, New Features, & Tooling Enhancements
+
+Recent updates have significantly enhanced the reliability and correctness of the Phloem graph database, expanded the standard applications with a new Daily Inspiration feature, and improved developer tooling. Key improvements in Phloem resolve confusion between user-defined properties and internal Node IDs, ensuring accurate optimization paths for `MATCH` queries. A new test for `MERGE` with parameters bolsters confidence in dynamic query execution. Additionally, a fallback mechanism in the graphics pipeline guarantees successful startup even in headless environments. The introduction of the `fortune` application and its corresponding BDD tests, along with a new developer workflow scenario, enrich the system's capabilities and testing infrastructure.
+
+### 🌿 Phloem (Graph DB) Reliability & Testing
+
+*   **MATCH Optimization Fix**: Corrected a flaw in the `GraphExecutor` where a user-defined property named "id" was incorrectly treated as an internal Node ID for optimization purposes. The engine now exclusively inspects the `WHERE` clause for explicit `id(n) = value` predicates, resolving unexpected query failures and ensuring correct results when standard node properties conflict with internal IDs.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+*   **MERGE Parameters Verification**: Added a comprehensive unit test verifying that `MERGE` commands correctly utilize parameters within property maps, ensuring that dynamically bound variables are accurately evaluated during node creation and retrieval.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🎨 Graphics & Display Pipeline
+
+*   **Headless Startup Fallback**: Implemented a robust fallback mechanism in the `sprout` supervisor's display pipeline. If no hardware display driver (`display_bootfb` or `display_virtio_gpu`) can be initialized, the system automatically launches `display_fake`. This prevents the `bloom` compositor from crashing or silently running headless without valid display handles.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`, `userspace/sprout/src/pipelines.rs`
+
+### 📱 Applications & New Features
+
+*   **Daily Inspiration / Fortune App**: Introduced a new "Daily Inspiration" feature accompanied by the `fortune` application. This application is now officially registered in the `xtask` image configuration and spawned by the `sprout` supervisor, bringing interactive text generation to the desktop experience.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`
+
+### 🛠️ Developer Tooling & Documentation
+
+*   **Developer Workflow BDD Test**: Added a new BDD feature file documenting and testing the developer workflow for inspecting the system graph using GQL queries against the `anther` service.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
+*   **Toolchain Pinning**: Pinned the Rust toolchain to `nightly-2026-02-10` in `rust-toolchain.toml` to guarantee compatibility with vendored Rust source code and mitigate `#[rustc_const_unstable]` errors during `build-std`.
+    *   *Artifacts*: `rust-toolchain.toml`
+
+### ⚙️ System Internals (Experimental)
+
+*   **`no_std` Migration Attempt**: An experimental migration of userspace applications to a `no_std` environment utilizing `spin::Mutex` was attempted and subsequently reverted. This effort aimed to reduce the dependency footprint but required further refinement for stability.
+    *   *Artifacts*: Multiple userspace crates (temporarily modified and reverted)
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

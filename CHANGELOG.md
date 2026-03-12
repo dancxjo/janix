@@ -1,5 +1,28 @@
 # Changelog
 
+## Phloem Enhancements, New Features & Stability Fixes
+
+Recent updates bring critical bug fixes to the Phloem graph database, introduce a new "Daily Inspiration" feature with a fortune cookie application, and ensure robust system startup even in headless environments. A new developer workflow behavior test was also added to document and verify GQL interactions with the system graph.
+
+### 🌿 Phloem Database Fixes & Testing
+
+*   **MATCH ID Optimization Fix**: Corrected a bug where the `GraphExecutor` confused a user-defined property named `id` with the internal Node ID during `MATCH` edge optimization. The optimization now correctly relies exclusively on `WHERE id(n) = ...` predicates.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+*   **MERGE Parameters Verification**: Expanded unit testing to ensure that `MERGE` commands correctly utilize parameters within property maps, ensuring robust support for dynamic queries.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🥠 New Feature: Daily Inspiration
+
+*   **Fortune Application**: Introduced the `fortune` application, designed to present a daily inspiration or fortune cookie message. This app is now registered in the image configuration and automatically spawned by the `sprout` supervisor.
+    *   *Artifacts*: `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`, `docs/behavior/features/daily_inspiration.feature`
+
+### 🛡️ System Robustness & Developer Tooling
+
+*   **Graphics Fallback**: Improved the `sprout` display pipeline to gracefully fall back to `display_fake` if hardware displays (`display_bootfb` or `display_virtio_gpu`) fail to initialize. This prevents the `bloom` compositor from crashing or running silently in headless mode, logging a warning instead.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`, `userspace/sprout/src/pipelines.rs`
+*   **Developer Workflow BDD**: Added a new Behavior-Driven Development (BDD) scenario to document and test the standard developer workflow for inspecting the system graph via GQL, along with the necessary step definitions in the testing framework.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

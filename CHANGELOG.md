@@ -1,5 +1,30 @@
 # Changelog
 
+## Developer Workflow, Daily Inspiration, & Phloem Refinements
+
+This update introduces new features focused on improving the system experience and developer tooling, alongside critical fixes for the Phloem graph database and graphics initialization. The "Daily Inspiration" feature brings fortune cookie messages to the desktop, while new BDD tests validate developer workflows using GQL. Additionally, the graphics pipeline now robustly handles headless environments by falling back to a fake display, preventing startup crashes.
+
+### ✨ Features & Developer Experience
+
+*   **Daily Inspiration & Fortune App**: A new `fortune` application has been integrated into the `sprout` supervisor and image configuration. This is verified by the new `daily_inspiration.feature` BDD test, ensuring users receive random inspirational messages upon login.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/fortune/`, `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`
+
+*   **Developer Workflow BDD**: A new scenario has been added to document and validate the developer workflow for inspecting the system graph. This includes executing GQL queries directly against the `anther` service during tests.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
+### 🌿 Phloem (Graph DB) Fixes & Testing
+
+*   **Internal ID Optimization Fix**: Resolved a critical confusion bug in `GraphExecutor::execute_match`. Previously, edge matching incorrectly treated a user-defined property named "id" as the internal Node ID. The optimization now correctly targets `WHERE id(n) = value` predicates.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+*   **MERGE Parameter Support**: Expanded test coverage by adding a unit test verifying that `MERGE` commands correctly handle parameterized properties.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🎨 Graphics & Display Pipeline
+
+*   **Headless Display Fallback**: The `sprout` supervisor now implements a fallback to `display_fake` if hardware displays (`display_bootfb` or `display_virtio_gpu`) fail to initialize. This ensures the `bloom` compositor receives valid handles and the system continues to operate in headless scenarios.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`, `userspace/sprout/src/pipelines.rs`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

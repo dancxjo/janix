@@ -140,7 +140,7 @@ mod tests {
     impl GraphApply for TestGraph {
         fn create_node(&mut self, _kind: &str) -> Result<ThingId, XmlIngestError> {
             self.nodes += 1;
-            Ok(ThingId::from_u64(self.nodes))
+            Ok(ThingId([self.nodes as u8; 16]))
         }
 
         fn link(&mut self, src: ThingId, rel: &str, dst: ThingId) -> Result<(), XmlIngestError> {

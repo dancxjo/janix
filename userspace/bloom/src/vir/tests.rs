@@ -7,6 +7,38 @@ mod tests {
     use alloc::sync::Arc;
 
     #[test]
+    fn test_create_empty_document() {
+        let doc = VirDocument::new();
+        assert_eq!(doc.elements.len(), 0);
+        assert!(doc.width.is_none());
+        assert!(doc.height.is_none());
+        assert!(doc.view_box.is_none());
+    }
+
+    #[test]
+    fn test_create_simple_rect() {
+        let mut path = VirPath::new();
+        path.move_to(0.0, 0.0);
+        path.line_to(100.0, 0.0);
+        path.line_to(100.0, 100.0);
+        path.line_to(0.0, 100.0);
+        path.close();
+
+        let elem = VirElement {
+            path: Arc::new(path),
+            fill: Some(FillStyle {
+                paint: Paint::Solid(VirColor::rgb(255, 0, 0)),
+                rule: FillRule::NonZero,
+            }),
+            stroke: None,
+            transform: VirTransform::identity(),
+            opacity: 1.0,
+        };
+
+        assert_eq!(elem.path.segments.len(), 5);
+    }
+
+    #[test]
     fn test_simple_rect_pipeline() {
         // Create a simple rectangle path
         let mut path = VirPath::new();
@@ -34,7 +66,7 @@ mod tests {
 
         // Convert to DrawList
         let config = TessellateConfig::default();
-        let drawlist = vir_to_drawlist(&doc, &config);
+        let mut drawlist = vir_to_drawlist(&doc, &config);
 
         // Should have at least one command
         assert!(!drawlist.commands().is_empty());
@@ -60,7 +92,7 @@ mod tests {
         doc.elements.push(element);
 
         let config = TessellateConfig::default();
-        let drawlist = vir_to_drawlist(&doc, &config);
+        let mut drawlist = vir_to_drawlist(&doc, &config);
 
         assert!(!drawlist.commands().is_empty());
     }
@@ -90,7 +122,7 @@ mod tests {
         doc.elements.push(element);
 
         let config = TessellateConfig::default();
-        let drawlist = vir_to_drawlist(&doc, &config);
+        let mut drawlist = vir_to_drawlist(&doc, &config);
 
         assert!(!drawlist.commands().is_empty());
     }

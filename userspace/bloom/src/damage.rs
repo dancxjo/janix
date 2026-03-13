@@ -186,6 +186,7 @@ impl Damage {
         }
 
         // Try to merge with existing rects
+        let mut merged = false;
         for i in 0..self.count {
             if self.rects[i].touches_or_overlaps(clipped) {
                 self.rects[i] = self.rects[i].union(clipped);
@@ -194,21 +195,32 @@ impl Damage {
                     self.causes[i] = cause;
                     self.sources[i] = source;
                 }
-                // After merge, try to consolidate further
-                self.consolidate();
-                return;
+                merged = true;
+                break;
             }
         }
 
-        // No merge possible, add as new rect
-        if self.count < MAX_RECTS {
-            self.rects[self.count] = clipped;
-            self.causes[self.count] = cause;
-            self.sources[self.count] = source;
-            self.count += 1;
+        if merged {
+            // After merge, try to consolidate further
+            self.consolidate();
+            // Check if the merged rects cover >25% screen
+            for i in 0..self.count {
+                if self.rects[i].area() * 4 > self.bounds.area() {
+                    self.collapse_to_full_with_cause(self.causes[i], self.sources[i]);
+                    return;
+                }
+            }
         } else {
-            // Exceeded MAX_RECTS, collapse to full-frame
-            self.collapse_to_full_with_cause(cause, source);
+            // No merge possible, add as new rect
+            if self.count < MAX_RECTS {
+                self.rects[self.count] = clipped;
+                self.causes[self.count] = cause;
+                self.sources[self.count] = source;
+                self.count += 1;
+            } else {
+                // Exceeded MAX_RECTS, collapse to full-frame
+                self.collapse_to_full_with_cause(cause, source);
+            }
         }
     }
 
@@ -629,13 +641,18 @@ mod tests {
         let mut d = Damage::empty(bounds);
 
         // Add MAX_RECTS separate rects
+        // Make sure none of these overlap, and none of them will cause collapse due to the 25% area rule
         for i in 0..MAX_RECTS {
-            d.add_rect(Rect::new((i * 100) as i32, 0, 10, 10));
+            // Need to place them such that they don't overlap when consolidated.
+            // Also need to be careful with y to not overlap
+            let x = (i % 8) as i32 * 100;
+            let y = (i / 8) as i32 * 100;
+            d.add_rect(Rect::new(x, y, 10, 10));
         }
         assert!(!d.is_full);
 
-        // One more should collapse
-        d.add_rect(Rect::new(900, 0, 10, 10));
+        // One more should collapse (make sure it doesn't overlap to trigger the overflow)
+        d.add_rect(Rect::new(900, 900, 10, 10));
         assert!(d.is_full);
     }
 
@@ -665,7 +682,7 @@ mod tests {
         t.begin_frame(100, 100);
 
         let rect = Rect::new(10, 10, 20, 20);
-        let source = Some(ThingId::from_u64(42));
+        let source = Some(ThingId([42; 16]));
         t.note_bbox_with_cause(rect, DamageCause::GeometryChanged, source);
 
         let d = t.end_frame();
@@ -680,7 +697,7 @@ mod tests {
         let mut t = DamageTracker::new();
         t.begin_frame(100, 100);
 
-        let source = Some(ThingId::from_u64(99));
+        let source = Some(ThingId([99; 16]));
         t.mark_full_with_cause(DamageCause::ForceFull, source);
 
         let d = t.end_frame();
@@ -709,8 +726,8 @@ mod tests {
         let bounds = Rect::full(100, 100);
         let mut d = Damage::empty(bounds);
 
-        let source1 = Some(ThingId::from_u64(10));
-        let source2 = Some(ThingId::from_u64(20));
+        let source1 = Some(ThingId([10; 16]));
+        let source2 = Some(ThingId([20; 16]));
 
         d.add_rect_with_cause(
             Rect::new(0, 0, 10, 10),

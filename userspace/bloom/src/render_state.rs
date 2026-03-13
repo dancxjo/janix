@@ -515,7 +515,9 @@ mod tests {
 
     #[test]
     fn evicts_when_over_budget() {
-        let mut state = RenderState::with_cache_limit(32);
+        // Cache limit: 16 bytes. image_of_size(2, 2) takes 2 * 2 * 4 = 16 bytes.
+        // Inserting two images will require eviction.
+        let mut state = RenderState::with_cache_limit(16);
         let key_a = RasterKey::Text {
             w: 2,
             h: 2,

@@ -625,10 +625,15 @@ mod tests {
 
         // MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101})
         // This should create 'a', 'b', and the edge 'REL'.
-        let cmd = parse("MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101}) RETURN a, b").unwrap();
+        let cmd =
+            parse("MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101}) RETURN a, b").unwrap();
         let res = ex.execute(cmd);
 
-        assert!(res.success, "MERGE edge with inline nodes failed: {}", res.message);
+        assert!(
+            res.success,
+            "MERGE edge with inline nodes failed: {}",
+            res.message
+        );
         assert_eq!(res.rows.len(), 1);
     }
 
@@ -691,5 +696,42 @@ mod tests {
         } else {
             panic!("Expected Node ID");
         }
+    }
+    #[test]
+    fn test_match_multiple_properties() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // Match node 1 which has name=12345 and state=100
+        let cmd = parse("MATCH (n:proc.Process {name: 12345, state: 100}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+
+        assert!(res.success, "MATCH with multiple properties failed");
+        assert_eq!(
+            res.rows.len(),
+            1,
+            "Expected exactly 1 row matching multiple properties"
+        );
+
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1, "Expected to find node 1");
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // Match with conflicting properties (should return empty result)
+        let cmd_conflict =
+            parse("MATCH (n:proc.Process {name: 12345, state: 999}) RETURN n").unwrap();
+        let res_conflict = ex.execute(cmd_conflict);
+
+        assert!(
+            res_conflict.success,
+            "MATCH should succeed but return empty"
+        );
+        assert_eq!(
+            res_conflict.rows.len(),
+            0,
+            "Expected empty result for conflicting properties"
+        );
     }
 }

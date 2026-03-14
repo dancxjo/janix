@@ -1,5 +1,40 @@
 # Changelog
 
+## Phloem Hardening, Daily Inspiration & Graphics Fallback
+
+This update focuses on stabilizing the Graph DB query engine, improving system resilience in headless environments, and introducing new user-facing applications. The Phloem graph database has received critical fixes for `MATCH` query optimizations and expanded test coverage for parameterized `MERGE` operations. Additionally, the system now gracefully falls back to a software display if no hardware graphics are detected, preventing crashes. A new "Daily Inspiration" feature has been added alongside the `fortune` application, and an experimental `no_std` migration for userspace applications was reverted to ensure build stability.
+
+### 🌿 Phloem (Graph DB) Enhancements
+
+*   **MATCH ID Optimization Fix**: Resolved a critical bug where the `GraphExecutor` incorrectly optimized queries based on a user-defined property named `id` instead of the internal Node ID. The engine now strictly relies on the `id(n) = value` predicate in `WHERE` clauses for this optimization, ensuring accurate results when node properties conflict with internal IDs.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+*   **Parameterized MERGE Operations**: Added comprehensive integration tests to verify that `MERGE` commands correctly handle parameters in property maps. This ensures secure and dynamic query construction when creating or finding nodes.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### ✨ New Features & Applications
+
+*   **Daily Inspiration (Fortune App)**: Introduced the `fortune` application, which provides users with daily quotes or inspiration. This feature is now integrated into the system's supervisor startup pipeline and validated with dedicated BDD scenarios.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `xtask/src/image.rs`
+
+### 🎨 Graphics & Display Resilience
+
+*   **Software Display Fallback (`display_fake`)**: The Sprout supervisor now implements a robust fallback mechanism for the display pipeline. If hardware drivers (`display_bootfb` or `display_virtio_gpu`) fail to initialize or are absent (e.g., in a headless VM), the system automatically launches `display_fake`. This ensures the compositor (`bloom`) receives valid display handles and prevents silent failures.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`, `userspace/sprout/src/pipelines.rs`
+
+### 🛠️ Developer Tooling & Testing
+
+*   **GQL Developer Workflow Tests**: Added a new BDD scenario (`developer_workflow.feature`) to formally document and test the process of inspecting the system graph via OpenGQL queries through the `anther` HTTP gateway.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
+*   **Rust Toolchain Pinning**: Pinned the Rust toolchain to `nightly-2026-02-10` to maintain compatibility with vendored Rust source code and resolve `#[rustc_const_unstable]` errors during `build-std` compilation.
+    *   *Artifacts*: `rust-toolchain.toml`
+
+### ⚙️ Core System Internals
+
+*   **Reverted `no_std` Userspace Migration**: An experimental effort to migrate core userspace applications to a `no_std` environment using `spin::Mutex` was reverted. This decision prioritizes immediate stability and simplifies the kernel task reply waiting mechanism while further refinements are explored.
+    *   *Artifacts*: Various userspace crates (e.g., `sprout`, `netd`, `phloem`).
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

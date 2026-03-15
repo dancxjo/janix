@@ -1,5 +1,31 @@
 # Changelog
 
+## Developer Workflow, Daily Inspiration & Graphics Resilience
+
+Recent updates introduce new tools and tests to enhance the developer experience, along with new applications and increased resilience for the graphics system in headless environments. A new BDD test covers querying system processes and services via GQL, while the new Fortune application brings a daily inspiration feature. Finally, the Phloem graph database has received bug fixes for query optimization and new test coverage. An experimental migration to a `no_std` userspace environment was attempted but subsequently reverted for further refinement.
+
+### 🛠️ Developer Workflow & Testing
+
+*   **Developer Workflow BDD**: A new scenario has been added to document and test the developer workflow for inspecting the system graph via GQL, including querying system processes (`proc.Task`), CPU configuration (`dev.Cpu`), and system services (`svc.Root`). The Rust toolchain has also been pinned to `nightly-2026-02-10`.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`, `rust-toolchain.toml`
+
+### 🎨 Applications & Features
+
+*   **Daily Inspiration (Fortune)**: Implemented a new "Daily Inspiration" feature accompanied by a new `fortune` application that displays thought-provoking messages to the user.
+    *   *Artifacts*: `userspace/fortune/`, `docs/behavior/features/daily_inspiration.feature`
+
+### 🌿 Phloem (Graph DB) Fixes
+
+*   **MATCH Optimization Fix**: Fixed an issue in `MATCH` query optimization where a user-defined node property named 'id' was incorrectly confused with the internal Node ID. The executor now correctly inspects the `WHERE` clause for `id(n) = value` predicates.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+*   **MERGE Parameters**: Added a unit test to verify that `MERGE` commands correctly handle parameters in property maps.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🖥️ Graphics System Resilience
+
+*   **Headless Fallback**: The `sprout` supervisor now falls back to launching `display_fake` if no hardware display drivers (`display_bootfb` or `display_virtio_gpu`) can be initialized. This prevents the compositor (`bloom`) from crashing in headless or automated test environments.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

@@ -393,6 +393,19 @@ mod tests {
         assert!(res.rows.is_empty());
     }
 
+    #[test]
+    fn test_lookup_by_id_kind_mismatch() {
+        // MATCH (n:proc.Thread) WHERE id(n) = 1 RETURN n
+        // Node 1 is a proc.Process, so it should not match the kind proc.Thread
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:proc.Thread) WHERE id(n) = 1 RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        // Should find no rows because the node kind does not match
+        assert!(res.rows.is_empty());
+    }
+
     // ===== 3) Edges and neighborhood traversal =====
 
     #[test]

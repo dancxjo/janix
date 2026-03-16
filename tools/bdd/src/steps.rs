@@ -2103,33 +2103,6 @@ async fn make_concurrent_requests(
     Ok(())
 }
 
-// ===== GQL Steps =====
-
-#[when(regex = r#"^I execute the GQL query \"(.+)\"$"#)]
-async fn execute_gql_query(world: &mut ThingOsWorld, query: String) -> Result<(), StepError> {
-    let port = world
-        .http_port
-        .ok_or(StepError("HTTP port not configured".to_string()))?;
-    let url = format!("http://127.0.0.1:{}/api/v1/query", port);
-
-    let client = Client::new();
-    let resp = client
-        .post(&url)
-        .body(query)
-        .send()
-        .await
-        .map_err(|e| StepError(format!("Request failed: {}", e)))?;
-
-    let status = resp.status().as_u16();
-    let body = resp
-        .text()
-        .await
-        .map_err(|e| StepError(format!("Failed to read body: {}", e)))?;
-
-    world.last_http_response = Some((status, body));
-    Ok(())
-}
-
 #[then(regex = r#"^the GQL result should have at least (\d+) rows$"#)]
 async fn gql_result_rows(world: &mut ThingOsWorld, min_rows: usize) -> Result<(), StepError> {
     let (_, body) = world

@@ -567,6 +567,23 @@ mod tests {
     }
 
     #[test]
+    fn test_count_match_with_no_results() {
+        // MATCH (n:NonExistent) RETURN count(n)
+        // Ensure it returns a number (0) rather than empty results.
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:NonExistent) RETURN count(n)").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Number(n) = res.rows[0][0] {
+            assert_eq!(n, 0);
+        } else {
+            panic!("Expected Number result");
+        }
+    }
+
+    #[test]
     fn test_order_desc() {
         // MATCH (n) RETURN n ORDER BY id(n) DESC LIMIT 2
         let g = setup_mock();

@@ -534,26 +534,6 @@ mod tests {
     // ===== 8) Pagination and Ordering =====
 
     #[test]
-    fn test_pagination_and_ordering_combined() {
-        let g = setup_mock();
-        let mut ex = GraphExecutor::with_graph(&g);
-        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) DESC SKIP 1 LIMIT 2").unwrap();
-        let res = ex.execute(cmd);
-        assert!(res.success);
-        assert_eq!(res.rows.len(), 2);
-        if let crate::ResultValue::Node(id) = res.rows[0][0] {
-            assert_eq!(id, 4);
-        } else {
-            panic!("Expected Node result");
-        }
-        if let crate::ResultValue::Node(id) = res.rows[1][0] {
-            assert_eq!(id, 3);
-        } else {
-            panic!("Expected Node result");
-        }
-    }
-
-    #[test]
     fn test_pagination() {
         // MATCH (n) RETURN n ORDER BY id(n) ASC SKIP 1 LIMIT 2
         let g = setup_mock();

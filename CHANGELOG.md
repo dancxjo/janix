@@ -1,5 +1,36 @@
 # Changelog
 
+## BDD Expansion, Graph Database Maturation, and System Robustness
+
+Recent updates to the operating system continue to focus on stabilizing the Phloem graph database, expanding the Behavior-Driven Development (BDD) testing framework to cover more complex developer workflows, and improving the overall robustness of the system startup process. Additionally, a new "Daily Inspiration" feature with a dedicated `fortune` application has been introduced to demonstrate LLM integration capabilities. A brief experimental exploration into migrating core userspace applications to a `no_std` environment was also conducted.
+
+### 🌿 Phloem (Graph DB) Hardening
+
+*   **MATCH Node ID Optimization Fix**: Corrected a critical flaw in the `MATCH` edge optimization where user-defined node properties named "id" were incorrectly confused with internal Node IDs. The optimizer now strictly relies on `WHERE id(n) = value` predicates, ensuring queries return accurate results even when nodes have arbitrary "id" properties.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+*   **Parameterized MERGE Unit Tests**: Added comprehensive unit testing to verify that `MERGE` commands correctly handle parameters within property maps. This ensures robust support for dynamic, secure queries.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🧪 BDD Framework & Developer Workflow Testing
+
+*   **Developer Workflow Introspection**: Introduced a new BDD scenario (`developer_workflow.feature`) to formally document and test the developer experience of inspecting the live system graph. This scenario verifies the ability to query critical system nodes like `proc.Task`, `dev.Cpu`, and `svc.Root` using the new `execute_gql_query` test step.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
+### 💻 System Robustness & Graphics Initialization
+
+*   **Headless Graphics Fallback**: Implemented a critical fix in the `sprout` supervisor to ensure the compositor (`bloom`) launches successfully even in headless environments. If neither `display_bootfb` nor `display_virtio_gpu` can be initialized, `sprout` automatically falls back to a `display_fake` driver, preventing compositor crashes.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+
+### 🔮 New Applications & Features
+
+*   **Daily Inspiration (Fortune App)**: Added a new "Daily Inspiration" feature alongside a dedicated `fortune` application. This application demonstrates the integration of the system's LLM capabilities (`Ollama`) to generate and display thought-provoking messages upon boot, complete with its own BDD verification scenario.
+    *   *Artifacts*: `userspace/fortune/`, `docs/behavior/features/daily_inspiration.feature`
+
+### 🧪 Experimental Explorations
+
+*   **Userspace `no_std` Migration (Reverted)**: Conducted an experimental attempt to migrate core userspace applications from `std` to a `no_std` environment, leveraging `spin::Mutex` instead of `std::sync::Mutex`. While promising, this change was reverted for further refinement and to maintain stability in the short term.
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

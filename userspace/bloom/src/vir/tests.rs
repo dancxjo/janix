@@ -34,7 +34,7 @@ mod tests {
 
         // Convert to DrawList
         let config = TessellateConfig::default();
-        let drawlist = vir_to_drawlist(&doc, &config);
+        let mut drawlist = vir_to_drawlist(&doc, &config);
 
         // Should have at least one command
         assert!(!drawlist.commands().is_empty());
@@ -60,7 +60,7 @@ mod tests {
         doc.elements.push(element);
 
         let config = TessellateConfig::default();
-        let drawlist = vir_to_drawlist(&doc, &config);
+        let mut drawlist = vir_to_drawlist(&doc, &config);
 
         assert!(!drawlist.commands().is_empty());
     }
@@ -90,7 +90,7 @@ mod tests {
         doc.elements.push(element);
 
         let config = TessellateConfig::default();
-        let drawlist = vir_to_drawlist(&doc, &config);
+        let mut drawlist = vir_to_drawlist(&doc, &config);
 
         assert!(!drawlist.commands().is_empty());
     }

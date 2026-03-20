@@ -1,5 +1,32 @@
 # Changelog
 
+## Graph DB Optimizations, New Applications, and System Robustness
+
+Recent development has focused on resolving a critical optimization bug within the Phloem graph database, ensuring that internal node IDs are not conflated with user-defined "id" properties during `MATCH` queries. This release also introduces the new `fortune` application, which leverages the Daily Inspiration feature to deliver quotes to the user. Additionally, the graphics system has been made more robust with a fallback mechanism for headless environments, and new BDD tests have been added to validate the developer workflow and GQL queries.
+
+### 🌿 Phloem (Graph DB) Enhancements
+
+*   **MATCH Optimization Fix**: Corrected a bug where the `MATCH` query optimizer confused user-defined properties named `id` (e.g., `WHERE id = 123`) with the internal Node ID optimization (`WHERE id(n) = 123`). The executor now strictly uses the `id(n)` function for identifying nodes by internal ID.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+*   **MERGE with Parameters**: Added a unit test validating that `MERGE` operations correctly resolve parameterized variables (e.g., `MERGE (n:Kind {key: $p_key})`).
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 📱 Applications & Features
+
+*   **Fortune (Daily Inspiration)**: Introduced a new user-facing application (`fortune`) that implements the "Daily Inspiration" feature. This app generates and displays a "fortune cookie" style message on startup.
+    *   *Artifacts*: `userspace/fortune/`, `docs/behavior/features/daily_inspiration.feature`
+
+### 🎨 Graphics & UI
+
+*   **Headless Mode Fallback**: Improved the graphics system initialization in `sprout` to automatically fall back to the `display_fake` driver if no physical or virtual display device is found. This prevents the compositor (`bloom`) from crashing in headless environments.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+
+### 🧪 Testing & Verification
+
+*   **Developer Workflow BDD**: Added a new BDD scenario (`developer_workflow.feature`) to explicitly test the system from a developer's perspective, including executing GQL queries over HTTP.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

@@ -1,5 +1,29 @@
 # Changelog
 
+## BDD Features, Phloem Fixes & Reverted no_std Migration
+
+Recent updates bring new BDD testing scenarios to document developer workflows and daily applications. The userspace applications' `no_std` migration was reverted due to technical challenges on modern nightlies, opting to stick with `std` for now. Phloem (the graph database) received critical bug fixes regarding node matching, and the graphics startup sequence was made more resilient in headless environments.
+
+### 🧪 BDD Scenarios & Workflows
+
+*   **Developer Workflow**: Added a new BDD feature to verify the developer experience for querying the system graph using GQL. This includes verifying the system process tree (`proc.Task`), CPU configuration (`dev.Cpu`), and service roots (`svc.Root`).
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+*   **Daily Inspiration**: Added a "Daily Inspiration" BDD feature and a new `fortune` application that displays a simple fortune cookie message on the desktop.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/fortune/`
+
+### 🌿 Phloem (Graph DB) Fixes & Testing
+
+*   **MATCH Node ID Optimization Fix**: Resolved an issue where the `GraphExecutor` incorrectly confused a user-defined node property named "id" with the internal Graph Node ID during query optimization. The optimization now correctly relies exclusively on the `id(n) = value` syntax in `WHERE` clauses.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+*   **Parameterized MERGE Tests**: Expanded test coverage by adding a unit test to verify that `MERGE` clauses correctly interpret parameterized variables (e.g., `MERGE (n:Kind {key: $p_key})`).
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### ⚙️ Graphics & Architecture
+
+*   **Graphics Headless Fallback**: The `sprout` supervisor now gracefully falls back to using `display_fake` if no physical or virtual graphics devices (like `display_bootfb` or `display_virtio_gpu`) are found. This prevents the compositor (`bloom`) from crashing in headless environments.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+*   **Reverted `no_std` Migration**: The experimental migration of userspace applications to a `no_std` environment (replacing `std::sync::Mutex` with `spin::Mutex`) was reverted to allow further refinement and better compatibility with the toolchain.
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

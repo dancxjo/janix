@@ -692,4 +692,28 @@ mod tests {
             panic!("Expected Node ID");
         }
     }
+
+    #[test]
+    fn test_match_multiple_properties() {
+        let g = setup_mock();
+        // Node 1 has name: 12345, state: 100
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // Match with multiple matching properties
+        let cmd = parse("MATCH (n {name: 12345, state: 100}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1);
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // Match with one matching and one conflicting property
+        let cmd_conflict = parse("MATCH (n {name: 12345, state: 999}) RETURN n").unwrap();
+        let res_conflict = ex.execute(cmd_conflict);
+        assert!(res_conflict.success);
+        assert!(res_conflict.rows.is_empty(), "Should return empty if any property conflicts");
+    }
 }

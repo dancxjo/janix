@@ -1,5 +1,33 @@
 # Changelog
 
+## Daily Inspiration & Experimental Userspace Refactoring
+
+This update introduces a new "Daily Inspiration" feature along with the `fortune` application to provide users with engaging content on startup. We've also bolstered our BDD test suite with new developer workflow scenarios and improved our graphics subsystem's resilience by ensuring a fallback to a fake display when hardware initialization fails. In the graph database `phloem`, we've added critical unit tests for parameter handling in `MERGE` commands and resolved a subtle bug regarding the `id` property in `MATCH` query optimizations. Finally, an experimental refactor to migrate userspace applications to `no_std` was introduced and subsequently reverted for further refinement.
+
+### ✨ New Features & Applications
+
+*   **Daily Inspiration & Fortune App**: A new feature providing a daily quote or message. Includes the new `fortune` application registered in the supervisor (`sprout`) and verified with a dedicated BDD test.
+    *   *Artifacts*: `userspace/fortune/`, `docs/behavior/features/daily_inspiration.feature`
+
+### 🧪 Testing & Developer Workflow
+
+*   **Developer Workflow BDD**: Added a new behavior-driven development scenario detailing the developer workflow, including the ability to execute GQL queries against the `anther` service during tests.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+*   **Phloem MERGE Parameters**: Expanded the unit test coverage for `phloem` by adding explicit tests verifying that `MERGE` commands correctly handle parameters within property maps.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🐛 Bug Fixes & Resilience
+
+*   **Graphics Startup Fallback**: Addressed a startup failure in headless environments. The graphics pipeline (`sprout`) now robustly falls back to launching `display_fake` if `display_bootfb` or `display_virtio_gpu` cannot be initialized, preventing compositor crashes.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`, `userspace/sprout/src/pipelines.rs`
+*   **Phloem MATCH Optimization**: Fixed an issue in `phloem`'s graph executor where querying by a property named `id` (e.g., `MATCH (n {id: 123})`) was incorrectly optimized as an internal node ID lookup. The optimization now correctly targets only explicit `id(n) = value` predicates.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`
+
+### 🏗️ Experimental Architecture
+
+*   **no_std Userspace Migration**: An experimental and sweeping refactoring effort was made to migrate core userspace applications to a `no_std` environment, utilizing `spin::Mutex` in place of `std::sync::Mutex` and simplifying kernel task reply waits. This massive change was reverted to allow for more granular integration in the future.
+    *   *Artifacts*: `kernel/src/sched/`, `kernel/src/task/`, `userspace/*/src/main.rs` (Reverted)
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

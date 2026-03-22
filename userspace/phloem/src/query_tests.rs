@@ -244,6 +244,22 @@ mod tests {
     }
 
     #[test]
+    fn test_count_empty() {
+        // MATCH (n:NonExistentKind) RETURN count(n)
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:NonExistentKind) RETURN count(n)").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert!(!res.rows.is_empty(), "Expected a row containing 0");
+        if let crate::ResultValue::Number(n) = res.rows[0][0] {
+            assert_eq!(n, 0);
+        } else {
+            panic!("Expected Number result");
+        }
+    }
+
+    #[test]
     fn test_count_nodes_by_kind() {
         // MATCH (n:proc.Process) RETURN count(n)
         let g = setup_mock();

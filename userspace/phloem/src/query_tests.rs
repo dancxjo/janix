@@ -313,6 +313,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn test_order_desc_pagination() {
+        // MATCH (n) RETURN n ORDER BY id(n) DESC SKIP 1 LIMIT 2
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) DESC SKIP 1 LIMIT 2").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        // Expecting nodes 4, 3 (reverse ID order: 5, 4, 3, 2, 1 -> skip 1 -> 4, 3)
+        assert_eq!(res.rows.len(), 2);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 4);
+        } else {
+            panic!("Expected Node ID");
+        }
+        if let crate::ResultValue::Node(id) = res.rows[1][0] {
+            assert_eq!(id, 3);
+        } else {
+            panic!("Expected Node ID");
+        }
+    }
+
     // ===== 1) Identity and direct lookup =====
 
     #[test]

@@ -20,6 +20,7 @@ use alloc::vec::Vec;
 /// use stem::petals::DrawList;
 /// use stem::thing::ThingId;
 /// use abi::drawlist::{DrawListBuilder, FillRule, PathVerb, PointF};
+/// use abi::ids::HandleId;
 ///
 /// let window_id = ThingId::from_u64(42);
 /// let mut dl = DrawList::new(window_id);

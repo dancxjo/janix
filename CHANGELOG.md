@@ -1,5 +1,32 @@
 # Changelog
 
+## Daily Inspiration, Graph DB Fixes & Testing Workflow
+
+This update introduces a new "Daily Inspiration" feature, adding more character to the OS. The Phloem graph database received critical bug fixes related to node ID lookups during `MATCH` optimizations. We've also expanded our BDD testing framework to include developer workflow scenarios with native GQL execution capabilities, allowing us to formally verify system state queries. Lastly, a fix was implemented to ensure the graphics system boots gracefully even in headless environments without a display. An experimental attempt to migrate userspace to `no_std` was also performed and subsequently reverted for further refinement.
+
+### 🌟 New Features & Applications
+
+*   **Daily Inspiration (Fortune)**: Added a new `fortune` application that displays a thought-provoking message on the desktop upon startup.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/sprout/src/supervisor.rs`
+
+### 🌿 Phloem (Graph DB) Fixes & Enhancements
+
+*   **MATCH ID Optimization Fix**: Resolved an issue where querying a node with a generic property named "id" (e.g., `MATCH (n {id: 123})`) incorrectly triggered an internal Node ID optimization. The engine now strictly requires the `id(n) = value` predicate for this optimization to occur.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+*   **MERGE Parameter Tests**: Expanded test coverage for `MERGE` operations utilizing parameterized variables.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🧪 Developer Workflow & Testing
+
+*   **GQL BDD Steps**: The BDD testing framework now natively supports executing GQL queries against the system's HTTP API. This enables rich validation of the live system graph during tests.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
+### 🛠️ System & Core Fixes
+
+*   **Headless Graphics Startup**: Fixed a bug where the graphics compositor would fail to start if no physical or virtual display was detected. The system now correctly falls back to a `display_fake` output when necessary.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`, `userspace/sprout/src/pipelines.rs`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

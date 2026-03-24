@@ -531,6 +531,52 @@ mod tests {
         assert!(!res.success);
     }
 
+    #[test]
+    fn test_match_multiple_inline_props() {
+        let g = setup_mock();
+
+        // Setup nodes with multiple properties
+        // Node 1 is already in mock with name: 12345, state: 100
+        // Node 2 is already in mock with name: 67890, state: 101
+
+        // Add another node to test property filtering
+        g.add_node(6, "proc.Process");
+        g.set_prop(6, "name", 12345);
+        g.set_prop(6, "state", 101);
+
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // Match node 1 exactly (Logical AND)
+        let cmd_match_1 = parse("MATCH (n:proc.Process {name: 12345, state: 100}) RETURN n").unwrap();
+        let res_match_1 = ex.execute(cmd_match_1);
+        assert!(res_match_1.success);
+        assert_eq!(res_match_1.rows.len(), 1);
+
+        if let crate::ResultValue::Node(id) = res_match_1.rows[0][0] {
+            assert_eq!(id, 1, "Expected Node 1");
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // Match node 6 exactly (Logical AND)
+        let cmd_match_2 = parse("MATCH (n:proc.Process {name: 12345, state: 101}) RETURN n").unwrap();
+        let res_match_2 = ex.execute(cmd_match_2);
+        assert!(res_match_2.success);
+        assert_eq!(res_match_2.rows.len(), 1);
+
+        if let crate::ResultValue::Node(id) = res_match_2.rows[0][0] {
+            assert_eq!(id, 6, "Expected Node 6");
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // Match none (conflicting properties)
+        let cmd_match_none = parse("MATCH (n:proc.Process {name: 12345, state: 999}) RETURN n").unwrap();
+        let res_match_none = ex.execute(cmd_match_none);
+        assert!(res_match_none.success);
+        assert_eq!(res_match_none.rows.len(), 0, "Expected empty result set due to property mismatch");
+    }
+
     // ===== 8) Pagination and Ordering =====
 
     #[test]

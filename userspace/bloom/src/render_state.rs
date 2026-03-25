@@ -515,7 +515,7 @@ mod tests {
 
     #[test]
     fn evicts_when_over_budget() {
-        let mut state = RenderState::with_cache_limit(32);
+        let mut state = RenderState::with_cache_limit(31);
         let key_a = RasterKey::Text {
             w: 2,
             h: 2,

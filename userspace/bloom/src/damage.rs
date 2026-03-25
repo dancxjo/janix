@@ -471,6 +471,7 @@ impl Default for DamageJournal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use stem::thing::HandleId;
 
     // --- Rect tests ---
 
@@ -625,7 +626,7 @@ mod tests {
 
     #[test]
     fn test_damage_collapse_on_overflow() {
-        let bounds = Rect::full(1000, 1000);
+        let bounds = Rect::full(10000, 1000);
         let mut d = Damage::empty(bounds);
 
         // Add MAX_RECTS separate rects
@@ -635,7 +636,7 @@ mod tests {
         assert!(!d.is_full);
 
         // One more should collapse
-        d.add_rect(Rect::new(900, 0, 10, 10));
+        d.add_rect(Rect::new((MAX_RECTS * 100) as i32, 0, 10, 10));
         assert!(d.is_full);
     }
 

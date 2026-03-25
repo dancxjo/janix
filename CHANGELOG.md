@@ -1,5 +1,30 @@
 # Changelog
 
+## Phloem Query Engine Fixes & Application Expansion
+
+Recent updates have strengthened the Phloem graph database and improved system resilience, while expanding application capabilities. The query engine received crucial fixes for node ID resolution and new test coverage for parameterized queries. The system compositor now correctly falls back to a fake display when running headless, preventing crashes in environments without dedicated graphics hardware. Additionally, a new 'Fortune' application provides daily inspiration, and the test suite has been bolstered with comprehensive developer workflow scenarios.
+
+### 🌿 Phloem (Graph DB) Fixes
+
+*   **Node ID Resolution**: Fixed a critical bug in `MATCH` optimization where querying by an arbitrary property named "id" (e.g., `MATCH (n {id: 123})`) incorrectly triggered internal node ID lookup logic, replacing it with strict `id(n) = value` validation.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+*   **Parameterized MERGE Testing**: Added comprehensive test coverage for `MERGE` statements using parameter variables to dynamically map node properties.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🖥️ Graphics & Applications
+
+*   **Display Fallback for Headless Resilience**: The `sprout` supervisor now automatically spawns `display_fake` if neither `display_bootfb` nor `display_virtio_gpu` can be initialized. This ensures `bloom` receives valid handles and the system continues to function gracefully in headless environments.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`, `userspace/sprout/src/pipelines.rs`
+*   **Fortune Application**: Introduced a new desktop application that provides daily inspiration through fortune cookie messages.
+    *   *Artifacts*: `userspace/fortune/src/main.rs`, `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`
+
+### 🧪 BDD Testing & Tooling
+
+*   **Developer Workflow Scenarios**: Added new BDD feature scenarios to validate developer workflows via GQL introspection.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+*   **Daily Inspiration Scenarios**: Added automated test verification for the Fortune application.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

@@ -651,6 +651,16 @@ mod tests {
         assert!(!res.rows.is_empty(), "Expected edges from node 1, but got empty result. The executor likely confused property 'id' with internal Node ID.");
     }
     #[test]
+    fn test_multiple_properties_in_node_pattern() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:proc.Process {name: 12345, state: 100}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+    }
+
+    #[test]
     fn test_merge_with_params() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);

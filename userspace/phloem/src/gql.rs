@@ -711,6 +711,43 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_match_multiple_props() {
+        let cmd = parse("MATCH (n {id: 1, type: \"user\", status: \"active\"}) RETURN n").unwrap();
+        if let Command::Match { pattern, .. } = cmd {
+            if let Pattern::Node(pat) = pattern {
+                assert_eq!(pat.var.as_deref(), Some("n"));
+                assert_eq!(pat.kind, None);
+                assert_eq!(pat.props.len(), 3);
+
+                assert_eq!(pat.props[0].0, "id");
+                if let Value::Number(n) = pat.props[0].1 {
+                    assert_eq!(n, 1);
+                } else {
+                    panic!("Wrong prop value type for id");
+                }
+
+                assert_eq!(pat.props[1].0, "type");
+                if let Value::String(ref s) = pat.props[1].1 {
+                    assert_eq!(s, "user");
+                } else {
+                    panic!("Wrong prop value type for type");
+                }
+
+                assert_eq!(pat.props[2].0, "status");
+                if let Value::String(ref s) = pat.props[2].1 {
+                    assert_eq!(s, "active");
+                } else {
+                    panic!("Wrong prop value type for status");
+                }
+            } else {
+                panic!("Expected Pattern::Node");
+            }
+        } else {
+            panic!("Expected Command::Match");
+        }
+    }
+
+    #[test]
     fn test_parse_match_kind_props() {
         let cmd = parse("MATCH (p:proc.Process {name: \"init\"}) RETURN p").unwrap();
         if let Command::Match { pattern, .. } = cmd {

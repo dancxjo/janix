@@ -1,5 +1,39 @@
 # Changelog
 
+## Graph Database Hardening, Graphics Resilience, & Expanded Testing
+
+Recent changes focused on hardening the Phloem graph database query engine, improving system startup reliability in headless environments, and expanding the testing framework. A bug causing property confusion in the `MATCH` optimization was resolved, and unit testing was expanded for parameterized queries. The system graphics pipeline now gracefully falls back to a fake display if hardware isn't available, preventing compositor crashes. A new Daily Inspiration feature, powered by the Fortune application, was also introduced. An experimental migration of userspace applications to a `no_std` environment using `spin::Mutex` was attempted but temporarily reverted for further refinement. Finally, new BDD tests for developer workflows and GQL introspection have been integrated.
+
+### 🌿 Phloem (Graph DB) Hardening & Fixes
+
+*   **MATCH Optimization Fix**: Corrected a bug where the `MATCH` query optimization incorrectly conflated a generic property named "id" with the internal Node ID. The optimization now strictly inspects the `WHERE` clause for explicit `id(n) = value` predicates, ensuring queries return correct results even when nodes possess user-defined "id" properties.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+*   **MERGE with Parameters**: Added comprehensive unit testing to ensure `MERGE` commands correctly handle dynamic parameter substitution in property maps, verifying robust dynamic node creation and lookup.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🎨 Graphics System Resilience
+
+*   **Headless Display Fallback**: The display pipeline setup in `sprout` now gracefully falls back to launching `display_fake` if hardware graphics initialization (`display_bootfb` or `display_virtio_gpu`) fails. This ensures the `bloom` compositor receives valid display handles and avoids crashing in headless environments.
+    *   *Artifacts*: `userspace/sprout/`
+
+### 🌟 Applications & Features
+
+*   **Daily Inspiration (Fortune)**: Introduced a new "Daily Inspiration" feature powered by the `fortune` application. This application has been integrated into the system image and is actively supervised by `sprout`.
+    *   *Artifacts*: `userspace/fortune/`, `docs/behavior/features/daily_inspiration.feature`, `xtask/src/image.rs`, `userspace/sprout/`
+
+### 🧪 Developer Workflow & Testing
+
+*   **Developer Workflow BDD**: Added new BDD scenarios to document and validate the developer workflow for inspecting the live system graph via GQL. This includes querying critical system nodes such as `proc.Task`, `dev.Cpu`, and `svc.Root`.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
+*   **Toolchain Stability**: Pinned the default Rust toolchain to `nightly-2026-02-10` to guarantee compatibility with vendored Rust source code and avoid `#[rustc_const_unstable]` errors during `build-std`.
+    *   *Artifacts*: `rust-toolchain.toml`
+
+### 🔧 Core System Experiments
+
+*   **Userspace `no_std` Migration (Reverted)**: An experimental effort to migrate core userspace applications to a `#![no_std]` environment utilizing `spin::Mutex` was implemented and subsequently reverted. This prototype highlighted potential paths for minimizing standard library dependencies, but requires further refinement before permanent integration.
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

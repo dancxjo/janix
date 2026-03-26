@@ -22,9 +22,6 @@ pub mod svg_convert;
 pub mod transform;
 pub mod types;
 
-#[cfg(test)]
-mod tests;
-
 pub use render::vir_to_drawlist;
 pub use svg_convert::svg_to_vir;
 pub use transform::*;

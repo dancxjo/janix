@@ -14,7 +14,7 @@ pub const MAX_RECTS: usize = 32;
 use crate::geometry::Rect;
 use crate::snapshot::SnapshotInvalidation;
 use alloc::vec::Vec;
-use stem::thing::ThingId;
+use stem::thing::{HandleId, ThingId};
 
 /// Explicit cause for damage invalidation.
 ///
@@ -630,12 +630,19 @@ mod tests {
 
         // Add MAX_RECTS separate rects
         for i in 0..MAX_RECTS {
-            d.add_rect(Rect::new((i * 100) as i32, 0, 10, 10));
+            // Need to distribute them to be small enough so their combined area
+            // is not > 25% of the screen area which triggers a collapse.
+            // Also need to distribute them so they don't merge.
+            // Grid 10x10 spacing with rects size 2x2.
+            let x = (i % 5) * 10;
+            let y = (i / 5) * 10;
+            d.add_rect(Rect::new(x as i32, y as i32, 2, 2));
         }
         assert!(!d.is_full);
 
         // One more should collapse
-        d.add_rect(Rect::new(900, 0, 10, 10));
+        // Ensure it doesn't touch existing rects and doesn't get clipped completely due to bounds
+        d.add_rect(Rect::new(500, 500, 2, 2));
         assert!(d.is_full);
     }
 

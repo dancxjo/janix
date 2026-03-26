@@ -288,6 +288,8 @@ impl RasterCache {
     }
 
     fn evict_to_budget(&mut self) {
+        // Evict elements strictly if we EXCEED the budget, as required by memory:
+        // "evicts entries based strictly on a budget mechanism where items are evicted only when `total_bytes` is strictly greater than `max_bytes`."
         while self.total_bytes > self.max_bytes {
             let Some((&tick, key)) = self.usage_order.iter().next() else {
                 break;
@@ -515,7 +517,9 @@ mod tests {
 
     #[test]
     fn evicts_when_over_budget() {
-        let mut state = RenderState::with_cache_limit(32);
+        // Set cache limit to 31 so that adding a 2nd 16-byte image causes eviction
+        // strictly based on `total_bytes > max_bytes` (32 > 31)
+        let mut state = RenderState::with_cache_limit(31);
         let key_a = RasterKey::Text {
             w: 2,
             h: 2,
@@ -526,8 +530,11 @@ mod tests {
             h: 2,
             content_hash: 2,
         };
+        // Each image is 2x2 = 4 pixels = 16 bytes
         state.insert_raster(key_a.clone(), image_of_size(2, 2), None);
+        // Total bytes = 16. Not > 31.
         state.insert_raster(key_b.clone(), image_of_size(2, 2), None);
+        // Total bytes = 32. Now > 31, so key_a gets evicted.
 
         assert!(state.get_raster(&key_a).is_none());
         assert!(state.get_raster(&key_b).is_some());

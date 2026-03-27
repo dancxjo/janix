@@ -140,6 +140,7 @@ mod tests {
     impl GraphApply for TestGraph {
         fn create_node(&mut self, _kind: &str) -> Result<ThingId, XmlIngestError> {
             self.nodes += 1;
+            use stem::thing::HandleId;
             Ok(ThingId::from_u64(self.nodes))
         }
 

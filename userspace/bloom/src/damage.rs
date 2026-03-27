@@ -471,6 +471,7 @@ impl Default for DamageJournal {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use stem::thing::HandleId;
 
     // --- Rect tests ---
 
@@ -630,12 +631,12 @@ mod tests {
 
         // Add MAX_RECTS separate rects
         for i in 0..MAX_RECTS {
-            d.add_rect(Rect::new((i * 100) as i32, 0, 10, 10));
+            d.add_rect(Rect::new((i * 20) as i32, (i * 20) as i32, 10, 10));
         }
         assert!(!d.is_full);
 
         // One more should collapse
-        d.add_rect(Rect::new(900, 0, 10, 10));
+        d.add_rect(Rect::new(900, 900, 10, 10));
         assert!(d.is_full);
     }
 

@@ -288,7 +288,7 @@ impl RasterCache {
     }
 
     fn evict_to_budget(&mut self) {
-        while self.total_bytes > self.max_bytes {
+        while self.total_bytes >= self.max_bytes && !self.entries.is_empty() {
             let Some((&tick, key)) = self.usage_order.iter().next() else {
                 break;
             };

@@ -969,4 +969,16 @@ mod tests {
             panic!("Expected Match command");
         }
     }
+
+    #[test]
+    fn test_parse_return_multiple_expressions() {
+        let cmd = parse("MATCH (n) RETURN count(n), n").unwrap();
+        if let Command::Match { returns, .. } = cmd {
+            assert_eq!(returns.len(), 2);
+            assert_eq!(returns[0], ReturnExpression::Count("n".to_string()));
+            assert_eq!(returns[1], ReturnExpression::Variable("n".to_string()));
+        } else {
+            panic!("Expected Match command");
+        }
+    }
 }

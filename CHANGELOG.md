@@ -1,5 +1,35 @@
 # Changelog
 
+## System Reliability, Phloem Enhancements & Daily Inspiration
+
+Recent development has focused on enhancing system reliability, improving the Phloem graph database, and expanding developer testing tools. A new Fortune application has been introduced, delivering daily inspiration to users. In the graphics subsystem, a reliable fallback mechanism was implemented to ensure the compositor functions correctly even in headless environments. The Phloem graph database received critical fixes for Node ID resolution and expanded test coverage for parameterized queries. Furthermore, developer workflows are now explicitly documented and verified via new BDD scenarios. Finally, an experimental migration of userspace applications to a `no_std` environment was evaluated and reverted for future refinement.
+
+### 🌟 Applications & Features
+
+*   **Fortune Application**: Implemented a new "Daily Inspiration" feature with the `fortune` application, which displays messages to the user and is spawned via the sprout supervisor.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`
+
+### 🌿 Phloem (Graph DB) Improvements
+
+*   **MATCH ID Property Fix**: Corrected a bug in the `MATCH` internal Node ID optimization. It now correctly parses `id(n) = value` instead of confusing a generic `id` property (e.g., `{id: 123}`) with the internal node ID.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+*   **MERGE with Parameters Test**: Added comprehensive unit tests for the `MERGE` command to verify proper parameter substitution in property maps.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🎨 Graphics & System Reliability
+
+*   **Display Fallback Mechanism**: Fixed graphics system startup failures in headless environments by adding a fallback to `display_fake` in the `sprout` display pipeline when hardware displays (`display_bootfb` or `display_virtio_gpu`) are unavailable.
+    *   *Artifacts*: `userspace/bloom/src/main.rs`, `userspace/sprout/src/pipelines.rs`
+
+### 🧪 Testing & Developer Experience
+
+*   **Developer Workflow BDD Test**: Introduced a new BDD scenario to document and verify the developer workflow for inspecting the system graph via GQL, adding support for executing GQL queries against the `anther` service.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
+*   **Experimental no_std Migration**: Initiated an experimental migration to a `no_std` environment for core userspace applications, replacing `std::sync::Mutex` with `spin::Mutex`. This change was subsequently reverted for further refinement.
+    *   *Artifacts*: `userspace/`, `kernel/src/sched/`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

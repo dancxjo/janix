@@ -1,5 +1,32 @@
 # Changelog
 
+## Graph Database Correctness, Graphics Resilience & New Features
+
+Recent updates focus on refining the Phloem graph database for correctness and security, fortifying the graphics subsystem against headless environments, and expanding the user experience with new applications and testing workflows. The operating system now gracefully handles environments without physical displays, correctly parses parameterized graph mutations, and includes a new "Daily Inspiration" application demonstrating complex UI interactions. Developer workflows have also been formally documented and tested via BDD scenarios.
+
+### 🌿 Phloem (Graph DB) Hardening
+
+*   **MATCH ID Optimization Fix**: Corrected a significant bug in the `MATCH` query optimizer where any property named "id" (e.g., `MATCH (n {id: 123})`) was incorrectly interpreted as the internal node ID. The optimizer now correctly requires the explicit `id(n) = value` predicate syntax, preventing incorrect results and query failures.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+*   **Parameterized MERGE Support**: Added robust unit testing and verification for `MERGE` commands utilizing parameterized variables within property maps. This ensures secure and dynamic query execution when creating or finding nodes.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🎨 Graphics & Display Resilience
+
+*   **Headless Fallback (`display_fake`)**: Implemented a crucial fallback mechanism in the `sprout` supervisor's display pipeline. If physical display drivers (`display_bootfb` or `display_virtio_gpu`) fail to initialize—such as in headless VM environments—`sprout` now automatically launches `display_fake`. This prevents the `bloom` compositor from crashing and ensures the system remains operational.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+
+### 📱 Applications & User Experience
+
+*   **Daily Inspiration (Fortune App)**: Introduced the "Daily Inspiration" feature, complete with a new `fortune` application. This application demonstrates complex UI interactions and has been fully integrated into the system image and supervisor.
+    *   *Artifacts*: `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`, `docs/behavior/features/daily_inspiration.feature`
+
+### 🛠️ Developer Workflow & Testing
+
+*   **GQL BDD Integration**: Added a new `developer_workflow.feature` scenario to document and automatically test the process of inspecting the system graph via GQL. This includes new step definitions in the BDD framework to execute GQL queries directly against the `anther` service over HTTP.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

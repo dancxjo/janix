@@ -1,5 +1,38 @@
 # Changelog
 
+
+## Developer Workflow, BDD Expansion, and Graph DB Fixes
+
+Recent development has introduced important robustness improvements to the system, focusing on developer tooling, system stability under headless conditions, and critical fixes to the Phloem graph database query execution. A new "Daily Inspiration" feature has been added alongside a new `fortune` application, demonstrating the system's expanding capabilities and testing framework. Additionally, new Behavior-Driven Development (BDD) scenarios have been added to rigorously document and test the developer workflow using OpenGQL.
+
+### 🐛 Phloem (Graph DB) Query Optimization Fixes
+
+*   **MATCH ID Property Fix**: Resolved a critical bug in `execute_match` for edge patterns where a property explicitly named `id` (e.g., `MATCH (n {id: 123})`) was incorrectly treated as an optimization for the internal Node ID. The executor now strictly looks for the `id(n) = value` predicate in the `WHERE` clause before applying internal ID optimizations, ensuring queries with custom `id` properties return correct results.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+### 💡 Daily Inspiration & Fortune App
+
+*   **Fortune Application**: Added a new `fortune` application to provide daily inspiration. The app is automatically spawned by the `sprout` supervisor on startup and has been integrated into the system image.
+    *   *Artifacts*: `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`
+*   **BDD Verification**: Included a dedicated `daily_inspiration.feature` BDD test to verify the functionality of the new application and its visual presence on the system.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`
+
+### 🧪 BDD Framework & Developer Workflow
+
+*   **Developer Workflow Scenario**: Added a new BDD feature to document and verify the developer workflow, specifically focusing on inspecting the system graph via GQL queries against the `anther` service.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`
+*   **GQL Query Step Definition**: Implemented a new test step in the BDD framework to programmatically execute OpenGQL queries over HTTP during test scenarios, unlocking more advanced system verification.
+    *   *Artifacts*: `tools/bdd/src/steps.rs`
+*   **Phloem MERGE Parameter Tests**: Expanded the graph database test suite with unit tests verifying that `MERGE` commands correctly handle parameters in property maps.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🛠️ System Resilience & Toolchain
+
+*   **Graphics Startup Fallback**: Improved the robustness of the graphics subsystem startup. If `sprout` fails to initialize a hardware-backed display driver (like `display_bootfb` or `display_virtio_gpu`), it will now automatically fall back to launching `display_fake`. This prevents the `bloom` compositor from crashing or silently failing in headless testing environments.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+*   **Toolchain Pinning**: Pinned the Rust toolchain to `nightly-2026-02-10` in `rust-toolchain.toml` to maintain compatibility with vendored `build-std` sources and prevent recent `#[rustc_const_unstable]` errors.
+    *   *Artifacts*: `rust-toolchain.toml`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

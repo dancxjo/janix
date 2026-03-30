@@ -149,6 +149,10 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
     let r2 = unsafe { pci_read_config(bus, dev, func, 0x08) }; // Class/Subclass/ProgIF/Rev
     let r11 = unsafe { pci_read_config(bus, dev, func, 0x2C) }; // Subsystem Vendor/ID
 
+    // Enable IO (0x1), Memory (0x2), and Bus Master (0x4) in Command Register
+    let cmd = unsafe { pci_read_config(bus, dev, func, 0x04) };
+    unsafe { pci_write_config(bus, dev, func, 0x04, cmd | 0x07) };
+
     let vendor_id = (r0 & 0xFFFF) as u16;
     let device_id = (r0 >> 16) as u16;
     let (vendor_name, device_name) = pci::lookup_names(vendor_id, device_id);

@@ -548,6 +548,12 @@ fn build_userspace_app_with_features(
     let cwd = std::env::current_dir().unwrap();
     let std_src = cwd.join("vendor/rust/library");
 
+    if !std_src.exists() {
+        println!("==> Rust vendor source not found. Fetching...");
+        cmd!(sh, "just fetch-rust").run()?;
+        cmd!(sh, "just rust-apply-patches").run()?;
+    }
+
     let mut cmd = cmd!(
         sh,
         "cargo -Z build-std={build_std_crates} -Z build-std-features=compiler-builtins-mem {extra_flags...} build --target {target} --profile {profile} -p {name}"

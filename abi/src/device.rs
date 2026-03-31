@@ -68,3 +68,64 @@ pub struct RtcTime {
     pub weekday: u8, // 0-6
     pub flags: u8,   // Status flags
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_device_call_layout() {
+        assert_eq!(
+            core::mem::size_of::<DeviceCall>(),
+            40,
+            "DeviceCall size must be exactly 40 bytes to match ABI"
+        );
+        assert_eq!(
+            core::mem::align_of::<DeviceCall>(),
+            8,
+            "DeviceCall alignment must be exactly 8 bytes"
+        );
+    }
+
+    #[test]
+    fn test_pci_enable_msi_request_layout() {
+        assert_eq!(
+            core::mem::size_of::<PciEnableMsiRequest>(),
+            8,
+            "PciEnableMsiRequest size must be exactly 8 bytes"
+        );
+        assert_eq!(
+            core::mem::align_of::<PciEnableMsiRequest>(),
+            4,
+            "PciEnableMsiRequest alignment must be exactly 4 bytes"
+        );
+    }
+
+    #[test]
+    fn test_pci_enable_msi_response_layout() {
+        assert_eq!(
+            core::mem::size_of::<PciEnableMsiResponse>(),
+            4,
+            "PciEnableMsiResponse size must be exactly 4 bytes"
+        );
+        assert_eq!(
+            core::mem::align_of::<PciEnableMsiResponse>(),
+            1,
+            "PciEnableMsiResponse alignment must be exactly 1 byte"
+        );
+    }
+
+    #[test]
+    fn test_rtc_time_layout() {
+        assert_eq!(
+            core::mem::size_of::<RtcTime>(),
+            10,
+            "RtcTime size must be exactly 10 bytes"
+        );
+        assert_eq!(
+            core::mem::align_of::<RtcTime>(),
+            2,
+            "RtcTime alignment must be exactly 2 bytes"
+        );
+    }
+}

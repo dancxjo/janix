@@ -1,5 +1,33 @@
 # Changelog
 
+## Feature Additions, Graphics Reliability, and Phloem Fixes
+
+This update brings a variety of new features, bug fixes, and testing improvements to the operating system. A highlight of this release is the introduction of a new "Daily Inspiration" feature via the Fortune application. We have also significantly improved the reliability of our graphics system by adding a fallback to a fake display when no hardware display is found, preventing compositor crashes in headless environments. The Phloem graph database received important bug fixes related to internal Node ID matching and new test coverage for parameterized MERGE commands. Furthermore, system testing has been expanded with new developer workflow BDD scenarios to verify GQL execution. On the hardware and infrastructure side, we've enabled PCI bus mastering, automated Rust source fetching for build environments, and updated the QEMU audio device configuration.
+
+### 🌟 New Features & Applications
+
+*   **Daily Inspiration (Fortune App)**: Implemented a new Daily Inspiration feature that displays a random quote or message to the user upon startup. This introduces the new `fortune` application, which is now registered in the system image configuration and spawned by the `sprout` supervisor.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/sprout/src/supervisor.rs`, `xtask/src/image.rs`
+
+### 🐛 Bug Fixes & Reliability
+
+*   **Graphics System Startup Fallback**: Resolved an issue where the graphics system would fail to start in headless environments. The `sprout` supervisor now intelligently falls back to launching `display_fake` if hardware graphics initialization (`display_bootfb` or `display_virtio_gpu`) fails. This ensures the `bloom` compositor receives valid display handles and operates correctly.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+*   **Phloem Node ID Optimization Fix**: Fixed a bug in the Phloem graph database where the `MATCH` query incorrectly treated a generic node property named "id" (e.g., `MATCH (n {id: 123})`) as the internal Node ID for optimization purposes. The optimization is now strictly applied only when using the explicit `id(n) = value` predicate syntax in the `WHERE` clause.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+
+### 🧪 Testing & Developer Workflow
+
+*   **Developer Workflow BDD Tests**: Added new BDD test scenarios to document and verify the developer workflow, specifically focusing on inspecting the system graph via GQL queries against the `anther` service.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+*   **Parameterized MERGE Unit Tests**: Expanded test coverage for the Phloem graph database by adding unit tests to verify that `MERGE` commands correctly handle parameterized variables within property maps.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### 🛠️ Infrastructure & Hardware Support
+
+*   **System Enhancements**: Enabled PCI bus mastering, automated the fetching of Rust source code for smoother builds, updated the QEMU audio device configuration, and improved `.gitignore` rules for PID files.
+    *   *Artifacts*: Build scripts and device configurations.
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

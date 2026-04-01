@@ -1,5 +1,41 @@
 # Changelog
 
+## Application Expansion, Hardware Resilience & Query Refinement
+
+Recent updates have continued to refine the core system, expanding its hardware capabilities and shoring up the query engine. A significant addition is the new "Daily Inspiration" application (Fortune), which demonstrates system capability. The Phloem graph database received important bugfixes related to internal node ID handling and new test coverage for parameterized mutations. Furthermore, hardware initialization has been made more robust by gracefully falling back to a virtual display if physical hardware is absent, preventing compositor crashes. We also enabled PCI bus mastering and integrated automated tools for fetching Rust source code to improve the developer experience. An experimental effort to migrate userspace to a `no_std` environment was attempted and subsequently reverted for further refinement.
+
+### 🌟 Applications & Features
+
+*   **Daily Inspiration (Fortune App)**: Added a new Fortune application to the system image, providing daily inspiration messages. This feature is fully verified by new BDD scenarios.
+    *   *Artifacts*: `userspace/fortune/`, `docs/behavior/features/daily_inspiration.feature`
+
+### 🌿 Phloem (Graph DB) Improvements
+
+*   **MATCH Optimization Fix**: Corrected a flaw where the query optimizer confused a standard property named `id` with the internal Node ID. The optimization now correctly requires the explicit `id(n) = value` syntax.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`
+*   **MERGE Parameter Support**: Added comprehensive unit testing to ensure the `MERGE` command correctly handles variables/parameters within property maps.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### ⚙️ Hardware Resilience & Drivers
+
+*   **Headless Display Fallback**: Improved the system startup resilience by configuring the `sprout` supervisor to automatically fall back to the `display_fake` driver if hardware display initialization (`display_bootfb` or `display_virtio_gpu`) fails. This prevents the compositor from crashing in headless environments.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+*   **PCI Bus Mastering**: Enabled PCI bus mastering within the kernel PCI subsystem, allowing capable devices to perform direct memory access (DMA).
+    *   *Artifacts*: `kernel/src/root/pci.rs`
+
+### 🛠️ Developer Experience & Tooling
+
+*   **Automated Source Fetching**: Integrated automated Rust source fetching into the build system, simplifying the setup process for `cargo -Z build-std`.
+    *   *Artifacts*: `justfile`
+*   **Developer Workflow BDD**: Added new BDD test scenarios to document and verify the developer workflow, specifically focusing on inspecting the system graph via GQL over HTTP.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+*   **Toolchain Pinning**: Pinned the rust toolchain to `nightly-2026-02-10` to ensure stability and compatibility during builds.
+    *   *Artifacts*: `rust-toolchain.toml`
+
+### 🔬 Experimental Work
+
+*   **`no_std` Userspace Migration (Reverted)**: Undertook a comprehensive effort to migrate all userspace applications to a `no_std` environment using `spin::Mutex`. This work was reverted to evaluate alternative synchronization strategies and address unforeseen architectural constraints.
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

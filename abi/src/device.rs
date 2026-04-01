@@ -68,3 +68,33 @@ pub struct RtcTime {
     pub weekday: u8, // 0-6
     pub flags: u8,   // Status flags
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use core::mem::{align_of, size_of};
+
+    #[test]
+    fn test_device_abi_sizes() {
+        assert_eq!(size_of::<DeviceKind>(), 4);
+        assert_eq!(align_of::<DeviceKind>(), 4);
+
+        assert_eq!(size_of::<DeviceHandle>(), 4);
+        assert_eq!(align_of::<DeviceHandle>(), 4);
+
+        assert_eq!(size_of::<RootCaps>(), 0);
+        assert_eq!(align_of::<RootCaps>(), 1);
+
+        assert_eq!(size_of::<DeviceCall>(), 40);
+        assert_eq!(align_of::<DeviceCall>(), 8);
+
+        assert_eq!(size_of::<PciEnableMsiRequest>(), 8);
+        assert_eq!(align_of::<PciEnableMsiRequest>(), 4);
+
+        assert_eq!(size_of::<PciEnableMsiResponse>(), 4);
+        assert_eq!(align_of::<PciEnableMsiResponse>(), 1);
+
+        assert_eq!(size_of::<RtcTime>(), 10);
+        assert_eq!(align_of::<RtcTime>(), 2);
+    }
+}

@@ -61,15 +61,15 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
         }
         
         spins += 1;
-        if spins < 1000000 {
+        if spins < 1000 {
             core::hint::spin_loop();
         } else {
             sleep_count += 1;
-            if sleep_count % 1000 == 0 {
+            if sleep_count % 10000 == 0 {
                 crate::kprintln!("root_call still blocked after {} sleeps! done={}", sleep_count, done);
             }
             unsafe {
-                crate::sched::sleep_ticks_current(1);
+                crate::sched::yield_now_current();
             }
             spins = 0;
         }

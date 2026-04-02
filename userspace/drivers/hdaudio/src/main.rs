@@ -108,8 +108,12 @@ struct HdaController {
 fn main(_arg: usize) -> ! {
     info!("HDAUDIO: starting");
 
+    info!("HDAUDIO: searching for HDA controller...");
     let dev = match find_hda_device() {
-        Some(id) => id,
+        Some(id) => {
+            info!("HDAUDIO: found device {:?}", id);
+            id
+        }
         None => {
             error!("HDAUDIO: no HDA PCI device found");
             loop {
@@ -287,6 +291,9 @@ impl HdaController {
 
     fn init_controller(&mut self) -> Result<(), abi::errors::Errno> {
         self.reset_controller();
+        // HDA spec: codecs need time to complete their internal reset after
+        // the controller CRST bit assertion. 521μs minimum; use 10ms for margin.
+        stem::sleep_ms(10);
         self.init_corb_rirb();
         let gcap = self.read_u16(REG_GCAP);
         let state_sts = self.read_u16(REG_STATESTS);
@@ -328,26 +335,49 @@ impl HdaController {
         let root_nc = self.get_param(cad, 0x00, PARAM_NODE_COUNT)?;
         let root_start = ((root_nc >> 16) & 0x7f) as u8;
         let root_count = (root_nc & 0x7f) as u8;
+        info!("HDAUDIO: root nodes: start={} count={}", root_start, root_count);
 
         let mut afg = None;
         for nid in root_start..root_start.saturating_add(root_count) {
             let fg = self.get_param(cad, nid, PARAM_FG_TYPE)?;
+            info!("HDAUDIO: node {} fg_type=0x{:08x}", nid, fg);
             if (fg & 0xff) as u8 == FG_TYPE_AUDIO {
                 afg = Some(nid);
                 break;
             }
         }
-        let afg = afg?;
+        let afg = match afg {
+            Some(a) => a,
+            None => {
+                error!("HDAUDIO: no Audio Function Group found");
+                return None;
+            }
+        };
+        info!("HDAUDIO: AFG at node {}", afg);
 
         let sub = self.get_param(cad, afg, PARAM_NODE_COUNT)?;
         let start = ((sub >> 16) & 0x7f) as u8;
         let count = (sub & 0x7f) as u8;
+        info!("HDAUDIO: AFG sub-nodes: start={} count={}", start, count);
 
         let mut out_nid = None;
         let mut pin_nid = None;
         for nid in start..start.saturating_add(count) {
             let awcap = self.get_param(cad, nid, PARAM_AWCAP)?;
             let wtype = ((awcap >> 20) & 0xf) as u8;
+            let wtype_name = match wtype {
+                0 => "AudioOut",
+                1 => "AudioIn",
+                2 => "AudioMix",
+                3 => "AudioSel",
+                4 => "PinComplex",
+                5 => "Power",
+                6 => "VolumeKnob",
+                7 => "BeepGen",
+                0xf => "VendorDefined",
+                _ => "Unknown",
+            };
+            info!("HDAUDIO:   widget nid={} type={}({}) awcap=0x{:08x}", nid, wtype, wtype_name, awcap);
             if wtype == WIDGET_AUDIO_OUT && out_nid.is_none() {
                 out_nid = Some(nid);
             }
@@ -357,6 +387,13 @@ impl HdaController {
             if out_nid.is_some() && pin_nid.is_some() {
                 break;
             }
+        }
+
+        if out_nid.is_none() {
+            error!("HDAUDIO: no AudioOut widget found (codec may be input-only, e.g. hda-micro)");
+        }
+        if pin_nid.is_none() {
+            error!("HDAUDIO: no PinComplex widget found");
         }
 
         Some((afg, out_nid?, pin_nid?))
@@ -408,14 +445,14 @@ impl HdaController {
             if (self.read_u8(self.sd_base + SD_CTL0) & SD_CTL_SRST) != 0 {
                 break;
             }
-            core::hint::spin_loop();
+            stem::yield_now();
         }
         self.write_u8(self.sd_base + SD_CTL0, 0);
         for _ in 0..50_000 {
             if (self.read_u8(self.sd_base + SD_CTL0) & SD_CTL_SRST) == 0 {
                 break;
             }
-            core::hint::spin_loop();
+            stem::yield_now();
         }
 
         self.write_u32(self.sd_base + SD_BDPL, self.bdl_phys as u32);
@@ -481,7 +518,7 @@ impl HdaController {
         self.corb_wp = next_wp;
         self.write_u16(REG_CORBWP, self.corb_wp);
 
-        for _ in 0..200_000 {
+        for i in 0..200_000 {
             let wp = self.read_u16(REG_RIRBWP) & 0x00ff;
             if wp != self.rirb_rp {
                 self.rirb_rp = wp;
@@ -489,8 +526,17 @@ impl HdaController {
                 let resp = unsafe { read_volatile((self.rirb_virt as *const u32).add(idx * 2)) };
                 return Ok(resp);
             }
-            core::hint::spin_loop();
+            if i < 100 {
+                core::hint::spin_loop();
+            } else if i % 100 == 0 {
+                // Give hardware time to process - 1ms sleep
+                stem::sleep_ms(1);
+            } else {
+                stem::yield_now();
+            }
         }
+        warn!("HDAUDIO: verb timeout cmd=0x{:08x} (cad={} nid={} verb=0x{:04x} payload=0x{:02x})",
+              cmd, cad, nid, verb, payload);
         Err(abi::errors::Errno::ETIMEDOUT)
     }
 
@@ -531,7 +577,7 @@ impl HdaController {
             if (self.read_u32(REG_GCTL) & GCTL_CRST) == 0 {
                 break;
             }
-            core::hint::spin_loop();
+            stem::yield_now();
         }
         gctl |= GCTL_CRST;
         self.write_u32(REG_GCTL, gctl);
@@ -539,7 +585,7 @@ impl HdaController {
             if (self.read_u32(REG_GCTL) & GCTL_CRST) != 0 {
                 return;
             }
-            core::hint::spin_loop();
+            stem::yield_now();
         }
         warn!("HDAUDIO: controller reset timeout");
     }
@@ -570,17 +616,51 @@ impl HdaController {
 
 fn find_hda_device() -> Option<ThingId> {
     let mut devs = [ThingId::default(); 8];
-    let count = thingsys::find(kinds::DEV_SOUND_HDA_PCI_STUB, &mut devs).ok()?;
+    info!("HDAUDIO: calling thingsys::find for HDA stubs...");
+    let count = match thingsys::find(kinds::DEV_SOUND_HDA_PCI_STUB, &mut devs) {
+        Ok(c) => {
+            info!("HDAUDIO: find returned {} devices", c);
+            c
+        }
+        Err(e) => {
+            error!("HDAUDIO: find failed: {:?}", e);
+            return None;
+        }
+    };
+
+    // First pass: prefer controllers known to have codecs attached.
+    // QEMU's `-device intel-hda` creates an ICH6 controller (8086:2668)
+    // which is the one that has hda-duplex/hda-micro codecs on it.
+    // Also match known real-hardware IDs.
+    let preferred: &[(u16, u16)] = &[
+        (0x8086, 0x2668), // Intel ICH6 HDA (QEMU `-device intel-hda`)
+        (0x1022, 0x15e3), // AMD Family 17h HDA
+        (0x1002, 0x1640), // AMD/ATI
+        (0x10de, 0x2291), // NVIDIA
+    ];
+
     for &id in devs.iter().take(count) {
         let vendor = thingsys::prop_get(id, keys::VENDOR_ID).unwrap_or(0) as u16;
         let device = thingsys::prop_get(id, keys::DEVICE_ID).unwrap_or(0) as u16;
-        if (vendor == 0x1022 && device == 0x15e3)
-            || (vendor == 0x1002 && device == 0x1640)
-            || (vendor == 0x10de && device == 0x2291)
-        {
+        for &(pv, pd) in preferred {
+            if vendor == pv && device == pd {
+                info!("HDAUDIO: matched preferred device {:04x}:{:04x}", vendor, device);
+                return Some(id);
+            }
+        }
+    }
+
+    // Second pass: accept any Intel HDA controller (including ICH9 built-in).
+    for &id in devs.iter().take(count) {
+        let vendor = thingsys::prop_get(id, keys::VENDOR_ID).unwrap_or(0) as u16;
+        if vendor == 0x8086 {
+            let device = thingsys::prop_get(id, keys::DEVICE_ID).unwrap_or(0) as u16;
+            info!("HDAUDIO: using Intel HDA {:04x}:{:04x}", vendor, device);
             return Some(id);
         }
     }
+
+    // Final fallback: first device found.
     if count > 0 {
         Some(devs[0])
     } else {

@@ -37,7 +37,7 @@ hdd arch=karch:
 # Run with QEMU (UEFI mode)
 # Examples: just run, just run aarch64, just run riscv64
 run arch=karch:
-    RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}} -device intel-hda -device hda-micro,audiodev=snd0 -audiodev alsa,id=snd0"
+    RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}} -device intel-hda -device hda-duplex,audiodev=snd0 -audiodev alsa,id=snd0"
 
 # Start HTTPS proxy for guest (runs on port 8081)
 # Guest accesses via: http://10.0.2.2:8081/?url=https://example.com/

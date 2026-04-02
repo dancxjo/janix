@@ -115,6 +115,7 @@ impl SchedState {
         }
         if let Some(task) = self.get_task_mut(tid) {
             task.runq_location = Some((cpu, prio));
+            task.enqueued_at_tick = crate::sched::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed);
         }
     }
 

@@ -692,4 +692,43 @@ mod tests {
             panic!("Expected Node ID");
         }
     }
+
+    #[test]
+    fn test_match_multiple_inline_properties() {
+        let g = setup_mock();
+        // Give node 1 two specific properties
+        g.set_prop(1, "prop1", 100);
+        g.set_prop(1, "prop2", 200);
+
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // 1. Match with both properties correct (Logical AND)
+        let cmd = parse("MATCH (n {prop1: 100, prop2: 200}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1, "Should find node with both properties matching");
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1);
+        } else {
+            panic!("Expected Node result");
+        }
+
+        // 2. Match with one property conflicting
+        let cmd2 = parse("MATCH (n {prop1: 100, prop2: 999}) RETURN n").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success);
+        assert_eq!(res2.rows.len(), 0, "Should return empty result if one property conflicts");
+
+        // 3. Match with the other property conflicting
+        let cmd3 = parse("MATCH (n {prop1: 999, prop2: 200}) RETURN n").unwrap();
+        let res3 = ex.execute(cmd3);
+        assert!(res3.success);
+        assert_eq!(res3.rows.len(), 0, "Should return empty result if the other property conflicts");
+
+        // 4. Match with missing property
+        let cmd4 = parse("MATCH (n {prop1: 100, prop3: 300}) RETURN n").unwrap();
+        let res4 = ex.execute(cmd4);
+        assert!(res4.success);
+        assert_eq!(res4.rows.len(), 0, "Should return empty result if property is missing");
+    }
 }

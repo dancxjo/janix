@@ -20,7 +20,7 @@ fn main(_arg: usize) -> ! {
     stem::sleep(core::time::Duration::from_millis(500));
 
     // Find all dev.storage.Disk Things
-    let mut disks = [ThingId(0); 8];
+    let mut disks = [ThingId([0; 16]); 8];
     let count = match thingsys::find("dev.storage.Disk", &mut disks) {
         Ok(c) => c,
         Err(e) => {
@@ -52,7 +52,7 @@ fn main(_arg: usize) -> ! {
 }
 
 fn probe_disk(disk_id: ThingId, index: usize) {
-    info!("DISK_PROBE: === Disk {} (Thing {}) ===", index, disk_id.0);
+    info!("DISK_PROBE: === Disk {} (Thing {:?}) ===", index, disk_id);
 
     // Get disk properties
     match thingsys::prop_get(disk_id, "sector_count") {

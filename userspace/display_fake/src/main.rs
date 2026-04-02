@@ -6,7 +6,7 @@ use abi::driver_frame::FrameReader;
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
 use stem::syscall::{port_recv, port_send, PortHandle};
-use stem::thing::ThingId;
+use stem::thing::{ThingId, HandleId};
 
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]

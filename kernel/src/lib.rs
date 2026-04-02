@@ -558,6 +558,14 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     contract!("Initializing tasking...");
     crate::task::init::<R>();
 
+    // CRITICAL: Calibrate the BSP preemption timer BEFORE starting secondary CPUs.
+    // Secondary CPUs read timer_vector/timer_init_cnt in init_secondary_cpu().
+    // If these aren't set yet, secondary CPUs get no LAPIC timer, meaning
+    // wake_sleepers() (called only from on_tick → PreemptTick) never fires
+    // on those CPUs, and any task that calls sleep_ms() is stuck forever.
+    kinfo!("System initialized. Setting up preemption timer (100Hz)...");
+    runtime.setup_preemption_timer(100);
+
     // Bring up all secondary CPUs during early boot.
     let cpu_total = runtime.cpu_total_count();
     if cpu_total > 1 {
@@ -782,9 +790,6 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             }
         }
     }
-
-    kinfo!("System initialized. Setting up preemption timer (100Hz)...");
-    runtime.setup_preemption_timer(100);
 
     contract!("Entering scheduler loop.");
     loop {

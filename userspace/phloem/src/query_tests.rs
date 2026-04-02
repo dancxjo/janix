@@ -651,6 +651,31 @@ mod tests {
         assert!(!res.rows.is_empty(), "Expected edges from node 1, but got empty result. The executor likely confused property 'id' with internal Node ID.");
     }
     #[test]
+    fn test_multiple_return_expressions() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:proc.Process) RETURN n, count(n)").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.columns, vec!["n", "count(n)"]);
+        // It has 1 result row since it is an aggregation? Or does it group?
+        // Wait, executor.rs says:
+        // if has_aggregate ... row.push(ResultValue::Number(matched_ids.len() as u64));
+        // else push 0.
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1); // first node found
+        } else {
+            panic!("Expected Node ID");
+        }
+        if let crate::ResultValue::Number(n) = res.rows[0][1] {
+            assert_eq!(n, 2); // 2 proc.Process nodes
+        } else {
+            panic!("Expected Number result");
+        }
+    }
+
+    #[test]
     fn test_merge_with_params() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);

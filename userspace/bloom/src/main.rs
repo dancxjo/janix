@@ -699,11 +699,11 @@ fn main(arg: usize) -> ! {
 
     // Composition mode: CPU (default) or GPU (virgl-accelerated)
     #[cfg(feature = "gpu")]
-    let composition_mode = if target.backend == crate::compositor::DisplayBackend::VirtioGpu {
-        stem::info!("bloom: VirtioGpu detected - enabling GPU composition mode");
+    let composition_mode = if target.backend == crate::compositor::DisplayBackend::VirtioGpu && presenter.has_3d_cap() {
+        stem::info!("bloom: VirtioGpu + Virgl 3D detected - enabling GPU composition mode");
         CompositionMode::Gpu
     } else {
-        stem::info!("bloom: No VirtioGpu - using CPU composition mode");
+        stem::info!("bloom: GPU composition not supported (or Virgl disabled) - using CPU composition mode");
         CompositionMode::Cpu
     };
     #[cfg(not(feature = "gpu"))]
@@ -727,7 +727,9 @@ fn main(arg: usize) -> ! {
     // Window Manager disabled in paint pipeline (no legacy chrome/hit testing)
 
     // Glyph Arrival Watch
+    stem::info!("bloom: calling intern for FONT_GLYPH");
     let glyph_watch_pred = stem::thing::sys::intern(kinds::FONT_GLYPH).unwrap_or(0);
+    stem::info!("bloom: intern returned FONT_GLYPH={}", glyph_watch_pred);
     let glyph_watch = if glyph_watch_pred != 0 {
         use abi::root::RootWatchFilter;
         use abi::types::{WatchMode, WatchSpec};
@@ -738,13 +740,18 @@ fn main(arg: usize) -> ! {
             filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
             ..Default::default()
         };
-        stem::syscall::root_watch_open(&spec).ok()
+        stem::info!("bloom: calling root_watch_open for FONT_GLYPH");
+        let res = stem::syscall::root_watch_open(&spec).ok();
+        stem::info!("bloom: root_watch_open ret={:?}", res);
+        res
     } else {
         None
     };
 
     // UI Window Watch - triggers dirty when windows are created/modified
+    stem::info!("bloom: calling intern for UI_WINDOW");
     let ui_window_kind = stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0);
+    stem::info!("bloom: intern returned UI_WINDOW={}", ui_window_kind);
     let ui_window_watch = if ui_window_kind != 0 {
         use abi::root::RootWatchFilter;
         use abi::types::{WatchMode, WatchSpec};
@@ -756,13 +763,18 @@ fn main(arg: usize) -> ! {
             filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
             ..Default::default()
         };
-        stem::syscall::root_watch_open(&spec).ok()
+        stem::info!("bloom: calling root_watch_open for UI_WINDOW");
+        let res = stem::syscall::root_watch_open(&spec).ok();
+        stem::info!("bloom: root_watch_open ret={:?}", res);
+        res
     } else {
         None
     };
 
     // UI Paint Watch - triggers dirty when paint generation changes
+    stem::info!("bloom: calling intern for UI_PAINT_GEN");
     let ui_paint_gen_key = stem::thing::sys::intern(keys::UI_PAINT_GEN).unwrap_or(0);
+    stem::info!("bloom: intern returned UI_PAINT_GEN={}", ui_paint_gen_key);
     let ui_paint_watch = if ui_paint_gen_key != 0 {
         use abi::root::RootWatchFilter;
         use abi::types::{WatchMode, WatchSpec};
@@ -773,7 +785,10 @@ fn main(arg: usize) -> ! {
             filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
             ..Default::default()
         };
-        stem::syscall::root_watch_open(&spec).ok()
+        stem::info!("bloom: calling root_watch_open for UI_PAINT_GEN");
+        let res = stem::syscall::root_watch_open(&spec).ok();
+        stem::info!("bloom: root_watch_open ret={:?}", res);
+        res
     } else {
         None
     };

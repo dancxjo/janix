@@ -603,6 +603,7 @@ impl VirtioGpu {
                 if resp_type >= VIRTIO_GPU_RESP_OK_NODATA {
                     return Ok(());
                 } else {
+                    stem::error!("VirtioGpu: Submit 3D command failed with resp_type={}", resp_type);
                     return Err("Submit 3D command failed");
                 }
             }
@@ -613,6 +614,7 @@ impl VirtioGpu {
             }
         }
 
+        stem::error!("VirtioGpu: Submit 3D command timeout!");
         Err("Submit 3D command timeout")
     }
 
@@ -861,6 +863,7 @@ impl VirtioGpu {
                 if resp_type >= VIRTIO_GPU_RESP_OK_NODATA {
                     return Ok(());
                 } else {
+                    stem::error!("VirtioGpu: Command failed with resp_type={}", resp_type);
                     return Err("Command failed");
                 }
             }
@@ -871,6 +874,7 @@ impl VirtioGpu {
             }
         }
 
+        stem::error!("VirtioGpu: Command timeout!");
         Err("Command timeout")
     }
 

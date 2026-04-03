@@ -13,12 +13,25 @@ use abi::ThingId;
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::info;
-use stem::syscall::{port_recv, port_send, PortHandle};
+use stem::syscall::{port_recv, port_send_all, PortHandle};
 
 use crate::damage::Damage;
 use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentDamageSnapshot, PresentStats};
 use crate::reclaimer;
 use crate::state::OverlayMode;
+
+fn send_reliable(handle: PortHandle, data: &[u8]) -> Result<usize, abi::errors::Errno> {
+    loop {
+        match port_send_all(handle, data) {
+            Err(abi::errors::Errno::EAGAIN) => stem::yield_now(),
+            Err(e) => {
+                stem::error!("bloom: send_reliable handle {} failed with {:?}", handle, e);
+                return Err(e);
+            }
+            Ok(n) => return Ok(n),
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug)]
 struct DriverNegotiation {
@@ -217,7 +230,7 @@ impl DriverPresenter {
             if let Some(total) =
                 drvproto::encode_message(&mut buf, drvproto::MSG_HELLO, &hello_bytes[..len])
             {
-                let _ = port_send(self.req_write, &buf[..total]);
+                let _ = send_reliable(self.req_write, &buf[..total]);
             }
         }
     }
@@ -230,7 +243,7 @@ impl DriverPresenter {
 
         let mut buf = [0u8; 128];
         if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_BIND, &bytes) {
-            let _ = port_send(self.req_write, &buf[..len]);
+            let _ = send_reliable(self.req_write, &buf[..len]);
             self.awaiting_bind_ack = true;
         }
     }
@@ -297,7 +310,8 @@ impl DriverPresenter {
             if let Some(len) =
                 drvproto::encode_message(buf, drvproto::MSG_PRESENT, &payload[..payload_len])
             {
-                let _ = port_send(self.req_write, &buf[..len]);
+                let status = send_reliable(self.req_write, &buf[..len]);
+                stem::info!("bloom: sent MSG_PRESENT rects={} len={} status={:?}", rect_count, len, status);
             }
         }
     }
@@ -434,7 +448,7 @@ impl DriverPresenter {
 
         // Encode and send message
         if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_SUBMIT_3D, &payload) {
-            let _ = port_send(self.req_write, &buf[..len]);
+            let _ = send_reliable(self.req_write, &buf[..len]);
         }
     }
 
@@ -474,7 +488,8 @@ impl DriverPresenter {
         if let Some(len) =
             drvproto::encode_message(&mut buf, drvproto::MSG_CREATE_TEXTURE_3D, &payload)
         {
-            let _ = port_send(self.req_write, &buf[..len]);
+            let status = send_reliable(self.req_write, &buf[..len]);
+            stem::info!("bloom: sent MSG_CREATE_TEXTURE_3D len={} status={:?}", len, status);
         }
 
         // Wait for MSG_TEXTURE_CREATED response
@@ -532,7 +547,7 @@ impl DriverPresenter {
         if let Some(len) =
             drvproto::encode_message(&mut buf, drvproto::MSG_UPLOAD_TEXTURE_3D, &payload)
         {
-            let _ = port_send(self.req_write, &buf[..len]);
+            let _ = send_reliable(self.req_write, &buf[..len]);
         }
 
         // Don't wait for ACK to avoid latency - texture upload is fire-and-forget
@@ -612,7 +627,7 @@ impl Presenter for DriverPresenter {
         let send_acquire = |req_write: stem::syscall::PortHandle| {
             let mut buf = [0u8; 128];
             if let Some(total) = drvproto::encode_message(&mut buf, drvproto::MSG_ACQUIRE, &[]) {
-                let _ = port_send(req_write, &buf[..total]);
+                let _ = send_reliable(req_write, &buf[..total]);
             }
         };
 
@@ -624,6 +639,7 @@ impl Presenter for DriverPresenter {
             while let Some((header, payload)) = self.frames.next_message() {
                 let msg_type = header.msg_type;
                 if msg_type == drvproto::MSG_ACQUIRED {
+                    stem::info!("bloom: received MSG_ACQUIRED, payload_len={} expected={}", payload.len(), drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE);
                     if let Some(acq) = drvproto::decode_acquired_payload_le(payload) {
                         return (
                             ThingId({
@@ -637,6 +653,8 @@ impl Presenter for DriverPresenter {
                             acq.format,
                             acq.buffer_age,
                         );
+                    } else {
+                        stem::error!("bloom: MSG_ACQUIRED payload decoding failed!");
                     }
                 } else {
                     // Copy payload to break borrow from self.frames
@@ -689,6 +707,13 @@ impl PresenterImpl {
         match self {
             PresenterImpl::Null(inner) => inner.pump(),
             PresenterImpl::Driver(inner) => inner.pump(),
+        }
+    }
+
+    pub fn has_3d_cap(&self) -> bool {
+        match self {
+            PresenterImpl::Null(_) => false,
+            PresenterImpl::Driver(inner) => inner.has_3d_cap(),
         }
     }
 

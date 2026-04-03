@@ -42,7 +42,6 @@ use core::sync::atomic::Ordering;
 pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
     let reply = root_svc::enqueue(op);
     let mut spins = 0;
-    let mut sleep_count = 0;
 
     loop {
         let done = reply.done.load(Ordering::Acquire);
@@ -61,17 +60,35 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
         }
         
         spins += 1;
-        if spins < 1000 {
+        if spins < 100 {
             core::hint::spin_loop();
         } else {
-            sleep_count += 1;
-            if sleep_count % 10000 == 0 {
-                crate::kprintln!("root_call still blocked after {} sleeps! done={}", sleep_count, done);
+            break;
+        }
+    }
+
+    let my_tid = unsafe { crate::sched::current_tid_current() };
+    reply.waiting_task.store(my_tid, Ordering::Release);
+
+    loop {
+        let done = reply.done.load(Ordering::Acquire);
+        if done != 0 {
+            reply.waiting_task.store(0, Ordering::Relaxed);
+            let status = reply.status.load(Ordering::Relaxed);
+            let value = reply.value.load(Ordering::Relaxed);
+
+            #[cfg(feature = "diagnostic-apps")]
+            crate::ktrace!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
+
+            if status == 0 {
+                return Ok(value as usize);
+            } else {
+                return abi::errors::errno(status as isize);
             }
-            unsafe {
-                crate::sched::yield_now_current();
-            }
-            spins = 0;
+        }
+        
+        unsafe {
+            crate::sched::block_current_erased();
         }
     }
 }

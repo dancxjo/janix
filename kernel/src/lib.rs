@@ -64,6 +64,32 @@ pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
     }
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64) {
+    let name = match kind {
+        0 => "user_divide_by_zero",
+        6 => "user_invalid_opcode",
+        13 => "user_gpf",
+        _ => "user_exception",
+    };
+
+    crate::log_event!(
+        crate::logging::LogLevel::Error,
+        "kernel::trap",
+        "{} rip=0x{:016x} err=0x{:04x} rsp=0x{:016x} cs=0x{:x} kind={}",
+        name,
+        rip,
+        error_code,
+        rsp,
+        cs,
+        kind
+    );
+
+    unsafe {
+        crate::sched::exit_current(-1);
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct PhysRange {
     pub start: u64,

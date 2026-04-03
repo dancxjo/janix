@@ -70,6 +70,8 @@ unsafe extern "C" {
     fn irq_resched_handler_shim();
     fn irq_tlb_shootdown_handler_shim();
     fn irq_mouse_handler_shim();
+    fn invalid_opcode_handler_shim();
+    fn div0_handler_shim();
 }
 
 core::arch::global_asm!(
@@ -108,6 +110,32 @@ core::arch::global_asm!(
         cli
         mov %rsp, %rdi
         call rust_gp_handler
+    2:  hlt
+        jmp 2b
+
+    .global invalid_opcode_handler_shim
+    invalid_opcode_handler_shim:
+        push $0
+        testb $3, 16(%rsp)
+        jz 1f
+        swapgs
+    1:
+        cli
+        mov %rsp, %rdi
+        call rust_invalid_opcode_handler
+    2:  hlt
+        jmp 2b
+
+    .global div0_handler_shim
+    div0_handler_shim:
+        push $0
+        testb $3, 16(%rsp)
+        jz 1f
+        swapgs
+    1:
+        cli
+        mov %rsp, %rdi
+        call rust_div0_handler
     2:  hlt
         jmp 2b
 
@@ -341,9 +369,20 @@ pub unsafe fn init() {
             (*base.add(i)).set_handler(handler, crate::arch::x86_64::gdt::KERNEL_CODE_SEL, 0, 0x8E);
         }
 
-        // Exceptions
         IDT.entries[3].set_handler(
             breakpoint_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+        IDT.entries[0].set_handler(
+            div0_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+        IDT.entries[6].set_handler(
+            invalid_opcode_handler_shim as *const () as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             0,
             0x8E,
@@ -510,10 +549,56 @@ pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_gp_handler(frame: &InterruptStackFrame) -> ! {
-    panic!(
-        "GPF at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}",
-        frame.rip, frame.cs, frame.error_code, frame.rsp
-    );
+    if frame.cs & 3 == 3 {
+        unsafe {
+            unsafe extern "C" {
+                fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);
+            }
+            kernel_handle_exception(frame.rip, frame.error_code, frame.rsp, frame.cs, 13);
+            loop { core::arch::asm!("hlt"); }
+        }
+    } else {
+        panic!(
+            "KERNEL GPF at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}",
+            frame.rip, frame.cs, frame.error_code, frame.rsp
+        );
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_invalid_opcode_handler(frame: &InterruptStackFrame) -> ! {
+    if frame.cs & 3 == 3 {
+        unsafe {
+            unsafe extern "C" {
+                fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);
+            }
+            kernel_handle_exception(frame.rip, frame.error_code, frame.rsp, frame.cs, 6);
+            loop { core::arch::asm!("hlt"); }
+        }
+    } else {
+        panic!(
+            "KERNEL INVALID OPCODE at RIP=0x{:x} CS=0x{:x} RSP=0x{:x}",
+            frame.rip, frame.cs, frame.rsp
+        );
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_div0_handler(frame: &InterruptStackFrame) -> ! {
+    if frame.cs & 3 == 3 {
+        unsafe {
+            unsafe extern "C" {
+                fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);
+            }
+            kernel_handle_exception(frame.rip, frame.error_code, frame.rsp, frame.cs, 0);
+            loop { core::arch::asm!("hlt"); }
+        }
+    } else {
+        panic!(
+            "KERNEL DIVIDE BY ZERO at RIP=0x{:x} CS=0x{:x} RSP=0x{:x}",
+            frame.rip, frame.cs, frame.rsp
+        );
+    }
 }
 
 #[unsafe(no_mangle)]

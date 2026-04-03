@@ -133,7 +133,14 @@ fn main(arg: usize) -> ! {
     let mut bound = false;
     let mut bound_bs: Option<ThingId> = None;
 
+    let wait_handles = [drv_req_read];
     loop {
+        // Yield to let others run if we don't have data, blocking until we do
+        if let Err(_) = stem::syscall::port_wait(&wait_handles, 1 /* READABLE */) {
+            stem::yield_now();
+            continue;
+        }
+
         if let Ok(n) = port_recv(drv_req_read, &mut buf) {
             if n > 0 {
                 frames.push(&buf[..n]);

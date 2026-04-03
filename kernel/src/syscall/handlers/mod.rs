@@ -68,10 +68,10 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
     }
 
     let my_tid = unsafe { crate::sched::current_tid_current() };
-    reply.waiting_task.store(my_tid, Ordering::Release);
+    reply.waiting_task.store(my_tid, Ordering::SeqCst);
 
     loop {
-        let done = reply.done.load(Ordering::Acquire);
+        let done = reply.done.load(Ordering::SeqCst);
         if done != 0 {
             reply.waiting_task.store(0, Ordering::Relaxed);
             let status = reply.status.load(Ordering::Relaxed);

@@ -110,8 +110,6 @@ pub fn sys_port_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> 
             copyout(ptr, &buf[..read])?;
         }
         crate::kinfo!("sys_port_recv: read {} bytes from port {}", read, entry.port_id.0);
-    } else {
-        crate::kinfo!("sys_port_recv: read 0 bytes from port {}", entry.port_id.0);
     }
 
     Ok(read)

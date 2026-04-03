@@ -170,8 +170,8 @@ fn handle_msg<R: BootRuntime>(
             if let Some(&first_id) = result.created_ids.first() {
                 reply.p0.store(first_id, Ordering::Relaxed);
             }
-            reply.done.store(1, Ordering::Release);
-            let waiter = reply.waiting_task.load(Ordering::Acquire);
+            reply.done.store(1, Ordering::SeqCst);
+            let waiter = reply.waiting_task.load(Ordering::SeqCst);
             if waiter != 0 {
                 unsafe { crate::sched::wake_task_erased(waiter); }
             }
@@ -331,9 +331,9 @@ fn handle_msg<R: BootRuntime>(
     if let Some(reply) = msg.reply {
         reply.status.store(status, Ordering::Relaxed);
         reply.value.store(value, Ordering::Relaxed);
-        reply.done.store(1, Ordering::Release);
+        reply.done.store(1, Ordering::SeqCst);
 
-        let waiter = reply.waiting_task.load(Ordering::Acquire);
+        let waiter = reply.waiting_task.load(Ordering::SeqCst);
         if waiter != 0 {
             unsafe { crate::sched::wake_task_erased(waiter); }
         }

@@ -111,11 +111,11 @@ fn wait_for_reply<R: crate::BootRuntime>(reply: &alloc::sync::Arc<crate::root::R
     }
 
     let my_tid = unsafe { crate::sched::current_tid_current() };
-    reply.waiting_task.store(my_tid, Ordering::Release);
+    reply.waiting_task.store(my_tid, Ordering::SeqCst);
     WAIT_FOR_REPLY_BLOCKS.fetch_add(1, Ordering::Relaxed);
 
     loop {
-        if reply.done.load(Ordering::Acquire) != 0 {
+        if reply.done.load(Ordering::SeqCst) != 0 {
             reply.waiting_task.store(0, Ordering::Relaxed);
             WAIT_FOR_REPLY_WAKES.fetch_add(1, Ordering::Relaxed);
             

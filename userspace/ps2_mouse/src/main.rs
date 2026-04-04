@@ -190,6 +190,11 @@ fn main(raw_write_handle: usize) -> ! {
 
     init_mouse();
 
+    // Force polling diagnostic
+    info!("ps2_mouse: FORCING POLLING LOOP FOR DIAGNOSTIC");
+    polling_loop(handle);
+
+    /*
     // Subscribe to mouse interrupt
     match irq_subscribe(MOUSE_VECTOR) {
         Ok(()) => info!(
@@ -222,6 +227,7 @@ fn main(raw_write_handle: usize) -> ! {
             }
         }
     }
+    */
 }
 
 /// Drain all pending mouse data and assemble packets
@@ -268,9 +274,11 @@ fn polling_loop(handle: PortHandle) -> ! {
         let status = ioport_read(PS2_STATUS, 1);
 
         if status & STATUS_OUTPUT_FULL != 0 {
+            let byte = ioport_read(PS2_DATA, 1) as u8;
+            
             if status & STATUS_AUX_DATA != 0 {
-                let byte = ioport_read(PS2_DATA, 1) as u8;
-
+                info!("ps2_mouse: POLL got mouse byte 0x{:02x}", byte);
+                
                 if idx == 0 && (byte & 0x08) == 0 {
                     continue;
                 }
@@ -282,9 +290,11 @@ fn polling_loop(handle: PortHandle) -> ! {
                     let _ = port_send(handle, &packet);
                     idx = 0;
                 }
+            } else {
+                info!("ps2_mouse: POLL stealing keyboard byte 0x{:02x}", byte);
             }
         } else {
-            stem::yield_now();
+            stem::sleep_ms(10);
         }
     }
 }

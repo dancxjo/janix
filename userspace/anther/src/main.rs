@@ -1112,11 +1112,11 @@ fn send_all(net: &NetClient, conn_handle: u32, data: &[u8]) {
 
         if n == 0 {
             stall_count += 1;
-            if stall_count >= 100 {
+            if stall_count >= 1000 {
                 warn!("anther: Send stalled after {} bytes", sent);
                 break;
             }
-            stem::syscall::yield_now();
+            stem::time::sleep_ms(5);
             continue;
         }
 
@@ -1185,15 +1185,6 @@ const STDIO_MODE_MAGIC: usize = 0xDEADBEEF;
 #[stem::main]
 fn main(arg: usize) -> ! {
     stem::info!("anther: Starting HTTP server (ThingOS anther v0.1)");
-
-    crate::info!("anther: Spawning test thread that exits in 5s");
-    extern "C" fn test_thread_exit() -> ! {
-        crate::info!("anther: test_thread_exit ENTERED!");
-        stem::time::sleep_ms(5000);
-        crate::info!("anther: Test thread exiting with code 0! Does OS die?");
-        stem::syscall::exit(0);
-    }
-    let _ = stem::thread::spawn(test_thread_exit);
 
     // Default to server mode when spawned as a service (arg=0)
     // stdio mode is only for testing (requires magic value)

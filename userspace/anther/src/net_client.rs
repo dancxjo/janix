@@ -288,15 +288,13 @@ impl NetClient {
 
             // Wait for response
             let mut resp_buf = [0u8; 64];
-            let mut chunk_sent = false;
+            let mut sent_this_chunk = None;
             for _ in 0..200 {
                 match port_recv(self.our_read_port, &mut resp_buf) {
                     Ok(len) if len >= 4 => {
                         let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
                         if resp_type == RESP_OK {
-                            let sent = u16::from_le_bytes([resp_buf[2], resp_buf[3]]);
-                            total_sent += sent as usize;
-                            chunk_sent = true;
+                            sent_this_chunk = Some(u16::from_le_bytes([resp_buf[2], resp_buf[3]]) as usize);
                             break;
                         } else {
                             warn!(
@@ -311,7 +309,12 @@ impl NetClient {
                     }
                 }
             }
-            if !chunk_sent {
+            if let Some(sent) = sent_this_chunk {
+                total_sent += sent;
+                if sent < chunk.len() {
+                    break; // Could not send the full chunk, stop to let caller retry or wait
+                }
+            } else {
                 warn!("anther: tcp_send chunk timeout");
                 break;
             }

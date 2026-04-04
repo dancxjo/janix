@@ -311,7 +311,7 @@ impl DriverPresenter {
                 drvproto::encode_message(buf, drvproto::MSG_PRESENT, &payload[..payload_len])
             {
                 let status = send_reliable(self.req_write, &buf[..len]);
-                stem::info!(
+                stem::trace!(
                     "bloom: sent MSG_PRESENT rects={} len={} status={:?}",
                     rect_count,
                     len,
@@ -494,7 +494,7 @@ impl DriverPresenter {
             drvproto::encode_message(&mut buf, drvproto::MSG_CREATE_TEXTURE_3D, &payload)
         {
             let status = send_reliable(self.req_write, &buf[..len]);
-            stem::info!(
+            stem::trace!(
                 "bloom: sent MSG_CREATE_TEXTURE_3D len={} status={:?}",
                 len,
                 status
@@ -648,7 +648,7 @@ impl Presenter for DriverPresenter {
             while let Some((header, payload)) = self.frames.next_message() {
                 let msg_type = header.msg_type;
                 if msg_type == drvproto::MSG_ACQUIRED {
-                    stem::info!(
+                    stem::trace!(
                         "bloom: received MSG_ACQUIRED, payload_len={} expected={}",
                         payload.len(),
                         drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE

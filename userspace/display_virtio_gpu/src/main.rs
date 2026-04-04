@@ -147,7 +147,7 @@ fn send_msg(handle: PortHandle, msg_type: u16, payload: &[u8]) {
             stem::yield_now();
             status = stem::syscall::port_send_all(handle, &buf[..len]);
         }
-        info!(
+        stem::trace!(
             "display_virtio_gpu: sent msg_type={} handle={} size={} status={:?}",
             msg_type, handle, len, status
         );
@@ -334,7 +334,7 @@ fn main(arg: usize) -> ! {
 
     loop {
         let handles = [drv_req_read];
-        stem::info!("display_virtio_gpu: waiting on port_wait...");
+        stem::trace!("display_virtio_gpu: waiting on port_wait...");
         match stem::syscall::port_wait(&handles, 1 /* READABLE */) {
             Ok(_) => {
                 let mut read_total = 0;
@@ -353,7 +353,7 @@ fn main(arg: usize) -> ! {
                     }
                 }
                 if read_total > 0 {
-                    stem::info!(
+                    stem::trace!(
                         "display_virtio_gpu: port_wait read {} bytes, dropped={}",
                         read_total,
                         frames.dropped_bytes()
@@ -361,12 +361,12 @@ fn main(arg: usize) -> ! {
                 }
             }
             Err(e) => {
-                stem::info!("display_virtio_gpu: port_wait returned ERR: {:?}", e);
+                stem::trace!("display_virtio_gpu: port_wait returned ERR: {:?}", e);
             }
         }
 
         while let Some((header, payload)) = frames.next_message() {
-            stem::info!(
+            stem::trace!(
                 "display_virtio_gpu: next_message -> msg_type={}, len={}",
                 header.msg_type,
                 payload.len()
@@ -393,7 +393,7 @@ fn main(arg: usize) -> ! {
                     }
                 }
                 drvproto::MSG_ACQUIRE => {
-                    info!("display_virtio_gpu: received MSG_ACQUIRE");
+                    stem::trace!("display_virtio_gpu: received MSG_ACQUIRE");
                     let mut buffer_age = 0;
                     let idx = next_buffer_idx;
 
@@ -469,11 +469,11 @@ fn main(arg: usize) -> ! {
                                 w: disp_width,
                                 h: disp_height,
                             };
-                            stem::info!(
+                            stem::trace!(
                                 "display_virtio_gpu: calling present_rect for full_rect..."
                             );
                             let _ = gpu.present_rect(current_res_id, full_rect);
-                            stem::info!("display_virtio_gpu: returned from present_rect!");
+                            stem::trace!("display_virtio_gpu: returned from present_rect!");
                             stats.frame_count += 1;
                             stats.total_transfers += 1;
                             stats.total_flushes += 1;

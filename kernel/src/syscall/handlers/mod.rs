@@ -12,6 +12,7 @@ mod port;
 mod process;
 mod random;
 mod root_handlers;
+mod stdio;
 pub mod stream;
 mod time;
 mod trace;
@@ -27,6 +28,7 @@ pub use port::*;
 pub use process::*;
 pub use random::*;
 pub use root_handlers::*;
+pub use stdio::*;
 pub use time::*;
 pub use trace::*;
 
@@ -34,7 +36,7 @@ pub use trace::*;
 use crate::root::{self as root_svc, RootOp, SymbolShell};
 use crate::syscall::validate::{copyin, copyout};
 use abi::errors::{Errno, SysResult};
-use abi::symbols::{SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR, SymbolRefWire};
+use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR};
 use alloc::string::String;
 use core::sync::atomic::Ordering;
 
@@ -58,7 +60,7 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
                 return abi::errors::errno(status as isize);
             }
         }
-        
+
         spins += 1;
         if spins < 100 {
             core::hint::spin_loop();
@@ -86,7 +88,7 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
                 return abi::errors::errno(status as isize);
             }
         }
-        
+
         unsafe {
             crate::sched::block_current_erased();
         }

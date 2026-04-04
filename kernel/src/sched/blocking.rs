@@ -1,8 +1,8 @@
 //! Blocking primitives for task synchronization.
 
+use crate::task::TaskState;
 use crate::BootRuntime;
 use crate::BootTasking;
-use crate::task::TaskState;
 
 use super::SCHEDULER;
 

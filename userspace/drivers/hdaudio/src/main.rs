@@ -335,7 +335,10 @@ impl HdaController {
         let root_nc = self.get_param(cad, 0x00, PARAM_NODE_COUNT)?;
         let root_start = ((root_nc >> 16) & 0x7f) as u8;
         let root_count = (root_nc & 0x7f) as u8;
-        info!("HDAUDIO: root nodes: start={} count={}", root_start, root_count);
+        info!(
+            "HDAUDIO: root nodes: start={} count={}",
+            root_start, root_count
+        );
 
         let mut afg = None;
         for nid in root_start..root_start.saturating_add(root_count) {
@@ -377,7 +380,10 @@ impl HdaController {
                 0xf => "VendorDefined",
                 _ => "Unknown",
             };
-            info!("HDAUDIO:   widget nid={} type={}({}) awcap=0x{:08x}", nid, wtype, wtype_name, awcap);
+            info!(
+                "HDAUDIO:   widget nid={} type={}({}) awcap=0x{:08x}",
+                nid, wtype, wtype_name, awcap
+            );
             if wtype == WIDGET_AUDIO_OUT && out_nid.is_none() {
                 out_nid = Some(nid);
             }
@@ -535,8 +541,10 @@ impl HdaController {
                 stem::yield_now();
             }
         }
-        warn!("HDAUDIO: verb timeout cmd=0x{:08x} (cad={} nid={} verb=0x{:04x} payload=0x{:02x})",
-              cmd, cad, nid, verb, payload);
+        warn!(
+            "HDAUDIO: verb timeout cmd=0x{:08x} (cad={} nid={} verb=0x{:04x} payload=0x{:02x})",
+            cmd, cad, nid, verb, payload
+        );
         Err(abi::errors::Errno::ETIMEDOUT)
     }
 
@@ -644,7 +652,10 @@ fn find_hda_device() -> Option<ThingId> {
         let device = thingsys::prop_get(id, keys::DEVICE_ID).unwrap_or(0) as u16;
         for &(pv, pd) in preferred {
             if vendor == pv && device == pd {
-                info!("HDAUDIO: matched preferred device {:04x}:{:04x}", vendor, device);
+                info!(
+                    "HDAUDIO: matched preferred device {:04x}:{:04x}",
+                    vendor, device
+                );
                 return Some(id);
             }
         }

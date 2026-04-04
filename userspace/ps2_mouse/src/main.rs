@@ -135,7 +135,10 @@ fn init_mouse() {
         info!("ps2_mouse: reset ACK received (0xfa)");
         let bat = read_data_filtered(true, "BAT byte (0xAA)").unwrap_or(0);
         let id = read_data_filtered(true, "Device ID (0x00)").unwrap_or(1);
-        info!("ps2_mouse: BAT passed (0x{:02x}), ID 0x{:02x} confirmed", bat, id);
+        info!(
+            "ps2_mouse: BAT passed (0x{:02x}), ID 0x{:02x} confirmed",
+            bat, id
+        );
     }
 
     info!("ps2_mouse: setting sample rate (100)");
@@ -155,7 +158,10 @@ fn init_mouse() {
     let b1 = read_data_filtered(true, "status byte 1").unwrap_or(0);
     let b2 = read_data_filtered(true, "status byte 2").unwrap_or(0);
     let b3 = read_data_filtered(true, "status byte 3").unwrap_or(0);
-    info!("ps2_mouse: status result = Some({}) Some({}) Some({})", b1, b2, b3);
+    info!(
+        "ps2_mouse: status result = Some({}) Some({}) Some({})",
+        b1, b2, b3
+    );
 
     // If bit 5 is 0, it means it's already enabled in streaming mode.
     if b1 & 0x20 != 0 {
@@ -252,14 +258,20 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
             *idx += 1;
 
             if *idx == 3 {
-                info!("ps2_mouse: sending packet {:02x} {:02x} {:02x}", packet[0], packet[1], packet[2]);
+                info!(
+                    "ps2_mouse: sending packet {:02x} {:02x} {:02x}",
+                    packet[0], packet[1], packet[2]
+                );
                 let _ = port_send(handle, packet);
                 *idx = 0;
             }
         } else {
             // Not mouse data; steal it to clear the jam!
             let stolen = ioport_read(PS2_DATA, 1) as u8;
-            info!("ps2_mouse: STEALING keyboard byte 0x{:02x} to clear jam", stolen);
+            info!(
+                "ps2_mouse: STEALING keyboard byte 0x{:02x} to clear jam",
+                stolen
+            );
             continue;
         }
     }
@@ -277,10 +289,10 @@ fn polling_loop(handle: PortHandle) -> ! {
 
         if status & STATUS_OUTPUT_FULL != 0 {
             let byte = ioport_read(PS2_DATA, 1) as u8;
-            
+
             if status & STATUS_AUX_DATA != 0 {
                 info!("ps2_mouse: POLL got mouse byte 0x{:02x}", byte);
-                
+
                 if idx == 0 && (byte & 0x08) == 0 {
                     continue;
                 }

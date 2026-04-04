@@ -83,7 +83,12 @@ fn render_window_init(
 }
 
 /// Update just the text content on existing nodes and bump scene gen (no new nodes created).
-fn render_window_update(window_id: ThingId, nodes: &FetchdUiNodes, ip_text: &str, status_text: &str) {
+fn render_window_update(
+    window_id: ThingId,
+    nodes: &FetchdUiNodes,
+    ip_text: &str,
+    status_text: &str,
+) {
     set_string_prop(nodes.ip_node, keys::UI_TEXT, ip_text);
     set_string_prop(nodes.status_node, keys::UI_TEXT, status_text);
     // Bump scene gen so Bloom re-renders

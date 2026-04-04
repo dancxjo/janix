@@ -901,12 +901,36 @@ mod tests {
         let mut root_buf = [0u8; 2048];
         let mut offset = 0;
         // . and ..
-        write_dir_record(&mut root_buf, &mut offset, "\x00", root_lba, root_size, 2, None);
-        write_dir_record(&mut root_buf, &mut offset, "\x01", root_lba, root_size, 2, None);
+        write_dir_record(
+            &mut root_buf,
+            &mut offset,
+            "\x00",
+            root_lba,
+            root_size,
+            2,
+            None,
+        );
+        write_dir_record(
+            &mut root_buf,
+            &mut offset,
+            "\x01",
+            root_lba,
+            root_size,
+            2,
+            None,
+        );
         // SUBDIR
         write_dir_record(&mut root_buf, &mut offset, "SUBDIR", 200, 2048, 2, None);
         // ROOTFILE.TXT;1
-        write_dir_record(&mut root_buf, &mut offset, "ROOTFILE.TXT;1", 300, 100, 0, None);
+        write_dir_record(
+            &mut root_buf,
+            &mut offset,
+            "ROOTFILE.TXT;1",
+            300,
+            100,
+            0,
+            None,
+        );
         image.set_sector(100, &root_buf);
 
         // SUBDIR (LBA 200)

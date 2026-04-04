@@ -853,8 +853,6 @@ mod tests {
         }
     }
 
-
-
     #[test]
     fn test_tokenize_escapes() {
         let tokens = tokenize("\"line\\nbreak\"").unwrap();

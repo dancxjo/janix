@@ -1,6 +1,6 @@
-use super::SymbolShell;
 use super::graph::ThingId;
-use super::{RootOp, enqueue};
+use super::SymbolShell;
+use super::{enqueue, RootOp};
 use crate::device_registry::{DeviceEntry, REGISTRY};
 use crate::{BootModuleDesc, FramebufferInfo, PhysRange};
 use abi::schema::{confidence, keys, kinds, rels, source};
@@ -51,7 +51,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     let create = |kind: &str| -> u64 {
         let reply = enqueue(RootOp::CreateNode {
             kind: SymbolShell::Str(alloc::string::String::from(kind)),
-            creator_tid: 0, // Boot process, no creator
+            creator_tid: 0,       // Boot process, no creator
             owner_thing_id: None, // Boot-created things are kernel-owned
         });
         wait_reply_spin!(reply);
@@ -72,7 +72,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
                 line: line!(),
             },
             fields: alloc::vec::Vec::new(),
-            about: alloc::vec::Vec::new()
+            about: alloc::vec::Vec::new(),
         });
         crate::ktrace!("ROOT_TRACE: set({}, {})", id, key);
         let reply = enqueue(RootOp::PropSet {
@@ -124,7 +124,6 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     // Use consistent numeric provenance (u8 -> u64)
     let src_boot = source::BOOT as u64;
     let conf_high = confidence::HIGH as u64;
-
 
     // 1. Host
     crate::kinfo!("ROOT_DIAG: 1. Host creation start");
@@ -210,7 +209,6 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     }
     crate::kinfo!("ROOT_DIAG: 6. Memory Ranges done");
 
-
     // 7. Modules
     let bytespace_create_ptr = |ptr: u64, len: u64| -> u64 {
         let reply = enqueue(RootOp::BytespaceCreateFromPtr { ptr, len });
@@ -272,7 +270,10 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             link(initrd_dir, abi_rels::CONTENT_CONTAINS, file_node);
         }
 
-        crate::contract!("ROOT: filesystem bootstrap: /initrd/ with {} files", info.modules.len());
+        crate::contract!(
+            "ROOT: filesystem bootstrap: /initrd/ with {} files",
+            info.modules.len()
+        );
     }
 
     // 8. Framebuffer

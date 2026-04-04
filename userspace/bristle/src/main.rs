@@ -13,7 +13,7 @@ use abi::hid::{
 use bristle::mouse::{MouseState, PointerEvent};
 use bristle::thigmonasty::{KeyEdge, KeyboardState};
 use stem::info;
-use stem::syscall::{port_recv, port_send, port_wait, topic_create, topic_publish, PortHandle};
+use stem::syscall::{PortHandle, port_recv, port_send, port_wait, topic_create, topic_publish};
 use stem::thing::sys as thingsys;
 
 /// Register Bristle in the Root graph and return the node ID
@@ -150,7 +150,11 @@ fn serialize_key_up(key: Key, mods: Mods, timestamp_ns: u64, buf: &mut [u8]) -> 
 
 /// Serialize a PointerMove event
 fn serialize_pointer_move(dx: i16, dy: i16, timestamp_ns: u64, buf: &mut [u8]) -> usize {
-    crate::info!("[CONTRACT] CONTRACT: input pointer_move dx={} dy={}", dx, dy);
+    crate::info!(
+        "[CONTRACT] CONTRACT: input pointer_move dx={} dy={}",
+        dx,
+        dy
+    );
     if buf.len() < 24 {
         return 0;
     }

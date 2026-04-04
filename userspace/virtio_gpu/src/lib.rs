@@ -603,7 +603,10 @@ impl VirtioGpu {
                 if resp_type >= VIRTIO_GPU_RESP_OK_NODATA {
                     return Ok(());
                 } else {
-                    stem::error!("VirtioGpu: Submit 3D command failed with resp_type={}", resp_type);
+                    stem::error!(
+                        "VirtioGpu: Submit 3D command failed with resp_type={}",
+                        resp_type
+                    );
                     return Err("Submit 3D command failed");
                 }
             }

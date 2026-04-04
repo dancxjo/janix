@@ -6,8 +6,8 @@
 //! Uses a deferred work queue to avoid deadlock: public functions queue work,
 //! and `do_*` functions perform the actual graph operations.
 
+use crate::root::{enqueue, enqueue_no_reply, RootOp};
 use crate::task::graph_queue::{self, GraphWork};
-use crate::root::{RootOp, enqueue, enqueue_no_reply};
 use crate::task::TaskId;
 use abi::schema::{keys, kinds, rels};
 use core::sync::atomic::Ordering;
@@ -81,13 +81,19 @@ static INTERN_SLEEPING: AtomicU64 = AtomicU64::new(0);
 static INTERN_DEAD: AtomicU64 = AtomicU64::new(0);
 static INTERN_RUNNING: AtomicU64 = AtomicU64::new(0);
 
-pub static WAIT_FOR_REPLY_BLOCKS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-pub static WAIT_FOR_REPLY_WAKES: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-pub static NO_REPLY_BATCHES_SENT: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static WAIT_FOR_REPLY_BLOCKS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static WAIT_FOR_REPLY_WAKES: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static NO_REPLY_BATCHES_SENT: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
-pub static WAIT_FOR_REPLY_CALLS: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-pub static WAIT_FOR_REPLY_US_TOTAL: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
-pub static WAIT_FOR_REPLY_US_MAX: core::sync::atomic::AtomicU64 = core::sync::atomic::AtomicU64::new(0);
+pub static WAIT_FOR_REPLY_CALLS: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static WAIT_FOR_REPLY_US_TOTAL: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
+pub static WAIT_FOR_REPLY_US_MAX: core::sync::atomic::AtomicU64 =
+    core::sync::atomic::AtomicU64::new(0);
 
 fn wait_for_reply<R: crate::BootRuntime>(reply: &alloc::sync::Arc<crate::root::ReplyCell>) -> u64 {
     let rt = crate::runtime::<R>();
@@ -118,13 +124,13 @@ fn wait_for_reply<R: crate::BootRuntime>(reply: &alloc::sync::Arc<crate::root::R
         if reply.done.load(Ordering::SeqCst) != 0 {
             reply.waiting_task.store(0, Ordering::Relaxed);
             WAIT_FOR_REPLY_WAKES.fetch_add(1, Ordering::Relaxed);
-            
+
             let elapsed = rt.mono_ticks().wrapping_sub(t0);
             let us = crate::task::graph::ticks_to_us::<R>(elapsed);
             WAIT_FOR_REPLY_CALLS.fetch_add(1, Ordering::Relaxed);
             WAIT_FOR_REPLY_US_TOTAL.fetch_add(us, Ordering::Relaxed);
             crate::task::graph::update_max_u64(&WAIT_FOR_REPLY_US_MAX, us);
-            
+
             return reply.value.load(Ordering::Relaxed);
         }
         unsafe {
@@ -335,7 +341,11 @@ pub fn do_create_thread_node<R: crate::BootRuntime>(
     );
 
     if let Some(n) = name {
-        bb.set_prop_local(0, schema_sym!(keys::PROC_NAME, SYM_PROC_NAME), intern::<R>(n));
+        bb.set_prop_local(
+            0,
+            schema_sym!(keys::PROC_NAME, SYM_PROC_NAME),
+            intern::<R>(n),
+        );
     }
 
     // Link to scheduler service
@@ -347,7 +357,7 @@ pub fn do_create_thread_node<R: crate::BootRuntime>(
 
     let reply = enqueue(RootOp::ApplyBatch { batch: bb.finish() });
     wait_for_reply::<R>(&reply);
-    
+
     // The first created ID is returned in reply.p0 by the Root service.
     let id = reply.p0.load(Ordering::Relaxed);
     return if id != 0 { Some(id) } else { None };

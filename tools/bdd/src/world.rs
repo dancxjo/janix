@@ -215,9 +215,9 @@ impl ThingOsWorld {
             "-display",
             "none",
             "-no-shutdown",
-            // Serial to stdio for log capture
+            // Serial via UNIX socket to avoid block-buffering delays
             "-serial",
-            "stdio",
+            &format!("unix:{},server=on,wait=off", self.work_dir.join("serial.sock").display()),
             // VNC for headless graphics (needed for screenshots)
             "-vnc",
             &format!(":{}", vnc_display),
@@ -234,20 +234,30 @@ impl ThingOsWorld {
 
         let mut child = cmd.spawn()?;
 
-        // Spawn a task to read serial output and sync to global cache
-        let stdout = child.stdout.take().expect("stdout was piped");
+        // Spawn a task to read serial output from the UNIX socket and sync to global cache
         let serial_log = self.serial_log.clone();
+        let serial_sock_path = self.work_dir.join("serial.sock");
 
         tokio::spawn(async move {
             use crate::artifacts;
-            let reader = BufReader::new(stdout);
-            let mut lines = reader.lines();
-            while let Ok(Some(line)) = lines.next_line().await {
-                let mut log = serial_log.lock().await;
-                log.push_str(&line);
-                log.push('\n');
-                // Sync to global cache for reporter access
-                artifacts::set_latest_serial(&log).await;
+            // Wait briefly for QEMU to create the serial socket
+            for _ in 0..50 {
+                if serial_sock_path.exists() {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            
+            if let Ok(stream) = UnixStream::connect(&serial_sock_path).await {
+                let reader = BufReader::new(stream);
+                let mut lines = reader.lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    let mut log = serial_log.lock().await;
+                    log.push_str(&line);
+                    log.push('\n');
+                    // Sync to global cache for reporter access
+                    artifacts::set_latest_serial(&log).await;
+                }
             }
         });
 

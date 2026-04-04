@@ -72,7 +72,11 @@ pub fn push(work: GraphWork) {
     match &work {
         GraphWork::UpdateState { tid, state } => {
             for item in q.iter_mut() {
-                if let GraphWork::UpdateState { tid: existing_tid, state: existing_state } = item {
+                if let GraphWork::UpdateState {
+                    tid: existing_tid,
+                    state: existing_state,
+                } = item
+                {
                     if *existing_tid == *tid {
                         *existing_state = *state;
                         coalesced = true;
@@ -83,7 +87,11 @@ pub fn push(work: GraphWork) {
         }
         GraphWork::SetExitCode { tid, code } => {
             for item in q.iter_mut() {
-                if let GraphWork::SetExitCode { tid: existing_tid, code: existing_code } = item {
+                if let GraphWork::SetExitCode {
+                    tid: existing_tid,
+                    code: existing_code,
+                } = item
+                {
                     if *existing_tid == *tid {
                         *existing_code = *code;
                         coalesced = true;
@@ -94,7 +102,11 @@ pub fn push(work: GraphWork) {
         }
         GraphWork::SetPriority { tid, priority } => {
             for item in q.iter_mut() {
-                if let GraphWork::SetPriority { tid: existing_tid, priority: existing_priority } = item {
+                if let GraphWork::SetPriority {
+                    tid: existing_tid,
+                    priority: existing_priority,
+                } = item
+                {
                     if *existing_tid == *tid {
                         *existing_priority = *priority;
                         coalesced = true;
@@ -105,7 +117,11 @@ pub fn push(work: GraphWork) {
         }
         GraphWork::SetName { tid, name } => {
             for item in q.iter_mut() {
-                if let GraphWork::SetName { tid: existing_tid, name: existing_name } = item {
+                if let GraphWork::SetName {
+                    tid: existing_tid,
+                    name: existing_name,
+                } = item
+                {
                     if *existing_tid == *tid {
                         *existing_name = name.clone();
                         coalesced = true;
@@ -116,7 +132,11 @@ pub fn push(work: GraphWork) {
         }
         GraphWork::SetLocation { tid, cpu_index } => {
             for item in q.iter_mut() {
-                if let GraphWork::SetLocation { tid: existing_tid, cpu_index: existing_cpu_index } = item {
+                if let GraphWork::SetLocation {
+                    tid: existing_tid,
+                    cpu_index: existing_cpu_index,
+                } = item
+                {
                     if *existing_tid == *tid {
                         *existing_cpu_index = *cpu_index;
                         coalesced = true;
@@ -127,7 +147,11 @@ pub fn push(work: GraphWork) {
         }
         GraphWork::SetAffinity { tid, cpu_index } => {
             for item in q.iter_mut() {
-                if let GraphWork::SetAffinity { tid: existing_tid, cpu_index: existing_cpu_index } = item {
+                if let GraphWork::SetAffinity {
+                    tid: existing_tid,
+                    cpu_index: existing_cpu_index,
+                } = item
+                {
                     if *existing_tid == *tid {
                         *existing_cpu_index = *cpu_index;
                         coalesced = true;

@@ -1,7 +1,7 @@
 //! Image creation tasks - ISO and HDD.
 
-use crate::common::{Result, image_name};
-use xshell::{Shell, cmd};
+use crate::common::{image_name, Result};
+use xshell::{cmd, Shell};
 
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -27,210 +27,192 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             is_init: true,
             boot_module: true,
             features: vec!["diagnostic-apps"],
-
         },
         ProgramConfig {
             name: "bristle",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "rtc_cmos",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "clock",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "taskman",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "font_explorer",
             is_init: false,
             boot_module: false,
             features: vec![],
-
         },
         ProgramConfig {
             name: "ps2_kbd",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "echo",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "bloom",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "ps2_mouse",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "display_bootfb",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "display_virtio_gpu",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "fontd",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "blossom",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "flytrap",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "virtio_netd",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "rtl8168d",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "netd",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "fetchd",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "anther",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "fortune",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "photosynthesis",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "ahci_disk",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "iso9660d",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "virtio_sound",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "hdaudio",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "pci_stubd",
             is_init: false,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "beeper",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "nectar",
             is_init: true,
             boot_module: true,
             features: vec![],
-
         },
         ProgramConfig {
             name: "hello_std",
             is_init: false,
             boot_module: true,
             features: vec![],
-
+        },
+        ProgramConfig {
+            name: "stdio_demo",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
+        ProgramConfig {
+            name: "telnetd",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
         },
     ]
 }

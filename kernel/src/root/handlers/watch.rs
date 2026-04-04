@@ -5,10 +5,10 @@
 //! Watches may filter commits by subject/predicate/kind using O(1) summary matching.
 
 use super::HandlerResult;
-use crate::root::graph::{GlobalWatch, Graph, WATCH_SCAN_LIMIT, WatchFilter, commit_matches};
-use crate::root::handlers::watch_payload::{CoalesceEntry, filter_watch_payload};
+use crate::root::graph::{commit_matches, GlobalWatch, Graph, WatchFilter, WATCH_SCAN_LIMIT};
+use crate::root::handlers::watch_payload::{filter_watch_payload, CoalesceEntry};
 use crate::root::query::PreparedStep;
-use crate::root::resources::{ResourceHandle, stream};
+use crate::root::resources::{stream, ResourceHandle};
 use crate::root::symbols::Interner;
 use core::sync::atomic::Ordering;
 
@@ -211,9 +211,9 @@ pub fn handle_watch_next(graph: &mut Graph, msg: &crate::root::RootMsg, id: u64)
             core::ptr::copy_nonoverlapping(src, dst, payload.len());
         }
 
-    if let Some(reply) = msg.reply.as_ref() {
-        reply.p0.store(match_cursor, Ordering::Relaxed);
-    }
+        if let Some(reply) = msg.reply.as_ref() {
+            reply.p0.store(match_cursor, Ordering::Relaxed);
+        }
 
         if let Some(watch) = graph.global_watches.get_mut(&id) {
             watch.cursor_seq = match_cursor + 1;

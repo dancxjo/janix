@@ -147,7 +147,10 @@ fn send_msg(handle: PortHandle, msg_type: u16, payload: &[u8]) {
             stem::yield_now();
             status = stem::syscall::port_send_all(handle, &buf[..len]);
         }
-        info!("display_virtio_gpu: sent msg_type={} handle={} size={} status={:?}", msg_type, handle, len, status);
+        info!(
+            "display_virtio_gpu: sent msg_type={} handle={} size={} status={:?}",
+            msg_type, handle, len, status
+        );
     }
 }
 
@@ -350,7 +353,11 @@ fn main(arg: usize) -> ! {
                     }
                 }
                 if read_total > 0 {
-                    stem::info!("display_virtio_gpu: port_wait read {} bytes, dropped={}", read_total, frames.dropped_bytes());
+                    stem::info!(
+                        "display_virtio_gpu: port_wait read {} bytes, dropped={}",
+                        read_total,
+                        frames.dropped_bytes()
+                    );
                 }
             }
             Err(e) => {
@@ -359,7 +366,11 @@ fn main(arg: usize) -> ! {
         }
 
         while let Some((header, payload)) = frames.next_message() {
-            stem::info!("display_virtio_gpu: next_message -> msg_type={}, len={}", header.msg_type, payload.len());
+            stem::info!(
+                "display_virtio_gpu: next_message -> msg_type={}, len={}",
+                header.msg_type,
+                payload.len()
+            );
             match header.msg_type {
                 drvproto::MSG_HELLO => {
                     info!("display_virtio_gpu: received MSG_HELLO");
@@ -434,7 +445,9 @@ fn main(arg: usize) -> ! {
                 }
                 drvproto::MSG_PRESENT => {
                     if current_bs_id.is_none() {
-                        stem::error!("display_virtio_gpu: current_bs_id is NONE during MSG_PRESENT!");
+                        stem::error!(
+                            "display_virtio_gpu: current_bs_id is NONE during MSG_PRESENT!"
+                        );
                         let err = drvproto::ErrResp { code: 1 };
                         let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
                         if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
@@ -456,7 +469,9 @@ fn main(arg: usize) -> ! {
                                 w: disp_width,
                                 h: disp_height,
                             };
-                            stem::info!("display_virtio_gpu: calling present_rect for full_rect...");
+                            stem::info!(
+                                "display_virtio_gpu: calling present_rect for full_rect..."
+                            );
                             let _ = gpu.present_rect(current_res_id, full_rect);
                             stem::info!("display_virtio_gpu: returned from present_rect!");
                             stats.frame_count += 1;

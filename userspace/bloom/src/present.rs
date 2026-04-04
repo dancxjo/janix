@@ -311,7 +311,12 @@ impl DriverPresenter {
                 drvproto::encode_message(buf, drvproto::MSG_PRESENT, &payload[..payload_len])
             {
                 let status = send_reliable(self.req_write, &buf[..len]);
-                stem::info!("bloom: sent MSG_PRESENT rects={} len={} status={:?}", rect_count, len, status);
+                stem::info!(
+                    "bloom: sent MSG_PRESENT rects={} len={} status={:?}",
+                    rect_count,
+                    len,
+                    status
+                );
             }
         }
     }
@@ -489,7 +494,11 @@ impl DriverPresenter {
             drvproto::encode_message(&mut buf, drvproto::MSG_CREATE_TEXTURE_3D, &payload)
         {
             let status = send_reliable(self.req_write, &buf[..len]);
-            stem::info!("bloom: sent MSG_CREATE_TEXTURE_3D len={} status={:?}", len, status);
+            stem::info!(
+                "bloom: sent MSG_CREATE_TEXTURE_3D len={} status={:?}",
+                len,
+                status
+            );
         }
 
         // Wait for MSG_TEXTURE_CREATED response
@@ -639,7 +648,11 @@ impl Presenter for DriverPresenter {
             while let Some((header, payload)) = self.frames.next_message() {
                 let msg_type = header.msg_type;
                 if msg_type == drvproto::MSG_ACQUIRED {
-                    stem::info!("bloom: received MSG_ACQUIRED, payload_len={} expected={}", payload.len(), drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE);
+                    stem::info!(
+                        "bloom: received MSG_ACQUIRED, payload_len={} expected={}",
+                        payload.len(),
+                        drvproto::ACQUIRED_PAYLOAD_WIRE_SIZE
+                    );
                     if let Some(acq) = drvproto::decode_acquired_payload_le(payload) {
                         return (
                             ThingId({
@@ -662,14 +675,14 @@ impl Presenter for DriverPresenter {
                     self.handle_message(msg_type, &payload_vec);
                 }
             }
-            
+
             wait_ticks += 1;
             if wait_ticks == 60 {
                 wait_ticks = 0;
                 stem::info!("bloom: presenter stuck waiting for ACQUIRED, resending ACQUIRE...");
                 send_acquire(self.req_write);
             }
-            
+
             stem::yield_now();
         }
     }

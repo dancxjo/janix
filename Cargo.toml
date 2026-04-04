@@ -65,6 +65,8 @@ members = [
     "userspace/driver_wasm_host",
     "userspace/proto_driver_wasm", "userspace/virtio_sound", "userspace/beeper", "userspace/nectar",
     "userspace/hello_std",
+    "userspace/stdio_demo",
+    "userspace/telnetd",
 ]
 
 # Exclude wasm32 theme crates (different target)

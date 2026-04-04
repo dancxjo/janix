@@ -60,7 +60,8 @@ impl NetClient {
         let net_id = buf[0];
 
         // Get netd's socket API write port (we send to this)
-        let netd_write_port = thingsys::prop_get(net_id, keys::WRITE_PORT_HANDLE).ok()? as PortHandle;
+        let netd_write_port =
+            thingsys::prop_get(net_id, keys::WRITE_PORT_HANDLE).ok()? as PortHandle;
 
         // Create our own port pair for receiving responses
         // We give netd our write port so it can send responses to us
@@ -294,7 +295,8 @@ impl NetClient {
                     Ok(len) if len >= 4 => {
                         let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
                         if resp_type == RESP_OK {
-                            sent_this_chunk = Some(u16::from_le_bytes([resp_buf[2], resp_buf[3]]) as usize);
+                            sent_this_chunk =
+                                Some(u16::from_le_bytes([resp_buf[2], resp_buf[3]]) as usize);
                             break;
                         } else {
                             warn!(

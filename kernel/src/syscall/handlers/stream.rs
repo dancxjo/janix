@@ -4,7 +4,7 @@
 //! Uses Ports underneath.
 
 use super::port::sys_port_recv;
-use crate::ipc::{GLOBAL_HANDLE_TABLE, Handle, HandleMode, get_port};
+use crate::ipc::{get_port, Handle, HandleMode, GLOBAL_HANDLE_TABLE};
 use abi::errors::{Errno, SysResult};
 use alloc::collections::BTreeMap;
 use spin::Mutex;

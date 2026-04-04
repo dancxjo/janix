@@ -702,7 +702,9 @@ fn find_netd_and_mac() -> Option<(PortHandle, [u8; 6], ThingId)> {
 fn choose_best_net_stack(nodes: &[ThingId]) -> Option<ThingId> {
     let mut best: Option<ThingId> = None;
     for &id in nodes {
-        let socket_api = thingsys::prop_get(id, keys::WRITE_PORT_HANDLE).ok().unwrap_or(0);
+        let socket_api = thingsys::prop_get(id, keys::WRITE_PORT_HANDLE)
+            .ok()
+            .unwrap_or(0);
         let ip = thingsys::prop_get(id, "net.ip").ok().unwrap_or(0);
         if socket_api == 0 {
             continue;
@@ -752,7 +754,11 @@ fn get_or_generate_hostname(mac: [u8; 6]) -> String {
     format!("{}-{}", descriptors[d_idx], plants[p_idx])
 }
 
-fn maybe_create_window(current: Option<ThingId>, hostname: &str, ip: Option<[u8; 4]>) -> Option<ThingId> {
+fn maybe_create_window(
+    current: Option<ThingId>,
+    hostname: &str,
+    ip: Option<[u8; 4]>,
+) -> Option<ThingId> {
     if current.is_some() {
         return current;
     }
@@ -782,7 +788,11 @@ fn maybe_create_window(current: Option<ThingId>, hostname: &str, ip: Option<[u8;
     Some(win)
 }
 
-fn render_window(window_id: ThingId, hostname: &str, ip: Option<[u8; 4]>) -> Result<(), stem::errors::Error> {
+fn render_window(
+    window_id: ThingId,
+    hostname: &str,
+    ip: Option<[u8; 4]>,
+) -> Result<(), stem::errors::Error> {
     let ip_str = match ip {
         Some([a, b, c, d]) => format!("{}.{}.{}.{}", a, b, c, d),
         None => "Acquiring…".into(),
@@ -869,7 +879,12 @@ fn read_string_prop(id: ThingId, key_name: &str) -> Option<String> {
     Some(String::from_utf8_lossy(&buf).into_owned())
 }
 
-fn append_socket_api_header(msg: &mut Vec<u8>, resp_w: PortHandle, msg_type: u16, payload_len: u16) {
+fn append_socket_api_header(
+    msg: &mut Vec<u8>,
+    resp_w: PortHandle,
+    msg_type: u16,
+    payload_len: u16,
+) {
     msg.extend_from_slice(&(resp_w as u32).to_le_bytes());
     let caller_tid = stem::syscall::get_tid().unwrap_or(0);
     msg.extend_from_slice(&caller_tid.to_le_bytes());
@@ -995,7 +1010,10 @@ fn udp_send_to(
     msg.extend_from_slice(data);
 
     if msg.len() > 4096 {
-        stem::warn!("NECTAR: UDP IPC message too large (len={}), would be truncated", msg.len());
+        stem::warn!(
+            "NECTAR: UDP IPC message too large (len={}), would be truncated",
+            msg.len()
+        );
         return Err(());
     }
 

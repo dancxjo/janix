@@ -856,7 +856,9 @@ async fn wait_for_ready_state(world: &mut ThingOsWorld) -> Result<(), StepError>
     };
 
     // Wait for scheduler loop entry as the primary "ready" signal
-    let found = world.wait_for_serial("Entering scheduler loop", timeout).await;
+    let found = world
+        .wait_for_serial("Entering scheduler loop", timeout)
+        .await;
 
     if !found {
         capture_failure_diagnostics(world, "system ready state").await;
@@ -1330,7 +1332,9 @@ async fn given_clock_ticking(world: &mut ThingOsWorld) -> Result<(), StepError> 
     }
 
     // Wait for system ready
-    let found = world.wait_for_serial("Entering scheduler loop", 120.0).await;
+    let found = world
+        .wait_for_serial("Entering scheduler loop", 120.0)
+        .await;
     if !found {
         return Err(StepError("System did not reach ready state".to_string()));
     }
@@ -1441,7 +1445,9 @@ async fn given_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
     }
 
     // Wait for system ready
-    let found = world.wait_for_serial("Entering scheduler loop", 120.0).await;
+    let found = world
+        .wait_for_serial("Entering scheduler loop", 120.0)
+        .await;
     if !found {
         return Err(StepError("System did not reach ready state".to_string()));
     }
@@ -1899,20 +1905,20 @@ async fn see_network_window(world: &mut ThingOsWorld) -> Result<(), StepError> {
 
         for y in (scan_y_start..scan_y_end).step_by(5) {
             for x in (scan_x_start..scan_x_end).step_by(5) {
-                 if x < width && y < height {
+                if x < width && y < height {
                     let pixel = img.get_pixel(x, y).0;
                     if color_close(pixel, expected_color, 10) {
                         match_count += 1;
                     }
-                 }
+                }
             }
         }
 
         // We're stepping by 5, so total pixels checked is roughly (360/5) * (180/5) = 72 * 36 = 2592
         // If > 200 match, we probably see it.
         if match_count > 200 {
-             eprintln!("│  │  │      ✅ Network window detected in bottom-left");
-             return Ok(());
+            eprintln!("│  │  │      ✅ Network window detected in bottom-left");
+            return Ok(());
         }
 
         if start.elapsed() > timeout {
@@ -2096,7 +2102,10 @@ async fn make_concurrent_requests(
     }
 
     if failures > 0 {
-        return Err(StepError(format!("{} concurrent requests failed", failures)));
+        return Err(StepError(format!(
+            "{} concurrent requests failed",
+            failures
+        )));
     }
 
     eprintln!("│  │  │      ✅ {} concurrent requests succeeded", count);
@@ -2104,7 +2113,6 @@ async fn make_concurrent_requests(
 }
 
 // ===== GQL Steps =====
-
 
 #[then(regex = r#"^the GQL result should have at least (\d+) rows$"#)]
 async fn gql_result_rows(world: &mut ThingOsWorld, min_rows: usize) -> Result<(), StepError> {
@@ -2181,10 +2189,9 @@ async fn gql_result_cell_is_node(
         row_arr.len()
     )))?;
 
-    let type_field = cell
-        .get("type")
-        .and_then(|v| v.as_str())
-        .ok_or(StepError("Cell is not an object with 'type' field".to_string()))?;
+    let type_field = cell.get("type").and_then(|v| v.as_str()).ok_or(StepError(
+        "Cell is not an object with 'type' field".to_string(),
+    ))?;
 
     if type_field != "node" {
         return Err(StepError(format!(
@@ -2250,10 +2257,7 @@ async fn gql_result_cell_is_string(
             )));
         }
     } else {
-        return Err(StepError(format!(
-            "Expected string, found: {:?}",
-            cell
-        )));
+        return Err(StepError(format!("Expected string, found: {:?}", cell)));
     }
 
     eprintln!(

@@ -555,7 +555,9 @@ pub extern "C" fn rust_gp_handler(frame: &InterruptStackFrame) -> ! {
                 fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);
             }
             kernel_handle_exception(frame.rip, frame.error_code, frame.rsp, frame.cs, 13);
-            loop { core::arch::asm!("hlt"); }
+            loop {
+                core::arch::asm!("hlt");
+            }
         }
     } else {
         panic!(
@@ -573,7 +575,9 @@ pub extern "C" fn rust_invalid_opcode_handler(frame: &InterruptStackFrame) -> ! 
                 fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);
             }
             kernel_handle_exception(frame.rip, frame.error_code, frame.rsp, frame.cs, 6);
-            loop { core::arch::asm!("hlt"); }
+            loop {
+                core::arch::asm!("hlt");
+            }
         }
     } else {
         panic!(
@@ -591,7 +595,9 @@ pub extern "C" fn rust_div0_handler(frame: &InterruptStackFrame) -> ! {
                 fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);
             }
             kernel_handle_exception(frame.rip, frame.error_code, frame.rsp, frame.cs, 0);
-            loop { core::arch::asm!("hlt"); }
+            loop {
+                core::arch::asm!("hlt");
+            }
         }
     } else {
         panic!(

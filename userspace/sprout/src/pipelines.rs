@@ -344,7 +344,10 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         }
         Err(e) => {
             stem::error!("SPROUT: Failed to create kbd_raw port: {:?}", e);
-            return InputHandles { evt_read: 0, evt_echo_read: 0 };
+            return InputHandles {
+                evt_read: 0,
+                evt_echo_read: 0,
+            };
         }
     };
 
@@ -359,7 +362,10 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         }
         Err(e) => {
             stem::error!("SPROUT: Failed to create mouse_raw port: {:?}", e);
-            return InputHandles { evt_read: 0, evt_echo_read: 0 };
+            return InputHandles {
+                evt_read: 0,
+                evt_echo_read: 0,
+            };
         }
     };
 

@@ -23,11 +23,11 @@ macro_rules! wait_reply_block {
                 break;
             }
         }
-        
+
         if $reply.done.load(Ordering::Acquire) == 0 {
             let my_tid = unsafe { crate::sched::current_tid_current() };
             $reply.waiting_task.store(my_tid, Ordering::SeqCst);
-            
+
             loop {
                 let done = $reply.done.load(Ordering::SeqCst);
                 if done != 0 {
@@ -71,8 +71,8 @@ pub fn sys_root_create_node(kind_ptr: usize) -> SysResult<usize> {
     let sym = read_symbol(kind_ptr)?;
     let creator_tid = unsafe { crate::sched::current_tid_current() };
     let owner_thing_id = unsafe { crate::sched::graph_thing_for_current() };
-    root_call(RootOp::CreateNode { 
-        kind: sym, 
+    root_call(RootOp::CreateNode {
+        kind: sym,
         creator_tid,
         owner_thing_id,
     })
@@ -499,8 +499,7 @@ pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysRes
             value: p2,
         };
 
-        let src =
-            unsafe { core::slice::from_raw_parts(&evt as *const _ as *const u8, evt_size) };
+        let src = unsafe { core::slice::from_raw_parts(&evt as *const _ as *const u8, evt_size) };
         unsafe {
             copyout(out_ptr, src)?;
         }
@@ -626,14 +625,10 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
     let status = reply.status.load(Ordering::Relaxed);
     if status == 0 {
         // Unmap pages
-        if let Some(region) =
-            unsafe { crate::sched::get_user_mapping_at_current(user_va) }
-        {
+        if let Some(region) = unsafe { crate::sched::get_user_mapping_at_current(user_va) } {
             let len = region.end - region.start;
             unsafe {
-                if let Ok(removed) =
-                    crate::sched::remove_user_mappings_current(user_va, len)
-                {
+                if let Ok(removed) = crate::sched::remove_user_mappings_current(user_va, len) {
                     for (start, end) in removed {
                         let mut virt = start as u64;
                         let end_virt = end as u64;
@@ -924,7 +919,7 @@ pub fn sys_root_props_get_many(
     keys_len: usize,
     out_ptr: usize,
 ) -> SysResult<usize> {
-    use abi::types::{BULK_PROPS_MAX_KEYS, BulkPropsResponse};
+    use abi::types::{BulkPropsResponse, BULK_PROPS_MAX_KEYS};
 
     // Validate key count
     if keys_len == 0 || keys_len > BULK_PROPS_MAX_KEYS {
@@ -1052,5 +1047,7 @@ pub fn sys_root_dir_list(dir_id: usize, out_ptr: usize, out_len: usize) -> SysRe
 }
 
 pub fn sys_root_orphan_thing(thing_id: usize) -> SysResult<usize> {
-    root_call(RootOp::OrphanThing { thing_id: thing_id as u64 })
+    root_call(RootOp::OrphanThing {
+        thing_id: thing_id as u64,
+    })
 }

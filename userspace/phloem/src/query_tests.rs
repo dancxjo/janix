@@ -625,10 +625,15 @@ mod tests {
 
         // MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101})
         // This should create 'a', 'b', and the edge 'REL'.
-        let cmd = parse("MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101}) RETURN a, b").unwrap();
+        let cmd =
+            parse("MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101}) RETURN a, b").unwrap();
         let res = ex.execute(cmd);
 
-        assert!(res.success, "MERGE edge with inline nodes failed: {}", res.message);
+        assert!(
+            res.success,
+            "MERGE edge with inline nodes failed: {}",
+            res.message
+        );
         assert_eq!(res.rows.len(), 1);
     }
 

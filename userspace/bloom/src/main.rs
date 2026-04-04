@@ -615,11 +615,11 @@ fn main(arg: usize) -> ! {
         Ok(count) if count > 0 => {
             stem::info!("bloom: found existing UI CROWN");
             roots[0]
-        },
+        }
         _ => {
             stem::info!("bloom: creating new UI CROWN");
             stem::ui::UiBuilder::create_root()
-        },
+        }
     };
     stem::info!("bloom: UI CROWN initialized!");
 
@@ -647,7 +647,7 @@ fn main(arg: usize) -> ! {
     // Cursor state
     // Input handle: try to use the broadcast topic, fallback to legacy handle
     let mut bristle_evt_handle = bristle_evt as PortHandle;
-    
+
     let mut input_nodes = [ThingId::default(); 1];
     if let Ok(count) = find(abi::schema::hid::SVC_INPUT, &mut input_nodes) {
         if count > 0 {
@@ -699,11 +699,15 @@ fn main(arg: usize) -> ! {
 
     // Composition mode: CPU (default) or GPU (virgl-accelerated)
     #[cfg(feature = "gpu")]
-    let composition_mode = if target.backend == crate::compositor::DisplayBackend::VirtioGpu && presenter.has_3d_cap() {
+    let composition_mode = if target.backend == crate::compositor::DisplayBackend::VirtioGpu
+        && presenter.has_3d_cap()
+    {
         stem::info!("bloom: VirtioGpu + Virgl 3D detected - enabling GPU composition mode");
         CompositionMode::Gpu
     } else {
-        stem::info!("bloom: GPU composition not supported (or Virgl disabled) - using CPU composition mode");
+        stem::info!(
+            "bloom: GPU composition not supported (or Virgl disabled) - using CPU composition mode"
+        );
         CompositionMode::Cpu
     };
     #[cfg(not(feature = "gpu"))]
@@ -832,7 +836,7 @@ fn main(arg: usize) -> ! {
                     0,
                     current_age,
                 );
-                
+
                 // Use cached pointer or map if new
                 let ptr = if let Some(&ptr) = buffer_cache.get(&bs_id) {
                     ptr

@@ -438,12 +438,8 @@ impl SocketApi {
                         .ok();
                         conn_graph::set_if_changed(node, net::props::SOCK_FD, api_handle as u64)
                             .ok();
-                        conn_graph::set_if_changed(
-                            node,
-                            net::props::SOCK_PID,
-                            managed.owner_tid,
-                        )
-                        .ok();
+                        conn_graph::set_if_changed(node, net::props::SOCK_PID, managed.owner_tid)
+                            .ok();
                         conn_graph::set_if_changed(
                             node,
                             net::props::SOCK_CREATED_AT,
@@ -457,12 +453,8 @@ impl SocketApi {
                                     .ok()
                                     .flatten()
                             {
-                                net::ensure_edge(
-                                    owner_node,
-                                    net::preds::PROC_OWNS_SOCKET,
-                                    node,
-                                )
-                                .ok();
+                                net::ensure_edge(owner_node, net::preds::PROC_OWNS_SOCKET, node)
+                                    .ok();
                             }
                         }
                     }

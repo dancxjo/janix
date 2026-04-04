@@ -150,6 +150,7 @@ fn serialize_key_up(key: Key, mods: Mods, timestamp_ns: u64, buf: &mut [u8]) -> 
 
 /// Serialize a PointerMove event
 fn serialize_pointer_move(dx: i16, dy: i16, timestamp_ns: u64, buf: &mut [u8]) -> usize {
+    crate::info!("[CONTRACT] CONTRACT: input pointer_move dx={} dy={}", dx, dy);
     if buf.len() < 24 {
         return 0;
     }

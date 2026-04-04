@@ -190,11 +190,6 @@ fn main(raw_write_handle: usize) -> ! {
 
     init_mouse();
 
-    // Force polling diagnostic
-    info!("ps2_mouse: FORCING POLLING LOOP FOR DIAGNOSTIC");
-    polling_loop(handle);
-
-    /*
     // Subscribe to mouse interrupt
     match irq_subscribe(MOUSE_VECTOR) {
         Ok(()) => info!(
@@ -215,10 +210,15 @@ fn main(raw_write_handle: usize) -> ! {
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
 
+    // Perform an initial drain to clear any pending bytes that might keep the IRQ line HIGH
+    // If the IOAPIC is edge-triggered, an already-HIGH line will never trigger an interrupt!
+    drain_mouse_data(handle, &mut packet, &mut idx);
+
     loop {
         // Wait for mouse interrupt
         match irq_wait(MOUSE_VECTOR) {
-            Ok(_count) => {
+            Ok(count) => {
+                info!("ps2_mouse: IRQ12 fired! count={}", count);
                 // Drain all available mouse data
                 drain_mouse_data(handle, &mut packet, &mut idx);
             }
@@ -227,7 +227,6 @@ fn main(raw_write_handle: usize) -> ! {
             }
         }
     }
-    */
 }
 
 /// Drain all pending mouse data and assemble packets
@@ -241,9 +240,11 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
 
         if status & STATUS_AUX_DATA != 0 {
             let byte = ioport_read(PS2_DATA, 1) as u8;
+            info!("ps2_mouse: read byte {:02x}", byte);
 
             // First byte must have bit 3 set (sync)
             if *idx == 0 && (byte & 0x08) == 0 {
+                info!("ps2_mouse: dropped byte {:02x} (not sync)", byte);
                 continue;
             }
 
@@ -251,6 +252,7 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
             *idx += 1;
 
             if *idx == 3 {
+                info!("ps2_mouse: sending packet {:02x} {:02x} {:02x}", packet[0], packet[1], packet[2]);
                 let _ = port_send(handle, packet);
                 *idx = 0;
             }

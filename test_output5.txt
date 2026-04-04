@@ -1,0 +1,365 @@
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.16s
+     Running `target/debug/xtask bdd --arch x86_64 --feature pointer_input`
+Ensuring rustup target x86_64-unknown-none is installed...
+$ rustup target add x86_64-unknown-none
+info: component 'rust-std' for target 'x86_64-unknown-none' is up to date
+
+=== Building for x86_64 ===
+
+==> Fetching Limine...
+    Limine repo already exists, skipping clone.
+    Limine artifacts and tool already present, skipping build.
+    Limine ready.
+==> Fetching OVMF...
+    OVMF artifacts already present, skipping.
+==> Fetching Fonts...
+==> Fetching Icons (Tango)...
+    Tango icon set already exists.
+==> Fetching Cursors...
+    Plain Cursors already exist.
+==> Fetching Future Cursors (SVG)...
+    Future-cursors repo already exists.
+    Future SVG cursors copied to assets.
+==> Fetching pci.ids...
+    pci.ids already exists.
+Limine already present, skipping clone.
+Building bran kernel for x86_64 (dev profile)...
+$ cargo build --target x86_64-unknown-none --profile dev -p bran
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+Kernel built: bran/bin-x86_64/kernel
+Building ISO thing-os-x86_64-1775268144-954777731.iso...
+$ cp -r assets iso_root/
+Building userspace programs...
+Building sprout ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p sprout --features diagnostic-apps
+    Finished `release` profile [optimized] target(s) in 0.15s
+$ cp target/x86_64-unknown-thingos/release/sprout iso_root/boot/sprout
+Building bristle ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p bristle
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/bristle iso_root/boot/bristle
+Building rtc_cmos ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p rtc_cmos
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/rtc_cmos iso_root/boot/rtc_cmos
+Building clock ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p clock
+    Finished `release` profile [optimized] target(s) in 0.11s
+$ cp target/x86_64-unknown-thingos/release/clock iso_root/boot/clock
+Building taskman ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p taskman
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/taskman iso_root/boot/taskman
+Building font_explorer ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p font_explorer
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/font_explorer iso_root/boot/font_explorer
+Building ps2_kbd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p ps2_kbd
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/ps2_kbd iso_root/boot/ps2_kbd
+Building echo ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p echo
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/echo iso_root/boot/echo
+Building bloom ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p bloom
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/bloom iso_root/boot/bloom
+Building ps2_mouse ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p ps2_mouse
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/ps2_mouse iso_root/boot/ps2_mouse
+Building display_bootfb ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p display_bootfb
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/display_bootfb iso_root/boot/display_bootfb
+Building display_virtio_gpu ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p display_virtio_gpu
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/display_virtio_gpu iso_root/boot/display_virtio_gpu
+Building fontd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p fontd
+    Finished `release` profile [optimized] target(s) in 0.11s
+$ cp target/x86_64-unknown-thingos/release/fontd iso_root/boot/fontd
+Building blossom ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p blossom
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/blossom iso_root/boot/blossom
+Building flytrap ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p flytrap
+    Finished `release` profile [optimized] target(s) in 0.11s
+$ cp target/x86_64-unknown-thingos/release/flytrap iso_root/boot/flytrap
+Building virtio_netd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p virtio_netd
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/virtio_netd iso_root/boot/virtio_netd
+Building rtl8168d ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p rtl8168d
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/rtl8168d iso_root/boot/rtl8168d
+Building netd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p netd
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/netd iso_root/boot/netd
+Building fetchd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p fetchd
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/fetchd iso_root/boot/fetchd
+Building anther ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p anther
+    Finished `release` profile [optimized] target(s) in 0.11s
+$ cp target/x86_64-unknown-thingos/release/anther iso_root/boot/anther
+Building fortune ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p fortune
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/fortune iso_root/boot/fortune
+Building photosynthesis ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p photosynthesis
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/photosynthesis iso_root/boot/photosynthesis
+Building ahci_disk ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p ahci_disk
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/ahci_disk iso_root/boot/ahci_disk
+Building iso9660d ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p iso9660d
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/iso9660d iso_root/boot/iso9660d
+Building virtio_sound ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p virtio_sound
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/virtio_sound iso_root/boot/virtio_sound
+Building hdaudio ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p hdaudio
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/hdaudio iso_root/boot/hdaudio
+Building pci_stubd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p pci_stubd
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/pci_stubd iso_root/boot/pci_stubd
+Building beeper ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p beeper
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/beeper iso_root/boot/beeper
+Building nectar ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p nectar
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/nectar iso_root/boot/nectar
+Building hello_std ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p hello_std
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/hello_std iso_root/boot/hello_std
+$ xorriso -as mkisofs -R -J -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o thing-os-x86_64-1775268144-954777731.iso
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Drive current: -outdev 'stdio:thing-os-x86_64-1775268144-954777731.iso'
+Media current: stdio file, overwriteable
+Media status : is blank
+Media summary: 0 sessions, 0 data blocks, 0 data,  749g free
+Added to ISO image: directory '/'='/home/dancxjo/src/thing-os/iso_root'
+xorriso : UPDATE :    1237 files added in 1 seconds
+xorriso : UPDATE :    1237 files added in 1 seconds
+ISO image produced: 27726 sectors
+Written to medium : 27726 sectors at LBA 0
+Writing to 'stdio:thing-os-x86_64-1775268144-954777731.iso' completed successfully.
+
+$ ./vendor/limine/limine bios-install thing-os-x86_64-1775268144-954777731.iso
+Physical block size of 512 bytes.
+Installing to GPT. Logical block size of 512 bytes.
+Secondary header at LBA 0x1b137.
+Secondary header valid.
+Detected ISOHYBRID with a GUID partition table (GPT).
+Converting to MBR for improved compatibility...
+Conversion successful.
+No active partition found, some systems may not boot.
+Setting partition 1 as active to work around the issue...
+Installing to MBR.
+Stage 2 to be located at byte offset 0x200.
+Reminder: Remember to copy the limine-bios.sys file in either
+          the root, /boot, /limine, or /boot/limine directories of
+          one of the partitions on the device, or boot will fail!
+Limine BIOS stages installed successfully.
+ISO created: thing-os-x86_64-1775268144-954777731.iso
+
+=== Running BDD tests for x86_64 ===
+
+   Compiling bdd v0.1.0 (/home/dancxjo/src/thing-os/tools/bdd)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.61s
+     Running `target/debug/bdd`
+[bdd] Running tests for architecture: x86_64
+[bdd] CARGO_MANIFEST_DIR: /home/dancxjo/src/thing-os/tools/bdd
+[bdd] Features path: "/home/dancxjo/src/thing-os/docs/behavior/features/pointer_input.feature"
+[bdd] Building ISO thing-os-bdd-x86_64-159467-414815250.iso with resolution 1920x1080...
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.11s
+     Running `target/debug/xtask iso --resolution 1920x1080 --output thing-os-bdd-x86_64-159467-414815250.iso`
+Limine already present, skipping clone.
+Building bran kernel for x86_64 (dev profile)...
+$ cargo build --target x86_64-unknown-none --profile dev -p bran
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.07s
+Kernel built: bran/bin-x86_64/kernel
+Building ISO thing-os-bdd-x86_64-159467-414815250.iso...
+$ cp -r assets iso_root/
+Building userspace programs...
+Building sprout ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p sprout --features diagnostic-apps
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/sprout iso_root/boot/sprout
+Building bristle ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p bristle
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/bristle iso_root/boot/bristle
+Building rtc_cmos ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p rtc_cmos
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/rtc_cmos iso_root/boot/rtc_cmos
+Building clock ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p clock
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/clock iso_root/boot/clock
+Building taskman ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p taskman
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/taskman iso_root/boot/taskman
+Building font_explorer ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p font_explorer
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/font_explorer iso_root/boot/font_explorer
+Building ps2_kbd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p ps2_kbd
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/ps2_kbd iso_root/boot/ps2_kbd
+Building echo ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p echo
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/echo iso_root/boot/echo
+Building bloom ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p bloom
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/bloom iso_root/boot/bloom
+Building ps2_mouse ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p ps2_mouse
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/ps2_mouse iso_root/boot/ps2_mouse
+Building display_bootfb ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p display_bootfb
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/display_bootfb iso_root/boot/display_bootfb
+Building display_virtio_gpu ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p display_virtio_gpu
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/display_virtio_gpu iso_root/boot/display_virtio_gpu
+Building fontd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p fontd
+    Finished `release` profile [optimized] target(s) in 0.11s
+$ cp target/x86_64-unknown-thingos/release/fontd iso_root/boot/fontd
+Building blossom ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p blossom
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/blossom iso_root/boot/blossom
+Building flytrap ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p flytrap
+    Finished `release` profile [optimized] target(s) in 0.11s
+$ cp target/x86_64-unknown-thingos/release/flytrap iso_root/boot/flytrap
+Building virtio_netd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p virtio_netd
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/virtio_netd iso_root/boot/virtio_netd
+Building rtl8168d ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p rtl8168d
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/rtl8168d iso_root/boot/rtl8168d
+Building netd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p netd
+    Finished `release` profile [optimized] target(s) in 0.11s
+$ cp target/x86_64-unknown-thingos/release/netd iso_root/boot/netd
+Building fetchd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p fetchd
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/fetchd iso_root/boot/fetchd
+Building anther ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p anther
+    Finished `release` profile [optimized] target(s) in 0.11s
+$ cp target/x86_64-unknown-thingos/release/anther iso_root/boot/anther
+Building fortune ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p fortune
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/fortune iso_root/boot/fortune
+Building photosynthesis ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p photosynthesis
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/photosynthesis iso_root/boot/photosynthesis
+Building ahci_disk ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p ahci_disk
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/ahci_disk iso_root/boot/ahci_disk
+Building iso9660d ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p iso9660d
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/iso9660d iso_root/boot/iso9660d
+Building virtio_sound ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p virtio_sound
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/virtio_sound iso_root/boot/virtio_sound
+Building hdaudio ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p hdaudio
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/hdaudio iso_root/boot/hdaudio
+Building pci_stubd ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p pci_stubd
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/pci_stubd iso_root/boot/pci_stubd
+Building beeper ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p beeper
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/beeper iso_root/boot/beeper
+Building nectar ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p nectar
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/nectar iso_root/boot/nectar
+Building hello_std ...
+$ cargo -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target /home/dancxjo/src/thing-os/targets/x86_64-unknown-thingos.json --profile release -p hello_std
+    Finished `release` profile [optimized] target(s) in 0.10s
+$ cp target/x86_64-unknown-thingos/release/hello_std iso_root/boot/hello_std
+$ xorriso -as mkisofs -R -J -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o thing-os-bdd-x86_64-159467-414815250.iso
+xorriso 1.5.6 : RockRidge filesystem manipulator, libburnia project.
+
+Drive current: -outdev 'stdio:thing-os-bdd-x86_64-159467-414815250.iso'
+Media current: stdio file, overwriteable
+Media status : is blank
+Media summary: 0 sessions, 0 data blocks, 0 data,  749g free
+Added to ISO image: directory '/'='/home/dancxjo/src/thing-os/iso_root'
+xorriso : UPDATE :    1237 files added in 1 seconds
+xorriso : UPDATE :    1237 files added in 1 seconds
+ISO image produced: 27726 sectors
+Written to medium : 27726 sectors at LBA 0
+Writing to 'stdio:thing-os-bdd-x86_64-159467-414815250.iso' completed successfully.
+
+$ ./vendor/limine/limine bios-install thing-os-bdd-x86_64-159467-414815250.iso
+Physical block size of 512 bytes.
+Installing to GPT. Logical block size of 512 bytes.
+Secondary header at LBA 0x1b137.
+Secondary header valid.
+Detected ISOHYBRID with a GUID partition table (GPT).
+Converting to MBR for improved compatibility...
+Conversion successful.
+No active partition found, some systems may not boot.
+Setting partition 1 as active to work around the issue...
+Installing to MBR.
+Stage 2 to be located at byte offset 0x200.
+Reminder: Remember to copy the limine-bios.sys file in either
+          the root, /boot, /limine, or /boot/limine directories of
+          one of the partitions on the device, or boot will fail!
+Limine BIOS stages installed successfully.
+ISO created: thing-os-bdd-x86_64-159467-414815250.iso
+ISO generated at: thing-os-bdd-x86_64-159467-414815250.iso
+[bdd] ISO built: thing-os-bdd-x86_64-159467-414815250.iso
+[bdd] Forwarding HTTP: localhost:44451 -> guest:80
+
+╔══════════════════════════════════════════════════════════════╗
+║             Thing-OS BDD Test Suite                          ║
+╚══════════════════════════════════════════════════════════════╝
+
+┌─ Feature: Pointer Input
+│  ├─ Scenario: Cursor responds to mouse movement
+│  │  ├─ Given a cursor is visible on the screen

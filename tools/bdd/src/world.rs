@@ -127,7 +127,7 @@ impl ThingOsWorld {
         // Handle machine type and pflash - riscv64 requires special blockdev syntax
         match arch {
             "x86_64" => {
-                cmd.args(["-M", "q35"]);
+                cmd.args(["-M", "q35,usb=off,vmport=off,i8042=on"]);
                 cmd.args([
                     "-drive",
                     &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code),
@@ -230,6 +230,7 @@ impl ThingOsWorld {
 
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped()); // Capture stderr too to see QEMU errors
+        cmd.stdin(Stdio::null());
 
         let mut child = cmd.spawn()?;
 

@@ -929,7 +929,7 @@ fn handle_connection(conn_handle: u32) {
         }
 
         // Send headers
-        net.tcp_send(conn_handle, &headers);
+        send_all(net, conn_handle, &headers);
 
         // Send body
         match resp_body {

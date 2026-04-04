@@ -75,10 +75,10 @@ pub fn sys_port_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<usi
     }
 
     if port.send_all(&buf[..len]) {
-        crate::kinfo!("sys_port_send_all: wrote {} bytes to port {}", len, entry.port_id.0);
+        crate::ktrace!("sys_port_send_all: wrote {} bytes to port {}", len, entry.port_id.0);
         Ok(len)
     } else {
-        crate::kinfo!("sys_port_send_all: port {} FULL, returning EAGAIN", entry.port_id.0);
+        crate::ktrace!("sys_port_send_all: port {} FULL, returning EAGAIN", entry.port_id.0);
         Err(Errno::EAGAIN)
     }
 }
@@ -109,7 +109,7 @@ pub fn sys_port_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> 
         unsafe {
             copyout(ptr, &buf[..read])?;
         }
-        crate::kinfo!("sys_port_recv: read {} bytes from port {}", read, entry.port_id.0);
+        crate::ktrace!("sys_port_recv: read {} bytes from port {}", read, entry.port_id.0);
     }
 
     Ok(read)
@@ -191,7 +191,7 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResul
                     if (flags & abi::syscall::port_wait::READABLE) != 0 {
                         if let Some(port) = crate::ipc::get_port(entry.port_id) {
                             if !port.is_empty() {
-                                crate::kinfo!("sys_port_wait: port {} is NOT empty, returning Ok({})", entry.port_id.0, h);
+                                crate::ktrace!("sys_port_wait: port {} is NOT empty, returning Ok({})", entry.port_id.0, h);
                                 cleanup(&handles[..count], &mut table);
                                 return Ok(h as usize);
                             }
@@ -213,9 +213,9 @@ pub fn sys_port_wait(handles_ptr: usize, count: usize, flags: usize) -> SysResul
 
         // 3. Block current task
         unsafe {
-            crate::kinfo!("sys_port_wait: blocking task {}", tid);
+            crate::ktrace!("sys_port_wait: blocking task {}", tid);
             crate::sched::block_current_erased();
-            crate::kinfo!("sys_port_wait: unblocked task {}", tid);
+            crate::ktrace!("sys_port_wait: unblocked task {}", tid);
         }
     }
 }

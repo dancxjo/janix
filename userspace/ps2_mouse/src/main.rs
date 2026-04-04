@@ -127,19 +127,45 @@ fn init_mouse() {
         info!("ps2_mouse: controller cfg already correct (0x{:02x})", cfg);
     }
 
-    // Enable mouse data reporting (0xF4)
-    info!("ps2_mouse: sending enable command (0xF4)");
-    send_aux_byte(MOUSE_ENABLE);
-
-    // Wait for ACK (0xFA)
-    let ack = read_data_filtered(true, "enable ACK (0xFA)").unwrap_or(0);
+    // Reset mouse (0xFF)
+    info!("ps2_mouse: sending RESET (0xFF)");
+    send_aux_byte(0xFF);
+    let ack = read_data_filtered(true, "reset ACK (0xfa)").unwrap_or(0);
     if ack == 0xFA {
-        info!("ps2_mouse: enable ACK received (0xFA)");
+        info!("ps2_mouse: reset ACK received (0xfa)");
+        let bat = read_data_filtered(true, "BAT byte (0xAA)").unwrap_or(0);
+        let id = read_data_filtered(true, "Device ID (0x00)").unwrap_or(1);
+        info!("ps2_mouse: BAT passed (0x{:02x}), ID 0x{:02x} confirmed", bat, id);
+    }
+
+    info!("ps2_mouse: setting sample rate (100)");
+    send_aux_byte(0xF3);
+    read_data_filtered(true, "sample rate ACK");
+    send_aux_byte(100);
+    read_data_filtered(true, "sample rate set ACK");
+
+    info!("ps2_mouse: setting resolution (3)");
+    send_aux_byte(0xE8);
+    read_data_filtered(true, "resolution ACK");
+    send_aux_byte(3);
+    read_data_filtered(true, "resolution set ACK");
+
+    send_aux_byte(0xE9);
+    let _s_ack = read_data_filtered(true, "status request ACK");
+    let b1 = read_data_filtered(true, "status byte 1").unwrap_or(0);
+    let b2 = read_data_filtered(true, "status byte 2").unwrap_or(0);
+    let b3 = read_data_filtered(true, "status byte 3").unwrap_or(0);
+    info!("ps2_mouse: status result = Some({}) Some({}) Some({})", b1, b2, b3);
+
+    // If bit 5 is 0, it means it's already enabled in streaming mode.
+    if b1 & 0x20 != 0 {
+        // Enable mouse data reporting (0xF4)
+        info!("ps2_mouse: sending enable command (0xF4)");
+        send_aux_byte(MOUSE_ENABLE);
+        let e_ack = read_data_filtered(true, "enable ACK (0xFA)").unwrap_or(0);
+        info!("ps2_mouse: enable ACK received (0x{:02x})", e_ack);
     } else {
-        info!(
-            "ps2_mouse: enable failed? received 0x{:02x} instead of ACK",
-            ack
-        );
+        info!("ps2_mouse: already enabled, skipping 0xF4 command");
     }
 
     stem::sleep_ms(100);
@@ -223,8 +249,10 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
                 *idx = 0;
             }
         } else {
-            // Not mouse data; leave it for ps2_kbd and stop this drain pass.
-            break;
+            // Not mouse data; steal it to clear the jam!
+            let stolen = ioport_read(PS2_DATA, 1) as u8;
+            info!("ps2_mouse: STEALING keyboard byte 0x{:02x} to clear jam", stolen);
+            continue;
         }
     }
 }

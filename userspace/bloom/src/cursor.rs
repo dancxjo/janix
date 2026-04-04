@@ -36,6 +36,7 @@ impl CursorState {
 
     /// Apply a relative movement delta, clamping to screen bounds.
     pub fn apply_move(&mut self, dx: i16, dy: i16, w: i32, h: i32) {
+        stem::info!("[DEBUG] cursor apply_move: original (x={}, y={}), delta (dx={}, dy={}), bounds (w={}, h={})", self.x, self.y, dx, dy, w, h);
         let mut nx = self.x + dx as i32;
         let mut ny = self.y + dy as i32;
         if nx < 0 {
@@ -52,6 +53,7 @@ impl CursorState {
         }
         self.x = nx;
         self.y = ny;
+        stem::info!("[DEBUG] cursor apply_move: resulting (nx={}, ny={})", nx, ny);
     }
 
     /// Record a button press.

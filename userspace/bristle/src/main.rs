@@ -445,10 +445,13 @@ fn main(packed_handles: usize) -> ! {
 
         // Process mouse input
         if ready_handle == mouse_read {
+            stem::info!("[DEBUG] bristle main: ready_handle == mouse_read");
             if let Ok(n) = port_recv(mouse_read, &mut mouse_buf) {
+                stem::info!("[DEBUG] bristle main: port_recv returned n={}", n);
                 for &byte in &mouse_buf[..n] {
                     // Keep packet framing across recv calls: the stream can split 3-byte packets.
                     if mouse_packet_len == 0 && (byte & 0x08) == 0 {
+                        stem::info!("[DEBUG] bristle main: dropping out-of-sync byte {:#04x}", byte);
                         continue;
                     }
 

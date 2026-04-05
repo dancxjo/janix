@@ -239,6 +239,8 @@ mod tests {
         assert_eq!(registry.try_wait(vector, 1), 1);
         assert_eq!(registry.try_wait(vector, 2), 1);
 
+        WAKE_COUNT.store(0, Ordering::Relaxed);
+
         registry.dispatch(vector);
         registry.dispatch(vector);
         assert_eq!(registry.try_wait(vector, 1), 2);

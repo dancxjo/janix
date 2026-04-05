@@ -308,7 +308,7 @@ mod tests {
         let reply = Arc::new(ReplyCell::new());
         let msg = RootMsg {
             op,
-            reply: reply.clone(),
+            reply: Some(reply.clone()),
         };
 
         // Call handler
@@ -355,7 +355,7 @@ mod tests {
         let reply = Arc::new(ReplyCell::new());
         let msg = RootMsg {
             op,
-            reply: reply.clone(),
+            reply: Some(reply.clone()),
         };
 
         let (status, _written) = handle_watch_next(&mut graph, &msg, watch_id);
@@ -424,7 +424,7 @@ mod tests {
         let reply = Arc::new(ReplyCell::new());
         let msg = RootMsg {
             op,
-            reply: reply.clone(),
+            reply: Some(reply.clone()),
         };
 
         let (status, written) = handle_watch_next(&mut graph, &msg, watch_id);
@@ -476,7 +476,7 @@ mod tests {
             out_len: 0,
         };
         let reply = Arc::new(ReplyCell::new());
-        let msg = RootMsg { op, reply };
+        let msg = RootMsg { op, reply: Some(reply) };
 
         let (status, _written) = handle_watch_next(&mut graph, &msg, watch_id);
 

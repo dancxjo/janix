@@ -718,7 +718,7 @@ mod tests {
             root_id,
             UiNodeSnapshot {
                 id: root_id,
-                kind: UiNodeKind::Root,
+                kind: UiNodeKind::Crown,
                 props: root_props,
                 strings: BTreeMap::new(),
                 children: vec![child_id],

@@ -17,9 +17,10 @@ use alloc::vec::Vec;
 ///
 /// # Example
 /// ```no_run
-/// use stem::petals::DrawList;
+/// use stem::petals::drawlist::DrawList;
 /// use stem::thing::ThingId;
 /// use abi::drawlist::{DrawListBuilder, FillRule, PathVerb, PointF};
+/// use abi::ids::HandleId;
 ///
 /// let window_id = ThingId::from_u64(42);
 /// let mut dl = DrawList::new(window_id);

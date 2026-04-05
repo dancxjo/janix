@@ -1,5 +1,77 @@
 # Changelog
 
+## Process Management, Networking & UI Framework Expansion
+
+Recent development has brought major architectural enhancements to Thing-OS, focusing on robust process management, real-time networking capabilities, and a refined UI framework. The kernel now supports detailed process monitoring, signal handling (`SYS_TASK_KILL`), and standard synchronization primitives (`futex`). Networking has seen a significant upgrade with Server-Sent Events (SSE) support in Anther and a multi-threaded connection handling model in `netd`. Additionally, initial standard library (`std`) support has been introduced, paving the way for easier porting of external Rust crates.
+
+### ⚙️ System Library & API Expansion
+
+*   **Standard Library Support**: Introduced initial `std` support via the `restricted_std` feature and a custom Platform Abstraction Layer (PAL) patch, allowing userspace applications to leverage the Rust standard library.
+    *   *Artifacts*: `userspace/hello_std/`, `stem::pal`
+
+*   **Process Management Sycalls**: Added `SYS_TASK_KILL` for sending signals to tasks, `SYS_TASK_DUMP` for retrieving detailed scheduler statistics, and enhanced process spawning with `argv` and `env` support.
+    *   *Artifacts*: `kernel/src/task/`, `abi/src/syscall.rs`
+
+*   **Synchronization & IPC**: Implemented kernel-backed `futex` syscalls (`sys_futex_wait`, `sys_futex_wake`) and anonymous pipe IPC for robust inter-process communication.
+    *   *Artifacts*: `kernel/src/sched/futex.rs` (approx), `abi/src/syscall.rs`
+
+*   **Hardware RNG Entropy**: Integrated an entropy pool in the kernel and implemented the `SYS_GETRANDOM` syscall, utilizing the x86_64 hardware random number generator (`RDRAND`/`RDSEED`).
+    *   *Artifacts*: `kernel/src/entropy.rs`
+
+### 🌐 Networking & Real-time Updates
+
+*   **Server-Sent Events (SSE)**: The Anther HTTP server now supports SSE, enabling real-time streaming of graph node updates (Thing properties) to web clients without polling.
+    *   *Artifacts*: `userspace/anther/`
+
+*   **Multi-threaded Connection Handling**: `netd` has been refactored to spawn a dedicated thread for each incoming network connection, significantly improving responsiveness and isolating IPC traffic.
+    *   *Artifacts*: `userspace/netd/`
+
+*   **LLM Integration & Explain Capability**: Added the ability for Anther to explain graph nodes using a local Ollama instance, further integrating AI capabilities into the system interface.
+    *   *Artifacts*: `userspace/anther/`, `userspace/nectar/`
+
+### 🎨 UI Framework & Desktop Experience
+
+*   **Reactive Task Manager**: The `taskman` application now displays a detailed, two-column list of running processes, leveraging reactive updates from the supervisor to reflect task states instantly.
+    *   *Artifacts*: `userspace/taskman/`
+
+*   **Window Management & Chrome**: Implemented window title bars and borders ("chrome") for UI applications, with support for keyed UI elements to reduce unnecessary repaints and optimize event handling.
+    *   *Artifacts*: `userspace/blossom/`, `userspace/bloom/`
+
+*   **Layout Enhancements**: Added support for horizontal row layouts and computed styles, improving the flexibility and aesthetics of the `blossom` UI framework.
+    *   *Artifacts*: `userspace/blossom/src/graph_ui.rs`
+
+### 🧪 System Verification
+
+*   **Comprehensive BDD Scenarios**: Added several new Behavior-Driven Development (BDD) scenarios, including "System Stewardship", "Getting Started", and "Anther HTTP API", ensuring end-to-end functionality of these new features.
+    *   *Artifacts*: `docs/behavior/features/system_stewardship.feature`, `docs/behavior/features/getting_started.feature`, `docs/behavior/features/anther_http.feature`
+## Graphics Resilience & Daily Inspiration
+
+This update introduces a variety of refinements to the operating system's overall robustness, especially surrounding graphics initialization, as well as new user-facing features and database stability improvements. A primary focus has been ensuring the OS boots gracefully even when no physical or virtual display is detected, alongside the introduction of a new "Daily Inspiration" workflow. Additionally, the Phloem graph database has received important bug fixes related to node ID handling, and the build system has been further automated.
+
+### 🎨 Graphics & Display Fallback
+
+*   **Fail-Safe Graphics Initialization**: The system now robustly handles environments without display devices. If standard display drivers (`display_bootfb` or `display_virtio_gpu`) fail to initialize, `sprout` seamlessly launches `display_fake`. This prevents the compositor (`bloom`) from crashing, allowing headless or degraded environments to continue functioning smoothly.
+    *   *Artifacts*: `userspace/sprout/src/pipelines.rs`, `userspace/bloom/src/main.rs`
+
+### 🔮 User Features & Workflow
+
+*   **Daily Inspiration (Fortune)**: Added the new "Fortune" application, which provides users with daily inspiration and messages. This feature includes full behavioral testing to ensure the fortune-telling process works predictably from the user's perspective.
+    *   *Artifacts*: `docs/behavior/features/daily_inspiration.feature`, `userspace/sprout/src/supervisor.rs`
+*   **Developer Workflow Testing**: A new behavioral test has been added to document and verify the process developers use to inspect the live system graph via GQL, leveraging the `anther` service.
+    *   *Artifacts*: `docs/behavior/features/developer_workflow.feature`, `tools/bdd/src/steps.rs`
+
+### 🗄️ Phloem Database Fixes
+
+*   **MATCH ID Optimization Fix**: Resolved a critical bug where the graph executor confused a custom property named "id" with the internal node ID during query optimizations. `MATCH` optimizations now strictly require the explicit `id(n) = value` syntax.
+    *   *Artifacts*: `userspace/phloem/src/executor.rs`, `userspace/phloem/src/query_tests.rs`
+*   **MERGE Parameter Support**: Expanded the test suite to formally verify that the `MERGE` command correctly supports and maps inline parameters during node creation and lookup.
+    *   *Artifacts*: `userspace/phloem/src/query_tests.rs`
+
+### ⚙️ System & Build Automation
+
+*   **PCI & Toolchain Enhancements**: Enabled PCI bus mastering within the kernel (`kernel/src/root/pci.rs`) to expand hardware support. Additionally, automated Rust source fetching to prevent build issues during `build-std` and updated the toolchain to `nightly-2026-02-10`.
+    *   *Artifacts*: `kernel/src/root/pci.rs`, `rust-toolchain.toml`
+
 ## Unified Event Loop & Graph Integration Refinement
 
 This update further refines the scheduler modernization by introducing a dedicated `ring_drain_task` and centralizing event processing. The kernel now strictly separates scheduler events (emitted lock-free) from graph updates, which are processed asynchronously by dedicated worker threads. This change significantly reduces scheduler latency and improves system responsiveness under heavy graph load. Additionally, extensive profiling has been added to the graph integration layer to identify bottlenecks. Userspace input handling has also been robustified with a new keyboard state engine.

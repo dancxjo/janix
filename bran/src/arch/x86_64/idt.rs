@@ -7,6 +7,7 @@ pub const IRQ_TLB_SHOOTDOWN_VECTOR: u8 = 0x41;
 use kernel::kinfo;
 
 static IRQ12_COUNT: AtomicU64 = AtomicU64::new(0);
+static IRQ1_COUNT: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Clone, Copy)]
 #[repr(C, packed)]
@@ -69,7 +70,10 @@ unsafe extern "C" {
     fn irq_timer_handler_shim();
     fn irq_resched_handler_shim();
     fn irq_tlb_shootdown_handler_shim();
+    fn irq_keyboard_handler_shim();
     fn irq_mouse_handler_shim();
+    fn invalid_opcode_handler_shim();
+    fn div0_handler_shim();
 }
 
 core::arch::global_asm!(
@@ -108,6 +112,32 @@ core::arch::global_asm!(
         cli
         mov %rsp, %rdi
         call rust_gp_handler
+    2:  hlt
+        jmp 2b
+
+    .global invalid_opcode_handler_shim
+    invalid_opcode_handler_shim:
+        push $0
+        testb $3, 16(%rsp)
+        jz 1f
+        swapgs
+    1:
+        cli
+        mov %rsp, %rdi
+        call rust_invalid_opcode_handler
+    2:  hlt
+        jmp 2b
+
+    .global div0_handler_shim
+    div0_handler_shim:
+        push $0
+        testb $3, 16(%rsp)
+        jz 1f
+        swapgs
+    1:
+        cli
+        mov %rsp, %rdi
+        call rust_div0_handler
     2:  hlt
         jmp 2b
 
@@ -208,6 +238,41 @@ core::arch::global_asm!(
         push %r11
 
         mov $0x20, %rdi
+        call rust_irq_handler
+
+        pop %r11
+        pop %r10
+        pop %r9
+        pop %r8
+        pop %rdi
+        pop %rsi
+        pop %rdx
+        pop %rcx
+        pop %rax
+
+        testb $3, 8(%rsp)
+        jz 2f
+        swapgs
+    2:
+        iretq
+
+    .global irq_keyboard_handler_shim
+    irq_keyboard_handler_shim:
+        testb $3, 8(%rsp)
+        jz 1f
+        swapgs
+    1:
+        push %rax
+        push %rcx
+        push %rdx
+        push %rsi
+        push %rdi
+        push %r8
+        push %r9
+        push %r10
+        push %r11
+
+        mov $0x21, %rdi
         call rust_irq_handler
 
         pop %r11
@@ -341,9 +406,20 @@ pub unsafe fn init() {
             (*base.add(i)).set_handler(handler, crate::arch::x86_64::gdt::KERNEL_CODE_SEL, 0, 0x8E);
         }
 
-        // Exceptions
         IDT.entries[3].set_handler(
             breakpoint_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+        IDT.entries[0].set_handler(
+            div0_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+        IDT.entries[6].set_handler(
+            invalid_opcode_handler_shim as *const () as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             0,
             0x8E,
@@ -380,6 +456,14 @@ pub unsafe fn init() {
         // Dedicated Timer Vector
         IDT.entries[IRQ_TIMER_VECTOR as usize].set_handler(
             irq_timer_handler_shim as *const () as u64,
+            crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
+            0,
+            0x8E,
+        );
+
+        // Dedicated Keyboard Vector (0x21) - Bypass Common Shim/ISR lookup
+        IDT.entries[0x21].set_handler(
+            irq_keyboard_handler_shim as *const () as u64,
             crate::arch::x86_64::gdt::KERNEL_CODE_SEL,
             0,
             0x8E,
@@ -444,9 +528,24 @@ pub struct InterruptStackFrame {
 /// Hardware IRQ handler - dispatches to kernel and sends EOI
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_irq_handler(vector: u64) {
-    // Prefer the LAPIC ISR-reported in-service vector when available.
-    // This matches the historical path and avoids relying on shim-passed constants.
-    let resolved = crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(vector as u8);
+    // Dedicated shims pass the exact vector. Generic shared stubs still fall back
+    // to LAPIC ISR probing until they are split out into per-vector handlers.
+    let resolved = if vector != 0 {
+        vector as u8
+    } else {
+        crate::arch::x86_64::ioapic::lapic_in_service_vector().unwrap_or(0)
+    };
+
+    if resolved == 0 {
+        return;
+    }
+
+    if resolved == 0x21 {
+        let count = IRQ1_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
+        if count <= 3 || (count % 128 == 0) {
+            kinfo!("IRQ1 fired (count={})", count);
+        }
+    }
 
     if resolved == 0x2C {
         let count = IRQ12_COUNT.fetch_add(1, Ordering::Relaxed) + 1;
@@ -510,10 +609,62 @@ pub extern "C" fn rust_pf_handler(frame: &InterruptStackFrame) {
 
 #[unsafe(no_mangle)]
 pub extern "C" fn rust_gp_handler(frame: &InterruptStackFrame) -> ! {
-    panic!(
-        "GPF at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}",
-        frame.rip, frame.cs, frame.error_code, frame.rsp
-    );
+    if frame.cs & 3 == 3 {
+        unsafe {
+            unsafe extern "C" {
+                fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);
+            }
+            kernel_handle_exception(frame.rip, frame.error_code, frame.rsp, frame.cs, 13);
+            loop {
+                core::arch::asm!("hlt");
+            }
+        }
+    } else {
+        panic!(
+            "KERNEL GPF at RIP=0x{:x} CS=0x{:x} ERR=0x{:x} RSP=0x{:x}",
+            frame.rip, frame.cs, frame.error_code, frame.rsp
+        );
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_invalid_opcode_handler(frame: &InterruptStackFrame) -> ! {
+    if frame.cs & 3 == 3 {
+        unsafe {
+            unsafe extern "C" {
+                fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);
+            }
+            kernel_handle_exception(frame.rip, frame.error_code, frame.rsp, frame.cs, 6);
+            loop {
+                core::arch::asm!("hlt");
+            }
+        }
+    } else {
+        panic!(
+            "KERNEL INVALID OPCODE at RIP=0x{:x} CS=0x{:x} RSP=0x{:x}",
+            frame.rip, frame.cs, frame.rsp
+        );
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn rust_div0_handler(frame: &InterruptStackFrame) -> ! {
+    if frame.cs & 3 == 3 {
+        unsafe {
+            unsafe extern "C" {
+                fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64);
+            }
+            kernel_handle_exception(frame.rip, frame.error_code, frame.rsp, frame.cs, 0);
+            loop {
+                core::arch::asm!("hlt");
+            }
+        }
+    } else {
+        panic!(
+            "KERNEL DIVIDE BY ZERO at RIP=0x{:x} CS=0x{:x} RSP=0x{:x}",
+            frame.rip, frame.cs, frame.rsp
+        );
+    }
 }
 
 #[unsafe(no_mangle)]

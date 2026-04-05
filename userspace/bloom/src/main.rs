@@ -56,7 +56,7 @@ use abi::display_driver_protocol::BindPayload;
 use abi::schema::input::{
     FILTER_BUTTON, FILTER_POINTER, SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER,
 };
-use abi::schema::{keys, kinds};
+use abi::schema::{hid, keys, kinds, pointer};
 use stem::syscall::{port_create, topic_subscribe, PortHandle};
 
 use crate::asset::AssetBank;
@@ -141,6 +141,88 @@ struct CursorUnderlay {
     rect: crate::geometry::Rect,
     pixels: alloc::vec::Vec<u32>,
     valid: bool,
+}
+
+fn find_bristle_node() -> Option<ThingId> {
+    let mut input_nodes = [ThingId::default(); 16];
+    match find(hid::SVC_INPUT, &mut input_nodes) {
+        Ok(count) if count > 0 => {
+            let count = count.min(input_nodes.len());
+            let mut best = input_nodes[0];
+            for node in input_nodes.iter().take(count).skip(1) {
+                if node.to_u64_lossy() > best.to_u64_lossy() {
+                    best = *node;
+                }
+            }
+            Some(best)
+        }
+        _ => None,
+    }
+}
+
+fn subscribe_bristle_topic() -> Option<PortHandle> {
+    let input_node = find_bristle_node()?;
+    if let Ok(topic_id) = prop_get(input_node, abi::schema::input::INPUT_TOPIC_ID) {
+        if let Ok((write, read)) = port_create(4096) {
+            if topic_subscribe(topic_id as u32, write).is_ok() {
+                stem::info!(
+                    "[bloom] dynamically subscribed to input topic {} on svc.Input {} via port {}",
+                    topic_id,
+                    input_node.to_u64_lossy(),
+                    read
+                );
+                return Some(read);
+            }
+        }
+    }
+    None
+}
+
+fn warn_graph_pointer_state(
+    cursor: &CursorState,
+    bristle_node: ThingId,
+    frame: u64,
+) {
+    let graph_x = prop_get(bristle_node, pointer::POINTER_X).ok();
+    let graph_y = prop_get(bristle_node, pointer::POINTER_Y).ok();
+    let graph_buttons = prop_get(bristle_node, pointer::POINTER_BUTTONS).ok();
+
+    if let (Some(x), Some(y)) = (graph_x, graph_y) {
+        let x = x as i32;
+        let y = y as i32;
+        if (cursor.x != x || cursor.y != y) && frame % 120 == 0 {
+            stem::warn!(
+                "[bloom] graph pointer state diverged from streamed cursor: cursor=({}, {}) graph=({}, {})",
+                cursor.x,
+                cursor.y,
+                x,
+                y
+            );
+        }
+        if let Some(buttons) = graph_buttons {
+            let buttons = buttons as u32;
+            if cursor.buttons() != buttons && frame % 120 == 0 {
+                stem::warn!(
+                    "[bloom] graph pointer.buttons diverged from streamed cursor: cursor=0x{:x} graph=0x{:x}",
+                    cursor.buttons(),
+                    buttons
+                );
+            }
+        }
+    } else if frame % 120 == 0 {
+        stem::warn!(
+            "[bloom] graph pointer state unavailable on svc.Input {}",
+            bristle_node.to_u64_lossy()
+        );
+    }
+}
+
+fn warn_graph_state_if_needed(cursor: &CursorState, bristle_node: Option<ThingId>, frame: u64) {
+    if let Some(node) = bristle_node {
+        warn_graph_pointer_state(cursor, node, frame);
+    } else if frame % 120 == 0 {
+        stem::warn!("[bloom] no svc.Input node found for graph pointer diagnostics");
+    }
 }
 
 #[inline]
@@ -615,11 +697,11 @@ fn main(arg: usize) -> ! {
         Ok(count) if count > 0 => {
             stem::info!("bloom: found existing UI CROWN");
             roots[0]
-        },
+        }
         _ => {
             stem::info!("bloom: creating new UI CROWN");
             stem::ui::UiBuilder::create_root()
-        },
+        }
     };
     stem::info!("bloom: UI CROWN initialized!");
 
@@ -645,25 +727,12 @@ fn main(arg: usize) -> ! {
     let (screen_w, screen_h) = (target.width as i32, target.height as i32);
 
     // Cursor state
-    // Input handle: try to use the broadcast topic, fallback to legacy handle
+    // Prefer the explicit wired Bristle handle when Sprout provides one.
+    // The topic path remains a fallback/recovery path.
     let mut bristle_evt_handle = bristle_evt as PortHandle;
-    
-    let mut input_nodes = [ThingId::default(); 1];
-    if let Ok(count) = find(abi::schema::hid::SVC_INPUT, &mut input_nodes) {
-        if count > 0 {
-            let input_node = input_nodes[0];
-            if let Ok(topic_id) = prop_get(input_node, abi::schema::input::INPUT_TOPIC_ID) {
-                if let Ok((write, read)) = port_create(4096) {
-                    if topic_subscribe(topic_id as u32, write).is_ok() {
-                        stem::info!(
-                            "[bloom] dynamically subscribed to input topic {} via port {}",
-                            topic_id,
-                            read
-                        );
-                        bristle_evt_handle = read;
-                    }
-                }
-            }
+    if bristle_evt_handle == 0 {
+        if let Some(handle) = subscribe_bristle_topic() {
+            bristle_evt_handle = handle;
         }
     }
 
@@ -673,6 +742,7 @@ fn main(arg: usize) -> ! {
         bristle_evt
     );
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
+    let mut bristle_node = find_bristle_node();
     let mut cursor_rasterizer = CursorRasterizer::new();
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_keys: BTreeSet<Key> = BTreeSet::new();
@@ -699,11 +769,15 @@ fn main(arg: usize) -> ! {
 
     // Composition mode: CPU (default) or GPU (virgl-accelerated)
     #[cfg(feature = "gpu")]
-    let composition_mode = if target.backend == crate::compositor::DisplayBackend::VirtioGpu {
-        stem::info!("bloom: VirtioGpu detected - enabling GPU composition mode");
+    let composition_mode = if target.backend == crate::compositor::DisplayBackend::VirtioGpu
+        && presenter.has_3d_cap()
+    {
+        stem::info!("bloom: VirtioGpu + Virgl 3D detected - enabling GPU composition mode");
         CompositionMode::Gpu
     } else {
-        stem::info!("bloom: No VirtioGpu - using CPU composition mode");
+        stem::info!(
+            "bloom: GPU composition not supported (or Virgl disabled) - using CPU composition mode"
+        );
         CompositionMode::Cpu
     };
     #[cfg(not(feature = "gpu"))]
@@ -727,7 +801,9 @@ fn main(arg: usize) -> ! {
     // Window Manager disabled in paint pipeline (no legacy chrome/hit testing)
 
     // Glyph Arrival Watch
+    stem::info!("bloom: calling intern for FONT_GLYPH");
     let glyph_watch_pred = stem::thing::sys::intern(kinds::FONT_GLYPH).unwrap_or(0);
+    stem::info!("bloom: intern returned FONT_GLYPH={}", glyph_watch_pred);
     let glyph_watch = if glyph_watch_pred != 0 {
         use abi::root::RootWatchFilter;
         use abi::types::{WatchMode, WatchSpec};
@@ -738,13 +814,18 @@ fn main(arg: usize) -> ! {
             filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
             ..Default::default()
         };
-        stem::syscall::root_watch_open(&spec).ok()
+        stem::info!("bloom: calling root_watch_open for FONT_GLYPH");
+        let res = stem::syscall::root_watch_open(&spec).ok();
+        stem::info!("bloom: root_watch_open ret={:?}", res);
+        res
     } else {
         None
     };
 
     // UI Window Watch - triggers dirty when windows are created/modified
+    stem::info!("bloom: calling intern for UI_WINDOW");
     let ui_window_kind = stem::thing::sys::intern(kinds::UI_WINDOW).unwrap_or(0);
+    stem::info!("bloom: intern returned UI_WINDOW={}", ui_window_kind);
     let ui_window_watch = if ui_window_kind != 0 {
         use abi::root::RootWatchFilter;
         use abi::types::{WatchMode, WatchSpec};
@@ -756,13 +837,18 @@ fn main(arg: usize) -> ! {
             filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
             ..Default::default()
         };
-        stem::syscall::root_watch_open(&spec).ok()
+        stem::info!("bloom: calling root_watch_open for UI_WINDOW");
+        let res = stem::syscall::root_watch_open(&spec).ok();
+        stem::info!("bloom: root_watch_open ret={:?}", res);
+        res
     } else {
         None
     };
 
     // UI Paint Watch - triggers dirty when paint generation changes
+    stem::info!("bloom: calling intern for UI_PAINT_GEN");
     let ui_paint_gen_key = stem::thing::sys::intern(keys::UI_PAINT_GEN).unwrap_or(0);
+    stem::info!("bloom: intern returned UI_PAINT_GEN={}", ui_paint_gen_key);
     let ui_paint_watch = if ui_paint_gen_key != 0 {
         use abi::root::RootWatchFilter;
         use abi::types::{WatchMode, WatchSpec};
@@ -773,7 +859,10 @@ fn main(arg: usize) -> ! {
             filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
             ..Default::default()
         };
-        stem::syscall::root_watch_open(&spec).ok()
+        stem::info!("bloom: calling root_watch_open for UI_PAINT_GEN");
+        let res = stem::syscall::root_watch_open(&spec).ok();
+        stem::info!("bloom: root_watch_open ret={:?}", res);
+        res
     } else {
         None
     };
@@ -817,7 +906,7 @@ fn main(arg: usize) -> ! {
                     0,
                     current_age,
                 );
-                
+
                 // Use cached pointer or map if new
                 let ptr = if let Some(&ptr) = buffer_cache.get(&bs_id) {
                     ptr
@@ -903,6 +992,12 @@ fn main(arg: usize) -> ! {
         let paint_res = paint_pipeline.process_updates(target.width as i32, target.height as i32);
 
         // Input processing with window management
+        if bristle_evt_handle == 0 {
+            if let Some(handle) = subscribe_bristle_topic() {
+                bristle_evt_handle = handle;
+            }
+        }
+
         if bristle_evt_handle != 0 {
             prev_keys = pressed_keys.clone();
             {
@@ -915,8 +1010,10 @@ fn main(arg: usize) -> ! {
                     &mut accel_state,
                     screen_w,
                     screen_h,
-                )
+                );
             }
+            bristle_node = find_bristle_node().or(bristle_node);
+            warn_graph_state_if_needed(&cursor, bristle_node, loop_ctrl.frame_number());
 
             let shift_down =
                 pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);

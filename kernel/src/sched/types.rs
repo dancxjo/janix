@@ -1,12 +1,12 @@
 //! Core scheduler types and data structures.
 
-use crate::BootRuntime;
 use crate::task::{Task, TaskId};
-use core::sync::atomic::{AtomicUsize, Ordering};
-use core::marker::PhantomData;
+use crate::BootRuntime;
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
+use core::marker::PhantomData;
+use core::sync::atomic::{AtomicUsize, Ordering};
 
 /// Separate lock for TaskId→ThingId graph mappings.
 ///
@@ -40,14 +40,14 @@ pub const MAX_CPUS: usize = 32;
 
 /// Anti-starvation: ticks to wait before boosting priority by one level
 /// At 100Hz, 500 ticks = ~5 seconds
-/// 
+///
 /// This ensures low-priority tasks don't starve even when high-priority tasks
 /// are continuously runnable. After waiting for AGING_THRESHOLD_TICKS, a task's
 /// priority is temporarily boosted by one level until it gets scheduled.
 pub const AGING_THRESHOLD_TICKS: u64 = 500;
 
 /// Anti-starvation: maximum priority boost levels (prevents excessive boosting)
-/// 
+///
 /// Limits how many priority levels a task can be boosted. For example, with
 /// MAX_PRIORITY_BOOST = 2, a Low priority task can be boosted to at most High
 /// priority (Low -> Normal -> High), but never to Realtime.
@@ -77,8 +77,6 @@ pub enum ScheduleReason {
     /// safe points. Same behaviour as SafePoint, semantically distinct.
     ReschedIfNeeded,
 }
-
-
 
 pub struct SwitchParams<Ctx, AS> {
     pub from_ctx: *mut Ctx,
@@ -162,8 +160,6 @@ impl<R: BootRuntime> Scheduler<R> {
         let tid = self.current_id_on_cpu(cpu)?;
         crate::task::registry::get_task::<R>(tid).map(|t| t.priority)
     }
-
-
 
     /// Returns `true` if there is at least one task in a non-idle run queue
     /// (priority levels 1–4) for the given CPU. Used by `run_scheduler` to

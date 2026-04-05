@@ -856,7 +856,9 @@ async fn wait_for_ready_state(world: &mut ThingOsWorld) -> Result<(), StepError>
     };
 
     // Wait for scheduler loop entry as the primary "ready" signal
-    let found = world.wait_for_serial("Entering scheduler loop", timeout).await;
+    let found = world
+        .wait_for_serial("Entering scheduler loop", timeout)
+        .await;
 
     if !found {
         capture_failure_diagnostics(world, "system ready state").await;
@@ -1330,7 +1332,9 @@ async fn given_clock_ticking(world: &mut ThingOsWorld) -> Result<(), StepError> 
     }
 
     // Wait for system ready
-    let found = world.wait_for_serial("Entering scheduler loop", 120.0).await;
+    let found = world
+        .wait_for_serial("Entering scheduler loop", 120.0)
+        .await;
     if !found {
         return Err(StepError("System did not reach ready state".to_string()));
     }
@@ -1440,8 +1444,10 @@ async fn given_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
             .map_err(|e| StepError(format!("Failed to boot QEMU: {}", e)))?;
     }
 
-    // Wait for system ready
-    let found = world.wait_for_serial("Entering scheduler loop", 120.0).await;
+    // Wait for system ready (use a late log to avoid missing it due to wait=off)
+    let found = world
+        .wait_for_serial("ps2_mouse: entering interrupt-driven loop", 120.0)
+        .await;
     if !found {
         return Err(StepError("System did not reach ready state".to_string()));
     }
@@ -1457,15 +1463,13 @@ async fn given_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
 
 #[when("I press a key")]
 async fn when_press_key(world: &mut ThingOsWorld) {
-    use crate::artifacts::qmp::execute_on_stream;
-
-    if let Some(stream) = world.qmp_control.as_mut() {
+    if world.qmp_control.is_some() {
         let press = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "key", "data": {"down": true, "key": {"type": "qcode", "data": "a"}}}]}}"#;
         let release = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "key", "data": {"down": false, "key": {"type": "qcode", "data": "a"}}}]}}"#;
 
-        let _ = execute_on_stream(stream, press).await;
+        let _ = world.execute_qmp_control(press).await;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let _ = execute_on_stream(stream, release).await;
+        let _ = world.execute_qmp_control(release).await;
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         eprintln!("│  │  │      ⌨️ Sent keypress 'a'");
     } else {
@@ -1475,9 +1479,7 @@ async fn when_press_key(world: &mut ThingOsWorld) {
 
 #[when(regex = r#"^I press (.+)$"#)]
 async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
-    use crate::artifacts::qmp::execute_on_stream;
-
-    if let Some(stream) = world.qmp_control.as_mut() {
+    if world.qmp_control.is_some() {
         let parts: Vec<&str> = keys.split('+').collect();
         eprintln!("│  │  │      ⌨️ Pressing: {}", keys);
 
@@ -1493,7 +1495,7 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
                 r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": true, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
                 qcode
             );
-            let _ = execute_on_stream(stream, &cmd).await;
+            let _ = world.execute_qmp_control(&cmd).await;
         }
 
         // Press main key
@@ -1507,9 +1509,9 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
                 r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": false, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
                 qcode
             );
-            let _ = execute_on_stream(stream, &press).await;
+            let _ = world.execute_qmp_control(&press).await;
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            let _ = execute_on_stream(stream, &release).await;
+            let _ = world.execute_qmp_control(&release).await;
         }
 
         // Release modifiers
@@ -1524,7 +1526,7 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
                 r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": false, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
                 qcode
             );
-            let _ = execute_on_stream(stream, &cmd).await;
+            let _ = world.execute_qmp_control(&cmd).await;
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -1535,13 +1537,15 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
 
 #[when("I move the mouse")]
 async fn when_move_mouse(world: &mut ThingOsWorld) {
-    use crate::artifacts::qmp::execute_on_stream;
+    eprintln!("│  │  │      debug: starting when_move_mouse!");
 
-    if let Some(stream) = world.qmp_control.as_mut() {
+    if world.qmp_control.is_some() {
         let cmd = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "rel", "data": {"axis": "x", "value": 50}}, {"type": "rel", "data": {"axis": "y", "value": 50}}]}}"#;
-        let _ = execute_on_stream(stream, cmd).await;
+        match world.execute_qmp_control(cmd).await {
+            Ok(res) => eprintln!("│  │  │      🖱️ Sent mouse movement, QMP res: {}", res.trim()),
+            Err(e) => eprintln!("│  │  │      ❌ QMP error: {}", e),
+        }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        eprintln!("│  │  │      🖱️ Sent mouse movement");
     } else {
         eprintln!("│  │  │      ⚠️ No QMP connection for mouse input");
     }
@@ -1899,20 +1903,20 @@ async fn see_network_window(world: &mut ThingOsWorld) -> Result<(), StepError> {
 
         for y in (scan_y_start..scan_y_end).step_by(5) {
             for x in (scan_x_start..scan_x_end).step_by(5) {
-                 if x < width && y < height {
+                if x < width && y < height {
                     let pixel = img.get_pixel(x, y).0;
                     if color_close(pixel, expected_color, 10) {
                         match_count += 1;
                     }
-                 }
+                }
             }
         }
 
         // We're stepping by 5, so total pixels checked is roughly (360/5) * (180/5) = 72 * 36 = 2592
         // If > 200 match, we probably see it.
         if match_count > 200 {
-             eprintln!("│  │  │      ✅ Network window detected in bottom-left");
-             return Ok(());
+            eprintln!("│  │  │      ✅ Network window detected in bottom-left");
+            return Ok(());
         }
 
         if start.elapsed() > timeout {
@@ -2096,7 +2100,10 @@ async fn make_concurrent_requests(
     }
 
     if failures > 0 {
-        return Err(StepError(format!("{} concurrent requests failed", failures)));
+        return Err(StepError(format!(
+            "{} concurrent requests failed",
+            failures
+        )));
     }
 
     eprintln!("│  │  │      ✅ {} concurrent requests succeeded", count);
@@ -2105,6 +2112,7 @@ async fn make_concurrent_requests(
 
 // ===== GQL Steps =====
 
+// `execute_gql_query` was previously defined and handles executing GQL queries over HTTP.
 
 #[then(regex = r#"^the GQL result should have at least (\d+) rows$"#)]
 async fn gql_result_rows(world: &mut ThingOsWorld, min_rows: usize) -> Result<(), StepError> {
@@ -2181,10 +2189,9 @@ async fn gql_result_cell_is_node(
         row_arr.len()
     )))?;
 
-    let type_field = cell
-        .get("type")
-        .and_then(|v| v.as_str())
-        .ok_or(StepError("Cell is not an object with 'type' field".to_string()))?;
+    let type_field = cell.get("type").and_then(|v| v.as_str()).ok_or(StepError(
+        "Cell is not an object with 'type' field".to_string(),
+    ))?;
 
     if type_field != "node" {
         return Err(StepError(format!(
@@ -2250,10 +2257,7 @@ async fn gql_result_cell_is_string(
             )));
         }
     } else {
-        return Err(StepError(format!(
-            "Expected string, found: {:?}",
-            cell
-        )));
+        return Err(StepError(format!("Expected string, found: {:?}", cell)));
     }
 
     eprintln!(

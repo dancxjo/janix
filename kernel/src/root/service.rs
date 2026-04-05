@@ -4,9 +4,9 @@ use super::graph::Graph;
 use super::journal::Journal;
 use super::symbols::Interner;
 use super::{RootMsg, RootOp};
-use crate::BootRuntime;
 use crate::root::handlers as root_handlers;
 use crate::root::handlers::batch::RootBatchScratch;
+use crate::BootRuntime;
 use core::sync::atomic::Ordering;
 
 pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
@@ -77,9 +77,9 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
         if processed_this_round == 0 {
             // Signal intent to sleep
             super::ROOT_ASLEEP.store(true, Ordering::Release);
-            
+
             // Double check queue to avoid missed wakeups race condition
-            // (a message could have arrived just *after* we finished pop_msg 
+            // (a message could have arrived just *after* we finished pop_msg
             // but *before* we set ROOT_ASLEEP)
             if super::queue_len() > 0 {
                 super::ROOT_ASLEEP.store(false, Ordering::Release);
@@ -170,10 +170,12 @@ fn handle_msg<R: BootRuntime>(
             if let Some(&first_id) = result.created_ids.first() {
                 reply.p0.store(first_id, Ordering::Relaxed);
             }
-            reply.done.store(1, Ordering::Release);
-            let waiter = reply.waiting_task.load(Ordering::Acquire);
+            reply.done.store(1, Ordering::SeqCst);
+            let waiter = reply.waiting_task.load(Ordering::SeqCst);
             if waiter != 0 {
-                unsafe { crate::sched::wake_task_erased(waiter); }
+                unsafe {
+                    crate::sched::wake_task_erased(waiter);
+                }
             }
         }
         return;
@@ -185,9 +187,18 @@ fn handle_msg<R: BootRuntime>(
 
         // Graph core operations
         RootOp::GetKind { id } => root_handlers::handle_get_kind(graph, id),
-        RootOp::CreateNode { kind, creator_tid, owner_thing_id } => {
-            root_handlers::handle_create_node(graph, journal, interner, kind, creator_tid, owner_thing_id)
-        }
+        RootOp::CreateNode {
+            kind,
+            creator_tid,
+            owner_thing_id,
+        } => root_handlers::handle_create_node(
+            graph,
+            journal,
+            interner,
+            kind,
+            creator_tid,
+            owner_thing_id,
+        ),
         RootOp::Link { src, rel, dst } => {
             root_handlers::handle_link(graph, interner, src, rel, dst)
         }
@@ -243,18 +254,16 @@ fn handle_msg<R: BootRuntime>(
         RootOp::BytespaceTruncate { id, new_len } => {
             root_handlers::handle_bytespace_truncate(graph, id, new_len)
         }
-        RootOp::ResolvePath { path } => {
-            root_handlers::handle_resolve_path(graph, interner, &path)
-        }
+        RootOp::ResolvePath { path } => root_handlers::handle_resolve_path(graph, interner, &path),
         RootOp::Unlink { src, rel, dst } => {
             root_handlers::handle_unlink(graph, interner, src, rel, dst)
         }
-        RootOp::DirList { id, out_ptr, out_len } => {
-            root_handlers::handle_dir_list(graph, interner, id, out_ptr, out_len)
-        }
-        RootOp::OrphanThing { thing_id } => {
-            root_handlers::handle_orphan_thing(graph, thing_id)
-        }
+        RootOp::DirList {
+            id,
+            out_ptr,
+            out_len,
+        } => root_handlers::handle_dir_list(graph, interner, id, out_ptr, out_len),
+        RootOp::OrphanThing { thing_id } => root_handlers::handle_orphan_thing(graph, thing_id),
         RootOp::CleanupTaskThings { owner_thing_id } => {
             root_handlers::handle_cleanup_task_things(graph, owner_thing_id)
         }
@@ -331,11 +340,13 @@ fn handle_msg<R: BootRuntime>(
     if let Some(reply) = msg.reply {
         reply.status.store(status, Ordering::Relaxed);
         reply.value.store(value, Ordering::Relaxed);
-        reply.done.store(1, Ordering::Release);
+        reply.done.store(1, Ordering::SeqCst);
 
-        let waiter = reply.waiting_task.load(Ordering::Acquire);
+        let waiter = reply.waiting_task.load(Ordering::SeqCst);
         if waiter != 0 {
-            unsafe { crate::sched::wake_task_erased(waiter); }
+            unsafe {
+                crate::sched::wake_task_erased(waiter);
+            }
         }
     }
 }

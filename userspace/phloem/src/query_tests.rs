@@ -730,7 +730,33 @@ mod tests {
         assert!(!res.rows.is_empty(), "Expected edges from node 1, but got empty result. The executor likely confused property 'id' with internal Node ID.");
     }
     #[test]
-    fn test_edge_order_by_desc() {
+    fn test_match_where_id_and_properties_must_both_match() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // Node 1 is proc.Process with name 12345 in our mock
+
+        // 1. Correct kind, correct property, correct ID
+        let cmd1 = parse("MATCH (n:proc.Process {name: 12345}) WHERE id(n) = 1 RETURN n").unwrap();
+        let res1 = ex.execute(cmd1);
+        assert!(res1.success);
+        assert_eq!(res1.rows.len(), 1, "Should match when ID, kind, and properties all match");
+
+        // 2. Correct kind, WRONG property, correct ID
+        let cmd2 = parse("MATCH (n:proc.Process {name: 99999}) WHERE id(n) = 1 RETURN n").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success);
+        assert_eq!(res2.rows.len(), 0, "Should not match if properties differ, even if internal ID matches");
+
+        // 3. WRONG kind, correct property, correct ID
+        let cmd3 = parse("MATCH (n:fs.File {name: 12345}) WHERE id(n) = 1 RETURN n").unwrap();
+        let res3 = ex.execute(cmd3);
+        assert!(res3.success);
+        assert_eq!(res3.rows.len(), 0, "Should not match if kind differs, even if internal ID matches");
+    }
+    #[test]
+
+      fn test_edge_order_by_desc() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
 

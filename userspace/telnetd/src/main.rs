@@ -227,34 +227,46 @@ fn handle_shell_line(
 
 fn handle_action(net: &NetClient, conn_handle: u32, action: ShellAction) -> bool {
     match action {
-        ShellAction::PrintLine(line) => write_line(net, conn_handle, &line),
-        ShellAction::PrintError(line) => write_line(net, conn_handle, &format!("error: {}", line)),
-        ShellAction::ClearScreen => write_raw(net, conn_handle, b"\x1b[2J\x1b[H"),
+        ShellAction::PrintLine(line) => {
+            let _ = write_line(net, conn_handle, &line);
+        }
+        ShellAction::PrintError(line) => {
+            let _ = write_line(net, conn_handle, &format!("error: {}", line));
+        }
+        ShellAction::ClearScreen => {
+            let _ = write_raw(net, conn_handle, b"\x1b[2J\x1b[H");
+        }
         ShellAction::ListDir(path) => match list_dir(&path) {
-            Ok(entries) if entries.is_empty() => write_line(net, conn_handle, "(empty)"),
+            Ok(entries) if entries.is_empty() => {
+                let _ = write_line(net, conn_handle, "(empty)");
+            }
             Ok(entries) => {
                 for entry in entries {
-                    write_line(net, conn_handle, &entry);
+                    let _ = write_line(net, conn_handle, &entry);
                 }
             }
-            Err(err) => write_line(net, conn_handle, &format!("error: ls: {}: {}", path, err)),
+            Err(err) => {
+                let _ = write_line(net, conn_handle, &format!("error: ls: {}: {}", path, err));
+            }
         },
         ShellAction::ShowTasks => {
             for line in task_lines() {
-                write_line(net, conn_handle, &line);
+                let _ = write_line(net, conn_handle, &line);
             }
         }
         ShellAction::ShowMem => {
             for line in mem_lines() {
-                write_line(net, conn_handle, &line);
+                let _ = write_line(net, conn_handle, &line);
             }
         }
         ShellAction::DumpGraph => {
-            write_line(net, conn_handle, "error: graph dump is serial-only for now");
+            let _ = write_line(net, conn_handle, "error: graph dump is serial-only for now");
         }
         ShellAction::RunProgram(path) => match run_program(net, conn_handle, &path) {
             Ok(()) => return true,
-            Err(err) => write_line(net, conn_handle, &format!("error: run: {}: {}", path, err)),
+            Err(err) => {
+                let _ = write_line(net, conn_handle, &format!("error: run: {}: {}", path, err));
+            }
         },
     }
     false
@@ -324,7 +336,9 @@ fn drain_pipe_to_socket(net: &NetClient, conn_handle: u32, pipe_id: u64) {
     loop {
         match pipe::pipe_read(pipe_id, &mut buf) {
             Ok(0) => break,
-            Ok(n) => write_raw(net, conn_handle, &buf[..n]),
+            Ok(n) => {
+                let _ = write_raw(net, conn_handle, &buf[..n]);
+            }
             Err(abi::errors::Errno::EAGAIN) => break,
             Err(_) => break,
         }
@@ -376,19 +390,25 @@ fn mem_lines() -> Vec<String> {
     ]
 }
 
-fn write_line(net: &NetClient, conn_handle: u32, line: &str) {
-    write_raw(net, conn_handle, line.as_bytes());
-    write_raw(net, conn_handle, b"\r\n");
+fn write_line(net: &NetClient, conn_handle: u32, line: &str) -> bool {
+    write_raw(net, conn_handle, line.as_bytes()) && write_raw(net, conn_handle, b"\r\n")
 }
 
-fn write_raw(net: &NetClient, conn_handle: u32, bytes: &[u8]) {
+fn write_raw(net: &NetClient, conn_handle: u32, bytes: &[u8]) -> bool {
     let mut sent = 0usize;
+    let mut stalled = 0u8;
     while sent < bytes.len() {
         let n = net.tcp_send(conn_handle, &bytes[sent..]);
         if n == 0 {
+            stalled = stalled.saturating_add(1);
+            if stalled >= 8 {
+                return false;
+            }
             stem::time::sleep_ms(5);
             continue;
         }
+        stalled = 0;
         sent += n;
     }
+    true
 }

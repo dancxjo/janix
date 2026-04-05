@@ -11,6 +11,7 @@ const MSG_TCP_SEND: u16 = 0x0201;
 const MSG_TCP_RECV: u16 = 0x0202;
 const MSG_TCP_CLOSE: u16 = 0x0203;
 
+const RESP_OK: u16 = 0x0000;
 const RESP_ERROR: u16 = 0x0001;
 const RESP_HANDLE: u16 = 0x0002;
 const RESP_DATA: u16 = 0x0003;
@@ -184,30 +185,49 @@ impl NetClient {
     }
 
     pub fn tcp_send(&self, handle: u32, data: &[u8]) -> usize {
-        self.drain_stale_responses();
-        let mut payload = Vec::with_capacity(4 + data.len());
-        payload.extend_from_slice(&handle.to_le_bytes());
-        payload.extend_from_slice(data);
-        if !self.send_api_msg(&self.build_msg(MSG_TCP_SEND, &payload)) {
-            return 0;
-        }
+        let mut total_sent = 0usize;
 
-        let mut resp_buf = [0u8; 64];
-        for _ in 0..100 {
-            match port_recv(self.our_read_port, &mut resp_buf) {
-                Ok(len) if len >= 2 => {
-                    let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
-                    if resp_type == RESP_DATA && len >= 4 {
-                        return u16::from_le_bytes([resp_buf[2], resp_buf[3]]) as usize;
+        self.drain_stale_responses();
+        for chunk in data.chunks(4000) {
+            let mut payload = Vec::with_capacity(4 + chunk.len());
+            payload.extend_from_slice(&handle.to_le_bytes());
+            payload.extend_from_slice(chunk);
+            if !self.send_api_msg(&self.build_msg(MSG_TCP_SEND, &payload)) {
+                break;
+            }
+
+            let mut resp_buf = [0u8; 64];
+            let mut sent_this_chunk = None;
+            for _ in 0..100 {
+                match port_recv(self.our_read_port, &mut resp_buf) {
+                    Ok(len) if len >= 4 => {
+                        let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
+                        if resp_type == RESP_OK {
+                            sent_this_chunk =
+                                Some(u16::from_le_bytes([resp_buf[2], resp_buf[3]]) as usize);
+                            break;
+                        }
+                        if resp_type == RESP_ERROR {
+                            return total_sent;
+                        }
+                        return total_sent;
                     }
-                    if resp_type == RESP_ERROR {
-                        return 0;
+                    _ => stem::syscall::yield_now(),
+                }
+            }
+
+            match sent_this_chunk {
+                Some(sent) => {
+                    total_sent += sent;
+                    if sent < chunk.len() {
+                        break;
                     }
                 }
-                _ => stem::syscall::yield_now(),
+                None => break,
             }
         }
-        0
+
+        total_sent
     }
 
     pub fn tcp_close(&self, handle: u32) {

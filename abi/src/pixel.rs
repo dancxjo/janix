@@ -216,6 +216,21 @@ mod tests {
     }
 
     #[test]
+    fn test_pixel_format_properties() {
+        assert_eq!(PixelFormat::Bgra8888.bytes_per_pixel(), 4);
+        assert!(PixelFormat::Bgra8888.has_alpha());
+
+        assert_eq!(PixelFormat::Bgrx8888.bytes_per_pixel(), 4);
+        assert!(!PixelFormat::Bgrx8888.has_alpha());
+
+        assert_eq!(PixelFormat::Rgb565.bytes_per_pixel(), 2);
+        assert!(!PixelFormat::Rgb565.has_alpha());
+
+        assert_eq!(PixelFormat::Unknown.bytes_per_pixel(), 0);
+        assert!(!PixelFormat::Unknown.has_alpha());
+    }
+
+    #[test]
     fn test_premultiply() {
         // Opaque - no change
         let opaque = Color::from_rgba(100, 150, 200, 255);

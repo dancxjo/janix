@@ -798,6 +798,37 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_multiple_properties() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // MERGE a node with multiple properties
+        let cmd = parse("MERGE (n:Kind {key1: 10, key2: 20, key3: 30}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+
+        assert!(res.success, "MERGE with multiple properties failed: {}", res.message);
+        assert_eq!(res.rows.len(), 1);
+
+        let id = if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            id
+        } else {
+            panic!("Expected Node ID");
+        };
+
+        // Verify the properties were set correctly by matching them back
+        let cmd_check = parse("MATCH (n:Kind {key1: 10, key2: 20, key3: 30}) RETURN n").unwrap();
+        let res_check = ex.execute(cmd_check);
+
+        assert!(res_check.success);
+        assert_eq!(res_check.rows.len(), 1, "Should find the node with all properties");
+
+        if let crate::ResultValue::Node(id_check) = res_check.rows[0][0] {
+            assert_eq!(id, id_check, "The found node should be the same as the merged one");
+        } else {
+            panic!("Expected Node ID");
+        }
+  }
+    #[test]
     fn test_match_multiple_inline_properties() {
         let g = setup_mock();
         // Give node 1 two specific properties

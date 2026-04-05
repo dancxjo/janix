@@ -1444,9 +1444,9 @@ async fn given_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
             .map_err(|e| StepError(format!("Failed to boot QEMU: {}", e)))?;
     }
 
-    // Wait for system ready
+    // Wait for system ready (use a late log to avoid missing it due to wait=off)
     let found = world
-        .wait_for_serial("Entering scheduler loop", 120.0)
+        .wait_for_serial("ps2_mouse: entering interrupt-driven loop", 120.0)
         .await;
     if !found {
         return Err(StepError("System did not reach ready state".to_string()));

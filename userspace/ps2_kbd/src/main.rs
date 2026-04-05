@@ -68,13 +68,14 @@ fn main(raw_write_handle: usize) -> ! {
     }
 
     info!("ps2_kbd: entering interrupt-driven loop");
+    let mut state = KeyboardState::new();
 
     loop {
         // Wait for keyboard interrupt
         match irq_wait(KBD_VECTOR) {
             Ok(_count) => {
                 // Drain all available keyboard data
-                drain_keyboard_data(handle);
+                drain_keyboard_data(handle, &mut state);
             }
             Err(_) => {
                 // Should not happen, but fallback to yield
@@ -84,8 +85,17 @@ fn main(raw_write_handle: usize) -> ! {
     }
 }
 
+mod normalizer;
+mod thigmonasty;
+
+use abi::hid::{
+    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType,
+    KeyEventPayload, Key,
+};
+use thigmonasty::{KeyboardState, KeyEdge};
+
 /// Drain all pending keyboard data from the controller
-fn drain_keyboard_data(handle: PortHandle) {
+fn drain_keyboard_data(handle: PortHandle, state: &mut KeyboardState) {
     // Read while data is available (handle burst of scancodes)
     for _ in 0..16 {
         let status = ioport_read(PS2_STATUS, 1);
@@ -97,7 +107,9 @@ fn drain_keyboard_data(handle: PortHandle) {
         if status & STATUS_AUX_DATA == 0 {
             // Keyboard data - read and send
             let scancode = ioport_read(PS2_DATA, 1) as u8;
-            let _ = port_send(handle, &[scancode]);
+            if let Some(edge) = state.process_ps2(scancode) {
+                send_key_event(handle, edge);
+            }
         } else {
             // If aux data (mouse), stop draining - let ps2_mouse handle it
             stem::info!("ps2_kbd: yield on AUX data (mouse packet)");
@@ -106,19 +118,51 @@ fn drain_keyboard_data(handle: PortHandle) {
     }
 }
 
+fn send_key_event(handle: PortHandle, edge: KeyEdge) {
+    let timestamp_ns = stem::monotonic_ns();
+    let mut buf = [0u8; 24]; // Max size is header + 4 byte payload
+    
+    let (event_type, key, mods, repeat) = match edge {
+        KeyEdge::Down { key, mods, repeat } => (EventType::KeyDown, key, mods, repeat),
+        KeyEdge::Up { key, mods } => (EventType::KeyUp, key, mods, false),
+    };
+
+    let header = BristleEventHeader {
+        magic: BRISTLE_EVENT_MAGIC,
+        version: BRISTLE_EVENT_VERSION,
+        event_type: event_type as u16,
+        timestamp_ns,
+        payload_len: KeyEventPayload::SIZE as u32,
+    };
+    
+    let payload = KeyEventPayload {
+        key: key as u16,
+        mods: mods.0,
+        flags: if repeat { 1 } else { 0 },
+    };
+
+    buf[0..20].copy_from_slice(&header.to_bytes());
+    buf[20..24].copy_from_slice(&payload.to_bytes());
+    
+    let _ = port_send(handle, &buf[..24]);
+}
+
 /// Fallback polling loop (if IRQ subscribe fails)
 fn polling_loop(handle: PortHandle) -> ! {
     info!(
         "ps2_kbd: using polling mode ({}ms interval)",
         POLLING_INTERVAL_MS
     );
+    let mut state = KeyboardState::new();
     loop {
         let status = ioport_read(PS2_STATUS, 1);
 
         if status & STATUS_OUTPUT_FULL != 0 {
             if status & STATUS_AUX_DATA == 0 {
                 let scancode = ioport_read(PS2_DATA, 1) as u8;
-                let _ = port_send(handle, &[scancode]);
+                if let Some(edge) = state.process_ps2(scancode) {
+                    send_key_event(handle, edge);
+                }
             }
         } else {
             // Rate limit the polling to avoid burning CPU

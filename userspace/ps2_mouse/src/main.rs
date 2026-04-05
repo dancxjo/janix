@@ -218,10 +218,11 @@ fn main(raw_write_handle: usize) -> ! {
 
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
+    let mut mouse_state = MouseState::new();
 
     // Perform an initial drain to clear any pending bytes that might keep the IRQ line HIGH
     // If the IOAPIC is edge-triggered, an already-HIGH line will never trigger an interrupt!
-    drain_mouse_data(handle, &mut packet, &mut idx);
+    drain_mouse_data(handle, &mut mouse_state, &mut packet, &mut idx);
 
     loop {
         // Wait for mouse interrupt
@@ -229,7 +230,7 @@ fn main(raw_write_handle: usize) -> ! {
             Ok(count) => {
                 info!("ps2_mouse: IRQ12 fired! count={}", count);
                 // Drain all available mouse data
-                drain_mouse_data(handle, &mut packet, &mut idx);
+                drain_mouse_data(handle, &mut mouse_state, &mut packet, &mut idx);
             }
             Err(_) => {
                 stem::yield_now();
@@ -238,8 +239,72 @@ fn main(raw_write_handle: usize) -> ! {
     }
 }
 
+mod mouse;
+
+use abi::hid::{
+    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType,
+    PointerButtonPayload, PointerMovePayload,
+};
+use mouse::{MouseState, PointerEvent};
+
+fn send_mouse_events(handle: PortHandle, state: &mut MouseState, packet: &[u8; 3]) {
+    let (events, count) = state.process_packet(packet);
+    for i in 0..count {
+        if let Some(evt) = events[i] {
+            let timestamp_ns = stem::monotonic_ns();
+            let mut buf = [0u8; 24]; // Max size is header + 4 byte payload
+            let len;
+
+            match evt {
+                PointerEvent::Move { dx, dy } => {
+                    let header = BristleEventHeader {
+                        magic: BRISTLE_EVENT_MAGIC,
+                        version: BRISTLE_EVENT_VERSION,
+                        event_type: EventType::PointerMove as u16,
+                        timestamp_ns,
+                        payload_len: PointerMovePayload::SIZE as u32,
+                    };
+                    let payload = PointerMovePayload { dx, dy };
+                    buf[0..20].copy_from_slice(&header.to_bytes());
+                    buf[20..24].copy_from_slice(&payload.to_bytes());
+                    len = 24;
+                }
+                PointerEvent::ButtonDown { button } => {
+                    let header = BristleEventHeader {
+                        magic: BRISTLE_EVENT_MAGIC,
+                        version: BRISTLE_EVENT_VERSION,
+                        event_type: EventType::PointerButtonDown as u16,
+                        timestamp_ns,
+                        payload_len: PointerButtonPayload::SIZE as u32,
+                    };
+                    let payload = PointerButtonPayload { button, _pad: 0 };
+                    buf[0..20].copy_from_slice(&header.to_bytes());
+                    buf[20..22].copy_from_slice(&payload.to_bytes());
+                    len = 22;
+                }
+                PointerEvent::ButtonUp { button } => {
+                    let header = BristleEventHeader {
+                        magic: BRISTLE_EVENT_MAGIC,
+                        version: BRISTLE_EVENT_VERSION,
+                        event_type: EventType::PointerButtonUp as u16,
+                        timestamp_ns,
+                        payload_len: PointerButtonPayload::SIZE as u32,
+                    };
+                    let payload = PointerButtonPayload { button, _pad: 0 };
+                    buf[0..20].copy_from_slice(&header.to_bytes());
+                    buf[20..22].copy_from_slice(&payload.to_bytes());
+                    len = 22;
+                }
+            }
+            if len > 0 {
+                let _ = port_send(handle, &buf[..len]);
+            }
+        }
+    }
+}
+
 /// Drain all pending mouse data and assemble packets
-fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
+fn drain_mouse_data(handle: PortHandle, state: &mut MouseState, packet: &mut [u8; 3], idx: &mut usize) {
     for _ in 0..16 {
         let status = ioport_read(PS2_STATUS, 1);
 
@@ -249,11 +314,9 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
 
         if status & STATUS_AUX_DATA != 0 {
             let byte = ioport_read(PS2_DATA, 1) as u8;
-            info!("ps2_mouse: read byte {:02x}", byte);
 
             // First byte must have bit 3 set (sync)
             if *idx == 0 && (byte & 0x08) == 0 {
-                info!("ps2_mouse: dropped byte {:02x} (not sync)", byte);
                 continue;
             }
 
@@ -261,20 +324,12 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
             *idx += 1;
 
             if *idx == 3 {
-                info!(
-                    "ps2_mouse: sending packet {:02x} {:02x} {:02x}",
-                    packet[0], packet[1], packet[2]
-                );
-                let _ = port_send(handle, packet);
+                send_mouse_events(handle, state, packet);
                 *idx = 0;
             }
         } else {
             // Not mouse data; steal it to clear the jam!
-            let stolen = ioport_read(PS2_DATA, 1) as u8;
-            info!(
-                "ps2_mouse: STEALING keyboard byte 0x{:02x} to clear jam",
-                stolen
-            );
+            let _stolen = ioport_read(PS2_DATA, 1) as u8;
             continue;
         }
     }
@@ -286,6 +341,7 @@ fn polling_loop(handle: PortHandle) -> ! {
 
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
+    let mut mouse_state = MouseState::new();
 
     loop {
         let status = ioport_read(PS2_STATUS, 1);
@@ -304,7 +360,7 @@ fn polling_loop(handle: PortHandle) -> ! {
                 idx += 1;
 
                 if idx == 3 {
-                    let _ = port_send(handle, &packet);
+                    send_mouse_events(handle, &mut mouse_state, &packet);
                     idx = 0;
                 }
             } else {

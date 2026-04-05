@@ -1,7 +1,7 @@
 use super::Task;
 use crate::BootRuntime;
-use alloc::vec::Vec;
 use alloc::boxed::Box;
+use alloc::vec::Vec;
 use spin::Mutex;
 
 pub struct TaskRegistry<R: BootRuntime> {
@@ -24,11 +24,17 @@ impl<R: BootRuntime> TaskRegistry<R> {
     }
 
     pub fn get(&self, id: u64) -> Option<&Task<R>> {
-        self.tasks.binary_search_by_key(&id, |t| t.id).ok().map(|idx| &*self.tasks[idx])
+        self.tasks
+            .binary_search_by_key(&id, |t| t.id)
+            .ok()
+            .map(|idx| &*self.tasks[idx])
     }
 
     pub fn get_mut(&mut self, id: u64) -> Option<&mut Task<R>> {
-        self.tasks.binary_search_by_key(&id, |t| t.id).ok().map(move |idx| &mut *self.tasks[idx])
+        self.tasks
+            .binary_search_by_key(&id, |t| t.id)
+            .ok()
+            .map(move |idx| &mut *self.tasks[idx])
     }
 
     pub fn remove(&mut self, id: u64) -> Option<Box<Task<R>>> {

@@ -163,16 +163,7 @@ impl ThingOsReporter {
                 self.step_start_time = Some(std::time::Instant::now());
 
                 // Try to capture a "before" screenshot
-                let screenshot_before = {
-                    let collector = artifacts::global().lock().await;
-                    let path = collector.screenshot_path("before");
-                    drop(collector);
-
-                    match artifacts::take_screenshot_global(&path).await {
-                        Ok(p) => Some(p),
-                        Err(_e) => None,
-                    }
-                };
+                let screenshot_before = None;
 
                 let mut collector = artifacts::global().lock().await;
                 collector.on_step_start(
@@ -203,31 +194,10 @@ impl ThingOsReporter {
         let serial = artifacts::get_latest_serial().await;
 
         // Try to capture a screenshot
-        let screenshot_after = {
-            let collector = artifacts::global().lock().await;
-            let path = collector.screenshot_path("after");
-            drop(collector);
-
-            match artifacts::take_screenshot_global(&path).await {
-                Ok(p) => Some(p),
-                Err(e) => {
-                    eprintln!("│  │  │      ⚠️ Screenshot: {}", e);
-                    None
-                }
-            }
-        };
+        let screenshot_after = None;
 
         // Try to dump registers
-        let registers = {
-            let collector = artifacts::global().lock().await;
-            let path = collector.register_path();
-            drop(collector);
-
-            match artifacts::dump_registers_global(&path).await {
-                Ok(p) => Some(p),
-                Err(_) => None,
-            }
-        };
+        let registers = None;
 
         let mut collector = artifacts::global().lock().await;
         collector.on_step_end(result, None, screenshot_after, registers, &serial);

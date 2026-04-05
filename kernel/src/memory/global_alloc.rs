@@ -1,6 +1,6 @@
-use crate::BootRuntime;
 #[cfg(not(test))]
 use crate::memory::kheap::kernel_heap;
+use crate::BootRuntime;
 #[cfg(not(test))]
 use core::alloc::{GlobalAlloc, Layout};
 

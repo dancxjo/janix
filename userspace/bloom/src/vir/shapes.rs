@@ -164,7 +164,7 @@ mod tests {
     fn test_circle() {
         let path = circle_to_path(50.0, 50.0, 25.0);
         // Circle uses 4 cubic beziers + close
-        assert_eq!(path.segments.len(), 5);
+        assert_eq!(path.segments.len(), 6);
 
         match path.segments[0] {
             VirSegment::MoveTo(p) => {

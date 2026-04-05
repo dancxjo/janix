@@ -33,8 +33,11 @@ impl MouseState {
         let x_raw = packet[1];
         let y_raw = packet[2];
 
+        stem::info!("[DEBUG] bristle MouseState: processing packet [{:#04x}, {:#04x}, {:#04x}]", flags, x_raw, y_raw);
+
         // Check overflow - discard packet if overflowed
         if (flags & 0xC0) != 0 {
+            stem::info!("[DEBUG] bristle MouseState: overflow flag set, discarding");
             return (events, 0);
         }
 
@@ -57,6 +60,7 @@ impl MouseState {
 
         // Emit move event if there's movement
         if dx != 0 || dy != 0 {
+            stem::info!("[DEBUG] bristle MouseState: emitting Move {{ dx: {}, dy: {} }}", dx, dy);
             events[count] = Some(PointerEvent::Move { dx, dy });
             count += 1;
         }

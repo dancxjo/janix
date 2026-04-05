@@ -1,12 +1,15 @@
 //! Task and thread spawning functions.
 
-use crate::task::{Affinity, StartupArg, Task, TaskId, TaskPriority, TaskState};
+use crate::task::{
+    Affinity, ProcessInfo, StartupArg, StdioBinding, StdioPipeMode, Task, TaskId, TaskPriority,
+    TaskState,
+};
 use crate::{BootRuntime, BootTasking, UserEntry};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
+use super::types::{Scheduler, DEFAULT_TIMESLICE};
 use super::SCHEDULER;
-use super::types::{DEFAULT_TIMESLICE, Scheduler};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 // Global round-robin index for CPU selection
@@ -35,7 +38,12 @@ impl<R: BootRuntime> Scheduler<R> {
                 //     }
                 // }
                 let _ = rt; // Suppress unused variable warning
-                idx % count
+                if count > 1 {
+                    (idx % (count - 1)) + 1
+                } else {
+                    0
+                }
+
             }
         }
     }
@@ -158,17 +166,26 @@ impl<R: BootRuntime> Scheduler<R> {
         let aspace = rt.tasking().active_address_space();
 
         // Inherit mappings and process_info from current task
-        let (mappings, parent_pinfo) = if let Some(current_id) =
-            self.state.per_cpu[super::current_cpu_index::<R>()].current
-        {
-            if let Some(parent) = crate::task::registry::get_task::<R>(current_id) {
-                (parent.mappings.clone(), parent.process_info.clone())
+        let (mappings, parent_pinfo) =
+            if let Some(current_id) = self.state.per_cpu[super::current_cpu_index::<R>()].current {
+                if let Some(parent) = crate::task::registry::get_task::<R>(current_id) {
+                    (parent.mappings.clone(), parent.process_info.clone())
+                } else {
+                    (
+                        alloc::sync::Arc::new(spin::Mutex::new(
+                            crate::memory::mappings::MappingList::new(),
+                        )),
+                        None,
+                    )
+                }
             } else {
-                (alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new())), None)
-            }
-        } else {
-            (alloc::sync::Arc::new(spin::Mutex::new(crate::memory::mappings::MappingList::new())), None)
-        };
+                (
+                    alloc::sync::Arc::new(spin::Mutex::new(
+                        crate::memory::mappings::MappingList::new(),
+                    )),
+                    None,
+                )
+            };
 
         let spec = crate::UserTaskSpec {
             entry: entry as u64,
@@ -474,7 +491,8 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     // Determine parent PID from the current task's ProcessInfo
     let cpu_idx = super::current_cpu_index::<R>();
     let ppid = sched
-        .state.per_cpu
+        .state
+        .per_cpu
         .get(cpu_idx)
         .and_then(|pc| pc.current)
         .and_then(|ctid| crate::task::registry::get_task::<R>(ctid))
@@ -483,11 +501,13 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         .unwrap_or(0);
 
     // Create per-process identity
-    let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+    let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid: id as u32,
         ppid,
         argv: alloc::vec![module.name.as_bytes().to_vec()],
         env: alloc::collections::BTreeMap::new(),
+        stdio: [StdioBinding::Console; 3],
+        console_stdin: alloc::collections::VecDeque::new(),
     }));
 
     // Store name and process_info on the task struct
@@ -517,6 +537,51 @@ pub enum StdioSpec {
     Pipe,
 }
 
+fn inherited_stdio_or_console<R: BootRuntime>() -> [StdioBinding; 3] {
+    let tid = crate::runtime::<R>().current_tid();
+    crate::task::registry::get_task::<R>(tid)
+        .and_then(|task| task.process_info.as_ref())
+        .map(|pi| pi.lock().stdio)
+        .unwrap_or([StdioBinding::Console; 3])
+}
+
+fn bindings_from_specs<R: BootRuntime>(
+    stdin_spec: StdioSpec,
+    stdout_spec: StdioSpec,
+    stderr_spec: StdioSpec,
+    stdin_pipe: u64,
+    stdout_pipe: u64,
+    stderr_pipe: u64,
+) -> [StdioBinding; 3] {
+    let inherited = inherited_stdio_or_console::<R>();
+    [
+        match stdin_spec {
+            StdioSpec::Inherit => inherited[0],
+            StdioSpec::Null => StdioBinding::Null,
+            StdioSpec::Pipe => StdioBinding::Pipe {
+                pipe_id: stdin_pipe,
+                mode: StdioPipeMode::Read,
+            },
+        },
+        match stdout_spec {
+            StdioSpec::Inherit => inherited[1],
+            StdioSpec::Null => StdioBinding::Null,
+            StdioSpec::Pipe => StdioBinding::Pipe {
+                pipe_id: stdout_pipe,
+                mode: StdioPipeMode::Write,
+            },
+        },
+        match stderr_spec {
+            StdioSpec::Inherit => inherited[2],
+            StdioSpec::Null => StdioBinding::Null,
+            StdioSpec::Pipe => StdioBinding::Pipe {
+                pipe_id: stderr_pipe,
+                mode: StdioPipeMode::Write,
+            },
+        },
+    ]
+}
+
 /// Result of an enhanced spawn: child tid + pipe IDs for piped stdio.
 #[derive(Debug, Clone)]
 pub struct SpawnExResult {
@@ -543,13 +608,15 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
 ) -> Result<SpawnExResult, abi::errors::Errno> {
     let rt = crate::runtime::<R>();
     let modules = rt.modules();
-    let module = modules.iter().find(|m| m.name.contains(name))
+    let module = modules
+        .iter()
+        .find(|m| m.name.contains(name))
         .ok_or(abi::errors::Errno::ENOENT)?;
 
     let aspace = rt.tasking().make_user_address_space();
 
-    let (mut entry, stack_info, regions) = crate::task::loader::load_module(rt, aspace, module)
-        .ok_or(abi::errors::Errno::ENOEXEC)?;
+    let (mut entry, stack_info, regions) =
+        crate::task::loader::load_module(rt, aspace, module).ok_or(abi::errors::Errno::ENOEXEC)?;
     entry.arg0 = 0; // No raw arg for ex spawn
 
     // Create pipes for piped stdio
@@ -558,13 +625,13 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     let mut stderr_pipe: u64 = 0;
 
     if stdin_spec == StdioSpec::Pipe {
-        stdin_pipe = crate::ipc::pipe::create(4096, 0);
+        stdin_pipe = crate::ipc::pipe::create(4096, abi::syscall::pipe_flags::NONBLOCK);
     }
     if stdout_spec == StdioSpec::Pipe {
-        stdout_pipe = crate::ipc::pipe::create(4096, 0);
+        stdout_pipe = crate::ipc::pipe::create(4096, abi::syscall::pipe_flags::NONBLOCK);
     }
     if stderr_spec == StdioSpec::Pipe {
-        stderr_pipe = crate::ipc::pipe::create(4096, 0);
+        stderr_pipe = crate::ipc::pipe::create(4096, abi::syscall::pipe_flags::NONBLOCK);
     }
 
     let _irq = rt.irq_disable();
@@ -573,16 +640,22 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     let ptr = lock.expect("Scheduler not initialized");
     let sched = unsafe { &mut *(ptr as *mut super::types::Scheduler<R>) };
 
-    let id = sched.spawn_user_task(
-        entry, aspace, stack_info, regions,
-        crate::task::TaskPriority::Normal,
-        crate::task::Affinity::Any,
-    ).ok_or(abi::errors::Errno::EAGAIN)?;
+    let id = sched
+        .spawn_user_task(
+            entry,
+            aspace,
+            stack_info,
+            regions,
+            crate::task::TaskPriority::Normal,
+            crate::task::Affinity::Any,
+        )
+        .ok_or(abi::errors::Errno::EAGAIN)?;
 
     // Determine parent PID
     let cpu_idx = super::current_cpu_index::<R>();
     let ppid = sched
-        .state.per_cpu
+        .state
+        .per_cpu
         .get(cpu_idx)
         .and_then(|pc| pc.current)
         .and_then(|ctid| crate::task::registry::get_task::<R>(ctid))
@@ -597,12 +670,23 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         argv
     };
 
+    let stdio = bindings_from_specs::<R>(
+        stdin_spec,
+        stdout_spec,
+        stderr_spec,
+        stdin_pipe,
+        stdout_pipe,
+        stderr_pipe,
+    );
+
     // Create per-process identity with provided argv & env
-    let pinfo = alloc::sync::Arc::new(spin::Mutex::new(crate::task::ProcessInfo {
+    let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid: id as u32,
         ppid,
         argv: final_argv,
         env,
+        stdio,
+        console_stdin: alloc::collections::VecDeque::new(),
     }));
 
     // Store name and process_info on the task struct

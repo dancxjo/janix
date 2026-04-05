@@ -1,9 +1,9 @@
 # BDD Test Results: x86_64
 
-> Last run: 2026-02-05 21:00:10
+> Last run: 2026-04-05 12:26:57
 
 ## Features
 
 | Feature | Scenarios | Status |
 |---------|-----------|--------|
-| [Daily System Standup](daily-system-standup/README.md) | 1/1 | ✅ |
+| [Pointer Input](pointer-input/README.md) | 1/1 | ✅ |

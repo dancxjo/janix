@@ -1,12 +1,12 @@
 //! Bytespace resource handlers.
 
-use crate::BootRuntime;
-use crate::root::RootMsg;
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
 use crate::root::resources::bytespace::Provenance;
-use crate::root::resources::{ResourceHandle, bytespace};
+use crate::root::resources::{bytespace, ResourceHandle};
 use crate::root::symbols::Interner;
+use crate::root::RootMsg;
+use crate::BootRuntime;
 #[allow(unused_imports)]
 use abi::symbols::SymbolId;
 use core::sync::atomic::Ordering;
@@ -244,11 +244,7 @@ pub fn handle_bytespace_phys(graph: &mut Graph, msg: &RootMsg, id: u64) -> Handl
 
 /// Truncate a bytespace to a new length.
 /// For v0, we only support truncating to a smaller size (i.e., updating the logical length).
-pub fn handle_bytespace_truncate(
-    graph: &mut Graph,
-    id: u64,
-    new_len: u64,
-) -> HandlerResult {
+pub fn handle_bytespace_truncate(graph: &mut Graph, id: u64, new_len: u64) -> HandlerResult {
     if let Some(node) = graph.get_node_mut(id) {
         if let Some(ResourceHandle::Bytespace(handle)) = &node.resource {
             let mut lock = handle.lock();

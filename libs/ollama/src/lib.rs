@@ -215,7 +215,9 @@ fn http_post(url: &str, body: &str) -> Result<(TcpStream, Vec<u8>), String> {
     let mut tmp = [0u8; 1024];
 
     for _ in 0..40 {
-        let n = stream.read(&mut tmp).map_err(|e| format!("HTTP read: {}", e))?;
+        let n = stream
+            .read(&mut tmp)
+            .map_err(|e| format!("HTTP read: {}", e))?;
         if n == 0 {
             break;
         }

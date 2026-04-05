@@ -51,7 +51,11 @@ impl MonotonicClamp {
                 self.last
                     .compare_exchange(last, raw, Ordering::Relaxed, Ordering::Relaxed)
             {
-                if actual > raw { actual } else { raw }
+                if actual > raw {
+                    actual
+                } else {
+                    raw
+                }
             } else {
                 raw
             }

@@ -1,12 +1,12 @@
-use super::SCHEDULER;
 use super::types::Scheduler;
+use super::SCHEDULER;
+use crate::memory::mappings::MappingList;
 use crate::{BootRuntime, BootTasking};
 use abi::errors::Errno;
 use abi::vm::VmRegionInfo;
-use alloc::vec::Vec;
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use spin::Mutex;
-use crate::memory::mappings::MappingList;
 
 use core::sync::atomic::{AtomicPtr, Ordering};
 

@@ -3,10 +3,10 @@
 use core::sync::atomic::{AtomicU64, Ordering};
 
 use crate::memory::MapError;
-use crate::{BootRuntime, BootTasking, MapKind, MapPerms, memory};
+use crate::{memory, BootRuntime, BootTasking, MapKind, MapPerms};
 
-use super::SCHEDULER;
 use super::types::{Scheduler, StackFaultResult};
+use super::SCHEDULER;
 
 const DEFAULT_USER_STACK_PAGES: usize = 16;
 const MAX_USER_STACK_PAGES: usize = 256;

@@ -5,14 +5,14 @@ use tokio::net::UnixStream;
 use tokio::sync::Mutex;
 
 /// Global QMP stream (for reporter access to screenshots).
-/// Kept open to avoid reconnection issues.
-pub(crate) static QMP_STREAM: OnceLock<Mutex<Option<UnixStream>>> = OnceLock::new();
+/// Kept as a path, connections are opened on-demand to avoid QEMU deadlocks from buffer overflows.
+pub(crate) static QMP_STREAM: OnceLock<Mutex<Option<PathBuf>>> = OnceLock::new();
 
 /// Set the global QMP stream (called from world after init).
-pub async fn set_qmp_stream(stream: Option<UnixStream>) {
+pub async fn set_qmp_stream(path: Option<PathBuf>) {
     if let Some(cache) = QMP_STREAM.get() {
         let mut guard = cache.lock().await;
-        *guard = stream;
+        *guard = path;
     }
 }
 
@@ -95,16 +95,31 @@ pub async fn execute_on_stream(
     }
 }
 
+pub async fn connect_qmp(
+    socket_path: &std::path::Path,
+) -> Result<UnixStream, Box<dyn std::error::Error + Send + Sync>> {
+    let mut stream = UnixStream::connect(socket_path).await?;
+    let mut buf = vec![0u8; 4096];
+    let _ = stream.readable().await;
+    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await?;
+    stream.write_all(b"{\"execute\": \"qmp_capabilities\"}\n").await?;
+    let _ = stream.readable().await;
+    let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await?;
+    Ok(stream)
+}
+
 async fn qmp_execute(command: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
     let mutex = QMP_STREAM.get().ok_or("Artifacts system not initialized")?;
-    let mut guard = mutex.lock().await;
+    let guard = mutex.lock().await;
 
-    let stream = match guard.as_mut() {
-        Some(s) => s,
+    let path = match guard.as_ref() {
+        Some(p) => p.clone(),
         None => return Err("No QMP connection active".into()),
     };
+    drop(guard); // Free lock during I/O
 
-    execute_on_stream(stream, command).await
+    let mut stream = connect_qmp(&path).await?;
+    execute_on_stream(&mut stream, command).await
 }
 
 /// Take a screenshot using the global QMP socket (for reporter).

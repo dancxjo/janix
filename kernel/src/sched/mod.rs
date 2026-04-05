@@ -10,14 +10,14 @@
 //! - `events`: Lock-free scheduler event types
 //! - `ring`: SPSC ring buffer for scheduler events
 
-pub mod state;
-pub mod events;
 pub(crate) mod blocking;
+pub mod events;
 mod hooks;
 pub(crate) mod ring;
 mod sleep;
 mod spawn;
 mod stack;
+pub mod state;
 pub(crate) mod types;
 mod vm;
 pub(crate) mod wait_queue;
@@ -29,10 +29,10 @@ pub use blocking::{
 pub use hooks::{
     add_user_mapping_current, alloc_user_stack_current, check_user_mapping_current,
     current_priority_current, current_tid_current, dump_stats_current, exit_current,
-    get_user_mapping_at_current, graph_thing_for_current, handle_user_stack_fault_current, 
-    kill_by_tid_current, process_info_current, remove_user_mappings_current, set_priority_current,
-    sleep_ticks_current, spawn_process_current, spawn_process_ex_current,
-    spawn_user_thread_current, task_status_current, yield_now_current,
+    get_user_mapping_at_current, graph_thing_for_current, handle_user_stack_fault_current,
+    kill_by_tid_current, process_info_current, process_info_for_tid_current,
+    remove_user_mappings_current, set_priority_current, sleep_ticks_current, spawn_process_current,
+    spawn_process_ex_current, spawn_user_thread_current, task_status_current, yield_now_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -40,9 +40,7 @@ pub use spawn::{
     user_thread_trampoline, SpawnExResult, StdioSpec,
 };
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
-pub use types::{
-    DEFAULT_TIMESLICE, ScheduleReason, Scheduler, StackFaultResult, SwitchParams,
-};
+pub use types::{ScheduleReason, Scheduler, StackFaultResult, SwitchParams, DEFAULT_TIMESLICE};
 pub use wait_queue::WaitQueue;
 
 use crate::task::{StartupArg, Task, TaskId, TaskPriority, TaskState};
@@ -172,6 +170,7 @@ pub fn init<R: BootRuntime>() {
             hooks::CHECK_USER_MAPPING_HOOK = Some(vm::check_user_mapping::<R>);
             hooks::GET_USER_MAPPING_AT_HOOK = Some(vm::get_user_mapping_at::<R>);
             hooks::PROCESS_INFO_HOOK = Some(process_info::<R>);
+            hooks::PROCESS_INFO_FOR_TID_HOOK = Some(process_info_for_tid::<R>);
             hooks::SPAWN_PROCESS_EX_HOOK = Some(spawn::spawn_process_ex::<R>);
             hooks::GRAPH_THING_FOR_CURRENT_HOOK = Some(graph_thing_for_current_impl::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
@@ -264,7 +263,13 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
     sched.state.per_cpu[0].current = Some(0);
 
     // Queue graph node creation for the boot task
-    crate::sched::ring::push_task_created::<R>(0, TaskPriority::Normal as u8, false, Some("boot"), None);
+    crate::sched::ring::push_task_created::<R>(
+        0,
+        TaskPriority::Normal as u8,
+        false,
+        Some("boot"),
+        None,
+    );
     crate::sched::ring::push_task_state::<R>(0, "running");
     // Link boot task to CPU 0
     crate::sched::ring::push_task_location::<R>(0, 0);
@@ -282,7 +287,12 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         );
 
         // Remove from run queues - idle tasks are special
-        for q in sched.state.per_cpu.iter_mut().flat_map(|pc| pc.runq.iter_mut()) {
+        for q in sched
+            .state
+            .per_cpu
+            .iter_mut()
+            .flat_map(|pc| pc.runq.iter_mut())
+        {
             if let Some(pos) = q.iter().position(|&id| id == idle_id) {
                 q.remove(pos);
             }
@@ -326,7 +336,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 }
 
                 let cpu_idx = current_cpu_index::<R>();
-                
+
                 // If a higher-priority task became runnable (e.g. via wake_task),
                 // preempt immediately rather than waiting for timeslice expiry.
                 if self.state.need_resched {
@@ -335,7 +345,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 }
 
                 // Decrement current task's time slice
-                if let Some(current_id) = self.state.per_cpu.get(cpu_idx).and_then(|pc| pc.current) {
+                if let Some(current_id) = self.state.per_cpu.get(cpu_idx).and_then(|pc| pc.current)
+                {
                     if let Some(task) = crate::task::registry::get_task_mut::<R>(current_id) {
                         if task.timeslice_remaining > 0 {
                             task.timeslice_remaining -= 1;
@@ -402,14 +413,15 @@ impl<R: BootRuntime> types::Scheduler<R> {
                         task.enqueued_at_tick = TICK_COUNT.load(Ordering::Relaxed);
                         let task_ref = &*task;
                         let priority = task_ref.priority;
-                        let target_cpu = if let crate::task::Affinity::Pinned(cpu) = task_ref.affinity {
-                            cpu
-                        } else if let Some(last) = task_ref.last_cpu {
-                            last
-                        } else {
-                            let idx = spawn::RR_IDX.fetch_add(1, Ordering::Relaxed);
-                            idx % self.state.online_cpu_count
-                        };
+                        let target_cpu =
+                            if let crate::task::Affinity::Pinned(cpu) = task_ref.affinity {
+                                cpu
+                            } else if let Some(last) = task_ref.last_cpu {
+                                last
+                            } else {
+                                let idx = spawn::RR_IDX.fetch_add(1, Ordering::Relaxed);
+                                idx % self.state.online_cpu_count
+                            };
 
                         let actual_cpu = if target_cpu < self.state.per_cpu.len() {
                             target_cpu
@@ -418,7 +430,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
                         };
                         self.state.enqueue_task(actual_cpu, priority as usize, tid);
 
-                        let current_prio = self.state.per_cpu.get(actual_cpu)
+                        let current_prio = self
+                            .state
+                            .per_cpu
+                            .get(actual_cpu)
                             .and_then(|pc| pc.current)
                             .and_then(|cid| crate::task::registry::get_task::<R>(cid))
                             .map(|t| t.priority as usize)
@@ -533,7 +548,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 if task.state != TaskState::Dead {
                     let priority = task.priority;
                     // Push to LOCAL runq (we are yielding on this CPU)
-                    self.state.enqueue_task(cpu_idx, priority as usize, current_id);
+                    self.state
+                        .enqueue_task(cpu_idx, priority as usize, current_id);
                     self.metrics.pushes += 1;
                 }
             }
@@ -581,7 +597,8 @@ impl<R: BootRuntime> types::Scheduler<R> {
             for p in (1..5).rev() {
                 if let Some(&id) = self.state.per_cpu[cpu_idx].runq[p].front() {
                     let mut eff = p; // Start with base priority (queue index)
-                    if p < 4 { // aging only applies up to High
+                    if p < 4 {
+                        // aging only applies up to High
                         if let Some(task) = crate::task::registry::get_task::<R>(id) {
                             let now = TICK_COUNT.load(Ordering::Relaxed);
                             let wait_ticks = now.saturating_sub(task.enqueued_at_tick);
@@ -600,7 +617,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             if let Some(p) = best_q {
                 let id = self.state.dequeue_task_front(cpu_idx, p).unwrap();
                 self.metrics.pops += 1;
-                
+
                 let task_ref = crate::task::registry::get_task::<R>(id);
                 if task_ref.map_or(true, |t| t.state == TaskState::Dead) {
                     continue;
@@ -671,17 +688,49 @@ impl<R: BootRuntime> types::Scheduler<R> {
             .expect("prepare_schedule called without current task");
 
         if next_id == current_id {
-            let idx = self.state.get_task_index(current_id).unwrap_or_else(|| { crate::kerror!("SchedTasks: {:?}", self.state.tasks.iter().map(|f| f.tid).collect::<alloc::vec::Vec<_>>()); panic!("failed to find current_id {} in get_task_index", current_id) });
+            let idx = self.state.get_task_index(current_id).unwrap_or_else(|| {
+                crate::kerror!(
+                    "SchedTasks: {:?}",
+                    self.state
+                        .tasks
+                        .iter()
+                        .map(|f| f.tid)
+                        .collect::<alloc::vec::Vec<_>>()
+                );
+                panic!("failed to find current_id {} in get_task_index", current_id)
+            });
             crate::task::registry::get_registry::<R>().tasks[idx].state = TaskState::Running;
             return None;
         }
 
         self.state.per_cpu[cpu_idx].current = Some(next_id);
 
-        let old_idx = self.state.get_task_index(current_id).unwrap_or_else(|| { crate::kerror!("SchedTasks: {:?}", self.state.tasks.iter().map(|f| f.tid).collect::<alloc::vec::Vec<_>>()); panic!("failed to find current_id {} in get_task_index", current_id) });
-        let new_idx = self.state.get_task_index(next_id).unwrap_or_else(|| { crate::kerror!("SchedTasks: {:?}", self.state.tasks.iter().map(|f| f.tid).collect::<alloc::vec::Vec<_>>()); panic!("failed to find next_id {} in get_task_index", next_id) });
+        let old_idx = self.state.get_task_index(current_id).unwrap_or_else(|| {
+            crate::kerror!(
+                "SchedTasks: {:?}",
+                self.state
+                    .tasks
+                    .iter()
+                    .map(|f| f.tid)
+                    .collect::<alloc::vec::Vec<_>>()
+            );
+            panic!("failed to find current_id {} in get_task_index", current_id)
+        });
+        let new_idx = self.state.get_task_index(next_id).unwrap_or_else(|| {
+            crate::kerror!(
+                "SchedTasks: {:?}",
+                self.state
+                    .tasks
+                    .iter()
+                    .map(|f| f.tid)
+                    .collect::<alloc::vec::Vec<_>>()
+            );
+            panic!("failed to find next_id {} in get_task_index", next_id)
+        });
 
-        let tasks_ptr = crate::task::registry::get_registry::<R>().tasks.as_mut_ptr();
+        let tasks_ptr = crate::task::registry::get_registry::<R>()
+            .tasks
+            .as_mut_ptr();
         unsafe {
             let old_task = &mut **tasks_ptr.add(old_idx);
             let new_task = &mut **tasks_ptr.add(new_idx);
@@ -721,13 +770,15 @@ impl<R: BootRuntime> types::Scheduler<R> {
         }
     }
 
-    pub fn terminate_current(&mut self, code: i32) -> SwitchParams<
-        <R::Tasking as BootTasking>::Context,
-        <R::Tasking as BootTasking>::AddressSpace,
-    > {
+    pub fn terminate_current(
+        &mut self,
+        code: i32,
+    ) -> SwitchParams<<R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace>
+    {
         let cpu_idx = current_cpu_index::<R>();
         let current_id = self
-            .state.per_cpu
+            .state
+            .per_cpu
             .get(cpu_idx)
             .and_then(|pc| pc.current)
             .expect("terminate_current called with no current task");
@@ -739,7 +790,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
             // Queue graph state update and exit code
             crate::sched::ring::push_task_state::<R>(current_id, "dead");
             crate::sched::ring::push_task_exited::<R>(current_id, code);
-            
+
             // Cleanup owned things
             if let Some(owner_thing_id) = types::graph_thing_for_tid(current_id) {
                 crate::root::enqueue(crate::root::RootOp::CleanupTaskThings { owner_thing_id });
@@ -826,8 +877,7 @@ pub fn task_status<R: BootRuntime>(id: TaskId) -> Option<(TaskState, Option<i32>
     let lock = SCHEDULER.lock();
     let res = if let Some(ptr) = *lock {
         let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
-        crate::task::registry::get_task::<R>(id)
-            .map(|t| (t.state, t.exit_code))
+        crate::task::registry::get_task::<R>(id).map(|t| (t.state, t.exit_code))
     } else {
         None
     };
@@ -843,7 +893,8 @@ pub fn current_priority<R: BootRuntime>() -> TaskPriority {
             let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
             let cpu = current_cpu_index::<R>();
             sched
-                .state.per_cpu
+                .state
+                .per_cpu
                 .get(cpu)
                 .and_then(|pc| pc.current)
                 .and_then(|tid| crate::task::registry::get_task::<R>(tid))
@@ -864,7 +915,8 @@ pub fn current_tid<R: BootRuntime>() -> u64 {
 }
 
 /// Get the current task's ProcessInfo Arc, if any.
-pub fn process_info<R: BootRuntime>() -> Option<alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>> {
+pub fn process_info<R: BootRuntime>(
+) -> Option<alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>> {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
@@ -874,7 +926,8 @@ pub fn process_info<R: BootRuntime>() -> Option<alloc::sync::Arc<spin::Mutex<cra
             let sched = unsafe { &*(ptr as *const types::Scheduler<R>) };
             let cpu_idx = current_cpu_index::<R>();
             sched
-                .state.per_cpu
+                .state
+                .per_cpu
                 .get(cpu_idx)
                 .and_then(|pc| pc.current)
                 .and_then(|tid| crate::task::registry::get_task::<R>(tid))
@@ -884,6 +937,16 @@ pub fn process_info<R: BootRuntime>() -> Option<alloc::sync::Arc<spin::Mutex<cra
         }
     };
 
+    rt.irq_restore(_irq);
+    result
+}
+
+pub fn process_info_for_tid<R: BootRuntime>(
+    tid: u64,
+) -> Option<alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>> {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let result = crate::task::registry::get_task::<R>(tid).and_then(|t| t.process_info.clone());
     rt.irq_restore(_irq);
     result
 }
@@ -912,10 +975,13 @@ pub fn exit<R: BootRuntime>(code: i32) {
     }
 
     unsafe {
-        rt.tasking()
-            .switch(&mut *(switch.from_ctx as *mut _), &*switch.to_ctx, switch.to_tid);
+        rt.tasking().switch(
+            &mut *(switch.from_ctx as *mut _),
+            &*switch.to_ctx,
+            switch.to_tid,
+        );
     }
-    
+
     unreachable!("Thread continued after terminating!");
 }
 
@@ -952,32 +1018,32 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
         if !task_killed {
             rt.irq_restore(_irq);
             return false;
-        }            // Remove from all run queues
-            sched.state.remove_task_from_runq(tid);
+        } // Remove from all run queues
+        sched.state.remove_task_from_runq(tid);
 
-            // Remove from sleep queue
-            sched.state.sleep_queue.retain(|_, tids| {
-                tids.retain(|&t| t != tid);
-                !tids.is_empty()
-            });
+        // Remove from sleep queue
+        sched.state.sleep_queue.retain(|_, tids| {
+            tids.retain(|&t| t != tid);
+            !tids.is_empty()
+        });
 
-            // Queue graph state update
-            crate::sched::ring::push_task_state::<R>(tid, "dead");
-            crate::sched::ring::push_task_exited::<R>(tid, -9);
-            
-            // Cleanup owned things
-            if let Some(owner_thing_id) = types::graph_thing_for_tid(tid) {
-                crate::root::enqueue(crate::root::RootOp::CleanupTaskThings { owner_thing_id });
-            }
+        // Queue graph state update
+        crate::sched::ring::push_task_state::<R>(tid, "dead");
+        crate::sched::ring::push_task_exited::<R>(tid, -9);
 
-            // Release any claimed devices
-            crate::device_registry::REGISTRY
-                .lock()
-                .release_all_for_task(tid);
+        // Cleanup owned things
+        if let Some(owner_thing_id) = types::graph_thing_for_tid(tid) {
+            crate::root::enqueue(crate::root::RootOp::CleanupTaskThings { owner_thing_id });
+        }
 
-            crate::kinfo!("SCHED: Killed task {} (SIGKILL)", tid);
-            rt.irq_restore(_irq);
-            return true;
+        // Release any claimed devices
+        crate::device_registry::REGISTRY
+            .lock()
+            .release_all_for_task(tid);
+
+        crate::kinfo!("SCHED: Killed task {} (SIGKILL)", tid);
+        rt.irq_restore(_irq);
+        return true;
     }
     rt.irq_restore(_irq);
     false
@@ -1132,7 +1198,9 @@ pub unsafe fn enter_secondary(cpu_index: usize) -> ! {
 mod tests {
     use super::*;
     use crate::task::{Affinity, TaskPriority, TaskState};
-    use crate::{BootRuntime, BootRuntimeBase, BootTasking, MapKind, MapPerms, UserEntry, UserTaskSpec};
+    use crate::{
+        BootRuntime, BootRuntimeBase, BootTasking, MapKind, MapPerms, UserEntry, UserTaskSpec,
+    };
 
     // Mock types for testing - copy from spawn.rs tests
     #[derive(Default, Copy, Clone)]
@@ -1143,21 +1211,41 @@ mod tests {
     struct MockRuntime;
     impl BootRuntimeBase for MockRuntime {
         fn putchar(&self, _c: u8) {}
-        fn mono_ticks(&self) -> u64 { 0 }
-        fn mono_freq_hz(&self) -> u64 { 1 }
+        fn mono_ticks(&self) -> u64 {
+            0
+        }
+        fn mono_freq_hz(&self) -> u64 {
+            1
+        }
         fn init_secondary_cpu(&self, _cpu_index: usize) {}
     }
     impl BootRuntime for MockRuntime {
         type Tasking = MockRuntime;
-        fn tasking(&self) -> &Self { self }
-        fn halt(&self) -> ! { loop {} }
-        fn irq_disable(&self) -> crate::IrqState { crate::IrqState(0) }
+        fn tasking(&self) -> &Self {
+            self
+        }
+        fn halt(&self) -> ! {
+            loop {}
+        }
+        fn irq_disable(&self) -> crate::IrqState {
+            crate::IrqState(0)
+        }
         fn irq_restore(&self, _state: crate::IrqState) {}
-        fn phys_memory_map(&self) -> &'static [crate::PhysRange] { &[] }
-        fn phys_to_virt_offset(&self) -> u64 { 0 }
-        fn modules(&self) -> &'static [crate::BootModuleDesc] { &[] }
-        fn framebuffer(&self) -> Option<crate::FramebufferInfo> { None }
-        fn simd_state_layout(&self) -> (usize, usize) { (0, 1) }
+        fn phys_memory_map(&self) -> &'static [crate::PhysRange] {
+            &[]
+        }
+        fn phys_to_virt_offset(&self) -> u64 {
+            0
+        }
+        fn modules(&self) -> &'static [crate::BootModuleDesc] {
+            &[]
+        }
+        fn framebuffer(&self) -> Option<crate::FramebufferInfo> {
+            None
+        }
+        fn simd_state_layout(&self) -> (usize, usize) {
+            (0, 1)
+        }
         unsafe fn simd_save(&self, _ptr: *mut u8) {}
         unsafe fn simd_restore(&self, _ptr: *const u8) {}
     }
@@ -1166,20 +1254,49 @@ mod tests {
         type Context = MockContext;
         type AddressSpace = MockAddressSpace;
         fn init(&self, _hhdm: u64) {}
-        fn init_kernel_context(&self, _entry: extern "C" fn(usize) -> !, _st: u64, _arg: usize) -> Self::Context {
+        fn init_kernel_context(
+            &self,
+            _entry: extern "C" fn(usize) -> !,
+            _st: u64,
+            _arg: usize,
+        ) -> Self::Context {
             MockContext(_arg)
         }
-        fn init_user_context(&self, _spec: UserTaskSpec<Self::AddressSpace>, _kst: u64) -> Self::Context {
+        fn init_user_context(
+            &self,
+            _spec: UserTaskSpec<Self::AddressSpace>,
+            _kst: u64,
+        ) -> Self::Context {
             MockContext(_spec.arg)
         }
         unsafe fn switch(&self, _f: &mut Self::Context, _t: &Self::Context, _tid: u64) {}
-        unsafe fn enter_user(&self, _e: UserEntry) -> ! { loop {} }
-        fn make_user_address_space(&self) -> Self::AddressSpace { MockAddressSpace(0) }
-        fn active_address_space(&self) -> Self::AddressSpace { MockAddressSpace(0) }
+        unsafe fn enter_user(&self, _e: UserEntry) -> ! {
+            loop {}
+        }
+        fn make_user_address_space(&self) -> Self::AddressSpace {
+            MockAddressSpace(0)
+        }
+        fn active_address_space(&self) -> Self::AddressSpace {
+            MockAddressSpace(0)
+        }
         fn activate_address_space(&self, _as: Self::AddressSpace) {}
-        fn map_page(&self, _as: Self::AddressSpace, _v: u64, _p: u64, _pr: MapPerms, _k: MapKind, _a: &dyn crate::FrameAllocatorHook) -> Result<(), ()> { Ok(()) }
-        fn unmap_page(&self, _as: Self::AddressSpace, _v: u64) -> Result<Option<u64>, ()> { Ok(None) }
-        fn translate(&self, _as: Self::AddressSpace, _v: u64) -> Option<u64> { None }
+        fn map_page(
+            &self,
+            _as: Self::AddressSpace,
+            _v: u64,
+            _p: u64,
+            _pr: MapPerms,
+            _k: MapKind,
+            _a: &dyn crate::FrameAllocatorHook,
+        ) -> Result<(), ()> {
+            Ok(())
+        }
+        fn unmap_page(&self, _as: Self::AddressSpace, _v: u64) -> Result<Option<u64>, ()> {
+            Ok(None)
+        }
+        fn translate(&self, _as: Self::AddressSpace, _v: u64) -> Option<u64> {
+            None
+        }
         fn tlb_flush_page(&self, _v: u64) {}
     }
 
@@ -1188,14 +1305,15 @@ mod tests {
         if !INIT_TESTS.swap(true, core::sync::atomic::Ordering::SeqCst) {
             crate::task::registry::init::<MockRuntime>();
         } else {
-            // Need to clear registry between tests if they run sequentially, 
-            // but for concurrent tests, clearing might race. 
+            // Need to clear registry between tests if they run sequentially,
+            // but for concurrent tests, clearing might race.
             // Better to just ensure task IDs are unique in tests.
         }
     }
 
     #[test]
     fn test_priority_aging_boost() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
         static RUNTIME: MockRuntime = MockRuntime;
         // Test that tasks waiting too long get priority boost when scheduling
@@ -1230,7 +1348,7 @@ mod tests {
             name_len: 0,
             process_info: None,
         };
-        
+
         // Create a low-priority task enqueued a long time ago
         let task_low = crate::task::Task {
             id: 1002,
@@ -1258,22 +1376,31 @@ mod tests {
             name_len: 0,
             process_info: None,
         };
-        
-        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task_normal));
-        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task_low));
-        
-        sched.state.enqueue_task(0, TaskPriority::Normal as usize, 1001);
-        sched.state.enqueue_task(0, TaskPriority::Low as usize, 1002);
-        
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(task_normal));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(task_low));
+
+        sched
+            .state
+            .enqueue_task(0, TaskPriority::Normal as usize, 1001);
+        sched
+            .state
+            .enqueue_task(0, TaskPriority::Low as usize, 1002);
+
         // Simulate time advancing enough to give the Low task a boost of +2 (effective priority 3 = High)
         let now = types::AGING_THRESHOLD_TICKS * 2;
         TICK_COUNT.store(now, core::sync::atomic::Ordering::Relaxed);
-        
-        // Request schedule. The Low task should be selected because its effective priority is higher 
+
+        // Request schedule. The Low task should be selected because its effective priority is higher
         // than Normal due to wait time.
         let next_switch = sched.prepare_schedule().expect("Should find a task");
-        assert_eq!(next_switch.to_tid, 1002, "Low priority task with aging should preempt normal task");
-        
+        assert_eq!(
+            next_switch.to_tid, 1002,
+            "Low priority task with aging should preempt normal task"
+        );
+
         // Verify it was popped from the Low queue, not moved to High queue
         assert!(sched.state.per_cpu[0].runq[TaskPriority::Low as usize].is_empty());
         assert!(!sched.state.per_cpu[0].runq[TaskPriority::Normal as usize].is_empty());
@@ -1281,12 +1408,13 @@ mod tests {
 
     #[test]
     fn test_reset_priority_aging_on_schedule() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
         static RUNTIME: MockRuntime = MockRuntime;
         // Test that enqueued_at_tick resets when task is preempted/yields
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
-        
+
         // Task 1 is running
         let mut task1 = crate::task::Task {
             id: 2001,
@@ -1314,7 +1442,7 @@ mod tests {
             name_len: 0,
             process_info: None,
         };
-        
+
         // Task 2 is runnable
         let task2 = crate::task::Task {
             id: 2002,
@@ -1342,20 +1470,22 @@ mod tests {
             name_len: 0,
             process_info: None,
         };
-        
+
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task1));
         crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(task2));
-        
+
         sched.state.per_cpu[0].current = Some(2001);
-        sched.state.enqueue_task(0, TaskPriority::Normal as usize, 2002);
-        
+        sched
+            .state
+            .enqueue_task(0, TaskPriority::Normal as usize, 2002);
+
         // Time moves forward
         TICK_COUNT.store(1000, core::sync::atomic::Ordering::Relaxed);
-        
+
         // Trigger a timer tick to cause preemption
         let switch = sched.prepare_yield().expect("Should preempt to task2");
         assert_eq!(switch.to_tid, 2002);
-        
+
         // Verify task1 was placed back in runq and its enqueued_at_tick was updated to TICK_COUNT
         let t1 = crate::task::registry::get_task::<MockRuntime>(2001).unwrap();
         assert_eq!(t1.enqueued_at_tick, 1000);
@@ -1364,7 +1494,9 @@ mod tests {
 
     #[test]
     fn test_wake_preempts_lower_priority() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
+        crate::task::registry::init::<MockRuntime>();
         use core::sync::atomic::Ordering;
 
         static RUNTIME: MockRuntime = MockRuntime;
@@ -1427,8 +1559,10 @@ mod tests {
             process_info: None,
         };
 
-        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(normal_task));
-        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(rt_task));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(normal_task));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(rt_task));
         sched.state.per_cpu[0].current = Some(3001); // Normal task is running
 
         // Put RT task in sleep queue with wake_tick in the past
@@ -1460,7 +1594,10 @@ mod tests {
         let switch = sched.prepare_yield();
         assert!(switch.is_some(), "Should produce a context switch");
         let switch = switch.unwrap();
-        assert_eq!(switch.to_tid, 3002, "Scheduler should switch to the RT task");
+        assert_eq!(
+            switch.to_tid, 3002,
+            "Scheduler should switch to the RT task"
+        );
         assert_eq!(
             switch.from_tid, 3001,
             "Scheduler should switch away from the Normal task"
@@ -1469,53 +1606,74 @@ mod tests {
 
     #[test]
     fn test_sorted_insertion() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
+        crate::task::registry::init::<MockRuntime>();
         static RUNTIME: MockRuntime = MockRuntime;
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
 
         // Helper to create dummy task
-        let make_task = |id: TaskId| {
-            crate::task::Task {
-                id,
-                state: TaskState::Runnable,
-                priority: TaskPriority::Normal,
-                base_priority: TaskPriority::Normal,
-                enqueued_at_tick: 0,
-                exit_code: None,
-                is_user: false,
-                wake_pending: false,
-                affinity: Affinity::Any,
-                kstack_base: core::ptr::null_mut(),
-                kstack_size: 0,
-                kstack_top: 0,
-                ctx: Default::default(),
-                aspace: MockAddressSpace(0),
-                simd: crate::simd::SimdState::new(&RUNTIME),
-                stack_info: None,
-                mappings: alloc::sync::Arc::new(spin::Mutex::new(
-                    crate::memory::mappings::MappingList::new(),
-                )),
-                timeslice_remaining: types::DEFAULT_TIMESLICE,
-                last_cpu: None,
-                name: [0; 32],
-                name_len: 0,
-                process_info: None,
-            }
+        let make_task = |id: TaskId| crate::task::Task {
+            id,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: None,
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
         };
 
         // Insert tasks out of order
-        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(make_task(4010)));
-        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(make_task(4005)));
-        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(make_task(4020)));
-        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(make_task(4001)));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(make_task(4010)));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(make_task(4005)));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(make_task(4020)));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(make_task(4001)));
 
         // Verify sorted order internally
-        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks.len(), 4);
-        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks[0].id, 4001);
-        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks[1].id, 4005);
-        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks[2].id, 4010);
-        assert_eq!(crate::task::registry::get_registry::<MockRuntime>().tasks[3].id, 4020);
+        assert_eq!(
+            crate::task::registry::get_registry::<MockRuntime>()
+                .tasks
+                .len(),
+            4
+        );
+        assert_eq!(
+            crate::task::registry::get_registry::<MockRuntime>().tasks[0].id,
+            4001
+        );
+        assert_eq!(
+            crate::task::registry::get_registry::<MockRuntime>().tasks[1].id,
+            4005
+        );
+        assert_eq!(
+            crate::task::registry::get_registry::<MockRuntime>().tasks[2].id,
+            4010
+        );
+        assert_eq!(
+            crate::task::registry::get_registry::<MockRuntime>().tasks[3].id,
+            4020
+        );
 
         // Verify lookups work
         assert!(crate::task::registry::get_task::<MockRuntime>(4010).is_some());
@@ -1526,7 +1684,9 @@ mod tests {
 
     #[test]
     fn test_block_and_wake_state_transitions() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
+        crate::task::registry::init::<MockRuntime>();
         static RUNTIME: MockRuntime = MockRuntime;
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -1558,7 +1718,8 @@ mod tests {
             process_info: None,
         };
 
-        crate::task::registry::get_registry::<MockRuntime>().insert(alloc::boxed::Box::new(waiting_task));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(waiting_task));
         sched.state.per_cpu[0].current = Some(5001);
 
         // Put task in Wait queue and switch it to Blocked (simulating block_current behavior)
@@ -1568,7 +1729,12 @@ mod tests {
         sched.state.wait_queue.push_back(5001);
 
         // Verify task is stuck blocked
-        assert_eq!(crate::task::registry::get_task::<MockRuntime>(5001).unwrap().state, TaskState::Blocked);
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(5001)
+                .unwrap()
+                .state,
+            TaskState::Blocked
+        );
 
         // Emulate `wake_task_erased` via wake_task in MockRuntime context
         crate::sched::blocking::WAKE_TASK_HOOK.store(
@@ -1579,7 +1745,7 @@ mod tests {
         // Make sure scheduler hook resolves safely (we will mock inject the scheduler here via static for the hook)
         // Since we are unit testing `wake_task`, we can't easily use the global `SCHEDULER`.
         // So we just directly call the core logic we care about: the wake sleeper unblock logic.
-        
+
         // Remove from wait queue if present
         if let Some(pos) = sched.state.wait_queue.iter().position(|&wid| wid == 5001) {
             sched.state.wait_queue.remove(pos);
@@ -1594,8 +1760,12 @@ mod tests {
         }
 
         let woken_task = crate::task::registry::get_task::<MockRuntime>(5001).unwrap();
-        assert_eq!(woken_task.state, TaskState::Runnable, "Task must transition from Blocked to Runnable upon wake");
-        
+        assert_eq!(
+            woken_task.state,
+            TaskState::Runnable,
+            "Task must transition from Blocked to Runnable upon wake"
+        );
+
         // Verify task was placed in runq
         assert!(
             sched.state.per_cpu[0].runq[TaskPriority::Normal as usize]

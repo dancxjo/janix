@@ -137,7 +137,7 @@ mod tests {
         let doc = example_filled_rect(10.0, 10.0, 100.0, 50.0, 255, 0, 0);
         assert_eq!(doc.elements.len(), 1);
 
-        let drawlist = render_vir_default(&doc);
+        let mut drawlist = render_vir_default(&doc);
         assert!(!drawlist.commands().is_empty());
     }
 
@@ -146,7 +146,7 @@ mod tests {
         let doc = example_filled_circle(50.0, 50.0, 25.0, 0, 255, 0);
         assert_eq!(doc.elements.len(), 1);
 
-        let drawlist = render_vir_default(&doc);
+        let mut drawlist = render_vir_default(&doc);
         assert!(!drawlist.commands().is_empty());
     }
 
@@ -155,7 +155,7 @@ mod tests {
         let doc = example_stroked_line(0.0, 0.0, 100.0, 100.0, 2.0, 0, 0, 255);
         assert_eq!(doc.elements.len(), 1);
 
-        let drawlist = render_vir_default(&doc);
+        let mut drawlist = render_vir_default(&doc);
         assert!(!drawlist.commands().is_empty());
     }
 
@@ -163,11 +163,12 @@ mod tests {
     fn test_quality_comparison() {
         let doc = example_bezier_path();
 
-        let default_list = render_vir_default(&doc);
-        let hq_list = render_vir_high_quality(&doc);
+        let mut default_list = render_vir_default(&doc);
+        let mut hq_list = render_vir_high_quality(&doc);
 
         // High quality should potentially have more commands due to finer tessellation
         assert!(!default_list.commands().is_empty());
         assert!(!hq_list.commands().is_empty());
+        assert!(hq_list.commands().len() > default_list.commands().len());
     }
 }

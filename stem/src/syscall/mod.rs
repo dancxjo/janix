@@ -7,6 +7,8 @@ pub mod stream;
 use abi::device::{DEVICE_IRQ_SUBSCRIBE_DEVICE, DEVICE_IRQ_SUBSCRIBE_VECTOR};
 use abi::errors::Errno;
 pub use abi::syscall::*;
+use alloc::collections::BTreeMap;
+use alloc::vec::Vec;
 
 use arch::raw_syscall6;
 
@@ -57,6 +59,17 @@ pub fn log_write(msg: &str, level: usize) -> Result<usize, Errno> {
 }
 
 pub use log_write as debug_write;
+
+pub fn read(fd: usize, buf: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_READ, fd, buf.as_mut_ptr() as usize, buf.len(), 0, 0, 0) };
+    abi::errors::errno(ret)
+}
+
+pub fn write(fd: usize, buf: &[u8]) -> Result<usize, Errno> {
+    let ret = unsafe { raw_syscall6(SYS_WRITE, fd, buf.as_ptr() as usize, buf.len(), 0, 0, 0) };
+    abi::errors::errno(ret)
+}
+
 pub use port::{
     port_close, port_create, port_recv, port_send, port_send_all, port_wait, topic_create,
     topic_publish, topic_subscribe, PortHandle,
@@ -104,7 +117,10 @@ pub fn argv_get(buf: &mut [u8]) -> Result<usize, Errno> {
             SYS_ARGV_GET,
             buf.as_mut_ptr() as usize,
             buf.len(),
-            0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
         )
     };
     abi::errors::errno(ret)
@@ -119,7 +135,8 @@ pub fn env_get(key: &[u8], val: &mut [u8]) -> Result<usize, Errno> {
             key.len(),
             val.as_mut_ptr() as usize,
             val.len(),
-            0, 0,
+            0,
+            0,
         )
     };
     abi::errors::errno(ret)
@@ -134,7 +151,8 @@ pub fn env_set(key: &[u8], val: &[u8]) -> Result<(), Errno> {
             key.len(),
             val.as_ptr() as usize,
             val.len(),
-            0, 0,
+            0,
+            0,
         )
     };
     abi::errors::errno(ret).map(|_| ())
@@ -142,14 +160,7 @@ pub fn env_set(key: &[u8], val: &[u8]) -> Result<(), Errno> {
 
 /// Remove an environment variable.
 pub fn env_unset(key: &[u8]) -> Result<(), Errno> {
-    let ret = unsafe {
-        raw_syscall6(
-            SYS_ENV_UNSET,
-            key.as_ptr() as usize,
-            key.len(),
-            0, 0, 0, 0,
-        )
-    };
+    let ret = unsafe { raw_syscall6(SYS_ENV_UNSET, key.as_ptr() as usize, key.len(), 0, 0, 0, 0) };
     abi::errors::errno(ret).map(|_| ())
 }
 
@@ -160,7 +171,10 @@ pub fn env_list(buf: &mut [u8]) -> Result<usize, Errno> {
             SYS_ENV_LIST,
             buf.as_mut_ptr() as usize,
             buf.len(),
-            0, 0, 0, 0,
+            0,
+            0,
+            0,
+            0,
         )
     };
     abi::errors::errno(ret)
@@ -188,6 +202,70 @@ pub fn spawn_process(name: &str, arg: usize) -> Result<u64, abi::errors::Errno> 
         )
     };
     abi::errors::errno(ret).map(|v| v as u64)
+}
+
+pub fn spawn_process_ex(
+    name: &str,
+    argv: &[&[u8]],
+    env: &BTreeMap<Vec<u8>, Vec<u8>>,
+    stdin_mode: u32,
+    stdout_mode: u32,
+    stderr_mode: u32,
+) -> Result<abi::types::SpawnProcessExResp, Errno> {
+    let argv_blob = serialize_argv(argv);
+    let env_blob = serialize_env(env);
+
+    let req = abi::types::SpawnProcessExReq {
+        name_ptr: name.as_ptr() as u64,
+        name_len: name.len() as u32,
+        _pad0: 0,
+        argv_ptr: argv_blob.as_ptr() as u64,
+        argv_len: argv_blob.len() as u32,
+        _pad1: 0,
+        env_ptr: env_blob.as_ptr() as u64,
+        env_len: env_blob.len() as u32,
+        _pad2: 0,
+        stdin_mode,
+        stdout_mode,
+        stderr_mode,
+        _reserved: 0,
+    };
+
+    let mut resp = abi::types::SpawnProcessExResp::default();
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_SPAWN_PROCESS_EX,
+            &req as *const _ as usize,
+            &mut resp as *mut _ as usize,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| resp)
+}
+
+fn serialize_argv(argv: &[&[u8]]) -> Vec<u8> {
+    let mut blob = Vec::new();
+    blob.extend_from_slice(&(argv.len() as u32).to_le_bytes());
+    for arg in argv {
+        blob.extend_from_slice(&(arg.len() as u32).to_le_bytes());
+        blob.extend_from_slice(arg);
+    }
+    blob
+}
+
+fn serialize_env(env: &BTreeMap<Vec<u8>, Vec<u8>>) -> Vec<u8> {
+    let mut blob = Vec::new();
+    blob.extend_from_slice(&(env.len() as u32).to_le_bytes());
+    for (key, value) in env {
+        blob.extend_from_slice(&(key.len() as u32).to_le_bytes());
+        blob.extend_from_slice(key);
+        blob.extend_from_slice(&(value.len() as u32).to_le_bytes());
+        blob.extend_from_slice(value);
+    }
+    blob
 }
 
 pub fn set_priority(tid: u64, priority: usize) -> Result<(), Errno> {
@@ -508,6 +586,36 @@ pub fn root_bytespace_create(len: usize, flags: usize, format: usize) -> Result<
     Ok(ret)
 }
 
+pub fn root_resolve_path(path: &str) -> Result<u64, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ROOT_RESOLVE_PATH,
+            path.as_ptr() as usize,
+            path.len(),
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|v| v as u64)
+}
+
+pub fn root_dir_list(dir_id: u64, out: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_ROOT_DIR_LIST,
+            dir_id as usize,
+            out.as_mut_ptr() as usize,
+            out.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
 pub fn root_intern(name: &str) -> Result<usize, Errno> {
     let ret = unsafe {
         match raw_syscall6(
@@ -586,4 +694,3 @@ pub fn getrandom(buf: &mut [u8]) -> Result<(), Errno> {
     }
     Ok(())
 }
-

@@ -3,9 +3,8 @@
 use super::{copyin, copyout};
 use crate::syscall::validate::validate_user_range;
 use abi::device::{
-    DEVICE_IRQ_SUBSCRIBE_DEVICE, DEVICE_IRQ_SUBSCRIBE_VECTOR, DeviceCall, DeviceKind,
-    PCI_IRQ_MODE_MSI, PCI_IRQ_MODE_MSIX, PCI_OP_ENABLE_MSI, PciEnableMsiRequest,
-    PciEnableMsiResponse,
+    DeviceCall, DeviceKind, PciEnableMsiRequest, PciEnableMsiResponse, DEVICE_IRQ_SUBSCRIBE_DEVICE,
+    DEVICE_IRQ_SUBSCRIBE_VECTOR, PCI_IRQ_MODE_MSI, PCI_IRQ_MODE_MSIX, PCI_OP_ENABLE_MSI,
 };
 use abi::errors::{Errno, SysResult};
 

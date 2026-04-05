@@ -20,9 +20,7 @@ pub fn validate_user_range(base: usize, len: usize, writable: bool) -> SysResult
     }
 
     // Check against actual mappings if the hook is available
-    if let Some(valid) =
-        unsafe { crate::sched::check_user_mapping_current(base, len, writable) }
-    {
+    if let Some(valid) = unsafe { crate::sched::check_user_mapping_current(base, len, writable) } {
         if !valid {
             // crate::kinfo!("validate_user_range: check failed base={:#x} len={} w={}", base, len, writable);
             return Err(Errno::EFAULT);

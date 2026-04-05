@@ -86,10 +86,7 @@ pub enum SchedEvent {
         timestamp: u64,
     },
     /// Task voluntarily yielded
-    TaskYielded {
-        tid: u64,
-        timestamp: u64,
-    },
+    TaskYielded { tid: u64, timestamp: u64 },
     /// A new task was created
     TaskCreated {
         tid: u64,
@@ -101,11 +98,7 @@ pub enum SchedEvent {
         timestamp: u64,
     },
     /// A task exited
-    TaskExited {
-        tid: u64,
-        code: i32,
-        timestamp: u64,
-    },
+    TaskExited { tid: u64, code: i32, timestamp: u64 },
     /// Task priority was changed
     PriorityChanged {
         tid: u64,
@@ -114,17 +107,9 @@ pub enum SchedEvent {
         timestamp: u64,
     },
     /// Task affinity was set to a specific CPU
-    AffinitySet {
-        tid: u64,
-        cpu: u16,
-        timestamp: u64,
-    },
+    AffinitySet { tid: u64, cpu: u16, timestamp: u64 },
     /// Task location (RUNS_ON) was updated
-    LocationSet {
-        tid: u64,
-        cpu: u16,
-        timestamp: u64,
-    },
+    LocationSet { tid: u64, cpu: u16, timestamp: u64 },
     /// Task state changed (generic state update)
     StateChanged {
         tid: u64,

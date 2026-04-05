@@ -37,7 +37,7 @@ hdd arch=karch:
 # Run with QEMU (UEFI mode)
 # Examples: just run, just run aarch64, just run riscv64
 run arch=karch:
-    RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}} -device virtio-sound-pci,audiodev=snd0 -audiodev alsa,id=snd0"
+    RUSTFLAGS="-Awarnings" cargo xtask run --env {{arch}} --profile {{rust_profile}} --qemu-flags "{{qemuflags}} -device intel-hda -device hda-duplex,audiodev=snd0 -audiodev alsa,id=snd0"
 
 # Start HTTPS proxy for guest (runs on port 8081)
 # Guest accesses via: http://10.0.2.2:8081/?url=https://example.com/
@@ -118,7 +118,7 @@ die:
     cargo xtask kill
 
 # Build sprout user app
-sprout arch=karch:
+sprout arch=karch: fetch-rust
     #!/usr/bin/env bash
     TARGET_ARCH="{{arch}}"
     if [ "$TARGET_ARCH" == "riscv64" ]; then
@@ -131,7 +131,7 @@ sprout arch=karch:
     RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p sprout
 
 # Build rtc_cmos user app
-rtc_cmos arch=karch:
+rtc_cmos arch=karch: fetch-rust
     #!/usr/bin/env bash
     TARGET_ARCH="{{arch}}"
     if [ "$TARGET_ARCH" == "riscv64" ]; then
@@ -144,7 +144,7 @@ rtc_cmos arch=karch:
     RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p rtc_cmos
 
 # Build clock user app
-clock arch=karch:
+clock arch=karch: fetch-rust
     #!/usr/bin/env bash
     TARGET_ARCH="{{arch}}"
     if [ "$TARGET_ARCH" == "riscv64" ]; then
@@ -157,7 +157,7 @@ clock arch=karch:
     RUSTFLAGS="-Awarnings" cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec build --target "$TARGET_JSON" -p clock
 
 # Build bristle user app
-bristle arch=karch:
+bristle arch=karch: fetch-rust
     #!/usr/bin/env bash
     TARGET_ARCH="{{arch}}"
     if [ "$TARGET_ARCH" == "riscv64" ]; then
@@ -178,7 +178,7 @@ test *args:
     cargo test -p abi -p pciids -p xtask {{args}}
 
 # Check everything (compilation + UI split)
-check: check-ui-split
+check: check-ui-split fetch-rust
     export __CARGO_TESTS_ONLY_SRC_ROOT="$(pwd)/vendor/rust/library"
     cargo +nightly -Z build-std=core,alloc,std,panic_abort -Z build-std-features=compiler-builtins-mem -Z json-target-spec check --target targets/x86_64-unknown-thingos.json -p bloom -p blossom
 
@@ -195,6 +195,7 @@ rust_commit := "18d13b5332916ffca8eadb9106d54b5b434e9978"
 fetch-rust:
     #!/usr/bin/env bash
     set -euo pipefail
+    ROOT_DIR="$(pwd)"
     if [ -d vendor/rust/.git ]; then
         echo "vendor/rust already exists, skipping clone."
         echo "  To re-fetch, run: just rust-reset  (or rm -rf vendor/rust)"
@@ -206,13 +207,16 @@ fetch-rust:
         git fetch --depth 1 origin {{rust_commit}}
         git checkout {{rust_commit}}
         echo "==> Rust source ready at vendor/rust/"
+        cd "$ROOT_DIR"
     fi
     # Ensure library submodules needed for std are initialized
     if [ ! -f vendor/rust/library/backtrace/Cargo.toml ]; then
         echo "==> Initializing library/backtrace submodule..."
         cd vendor/rust && git submodule update --init --depth 1 library/backtrace
+        cd "$ROOT_DIR"
     fi
     echo "  library/std/src/lib.rs exists: $(test -f vendor/rust/library/std/src/lib.rs && echo yes || echo no)"
+
 
 # Save local modifications in vendor/rust/ as patches
 rust-save-patches:

@@ -7,11 +7,11 @@
 #![feature(restricted_std)]
 #![no_main]
 
-extern crate std;
 extern crate alloc;
+extern crate std;
 
 use std::collections::{HashMap, VecDeque};
-use std::io::{Read, Write, Seek, SeekFrom};
+use std::io::{Read, Seek, SeekFrom, Write};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime};
@@ -49,7 +49,12 @@ fn run_all(tests: &[Test]) -> i32 {
 
     println!();
     println!("═══════════════════════════════════════════════════");
-    println!("SUMMARY: {} passed, {} failed, {} total", passed, failed, passed + failed);
+    println!(
+        "SUMMARY: {} passed, {} failed, {} total",
+        passed,
+        failed,
+        passed + failed
+    );
     if failed == 0 {
         println!("STATUS: ALL TESTS PASSED ✓");
     } else {
@@ -57,7 +62,11 @@ fn run_all(tests: &[Test]) -> i32 {
     }
     println!("═══════════════════════════════════════════════════");
 
-    if failed > 0 { 1 } else { 0 }
+    if failed > 0 {
+        1
+    } else {
+        0
+    }
 }
 
 // ── Flag parsing ─────────────────────────────────────────────────────
@@ -76,8 +85,13 @@ struct Flags {
 fn parse_flags() -> Flags {
     let args: Vec<String> = std::env::args().collect();
     let mut f = Flags {
-        net: false, dns: false, spawn: false, stress: false,
-        child_echo: false, child_exit: false, child_exit_code: 0,
+        net: false,
+        dns: false,
+        spawn: false,
+        stress: false,
+        child_echo: false,
+        child_exit: false,
+        child_exit_code: 0,
     };
     for a in &args[1..] {
         match a.as_str() {
@@ -85,7 +99,12 @@ fn parse_flags() -> Flags {
             "--dns" => f.dns = true,
             "--spawn" => f.spawn = true,
             "--stress" => f.stress = true,
-            "--all" => { f.net = true; f.dns = true; f.spawn = true; f.stress = true; }
+            "--all" => {
+                f.net = true;
+                f.dns = true;
+                f.spawn = true;
+                f.stress = true;
+            }
             "--child-echo" => f.child_echo = true,
             "--child-exit" => f.child_exit = true,
             s if s.starts_with("--exit-code=") => {
@@ -104,7 +123,8 @@ fn parse_flags() -> Flags {
 fn child_echo_mode() -> ! {
     let args: Vec<String> = std::env::args().collect();
     // Skip program name and --child-echo flag
-    let payload: Vec<&str> = args.iter()
+    let payload: Vec<&str> = args
+        .iter()
         .skip(1)
         .filter(|a| *a != "--child-echo")
         .map(|s| s.as_str())
@@ -229,7 +249,10 @@ fn test_time() -> Result<(), String> {
     let elapsed = t1.duration_since(t0);
     // Tolerate jitter — just check it advanced at all (>= 1ms)
     if elapsed < Duration::from_millis(1) {
-        return Err(format!("Instant elapsed {:?} < 1ms after 10ms sleep", elapsed));
+        return Err(format!(
+            "Instant elapsed {:?} < 1ms after 10ms sleep",
+            elapsed
+        ));
     }
 
     // SystemTime >= UNIX_EPOCH
@@ -264,7 +287,12 @@ fn test_env_args() -> Result<(), String> {
     std::env::set_var(key, "smoke_test_value");
     match std::env::var(key) {
         Ok(v) if v == "smoke_test_value" => {}
-        Ok(v) => return Err(format!("var({}) = '{}', expected 'smoke_test_value'", key, v)),
+        Ok(v) => {
+            return Err(format!(
+                "var({}) = '{}', expected 'smoke_test_value'",
+                key, v
+            ))
+        }
         Err(e) => return Err(format!("var({}) missing after set_var: {}", key, e)),
     }
     std::env::remove_var(key);
@@ -290,32 +318,36 @@ fn test_fs() -> Result<(), String> {
     let file_path = base.join("test.txt");
     let content = b"Hello from hello_std fs test!\n";
     {
-        let mut f = std::fs::File::create(&file_path)
-            .map_err(|e| format!("File::create: {}", e))?;
-        f.write_all(content).map_err(|e| format!("write_all: {}", e))?;
+        let mut f =
+            std::fs::File::create(&file_path).map_err(|e| format!("File::create: {}", e))?;
+        f.write_all(content)
+            .map_err(|e| format!("write_all: {}", e))?;
     }
 
     // Read it back
     {
-        let mut f = std::fs::File::open(&file_path)
-            .map_err(|e| format!("File::open: {}", e))?;
+        let mut f = std::fs::File::open(&file_path).map_err(|e| format!("File::open: {}", e))?;
         let mut buf = Vec::new();
-        f.read_to_end(&mut buf).map_err(|e| format!("read_to_end: {}", e))?;
+        f.read_to_end(&mut buf)
+            .map_err(|e| format!("read_to_end: {}", e))?;
         if buf != content {
             return Err(format!(
                 "read-back mismatch: got {} bytes, expected {}",
-                buf.len(), content.len()
+                buf.len(),
+                content.len()
             ));
         }
     }
 
     // Seek test
     {
-        let mut f = std::fs::File::open(&file_path)
-            .map_err(|e| format!("File::open for seek: {}", e))?;
-        f.seek(SeekFrom::Start(6)).map_err(|e| format!("seek: {}", e))?;
+        let mut f =
+            std::fs::File::open(&file_path).map_err(|e| format!("File::open for seek: {}", e))?;
+        f.seek(SeekFrom::Start(6))
+            .map_err(|e| format!("seek: {}", e))?;
         let mut partial = [0u8; 4];
-        f.read_exact(&mut partial).map_err(|e| format!("read_exact after seek: {}", e))?;
+        f.read_exact(&mut partial)
+            .map_err(|e| format!("read_exact after seek: {}", e))?;
         if &partial != b"from" {
             return Err(format!(
                 "seek+read: expected 'from', got '{}'",
@@ -325,10 +357,13 @@ fn test_fs() -> Result<(), String> {
     }
 
     // Metadata — check file length
-    let meta = std::fs::metadata(&file_path)
-        .map_err(|e| format!("metadata: {}", e))?;
+    let meta = std::fs::metadata(&file_path).map_err(|e| format!("metadata: {}", e))?;
     if meta.len() != content.len() as u64 {
-        return Err(format!("metadata.len() = {}, expected {}", meta.len(), content.len()));
+        return Err(format!(
+            "metadata.len() = {}, expected {}",
+            meta.len(),
+            content.len()
+        ));
     }
 
     // read_dir — should list test.txt
@@ -336,11 +371,12 @@ fn test_fs() -> Result<(), String> {
         .map_err(|e| format!("read_dir: {}", e))?
         .filter_map(|e| e.ok())
         .collect();
-    let found = entries.iter().any(|e| {
-        e.file_name().to_str().map_or(false, |n| n == "test.txt")
-    });
+    let found = entries
+        .iter()
+        .any(|e| e.file_name().to_str().map_or(false, |n| n == "test.txt"));
     if !found {
-        let names: Vec<_> = entries.iter()
+        let names: Vec<_> = entries
+            .iter()
             .map(|e| e.file_name().to_string_lossy().into_owned())
             .collect();
         return Err(format!("read_dir: 'test.txt' not found in {:?}", names));
@@ -348,8 +384,7 @@ fn test_fs() -> Result<(), String> {
 
     // Rename
     let renamed = base.join("renamed.txt");
-    std::fs::rename(&file_path, &renamed)
-        .map_err(|e| format!("rename: {}", e))?;
+    std::fs::rename(&file_path, &renamed).map_err(|e| format!("rename: {}", e))?;
     if file_path.exists() {
         return Err("rename: old file still exists".into());
     }
@@ -358,8 +393,7 @@ fn test_fs() -> Result<(), String> {
     }
 
     // Clean up
-    std::fs::remove_dir_all(&base)
-        .map_err(|e| format!("remove_dir_all: {}", e))?;
+    std::fs::remove_dir_all(&base).map_err(|e| format!("remove_dir_all: {}", e))?;
     if base.exists() {
         return Err("remove_dir_all: directory still exists".into());
     }
@@ -406,11 +440,16 @@ fn test_threads() -> Result<(), String> {
         }));
     }
     for h in handles2 {
-        h.join().map_err(|_| "mutex thread join panicked".to_string())?;
+        h.join()
+            .map_err(|_| "mutex thread join panicked".to_string())?;
     }
     let mx_total = *mx.lock().unwrap();
     if mx_total != (nthreads as u64) * 1000 {
-        return Err(format!("Mutex total {} != expected {}", mx_total, nthreads * 1000));
+        return Err(format!(
+            "Mutex total {} != expected {}",
+            mx_total,
+            nthreads * 1000
+        ));
     }
 
     // Condvar test — one thread waits, another signals
@@ -433,7 +472,9 @@ fn test_threads() -> Result<(), String> {
         *started = true;
         cvar.notify_one();
     }
-    let woke = waiter.join().map_err(|_| "condvar waiter panicked".to_string())?;
+    let woke = waiter
+        .join()
+        .map_err(|_| "condvar waiter panicked".to_string())?;
     if !woke {
         return Err("Condvar: waiter did not wake".into());
     }
@@ -445,8 +486,7 @@ fn test_threads() -> Result<(), String> {
 
 fn test_pipes() -> Result<(), String> {
     // Basic pipe: write, read to EOF
-    let (reader, writer) = std::io::pipe()
-        .map_err(|e| format!("io::pipe(): {}", e))?;
+    let (reader, writer) = std::io::pipe().map_err(|e| format!("io::pipe(): {}", e))?;
 
     let msg = b"hello pipe\n";
     let writer_handle = std::thread::spawn(move || -> Result<(), String> {
@@ -458,7 +498,8 @@ fn test_pipes() -> Result<(), String> {
 
     let mut r = reader;
     let mut buf = Vec::new();
-    r.read_to_end(&mut buf).map_err(|e| format!("pipe read_to_end: {}", e))?;
+    r.read_to_end(&mut buf)
+        .map_err(|e| format!("pipe read_to_end: {}", e))?;
     if buf != msg {
         return Err(format!(
             "pipe: read '{}', expected '{}'",
@@ -467,11 +508,12 @@ fn test_pipes() -> Result<(), String> {
         ));
     }
 
-    writer_handle.join().map_err(|_| "pipe writer panicked".to_string())??;
+    writer_handle
+        .join()
+        .map_err(|_| "pipe writer panicked".to_string())??;
 
     // Broken pipe test: drop reader, then writer should get error
-    let (reader2, writer2) = std::io::pipe()
-        .map_err(|e| format!("io::pipe() #2: {}", e))?;
+    let (reader2, writer2) = std::io::pipe().map_err(|e| format!("io::pipe() #2: {}", e))?;
     drop(reader2);
     let mut w2 = writer2;
     match w2.write_all(b"should fail") {
@@ -480,7 +522,10 @@ fn test_pipes() -> Result<(), String> {
         }
         Err(e) => {
             // Got an error, but not BrokenPipe — still acceptable in some impls
-            eprintln!("[test_pipes] note: broken pipe error kind = {:?} (expected BrokenPipe)", e.kind());
+            eprintln!(
+                "[test_pipes] note: broken pipe error kind = {:?} (expected BrokenPipe)",
+                e.kind()
+            );
         }
         Ok(()) => {
             return Err("write to pipe with dropped reader did not error".into());
@@ -504,7 +549,9 @@ fn test_net_tcp() -> Result<(), String> {
     let addr = "10.0.2.2:80";
     match TcpStream::connect(addr) {
         Ok(stream) => {
-            let peer = stream.peer_addr().map_err(|e| format!("peer_addr: {}", e))?;
+            let peer = stream
+                .peer_addr()
+                .map_err(|e| format!("peer_addr: {}", e))?;
             eprintln!("[test_net_tcp] connected to {} (peer={:?})", addr, peer);
             // Connection succeeded — the networking stack works
             drop(stream);
@@ -514,7 +561,10 @@ fn test_net_tcp() -> Result<(), String> {
             // Connection refused is acceptable — it means netd is working,
             // the TCP stack did its job, but no server is listening.
             if format!("{}", e).contains("refused") || format!("{}", e).contains("failed") {
-                eprintln!("[test_net_tcp] connect to {} returned: {} (stack is working)", addr, e);
+                eprintln!(
+                    "[test_net_tcp] connect to {} returned: {} (stack is working)",
+                    addr, e
+                );
                 Ok(())
             } else {
                 Err(format!("TcpStream::connect({}): {}", addr, e))
@@ -548,7 +598,8 @@ fn test_spawn() -> Result<(), String> {
     use std::process::Command;
 
     // Get our own executable path from args
-    let self_name = std::env::args().next()
+    let self_name = std::env::args()
+        .next()
         .ok_or_else(|| "no arg0 for self-exec".to_string())?;
 
     // Test 1: echo child — pass args, capture output
@@ -601,7 +652,8 @@ fn test_stress() -> Result<(), String> {
             }));
         }
         for h in handles {
-            h.join().map_err(|_| format!("stress iter {}: thread panicked", i))?;
+            h.join()
+                .map_err(|_| format!("stress iter {}: thread panicked", i))?;
         }
         let total = counter.load(Ordering::SeqCst);
         if total != 4000 {
@@ -609,8 +661,8 @@ fn test_stress() -> Result<(), String> {
         }
 
         // Pipe stress
-        let (reader, writer) = std::io::pipe()
-            .map_err(|e| format!("stress iter {}: pipe: {}", i, e))?;
+        let (reader, writer) =
+            std::io::pipe().map_err(|e| format!("stress iter {}: pipe: {}", i, e))?;
         let wh = std::thread::spawn(move || {
             let mut w = writer;
             let _ = w.write_all(b"stress");
@@ -618,8 +670,10 @@ fn test_stress() -> Result<(), String> {
         });
         let mut r = reader;
         let mut buf = Vec::new();
-        r.read_to_end(&mut buf).map_err(|e| format!("stress iter {}: read: {}", i, e))?;
-        wh.join().map_err(|_| format!("stress iter {}: writer panicked", i))?;
+        r.read_to_end(&mut buf)
+            .map_err(|e| format!("stress iter {}: read: {}", i, e))?;
+        wh.join()
+            .map_err(|_| format!("stress iter {}: writer panicked", i))?;
         if buf != b"stress" {
             return Err(format!("stress iter {}: data mismatch", i));
         }

@@ -150,7 +150,7 @@ mod tests {
         });
 
         let config = TessellateConfig::default();
-        let list = vir_to_drawlist(&doc, &config);
+        let mut list = vir_to_drawlist(&doc, &config);
 
         assert!(!list.commands().is_empty());
     }

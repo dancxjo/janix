@@ -1,8 +1,8 @@
 //! Static hook system for type-erased scheduler access.
 
 use super::types::StackFaultResult;
-use crate::task::{ProcessInfo, TaskId, TaskState};
 use crate::sched::spawn::{SpawnExResult, StdioSpec};
+use crate::task::{ProcessInfo, TaskId, TaskState};
 use abi::errors::Errno;
 use abi::vm::VmRegionInfo;
 use alloc::collections::BTreeMap;
@@ -42,6 +42,9 @@ pub(crate) static mut RUN_SCHEDULER_HOOK: Option<fn() -> !> = None;
 pub(crate) static mut KILL_BY_TID_HOOK: Option<fn(u64) -> bool> = None;
 pub(crate) static mut DUMP_STATS_HOOK: Option<fn()> = None;
 pub(crate) static mut PROCESS_INFO_HOOK: Option<fn() -> Option<Arc<Mutex<ProcessInfo>>>> = None;
+pub(crate) static mut PROCESS_INFO_FOR_TID_HOOK: Option<
+    fn(u64) -> Option<Arc<Mutex<ProcessInfo>>>,
+> = None;
 pub(crate) static mut GRAPH_THING_FOR_CURRENT_HOOK: Option<fn() -> Option<u64>> = None;
 
 pub unsafe fn yield_now_current() {
@@ -185,6 +188,14 @@ pub unsafe fn check_user_mapping_current(addr: usize, len: usize, write: bool) -
 pub fn process_info_current() -> Option<Arc<Mutex<ProcessInfo>>> {
     if let Some(hook) = unsafe { PROCESS_INFO_HOOK } {
         hook()
+    } else {
+        None
+    }
+}
+
+pub fn process_info_for_tid_current(tid: u64) -> Option<Arc<Mutex<ProcessInfo>>> {
+    if let Some(hook) = unsafe { PROCESS_INFO_FOR_TID_HOOK } {
+        hook(tid)
     } else {
         None
     }

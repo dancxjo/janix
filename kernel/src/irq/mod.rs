@@ -227,8 +227,7 @@ mod tests {
 
         WAKE_COUNT.store(0, Ordering::Relaxed);
         unsafe {
-            crate::sched::blocking::WAKE_TASK_HOOK
-                .store(mock_wake as *mut (), Ordering::SeqCst);
+            crate::sched::blocking::WAKE_TASK_HOOK.store(mock_wake as *mut (), Ordering::SeqCst);
         }
 
         registry.subscribe(vector, 1).expect("Subscribe task 1");
@@ -239,6 +238,8 @@ mod tests {
         assert_eq!(WAKE_COUNT.load(Ordering::Relaxed), 2);
         assert_eq!(registry.try_wait(vector, 1), 1);
         assert_eq!(registry.try_wait(vector, 2), 1);
+
+        WAKE_COUNT.store(0, Ordering::Relaxed);
 
         registry.dispatch(vector);
         registry.dispatch(vector);

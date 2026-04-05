@@ -3611,6 +3611,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6ce2be8dc25455e1f91df71bfa12ad37d7af1092ae736f3a6cd0e37bc7810596"
 
 [[package]]
+name = "stdio_demo"
+version = "0.1.0"
+dependencies = [
+ "stem",
+]
+
+[[package]]
 name = "stem"
 version = "0.1.0"
 dependencies = [
@@ -3788,6 +3795,14 @@ checksum = "591ef38edfb78ca4771ee32cf494cb8771944bee237a9b91fc9c1424ac4b777b"
 
 [[package]]
 name = "taskman"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
+name = "telnetd"
 version = "0.1.0"
 dependencies = [
  "abi",

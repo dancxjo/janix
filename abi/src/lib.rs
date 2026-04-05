@@ -17,6 +17,7 @@ pub mod kinds;
 pub mod module;
 pub mod module_manifest;
 pub mod names;
+pub mod petals_shell;
 pub mod query;
 pub mod root;
 pub mod schema;

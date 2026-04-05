@@ -232,6 +232,29 @@ mod tests {
     }
 
     #[test]
+    fn test_match_multiple_properties() {
+        // MATCH (n:proc.Process {state: 100, name: 12345}) RETURN n
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:proc.Process {state: 100, name: 12345}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1);
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // MATCH (n:proc.Process {state: 101, name: 12345}) RETURN n
+        // Should return empty result as properties conflict
+        let cmd2 = parse("MATCH (n:proc.Process {state: 101, name: 12345}) RETURN n").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success);
+        assert!(res2.rows.is_empty());
+    }
+
+    #[test]
     fn test_list_nodes_by_kind() {
         // MATCH (n:proc.Process) RETURN n LIMIT 10
         let g = setup_mock();
@@ -241,6 +264,20 @@ mod tests {
         assert!(res.success);
         // Should find 2 proc.Process nodes
         assert_eq!(res.rows.len(), 2);
+    }
+
+    #[test]
+    fn test_count_nodes_empty_result() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        // A kind that doesn't exist
+        let cmd = parse("MATCH (n:nonexistent.Kind) RETURN count(n)").unwrap();
+        let res = ex.execute(cmd);
+
+        assert!(res.success);
+        // Aggregate queries like count() should return exactly one row even if there are no matches
+        assert_eq!(res.rows.len(), 1);
+        assert!(matches!(res.rows[0][0], crate::ResultValue::Number(0)));
     }
 
     #[test]
@@ -534,6 +571,26 @@ mod tests {
     // ===== 8) Pagination and Ordering =====
 
     #[test]
+    fn test_pagination_and_ordering_combined() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n) RETURN n ORDER BY id(n) DESC SKIP 1 LIMIT 2").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 2);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 4);
+        } else {
+            panic!("Expected Node result");
+        }
+        if let crate::ResultValue::Node(id) = res.rows[1][0] {
+            assert_eq!(id, 3);
+        } else {
+            panic!("Expected Node result");
+        }
+    }
+
+    #[test]
     fn test_pagination() {
         // MATCH (n) RETURN n ORDER BY id(n) ASC SKIP 1 LIMIT 2
         let g = setup_mock();
@@ -564,6 +621,23 @@ mod tests {
         let res = ex.execute(cmd);
         assert!(res.success);
         assert!(res.rows.is_empty());
+    }
+
+    #[test]
+    fn test_count_match_with_no_results() {
+        // MATCH (n:NonExistent) RETURN count(n)
+        // Ensure it returns a number (0) rather than empty results.
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:NonExistent) RETURN count(n)").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Number(n) = res.rows[0][0] {
+            assert_eq!(n, 0);
+        } else {
+            panic!("Expected Number result");
+        }
     }
 
     #[test]
@@ -625,10 +699,15 @@ mod tests {
 
         // MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101})
         // This should create 'a', 'b', and the edge 'REL'.
-        let cmd = parse("MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101}) RETURN a, b").unwrap();
+        let cmd =
+            parse("MERGE (a:Kind {key: 100})-[:REL]->(b:Kind {key: 101}) RETURN a, b").unwrap();
         let res = ex.execute(cmd);
 
-        assert!(res.success, "MERGE edge with inline nodes failed: {}", res.message);
+        assert!(
+            res.success,
+            "MERGE edge with inline nodes failed: {}",
+            res.message
+        );
         assert_eq!(res.rows.len(), 1);
     }
 
@@ -650,6 +729,79 @@ mod tests {
         // Should find edges from node 1.
         assert!(!res.rows.is_empty(), "Expected edges from node 1, but got empty result. The executor likely confused property 'id' with internal Node ID.");
     }
+    #[test]
+    fn test_match_where_id_and_properties_must_both_match() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // Node 1 is proc.Process with name 12345 in our mock
+
+        // 1. Correct kind, correct property, correct ID
+        let cmd1 = parse("MATCH (n:proc.Process {name: 12345}) WHERE id(n) = 1 RETURN n").unwrap();
+        let res1 = ex.execute(cmd1);
+        assert!(res1.success);
+        assert_eq!(res1.rows.len(), 1, "Should match when ID, kind, and properties all match");
+
+        // 2. Correct kind, WRONG property, correct ID
+        let cmd2 = parse("MATCH (n:proc.Process {name: 99999}) WHERE id(n) = 1 RETURN n").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success);
+        assert_eq!(res2.rows.len(), 0, "Should not match if properties differ, even if internal ID matches");
+
+        // 3. WRONG kind, correct property, correct ID
+        let cmd3 = parse("MATCH (n:fs.File {name: 12345}) WHERE id(n) = 1 RETURN n").unwrap();
+        let res3 = ex.execute(cmd3);
+        assert!(res3.success);
+        assert_eq!(res3.rows.len(), 0, "Should not match if kind differs, even if internal ID matches");
+    }
+    #[test]
+
+      fn test_edge_order_by_desc() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // MATCH (a)-[]->(b) RETURN a ORDER BY id(a) DESC
+        // Edges: 1->2, 1->3, 3->1, 3->2
+        // We expect 'a' to be 3, 3, 1, 1
+
+        let cmd = parse("MATCH (a)-[]->(b) RETURN a ORDER BY id(a) DESC").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+
+        let mut ids = Vec::new();
+        for row in res.rows {
+            if let crate::ResultValue::Node(id) = row[0] {
+                ids.push(id);
+            }
+        }
+
+        assert_eq!(ids, vec![3, 3, 1, 1]);
+  }
+  #[test]
+    fn test_multiple_return_expressions() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:proc.Process) RETURN n, count(n)").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.columns, vec!["n", "count(n)"]);
+        // It has 1 result row since it is an aggregation? Or does it group?
+        // Wait, executor.rs says:
+        // if has_aggregate ... row.push(ResultValue::Number(matched_ids.len() as u64));
+        // else push 0.
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1); // first node found
+        } else {
+            panic!("Expected Node ID");
+        }
+        if let crate::ResultValue::Number(n) = res.rows[0][1] {
+            assert_eq!(n, 2); // 2 proc.Process nodes
+        } else {
+            panic!("Expected Number result");
+        }
+    }
+
     #[test]
     fn test_merge_with_params() {
         let g = setup_mock();
@@ -725,5 +877,124 @@ mod tests {
         let res_empty = ex.execute(cmd_empty);
         assert!(res_empty.success);
         assert_eq!(res_empty.rows.len(), 0, "Expected 0 matches because of conflicting property");
+          }
+
+    #[test]
+
+    fn test_variable_binding_lifecycle() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // 1. MATCH does not bind variables across statements
+        let cmd_match = parse("MATCH (n:proc.Process {name: 12345}) RETURN n").unwrap();
+        let res_match = ex.execute(cmd_match);
+        assert!(res_match.success, "MATCH failed");
+        assert_eq!(res_match.rows.len(), 1, "Expected to find node 1");
+
+        let cmd_set_fail = parse("SET n.priority = 10").unwrap();
+        let res_set_fail = ex.execute(cmd_set_fail);
+        assert!(!res_set_fail.success, "SET should fail because 'n' is not bound by MATCH");
+        assert!(res_set_fail.message.contains("not bound"), "Expected not bound message, got: {}", res_set_fail.message);
+
+        // 2. MERGE binds variables across statements
+        let cmd_merge = parse("MERGE (m:proc.Process {name: 12345}) RETURN m").unwrap();
+        let res_merge = ex.execute(cmd_merge);
+        assert!(res_merge.success, "MERGE failed");
+        assert_eq!(res_merge.rows.len(), 1, "Expected to return node 1");
+
+        // Let's verify it actually returned node 1
+        if let crate::ResultValue::Node(id) = res_merge.rows[0][0] {
+            assert_eq!(id, 1, "Expected node 1");
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // 3. SET on a bound variable should succeed
+        let cmd_set_success = parse("SET m.priority = 10").unwrap();
+        let res_set_success = ex.execute(cmd_set_success);
+        assert!(res_set_success.success, "SET should succeed because 'm' was bound by MERGE. Message: {}", res_set_success.message);
+
+        // 4. Verify the property was set correctly
+        let cmd_verify = parse("MATCH (x:proc.Process {priority: 10}) RETURN x").unwrap();
+        let res_verify = ex.execute(cmd_verify);
+        assert!(res_verify.success, "MATCH for verification failed");
+        assert_eq!(res_verify.rows.len(), 1, "Expected to find 1 node with priority 10");
+
+        if let crate::ResultValue::Node(id) = res_verify.rows[0][0] {
+            assert_eq!(id, 1, "Expected the modified node to be node 1");
+        } else {
+            panic!("Expected Node ID");
+        }
+    }
+
+    #[test]
+
+      fn test_merge_multiple_properties() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // MERGE a node with multiple properties
+        let cmd = parse("MERGE (n:Kind {key1: 10, key2: 20, key3: 30}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+
+        assert!(res.success, "MERGE with multiple properties failed: {}", res.message);
+        assert_eq!(res.rows.len(), 1);
+
+        let id = if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            id
+        } else {
+            panic!("Expected Node ID");
+        };
+
+        // Verify the properties were set correctly by matching them back
+        let cmd_check = parse("MATCH (n:Kind {key1: 10, key2: 20, key3: 30}) RETURN n").unwrap();
+        let res_check = ex.execute(cmd_check);
+
+        assert!(res_check.success);
+        assert_eq!(res_check.rows.len(), 1, "Should find the node with all properties");
+
+        if let crate::ResultValue::Node(id_check) = res_check.rows[0][0] {
+            assert_eq!(id, id_check, "The found node should be the same as the merged one");
+        } else {
+            panic!("Expected Node ID");
+        }
+  }
+    #[test]
+    fn test_match_multiple_inline_properties() {
+        let g = setup_mock();
+        // Give node 1 two specific properties
+        g.set_prop(1, "prop1", 100);
+        g.set_prop(1, "prop2", 200);
+
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // 1. Match with both properties correct (Logical AND)
+        let cmd = parse("MATCH (n {prop1: 100, prop2: 200}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1, "Should find node with both properties matching");
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1);
+        } else {
+            panic!("Expected Node result");
+        }
+
+        // 2. Match with one property conflicting
+        let cmd2 = parse("MATCH (n {prop1: 100, prop2: 999}) RETURN n").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success);
+        assert_eq!(res2.rows.len(), 0, "Should return empty result if one property conflicts");
+
+        // 3. Match with the other property conflicting
+        let cmd3 = parse("MATCH (n {prop1: 999, prop2: 200}) RETURN n").unwrap();
+        let res3 = ex.execute(cmd3);
+        assert!(res3.success);
+        assert_eq!(res3.rows.len(), 0, "Should return empty result if the other property conflicts");
+
+        // 4. Match with missing property
+        let cmd4 = parse("MATCH (n {prop1: 100, prop3: 300}) RETURN n").unwrap();
+        let res4 = ex.execute(cmd4);
+        assert!(res4.success);
+        assert_eq!(res4.rows.len(), 0, "Should return empty result if property is missing");
     }
 }

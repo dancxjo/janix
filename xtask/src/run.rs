@@ -1,7 +1,7 @@
 //! QEMU run tasks.
 
-use crate::common::{Result, image_name};
-use xshell::{Shell, cmd};
+use crate::common::{image_name, Result};
+use xshell::{cmd, Shell};
 
 use std::net::TcpListener;
 use std::path::Path;
@@ -21,15 +21,21 @@ fn user_netdev_arg() -> String {
         return format!("user,id=n0,hostfwd={}", v);
     }
 
-    // Default behavior: use 8888 if free, otherwise run without hostfwd.
+    let mut netdev = String::from("user,id=n0");
+
     if TcpListener::bind(("127.0.0.1", 8888)).is_ok() {
-        "user,id=n0,hostfwd=tcp::8888-:80".to_string()
+        netdev.push_str(",hostfwd=tcp::8888-:80");
     } else {
-        eprintln!(
-            "xtask: host port 8888 is busy; running QEMU without hostfwd (set THINGOS_HOSTFWD to override)"
-        );
-        "user,id=n0".to_string()
+        eprintln!("xtask: host port 8888 is busy; skipping HTTP forward");
     }
+
+    if TcpListener::bind(("127.0.0.1", 2323)).is_ok() {
+        netdev.push_str(",hostfwd=tcp::2323-:2323");
+    } else {
+        eprintln!("xtask: host port 2323 is busy; skipping telnet forward");
+    }
+
+    netdev
 }
 
 fn x86_qemu_trace_enabled() -> bool {

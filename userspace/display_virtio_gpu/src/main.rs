@@ -142,7 +142,15 @@ fn unpack_handle(arg: usize, index: u32) -> PortHandle {
 fn send_msg(handle: PortHandle, msg_type: u16, payload: &[u8]) {
     let mut buf = [0u8; 256];
     if let Some(len) = drvproto::encode_message(&mut buf, msg_type, payload) {
-        let _ = port_send(handle, &buf[..len]);
+        let mut status = stem::syscall::port_send_all(handle, &buf[..len]);
+        while let Err(abi::errors::Errno::EAGAIN) = status {
+            stem::yield_now();
+            status = stem::syscall::port_send_all(handle, &buf[..len]);
+        }
+        stem::trace!(
+            "display_virtio_gpu: sent msg_type={} handle={} size={} status={:?}",
+            msg_type, handle, len, status
+        );
     }
 }
 
@@ -325,13 +333,44 @@ fn main(arg: usize) -> ! {
         alloc::collections::BTreeMap::new();
 
     loop {
-        if let Ok(n) = port_recv(drv_req_read, &mut buf) {
-            if n > 0 {
-                frames.push(&buf[..n]);
+        let handles = [drv_req_read];
+        stem::trace!("display_virtio_gpu: waiting on port_wait...");
+        match stem::syscall::port_wait(&handles, 1 /* READABLE */) {
+            Ok(_) => {
+                let mut read_total = 0;
+                loop {
+                    match port_recv(drv_req_read, &mut buf) {
+                        Ok(n) if n > 0 => {
+                            frames.push(&buf[..n]);
+                            read_total += n;
+                        }
+                        Ok(0) => break,
+                        Err(e) => {
+                            stem::error!("display_virtio_gpu: port_recv ERR: {:?}", e);
+                            break;
+                        }
+                        _ => break,
+                    }
+                }
+                if read_total > 0 {
+                    stem::trace!(
+                        "display_virtio_gpu: port_wait read {} bytes, dropped={}",
+                        read_total,
+                        frames.dropped_bytes()
+                    );
+                }
+            }
+            Err(e) => {
+                stem::trace!("display_virtio_gpu: port_wait returned ERR: {:?}", e);
             }
         }
 
         while let Some((header, payload)) = frames.next_message() {
+            stem::trace!(
+                "display_virtio_gpu: next_message -> msg_type={}, len={}",
+                header.msg_type,
+                payload.len()
+            );
             match header.msg_type {
                 drvproto::MSG_HELLO => {
                     info!("display_virtio_gpu: received MSG_HELLO");
@@ -354,7 +393,7 @@ fn main(arg: usize) -> ! {
                     }
                 }
                 drvproto::MSG_ACQUIRE => {
-                    info!("display_virtio_gpu: received MSG_ACQUIRE");
+                    stem::trace!("display_virtio_gpu: received MSG_ACQUIRE");
                     let mut buffer_age = 0;
                     let idx = next_buffer_idx;
 
@@ -406,6 +445,9 @@ fn main(arg: usize) -> ! {
                 }
                 drvproto::MSG_PRESENT => {
                     if current_bs_id.is_none() {
+                        stem::error!(
+                            "display_virtio_gpu: current_bs_id is NONE during MSG_PRESENT!"
+                        );
                         let err = drvproto::ErrResp { code: 1 };
                         let mut err_bytes = [0u8; drvproto::ERR_RESP_WIRE_SIZE];
                         if let Some(len) = drvproto::encode_err_resp_le(&err, &mut err_bytes) {
@@ -427,7 +469,11 @@ fn main(arg: usize) -> ! {
                                 w: disp_width,
                                 h: disp_height,
                             };
+                            stem::trace!(
+                                "display_virtio_gpu: calling present_rect for full_rect..."
+                            );
                             let _ = gpu.present_rect(current_res_id, full_rect);
+                            stem::trace!("display_virtio_gpu: returned from present_rect!");
                             stats.frame_count += 1;
                             stats.total_transfers += 1;
                             stats.total_flushes += 1;

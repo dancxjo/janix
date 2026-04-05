@@ -51,14 +51,25 @@ impl InputState {
 
     /// Find and cache the bristle service node.
     fn get_bristle(&mut self) -> Option<ThingId> {
-        if self.bristle_node.is_some() {
-            return self.bristle_node;
+        if let Some(node) = self.bristle_node {
+            if prop_get(node, pointer::POINTER_X).is_ok() || prop_get(node, kb::KEYBOARD_GEN).is_ok() {
+                return Some(node);
+            }
         }
-        // Find svc.Input node (bristle)
-        let mut nodes = [ThingId::default(); 4];
+
+        // Find the newest svc.Input node. Old orphaned nodes can remain in the graph
+        // if Bristle registered before task ownership was established.
+        let mut nodes = [ThingId::default(); 16];
         if let Ok(count) = find(hid::SVC_INPUT, &mut nodes) {
+            let count = count.min(nodes.len());
             if count > 0 {
-                self.bristle_node = Some(nodes[0]);
+                let mut best = nodes[0];
+                for node in nodes.iter().take(count).skip(1) {
+                    if node.to_u64_lossy() > best.to_u64_lossy() {
+                        best = *node;
+                    }
+                }
+                self.bristle_node = Some(best);
                 return self.bristle_node;
             }
         }

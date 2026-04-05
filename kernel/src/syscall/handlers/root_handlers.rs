@@ -8,7 +8,7 @@ use abi::vm::{VmBackingKind, VmMapFlags, VmProt, VmRegionInfo};
 use alloc::string::String;
 use core::sync::atomic::Ordering;
 
-macro_rules! wait_reply_spin {
+macro_rules! wait_reply_block {
     ($reply:expr) => {{
         let mut spins = 0;
         loop {
@@ -17,13 +17,26 @@ macro_rules! wait_reply_spin {
                 break;
             }
             spins += 1;
-            if spins < 100_000 {
+            if spins < 100 {
                 core::hint::spin_loop();
             } else {
-                unsafe {
-                    crate::sched::sleep_ticks_current(1);
+                break;
+            }
+        }
+
+        if $reply.done.load(Ordering::Acquire) == 0 {
+            let my_tid = unsafe { crate::sched::current_tid_current() };
+            $reply.waiting_task.store(my_tid, Ordering::SeqCst);
+
+            loop {
+                let done = $reply.done.load(Ordering::SeqCst);
+                if done != 0 {
+                    $reply.waiting_task.store(0, Ordering::Relaxed);
+                    break;
                 }
-                spins = 0;
+                unsafe {
+                    crate::sched::block_current_erased();
+                }
             }
         }
     }};
@@ -58,8 +71,8 @@ pub fn sys_root_create_node(kind_ptr: usize) -> SysResult<usize> {
     let sym = read_symbol(kind_ptr)?;
     let creator_tid = unsafe { crate::sched::current_tid_current() };
     let owner_thing_id = unsafe { crate::sched::graph_thing_for_current() };
-    root_call(RootOp::CreateNode { 
-        kind: sym, 
+    root_call(RootOp::CreateNode {
+        kind: sym,
         creator_tid,
         owner_thing_id,
     })
@@ -72,7 +85,7 @@ pub fn sys_root_link(src: usize, rel_ptr: usize, dst: usize) -> SysResult<usize>
         rel,
         dst: dst as u64,
     });
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     if status == 0 {
         return Ok(0);
@@ -223,7 +236,7 @@ pub fn sys_root_describe_thing(id: usize, out_ptr: usize, len: usize) -> SysResu
         len: kbuf_len as u64,
     });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     let written = reply.value.load(Ordering::Relaxed) as usize;
     if status == 0 {
@@ -247,7 +260,7 @@ pub fn sys_root_describe_symbol(id: usize, out_ptr: usize, len: usize) -> SysRes
         len: kbuf_len as u64,
     });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     let written = reply.value.load(Ordering::Relaxed) as usize;
     if status == 0 {
@@ -280,7 +293,7 @@ pub fn sys_root_describe_edge(
         len: kbuf_len as u64,
     });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     let written = reply.value.load(Ordering::Relaxed) as usize;
     if status == 0 {
@@ -303,7 +316,7 @@ pub fn sys_root_dump_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<u
         len: kbuf_len as u64,
     });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     let written = reply.value.load(Ordering::Relaxed) as usize;
     if status == 0 {
@@ -331,7 +344,7 @@ pub fn sys_root_get_edges(id: usize, out_ptr: usize, len: usize) -> SysResult<us
         len: kbuf_len as u64,
     });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     let written = reply.value.load(Ordering::Relaxed) as usize;
     if status == 0 {
@@ -365,7 +378,7 @@ pub fn sys_root_get_props(id: usize, out_ptr: usize, len: usize) -> SysResult<us
         len: kbuf_len as u64,
     });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     let written = reply.value.load(Ordering::Relaxed) as usize;
     if status == 0 {
@@ -471,7 +484,7 @@ pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysRes
         out_ptr: out_ptr as u64,
     });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     let count = reply.value.load(Ordering::Relaxed);
 
@@ -486,8 +499,7 @@ pub fn sys_root_stream_poll(stream: usize, max: usize, out_ptr: usize) -> SysRes
             value: p2,
         };
 
-        let src =
-            unsafe { core::slice::from_raw_parts(&evt as *const _ as *const u8, evt_size) };
+        let src = unsafe { core::slice::from_raw_parts(&evt as *const _ as *const u8, evt_size) };
         unsafe {
             copyout(out_ptr, src)?;
         }
@@ -547,7 +559,7 @@ pub fn sys_root_bytespace_write(
 pub fn sys_root_bytespace_info(id: usize) -> SysResult<usize> {
     let reply = root_svc::enqueue(RootOp::BytespaceInfo { id: id as u64 });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     if status == 0 {
         // Size is in value, page_count in p0, flags in p1
@@ -564,7 +576,7 @@ pub fn sys_root_bytespace_map(id: usize) -> SysResult<usize> {
 
     let reply = root_svc::enqueue(RootOp::BytespaceMap { id: id as u64, tid });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     if status == 0 {
         let user_va = reply.value.load(Ordering::Relaxed);
@@ -609,18 +621,14 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
         tid,
     });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     if status == 0 {
         // Unmap pages
-        if let Some(region) =
-            unsafe { crate::sched::get_user_mapping_at_current(user_va) }
-        {
+        if let Some(region) = unsafe { crate::sched::get_user_mapping_at_current(user_va) } {
             let len = region.end - region.start;
             unsafe {
-                if let Ok(removed) =
-                    crate::sched::remove_user_mappings_current(user_va, len)
-                {
+                if let Ok(removed) = crate::sched::remove_user_mappings_current(user_va, len) {
                     for (start, end) in removed {
                         let mut virt = start as u64;
                         let end_virt = end as u64;
@@ -641,7 +649,7 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
 pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
     let reply = root_svc::enqueue(RootOp::BytespacePhys { id: id as u64 });
 
-    wait_reply_spin!(reply);
+    wait_reply_block!(reply);
     let status = reply.status.load(Ordering::Relaxed);
     if status == 0 {
         let phys_base = reply.value.load(Ordering::Relaxed);
@@ -836,51 +844,44 @@ pub fn sys_root_watch_next(
         out_len: cap as u64,
     });
 
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            let status = reply.status.load(Ordering::Relaxed);
+    wait_reply_block!(reply);
+    let status = reply.status.load(Ordering::Relaxed);
 
-            if status >= 0 {
-                let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
+    if status >= 0 {
+        let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
 
-                if status == 0 {
-                    // Copy data
-                    unsafe {
-                        let src = core::slice::from_raw_parts(buf_ptr, bytes_read);
-                        copyout(out_ptr, src)?;
-                    }
-                    // Copy seq
-                    let seq = reply.p0.load(Ordering::Relaxed);
-                    unsafe {
-                        copyout(out_seq_ptr, &seq.to_le_bytes())?;
-                    }
-                    return Ok(bytes_read);
-                }
-                return Ok(bytes_read);
-            } else {
-                match status {
-                    -75 => return Err(Errno::EOVERFLOW),
-                    -28 => return Err(Errno::ENOSPC),
-                    -11 => return Err(Errno::EAGAIN),
-                    -22 => return Err(Errno::EINVAL), // Invalid handle
-                    -9 => return Err(Errno::EBADF),   // Bad/stale watch descriptor
-                    _ => {
-                        // Log unexpected status for debugging
-                        let tid = unsafe { crate::sched::current_tid_current() };
-                        crate::kinfo!(
-                            "watch_next: UNEXPECTED status={} wid={} tid={}",
-                            status,
-                            id,
-                            tid
-                        );
-                        return Err(Errno::EIO);
-                    }
-                }
+        if status == 0 {
+            // Copy data
+            unsafe {
+                let src = core::slice::from_raw_parts(buf_ptr, bytes_read);
+                copyout(out_ptr, src)?;
             }
+            // Copy seq
+            let seq = reply.p0.load(Ordering::Relaxed);
+            unsafe {
+                copyout(out_seq_ptr, &seq.to_le_bytes())?;
+            }
+            return Ok(bytes_read);
         }
-        unsafe {
-            crate::sched::yield_now_current();
+        return Ok(bytes_read);
+    } else {
+        match status {
+            -75 => return Err(Errno::EOVERFLOW),
+            -28 => return Err(Errno::ENOSPC),
+            -11 => return Err(Errno::EAGAIN),
+            -22 => return Err(Errno::EINVAL), // Invalid handle
+            -9 => return Err(Errno::EBADF),   // Bad/stale watch descriptor
+            _ => {
+                // Log unexpected status for debugging
+                let tid = unsafe { crate::sched::current_tid_current() };
+                crate::kinfo!(
+                    "watch_next: UNEXPECTED status={} wid={} tid={}",
+                    status,
+                    id,
+                    tid
+                );
+                return Err(Errno::EIO);
+            }
         }
     }
 }
@@ -897,20 +898,13 @@ pub fn sys_root_apply_batch(ptr: usize, len: usize) -> SysResult<usize> {
 
     let reply = root_svc::enqueue(RootOp::ApplyBatch { batch });
 
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            let status = reply.status.load(Ordering::Relaxed);
-            let val = reply.value.load(Ordering::Relaxed);
-            if status == 0 {
-                return Ok(val as usize); // Returns seq
-            } else {
-                return Err(Errno::EINVAL);
-            }
-        }
-        unsafe {
-            crate::sched::yield_now_current();
-        }
+    wait_reply_block!(reply);
+    let status = reply.status.load(Ordering::Relaxed);
+    let val = reply.value.load(Ordering::Relaxed);
+    if status == 0 {
+        return Ok(val as usize); // Returns seq
+    } else {
+        return Err(Errno::EINVAL);
     }
 }
 
@@ -925,7 +919,7 @@ pub fn sys_root_props_get_many(
     keys_len: usize,
     out_ptr: usize,
 ) -> SysResult<usize> {
-    use abi::types::{BULK_PROPS_MAX_KEYS, BulkPropsResponse};
+    use abi::types::{BulkPropsResponse, BULK_PROPS_MAX_KEYS};
 
     // Validate key count
     if keys_len == 0 || keys_len > BULK_PROPS_MAX_KEYS {
@@ -960,29 +954,21 @@ pub fn sys_root_props_get_many(
         kbuf_ptr: &mut kbuf as *mut BulkPropsResponse as u64,
     });
 
-    // Wait for completion
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            let status = reply.status.load(Ordering::Relaxed);
-            let value = reply.value.load(Ordering::Relaxed);
-            if status == 0 {
-                // Copy response from kernel buffer to user buffer
-                let src = unsafe {
-                    core::slice::from_raw_parts(
-                        &kbuf as *const BulkPropsResponse as *const u8,
-                        core::mem::size_of::<BulkPropsResponse>(),
-                    )
-                };
-                unsafe { copyout(out_ptr, src)? };
-                return Ok(value as usize);
-            } else {
-                return Err(Errno::EIO);
-            }
-        }
-        unsafe {
-            crate::sched::yield_now_current();
-        }
+    wait_reply_block!(reply);
+    let status = reply.status.load(Ordering::Relaxed);
+    let value = reply.value.load(Ordering::Relaxed);
+    if status == 0 {
+        // Copy response from kernel buffer to user buffer
+        let src = unsafe {
+            core::slice::from_raw_parts(
+                &kbuf as *const BulkPropsResponse as *const u8,
+                core::mem::size_of::<BulkPropsResponse>(),
+            )
+        };
+        unsafe { copyout(out_ptr, src)? };
+        return Ok(value as usize);
+    } else {
+        return Err(Errno::EIO);
     }
 }
 
@@ -1042,31 +1028,26 @@ pub fn sys_root_dir_list(dir_id: usize, out_ptr: usize, out_len: usize) -> SysRe
         out_len: kbuf_len as u64,
     });
 
-    loop {
-        let done = reply.done.load(Ordering::Acquire);
-        if done != 0 {
-            let status = reply.status.load(Ordering::Relaxed);
-            let count = reply.value.load(Ordering::Relaxed) as usize;
-            if status == 0 {
-                // Copy filled entries to userspace
-                let entry_size = 264usize; // DIR_ENTRY_WIRE_SIZE
-                let bytes_to_copy = count * entry_size;
-                if bytes_to_copy > 0 {
-                    unsafe {
-                        copyout(out_ptr, &kbuf[..bytes_to_copy])?;
-                    }
-                }
-                return Ok(count);
-            } else {
-                return Err(Errno::EIO);
+    wait_reply_block!(reply);
+    let status = reply.status.load(Ordering::Relaxed);
+    let count = reply.value.load(Ordering::Relaxed) as usize;
+    if status == 0 {
+        // Copy filled entries to userspace
+        let entry_size = 264usize; // DIR_ENTRY_WIRE_SIZE
+        let bytes_to_copy = count * entry_size;
+        if bytes_to_copy > 0 {
+            unsafe {
+                copyout(out_ptr, &kbuf[..bytes_to_copy])?;
             }
         }
-        unsafe {
-            crate::sched::yield_now_current();
-        }
+        return Ok(count);
+    } else {
+        return Err(Errno::EIO);
     }
 }
 
 pub fn sys_root_orphan_thing(thing_id: usize) -> SysResult<usize> {
-    root_call(RootOp::OrphanThing { thing_id: thing_id as u64 })
+    root_call(RootOp::OrphanThing {
+        thing_id: thing_id as u64,
+    })
 }

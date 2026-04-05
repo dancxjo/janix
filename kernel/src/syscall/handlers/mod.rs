@@ -12,6 +12,7 @@ mod port;
 mod process;
 mod random;
 mod root_handlers;
+mod stdio;
 pub mod stream;
 mod time;
 mod trace;
@@ -27,6 +28,7 @@ pub use port::*;
 pub use process::*;
 pub use random::*;
 pub use root_handlers::*;
+pub use stdio::*;
 pub use time::*;
 pub use trace::*;
 
@@ -34,7 +36,7 @@ pub use trace::*;
 use crate::root::{self as root_svc, RootOp, SymbolShell};
 use crate::syscall::validate::{copyin, copyout};
 use abi::errors::{Errno, SysResult};
-use abi::symbols::{SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR, SymbolRefWire};
+use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR};
 use alloc::string::String;
 use core::sync::atomic::Ordering;
 
@@ -42,7 +44,6 @@ use core::sync::atomic::Ordering;
 pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
     let reply = root_svc::enqueue(op);
     let mut spins = 0;
-    let mut sleep_count = 0;
 
     loop {
         let done = reply.done.load(Ordering::Acquire);
@@ -59,19 +60,37 @@ pub(crate) fn root_call(op: RootOp) -> SysResult<usize> {
                 return abi::errors::errno(status as isize);
             }
         }
-        
+
         spins += 1;
-        if spins < 1000000 {
+        if spins < 100 {
             core::hint::spin_loop();
         } else {
-            sleep_count += 1;
-            if sleep_count % 1000 == 0 {
-                crate::kprintln!("root_call still blocked after {} sleeps! done={}", sleep_count, done);
+            break;
+        }
+    }
+
+    let my_tid = unsafe { crate::sched::current_tid_current() };
+    reply.waiting_task.store(my_tid, Ordering::SeqCst);
+
+    loop {
+        let done = reply.done.load(Ordering::SeqCst);
+        if done != 0 {
+            reply.waiting_task.store(0, Ordering::Relaxed);
+            let status = reply.status.load(Ordering::Relaxed);
+            let value = reply.value.load(Ordering::Relaxed);
+
+            #[cfg(feature = "diagnostic-apps")]
+            crate::ktrace!("ROOT_CALL_DEBUG: status={} value={:x}", status, value);
+
+            if status == 0 {
+                return Ok(value as usize);
+            } else {
+                return abi::errors::errno(status as isize);
             }
-            unsafe {
-                crate::sched::sleep_ticks_current(1);
-            }
-            spins = 0;
+        }
+
+        unsafe {
+            crate::sched::block_current_erased();
         }
     }
 }

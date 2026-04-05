@@ -54,7 +54,7 @@ impl Supervisor {
         // --- STAGE 3: Compositor ---
         info!("SPROUT: [Stage 3] Starting Compositor");
         crate::pipelines::setup_compositor(&mut self.tasks, display_handles, input_handles);
-        
+
         stem::sleep_ms(200);
 
         // --- STAGE 4: Final Polish (Beeper) ---
@@ -231,6 +231,7 @@ impl Supervisor {
         self.ensure_app("/fortune");
         self.ensure_app("/photosynthesis");
         self.ensure_app("/fetchd");
+        self.ensure_app("/telnetd");
         // self.ensure_app("/clock");
         // self.ensure_app("/drawlist_demo");
 

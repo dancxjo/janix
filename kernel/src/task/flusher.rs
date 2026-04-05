@@ -61,7 +61,10 @@ pub fn flush(max_events: usize, max_ticks: u64, start_ticks: u64) -> FlushResult
     let mut applied = 0usize;
 
     // Scratch buffer for draining
-    let mut buf = [SchedEvent::TaskYielded { tid: 0, timestamp: 0 }; 64];
+    let mut buf = [SchedEvent::TaskYielded {
+        tid: 0,
+        timestamp: 0,
+    }; 64];
 
     // Round-robin drain across CPUs, skip None entries
     let per_cpu_budget = (max_events / types::MAX_CPUS.max(1)).max(8);
@@ -87,7 +90,10 @@ pub fn flush(max_events: usize, max_ticks: u64, start_ticks: u64) -> FlushResult
 
     // We can't easily get elapsed here without a clock, so report 0.
     // The caller (graph_worker_task) tracks its own wall-clock budget.
-    FlushResult { applied, elapsed_ticks: 0 }
+    FlushResult {
+        applied,
+        elapsed_ticks: 0,
+    }
 }
 
 /// Translate a single SchedEvent into the appropriate GraphWork item
@@ -164,10 +170,7 @@ fn translate_event(event: &SchedEvent) {
                 DequeueReason::Blocked => "blocked",
                 DequeueReason::Sleeping => "sleeping",
             };
-            graph_queue::push(GraphWork::UpdateState {
-                tid: *tid,
-                state,
-            });
+            graph_queue::push(GraphWork::UpdateState { tid: *tid, state });
         }
         SchedEvent::TaskRan { tid, cpu, .. } => {
             graph_queue::push(GraphWork::UpdateState {
@@ -208,10 +211,7 @@ fn translate_event(event: &SchedEvent) {
                 let len = state_str_len(ptr);
                 core::str::from_utf8_unchecked(core::slice::from_raw_parts(ptr, len))
             };
-            graph_queue::push(GraphWork::UpdateState {
-                tid: *tid,
-                state,
-            });
+            graph_queue::push(GraphWork::UpdateState { tid: *tid, state });
         }
         SchedEvent::NameSet { tid, name, .. } => {
             let name_len = name.iter().position(|&b| b == 0).unwrap_or(name.len());

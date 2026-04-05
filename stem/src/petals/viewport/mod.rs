@@ -6,7 +6,7 @@
 //! # Example
 //!
 //! ```
-//! use stem::viewport::{Viewport, PanZoomController, ViewportConstraints};
+//! use stem::petals::viewport::{Viewport, PanZoomController, ViewportConstraints};
 //!
 //! let mut controller = PanZoomController::new(
 //!     Viewport::new(800.0, 600.0),
@@ -20,6 +20,8 @@
 //! controller.pan_by_screen(10.0, 5.0); // Pan right and down
 //!
 //! // Convert screen coordinates to world coordinates for hit testing
+//! let click_x = 400.0;
+//! let click_y = 300.0;
 //! let world_pos = controller.viewport.screen_to_world(click_x, click_y);
 //! ```
 

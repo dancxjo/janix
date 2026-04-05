@@ -40,6 +40,7 @@ pub const RESP_HANDLE: u16 = 0x0002;
 pub const RESP_DATA: u16 = 0x0003;
 pub const RESP_ACCEPT: u16 = 0x0004;
 pub const RESP_EMPTY: u16 = 0x0005;
+pub const RESP_CLOSED: u16 = 0x0006;
 
 pub fn is_known_msg_type(msg_type: u16) -> bool {
     matches!(
@@ -438,12 +439,8 @@ impl SocketApi {
                         .ok();
                         conn_graph::set_if_changed(node, net::props::SOCK_FD, api_handle as u64)
                             .ok();
-                        conn_graph::set_if_changed(
-                            node,
-                            net::props::SOCK_PID,
-                            managed.owner_tid,
-                        )
-                        .ok();
+                        conn_graph::set_if_changed(node, net::props::SOCK_PID, managed.owner_tid)
+                            .ok();
                         conn_graph::set_if_changed(
                             node,
                             net::props::SOCK_CREATED_AT,
@@ -457,12 +454,8 @@ impl SocketApi {
                                     .ok()
                                     .flatten()
                             {
-                                net::ensure_edge(
-                                    owner_node,
-                                    net::preds::PROC_OWNS_SOCKET,
-                                    node,
-                                )
-                                .ok();
+                                net::ensure_edge(owner_node, net::preds::PROC_OWNS_SOCKET, node)
+                                    .ok();
                             }
                         }
                     }
@@ -987,7 +980,7 @@ impl SocketApi {
                     encode_empty()
                 } else {
                     // Socket closed or EOF reached
-                    encode_error()
+                    encode_closed()
                 }
             }
         }
@@ -1251,6 +1244,10 @@ fn encode_accept(conn_handle: u32, remote_ip: Ipv4Address, remote_port: u16) -> 
 
 fn encode_empty() -> Vec<u8> {
     RESP_EMPTY.to_le_bytes().to_vec()
+}
+
+fn encode_closed() -> Vec<u8> {
+    RESP_CLOSED.to_le_bytes().to_vec()
 }
 
 /// Helper to split a large buffer into packet metadata and payload

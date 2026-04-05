@@ -108,7 +108,9 @@ fn init_mouse() {
     // Enable aux port
     wait_input_empty();
     ioport_write(PS2_CMD, CMD_ENABLE_AUX as usize, 1);
-    stem::sleep_ms(50);
+    for _ in 0..10 {
+        stem::yield_now();
+    }
 
     // Ensure IRQ12 is enabled (Bit 1) and Mouse Disabled (Bit 5) is CLEARED.
     // Bit 5: 1 = Mouse Disabled, 0 = Mouse Enabled.
@@ -163,8 +165,9 @@ fn init_mouse() {
         b1, b2, b3
     );
 
-    // If bit 5 is 0, it means it's already enabled in streaming mode.
-    if b1 & 0x20 != 0 {
+    // Bit 5 indicates Enable/Disable status (1 = Enabled, 0 = Disabled).
+    // If it is 0, data reporting is disabled, so we must enable it.
+    if b1 & 0x20 == 0 {
         // Enable mouse data reporting (0xF4)
         info!("ps2_mouse: sending enable command (0xF4)");
         send_aux_byte(MOUSE_ENABLE);

@@ -382,7 +382,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
                 module_path: "/ps2_kbd".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                spawn_arg: 0,
+                spawn_arg: kbd_raw.0 as usize,
             });
         }
         Err(e) => {
@@ -401,7 +401,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
                 module_path: "/ps2_mouse".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                spawn_arg: 0,
+                spawn_arg: mouse_raw.0 as usize,
             });
         }
         Err(e) => {
@@ -430,7 +430,7 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
                 module_path: "/bristle".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                spawn_arg: 0,
+                spawn_arg: bristle_arg as usize,
             });
         }
         Err(e) => {
@@ -534,7 +534,7 @@ pub fn setup_compositor(
                 module_path: "/echo".to_string(),
                 pid: Some(pid),
                 restarts: 0,
-                spawn_arg: 0,
+                spawn_arg: input.evt_echo_read as usize,
             });
         }
         Err(e) => {

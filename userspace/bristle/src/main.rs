@@ -324,6 +324,11 @@ fn main(packed_handles: usize) -> ! {
     let legacy_evt_write = ((packed >> 16) & 0xFFFF) as PortHandle;
     let legacy_evt_echo_write = (packed & 0xFFFF) as PortHandle;
 
+    stem::info!("BRISTLE_MAIN_ENTERED_WITH_LOGS_YAY");
+
+
+
+
     info!(
         "bristle: online (kbd={}, mouse={}, evt={}, echo={})",
         kbd_read, mouse_read, legacy_evt_write, legacy_evt_echo_write

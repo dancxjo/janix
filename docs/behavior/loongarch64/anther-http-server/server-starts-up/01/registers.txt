@@ -12,7 +12,7 @@ CPU#0
 
  CSR000: CRMD   14               PRMD   4                EUEN   1                MISC   0               
  CSR004: ECFG   800              ESTAT  0                ERA    f18dfc0          BADV   d207408         
- CSR008: BADI   2a000184        
+ CSR008: BADI   293ffd05        
  CSR012: EENTRY 10000           
  CSR016: TLBIDX c000000          TLBEHI 0                TLBELO0 0               TLBELO1 0              
  CSR024: ASID   a0000            PGDL   fefd000          PGDH   0                PGD    0               

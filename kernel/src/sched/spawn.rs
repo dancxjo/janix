@@ -38,7 +38,12 @@ impl<R: BootRuntime> Scheduler<R> {
                 //     }
                 // }
                 let _ = rt; // Suppress unused variable warning
-                idx % count
+                if count > 1 {
+                    (idx % (count - 1)) + 1
+                } else {
+                    0
+                }
+
             }
         }
     }

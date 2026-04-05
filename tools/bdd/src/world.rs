@@ -37,9 +37,14 @@ pub struct ThingOsWorld {
     #[world(skip)]
     pub http_port: Option<u16>,
     /// Last HTTP response (status, body)
+    /// Last HTTP response (status, body)
     #[world(skip)]
     pub last_http_response: Option<(u16, String)>,
+    /// Work directory for storing sockets
+    #[world(skip)]
+    pub work_dir: PathBuf,
 }
+
 
 impl ThingOsWorld {
     /// Boot the OS in QEMU for the given architecture.
@@ -55,6 +60,10 @@ impl ThingOsWorld {
         let pid = std::process::id();
         let iso_name = format!("thing-os-bdd-{}-{}-{}.iso", arch, pid, nanos);
         let iso_path = PathBuf::from(&iso_name);
+
+        self.work_dir = std::env::temp_dir().join(format!("thingos-bdd-{}-{}", pid, nanos));
+        std::fs::create_dir_all(&self.work_dir)?;
+
 
         // Get resolution from environment (default 1920x1080 for BDD tests)
         let resolution =

@@ -232,6 +232,29 @@ mod tests {
     }
 
     #[test]
+    fn test_match_multiple_properties() {
+        // MATCH (n:proc.Process {state: 100, name: 12345}) RETURN n
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+        let cmd = parse("MATCH (n:proc.Process {state: 100, name: 12345}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1);
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // MATCH (n:proc.Process {state: 101, name: 12345}) RETURN n
+        // Should return empty result as properties conflict
+        let cmd2 = parse("MATCH (n:proc.Process {state: 101, name: 12345}) RETURN n").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success);
+        assert!(res2.rows.is_empty());
+    }
+
+    #[test]
     fn test_list_nodes_by_kind() {
         // MATCH (n:proc.Process) RETURN n LIMIT 10
         let g = setup_mock();

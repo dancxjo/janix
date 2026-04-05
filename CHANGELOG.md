@@ -1,5 +1,49 @@
 # Changelog
 
+## Process Management, Networking & UI Framework Expansion
+
+Recent development has brought major architectural enhancements to Thing-OS, focusing on robust process management, real-time networking capabilities, and a refined UI framework. The kernel now supports detailed process monitoring, signal handling (`SYS_TASK_KILL`), and standard synchronization primitives (`futex`). Networking has seen a significant upgrade with Server-Sent Events (SSE) support in Anther and a multi-threaded connection handling model in `netd`. Additionally, initial standard library (`std`) support has been introduced, paving the way for easier porting of external Rust crates.
+
+### ⚙️ System Library & API Expansion
+
+*   **Standard Library Support**: Introduced initial `std` support via the `restricted_std` feature and a custom Platform Abstraction Layer (PAL) patch, allowing userspace applications to leverage the Rust standard library.
+    *   *Artifacts*: `userspace/hello_std/`, `stem::pal`
+
+*   **Process Management Sycalls**: Added `SYS_TASK_KILL` for sending signals to tasks, `SYS_TASK_DUMP` for retrieving detailed scheduler statistics, and enhanced process spawning with `argv` and `env` support.
+    *   *Artifacts*: `kernel/src/task/`, `abi/src/syscall.rs`
+
+*   **Synchronization & IPC**: Implemented kernel-backed `futex` syscalls (`sys_futex_wait`, `sys_futex_wake`) and anonymous pipe IPC for robust inter-process communication.
+    *   *Artifacts*: `kernel/src/sched/futex.rs` (approx), `abi/src/syscall.rs`
+
+*   **Hardware RNG Entropy**: Integrated an entropy pool in the kernel and implemented the `SYS_GETRANDOM` syscall, utilizing the x86_64 hardware random number generator (`RDRAND`/`RDSEED`).
+    *   *Artifacts*: `kernel/src/entropy.rs`
+
+### 🌐 Networking & Real-time Updates
+
+*   **Server-Sent Events (SSE)**: The Anther HTTP server now supports SSE, enabling real-time streaming of graph node updates (Thing properties) to web clients without polling.
+    *   *Artifacts*: `userspace/anther/`
+
+*   **Multi-threaded Connection Handling**: `netd` has been refactored to spawn a dedicated thread for each incoming network connection, significantly improving responsiveness and isolating IPC traffic.
+    *   *Artifacts*: `userspace/netd/`
+
+*   **LLM Integration & Explain Capability**: Added the ability for Anther to explain graph nodes using a local Ollama instance, further integrating AI capabilities into the system interface.
+    *   *Artifacts*: `userspace/anther/`, `userspace/nectar/`
+
+### 🎨 UI Framework & Desktop Experience
+
+*   **Reactive Task Manager**: The `taskman` application now displays a detailed, two-column list of running processes, leveraging reactive updates from the supervisor to reflect task states instantly.
+    *   *Artifacts*: `userspace/taskman/`
+
+*   **Window Management & Chrome**: Implemented window title bars and borders ("chrome") for UI applications, with support for keyed UI elements to reduce unnecessary repaints and optimize event handling.
+    *   *Artifacts*: `userspace/blossom/`, `userspace/bloom/`
+
+*   **Layout Enhancements**: Added support for horizontal row layouts and computed styles, improving the flexibility and aesthetics of the `blossom` UI framework.
+    *   *Artifacts*: `userspace/blossom/src/graph_ui.rs`
+
+### 🧪 System Verification
+
+*   **Comprehensive BDD Scenarios**: Added several new Behavior-Driven Development (BDD) scenarios, including "System Stewardship", "Getting Started", and "Anther HTTP API", ensuring end-to-end functionality of these new features.
+    *   *Artifacts*: `docs/behavior/features/system_stewardship.feature`, `docs/behavior/features/getting_started.feature`, `docs/behavior/features/anther_http.feature`
 ## Graphics Resilience & Daily Inspiration
 
 This update introduces a variety of refinements to the operating system's overall robustness, especially surrounding graphics initialization, as well as new user-facing features and database stability improvements. A primary focus has been ensuring the OS boots gracefully even when no physical or virtual display is detected, alongside the introduction of a new "Daily Inspiration" workflow. Additionally, the Phloem graph database has received important bug fixes related to node ID handling, and the build system has been further automated.

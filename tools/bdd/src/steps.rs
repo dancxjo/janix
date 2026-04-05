@@ -2112,6 +2112,8 @@ async fn make_concurrent_requests(
 
 // ===== GQL Steps =====
 
+// `execute_gql_query` was previously defined and handles executing GQL queries over HTTP.
+
 #[then(regex = r#"^the GQL result should have at least (\d+) rows$"#)]
 async fn gql_result_rows(world: &mut ThingOsWorld, min_rows: usize) -> Result<(), StepError> {
     let (_, body) = world

@@ -271,6 +271,55 @@ mod tests {
     }
 
     #[test]
+    fn test_handle_watch_open_cursor_modes() {
+        let mut graph = Graph::new();
+        let mut interner = Interner::new();
+
+        // Push 3 commits so oldest=1, newest=3, next=4
+        graph.commit_history.push(1, vec![1], CommitSummary::default());
+        graph.commit_history.push(2, vec![2], CommitSummary::default());
+        graph.commit_history.push(3, vec![3], CommitSummary::default());
+
+        let filter = WatchFilter::default();
+
+        // 1. WATCH_START_LATEST should start at next_seq (which is 4)
+        let (_, watch_id_latest) = handle_watch_open(
+            &mut graph,
+            &mut interner,
+            0,
+            abi::types::WATCH_START_LATEST,
+            vec![],
+            filter.clone(),
+        );
+        let watch_latest = graph.global_watches.get(&watch_id_latest).unwrap();
+        assert_eq!(watch_latest.cursor_seq, 4, "LATEST should start at next sequence");
+
+        // 2. start_seq = 0 should start at oldest available (which is 1)
+        let (_, watch_id_zero) = handle_watch_open(
+            &mut graph,
+            &mut interner,
+            0,
+            0,
+            vec![],
+            filter.clone(),
+        );
+        let watch_zero = graph.global_watches.get(&watch_id_zero).unwrap();
+        assert_eq!(watch_zero.cursor_seq, 1, "0 should start at oldest available sequence");
+
+        // 3. Specific start_seq (e.g., 2) should start exactly there
+        let (_, watch_id_specific) = handle_watch_open(
+            &mut graph,
+            &mut interner,
+            0,
+            2,
+            vec![],
+            filter.clone(),
+        );
+        let watch_specific = graph.global_watches.get(&watch_id_specific).unwrap();
+        assert_eq!(watch_specific.cursor_seq, 2, "Specific sequence should start precisely there");
+    }
+
+    #[test]
     fn test_handle_watch_next_basic() {
         let mut graph = Graph::new();
         // Setup history with one commit (seq 1)

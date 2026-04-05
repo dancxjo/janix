@@ -1313,6 +1313,7 @@ mod tests {
 
     #[test]
     fn test_priority_aging_boost() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
         static RUNTIME: MockRuntime = MockRuntime;
         // Test that tasks waiting too long get priority boost when scheduling
@@ -1407,6 +1408,7 @@ mod tests {
 
     #[test]
     fn test_reset_priority_aging_on_schedule() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
         static RUNTIME: MockRuntime = MockRuntime;
         // Test that enqueued_at_tick resets when task is preempted/yields
@@ -1492,7 +1494,9 @@ mod tests {
 
     #[test]
     fn test_wake_preempts_lower_priority() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
+        crate::task::registry::init::<MockRuntime>();
         use core::sync::atomic::Ordering;
 
         static RUNTIME: MockRuntime = MockRuntime;
@@ -1602,7 +1606,9 @@ mod tests {
 
     #[test]
     fn test_sorted_insertion() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
+        crate::task::registry::init::<MockRuntime>();
         static RUNTIME: MockRuntime = MockRuntime;
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -1678,7 +1684,9 @@ mod tests {
 
     #[test]
     fn test_block_and_wake_state_transitions() {
+        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
+        crate::task::registry::init::<MockRuntime>();
         static RUNTIME: MockRuntime = MockRuntime;
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());

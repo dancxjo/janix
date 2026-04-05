@@ -26,7 +26,7 @@ pub struct ThingOsWorld {
     pub qmp_socket: Option<PathBuf>,
     /// QMP connection for step logic (separate from reporter)
     #[world(skip)]
-    pub qmp_control: Option<UnixStream>,
+    pub qmp_control: Option<PathBuf>,
     /// VNC display number (for screenshot capture)
     #[world(skip)]
     pub vnc_display: Option<u16>,
@@ -137,6 +137,7 @@ impl ThingOsWorld {
         match arch {
             "x86_64" => {
                 cmd.args(["-M", "q35,usb=off,vmport=off,i8042=on"]);
+                cmd.args(["-device", "virtio-vga"]);
                 cmd.args([
                     "-drive",
                     &format!("if=pflash,unit=0,format=raw,file={},readonly=on", ovmf_code),
@@ -220,13 +221,16 @@ impl ThingOsWorld {
         cmd.args([
             "-m",
             "2G",
+            "-smp",
+            "4",
             // Disable default display, use VNC instead
             "-display",
             "none",
             "-no-shutdown",
             // Serial via UNIX socket to avoid block-buffering delays
-            "-serial",
-            &format!("unix:{},server=on,wait=off", self.work_dir.join("serial.sock").display()),
+            "-chardev",
+            &format!("socket,id=char0,path={},server=on,wait=on", self.work_dir.join("serial.sock").display()),
+            "-serial", "chardev:char0",
             // VNC for headless graphics (needed for screenshots)
             "-vnc",
             &format!(":{}", vnc_display),
@@ -257,15 +261,28 @@ impl ThingOsWorld {
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
             
-            if let Ok(stream) = UnixStream::connect(&serial_sock_path).await {
-                let reader = BufReader::new(stream);
-                let mut lines = reader.lines();
-                while let Ok(Some(line)) = lines.next_line().await {
-                    let mut log = serial_log.lock().await;
-                    log.push_str(&line);
-                    log.push('\n');
-                    // Sync to global cache for reporter access
-                    artifacts::set_latest_serial(&log).await;
+            match UnixStream::connect(&serial_sock_path).await {
+                Ok(mut stream) => {
+                    let mut buf = vec![0u8; 4096];
+                    let mut last_update = std::time::Instant::now();
+                    while let Ok(n) = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
+                        if n == 0 { break; } // EOF
+
+                        let text = String::from_utf8_lossy(&buf[..n]);
+                        let mut log = serial_log.lock().await;
+
+                        log.push_str(&text);
+
+                        // Sync to global cache for reporter access (throttled to avoid QEMU pipe stall)
+                        if last_update.elapsed().as_millis() > 50 {
+                            artifacts::set_latest_serial(&log).await;
+                            last_update = std::time::Instant::now();
+                        }
+                    }
+                    eprintln!("│  │  │      ⚠️ QEMU serial socket reader loop exited! Did QEMU close?");
+                }
+                Err(e) => {
+                    eprintln!("│  │  │      debug: FAILED to connect to QEMU serial socket: {}", e);
                 }
             }
         });
@@ -283,40 +300,11 @@ impl ThingOsWorld {
 
         self.qemu = Some(child);
 
-        // Wait for sockets
-        let mut global_stream = None;
-        let mut world_stream = None;
+        let global_path = if qmp_global_path.exists() { Some(qmp_global_path.clone()) } else { None };
+        let world_path = if qmp_world_path.exists() { Some(qmp_world_path.clone()) } else { None };
 
-        for _ in 0..50 {
-            if global_stream.is_none() && qmp_global_path.exists() {
-                if let Ok(s) = Self::connect_qmp(&qmp_global_path).await {
-                    global_stream = Some(s);
-                }
-            }
-
-            if world_stream.is_none() && qmp_world_path.exists() {
-                if let Ok(s) = Self::connect_qmp(&qmp_world_path).await {
-                    world_stream = Some(s);
-                }
-            }
-
-            if global_stream.is_some() && world_stream.is_some() {
-                break;
-            }
-            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-        }
-
-        if global_stream.is_none() {
-            eprintln!("[bdd] Warning: Global QMP not initialized");
-        } else {
-            crate::artifacts::set_qmp_stream(global_stream).await;
-        }
-
-        if world_stream.is_none() {
-            eprintln!("[bdd] Warning: World QMP not initialized");
-        } else {
-            self.qmp_control = world_stream;
-        }
+        crate::artifacts::set_qmp_stream(global_path).await;
+        self.qmp_control = world_path;
 
         Ok(())
     }
@@ -343,9 +331,10 @@ impl ThingOsWorld {
             ppm_abs.display()
         );
 
-        let stream = self.qmp_control.as_mut().ok_or("No world QMP connection")?;
+        let path = self.qmp_control.as_ref().ok_or("No world QMP connection")?;
+        let mut stream = Self::connect_qmp(path).await.map_err(|e| e.to_string())?;
 
-        let resp = execute_on_stream(stream, &cmd).await?;
+        let resp = crate::artifacts::qmp::execute_on_stream(&mut stream, &cmd).await?;
         if resp.contains("error") {
             return Err(format!("QMP error: {}", resp).into());
         }
@@ -366,10 +355,16 @@ impl ThingOsWorld {
         Ok(png_path)
     }
 
+    pub async fn execute_qmp_control(&self, cmd: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+        let path = self.qmp_control.as_ref().ok_or("No world QMP connection")?;
+        let mut stream = Self::connect_qmp(path).await?;
+        crate::artifacts::qmp::execute_on_stream(&mut stream, cmd).await
+    }
+
     /// Connect to a QMP socket and perform handshake.
     async fn connect_qmp(
         socket_path: &std::path::Path,
-    ) -> Result<UnixStream, Box<dyn std::error::Error>> {
+    ) -> Result<UnixStream, Box<dyn std::error::Error + Send + Sync>> {
         let mut stream = UnixStream::connect(socket_path).await?;
 
         // Read greeting
@@ -393,16 +388,26 @@ impl ThingOsWorld {
     pub async fn wait_for_serial(&self, needle: &str, timeout_secs: f64) -> bool {
         let start = std::time::Instant::now();
         let timeout = std::time::Duration::from_secs_f64(timeout_secs);
+        let mut last_print = std::time::Instant::now();
 
         loop {
             {
                 let log = self.serial_log.lock().await;
+                if last_print.elapsed() > std::time::Duration::from_secs(5) {
+                    eprintln!("│  │  │      debug: waiting for {}. current log len: {}", needle, log.len());
+                    let tail = if log.len() > 200 { &log[log.len() - 200..] } else { &log[..] };
+                    eprintln!("│  │  │      debug: tail: {:?}", tail);
+                    last_print = std::time::Instant::now();
+                }
+
                 if log.contains(needle) {
+                    eprintln!("│  │  │      debug: found {} in serial", needle);
                     return true;
                 }
             }
 
             if start.elapsed() > timeout {
+                eprintln!("│  │  │      debug: timed out waiting for {}", needle);
                 return false;
             }
 

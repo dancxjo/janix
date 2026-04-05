@@ -12,7 +12,7 @@ use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec;
 use alloc::vec::Vec;
-use net_client::NetClient;
+use net_client::{NetClient, TcpRecvResult};
 use stem::syscall::{pipe, spawn_process_ex};
 use stem::{info, warn};
 
@@ -177,14 +177,14 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
     write_raw(net, conn_handle, shell.prompt().as_bytes());
 
     loop {
-        let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) else {
-            stem::time::sleep_ms(10);
-            continue;
+        let data = match net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
+            TcpRecvResult::Data(data) => data,
+            TcpRecvResult::Empty => {
+                stem::time::sleep_ms(10);
+                continue;
+            }
+            TcpRecvResult::Closed => break,
         };
-
-        if data.is_empty() {
-            break;
-        }
 
         for byte in data {
             let (event, response) = console.ingest(byte);
@@ -289,23 +289,30 @@ fn run_program(net: &NetClient, conn_handle: u32, path: &str) -> Result<(), &'st
         drain_pipe_to_socket(net, conn_handle, resp.stdout_pipe);
         drain_pipe_to_socket(net, conn_handle, resp.stderr_pipe);
 
-        if let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
-            for byte in data {
-                let (event, response) = console.ingest(byte);
-                if let Some(bytes) = response {
-                    write_raw(net, conn_handle, &bytes);
-                }
-                match event {
-                    Some(InputEvent::Submit(line)) => {
-                        write_raw(net, conn_handle, b"\r\n");
-                        let _ = pipe::pipe_write(resp.stdin_pipe, line.as_bytes());
-                        let _ = pipe::pipe_write(resp.stdin_pipe, b"\n");
+        match net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
+            TcpRecvResult::Data(data) => {
+                for byte in data {
+                    let (event, response) = console.ingest(byte);
+                    if let Some(bytes) = response {
+                        write_raw(net, conn_handle, &bytes);
                     }
-                    Some(InputEvent::Interrupt) => {
-                        let _ = stem::syscall::task_kill(resp.child_tid);
+                    match event {
+                        Some(InputEvent::Submit(line)) => {
+                            write_raw(net, conn_handle, b"\r\n");
+                            let _ = pipe::pipe_write(resp.stdin_pipe, line.as_bytes());
+                            let _ = pipe::pipe_write(resp.stdin_pipe, b"\n");
+                        }
+                        Some(InputEvent::Interrupt) => {
+                            let _ = stem::syscall::task_kill(resp.child_tid);
+                        }
+                        None => {}
                     }
-                    None => {}
                 }
+            }
+            TcpRecvResult::Empty => {}
+            TcpRecvResult::Closed => {
+                let _ = stem::syscall::task_kill(resp.child_tid);
+                break;
             }
         }
 

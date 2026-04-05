@@ -778,7 +778,7 @@ fn maybe_create_window(
     thingsys::link(crown, rels::HAS_CHILD, win).ok();
     thingsys::prop_set(win, keys::UI_BG_COLOR, 0xFFF0EDE8).ok();
     thingsys::prop_set(win, keys::UI_WIDTH, 360).ok();
-    thingsys::prop_set(win, keys::UI_HEIGHT, 120).ok();
+    thingsys::prop_set(win, keys::UI_HEIGHT, 480).ok();
     thingsys::prop_set(win, keys::UI_X, 0).ok();
     thingsys::prop_set(win, keys::UI_Y, 0).ok();
     thingsys::prop_set(win, keys::UI_INSET_RIGHT, 16).ok();
@@ -793,10 +793,7 @@ fn render_window(
     hostname: &str,
     ip: Option<[u8; 4]>,
 ) -> Result<(), stem::errors::Error> {
-    let ip_str = match ip {
-        Some([a, b, c, d]) => format!("{}.{}.{}.{}", a, b, c, d),
-        None => "Acquiring…".into(),
-    };
+    // IP is shown elsewhere; we no longer display it here.
     let mut ui = Petals::begin_window(window_id);
     let root = ui.column(|ui| {
         let label = ui.text("Hostname")?;
@@ -808,14 +805,7 @@ fn render_window(
         let _ = ui.set_font_size(value, 24);
         let _ = ui.set_color(value, 0xFF1A5080);
 
-        let ip_label = ui.text("IP Address")?;
-        let _ = ui.set_font_name(ip_label, "NotoSans-Regular");
-        let _ = ui.set_font_size(ip_label, 14);
-        let _ = ui.set_color(ip_label, 0xFF505050);
-        let ip_value = ui.text(&ip_str)?;
-        let _ = ui.set_font_name(ip_value, "NotoSans-Regular");
-        let _ = ui.set_font_size(ip_value, 24);
-        let _ = ui.set_color(ip_value, 0xFF1A5080);
+        // IP Address display removed — it is shown elsewhere in the UI.
         Ok(())
     })?;
     let _ = ui.set_gap(root, 6);

@@ -45,6 +45,12 @@ pub struct MouseAccelState {
     last_timestamp_ns: Option<u64>,
 }
 
+#[derive(Default, Clone, Copy)]
+pub struct PollStats {
+    pub had_key_event: bool,
+    pub had_pointer_event: bool,
+}
+
 fn apply_mouse_accel(delta: (i16, i16), dt_s: f32, cfg: &MouseAccelConfig) -> (i16, i16) {
     // Always apply base sensitivity
     let dx = delta.0 as f32 * cfg.base_sensitivity;
@@ -83,111 +89,123 @@ pub fn poll_bristle(
     accel_state: &mut MouseAccelState,
     w: i32,
     h: i32,
-) {
+) -> PollStats {
     let mut buf = [0u8; 256];
+    let mut stats = PollStats::default();
 
     loop {
         let n = match port_recv(handle, &mut buf) {
             Ok(n) => n,
-            Err(_) => return,
+            Err(_) => return stats,
         };
 
         if n == 0 {
-            return;
+            return stats;
         }
 
-        if n < BristleEventHeader::SIZE {
-            continue;
-        }
+        let mut offset = 0usize;
+        while offset + BristleEventHeader::SIZE <= n {
+            let header_ptr = unsafe { buf.as_ptr().add(offset) };
+            let header: BristleEventHeader =
+                unsafe { core::ptr::read_unaligned(header_ptr as *const BristleEventHeader) };
+            let magic = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.magic)) };
+            let version = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.version)) };
+            let event_type =
+                unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.event_type)) };
+            let payload_len = unsafe {
+                core::ptr::read_unaligned(core::ptr::addr_of!(header.payload_len))
+            } as usize;
+            let timestamp_ns =
+                unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.timestamp_ns)) };
 
-        let header: BristleEventHeader =
-            unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const BristleEventHeader) };
-        let magic = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.magic)) };
-        let version = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.version)) };
-        let event_type =
-            unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.event_type)) };
-        let payload_len =
-            unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.payload_len)) } as usize;
-        let timestamp_ns =
-            unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.timestamp_ns)) };
+            if magic != BRISTLE_EVENT_MAGIC || version != BRISTLE_EVENT_VERSION {
+                break;
+            }
 
-        if magic != BRISTLE_EVENT_MAGIC || version != BRISTLE_EVENT_VERSION {
-            continue;
-        }
+            let total = BristleEventHeader::SIZE + payload_len;
+            if offset + total > n {
+                break;
+            }
 
-        let total = BristleEventHeader::SIZE + payload_len;
-        if n < total {
-            continue;
-        }
+            let payload_ptr = unsafe { header_ptr.add(BristleEventHeader::SIZE) };
+            match event_type {
+                1 => {
+                    if payload_len >= KeyEventPayload::SIZE {
+                        let payload: KeyEventPayload =
+                            unsafe { core::ptr::read_unaligned(payload_ptr as *const KeyEventPayload) };
+                        keys.insert(payload.key());
+                        stats.had_key_event = true;
+                    }
+                }
+                2 => {
+                    if payload_len >= KeyEventPayload::SIZE {
+                        let payload: KeyEventPayload =
+                            unsafe { core::ptr::read_unaligned(payload_ptr as *const KeyEventPayload) };
+                        keys.remove(&payload.key());
+                        stats.had_key_event = true;
+                    }
+                }
+                3 => {
+                    if payload_len >= PointerMovePayload::SIZE {
+                        let payload: PointerMovePayload = unsafe {
+                            core::ptr::read_unaligned(payload_ptr as *const PointerMovePayload)
+                        };
+                        let dx =
+                            unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dx)) };
+                        let dy =
+                            unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dy)) };
+                        stem::info!(
+                            "[DEBUG] bloom poll_bristle: received PointerMove dx={}, dy={}",
+                            dx,
+                            dy
+                        );
+                        let dt_s = match accel_state.last_timestamp_ns {
+                            Some(prev) if timestamp_ns > prev => {
+                                (timestamp_ns - prev) as f32 * 1.0e-9
+                            }
+                            _ => 0.0,
+                        };
+                        accel_state.last_timestamp_ns = Some(timestamp_ns);
 
-        match event_type {
-            1 => {
-                // KeyDown
-                if payload_len >= KeyEventPayload::SIZE {
-                    let payload: KeyEventPayload = unsafe {
-                        core::ptr::read_unaligned(
-                            buf.as_ptr().add(BristleEventHeader::SIZE) as *const KeyEventPayload
-                        )
-                    };
-                    keys.insert(payload.key());
+                        let dt_s = if dt_s > 0.25 { 0.0 } else { dt_s };
+                        let (ax, ay) = apply_mouse_accel((dx, dy), dt_s, accel_cfg);
+                        stem::info!(
+                            "[DEBUG] bloom poll_bristle: applying accelerated Move ax={}, ay={}",
+                            ax,
+                            ay
+                        );
+                        cursor.apply_move(ax, ay, w, h);
+                        stats.had_pointer_event = true;
+                    }
                 }
-            }
-            2 => {
-                // KeyUp
-                if payload_len >= KeyEventPayload::SIZE {
-                    let payload: KeyEventPayload = unsafe {
-                        core::ptr::read_unaligned(
-                            buf.as_ptr().add(BristleEventHeader::SIZE) as *const KeyEventPayload
-                        )
-                    };
-                    keys.remove(&payload.key());
+                4 => {
+                    if payload_len >= PointerButtonPayload::SIZE {
+                        let payload: PointerButtonPayload = unsafe {
+                            core::ptr::read_unaligned(payload_ptr as *const PointerButtonPayload)
+                        };
+                        let btn = unsafe {
+                            core::ptr::read_unaligned(core::ptr::addr_of!(payload.button))
+                        };
+                        cursor.button_down(btn);
+                        stats.had_pointer_event = true;
+                    }
                 }
+                5 => {
+                    if payload_len >= PointerButtonPayload::SIZE {
+                        let payload: PointerButtonPayload = unsafe {
+                            core::ptr::read_unaligned(payload_ptr as *const PointerButtonPayload)
+                        };
+                        let btn = unsafe {
+                            core::ptr::read_unaligned(core::ptr::addr_of!(payload.button))
+                        };
+                        cursor.button_up(btn);
+                        stats.had_pointer_event = true;
+                    }
+                }
+                _ => {}
             }
-            3 => {
-                if payload_len >= PointerMovePayload::SIZE {
-                    let payload: PointerMovePayload = unsafe {
-                        core::ptr::read_unaligned(
-                            buf.as_ptr().add(BristleEventHeader::SIZE) as *const PointerMovePayload
-                        )
-                    };
-                    let dx = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dx)) };
-                    let dy = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dy)) };
-                    stem::info!("[DEBUG] bloom poll_bristle: received PointerMove dx={}, dy={}", dx, dy);
-                    let dt_s = match accel_state.last_timestamp_ns {
-                        Some(prev) if timestamp_ns > prev => (timestamp_ns - prev) as f32 * 1.0e-9,
-                        _ => 0.0,
-                    };
-                    accel_state.last_timestamp_ns = Some(timestamp_ns);
 
-                    let dt_s = if dt_s > 0.25 { 0.0 } else { dt_s };
-                    let (ax, ay) = apply_mouse_accel((dx, dy), dt_s, accel_cfg);
-                    stem::info!("[DEBUG] bloom poll_bristle: applying accelerated Move ax={}, ay={}", ax, ay);
-                    cursor.apply_move(ax, ay, w, h);
-                }
-            }
-            4 => {
-                if payload_len >= PointerButtonPayload::SIZE {
-                    let payload: PointerButtonPayload = unsafe {
-                        core::ptr::read_unaligned(buf.as_ptr().add(BristleEventHeader::SIZE)
-                            as *const PointerButtonPayload)
-                    };
-                    let btn =
-                        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.button)) };
-                    cursor.button_down(btn);
-                }
-            }
-            5 => {
-                if payload_len >= PointerButtonPayload::SIZE {
-                    let payload: PointerButtonPayload = unsafe {
-                        core::ptr::read_unaligned(buf.as_ptr().add(BristleEventHeader::SIZE)
-                            as *const PointerButtonPayload)
-                    };
-                    let btn =
-                        unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.button)) };
-                    cursor.button_up(btn);
-                }
-            }
-            _ => {}
+            offset += total;
         }
     }
 }

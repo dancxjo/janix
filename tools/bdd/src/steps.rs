@@ -1463,15 +1463,13 @@ async fn given_cursor_visible(world: &mut ThingOsWorld) -> Result<(), StepError>
 
 #[when("I press a key")]
 async fn when_press_key(world: &mut ThingOsWorld) {
-    use crate::artifacts::qmp::execute_on_stream;
-
-    if let Some(stream) = world.qmp_control.as_mut() {
+    if world.qmp_control.is_some() {
         let press = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "key", "data": {"down": true, "key": {"type": "qcode", "data": "a"}}}]}}"#;
         let release = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "key", "data": {"down": false, "key": {"type": "qcode", "data": "a"}}}]}}"#;
 
-        let _ = execute_on_stream(stream, press).await;
+        let _ = world.execute_qmp_control(press).await;
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-        let _ = execute_on_stream(stream, release).await;
+        let _ = world.execute_qmp_control(release).await;
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
         eprintln!("│  │  │      ⌨️ Sent keypress 'a'");
     } else {
@@ -1481,9 +1479,7 @@ async fn when_press_key(world: &mut ThingOsWorld) {
 
 #[when(regex = r#"^I press (.+)$"#)]
 async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
-    use crate::artifacts::qmp::execute_on_stream;
-
-    if let Some(stream) = world.qmp_control.as_mut() {
+    if world.qmp_control.is_some() {
         let parts: Vec<&str> = keys.split('+').collect();
         eprintln!("│  │  │      ⌨️ Pressing: {}", keys);
 
@@ -1499,7 +1495,7 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
                 r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": true, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
                 qcode
             );
-            let _ = execute_on_stream(stream, &cmd).await;
+            let _ = world.execute_qmp_control(&cmd).await;
         }
 
         // Press main key
@@ -1513,9 +1509,9 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
                 r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": false, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
                 qcode
             );
-            let _ = execute_on_stream(stream, &press).await;
+            let _ = world.execute_qmp_control(&press).await;
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-            let _ = execute_on_stream(stream, &release).await;
+            let _ = world.execute_qmp_control(&release).await;
         }
 
         // Release modifiers
@@ -1530,7 +1526,7 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
                 r#"{{"execute": "input-send-event", "arguments": {{"events": [{{"type": "key", "data": {{"down": false, "key": {{"type": "qcode", "data": "{}"}}}}}}]}}}}"#,
                 qcode
             );
-            let _ = execute_on_stream(stream, &cmd).await;
+            let _ = world.execute_qmp_control(&cmd).await;
         }
 
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -1541,11 +1537,11 @@ async fn when_press_combo(world: &mut ThingOsWorld, keys: String) {
 
 #[when("I move the mouse")]
 async fn when_move_mouse(world: &mut ThingOsWorld) {
-    use crate::artifacts::qmp::execute_on_stream;
+    eprintln!("│  │  │      debug: starting when_move_mouse!");
 
-    if let Some(stream) = world.qmp_control.as_mut() {
+    if world.qmp_control.is_some() {
         let cmd = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "rel", "data": {"axis": "x", "value": 50}}, {"type": "rel", "data": {"axis": "y", "value": 50}}]}}"#;
-        match execute_on_stream(stream, cmd).await {
+        match world.execute_qmp_control(cmd).await {
             Ok(res) => eprintln!("│  │  │      🖱️ Sent mouse movement, QMP res: {}", res.trim()),
             Err(e) => eprintln!("│  │  │      ❌ QMP error: {}", e),
         }

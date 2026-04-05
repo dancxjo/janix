@@ -6,7 +6,7 @@
 #![no_main]
 
 use stem::info;
-use stem::syscall::{PortHandle, ioport_read, ioport_write, irq_subscribe, irq_wait, port_send};
+use stem::syscall::{PortHandle, ioport_read, ioport_write, irq_subscribe, irq_wait, port_send_all};
 
 const PS2_DATA: usize = 0x60;
 const PS2_STATUS: usize = 0x64;
@@ -213,16 +213,22 @@ fn main(raw_write_handle: usize) -> ! {
             polling_loop(handle);
         }
     }
-
     info!("ps2_mouse: entering interrupt-driven loop");
 
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
     let mut mouse_state = MouseState::new();
+    let mut drop_counter = 0u32;
 
     // Perform an initial drain to clear any pending bytes that might keep the IRQ line HIGH
     // If the IOAPIC is edge-triggered, an already-HIGH line will never trigger an interrupt!
-    drain_mouse_data(handle, &mut mouse_state, &mut packet, &mut idx);
+    drain_mouse_data(
+        handle,
+        &mut mouse_state,
+        &mut packet,
+        &mut idx,
+        &mut drop_counter,
+    );
 
     loop {
         // Wait for mouse interrupt
@@ -230,7 +236,13 @@ fn main(raw_write_handle: usize) -> ! {
             Ok(count) => {
                 info!("ps2_mouse: IRQ12 fired! count={}", count);
                 // Drain all available mouse data
-                drain_mouse_data(handle, &mut mouse_state, &mut packet, &mut idx);
+                drain_mouse_data(
+                    handle,
+                    &mut mouse_state,
+                    &mut packet,
+                    &mut idx,
+                    &mut drop_counter,
+                );
             }
             Err(_) => {
                 stem::yield_now();
@@ -247,7 +259,12 @@ use abi::hid::{
 };
 use mouse::{MouseState, PointerEvent};
 
-fn send_mouse_events(handle: PortHandle, state: &mut MouseState, packet: &[u8; 3]) {
+fn send_mouse_events(
+    handle: PortHandle,
+    state: &mut MouseState,
+    packet: &[u8; 3],
+    drop_counter: &mut u32,
+) {
     let (events, count) = state.process_packet(packet);
     for i in 0..count {
         if let Some(evt) = events[i] {
@@ -296,15 +313,28 @@ fn send_mouse_events(handle: PortHandle, state: &mut MouseState, packet: &[u8; 3
                     len = 22;
                 }
             }
-            if len > 0 {
-                let _ = port_send(handle, &buf[..len]);
+            if len > 0 && port_send_all(handle, &buf[..len]).is_err() {
+                *drop_counter = drop_counter.wrapping_add(1);
+                if *drop_counter <= 4 || *drop_counter % 100 == 0 {
+                    info!(
+                        "ps2_mouse: dropped {} mouse events because raw input port {} is full",
+                        *drop_counter,
+                        handle
+                    );
+                }
             }
         }
     }
 }
 
 /// Drain all pending mouse data and assemble packets
-fn drain_mouse_data(handle: PortHandle, state: &mut MouseState, packet: &mut [u8; 3], idx: &mut usize) {
+fn drain_mouse_data(
+    handle: PortHandle,
+    state: &mut MouseState,
+    packet: &mut [u8; 3],
+    idx: &mut usize,
+    drop_counter: &mut u32,
+) {
     for _ in 0..16 {
         let status = ioport_read(PS2_STATUS, 1);
 
@@ -324,7 +354,7 @@ fn drain_mouse_data(handle: PortHandle, state: &mut MouseState, packet: &mut [u8
             *idx += 1;
 
             if *idx == 3 {
-                send_mouse_events(handle, state, packet);
+                send_mouse_events(handle, state, packet, drop_counter);
                 *idx = 0;
             }
         } else {
@@ -342,6 +372,7 @@ fn polling_loop(handle: PortHandle) -> ! {
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
     let mut mouse_state = MouseState::new();
+    let mut drop_counter = 0u32;
 
     loop {
         let status = ioport_read(PS2_STATUS, 1);
@@ -360,11 +391,12 @@ fn polling_loop(handle: PortHandle) -> ! {
                 idx += 1;
 
                 if idx == 3 {
-                    send_mouse_events(handle, &mut mouse_state, &packet);
+                    send_mouse_events(handle, &mut mouse_state, &packet, &mut drop_counter);
                     idx = 0;
                 }
             } else {
-                info!("ps2_mouse: POLL stealing keyboard byte 0x{:02x}", byte);
+                // Leave keyboard bytes queued for ps2_kbd.
+                stem::sleep_ms(1);
             }
         } else {
             stem::sleep_ms(10);

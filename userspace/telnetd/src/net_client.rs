@@ -17,6 +17,7 @@ const RESP_HANDLE: u16 = 0x0002;
 const RESP_DATA: u16 = 0x0003;
 const RESP_ACCEPT: u16 = 0x0004;
 const RESP_EMPTY: u16 = 0x0005;
+const RESP_CLOSED: u16 = 0x0006;
 
 pub struct NetClient {
     netd_write_port: PortHandle,
@@ -26,6 +27,12 @@ pub struct NetClient {
 
 pub struct AcceptResult {
     pub conn_handle: u32,
+}
+
+pub enum TcpRecvResult {
+    Data(Vec<u8>),
+    Empty,
+    Closed,
 }
 
 impl NetClient {
@@ -157,13 +164,13 @@ impl NetClient {
         None
     }
 
-    pub fn tcp_recv(&self, handle: u32, max_len: u16) -> Option<Vec<u8>> {
+    pub fn tcp_recv(&self, handle: u32, max_len: u16) -> TcpRecvResult {
         self.drain_stale_responses();
         let mut payload = Vec::with_capacity(6);
         payload.extend_from_slice(&handle.to_le_bytes());
         payload.extend_from_slice(&max_len.to_le_bytes());
         if !self.send_api_msg(&self.build_msg(MSG_TCP_RECV, &payload)) {
-            return None;
+            return TcpRecvResult::Empty;
         }
 
         let mut resp_buf = [0u8; 4096 + 128];
@@ -172,19 +179,22 @@ impl NetClient {
                 Ok(len) if len >= 2 => {
                     let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
                     if resp_type == RESP_DATA && len > 2 {
-                        return Some(resp_buf[2..len].to_vec());
+                        return TcpRecvResult::Data(resp_buf[2..len].to_vec());
                     }
                     if resp_type == RESP_EMPTY
                         || resp_type == RESP_ERROR
                         || (resp_type == RESP_DATA && len == 2)
                     {
-                        return None;
+                        return TcpRecvResult::Empty;
+                    }
+                    if resp_type == RESP_CLOSED {
+                        return TcpRecvResult::Closed;
                     }
                 }
                 _ => stem::syscall::yield_now(),
             }
         }
-        None
+        TcpRecvResult::Empty
     }
 
     pub fn tcp_send(&self, handle: u32, data: &[u8]) -> usize {

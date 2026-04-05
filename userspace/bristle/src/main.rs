@@ -11,7 +11,7 @@ use abi::hid::{
     KeyEventPayload, PointerButtonPayload, PointerMovePayload,
 };
 use stem::info;
-use stem::syscall::{PortHandle, port_recv, port_send, port_wait, topic_create, topic_publish};
+use stem::syscall::{PortHandle, port_recv, port_send_all, port_wait, topic_create, topic_publish};
 use stem::thing::sys as thingsys;
 
 /// Register Bristle in the Root graph and return the node ID
@@ -59,10 +59,26 @@ impl Default for InputGraphState {
 fn publish_initial_graph_state(node_id: stem::thing::ThingId, state: &InputGraphState) {
     use abi::schema::{keyboard as kb, pointer};
 
-    let _ = thingsys::prop_set(node_id, pointer::POINTER_X, state.pointer_x as u64);
-    let _ = thingsys::prop_set(node_id, pointer::POINTER_Y, state.pointer_y as u64);
-    let _ = thingsys::prop_set(node_id, pointer::POINTER_BUTTONS, state.pointer_buttons);
-    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_GEN, state.keyboard_gen);
+    if let Err(e) = thingsys::prop_set(node_id, pointer::POINTER_X, state.pointer_x as u64) {
+        info!("bristle: failed to set pointer.x on {}: {:?}", node_id.to_u64_lossy(), e);
+    }
+    if let Err(e) = thingsys::prop_set(node_id, pointer::POINTER_Y, state.pointer_y as u64) {
+        info!("bristle: failed to set pointer.y on {}: {:?}", node_id.to_u64_lossy(), e);
+    }
+    if let Err(e) = thingsys::prop_set(node_id, pointer::POINTER_BUTTONS, state.pointer_buttons) {
+        info!(
+            "bristle: failed to set pointer.buttons on {}: {:?}",
+            node_id.to_u64_lossy(),
+            e
+        );
+    }
+    if let Err(e) = thingsys::prop_set(node_id, kb::KEYBOARD_GEN, state.keyboard_gen) {
+        info!(
+            "bristle: failed to set keyboard.gen on {}: {:?}",
+            node_id.to_u64_lossy(),
+            e
+        );
+    }
 }
 
 fn update_keyboard_graph_state(
@@ -74,10 +90,18 @@ fn update_keyboard_graph_state(
     use abi::schema::keyboard as kb;
 
     state.keyboard_gen = state.keyboard_gen.wrapping_add(1);
-    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_LAST_KEY, payload.key as u64);
-    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_KEY_EDGE, if is_down { 1 } else { 0 });
-    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_MODS, payload.mods as u64);
-    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_GEN, state.keyboard_gen);
+    if let Err(e) = thingsys::prop_set(node_id, kb::KEYBOARD_LAST_KEY, payload.key as u64) {
+        info!("bristle: failed to set keyboard.last_key: {:?}", e);
+    }
+    if let Err(e) = thingsys::prop_set(node_id, kb::KEYBOARD_KEY_EDGE, if is_down { 1 } else { 0 }) {
+        info!("bristle: failed to set keyboard.key_edge: {:?}", e);
+    }
+    if let Err(e) = thingsys::prop_set(node_id, kb::KEYBOARD_MODS, payload.mods as u64) {
+        info!("bristle: failed to set keyboard.mods: {:?}", e);
+    }
+    if let Err(e) = thingsys::prop_set(node_id, kb::KEYBOARD_GEN, state.keyboard_gen) {
+        info!("bristle: failed to set keyboard.gen: {:?}", e);
+    }
 }
 
 fn update_pointer_move_graph_state(
@@ -89,8 +113,21 @@ fn update_pointer_move_graph_state(
 
     state.pointer_x = state.pointer_x.saturating_add(payload.dx as i32);
     state.pointer_y = state.pointer_y.saturating_add(payload.dy as i32);
-    let _ = thingsys::prop_set(node_id, pointer::POINTER_X, state.pointer_x as u64);
-    let _ = thingsys::prop_set(node_id, pointer::POINTER_Y, state.pointer_y as u64);
+    if let Err(e) = thingsys::prop_set(node_id, pointer::POINTER_X, state.pointer_x as u64) {
+        info!("bristle: failed to set pointer.x: {:?}", e);
+    }
+    if let Err(e) = thingsys::prop_set(node_id, pointer::POINTER_Y, state.pointer_y as u64) {
+        info!("bristle: failed to set pointer.y: {:?}", e);
+    }
+    let readback_x = thingsys::prop_get(node_id, pointer::POINTER_X).unwrap_or(u64::MAX) as i32;
+    let readback_y = thingsys::prop_get(node_id, pointer::POINTER_Y).unwrap_or(u64::MAX) as i32;
+    info!(
+        "bristle: graph pointer now ({}, {}) readback=({}, {})",
+        state.pointer_x,
+        state.pointer_y,
+        readback_x,
+        readback_y
+    );
 }
 
 fn update_pointer_button_graph_state(
@@ -107,7 +144,15 @@ fn update_pointer_button_graph_state(
     } else {
         state.pointer_buttons &= !bit;
     }
-    let _ = thingsys::prop_set(node_id, pointer::POINTER_BUTTONS, state.pointer_buttons);
+    if let Err(e) = thingsys::prop_set(node_id, pointer::POINTER_BUTTONS, state.pointer_buttons) {
+        info!("bristle: failed to set pointer.buttons: {:?}", e);
+    }
+    let readback = thingsys::prop_get(node_id, pointer::POINTER_BUTTONS).unwrap_or(u64::MAX);
+    info!(
+        "bristle: graph pointer.buttons now {:x} readback={:x}",
+        state.pointer_buttons,
+        readback
+    );
 }
 
 /// Maximum number of dynamic event subscribers
@@ -261,9 +306,6 @@ fn main(packed_handles: usize) -> ! {
 
     stem::info!("BRISTLE_MAIN_ENTERED_WITH_LOGS_YAY");
 
-
-
-
     info!(
         "bristle: online (kbd={}, mouse={}, evt={}, echo={})",
         kbd_read, mouse_read, legacy_evt_write, legacy_evt_echo_write
@@ -277,7 +319,7 @@ fn main(packed_handles: usize) -> ! {
         }
         Err(e) => {
             info!("bristle: FAILED to create broadcast topic: {:?}", e);
-            None // Fallback to legacy only
+            None // legacy path still active
         }
     };
 
@@ -291,6 +333,7 @@ fn main(packed_handles: usize) -> ! {
     let mut event_accum = [0u8; 64];
     let mut accum_len = 0usize;
     let mut drop_counter: u32 = 0;
+    let mut resync_counter: u32 = 0;
     let mut event_count: u64 = 0;
 
     let wait_handles = [kbd_read, mouse_read];
@@ -348,14 +391,22 @@ fn main(packed_handles: usize) -> ! {
                                             info!("bristle: F10 pressed - dumping graph...");
                                             let _ = thingsys::dump_graph(0);
                                         }
-                                        Key::F12 => {
-                                            info!("bristle: F12 pressed - resetting userspace and respawning sprout...");
-                                            reset_userspace_and_respawn_sprout();
-                                        }
                                         Key::Delete => {
                                             if payload.mods().has_ctrl() && payload.mods().has_alt() {
                                                 info!("bristle: Ctrl+Alt+Del - rebooting system...");
                                                 stem::syscall::reboot();
+                                            }
+                                        }
+                                        Key::F12 => {
+                                            if payload.mods().has_ctrl() && payload.mods().has_alt() {
+                                                info!(
+                                                    "bristle: Ctrl+Alt+F12 pressed - resetting userspace and respawning sprout..."
+                                                );
+                                                reset_userspace_and_respawn_sprout();
+                                            } else {
+                                                info!(
+                                                    "bristle: ignoring bare F12 reset request; use Ctrl+Alt+F12"
+                                                );
                                             }
                                         }
                                         _ => {}
@@ -421,20 +472,14 @@ fn main(packed_handles: usize) -> ! {
                                     }
                                 }
 
-                                // Forward the event to subscribers
-                                let mut _sent_to_legacy = false;
-                                if port_send(legacy_evt_write, event_bytes).is_ok() {
-                                    _sent_to_legacy = true;
-                                } else {
+                                if port_send_all(legacy_evt_write, event_bytes).is_err() {
                                     drop_counter += 1;
                                 }
 
-                                if legacy_evt_echo_write != 0 {
-                                    if port_send(legacy_evt_echo_write, event_bytes).is_ok() {
-                                        _sent_to_legacy = true;
-                                    } else {
-                                        drop_counter += 1;
-                                    }
+                                if legacy_evt_echo_write != 0
+                                    && port_send_all(legacy_evt_echo_write, event_bytes).is_err()
+                                {
+                                    drop_counter += 1;
                                 }
 
                                 event_count += 1;
@@ -453,6 +498,14 @@ fn main(packed_handles: usize) -> ! {
                             }
                         } else {
                             // Invalid header, drop 1 byte to try resync
+                            resync_counter = resync_counter.wrapping_add(1);
+                            if resync_counter <= 4 || resync_counter % 100 == 0 {
+                                info!(
+                                    "bristle: resyncing raw stream after invalid header (count={}, accum_len={})",
+                                    resync_counter,
+                                    accum_len
+                                );
+                            }
                             accum_len -= 1;
                             if accum_len > 0 {
                                 event_accum.copy_within(1..1 + accum_len, 0);
@@ -463,7 +516,6 @@ fn main(packed_handles: usize) -> ! {
             }
         }
 
-        // Rate-limited drop logging
         if drop_counter > 0 && drop_counter % 100 == 0 {
             info!("bristle: dropped {} events (port full)", drop_counter);
         }

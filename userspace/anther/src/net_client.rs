@@ -23,6 +23,7 @@ const RESP_HANDLE: u16 = 0x0002;
 const RESP_DATA: u16 = 0x0003;
 const RESP_ACCEPT: u16 = 0x0004;
 const RESP_EMPTY: u16 = 0x0005;
+const RESP_CLOSED: u16 = 0x0006;
 
 /// A connection to netd's socket API
 pub struct NetClient {
@@ -249,6 +250,8 @@ impl NetClient {
                     if resp_type == RESP_DATA && len > 2 {
                         let data = resp_buf[2..len].to_vec();
                         return Some(data);
+                    } else if resp_type == RESP_CLOSED {
+                        return Some(Vec::new());
                     } else if resp_type == RESP_EMPTY
                         || resp_type == RESP_ERROR
                         || (resp_type == RESP_DATA && len == 2)

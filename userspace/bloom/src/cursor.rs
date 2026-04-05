@@ -39,6 +39,16 @@ impl CursorState {
         stem::info!("[DEBUG] cursor apply_move: original (x={}, y={}), delta (dx={}, dy={}), bounds (w={}, h={})", self.x, self.y, dx, dy, w, h);
         let mut nx = self.x + dx as i32;
         let mut ny = self.y + dy as i32;
+        self.set_position_clamped(nx, ny, w, h);
+        nx = self.x;
+        ny = self.y;
+        stem::info!("[DEBUG] cursor apply_move: resulting (nx={}, ny={})", nx, ny);
+    }
+
+    /// Set an absolute cursor position, clamping to screen bounds.
+    pub fn set_position_clamped(&mut self, x: i32, y: i32, w: i32, h: i32) {
+        let mut nx = x;
+        let mut ny = y;
         if nx < 0 {
             nx = 0;
         }
@@ -53,7 +63,6 @@ impl CursorState {
         }
         self.x = nx;
         self.y = ny;
-        stem::info!("[DEBUG] cursor apply_move: resulting (nx={}, ny={})", nx, ny);
     }
 
     /// Record a button press.
@@ -73,6 +82,11 @@ impl CursorState {
     /// Get the current button state bitmask.
     pub fn buttons(&self) -> u32 {
         self.buttons
+    }
+
+    /// Replace the current button bitmask.
+    pub fn set_buttons(&mut self, buttons: u32) {
+        self.buttons = buttons;
     }
 
     /// Get the current position as a tuple.

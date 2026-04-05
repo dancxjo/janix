@@ -1,7 +1,7 @@
 #![feature(restricted_std)]
 #![no_main]
 
-use stem::syscall::{ioport_read, irq_subscribe, irq_wait, port_send, PortHandle};
+use stem::syscall::{ioport_read, irq_subscribe, irq_wait, port_send_all, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::{info, warn};
 
@@ -67,22 +67,8 @@ fn main(raw_write_handle: usize) -> ! {
         }
     }
 
-    info!("ps2_kbd: entering interrupt-driven loop");
-    let mut state = KeyboardState::new();
-
-    loop {
-        // Wait for keyboard interrupt
-        match irq_wait(KBD_VECTOR) {
-            Ok(_count) => {
-                // Drain all available keyboard data
-                drain_keyboard_data(handle, &mut state);
-            }
-            Err(_) => {
-                // Should not happen, but fallback to yield
-                stem::yield_now();
-            }
-        }
-    }
+    info!("ps2_kbd: entering cooperative polling loop");
+    polling_loop(handle);
 }
 
 mod normalizer;
@@ -95,7 +81,7 @@ use abi::hid::{
 use thigmonasty::{KeyboardState, KeyEdge};
 
 /// Drain all pending keyboard data from the controller
-fn drain_keyboard_data(handle: PortHandle, state: &mut KeyboardState) {
+fn drain_keyboard_data(handle: PortHandle, state: &mut KeyboardState, drop_counter: &mut u32) {
     // Read while data is available (handle burst of scancodes)
     for _ in 0..16 {
         let status = ioport_read(PS2_STATUS, 1);
@@ -108,7 +94,7 @@ fn drain_keyboard_data(handle: PortHandle, state: &mut KeyboardState) {
             // Keyboard data - read and send
             let scancode = ioport_read(PS2_DATA, 1) as u8;
             if let Some(edge) = state.process_ps2(scancode) {
-                send_key_event(handle, edge);
+                send_key_event(handle, edge, drop_counter);
             }
         } else {
             // If aux data (mouse), stop draining - let ps2_mouse handle it
@@ -118,7 +104,7 @@ fn drain_keyboard_data(handle: PortHandle, state: &mut KeyboardState) {
     }
 }
 
-fn send_key_event(handle: PortHandle, edge: KeyEdge) {
+fn send_key_event(handle: PortHandle, edge: KeyEdge, drop_counter: &mut u32) {
     let timestamp_ns = stem::monotonic_ns();
     let mut buf = [0u8; 24]; // Max size is header + 4 byte payload
     
@@ -144,7 +130,16 @@ fn send_key_event(handle: PortHandle, edge: KeyEdge) {
     buf[0..20].copy_from_slice(&header.to_bytes());
     buf[20..24].copy_from_slice(&payload.to_bytes());
     
-    let _ = port_send(handle, &buf[..24]);
+    if port_send_all(handle, &buf[..24]).is_err() {
+        *drop_counter = drop_counter.wrapping_add(1);
+        if *drop_counter <= 4 || *drop_counter % 100 == 0 {
+            warn!(
+                "ps2_kbd: dropped {} key events because raw input port {} is full",
+                *drop_counter,
+                handle
+            );
+        }
+    }
 }
 
 /// Fallback polling loop (if IRQ subscribe fails)
@@ -154,6 +149,7 @@ fn polling_loop(handle: PortHandle) -> ! {
         POLLING_INTERVAL_MS
     );
     let mut state = KeyboardState::new();
+    let mut drop_counter = 0u32;
     loop {
         let status = ioport_read(PS2_STATUS, 1);
 
@@ -161,8 +157,11 @@ fn polling_loop(handle: PortHandle) -> ! {
             if status & STATUS_AUX_DATA == 0 {
                 let scancode = ioport_read(PS2_DATA, 1) as u8;
                 if let Some(edge) = state.process_ps2(scancode) {
-                    send_key_event(handle, edge);
+                    send_key_event(handle, edge, &mut drop_counter);
                 }
+            } else {
+                // Leave mouse bytes queued for ps2_mouse.
+                stem::sleep_ms(1);
             }
         } else {
             // Rate limit the polling to avoid burning CPU

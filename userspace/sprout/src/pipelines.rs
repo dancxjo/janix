@@ -369,7 +369,8 @@ pub fn setup_input_broker(tasks: &mut Vec<ManagedTask>) -> InputHandles {
         }
     };
 
-    // Note: evt port no longer needed - bloom and echo self-register as input subscribers
+    // Keep the wired Bristle event ports for now. The topic path is still
+    // available, but the explicit ports are the only path proven to work.
 
     // Spawn ps2_kbd with raw write handle
     match stem::syscall::spawn_process("/ps2_kbd", kbd_raw.0 as usize) {
@@ -478,7 +479,7 @@ pub fn setup_compositor(
             slice[0] = 0xB100AA01; // Magic
             slice[1] = drv_req_write as u32;
             slice[2] = drv_resp_read as u32;
-            slice[3] = input.evt_read as u32; // Pass legacy event handle
+            slice[3] = input.evt_read as u32; // Pass wired Bristle event handle
             info!(
                 "SPROUT: Writing bloom BS: drv_req={}, drv_resp={}, bristle_evt={}",
                 drv_req_write, drv_resp_read, input.evt_read
@@ -523,7 +524,7 @@ pub fn setup_compositor(
         }
     }
 
-    // Spawn echo with legacy port handle
+    // Spawn echo with wired Bristle event handle.
     match stem::syscall::spawn_process("/echo", input.evt_echo_read as usize) {
         Ok(pid) => {
             info!("SPROUT: Spawned echo (PID={})", pid);

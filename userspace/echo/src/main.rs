@@ -14,7 +14,50 @@ use abi::hid::{
 use abi::schema::input::{SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER};
 use stem::info;
 use stem::syscall::{port_create, port_recv, PortHandle};
-use stem::thing::sys::{create_node, prop_set};
+
+fn find_bristle_node() -> Option<stem::thing::ThingId> {
+    use abi::schema::hid::SVC_INPUT;
+    use stem::thing::sys::find;
+    use stem::thing::ThingId;
+
+    let mut input_nodes = [ThingId::default(); 16];
+    match find(SVC_INPUT, &mut input_nodes) {
+        Ok(count) if count > 0 => {
+            let count = count.min(input_nodes.len());
+            let mut best = input_nodes[0];
+            for node in input_nodes.iter().take(count).skip(1) {
+                if node.to_u64_lossy() > best.to_u64_lossy() {
+                    best = *node;
+                }
+            }
+            Some(best)
+        }
+        _ => None,
+    }
+}
+
+fn subscribe_bristle_topic() -> Option<PortHandle> {
+    use abi::schema::input::INPUT_TOPIC_ID;
+    use stem::syscall::topic_subscribe;
+    use stem::thing::sys::prop_get;
+
+    let input_node = find_bristle_node()?;
+    if let Ok(topic_id) = prop_get(input_node, INPUT_TOPIC_ID) {
+        if let Ok((write, read)) = port_create(4096) {
+            if topic_subscribe(topic_id as u32, write).is_ok() {
+                info!(
+                    "echo: dynamically subscribed to input topic {} on svc.Input {} via port {}",
+                    topic_id,
+                    input_node.to_u64_lossy(),
+                    read
+                );
+                return Some(read);
+            }
+        }
+    }
+
+    None
+}
 
 fn format_mods(mods: Mods) -> &'static str {
     match mods.0 {
@@ -41,122 +84,97 @@ fn button_name(button: u8) -> &'static str {
 }
 
 fn parse_and_print_event(buf: &[u8]) {
-    if buf.len() < 20 {
-        return;
-    }
+    let mut offset = 0usize;
+    while offset + 20 <= buf.len() {
+        let header: BristleEventHeader = unsafe {
+            core::ptr::read_unaligned(buf.as_ptr().add(offset) as *const BristleEventHeader)
+        };
 
-    let header: BristleEventHeader =
-        unsafe { core::ptr::read_unaligned(buf.as_ptr() as *const BristleEventHeader) };
+        if header.magic != BRISTLE_EVENT_MAGIC {
+            let magic = header.magic;
+            info!("echo: dropped invalid magic: {:x}", magic);
+            return;
+        }
+        if header.version != BRISTLE_EVENT_VERSION {
+            let version = header.version;
+            info!("echo: dropped invalid version: {:x}", version);
+            return;
+        }
 
-    if header.magic != BRISTLE_EVENT_MAGIC {
-        let magic = header.magic;
-        info!("echo: dropped invalid magic: {:x}", magic);
-        return;
-    }
-    if header.version != BRISTLE_EVENT_VERSION {
-        let version = header.version;
-        info!("echo: dropped invalid version: {:x}", version);
-        return;
-    }
+        let payload_len = header.payload_len as usize;
+        let total = 20 + payload_len;
+        if offset + total > buf.len() {
+            return;
+        }
 
-    match header.event_type {
-        1 => {
-            // KeyDown
-            if buf.len() >= 24 {
-                let payload: KeyEventPayload = unsafe {
-                    core::ptr::read_unaligned(buf.as_ptr().add(20) as *const KeyEventPayload)
-                };
-                let key = Key::from_raw(payload.key);
-                let mods = Mods(payload.mods);
-                let repeat = if payload.flags & 1 != 0 {
-                    " (repeat)"
-                } else {
-                    ""
-                };
-                info!("KeyDown {}{}{}", key.name(), format_mods(mods), repeat);
+        let payload_ptr = unsafe { buf.as_ptr().add(offset + 20) };
+        match header.event_type {
+            1 => {
+                if payload_len >= KeyEventPayload::SIZE {
+                    let payload: KeyEventPayload =
+                        unsafe { core::ptr::read_unaligned(payload_ptr as *const KeyEventPayload) };
+                    let key = Key::from_raw(payload.key);
+                    let mods = Mods(payload.mods);
+                    let repeat = if payload.flags & 1 != 0 {
+                        " (repeat)"
+                    } else {
+                        ""
+                    };
+                    info!("KeyDown {}{}{}", key.name(), format_mods(mods), repeat);
+                }
             }
-        }
-        2 => {
-            // KeyUp
-            if buf.len() >= 24 {
-                let payload: KeyEventPayload = unsafe {
-                    core::ptr::read_unaligned(buf.as_ptr().add(20) as *const KeyEventPayload)
-                };
-                let key = Key::from_raw(payload.key);
-                let mods = Mods(payload.mods);
-                info!("KeyUp {}{}", key.name(), format_mods(mods));
+            2 => {
+                if payload_len >= KeyEventPayload::SIZE {
+                    let payload: KeyEventPayload =
+                        unsafe { core::ptr::read_unaligned(payload_ptr as *const KeyEventPayload) };
+                    let key = Key::from_raw(payload.key);
+                    let mods = Mods(payload.mods);
+                    info!("KeyUp {}{}", key.name(), format_mods(mods));
+                }
             }
-        }
-        3 => {
-            // PointerMove
-            if buf.len() >= 24 {
-                let payload: PointerMovePayload = unsafe {
-                    core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerMovePayload)
-                };
-                let dx = payload.dx;
-                let dy = payload.dy;
-                info!("PointerMove dx={} dy={}", dx, dy);
+            3 => {
+                if payload_len >= PointerMovePayload::SIZE {
+                    let payload: PointerMovePayload = unsafe {
+                        core::ptr::read_unaligned(payload_ptr as *const PointerMovePayload)
+                    };
+                    let dx = payload.dx;
+                    let dy = payload.dy;
+                    info!("PointerMove dx={} dy={}", dx, dy);
+                }
             }
-        }
-        4 => {
-            // PointerButtonDown
-            if buf.len() >= 22 {
-                let payload: PointerButtonPayload = unsafe {
-                    core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerButtonPayload)
-                };
-                let btn = payload.button;
-                info!("PointerButtonDown {}", button_name(btn));
+            4 => {
+                if payload_len >= PointerButtonPayload::SIZE {
+                    let payload: PointerButtonPayload = unsafe {
+                        core::ptr::read_unaligned(payload_ptr as *const PointerButtonPayload)
+                    };
+                    let btn = payload.button;
+                    info!("PointerButtonDown {}", button_name(btn));
+                }
             }
-        }
-        5 => {
-            // PointerButtonUp
-            if buf.len() >= 22 {
-                let payload: PointerButtonPayload = unsafe {
-                    core::ptr::read_unaligned(buf.as_ptr().add(20) as *const PointerButtonPayload)
-                };
-                let btn = payload.button;
-                info!("PointerButtonUp {}", button_name(btn));
+            5 => {
+                if payload_len >= PointerButtonPayload::SIZE {
+                    let payload: PointerButtonPayload = unsafe {
+                        core::ptr::read_unaligned(payload_ptr as *const PointerButtonPayload)
+                    };
+                    let btn = payload.button;
+                    info!("PointerButtonUp {}", button_name(btn));
+                }
             }
+            _ => {}
         }
-        _ => {}
+
+        offset += total;
     }
 }
 
 #[stem::main]
 fn main(arg: usize) -> ! {
-    use abi::schema::hid::SVC_INPUT;
-    use abi::schema::input::INPUT_TOPIC_ID;
-    use stem::syscall::topic_subscribe;
-    use stem::thing::sys::{find, prop_get};
-    use stem::thing::ThingId;
-
     info!("echo: starting up");
 
-    // Input handle: try to use the broadcast topic, fallback to legacy handle
     let mut handle = arg as PortHandle;
-
-    let mut input_nodes = [ThingId::default(); 1];
-    if let Ok(count) = find(SVC_INPUT, &mut input_nodes) {
-        if count > 0 {
-            let input_node = input_nodes[0];
-            if let Ok(topic_id) = prop_get(input_node, INPUT_TOPIC_ID) {
-                if let Ok((write, read)) = port_create(4096) {
-                    if topic_subscribe(topic_id as u32, write).is_ok() {
-                        info!(
-                            "echo: dynamically subscribed to input topic {} via port {}",
-                            topic_id, read
-                        );
-                        handle = read;
-                    }
-                }
-            }
-        }
-    }
-
     if handle == 0 {
-        info!("echo: no input handle provided or topic found, exiting");
-        loop {
-            stem::yield_now();
+        if let Some(topic_handle) = subscribe_bristle_topic() {
+            handle = topic_handle;
         }
     }
 
@@ -168,6 +186,16 @@ fn main(arg: usize) -> ! {
     let mut buf = [0u8; 256];
 
     loop {
+        if handle == 0 {
+            if let Some(new_handle) = subscribe_bristle_topic() {
+                handle = new_handle;
+                info!("echo: attached to Bristle topic on handle {}", handle);
+            } else {
+                stem::yield_now();
+                continue;
+            }
+        }
+
         match port_recv(handle, &mut buf) {
             Ok(n) if n >= 20 => {
                 parse_and_print_event(&buf[..n]);

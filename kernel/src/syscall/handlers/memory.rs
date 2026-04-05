@@ -12,8 +12,7 @@ const USER_VM_BASE: u64 = 0x4000_0000_0000; // 64TB mark
 static NEXT_USER_MAP: AtomicU64 = AtomicU64::new(USER_VM_BASE);
 
 pub fn sys_alloc_stack(pages: usize) -> SysResult<usize> {
-    let top =
-        unsafe { crate::sched::alloc_user_stack_current(pages) }.ok_or(Errno::ENOMEM)?;
+    let top = unsafe { crate::sched::alloc_user_stack_current(pages) }.ok_or(Errno::ENOMEM)?;
     Ok(top)
 }
 
@@ -138,8 +137,7 @@ pub fn sys_vm_unmap(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
     }
 
     // Update mappings
-    let removed_ranges =
-        unsafe { crate::sched::remove_user_mappings_current(req.addr, len)? };
+    let removed_ranges = unsafe { crate::sched::remove_user_mappings_current(req.addr, len)? };
 
     // Unmap pages
     for (start, end) in removed_ranges {

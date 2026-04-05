@@ -3,7 +3,7 @@
 //! Implements a driver for virtio-net PCI devices (VirtIO 1.0+).
 
 use crate::net::{EthernetFrame, Nic, NicStats, TxError};
-use crate::virtio::{DeviceStatus, VirtioPciDevice, Virtqueue, features, net_features};
+use crate::virtio::{features, net_features, DeviceStatus, VirtioPciDevice, Virtqueue};
 use alloc::vec::Vec;
 
 /// VirtIO network device header (prepended to each frame)

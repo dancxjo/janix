@@ -4,7 +4,7 @@
 
 #[cfg(target_arch = "aarch64")]
 mod neon;
-mod scalar;
+pub mod scalar;
 #[cfg(all(any(target_arch = "x86", target_arch = "x86_64"), feature = "simd"))]
 mod x86;
 

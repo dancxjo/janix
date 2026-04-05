@@ -16,8 +16,14 @@ pub fn yield_now<R: BootRuntime>() -> bool {
     use core::sync::atomic::{AtomicU64, Ordering};
     // Per-CPU diagnostic counters so each CPU gets 20 calls of logging
     static DIAG_CPU: [AtomicU64; 8] = [
-        AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
-        AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0), AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
+        AtomicU64::new(0),
     ];
 
     let rt = crate::runtime::<R>();
@@ -36,7 +42,9 @@ pub fn yield_now<R: BootRuntime>() -> bool {
 
     let diag_n = if cpu_idx < 8 {
         DIAG_CPU[cpu_idx].fetch_add(1, Ordering::Relaxed)
-    } else { 999 };
+    } else {
+        999
+    };
     if diag_n < 20 {
         /*
         crate::kdebug!(
@@ -110,7 +118,9 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
 
         // Calculate wake time and add to sleep queue
         let wake_tick = super::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed) + ticks;
-        sched.state.sleep_queue
+        sched
+            .state
+            .sleep_queue
             .entry(wake_tick)
             .or_default()
             .push(current_id);

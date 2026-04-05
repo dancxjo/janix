@@ -71,7 +71,10 @@ impl CompositorTarget {
         bs_id: ThingId,
         arg_ports: (PortHandle, PortHandle),
     ) -> Result<Self, CompositorError> {
-        stem::info!("bloom: map_from_bytespace start bs={}", bs_id.to_u64_lossy());
+        stem::info!(
+            "bloom: map_from_bytespace start bs={}",
+            bs_id.to_u64_lossy()
+        );
         let sym = Symbols::new();
         stem::info!("bloom: symbols loaded");
         let deadline = stem::time::now() + stem::time::Duration::from_millis(2000);
@@ -80,25 +83,33 @@ impl CompositorTarget {
         loop {
             iters += 1;
             stem::info!("bloom: loop iter {}", iters);
-            
+
             let width = thingsys::prop_get(bs_id, keys::WIDTH).unwrap_or(0) as u32;
             stem::info!("bloom: got width {}", width);
-            
+
             let height = thingsys::prop_get(bs_id, keys::HEIGHT).unwrap_or(0) as u32;
             let stride = thingsys::prop_get(bs_id, keys::STRIDE).unwrap_or(0) as u32;
             let format = thingsys::prop_get(bs_id, keys::FORMAT).unwrap_or(0) as u32;
-            stem::info!("bloom: got properties w={} h={} s={} f={}", width, height, stride, format);
+            stem::info!(
+                "bloom: got properties w={} h={} s={} f={}",
+                width,
+                height,
+                stride,
+                format
+            );
 
             if width != 0 && height != 0 && stride != 0 {
                 stem::info!("bloom: properties OK, building from config...");
-                return Self::build_from_config(&sym, bs_id, width, height, stride, format, arg_ports);
+                return Self::build_from_config(
+                    &sym, bs_id, width, height, stride, format, arg_ports,
+                );
             }
 
             if stem::time::now() > deadline {
                 stem::info!("bloom: map_from_bytespace loop deadline expired!");
                 break;
             }
-            
+
             stem::info!("bloom: sleeping 50ms");
             stem::sleep_ms(50);
             stem::info!("bloom: woke up from sleep");
@@ -129,9 +140,18 @@ impl CompositorTarget {
                             let h = thingsys::prop_get(*id, keys::HEIGHT).unwrap_or(0) as u32;
                             let s = thingsys::prop_get(*id, keys::STRIDE).unwrap_or(0) as u32;
                             let f = thingsys::prop_get(*id, keys::FORMAT).unwrap_or(0) as u32;
-                            crate::log!("bloom test: id={} w={} h={} s={}", id.to_u64_lossy(), w, h, s);
+                            crate::log!(
+                                "bloom test: id={} w={} h={} s={}",
+                                id.to_u64_lossy(),
+                                w,
+                                h,
+                                s
+                            );
                             if w != 0 && h != 0 && s != 0 {
-                                crate::log!("bloom: found config via discover_and_map! id={}", id.to_u64_lossy());
+                                crate::log!(
+                                    "bloom: found config via discover_and_map! id={}",
+                                    id.to_u64_lossy()
+                                );
                                 found_config = Some((*id, w, h, s, f));
                                 break;
                             }

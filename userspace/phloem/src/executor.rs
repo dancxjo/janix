@@ -370,7 +370,11 @@ impl<G: Graph> GraphExecutor<G> {
                     rel_var,
                     rel_kind
                 );
-                let limit_total = limit + skip;
+                let limit_total = if order_by.is_some() {
+                    usize::MAX
+                } else {
+                    limit + skip
+                };
 
                 // Check if we have any aggregate functions
                 let has_aggregate = returns
@@ -478,6 +482,40 @@ impl<G: Graph> GraphExecutor<G> {
                     }
                 }
 
+                // Sort results if needed
+                if let Some(order) = &order_by {
+                    edge_matches.sort_by(|a, b| {
+                        let (s_a, _r_a, d_a) = a;
+                        let (s_b, _r_b, d_b) = b;
+
+                        let var = match order {
+                            crate::gql::OrderBy::IdAsc(v) => v,
+                            crate::gql::OrderBy::IdDesc(v) => v,
+                        };
+
+                        let val_a = if Some(var) == src.var.as_ref() {
+                            s_a
+                        } else if Some(var) == dst.var.as_ref() {
+                            d_a
+                        } else {
+                            &0 // Unknown var, treat as 0
+                        };
+
+                        let val_b = if Some(var) == src.var.as_ref() {
+                            s_b
+                        } else if Some(var) == dst.var.as_ref() {
+                            d_b
+                        } else {
+                            &0
+                        };
+
+                        match order {
+                            crate::gql::OrderBy::IdAsc(_) => val_a.cmp(val_b),
+                            crate::gql::OrderBy::IdDesc(_) => val_b.cmp(val_a),
+                        }
+                    });
+                }
+
                 // Now format results based on whether we have aggregates
                 if has_aggregate {
                     let mut row = Vec::new();
@@ -523,6 +561,7 @@ impl<G: Graph> GraphExecutor<G> {
                     ExecutionResult::rows(cols, alloc::vec![row])
                 } else {
                     // Non-aggregate: build rows
+                    // We must apply pagination here, because we may have fetched all edges for sorting
                     let rows: Vec<Vec<ResultValue>> = edge_matches
                         .into_iter()
                         .skip(skip)
@@ -1100,5 +1139,45 @@ mod tests {
         assert!(!ex.evaluate_expression(&expr, 456, "n"));
         // wrong variable name -> false
         assert!(!ex.evaluate_expression(&expr, 123, "x"));
+    }
+
+    #[test]
+    fn test_set_unbound_variable() {
+        let mut ex = GraphExecutor::new();
+        let cmd = Command::Set {
+            var: "n".to_string(),
+            key: "key".to_string(),
+            value: Value::Number(1),
+        };
+        let res = ex.execute(cmd);
+        assert!(!res.success);
+        assert_eq!(res.message, "variable 'n' not bound");
+    }
+
+    #[test]
+    fn test_evaluate_expression_count_edges() {
+        // We'll create a MockGraph here to supply the edges
+        use crate::query_tests::MockGraph;
+        let g = MockGraph::new();
+        // create a node with 2 edges
+        g.add_node(100, "Node");
+        g.add_node(101, "Node");
+        g.add_node(102, "Node");
+        g.add_edge(100, "REL", 101);
+        g.add_edge(100, "REL", 102);
+
+        let ex = GraphExecutor::with_graph(&g);
+
+        let expr = Expression::Eq(
+            Box::new(Expression::CountEdges("n".to_string())),
+            Box::new(Expression::Value(Value::Number(2))),
+        );
+
+        // evaluate for node 100 with var "n", should have 2 edges -> matches 2 -> true
+        assert!(ex.evaluate_expression(&expr, 100, "n"));
+        // wrong node id -> 0 edges -> false
+        assert!(!ex.evaluate_expression(&expr, 999, "n"));
+        // evaluate for node 100 with var "m", variable mismatch -> None -> false
+        assert!(!ex.evaluate_expression(&expr, 100, "m"));
     }
 }

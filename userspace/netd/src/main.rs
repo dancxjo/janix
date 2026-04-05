@@ -323,22 +323,18 @@ fn main(_arg: usize) -> ! {
 
                                 let response = if uses_large_buf {
                                     let (rx, tx) = match next_conn_buf % 4 {
-                                        0 => (
-                                            unsafe { &mut CONN_RX_0[..] },
-                                            unsafe { &mut CONN_TX_0[..] },
-                                        ),
-                                        1 => (
-                                            unsafe { &mut CONN_RX_1[..] },
-                                            unsafe { &mut CONN_TX_1[..] },
-                                        ),
-                                        2 => (
-                                            unsafe { &mut CONN_RX_2[..] },
-                                            unsafe { &mut CONN_TX_2[..] },
-                                        ),
-                                        _ => (
-                                            unsafe { &mut CONN_RX_3[..] },
-                                            unsafe { &mut CONN_TX_3[..] },
-                                        ),
+                                        0 => (unsafe { &mut CONN_RX_0[..] }, unsafe {
+                                            &mut CONN_TX_0[..]
+                                        }),
+                                        1 => (unsafe { &mut CONN_RX_1[..] }, unsafe {
+                                            &mut CONN_TX_1[..]
+                                        }),
+                                        2 => (unsafe { &mut CONN_RX_2[..] }, unsafe {
+                                            &mut CONN_TX_2[..]
+                                        }),
+                                        _ => (unsafe { &mut CONN_RX_3[..] }, unsafe {
+                                            &mut CONN_TX_3[..]
+                                        }),
                                     };
                                     next_conn_buf = next_conn_buf.wrapping_add(1);
                                     socket_api.process_message(
@@ -353,22 +349,18 @@ fn main(_arg: usize) -> ! {
                                     )
                                 } else if msg_type == socket_api::MSG_TCP_ACCEPT {
                                     let (rx, tx) = match next_conn_buf % 4 {
-                                        0 => (
-                                            unsafe { &mut CONN_RX_0[..] },
-                                            unsafe { &mut CONN_TX_0[..] },
-                                        ),
-                                        1 => (
-                                            unsafe { &mut CONN_RX_1[..] },
-                                            unsafe { &mut CONN_TX_1[..] },
-                                        ),
-                                        2 => (
-                                            unsafe { &mut CONN_RX_2[..] },
-                                            unsafe { &mut CONN_TX_2[..] },
-                                        ),
-                                        _ => (
-                                            unsafe { &mut CONN_RX_3[..] },
-                                            unsafe { &mut CONN_TX_3[..] },
-                                        ),
+                                        0 => (unsafe { &mut CONN_RX_0[..] }, unsafe {
+                                            &mut CONN_TX_0[..]
+                                        }),
+                                        1 => (unsafe { &mut CONN_RX_1[..] }, unsafe {
+                                            &mut CONN_TX_1[..]
+                                        }),
+                                        2 => (unsafe { &mut CONN_RX_2[..] }, unsafe {
+                                            &mut CONN_TX_2[..]
+                                        }),
+                                        _ => (unsafe { &mut CONN_RX_3[..] }, unsafe {
+                                            &mut CONN_TX_3[..]
+                                        }),
                                     };
                                     next_conn_buf = next_conn_buf.wrapping_add(1);
                                     socket_api.process_message(
@@ -401,7 +393,9 @@ fn main(_arg: usize) -> ! {
                                     Ok(n) => {
                                         warn!(
                                             "NETD: short Socket API response to port {} ({}/{})",
-                                            client_response_port, n, response.len()
+                                            client_response_port,
+                                            n,
+                                            response.len()
                                         );
                                     }
                                     Err(_) => {
@@ -446,7 +440,10 @@ fn main(_arg: usize) -> ! {
         iface.poll(now, &mut device, &mut socket_set);
 
         if api_buffered > 8192 {
-            warn!("NETD: API buffer overflow ({} bytes), clearing", api_buffered);
+            warn!(
+                "NETD: API buffer overflow ({} bytes), clearing",
+                api_buffered
+            );
             api_buffered = 0;
         }
 
@@ -471,10 +468,7 @@ fn main(_arg: usize) -> ! {
         // causing TCP handshake timeouts.
         if !did_work {
             let wait_ports = [rx_port, api_read_port];
-            let _ = stem::syscall::port::port_wait(
-                &wait_ports,
-                abi::syscall::port_wait::READABLE,
-            );
+            let _ = stem::syscall::port::port_wait(&wait_ports, abi::syscall::port_wait::READABLE);
         }
     }
 }

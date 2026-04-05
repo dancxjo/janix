@@ -396,12 +396,12 @@ fn write_line(net: &NetClient, conn_handle: u32, line: &str) -> bool {
 
 fn write_raw(net: &NetClient, conn_handle: u32, bytes: &[u8]) -> bool {
     let mut sent = 0usize;
-    let mut stalled = 0u8;
+    let mut stalled = 0u16;
     while sent < bytes.len() {
         let n = net.tcp_send(conn_handle, &bytes[sent..]);
         if n == 0 {
             stalled = stalled.saturating_add(1);
-            if stalled >= 8 {
+            if stalled >= 1000 {
                 return false;
             }
             stem::time::sleep_ms(5);

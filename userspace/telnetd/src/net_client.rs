@@ -167,14 +167,17 @@ impl NetClient {
         }
 
         let mut resp_buf = [0u8; 4096 + 128];
-        for _ in 0..100 {
+        for _ in 0..200 {
             match port_recv(self.our_read_port, &mut resp_buf) {
                 Ok(len) if len >= 2 => {
                     let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
                     if resp_type == RESP_DATA && len > 2 {
                         return Some(resp_buf[2..len].to_vec());
                     }
-                    if resp_type == RESP_EMPTY || resp_type == RESP_ERROR {
+                    if resp_type == RESP_EMPTY
+                        || resp_type == RESP_ERROR
+                        || (resp_type == RESP_DATA && len == 2)
+                    {
                         return None;
                     }
                 }

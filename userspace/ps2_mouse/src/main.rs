@@ -49,16 +49,16 @@ fn flush_output_buffer() {
 fn read_data_filtered(expect_aux: bool, label: &str) -> Option<u8> {
     let discarded_aux: u32 = 0;
     let discarded_non_aux: u32 = 0;
-    for _ in 0..20000 {
+    for _ in 0..20_000 {
         let status = ioport_read(PS2_STATUS, 1);
         if status & STATUS_OUTPUT_FULL == 0 {
             stem::yield_now();
             continue;
         }
         let is_aux = (status & STATUS_AUX_DATA) != 0;
+
         if is_aux != expect_aux {
-            // It's not the type of data we're waiting for.
-            // DO NOT read it, or we'll steal it from the other driver!
+            // Leave bytes for the matching side of the shared controller.
             stem::yield_now();
             continue;
         }
@@ -328,9 +328,9 @@ fn drain_mouse_data(handle: PortHandle, state: &mut MouseState, packet: &mut [u8
                 *idx = 0;
             }
         } else {
-            // Not mouse data; steal it to clear the jam!
-            let _stolen = ioport_read(PS2_DATA, 1) as u8;
-            continue;
+            // Shared i8042 controller: leave keyboard bytes for ps2_kbd.
+            // Consuming them here makes keyboard input appear dead.
+            break;
         }
     }
 }

@@ -1545,9 +1545,11 @@ async fn when_move_mouse(world: &mut ThingOsWorld) {
 
     if let Some(stream) = world.qmp_control.as_mut() {
         let cmd = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "rel", "data": {"axis": "x", "value": 50}}, {"type": "rel", "data": {"axis": "y", "value": 50}}]}}"#;
-        let _ = execute_on_stream(stream, cmd).await;
+        match execute_on_stream(stream, cmd).await {
+            Ok(res) => eprintln!("│  │  │      🖱️ Sent mouse movement, QMP res: {}", res.trim()),
+            Err(e) => eprintln!("│  │  │      ❌ QMP error: {}", e),
+        }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
-        eprintln!("│  │  │      🖱️ Sent mouse movement");
     } else {
         eprintln!("│  │  │      ⚠️ No QMP connection for mouse input");
     }

@@ -8,7 +8,7 @@
 
 use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType, Key,
-    KeyEventPayload, PointerMovePayload,
+    KeyEventPayload, PointerButtonPayload, PointerMovePayload,
 };
 use stem::info;
 use stem::syscall::{PortHandle, port_recv, port_send, port_wait, topic_create, topic_publish};
@@ -34,6 +34,80 @@ fn register_in_graph(topic_id: Option<u32>) -> Option<stem::thing::ThingId> {
             None
         }
     }
+}
+
+#[derive(Clone, Copy)]
+struct InputGraphState {
+    pointer_x: i32,
+    pointer_y: i32,
+    pointer_buttons: u64,
+    keyboard_gen: u64,
+}
+
+impl Default for InputGraphState {
+    fn default() -> Self {
+        Self {
+            // Match existing viewport defaults so graph-state consumers do not jump to 0,0.
+            pointer_x: 400,
+            pointer_y: 300,
+            pointer_buttons: 0,
+            keyboard_gen: 0,
+        }
+    }
+}
+
+fn publish_initial_graph_state(node_id: stem::thing::ThingId, state: &InputGraphState) {
+    use abi::schema::{keyboard as kb, pointer};
+
+    let _ = thingsys::prop_set(node_id, pointer::POINTER_X, state.pointer_x as u64);
+    let _ = thingsys::prop_set(node_id, pointer::POINTER_Y, state.pointer_y as u64);
+    let _ = thingsys::prop_set(node_id, pointer::POINTER_BUTTONS, state.pointer_buttons);
+    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_GEN, state.keyboard_gen);
+}
+
+fn update_keyboard_graph_state(
+    node_id: stem::thing::ThingId,
+    state: &mut InputGraphState,
+    payload: KeyEventPayload,
+    is_down: bool,
+) {
+    use abi::schema::keyboard as kb;
+
+    state.keyboard_gen = state.keyboard_gen.wrapping_add(1);
+    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_LAST_KEY, payload.key as u64);
+    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_KEY_EDGE, if is_down { 1 } else { 0 });
+    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_MODS, payload.mods as u64);
+    let _ = thingsys::prop_set(node_id, kb::KEYBOARD_GEN, state.keyboard_gen);
+}
+
+fn update_pointer_move_graph_state(
+    node_id: stem::thing::ThingId,
+    state: &mut InputGraphState,
+    payload: PointerMovePayload,
+) {
+    use abi::schema::pointer;
+
+    state.pointer_x = state.pointer_x.saturating_add(payload.dx as i32);
+    state.pointer_y = state.pointer_y.saturating_add(payload.dy as i32);
+    let _ = thingsys::prop_set(node_id, pointer::POINTER_X, state.pointer_x as u64);
+    let _ = thingsys::prop_set(node_id, pointer::POINTER_Y, state.pointer_y as u64);
+}
+
+fn update_pointer_button_graph_state(
+    node_id: stem::thing::ThingId,
+    state: &mut InputGraphState,
+    payload: PointerButtonPayload,
+    is_down: bool,
+) {
+    use abi::schema::pointer;
+
+    let bit = 1u64 << (payload.button as u64);
+    if is_down {
+        state.pointer_buttons |= bit;
+    } else {
+        state.pointer_buttons &= !bit;
+    }
+    let _ = thingsys::prop_set(node_id, pointer::POINTER_BUTTONS, state.pointer_buttons);
 }
 
 /// Maximum number of dynamic event subscribers
@@ -207,7 +281,11 @@ fn main(packed_handles: usize) -> ! {
         }
     };
 
-    let _node_id = register_in_graph(topic_id);
+    let node_id = register_in_graph(topic_id);
+    let mut graph_state = InputGraphState::default();
+    if let Some(node) = node_id {
+        publish_initial_graph_state(node, &graph_state);
+    }
 
     let mut recv_buf = [0u8; 128];
     let mut event_accum = [0u8; 64];
@@ -250,7 +328,17 @@ fn main(packed_handles: usize) -> ! {
                                     let mut p = [0u8; 4];
                                     p.copy_from_slice(&event_bytes[20..24]);
                                     let payload = KeyEventPayload::from_bytes(&p);
-                                    
+
+                                    crate::info!(
+                                        "[CONTRACT] CONTRACT: input key_event key={} edge=down mods=0x{:02x} repeat={}",
+                                        payload.key().name(),
+                                        payload.mods,
+                                        payload.is_repeat()
+                                    );
+                                    if let Some(node) = node_id {
+                                        update_keyboard_graph_state(node, &mut graph_state, payload, true);
+                                    }
+
                                     match payload.key() {
                                         Key::F2 => {
                                             info!("bristle: F2 pressed - dumping tasks...");
@@ -272,10 +360,26 @@ fn main(packed_handles: usize) -> ! {
                                         }
                                         _ => {}
                                     }
+                                } else if header.event_type == EventType::KeyUp as u16 && header.payload_len >= 4 {
+                                    let mut p = [0u8; 4];
+                                    p.copy_from_slice(&event_bytes[20..24]);
+                                    let payload = KeyEventPayload::from_bytes(&p);
+
+                                    crate::info!(
+                                        "[CONTRACT] CONTRACT: input key_event key={} edge=up mods=0x{:02x}",
+                                        payload.key().name(),
+                                        payload.mods
+                                    );
+                                    if let Some(node) = node_id {
+                                        update_keyboard_graph_state(node, &mut graph_state, payload, false);
+                                    }
                                 } else if header.event_type == EventType::PointerMove as u16 && header.payload_len >= 4 {
                                     let mut p = [0u8; 4];
                                     p.copy_from_slice(&event_bytes[20..24]);
                                     let payload = PointerMovePayload::from_bytes(&p);
+                                    if let Some(node) = node_id {
+                                        update_pointer_move_graph_state(node, &mut graph_state, payload);
+                                    }
                                     let dx = payload.dx;
                                     let dy = payload.dy;
                                     crate::info!(
@@ -283,6 +387,38 @@ fn main(packed_handles: usize) -> ! {
                                         dx,
                                         dy
                                     );
+                                } else if header.event_type == EventType::PointerButtonDown as u16
+                                    && header.payload_len >= PointerButtonPayload::SIZE as u32
+                                {
+                                    let mut p = [0u8; PointerButtonPayload::SIZE];
+                                    p.copy_from_slice(
+                                        &event_bytes[20..20 + PointerButtonPayload::SIZE]
+                                    );
+                                    let payload = PointerButtonPayload::from_bytes(&p);
+                                    if let Some(node) = node_id {
+                                        update_pointer_button_graph_state(
+                                            node,
+                                            &mut graph_state,
+                                            payload,
+                                            true,
+                                        );
+                                    }
+                                } else if header.event_type == EventType::PointerButtonUp as u16
+                                    && header.payload_len >= PointerButtonPayload::SIZE as u32
+                                {
+                                    let mut p = [0u8; PointerButtonPayload::SIZE];
+                                    p.copy_from_slice(
+                                        &event_bytes[20..20 + PointerButtonPayload::SIZE]
+                                    );
+                                    let payload = PointerButtonPayload::from_bytes(&p);
+                                    if let Some(node) = node_id {
+                                        update_pointer_button_graph_state(
+                                            node,
+                                            &mut graph_state,
+                                            payload,
+                                            false,
+                                        );
+                                    }
                                 }
 
                                 // Forward the event to subscribers

@@ -7,7 +7,7 @@
 //! - Used ring
 
 use core::ptr::{read_volatile, write_volatile};
-use core::sync::atomic::{AtomicU16, Ordering, fence};
+use core::sync::atomic::{fence, AtomicU16, Ordering};
 
 /// Descriptor flags
 pub mod desc_flags {

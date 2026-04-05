@@ -8,6 +8,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
     let result = match syscall_id {
         SYS_EXIT => handlers::sys_exit(args[0] as i32),
         SYS_REBOOT => handlers::sys_reboot(),
+        SYS_READ => handlers::sys_read(args[0], args[1], args[2]),
+        SYS_WRITE => handlers::sys_write(args[0], args[1], args[2]),
         SYS_DEBUG_WRITE => handlers::sys_debug_write(args[0], args[1]),
         SYS_LOG_WRITE => handlers::sys_log_write(args[0], args[1], args[2]),
         SYS_YIELD => handlers::sys_yield(),
@@ -109,9 +111,7 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
             handlers::sys_root_props_get_many(args[0], args[1], args[2], args[3])
         }
 
-        SYS_ROOT_BYTESPACE_TRUNCATE => {
-            handlers::sys_root_bytespace_truncate(args[0], args[1])
-        }
+        SYS_ROOT_BYTESPACE_TRUNCATE => handlers::sys_root_bytespace_truncate(args[0], args[1]),
         SYS_ROOT_RESOLVE_PATH => handlers::sys_root_resolve_path(args[0], args[1]),
         SYS_ROOT_UNLINK => handlers::sys_root_unlink(args[0], args[1], args[2]),
         SYS_ROOT_DIR_LIST => handlers::sys_root_dir_list(args[0], args[1], args[2]),

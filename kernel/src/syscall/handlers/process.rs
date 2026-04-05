@@ -1,10 +1,10 @@
 //! Process lifecycle and task management syscalls
 
 use super::copyin;
-use crate::syscall::validate::validate_user_range;
 use crate::sched;
 use crate::sched as scheduler;
 use crate::sched::StdioSpec;
+use crate::syscall::validate::validate_user_range;
 use crate::task::StartupArg;
 use abi::errors::{Errno, SysResult};
 use alloc::collections::BTreeMap;
@@ -162,7 +162,11 @@ pub fn sys_set_priority(tid: usize, priority: usize) -> SysResult<usize> {
 
 pub fn sys_task_kill(tid: usize) -> SysResult<usize> {
     let killed = unsafe { crate::sched::kill_by_tid_current(tid as u64) };
-    if killed { Ok(0) } else { Err(Errno::ESRCH) }
+    if killed {
+        Ok(0)
+    } else {
+        Err(Errno::ESRCH)
+    }
 }
 
 pub fn sys_task_dump() -> SysResult<usize> {
@@ -246,7 +250,9 @@ pub fn sys_env_get(
     }
     validate_user_range(key_ptr, key_len, false)?;
     let mut key = alloc::vec![0u8; key_len];
-    unsafe { copyin(&mut key, key_ptr)?; }
+    unsafe {
+        copyin(&mut key, key_ptr)?;
+    }
 
     let pinfo = crate::sched::process_info_current();
     let pinfo = pinfo.ok_or(Errno::ENOENT)?;
@@ -258,7 +264,9 @@ pub fn sys_env_get(
     if val_ptr != 0 && val_len > 0 {
         let copy_len = val_len.min(needed);
         validate_user_range(val_ptr, copy_len, true)?;
-        unsafe { super::copyout(val_ptr, &val[..copy_len])?; }
+        unsafe {
+            super::copyout(val_ptr, &val[..copy_len])?;
+        }
     }
     Ok(needed)
 }
@@ -294,7 +302,9 @@ pub fn sys_env_unset(key_ptr: usize, key_len: usize) -> SysResult<usize> {
     }
     validate_user_range(key_ptr, key_len, false)?;
     let mut key = alloc::vec![0u8; key_len];
-    unsafe { copyin(&mut key, key_ptr)?; }
+    unsafe {
+        copyin(&mut key, key_ptr)?;
+    }
 
     let pinfo = crate::sched::process_info_current();
     let pinfo = pinfo.ok_or(Errno::ENOENT)?;
@@ -323,7 +333,9 @@ pub fn sys_env_list(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
     if buf_len > 0 && buf_ptr != 0 {
         let copy_len = needed.min(buf_len);
         validate_user_range(buf_ptr, copy_len, true)?;
-        unsafe { super::copyout(buf_ptr, &blob[..copy_len])?; }
+        unsafe {
+            super::copyout(buf_ptr, &blob[..copy_len])?;
+        }
     }
     Ok(needed)
 }
@@ -331,7 +343,7 @@ pub fn sys_env_list(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
 /// SYS_SPAWN_PROCESS_EX handler.
 /// Args: req_ptr = pointer to SpawnProcessExReq, resp_ptr = pointer to SpawnProcessExResp.
 pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
-    use abi::types::{SpawnProcessExReq, SpawnProcessExResp, stdio_mode};
+    use abi::types::{stdio_mode, SpawnProcessExReq, SpawnProcessExResp};
 
     // Copy in the request struct
     validate_user_range(req_ptr, core::mem::size_of::<SpawnProcessExReq>(), false)?;
@@ -351,7 +363,9 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
     }
     validate_user_range(req.name_ptr as usize, name_len, false)?;
     let mut name_bytes = alloc::vec![0u8; name_len];
-    unsafe { copyin(&mut name_bytes, req.name_ptr as usize)?; }
+    unsafe {
+        copyin(&mut name_bytes, req.name_ptr as usize)?;
+    }
     let name = core::str::from_utf8(&name_bytes).map_err(|_| Errno::EINVAL)?;
 
     // Deserialize argv blob
@@ -359,7 +373,9 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
         let alen = req.argv_len as usize;
         validate_user_range(req.argv_ptr as usize, alen, false)?;
         let mut blob = alloc::vec![0u8; alen];
-        unsafe { copyin(&mut blob, req.argv_ptr as usize)?; }
+        unsafe {
+            copyin(&mut blob, req.argv_ptr as usize)?;
+        }
         deserialize_argv(&blob)?
     } else {
         Vec::new()
@@ -370,7 +386,9 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
         let elen = req.env_len as usize;
         validate_user_range(req.env_ptr as usize, elen, false)?;
         let mut blob = alloc::vec![0u8; elen];
-        unsafe { copyin(&mut blob, req.env_ptr as usize)?; }
+        unsafe {
+            copyin(&mut blob, req.env_ptr as usize)?;
+        }
         deserialize_env(&blob)?
     } else {
         BTreeMap::new()
@@ -383,9 +401,7 @@ pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize>
 
     // Spawn the process
     let result = unsafe {
-        scheduler::spawn_process_ex_current(
-            name, argv, env, stdin_spec, stdout_spec, stderr_spec,
-        )
+        scheduler::spawn_process_ex_current(name, argv, env, stdin_spec, stdout_spec, stderr_spec)
     }?;
 
     // Write the response
@@ -473,4 +489,3 @@ fn deserialize_env(blob: &[u8]) -> Result<BTreeMap<Vec<u8>, Vec<u8>>, Errno> {
     }
     Ok(result)
 }
-

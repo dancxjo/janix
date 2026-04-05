@@ -10,6 +10,7 @@ pub mod logging;
 pub mod memory;
 pub mod net;
 pub mod once_cell;
+pub mod petals_session;
 pub mod root;
 pub mod sched;
 pub mod simd;
@@ -58,6 +59,32 @@ pub extern "C" fn kernel_handle_page_fault(rip: u64, addr: u64, err: u64) {
     if stack_result == crate::sched::StackFaultResult::Overflow {
         crate::kprintln!("STACK: overflow at va=0x{:x}", addr);
     }
+
+    unsafe {
+        crate::sched::exit_current(-1);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn kernel_handle_exception(rip: u64, error_code: u64, rsp: u64, cs: u64, kind: u64) {
+    let name = match kind {
+        0 => "user_divide_by_zero",
+        6 => "user_invalid_opcode",
+        13 => "user_gpf",
+        _ => "user_exception",
+    };
+
+    crate::log_event!(
+        crate::logging::LogLevel::Error,
+        "kernel::trap",
+        "{} rip=0x{:016x} err=0x{:04x} rsp=0x{:016x} cs=0x{:x} kind={}",
+        name,
+        rip,
+        error_code,
+        rsp,
+        cs,
+        kind
+    );
 
     unsafe {
         crate::sched::exit_current(-1);
@@ -558,6 +585,14 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     contract!("Initializing tasking...");
     crate::task::init::<R>();
 
+    // CRITICAL: Calibrate the BSP preemption timer BEFORE starting secondary CPUs.
+    // Secondary CPUs read timer_vector/timer_init_cnt in init_secondary_cpu().
+    // If these aren't set yet, secondary CPUs get no LAPIC timer, meaning
+    // wake_sleepers() (called only from on_tick → PreemptTick) never fires
+    // on those CPUs, and any task that calls sleep_ms() is stuck forever.
+    kinfo!("System initialized. Setting up preemption timer (100Hz)...");
+    runtime.setup_preemption_timer(100);
+
     // Bring up all secondary CPUs during early boot.
     let cpu_total = runtime.cpu_total_count();
     if cpu_total > 1 {
@@ -727,7 +762,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             contract!("Spawning init process...");
             let mut entry = user_entry;
             entry.arg0 = StartupArg::BootRegistry.to_raw(); // arg0 = registry ptr
-            // Spawn at Normal priority - all tasks share the same priority for fair scheduling
+                                                            // Spawn at Normal priority - all tasks share the same priority for fair scheduling
             crate::sched::spawn_user_task_full::<R>(
                 entry,
                 aspace,
@@ -783,15 +818,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         }
     }
 
-    kinfo!("System initialized. Setting up preemption timer (100Hz)...");
-    runtime.setup_preemption_timer(100);
-
     contract!("Entering scheduler loop.");
+    crate::petals_session::init();
     loop {
-        // Echo any incoming serial characters
-        if let Some(ch) = runtime_base().getchar() {
-            runtime_base().putchar(ch);
-        }
+        crate::petals_session::poll();
         crate::task::yield_now::<R>();
         // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty
     }
@@ -846,7 +876,7 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
 
     // Per-CPU init
     base.mono_ticks(); // ok for logging
-    // IMPORTANT: per-CPU SIMD init
+                       // IMPORTANT: per-CPU SIMD init
     base.simd_init_cpu();
 
     // Then:

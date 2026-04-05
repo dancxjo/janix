@@ -302,10 +302,7 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
 pub fn enqueue_no_reply(op: RootOp) {
     let is_log_event = matches!(op, RootOp::LogEvent { .. });
 
-    let msg = RootMsg {
-        op,
-        reply: None,
-    };
+    let msg = RootMsg { op, reply: None };
 
     if let Some(q) = ROOT_INBOX.lock().as_mut() {
         if q.len() >= MAX_INBOX_SIZE {

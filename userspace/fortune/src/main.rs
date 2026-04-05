@@ -1,14 +1,13 @@
 #![feature(restricted_std)]
 #![no_main]
 
-
 use core::time::Duration;
 
 use abi::ids::HandleId;
 use abi::schema::{keys, kinds, rels};
-use std::task::{RawWaker, RawWakerVTable, Waker};
 use llm::{ChatRequest, Message, Role, StreamingLlmClient};
 use ollama::OllamaClient;
+use std::task::{RawWaker, RawWakerVTable, Waker};
 use stem::info;
 use stem::petals::Petals;
 use stem::thing::sys::{

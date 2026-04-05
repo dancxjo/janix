@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::root::pci_stub::{PciClassInfo, classify_stub, publish_stub_device};
+use crate::root::pci_stub::{classify_stub, publish_stub_device, PciClassInfo};
 use abi::schema::{confidence, keys, kinds, rels, source};
 use alloc::format;
 use stem::pci;
@@ -149,6 +149,10 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
     let r2 = unsafe { pci_read_config(bus, dev, func, 0x08) }; // Class/Subclass/ProgIF/Rev
     let r11 = unsafe { pci_read_config(bus, dev, func, 0x2C) }; // Subsystem Vendor/ID
 
+    // Enable IO (0x1), Memory (0x2), and Bus Master (0x4) in Command Register
+    let cmd = unsafe { pci_read_config(bus, dev, func, 0x04) };
+    unsafe { pci_write_config(bus, dev, func, 0x04, cmd | 0x07) };
+
     let vendor_id = (r0 & 0xFFFF) as u16;
     let device_id = (r0 >> 16) as u16;
     let (vendor_name, device_name) = pci::lookup_names(vendor_id, device_id);
@@ -210,7 +214,11 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // Simple hex loop
     fn nibble(n: u8) -> u8 {
-        if n < 10 { n + b'0' } else { n - 10 + b'a' }
+        if n < 10 {
+            n + b'0'
+        } else {
+            n - 10 + b'a'
+        }
     }
     let mut hex_buf = [0u8; 16];
     for i in 0..8 {
@@ -644,7 +652,7 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
 
     // Register CMOS in device registry
     {
-        use crate::device_registry::{CMOS_IOPORT_RANGES, DeviceEntry, REGISTRY};
+        use crate::device_registry::{DeviceEntry, CMOS_IOPORT_RANGES, REGISTRY};
         let mut reg = REGISTRY.lock();
         reg.register(DeviceEntry::new_legacy(
             kinds::DEV_RTC_CMOS,

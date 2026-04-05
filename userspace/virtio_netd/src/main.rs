@@ -165,7 +165,10 @@ fn main(_arg: usize) -> ! {
             );
             match port_send(rx_write_handle, &encoded) {
                 Ok(n) => {
-                    info!("VIRTIO_NETD: Frame forwarded successfully ({} bytes sent)", n);
+                    info!(
+                        "VIRTIO_NETD: Frame forwarded successfully ({} bytes sent)",
+                        n
+                    );
                 }
                 Err(e) => {
                     warn!("VIRTIO_NETD: Failed to send RX frame to netd: {:?}", e);

@@ -99,7 +99,8 @@ impl SchedState {
     }
 
     pub fn get_task_mut(&mut self, tid: TaskId) -> Option<&mut TaskSchedFields> {
-        self.get_task_index(tid).map(move |idx| &mut self.tasks[idx])
+        self.get_task_index(tid)
+            .map(move |idx| &mut self.tasks[idx])
     }
 
     pub fn insert_task(&mut self, fields: TaskSchedFields) {
@@ -115,6 +116,8 @@ impl SchedState {
         }
         if let Some(task) = self.get_task_mut(tid) {
             task.runq_location = Some((cpu, prio));
+            task.enqueued_at_tick =
+                crate::sched::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed);
         }
     }
 
@@ -148,4 +151,3 @@ impl SchedState {
         false
     }
 }
-

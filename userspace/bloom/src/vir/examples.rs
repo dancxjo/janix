@@ -169,5 +169,6 @@ mod tests {
         // High quality should potentially have more commands due to finer tessellation
         assert!(!default_list.commands().is_empty());
         assert!(!hq_list.commands().is_empty());
+        assert!(hq_list.commands().len() > default_list.commands().len());
     }
 }

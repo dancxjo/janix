@@ -1,24 +1,24 @@
+pub mod flusher;
+pub mod graph;
+pub mod graph_queue;
+pub mod graphify;
 pub mod loader;
 pub mod registry;
-pub mod graph;
-pub mod graphify;
-pub mod graph_queue;
-pub mod flusher;
 use crate::sched as scheduler;
 
 pub use crate::sched::Scheduler;
 
+use crate::simd::SimdState;
 use crate::BootRuntime;
 use crate::BootTasking;
-use crate::simd::SimdState;
 use abi::types::StackInfo;
-use alloc::collections::BTreeMap;
+use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::Mutex;
 
 pub type TaskId = crate::sched::state::TaskId;
-pub use crate::sched::state::{TaskPriority, Affinity, TaskState};
+pub use crate::sched::state::{Affinity, TaskPriority, TaskState};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StartupArg {
@@ -39,6 +39,19 @@ impl StartupArg {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdioPipeMode {
+    Read,
+    Write,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StdioBinding {
+    Null,
+    Console,
+    Pipe { pipe_id: u64, mode: StdioPipeMode },
+}
+
 /// Per-process identity and storage.
 ///
 /// Shared by all threads within a process via `Arc<Mutex<ProcessInfo>>`.
@@ -49,6 +62,8 @@ pub struct ProcessInfo {
     pub ppid: u32,
     pub argv: Vec<Vec<u8>>,
     pub env: BTreeMap<Vec<u8>, Vec<u8>>,
+    pub stdio: [StdioBinding; 3],
+    pub console_stdin: VecDeque<u8>,
 }
 
 pub struct Task<R: BootRuntime> {
@@ -88,7 +103,7 @@ pub struct Task<R: BootRuntime> {
     /// Used to calculate how long the task has been waiting: `current_tick - enqueued_at_tick`.
     /// When this exceeds `AGING_THRESHOLD_TICKS`, the task's effective priority is boosted.
     pub enqueued_at_tick: u64,
-    
+
     /// Anti-starvation: base priority before any aging boost.
     /// When a task is created or its priority is changed via set_priority(), both
     /// `priority` and `base_priority` are updated. The scheduler temporarily modifies

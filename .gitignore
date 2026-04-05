@@ -5,6 +5,7 @@
 *.hdd
 iso_root/
 *.log
+*.pid
 
 # Vendor dependencies (fetched by `just fetch`)
 /vendor/

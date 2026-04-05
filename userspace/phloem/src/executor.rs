@@ -1140,4 +1140,44 @@ mod tests {
         // wrong variable name -> false
         assert!(!ex.evaluate_expression(&expr, 123, "x"));
     }
+
+    #[test]
+    fn test_set_unbound_variable() {
+        let mut ex = GraphExecutor::new();
+        let cmd = Command::Set {
+            var: "n".to_string(),
+            key: "key".to_string(),
+            value: Value::Number(1),
+        };
+        let res = ex.execute(cmd);
+        assert!(!res.success);
+        assert_eq!(res.message, "variable 'n' not bound");
+    }
+
+    #[test]
+    fn test_evaluate_expression_count_edges() {
+        // We'll create a MockGraph here to supply the edges
+        use crate::query_tests::MockGraph;
+        let g = MockGraph::new();
+        // create a node with 2 edges
+        g.add_node(100, "Node");
+        g.add_node(101, "Node");
+        g.add_node(102, "Node");
+        g.add_edge(100, "REL", 101);
+        g.add_edge(100, "REL", 102);
+
+        let ex = GraphExecutor::with_graph(&g);
+
+        let expr = Expression::Eq(
+            Box::new(Expression::CountEdges("n".to_string())),
+            Box::new(Expression::Value(Value::Number(2))),
+        );
+
+        // evaluate for node 100 with var "n", should have 2 edges -> matches 2 -> true
+        assert!(ex.evaluate_expression(&expr, 100, "n"));
+        // wrong node id -> 0 edges -> false
+        assert!(!ex.evaluate_expression(&expr, 999, "n"));
+        // evaluate for node 100 with var "m", variable mismatch -> None -> false
+        assert!(!ex.evaluate_expression(&expr, 100, "m"));
+    }
 }

@@ -6,7 +6,7 @@
 #![no_main]
 
 use stem::info;
-use stem::syscall::{PortHandle, ioport_read, ioport_write, irq_subscribe, irq_wait, port_send};
+use stem::syscall::{PortHandle, ioport_read, ioport_write, irq_subscribe, irq_wait, port_send_all};
 
 const PS2_DATA: usize = 0x60;
 const PS2_STATUS: usize = 0x64;
@@ -49,16 +49,16 @@ fn flush_output_buffer() {
 fn read_data_filtered(expect_aux: bool, label: &str) -> Option<u8> {
     let discarded_aux: u32 = 0;
     let discarded_non_aux: u32 = 0;
-    for _ in 0..20000 {
+    for _ in 0..20_000 {
         let status = ioport_read(PS2_STATUS, 1);
         if status & STATUS_OUTPUT_FULL == 0 {
             stem::yield_now();
             continue;
         }
         let is_aux = (status & STATUS_AUX_DATA) != 0;
+
         if is_aux != expect_aux {
-            // It's not the type of data we're waiting for.
-            // DO NOT read it, or we'll steal it from the other driver!
+            // Leave bytes for the matching side of the shared controller.
             stem::yield_now();
             continue;
         }
@@ -108,7 +108,9 @@ fn init_mouse() {
     // Enable aux port
     wait_input_empty();
     ioport_write(PS2_CMD, CMD_ENABLE_AUX as usize, 1);
-    stem::sleep_ms(50);
+    for _ in 0..10 {
+        stem::yield_now();
+    }
 
     // Ensure IRQ12 is enabled (Bit 1) and Mouse Disabled (Bit 5) is CLEARED.
     // Bit 5: 1 = Mouse Disabled, 0 = Mouse Enabled.
@@ -127,19 +129,52 @@ fn init_mouse() {
         info!("ps2_mouse: controller cfg already correct (0x{:02x})", cfg);
     }
 
-    // Enable mouse data reporting (0xF4)
-    info!("ps2_mouse: sending enable command (0xF4)");
-    send_aux_byte(MOUSE_ENABLE);
-
-    // Wait for ACK (0xFA)
-    let ack = read_data_filtered(true, "enable ACK (0xFA)").unwrap_or(0);
+    // Reset mouse (0xFF)
+    info!("ps2_mouse: sending RESET (0xFF)");
+    send_aux_byte(0xFF);
+    let ack = read_data_filtered(true, "reset ACK (0xfa)").unwrap_or(0);
     if ack == 0xFA {
-        info!("ps2_mouse: enable ACK received (0xFA)");
-    } else {
+        info!("ps2_mouse: reset ACK received (0xfa)");
+        let bat = read_data_filtered(true, "BAT byte (0xAA)").unwrap_or(0);
+        let id = read_data_filtered(true, "Device ID (0x00)").unwrap_or(1);
         info!(
-            "ps2_mouse: enable failed? received 0x{:02x} instead of ACK",
-            ack
+            "ps2_mouse: BAT passed (0x{:02x}), ID 0x{:02x} confirmed",
+            bat, id
         );
+    }
+
+    info!("ps2_mouse: setting sample rate (100)");
+    send_aux_byte(0xF3);
+    read_data_filtered(true, "sample rate ACK");
+    send_aux_byte(100);
+    read_data_filtered(true, "sample rate set ACK");
+
+    info!("ps2_mouse: setting resolution (3)");
+    send_aux_byte(0xE8);
+    read_data_filtered(true, "resolution ACK");
+    send_aux_byte(3);
+    read_data_filtered(true, "resolution set ACK");
+
+    send_aux_byte(0xE9);
+    let _s_ack = read_data_filtered(true, "status request ACK");
+    let b1 = read_data_filtered(true, "status byte 1").unwrap_or(0);
+    let b2 = read_data_filtered(true, "status byte 2").unwrap_or(0);
+    let b3 = read_data_filtered(true, "status byte 3").unwrap_or(0);
+    info!(
+        "ps2_mouse: status result = Some({}) Some({}) Some({})",
+        b1, b2, b3
+    );
+
+    // Bit 5 indicates Enable/Disable status (1 = Enabled, 0 = Disabled).
+    // If it is 0, data reporting is disabled, so we must enable it.
+    if b1 & 0x20 == 0 {
+        // Enable mouse data reporting (0xF4)
+        info!("ps2_mouse: sending enable command (0xF4)");
+        send_aux_byte(MOUSE_ENABLE);
+        let e_ack = read_data_filtered(true, "enable ACK (0xFA)").unwrap_or(0);
+        info!("ps2_mouse: enable ACK received (0x{:02x})", e_ack);
+    } else {
+        info!("ps2_mouse: already enabled, skipping 0xF4 command");
     }
 
     stem::sleep_ms(100);
@@ -178,18 +213,36 @@ fn main(raw_write_handle: usize) -> ! {
             polling_loop(handle);
         }
     }
-
     info!("ps2_mouse: entering interrupt-driven loop");
 
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
+    let mut mouse_state = MouseState::new();
+    let mut drop_counter = 0u32;
+
+    // Perform an initial drain to clear any pending bytes that might keep the IRQ line HIGH
+    // If the IOAPIC is edge-triggered, an already-HIGH line will never trigger an interrupt!
+    drain_mouse_data(
+        handle,
+        &mut mouse_state,
+        &mut packet,
+        &mut idx,
+        &mut drop_counter,
+    );
 
     loop {
         // Wait for mouse interrupt
         match irq_wait(MOUSE_VECTOR) {
-            Ok(_count) => {
+            Ok(count) => {
+                info!("ps2_mouse: IRQ12 fired! count={}", count);
                 // Drain all available mouse data
-                drain_mouse_data(handle, &mut packet, &mut idx);
+                drain_mouse_data(
+                    handle,
+                    &mut mouse_state,
+                    &mut packet,
+                    &mut idx,
+                    &mut drop_counter,
+                );
             }
             Err(_) => {
                 stem::yield_now();
@@ -198,8 +251,90 @@ fn main(raw_write_handle: usize) -> ! {
     }
 }
 
+mod mouse;
+
+use abi::hid::{
+    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType,
+    PointerButtonPayload, PointerMovePayload,
+};
+use mouse::{MouseState, PointerEvent};
+
+fn send_mouse_events(
+    handle: PortHandle,
+    state: &mut MouseState,
+    packet: &[u8; 3],
+    drop_counter: &mut u32,
+) {
+    let (events, count) = state.process_packet(packet);
+    for i in 0..count {
+        if let Some(evt) = events[i] {
+            let timestamp_ns = stem::monotonic_ns();
+            let mut buf = [0u8; 24]; // Max size is header + 4 byte payload
+            let len;
+
+            match evt {
+                PointerEvent::Move { dx, dy } => {
+                    let header = BristleEventHeader {
+                        magic: BRISTLE_EVENT_MAGIC,
+                        version: BRISTLE_EVENT_VERSION,
+                        event_type: EventType::PointerMove as u16,
+                        timestamp_ns,
+                        payload_len: PointerMovePayload::SIZE as u32,
+                    };
+                    let payload = PointerMovePayload { dx, dy };
+                    buf[0..20].copy_from_slice(&header.to_bytes());
+                    buf[20..24].copy_from_slice(&payload.to_bytes());
+                    len = 24;
+                }
+                PointerEvent::ButtonDown { button } => {
+                    let header = BristleEventHeader {
+                        magic: BRISTLE_EVENT_MAGIC,
+                        version: BRISTLE_EVENT_VERSION,
+                        event_type: EventType::PointerButtonDown as u16,
+                        timestamp_ns,
+                        payload_len: PointerButtonPayload::SIZE as u32,
+                    };
+                    let payload = PointerButtonPayload { button, _pad: 0 };
+                    buf[0..20].copy_from_slice(&header.to_bytes());
+                    buf[20..22].copy_from_slice(&payload.to_bytes());
+                    len = 22;
+                }
+                PointerEvent::ButtonUp { button } => {
+                    let header = BristleEventHeader {
+                        magic: BRISTLE_EVENT_MAGIC,
+                        version: BRISTLE_EVENT_VERSION,
+                        event_type: EventType::PointerButtonUp as u16,
+                        timestamp_ns,
+                        payload_len: PointerButtonPayload::SIZE as u32,
+                    };
+                    let payload = PointerButtonPayload { button, _pad: 0 };
+                    buf[0..20].copy_from_slice(&header.to_bytes());
+                    buf[20..22].copy_from_slice(&payload.to_bytes());
+                    len = 22;
+                }
+            }
+            if len > 0 && port_send_all(handle, &buf[..len]).is_err() {
+                *drop_counter = drop_counter.wrapping_add(1);
+                if *drop_counter <= 4 || *drop_counter % 100 == 0 {
+                    info!(
+                        "ps2_mouse: dropped {} mouse events because raw input port {} is full",
+                        *drop_counter,
+                        handle
+                    );
+                }
+            }
+        }
+    }
+}
+
 /// Drain all pending mouse data and assemble packets
-fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
+fn drain_mouse_data(
+    handle: PortHandle,
+    state: &mut MouseState,
+    packet: &mut [u8; 3],
+    idx: &mut usize,
+    drop_counter: &mut u32,
+) {
     for _ in 0..16 {
         let status = ioport_read(PS2_STATUS, 1);
 
@@ -219,11 +354,12 @@ fn drain_mouse_data(handle: PortHandle, packet: &mut [u8; 3], idx: &mut usize) {
             *idx += 1;
 
             if *idx == 3 {
-                let _ = port_send(handle, packet);
+                send_mouse_events(handle, state, packet, drop_counter);
                 *idx = 0;
             }
         } else {
-            // Not mouse data; leave it for ps2_kbd and stop this drain pass.
+            // Shared i8042 controller: leave keyboard bytes for ps2_kbd.
+            // Consuming them here makes keyboard input appear dead.
             break;
         }
     }
@@ -235,13 +371,17 @@ fn polling_loop(handle: PortHandle) -> ! {
 
     let mut packet = [0u8; 3];
     let mut idx = 0usize;
+    let mut mouse_state = MouseState::new();
+    let mut drop_counter = 0u32;
 
     loop {
         let status = ioport_read(PS2_STATUS, 1);
 
         if status & STATUS_OUTPUT_FULL != 0 {
+            let byte = ioport_read(PS2_DATA, 1) as u8;
+
             if status & STATUS_AUX_DATA != 0 {
-                let byte = ioport_read(PS2_DATA, 1) as u8;
+                info!("ps2_mouse: POLL got mouse byte 0x{:02x}", byte);
 
                 if idx == 0 && (byte & 0x08) == 0 {
                     continue;
@@ -251,12 +391,15 @@ fn polling_loop(handle: PortHandle) -> ! {
                 idx += 1;
 
                 if idx == 3 {
-                    let _ = port_send(handle, &packet);
+                    send_mouse_events(handle, &mut mouse_state, &packet, &mut drop_counter);
                     idx = 0;
                 }
+            } else {
+                // Leave keyboard bytes queued for ps2_kbd.
+                stem::sleep_ms(1);
             }
         } else {
-            stem::yield_now();
+            stem::sleep_ms(10);
         }
     }
 }

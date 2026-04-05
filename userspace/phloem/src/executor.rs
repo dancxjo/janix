@@ -370,7 +370,11 @@ impl<G: Graph> GraphExecutor<G> {
                     rel_var,
                     rel_kind
                 );
-                let limit_total = limit + skip;
+                let limit_total = if order_by.is_some() {
+                    usize::MAX
+                } else {
+                    limit + skip
+                };
 
                 // Check if we have any aggregate functions
                 let has_aggregate = returns
@@ -478,6 +482,40 @@ impl<G: Graph> GraphExecutor<G> {
                     }
                 }
 
+                // Sort results if needed
+                if let Some(order) = &order_by {
+                    edge_matches.sort_by(|a, b| {
+                        let (s_a, _r_a, d_a) = a;
+                        let (s_b, _r_b, d_b) = b;
+
+                        let var = match order {
+                            crate::gql::OrderBy::IdAsc(v) => v,
+                            crate::gql::OrderBy::IdDesc(v) => v,
+                        };
+
+                        let val_a = if Some(var) == src.var.as_ref() {
+                            s_a
+                        } else if Some(var) == dst.var.as_ref() {
+                            d_a
+                        } else {
+                            &0 // Unknown var, treat as 0
+                        };
+
+                        let val_b = if Some(var) == src.var.as_ref() {
+                            s_b
+                        } else if Some(var) == dst.var.as_ref() {
+                            d_b
+                        } else {
+                            &0
+                        };
+
+                        match order {
+                            crate::gql::OrderBy::IdAsc(_) => val_a.cmp(val_b),
+                            crate::gql::OrderBy::IdDesc(_) => val_b.cmp(val_a),
+                        }
+                    });
+                }
+
                 // Now format results based on whether we have aggregates
                 if has_aggregate {
                     let mut row = Vec::new();
@@ -523,6 +561,7 @@ impl<G: Graph> GraphExecutor<G> {
                     ExecutionResult::rows(cols, alloc::vec![row])
                 } else {
                     // Non-aggregate: build rows
+                    // We must apply pagination here, because we may have fetched all edges for sorting
                     let rows: Vec<Vec<ResultValue>> = edge_matches
                         .into_iter()
                         .skip(skip)

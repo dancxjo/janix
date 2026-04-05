@@ -730,6 +730,28 @@ mod tests {
         assert!(!res.rows.is_empty(), "Expected edges from node 1, but got empty result. The executor likely confused property 'id' with internal Node ID.");
     }
     #[test]
+    fn test_edge_order_by_desc() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // MATCH (a)-[]->(b) RETURN a ORDER BY id(a) DESC
+        // Edges: 1->2, 1->3, 3->1, 3->2
+        // We expect 'a' to be 3, 3, 1, 1
+
+        let cmd = parse("MATCH (a)-[]->(b) RETURN a ORDER BY id(a) DESC").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+
+        let mut ids = Vec::new();
+        for row in res.rows {
+            if let crate::ResultValue::Node(id) = row[0] {
+                ids.push(id);
+            }
+        }
+
+        assert_eq!(ids, vec![3, 3, 1, 1]);
+  }
+  #[test]
     fn test_multiple_return_expressions() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);

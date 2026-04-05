@@ -846,6 +846,41 @@ mod tests {
     }
 
     #[test]
+    fn test_match_multiple_props() {
+        let g = setup_mock();
+        // Add nodes with multiple properties
+        g.add_node(6, "proc.Thread");
+        g.set_prop(6, "tid", 1001);
+        g.set_prop(6, "state", 200);
+
+        g.add_node(7, "proc.Thread");
+        g.set_prop(7, "tid", 1002);
+        g.set_prop(7, "state", 200);
+
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // MATCH (t:proc.Thread {state: 200, tid: 1002}) RETURN t
+        let cmd = parse("MATCH (t:proc.Thread {state: 200, tid: 1002}) RETURN t").unwrap();
+        let res = ex.execute(cmd);
+
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1, "Expected exactly 1 match for logical AND of multiple properties");
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 7);
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // MATCH (t:proc.Thread {state: 200, tid: 9999}) RETURN t
+        // Should return empty since tid 9999 doesn't exist
+        let cmd_empty = parse("MATCH (t:proc.Thread {state: 200, tid: 9999}) RETURN t").unwrap();
+        let res_empty = ex.execute(cmd_empty);
+        assert!(res_empty.success);
+        assert_eq!(res_empty.rows.len(), 0, "Expected 0 matches because of conflicting property");
+          }
+
+    #[test]
+
     fn test_variable_binding_lifecycle() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);

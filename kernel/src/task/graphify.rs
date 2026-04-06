@@ -430,8 +430,20 @@ pub fn do_flush_batch<R: crate::BootRuntime>(items: &[(u64, GraphWork)]) {
         return;
     }
 
-    enqueue_no_reply(RootOp::ApplyBatch { batch: bb.finish() });
-    NO_REPLY_BATCHES_SENT.fetch_add(1, Ordering::Relaxed);
+    let mut op = RootOp::ApplyBatch { batch: bb.finish() };
+    loop {
+        match enqueue_no_reply(op) {
+            Ok(_) => {
+                NO_REPLY_BATCHES_SENT.fetch_add(1, Ordering::Relaxed);
+                break;
+            }
+            Err(ret_op) => {
+                op = ret_op;
+                crate::task::yield_now::<R>();
+                crate::sched::sleep_ms::<R>(2);
+            }
+        }
+    }
 }
 
 pub fn do_link_parent<R: crate::BootRuntime>(thing_id: u64, parent_thing: u64, _sched_thing: u64) {
@@ -447,7 +459,17 @@ pub fn do_link_parent<R: crate::BootRuntime>(thing_id: u64, parent_thing: u64, _
         thing_id,
     );
 
-    enqueue_no_reply(RootOp::ApplyBatch { batch: bb.finish() });
+    let mut op = RootOp::ApplyBatch { batch: bb.finish() };
+    loop {
+        match enqueue_no_reply(op) {
+            Ok(_) => break,
+            Err(ret_op) => {
+                op = ret_op;
+                crate::task::yield_now::<R>();
+                crate::sched::sleep_ms::<R>(2);
+            }
+        }
+    }
 }
 
 /// Link a task to a bytespace it uses.
@@ -461,5 +483,15 @@ pub fn link_bytespace<R: crate::BootRuntime>(thread_thing: u64, bytespace_thing:
         bytespace_thing,
     );
 
-    enqueue_no_reply(RootOp::ApplyBatch { batch: bb.finish() });
+    let mut op = RootOp::ApplyBatch { batch: bb.finish() };
+    loop {
+        match enqueue_no_reply(op) {
+            Ok(_) => break,
+            Err(ret_op) => {
+                op = ret_op;
+                crate::task::yield_now::<R>();
+                crate::sched::sleep_ms::<R>(2);
+            }
+        }
+    }
 }

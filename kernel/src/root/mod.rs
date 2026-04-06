@@ -260,9 +260,6 @@ pub fn init_root_service<R: crate::BootRuntime>() {
 pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
     let reply = Arc::new(ReplyCell::new());
 
-    // Check if this is a droppable message type (LogEvent can be dropped under pressure)
-    let is_log_event = matches!(op, RootOp::LogEvent { .. });
-
     let msg = RootMsg {
         op,
         reply: Some(reply.clone()),
@@ -271,11 +268,6 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
     if let Some(q) = ROOT_INBOX.lock().as_mut() {
         // Cap inbox size to prevent OOM from unbounded queue growth
         if q.len() >= MAX_INBOX_SIZE {
-            if is_log_event {
-                // Drop log events under pressure - they're best-effort
-                INBOX_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-                return reply;
-            }
             // For critical ops, return EAGAIN to quickly fail the caller rather than spinning/deadlocking
             reply.status.store(::abi::errors::Errno::EAGAIN as i32, Ordering::Release);
             reply.done.store(1, Ordering::Release);
@@ -298,18 +290,12 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
     reply
 }
 
-pub fn enqueue_no_reply(op: RootOp) {
-    let is_log_event = matches!(op, RootOp::LogEvent { .. });
-
+pub fn enqueue_no_reply(op: RootOp) -> Result<(), RootOp> {
     let msg = RootMsg { op, reply: None };
 
     if let Some(q) = ROOT_INBOX.lock().as_mut() {
         if q.len() >= MAX_INBOX_SIZE {
-            // under pressure, drop new messages if there's no way to communicate EAGAIN
-            if is_log_event {
-                INBOX_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-            }
-            return;
+            return Err(msg.op);
         }
 
         q.push_back(msg);
@@ -321,6 +307,7 @@ pub fn enqueue_no_reply(op: RootOp) {
                 }
             }
         }
+        Ok(())
     } else {
         panic!("Root inbox not initialized");
     }

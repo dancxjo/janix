@@ -525,7 +525,7 @@ mod tests {
             out_len: 0,
         };
         let reply = Arc::new(ReplyCell::new());
-        let msg = RootMsg { op, reply: Some(reply) };
+        let msg = RootMsg { op, reply: Some(reply.clone()) };
 
         let (status, _written) = handle_watch_next(&mut graph, &msg, watch_id);
 

@@ -791,4 +791,18 @@ mod tests {
         assert!(graph.set_owner(thing1, Some(owner2_id)));
         assert_eq!(graph.nodes.get(&thing1).unwrap().owner, Some(owner2_id));
     }
+
+    #[test]
+    fn test_set_owner_invalid_thing() {
+        let mut graph = Graph::new();
+
+        let invalid_thing_id = 9999;
+        let owner_id = 1000;
+
+        // set_owner should return false if thing doesn't exist
+        assert!(!graph.set_owner(invalid_thing_id, Some(owner_id)));
+
+        // orphan_thing should return false if thing doesn't exist
+        assert!(!graph.orphan_thing(invalid_thing_id));
+    }
 }

@@ -774,6 +774,37 @@ mod tests {
         assert_eq!(res.rows.len(), 1);
     }
 
+
+    #[test]
+    fn test_merge_edge_preserves_node_properties() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // MERGE an edge with newly created nodes that have properties
+        let cmd = parse("MERGE (a:Person {age: 30})-[:KNOWS]->(b:Person {age: 25}) RETURN a, b").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success, "MERGE failed");
+        assert_eq!(res.rows.len(), 1);
+
+        let id_a = if let crate::ResultValue::Node(id) = res.rows[0][0] { id } else { panic!("No id a") };
+        let id_b = if let crate::ResultValue::Node(id) = res.rows[0][1] { id } else { panic!("No id b") };
+
+        // Test that they can be found by their properties via MATCH
+        let cmd_check_a = parse("MATCH (n:Person {age: 30}) RETURN n").unwrap();
+        let res_check_a = ex.execute(cmd_check_a);
+        assert!(res_check_a.success);
+        assert_eq!(res_check_a.rows.len(), 1);
+        let found_a = if let crate::ResultValue::Node(id) = res_check_a.rows[0][0] { id } else { panic!() };
+        assert_eq!(id_a, found_a);
+
+        let cmd_check_b = parse("MATCH (n:Person {age: 25}) RETURN n").unwrap();
+        let res_check_b = ex.execute(cmd_check_b);
+        assert!(res_check_b.success);
+        assert_eq!(res_check_b.rows.len(), 1);
+        let found_b = if let crate::ResultValue::Node(id) = res_check_b.rows[0][0] { id } else { panic!() };
+        assert_eq!(id_b, found_b);
+    }
+
     #[test]
     fn test_match_edge_with_id_property_confusion() {
         let g = setup_mock();

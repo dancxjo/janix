@@ -189,6 +189,8 @@ fn sync_input_from_graph(
     pressed_keys: &mut BTreeSet<Key>,
     bristle_node: Option<ThingId>,
     graph_input: &mut GraphInputState,
+    had_pointer_event: bool,
+    had_key_event: bool,
     screen_w: i32,
     screen_h: i32,
     frame: u64,
@@ -211,23 +213,25 @@ fn sync_input_from_graph(
         pressed_keys.clear();
     }
 
-    if let (Ok(x), Ok(y)) = (
-        prop_get(node, pointer::POINTER_X),
-        prop_get(node, pointer::POINTER_Y),
-    ) {
-        cursor.set_position_clamped(x as i32, y as i32, screen_w, screen_h);
-    } else if frame % 120 == 0 {
-        stem::warn!(
-            "[bloom] graph pointer state unavailable on svc.Input {}",
-            node.to_u64_lossy()
-        );
+    if !had_pointer_event {
+        if let (Ok(x), Ok(y)) = (
+            prop_get(node, pointer::POINTER_X),
+            prop_get(node, pointer::POINTER_Y),
+        ) {
+            cursor.set_position_clamped(x as i32, y as i32, screen_w, screen_h);
+        } else if frame % 120 == 0 {
+            stem::warn!(
+                "[bloom] graph pointer state unavailable on svc.Input {}",
+                node.to_u64_lossy()
+            );
+        }
+
+        if let Ok(buttons) = prop_get(node, pointer::POINTER_BUTTONS) {
+            cursor.set_buttons(buttons as u32);
+        }
     }
 
-    if let Ok(buttons) = prop_get(node, pointer::POINTER_BUTTONS) {
-        cursor.set_buttons(buttons as u32);
-    }
-
-    if keyboard_gen > graph_input.last_keyboard_gen {
+    if !had_key_event && keyboard_gen > graph_input.last_keyboard_gen {
         graph_input.last_keyboard_gen = keyboard_gen;
         let key = Key::from_raw(prop_get(node, kb::KEYBOARD_LAST_KEY).unwrap_or(0) as u16);
         if key != Key::Unknown {
@@ -1017,7 +1021,7 @@ fn main(arg: usize) -> ! {
 
         if bristle_evt_handle != 0 {
             prev_keys = pressed_keys.clone();
-            {
+            let poll_stats = {
                 crate::trace_span!("bloom.loop.poll_bristle");
                 poll_bristle(
                     bristle_evt_handle,
@@ -1027,14 +1031,16 @@ fn main(arg: usize) -> ! {
                     &mut accel_state,
                     screen_w,
                     screen_h,
-                );
-            }
+                )
+            };
             bristle_node = find_bristle_node().or(bristle_node);
             sync_input_from_graph(
                 &mut cursor,
                 &mut pressed_keys,
                 bristle_node,
                 &mut graph_input,
+                poll_stats.had_pointer_event,
+                poll_stats.had_key_event,
                 screen_w,
                 screen_h,
                 loop_ctrl.frame_number(),

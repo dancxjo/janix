@@ -1,6 +1,6 @@
 # Feature: Telnet Server
 
-> Last run: 2026-04-05 19:04:08
+> Last run: 2026-04-05 19:06:17
 
 ## Scenarios
 

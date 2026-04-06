@@ -1,7 +1,7 @@
 #![feature(restricted_std)]
 #![no_main]
 
-use stem::syscall::{ioport_read, irq_subscribe, irq_wait, port_send_all, PortHandle};
+use stem::syscall::{ioport_read, irq_subscribe, port_send_all, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::{info, warn};
 
@@ -18,8 +18,8 @@ const STATUS_AUX_DATA: usize = 0x20;
 /// IRQ1 vector (keyboard) - legacy IRQ1 maps to vector 0x21 after IOAPIC remap
 const KBD_VECTOR: u8 = 0x21;
 
-/// Polling interval in milliseconds for degraded mode
-const POLLING_INTERVAL_MS: u64 = 10;
+/// Polling interval in milliseconds for the cooperative service loop.
+const POLLING_INTERVAL_MS: u64 = 2;
 
 /// Driver state node kind
 const KIND_DRV_PS2_KBD: &str = "drv.Ps2Keyboard";
@@ -55,8 +55,11 @@ fn main(raw_write_handle: usize) -> ! {
     match irq_subscribe(KBD_VECTOR) {
         Ok(()) => {
             info!("ps2_kbd: subscribed to IRQ1 (vector 0x{:02x})", KBD_VECTOR);
-            set_mode("Interrupt");
-            interrupt_loop(handle);
+            // Keep polling even after a successful subscription. On the current x86 path
+            // the shared i8042 line can fail to deliver a usable wakeup, but the controller
+            // buffer itself still reflects incoming bytes correctly.
+            set_mode("Polling");
+            polling_loop(handle);
         }
         Err(e) => {
             info!(
@@ -140,28 +143,10 @@ fn send_key_event(handle: PortHandle, edge: KeyEdge, drop_counter: &mut u32) {
     }
 }
 
-/// Primary interrupt-driven loop.
-fn interrupt_loop(handle: PortHandle) -> ! {
-    info!("ps2_kbd: entering interrupt-driven loop");
-    let mut state = KeyboardState::new();
-    let mut drop_counter = 0u32;
-
-    // Clear any already-pending keyboard bytes before waiting. On an edge-triggered
-    // line, a latched byte can keep IRQ1 asserted without generating a fresh edge.
-    drain_keyboard_data(handle, &mut state, &mut drop_counter);
-
-    loop {
-        match irq_wait(KBD_VECTOR) {
-            Ok(_) => drain_keyboard_data(handle, &mut state, &mut drop_counter),
-            Err(_) => stem::yield_now(),
-        }
-    }
-}
-
 /// Fallback polling loop (if IRQ subscribe fails)
 fn polling_loop(handle: PortHandle) -> ! {
     info!(
-        "ps2_kbd: using polling mode ({}ms interval)",
+        "ps2_kbd: using cooperative polling loop ({}ms interval)",
         POLLING_INTERVAL_MS
     );
     let mut state = KeyboardState::new();
@@ -171,10 +156,7 @@ fn polling_loop(handle: PortHandle) -> ! {
 
         if status & STATUS_OUTPUT_FULL != 0 {
             if status & STATUS_AUX_DATA == 0 {
-                let scancode = ioport_read(PS2_DATA, 1) as u8;
-                if let Some(edge) = state.process_ps2(scancode) {
-                    send_key_event(handle, edge, &mut drop_counter);
-                }
+                drain_keyboard_data(handle, &mut state, &mut drop_counter);
             } else {
                 // Leave mouse bytes queued for ps2_mouse.
                 stem::sleep_ms(1);

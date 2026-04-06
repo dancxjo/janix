@@ -92,6 +92,36 @@ pub fn prop_set<S: IntoSymbolRef>(id: ThingId, key: S, value: u64) -> Result<(),
     errno(ret).map(|_| ())
 }
 
+pub fn prop_set_async<S: IntoSymbolRef>(id: ThingId, key: S, value: u64) -> Result<u64, Errno> {
+    let wire = key.to_wire();
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_ASYNC_PROP_SET,
+            id.to_u64_lossy() as usize,
+            &wire as *const _ as usize,
+            value as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as u64)
+}
+
+pub fn async_wait(handle: u64) -> Result<u64, Errno> {
+    let ret = unsafe { syscall6(SYS_ROOT_ASYNC_WAIT, handle as usize, 0, 0, 0, 0, 0) };
+    errno(ret).map(|v| v as u64)
+}
+
+pub fn async_drop(handle: u64) {
+    let _ = unsafe { syscall6(SYS_ROOT_ASYNC_DROP, handle as usize, 0, 0, 0, 0, 0) };
+}
+
+pub fn async_status(handle: u64) -> Result<usize, Errno> {
+    let ret = unsafe { syscall6(SYS_ROOT_ASYNC_STATUS, handle as usize, 0, 0, 0, 0, 0) };
+    errno(ret).map(|v| v as usize)
+}
+
 pub fn try_typed<T: super::Thing>(
     _id: ThingId,
 ) -> Result<super::ThingRef<T>, super::sys::KindMismatch> {

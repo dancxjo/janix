@@ -176,6 +176,16 @@ pub const SYS_ROOT_DIR_LIST: u32 = 0x172;
 pub const SYS_ROOT_ORPHAN_THING: u32 = 0x173;
 
 // ============================================================================
+// Block 0x180–0x18F: Async Graph
+// ============================================================================
+pub const SYS_ROOT_ASYNC_PROP_SET: u32 = 0x180;
+pub const SYS_ROOT_ASYNC_LINK: u32 = 0x181;
+pub const SYS_ROOT_ASYNC_CREATE_NODE: u32 = 0x182;
+pub const SYS_ROOT_ASYNC_WAIT: u32 = 0x183;
+pub const SYS_ROOT_ASYNC_DROP: u32 = 0x184;
+pub const SYS_ROOT_ASYNC_STATUS: u32 = 0x185;
+
+// ============================================================================
 // Block 0x1A0–0x1AF: Network
 // ============================================================================
 pub const SYS_NIC_MAC: u32 = 0x1A0;

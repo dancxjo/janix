@@ -372,6 +372,13 @@ fn main(_arg: usize) -> ! {
         // thingsys::prop_set in the initialization block and is sufficient for
         // service discovery.
 
+        let current_link_state = device.link_up();
+        if current_link_state != _last_link_state {
+            _last_link_state = current_link_state;
+            let _ = thingsys::prop_set_async(net_id, "net.link_up", if current_link_state { 1 } else { 0 });
+            info!("NETD: Link state changed {} -> async updated graph", if current_link_state { "UP" } else { "DOWN" });
+        }
+
         // Garbage collect closed sockets (local operation, fast, no IPC)
         socket_api.gc_closed_sockets(&mut socket_set);
 

@@ -13,6 +13,7 @@ pub mod pci_stub;
 pub mod resources;
 pub mod schema;
 pub mod service;
+pub mod async_ops;
 
 pub use service::root_main;
 
@@ -248,6 +249,7 @@ static INBOX_DROP_COUNT: AtomicU64 = AtomicU64::new(0);
 
 pub fn init_root_service<R: crate::BootRuntime>() {
     *ROOT_INBOX.lock() = Some(VecDeque::new());
+    async_ops::init();
     crate::kinfo!("Spawning Root service...");
     let tid = crate::task::spawn_with_priority::<R>(
         service::root_main::<R>,

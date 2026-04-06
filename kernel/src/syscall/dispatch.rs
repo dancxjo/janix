@@ -117,6 +117,13 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ROOT_DIR_LIST => handlers::sys_root_dir_list(args[0], args[1], args[2]),
         SYS_ROOT_ORPHAN_THING => handlers::sys_root_orphan_thing(args[0]),
 
+        SYS_ROOT_ASYNC_PROP_SET => handlers::sys_root_async_prop_set(args[0], args[1], args[2]),
+        SYS_ROOT_ASYNC_LINK => handlers::sys_root_async_link(args[0], args[1], args[2]),
+        SYS_ROOT_ASYNC_CREATE_NODE => handlers::sys_root_async_create_node(args[0]),
+        SYS_ROOT_ASYNC_WAIT => handlers::sys_root_async_wait(args[0]),
+        SYS_ROOT_ASYNC_DROP => handlers::sys_root_async_drop(args[0]),
+        SYS_ROOT_ASYNC_STATUS => handlers::sys_root_async_status(args[0]),
+
         SYS_NIC_MAC => handlers::sys_nic_mac(args[0]),
         SYS_NIC_LINK_UP => handlers::sys_nic_link_up(),
         SYS_NIC_POLL_RX => handlers::sys_nic_poll_rx(args[0], args[1]),

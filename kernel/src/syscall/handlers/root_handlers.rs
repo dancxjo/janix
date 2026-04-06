@@ -646,6 +646,76 @@ pub fn sys_root_bytespace_unmap(id: usize, user_va: usize) -> SysResult<usize> {
     }
 }
 
+pub fn sys_root_async_prop_set(id: usize, key_ptr: usize, value: usize) -> SysResult<usize> {
+    let key = read_symbol(key_ptr)?;
+    let cell = root_svc::enqueue(RootOp::PropSet {
+        id: id as u64,
+        key,
+        value: value as u64,
+    });
+    crate::root::async_ops::alloc_handle(cell)
+        .map(|h| h as usize)
+        .ok_or(Errno::ENOMEM)
+}
+
+pub fn sys_root_async_link(src: usize, rel_ptr: usize, dst: usize) -> SysResult<usize> {
+    let rel = read_symbol(rel_ptr)?;
+    let cell = root_svc::enqueue(RootOp::Link {
+        src: src as u64,
+        rel,
+        dst: dst as u64,
+    });
+    crate::root::async_ops::alloc_handle(cell)
+        .map(|h| h as usize)
+        .ok_or(Errno::ENOMEM)
+}
+
+pub fn sys_root_async_create_node(kind_ptr: usize) -> SysResult<usize> {
+    let kind = read_symbol(kind_ptr)?;
+    let creator_tid = unsafe { crate::sched::current_tid_current() };
+    let owner_thing_id = unsafe { crate::sched::graph_thing_for_current() };
+    let cell = root_svc::enqueue(RootOp::CreateNode {
+        kind,
+        creator_tid,
+        owner_thing_id,
+    });
+    crate::root::async_ops::alloc_handle(cell)
+        .map(|h| h as usize)
+        .ok_or(Errno::ENOMEM)
+}
+
+pub fn sys_root_async_wait(handle: usize) -> SysResult<usize> {
+    let cell = crate::root::async_ops::get_cell(handle as u64).ok_or(Errno::ENOENT)?;
+    wait_reply_block!(cell);
+    let status = cell.status.load(Ordering::Relaxed);
+    let val = cell.value.load(Ordering::Relaxed) as usize;
+    crate::root::async_ops::free_handle(handle as u64);
+    if status == 0 {
+        Ok(val)
+    } else {
+        Err(abi::errors::errno(status as isize).unwrap_err())
+    }
+}
+
+pub fn sys_root_async_drop(handle: usize) -> SysResult<usize> {
+    crate::root::async_ops::free_handle(handle as u64);
+    Ok(0)
+}
+
+pub fn sys_root_async_status(handle: usize) -> SysResult<usize> {
+    let cell = crate::root::async_ops::get_cell(handle as u64).ok_or(Errno::ENOENT)?;
+    if cell.done.load(Ordering::Acquire) != 0 {
+        let status = cell.status.load(Ordering::Relaxed);
+        if status == 0 {
+            Ok(1) // 1 = Done
+        } else {
+            Ok(2) // 2 = Error
+        }
+    } else {
+        Ok(0) // 0 = Pending
+    }
+}
+
 pub fn sys_root_bytespace_phys(id: usize) -> SysResult<usize> {
     let reply = root_svc::enqueue(RootOp::BytespacePhys { id: id as u64 });
 

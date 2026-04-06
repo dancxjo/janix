@@ -82,6 +82,8 @@ pub const SYS_TOPIC_CREATE: u32 = 0x87;
 pub const SYS_TOPIC_SUBSCRIBE: u32 = 0x88;
 /// Publish a payload to all topic subscribers. Returns delivered subscriber count.
 pub const SYS_TOPIC_PUBLISH: u32 = 0x89;
+/// Non-blocking receive. Returns EAGAIN when no message is queued.
+pub const SYS_PORT_TRY_RECV: u32 = 0x8A;
 
 pub mod port_wait {
     pub const READABLE: u32 = 1 << 0;

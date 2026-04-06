@@ -6,7 +6,7 @@
 use alloc::collections::VecDeque;
 use smoltcp::phy::{self, Device, DeviceCapabilities, Medium};
 use smoltcp::time::Instant;
-use stem::syscall::port::{port_recv, port_send, PortHandle};
+use stem::syscall::port::{port_send, port_try_recv, PortHandle};
 
 use crate::driver_protocol::{
     NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_LINK_DOWN, MSG_LINK_UP,
@@ -66,7 +66,7 @@ impl IpcNicDevice {
     pub fn poll_rx(&mut self) {
         // Try to receive frames from driver
         loop {
-            match port_recv(self.rx_port, &mut self.rx_buf[self.rx_buf_len..]) {
+            match port_try_recv(self.rx_port, &mut self.rx_buf[self.rx_buf_len..]) {
                 Ok(len) if len > 0 => {
                     self.rx_buf_len += len;
                 }

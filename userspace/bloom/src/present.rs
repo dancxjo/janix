@@ -13,7 +13,7 @@ use abi::ThingId;
 use alloc::string::String;
 use alloc::vec::Vec;
 use stem::info;
-use stem::syscall::{port_recv, port_send_all, PortHandle};
+use stem::syscall::{port_send_all, port_try_recv, PortHandle};
 
 use crate::damage::Damage;
 use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentDamageSnapshot, PresentStats};
@@ -354,7 +354,7 @@ impl DriverPresenter {
     fn pump_port(&mut self) {
         let mut temp = [0u8; 256];
         loop {
-            let n = match port_recv(self.resp_read, &mut temp) {
+            let n = match port_try_recv(self.resp_read, &mut temp) {
                 Ok(n) => n,
                 Err(_) => break,
             };
@@ -730,7 +730,9 @@ impl Presenter for DriverPresenter {
             let now_ns = stem::monotonic_ns();
             if now_ns.saturating_sub(last_acquire_send_ns) >= 50_000_000 {
                 if now_ns.saturating_sub(last_stuck_log_ns) >= 250_000_000 {
-                    stem::info!("bloom: presenter stuck waiting for ACQUIRED, resending ACQUIRE...");
+                    stem::info!(
+                        "bloom: presenter stuck waiting for ACQUIRED, resending ACQUIRE..."
+                    );
                     last_stuck_log_ns = now_ns;
                 }
                 send_acquire(self);

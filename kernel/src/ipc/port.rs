@@ -26,11 +26,18 @@ pub struct Port {
     waiters_write: crate::sched::WaitQueue,
     send_lock: Mutex<()>,
     recv_lock: Mutex<()>,
+    endpoints: Mutex<PortEndpoints>,
 
     #[cfg(debug_assertions)]
     sender_tid: AtomicU64,
     #[cfg(debug_assertions)]
     receiver_tid: AtomicU64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct PortEndpoints {
+    readers: u32,
+    writers: u32,
 }
 
 impl Port {
@@ -47,6 +54,10 @@ impl Port {
             waiters_write: crate::sched::WaitQueue::new(),
             send_lock: Mutex::new(()),
             recv_lock: Mutex::new(()),
+            endpoints: Mutex::new(PortEndpoints {
+                readers: 1,
+                writers: 1,
+            }),
             #[cfg(debug_assertions)]
             sender_tid: AtomicU64::new(0),
             #[cfg(debug_assertions)]
@@ -115,8 +126,8 @@ impl Port {
         self.head
             .store(head.wrapping_add(to_write), Ordering::Release);
 
-        // Wake up readers (likely multiple readers in some discovery flows, wake_all is safer)
-        self.waiters_read.wake_all();
+        // One queued message should wake one receiver.
+        self.waiters_read.wake_one();
 
         to_write
     }
@@ -150,7 +161,7 @@ impl Port {
 
         self.head
             .store(head.wrapping_add(data.len()), Ordering::Release);
-        self.waiters_read.wake_all();
+        self.waiters_read.wake_one();
         true
     }
 
@@ -178,7 +189,7 @@ impl Port {
     ///
     /// This method is gated by debug assertions to ensure only one consumer task
     /// accesses the port (SPSC).
-    pub fn recv(&self, buf: &mut [u8]) -> usize {
+    pub fn try_recv(&self, buf: &mut [u8]) -> usize {
         #[cfg(debug_assertions)]
         self.check_ownership(false);
 
@@ -205,6 +216,52 @@ impl Port {
         self.waiters_write.wake_one();
 
         to_read
+    }
+
+    pub fn recv(&self, buf: &mut [u8]) -> usize {
+        self.try_recv(buf)
+    }
+
+    pub fn has_readers(&self) -> bool {
+        self.endpoints.lock().readers > 0
+    }
+
+    pub fn has_writers(&self) -> bool {
+        self.endpoints.lock().writers > 0
+    }
+
+    pub fn close_reader(&self) -> bool {
+        let mut endpoints = self.endpoints.lock();
+        if endpoints.readers == 0 {
+            return false;
+        }
+        endpoints.readers -= 1;
+        let destroy = endpoints.readers == 0 && endpoints.writers == 0;
+        let last_reader = endpoints.readers == 0;
+        drop(endpoints);
+
+        if last_reader {
+            self.waiters_write.wake_all();
+        }
+
+        destroy
+    }
+
+    pub fn close_writer(&self) -> bool {
+        let mut endpoints = self.endpoints.lock();
+        if endpoints.writers == 0 {
+            return false;
+        }
+        endpoints.writers -= 1;
+        let destroy = endpoints.readers == 0 && endpoints.writers == 0;
+        let last_writer = endpoints.writers == 0;
+        drop(endpoints);
+
+        if last_writer {
+            self.waiters_read.wake_all();
+        }
+
+        destroy
     }
 
     #[cfg(debug_assertions)]
@@ -374,5 +431,28 @@ mod tests {
         let n = receiver.recv(&mut out);
         assert_eq!(n, 4);
         assert_eq!(&out[..n], &[1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn test_port_try_recv_empty() {
+        let port = Arc::new(Port::new(16));
+        let receiver = Receiver::new(Arc::clone(&port));
+        let mut out = [0u8; 8];
+        assert_eq!(receiver.recv(&mut out), 0);
+        assert!(receiver.is_empty());
+    }
+
+    #[test]
+    fn test_port_close_endpoints() {
+        let port = Arc::new(Port::new(16));
+        assert!(port.has_readers());
+        assert!(port.has_writers());
+
+        assert!(!port.close_writer());
+        assert!(!port.has_writers());
+        assert!(port.has_readers());
+
+        assert!(port.close_reader());
+        assert!(!port.has_readers());
     }
 }

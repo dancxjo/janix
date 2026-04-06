@@ -20,7 +20,9 @@ use dns_packet::{
 };
 use stem::info;
 use stem::petals::Petals;
-use stem::syscall::port::{port_create, port_recv, port_send_all, port_wait, PortHandle};
+use stem::syscall::port::{
+    port_create, port_recv, port_send_all, port_try_recv, port_wait, PortHandle,
+};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 
@@ -918,7 +920,7 @@ fn udp_bind(api: PortHandle, resp_w: PortHandle, resp_r: PortHandle, port: u16) 
     send_socket_api_msg(api, &msg)?;
     let mut resp = [0u8; 128];
     for _ in 0..100 {
-        if let Ok(len) = port_recv(resp_r, &mut resp) {
+        if let Ok(len) = port_try_recv(resp_r, &mut resp) {
             if len >= 6 && u16::from_le_bytes([resp[0], resp[1]]) == RESP_HANDLE {
                 return Ok(u32::from_le_bytes([resp[2], resp[3], resp[4], resp[5]]));
             }
@@ -940,7 +942,7 @@ fn net_join_multicast(
     send_socket_api_msg(api, &msg)?;
     let mut resp = [0u8; 64];
     for _ in 0..10 {
-        if port_recv(resp_r, &mut resp).is_ok() {
+        if port_try_recv(resp_r, &mut resp).is_ok() {
             break;
         }
         stem::time::sleep_ms(5);
@@ -1011,7 +1013,7 @@ fn udp_send_to(
 
     let mut resp = [0u8; 64];
     for _ in 0..20 {
-        if let Ok(len) = port_recv(resp_r, &mut resp) {
+        if let Ok(len) = port_try_recv(resp_r, &mut resp) {
             if len >= 2 && u16::from_le_bytes([resp[0], resp[1]]) == RESP_OK {
                 return Ok(());
             }

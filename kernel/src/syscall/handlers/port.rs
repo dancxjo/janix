@@ -40,6 +40,9 @@ pub fn sys_port_send(handle: usize, ptr: usize, len: usize) -> SysResult<usize> 
     };
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    if !port.has_readers() {
+        return Err(Errno::EPIPE);
+    }
 
     let mut buf = [0u8; 4096];
     unsafe {
@@ -68,6 +71,9 @@ pub fn sys_port_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<usi
     };
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+    if !port.has_readers() {
+        return Err(Errno::EPIPE);
+    }
 
     let mut buf = [0u8; 4096];
     unsafe {
@@ -90,7 +96,7 @@ pub fn sys_port_send_all(handle: usize, ptr: usize, len: usize) -> SysResult<usi
     }
 }
 
-pub fn sys_port_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
+fn sys_port_recv_impl(handle: usize, ptr: usize, len: usize, blocking: bool) -> SysResult<usize> {
     let len = len.min(4096);
     if len == 0 {
         return Ok(0);
@@ -108,28 +114,80 @@ pub fn sys_port_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> 
     };
 
     let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
-
     let mut buf = [0u8; 4096];
-    let read = port.recv(&mut buf[..len]);
+    let tid = unsafe { crate::sched::current_tid_current() };
 
-    if read > 0 {
-        unsafe {
-            copyout(ptr, &buf[..read])?;
+    loop {
+        let read = port.try_recv(&mut buf[..len]);
+        if read > 0 {
+            unsafe {
+                copyout(ptr, &buf[..read])?;
+            }
+            crate::ktrace!(
+                "sys_port_recv: read {} bytes from port {}",
+                read,
+                entry.port_id.0
+            );
+            return Ok(read);
         }
-        crate::ktrace!(
-            "sys_port_recv: read {} bytes from port {}",
-            read,
-            entry.port_id.0
-        );
-    }
 
-    Ok(read)
+        if !port.has_writers() {
+            return Err(Errno::EPIPE);
+        }
+
+        if !blocking {
+            return Err(Errno::EAGAIN);
+        }
+
+        port.add_waiter_read(tid);
+
+        let read = port.try_recv(&mut buf[..len]);
+        if read > 0 {
+            port.remove_waiter_read(tid);
+            unsafe {
+                copyout(ptr, &buf[..read])?;
+            }
+            crate::ktrace!(
+                "sys_port_recv: read {} bytes from port {} after wait registration",
+                read,
+                entry.port_id.0
+            );
+            return Ok(read);
+        }
+
+        if !port.has_writers() {
+            port.remove_waiter_read(tid);
+            return Err(Errno::EPIPE);
+        }
+
+        unsafe {
+            crate::sched::block_current_erased();
+        }
+    }
+}
+
+pub fn sys_port_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
+    sys_port_recv_impl(handle, ptr, len, true)
+}
+
+pub fn sys_port_try_recv(handle: usize, ptr: usize, len: usize) -> SysResult<usize> {
+    sys_port_recv_impl(handle, ptr, len, false)
 }
 
 pub fn sys_port_close(handle: usize) -> SysResult<usize> {
     let handle = crate::ipc::Handle(handle as u32);
     let mut table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
-    if table.close(handle) {
+    if let Some(entry) = table.close(handle) {
+        drop(table);
+
+        let port = crate::ipc::get_port(entry.port_id).ok_or(Errno::EBADF)?;
+        let destroy = match entry.mode {
+            crate::ipc::HandleMode::Read => port.close_reader(),
+            crate::ipc::HandleMode::Write => port.close_writer(),
+        };
+        if destroy {
+            crate::ipc::close_port(entry.port_id);
+        }
         Ok(0)
     } else {
         Err(Errno::EBADF)

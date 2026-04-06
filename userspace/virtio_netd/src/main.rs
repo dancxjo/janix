@@ -17,14 +17,12 @@ mod driver;
 mod protocol;
 
 use abi::schema::keys;
-use alloc::vec::Vec;
 use driver::VirtioNetDriver;
 use protocol::{
     NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_LINK_DOWN, MSG_LINK_UP, MSG_MAC_REQ, MSG_MAC_RESP,
 };
-use stem::syscall::port::{port_create, port_recv, port_send, PortHandle};
+use stem::syscall::port::{port_create, port_send, port_try_recv};
 use stem::thing::sys as thingsys;
-use stem::thing::ThingId;
 use stem::{error, info, warn};
 
 /// Graph kind for the network driver service
@@ -177,7 +175,7 @@ fn main(_arg: usize) -> ! {
         }
 
         // Check for TX requests from netd (non-blocking)
-        match port_recv(read_handle, &mut rx_buf) {
+        match port_try_recv(read_handle, &mut rx_buf) {
             Ok(len) if len > 0 => {
                 if let Some(msg) = NetDriverMsg::decode(&rx_buf[..len]) {
                     match msg.msg_type {

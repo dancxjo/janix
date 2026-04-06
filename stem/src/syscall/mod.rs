@@ -71,8 +71,8 @@ pub fn write(fd: usize, buf: &[u8]) -> Result<usize, Errno> {
 }
 
 pub use port::{
-    port_close, port_create, port_recv, port_send, port_send_all, port_wait, topic_create,
-    topic_publish, topic_subscribe, PortHandle,
+    port_close, port_create, port_recv, port_send, port_send_all, port_try_recv, port_wait,
+    topic_create, topic_publish, topic_subscribe, PortHandle,
 };
 
 pub fn yield_now() {
@@ -278,11 +278,7 @@ pub fn alloc_stack(pages: usize) -> Result<usize, Errno> {
     abi::errors::errno(ret)
 }
 
-pub fn spawn_thread(
-    entry: usize,
-    arg: usize,
-    stack: &crate::stack::Stack,
-) -> Result<u64, Errno> {
+pub fn spawn_thread(entry: usize, arg: usize, stack: &crate::stack::Stack) -> Result<u64, Errno> {
     let req = abi::types::SpawnThreadReq {
         entry,
         sp: stack.sp as usize,

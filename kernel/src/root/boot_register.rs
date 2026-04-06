@@ -20,7 +20,7 @@ pub struct BootInfo<'a> {
 
 macro_rules! wait_reply_spin {
     ($reply:expr) => {{
-        crate::kinfo!("ROOT_DIAG: inside wait_reply_spin! about to loop");
+        crate::ktrace!("ROOT_DIAG: inside wait_reply_spin! about to loop");
         let mut yields = 0u64;
         loop {
             let done = $reply.done.load(core::sync::atomic::Ordering::Acquire);
@@ -29,14 +29,17 @@ macro_rules! wait_reply_spin {
             }
             yields += 1;
             if yields % 100 == 0 {
-                crate::kinfo!("ROOT_DIAG: wait_reply_spin() still waiting! yields={}", yields);
+                crate::ktrace!(
+                    "ROOT_DIAG: wait_reply_spin() still waiting! yields={}",
+                    yields
+                );
             }
             // Yield if waiting for another CPU to process async ops
             unsafe {
                 crate::sched::yield_now_current();
             }
         }
-        crate::kinfo!("ROOT_DIAG: wait_reply_spin() DONE");
+        crate::ktrace!("ROOT_DIAG: wait_reply_spin() DONE");
     }};
 }
 
@@ -49,7 +52,8 @@ pub struct BootInventory {
 pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> BootInventory {
     crate::kinfo!("ROOT: boot registration begin (Census Phase 1 v0.2)");
 
-    let create = |kind: &str| -> u64 { crate::kinfo!("ROOT_DIAG: create({})", kind);
+    let create = |kind: &str| -> u64 {
+        crate::ktrace!("ROOT_DIAG: create({})", kind);
         let reply = enqueue(RootOp::CreateNode {
             kind: SymbolShell::Str(alloc::string::String::from(kind)),
             creator_tid: 0,       // Boot process, no creator
@@ -59,7 +63,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
         reply.value.load(core::sync::atomic::Ordering::Relaxed)
     };
 
-    let set = |id: u64, key: &str, val: u64| { crate::kinfo!("ROOT_DIAG: set({}, {}) START LogEvent", id, key);
+    let set = |id: u64, key: &str, val: u64| {
+        crate::ktrace!("ROOT_DIAG: set({}, {}) START LogEvent", id, key);
         let log_event_reply = crate::root::enqueue(RootOp::LogEvent {
             level: 3,
             event: SymbolShell::Str(alloc::string::String::from("boot.trace")),
@@ -75,18 +80,17 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             fields: alloc::vec::Vec::new(),
             about: alloc::vec::Vec::new(),
         });
-        crate::kinfo!("ROOT_DIAG: set({}, {}) END LogEvent", id, key);
+        crate::ktrace!("ROOT_DIAG: set({}, {}) END LogEvent", id, key);
         let reply = enqueue(RootOp::PropSet {
             id,
             key: SymbolShell::Str(alloc::string::String::from(key)),
             value: val,
         });
-        crate::kinfo!("ROOT_DIAG: set({}, {}) END PropSet enqueue", id, key);
         wait_reply_spin!(reply);
-        crate::kinfo!("ROOT_DIAG: set({}, {}) RETURN", id, key);
     };
 
-    let link = |src: u64, rel: &str, dst: u64| { crate::kinfo!("ROOT_DIAG: link({}, {}, {})", src, rel, dst);
+    let link = |src: u64, rel: &str, dst: u64| {
+        crate::ktrace!("ROOT_DIAG: link({}, {}, {})", src, rel, dst);
         crate::ktrace!("ROOT_TRACE: link({}, {}, {})", src, rel, dst);
         let reply = enqueue(RootOp::Link {
             src,
@@ -96,7 +100,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
         wait_reply_spin!(reply);
     };
 
-    let intern = |s: &str| -> u64 { crate::kinfo!("ROOT_DIAG: intern({})", s);
+    let intern = |s: &str| -> u64 {
+        crate::ktrace!("ROOT_DIAG: intern({})", s);
         let reply = enqueue(RootOp::Intern {
             name: alloc::string::String::from(s),
         });
@@ -129,7 +134,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     let conf_high = confidence::HIGH as u64;
 
     // 1. Host
-    crate::kinfo!("ROOT_DIAG: 1. Host creation start");
+    crate::ktrace!("ROOT_DIAG: 1. Host creation start");
     let host = create(kinds::DEV_HOST);
     set(host, keys::HHDM_OFFSET, info.hhdm_offset);
     let arch_id = intern(info.arch);
@@ -141,10 +146,10 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     set(host, keys::CONFIDENCE, conf_high);
     // Publish host anchor early so fallback host links can attach during boot census.
     super::graph_anchors::set_host(host);
-    crate::kinfo!("ROOT_DIAG: 1. Host registered: t{:x}", host);
+    crate::ktrace!("ROOT_DIAG: 1. Host registered: t{:x}", host);
 
     // 2. Platform Bus
-    crate::kinfo!("ROOT_DIAG: 2. Platform Bus start");
+    crate::ktrace!("ROOT_DIAG: 2. Platform Bus start");
     let platform_bus = create(kinds::DEV_BUS_PLATFORM);
     let pbus_name = intern("platform0");
     set(platform_bus, keys::NAME, pbus_name);
@@ -152,28 +157,28 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
     set(platform_bus, keys::CONFIDENCE, conf_high);
 
     link(host, rels::HAS_BUS, platform_bus);
-    crate::kinfo!("ROOT_DIAG: 2. Platform Bus done");
+    crate::ktrace!("ROOT_DIAG: 2. Platform Bus done");
 
     // 3. Kernel
-    crate::kinfo!("ROOT_DIAG: 3. Kernel start");
+    crate::ktrace!("ROOT_DIAG: 3. Kernel start");
     let kernel = create(kinds::PROC_KERNEL);
     set(kernel, "version", 1);
     // Initialize TimeState: 0 = Unanchored, 1 = Anchored
     set(kernel, "sys.TimeState", 0);
     link(kernel, rels::RUNS_ON, host);
-    crate::kinfo!("ROOT_DIAG: 3. Kernel done");
+    crate::ktrace!("ROOT_DIAG: 3. Kernel done");
 
     // 4. Root Service
-    crate::kinfo!("ROOT_DIAG: 4. Root Service start");
+    crate::ktrace!("ROOT_DIAG: 4. Root Service start");
     let root_svc = create(kinds::SVC_ROOT);
     let root_name = intern("/");
     set(root_svc, keys::NAME, root_name);
     link(kernel, rels::PROVIDES, root_svc);
     link(root_svc, rels::MONITORS, host);
-    crate::kinfo!("ROOT_DIAG: 4. Root Service done");
+    crate::ktrace!("ROOT_DIAG: 4. Root Service done");
 
     // 5. CPUs
-    crate::kinfo!("ROOT_DIAG: 5. CPUs start");
+    crate::ktrace!("ROOT_DIAG: 5. CPUs start");
     for i in 0..info.cpu_count {
         let cpu = create(kinds::DEV_CPU);
         set(cpu, "id", i as u64);
@@ -182,10 +187,10 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
         link(host, rels::HAS_CPU, cpu);
         super::graph_anchors::set_cpu_thing(i, cpu);
     }
-    crate::kinfo!("ROOT_DIAG: 5. CPUs done");
+    crate::ktrace!("ROOT_DIAG: 5. CPUs done");
 
     // 6. Memory Ranges
-    crate::kinfo!("ROOT_DIAG: 6. Memory Ranges start");
+    crate::ktrace!("ROOT_DIAG: 6. Memory Ranges start");
     let mut fb_backing_range: Option<ThingId> = None;
     let fb_phys_start = info
         .framebuffer
@@ -210,7 +215,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             }
         }
     }
-    crate::kinfo!("ROOT_DIAG: 6. Memory Ranges done");
+    crate::ktrace!("ROOT_DIAG: 6. Memory Ranges done");
 
     // 7. Modules
     let bytespace_create_ptr = |ptr: u64, len: u64| -> u64 {

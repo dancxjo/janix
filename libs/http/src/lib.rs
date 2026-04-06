@@ -8,7 +8,7 @@ use alloc::vec::Vec;
 use core::fmt::Write;
 use core::str::FromStr;
 
-use stem::syscall::port::{port_create, port_recv, port_send, PortHandle};
+use stem::syscall::port::{port_create, port_send, port_try_recv, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 
@@ -191,7 +191,7 @@ fn send_recv(netd_port: PortHandle, my_port: PortHandle, msg: &[u8]) -> Result<V
     let mut buf = [0u8; 8192]; // Large enough for response
     let start = stem::time::monotonic_ns();
     loop {
-        match port_recv(my_port, &mut buf) {
+        match port_try_recv(my_port, &mut buf) {
             Ok(len) if len > 0 => return Ok(buf[..len].to_vec()),
             _ => {
                 if stem::time::monotonic_ns() - start > 5_000_000_000 {

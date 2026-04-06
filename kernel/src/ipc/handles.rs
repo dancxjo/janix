@@ -73,17 +73,12 @@ impl HandleTable {
     }
 
     /// Close a handle, freeing the slot
-    pub fn close(&mut self, handle: Handle) -> bool {
+    pub fn close(&mut self, handle: Handle) -> Option<HandleEntry> {
         let idx = handle.0 as usize;
         if idx >= MAX_HANDLES {
-            return false;
+            return None;
         }
-        if self.entries[idx].is_some() {
-            self.entries[idx] = None;
-            true
-        } else {
-            false
-        }
+        self.entries[idx].take()
     }
 }
 

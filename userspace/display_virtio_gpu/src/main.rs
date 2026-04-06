@@ -9,7 +9,7 @@ use abi::ids::HandleId;
 use abi::schema::{keys, kinds};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::info;
-use stem::syscall::{port_recv, port_send, PortHandle};
+use stem::syscall::{port_recv, PortHandle};
 use stem::thing::{sys as thingsys, ThingId};
 use virtio_gpu::{Rect, VirtioGpu};
 
@@ -149,7 +149,10 @@ fn send_msg(handle: PortHandle, msg_type: u16, payload: &[u8]) {
         }
         stem::trace!(
             "display_virtio_gpu: sent msg_type={} handle={} size={} status={:?}",
-            msg_type, handle, len, status
+            msg_type,
+            handle,
+            len,
+            status
         );
     }
 }
@@ -338,18 +341,36 @@ fn main(arg: usize) -> ! {
         match stem::syscall::port_wait(&handles, 1 /* READABLE */) {
             Ok(_) => {
                 let mut read_total = 0;
-                loop {
-                    match port_recv(drv_req_read, &mut buf) {
-                        Ok(n) if n > 0 => {
+                match port_recv(drv_req_read, &mut buf) {
+                    Ok(n) => {
+                        if n == 0 {
+                            // No payload queued after wake; just continue the outer loop.
+                        } else {
                             frames.push(&buf[..n]);
                             read_total += n;
                         }
-                        Ok(0) => break,
+                    }
+                    Err(e) => {
+                        stem::error!("display_virtio_gpu: port_recv ERR: {:?}", e);
+                    }
+                }
+
+                // `port_recv` is now blocking. After `port_wait` wakes us, drain only
+                // with `port_try_recv` so we don't park here before processing frames.
+                loop {
+                    match stem::syscall::port_try_recv(drv_req_read, &mut buf) {
+                        Ok(n) => {
+                            if n == 0 {
+                                break;
+                            }
+                            frames.push(&buf[..n]);
+                            read_total += n;
+                        }
+                        Err(abi::errors::Errno::EAGAIN) => break,
                         Err(e) => {
-                            stem::error!("display_virtio_gpu: port_recv ERR: {:?}", e);
+                            stem::error!("display_virtio_gpu: port_try_recv ERR: {:?}", e);
                             break;
                         }
-                        _ => break,
                     }
                 }
                 if read_total > 0 {

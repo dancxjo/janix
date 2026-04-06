@@ -67,6 +67,23 @@ pub fn port_recv(handle: PortHandle, buf: &mut [u8]) -> Result<usize, Errno> {
     abi::errors::errno(ret)
 }
 
+/// Try to receive bytes from a port without blocking.
+/// Returns `EAGAIN` when no bytes are queued.
+pub fn port_try_recv(handle: PortHandle, buf: &mut [u8]) -> Result<usize, Errno> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_PORT_TRY_RECV,
+            handle as usize,
+            buf.as_mut_ptr() as usize,
+            buf.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret)
+}
+
 /// Close a port handle
 pub fn port_close(handle: PortHandle) -> Result<(), Errno> {
     let ret = unsafe { raw_syscall6(SYS_PORT_CLOSE, handle as usize, 0, 0, 0, 0, 0) };

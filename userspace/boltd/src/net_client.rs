@@ -1,6 +1,6 @@
 use abi::schema::keys;
 use alloc::vec::Vec;
-use stem::syscall::port::{port_recv, port_send_all, port_wait, PortHandle};
+use stem::syscall::port::{port_recv, port_send_all, port_try_recv, port_wait, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
 use stem::{info, warn};
@@ -95,7 +95,7 @@ impl NetClient {
     pub fn drain_stale_responses(&self) {
         let mut buf = [0u8; 4096 + 128];
         for _ in 0..32 {
-            if port_recv(self.our_read_port, &mut buf).is_err() {
+            if port_try_recv(self.our_read_port, &mut buf).is_err() {
                 break;
             }
         }
@@ -111,27 +111,22 @@ impl NetClient {
         }
 
         let mut resp_buf = [0u8; 64];
-        for _ in 0..200 {
-            match port_recv(self.our_read_port, &mut resp_buf) {
-                Ok(len) if len >= 6 => {
-                    let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
-                    if resp_type == RESP_HANDLE {
-                        return Some(u32::from_le_bytes([
-                            resp_buf[2],
-                            resp_buf[3],
-                            resp_buf[4],
-                            resp_buf[5],
-                        ]));
-                    } else if resp_type == RESP_ERROR {
-                        return None;
-                    }
+        match port_recv(self.our_read_port, &mut resp_buf) {
+            Ok(len) if len >= 6 => {
+                let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
+                if resp_type == RESP_HANDLE {
+                    Some(u32::from_le_bytes([
+                        resp_buf[2],
+                        resp_buf[3],
+                        resp_buf[4],
+                        resp_buf[5],
+                    ]))
+                } else {
+                    None
                 }
-                _ => stem::syscall::yield_now(),
             }
+            _ => None,
         }
-
-        warn!("telnetd: TCP_LISTEN timeout");
-        None
     }
 
     pub fn tcp_accept(&self, listen_handle: u32) -> Option<AcceptResult> {
@@ -141,28 +136,24 @@ impl NetClient {
         }
 
         let mut resp_buf = [0u8; 64];
-        for _ in 0..100 {
-            match port_recv(self.our_read_port, &mut resp_buf) {
-                Ok(len) if len >= 2 => {
-                    let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
-                    if resp_type == RESP_ACCEPT && len >= 12 {
-                        return Some(AcceptResult {
-                            conn_handle: u32::from_le_bytes([
-                                resp_buf[2],
-                                resp_buf[3],
-                                resp_buf[4],
-                                resp_buf[5],
-                            ]),
-                        });
-                    } else if resp_type == RESP_EMPTY || resp_type == RESP_ERROR {
-                        return None;
-                    }
+        match port_recv(self.our_read_port, &mut resp_buf) {
+            Ok(len) if len >= 2 => {
+                let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
+                if resp_type == RESP_ACCEPT && len >= 12 {
+                    Some(AcceptResult {
+                        conn_handle: u32::from_le_bytes([
+                            resp_buf[2],
+                            resp_buf[3],
+                            resp_buf[4],
+                            resp_buf[5],
+                        ]),
+                    })
+                } else {
+                    None
                 }
-                _ => stem::syscall::yield_now(),
             }
+            _ => None,
         }
-
-        None
     }
 
     pub fn tcp_recv(&self, handle: u32, max_len: u16) -> TcpRecvResult {
@@ -175,32 +166,28 @@ impl NetClient {
         }
 
         let mut resp_buf = [0u8; 4096 + 128];
-        for _ in 0..200 {
-            match port_recv(self.our_read_port, &mut resp_buf) {
-                Ok(len) if len >= 2 => {
-                    let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
-                    if resp_type == RESP_DATA && len > 2 {
-                        return TcpRecvResult::Data(resp_buf[2..len].to_vec());
-                    } else if resp_type == RESP_CLOSED {
-                        return TcpRecvResult::Closed;
-                    } else if resp_type == RESP_EMPTY
-                        || resp_type == RESP_ERROR
-                        || (resp_type == RESP_DATA && len == 2)
-                    {
-                        return TcpRecvResult::Empty;
-                    } else {
-                        warn!(
-                            "telnetd: tcp_recv got unexpected resp_type 0x{:04x} len={}",
-                            resp_type, len
-                        );
-                        return TcpRecvResult::Empty;
-                    }
+        match port_recv(self.our_read_port, &mut resp_buf) {
+            Ok(len) if len >= 2 => {
+                let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
+                if resp_type == RESP_DATA && len > 2 {
+                    TcpRecvResult::Data(resp_buf[2..len].to_vec())
+                } else if resp_type == RESP_CLOSED {
+                    TcpRecvResult::Closed
+                } else if resp_type == RESP_EMPTY
+                    || resp_type == RESP_ERROR
+                    || (resp_type == RESP_DATA && len == 2)
+                {
+                    TcpRecvResult::Empty
+                } else {
+                    warn!(
+                        "telnetd: tcp_recv got unexpected resp_type 0x{:04x} len={}",
+                        resp_type, len
+                    );
+                    TcpRecvResult::Empty
                 }
-                _ => stem::syscall::yield_now(),
             }
+            _ => TcpRecvResult::Empty,
         }
-
-        TcpRecvResult::Empty
     }
 
     pub fn tcp_send(&self, handle: u32, data: &[u8]) -> usize {
@@ -216,26 +203,21 @@ impl NetClient {
             }
 
             let mut resp_buf = [0u8; 64];
-            let mut sent_this_chunk = None;
-            for _ in 0..200 {
-                match port_recv(self.our_read_port, &mut resp_buf) {
-                    Ok(len) if len >= 4 => {
-                        let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
-                        if resp_type == RESP_OK {
-                            sent_this_chunk =
-                                Some(u16::from_le_bytes([resp_buf[2], resp_buf[3]]) as usize);
-                            break;
-                        } else {
-                            warn!(
-                                "telnetd: tcp_send got unexpected resp_type 0x{:04x} len={}",
-                                resp_type, len
-                            );
-                            break;
-                        }
+            let sent_this_chunk = match port_recv(self.our_read_port, &mut resp_buf) {
+                Ok(len) if len >= 4 => {
+                    let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
+                    if resp_type == RESP_OK {
+                        Some(u16::from_le_bytes([resp_buf[2], resp_buf[3]]) as usize)
+                    } else {
+                        warn!(
+                            "telnetd: tcp_send got unexpected resp_type 0x{:04x} len={}",
+                            resp_type, len
+                        );
+                        None
                     }
-                    _ => stem::syscall::yield_now(),
                 }
-            }
+                _ => None,
+            };
 
             match sent_this_chunk {
                 Some(sent) => {
@@ -245,7 +227,7 @@ impl NetClient {
                     }
                 }
                 None => {
-                    warn!("telnetd: tcp_send chunk timeout");
+                    warn!("telnetd: tcp_send failed waiting for reply");
                     break;
                 }
             }
@@ -261,11 +243,6 @@ impl NetClient {
         }
 
         let mut resp_buf = [0u8; 64];
-        for _ in 0..20 {
-            if port_recv(self.our_read_port, &mut resp_buf).is_ok() {
-                break;
-            }
-            stem::syscall::yield_now();
-        }
+        let _ = port_try_recv(self.our_read_port, &mut resp_buf);
     }
 }

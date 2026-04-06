@@ -187,8 +187,9 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                     if trimmed == "quit" || trimmed == "exit" {
                         return;
                     }
+                    let parsed_query = trimmed.trim_end_matches(';');
 
-                    match phloem::parse(trimmed) {
+                    match phloem::parse(parsed_query) {
                         Ok(cmd) => {
                             let result = executor.execute(cmd);
                             

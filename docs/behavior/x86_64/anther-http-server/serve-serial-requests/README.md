@@ -1,12 +1,12 @@
 # ❌ Scenario: Serve serial requests
 
-> Last run: 2026-04-05 17:45:26
+> Last run: 2026-04-05 17:52:25
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given the anther server is ready | ❌ | 39115ms | - [📜](./01/serial.log) - |
+| 1 | Given the anther server is ready | ❌ | 2899ms | - [📜](./01/serial.log) - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

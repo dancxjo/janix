@@ -1,5 +1,9 @@
-# Daily System Standup
+# Feature: Daily System Standup
 
-| Scenario | Status | Duration |
-|----------|--------|----------|
-| [Morning Health Check](morning-health-check/README.md) | ❌ Failed | 20s |
+> Last run: 2026-04-05 17:45:26
+
+## Scenarios
+
+| Scenario | Steps | Status | Link |
+|----------|-------|--------|------|
+| Morning Health Check | 2/3 | ❌ | [View Details](morning-health-check/README.md) |

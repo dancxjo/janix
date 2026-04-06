@@ -574,8 +574,9 @@ impl SocketApi {
             ip: remote_ip,
             port: remote_port,
         });
-        Self::sync_remote_edge(&managed);
-        Self::ensure_tcp_connection(&mut managed, now_ms, "syn-sent");
+        // DEFERRED: No blocking graph operations in network hot-path
+        // Self::sync_remote_edge(&managed);
+        // Self::ensure_tcp_connection(&mut managed, now_ms, "syn-sent");
 
         self.sockets.insert(api_handle, managed);
 
@@ -667,14 +668,15 @@ impl SocketApi {
                         port: remote_port,
                     });
                     managed.last_seen_ms = Self::now_ms();
-                    Self::sync_remote_edge(managed);
-                    Self::ensure_tcp_connection(managed, managed.last_seen_ms, "established");
-                    conn_graph::set_sym_if_changed(
-                        managed.socket_node,
-                        net::props::SOCK_STATE,
-                        "connected",
-                    )
-                    .ok();
+                    // DEFERRED: No blocking graph operations in network hot-path
+                    // Self::sync_remote_edge(managed);
+                    // Self::ensure_tcp_connection(managed, managed.last_seen_ms, "established");
+                    // conn_graph::set_sym_if_changed(
+                    //     managed.socket_node,
+                    //     net::props::SOCK_STATE,
+                    //     "connected",
+                    // )
+                    // .ok();
                 }
 
                 // Move the socket to the new connection handle
@@ -990,14 +992,16 @@ impl SocketApi {
     pub fn handle_close<'a>(&mut self, socket_set: &mut SocketSet<'a>, handle: u32) -> Vec<u8> {
         let now_ms = Self::now_ms();
         if let Some(managed) = self.sockets.get(&handle) {
-            conn_graph::set_sym_if_changed(managed.socket_node, net::props::SOCK_STATE, "closed")
-                .ok();
-            conn_graph::set_if_changed(managed.socket_node, net::props::SOCK_CLOSED_AT, now_ms)
-                .ok();
-            if let Some(conn_id) = managed.connection_node {
-                conn_graph::set_sym_if_changed(conn_id, net::props::CONN_STATE, "closed").ok();
-                conn_graph::set_if_changed(conn_id, net::props::CONN_LAST_SEEN, now_ms).ok();
-            }
+            // DEFERRED: No blocking graph operations in network hot-path
+            // conn_graph::set_sym_if_changed(managed.socket_node, net::props::SOCK_STATE, "closed")
+            //     .ok();
+            // conn_graph::set_if_changed(managed.socket_node, net::props::SOCK_CLOSED_AT, now_ms)
+            //     .ok();
+            // if let Some(conn_id) = managed.connection_node {
+            //     conn_graph::set_sym_if_changed(conn_id, net::props::CONN_STATE, "closed").ok();
+            //     conn_graph::set_if_changed(conn_id, net::props::CONN_LAST_SEEN, now_ms).ok();
+            // }
+
 
             if managed.kind == SocketType::Tcp {
                 let socket = socket_set.get_mut::<TcpSocket>(managed.handle);

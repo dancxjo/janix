@@ -1975,6 +1975,7 @@ async fn anther_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> 
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
+    eprintln!(">>> RETURNING STEP ERROR! <<<");
     Err(StepError(
         "Timed out waiting for Anther health check".to_string(),
     ))

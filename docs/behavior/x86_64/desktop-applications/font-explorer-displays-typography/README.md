@@ -1,4 +1,4 @@
-# ❌ Scenario: Morning Health Check
+# ❌ Scenario: Font Explorer displays typography
 
 > Last run: 2026-04-05 17:45:26
 
@@ -6,9 +6,7 @@
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given the machine is running | ✅ | 5468ms | - - - |
-| 2 | When I wait for the system to reach ready state | ✅ | 0ms | - - - |
-| 3 | Then I should see a message in the serial output that says "SPROUT: Entering supervisor loop." within 5s | ❌ | 6075ms | - [📜](./03/serial.log) - |
+| 1 | Given the machine is running | ❌ | 1001ms | - - - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

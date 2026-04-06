@@ -77,7 +77,7 @@ exclude = [
 resolver = "2"
 
 [profile.dev]
-panic = "abort"
+# panic = "abort"
 
 [profile.release]
 lto = true

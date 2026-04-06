@@ -182,6 +182,7 @@ impl ThingOsReporter {
                 self.finish_step(StepResult::Skipped).await;
             }
             event::Step::Failed(_, _, _, err) => {
+                eprintln!(">>> REPORTER CAUGHT FAILED STEP: {:?} <<<", err);
                 self.scenario_failed = true;
                 eprintln!("│  │  │  └─ ❌ FAILED");
                 eprintln!("│  │  │      {:?}", err);
@@ -191,6 +192,7 @@ impl ThingOsReporter {
     }
 
     async fn finish_step(&mut self, result: StepResult) {
+        eprintln!(">>> FINISH STEP START: {:?} <<<", result);
         let serial = artifacts::get_latest_serial().await;
 
         // Try to capture a screenshot

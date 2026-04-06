@@ -759,6 +759,7 @@ fn main(arg: usize) -> ! {
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
     let mut bristle_node = find_bristle_node();
     let mut graph_input = GraphInputState::default();
+    let mut paint_pending_rebuilds = false;
     let mut cursor_rasterizer = CursorRasterizer::new();
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_keys: BTreeSet<Key> = BTreeSet::new();
@@ -964,9 +965,10 @@ fn main(arg: usize) -> ! {
             }
         }
 
+        let mut poll_stats = crate::bristle::PollStats::default();
         if bristle_evt_handle != 0 {
             prev_keys = pressed_keys.clone();
-            let poll_stats = {
+            poll_stats = {
                 crate::trace_span!("bloom.loop.poll_bristle");
                 poll_bristle(
                     bristle_evt_handle,
@@ -1049,8 +1051,88 @@ fn main(arg: usize) -> ! {
             }
         }
 
-        // Refresh window state after input so hit-testing sees current geometry.
-        let paint_res = paint_pipeline.process_updates(target.width as i32, target.height as i32);
+        let cursor_frame_priority = paint_pending_rebuilds
+            && invalidation_causes.is_empty()
+            && poll_stats.had_pointer_event
+            && cursor.x != prev_cursor_x
+            && cursor.y != prev_cursor_y;
+        let should_process_updates = !cursor_frame_priority
+            && (!first_frame_rendered || paint_pending_rebuilds || !invalidation_causes.is_empty());
+
+        // Refresh window state after input so hit-testing sees current geometry, but let
+        // pure pointer-motion frames bypass background window rebuild work.
+        let paint_res = if should_process_updates {
+            let res = paint_pipeline.process_updates(
+                target.width as i32,
+                target.height as i32,
+                || {
+                    if bristle_evt_handle == 0 {
+                        return;
+                    }
+                    let progress_poll = poll_bristle(
+                        bristle_evt_handle,
+                        &mut cursor,
+                        &mut pressed_keys,
+                        &accel_cfg,
+                        &mut accel_state,
+                        screen_w,
+                        screen_h,
+                    );
+                    if progress_poll.had_pointer_event || progress_poll.had_key_event {
+                        bristle_node = find_bristle_node().or(bristle_node);
+                        sync_input_from_graph(
+                            &mut cursor,
+                            &mut pressed_keys,
+                            bristle_node,
+                            &mut graph_input,
+                            progress_poll.had_pointer_event,
+                            progress_poll.had_key_event,
+                            screen_w,
+                            screen_h,
+                            loop_ctrl.frame_number(),
+                        );
+                    }
+                },
+            );
+            paint_pending_rebuilds = res.pending_rebuilds;
+            res
+        } else {
+            crate::paint_vm::PaintResult {
+                damage: alloc::vec::Vec::new(),
+                pending_rebuilds: paint_pending_rebuilds,
+            }
+        };
+
+        // Late-latch input that arrived while process_updates() was running so cursor motion
+        // does not wait an extra compositor iteration.
+        if bristle_evt_handle != 0 {
+            let late_poll_stats = {
+                crate::trace_span!("bloom.loop.poll_bristle_late");
+                poll_bristle(
+                    bristle_evt_handle,
+                    &mut cursor,
+                    &mut pressed_keys,
+                    &accel_cfg,
+                    &mut accel_state,
+                    screen_w,
+                    screen_h,
+                )
+            };
+            if late_poll_stats.had_pointer_event || late_poll_stats.had_key_event {
+                bristle_node = find_bristle_node().or(bristle_node);
+                sync_input_from_graph(
+                    &mut cursor,
+                    &mut pressed_keys,
+                    bristle_node,
+                    &mut graph_input,
+                    late_poll_stats.had_pointer_event,
+                    late_poll_stats.had_key_event,
+                    screen_w,
+                    screen_h,
+                    loop_ctrl.frame_number(),
+                );
+            }
+        }
 
         // Input-driven window management
         if bristle_evt_handle != 0 {

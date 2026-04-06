@@ -23,6 +23,9 @@ use crate::surface::Surface;
 use alloc::sync::Arc;
 use core::cmp::{max, min};
 
+const WINDOW_REBUILD_BUDGET_NS: u64 = 8_000_000;
+const MAX_WINDOW_REBUILDS_PER_FRAME: usize = 1;
+
 pub struct WindowHit {
     pub id: ThingId,
     pub rect: Rect,
@@ -50,10 +53,12 @@ pub(crate) struct WindowPaintState {
     pub(crate) paint_bs: u64,
     pub(crate) geometry_gen: u64,
     pub(crate) asset_gen: u64,
+    pub(crate) raster_dirty: bool,
 }
 
 pub struct PaintResult {
     pub damage: Vec<Rect>,
+    pub pending_rebuilds: bool,
 }
 
 pub struct PaintPipeline {
@@ -71,12 +76,18 @@ impl PaintPipeline {
         }
     }
 
-    pub fn process_updates(&mut self, screen_w: i32, screen_h: i32) -> PaintResult {
+    pub fn process_updates<F>(&mut self, screen_w: i32, screen_h: i32, mut on_progress: F) -> PaintResult
+    where
+        F: FnMut(),
+    {
         use crate::render_state::RasterCacheKey;
         use abi::pixel::PixelFormat;
 
         // Get current asset generation
         let current_asset_gen = crate::painter_resources::ASSETS.current_generation().0;
+        let update_start_ns = stem::monotonic_ns();
+        let mut rebuilds_this_frame = 0usize;
+        let mut pending_rebuilds = false;
 
         let mut damage = Vec::new();
         let mut window_ids = [ThingId::default(); 128];
@@ -84,6 +95,7 @@ impl PaintPipeline {
         let mut active: BTreeSet<ThingId> = BTreeSet::new();
 
         for id in window_ids.iter().take(count) {
+            on_progress();
             active.insert(*id);
             let Some(props) = read_window_frame_props(*id, screen_w, screen_h) else {
                 continue;
@@ -99,6 +111,7 @@ impl PaintPipeline {
                 paint_bs: 0,
                 geometry_gen: 0,
                 asset_gen: 0,
+                raster_dirty: true,
             });
 
             // Track paint changes
@@ -132,29 +145,36 @@ impl PaintPipeline {
             if geometry_changed {
                 entry.geometry_gen = entry.geometry_gen.wrapping_add(1);
             }
-
             if needs_rebuild {
-                crate::trace_span!("bloom.window_cache.rebuild");
+                entry.raster_dirty = true;
+            }
 
-                // Construct cache key
-                let cache_key = RasterCacheKey::new(
-                    *id,
-                    entry.paint_gen,
-                    entry.geometry_gen,
-                    entry.asset_gen,
-                    1.0, // TODO: Get from UI_SCALE_FACTOR property
-                    EdgeAA::None,
-                    PixelFormat::Bgra8888,
-                );
+            let cache_key = RasterCacheKey::new(
+                *id,
+                entry.paint_gen,
+                entry.geometry_gen,
+                entry.asset_gen,
+                1.0, // TODO: Get from UI_SCALE_FACTOR property
+                EdgeAA::None,
+                PixelFormat::Bgra8888,
+            );
 
-                // Try cache lookup
+            if entry.raster_dirty {
+                let elapsed_ns = stem::monotonic_ns().saturating_sub(update_start_ns);
+                let budget_exhausted = rebuilds_this_frame >= MAX_WINDOW_REBUILDS_PER_FRAME
+                    || elapsed_ns >= WINDOW_REBUILD_BUDGET_NS;
+                if budget_exhausted {
+                    pending_rebuilds = true;
+                    continue;
+                }
+
                 if let Some(_cached_image) = self.render_state.get_window_raster(&cache_key) {
-                    // Cache hit - nothing to do, image is already cached
                     crate::trace_counter!("bloom.window_paint.cache_hit", 1);
+                    entry.raster_dirty = false;
                 } else {
-                    // Cache miss - need to rasterize
                     crate::trace_counter!("bloom.window_paint.cache_miss", 1);
 
+                    let rebuild_start_ns = stem::monotonic_ns();
                     let w = rect.width() as usize;
                     let h = rect.height() as usize;
                     let len = w * h;
@@ -162,12 +182,10 @@ impl PaintPipeline {
                     crate::trace_counter!("bloom.window_cache.rebuild.count", 1);
                     crate::trace_counter!("bloom.window_cache.pixels_written.total", len as u64);
 
-                    // Execute drawlist into temporary buffer
                     if w > 0 && h > 0 {
                         let mut buffer = vec![0u32; len];
 
-                        // Create wrapper surface for the buffer
-                        // SAFETY: buffer is valid for len, valid dimensions
+                        // SAFETY: buffer is valid for len, valid dimensions.
                         let mut surface = unsafe {
                             Surface::new(
                                 buffer.as_mut_ptr() as *mut u8,
@@ -178,13 +196,11 @@ impl PaintPipeline {
                             )
                         };
 
-                        // Build and execute local drawlist
                         let local_rect = Rect::new(0, 0, rect.width(), rect.height());
                         let list =
                             build_drawlist(props.paint_bs, local_rect, &mut self.icon_symbol_cache);
                         raster::execute(&mut surface, &list, false);
 
-                        // Insert into cache
                         let image = Arc::new(Image {
                             width: w as u32,
                             height: h as u32,
@@ -196,6 +212,21 @@ impl PaintPipeline {
 
                         self.render_state.insert_window_raster(cache_key, image);
                     }
+
+                    rebuilds_this_frame += 1;
+                    entry.raster_dirty = false;
+
+                    let rebuild_ns = stem::monotonic_ns().saturating_sub(rebuild_start_ns);
+                    if rebuild_ns > 25_000_000 {
+                        stem::warn!(
+                            "[bloom] slow window rebuild id={} {:.3}ms size={}x{}",
+                            id.to_u64_lossy(),
+                            rebuild_ns as f64 / 1_000_000.0,
+                            rect.width(),
+                            rect.height(),
+                        );
+                    }
+                    stem::yield_now();
                 }
 
                 damage.push(Rect::new(rect.x(), rect.y(), rect.width(), rect.height()));
@@ -204,7 +235,20 @@ impl PaintPipeline {
 
         self.windows.retain(|id, _| active.contains(id));
 
-        PaintResult { damage }
+        let update_ns = stem::monotonic_ns().saturating_sub(update_start_ns);
+        if update_ns > 50_000_000 {
+            stem::warn!(
+                "[bloom] process_updates took {:.3}ms (rebuilds={} pending={})",
+                update_ns as f64 / 1_000_000.0,
+                rebuilds_this_frame,
+                pending_rebuilds,
+            );
+        }
+
+        PaintResult {
+            damage,
+            pending_rebuilds,
+        }
     }
 
     pub fn top_window_at_point(&self, x: i32, y: i32) -> Option<WindowHit> {

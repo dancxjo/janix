@@ -1,4 +1,4 @@
-use crate::{BootRuntime, BootTasking, MapKind, MapPerms, runtime};
+use crate::{runtime, BootRuntime, BootTasking, MapKind, MapPerms};
 
 pub struct BootHeap {
     pub base: u64,

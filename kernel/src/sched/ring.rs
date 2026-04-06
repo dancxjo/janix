@@ -77,7 +77,8 @@ impl EventRing {
         // SAFETY: idx is always < RING_CAPACITY. We are the sole producer,
         // and this slot is not readable by the consumer until we advance head.
         unsafe {
-            let slot = &self.buf[idx] as *const MaybeUninit<SchedEvent> as *mut MaybeUninit<SchedEvent>;
+            let slot =
+                &self.buf[idx] as *const MaybeUninit<SchedEvent> as *mut MaybeUninit<SchedEvent>;
             (*slot).write(event);
         }
 
@@ -240,71 +241,96 @@ pub fn aggregate_metrics() -> RingMetrics {
 
 pub fn push_task_state<R: crate::BootRuntime>(tid: u64, state: &'static str) {
     let cpu = crate::sched::current_cpu_index::<R>();
-    push_event(cpu, crate::sched::events::SchedEvent::StateChanged {
-        tid,
-        state_ptr: state.as_ptr() as u64,
-        timestamp: crate::runtime::<R>().mono_ticks(),
-    });
+    push_event(
+        cpu,
+        crate::sched::events::SchedEvent::StateChanged {
+            tid,
+            state_ptr: state.as_ptr() as u64,
+            timestamp: crate::runtime::<R>().mono_ticks(),
+        },
+    );
 }
 
 pub fn push_task_exited<R: crate::BootRuntime>(tid: u64, code: i32) {
     let cpu = crate::sched::current_cpu_index::<R>();
-    push_event(cpu, crate::sched::events::SchedEvent::TaskExited {
-        tid,
-        code,
-        timestamp: crate::runtime::<R>().mono_ticks(),
-    });
+    push_event(
+        cpu,
+        crate::sched::events::SchedEvent::TaskExited {
+            tid,
+            code,
+            timestamp: crate::runtime::<R>().mono_ticks(),
+        },
+    );
 }
 
 pub fn push_task_priority<R: crate::BootRuntime>(tid: u64, priority: u8) {
     let cpu = crate::sched::current_cpu_index::<R>();
-    push_event(cpu, crate::sched::events::SchedEvent::PriorityChanged {
-        tid,
-        old_prio: 0, // not really needed for graph update
-        new_prio: priority,
-        timestamp: crate::runtime::<R>().mono_ticks(),
-    });
+    push_event(
+        cpu,
+        crate::sched::events::SchedEvent::PriorityChanged {
+            tid,
+            old_prio: 0, // not really needed for graph update
+            new_prio: priority,
+            timestamp: crate::runtime::<R>().mono_ticks(),
+        },
+    );
 }
 
 pub fn push_task_affinity<R: crate::BootRuntime>(tid: u64, target_cpu: usize) {
     let cpu = crate::sched::current_cpu_index::<R>();
-    push_event(cpu, crate::sched::events::SchedEvent::AffinitySet {
-        tid,
-        cpu: target_cpu as u16,
-        timestamp: crate::runtime::<R>().mono_ticks(),
-    });
+    push_event(
+        cpu,
+        crate::sched::events::SchedEvent::AffinitySet {
+            tid,
+            cpu: target_cpu as u16,
+            timestamp: crate::runtime::<R>().mono_ticks(),
+        },
+    );
 }
 
 pub fn push_task_location<R: crate::BootRuntime>(tid: u64, target_cpu: usize) {
     let cpu = crate::sched::current_cpu_index::<R>();
-    push_event(cpu, crate::sched::events::SchedEvent::LocationSet {
-        tid,
-        cpu: target_cpu as u16,
-        timestamp: crate::runtime::<R>().mono_ticks(),
-    });
+    push_event(
+        cpu,
+        crate::sched::events::SchedEvent::LocationSet {
+            tid,
+            cpu: target_cpu as u16,
+            timestamp: crate::runtime::<R>().mono_ticks(),
+        },
+    );
 }
 
 pub fn push_task_created<R: crate::BootRuntime>(
-    tid: u64, priority: u8, is_user: bool, name: Option<&str>, parent_tid: Option<u64>
+    tid: u64,
+    priority: u8,
+    is_user: bool,
+    name: Option<&str>,
+    parent_tid: Option<u64>,
 ) {
     let cpu = crate::sched::current_cpu_index::<R>();
-    push_event(cpu, crate::sched::events::SchedEvent::TaskCreated {
-        tid,
-        prio: priority,
-        is_user,
-        parent_tid: parent_tid.unwrap_or(0),
-        name: crate::sched::events::pack_name(name),
-        timestamp: crate::runtime::<R>().mono_ticks(),
-    });
+    push_event(
+        cpu,
+        crate::sched::events::SchedEvent::TaskCreated {
+            tid,
+            prio: priority,
+            is_user,
+            parent_tid: parent_tid.unwrap_or(0),
+            name: crate::sched::events::pack_name(name),
+            timestamp: crate::runtime::<R>().mono_ticks(),
+        },
+    );
 }
 
 pub fn push_task_name<R: crate::BootRuntime>(tid: u64, name: Option<&str>) {
     let cpu = crate::sched::current_cpu_index::<R>();
-    push_event(cpu, crate::sched::events::SchedEvent::NameSet {
-        tid,
-        name: crate::sched::events::pack_name(name),
-        timestamp: crate::runtime::<R>().mono_ticks(),
-    });
+    push_event(
+        cpu,
+        crate::sched::events::SchedEvent::NameSet {
+            tid,
+            name: crate::sched::events::pack_name(name),
+            timestamp: crate::runtime::<R>().mono_ticks(),
+        },
+    );
 }
 
 // ============================================================================
@@ -313,8 +339,8 @@ pub fn push_task_name<R: crate::BootRuntime>(tid: u64, name: Option<&str>) {
 
 #[cfg(test)]
 mod tests {
-    use crate::sched::events::*;
     use super::*;
+    use crate::sched::events::*;
 
     fn make_event(tid: u64) -> SchedEvent {
         SchedEvent::TaskYielded { tid, timestamp: 0 }

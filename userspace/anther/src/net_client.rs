@@ -23,6 +23,7 @@ const RESP_HANDLE: u16 = 0x0002;
 const RESP_DATA: u16 = 0x0003;
 const RESP_ACCEPT: u16 = 0x0004;
 const RESP_EMPTY: u16 = 0x0005;
+const RESP_CLOSED: u16 = 0x0006;
 
 /// A connection to netd's socket API
 pub struct NetClient {
@@ -60,7 +61,8 @@ impl NetClient {
         let net_id = buf[0];
 
         // Get netd's socket API write port (we send to this)
-        let netd_write_port = thingsys::prop_get(net_id, keys::WRITE_PORT_HANDLE).ok()? as PortHandle;
+        let netd_write_port =
+            thingsys::prop_get(net_id, keys::WRITE_PORT_HANDLE).ok()? as PortHandle;
 
         // Create our own port pair for receiving responses
         // We give netd our write port so it can send responses to us
@@ -248,6 +250,8 @@ impl NetClient {
                     if resp_type == RESP_DATA && len > 2 {
                         let data = resp_buf[2..len].to_vec();
                         return Some(data);
+                    } else if resp_type == RESP_CLOSED {
+                        return Some(Vec::new());
                     } else if resp_type == RESP_EMPTY
                         || resp_type == RESP_ERROR
                         || (resp_type == RESP_DATA && len == 2)
@@ -288,15 +292,14 @@ impl NetClient {
 
             // Wait for response
             let mut resp_buf = [0u8; 64];
-            let mut chunk_sent = false;
+            let mut sent_this_chunk = None;
             for _ in 0..200 {
                 match port_recv(self.our_read_port, &mut resp_buf) {
                     Ok(len) if len >= 4 => {
                         let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
                         if resp_type == RESP_OK {
-                            let sent = u16::from_le_bytes([resp_buf[2], resp_buf[3]]);
-                            total_sent += sent as usize;
-                            chunk_sent = true;
+                            sent_this_chunk =
+                                Some(u16::from_le_bytes([resp_buf[2], resp_buf[3]]) as usize);
                             break;
                         } else {
                             warn!(
@@ -311,7 +314,12 @@ impl NetClient {
                     }
                 }
             }
-            if !chunk_sent {
+            if let Some(sent) = sent_this_chunk {
+                total_sent += sent;
+                if sent < chunk.len() {
+                    break; // Could not send the full chunk, stop to let caller retry or wait
+                }
+            } else {
                 warn!("anther: tcp_send chunk timeout");
                 break;
             }

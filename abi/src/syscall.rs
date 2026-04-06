@@ -47,6 +47,8 @@ pub const SYS_TIME_ANCHOR: u32 = 0x22;
 // ============================================================================
 // Block 0x30–0x3F: Logging / debug output
 // ============================================================================
+pub const SYS_READ: u32 = 0x34;
+pub const SYS_WRITE: u32 = 0x35;
 pub const SYS_DEBUG_WRITE: u32 = 0x30;
 pub const SYS_LOG_WRITE: u32 = 0x31;
 pub const SYS_TRACE_READ: u32 = 0x32;

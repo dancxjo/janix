@@ -18,11 +18,11 @@ use abi::schema::{keys, kinds, rels};
 use abi::types::Edge;
 use described::{DescribeGraph, DescribeMode, DescriptionService, SysGraph, ViewSpec};
 use ollama::OllamaClient;
-use stem::{error, info, trace};
 use stem::syscall::graph::{find, intern, link, prop_get, prop_set};
 use stem::thing::sys::{get_edges, get_props};
 use stem::thing::HandleId; // for from_u64
 use stem::thing::ThingId;
+use stem::{error, info, trace};
 
 // ============================================================================
 // API Limits (constants)
@@ -89,7 +89,8 @@ mod subgraph_cache {
     pub fn get(query: &str, now_ns: u64) -> Option<Vec<u8>> {
         if let Ok(guard) = CACHE.lock() {
             if let Some(entry) = guard.as_ref() {
-                if entry.query == query && now_ns.saturating_sub(entry.timestamp_ns) < CACHE_TTL_NS {
+                if entry.query == query && now_ns.saturating_sub(entry.timestamp_ns) < CACHE_TTL_NS
+                {
                     return Some(entry.json_bytes.clone());
                 }
             }
@@ -109,10 +110,12 @@ mod subgraph_cache {
     }
 }
 
-
 /// Build error response
 pub fn error_response(err: ApiError) -> (&'static str, ResponseBody) {
-    (err.http_status(), ResponseBody::Owned(err.to_json().into_bytes()))
+    (
+        err.http_status(),
+        ResponseBody::Owned(err.to_json().into_bytes()),
+    )
 }
 
 // ============================================================================
@@ -473,7 +476,7 @@ pub fn handle_watch_thing(id_str: &str) -> (&'static str, ResponseBody) {
 
     // Verify the thing exists
     match stem::syscall::graph::get_kind(id) {
-        Ok(k) if k != 0 => {},
+        Ok(k) if k != 0 => {}
         _ => return error_response(ApiError::not_found(format!("Thing {} not found", id))),
     };
 
@@ -626,10 +629,16 @@ pub fn handle_explain_thing(id_str: &str) -> (&'static str, ResponseBody) {
 
     // Build the prompt using described logic
     let config = described::DescriptionConfig::default();
-    let prompt = match described::build_prompt_packet(&mut graph, ThingId::from_u64(id), &view, &config) {
-        Ok(p) => p,
-        Err(e) => return error_response(ApiError::internal(format!("Failed to build prompt: {:?}", e))),
-    };
+    let prompt =
+        match described::build_prompt_packet(&mut graph, ThingId::from_u64(id), &view, &config) {
+            Ok(p) => p,
+            Err(e) => {
+                return error_response(ApiError::internal(format!(
+                    "Failed to build prompt: {:?}",
+                    e
+                )))
+            }
+        };
 
     // Connect to Ollama
     let model = "llama3"; // Default model
@@ -674,7 +683,7 @@ pub fn handle_method_not_allowed() -> (&'static str, ResponseBody) {
 /// GET /api/v1/subgraph?root=...&depth=...&max_nodes=...
 pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
     let t0 = stem::time::monotonic_ns();
-    
+
     // Check cache first
     if let Some(cached_bytes) = subgraph_cache::get(query, t0) {
         info!("SUBGRAPH: cache hit for query='{}'", query);
@@ -703,7 +712,10 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
             }
         }
     }
-    info!("SUBGRAPH: parsed root={:?} depth={} max_nodes={}", root_id, depth, max_nodes);
+    info!(
+        "SUBGRAPH: parsed root={:?} depth={} max_nodes={}",
+        root_id, depth, max_nodes
+    );
 
     // Pre-intern all symbols we'll need - avoids syscalls in hot loops
     let layout_x_sym = intern("layout.pos.x").unwrap_or(0);
@@ -780,8 +792,11 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
         }
     }
     let t1 = stem::time::monotonic_ns();
-    info!("SUBGRAPH: seed phase done, queue={} seeds, took {} us",
-          queue.len(), (t1 - t0) / 1000);
+    info!(
+        "SUBGRAPH: seed phase done, queue={} seeds, took {} us",
+        queue.len(),
+        (t1 - t0) / 1000
+    );
 
     while let Some((node_id, node_depth)) = queue.pop_front() {
         if visited_set.contains(&node_id) {
@@ -795,8 +810,12 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
         visited_order.push(node_id);
         if visited_order.len() % 50 == 0 {
             let tn = stem::time::monotonic_ns();
-            info!("SUBGRAPH: BFS progress {} nodes, queue={}, {} us elapsed",
-                  visited_order.len(), queue.len(), (tn - t0) / 1000);
+            info!(
+                "SUBGRAPH: BFS progress {} nodes, queue={}, {} us elapsed",
+                visited_order.len(),
+                queue.len(),
+                (tn - t0) / 1000
+            );
         }
 
         // Get outgoing edges if we haven't reached max depth
@@ -817,8 +836,13 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
         }
     }
     let t2 = stem::time::monotonic_ns();
-    info!("SUBGRAPH: BFS done, {} nodes, {} edges, truncated={}, took {} us",
-          visited_order.len(), edges_out.len(), truncated, (t2 - t0) / 1000);
+    info!(
+        "SUBGRAPH: BFS done, {} nodes, {} edges, truncated={}, took {} us",
+        visited_order.len(),
+        edges_out.len(),
+        truncated,
+        (t2 - t0) / 1000
+    );
 
     // Build JSON response
     let mut json = JsonBuilder::new();
@@ -865,12 +889,16 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
         let layout_x_idx = if layout_x_sym != 0 {
             batch_keys.push(layout_x_sym as u32);
             Some(batch_keys.len() - 1)
-        } else { None };
-        
+        } else {
+            None
+        };
+
         let layout_y_idx = if layout_y_sym != 0 {
             batch_keys.push(layout_y_sym as u32);
             Some(batch_keys.len() - 1)
-        } else { None };
+        } else {
+            None
+        };
 
         let mut label = String::new();
         let mut layout_x_val = 0;
@@ -878,10 +906,14 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
 
         // Fetch all properties in one syscall
         if !batch_keys.is_empty() {
-            if let Ok(resp) = stem::thing::sys::props_get_many(ThingId::from_u64(*node_id), &batch_keys) {
+            if let Ok(resp) =
+                stem::thing::sys::props_get_many(ThingId::from_u64(*node_id), &batch_keys)
+            {
                 // Try to find a label from the name_syms in order
                 for i in 0..4 {
-                    if name_syms[i] == 0 { continue; }
+                    if name_syms[i] == 0 {
+                        continue;
+                    }
                     // Find where this key was in the batch_keys array
                     if let Some(idx) = batch_keys.iter().position(|&k| k == name_syms[i] as u32) {
                         if (resp.present_mask & (1 << idx)) != 0 {
@@ -895,7 +927,9 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
                                 // If we don't have a label yet, try to decode this one
                                 if label.is_empty() {
                                     let mut buf = [0u8; 64];
-                                    if let Ok(len) = stem::thing::sys::describe_symbol(val as u32, &mut buf) {
+                                    if let Ok(len) =
+                                        stem::thing::sys::describe_symbol(val as u32, &mut buf)
+                                    {
                                         if len > 0 {
                                             if let Ok(s) = core::str::from_utf8(&buf[..len]) {
                                                 label = String::from(s);
@@ -914,7 +948,7 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
                         layout_x_val = resp.values[idx];
                     }
                 }
-                
+
                 // Extract layout Y
                 if let Some(idx) = layout_y_idx {
                     if (resp.present_mask & (1 << idx)) != 0 {
@@ -1019,9 +1053,12 @@ pub fn handle_get_subgraph(query: &str) -> (&'static str, ResponseBody) {
 
     let t3 = stem::time::monotonic_ns();
     let bytes = json.into_bytes();
-    info!("SUBGRAPH: JSON built, {} bytes, total {} us",
-          bytes.len(), (t3 - t0) / 1000);
-          
+    info!(
+        "SUBGRAPH: JSON built, {} bytes, total {} us",
+        bytes.len(),
+        (t3 - t0) / 1000
+    );
+
     // Store in cache
     subgraph_cache::put(query.to_string(), t3, bytes.clone());
     json_response_bytes("200 OK", bytes)
@@ -1787,7 +1824,11 @@ pub fn handle_execute_gql_query_get(query_string: &str) -> (&'static str, Respon
 // ============================================================================
 
 /// Dispatch a request to the appropriate API handler
-pub fn dispatch(route: ApiRoute<'_>, req: &Request<'_>, body: &[u8]) -> (&'static str, ResponseBody) {
+pub fn dispatch(
+    route: ApiRoute<'_>,
+    req: &Request<'_>,
+    body: &[u8],
+) -> (&'static str, ResponseBody) {
     match route {
         ApiRoute::Discovery => handle_discovery(),
         ApiRoute::GetThing { id } => handle_get_thing(id),

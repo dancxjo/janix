@@ -1,6 +1,6 @@
 //! Network syscall handlers
 
-use crate::net::{Nic, primary_nic};
+use crate::net::{primary_nic, Nic};
 use crate::syscall::validate::{copyout, validate_user_range};
 use abi::errors::{Errno, SysResult};
 

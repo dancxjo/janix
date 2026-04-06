@@ -35,7 +35,9 @@ pub enum ResponseBody {
     Stream(Box<dyn llm::ChatStream + Send>),
     /// SSE watch stream for a specific Thing's properties.
     /// The connection handler drives the kernel watch loop.
-    WatchStream { thing_id: u64 },
+    WatchStream {
+        thing_id: u64,
+    },
 }
 
 impl ResponseBody {

@@ -2182,7 +2182,7 @@ async fn connect_and_send_telnet(world: &mut ThingOsWorld, command: String) -> R
         }
     }).await;
     
-    world.telnet_response = Some(String::from_utf8_lossy(&resp).into_owned());
+    let s = String::from_utf8_lossy(&resp).into_owned(); eprintln!("TELNET RESP: {}", s); world.telnet_response = Some(s);
     Ok(())
 }
 

@@ -327,7 +327,7 @@ impl Parser {
                         where_clause = Some(self.parse_expression()?);
                     }
 
-                    let mut limit = 1000; // Default limit increased
+                    let mut limit = 50; // Default limit reduced to optimize BFS scans
                     let mut skip = 0;
                     let mut returns = Vec::new();
                     let mut order_by = None;

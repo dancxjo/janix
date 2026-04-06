@@ -534,8 +534,7 @@ fn should_force_full_damage(causes: &[SnapshotInvalidation]) -> Option<SnapshotI
     causes.iter().copied().find(|cause| {
         matches!(
             cause,
-            SnapshotInvalidation::FontChanged
-                | SnapshotInvalidation::ThemeChanged
+            SnapshotInvalidation::ThemeChanged
                 | SnapshotInvalidation::WallpaperChanged
                 | SnapshotInvalidation::Forced
         )
@@ -993,10 +992,10 @@ fn main(arg: usize) -> ! {
             );
         }
 
-        // Poll font client for IPC responses
-        if crate::font_client::poll() {
-            invalidation_causes.push(SnapshotInvalidation::FontChanged);
-        }
+        // Poll font client for IPC responses. Font warmup should not trigger
+        // immediate compositor redraws; those redraws can monopolize the main
+        // loop under emulation and make cursor motion feel stuck.
+        let _font_cache_updated = crate::font_client::poll();
 
         // 0. Check for new glyphs in graph
         if let Some(gw) = glyph_watch {
@@ -1005,7 +1004,6 @@ fn main(arg: usize) -> ! {
             if let Ok(len) = stem::syscall::root_watch_next(gw, &mut g_seq, &mut g_buf) {
                 if len > 0 {
                     crate::font_graph::mark_dirty();
-                    invalidation_causes.push(SnapshotInvalidation::FontChanged);
                 }
             }
         }

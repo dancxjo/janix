@@ -5,15 +5,10 @@ extern crate alloc;
 
 mod net_client;
 
-use abi::petals_shell::{ShellAction, ShellSession};
-use abi::types::stdio_mode;
-use alloc::collections::BTreeMap;
-use alloc::format;
-use alloc::string::{String, ToString};
+use alloc::string::String;
 use alloc::vec;
 use alloc::vec::Vec;
 use net_client::{NetClient, TcpRecvResult};
-use stem::syscall::{pipe, spawn_process_ex};
 use stem::{info, warn};
 
 const TELNET_PORT: u16 = 2323;
@@ -22,16 +17,6 @@ const DONT: u8 = 254;
 const DO: u8 = 253;
 const WONT: u8 = 252;
 const WILL: u8 = 251;
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-struct DirEntryWire {
-    thing_id: u64,
-    kind_id: u32,
-    name_len: u16,
-    _padding: u16,
-    name: [u8; 248],
-}
 
 enum InputEvent {
     Submit(String),
@@ -166,15 +151,14 @@ fn main(_arg: usize) -> ! {
 }
 
 fn handle_connection(net: &NetClient, conn_handle: u32) {
-    let mut shell = ShellSession::new();
     let mut console = TelnetConsole::new();
+    let mut executor = phloem::GraphExecutor::new();
 
-    write_raw(net, conn_handle, b"\xff\xfb\x01\xff\xfb\x03");
-    for line in shell.banner_lines() {
-        write_line(net, conn_handle, line);
-    }
+    write_raw(net, conn_handle, b"\xff\xfb\x01\xff\xfb\x03"); // WILL ECHO, WILL SUPPRESS GO AHEAD
+    write_line(net, conn_handle, "ThingOS GQL Server");
+    write_line(net, conn_handle, "Type your query, or 'quit' to exit.");
     write_line(net, conn_handle, "");
-    write_raw(net, conn_handle, shell.prompt().as_bytes());
+    write_raw(net, conn_handle, b"gql> ");
 
     loop {
         let data = match net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
@@ -195,206 +179,65 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
             match event {
                 Some(InputEvent::Submit(line)) => {
                     write_raw(net, conn_handle, b"\r\n");
-                    if !handle_shell_line(net, conn_handle, &mut shell, line.as_str()) {
-                        write_raw(net, conn_handle, shell.prompt().as_bytes());
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        write_raw(net, conn_handle, b"gql> ");
+                        continue;
                     }
+                    if trimmed == "quit" || trimmed == "exit" {
+                        return;
+                    }
+
+                    match phloem::parse(trimmed) {
+                        Ok(cmd) => {
+                            let result = executor.execute(cmd);
+                            
+                            if !result.message.is_empty() {
+                                write_line(net, conn_handle, &result.message);
+                            }
+                            
+                            if !result.columns.is_empty() {
+                                // Simple tabular printing
+                                let header = result.columns.join(" | ");
+                                write_line(net, conn_handle, &header);
+                                let sep = "-".repeat(header.len());
+                                write_line(net, conn_handle, &sep);
+                                
+                                for row in result.rows {
+                                    let mut row_str = String::new();
+                                    for (i, val) in row.into_iter().enumerate() {
+                                        if i > 0 { row_str.push_str(" | "); }
+                                        match val {
+                                            phloem::ResultValue::Node(id) => {
+                                                row_str.push_str(&format!("node({})", id));
+                                            }
+                                            phloem::ResultValue::String(s) => {
+                                                row_str.push_str(&s);
+                                            }
+                                            phloem::ResultValue::Number(n) => {
+                                                row_str.push_str(&format!("{}", n));
+                                            }
+                                        }
+                                    }
+                                    write_line(net, conn_handle, &row_str);
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            write_line(net, conn_handle, &format!("error: GQL parse failed: {}", e));
+                        }
+                    }
+
+                    write_raw(net, conn_handle, b"gql> ");
                 }
                 Some(InputEvent::Interrupt) => {
                     write_line(net, conn_handle, "^C");
-                    write_raw(net, conn_handle, shell.prompt().as_bytes());
+                    write_raw(net, conn_handle, b"gql> ");
                 }
                 None => {}
             }
         }
     }
-}
-
-fn handle_shell_line(
-    net: &NetClient,
-    conn_handle: u32,
-    shell: &mut ShellSession,
-    line: &str,
-) -> bool {
-    let actions = shell.handle_line(line);
-    let mut launched = false;
-    for action in actions {
-        if handle_action(net, conn_handle, action) {
-            launched = true;
-        }
-    }
-    launched
-}
-
-fn handle_action(net: &NetClient, conn_handle: u32, action: ShellAction) -> bool {
-    match action {
-        ShellAction::PrintLine(line) => {
-            let _ = write_line(net, conn_handle, &line);
-        }
-        ShellAction::PrintError(line) => {
-            let _ = write_line(net, conn_handle, &format!("error: {}", line));
-        }
-        ShellAction::ClearScreen => {
-            let _ = write_raw(net, conn_handle, b"\x1b[2J\x1b[H");
-        }
-        ShellAction::ListDir(path) => match list_dir(&path) {
-            Ok(entries) if entries.is_empty() => {
-                let _ = write_line(net, conn_handle, "(empty)");
-            }
-            Ok(entries) => {
-                for entry in entries {
-                    let _ = write_line(net, conn_handle, &entry);
-                }
-            }
-            Err(err) => {
-                let _ = write_line(net, conn_handle, &format!("error: ls: {}: {}", path, err));
-            }
-        },
-        ShellAction::ShowTasks => {
-            for line in task_lines() {
-                let _ = write_line(net, conn_handle, &line);
-            }
-        }
-        ShellAction::ShowMem => {
-            for line in mem_lines() {
-                let _ = write_line(net, conn_handle, &line);
-            }
-        }
-        ShellAction::DumpGraph => {
-            let _ = write_line(net, conn_handle, "error: graph dump is serial-only for now");
-        }
-        ShellAction::RunProgram(path) => match run_program(net, conn_handle, &path) {
-            Ok(()) => return true,
-            Err(err) => {
-                let _ = write_line(net, conn_handle, &format!("error: run: {}: {}", path, err));
-            }
-        },
-    }
-    false
-}
-
-fn run_program(net: &NetClient, conn_handle: u32, path: &str) -> Result<(), &'static str> {
-    let env = BTreeMap::new();
-    let resp = spawn_process_ex(
-        path,
-        &[],
-        &env,
-        stdio_mode::PIPE,
-        stdio_mode::PIPE,
-        stdio_mode::PIPE,
-    )
-    .map_err(|_| "spawn failed")?;
-
-    let mut console = TelnetConsole::new();
-    loop {
-        drain_pipe_to_socket(net, conn_handle, resp.stdout_pipe);
-        drain_pipe_to_socket(net, conn_handle, resp.stderr_pipe);
-
-        match net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
-            TcpRecvResult::Data(data) => {
-                for byte in data {
-                    let (event, response) = console.ingest(byte);
-                    if let Some(bytes) = response {
-                        write_raw(net, conn_handle, &bytes);
-                    }
-                    match event {
-                        Some(InputEvent::Submit(line)) => {
-                            write_raw(net, conn_handle, b"\r\n");
-                            let _ = pipe::pipe_write(resp.stdin_pipe, line.as_bytes());
-                            let _ = pipe::pipe_write(resp.stdin_pipe, b"\n");
-                        }
-                        Some(InputEvent::Interrupt) => {
-                            let _ = stem::syscall::task_kill(resp.child_tid);
-                        }
-                        None => {}
-                    }
-                }
-            }
-            TcpRecvResult::Empty => {}
-            TcpRecvResult::Closed => {
-                let _ = stem::syscall::task_kill(resp.child_tid);
-                break;
-            }
-        }
-
-        match stem::syscall::task_poll(resp.child_tid) {
-            Ok((abi::types::TaskStatus::Dead, code)) => {
-                drain_pipe_to_socket(net, conn_handle, resp.stdout_pipe);
-                drain_pipe_to_socket(net, conn_handle, resp.stderr_pipe);
-                write_line(
-                    net,
-                    conn_handle,
-                    &format!("[process {} exited with {}]", resp.child_tid, code),
-                );
-                break;
-            }
-            Ok(_) => stem::time::sleep_ms(10),
-            Err(_) => break,
-        }
-    }
-
-    let _ = pipe::pipe_close(resp.stdin_pipe, 1);
-    let _ = pipe::pipe_close(resp.stdout_pipe, 0);
-    let _ = pipe::pipe_close(resp.stderr_pipe, 0);
-    Ok(())
-}
-
-fn drain_pipe_to_socket(net: &NetClient, conn_handle: u32, pipe_id: u64) {
-    let mut buf = [0u8; 512];
-    loop {
-        match pipe::pipe_read(pipe_id, &mut buf) {
-            Ok(0) => break,
-            Ok(n) => {
-                let _ = write_raw(net, conn_handle, &buf[..n]);
-            }
-            Err(abi::errors::Errno::EAGAIN) => break,
-            Err(_) => break,
-        }
-    }
-}
-
-fn list_dir(path: &str) -> Result<Vec<String>, &'static str> {
-    let dir_id = stem::syscall::root_resolve_path(path).map_err(|_| "not found")?;
-    let mut buf = vec![0u8; core::mem::size_of::<DirEntryWire>() * 32];
-    let count = stem::syscall::root_dir_list(dir_id, &mut buf).map_err(|_| "list failed")?;
-    let mut out = Vec::new();
-    for idx in 0..count {
-        let ptr = unsafe {
-            buf.as_ptr().add(idx * core::mem::size_of::<DirEntryWire>()) as *const DirEntryWire
-        };
-        let entry = unsafe { *ptr };
-        let name_len = usize::from(entry.name_len).min(entry.name.len());
-        let name = core::str::from_utf8(&entry.name[..name_len]).unwrap_or("?");
-        out.push(name.to_string());
-    }
-    Ok(out)
-}
-
-fn task_lines() -> Vec<String> {
-    let mut ids = [stem::thing::ThingId::default(); 64];
-    let count = stem::thing::sys::find("proc.Thread", &mut ids).unwrap_or(0);
-    let mut out = Vec::new();
-    for id in ids.into_iter().take(count) {
-        let mut buf = [0u8; 256];
-        let len = stem::thing::sys::describe_thing(id, &mut buf).unwrap_or(0);
-        let line = core::str::from_utf8(&buf[..len]).unwrap_or("<invalid utf8>");
-        out.push(line.to_string());
-    }
-    if out.is_empty() {
-        out.push("no proc.Thread nodes found".to_string());
-    }
-    out
-}
-
-fn mem_lines() -> Vec<String> {
-    let mut ranges = [stem::thing::ThingId::default(); 128];
-    let mut bytespaces = [stem::thing::ThingId::default(); 128];
-    let range_count = stem::thing::sys::find("mem.Range", &mut ranges).unwrap_or(0);
-    let bs_count = stem::thing::sys::find("thing.bytespace", &mut bytespaces).unwrap_or(0);
-    vec![
-        format!("mem.range_nodes={}", range_count),
-        format!("bytespace_nodes={}", bs_count),
-        "kernel allocator stats are not exposed to userspace yet".to_string(),
-    ]
 }
 
 fn write_line(net: &NetClient, conn_handle: u32, line: &str) -> bool {

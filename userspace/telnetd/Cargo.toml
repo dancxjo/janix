@@ -6,6 +6,7 @@ edition = "2021"
 [dependencies]
 stem = { path = "../../stem", features = ["rt", "global-alloc"] }
 abi = { path = "../../abi" }
+phloem = { path = "../phloem" }
 
 [[bin]]
 name = "telnetd"

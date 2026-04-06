@@ -6,5 +6,5 @@ Feature: Telnet Server
 
   Scenario: Serve telnet connection
     Given the telnet server is ready
-    When I connect to the telnet server and send "help"
-    Then the telnet response should contain "Available commands:"
+    When I connect to the telnet server and send "match (n) return n;"
+    Then the telnet response should contain "node("

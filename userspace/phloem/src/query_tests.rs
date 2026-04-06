@@ -1076,7 +1076,7 @@ mod tests {
         }
   }
     #[test]
-    fn test_match_multiple_inline_properties() {
+    fn test_match_multiple_custom_properties() {
         let g = setup_mock();
         // Give node 1 two specific properties
         g.set_prop(1, "prop1", 100);

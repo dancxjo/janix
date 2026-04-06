@@ -175,7 +175,7 @@ fetch:
 
 # Run all unit tests (host-testable crates only)
 test *args:
-    cargo test -p abi -p pciids -p xtask {{args}}
+    cargo test -p abi -p pciids -p xtask -p phloem {{args}}
 
 # Check everything (compilation + UI split)
 check: check-ui-split fetch-rust

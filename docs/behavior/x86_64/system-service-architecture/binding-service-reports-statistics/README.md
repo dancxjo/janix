@@ -1,4 +1,4 @@
-# ❌ Scenario: Core services and drivers are launched by the supervisor
+# ❌ Scenario: Binding service reports statistics
 
 > Last run: 2026-04-05 17:45:26
 
@@ -6,7 +6,7 @@
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given the machine is booting | ❌ | 1001ms | - - - |
+| 1 | Given the machine is running | ❌ | 1001ms | - - - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

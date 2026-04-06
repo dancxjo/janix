@@ -1,13 +1,12 @@
-# ✅ Scenario: Server starts up
+# ❌ Scenario: Server starts up
 
-> Last run: 2026-04-05 17:56:38
+> Last run: 2026-04-05 18:00:52
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | When I start the machine | ✅ | 3646ms | - [📜](./01/serial.log) - |
-| 2 | Then I should see a message in the serial output that says "anther: Listening on port 80" | ✅ | 2328ms | - [📜](./02/serial.log) - |
+| 1 | When I start the machine | ❌ | 1000ms | - [📜](./01/serial.log) - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

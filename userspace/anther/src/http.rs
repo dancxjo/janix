@@ -108,7 +108,7 @@ pub fn parse_method(s: &str) -> Result<Method, ParseError> {
         "PUT" => Ok(Method::Put),
         "PATCH" => Ok(Method::Patch),
         "DELETE" => Ok(Method::Delete),
-        _ => Ok(Method::Other),
+        _ => { stem::println!("Unknown method: {:?}", s); Ok(Method::Other) }
     }
 }
 

@@ -1,14 +1,12 @@
 # ❌ Scenario: Serve serial requests
 
-> Last run: 2026-04-05 17:56:38
+> Last run: 2026-04-05 18:00:52
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given the anther server is ready | ✅ | 7226ms | - [📜](./01/serial.log) - |
-| 2 | When I make a GET request to "/health" | ✅ | 1520ms | - [📜](./02/serial.log) - |
-| 3 | Then the response status should be 200 | ❌ | 1012ms | - [📜](./03/serial.log) - |
+| 1 | Given the anther server is ready | ❌ | 2839ms | - [📜](./01/serial.log) - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

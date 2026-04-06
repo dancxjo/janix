@@ -1,13 +1,13 @@
 # ✅ Scenario: Cursor responds to mouse movement
 
-> Last run: 2026-04-05 12:26:57
+> Last run: 2026-04-05 17:45:26
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given a cursor is visible on the screen | ✅ | 6579ms | - [📜](./01/serial.log) - |
-| 2 | When I move the mouse | ✅ | 3ms | - [📜](./02/serial.log) - |
+| 1 | Given a cursor is visible on the screen | ✅ | 6271ms | - [📜](./01/serial.log) - |
+| 2 | When I move the mouse | ✅ | 0ms | - [📜](./02/serial.log) - |
 | 3 | Then the serial log should contain 'CONTRACT: input pointer_move' | ✅ | 0ms | - [📜](./03/serial.log) - |
 | 4 | And the cursor should move correspondingly on the screen | ✅ | 0ms | - [📜](./04/serial.log) - |
 
@@ -17,734 +17,818 @@
 ```
 [2J[01;01H[=3h[2J[01;01H[2J[01;01H[8;042;160t0[2J[01;01H[2J[01;01H[8;056;240t0[2J[01;01HBdsDxe: loading Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
 BdsDxe: starting Boot0002 "UEFI QEMU DVD-ROM QM00005 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
-[2J[01;01H[01;01H[2J[01;01H[01;01H[12375468831] [INFO] [kernel] [CPU0] BOOTFB: width=1920 height=1080 pitch=7680 bpp=32 format=Bgrx8888
-[12381370650] [CONTRACT] [kernel] [CPU0] thing-os kernel starting...
-[12385013025] [INFO] [bran::requests] [CPU0] Limine: Found 39 boot modules
-[12387136542] [INFO] [bran::requests] [CPU0]   [0] /boot/sprout (cmdline='init') size=111120
-[12388680909] [INFO] [bran::requests] [CPU0]   [1] /boot/bristle (cmdline='init') size=33264
-[12389353251] [INFO] [bran::requests] [CPU0]   [2] /boot/rtc_cmos (cmdline='init') size=29248
-[12390028992] [INFO] [bran::requests] [CPU0]   [3] /boot/clock (cmdline='') size=61968
-[12390635796] [INFO] [bran::requests] [CPU0]   [4] /boot/taskman (cmdline='') size=70160
-[12391238871] [INFO] [bran::requests] [CPU0]   [5] /boot/ps2_kbd (cmdline='init') size=20976
-[12391861944] [INFO] [bran::requests] [CPU0]   [6] /boot/echo (cmdline='init') size=25072
-[12392485413] [INFO] [bran::requests] [CPU0]   [7] /boot/bloom (cmdline='init') size=961032
-[12393421557] [INFO] [bran::requests] [CPU0]   [8] /boot/ps2_mouse (cmdline='init') size=29168
-[12394185540] [INFO] [bran::requests] [CPU0]   [9] /boot/display_bootfb (cmdline='init') size=29248
-[12394868508] [INFO] [bran::requests] [CPU0]   [10] /boot/display_virtio_gpu (cmdline='init') size=53864
-[12395573487] [INFO] [bran::requests] [CPU0]   [11] /boot/fontd (cmdline='init') size=188944
-[12396226392] [INFO] [bran::requests] [CPU0]   [12] /boot/blossom (cmdline='init') size=123408
-[12396882828] [INFO] [bran::requests] [CPU0]   [13] /boot/flytrap (cmdline='') size=291352
-[12397500357] [INFO] [bran::requests] [CPU0]   [14] /boot/virtio_netd (cmdline='') size=49680
-[12398132439] [INFO] [bran::requests] [CPU0]   [15] /boot/rtl8168d (cmdline='') size=45584
-[12398745480] [INFO] [bran::requests] [CPU0]   [16] /boot/netd (cmdline='') size=147984
-[12399355584] [INFO] [bran::requests] [CPU0]   [17] /boot/fetchd (cmdline='') size=41488
-[12399957537] [INFO] [bran::requests] [CPU0]   [18] /boot/anther (cmdline='') size=578080
-[12400567278] [INFO] [bran::requests] [CPU0]   [19] /boot/fortune (cmdline='') size=61968
-[12401172498] [INFO] [bran::requests] [CPU0]   [20] /boot/photosynthesis (cmdline='') size=12648
-[12402021324] [INFO] [bran::requests] [CPU0]   [21] /boot/ahci_disk (cmdline='') size=45664
-[12403010103] [INFO] [bran::requests] [CPU0]   [22] /boot/iso9660d (cmdline='') size=53856
-[12403820220] [INFO] [bran::requests] [CPU0]   [23] /boot/virtio_sound (cmdline='init') size=49648
-[12404497974] [INFO] [bran::requests] [CPU0]   [24] /boot/hdaudio (cmdline='') size=37360
-[12405108639] [INFO] [bran::requests] [CPU0]   [25] /boot/pci_stubd (cmdline='') size=29168
-[12405749433] [INFO] [bran::requests] [CPU0]   [26] /boot/beeper (cmdline='init') size=33296
-[12406376532] [INFO] [bran::requests] [CPU0]   [27] /boot/nectar (cmdline='init') size=176656
-[12407007822] [INFO] [bran::requests] [CPU0]   [28] /boot/hello_std (cmdline='') size=16880
-[12407703396] [INFO] [bran::requests] [CPU0]   [29] /boot/stdio_demo (cmdline='') size=16880
-[12408336105] [INFO] [bran::requests] [CPU0]   [30] /boot/telnetd (cmdline='') size=57872
-[12408970200] [INFO] [bran::requests] [CPU0]   [31] /assets/wallpapers/clouds.bmp (cmdline='') size=786486
-[12409689369] [INFO] [bran::requests] [CPU0]   [32] /assets/wallpapers/flower.bmp (cmdline='') size=8386614
-[12410414181] [INFO] [bran::requests] [CPU0]   [33] /assets/wallpapers/leather.bmp (cmdline='') size=1179702
-[12411165954] [INFO] [bran::requests] [CPU0]   [34] /assets/wallpapers/linen.bmp (cmdline='') size=4718646
-[12411890205] [INFO] [bran::requests] [CPU0]   [35] /assets/fonts/NotoSans-Regular.ttf (cmdline='') size=569208
-[12413053224] [INFO] [bran::requests] [CPU0]   [36] /assets/themes/genie_circles.wasm (cmdline='') size=2824
-[12414061803] [INFO] [bran::requests] [CPU0]   [37] /assets/cursors/future/default.svg (cmdline='') size=3051
-[12414819384] [INFO] [bran::requests] [CPU0]   [38] /boot/locale.conf (cmdline='') size=85
-[12416220465] [INFO] [kernel::memory] [CPU0] Memory map has 64 entries
-[12417772422] [INFO] [kernel::memory] [CPU0]   [0] 0x0 - 0x87000 (Usable)
-[12418565643] [INFO] [kernel::memory] [CPU0]   [1] 0x87000 - 0x88000 (Reserved)
-[12419149908] [INFO] [kernel::memory] [CPU0]   [2] 0x88000 - 0xa0000 (Usable)
-[12419679030] [INFO] [kernel::memory] [CPU0]   [3] 0x100000 - 0x800000 (Usable)
-[12420218316] [INFO] [kernel::memory] [CPU0]   [4] 0x800000 - 0x808000 (Other)
-[12420788985] [INFO] [kernel::memory] [CPU0]   [5] 0x808000 - 0x80b000 (Usable)
-[12421331571] [INFO] [kernel::memory] [CPU0]   [6] 0x80b000 - 0x80c000 (Other)
-[12421937418] [INFO] [kernel::memory] [CPU0]   [7] 0x80c000 - 0x811000 (Usable)
-[12422804460] [INFO] [kernel::memory] [CPU0]   [8] 0x811000 - 0x900000 (Other)
-[12423535410] [INFO] [kernel::memory] [CPU0]   [9] 0x900000 - 0x1780000 (Reserved)
-[12424200558] [INFO] [kernel::memory] [CPU0]   [10] 0x1780000 - 0x77989000 (Usable)
-[12424771887] [INFO] [kernel::memory] [CPU0]   [11] 0x77989000 - 0x779ed000 (Reserved)
-[12425375589] [INFO] [kernel::memory] [CPU0]   [12] 0x779ed000 - 0x779ee000 (Other)
-[12425939790] [INFO] [kernel::memory] [CPU0]   [13] 0x779ee000 - 0x779ef000 (Reserved)
-[12426523461] [INFO] [kernel::memory] [CPU0]   [14] 0x779ef000 - 0x779f0000 (Other)
-[12427089213] [INFO] [kernel::memory] [CPU0]   [15] 0x779f0000 - 0x779f1000 (Reserved)
-[12427671762] [INFO] [kernel::memory] [CPU0]   [16] 0x779f1000 - 0x779f2000 (Other)
-[12428236326] [INFO] [kernel::memory] [CPU0]   [17] 0x779f2000 - 0x779f3000 (Reserved)
-[12428833956] [INFO] [kernel::memory] [CPU0]   [18] 0x779f3000 - 0x77a7e000 (Other)
-[12429397959] [INFO] [kernel::memory] [CPU0]   [19] 0x77a7e000 - 0x77a7f000 (Reserved)
-[12429979023] [INFO] [kernel::memory] [CPU0]   [20] 0x77a7f000 - 0x77f00000 (Other)
-[12430543719] [INFO] [kernel::memory] [CPU0]   [21] 0x77f00000 - 0x77f01000 (Reserved)
-[12431127060] [INFO] [kernel::memory] [CPU0]   [22] 0x77f01000 - 0x78022000 (Other)
-[12431795574] [INFO] [kernel::memory] [CPU0]   [23] 0x78022000 - 0x78023000 (Reserved)
-[12432720333] [INFO] [kernel::memory] [CPU0]   [24] 0x78023000 - 0x78823000 (Other)
-[12433454715] [INFO] [kernel::memory] [CPU0]   [25] 0x78823000 - 0x78824000 (Reserved)
-[12434115078] [INFO] [kernel::memory] [CPU0]   [26] 0x78824000 - 0x788e5000 (Other)
-[12434684460] [INFO] [kernel::memory] [CPU0]   [27] 0x788e5000 - 0x788e6000 (Reserved)
-[12435289152] [INFO] [kernel::memory] [CPU0]   [28] 0x788e6000 - 0x788f5000 (Other)
-[12435855927] [INFO] [kernel::memory] [CPU0]   [29] 0x788f5000 - 0x788f6000 (Reserved)
-[12436441512] [INFO] [kernel::memory] [CPU0]   [30] 0x788f6000 - 0x788fb000 (Other)
-[12437007198] [INFO] [kernel::memory] [CPU0]   [31] 0x788fb000 - 0x788fc000 (Reserved)
-[12437592552] [INFO] [kernel::memory] [CPU0]   [32] 0x788fc000 - 0x78901000 (Other)
-[12438155796] [INFO] [kernel::memory] [CPU0]   [33] 0x78901000 - 0x78902000 (Reserved)
-[12438754548] [INFO] [kernel::memory] [CPU0]   [34] 0x78902000 - 0x7892e000 (Other)
-[12439319739] [INFO] [kernel::memory] [CPU0]   [35] 0x7892e000 - 0x78930000 (Reserved)
-[12439902585] [INFO] [kernel::memory] [CPU0]   [36] 0x78930000 - 0x78939000 (Other)
-[12440468040] [INFO] [kernel::memory] [CPU0]   [37] 0x78939000 - 0x7893b000 (Reserved)
-[12441052602] [INFO] [kernel::memory] [CPU0]   [38] 0x7893b000 - 0x78943000 (Other)
-[12441855558] [INFO] [kernel::memory] [CPU0]   [39] 0x78943000 - 0x78944000 (Reserved)
-[12442761441] [INFO] [kernel::memory] [CPU0]   [40] 0x78944000 - 0x7894e000 (Other)
-[12443436555] [INFO] [kernel::memory] [CPU0]   [41] 0x7894e000 - 0x7894f000 (Reserved)
-[12444032469] [INFO] [kernel::memory] [CPU0]   [42] 0x7894f000 - 0x7895c000 (Other)
-[12444600432] [INFO] [kernel::memory] [CPU0]   [43] 0x7895c000 - 0x7895e000 (Reserved)
-[12445203078] [INFO] [kernel::memory] [CPU0]   [44] 0x7895e000 - 0x7896c000 (Other)
-[12445771635] [INFO] [kernel::memory] [CPU0]   [45] 0x7896c000 - 0x7896d000 (Reserved)
-[12446363358] [INFO] [kernel::memory] [CPU0]   [46] 0x7896d000 - 0x78979000 (Other)
-[12446928021] [INFO] [kernel::memory] [CPU0]   [47] 0x78979000 - 0x7897a000 (Reserved)
-[12447512352] [INFO] [kernel::memory] [CPU0]   [48] 0x7897a000 - 0x7897e000 (Other)
-[12448080315] [INFO] [kernel::memory] [CPU0]   [49] 0x7897e000 - 0x7897f000 (Reserved)
-[12448682796] [INFO] [kernel::memory] [CPU0]   [50] 0x7897f000 - 0x7898f000 (Other)
-[12449247063] [INFO] [kernel::memory] [CPU0]   [51] 0x7898f000 - 0x78990000 (Reserved)
-[12449831295] [INFO] [kernel::memory] [CPU0]   [52] 0x78990000 - 0x78a1e000 (Other)
-[12450397179] [INFO] [kernel::memory] [CPU0]   [53] 0x78a1e000 - 0x78a1f000 (Reserved)
-[12450984315] [INFO] [kernel::memory] [CPU0]   [54] 0x78a1f000 - 0x78a2a000 (Other)
-[12451646757] [INFO] [kernel::memory] [CPU0]   [55] 0x78a2a000 - 0x78a2b000 (Reserved)
-[12452568051] [INFO] [kernel::memory] [CPU0]   [56] 0x78a2b000 - 0x78a50000 (Other)
-[12453243528] [INFO] [kernel::memory] [CPU0]   [57] 0x78a50000 - 0x78a51000 (Reserved)
-[12453935340] [INFO] [kernel::memory] [CPU0]   [58] 0x78a51000 - 0x78a5d000 (Other)
-[12454505349] [INFO] [kernel::memory] [CPU0]   [59] 0x78a5d000 - 0x78a5e000 (Reserved)
-[12455109513] [INFO] [kernel::memory] [CPU0]   [60] 0x78a5e000 - 0x78a6b000 (Other)
-[12455681271] [INFO] [kernel::memory] [CPU0]   [61] 0x78a6b000 - 0x78a6c000 (Reserved)
-[12456270585] [INFO] [kernel::memory] [CPU0]   [62] 0x78a6c000 - 0x78ab4000 (Other)
-[12456842508] [INFO] [kernel::memory] [CPU0]   [63] 0x78ab4000 - 0x78ab5000 (Reserved)
-[12457735290] [INFO] [kernel::memory] [CPU0] HHDM Offset: 0xffff800000000000
-[12687054600] [CONTRACT] [kernel::memory] [CPU0] Frame allocator initialized with 485793 free frames
-[12698246880] [INFO] [bran::arch] [CPU0] IOAPIC: hhdm=0xffff800000000000
-[12703171635] [INFO] [bran::arch] [CPU0] IOAPIC: Disabling legacy PIC...
-[12704435304] [INFO] [bran::arch] [CPU0] IOAPIC: PIC disabled OK
-[12705324027] [INFO] [bran::arch] [CPU0] IOAPIC: RSDP virt=0x7f77e014
-[12709706625] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: total length 144
-[12711417444] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 0, len 8 at 0xffff80007f77802c
-[12712554426] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 0, len 8 at 0xffff80007f778034
-[12713260725] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 0, len 8 at 0xffff80007f77803c
-[12713947818] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 0, len 8 at 0xffff80007f778044
-[12714635241] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 1, len 12 at 0xffff80007f77804c
-[12715634580] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f778058
-[12716644908] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f778062
-[12717354738] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f77806c
-[12718052787] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f778076
-[12718763079] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f778080
-[12719457729] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 4, len 6 at 0xffff80007f77808a
-[12720507393] [INFO] [bran::arch] [CPU0] IOAPIC: MADT parsed OK
-[12721560621] [INFO] [bran::arch] [CPU0] SMP: Found 4 CPUs (CPU_COUNT now = 4)
-[12722325825] [INFO] [bran::arch] [CPU0] IOAPIC: Found at phys 0xfec00000, GSI base 0
-[12724072878] [INFO] [bran::arch] [CPU0] IOAPIC: Registers initialized
-[12725024730] [INFO] [bran::arch] [CPU0] IOAPIC: Local APIC enabled (SVR=0x1FF, TPR=0)
-[12726067431] [INFO] [bran::arch] [CPU0] IOAPIC: version 0x20, 24 redir entries
-[12727605264] [INFO] [bran::arch] [CPU0] IOAPIC: All pins masked
-[12729106335] [INFO] [bran::arch] [CPU0] IOAPIC: IRQ1 -> GSI 1 -> 0x21
-[12729894606] [INFO] [bran::arch] [CPU0] IOAPIC: IRQ12 -> GSI 12 -> 0x2C
-[12730480983] [INFO] [bran::arch] [CPU0] IOAPIC: Init complete
-[12731252358] [CONTRACT] [kernel] [CPU0] Initializing global allocator...
-[13107950526] [INFO] [kernel::memory::global_alloc] [CPU0] Global allocator initialized (LinkedHeap, 32MB)
-[13108972602] [CONTRACT] [kernel] [CPU0] Seeding entropy pool...
-[13112367114] [INFO] [kernel::entropy] [CPU0] ENTROPY: no hardware RNG available, using timer fallback (NOT seeded)
-[13113317481] [INFO] [kernel::entropy] [CPU0] ENTROPY: marked seeded with weak entropy (timer-only fallback)
-[13114144065] [CONTRACT] [kernel] [CPU0] Initializing SIMD...
-[13115671767] [CONTRACT] [kernel] [CPU0] Initializing tasking...
-[13128866718] [INFO] [kernel::sched] [CPU0]   Acquiring scheduler lock...
-[13130241135] [INFO] [kernel::sched] [CPU0]   Lock acquired, checking if initialized...
-[13131105075] [INFO] [kernel::sched] [CPU0]   Allocating scheduler...
-[13132893543] [INFO] [kernel::sched] [CPU0]   Leaking scheduler...
-[13133492559] [INFO] [kernel::sched] [CPU0]   Initializing boot task...
-[13135932876] [INFO] [kernel::sched] [CPU0]   Creating boot task...
-[13143574818] [INFO] [kernel::sched] [CPU0]   Creating idle tasks...
-[13145390280] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 1 assigned to CPU 0
-[13158740628] [INFO] [kernel::sched] [CPU0]   Boot task initialized
-[13159354824] [INFO] [kernel::sched] [CPU0]   Storing scheduler pointer...
-[13175917128] [INFO] [kernel::sched] [CPU0]   Initialized 4 event ring(s)
-[13176590955] [CONTRACT] [kernel::sched] [CPU0] Scheduler initialized
-[13178715462] [CONTRACT] [alloc] [CPU0] MEDIUM ALLOC #1: 224 KB align=8 total=0MB
-[13180042128] [INFO] [kernel::task] [CPU0]   Creating graph worker tasks...
-[13181192112] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 2 assigned to CPU 0
-[13183637577] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 3 assigned to CPU 0
-[13184507919] [INFO] [kernel] [CPU0] System initialized. Setting up preemption timer (100Hz)...
-[13219522998] [INFO] [bran::arch::x86_64] [CPU0] LAPIC: calibrated timer (62334400 ticks/sec), init_cnt=623344 for 100Hz
-[13221090333] [INFO] [kernel] [CPU0] Kernel: Detected 4 CPUs. Starting 3 secondaries...
-[13221933120] [INFO] [bran::arch::x86_64] [CPU0] SMP: Starting 3 secondary CPUs...
-[13223142471] [INFO] [bran::arch::x86_64] [CPU0] SMP: Initializing trampoline at 0x8000
-[13228877079] [INFO] [bran::arch::x86_64] [CPU0] SMP: Starting CPU 1 (APIC 1)
-[13259291925] [INFO] [bran::arch::x86_64] [CPU0] SMP: CPU 1 (APIC 1) is online
-[13260278328] [INFO] [bran::arch::x86_64] [CPU0] SMP: Starting CPU 2 (APIC 2)
-[13262174211] [INFO] [kernel] [CPU1] SMP: Entering kernel_secondary_entry for CPU 1
-[13263452928] [INFO] [kernel::sched] [CPU1] SMP: CPU 1 online (triggered by scheduler spawn)
-[13264556679] [DEBUG] [kernel::sched::spawn] [CPU1] SCHED: Task 4 assigned to CPU 1
-[13267499553] [INFO] [kernel::sched] [CPU1] SMP: Secondary CPU 1 online!
-[13269061080] [INFO] [kernel::task] [CPU1] SMP: CPU 1 bootstrapped with idle task 4
-[13289027829] [INFO] [kernel] [CPU2] SMP: Entering kernel_secondary_entry for CPU 2
-[13290614271] [INFO] [bran::arch::x86_64] [CPU0] SMP: CPU 2 (APIC 2) is online
-[13291808937] [INFO] [kernel::sched] [CPU2] SMP: CPU 2 online (triggered by scheduler spawn)
-[13293085971] [INFO] [bran::arch::x86_64] [CPU0] SMP: Starting CPU 3 (APIC 3)
-[13294076499] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 5 assigned to CPU 2
-[13296137349] [INFO] [kernel::sched] [CPU2] SMP: Secondary CPU 2 online!
-[13297122927] [INFO] [kernel::task] [CPU2] SMP: CPU 2 bootstrapped with idle task 5
-[13322552430] [INFO] [kernel] [CPU3] SMP: Entering kernel_secondary_entry for CPU 3
-[13324968954] [INFO] [bran::arch::x86_64] [CPU0] SMP: CPU 3 (APIC 3) is online
-[13325940573] [INFO] [kernel::sched] [CPU3] SMP: CPU 3 online (triggered by scheduler spawn)
-[13327568430] [INFO] [bran::arch::x86_64] [CPU0] SMP: Secondary CPU startup complete
-[13328684424] [DEBUG] [kernel::sched::spawn] [CPU3] SCHED: Task 6 assigned to CPU 3
-[13329897867] [INFO] [kernel] [CPU0] Kernel: Secondary CPU bring-up complete.
-[13330793025] [INFO] [kernel::sched] [CPU3] SMP: Secondary CPU 3 online!
-[13332013266] [INFO] [kernel::task] [CPU3] SMP: CPU 3 bootstrapped with idle task 6
-[13338788298] [INFO] [kernel::root] [CPU0] Spawning Root service...
-[13339816116] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 7 assigned to CPU 1
-[13341772191] [INFO] [kernel::root::boot_register] [CPU0] ROOT: boot registration begin (Census Phase 1 v0.2)
-[13342632270] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 1. Host creation start
-[13348019553] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[2J[01;01H[01;01H[2J[01;01H[01;01H[11400540657] [INFO] [kernel] [CPU0] BOOTFB: width=1920 height=1080 pitch=7680 bpp=32 format=Bgrx8888
+[11405893455] [CONTRACT] [kernel] [CPU0] thing-os kernel starting...
+[11409629682] [INFO] [bran::requests] [CPU0] Limine: Found 39 boot modules
+[11411589552] [INFO] [bran::requests] [CPU0]   [0] /boot/sprout (cmdline='init') size=111120
+[11412751548] [INFO] [bran::requests] [CPU0]   [1] /boot/bristle (cmdline='init') size=41456
+[11413364391] [INFO] [bran::requests] [CPU0]   [2] /boot/rtc_cmos (cmdline='init') size=29248
+[11414002149] [INFO] [bran::requests] [CPU0]   [3] /boot/clock (cmdline='') size=61968
+[11414566251] [INFO] [bran::requests] [CPU0]   [4] /boot/taskman (cmdline='') size=70160
+[11415151341] [INFO] [bran::requests] [CPU0]   [5] /boot/ps2_kbd (cmdline='init') size=25072
+[11415744450] [INFO] [bran::requests] [CPU0]   [6] /boot/echo (cmdline='init') size=25072
+[11416320036] [INFO] [bran::requests] [CPU0]   [7] /boot/bloom (cmdline='init') size=965128
+[11416907304] [INFO] [bran::requests] [CPU0]   [8] /boot/ps2_mouse (cmdline='init') size=29168
+[11417590206] [INFO] [bran::requests] [CPU0]   [9] /boot/display_bootfb (cmdline='init') size=29248
+[11418237336] [INFO] [bran::requests] [CPU0]   [10] /boot/display_virtio_gpu (cmdline='init') size=53864
+[11418922515] [INFO] [bran::requests] [CPU0]   [11] /boot/fontd (cmdline='init') size=188944
+[11419521498] [INFO] [bran::requests] [CPU0]   [12] /boot/blossom (cmdline='init') size=123408
+[11420130612] [INFO] [bran::requests] [CPU0]   [13] /boot/flytrap (cmdline='') size=291352
+[11420717748] [INFO] [bran::requests] [CPU0]   [14] /boot/virtio_netd (cmdline='') size=49680
+[11421321120] [INFO] [bran::requests] [CPU0]   [15] /boot/rtl8168d (cmdline='') size=45584
+[11421919608] [INFO] [bran::requests] [CPU0]   [16] /boot/netd (cmdline='') size=147984
+[11422486647] [INFO] [bran::requests] [CPU0]   [17] /boot/fetchd (cmdline='') size=41488
+[11423117013] [INFO] [bran::requests] [CPU0]   [18] /boot/anther (cmdline='') size=586272
+[11423714610] [INFO] [bran::requests] [CPU0]   [19] /boot/fortune (cmdline='') size=61968
+[11424294288] [INFO] [bran::requests] [CPU0]   [20] /boot/photosynthesis (cmdline='') size=12648
+[11424932904] [INFO] [bran::requests] [CPU0]   [21] /boot/ahci_disk (cmdline='') size=45664
+[11425524990] [INFO] [bran::requests] [CPU0]   [22] /boot/iso9660d (cmdline='') size=53856
+[11426110080] [INFO] [bran::requests] [CPU0]   [23] /boot/virtio_sound (cmdline='init') size=49648
+[11426743944] [INFO] [bran::requests] [CPU0]   [24] /boot/hdaudio (cmdline='') size=37360
+[11427322830] [INFO] [bran::requests] [CPU0]   [25] /boot/pci_stubd (cmdline='') size=29168
+[11427914916] [INFO] [bran::requests] [CPU0]   [26] /boot/beeper (cmdline='init') size=33296
+[11428526109] [INFO] [bran::requests] [CPU0]   [27] /boot/nectar (cmdline='init') size=176656
+[11429130009] [INFO] [bran::requests] [CPU0]   [28] /boot/hello_std (cmdline='') size=16880
+[11429750343] [INFO] [bran::requests] [CPU0]   [29] /boot/stdio_demo (cmdline='') size=16880
+[11430357147] [INFO] [bran::requests] [CPU0]   [30] /boot/telnetd (cmdline='') size=57872
+[11430937155] [INFO] [bran::requests] [CPU0]   [31] /assets/wallpapers/clouds.bmp (cmdline='') size=786486
+[11431761924] [INFO] [bran::requests] [CPU0]   [32] /assets/wallpapers/flower.bmp (cmdline='') size=8386614
+[11432545575] [INFO] [bran::requests] [CPU0]   [33] /assets/wallpapers/leather.bmp (cmdline='') size=1179702
+[11433258969] [INFO] [bran::requests] [CPU0]   [34] /assets/wallpapers/linen.bmp (cmdline='') size=4718646
+[11433945072] [INFO] [bran::requests] [CPU0]   [35] /assets/fonts/NotoSans-Regular.ttf (cmdline='') size=569208
+[11434660677] [INFO] [bran::requests] [CPU0]   [36] /assets/themes/genie_circles.wasm (cmdline='') size=2824
+[11435374896] [INFO] [bran::requests] [CPU0]   [37] /assets/cursors/future/default.svg (cmdline='') size=3051
+[11436076773] [INFO] [bran::requests] [CPU0]   [38] /boot/locale.conf (cmdline='') size=85
+[11437361298] [INFO] [kernel::memory] [CPU0] Memory map has 64 entries
+[11438706345] [INFO] [kernel::memory] [CPU0]   [0] 0x0 - 0x87000 (Usable)
+[11439457260] [INFO] [kernel::memory] [CPU0]   [1] 0x87000 - 0x88000 (Reserved)
+[11440001034] [INFO] [kernel::memory] [CPU0]   [2] 0x88000 - 0xa0000 (Usable)
+[11440504647] [INFO] [kernel::memory] [CPU0]   [3] 0x100000 - 0x800000 (Usable)
+[11441018457] [INFO] [kernel::memory] [CPU0]   [4] 0x800000 - 0x808000 (Other)
+[11441584077] [INFO] [kernel::memory] [CPU0]   [5] 0x808000 - 0x80b000 (Usable)
+[11442098217] [INFO] [kernel::memory] [CPU0]   [6] 0x80b000 - 0x80c000 (Other)
+[11442601830] [INFO] [kernel::memory] [CPU0]   [7] 0x80c000 - 0x811000 (Usable)
+[11443113462] [INFO] [kernel::memory] [CPU0]   [8] 0x811000 - 0x900000 (Other)
+[11443617471] [INFO] [kernel::memory] [CPU0]   [9] 0x900000 - 0x1780000 (Reserved)
+[11444145867] [INFO] [kernel::memory] [CPU0]   [10] 0x1780000 - 0x7797d000 (Usable)
+[11444693634] [INFO] [kernel::memory] [CPU0]   [11] 0x7797d000 - 0x779e1000 (Reserved)
+[11445244536] [INFO] [kernel::memory] [CPU0]   [12] 0x779e1000 - 0x779e2000 (Other)
+[11445780225] [INFO] [kernel::memory] [CPU0]   [13] 0x779e2000 - 0x779e3000 (Reserved)
+[11446338255] [INFO] [kernel::memory] [CPU0]   [14] 0x779e3000 - 0x779e4000 (Other)
+[11446876023] [INFO] [kernel::memory] [CPU0]   [15] 0x779e4000 - 0x779e5000 (Reserved)
+[11447433657] [INFO] [kernel::memory] [CPU0]   [16] 0x779e5000 - 0x779e6000 (Other)
+[11447984196] [INFO] [kernel::memory] [CPU0]   [17] 0x779e6000 - 0x779e7000 (Reserved)
+[11448539850] [INFO] [kernel::memory] [CPU0]   [18] 0x779e7000 - 0x77a72000 (Other)
+[11449076034] [INFO] [kernel::memory] [CPU0]   [19] 0x77a72000 - 0x77a73000 (Reserved)
+[11449632678] [INFO] [kernel::memory] [CPU0]   [20] 0x77a73000 - 0x77ef4000 (Other)
+[11450205624] [INFO] [kernel::memory] [CPU0]   [21] 0x77ef4000 - 0x77ef5000 (Reserved)
+[11450789691] [INFO] [kernel::memory] [CPU0]   [22] 0x77ef5000 - 0x78016000 (Other)
+[11451354288] [INFO] [kernel::memory] [CPU0]   [23] 0x78016000 - 0x78017000 (Reserved)
+[11451913539] [INFO] [kernel::memory] [CPU0]   [24] 0x78017000 - 0x78817000 (Other)
+[11452450944] [INFO] [kernel::memory] [CPU0]   [25] 0x78817000 - 0x78818000 (Reserved)
+[11453006829] [INFO] [kernel::memory] [CPU0]   [26] 0x78818000 - 0x788d9000 (Other)
+[11453544795] [INFO] [kernel::memory] [CPU0]   [27] 0x788d9000 - 0x788da000 (Reserved)
+[11454205158] [INFO] [kernel::memory] [CPU0]   [28] 0x788da000 - 0x788e9000 (Other)
+[11454850737] [INFO] [kernel::memory] [CPU0]   [29] 0x788e9000 - 0x788ea000 (Reserved)
+[11455413651] [INFO] [kernel::memory] [CPU0]   [30] 0x788ea000 - 0x788ef000 (Other)
+[11455952640] [INFO] [kernel::memory] [CPU0]   [31] 0x788ef000 - 0x788f0000 (Reserved)
+[11456513904] [INFO] [kernel::memory] [CPU0]   [32] 0x788f0000 - 0x788f5000 (Other)
+[11457051870] [INFO] [kernel::memory] [CPU0]   [33] 0x788f5000 - 0x788f6000 (Reserved)
+[11457707976] [INFO] [kernel::memory] [CPU0]   [34] 0x788f6000 - 0x78922000 (Other)
+[11458516641] [INFO] [kernel::memory] [CPU0]   [35] 0x78922000 - 0x78924000 (Reserved)
+[11459201259] [INFO] [kernel::memory] [CPU0]   [36] 0x78924000 - 0x7892d000 (Other)
+[11459888583] [INFO] [kernel::memory] [CPU0]   [37] 0x7892d000 - 0x7892f000 (Reserved)
+[11460452850] [INFO] [kernel::memory] [CPU0]   [38] 0x7892f000 - 0x78937000 (Other)
+[11461132980] [INFO] [kernel::memory] [CPU0]   [39] 0x78937000 - 0x78938000 (Reserved)
+[11461742952] [INFO] [kernel::memory] [CPU0]   [40] 0x78938000 - 0x78942000 (Other)
+[11462283558] [INFO] [kernel::memory] [CPU0]   [41] 0x78942000 - 0x78943000 (Reserved)
+[11462859111] [INFO] [kernel::memory] [CPU0]   [42] 0x78943000 - 0x78950000 (Other)
+[11463400014] [INFO] [kernel::memory] [CPU0]   [43] 0x78950000 - 0x78952000 (Reserved)
+[11463956262] [INFO] [kernel::memory] [CPU0]   [44] 0x78952000 - 0x78960000 (Other)
+[11464513962] [INFO] [kernel::memory] [CPU0]   [45] 0x78960000 - 0x78961000 (Reserved)
+[11465069880] [INFO] [kernel::memory] [CPU0]   [46] 0x78961000 - 0x7896d000 (Other)
+[11465605833] [INFO] [kernel::memory] [CPU0]   [47] 0x7896d000 - 0x7896e000 (Reserved)
+[11466160596] [INFO] [kernel::memory] [CPU0]   [48] 0x7896e000 - 0x78972000 (Other)
+[11466696813] [INFO] [kernel::memory] [CPU0]   [49] 0x78972000 - 0x78973000 (Reserved)
+[11467254744] [INFO] [kernel::memory] [CPU0]   [50] 0x78973000 - 0x78983000 (Other)
+[11467817526] [INFO] [kernel::memory] [CPU0]   [51] 0x78983000 - 0x78984000 (Reserved)
+[11468374797] [INFO] [kernel::memory] [CPU0]   [52] 0x78984000 - 0x78a14000 (Other)
+[11468911311] [INFO] [kernel::memory] [CPU0]   [53] 0x78a14000 - 0x78a15000 (Reserved)
+[11469465282] [INFO] [kernel::memory] [CPU0]   [54] 0x78a15000 - 0x78a20000 (Other)
+[11470003215] [INFO] [kernel::memory] [CPU0]   [55] 0x78a20000 - 0x78a21000 (Reserved)
+[11470554843] [INFO] [kernel::memory] [CPU0]   [56] 0x78a21000 - 0x78a46000 (Other)
+[11471098716] [INFO] [kernel::memory] [CPU0]   [57] 0x78a46000 - 0x78a47000 (Reserved)
+[11471647506] [INFO] [kernel::memory] [CPU0]   [58] 0x78a47000 - 0x78a53000 (Other)
+[11472177882] [INFO] [kernel::memory] [CPU0]   [59] 0x78a53000 - 0x78a54000 (Reserved)
+[11472726837] [INFO] [kernel::memory] [CPU0]   [60] 0x78a54000 - 0x78a61000 (Other)
+[11473256850] [INFO] [kernel::memory] [CPU0]   [61] 0x78a61000 - 0x78a62000 (Reserved)
+[11473805277] [INFO] [kernel::memory] [CPU0]   [62] 0x78a62000 - 0x78aaa000 (Other)
+[11474349447] [INFO] [kernel::memory] [CPU0]   [63] 0x78aaa000 - 0x78aab000 (Reserved)
+[11475335454] [INFO] [kernel::memory] [CPU0] HHDM Offset: 0xffff800000000000
+[11712457548] [CONTRACT] [kernel::memory] [CPU0] Frame allocator initialized with 485781 free frames
+[11722900662] [INFO] [bran::arch] [CPU0] IOAPIC: hhdm=0xffff800000000000
+[11727898908] [INFO] [bran::arch] [CPU0] IOAPIC: Disabling legacy PIC...
+[11729152875] [INFO] [bran::arch] [CPU0] IOAPIC: PIC disabled OK
+[11729996091] [INFO] [bran::arch] [CPU0] IOAPIC: RSDP virt=0x7f77e014
+[11734087299] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: total length 144
+[11735764524] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 0, len 8 at 0xffff80007f77802c
+[11736915267] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 0, len 8 at 0xffff80007f778034
+[11737590150] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 0, len 8 at 0xffff80007f77803c
+[11738280477] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 0, len 8 at 0xffff80007f778044
+[11738940543] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 1, len 12 at 0xffff80007f77804c
+[11739910017] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f778058
+[11740849164] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f778062
+[11741541339] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f77806c
+[11742209358] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f778076
+[11742867411] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 2, len 10 at 0xffff80007f778080
+[11743527411] [INFO] [bran::arch::x86_64::acpi] [CPU0] MADT: Entry type 4, len 6 at 0xffff80007f77808a
+[11744649642] [INFO] [bran::arch] [CPU0] IOAPIC: MADT parsed OK
+[11745645714] [INFO] [bran::arch] [CPU0] SMP: Found 4 CPUs (CPU_COUNT now = 4)
+[11746326867] [INFO] [bran::arch] [CPU0] IOAPIC: Found at phys 0xfec00000, GSI base 0
+[11747892915] [INFO] [bran::arch] [CPU0] IOAPIC: Registers initialized
+[11748805134] [INFO] [bran::arch] [CPU0] IOAPIC: Local APIC enabled (SVR=0x1FF, TPR=0)
+[11749805562] [INFO] [bran::arch] [CPU0] IOAPIC: version 0x20, 24 redir entries
+[11751389001] [INFO] [bran::arch] [CPU0] IOAPIC: All pins masked
+[11753118564] [INFO] [bran::arch] [CPU0] IOAPIC: IRQ1 -> GSI 1 -> 0x21
+[11753907495] [INFO] [bran::arch] [CPU0] IOAPIC: IRQ12 -> GSI 12 -> 0x2C
+[11754458331] [INFO] [bran::arch] [CPU0] IOAPIC: Init complete
+[11755409325] [CONTRACT] [kernel] [CPU0] Initializing global allocator...
+[12124471986] [INFO] [kernel::memory::global_alloc] [CPU0] Global allocator initialized (LinkedHeap, 32MB)
+[12125468190] [CONTRACT] [kernel] [CPU0] Seeding entropy pool...
+[12128617578] [INFO] [kernel::entropy] [CPU0] ENTROPY: no hardware RNG available, using timer fallback (NOT seeded)
+[12129489207] [INFO] [kernel::entropy] [CPU0] ENTROPY: marked seeded with weak entropy (timer-only fallback)
+[12130270053] [CONTRACT] [kernel] [CPU0] Initializing SIMD...
+[12131756406] [CONTRACT] [kernel] [CPU0] Initializing tasking...
+[12143593902] [INFO] [kernel::sched] [CPU0]   Acquiring scheduler lock...
+[12144856515] [INFO] [kernel::sched] [CPU0]   Lock acquired, checking if initialized...
+[12145589643] [INFO] [kernel::sched] [CPU0]   Allocating scheduler...
+[12147276240] [INFO] [kernel::sched] [CPU0]   Leaking scheduler...
+[12147816021] [INFO] [kernel::sched] [CPU0]   Initializing boot task...
+[12150181494] [INFO] [kernel::sched] [CPU0]   Creating boot task...
+[12157624710] [INFO] [kernel::sched] [CPU0]   Creating idle tasks...
+[12159301407] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 1 assigned to CPU 0
+[12173040330] [INFO] [kernel::sched] [CPU0]   Boot task initialized
+[12173609745] [INFO] [kernel::sched] [CPU0]   Storing scheduler pointer...
+[12189130008] [INFO] [kernel::sched] [CPU0]   Initialized 4 event ring(s)
+[12189732984] [CONTRACT] [kernel::sched] [CPU0] Scheduler initialized
+[12191712753] [CONTRACT] [alloc] [CPU0] MEDIUM ALLOC #1: 224 KB align=8 total=0MB
+[12193033809] [INFO] [kernel::task] [CPU0]   Creating graph worker tasks...
+[12194112645] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 2 assigned to CPU 0
+[12196376907] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 3 assigned to CPU 0
+[12197194284] [INFO] [kernel] [CPU0] System initialized. Setting up preemption timer (100Hz)...
+[12232292094] [INFO] [bran::arch::x86_64] [CPU0] LAPIC: calibrated timer (62490800 ticks/sec), init_cnt=624908 for 100Hz
+[12233830686] [INFO] [kernel] [CPU0] Kernel: Detected 4 CPUs. Starting 3 secondaries...
+[12234631761] [INFO] [bran::arch::x86_64] [CPU0] SMP: Starting 3 secondary CPUs...
+[12235813425] [INFO] [bran::arch::x86_64] [CPU0] SMP: Initializing trampoline at 0x8000
+[12241285617] [INFO] [bran::arch::x86_64] [CPU0] SMP: Starting CPU 1 (APIC 1)
+[12271799595] [INFO] [bran::arch::x86_64] [CPU0] SMP: CPU 1 (APIC 1) is online
+[12272800254] [INFO] [bran::arch::x86_64] [CPU0] SMP: Starting CPU 2 (APIC 2)
+[12275677029] [INFO] [kernel] [CPU1] SMP: Entering kernel_secondary_entry for CPU 1
+[12277037784] [INFO] [kernel::sched] [CPU1] SMP: CPU 1 online (triggered by scheduler spawn)
+[12278142261] [DEBUG] [kernel::sched::spawn] [CPU1] SCHED: Task 4 assigned to CPU 1
+[12280838625] [INFO] [kernel::sched] [CPU1] SMP: Secondary CPU 1 online!
+[12282167304] [INFO] [kernel::task] [CPU1] SMP: CPU 1 bootstrapped with idle task 4
+[12300819003] [INFO] [kernel] [CPU2] SMP: Entering kernel_secondary_entry for CPU 2
+[12302108907] [INFO] [bran::arch::x86_64] [CPU0] SMP: CPU 2 (APIC 2) is online
+[12303672249] [INFO] [kernel::sched] [CPU2] SMP: CPU 2 online (triggered by scheduler spawn)
+[12304687461] [INFO] [bran::arch::x86_64] [CPU0] SMP: Starting CPU 3 (APIC 3)
+[12305908527] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 5 assigned to CPU 2
+[12307296738] [INFO] [kernel::sched] [CPU2] SMP: Secondary CPU 2 online!
+[12308086956] [INFO] [kernel::task] [CPU2] SMP: CPU 2 bootstrapped with idle task 5
+[12333740892] [INFO] [kernel] [CPU3] SMP: Entering kernel_secondary_entry for CPU 3
+[12335131479] [INFO] [bran::arch::x86_64] [CPU0] SMP: CPU 3 (APIC 3) is online
+[12336431448] [INFO] [kernel::sched] [CPU3] SMP: CPU 3 online (triggered by scheduler spawn)
+[12337705644] [INFO] [bran::arch::x86_64] [CPU0] SMP: Secondary CPU startup complete
+[12338989113] [DEBUG] [kernel::sched::spawn] [CPU3] SCHED: Task 6 assigned to CPU 3
+[12340194801] [INFO] [kernel] [CPU0] Kernel: Secondary CPU bring-up complete.
+[12341149590] [INFO] [kernel::sched] [CPU3] SMP: Secondary CPU 3 online!
+[12342402501] [INFO] [kernel::task] [CPU3] SMP: CPU 3 bootstrapped with idle task 6
+[12348903765] [INFO] [kernel::root] [CPU0] Spawning Root service...
+[12350256072] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 7 assigned to CPU 1
+[12352494759] [INFO] [kernel::root::boot_register] [CPU0] ROOT: boot registration begin (Census Phase 1 v0.2)
+[12353842413] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 1. Host creation start
+[12361219563] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
 RM
-[13350481716] [INFO] [kernel::root::service] [CPU1] ROOT: started once
-[13351824189] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Initializing components...
-[13353970905] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Graph initialized
-[13355663574] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Journal initialized
-[13357210482] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Interner initialized
-[13373893929] [CONTRACT] [kernel::root::service] [CPU1] ROOT: LogSymbols initialized
-[13377329394] [CONTRACT] [kernel::root::service] [CPU1] ROOT: BatchScratch initialized
-[13378757271] [CONTRACT] [kernel::root::service] [CPU1] ROOT: QueryScratch initialized
-[13379780832] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Entering main loop
-[13402116618] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13421759175] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13424448312] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13428894204] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13430639640] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13432925979] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13435297161] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13437530172] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 1. Host registered: t1
-[13438398468] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 2. Platform Bus start
-[13439482584] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13446102450] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13448054004] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13450855110] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13453540386] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13456336608] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
-[13458984495] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 2. Platform Bus done
-[13460010564] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 3. Kernel start
-[13472707578] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 3. Kernel done
-[13473923925] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 4. Root Service start
-[13481335560] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 4. Root Service done
-[13482940779] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 5. CPUs start
-[13512992031] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 5. CPUs done
-[13513880490] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 6. Memory Ranges start
-[13886182431] [CONTRACT] [alloc] [CPU1] MEDIUM ALLOC #2: 120 KB align=8 total=1MB
-[14423693757] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 6. Memory Ranges done
-[14455342935] [INFO] [kernel::root::service] [CPU1] ROOT STATS: iter=1000 nodes=331 watches=0 history=499 journal=424 symbols=51 drops=0
-[14493573633] [CONTRACT] [alloc] [CPU1] MEDIUM ALLOC #3: 240 KB align=8 total=1MB
-[16033084815] [INFO] [kernel::root::service] [CPU1] ROOT STATS: iter=2000 nodes=447 watches=0 history=961 journal=769 symbols=95 drops=0
-[16955929155] [CONTRACT] [kernel::root::boot_register] [CPU0] ROOT: filesystem bootstrap: /initrd/ with 39 files
-[17061360558] [CONTRACT] [kernel::root::boot_register] [CPU0] ROOT: Census Phase 2: PCI
-[17062527141] [INFO] [kernel::root::pci] [CPU0] PCI: Starting enumeration...
-[17176573491] [INFO] [kernel::root::pci] [CPU0] PCI: 00:00.0 8086:29c0 Intel Corporation 82G33/G31/P35/P31 Express DRAM Controller class=06:00 prog_if=00 rev=00
-[17357579283] [INFO] [kernel::root::pci] [CPU0] PCI: 00:01.0 1af4:1050 Red Hat, Inc. Virtio 1.0 GPU class=03:00 prog_if=00 rev=01
-[17386107618] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR0: phys=0x80000000 size=0x800000
-[17387028879] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR2: phys=0xc000000000 size=0x4000
-[17387731218] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR4: phys=0x80882000 size=0x1000
-[17392209912] [INFO] [kernel::root::pci] [CPU0] PCI: Found virtio display controller at 00:01.0
-[17412821052] [INFO] [kernel::root::pci] [CPU0] PCI: VirtIO notify_cfg BAR2 offset=0x3000 mult=4
-[17433679692] [INFO] [kernel::root::pci] [CPU0] PCI: VirtIO common_cfg BAR2 offset=0x1000
-[17436068001] [INFO] [kernel::root::pci] [CPU0] PCI: Registered virtio GPU (graph_id=1086, idx=1) BAR0=0x80000000
-[17519283045] [INFO] [kernel::root::pci] [CPU0] PCI: 00:02.0 1af4:1000 Red Hat, Inc. Virtio network device class=02:00 prog_if=00 rev=00
-[17544362550] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR1: phys=0x80881000 size=0x1000
-[17545191213] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR4: phys=0xc000004000 size=0x4000
-[17549553087] [INFO] [kernel::root::pci] [CPU0] PCI: Found virtio network controller at 00:02.0
-[17596229607] [INFO] [kernel::root::pci] [CPU0] PCI: VirtIO notify_cfg BAR4 offset=0x3000 mult=4
-[17626438500] [INFO] [kernel::root::pci] [CPU0] PCI: VirtIO common_cfg BAR4 offset=0x0
-[17629836741] [INFO] [kernel::root::pci] [CPU0] PCI: Registered virtio network (graph_id=1120, idx=2) BAR4=0xc000004000
-[17631248613] [INFO] [kernel::root::pci] [CPU0] VirtIO-Net: Device registered for userspace driver
-[17710044429] [INFO] [kernel::root::pci] [CPU0] PCI: 00:1f.0 8086:2918 Intel Corporation 82801IB (ICH9) LPC Interface Controller class=06:01 prog_if=00 rev=02
-[17712085248] [INFO] [kernel::root::pci] [CPU0] PCI: Found LPC/ISA bridge at 00:1f.0
-[17816795436] [INFO] [kernel::root::pci] [CPU0] LPC: Created Legacy IO bus with CMOS and PS/2 controller
-[17888967591] [INFO] [kernel::root::pci] [CPU0] PCI: 00:1f.2 8086:2922 Intel Corporation 82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode] class=01:06 prog_if=01 rev=02
-[17901711102] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR5: phys=0x80880000 size=0x1000
-[17905871577] [INFO] [kernel::root::pci] [CPU0] PCI: Found AHCI SATA controller at 00:1f.2
-[17908292391] [INFO] [kernel::root::pci] [CPU0] PCI: Registered AHCI controller (graph_id=1193, idx=5) BAR5=0x80880000
-[17913506523] [INFO] [kernel::root::service] [CPU1] ROOT STATS: iter=3000 nodes=584 watches=0 history=1024 journal=1024 symbols=181 drops=0
-[17982066366] [INFO] [kernel::root::pci] [CPU0] PCI: 00:1f.3 8086:2930 Intel Corporation 82801I (ICH9 Family) SMBus Controller class=0c:05 prog_if=00 rev=02
-[17988150972] [CONTRACT] [kernel::root::boot_register] [CPU0] ROOT: registered items. host=t1 kernel=tb
-[17989342404] [CONTRACT] [kernel] [CPU0] KERNEL: root census complete: host=t1 kernel=tb root=te
-[17990177964] [CONTRACT] [kernel] [CPU0] Kernel: Enumerating 39 boot modules...
-[17991092097] [CONTRACT] [kernel] [CPU0]   [0] name='/boot/sprout' cmdline='init' size=111120
-[17991780840] [CONTRACT] [kernel] [CPU0]   [1] name='/boot/bristle' cmdline='init' size=33264
-[17992465920] [CONTRACT] [kernel] [CPU0]   [2] name='/boot/rtc_cmos' cmdline='init' size=29248
-[17993443083] [CONTRACT] [kernel] [CPU0]   [3] name='/boot/clock' cmdline='' size=61968
-[17994070710] [CONTRACT] [kernel] [CPU0]   [4] name='/boot/taskman' cmdline='' size=70160
-[17994701802] [CONTRACT] [kernel] [CPU0]   [5] name='/boot/ps2_kbd' cmdline='init' size=20976
-[17995380315] [CONTRACT] [kernel] [CPU0]   [6] name='/boot/echo' cmdline='init' size=25072
-[17996020713] [CONTRACT] [kernel] [CPU0]   [7] name='/boot/bloom' cmdline='init' size=961032
-[17996673948] [CONTRACT] [kernel] [CPU0]   [8] name='/boot/ps2_mouse' cmdline='init' size=29168
-[17997345432] [CONTRACT] [kernel] [CPU0]   [9] name='/boot/display_bootfb' cmdline='init' size=29248
-[17998113705] [CONTRACT] [kernel] [CPU0]   [10] name='/boot/display_virtio_gpu' cmdline='init' size=53864
-[17998882374] [CONTRACT] [kernel] [CPU0]   [11] name='/boot/fontd' cmdline='init' size=188944
-[17999542572] [CONTRACT] [kernel] [CPU0]   [12] name='/boot/blossom' cmdline='init' size=123408
-[18000214386] [CONTRACT] [kernel] [CPU0]   [13] name='/boot/flytrap' cmdline='' size=291352
-[18000943653] [CONTRACT] [kernel] [CPU0]   [14] name='/boot/virtio_netd' cmdline='' size=49680
-[18001661997] [CONTRACT] [kernel] [CPU0]   [15] name='/boot/rtl8168d' cmdline='' size=45584
-[18002341764] [CONTRACT] [kernel] [CPU0]   [16] name='/boot/netd' cmdline='' size=147984
-[18002967906] [CONTRACT] [kernel] [CPU0]   [17] name='/boot/fetchd' cmdline='' size=41488
-[18003600054] [CONTRACT] [kernel] [CPU0]   [18] name='/boot/anther' cmdline='' size=578080
-[18004238406] [CONTRACT] [kernel] [CPU0]   [19] name='/boot/fortune' cmdline='' size=61968
-[18004934442] [CONTRACT] [kernel] [CPU0]   [20] name='/boot/photosynthesis' cmdline='' size=12648
-[18005680275] [CONTRACT] [kernel] [CPU0]   [21] name='/boot/ahci_disk' cmdline='' size=45664
-[18006332256] [CONTRACT] [kernel] [CPU0]   [22] name='/boot/iso9660d' cmdline='' size=53856
-[18006977010] [CONTRACT] [kernel] [CPU0]   [23] name='/boot/virtio_sound' cmdline='init' size=49648
-[18007733667] [CONTRACT] [kernel] [CPU0]   [24] name='/boot/hdaudio' cmdline='' size=37360
-[18008473296] [CONTRACT] [kernel] [CPU0]   [25] name='/boot/pci_stubd' cmdline='' size=29168
-[18009141711] [CONTRACT] [kernel] [CPU0]   [26] name='/boot/beeper' cmdline='init' size=33296
-[18009799401] [CONTRACT] [kernel] [CPU0]   [27] name='/boot/nectar' cmdline='init' size=176656
-[18010464450] [CONTRACT] [kernel] [CPU0]   [28] name='/boot/hello_std' cmdline='' size=16880
-[18011115375] [CONTRACT] [kernel] [CPU0]   [29] name='/boot/stdio_demo' cmdline='' size=16880
-[18011813886] [CONTRACT] [kernel] [CPU0]   [30] name='/boot/telnetd' cmdline='' size=57872
-[18012471015] [CONTRACT] [kernel] [CPU0]   [31] name='/assets/wallpapers/clouds.bmp' cmdline='' size=786486
-[18013222656] [CONTRACT] [kernel] [CPU0]   [32] name='/assets/wallpapers/flower.bmp' cmdline='' size=8386614
-[18013978290] [CONTRACT] [kernel] [CPU0]   [33] name='/assets/wallpapers/leather.bmp' cmdline='' size=1179702
-[18014745210] [CONTRACT] [kernel] [CPU0]   [34] name='/assets/wallpapers/linen.bmp' cmdline='' size=4718646
-[18015589482] [CONTRACT] [kernel] [CPU0]   [35] name='/assets/fonts/NotoSans-Regular.ttf' cmdline='' size=569208
-[18016472661] [CONTRACT] [kernel] [CPU0]   [36] name='/assets/themes/genie_circles.wasm' cmdline='' size=2824
-[18017304492] [CONTRACT] [kernel] [CPU0]   [37] name='/assets/cursors/future/default.svg' cmdline='' size=3051
-[18018084348] [CONTRACT] [kernel] [CPU0]   [38] name='/boot/locale.conf' cmdline='' size=85
-[18019778667] [INFO] [kernel] [CPU0] Found init module: /boot/sprout (cmdline: 'init'), loading...
-[18021961650] [INFO] [kernel::task::loader] [CPU0] Loading module: /boot/sprout
-[18022937526] [DEBUG] [kernel::task::loader] [CPU0]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[18031703184] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=200000 exec=true
-[18046124811] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=213000 exec=false
-[18050747715] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=21a000 exec=false
-[18061460340] [INFO] [kernel] [CPU0] Spawning sprout with registry at 0x600000...
-[18062227326] [CONTRACT] [kernel] [CPU0] Spawning init process...
-[18064374999] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 8 (user task/process) assigned to CPU 2
-[18067370310] [CONTRACT] [kernel] [CPU0] Entering scheduler loop.
-[18068116869] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb00db400
+[12362948268] [INFO] [kernel::root::service] [CPU1] ROOT: started once
+[12363805905] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Initializing components...
+[12365280708] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Graph initialized
+[12366409308] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Journal initialized
+[12367569423] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Interner initialized
+[12379352601] [CONTRACT] [kernel::root::service] [CPU1] ROOT: LogSymbols initialized
+[12382482783] [CONTRACT] [kernel::root::service] [CPU1] ROOT: BatchScratch initialized
+[12384063912] [CONTRACT] [kernel::root::service] [CPU1] ROOT: QueryScratch initialized
+[12385161492] [CONTRACT] [kernel::root::service] [CPU1] ROOT: Entering main loop
+[12406372143] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12426193593] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12428483727] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12431760099] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12433588200] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12436570179] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12439122201] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12441402435] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 1. Host registered: t1
+[12442210374] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 2. Platform Bus start
+[12443234628] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12449280756] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12450865614] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12453251382] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12455528085] [DEBUG] [kernel::sched::sleep] [CPU1] DIAG ctx_switch: cpu=1 from=4 to=7
+[12459746838] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 2. Platform Bus done
+[12460456602] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 3. Kernel start
+[12474481470] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 3. Kernel done
+[12475389102] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 4. Root Service start
+[12481819152] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 4. Root Service done
+[12482729457] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 5. CPUs start
+[12511659765] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 5. CPUs done
+[12512532945] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 6. Memory Ranges start
+[12878612373] [CONTRACT] [alloc] [CPU1] MEDIUM ALLOC #2: 120 KB align=8 total=1MB
+[13352558769] [INFO] [kernel::root::boot_register] [CPU0] ROOT_DIAG: 6. Memory Ranges done
+[13382602398] [INFO] [kernel::root::service] [CPU1] ROOT STATS: iter=1000 nodes=331 watches=0 history=499 journal=424 symbols=51 drops=0
+[13415333316] [CONTRACT] [alloc] [CPU1] MEDIUM ALLOC #3: 240 KB align=8 total=1MB
+[14670253191] [INFO] [kernel::root::service] [CPU1] ROOT STATS: iter=2000 nodes=449 watches=0 history=964 journal=773 symbols=98 drops=0
+[15379009800] [CONTRACT] [kernel::root::boot_register] [CPU0] ROOT: filesystem bootstrap: /initrd/ with 39 files
+[15474816423] [CONTRACT] [kernel::root::boot_register] [CPU0] ROOT: Census Phase 2: PCI
+[15475842459] [INFO] [kernel::root::pci] [CPU0] PCI: Starting enumeration...
+[15578014122] [INFO] [kernel::root::pci] [CPU0] PCI: 00:00.0 8086:29c0 Intel Corporation 82G33/G31/P35/P31 Express DRAM Controller class=06:00 prog_if=00 rev=00
+[15636606381] [INFO] [kernel::root::pci] [CPU0] PCI: 00:01.0 1af4:1050 Red Hat, Inc. Virtio 1.0 GPU class=03:00 prog_if=00 rev=01
+[15668872296] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR0: phys=0x80000000 size=0x800000
+[15669940506] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR2: phys=0xc000000000 size=0x4000
+[15670606149] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR4: phys=0x80882000 size=0x1000
+[15674740851] [INFO] [kernel::root::pci] [CPU0] PCI: Found virtio display controller at 00:01.0
+[15692120400] [INFO] [kernel::root::pci] [CPU0] PCI: VirtIO notify_cfg BAR2 offset=0x3000 mult=4
+[15711708078] [INFO] [kernel::root::pci] [CPU0] PCI: VirtIO common_cfg BAR2 offset=0x1000
+[15714012072] [INFO] [kernel::root::pci] [CPU0] PCI: Registered virtio GPU (graph_id=1086, idx=1) BAR0=0x80000000
+[15767803590] [INFO] [kernel::root::pci] [CPU0] PCI: 00:02.0 1af4:1000 Red Hat, Inc. Virtio network device class=02:00 prog_if=00 rev=00
+[15785972103] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR1: phys=0x80881000 size=0x1000
+[15786747900] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR4: phys=0xc000004000 size=0x4000
+[15790444098] [INFO] [kernel::root::pci] [CPU0] PCI: Found virtio network controller at 00:02.0
+[15815442654] [INFO] [kernel::root::pci] [CPU0] PCI: VirtIO notify_cfg BAR4 offset=0x3000 mult=4
+[15836109432] [INFO] [kernel::root::pci] [CPU0] PCI: VirtIO common_cfg BAR4 offset=0x0
+[15839654523] [INFO] [kernel::root::pci] [CPU0] PCI: Registered virtio network (graph_id=1120, idx=2) BAR4=0xc000004000
+[15840621555] [INFO] [kernel::root::pci] [CPU0] VirtIO-Net: Device registered for userspace driver
+[15924358296] [INFO] [kernel::root::pci] [CPU0] PCI: 00:1f.0 8086:2918 Intel Corporation 82801IB (ICH9) LPC Interface Controller class=06:01 prog_if=00 rev=02
+[15926189763] [INFO] [kernel::root::pci] [CPU0] PCI: Found LPC/ISA bridge at 00:1f.0
+[16045757739] [INFO] [kernel::root::pci] [CPU0] LPC: Created Legacy IO bus with CMOS and PS/2 controller
+[16164750624] [INFO] [kernel::root::pci] [CPU0] PCI: 00:1f.2 8086:2922 Intel Corporation 82801IR/IO/IH (ICH9R/DO/DH) 6 port SATA Controller [AHCI mode] class=01:06 prog_if=01 rev=02
+[16196862363] [INFO] [kernel::root::pci] [CPU0] PCI:   BAR5: phys=0x80880000 size=0x1000
+[16204078374] [INFO] [kernel::root::pci] [CPU0] PCI: Found AHCI SATA controller at 00:1f.2
+[16208194365] [INFO] [kernel::root::pci] [CPU0] PCI: Registered AHCI controller (graph_id=1193, idx=5) BAR5=0x80880000
+[16278961578] [INFO] [kernel::root::service] [CPU1] ROOT STATS: iter=3000 nodes=584 watches=0 history=1024 journal=1024 symbols=181 drops=0
+[16310071998] [INFO] [kernel::root::pci] [CPU0] PCI: 00:1f.3 8086:2930 Intel Corporation 82801I (ICH9 Family) SMBus Controller class=0c:05 prog_if=00 rev=02
+[16316486274] [CONTRACT] [kernel::root::boot_register] [CPU0] ROOT: registered items. host=t1 kernel=tb
+[16317838515] [CONTRACT] [kernel] [CPU0] KERNEL: root census complete: host=t1 kernel=tb root=te
+[16319186697] [CONTRACT] [kernel] [CPU0] Kernel: Enumerating 39 boot modules...
+[16320481452] [CONTRACT] [kernel] [CPU0]   [0] name='/boot/sprout' cmdline='init' size=111120
+[16321410501] [CONTRACT] [kernel] [CPU0]   [1] name='/boot/bristle' cmdline='init' size=41456
+[16322295561] [CONTRACT] [kernel] [CPU0]   [2] name='/boot/rtc_cmos' cmdline='init' size=29248
+[16323197715] [CONTRACT] [kernel] [CPU0]   [3] name='/boot/clock' cmdline='' size=61968
+[16324018491] [CONTRACT] [kernel] [CPU0]   [4] name='/boot/taskman' cmdline='' size=70160
+[16324862433] [CONTRACT] [kernel] [CPU0]   [5] name='/boot/ps2_kbd' cmdline='init' size=25072
+[16325736801] [CONTRACT] [kernel] [CPU0]   [6] name='/boot/echo' cmdline='init' size=25072
+[16326680238] [CONTRACT] [kernel] [CPU0]   [7] name='/boot/bloom' cmdline='init' size=965128
+[16327657368] [CONTRACT] [kernel] [CPU0]   [8] name='/boot/ps2_mouse' cmdline='init' size=29168
+[16329362082] [CONTRACT] [kernel] [CPU0]   [9] name='/boot/display_bootfb' cmdline='init' size=29248
+[16331065344] [CONTRACT] [kernel] [CPU0]   [10] name='/boot/display_virtio_gpu' cmdline='init' size=53864
+[16332016536] [CONTRACT] [kernel] [CPU0]   [11] name='/boot/fontd' cmdline='init' size=188944
+[16332713529] [CONTRACT] [kernel] [CPU0]   [12] name='/boot/blossom' cmdline='init' size=123408
+[16333384947] [CONTRACT] [kernel] [CPU0]   [13] name='/boot/flytrap' cmdline='' size=291352
+[16334027160] [CONTRACT] [kernel] [CPU0]   [14] name='/boot/virtio_netd' cmdline='' size=49680
+[16334742699] [CONTRACT] [kernel] [CPU0]   [15] name='/boot/rtl8168d' cmdline='' size=45584
+[16335640728] [CONTRACT] [kernel] [CPU0]   [16] name='/boot/netd' cmdline='' size=147984
+[16336541562] [CONTRACT] [kernel] [CPU0]   [17] name='/boot/fetchd' cmdline='' size=41488
+[16337386164] [CONTRACT] [kernel] [CPU0]   [18] name='/boot/anther' cmdline='' size=586272
+[16338031644] [CONTRACT] [kernel] [CPU0]   [19] name='/boot/fortune' cmdline='' size=61968
+[16338678774] [CONTRACT] [kernel] [CPU0]   [20] name='/boot/photosynthesis' cmdline='' size=12648
+[16339504500] [CONTRACT] [kernel] [CPU0]   [21] name='/boot/ahci_disk' cmdline='' size=45664
+[16340161299] [CONTRACT] [kernel] [CPU0]   [22] name='/boot/iso9660d' cmdline='' size=53856
+[16340801631] [CONTRACT] [kernel] [CPU0]   [23] name='/boot/virtio_sound' cmdline='init' size=49648
+[16341496743] [CONTRACT] [kernel] [CPU0]   [24] name='/boot/hdaudio' cmdline='' size=37360
+[16342129023] [CONTRACT] [kernel] [CPU0]   [25] name='/boot/pci_stubd' cmdline='' size=29168
+[16342789518] [CONTRACT] [kernel] [CPU0]   [26] name='/boot/beeper' cmdline='init' size=33296
+[16343443446] [CONTRACT] [kernel] [CPU0]   [27] name='/boot/nectar' cmdline='init' size=176656
+[16344102654] [CONTRACT] [kernel] [CPU0]   [28] name='/boot/hello_std' cmdline='' size=16880
+[16344748827] [CONTRACT] [kernel] [CPU0]   [29] name='/boot/stdio_demo' cmdline='' size=16880
+[16345401864] [CONTRACT] [kernel] [CPU0]   [30] name='/boot/telnetd' cmdline='' size=57872
+[16346102784] [CONTRACT] [kernel] [CPU0]   [31] name='/assets/wallpapers/clouds.bmp' cmdline='' size=786486
+[16346850531] [CONTRACT] [kernel] [CPU0]   [32] name='/assets/wallpapers/flower.bmp' cmdline='' size=8386614
+[16347607749] [CONTRACT] [kernel] [CPU0]   [33] name='/assets/wallpapers/leather.bmp' cmdline='' size=1179702
+[16348399551] [CONTRACT] [kernel] [CPU0]   [34] name='/assets/wallpapers/linen.bmp' cmdline='' size=4718646
+[16349314344] [CONTRACT] [kernel] [CPU0]   [35] name='/assets/fonts/NotoSans-Regular.ttf' cmdline='' size=569208
+[16350353118] [CONTRACT] [kernel] [CPU0]   [36] name='/assets/themes/genie_circles.wasm' cmdline='' size=2824
+[16351427334] [CONTRACT] [kernel] [CPU0]   [37] name='/assets/cursors/future/default.svg' cmdline='' size=3051
+[16352997045] [CONTRACT] [kernel] [CPU0]   [38] name='/boot/locale.conf' cmdline='' size=85
+[16354588437] [INFO] [kernel] [CPU0] Found init module: /boot/sprout (cmdline: 'init'), loading...
+[16356387498] [INFO] [kernel::task::loader] [CPU0] Loading module: /boot/sprout
+[16357291566] [DEBUG] [kernel::task::loader] [CPU0]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[16366727223] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=200000 exec=true
+[16381866699] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=213000 exec=false
+[16387408125] [INFO] [kernel::task::loader] [CPU0] Segment: vaddr=21a000 exec=false
+[16400069103] [INFO] [kernel] [CPU0] Spawning sprout with registry at 0x600000...
+[16400921064] [CONTRACT] [kernel] [CPU0] Spawning init process...
+[16403420946] [DEBUG] [kernel::sched::spawn] [CPU0] SCHED: Task 8 (user task/process) assigned to CPU 2
+[16406373555] [CONTRACT] [kernel] [CPU0] Entering scheduler loop.
+[16407169746] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb00db400
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x600000
 ThingOS Petals
 type 'help' for commands
 
-petals> [18074872761] [DEBUG] [kernel::sched::sleep] [CPU0] DIAG ctx_switch: cpu=0 from=0 to=2
-[18075672780] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=8 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369013504 RFLAGS_BEFORE=134 CR3_BEFORE=50393088 fs_base=0 gs_base=18446744071564572728
-[18093107142] [INFO] [sprout] [CPU2] [sprout] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ff990 rip=0x20139f rflags=0x206
-[18098327016] [INFO] [sprout] [CPU2] SPROUT: v0.4 starting (Supervisor Mode)...
-[18099805152] [INFO] [sprout::devtree] [CPU2] SPROUT: devtree::init entry (v0.2)
-[18101163300] [INFO] [sprout::devtree] [CPU2] SPROUT: Step 1: Find Host
-[18112238199] [INFO] [sprout::devtree] [CPU2] SPROUT: Step 2: HHDM
-[18120186546] [INFO] [sprout::devtree] [CPU2] SPROUT: Step 3: Platform Bus
-[18124476645] [INFO] [sprout::devtree] [CPU2] SPROUT: Step 4: Firmware
-[18125732064] [INFO] [sprout::devtree] [CPU2] SPROUT: Finding ACPI...
-[18130550757] [INFO] [sprout::devtree] [CPU2] SPROUT: Found 1 ACPI nodes
-[18134866794] [INFO] [sprout::devtree] [CPU2] SPROUT: ACPI RSDP = 0x7f77e014
-[18136674336] [INFO] [sprout::devtree] [CPU2] SPROUT: Finding DTB...
-[18143299812] [INFO] [sprout::devtree] [CPU2] SPROUT: Found 0 DTB nodes
-[18144576219] [INFO] [sprout::devtree] [CPU2] SPROUT: Init OK, returning context
-[18145928757] [INFO] [sprout::devtree] [CPU2] SPROUT: build() called
-[18147251430] [INFO] [sprout::devtree::x86_64] [CPU2] SPROUT: x86_64 platform enrichment... (v0.2)
-[18151297164] [INFO] [sprout::devtree::x86_64] [CPU2] SPROUT: x86_64 enumerate done
-[18156271320] [INFO] [sprout] [CPU2] SPROUT: About to create Supervisor...
-[18157637454] [INFO] [sprout] [CPU2] SPROUT: Supervisor created, calling run_forever...
-[18159160074] [INFO] [sprout::supervisor] [CPU2] SPROUT: Supervisor starting (phased mode)...
-[18160641180] [INFO] [sprout::supervisor] [CPU2] SPROUT: [Stage 1] Hardware Discovery and Core Drivers
-[18162912174] [INFO] [sprout::supervisor] [CPU2] SPROUT: Discovering modules...
-[18169980048] [INFO] [sprout::supervisor] [CPU2] SPROUT: Found 39 modules
-[18214905753] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[0] = '/boot/sprout'
-[18223703289] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[1] = '/boot/bristle'
-[18230878941] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[2] = '/boot/rtc_cmos'
-[18237822306] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[3] = '/boot/clock'
-[18242246154] [INFO] [sprout::supervisor] [CPU2] SPROUT: Discovered app: /boot/clock
-[18248110584] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[4] = '/boot/taskman'
-[18255671445] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[5] = '/boot/ps2_kbd'
-[18263277582] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[6] = '/boot/echo'
-[18269288829] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[7] = '/boot/bloom'
-[18275399472] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[8] = '/boot/ps2_mouse'
-[18282049863] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[9] = '/boot/display_bootfb'
-[18288593103] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[10] = '/boot/display_virtio_gpu'
-[18295235145] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[11] = '/boot/fontd'
-[18300790629] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[12] = '/boot/blossom'
-[18306691293] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[13] = '/boot/flytrap'
-[18312642843] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[14] = '/boot/virtio_netd'
-[18318398604] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[15] = '/boot/rtl8168d'
-[18324629895] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[16] = '/boot/netd'
-[18329813007] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[17] = '/boot/fetchd'
-[18336263583] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[18] = '/boot/anther'
-[18341115870] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[19] = '/boot/fortune'
-[18347570901] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[20] = '/boot/photosynthesis'
-[18353887794] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[21] = '/boot/ahci_disk'
-[18359863203] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[22] = '/boot/iso9660d'
-[18365323845] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[23] = '/boot/virtio_sound'
-[18371066472] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[24] = '/boot/hdaudio'
-[18376592520] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[25] = '/boot/pci_stubd'
-[18383017389] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[26] = '/boot/beeper'
-[18388131234] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[27] = '/boot/nectar'
-[18393452550] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[28] = '/boot/hello_std'
-[18397038066] [INFO] [sprout::supervisor] [CPU2] SPROUT: Discovered app: /boot/hello_std
-[18401841777] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[29] = '/boot/stdio_demo'
-[18407041521] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[30] = '/boot/telnetd'
-[18412444941] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[31] = '/assets/wallpapers/clouds.bmp'
-[18417705735] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[32] = '/assets/wallpapers/flower.bmp'
-[18424228680] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[33] = '/assets/wallpapers/leather.bmp'
-[18429499869] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[34] = '/assets/wallpapers/linen.bmp'
-[18435815640] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[35] = '/assets/fonts/NotoSans-Regular.ttf'
-[18441540612] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[36] = '/assets/themes/genie_circles.wasm'
-[18448184964] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[37] = '/assets/cursors/future/default.svg'
-[18455049360] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[38] = '/boot/locale.conf'
-[18458777733] [INFO] [sprout::registry] [CPU2] SPROUT: Scanning boot modules...
-[18483831333] [INFO] [sprout::registry] [CPU2] SPROUT: Registering driver 'dev.rtc.Cmos' -> '/boot/rtc_cmos' (fallback)
-[18638645025] [INFO] [sprout::registry] [CPU2] SPROUT: Registry scan complete. Found 1 drivers.
-[18646557765] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/pci_stubd
-[18647624193] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[18649622310] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[18654496773] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=205000 exec=false
-[18655920558] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=206000 exec=false
-[18665600184] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 9 (user task/process) assigned to CPU 3
-[18671332152] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb00db400
-[18673198632] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned pci_stubd (PID=9)
+petals> [16415278077] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=8 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369013552 RFLAGS_BEFORE=134 CR3_BEFORE=50393088 fs_base=0 gs_base=18446744071564586608
+[16421603352] [DEBUG] [kernel::sched::sleep] [CPU0] DIAG ctx_switch: cpu=0 from=0 to=2
+[16451127363] [INFO] [sprout] [CPU2] [sprout] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ff990 rip=0x20139f rflags=0x206
+[16455504153] [INFO] [sprout] [CPU2] SPROUT: v0.4 starting (Supervisor Mode)...
+[16457558238] [INFO] [sprout::devtree] [CPU2] SPROUT: devtree::init entry (v0.2)
+[16459299945] [INFO] [sprout::devtree] [CPU2] SPROUT: Step 1: Find Host
+[16472396787] [INFO] [sprout::devtree] [CPU2] SPROUT: Step 2: HHDM
+[16479986820] [INFO] [sprout::devtree] [CPU2] SPROUT: Step 3: Platform Bus
+[16495450851] [INFO] [sprout::devtree] [CPU2] SPROUT: Step 4: Firmware
+[16498267335] [INFO] [sprout::devtree] [CPU2] SPROUT: Finding ACPI...
+[16507067973] [INFO] [sprout::devtree] [CPU2] SPROUT: Found 1 ACPI nodes
+[16512340053] [INFO] [sprout::devtree] [CPU2] SPROUT: ACPI RSDP = 0x7f77e014
+[16514156934] [INFO] [sprout::devtree] [CPU2] SPROUT: Finding DTB...
+[16520641962] [INFO] [sprout::devtree] [CPU2] SPROUT: Found 0 DTB nodes
+[16522334796] [INFO] [sprout::devtree] [CPU2] SPROUT: Init OK, returning context
+[16524077460] [INFO] [sprout::devtree] [CPU2] SPROUT: build() called
+[16525815240] [INFO] [sprout::devtree::x86_64] [CPU2] SPROUT: x86_64 platform enrichment... (v0.2)
+[16533134277] [INFO] [sprout::devtree::x86_64] [CPU2] SPROUT: x86_64 enumerate done
+[16534941885] [INFO] [sprout] [CPU2] SPROUT: About to create Supervisor...
+[16536950430] [INFO] [sprout] [CPU2] SPROUT: Supervisor created, calling run_forever...
+[16539390285] [INFO] [sprout::supervisor] [CPU2] SPROUT: Supervisor starting (phased mode)...
+[16541717808] [INFO] [sprout::supervisor] [CPU2] SPROUT: [Stage 1] Hardware Discovery and Core Drivers
+[16543860201] [INFO] [sprout::supervisor] [CPU2] SPROUT: Discovering modules...
+[16550774856] [INFO] [sprout::supervisor] [CPU2] SPROUT: Found 39 modules
+[16614089547] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[0] = '/boot/sprout'
+[16625302518] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[1] = '/boot/bristle'
+[16632872520] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[2] = '/boot/rtc_cmos'
+[16640363388] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[3] = '/boot/clock'
+[16649341401] [INFO] [sprout::supervisor] [CPU2] SPROUT: Discovered app: /boot/clock
+[16662537210] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[4] = '/boot/taskman'
+[16671328773] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[5] = '/boot/ps2_kbd'
+[16685586060] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[6] = '/boot/echo'
+[16693118970] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[7] = '/boot/bloom'
+[16705092558] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[8] = '/boot/ps2_mouse'
+[16713210129] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[9] = '/boot/display_bootfb'
+[16722815703] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[10] = '/boot/display_virtio_gpu'
+[16730782761] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[11] = '/boot/fontd'
+[16737910332] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[12] = '/boot/blossom'
+[16745212143] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[13] = '/boot/flytrap'
+[16753076439] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[14] = '/boot/virtio_netd'
+[16760814081] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[15] = '/boot/rtl8168d'
+[16768189383] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[16] = '/boot/netd'
+[16777882803] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[17] = '/boot/fetchd'
+[16786077264] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[18] = '/boot/anther'
+[16793697624] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[19] = '/boot/fortune'
+[16801097247] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[20] = '/boot/photosynthesis'
+[16809352461] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[21] = '/boot/ahci_disk'
+[16817821911] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[22] = '/boot/iso9660d'
+[16826115141] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[23] = '/boot/virtio_sound'
+[16834253502] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[24] = '/boot/hdaudio'
+[16841709291] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[25] = '/boot/pci_stubd'
+[16849812441] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[26] = '/boot/beeper'
+[16856979282] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[27] = '/boot/nectar'
+[16864520937] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[28] = '/boot/hello_std'
+[16870123512] [INFO] [sprout::supervisor] [CPU2] SPROUT: Discovered app: /boot/hello_std
+[16875634545] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[29] = '/boot/stdio_demo'
+[16883448417] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[30] = '/boot/telnetd'
+[16892882391] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[31] = '/assets/wallpapers/clouds.bmp'
+[16903848720] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[32] = '/assets/wallpapers/flower.bmp'
+[16913860821] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[33] = '/assets/wallpapers/leather.bmp'
+[16922126133] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[34] = '/assets/wallpapers/linen.bmp'
+[16930493481] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[35] = '/assets/fonts/NotoSans-Regular.ttf'
+[16938991641] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[36] = '/assets/themes/genie_circles.wasm'
+[16947952197] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[37] = '/assets/cursors/future/default.svg'
+[16956550116] [INFO] [sprout::supervisor] [CPU2] SPROUT: Module[38] = '/boot/locale.conf'
+[16962050985] [INFO] [sprout::registry] [CPU2] SPROUT: Scanning boot modules...
+[16997267298] [INFO] [sprout::registry] [CPU2] SPROUT: Registering driver 'dev.rtc.Cmos' -> '/boot/rtc_cmos' (fallback)
+[17196249675] [INFO] [sprout::registry] [CPU2] SPROUT: Registry scan complete. Found 1 drivers.
+[17207068725] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/pci_stubd
+[17208988599] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[17211750996] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[17219237442] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=205000 exec=false
+[17221076235] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=206000 exec=false
+[17234218881] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 9 (user task/process) assigned to CPU 3
+[17243972295] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb00db400
+[17245303812] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned pci_stubd (PID=9)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[18674844837] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=9 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369079040 RFLAGS_BEFORE=134 CR3_BEFORE=50860032 fs_base=0 gs_base=18446744071564572760
-[18681192618] [INFO] [pci_stubd] [CPU3] pci_stubd: starting pci-id matcher
-[18682067778] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/rtc_cmos
-[18683129784] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
-[18685301877] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[18690209043] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=204000 exec=false
-[18692582040] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=206000 exec=false
-[18702715713] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 10 (user task/process) assigned to CPU 1
-[18707686536] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned rtc_cmos (PID=10)
-[18709447845] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb00db400
+[17247453861] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=9 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369079088 RFLAGS_BEFORE=134 CR3_BEFORE=50860032 fs_base=0 gs_base=18446744071564586640
+[17254491507] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/rtc_cmos
+[17255992479] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
+[17262191925] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[17265219015] [INFO] [pci_stubd] [CPU3] pci_stubd: starting pci-id matcher
+[17270617617] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=204000 exec=false
+[17273908839] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=206000 exec=false
+[17284867149] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 10 (user task/process) assigned to CPU 1
+[17310609690] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned rtc_cmos (PID=10)
+[17315885763] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up storage pipeline...
+[17317369773] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb00db400
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x49b
-[18711695673] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=10 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369144576 RFLAGS_BEFORE=134 CR3_BEFORE=50974720 fs_base=0 gs_base=18446744071564572696
-[18716026032] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up storage pipeline...
-[18719363553] [INFO] [rtc_cmos] [CPU1] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ffeb0 rip=0x201027 rflags=0x202
-[18721364904] [INFO] [rtc_cmos] [CPU1] Starting... arg=49b
-[18723770274] [INFO] [rtc_cmos] [CPU1] Serving device ID: ThingId([155, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-[18729398721] [INFO] [rtc_cmos] [CPU1] RTC: 2026-04-05 19:27:15 = 1775417235 unix_secs
-[18731377764] [INFO] [kernel::time] [CPU1] System clock anchored: unix_secs=1775417235, mono_ns=9365456199, offset=1775417225634543801ns
-[18733322817] [INFO] [rtc_cmos] [CPU1] System clock anchored
-[18745513809] [INFO] [rtc_cmos] [CPU1] RTC: Set sys.TimeState = 1 (Anchored)
-[18792782382] [INFO] [rtc_cmos] [CPU1] Publishing time. Entering maintenance loop.
-[18806319972] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/ahci_disk
-[18807271725] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
-[18809533974] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[18816082725] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=207000 exec=false
-[18818467536] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20a000 exec=false
-[18826833696] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 11 (user task/process) assigned to CPU 2
-[18830462442] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned ahci_disk (PID=11)
-[18834067395] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb00db400
+[17320973769] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=10 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369148720 RFLAGS_BEFORE=134 CR3_BEFORE=50974720 fs_base=0 gs_base=18446744071564586576
+[17334120243] [INFO] [rtc_cmos] [CPU1] whoami: cs=0x2b ss=0x23 cpl=3 rsp=0x7ffeb0 rip=0x201027 rflags=0x202
+[17336536140] [INFO] [rtc_cmos] [CPU1] Starting... arg=49b
+[17340097599] [INFO] [rtc_cmos] [CPU1] Serving device ID: ThingId([155, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+[17346950280] [INFO] [rtc_cmos] [CPU1] RTC: 2026-04-06 01:00:28 = 1775437228 unix_secs
+[17349125541] [INFO] [kernel::time] [CPU1] System clock anchored: unix_secs=1775437228, mono_ns=8674329873, offset=1775437219325670127ns
+[17351249850] [INFO] [rtc_cmos] [CPU1] System clock anchored
+[17374099710] [INFO] [rtc_cmos] [CPU1] RTC: Set sys.TimeState = 1 (Anchored)
+[17470113210] [INFO] [rtc_cmos] [CPU1] Publishing time. Entering maintenance loop.
+[17493304620] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/ahci_disk
+[17496256602] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
+[17501524491] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[17516308854] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=207000 exec=false
+[17524899711] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20a000 exec=false
+[17544597180] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 11 (user task/process) assigned to CPU 2
+[17553392472] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned ahci_disk (PID=11)
+[17557358874] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb00db400
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[18835823292] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=11 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369210752 RFLAGS_BEFORE=130 CR3_BEFORE=51089408 fs_base=0 gs_base=18446744071564572728
-[18841983996] [INFO] [ahci_disk] [CPU2] AHCI: Starting AHCI/SATA disk driver v1
-[18846953499] [INFO] [sprout::pipelines] [CPU2] SPROUT: Failed to spawn ata_disk: ENOENT
-[18848949207] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/iso9660d
-[18849881688] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
-[18851791365] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[18859424892] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=209000 exec=false
-[18861915699] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20c000 exec=false
-[18869894703] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 12 (user task/process) assigned to CPU 3
-[18873412602] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned iso9660d (PID=12)
-[18875879187] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up audio driver...
-[18877162293] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb00db400
+[17562449619] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=11 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369214256 RFLAGS_BEFORE=134 CR3_BEFORE=51089408 fs_base=0 gs_base=18446744071564586608
+[17569494888] [INFO] [ahci_disk] [CPU2] AHCI: Starting AHCI/SATA disk driver v1
+[17585462136] [INFO] [sprout::pipelines] [CPU2] SPROUT: Failed to spawn ata_disk: ENOENT
+[17588147775] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/iso9660d
+[17589334653] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
+[17591878227] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[17602564452] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=209000 exec=false
+[17606411130] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20c000 exec=false
+[17616123063] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 12 (user task/process) assigned to CPU 3
+[17621099859] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb00db400
+[17622791142] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned iso9660d (PID=12)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[18879610365] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=12 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369277440 RFLAGS_BEFORE=134 CR3_BEFORE=51228672 fs_base=0 gs_base=18446744071564572760
-[18884038800] [INFO] [ahci_disk] [CPU2] AHCI: Found 6 PCI functions
-[18886548912] [INFO] [iso9660d] [CPU3] ISO9660D: Starting ISO9660 mount service...
-[18894693213] [INFO] [sprout::pipelines] [CPU2] SPROUT: No Sound device found
-[18895612230] [INFO] [iso9660d] [CPU3] ISO9660D: Found 0 block devices
-[18896455809] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up display pipeline...
-[18897411522] [INFO] [iso9660d] [CPU3] ISO9660D: No ISO9660 filesystems found
-[18899076768] [INFO] [iso9660d] [CPU3] ISO9660D: Entering service loop with 0 mounts
-[18923672163] [INFO] [sprout::pipelines] [CPU2] SPROUT: Using VirtIO GPU at 1920x1080
-[18925892271] [INFO] [sprout::pipelines] [CPU2] SPROUT: Display backend: VirtIO-GPU (1920x1080 stride=7680)
-[19427525733] [INFO] [ahci_disk] [CPU2] AHCI: Found AHCI controller at PCI func ThingId([169, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-[19442100579] [INFO] [ahci_disk] [CPU2] AHCI: BAR5=0x80880000
-[19445179380] [INFO] [kernel::syscall::handlers::device] [CPU2] DEVICE: task 11 claimed device 1193 (handle 0)
-[19447134366] [INFO] [ahci_disk] [CPU2] AHCI: Claimed PCI device ThingId([169, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) handle=0
-[19452918177] [INFO] [kernel::syscall::handlers::device] [CPU2] DEVICE: Mapped BAR5 phys=0x80880000 size=0x1000 -> virt=0x10000000
-[19454824092] [INFO] [ahci_disk] [CPU2] AHCI: Mapped ABAR at 0x10000000
-[19457063934] [INFO] [ahci_disk] [CPU2] AHCI: Version 1.0, 6 ports, 32 slots, 64-bit: true
-[19458695883] [INFO] [ahci_disk] [CPU2] AHCI: Ports implemented: 0x3f
-[19459846263] [INFO] [ahci_disk] [CPU2] AHCI: DMA virt=0x20b000
-[19463442999] [INFO] [ahci_disk] [CPU2] AHCI: DMA phys=0x30c8000
-[19464633771] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 0...
-[19466021091] [INFO] [ahci_disk] [CPU2] AHCI: Port 0 - no device
-[19467076464] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 1...
-[19468045641] [INFO] [ahci_disk] [CPU2] AHCI: Port 1 - no device
-[19469026203] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 2...
-[19470115929] [INFO] [ahci_disk] [CPU2] AHCI: Port 2 - SATAPI drive (sig=0xeb140101)
-[19481237061] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/display_virtio_gpu
-[19482656721] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
-[19484855907] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[19493148213] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=209000 exec=false
-[19495887312] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20c000 exec=false
-[19504144374] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 13 (user task/process) assigned to CPU 1
-[19507502355] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb00db400
-[19508690388] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned display driver '/display_virtio_gpu' (PID=13)
+[17624932974] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=12 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369279792 RFLAGS_BEFORE=134 CR3_BEFORE=51228672 fs_base=0 gs_base=18446744071564586640
+[17629231851] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up audio driver...
+[17632253793] [INFO] [iso9660d] [CPU3] ISO9660D: Starting ISO9660 mount service...
+[17636048958] [INFO] [ahci_disk] [CPU2] AHCI: Found 6 PCI functions
+[17645342253] [INFO] [iso9660d] [CPU3] ISO9660D: Found 0 block devices
+[17648192661] [INFO] [sprout::pipelines] [CPU2] SPROUT: No Sound device found
+[17649321789] [INFO] [iso9660d] [CPU3] ISO9660D: No ISO9660 filesystems found
+[17650888728] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up display pipeline...
+[17664371043] [INFO] [iso9660d] [CPU3] ISO9660D: Entering service loop with 0 mounts
+[17729343456] [INFO] [sprout::pipelines] [CPU2] SPROUT: Using VirtIO GPU at 1920x1080
+[17732489082] [INFO] [sprout::pipelines] [CPU2] SPROUT: Display backend: VirtIO-GPU (1920x1080 stride=7680)
+[18263875344] [INFO] [ahci_disk] [CPU2] AHCI: Found AHCI controller at PCI func ThingId([169, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+[18283143846] [INFO] [ahci_disk] [CPU2] AHCI: BAR5=0x80880000
+[18288359397] [INFO] [kernel::syscall::handlers::device] [CPU2] DEVICE: task 11 claimed device 1193 (handle 0)
+[18290272374] [INFO] [ahci_disk] [CPU2] AHCI: Claimed PCI device ThingId([169, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) handle=0
+[18294730179] [INFO] [kernel::syscall::handlers::device] [CPU2] DEVICE: Mapped BAR5 phys=0x80880000 size=0x1000 -> virt=0x10000000
+[18296649987] [INFO] [ahci_disk] [CPU2] AHCI: Mapped ABAR at 0x10000000
+[18298722024] [INFO] [ahci_disk] [CPU2] AHCI: Version 1.0, 6 ports, 32 slots, 64-bit: true
+[18300175278] [INFO] [ahci_disk] [CPU2] AHCI: Ports implemented: 0x3f
+[18301145379] [INFO] [ahci_disk] [CPU2] AHCI: DMA virt=0x20b000
+[18303365652] [INFO] [ahci_disk] [CPU2] AHCI: DMA phys=0x30c8000
+[18304310772] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 0...
+[18305191839] [INFO] [ahci_disk] [CPU2] AHCI: Port 0 - no device
+[18306051423] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 1...
+[18306828573] [INFO] [ahci_disk] [CPU2] AHCI: Port 1 - no device
+[18307603479] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 2...
+[18308507217] [INFO] [ahci_disk] [CPU2] AHCI: Port 2 - SATAPI drive (sig=0xeb140101)
+[18322848390] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/display_virtio_gpu
+[18324350319] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 03, 00, 00, 00, 00, 00, 00, 00, 00]
+[18327217029] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[18335186397] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=209000 exec=false
+[18339772275] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20c000 exec=false
+[18347472924] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 13 (user task/process) assigned to CPU 1
+[18352403916] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb00db400
+[18354119223] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned display driver '/display_virtio_gpu' (PID=13)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x30002
-[19510593069] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=13 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369357232 RFLAGS_BEFORE=130 CR3_BEFORE=59666432 fs_base=0 gs_base=18446744071564572696
-[19518505875] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: starting (drv_req_r=2, drv_resp_w=3)
-[19527729837] [INFO] [kernel::syscall::handlers::device] [CPU1] DEVICE: task 13 claimed device 1108 (handle 1)
-[19543652337] [INFO] [ahci_disk] [CPU2] AHCI: Registered ATAPI block device 1235 port=2 model='                                        ' rpc_port=5
-[19552478715] [INFO] [virtio_gpu] [CPU1] virtio_gpu: caps from graph - common BAR2 off=0x1000, notify BAR2 off=0x3000 mult=4
-[19554278238] [INFO] [kernel::syscall::handlers::device] [CPU1] DEVICE: Mapped BAR2 phys=0xc000000000 size=0x4000 -> virt=0x10001000
-[19560433068] [INFO] [virtio_gpu] [CPU1] virtio_gpu: device features=0x30000002 virgl=false
-[19568255289] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: GPU initialized successfully
-[19569762168] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: Virgl 3D not supported, using 2D only
-[19578265839] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: creating frame pool 1x 1920x1080 stride=7680 format=2
-[19593406338] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 3...
-[19595091780] [INFO] [ahci_disk] [CPU2] AHCI: Port 3 - no device
-[19596762240] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 4...
-[19598333766] [INFO] [ahci_disk] [CPU2] AHCI: Port 4 - no device
-[19599894270] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 5...
-[19601462661] [INFO] [ahci_disk] [CPU2] AHCI: Port 5 - no device
-[19603180740] [INFO] [ahci_disk] [CPU2] AHCI: Found 1 SATA disk(s)
-[19604895750] [INFO] [ahci_disk] [CPU2] AHCI: Entering RPC service loop
-[20076417009] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up input pipeline (keyboard + mouse)...
-[20089905429] [INFO] [sprout::pipelines] [CPU2] SPROUT: Created kbd_raw port (w=7, r=8)
-[20097872784] [INFO] [sprout::pipelines] [CPU2] SPROUT: Created mouse_raw port (w=9, r=10)
-[20100533838] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/ps2_kbd
-[20107614351] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20118778944] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20125069965] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=203000 exec=false
-[20127326241] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=204000 exec=false
-[20136471102] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 14 (user task/process) assigned to CPU 2
-[20139711306] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned ps2_kbd (PID=14)
-[20141692329] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/ps2_mouse
-[20142479709] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20144183697] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20148939855] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=205000 exec=false
-[20150357205] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=206000 exec=false
-[20160055674] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 15 (user task/process) assigned to CPU 3
-[20174358633] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb0106680
-[20175921876] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned ps2_mouse (PID=15)
+[18356134896] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=13 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369357616 RFLAGS_BEFORE=134 CR3_BEFORE=59666432 fs_base=0 gs_base=18446744071564586576
+[18363800037] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: starting (drv_req_r=2, drv_resp_w=3)
+[18384510012] [INFO] [kernel::syscall::handlers::device] [CPU1] DEVICE: task 13 claimed device 1108 (handle 1)
+[18398553063] [INFO] [ahci_disk] [CPU2] AHCI: Registered ATAPI block device 1235 port=2 model='                                        ' rpc_port=5
+[18408284895] [INFO] [virtio_gpu] [CPU1] virtio_gpu: caps from graph - common BAR2 off=0x1000, notify BAR2 off=0x3000 mult=4
+[18410719965] [INFO] [kernel::syscall::handlers::device] [CPU1] DEVICE: Mapped BAR2 phys=0xc000000000 size=0x4000 -> virt=0x10001000
+[18417679005] [INFO] [virtio_gpu] [CPU1] virtio_gpu: device features=0x30000002 virgl=false
+[18429255603] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: GPU initialized successfully
+[18431562567] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: Virgl 3D not supported, using 2D only
+[18433297575] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 3...
+[18434511216] [INFO] [ahci_disk] [CPU2] AHCI: Port 3 - no device
+[18435363177] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 4...
+[18436187748] [INFO] [ahci_disk] [CPU2] AHCI: Port 4 - no device
+[18436984269] [INFO] [ahci_disk] [CPU2] AHCI: Probing port 5...
+[18438107193] [INFO] [ahci_disk] [CPU2] AHCI: Port 5 - no device
+[18438974730] [INFO] [ahci_disk] [CPU2] AHCI: Found 1 SATA disk(s)
+[18439830420] [INFO] [ahci_disk] [CPU2] AHCI: Entering RPC service loop
+[18446199552] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: creating frame pool 1x 1920x1080 stride=7680 format=2
+[18927047502] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up input pipeline (keyboard + mouse)...
+[18930339021] [INFO] [sprout::pipelines] [CPU2] SPROUT: Created kbd_raw port (w=7, r=8)
+[18933092244] [INFO] [sprout::pipelines] [CPU2] SPROUT: Created mouse_raw port (w=9, r=10)
+[18935344824] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/ps2_kbd
+[18936236781] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[18938071713] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[18941949642] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=203000 exec=false
+[18944233770] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=205000 exec=false
+[18951402393] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 14 (user task/process) assigned to CPU 2
+[18955717803] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned ps2_kbd (PID=14)
+[18958245009] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/ps2_mouse
+[18959337078] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[18961296585] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[18966210120] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=205000 exec=false
+[18967736568] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=206000 exec=false
+[18976109163] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 15 (user task/process) assigned to CPU 3
+[18980371047] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb01080c8
+[18981501792] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned ps2_mouse (PID=15)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x9
-[20177973057] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=15 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369503744 RFLAGS_BEFORE=134 CR3_BEFORE=68620288 fs_base=0 gs_base=18446744071564572760
-[20184134388] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: frame pool ready (1 buffer)
-[20185624008] [INFO] [ps2_mouse] [CPU3] ps2_mouse: online (handle=9)
-[20186794254] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/bristle
-[20188082904] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20190775440] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20193304362] [INFO] [ps2_mouse] [CPU3] ps2_mouse: enabling aux port
-[20200649865] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=205000 exec=false
-[20203540566] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=207000 exec=false
-[20214913389] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 16 (user task/process) assigned to CPU 1
-[20218579458] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned bristle (PID=16)
-[20219710467] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb0106680
+[18982994943] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=15 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369500992 RFLAGS_BEFORE=130 CR3_BEFORE=68513792 fs_base=0 gs_base=18446744071564586640
+[18986907588] [INFO] [display_virtio_gpu] [CPU1] display_virtio_gpu: frame pool ready (1 buffer)
+[18987906135] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/bristle
+[18988832214] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[18990556926] [INFO] [ps2_mouse] [CPU3] ps2_mouse: online (handle=9)
+[18991322361] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[18992235405] [INFO] [ps2_mouse] [CPU3] ps2_mouse: enabling aux port
+[18997215270] [INFO] [ps2_mouse] [CPU3] ps2_mouse: controller cfg already correct (0x47)
+[18998087493] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=206000 exec=false
+[18999027333] [INFO] [ps2_mouse] [CPU3] ps2_mouse: sending RESET (0xFF)
+[19000472865] [INFO] [ps2_mouse] [CPU3] ps2_mouse: reset ACK received (0xfa)
+[19001299680] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=209000 exec=false
+[19002464514] [INFO] [ps2_mouse] [CPU3] ps2_mouse: BAT passed (0xaa), ID 0x00 confirmed
+[19004104185] [INFO] [ps2_mouse] [CPU3] ps2_mouse: setting sample rate (100)
+[19005346833] [INFO] [ps2_mouse] [CPU3] ps2_mouse: setting resolution (3)
+[19007197704] [INFO] [ps2_mouse] [CPU3] ps2_mouse: status result = Some(0) Some(3) Some(100)
+[19008819159] [INFO] [ps2_mouse] [CPU3] ps2_mouse: sending enable command (0xF4)
+[19010421738] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 16 (user task/process) assigned to CPU 1
+[19011658215] [INFO] [ps2_mouse] [CPU3] ps2_mouse: enable ACK received (0xfa)
+[19015247757] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb01080c8
+[19016447472] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned bristle (PID=16)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x8000a000b000d
-[20222246814] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=16 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369585664 RFLAGS_BEFORE=134 CR3_BEFORE=68890624 fs_base=0 gs_base=18446744071564572696
-[20226541038] [INFO] [sprout::pipelines] [CPU2] SPROUT: Input broker ready (keyboard + mouse)
-[20228246874] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up network stack...
-[20230180872] [INFO] [bristle] [CPU1] BRISTLE_MAIN_ENTERED_WITH_LOGS_YAY
-[20231690655] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb00fff90
-[20232907497] [INFO] [ps2_mouse] [CPU3] ps2_mouse: controller cfg already correct (0x47)
-[20234221986] [INFO] [bristle] [CPU1] bristle: online (kbd=8, mouse=10, evt=11, echo=13)
+[19018063812] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=16 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369583936 RFLAGS_BEFORE=130 CR3_BEFORE=68894720 fs_base=0 gs_base=18446744071564586576
+[19022745159] [INFO] [sprout::pipelines] [CPU2] SPROUT: Input broker ready (keyboard + mouse)
+[19023779940] [INFO] [bristle] [CPU1] BRISTLE_MAIN_ENTERED_WITH_LOGS_YAY
+[19024656552] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up network stack...
+[19026625497] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb0103240
+[19027702485] [INFO] [bristle] [CPU1] bristle: online (kbd=8, mouse=10, evt=11, echo=13)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x7
-[20236140078] [INFO] [ps2_mouse] [CPU3] ps2_mouse: sending RESET (0xFF)
-[20237203800] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=14 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369438208 RFLAGS_BEFORE=134 CR3_BEFORE=68399104 fs_base=0 gs_base=18446744071564572728
-[20240894652] [INFO] [bristle] [CPU1] bristle: created broadcast topic 0
-[20241909930] [INFO] [ps2_mouse] [CPU3] ps2_mouse: reset ACK received (0xfa)
-[20243627613] [INFO] [ps2_kbd] [CPU2] ps2_kbd: online (handle=7)
-[20245760007] [INFO] [ps2_mouse] [CPU3] ps2_mouse: BAT passed (0xaa), ID 0x00 confirmed
-[20249294109] [INFO] [ps2_mouse] [CPU3] ps2_mouse: setting sample rate (100)
-[20252399805] [INFO] [ps2_mouse] [CPU3] ps2_mouse: setting resolution (3)
-[20255814711] [INFO] [ps2_mouse] [CPU3] ps2_mouse: status result = Some(0) Some(3) Some(100)
-[20258248659] [INFO] [ps2_kbd] [CPU2] ps2_kbd: created driver node 1241
-[20259125106] [INFO] [bristle] [CPU1] bristle: registered in graph as svc.Input (id=1240)
-[20260395474] [INFO] [ps2_mouse] [CPU3] ps2_mouse: sending enable command (0xF4)
-[20261571066] [INFO] [kernel::syscall::handlers::device] [CPU2] DEVICE: task subscribed to vector 0x21
-[20262944295] [INFO] [ps2_mouse] [CPU3] ps2_mouse: enable ACK received (0xfa)
-[20264041149] [INFO] [ps2_kbd] [CPU2] ps2_kbd: subscribed to IRQ1 (vector 0x21)
-[20269047711] [INFO] [sprout::pipelines] [CPU2] SPROUT: Found NIC device ThingId([117, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
-[20272031373] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/virtio_netd
-[20273107569] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20275329855] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20282725188] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=208000 exec=false
-[20285461812] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20b000 exec=false
-[20293189917] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 17 (user task/process) assigned to CPU 2
-[20296594461] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned virtio_netd (PID=17)
-[20313141024] [INFO] [sprout::pipelines] [CPU2] SPROUT: spawn_netd start
-[20314929426] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/netd
-[20315903586] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20318298561] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20340379125] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=21d000 exec=false
-[20344974342] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=223000 exec=false
-[20365712763] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 18 (user task/process) assigned to CPU 3
-[20369277357] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned netd (PID=18)
-[20370280293] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb010a1b8
+[19029242562] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=14 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369434944 RFLAGS_BEFORE=130 CR3_BEFORE=68390912 fs_base=0 gs_base=18446744071564586608
+[19032801315] [INFO] [bristle] [CPU1] bristle: created broadcast topic 0
+[19035107124] [INFO] [ps2_kbd] [CPU2] ps2_kbd: online (handle=7)
+[19042434840] [INFO] [ps2_kbd] [CPU2] ps2_kbd: created driver node 1241
+[19043299539] [INFO] [bristle] [CPU1] bristle: registered in graph as svc.Input (id=1240)
+[19044505458] [INFO] [kernel::syscall::handlers::device] [CPU2] DEVICE: task subscribed to vector 0x21
+[19046337849] [INFO] [ps2_kbd] [CPU2] ps2_kbd: subscribed to IRQ1 (vector 0x21)
+[19050607719] [INFO] [sprout::pipelines] [CPU2] SPROUT: Found NIC device ThingId([117, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+[19053631377] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/virtio_netd
+[19054800303] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19056651735] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19063312752] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=208000 exec=false
+[19066243185] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20b000 exec=false
+[19073892684] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 17 (user task/process) assigned to CPU 2
+[19077029730] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned virtio_netd (PID=17)
+[19079858886] [INFO] [sprout::pipelines] [CPU2] SPROUT: spawn_netd start
+[19081750842] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/netd
+[19083084570] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19084743546] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19105192326] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=21d000 exec=false
+[19109475660] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=223000 exec=false
+[19130213025] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 18 (user task/process) assigned to CPU 3
+[19133261895] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned netd (PID=18)
+[19134111777] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb010ac38
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[20372311641] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=18 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369717024 RFLAGS_BEFORE=130 CR3_BEFORE=69144576 fs_base=0 gs_base=18446744071564572760
-[20378457957] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb00fff90
+[19136101710] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=18 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369716880 RFLAGS_BEFORE=134 CR3_BEFORE=69156864 fs_base=0 gs_base=18446744071564586640
+[19139583408] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb0103240
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x475
-[20380235403] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=17 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369651200 RFLAGS_BEFORE=134 CR3_BEFORE=69009408 fs_base=0 gs_base=18446744071564572728
-[20383751751] [INFO] [netd] [CPU3] NETD: Starting network stack service...
-[20385546126] [INFO] [netd] [CPU3] NETD: Looking for virtio_netd driver service...
-[20387502432] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: Starting VirtIO-NET driver service...
-[20390116824] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: Searching for NIC device...
-[20397441306] [INFO] [ps2_kbd] [CPU2] ps2_kbd: entering cooperative polling loop
-[20400226374] [INFO] [ps2_kbd] [CPU2] ps2_kbd: using polling mode (10ms interval)
-[20405236665] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: Found NIC device t475
-[20407553199] [INFO] [virtio::device] [CPU2] VirtIO: device::new(0x475) - claiming...
-[20409455583] [INFO] [kernel::syscall::handlers::device] [CPU2] DEVICE: task 17 claimed device 1141 (handle 2)
-[20411404596] [INFO] [virtio::device] [CPU2] VirtIO: claimed, handle=2
-[20414344170] [INFO] [sprout::supervisor] [CPU2] SPROUT: [Stage 2] Starting Network Apps and Services
-[20416565730] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up network apps...
-[20418411684] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/anther
-[20419292421] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20421260574] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20485211736] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=266000 exec=false
-[20509204782] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=28c000 exec=false
-[20517164679] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 19 (user task/process) assigned to CPU 1
-[20521486359] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb00fff90
-[20523040527] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned anther (PID=19)
+[19141293600] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=17 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369650704 RFLAGS_BEFORE=130 CR3_BEFORE=69021696 fs_base=0 gs_base=18446744071564586608
+[19145933598] [INFO] [netd] [CPU3] NETD: Starting network stack service...
+[19147371573] [INFO] [netd] [CPU3] NETD: Looking for virtio_netd driver service...
+[19148418399] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: Starting VirtIO-NET driver service...
+[19150120770] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: Searching for NIC device...
+[19154502147] [INFO] [ps2_kbd] [CPU2] ps2_kbd: entering cooperative polling loop
+[19156300152] [INFO] [ps2_kbd] [CPU2] ps2_kbd: using polling mode (10ms interval)
+[19159876428] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: Found NIC device t475
+[19161745548] [INFO] [virtio::device] [CPU2] VirtIO: device::new(0x475) - claiming...
+[19163016345] [INFO] [kernel::syscall::handlers::device] [CPU2] DEVICE: task 17 claimed device 1141 (handle 2)
+[19164469764] [INFO] [virtio::device] [CPU2] VirtIO: claimed, handle=2
+[19166552361] [INFO] [sprout::supervisor] [CPU2] SPROUT: [Stage 2] Starting Network Apps and Services
+[19168521570] [INFO] [sprout::pipelines] [CPU2] SPROUT: Setting up network apps...
+[19170512856] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/anther
+[19171263639] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19172916807] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19240259577] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=268000 exec=false
+[19265640933] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=28e000 exec=false
+[19273362471] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 19 (user task/process) assigned to CPU 1
+[19277028045] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb0103240
+[19278685008] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned anther (PID=19)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[20525075670] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=19 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369783088 RFLAGS_BEFORE=134 CR3_BEFORE=69541888 fs_base=0 gs_base=18446744071564572696
-[20529081474] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/nectar
-[20530513740] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20533188621] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20544308565] [INFO] [anther] [CPU1] anther: Starting HTTP server (ThingOS anther v0.1)
-[20547864579] [INFO] [anther] [CPU1] anther: Starting server mode on port 80...
-[20553894009] [INFO] [anther::net_client] [CPU1] anther: Network stack not found
-[20556078708] [INFO] [anther] [CPU1] anther: Waiting for network stack...
-[20559615384] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=226000 exec=false
-[20562985674] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=22a000 exec=false
-[20570579700] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 20 (user task/process) assigned to CPU 2
-[20573955798] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned nectar (PID=20)
-[20576601111] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/fetchd
-[20577389151] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20579050437] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20584887345] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=206000 exec=false
-[20587677330] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=209000 exec=false
-[20595062070] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 21 (user task/process) assigned to CPU 3
-[20598334416] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb010b5a8
-[20599977816] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned fetchd (PID=21)
+[19280634219] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=19 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369783104 RFLAGS_BEFORE=130 CR3_BEFORE=69554176 fs_base=0 gs_base=18446744071564586576
+[19283644908] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/nectar
+[19284994014] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19287096543] [INFO] [anther] [CPU1] anther: Starting HTTP server (ThingOS anther v0.1)
+[19288315101] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19290199995] [INFO] [anther] [CPU1] anther: Starting server mode on port 80...
+[19294484781] [INFO] [anther::net_client] [CPU1] anther: Network stack not found
+[19295861937] [INFO] [anther] [CPU1] anther: Waiting for network stack...
+[19316037774] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=226000 exec=false
+[19319579004] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=22a000 exec=false
+[19326615627] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 20 (user task/process) assigned to CPU 2
+[19329651396] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned nectar (PID=20)
+[19331807418] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/fetchd
+[19332571038] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19334202261] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19339704615] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=206000 exec=false
+[19342297689] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=209000 exec=false
+[19349689491] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 21 (user task/process) assigned to CPU 3
+[19352470764] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb010c048
+[19353965763] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned fetchd (PID=21)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[20601952800] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=21 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369915408 RFLAGS_BEFORE=130 CR3_BEFORE=70467584 fs_base=0 gs_base=18446744071564572760
-[20606972265] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/clock
-[20607732354] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20609408457] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20610365688] [INFO] [fetchd] [CPU3] FETCHD: Starting IP address display...
-[20613011760] [INFO] [fetchd] [CPU3] FETCHD: Waiting for UI Root (Compositor)...
-[20617883649] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=209000 exec=false
-[20621601066] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20e000 exec=false
-[20628762891] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 22 (user task/process) assigned to CPU 1
-[20631436980] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb010b5a8
-[20633827170] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned clock (PID=22)
+[19355603025] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=21 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369915424 RFLAGS_BEFORE=130 CR3_BEFORE=70488064 fs_base=0 gs_base=18446744071564586640
+[19360256916] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/clock
+[19361083368] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19362584571] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19363310967] [INFO] [fetchd] [CPU3] FETCHD: Starting IP address display...
+[19364601894] [INFO] [fetchd] [CPU3] FETCHD: Waiting for UI Root (Compositor)...
+[19367473092] [INFO] [ps2_mouse] [CPU3] ps2_mouse: init done
+[19368252651] [INFO] [kernel::syscall::handlers::device] [CPU3] DEVICE: task subscribed to vector 0x2c
+[19369919844] [INFO] [ps2_mouse] [CPU3] ps2_mouse: subscribed to IRQ12 (vector 0x2c)
+[19370808105] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=209000 exec=false
+[19371548031] [INFO] [ps2_mouse] [CPU3] ps2_mouse: entering interrupt-driven loop
+[19374309009] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20e000 exec=false
+[19381115127] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 22 (user task/process) assigned to CPU 1
+[19383814989] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb010c048
+[19385677344] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned clock (PID=22)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[20635814100] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=22 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369981808 RFLAGS_BEFORE=130 CR3_BEFORE=70594560 fs_base=0 gs_base=18446744071564572696
-[20640763836] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/taskman
-[20641581048] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20643141123] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20652751053] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20c000 exec=false
-[20656231959] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=210000 exec=false
-[20664025767] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 23 (user task/process) assigned to CPU 2
-[20667230892] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned taskman (PID=23)
-[20669738991] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/fontd
-[20670516273] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20672090703] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20698630755] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=226000 exec=false
-[20703702591] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=22d000 exec=false
-[20711293845] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 24 (user task/process) assigned to CPU 3
-[20714566785] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb010d510
-[20716159134] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned fontd (PID=24)
+[19387088853] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=22 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369981824 RFLAGS_BEFORE=130 CR3_BEFORE=70615040 fs_base=0 gs_base=18446744071564586576
+[19389991830] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/taskman
+[19390688823] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19392152505] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19401015051] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=20c000 exec=false
+[19404840312] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=210000 exec=false
+[19411448199] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 23 (user task/process) assigned to CPU 2
+[19413682068] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned taskman (PID=23)
+[19416130767] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/fontd
+[19416874686] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19418359719] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19443017352] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=226000 exec=false
+[19447913364] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=22d000 exec=false
+[19454761128] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 24 (user task/process) assigned to CPU 3
+[19457994006] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb010dfc8
+[19459185009] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned fontd (PID=24)
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[20717970834] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=24 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072370114064 RFLAGS_BEFORE=130 CR3_BEFORE=70897664 fs_base=0 gs_base=18446744071564572760
-[20723030823] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/blossom
-[20724405636] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20726733951] [INFO] [fontd] [CPU3] FONTD: Starting Graph-Native Font Service v2 (Atlas-based IPC)
-[20728304124] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20746897215] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=219000 exec=false
-[20751159825] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=21d000 exec=false
-[20754547341] [INFO] [fontd] [CPU3] FONTD: Service node created, req=15, resp=18
-[20760112791] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 25 (user task/process) assigned to CPU 1
-[20763489681] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned blossom (PID=25)
-[20764754703] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: ptr=0x7f9fb0
-[20766799713] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb00f10c8
-[20768330088] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: validating range len=48
+[19460779899] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=24 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072370113984 RFLAGS_BEFORE=134 CR3_BEFORE=70918144 fs_base=0 gs_base=18446744071564586640
+[19465297368] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/blossom
+[19466559684] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19468759893] [INFO] [fontd] [CPU3] FONTD: Starting Graph-Native Font Service v2 (Atlas-based IPC)
+[19470193050] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19488309588] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=219000 exec=false
+[19491527517] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=21d000 exec=false
+[19499411316] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 25 (user task/process) assigned to CPU 1
+[19501873776] [INFO] [fontd] [CPU3] FONTD: Service node created, req=15, resp=18
+[19502826717] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned blossom (PID=25)
+[19503566808] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb00f1068
+[19504496847] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/flytrap
+[19505275977] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[20770361271] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/flytrap
-[20771653815] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: copyin success. mode=0 start_seq=0
-[20773036416] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=25 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072370198304 RFLAGS_BEFORE=130 CR3_BEFORE=71172096 fs_base=0 gs_base=18446744071564572696
-[20777908536] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: DECODED FILTER: flags=0x1 kind=225 pred=0 subj_lo=0
-[20779720797] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20782489695] [INFO] [blossom] [CPU1] BLOSSOM: Starting SVG Cache Service
-[20783553186] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20786945487] [INFO] [blossom] [CPU1] BLOSSOM: Init UI pipeline...
-[20800340913] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
-[20801970618] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
-[20803607550] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
-[20805528084] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=229 subj_lo=0
-[20810189367] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: ptr=0x7f9fb0
-[20811730071] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: validating range len=48
-[20813494284] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: copyin success. mode=0 start_seq=0
-[20815199658] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: DECODED FILTER: flags=0x1 kind=230 pred=0 subj_lo=0
-[20825082927] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=237000 exec=false
-[20835863037] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=246000 exec=false
-[20844413271] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 26 (user task/process) assigned to CPU 2
-[20848509330] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned flytrap (PID=26)
-[20854309806] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb00fff90
+[19507213011] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19508239047] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=25 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072370197968 RFLAGS_BEFORE=130 CR3_BEFORE=71192576 fs_base=0 gs_base=18446744071564586576
+[19514847198] [INFO] [blossom] [CPU1] BLOSSOM: Starting SVG Cache Service
+[19516779183] [INFO] [blossom] [CPU1] BLOSSOM: Init UI pipeline...
+[19521468813] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: ptr=0x7f9fb0
+[19522987044] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: validating range len=48
+[19523860422] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
+[19524927642] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
+[19525953117] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[19528479300] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=226 subj_lo=0
+[19530494940] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: copyin success. mode=0 start_seq=0
+[19532524902] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: DECODED FILTER: flags=0x1 kind=225 pred=0 subj_lo=0
+[19545361209] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=237000 exec=false
+[19555401789] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=246000 exec=false
+[19562457750] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 26 (user task/process) assigned to CPU 2
+[19565005350] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned flytrap (PID=26)
+[19569274527] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb0103240
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[20857042833] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=20 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072369849328 RFLAGS_BEFORE=134 CR3_BEFORE=70205440 fs_base=0 gs_base=18446744071564572728
-[20863904292] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
-[20865705234] [INFO] [nectar] [CPU2] NECTAR: Started.
-[20866608444] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
-[20868471327] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
-[20870510958] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=231 subj_lo=0
-[20872766475] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb010b5a8
+[19570798170] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=20 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072369849344 RFLAGS_BEFORE=134 CR3_BEFORE=70225920 fs_base=0 gs_base=18446744071564586608
+[19575233502] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: ptr=0x7f9fb0
+[19576742691] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
+[19578059226] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: validating range len=48
+[19579605342] [INFO] [nectar] [CPU2] NECTAR: Started.
+[19580186241] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: copyin success. mode=0 start_seq=0
+[19581810699] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
+[19583305731] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: DECODED FILTER: flags=0x1 kind=230 pred=0 subj_lo=0
+[19585175808] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[19587250188] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb010c048
+[19591308627] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=231 subj_lo=0
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[20874944937] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=23 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072370047984 RFLAGS_BEFORE=134 CR3_BEFORE=70742016 fs_base=0 gs_base=18446744071564572728
-[20880350238] [INFO] [taskman] [CPU2] TASKMAN: starting task manager
-[20881293873] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: ptr=0x7f9fb0
-[20882812038] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: validating range len=48
-[20884322943] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: copyin success. mode=0 start_seq=0
-[20885906712] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: DECODED FILTER: flags=0x1 kind=232 pred=0 subj_lo=0
-[20888171238] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb00f1068
+[19597164708] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=23 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=0 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072370047904 RFLAGS_BEFORE=134 CR3_BEFORE=70762496 fs_base=0 gs_base=18446744071564586608
+[19602507210] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: ptr=0x7f9fb0
+[19603697718] [INFO] [taskman] [CPU2] TASKMAN: starting task manager
+[19604452890] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: validating range len=48
+[19605690060] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: copyin success. mode=0 start_seq=0
+[19606955742] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU3] sys_root_watch_open: DECODED FILTER: flags=0x1 kind=232 pred=0 subj_lo=0
+[19608761337] [DEBUG] [kernel::sched::spawn] [CPU2] Trampoline entered. Arg: 0xffffffffb010e758
 USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x0
-[20889895389] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=26 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562103005 RSP_BEFORE=18446744072370266864 RFLAGS_BEFORE=134 CR3_BEFORE=71380992 fs_base=0 gs_base=18446744071564572728
-[20895580662] [INFO] [flytrap] [CPU2] FLYTRAP: Starting unified content provider service...
-[20897808558] [INFO] [fontd] [CPU3] FONTD: Opened ASSET watch (handle=1248) for kind 'Asset'
-[20899029921] [INFO] [flytrap] [CPU2] FLYTRAP: Service contract validated - graph-native asset watcher
-[20900316162] [INFO] [fontd] [CPU3] FONTD: Service ready
-[20901087306] [INFO] [flytrap] [CPU2] FLYTRAP: Initializing Limine module content source...
-[20916659214] [INFO] [sprout::supervisor] [CPU2] SPROUT: [Stage 3] Starting Compositor
-[20936058264] [INFO] [virtio::device] [CPU2] VirtIO: common_bar=4 common_off=0x0 notify_bar=4 notify_off=0x3000 mult=4
-[20940414528] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
-[20942131485] [INFO] [sprout::pipelines] [CPU2] SPROUT: Writing bloom BS: drv_req=1, drv_resp=4, bristle_evt=12
-[20943424392] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
-[20945402379] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
-[20947399506] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=234 subj_lo=0
-[20957651880] [INFO] [ps2_mouse] [CPU3] ps2_mouse: init done
-[20958847635] [INFO] [kernel::syscall::handlers::device] [CPU3] DEVICE: task subscribed to vector 0x2c
-[20960637192] [INFO] [ps2_mouse] [CPU3] ps2_mouse: subscribed to IRQ12 (vector 0x2c)
-[20962103316] [INFO] [ps2_mouse] [CPU3] ps2_mouse: entering interrupt-driven loop
-[20964256104] [INFO] [sprout::pipelines] [CPU2] SPROUT: Bloom handles via BS=1251 backend=VirtIO-GPU
-[20966740344] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/bloom
-[20968003980] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
-[20970562800] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
-[20976776403] [INFO] [anther::net_client] [CPU1] anther: Network stack not found
-[20978668425] [INFO] [anther] [CPU1] anther: Waiting for network stack...
-[20983097652] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
-[20984381418] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
-[20985552819] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
-[20987246280] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=241 subj_lo=0
-[20994697614] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
-[20995707513] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
-[20996795754] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
-[20997926334] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=242 subj_lo=0
-[21003365790] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
-[21004361466] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
-[21005529996] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
-[21006660840] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=243 subj_lo=0
-[21018118539] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
-[21019673565] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
-[21021644556] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
-[21023473812] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x1 kind=244 pred=0 subj_lo=0
-[21066393051] [INFO] [blossom] [CPU1] BLOSSOM: UI pipeline ready
-[21110051226] [INF
+[19610632503] [INFO] [bran::arch::x86_64::enter_user] [CPU2] Entering user mode tid=26 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072370266592 RFLAGS_BEFORE=130 CR3_BEFORE=71401472 fs_base=0 gs_base=18446744071564586608
+[19613817432] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
+[19615923327] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
+[19617302331] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[19618827327] [INFO] [fontd] [CPU3] FONTD: Opened ASSET watch (handle=1248) for kind 'Asset'
+[19619933487] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=233 subj_lo=0
+[19621412811] [INFO] [fontd] [CPU3] FONTD: Service ready
+[19622079345] [INFO] [flytrap] [CPU2] FLYTRAP: Starting unified content provider service...
+[19623758847] [INFO] [flytrap] [CPU2] FLYTRAP: Service contract validated - graph-native asset watcher
+[19625554971] [INFO] [flytrap] [CPU2] FLYTRAP: Initializing Limine module content source...
+[19643883864] [INFO] [virtio::device] [CPU2] VirtIO: common_bar=4 common_off=0x0 notify_bar=4 notify_off=0x3000 mult=4
+[19645281315] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
+[19646412819] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
+[19647626196] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[19648903593] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=235 subj_lo=0
+[19657202070] [INFO] [virtio::device] [CPU2] VirtIO: mapping common BAR4...
+[19658852961] [INFO] [kernel::syscall::handlers::device] [CPU2] DEVICE: Mapped BAR4 phys=0xc000004000 size=0x4000 -> virt=0x107f3000
+[19660406271] [INFO] [virtio::device] [CPU2] VirtIO: common_cfg at 0x107f3000
+[19661737161] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
+[19663287105] [INFO] [virtio::device] [CPU2] VirtIO: notify_cfg at 0x107f6000
+[19664037657] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
+[19665880740] [INFO] [virtio::device] [CPU2] VirtIO: device_cfg = Some(276779008)
+[19666796721] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[19668674256] [INFO] [virtio::device] [CPU2] VirtIO: allocating DMA command buffer...
+[19669631454] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=242 subj_lo=0
+[19672248651] [INFO] [virtio::device] [CPU2] VirtIO: cmd_buf virt=0x107f7000 phys=0x44b6000
+[19673570037] [INFO] [virtio::device] [CPU2] VirtIO: device::new complete
+[19675867068] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: Device features 0x30bf8024
+[19678021110] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: MAC 52:54:00:12:34:56
+[19678930920] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
+[19680574188] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
+[19682316093] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[19684174092] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: Link UP
+[19684888311] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x2 kind=0 pred=244 subj_lo=0
+[19691180784] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: ptr=0x7fbfb0
+[19692222495] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: validating range len=48
+[19693294500] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: copyin success. mode=1 start_seq=0
+[19694426235] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: RX queue 0 setup (size=32)
+[19695174939] [DEBUG] [kernel::syscall::handlers::root_handlers] [CPU1] sys_root_watch_open: DECODED FILTER: flags=0x1 kind=245 pred=0 subj_lo=0
+[19702751079] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: TX queue 1 setup (size=32)
+[19712182644] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: Allocated RX pool (16 pages, 32 buffers)
+[19714572834] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: Allocated TX buffer (1 page)
+[19716739878] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: RX queue filled with 32 buffers
+[19718584479] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: DRIVER_OK set, device is live
+[19719748224] [INFO] [blossom] [CPU1] BLOSSOM: UI pipeline ready
+[19720543458] [INFO] [virtio_netd::driver] [CPU2] VirtIO-NET: Driver initialized successfully
+[19722157389] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: Driver initialized successfully
+[19723988823] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: MAC 52:54:00:12:34:56
+[19725216588] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: Waiting for link...
+[19726695582] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: Link is UP
+[19731966639] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: Created port (write=21, read=22)
+[19737281058] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: Created RX port (write=25, read=26)
+[19769456751] [INFO] [sprout::supervisor] [CPU2] SPROUT: [Stage 3] Starting Compositor
+[19782905736] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: Created service node ThingId([232, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+[19812134232] [INFO] [netd] [CPU3] NETD: Found driver service node ThingId([232, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+[19815103605] [INFO] [sprout::pipelines] [CPU2] SPROUT: Writing bloom BS: drv_req=1, drv_resp=4, bristle_evt=12
+[19827871206] [INFO] [sprout::pipelines] [CPU2] SPROUT: Bloom handles via BS=1257 backend=VirtIO-GPU
+[19829806590] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/bloom
+[19830720954] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19832463915] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19839018606] [INFO] [anther::net_client] [CPU1] anther: Network stack not found
+[19840453644] [INFO] [anther] [CPU1] anther: Waiting for network stack...
+[19858645356] [INFO] [blossom] [CPU1] BLOSSOM: Service node created, req=19, resp=24
+[19859842827] [INFO] [blossom] [CPU1] BLOSSOM: Service ready
+[19868141370] [INFO] [netd] [CPU3] NETD: Found driver service node ThingId([232, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+[19947114891] [INFO] [netd] [CPU3] NETD: Found driver service node ThingId([232, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+[19948293618] [INFO] [anther::net_client] [CPU1] anther: Network stack not found
+[19949577846] [INFO] [anther] [CPU1] anther: Waiting for network stack...
+[19963309905] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=2d4000 exec=false
+[19978107666] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=2ea000 exec=false
+[19985852172] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 27 (user task/process) assigned to CPU 3
+[19988658954] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned bloom (PID=27)
+[19989417888] [DEBUG] [kernel::sched::spawn] [CPU3] Trampoline entered. Arg: 0xffffffffb00db488
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0x4e9
+[19991888895] [INFO] [bran::arch::x86_64::enter_user] [CPU3] Entering user mode tid=27 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072370514160 RFLAGS_BEFORE=134 CR3_BEFORE=72433664 fs_base=0 gs_base=18446744071564586640
+[19994871105] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/echo
+[19995620106] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[19997142495] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[19998212520] [INFO] [bloom::logging] [CPU3] bloom: logging initialized
+[20001626139] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=204000 exec=false
+[20003210601] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=205000 exec=false
+[20012327412] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 28 (user task/process) assigned to CPU 1
+[20014997244] [DEBUG] [kernel::sched::spawn] [CPU1] Trampoline entered. Arg: 0xffffffffb00db488
+[20016028362] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned echo (PID=28)
+USER_TRAMPOLINE: PC=0x200000 SP=0x800000 ARG0=0xe
+[20017648695] [INFO] [bran::arch::x86_64::enter_user] [CPU1] Entering user mode tid=28 target_pc=2097152 target_sp=8388608 target_cs=43 target_ss=35 CS=8 SS=16 CPL_KERNEL_BEFORE=0 RIP_BEFORE=18446744071562324605 RSP_BEFORE=18446744072370579696 RFLAGS_BEFORE=134 CR3_BEFORE=73482240 fs_base=0 gs_base=18446744071564586576
+[20020934769] [INFO] [sprout::pipelines] [CPU2] SPROUT: Compositor ready
+[20023004232] [INFO] [echo] [CPU1] echo: starting up
+[20025260277] [INFO] [flytrap] [CPU2] FLYTRAP: Created Limine ContentSource node
+[20026137450] [INFO] [echo] [CPU1] echo: ready for Bristle events (main loop using handle 14)
+[20027055378] [INFO] [flytrap] [CPU2] FLYTRAP: Performing initial boot module scan...
+[20030932680] [INFO] [bloom] [CPU3] bloom: [bloom] SIMD backend: SSE2 (x86_64)
+[20038973163] [INFO] [virtio_netd] [CPU2] VIRTIO_NETD: Published service - TX port=21, RX port=26
+[20041389555] [INFO] [netd] [CPU3] NETD: Found driver service node ThingId([232, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0])
+[20049440598] [INFO] [bloom] [CPU3] [bloom] EARLY boot args: bristle_evt=12 arg_req=1 arg_resp=4
+[20051166300] [INFO] [bloom::compositor] [CPU3] bloom: map_from_bytespace start bs=1233
+[20064228162] [INFO] [netd] [CPU3] NETD: Driver TX port=21, RX port=26, link_up=true, mtu=1500
+[20066499816] [INFO] [netd] [CPU3] NETD: Connected to driver - MAC 52:54:00:12:34:56
+[20071067148] [INFO] [netd] [CPU3] NETD: Created socket API port (write=27, read=28)
+[20073936531] [INFO] [bloom::compositor] [CPU3] bloom: symbols loaded
+[20075688666] [INFO] [bloom::compositor] [CPU3] bloom: loop iter 1
+[20079390474] [INFO] [bloom::compositor] [CPU3] bloom: got width 1920
+[20088933381] [INFO] [sprout::supervisor] [CPU2] SPROUT: [Stage 4] Proof of life (Beeper)
+[20090238267] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawning beeper...
+[20091751647] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/beeper
+[20092517544] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[20094167610] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[20096460120] [INFO] [bloom::compositor] [CPU3] bloom: got properties w=1920 h=1080 s=7680 f=1
+[20098046034] [INFO] [bloom::compositor] [CPU3] bloom: properties OK, building from config...
+[20099043921] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=205000 exec=false
+[20099867106] [INFO] [bloom::compositor] [CPU3] bloom: compositor bytespace 1233 (1920x1080 stride=7680 format=1)
+[20100917067] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=207000 exec=false
+[20107994148] [DEBUG] [kernel::sched::spawn] [CPU2] SCHED: Task 29 (user task/process) assigned to CPU 0
+[20110802019] [INFO] [sprout::pipelines] [CPU2] SPROUT: Spawned beeper (PID=29)
+[20113456176] [INFO] [sprout::supervisor] [CPU2] SPROUT: [Stage 5] Starting Discovered User Apps
+[20115039087] [INFO] [sprout::supervisor] [CPU2] SPROUT: Launching discovered app '/boot/clock'
+[20116707963] [INFO] [kernel::task::loader] [CPU2] Loading module: /boot/clock
+[20117496102] [DEBUG] [kernel::task::loader] [CPU2]   Header: [7f, 45, 4c, 46, 02, 01, 01, 00, 00, 00, 00, 00, 00, 00, 00, 00]
+[20119308825] [INFO] [netd] [CPU3] NETD: Published initial stack node ThingId([236, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]) to graph
+[20121047496] [INFO] [kernel::task::loader] [CPU2] Segment: vaddr=200000 exec=true
+[20126031090] [INFO] [bloom::compositor] [CPU3] bloom: display backend: VirtIO-GPU
+[20132461635
 ```
 </details>

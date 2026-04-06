@@ -1,6 +1,6 @@
 # Feature: Pointer Input
 
-> Last run: 2026-04-05 12:26:57
+> Last run: 2026-04-05 17:45:26
 
 ## Scenarios
 

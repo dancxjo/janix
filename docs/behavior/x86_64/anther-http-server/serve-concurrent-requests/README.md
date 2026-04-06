@@ -1,13 +1,12 @@
 # ❌ Scenario: Serve concurrent requests
 
-> Last run: 2026-04-05 17:56:38
+> Last run: 2026-04-05 18:00:52
 
 ## Steps
 
 | # | Step | Result | Duration | Artifacts |
 |---|------|--------|----------|-----------|
-| 1 | Given the anther server is ready | ✅ | 6687ms | - [📜](./01/serial.log) - |
-| 2 | When I make 10 concurrent GET requests to "/health" | ❌ | 45266ms | - [📜](./02/serial.log) - |
+| 1 | Given the anther server is ready | ❌ | 2820ms | - [📜](./01/serial.log) - |
 
 <details>
 <summary>📜 Full Serial Log</summary>

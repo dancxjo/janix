@@ -56,7 +56,7 @@ use abi::display_driver_protocol::BindPayload;
 use abi::schema::input::{
     FILTER_BUTTON, FILTER_POINTER, SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER,
 };
-use abi::schema::{hid, keys, kinds, pointer};
+use abi::schema::{hid, keys, kinds};
 use stem::syscall::{port_create, topic_subscribe, PortHandle};
 
 use crate::asset::AssetBank;
@@ -185,14 +185,10 @@ fn subscribe_bristle_topic() -> Option<PortHandle> {
 }
 
 fn sync_input_from_graph(
-    cursor: &mut CursorState,
     pressed_keys: &mut BTreeSet<Key>,
     bristle_node: Option<ThingId>,
     graph_input: &mut GraphInputState,
-    had_pointer_event: bool,
     had_key_event: bool,
-    screen_w: i32,
-    screen_h: i32,
     frame: u64,
 ) {
     use abi::schema::keyboard as kb;
@@ -211,24 +207,6 @@ fn sync_input_from_graph(
     } else if keyboard_gen < graph_input.last_keyboard_gen {
         graph_input.last_keyboard_gen = 0;
         pressed_keys.clear();
-    }
-
-    if !had_pointer_event {
-        if let (Ok(x), Ok(y)) = (
-            prop_get(node, pointer::POINTER_X),
-            prop_get(node, pointer::POINTER_Y),
-        ) {
-            cursor.set_position_clamped(x as i32, y as i32, screen_w, screen_h);
-        } else if frame % 120 == 0 {
-            stem::warn!(
-                "[bloom] graph pointer state unavailable on svc.Input {}",
-                node.to_u64_lossy()
-            );
-        }
-
-        if let Ok(buttons) = prop_get(node, pointer::POINTER_BUTTONS) {
-            cursor.set_buttons(buttons as u32);
-        }
     }
 
     if !had_key_event && keyboard_gen > graph_input.last_keyboard_gen {
@@ -982,14 +960,10 @@ fn main(arg: usize) -> ! {
             };
             bristle_node = find_bristle_node().or(bristle_node);
             sync_input_from_graph(
-                &mut cursor,
                 &mut pressed_keys,
                 bristle_node,
                 &mut graph_input,
-                poll_stats.had_pointer_event,
                 poll_stats.had_key_event,
-                screen_w,
-                screen_h,
                 loop_ctrl.frame_number(),
             );
         }
@@ -1051,11 +1025,14 @@ fn main(arg: usize) -> ! {
             }
         }
 
-        let cursor_frame_priority = paint_pending_rebuilds
-            && invalidation_causes.is_empty()
+        let cursor_moved_since_last_frame = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
+        let pointer_motion_only = first_frame_rendered
             && poll_stats.had_pointer_event
-            && cursor.x != prev_cursor_x
-            && cursor.y != prev_cursor_y;
+            && !poll_stats.had_key_event
+            && cursor.buttons() == prev_cursor_buttons
+            && cursor_moved_since_last_frame;
+        let cursor_frame_priority = pointer_motion_only
+            && (paint_pending_rebuilds || !invalidation_causes.is_empty());
         let should_process_updates = !cursor_frame_priority
             && (!first_frame_rendered || paint_pending_rebuilds || !invalidation_causes.is_empty());
 
@@ -1083,14 +1060,10 @@ fn main(arg: usize) -> ! {
                     if progress_poll.had_pointer_event || progress_poll.had_key_event {
                         bristle_node = find_bristle_node().or(bristle_node);
                         sync_input_from_graph(
-                            &mut cursor,
                             &mut pressed_keys,
                             bristle_node,
                             &mut graph_input,
-                            progress_poll.had_pointer_event,
                             progress_poll.had_key_event,
-                            screen_w,
-                            screen_h,
                             loop_ctrl.frame_number(),
                         );
                     }
@@ -1123,14 +1096,10 @@ fn main(arg: usize) -> ! {
             if late_poll_stats.had_pointer_event || late_poll_stats.had_key_event {
                 bristle_node = find_bristle_node().or(bristle_node);
                 sync_input_from_graph(
-                    &mut cursor,
                     &mut pressed_keys,
                     bristle_node,
                     &mut graph_input,
-                    late_poll_stats.had_pointer_event,
                     late_poll_stats.had_key_event,
-                    screen_w,
-                    screen_h,
                     loop_ctrl.frame_number(),
                 );
             }
@@ -1429,11 +1398,6 @@ fn main(arg: usize) -> ! {
                         drag.window_id
                     );
                 }
-            } else {
-                let hovered = paint_pipeline
-                    .top_window_at_point(cursor.x, cursor.y)
-                    .map(|h| h.id);
-                set_focus(&mut focused_window, hovered);
             }
 
             ui_dispatch.dispatch_keyboard(&pressed_keys, &prev_keys);

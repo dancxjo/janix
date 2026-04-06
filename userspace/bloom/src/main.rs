@@ -519,6 +519,26 @@ fn should_force_full_damage(causes: &[SnapshotInvalidation]) -> Option<SnapshotI
     })
 }
 
+fn requires_window_rescan(causes: &[SnapshotInvalidation]) -> bool {
+    causes.iter().any(|cause| {
+        matches!(
+            cause,
+            SnapshotInvalidation::GeometryChanged | SnapshotInvalidation::Forced
+        )
+    })
+}
+
+fn requires_paint_refresh(causes: &[SnapshotInvalidation]) -> bool {
+    causes.iter().any(|cause| {
+        matches!(
+            cause,
+            SnapshotInvalidation::GeometryChanged
+                | SnapshotInvalidation::ContentChanged
+                | SnapshotInvalidation::Forced
+        )
+    })
+}
+
 fn cycle_windows_in_order(
     order: &[ThingId],
     current: Option<ThingId>,
@@ -755,7 +775,7 @@ fn main(arg: usize) -> ! {
     let mut prev_cursor_x = cursor.x;
     let mut prev_cursor_y = cursor.y;
     let mut prev_cursor_gen = crate::frame::AssetGeneration::ZERO;
-    let mut cursor_underlay = CursorUnderlay::default();
+    let mut cursor_underlays: BTreeMap<ThingId, CursorUnderlay> = BTreeMap::new();
     let mut drag_state: Option<DragState> = None;
 
     let mut debug_flags = DebugFlags::default();
@@ -1039,11 +1059,14 @@ fn main(arg: usize) -> ! {
         // Refresh window state after input so hit-testing sees current geometry, but let
         // pure pointer-motion frames bypass background window rebuild work.
         let paint_res = if should_process_updates {
-            let rescan_windows = !first_frame_rendered || !invalidation_causes.is_empty();
+            let rescan_windows =
+                !first_frame_rendered || requires_window_rescan(&invalidation_causes);
+            let refresh_paint = !first_frame_rendered || requires_paint_refresh(&invalidation_causes);
             let res = paint_pipeline.process_updates(
                 target.width as i32,
                 target.height as i32,
                 rescan_windows,
+                refresh_paint,
                 || {
                     if bristle_evt_handle == 0 {
                         return;
@@ -1419,13 +1442,18 @@ fn main(arg: usize) -> ! {
             damage = damage::Damage::full_with_cause(bounds, damage::DamageCause::ForceFull, None);
         }
 
-        // Add damage from paint pipeline with appropriate causes
-        for rect in &paint_res.damage {
-            damage.add_rect_with_cause(*rect, damage::DamageCause::ContentChanged, None);
+        // Add damage from paint pipeline with appropriate causes. On pure pointer-motion
+        // frames we intentionally defer scene work so cursor updates stay responsive.
+        if !pointer_motion_only {
+            for rect in &paint_res.damage {
+                damage.add_rect_with_cause(*rect, damage::DamageCause::ContentChanged, None);
+            }
         }
 
-        if let PresenterImpl::Driver(ref mut d) = presenter {
-            d.expand_damage(&mut damage, current_age);
+        if !pointer_motion_only {
+            if let PresenterImpl::Driver(ref mut d) = presenter {
+                d.expand_damage(&mut damage, current_age);
+            }
         }
 
         let cursor_moved = cursor.x != prev_cursor_x || cursor.y != prev_cursor_y;
@@ -1675,11 +1703,9 @@ fn main(arg: usize) -> ! {
         // Cursor-only fast path: restore old cursor underlay and skip scene composition.
         // Only valid when the current buffer is stable (age=1) and we captured underlay for
         // this exact bytespace on the previous frame.
-        let cursor_only_fast_path = is_cursor_only_frame
-            && current_age == 1
-            && cursor_underlay.valid
-            && cursor_underlay.bs_id == current_bs_id
-            && list.commands_ref().is_empty();
+        let cursor_underlay = cursor_underlays.entry(current_bs_id).or_default();
+        let cursor_only_fast_path =
+            is_cursor_only_frame && cursor_underlay.valid && list.commands_ref().is_empty();
 
         if !cursor_only_fast_path {
             // Execute drawlist (wallpaper + UI) - cursor is NOT in the DrawList
@@ -1799,7 +1825,7 @@ fn main(arg: usize) -> ! {
                 }
             }
         } else {
-            restore_cursor_underlay(&mut surface, &cursor_underlay);
+            restore_cursor_underlay(&mut surface, cursor_underlay);
         }
 
         // ============================================================================
@@ -1837,7 +1863,7 @@ fn main(arg: usize) -> ! {
                     snapshot.image.height as i32,
                 )
                 .clip(cursor_bounds);
-                capture_cursor_underlay(&surface, current_bs_id, cursor_rect, &mut cursor_underlay);
+                capture_cursor_underlay(&surface, current_bs_id, cursor_rect, cursor_underlay);
                 raster::blit_cursor_overlay(&mut surface, &snapshot.image, cx, cy);
                 true
             } else {
@@ -1848,7 +1874,7 @@ fn main(arg: usize) -> ! {
         };
 
         if !cursor_drawn {
-            capture_cursor_underlay(&surface, current_bs_id, cursor_rect, &mut cursor_underlay);
+            capture_cursor_underlay(&surface, current_bs_id, cursor_rect, cursor_underlay);
             raster::draw_crosshair(&mut surface, cursor.x, cursor.y, 0xFFFFFFFF);
         }
 

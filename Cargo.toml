@@ -67,6 +67,7 @@ members = [
     "userspace/hello_std",
     "userspace/stdio_demo",
     "userspace/telnetd",
+    "userspace/boltd",
 ]
 
 # Exclude wasm32 theme crates (different target)

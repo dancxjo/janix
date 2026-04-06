@@ -154,11 +154,6 @@ pub fn poll_bristle(
                             unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dx)) };
                         let dy =
                             unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dy)) };
-                        stem::info!(
-                            "[DEBUG] bloom poll_bristle: received PointerMove dx={}, dy={}",
-                            dx,
-                            dy
-                        );
                         let dt_s = match accel_state.last_timestamp_ns {
                             Some(prev) if timestamp_ns > prev => {
                                 (timestamp_ns - prev) as f32 * 1.0e-9
@@ -169,11 +164,6 @@ pub fn poll_bristle(
 
                         let dt_s = if dt_s > 0.25 { 0.0 } else { dt_s };
                         let (ax, ay) = apply_mouse_accel((dx, dy), dt_s, accel_cfg);
-                        stem::info!(
-                            "[DEBUG] bloom poll_bristle: applying accelerated Move ax={}, ay={}",
-                            ax,
-                            ay
-                        );
                         cursor.apply_move(ax, ay, w, h);
                         stats.had_pointer_event = true;
                     }
@@ -268,7 +258,6 @@ pub fn poll_pointer_events(
                     };
                     let dx = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dx)) };
                     let dy = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(payload.dy)) };
-                    stem::info!("[DEBUG] bloom poll_pointer_events: received PointerMove dx={}, dy={}", dx, dy);
                     let dt_s = match accel_state.last_timestamp_ns {
                         Some(prev) if timestamp_ns > prev => (timestamp_ns - prev) as f32 * 1.0e-9,
                         _ => 0.0,
@@ -277,7 +266,6 @@ pub fn poll_pointer_events(
 
                     let dt_s = if dt_s > 0.25 { 0.0 } else { dt_s };
                     let (ax, ay) = apply_mouse_accel((dx, dy), dt_s, accel_cfg);
-                    stem::info!("[DEBUG] bloom poll_pointer_events: yielding accelerated Move ax={}, ay={}", ax, ay);
                     events.push(PointerEvent::Move { dx: ax, dy: ay });
                 }
             }

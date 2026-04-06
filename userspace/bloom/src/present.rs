@@ -187,6 +187,7 @@ pub struct DriverPresenter {
     frame_count: u64,
     /// Damage history for buffer age expansion (last 4 frames)
     damage_history: Vec<Vec<crate::geometry::Rect>>,
+    pending_acquired: Option<(ThingId, u32, u32, u32, u32, u32)>,
 }
 
 impl DriverPresenter {
@@ -202,6 +203,7 @@ impl DriverPresenter {
             unknown_msg_logged: false,
             frame_count: 0,
             damage_history: Vec::new(),
+            pending_acquired: None,
         }
     }
 
@@ -429,7 +431,22 @@ impl DriverPresenter {
                 }
             }
             drvproto::MSG_ACQUIRED => {
-                // Handled in acquire_buffer sync loop
+                if let Some(acq) = drvproto::decode_acquired_payload_le(payload) {
+                    self.pending_acquired = Some((
+                        ThingId({
+                            let mut b = [0u8; 16];
+                            b[0..8].copy_from_slice(&acq.bytespace_id.to_le_bytes());
+                            b
+                        }),
+                        acq.width,
+                        acq.height,
+                        acq.stride,
+                        acq.format,
+                        acq.buffer_age,
+                    ));
+                } else {
+                    stem::error!("bloom: MSG_ACQUIRED payload decoding failed in async handler");
+                }
             }
             _ => {
                 if !self.unknown_msg_logged {
@@ -651,8 +668,8 @@ impl Presenter for DriverPresenter {
     }
 
     fn acquire_buffer(&mut self) -> (ThingId, u32, u32, u32, u32, u32) {
-        let mut buf = [0u8; 128];
-        let mut wait_ticks = 0;
+        let mut last_acquire_send_ns = 0u64;
+        let mut last_stuck_log_ns = 0u64;
 
         let send_acquire = |this: &mut Self| {
             let mut buf = [0u8; 128];
@@ -661,10 +678,19 @@ impl Presenter for DriverPresenter {
             }
         };
 
+        if let Some(acquired) = self.pending_acquired.take() {
+            return acquired;
+        }
+
         send_acquire(self);
+        last_acquire_send_ns = stem::monotonic_ns();
 
         // Synchronous wait for ACQUIRED
         loop {
+            if let Some(acquired) = self.pending_acquired.take() {
+                return acquired;
+            }
+
             self.pump_port();
             while let Some((header, payload)) = self.frames.next_message() {
                 let msg_type = header.msg_type;
@@ -697,11 +723,18 @@ impl Presenter for DriverPresenter {
                 }
             }
 
-            wait_ticks += 1;
-            if wait_ticks == 60 {
-                wait_ticks = 0;
-                stem::info!("bloom: presenter stuck waiting for ACQUIRED, resending ACQUIRE...");
+            if let Some(acquired) = self.pending_acquired.take() {
+                return acquired;
+            }
+
+            let now_ns = stem::monotonic_ns();
+            if now_ns.saturating_sub(last_acquire_send_ns) >= 50_000_000 {
+                if now_ns.saturating_sub(last_stuck_log_ns) >= 250_000_000 {
+                    stem::info!("bloom: presenter stuck waiting for ACQUIRED, resending ACQUIRE...");
+                    last_stuck_log_ns = now_ns;
+                }
                 send_acquire(self);
+                last_acquire_send_ns = now_ns;
             }
 
             stem::yield_now();

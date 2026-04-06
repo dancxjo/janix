@@ -1,0 +1,16 @@
+[package]
+name = "boltd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stem = { path = "../../stem", features = ["rt", "global-alloc"] }
+abi = { path = "../../abi" }
+phloem = { path = "../phloem" }
+spin = "0.9"
+
+[[bin]]
+name = "boltd"
+path = "src/main.rs"
+test = false
+bench = false

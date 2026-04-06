@@ -214,6 +214,12 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             boot_module: true,
             features: vec![],
         },
+        ProgramConfig {
+            name: "boltd",
+            is_init: false,
+            boot_module: true,
+            features: vec![],
+        },
     ]
 }
 

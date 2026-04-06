@@ -479,6 +479,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "boltd"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "phloem",
+ "spin",
+ "stem",
+]
+
+[[package]]
 name = "bran"
 version = "0.1.0"
 dependencies = [

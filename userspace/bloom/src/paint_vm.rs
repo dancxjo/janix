@@ -84,6 +84,7 @@ impl PaintPipeline {
         screen_w: i32,
         screen_h: i32,
         rescan_windows: bool,
+        refresh_paint: bool,
         mut on_progress: F,
     ) -> PaintResult
     where
@@ -101,6 +102,8 @@ impl PaintPipeline {
         let mut damage = Vec::new();
         if rescan_windows || self.scan_required {
             self.sync_windows(screen_w, screen_h, &mut damage, &mut on_progress);
+        } else if refresh_paint {
+            self.refresh_window_paint_state(&mut on_progress);
         }
 
         let dirty_ids: Vec<ThingId> = self.dirty_windows.iter().copied().collect();
@@ -310,6 +313,28 @@ impl PaintPipeline {
         }
 
         self.scan_required = false;
+    }
+
+    fn refresh_window_paint_state<F>(&mut self, on_progress: &mut F)
+    where
+        F: FnMut(),
+    {
+        let window_ids: Vec<ThingId> = self.windows.keys().copied().collect();
+        for id in window_ids {
+            on_progress();
+            let Some(entry) = self.windows.get_mut(&id) else {
+                continue;
+            };
+
+            let paint_gen = prop_get(id, keys::UI_PAINT_GEN).unwrap_or(entry.paint_gen);
+            let paint_bs = prop_get(id, keys::UI_PAINT_BYTESPACE).unwrap_or(entry.paint_bs);
+            if paint_gen != entry.paint_gen || paint_bs != entry.paint_bs {
+                entry.paint_gen = paint_gen;
+                entry.paint_bs = paint_bs;
+                entry.raster_dirty = true;
+                self.dirty_windows.insert(id);
+            }
+        }
     }
 
     pub fn top_window_at_point(&self, x: i32, y: i32) -> Option<WindowHit> {

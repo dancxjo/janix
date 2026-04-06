@@ -83,6 +83,61 @@ fn button_name(button: u8) -> &'static str {
     }
 }
 
+fn key_to_ascii(key: Key, mods: Mods) -> Option<char> {
+    let shift = mods.has_shift();
+    Some(match key {
+        Key::A => if shift { 'A' } else { 'a' },
+        Key::B => if shift { 'B' } else { 'b' },
+        Key::C => if shift { 'C' } else { 'c' },
+        Key::D => if shift { 'D' } else { 'd' },
+        Key::E => if shift { 'E' } else { 'e' },
+        Key::F => if shift { 'F' } else { 'f' },
+        Key::G => if shift { 'G' } else { 'g' },
+        Key::H => if shift { 'H' } else { 'h' },
+        Key::I => if shift { 'I' } else { 'i' },
+        Key::J => if shift { 'J' } else { 'j' },
+        Key::K => if shift { 'K' } else { 'k' },
+        Key::L => if shift { 'L' } else { 'l' },
+        Key::M => if shift { 'M' } else { 'm' },
+        Key::N => if shift { 'N' } else { 'n' },
+        Key::O => if shift { 'O' } else { 'o' },
+        Key::P => if shift { 'P' } else { 'p' },
+        Key::Q => if shift { 'Q' } else { 'q' },
+        Key::R => if shift { 'R' } else { 'r' },
+        Key::S => if shift { 'S' } else { 's' },
+        Key::T => if shift { 'T' } else { 't' },
+        Key::U => if shift { 'U' } else { 'u' },
+        Key::V => if shift { 'V' } else { 'v' },
+        Key::W => if shift { 'W' } else { 'w' },
+        Key::X => if shift { 'X' } else { 'x' },
+        Key::Y => if shift { 'Y' } else { 'y' },
+        Key::Z => if shift { 'Z' } else { 'z' },
+        Key::Num1 => if shift { '!' } else { '1' },
+        Key::Num2 => if shift { '@' } else { '2' },
+        Key::Num3 => if shift { '#' } else { '3' },
+        Key::Num4 => if shift { '$' } else { '4' },
+        Key::Num5 => if shift { '%' } else { '5' },
+        Key::Num6 => if shift { '^' } else { '6' },
+        Key::Num7 => if shift { '&' } else { '7' },
+        Key::Num8 => if shift { '*' } else { '8' },
+        Key::Num9 => if shift { '(' } else { '9' },
+        Key::Num0 => if shift { ')' } else { '0' },
+        Key::Space => ' ',
+        Key::Minus => if shift { '_' } else { '-' },
+        Key::Equal => if shift { '+' } else { '=' },
+        Key::LeftBracket => if shift { '{' } else { '[' },
+        Key::RightBracket => if shift { '}' } else { ']' },
+        Key::Backslash => if shift { '|' } else { '\\' },
+        Key::Semicolon => if shift { ':' } else { ';' },
+        Key::Quote => if shift { '"' } else { '\'' },
+        Key::Grave => if shift { '~' } else { '`' },
+        Key::Comma => if shift { '<' } else { ',' },
+        Key::Period => if shift { '>' } else { '.' },
+        Key::Slash => if shift { '?' } else { '/' },
+        _ => return None,
+    })
+}
+
 fn parse_and_print_event(buf: &[u8]) {
     let mut offset = 0usize;
     while offset + 20 <= buf.len() {
@@ -121,6 +176,15 @@ fn parse_and_print_event(buf: &[u8]) {
                         ""
                     };
                     info!("KeyDown {}{}{}", key.name(), format_mods(mods), repeat);
+                    if let Some(ch) = key_to_ascii(key, mods) {
+                        info!("TextInput {:?}", ch);
+                    } else if key == Key::Enter {
+                        info!("TextInput <Enter>");
+                    } else if key == Key::Backspace {
+                        info!("TextInput <Backspace>");
+                    } else if key == Key::Tab {
+                        info!("TextInput <Tab>");
+                    }
                 }
             }
             2 => {

@@ -2118,6 +2118,90 @@ async fn make_concurrent_requests(
     Ok(())
 }
 
+// ===== Telnet Steps =====
+
+#[given("the telnet server is ready")]
+async fn telnet_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> {
+    if world.qemu.is_none() {
+        turn_on_machine(world).await?;
+    }
+
+    check_serial(world, "telnetd: listening on guest port 2323", 180.0).await?;
+
+    let port = world
+        .telnet_port
+        .ok_or(StepError("Telnet port not configured".to_string()))?;
+    if port == 0 {
+        return Err(StepError("Telnet port failed to bind".to_string()));
+    }
+
+    // Attempt a quick connection to verify it's up
+    let start = std::time::Instant::now();
+    let timeout = std::time::Duration::from_secs(30);
+
+    while start.elapsed() < timeout {
+        if let Ok(mut stream) = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await {
+            eprintln!("│  │  │      ✅ Telnet is responsive");
+            return Ok(());
+        }
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+    }
+
+    Err(StepError("Timed out waiting for Telnet connection".to_string()))
+}
+
+#[when(regex = r#"^I connect to the telnet server and send "(.+)"$"#)]
+async fn connect_and_send_telnet(world: &mut ThingOsWorld, command: String) -> Result<(), StepError> {
+    let port = world
+        .telnet_port
+        .ok_or(StepError("Telnet port not configured".to_string()))?;
+        
+    let mut stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
+        .await
+        .map_err(|e| StepError(format!("Telnet connect failed: {}", e)))?;
+        
+    // Wait for the banner to show up by attempting to read
+    let mut buf = [0u8; 4096];
+    tokio::time::timeout(std::time::Duration::from_secs(2), tokio::io::AsyncReadExt::read(&mut stream, &mut buf)).await.ok();
+        
+    let cmd = format!("{}\r\n", command);
+    tokio::io::AsyncWriteExt::write_all(&mut stream, cmd.as_bytes())
+        .await
+        .map_err(|e| StepError(format!("Telnet send failed: {}", e)))?;
+        
+    // Read response up to 2 seconds or EOF
+    let mut resp = Vec::new();
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+        loop {
+            let mut chunk = [0u8; 1024];
+            match tokio::io::AsyncReadExt::read(&mut stream, &mut chunk).await {
+                Ok(0) => break,
+                Ok(n) => resp.extend_from_slice(&chunk[..n]),
+                Err(_) => break,
+            }
+        }
+    }).await;
+    
+    world.telnet_response = Some(String::from_utf8_lossy(&resp).into_owned());
+    Ok(())
+}
+
+#[then(regex = r#"^the telnet response should contain "(.+)"$"#)]
+async fn check_telnet_response(world: &mut ThingOsWorld, text: String) -> Result<(), StepError> {
+    let resp = world
+        .telnet_response
+        .as_ref()
+        .ok_or(StepError("No Telnet response recorded".to_string()))?;
+
+    if !resp.contains(&text) {
+        return Err(StepError(format!(
+            "Telnet response did not contain '{}'. Response: {}",
+            text, resp
+        )));
+    }
+    Ok(())
+}
+
 // ===== GQL Steps =====
 
 // `execute_gql_query` was previously defined and handles executing GQL queries over HTTP.

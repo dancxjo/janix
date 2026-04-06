@@ -143,6 +143,12 @@ struct CursorUnderlay {
     valid: bool,
 }
 
+#[derive(Default)]
+struct GraphInputState {
+    node_id: Option<ThingId>,
+    last_keyboard_gen: u64,
+}
+
 fn find_bristle_node() -> Option<ThingId> {
     let mut input_nodes = [ThingId::default(); 16];
     match find(hid::SVC_INPUT, &mut input_nodes) {
@@ -178,50 +184,60 @@ fn subscribe_bristle_topic() -> Option<PortHandle> {
     None
 }
 
-fn warn_graph_pointer_state(
-    cursor: &CursorState,
-    bristle_node: ThingId,
+fn sync_input_from_graph(
+    cursor: &mut CursorState,
+    pressed_keys: &mut BTreeSet<Key>,
+    bristle_node: Option<ThingId>,
+    graph_input: &mut GraphInputState,
+    screen_w: i32,
+    screen_h: i32,
     frame: u64,
 ) {
-    let graph_x = prop_get(bristle_node, pointer::POINTER_X).ok();
-    let graph_y = prop_get(bristle_node, pointer::POINTER_Y).ok();
-    let graph_buttons = prop_get(bristle_node, pointer::POINTER_BUTTONS).ok();
+    use abi::schema::keyboard as kb;
 
-    if let (Some(x), Some(y)) = (graph_x, graph_y) {
-        let x = x as i32;
-        let y = y as i32;
-        if (cursor.x != x || cursor.y != y) && frame % 120 == 0 {
-            stem::warn!(
-                "[bloom] graph pointer state diverged from streamed cursor: cursor=({}, {}) graph=({}, {})",
-                cursor.x,
-                cursor.y,
-                x,
-                y
-            );
+    let Some(node) = bristle_node else {
+        if frame % 120 == 0 {
+            stem::warn!("[bloom] no svc.Input node found for graph input fallback");
         }
-        if let Some(buttons) = graph_buttons {
-            let buttons = buttons as u32;
-            if cursor.buttons() != buttons && frame % 120 == 0 {
-                stem::warn!(
-                    "[bloom] graph pointer.buttons diverged from streamed cursor: cursor=0x{:x} graph=0x{:x}",
-                    cursor.buttons(),
-                    buttons
-                );
-            }
-        }
+        return;
+    };
+
+    let keyboard_gen = prop_get(node, kb::KEYBOARD_GEN).unwrap_or(0);
+    if graph_input.node_id != Some(node) {
+        graph_input.node_id = Some(node);
+        graph_input.last_keyboard_gen = keyboard_gen;
+    } else if keyboard_gen < graph_input.last_keyboard_gen {
+        graph_input.last_keyboard_gen = 0;
+        pressed_keys.clear();
+    }
+
+    if let (Ok(x), Ok(y)) = (
+        prop_get(node, pointer::POINTER_X),
+        prop_get(node, pointer::POINTER_Y),
+    ) {
+        cursor.set_position_clamped(x as i32, y as i32, screen_w, screen_h);
     } else if frame % 120 == 0 {
         stem::warn!(
             "[bloom] graph pointer state unavailable on svc.Input {}",
-            bristle_node.to_u64_lossy()
+            node.to_u64_lossy()
         );
     }
-}
 
-fn warn_graph_state_if_needed(cursor: &CursorState, bristle_node: Option<ThingId>, frame: u64) {
-    if let Some(node) = bristle_node {
-        warn_graph_pointer_state(cursor, node, frame);
-    } else if frame % 120 == 0 {
-        stem::warn!("[bloom] no svc.Input node found for graph pointer diagnostics");
+    if let Ok(buttons) = prop_get(node, pointer::POINTER_BUTTONS) {
+        cursor.set_buttons(buttons as u32);
+    }
+
+    if keyboard_gen > graph_input.last_keyboard_gen {
+        graph_input.last_keyboard_gen = keyboard_gen;
+        let key = Key::from_raw(prop_get(node, kb::KEYBOARD_LAST_KEY).unwrap_or(0) as u16);
+        if key != Key::Unknown {
+            let edge = prop_get(node, kb::KEYBOARD_KEY_EDGE).unwrap_or(0);
+            if edge == 0 {
+                pressed_keys.remove(&key);
+            } else {
+                pressed_keys.insert(key);
+            }
+        }
     }
 }
 
@@ -743,6 +759,7 @@ fn main(arg: usize) -> ! {
     );
     let mut cursor = CursorState::new(screen_w / 2, screen_h / 2);
     let mut bristle_node = find_bristle_node();
+    let mut graph_input = GraphInputState::default();
     let mut cursor_rasterizer = CursorRasterizer::new();
     let mut pressed_keys: BTreeSet<Key> = BTreeSet::new();
     let mut prev_keys: BTreeSet<Key> = BTreeSet::new();
@@ -1013,7 +1030,15 @@ fn main(arg: usize) -> ! {
                 );
             }
             bristle_node = find_bristle_node().or(bristle_node);
-            warn_graph_state_if_needed(&cursor, bristle_node, loop_ctrl.frame_number());
+            sync_input_from_graph(
+                &mut cursor,
+                &mut pressed_keys,
+                bristle_node,
+                &mut graph_input,
+                screen_w,
+                screen_h,
+                loop_ctrl.frame_number(),
+            );
 
             let shift_down =
                 pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);

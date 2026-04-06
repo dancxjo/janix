@@ -40,6 +40,12 @@ pub struct ThingOsWorld {
     /// Last HTTP response (status, body)
     #[world(skip)]
     pub last_http_response: Option<(u16, String)>,
+    /// Port forwarded to guest telnetd (2323)
+    #[world(skip)]
+    pub telnet_port: Option<u16>,
+    /// Last telnet response
+    #[world(skip)]
+    pub telnet_response: Option<String>,
     /// Work directory for storing sockets
     #[world(skip)]
     pub work_dir: PathBuf,
@@ -118,8 +124,15 @@ impl ThingOsWorld {
             .map(|l| l.local_addr().unwrap().port())
             .unwrap_or(0);
         self.http_port = Some(http_port);
+        let telnet_port = TcpListener::bind("127.0.0.1:0")
+            .map(|l| l.local_addr().unwrap().port())
+            .unwrap_or(0);
+        self.telnet_port = Some(telnet_port);
         if http_port > 0 {
             eprintln!("[bdd] Forwarding HTTP: localhost:{} -> guest:80", http_port);
+        }
+        if telnet_port > 0 {
+            eprintln!("[bdd] Forwarding Telnet: localhost:{} -> guest:2323", telnet_port);
         }
 
         let qemu_bin = match arch {
@@ -150,8 +163,13 @@ impl ThingOsWorld {
 
                 if let Some(port) = self.http_port {
                     if port > 0 {
+                        let tport = self.telnet_port.unwrap_or(0);
                         cmd.args(["-device", "virtio-net-pci,netdev=n0"]);
-                        cmd.args(["-netdev", &format!("user,id=n0,hostfwd=tcp::{}-:80", port)]);
+                        if tport > 0 {
+                            cmd.args(["-netdev", &format!("user,id=n0,hostfwd=tcp::{}-:80,hostfwd=tcp::{}-:2323", port, tport)]);
+                        } else {
+                            cmd.args(["-netdev", &format!("user,id=n0,hostfwd=tcp::{}-:80", port)]);
+                        }
                     }
                 }
             }

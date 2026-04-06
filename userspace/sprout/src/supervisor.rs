@@ -148,6 +148,7 @@ impl Supervisor {
                 || name.ends_with("/clock")
                 || name.ends_with("/idle")
                 || name.ends_with("/hello_std")
+                || name.ends_with("/telnetd")
                 || (cfg!(feature = "diagnostic-apps")
                     && (name.ends_with("/threads_demo") || name.ends_with("/scheduler_verify")))
             {

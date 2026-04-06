@@ -56,6 +56,7 @@ fn main(raw_write_handle: usize) -> ! {
         Ok(()) => {
             info!("ps2_kbd: subscribed to IRQ1 (vector 0x{:02x})", KBD_VECTOR);
             set_mode("Interrupt");
+            interrupt_loop(handle);
         }
         Err(e) => {
             info!(
@@ -66,9 +67,6 @@ fn main(raw_write_handle: usize) -> ! {
             polling_loop(handle);
         }
     }
-
-    info!("ps2_kbd: entering cooperative polling loop");
-    polling_loop(handle);
 }
 
 mod normalizer;
@@ -138,6 +136,24 @@ fn send_key_event(handle: PortHandle, edge: KeyEdge, drop_counter: &mut u32) {
                 *drop_counter,
                 handle
             );
+        }
+    }
+}
+
+/// Primary interrupt-driven loop.
+fn interrupt_loop(handle: PortHandle) -> ! {
+    info!("ps2_kbd: entering interrupt-driven loop");
+    let mut state = KeyboardState::new();
+    let mut drop_counter = 0u32;
+
+    // Clear any already-pending keyboard bytes before waiting. On an edge-triggered
+    // line, a latched byte can keep IRQ1 asserted without generating a fresh edge.
+    drain_keyboard_data(handle, &mut state, &mut drop_counter);
+
+    loop {
+        match irq_wait(KBD_VECTOR) {
+            Ok(_) => drain_keyboard_data(handle, &mut state, &mut drop_counter),
+            Err(_) => stem::yield_now(),
         }
     }
 }

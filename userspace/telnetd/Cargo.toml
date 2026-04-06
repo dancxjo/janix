@@ -1,0 +1,14 @@
+[package]
+name = "telnetd"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stem = { path = "../../stem", features = ["rt", "global-alloc"] }
+abi = { path = "../../abi" }
+
+[[bin]]
+name = "telnetd"
+path = "src/main.rs"
+test = false
+bench = false

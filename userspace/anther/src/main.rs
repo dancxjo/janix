@@ -52,8 +52,11 @@ fn build_headers(
     write!(
         VecWriter(&mut response),
         "HTTP/1.1 {}\r\nServer: {}\r\nContent-Type: {}\r\n",
-        status, SERVER_NAME, content_type
-    ).ok();
+        status,
+        SERVER_NAME,
+        content_type
+    )
+    .ok();
 
     if let Some(len) = body_len {
         write!(VecWriter(&mut response), "Content-Length: {}\r\n", len).ok();
@@ -92,8 +95,11 @@ fn build_redirect(location: &str, is_head: bool, keep_alive: bool) -> (Vec<u8>, 
     write!(
         VecWriter(&mut response),
         "HTTP/1.1 302 Found\r\nServer: {}\r\nLocation: {}\r\nContent-Length: {}\r\n",
-        SERVER_NAME, location, body.len()
-    ).ok();
+        SERVER_NAME,
+        location,
+        body.len()
+    )
+    .ok();
     if keep_alive {
         response.extend_from_slice(b"Connection: keep-alive\r\n");
     } else {
@@ -762,8 +768,7 @@ fn run_server_mode(port: u16) -> ! {
     // Global slot for passing conn_handle to the worker trampoline.
     // Protected by sequential spawning: we store before spawn, worker reads
     // before we can spawn again (single accept loop on the main thread).
-    static CONN_HANDLE_SLOT: core::sync::atomic::AtomicU32 =
-        core::sync::atomic::AtomicU32::new(0);
+    static CONN_HANDLE_SLOT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
 
     extern "C" fn worker_trampoline() -> ! {
         let conn = CONN_HANDLE_SLOT.load(core::sync::atomic::Ordering::Acquire);
@@ -777,14 +782,23 @@ fn run_server_mode(port: u16) -> ! {
     loop {
         if let Some(accept) = net.tcp_accept(listen_handle) {
             let conn = accept.conn_handle;
-            info!("anther: Accepted connection, spawning thread for conn_handle={}", conn);
+            info!(
+                "anther: Accepted connection, spawning thread for conn_handle={}",
+                conn
+            );
             CONN_HANDLE_SLOT.store(conn, core::sync::atomic::Ordering::Release);
             match stem::thread::spawn(worker_trampoline) {
                 Ok(tid) => {
-                    info!("anther: Thread spawned TID={} for conn_handle={}", tid, conn);
+                    info!(
+                        "anther: Thread spawned TID={} for conn_handle={}",
+                        tid, conn
+                    );
                 }
                 Err(e) => {
-                    warn!("anther: Thread spawn FAILED for conn_handle={}: {:?}", conn, e);
+                    warn!(
+                        "anther: Thread spawn FAILED for conn_handle={}: {:?}",
+                        conn, e
+                    );
                 }
             }
             continue;
@@ -799,7 +813,10 @@ fn run_server_mode(port: u16) -> ! {
 /// Creates a per-thread NetClient so IPC responses never interleave.
 fn handle_connection(conn_handle: u32) {
     let tid = stem::syscall::get_tid().unwrap_or(0);
-    info!("anther: Worker thread TID={} starting for conn_handle={}", tid, conn_handle);
+    info!(
+        "anther: Worker thread TID={} starting for conn_handle={}",
+        tid, conn_handle
+    );
 
     let net = match NetClient::connect() {
         Some(n) => {
@@ -807,7 +824,10 @@ fn handle_connection(conn_handle: u32) {
             n
         }
         None => {
-            warn!("anther: Worker TID={} failed to connect to netd, dropping connection", tid);
+            warn!(
+                "anther: Worker TID={} failed to connect to netd, dropping connection",
+                tid
+            );
             return;
         }
     };
@@ -824,8 +844,12 @@ fn handle_connection(conn_handle: u32) {
         while attempts < 200 {
             if let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
                 if !got_any_data {
-                    info!("anther: Worker TID={} got first {} bytes on conn_handle={}",
-                          tid, data.len(), conn_handle);
+                    info!(
+                        "anther: Worker TID={} got first {} bytes on conn_handle={}",
+                        tid,
+                        data.len(),
+                        conn_handle
+                    );
                     got_any_data = true;
                 }
                 request_data.extend_from_slice(&data);
@@ -850,10 +874,16 @@ fn handle_connection(conn_handle: u32) {
 
         let Some(header_end) = header_end else {
             if !request_data.is_empty() {
-                warn!("anther: TID={} headers incomplete ({} bytes so far)", tid, request_data.len());
+                warn!(
+                    "anther: TID={} headers incomplete ({} bytes so far)",
+                    tid,
+                    request_data.len()
+                );
             } else {
-                warn!("anther: TID={} conn_handle={} recv timed out with no data (200 attempts)",
-                      tid, conn_handle);
+                warn!(
+                    "anther: TID={} conn_handle={} recv timed out with no data (200 attempts)",
+                    tid, conn_handle
+                );
             }
             break;
         };
@@ -929,7 +959,7 @@ fn handle_connection(conn_handle: u32) {
         }
 
         // Send headers
-        net.tcp_send(conn_handle, &headers);
+        send_all(net, conn_handle, &headers);
 
         // Send body
         match resp_body {
@@ -940,58 +970,61 @@ fn handle_connection(conn_handle: u32) {
                 send_all(net, conn_handle, &v);
             }
             ResponseBody::Stream(mut stream) => {
-                 use alloc::format;
-                 let waker = noop_waker();
-                 let mut cx = Context::from_waker(&waker);
+                use alloc::format;
+                let waker = noop_waker();
+                let mut cx = Context::from_waker(&waker);
 
-                 loop {
-                     match stream.poll_next(&mut cx) {
-                         Poll::Ready(Ok(Some(delta))) => {
-                             let finish_str = match delta.finish {
-                                 Some(f) => match f {
-                                     llm::FinishReason::Stop => "\"stop\"",
-                                     llm::FinishReason::Length => "\"length\"",
-                                     llm::FinishReason::Canceled => "\"canceled\"",
-                                     llm::FinishReason::Error => "\"error\"",
-                                 },
-                                 None => "null",
-                             };
+                loop {
+                    match stream.poll_next(&mut cx) {
+                        Poll::Ready(Ok(Some(delta))) => {
+                            let finish_str = match delta.finish {
+                                Some(f) => match f {
+                                    llm::FinishReason::Stop => "\"stop\"",
+                                    llm::FinishReason::Length => "\"length\"",
+                                    llm::FinishReason::Canceled => "\"canceled\"",
+                                    llm::FinishReason::Error => "\"error\"",
+                                },
+                                None => "null",
+                            };
 
-                             let escaped_text = escape_json_string(&delta.text);
-                             let json = format!("{{\"text\":\"{}\",\"finish\":{}}}", escaped_text, finish_str);
+                            let escaped_text = escape_json_string(&delta.text);
+                            let json = format!(
+                                "{{\"text\":\"{}\",\"finish\":{}}}",
+                                escaped_text, finish_str
+                            );
 
-                             // Send as chunked encoding
-                             let event_str = format!("data: {}\n\n", json);
-                             send_chunk(net, conn_handle, event_str.as_bytes());
+                            // Send as chunked encoding
+                            let event_str = format!("data: {}\n\n", json);
+                            send_chunk(net, conn_handle, event_str.as_bytes());
 
-                             if delta.finish.is_some() {
-                                 // Close stream
-                                 send_chunk(net, conn_handle, &[]); // 0-length chunk to end
-                                 break;
-                             }
-                         }
-                         Poll::Ready(Ok(None)) => {
-                             send_chunk(net, conn_handle, &[]); // 0-length chunk to end
-                             break;
-                         }
-                         Poll::Ready(Err(_)) => {
-                             // Send error event
-                             let err_json = "{\"error\":\"Stream error\"}";
-                             let event_str = format!("data: {}\n\n", err_json);
-                             send_chunk(net, conn_handle, event_str.as_bytes());
-                             send_chunk(net, conn_handle, &[]);
-                             break;
-                         }
-                         Poll::Pending => {
-                             stem::thread::yield_now();
-                         }
-                     }
-                 }
+                            if delta.finish.is_some() {
+                                // Close stream
+                                send_chunk(net, conn_handle, &[]); // 0-length chunk to end
+                                break;
+                            }
+                        }
+                        Poll::Ready(Ok(None)) => {
+                            send_chunk(net, conn_handle, &[]); // 0-length chunk to end
+                            break;
+                        }
+                        Poll::Ready(Err(_)) => {
+                            // Send error event
+                            let err_json = "{\"error\":\"Stream error\"}";
+                            let event_str = format!("data: {}\n\n", err_json);
+                            send_chunk(net, conn_handle, event_str.as_bytes());
+                            send_chunk(net, conn_handle, &[]);
+                            break;
+                        }
+                        Poll::Pending => {
+                            stem::thread::yield_now();
+                        }
+                    }
+                }
             }
             ResponseBody::WatchStream { thing_id } => {
-                use alloc::format;
                 use abi::root::RootWatchFilter;
                 use abi::types::{WatchSpec, WATCH_START_LATEST};
+                use alloc::format;
 
                 // Reuse the existing props handler for consistent JSON output
                 let fetch_props_json = |tid: u64| -> Option<Vec<u8>> {
@@ -1009,7 +1042,10 @@ fn handle_connection(conn_handle: u32) {
 
                 // 1. Send initial props
                 if let Some(initial_json) = fetch_props_json(thing_id) {
-                    let event = format!("event: props\ndata: {}\n\n", core::str::from_utf8(&initial_json).unwrap_or("{}"));
+                    let event = format!(
+                        "event: props\ndata: {}\n\n",
+                        core::str::from_utf8(&initial_json).unwrap_or("{}")
+                    );
                     send_chunk(net, conn_handle, event.as_bytes());
                 }
 
@@ -1028,7 +1064,8 @@ fn handle_connection(conn_handle: u32) {
                 let watch_handle = match stem::syscall::root_watch_open(&spec) {
                     Ok(h) => h,
                     Err(_) => {
-                        let err_event = "event: error\ndata: {\"error\":\"Failed to open watch\"}\n\n";
+                        let err_event =
+                            "event: error\ndata: {\"error\":\"Failed to open watch\"}\n\n";
                         send_chunk(net, conn_handle, err_event.as_bytes());
                         send_chunk(net, conn_handle, &[]); // End chunked stream
                         break;
@@ -1042,13 +1079,16 @@ fn handle_connection(conn_handle: u32) {
                 let mut stall_count = 0u32;
 
                 loop {
-
-                    match stem::syscall::root_watch_next(watch_handle, &mut seq_out, &mut watch_buf) {
+                    match stem::syscall::root_watch_next(watch_handle, &mut seq_out, &mut watch_buf)
+                    {
                         Ok(_len) => {
                             // Something changed — re-fetch props and send
                             stall_count = 0;
                             if let Some(json) = fetch_props_json(thing_id) {
-                                let event = format!("event: props\ndata: {}\n\n", core::str::from_utf8(&json).unwrap_or("{}"));
+                                let event = format!(
+                                    "event: props\ndata: {}\n\n",
+                                    core::str::from_utf8(&json).unwrap_or("{}")
+                                );
                                 send_chunk(net, conn_handle, event.as_bytes());
                             }
                         }
@@ -1112,11 +1152,11 @@ fn send_all(net: &NetClient, conn_handle: u32, data: &[u8]) {
 
         if n == 0 {
             stall_count += 1;
-            if stall_count >= 100 {
+            if stall_count >= 1000 {
                 warn!("anther: Send stalled after {} bytes", sent);
                 break;
             }
-            stem::syscall::yield_now();
+            stem::time::sleep_ms(5);
             continue;
         }
 
@@ -1186,15 +1226,6 @@ const STDIO_MODE_MAGIC: usize = 0xDEADBEEF;
 fn main(arg: usize) -> ! {
     stem::info!("anther: Starting HTTP server (ThingOS anther v0.1)");
 
-    crate::info!("anther: Spawning test thread that exits in 5s");
-    extern "C" fn test_thread_exit() -> ! {
-        crate::info!("anther: test_thread_exit ENTERED!");
-        stem::time::sleep_ms(5000);
-        crate::info!("anther: Test thread exiting with code 0! Does OS die?");
-        stem::syscall::exit(0);
-    }
-    let _ = stem::thread::spawn(test_thread_exit);
-
     // Default to server mode when spawned as a service (arg=0)
     // stdio mode is only for testing (requires magic value)
     if arg == STDIO_MODE_MAGIC {
@@ -1227,8 +1258,8 @@ mod tests {
         assert!(headers_str.contains("200 OK"));
         match body {
             ResponseBody::Static(b) => {
-                 let s = core::str::from_utf8(b).unwrap();
-                 assert!(s.contains("Graph index"));
+                let s = core::str::from_utf8(b).unwrap();
+                assert!(s.contains("Graph index"));
             }
             _ => panic!("Expected static body"),
         }

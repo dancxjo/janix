@@ -1,0 +1,28 @@
+--- userspace/phloem/src/query_tests.rs
++++ userspace/phloem/src/query_tests.rs
+@@ -557,6 +557,25 @@
+     }
+
+     #[test]
++    fn test_multiple_conditions_in_where() {
++        let g = setup_mock();
++        let mut ex = GraphExecutor::with_graph(&g);
++        let cmd = parse("MATCH (n:proc.Process) WHERE id(n) = 1 AND n.name = 12345 RETURN n").unwrap();
++        let res = ex.execute(cmd);
++        assert!(res.success);
++        assert_eq!(res.rows.len(), 1);
++        if let crate::ResultValue::Node(id) = res.rows[0][0] {
++            assert_eq!(id, 1);
++        } else {
++            panic!("Expected Node result");
++        }
++
++        let cmd_fail = parse("MATCH (n:proc.Process) WHERE id(n) = 1 AND n.name = 99999 RETURN n").unwrap();
++        let res_fail = ex.execute(cmd_fail);
++        assert!(res_fail.success);
++        assert_eq!(res_fail.rows.len(), 0);
++    }
++
++    #[test]
+     fn test_skip_overflow() {
+         // MATCH (n) RETURN n SKIP 100

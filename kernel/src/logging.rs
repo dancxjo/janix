@@ -6,7 +6,7 @@
 use crate::BootRuntimeBase;
 use alloc::format;
 use core::fmt::{self, Write};
-use core::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU64, AtomicU8, Ordering};
 use spin::Mutex;
 
 // Re-export for macros

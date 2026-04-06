@@ -182,6 +182,8 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
 
 pub fn sleep_ms<R: BootRuntime>(ms: u64) {
     // 1 tick is 10ms (100Hz timer)
-    let ticks = core::cmp::max(1, ms / 10);
+    // Round up to avoid undersleeping.
+    // ms=0 converts to ticks=0, which sleep_ticks handles as a yield.
+    let ticks = (ms + 9) / 10;
     sleep_ticks::<R>(ticks);
 }

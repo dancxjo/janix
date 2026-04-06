@@ -492,6 +492,33 @@ mod tests {
     }
 
     #[test]
+    fn test_match_multiple_inline_properties() {
+        let g = setup_mock();
+        let mut ex = GraphExecutor::with_graph(&g);
+
+        // MATCH (n {name: 12345, state: 100}) RETURN n
+        // In setup_mock, node 1 has name=12345 and state=100
+        let cmd = parse("MATCH (n {name: 12345, state: 100}) RETURN n").unwrap();
+        let res = ex.execute(cmd);
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 1);
+
+        // Make sure it's node 1
+        if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            assert_eq!(id, 1);
+        } else {
+            panic!("Expected Node ID");
+        }
+
+        // Now test conflicting properties
+        let cmd2 = parse("MATCH (n {name: 12345, state: 999}) RETURN n").unwrap();
+        let res2 = ex.execute(cmd2);
+        assert!(res2.success);
+        // Node 1 has state 100, not 999, so it shouldn't match
+        assert!(res2.rows.is_empty());
+    }
+
+    #[test]
     fn test_count_edge_matches() {
         // MATCH (a)-[]->(b) RETURN count(b) LIMIT 200
         // This should return the count of edges, not "count() not supported" message

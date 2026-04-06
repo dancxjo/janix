@@ -212,6 +212,8 @@ struct UiPipeline {
     watchers: Vec<UiWatcher>,
     windows: BTreeMap<ThingId, WindowState>,
     ui_symbols: graph_ui::UiSymbols,
+    window_census_pending: bool,
+    poll_count: u64,
 }
 
 impl UiPipeline {
@@ -268,6 +270,8 @@ impl UiPipeline {
             watchers,
             windows: BTreeMap::new(),
             ui_symbols: graph_ui::UiSymbols::intern_sys(),
+            window_census_pending: false,
+            poll_count: 0,
         };
 
         // Initial census of existing windows
@@ -277,6 +281,7 @@ impl UiPipeline {
     }
 
     fn poll(&mut self) {
+        self.poll_count = self.poll_count.wrapping_add(1);
         let mut dirty: BTreeMap<ThingId, bool> = BTreeMap::new();
         let mut props_by_window: BTreeMap<ThingId, WindowProps> = BTreeMap::new();
 
@@ -300,6 +305,7 @@ impl UiPipeline {
                                     match op {
                                         watch::WatchOp::Upsert => {
                                             // New window created: start tracking it
+                                            self.window_census_pending = true;
                                             self.windows.entry(header.subject).or_insert(
                                                 WindowState {
                                                     last_gen: 0,
@@ -314,6 +320,7 @@ impl UiPipeline {
                                         }
                                         watch::WatchOp::Delete => {
                                             // Window deleted: stop tracking
+                                            self.window_census_pending = true;
                                             self.windows.remove(&header.subject);
                                             dirty.remove(&header.subject);
                                         }
@@ -322,6 +329,7 @@ impl UiPipeline {
                             } else if is_kind_watcher {
                                 // Kind watch event: conservatively mark subject dirty so first paint
                                 // happens even if predicate encoding differs.
+                                self.window_census_pending = true;
                                 dirty.insert(header.subject, true);
                             } else {
                                 dirty.insert(header.subject, true);
@@ -334,9 +342,13 @@ impl UiPipeline {
             }
         }
 
-        // Ensure windows created between watch polls are tracked and painted at least once.
-        for added in self.refresh_windows() {
-            dirty.insert(added, true);
+        // Fall back to a periodic census in case a kind watch was missed, but avoid
+        // paying a full window scan on every 5ms poll tick.
+        if self.window_census_pending || self.poll_count % 120 == 0 {
+            for added in self.refresh_windows() {
+                dirty.insert(added, true);
+            }
+            self.window_census_pending = false;
         }
 
         let mut window_ids: Vec<ThingId> = self.windows.keys().copied().collect();

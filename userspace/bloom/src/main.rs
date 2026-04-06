@@ -1062,9 +1062,11 @@ fn main(arg: usize) -> ! {
         // Refresh window state after input so hit-testing sees current geometry, but let
         // pure pointer-motion frames bypass background window rebuild work.
         let paint_res = if should_process_updates {
+            let rescan_windows = !first_frame_rendered || !invalidation_causes.is_empty();
             let res = paint_pipeline.process_updates(
                 target.width as i32,
                 target.height as i32,
+                rescan_windows,
                 || {
                     if bristle_evt_handle == 0 {
                         return;

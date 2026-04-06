@@ -14,10 +14,9 @@ use stem::thing::sys::{
 use stem::thing::ThingId;
 
 use crate::asset::Image;
-use crate::damage;
 use crate::drawlist::{DrawCmd, DrawList};
 use crate::frame::AssetGeneration;
-use crate::geometry::{Color, EdgeAA, Point, Rect}; // Added Point import if needed, already used in damage logic but good to align
+use crate::geometry::{Color, EdgeAA, Rect};
 use crate::raster;
 use crate::surface::Surface;
 use alloc::sync::Arc;
@@ -65,6 +64,8 @@ pub struct PaintPipeline {
     windows: BTreeMap<ThingId, WindowPaintState>,
     render_state: crate::render_state::RenderState,
     icon_symbol_cache: BTreeMap<String, u32>,
+    dirty_windows: BTreeSet<ThingId>,
+    scan_required: bool,
 }
 
 impl PaintPipeline {
@@ -73,10 +74,18 @@ impl PaintPipeline {
             windows: BTreeMap::new(),
             render_state: crate::render_state::RenderState::new(),
             icon_symbol_cache: BTreeMap::new(),
+            dirty_windows: BTreeSet::new(),
+            scan_required: true,
         }
     }
 
-    pub fn process_updates<F>(&mut self, screen_w: i32, screen_h: i32, mut on_progress: F) -> PaintResult
+    pub fn process_updates<F>(
+        &mut self,
+        screen_w: i32,
+        screen_h: i32,
+        rescan_windows: bool,
+        mut on_progress: F,
+    ) -> PaintResult
     where
         F: FnMut(),
     {
@@ -90,150 +99,112 @@ impl PaintPipeline {
         let mut pending_rebuilds = false;
 
         let mut damage = Vec::new();
-        let mut window_ids = [ThingId::default(); 128];
-        let count = find(kinds::UI_WINDOW, &mut window_ids).unwrap_or(0);
-        let mut active: BTreeSet<ThingId> = BTreeSet::new();
+        if rescan_windows || self.scan_required {
+            self.sync_windows(screen_w, screen_h, &mut damage, &mut on_progress);
+        }
 
-        for id in window_ids.iter().take(count) {
+        let dirty_ids: Vec<ThingId> = self.dirty_windows.iter().copied().collect();
+        for id in dirty_ids {
             on_progress();
-            active.insert(*id);
-            let Some(props) = read_window_frame_props(*id, screen_w, screen_h) else {
+
+            let Some(entry) = self.windows.get_mut(&id) else {
+                self.dirty_windows.remove(&id);
                 continue;
             };
-            let rect = props.rect;
-            let mut needs_rebuild = false;
 
-            let entry = self.windows.entry(*id).or_insert_with(|| WindowPaintState {
-                rect,
-                z: props.z,
-                hidden: props.hidden,
-                paint_gen: 0,
-                paint_bs: 0,
-                geometry_gen: 0,
-                asset_gen: 0,
-                raster_dirty: true,
-            });
-
-            // Track paint changes
-            if entry.paint_gen != props.paint_gen || entry.paint_bs != props.paint_bs {
-                needs_rebuild = true;
+            if !entry.raster_dirty || entry.hidden {
+                entry.raster_dirty = false;
+                self.dirty_windows.remove(&id);
+                continue;
             }
 
-            // Track geometry changes and bump geometry_gen AFTER updating values
-            let geometry_changed =
-                entry.rect != rect || entry.z != props.z || entry.hidden != props.hidden;
-            if geometry_changed {
-                needs_rebuild = true;
-                if entry.rect != rect || entry.hidden != props.hidden {
-                    damage.push(Rect::new(
-                        entry.rect.x(),
-                        entry.rect.y(),
-                        entry.rect.width(),
-                        entry.rect.height(),
-                    ));
-                }
+            let elapsed_ns = stem::monotonic_ns().saturating_sub(update_start_ns);
+            let budget_exhausted = rebuilds_this_frame >= MAX_WINDOW_REBUILDS_PER_FRAME
+                || (rebuilds_this_frame > 0 && elapsed_ns >= WINDOW_REBUILD_BUDGET_NS);
+            if budget_exhausted {
+                pending_rebuilds = true;
+                break;
             }
 
-            // Update state before bumping geometry_gen to avoid initial mismatch
-            entry.rect = rect;
-            entry.z = props.z;
-            entry.hidden = props.hidden;
-            entry.paint_gen = props.paint_gen;
-            entry.paint_bs = props.paint_bs;
-            entry.asset_gen = current_asset_gen;
-
-            if geometry_changed {
-                entry.geometry_gen = entry.geometry_gen.wrapping_add(1);
-            }
-            if needs_rebuild {
-                entry.raster_dirty = true;
-            }
-
+            let rect = entry.rect;
+            let target_asset_gen = current_asset_gen;
             let cache_key = RasterCacheKey::new(
-                *id,
+                id,
                 entry.paint_gen,
                 entry.geometry_gen,
-                entry.asset_gen,
-                1.0, // TODO: Get from UI_SCALE_FACTOR property
+                target_asset_gen,
+                1.0,
                 EdgeAA::None,
                 PixelFormat::Bgra8888,
             );
 
-            if entry.raster_dirty {
-                let elapsed_ns = stem::monotonic_ns().saturating_sub(update_start_ns);
-                let budget_exhausted = rebuilds_this_frame >= MAX_WINDOW_REBUILDS_PER_FRAME
-                    || elapsed_ns >= WINDOW_REBUILD_BUDGET_NS;
-                if budget_exhausted {
-                    pending_rebuilds = true;
-                    continue;
+            if let Some(_cached_image) = self.render_state.get_window_raster(&cache_key) {
+                crate::trace_counter!("bloom.window_paint.cache_hit", 1);
+                entry.asset_gen = target_asset_gen;
+                entry.raster_dirty = false;
+                self.dirty_windows.remove(&id);
+            } else {
+                crate::trace_counter!("bloom.window_paint.cache_miss", 1);
+
+                let rebuild_start_ns = stem::monotonic_ns();
+                let w = rect.width() as usize;
+                let h = rect.height() as usize;
+                let len = w * h;
+
+                crate::trace_counter!("bloom.window_cache.rebuild.count", 1);
+                crate::trace_counter!("bloom.window_cache.pixels_written.total", len as u64);
+
+                if w > 0 && h > 0 {
+                    let mut buffer = vec![0u32; len];
+
+                    let mut surface = unsafe {
+                        Surface::new(
+                            buffer.as_mut_ptr() as *mut u8,
+                            len * 4,
+                            w as u32,
+                            h as u32,
+                            w as u32 * 4,
+                        )
+                    };
+
+                    let local_rect = Rect::new(0, 0, rect.width(), rect.height());
+                    let list = build_drawlist(entry.paint_bs, local_rect, &mut self.icon_symbol_cache);
+                    raster::execute(&mut surface, &list, false);
+
+                    let image = Arc::new(Image {
+                        width: w as u32,
+                        height: h as u32,
+                        pixels: Arc::from(buffer.as_slice()),
+                        gen: AssetGeneration(target_asset_gen),
+                        name: Arc::from("window"),
+                        id: Some(id),
+                    });
+
+                    self.render_state.insert_window_raster(cache_key, image);
                 }
 
-                if let Some(_cached_image) = self.render_state.get_window_raster(&cache_key) {
-                    crate::trace_counter!("bloom.window_paint.cache_hit", 1);
-                    entry.raster_dirty = false;
-                } else {
-                    crate::trace_counter!("bloom.window_paint.cache_miss", 1);
+                rebuilds_this_frame += 1;
+                entry.asset_gen = target_asset_gen;
+                entry.raster_dirty = false;
+                self.dirty_windows.remove(&id);
 
-                    let rebuild_start_ns = stem::monotonic_ns();
-                    let w = rect.width() as usize;
-                    let h = rect.height() as usize;
-                    let len = w * h;
-
-                    crate::trace_counter!("bloom.window_cache.rebuild.count", 1);
-                    crate::trace_counter!("bloom.window_cache.pixels_written.total", len as u64);
-
-                    if w > 0 && h > 0 {
-                        let mut buffer = vec![0u32; len];
-
-                        // SAFETY: buffer is valid for len, valid dimensions.
-                        let mut surface = unsafe {
-                            Surface::new(
-                                buffer.as_mut_ptr() as *mut u8,
-                                len * 4,
-                                w as u32,
-                                h as u32,
-                                w as u32 * 4,
-                            )
-                        };
-
-                        let local_rect = Rect::new(0, 0, rect.width(), rect.height());
-                        let list =
-                            build_drawlist(props.paint_bs, local_rect, &mut self.icon_symbol_cache);
-                        raster::execute(&mut surface, &list, false);
-
-                        let image = Arc::new(Image {
-                            width: w as u32,
-                            height: h as u32,
-                            pixels: Arc::from(buffer.as_slice()),
-                            gen: AssetGeneration(current_asset_gen),
-                            name: Arc::from("window"),
-                            id: Some(*id),
-                        });
-
-                        self.render_state.insert_window_raster(cache_key, image);
-                    }
-
-                    rebuilds_this_frame += 1;
-                    entry.raster_dirty = false;
-
-                    let rebuild_ns = stem::monotonic_ns().saturating_sub(rebuild_start_ns);
-                    if rebuild_ns > 25_000_000 {
-                        stem::warn!(
-                            "[bloom] slow window rebuild id={} {:.3}ms size={}x{}",
-                            id.to_u64_lossy(),
-                            rebuild_ns as f64 / 1_000_000.0,
-                            rect.width(),
-                            rect.height(),
-                        );
-                    }
-                    stem::yield_now();
+                let rebuild_ns = stem::monotonic_ns().saturating_sub(rebuild_start_ns);
+                if rebuild_ns > 25_000_000 {
+                    stem::warn!(
+                        "[bloom] slow window rebuild id={} {:.3}ms size={}x{}",
+                        id.to_u64_lossy(),
+                        rebuild_ns as f64 / 1_000_000.0,
+                        rect.width(),
+                        rect.height(),
+                    );
                 }
-
-                damage.push(Rect::new(rect.x(), rect.y(), rect.width(), rect.height()));
+                stem::yield_now();
             }
+
+            damage.push(Rect::new(rect.x(), rect.y(), rect.width(), rect.height()));
         }
 
-        self.windows.retain(|id, _| active.contains(id));
+        pending_rebuilds |= !self.dirty_windows.is_empty();
 
         let update_ns = stem::monotonic_ns().saturating_sub(update_start_ns);
         if update_ns > 50_000_000 {
@@ -249,6 +220,96 @@ impl PaintPipeline {
             damage,
             pending_rebuilds,
         }
+    }
+
+    fn sync_windows<F>(
+        &mut self,
+        screen_w: i32,
+        screen_h: i32,
+        damage: &mut Vec<Rect>,
+        on_progress: &mut F,
+    ) where
+        F: FnMut(),
+    {
+        let mut window_ids = [ThingId::default(); 128];
+        let count = find(kinds::UI_WINDOW, &mut window_ids).unwrap_or(0);
+        let mut active: BTreeSet<ThingId> = BTreeSet::new();
+
+        for id in window_ids.iter().take(count) {
+            on_progress();
+            let Some(props) = read_window_frame_props(*id, screen_w, screen_h) else {
+                if let Some(prev) = self.windows.remove(id) {
+                    self.dirty_windows.remove(id);
+                    damage.push(prev.rect);
+                }
+                continue;
+            };
+            active.insert(*id);
+
+            let rect = props.rect;
+            let mut needs_rebuild = false;
+
+            let entry = self.windows.entry(*id).or_insert_with(|| {
+                needs_rebuild = true;
+                WindowPaintState {
+                    rect,
+                    z: props.z,
+                    hidden: props.hidden,
+                    paint_gen: 0,
+                    paint_bs: 0,
+                    geometry_gen: 0,
+                    asset_gen: 0,
+                    raster_dirty: true,
+                }
+            });
+
+            if entry.paint_gen != props.paint_gen || entry.paint_bs != props.paint_bs {
+                needs_rebuild = true;
+            }
+
+            let geometry_changed =
+                entry.rect != rect || entry.z != props.z || entry.hidden != props.hidden;
+            if geometry_changed {
+                needs_rebuild = true;
+                if entry.rect != rect || entry.hidden != props.hidden {
+                    damage.push(Rect::new(
+                        entry.rect.x(),
+                        entry.rect.y(),
+                        entry.rect.width(),
+                        entry.rect.height(),
+                    ));
+                }
+            }
+
+            entry.rect = rect;
+            entry.z = props.z;
+            entry.hidden = props.hidden;
+            entry.paint_gen = props.paint_gen;
+            entry.paint_bs = props.paint_bs;
+
+            if geometry_changed {
+                entry.geometry_gen = entry.geometry_gen.wrapping_add(1);
+            }
+            if needs_rebuild {
+                entry.raster_dirty = true;
+                self.dirty_windows.insert(*id);
+            }
+        }
+
+        let removed: Vec<ThingId> = self
+            .windows
+            .keys()
+            .copied()
+            .filter(|id| !active.contains(id))
+            .collect();
+        for id in removed {
+            if let Some(prev) = self.windows.remove(&id) {
+                self.dirty_windows.remove(&id);
+                damage.push(prev.rect);
+            }
+        }
+
+        self.scan_required = false;
     }
 
     pub fn top_window_at_point(&self, x: i32, y: i32) -> Option<WindowHit> {
@@ -372,9 +433,6 @@ impl PaintPipeline {
         use crate::render_state::RasterCacheKey;
         use abi::pixel::PixelFormat;
 
-        // Get current asset generation for cache lookups
-        let current_asset_gen = crate::painter_resources::ASSETS.current_generation().0;
-
         // Build list of (window_id, state_ref) for iteration
         let window_list: Vec<(ThingId, &WindowPaintState)> = self
             .windows
@@ -416,7 +474,7 @@ impl PaintPipeline {
                             *win_id,
                             win.paint_gen,
                             win.geometry_gen,
-                            current_asset_gen,
+                            win.asset_gen,
                             1.0,
                             EdgeAA::None,
                             PixelFormat::Bgra8888,
@@ -980,6 +1038,7 @@ mod tests {
                 paint_bs: 0,
                 geometry_gen: 0,
                 asset_gen: 0,
+                raster_dirty: false,
             },
         );
 
@@ -995,6 +1054,7 @@ mod tests {
                 paint_bs: 0,
                 geometry_gen: 0,
                 asset_gen: 0,
+                raster_dirty: false,
             },
         );
 
@@ -1019,6 +1079,7 @@ mod tests {
                 paint_bs: 0,
                 geometry_gen: 0,
                 asset_gen: 0,
+                raster_dirty: false,
             },
         );
 
@@ -1034,6 +1095,7 @@ mod tests {
                 paint_bs: 0,
                 geometry_gen: 0,
                 asset_gen: 0,
+                raster_dirty: false,
             },
         );
 

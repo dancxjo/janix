@@ -1950,19 +1950,26 @@ async fn anther_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> 
     }
 
     let url = format!("http://127.0.0.1:{}/health", port);
-    let client = Client::builder()
-        .timeout(std::time::Duration::from_secs(1))
-        .build()
-        .map_err(|e| StepError(e.to_string()))?;
-
+    
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(30);
 
     while start.elapsed() < timeout {
-        if let Ok(resp) = client.get(&url).send().await {
-            if resp.status().is_success() {
+        // Use simpler reqwest blocking client or just shell out to curl
+        let output = std::process::Command::new("curl")
+            .arg("-s")
+            .arg("-f")
+            .arg("-m")
+            .arg("1")
+            .arg(&url)
+            .output();
+            
+        if let Ok(out) = output {
+            if out.status.success() {
                 eprintln!("│  │  │      ✅ Anther is healthy");
                 return Ok(());
+            } else {
+                eprintln!("│  │  │      ⚠️ Anther health check unexpected reqwest/curl status: {}", out.status);
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;

@@ -341,4 +341,46 @@ mod tests {
         let ptr = heap.alloc_pinned(layout).expect("Should alloc");
         assert_eq!(ptr.as_ptr() as u64, base);
     }
+
+    #[test]
+    fn test_evictable_alloc_and_eviction() {
+        let mut heap = ArenaHeap::new();
+        let base1 = 0x2000;
+        let size1 = 1000;
+        let arena1 = Arena::new(base1, size1, ArenaFlags::EVICTABLE, 1, "test_evict1");
+        heap.add_arena(arena1);
+
+        let base2 = 0x3000;
+        let size2 = 1000;
+        let arena2 = Arena::new(base2, size2, ArenaFlags::EVICTABLE, 2, "test_evict2");
+        heap.add_arena(arena2);
+
+        let layout = Layout::from_size_align(20, 1).unwrap();
+
+        // Allocate should go to the tail (arena2)
+        let (id, generation, offset, ptr) = heap.alloc_evictable(layout).expect("Should alloc evictable");
+        assert_eq!(generation, 2);
+        assert_eq!(ptr.as_ptr() as u64, base2);
+        assert_eq!(offset, 0);
+
+        let stats = heap.stats();
+        assert_eq!(stats.total_evictable_bytes, 20);
+
+        // Evict the oldest evictable arena (arena1)
+        let evicted = heap.evict_oldest().expect("Should evict arena");
+        assert_eq!(evicted.tag, "test_evict1");
+        assert_eq!(evicted.base, base1);
+
+        let stats_after = heap.stats();
+        assert_eq!(stats_after.eviction_count, 1);
+        assert_eq!(stats_after.bytes_freed_by_eviction, size1);
+
+        // Evict the remaining evictable arena (arena2)
+        let evicted2 = heap.evict_oldest().expect("Should evict second arena");
+        assert_eq!(evicted2.tag, "test_evict2");
+        assert_eq!(evicted2.base, base2);
+
+        // No more arenas to evict
+        assert!(heap.evict_oldest().is_none());
+    }
 }

@@ -23,3 +23,4 @@ iso_root*/
 /bran/bin-*
 
 *_log*.txt
+qemu_pid

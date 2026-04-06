@@ -20,19 +20,6 @@ use crate::frame::{AssetGeneration, FrameSpec, FrameToken, PresentDamageSnapshot
 use crate::reclaimer;
 use crate::state::OverlayMode;
 
-fn send_reliable(handle: PortHandle, data: &[u8]) -> Result<usize, abi::errors::Errno> {
-    loop {
-        match port_send_all(handle, data) {
-            Err(abi::errors::Errno::EAGAIN) => stem::yield_now(),
-            Err(e) => {
-                stem::error!("bloom: send_reliable handle {} failed with {:?}", handle, e);
-                return Err(e);
-            }
-            Ok(n) => return Ok(n),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug)]
 struct DriverNegotiation {
     proto_major: u16,
@@ -218,6 +205,40 @@ impl DriverPresenter {
         }
     }
 
+    fn send_reliable(&mut self, data: &[u8]) -> Result<usize, abi::errors::Errno> {
+        let mut wait_count = 0u32;
+        loop {
+            match port_send_all(self.req_write, data) {
+                Err(abi::errors::Errno::EAGAIN) => {
+                    // Drain response traffic while the request port is full.
+                    // Without this, ACK/ACQUIRED messages can fill the return port,
+                    // block the driver, and starve input handling in the compositor.
+                    self.pump_port();
+                    self.process_rx();
+                    wait_count = wait_count.wrapping_add(1);
+                    if wait_count == 1024 {
+                        stem::warn!(
+                            "bloom: request port {} remained full while sending {} bytes",
+                            self.req_write,
+                            data.len()
+                        );
+                        wait_count = 0;
+                    }
+                    stem::yield_now();
+                }
+                Err(e) => {
+                    stem::error!(
+                        "bloom: send_reliable handle {} failed with {:?}",
+                        self.req_write,
+                        e
+                    );
+                    return Err(e);
+                }
+                Ok(n) => return Ok(n),
+            }
+        }
+    }
+
     pub fn start_handshake(&mut self) {
         let hello = drvproto::HelloPayload {
             proto_major: drvproto::PROTO_MAJOR,
@@ -230,7 +251,7 @@ impl DriverPresenter {
             if let Some(total) =
                 drvproto::encode_message(&mut buf, drvproto::MSG_HELLO, &hello_bytes[..len])
             {
-                let _ = send_reliable(self.req_write, &buf[..total]);
+                let _ = self.send_reliable(&buf[..total]);
             }
         }
     }
@@ -243,7 +264,7 @@ impl DriverPresenter {
 
         let mut buf = [0u8; 128];
         if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_BIND, &bytes) {
-            let _ = send_reliable(self.req_write, &buf[..len]);
+            let _ = self.send_reliable(&buf[..len]);
             self.awaiting_bind_ack = true;
         }
     }
@@ -310,7 +331,7 @@ impl DriverPresenter {
             if let Some(len) =
                 drvproto::encode_message(buf, drvproto::MSG_PRESENT, &payload[..payload_len])
             {
-                let status = send_reliable(self.req_write, &buf[..len]);
+                let status = self.send_reliable(&buf[..len]);
                 stem::trace!(
                     "bloom: sent MSG_PRESENT rects={} len={} status={:?}",
                     rect_count,
@@ -453,7 +474,7 @@ impl DriverPresenter {
 
         // Encode and send message
         if let Some(len) = drvproto::encode_message(&mut buf, drvproto::MSG_SUBMIT_3D, &payload) {
-            let _ = send_reliable(self.req_write, &buf[..len]);
+            let _ = self.send_reliable(&buf[..len]);
         }
     }
 
@@ -493,7 +514,7 @@ impl DriverPresenter {
         if let Some(len) =
             drvproto::encode_message(&mut buf, drvproto::MSG_CREATE_TEXTURE_3D, &payload)
         {
-            let status = send_reliable(self.req_write, &buf[..len]);
+            let status = self.send_reliable(&buf[..len]);
             stem::trace!(
                 "bloom: sent MSG_CREATE_TEXTURE_3D len={} status={:?}",
                 len,
@@ -556,7 +577,7 @@ impl DriverPresenter {
         if let Some(len) =
             drvproto::encode_message(&mut buf, drvproto::MSG_UPLOAD_TEXTURE_3D, &payload)
         {
-            let _ = send_reliable(self.req_write, &buf[..len]);
+            let _ = self.send_reliable(&buf[..len]);
         }
 
         // Don't wait for ACK to avoid latency - texture upload is fire-and-forget
@@ -633,14 +654,14 @@ impl Presenter for DriverPresenter {
         let mut buf = [0u8; 128];
         let mut wait_ticks = 0;
 
-        let send_acquire = |req_write: stem::syscall::PortHandle| {
+        let send_acquire = |this: &mut Self| {
             let mut buf = [0u8; 128];
             if let Some(total) = drvproto::encode_message(&mut buf, drvproto::MSG_ACQUIRE, &[]) {
-                let _ = send_reliable(req_write, &buf[..total]);
+                let _ = this.send_reliable(&buf[..total]);
             }
         };
 
-        send_acquire(self.req_write);
+        send_acquire(self);
 
         // Synchronous wait for ACQUIRED
         loop {
@@ -680,7 +701,7 @@ impl Presenter for DriverPresenter {
             if wait_ticks == 60 {
                 wait_ticks = 0;
                 stem::info!("bloom: presenter stuck waiting for ACQUIRED, resending ACQUIRE...");
-                send_acquire(self.req_write);
+                send_acquire(self);
             }
 
             stem::yield_now();

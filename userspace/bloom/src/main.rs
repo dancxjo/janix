@@ -899,11 +899,21 @@ fn main(arg: usize) -> ! {
     stem::syscall::console_disable();
 
     let mut first_frame_rendered = false;
+    let mut last_loop_start_ns = stem::monotonic_ns();
 
     let mut current_bs_id = final_bs_id;
     let mut current_age = final_age;
 
     loop {
+        let loop_start_ns = stem::monotonic_ns();
+        let loop_gap_ns = loop_start_ns.saturating_sub(last_loop_start_ns);
+        if loop_gap_ns > 100_000_000 {
+            stem::warn!(
+                "[bloom] compositor loop gap {:.3}ms",
+                loop_gap_ns as f64 / 1_000_000.0
+            );
+        }
+        last_loop_start_ns = loop_start_ns;
         loop_ctrl.next();
         invalidation_causes.clear();
         let updates = ASSETS.publish_pending();
@@ -1804,7 +1814,15 @@ fn main(arg: usize) -> ! {
 
             // Acquire NEXT buffer for the next frame
             if let PresenterImpl::Driver(_) = presenter {
+                let acquire_start_ns = stem::monotonic_ns();
                 let (next_bs_id, next_w, next_h, next_s, _f, next_age) = presenter.acquire_buffer();
+                let acquire_ns = stem::monotonic_ns().saturating_sub(acquire_start_ns);
+                if acquire_ns > 50_000_000 {
+                    stem::warn!(
+                        "[bloom] acquire_buffer took {:.3}ms",
+                        acquire_ns as f64 / 1_000_000.0
+                    );
+                }
 
                 // Use cached pointer or map if new
                 let next_ptr = if let Some(&ptr) = buffer_cache.get(&next_bs_id) {

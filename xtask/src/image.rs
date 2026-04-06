@@ -293,7 +293,8 @@ pub fn build_iso_with_config(
         format!("thing-os-{}-{}-{}.iso", arch, timestamp, nanos)
     };
 
-    let iso_root = Path::new("iso_root");
+    let iso_root_name = format!("iso_root_{}", nanos);
+    let iso_root = Path::new(&iso_root_name);
 
     println!("Building ISO {}...", iso_name);
 
@@ -304,7 +305,7 @@ pub fn build_iso_with_config(
     sh.create_dir(iso_root.join("boot/limine"))?;
     sh.create_dir(iso_root.join("EFI/BOOT"))?;
 
-    cmd!(sh, "cp -r assets iso_root/").run()?;
+    cmd!(sh, "cp -r assets {iso_root_name}/").run()?;
 
     let mut asset_files = Vec::new();
     for entry in WalkDir::new("assets") {
@@ -417,10 +418,10 @@ pub fn build_iso_with_config(
                 iso_root.join("EFI/BOOT/BOOTIA32.EFI"),
             )?;
 
-            cmd!(sh, "xorriso -as mkisofs -R -J -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso_name}").run()?;
+            cmd!(sh, "xorriso -as mkisofs -R -J -b boot/limine/limine-bios-cd.bin -no-emul-boot -boot-load-size 4 -boot-info-table --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label {iso_root_name} -o {iso_name}").run()?;
             cmd!(sh, "./vendor/limine/limine bios-install {iso_name}").run()?;
 
-            sh.remove_path("iso_root")?;
+            sh.remove_path(&iso_root_name)?;
             println!("ISO created: {}", iso_name);
 
             Ok(PathBuf::from(iso_name))
@@ -435,9 +436,9 @@ pub fn build_iso_with_config(
                 iso_root.join("EFI/BOOT/BOOTAA64.EFI"),
             )?;
 
-            cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso_name}").run()?;
+            cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-cd.bin -efi-boot-part --efi-boot-image --protective-msdos-label {iso_root_name} -o {iso_name}").run()?;
 
-            sh.remove_path("iso_root")?;
+            sh.remove_path(&iso_root_name)?;
             println!("ISO created: {}", iso_name);
 
             Ok(PathBuf::from(iso_name))
@@ -469,9 +470,9 @@ pub fn build_iso_with_config(
                 iso_root.join("EFI/BOOT/BOOTRISCV64.EFI"),
             )?;
 
-            cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-riscv64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso_name}").run()?;
+            cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-riscv64.bin -efi-boot-part --efi-boot-image --protective-msdos-label {iso_root_name} -o {iso_name}").run()?;
 
-            sh.remove_path("iso_root")?;
+            sh.remove_path(&iso_root_name)?;
             println!("ISO created: {}", iso_name);
 
             Ok(PathBuf::from(iso_name))
@@ -499,9 +500,9 @@ pub fn build_iso_with_config(
                 iso_root.join("EFI/BOOT/BOOTLOONGARCH64.EFI"),
             )?;
 
-            cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-loongarch64.bin -efi-boot-part --efi-boot-image --protective-msdos-label iso_root -o {iso_name}").run()?;
+            cmd!(sh, "xorriso -as mkisofs -R -J --efi-boot boot/limine/limine-uefi-loongarch64.bin -efi-boot-part --efi-boot-image --protective-msdos-label {iso_root_name} -o {iso_name}").run()?;
 
-            sh.remove_path("iso_root")?;
+            sh.remove_path(&iso_root_name)?;
             println!("ISO created: {}", iso_name);
 
             Ok(PathBuf::from(iso_name))

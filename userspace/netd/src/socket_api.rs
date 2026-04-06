@@ -18,6 +18,9 @@ use stem::net::conn_graph;
 use stem::thing::ThingId;
 use stem::{debug, info, trace, warn};
 
+pub static mut CONN_RX: [[u8; 8192]; 256] = [[0; 8192]; 256];
+pub static mut CONN_TX: [[u8; 32768]; 256] = [[0; 32768]; 256];
+
 // Socket API message types
 pub const MSG_TCP_CONNECT: u16 = 0x0200;
 pub const MSG_TCP_SEND: u16 = 0x0201;
@@ -91,6 +94,10 @@ struct ManagedSocket {
     graph_dirty: bool,
     /// Stable key for graph node creation (consumed on first flush)
     socket_key: Option<u64>,
+    /// Index of the backing static buffer, if any
+    pub buf_idx: Option<usize>,
+    /// Additional socket handles for listener pool backlog
+    pub listen_pool: Vec<(SocketHandle, usize)>,
 }
 
 impl ManagedSocket {
@@ -113,15 +120,21 @@ pub struct SocketApi {
     /// Pending accepted connections (listen_handle -> Vec<(conn_handle, remote_ip, remote_port)>)
     pending_accepts: BTreeMap<u32, Vec<(u32, Ipv4Address, u16)>>,
     /// Socket handles pending removal from SocketSet (after TCP close completes)
-    pending_removal: Vec<SocketHandle>,
+    pending_removal: Vec<(SocketHandle, Option<usize>)>,
     /// Reusable scratch buffer for receive operations
     recv_scratch: Vec<u8>,
     /// Next graph stats flush timestamp
-    next_graph_flush_ms: u64,
+    pub next_graph_flush_ms: u64,
+    /// List of free buffer indices (0..64)
+    pub free_buffers: Vec<usize>,
 }
 
 impl SocketApi {
     pub fn new() -> Self {
+        let mut free_buffers = Vec::with_capacity(256);
+        for i in (0..256).rev() {
+            free_buffers.push(i);
+        }
         Self {
             next_handle: 1,
             next_socket_id: 1,
@@ -131,7 +144,16 @@ impl SocketApi {
             recv_scratch: Vec::with_capacity(32768), // Large enough for most frames
             // Defer first graph flush to avoid blocking Root IPC during early boot
             next_graph_flush_ms: (stem::time::now().as_millis() as u64).saturating_add(60_000),
+            free_buffers,
         }
+    }
+
+    pub fn alloc_buffer(&mut self) -> Option<usize> {
+        self.free_buffers.pop()
+    }
+
+    pub fn free_buffer(&mut self, idx: usize) {
+        self.free_buffers.push(idx);
     }
 
     /// Allocate a new handle ID
@@ -248,6 +270,7 @@ impl SocketApi {
         owner_tid: u64,
         api_handle: u32,
         now_ms: u64,
+        buf_idx: Option<usize>,
     ) -> ManagedSocket {
         let socket_id = self.alloc_socket_id();
         let socket_key = Self::socket_key(owner_tid, socket_id, kind);
@@ -272,6 +295,8 @@ impl SocketApi {
             last_seen_ms: now_ms,
             graph_dirty: true, // Needs graph initialization
             socket_key: Some(socket_key),
+            buf_idx,
+            listen_pool: Vec::new(),
         };
 
         managed
@@ -342,8 +367,11 @@ impl SocketApi {
         socket_set: &mut SocketSet<'a>,
         now_ms: u64,
     ) {
-        let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
-        let state = socket.state();
+        let state = if managed.is_listener {
+            TcpState::Listen
+        } else {
+            socket_set.get_mut::<TcpSocket>(managed.handle).state()
+        };
         conn_graph::set_sym_if_changed(
             managed.socket_node,
             net::props::SOCK_STATE,
@@ -483,20 +511,19 @@ impl SocketApi {
         socket_set: &mut SocketSet<'a>,
         owner_tid: u64,
         port: u16,
-        _backlog: u16,
-        rx_storage: &'a mut [u8],
-        tx_storage: &'a mut [u8],
+        backlog: u16,
+        buf_idx: usize,
     ) -> Vec<u8> {
-        info!("SOCKET_API: TCP_LISTEN on port {}", port);
+        info!("SOCKET_API: TCP_LISTEN on port {} with backlog {}", port, backlog);
 
-        let rx_buffer = SocketBuffer::new(rx_storage);
-        let tx_buffer = SocketBuffer::new(tx_storage);
+        let rx_buffer = SocketBuffer::new(unsafe { &mut CONN_RX[buf_idx][..] });
+        let tx_buffer = SocketBuffer::new(unsafe { &mut CONN_TX[buf_idx][..] });
         let mut socket = TcpSocket::new(rx_buffer, tx_buffer);
 
-        // Set up as listening socket
         let endpoint = IpListenEndpoint::from(port);
         if let Err(e) = socket.listen(endpoint) {
             warn!("SOCKET_API: Failed to listen: {:?}", e);
+            self.free_buffer(buf_idx);
             return encode_error();
         }
 
@@ -504,7 +531,7 @@ impl SocketApi {
         let api_handle = self.alloc_handle();
         let now_ms = Self::now_ms();
 
-        let managed = self.new_managed_socket(
+        let mut managed = self.new_managed_socket(
             socket_handle,
             SocketType::Tcp,
             true,
@@ -515,7 +542,21 @@ impl SocketApi {
             owner_tid,
             api_handle,
             now_ms,
+            Some(buf_idx),
         );
+
+        let fill_backlog = core::cmp::min(core::cmp::max(backlog, 1), 16) - 1;
+        for _ in 0..fill_backlog {
+            let Some(b_idx) = self.alloc_buffer() else { break; };
+            let rx_buf = SocketBuffer::new(unsafe { &mut CONN_RX[b_idx][..] });
+            let tx_buf = SocketBuffer::new(unsafe { &mut CONN_TX[b_idx][..] });
+            let mut sock = TcpSocket::new(rx_buf, tx_buf);
+            if sock.listen(endpoint).is_ok() {
+                managed.listen_pool.push((socket_set.add(sock), b_idx));
+            } else {
+                self.free_buffer(b_idx);
+            }
+        }
 
         self.sockets.insert(api_handle, managed);
         self.pending_accepts.insert(api_handle, Vec::new());
@@ -536,13 +577,12 @@ impl SocketApi {
         owner_tid: u64,
         remote_ip: Ipv4Address,
         remote_port: u16,
-        rx_storage: &'a mut [u8],
-        tx_storage: &'a mut [u8],
+        buf_idx: usize,
     ) -> Vec<u8> {
         info!("SOCKET_API: TCP_CONNECT to {}:{}", remote_ip, remote_port);
 
-        let rx_buffer = SocketBuffer::new(rx_storage);
-        let tx_buffer = SocketBuffer::new(tx_storage);
+        let rx_buffer = SocketBuffer::new(unsafe { &mut CONN_RX[buf_idx][..] });
+        let tx_buffer = SocketBuffer::new(unsafe { &mut CONN_TX[buf_idx][..] });
         let mut socket = TcpSocket::new(rx_buffer, tx_buffer);
 
         let endpoint = IpEndpoint::new(IpAddress::Ipv4(remote_ip), remote_port);
@@ -569,6 +609,7 @@ impl SocketApi {
             owner_tid,
             api_handle,
             now_ms,
+            Some(buf_idx),
         );
         managed.remote = Some(EndpointV4 {
             ip: remote_ip,
@@ -611,8 +652,8 @@ impl SocketApi {
         &mut self,
         socket_set: &mut SocketSet<'a>,
         listen_handle: u32,
-        rx_storage: &'a mut [u8],
-        tx_storage: &'a mut [u8],
+        owner_tid: u64,
+        buf_idx: usize,
     ) -> Vec<u8> {
         // Check if we have a pending accepted connection
         if let Some(pending) = self.pending_accepts.get_mut(&listen_handle) {
@@ -626,13 +667,37 @@ impl SocketApi {
         }
 
         // No pending connections - check if listener socket has a connection ready
-        let (listener_socket_handle, listen_port, owner_tid) =
-            match self.sockets.get(&listen_handle) {
-                Some(s) if s.is_listener && s.kind == SocketType::Tcp => {
-                    (s.handle, s.local.map(|e| e.port).unwrap_or(80), s.owner_tid)
+        let mut connected_slot: Option<(SocketHandle, usize, bool, usize)> = None;
+        let mut listen_port = 0;
+        let mut owner_tid = 0;
+
+        if let Some(s) = self.sockets.get(&listen_handle) {
+            if s.is_listener && s.kind == SocketType::Tcp {
+                listen_port = s.local.map(|e| e.port).unwrap_or(80);
+                owner_tid = s.owner_tid;
+
+                let state = socket_set.get_mut::<TcpSocket>(s.handle).state();
+                if state == TcpState::Established {
+                    connected_slot = Some((s.handle, s.buf_idx.unwrap_or(0), true, 0));
+                } else {
+                    for (i, &(pool_handle, pool_bidx)) in s.listen_pool.iter().enumerate() {
+                        if socket_set.get_mut::<TcpSocket>(pool_handle).state() == TcpState::Established {
+                            connected_slot = Some((pool_handle, pool_bidx, false, i));
+                            break;
+                        }
+                    }
                 }
-                _ => return encode_error(),
-            };
+            } else {
+                return encode_error();
+            }
+        } else {
+            return encode_error();
+        }
+
+        let (listener_socket_handle, bidx_connected, is_main, pool_idx) = match connected_slot {
+            Some(slot) => slot,
+            None => return encode_empty(),
+        };
 
         let socket = socket_set.get_mut::<TcpSocket>(listener_socket_handle);
 
@@ -657,65 +722,51 @@ impl SocketApi {
                     remote_ip, remote_port, listen_handle
                 );
 
-                // Create a new handle for this connection (reusing the same socket)
                 let conn_handle = self.alloc_handle();
 
-                // Update the managed socket entry: it's now a connection, not a listener
-                if let Some(managed) = self.sockets.get_mut(&listen_handle) {
-                    managed.is_listener = false;
-                    managed.remote = Some(EndpointV4 {
-                        ip: remote_ip,
-                        port: remote_port,
-                    });
-                    managed.last_seen_ms = Self::now_ms();
-                    // DEFERRED: No blocking graph operations in network hot-path
-                    // Self::sync_remote_edge(managed);
-                    // Self::ensure_tcp_connection(managed, managed.last_seen_ms, "established");
-                    // conn_graph::set_sym_if_changed(
-                    //     managed.socket_node,
-                    //     net::props::SOCK_STATE,
-                    //     "connected",
-                    // )
-                    // .ok();
-                }
-
-                // Move the socket to the new connection handle
-                if let Some(old_managed) = self.sockets.remove(&listen_handle) {
-                    self.sockets.insert(conn_handle, old_managed);
-                }
-
-                // Remove old pending_accepts entry
+                // Set up the connection's ManagedSocket
+                let now_ms = Self::now_ms();
+                let mut conn_managed = self.new_managed_socket(
+                    listener_socket_handle,
+                    SocketType::Tcp,
+                    false,
+                    Some(EndpointV4 {
+                        ip: Ipv4Address::new(0, 0, 0, 0),
+                        port: listen_port,
+                    }),
+                    owner_tid,
+                    conn_handle,
+                    now_ms,
+                    Some(bidx_connected),
+                );
+                conn_managed.remote = Some(EndpointV4 {
+                    ip: remote_ip,
+                    port: remote_port,
+                });
+                self.sockets.insert(conn_handle, conn_managed);
                 self.pending_accepts.remove(&listen_handle);
 
                 // Create a new listener socket on the same port
-                let rx_buffer = SocketBuffer::new(rx_storage);
-                let tx_buffer = SocketBuffer::new(tx_storage);
+                let rx_buffer = SocketBuffer::new(unsafe { &mut CONN_RX[buf_idx][..] });
+                let tx_buffer = SocketBuffer::new(unsafe { &mut CONN_TX[buf_idx][..] });
                 let mut new_listener = TcpSocket::new(rx_buffer, tx_buffer);
 
                 let endpoint = IpListenEndpoint::from(listen_port);
                 if let Err(e) = new_listener.listen(endpoint) {
                     warn!("SOCKET_API: Failed to respawn listener: {:?}", e);
+                    self.free_buffer(buf_idx);
                 } else {
                     let new_socket_handle = socket_set.add(new_listener);
-                    let now_ms = Self::now_ms();
-                    let listener_managed = self.new_managed_socket(
-                        new_socket_handle,
-                        SocketType::Tcp,
-                        true,
-                        Some(EndpointV4 {
-                            ip: Ipv4Address::new(0, 0, 0, 0),
-                            port: listen_port,
-                        }),
-                        owner_tid,
-                        listen_handle,
-                        now_ms,
-                    );
-                    self.sockets.insert(listen_handle, listener_managed);
-                    self.pending_accepts.insert(listen_handle, Vec::new());
-                    info!(
-                        "SOCKET_API: Respawned listener on port {} handle={}",
-                        listen_port, listen_handle
-                    );
+                    if let Some(s) = self.sockets.get_mut(&listen_handle) {
+                        if is_main {
+                            s.handle = new_socket_handle;
+                            s.buf_idx = Some(buf_idx);
+                        } else {
+                            s.listen_pool[pool_idx] = (new_socket_handle, buf_idx);
+                        }
+                    } else {
+                        self.free_buffer(buf_idx);
+                    }
                 }
 
                 return encode_accept(conn_handle, remote_ip, remote_port);
@@ -736,6 +787,7 @@ impl SocketApi {
         rx_payload_storage: &'a mut [u8],
         tx_metadata_storage: &'a mut [smoltcp::socket::udp::PacketMetadata],
         tx_payload_storage: &'a mut [u8],
+        buf_idx: usize,
     ) -> Vec<u8> {
         info!("SOCKET_API: UDP_BIND on port {}", port);
 
@@ -765,6 +817,7 @@ impl SocketApi {
             owner_tid,
             api_handle,
             now_ms,
+            Some(buf_idx),
         );
 
         self.sockets.insert(api_handle, managed);
@@ -990,28 +1043,24 @@ impl SocketApi {
 
     /// Handle a TCP_CLOSE request
     pub fn handle_close<'a>(&mut self, socket_set: &mut SocketSet<'a>, handle: u32) -> Vec<u8> {
-        let now_ms = Self::now_ms();
         if let Some(managed) = self.sockets.get(&handle) {
-            // DEFERRED: No blocking graph operations in network hot-path
-            // conn_graph::set_sym_if_changed(managed.socket_node, net::props::SOCK_STATE, "closed")
-            //     .ok();
-            // conn_graph::set_if_changed(managed.socket_node, net::props::SOCK_CLOSED_AT, now_ms)
-            //     .ok();
-            // if let Some(conn_id) = managed.connection_node {
-            //     conn_graph::set_sym_if_changed(conn_id, net::props::CONN_STATE, "closed").ok();
-            //     conn_graph::set_if_changed(conn_id, net::props::CONN_LAST_SEEN, now_ms).ok();
-            // }
-
-
             if managed.kind == SocketType::Tcp {
                 let socket = socket_set.get_mut::<TcpSocket>(managed.handle);
                 socket.close();
                 debug!("SOCKET_API: TCP_CLOSE handle={} (initiating close)", handle);
-                self.pending_removal.push(managed.handle);
+                self.pending_removal.push((managed.handle, managed.buf_idx));
+                // Listen pools need to be closed/freed too
+                for &(pool_handle, pool_idx) in &managed.listen_pool {
+                    socket_set.get_mut::<TcpSocket>(pool_handle).close();
+                    self.pending_removal.push((pool_handle, Some(pool_idx)));
+                }
             } else {
                 // UDP sockets can be removed immediately
                 socket_set.remove(managed.handle);
                 debug!("SOCKET_API: UDP close handle={} (removed)", handle);
+                if let Some(bidx) = managed.buf_idx {
+                    self.free_buffer(bidx);
+                }
             }
         }
         self.sockets.remove(&handle);
@@ -1021,19 +1070,24 @@ impl SocketApi {
 
     /// Garbage collect closed sockets from the SocketSet
     pub fn gc_closed_sockets<'a>(&mut self, socket_set: &mut SocketSet<'a>) {
-        self.pending_removal.retain(|&socket_handle| {
-            // Check if it's a TCP socket
-            // In smoltcp 0.11, we can't easily check type without trying to get it
-            // but we know pending_removal ONLY contains TCP handles that we called close() on.
+        let mut new_pending = Vec::new();
+        let mut to_free = Vec::new();
+        for (socket_handle, buf_idx) in self.pending_removal.drain(..) {
             let socket = socket_set.get_mut::<TcpSocket>(socket_handle);
             if socket.state() == TcpState::Closed {
                 socket_set.remove(socket_handle);
                 debug!("SOCKET_API: GC removed explicitly closed TCP socket");
-                false
+                if let Some(bidx) = buf_idx {
+                    to_free.push(bidx);
+                }
             } else {
-                true
+                new_pending.push((socket_handle, buf_idx));
             }
-        });
+        }
+        self.pending_removal = new_pending;
+        for bidx in to_free {
+            self.free_buffer(bidx);
+        }
 
         let mut tracked_handles = BTreeSet::new();
         for managed in self.sockets.values() {
@@ -1067,8 +1121,6 @@ impl SocketApi {
         socket_set: &mut SocketSet<'a>,
         msg: &[u8],
         caller_tid: Option<u64>,
-        rx_storage: &'a mut [u8],
-        tx_storage: &'a mut [u8],
         dns_server: Option<Ipv4Address>,
     ) -> Vec<u8> {
         if msg.len() < 4 {
@@ -1097,26 +1149,52 @@ impl SocketApi {
                 if body.len() < 6 {
                     return encode_error();
                 }
+                let Some(buf_idx) = self.alloc_buffer() else {
+                    warn!("SOCKET_API: Out of socket buffers (TCP_CONNECT)");
+                    return encode_error();
+                };
                 let ip = Ipv4Address::from_bytes(&body[0..4]);
                 let port = u16::from_le_bytes([body[4], body[5]]);
                 self.handle_connect(
-                    iface, device, socket_set, owner_tid, ip, port, rx_storage, tx_storage,
+                    iface, device, socket_set, owner_tid, ip, port, buf_idx
                 )
             }
             MSG_TCP_LISTEN => {
                 if body.len() < 4 {
                     return encode_error();
                 }
+                let Some(buf_idx) = self.alloc_buffer() else {
+                    warn!("SOCKET_API: Out of socket buffers (TCP_LISTEN)");
+                    return encode_error();
+                };
                 let port = u16::from_le_bytes([body[0], body[1]]);
                 let backlog = u16::from_le_bytes([body[2], body[3]]);
-                self.handle_listen(socket_set, owner_tid, port, backlog, rx_storage, tx_storage)
+                self.handle_listen(socket_set, owner_tid, port, backlog, buf_idx)
             }
             MSG_TCP_ACCEPT => {
                 if body.len() < 4 {
                     return encode_error();
                 }
                 let listen_handle = u32::from_le_bytes([body[0], body[1], body[2], body[3]]);
-                self.handle_accept(socket_set, listen_handle, rx_storage, tx_storage)
+                let alloc_res = {
+                    let s = match self.sockets.get(&listen_handle) {
+                        Some(s) if s.is_listener => s,
+                        _ => return encode_error(),
+                    };
+                    let state = socket_set.get_mut::<TcpSocket>(s.handle).state();
+                    let has_conn = state == TcpState::Established || s.listen_pool.iter().any(|&(h, _)| socket_set.get_mut::<TcpSocket>(h).state() == TcpState::Established);
+                    if has_conn { self.alloc_buffer() } else { None } // Only alloc if connection is ready so it won't leak
+                };
+
+                if let Some(buf_idx) = alloc_res {
+                    self.handle_accept(socket_set, listen_handle, owner_tid, buf_idx)
+                } else if self.pending_accepts.get(&listen_handle).map(|v| v.len()).unwrap_or(0) > 0 {
+                    // Note: Actually handle_accept pops pending without needing new buf_idx.
+                    // To keep it simple, we just pass 0, it's not used if pending is popped.
+                    self.handle_accept(socket_set, listen_handle, owner_tid, 0)
+                } else {
+                    encode_empty()
+                }
             }
             MSG_TCP_SEND => {
                 if body.len() < 4 {
@@ -1145,12 +1223,16 @@ impl SocketApi {
                 if body.len() < 2 {
                     return encode_error();
                 }
+                let Some(buf_idx) = self.alloc_buffer() else {
+                    warn!("SOCKET_API: Out of socket buffers (UDP_BIND)");
+                    return encode_error();
+                };
                 let port = u16::from_le_bytes([body[0], body[1]]);
                 unsafe {
-                    let (rx_meta, rx_payload) = split_packet_buffer(rx_storage);
-                    let (tx_meta, tx_payload) = split_packet_buffer(tx_storage);
+                    let (rx_meta, rx_payload) = split_packet_buffer(&mut CONN_RX[buf_idx]);
+                    let (tx_meta, tx_payload) = split_packet_buffer(&mut CONN_TX[buf_idx]);
                     self.handle_udp_bind(
-                        socket_set, owner_tid, port, rx_meta, rx_payload, tx_meta, tx_payload,
+                        socket_set, owner_tid, port, rx_meta, rx_payload, tx_meta, tx_payload, buf_idx
                     )
                 }
             }

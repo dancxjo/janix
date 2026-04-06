@@ -3,7 +3,7 @@
 /**/target
 *.iso
 *.hdd
-iso_root/
+iso_root*/
 *.log
 *.pid
 

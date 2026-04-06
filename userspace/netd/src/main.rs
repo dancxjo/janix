@@ -217,42 +217,16 @@ fn main(_arg: usize) -> ! {
     // Initialize socket API
     let mut socket_api = SocketApi::new();
 
-    // Socket buffers for incoming connections (statically allocated)
-    // TX buffers sized to handle ~30KB HTTP responses (e.g., graph.js)
-    // We need enough buffers for: multiple listener respawns + concurrent connections
-
-    // Dedicated buffers for listener sockets (used by TCP_LISTEN and respawned listeners)
-    // Listeners need minimal buffers but we need one per simultaneous listener
-    static mut LISTENER_RX_0: [u8; 4096] = [0; 4096];
-    static mut LISTENER_TX_0: [u8; 4096] = [0; 4096];
-    static mut LISTENER_RX_1: [u8; 4096] = [0; 4096];
-    static mut LISTENER_TX_1: [u8; 4096] = [0; 4096];
-    static mut LISTENER_RX_2: [u8; 4096] = [0; 4096];
-    static mut LISTENER_TX_2: [u8; 4096] = [0; 4096];
-    static mut LISTENER_RX_3: [u8; 4096] = [0; 4096];
-    static mut LISTENER_TX_3: [u8; 4096] = [0; 4096];
-
-    // Buffers for active connections (larger for HTTP responses)
-    static mut CONN_RX_0: [u8; 8192] = [0; 8192];
-    static mut CONN_TX_0: [u8; 32768] = [0; 32768];
-    static mut CONN_RX_1: [u8; 8192] = [0; 8192];
-    static mut CONN_TX_1: [u8; 32768] = [0; 32768];
-    static mut CONN_RX_2: [u8; 8192] = [0; 8192];
-    static mut CONN_TX_2: [u8; 32768] = [0; 32768];
-    static mut CONN_RX_3: [u8; 8192] = [0; 8192];
-    static mut CONN_TX_3: [u8; 32768] = [0; 32768];
-
-    let mut next_listener_buf = 0usize;
-    let mut next_conn_buf = 0usize;
+    // Sockets storage handles 64 dynamic buffers managed entirely by `SocketApi`
     let mut api_msg_buf = [0u8; 16384];
     let mut api_buffered = 0usize;
 
-    // Socket storage for smoltcp - support up to 64 sockets
+    // Socket storage for smoltcp - support up to 256 sockets
     // This needs to be large enough to handle:
     // - Multiple listener sockets (respawned on each accept)
     // - Concurrent active connections
     // - Sockets in TIME_WAIT or FIN_WAIT states waiting for cleanup
-    let mut sockets_storage: [SocketStorage; 64] = [SocketStorage::EMPTY; 64];
+    let mut sockets_storage: [SocketStorage; 256] = [SocketStorage::EMPTY; 256];
     let mut socket_set = SocketSet::new(&mut sockets_storage[..]);
 
     // Main service loop
@@ -313,78 +287,19 @@ fn main(_arg: usize) -> ! {
                                 client_response_port,
                                 caller_tid,
                                 msg_body,
-                                msg_type,
+                                msg_type: _,
                                 consumed,
                             } => {
                                 api_msgs_this_pass += 1;
 
-                                let uses_large_buf = msg_type == socket_api::MSG_TCP_LISTEN
-                                    || msg_type == socket_api::MSG_TCP_CONNECT;
-
-                                let response = if uses_large_buf {
-                                    let (rx, tx) = match next_conn_buf % 4 {
-                                        0 => (unsafe { &mut CONN_RX_0[..] }, unsafe {
-                                            &mut CONN_TX_0[..]
-                                        }),
-                                        1 => (unsafe { &mut CONN_RX_1[..] }, unsafe {
-                                            &mut CONN_TX_1[..]
-                                        }),
-                                        2 => (unsafe { &mut CONN_RX_2[..] }, unsafe {
-                                            &mut CONN_TX_2[..]
-                                        }),
-                                        _ => (unsafe { &mut CONN_RX_3[..] }, unsafe {
-                                            &mut CONN_TX_3[..]
-                                        }),
-                                    };
-                                    next_conn_buf = next_conn_buf.wrapping_add(1);
-                                    socket_api.process_message(
-                                        &mut iface,
-                                        &mut device,
-                                        &mut socket_set,
-                                        msg_body,
-                                        caller_tid,
-                                        rx,
-                                        tx,
-                                        Some(dhcp_config.dns),
-                                    )
-                                } else if msg_type == socket_api::MSG_TCP_ACCEPT {
-                                    let (rx, tx) = match next_conn_buf % 4 {
-                                        0 => (unsafe { &mut CONN_RX_0[..] }, unsafe {
-                                            &mut CONN_TX_0[..]
-                                        }),
-                                        1 => (unsafe { &mut CONN_RX_1[..] }, unsafe {
-                                            &mut CONN_TX_1[..]
-                                        }),
-                                        2 => (unsafe { &mut CONN_RX_2[..] }, unsafe {
-                                            &mut CONN_TX_2[..]
-                                        }),
-                                        _ => (unsafe { &mut CONN_RX_3[..] }, unsafe {
-                                            &mut CONN_TX_3[..]
-                                        }),
-                                    };
-                                    next_conn_buf = next_conn_buf.wrapping_add(1);
-                                    socket_api.process_message(
-                                        &mut iface,
-                                        &mut device,
-                                        &mut socket_set,
-                                        msg_body,
-                                        caller_tid,
-                                        rx,
-                                        tx,
-                                        Some(dhcp_config.dns),
-                                    )
-                                } else {
-                                    socket_api.process_message(
-                                        &mut iface,
-                                        &mut device,
-                                        &mut socket_set,
-                                        msg_body,
-                                        caller_tid,
-                                        unsafe { &mut CONN_RX_0[..] },
-                                        unsafe { &mut CONN_TX_0[..] },
-                                        Some(dhcp_config.dns),
-                                    )
-                                };
+                                let response = socket_api.process_message(
+                                    &mut iface,
+                                    &mut device,
+                                    &mut socket_set,
+                                    msg_body,
+                                    caller_tid,
+                                    Some(dhcp_config.dns),
+                                );
 
                                 // Non-blocking response send: never stall the main loop
                                 // waiting for a client's response port to drain.

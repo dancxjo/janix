@@ -20,10 +20,12 @@ pub struct IpcNicDevice {
     rx_port: PortHandle,
     /// MAC address (set after receiving from driver)
     mac: [u8; 6],
+    /// Internal RX buffer length
+    rx_buf_len: usize,
     /// Pending received frames
     rx_queue: VecDeque<([u8; 2048], usize)>,
     /// Internal RX buffer
-    rx_buf: [u8; 2048],
+    rx_buf: [u8; 16384],
     /// Current carrier status as reported by driver notifications
     link_up: bool,
 }
@@ -35,8 +37,9 @@ impl IpcNicDevice {
             tx_port,
             rx_port,
             mac,
+            rx_buf_len: 0,
             rx_queue: VecDeque::new(),
-            rx_buf: [0u8; 2048],
+            rx_buf: [0u8; 16384],
             link_up,
         }
     }
@@ -63,33 +66,50 @@ impl IpcNicDevice {
     pub fn poll_rx(&mut self) {
         // Try to receive frames from driver
         loop {
-            match port_recv(self.rx_port, &mut self.rx_buf) {
+            match port_recv(self.rx_port, &mut self.rx_buf[self.rx_buf_len..]) {
                 Ok(len) if len > 0 => {
-                    if let Some(msg) = NetDriverMsg::decode(&self.rx_buf[..len]) {
-                        match msg.msg_type {
-                            MSG_FRAME_RX if !msg.payload.is_empty() => {
-                                stem::info!(
-                                    "IpcNicDevice: RX frame from driver, {} bytes",
-                                    msg.payload.len()
-                                );
-                                // Queue the frame
-                                let mut frame = [0u8; 2048];
-                                let frame_len = msg.payload.len().min(2048);
-                                frame[..frame_len].copy_from_slice(&msg.payload[..frame_len]);
-                                self.rx_queue.push_back((frame, frame_len));
-                            }
-                            MSG_LINK_UP => {
-                                self.link_up = true;
-                            }
-                            MSG_LINK_DOWN => {
-                                self.link_up = false;
-                            }
-                            _ => {}
-                        }
-                    }
+                    self.rx_buf_len += len;
                 }
                 _ => break, // No more data
             }
+        }
+
+        let mut offset = 0;
+        while offset < self.rx_buf_len {
+            if let Some(msg) = NetDriverMsg::decode(&self.rx_buf[offset..self.rx_buf_len]) {
+                match msg.msg_type {
+                    MSG_FRAME_RX if !msg.payload.is_empty() => {
+                        stem::info!(
+                            "IpcNicDevice: RX frame from driver, {} bytes",
+                            msg.payload.len()
+                        );
+                        // Queue the frame
+                        let mut frame = [0u8; 2048];
+                        let frame_len = msg.payload.len().min(2048);
+                        frame[..frame_len].copy_from_slice(&msg.payload[..frame_len]);
+                        self.rx_queue.push_back((frame, frame_len));
+                    }
+                    MSG_LINK_UP => {
+                        self.link_up = true;
+                    }
+                    MSG_LINK_DOWN => {
+                        self.link_up = false;
+                    }
+                    _ => {}
+                }
+                offset += 4 + msg.payload.len();
+            } else {
+                // Incomplete message, wait for more data
+                break;
+            }
+        }
+
+        // Shift remaining bytes to the front
+        if offset > 0 && offset < self.rx_buf_len {
+            self.rx_buf.copy_within(offset..self.rx_buf_len, 0);
+            self.rx_buf_len -= offset;
+        } else if offset == self.rx_buf_len {
+            self.rx_buf_len = 0;
         }
     }
 

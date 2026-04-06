@@ -398,16 +398,8 @@ fn main(packed_handles: usize) -> ! {
                                             }
                                         }
                                         Key::F12 => {
-                                            if payload.mods().has_ctrl() && payload.mods().has_alt() {
-                                                info!(
-                                                    "bristle: Ctrl+Alt+F12 pressed - resetting userspace and respawning sprout..."
-                                                );
-                                                reset_userspace_and_respawn_sprout();
-                                            } else {
-                                                info!(
-                                                    "bristle: ignoring bare F12 reset request; use Ctrl+Alt+F12"
-                                                );
-                                            }
+                                            info!("bristle: F12 pressed - resetting userspace and respawning sprout...");
+                                            reset_userspace_and_respawn_sprout();
                                         }
                                         _ => {}
                                     }

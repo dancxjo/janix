@@ -150,6 +150,8 @@ pub struct FontClient {
     metrics_cache: BTreeMap<AtlasKey, FaceMetrics>,
     /// Pending glyph requests (timestamp of request)
     pending_requests: BTreeMap<GlyphKey, u64>,
+    /// At most one in-flight metrics request. Responses are not tagged.
+    pending_metrics_request: Option<(AtlasKey, u64)>,
 }
 
 impl FontClient {
@@ -161,6 +163,7 @@ impl FontClient {
             atlas_mappings: BTreeMap::new(),
             metrics_cache: BTreeMap::new(),
             pending_requests: BTreeMap::new(),
+            pending_metrics_request: None,
         }
     }
 
@@ -287,49 +290,59 @@ impl FontClient {
                 continue;
             };
 
-            if tag != FontResponseTag::EnsureGlyphsResp {
-                continue;
-            }
+            match tag {
+                FontResponseTag::EnsureGlyphsResp => {
+                    let Some(resp) = EnsureGlyphsResp::decode(&resp_buf[1..resp_len]) else {
+                        continue;
+                    };
 
-            let Some(resp) = EnsureGlyphsResp::decode(&resp_buf[1..resp_len]) else {
-                continue;
-            };
+                    // Update atlas mapping
+                    let atlas_key = AtlasKey::new(resp.req_face_id, resp.req_px_size);
+                    let mapping = self.atlas_mappings.entry(atlas_key).or_insert_with(|| {
+                        AtlasMapping::new(
+                            resp.atlas_bytespace,
+                            resp.atlas_version,
+                            resp.atlas_width,
+                            resp.atlas_height,
+                        )
+                    });
 
-            // Update atlas mapping
-            let atlas_key = AtlasKey::new(resp.req_face_id, resp.req_px_size);
-            let mapping = self.atlas_mappings.entry(atlas_key).or_insert_with(|| {
-                AtlasMapping::new(
-                    resp.atlas_bytespace,
-                    resp.atlas_version,
-                    resp.atlas_width,
-                    resp.atlas_height,
-                )
-            });
+                    // Check for version change
+                    if mapping.version != resp.atlas_version {
+                        // Unmap old atlas
+                        mapping.unmap();
+                        mapping.bytespace_id = resp.atlas_bytespace;
+                        mapping.version = resp.atlas_version;
+                        mapping.width = resp.atlas_width;
+                        mapping.height = resp.atlas_height;
 
-            // Check for version change
-            if mapping.version != resp.atlas_version {
-                // Unmap old atlas
-                mapping.unmap();
-                mapping.bytespace_id = resp.atlas_bytespace;
-                mapping.version = resp.atlas_version;
-                mapping.width = resp.atlas_width;
-                mapping.height = resp.atlas_height;
+                        // Invalidate cached glyphs for this face/size
+                        let prefix = GlyphKey::new(resp.req_face_id, resp.req_px_size, 0);
+                        self.glyph_cache
+                            .retain(|k, _| k.face_id != prefix.face_id || k.px_size != prefix.px_size);
+                    }
 
-                // Invalidate cached glyphs for this face/size
-                let prefix = GlyphKey::new(resp.req_face_id, resp.req_px_size, 0);
-                self.glyph_cache
-                    .retain(|k, _| k.face_id != prefix.face_id || k.px_size != prefix.px_size);
-            }
-
-            // Cache new placements and clear pending
-            for p in &resp.placements {
-                let key = GlyphKey::new(resp.req_face_id, resp.req_px_size, p.glyph_id);
-                let mut entry = GlyphEntry::from(p);
-                entry.atlas_bytespace = resp.atlas_bytespace;
-                entry.atlas_version = resp.atlas_version;
-                self.glyph_cache.insert(key, entry);
-                self.pending_requests.remove(&key);
-                updated = true;
+                    // Cache new placements and clear pending
+                    for p in &resp.placements {
+                        let key = GlyphKey::new(resp.req_face_id, resp.req_px_size, p.glyph_id);
+                        let mut entry = GlyphEntry::from(p);
+                        entry.atlas_bytespace = resp.atlas_bytespace;
+                        entry.atlas_version = resp.atlas_version;
+                        self.glyph_cache.insert(key, entry);
+                        self.pending_requests.remove(&key);
+                        updated = true;
+                    }
+                }
+                FontResponseTag::FaceMetrics => {
+                    let Some(metrics) = FaceMetrics::decode(&resp_buf[1..resp_len]) else {
+                        continue;
+                    };
+                    if let Some((atlas_key, _)) = self.pending_metrics_request.take() {
+                        self.metrics_cache.insert(atlas_key, metrics);
+                        updated = true;
+                    }
+                }
+                _ => {}
             }
         }
         updated
@@ -346,7 +359,17 @@ impl FontClient {
             return None;
         }
 
-        // Request metrics
+        let now = monotonic_ns();
+        if let Some((pending_key, ts)) = self.pending_metrics_request {
+            if now.saturating_sub(ts) < 500_000_000 {
+                if pending_key == key {
+                    return None;
+                }
+                return None;
+            }
+            self.pending_metrics_request = None;
+        }
+
         let req = GetFaceMetrics { face_id, px_size };
         let mut req_buf = [0u8; 32];
         let req_len = req.encode(&mut req_buf)?;
@@ -355,19 +378,8 @@ impl FontClient {
             return None;
         }
 
-        let mut resp_buf = [0u8; 64];
-        let resp_len = port_recv(self.resp_port, &mut resp_buf).ok()?;
-        if resp_len == 0 {
-            return None;
-        }
-
-        if decode_response_tag(&resp_buf)? != FontResponseTag::FaceMetrics {
-            return None;
-        }
-
-        let metrics = FaceMetrics::decode(&resp_buf[1..resp_len])?;
-        self.metrics_cache.insert(key, metrics);
-        Some(metrics)
+        self.pending_metrics_request = Some((key, now));
+        None
     }
 }
 

@@ -1,10 +1,10 @@
 # Feature: Telnet Server
 
-> Last run: 2026-04-05 19:22:36
+> Last run: 2026-04-05 19:25:00
 
 ## Scenarios
 
 | Scenario | Steps | Status | Link |
 |----------|-------|--------|------|
 | Server starts up | 2/2 | ✅ | [View Details](server-starts-up/README.md) |
-| Serve telnet connection | 2/3 | ❌ | [View Details](serve-telnet-connection/README.md) |
+| Serve telnet connection | 3/3 | ✅ | [View Details](serve-telnet-connection/README.md) |

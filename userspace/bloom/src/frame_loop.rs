@@ -2,6 +2,8 @@
 //!
 //! All timing derives from `stem::time::now()` which returns an `Instant`.
 
+use stem::syscall::PortHandle;
+use stem::syscall::port::port_len;
 use stem::time::{Duration, Instant};
 
 pub struct FrameLoop {
@@ -43,6 +45,36 @@ impl FrameLoop {
         } else {
             // We missed the target, yield to other threads
             stem::yield_now();
+        }
+    }
+
+    /// Sleep until the target frame duration elapses, but wake early if input arrives.
+    ///
+    /// This keeps the compositor responsive while idle without forcing a high fixed FPS.
+    pub fn sleep_until_input(&self, input_handle: Option<PortHandle>) {
+        const INPUT_POLL_QUANTUM: Duration = Duration::from_millis(1);
+
+        loop {
+            if let Some(handle) = input_handle {
+                if port_len(handle).map(|len| len > 0).unwrap_or(false) {
+                    return;
+                }
+            }
+
+            let now = stem::time::now();
+            let elapsed = now.saturating_sub(self.frame_start);
+            if elapsed.as_nanos() >= self.target_duration.as_nanos() {
+                stem::yield_now();
+                return;
+            }
+
+            let remaining = self.target_duration.saturating_sub(elapsed);
+            if remaining.as_nanos() <= INPUT_POLL_QUANTUM.as_nanos() {
+                stem::time::sleep(remaining);
+                return;
+            }
+
+            stem::time::sleep(INPUT_POLL_QUANTUM);
         }
     }
 

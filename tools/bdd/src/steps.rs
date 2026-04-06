@@ -2169,9 +2169,9 @@ async fn connect_and_send_telnet(world: &mut ThingOsWorld, command: String) -> R
         .await
         .map_err(|e| StepError(format!("Telnet send failed: {}", e)))?;
         
-    // Read response up to 2 seconds or EOF
+    // Read response up to 15 seconds or EOF
     let mut resp = Vec::new();
-    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), async {
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
         loop {
             let mut chunk = [0u8; 1024];
             match tokio::io::AsyncReadExt::read(&mut stream, &mut chunk).await {

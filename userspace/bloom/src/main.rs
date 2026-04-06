@@ -747,14 +747,10 @@ fn main(arg: usize) -> ! {
     let (screen_w, screen_h) = (target.width as i32, target.height as i32);
 
     // Cursor state
-    // Prefer the explicit wired Bristle handle when Sprout provides one.
-    // The topic path remains a fallback/recovery path.
-    let mut bristle_evt_handle = bristle_evt as PortHandle;
-    if bristle_evt_handle == 0 {
-        if let Some(handle) = subscribe_bristle_topic() {
-            bristle_evt_handle = handle;
-        }
-    }
+    // Prefer Bristle's broker topic over the legacy boot-wired event port. The
+    // topic path is the authoritative distribution channel and has proven more
+    // responsive than the older direct handoff.
+    let mut bristle_evt_handle = subscribe_bristle_topic().unwrap_or(bristle_evt as PortHandle);
 
     stem::info!(
         "[bloom] bristle_evt_handle = {} (legacy was {})",
@@ -951,6 +947,42 @@ fn main(arg: usize) -> ! {
             }
         }
 
+        // Handle raw input before any expensive graph/watch/paint work so cursor motion
+        // is not delayed behind compositor bookkeeping.
+        if bristle_evt_handle == 0 {
+            if let Some(handle) = subscribe_bristle_topic() {
+                bristle_evt_handle = handle;
+            }
+        }
+
+        if bristle_evt_handle != 0 {
+            prev_keys = pressed_keys.clone();
+            let poll_stats = {
+                crate::trace_span!("bloom.loop.poll_bristle");
+                poll_bristle(
+                    bristle_evt_handle,
+                    &mut cursor,
+                    &mut pressed_keys,
+                    &accel_cfg,
+                    &mut accel_state,
+                    screen_w,
+                    screen_h,
+                )
+            };
+            bristle_node = find_bristle_node().or(bristle_node);
+            sync_input_from_graph(
+                &mut cursor,
+                &mut pressed_keys,
+                bristle_node,
+                &mut graph_input,
+                poll_stats.had_pointer_event,
+                poll_stats.had_key_event,
+                screen_w,
+                screen_h,
+                loop_ctrl.frame_number(),
+            );
+        }
+
         // Poll font client for IPC responses
         if crate::font_client::poll() {
             invalidation_causes.push(SnapshotInvalidation::FontChanged);
@@ -1009,43 +1041,11 @@ fn main(arg: usize) -> ! {
             }
         }
 
-        // Cache window state BEFORE input processing to ensure hit-testing is fresh
+        // Refresh window state after input so hit-testing sees current geometry.
         let paint_res = paint_pipeline.process_updates(target.width as i32, target.height as i32);
 
-        // Input processing with window management
-        if bristle_evt_handle == 0 {
-            if let Some(handle) = subscribe_bristle_topic() {
-                bristle_evt_handle = handle;
-            }
-        }
-
+        // Input-driven window management
         if bristle_evt_handle != 0 {
-            prev_keys = pressed_keys.clone();
-            let poll_stats = {
-                crate::trace_span!("bloom.loop.poll_bristle");
-                poll_bristle(
-                    bristle_evt_handle,
-                    &mut cursor,
-                    &mut pressed_keys,
-                    &accel_cfg,
-                    &mut accel_state,
-                    screen_w,
-                    screen_h,
-                )
-            };
-            bristle_node = find_bristle_node().or(bristle_node);
-            sync_input_from_graph(
-                &mut cursor,
-                &mut pressed_keys,
-                bristle_node,
-                &mut graph_input,
-                poll_stats.had_pointer_event,
-                poll_stats.had_key_event,
-                screen_w,
-                screen_h,
-                loop_ctrl.frame_number(),
-            );
-
             let shift_down =
                 pressed_keys.contains(&Key::LeftShift) || pressed_keys.contains(&Key::RightShift);
 
@@ -1561,7 +1561,7 @@ fn main(arg: usize) -> ! {
 
         if damage.is_empty() {
             presenter.pump();
-            loop_ctrl.sleep();
+            loop_ctrl.sleep_until_input((bristle_evt_handle != 0).then_some(bristle_evt_handle));
             continue;
         }
 
@@ -1833,7 +1833,7 @@ fn main(arg: usize) -> ! {
                 first_frame_rendered = true;
             }
         }
-        loop_ctrl.sleep();
+        loop_ctrl.sleep_until_input((bristle_evt_handle != 0).then_some(bristle_evt_handle));
     }
 }
 

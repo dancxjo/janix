@@ -13,6 +13,7 @@ pub enum ShellAction {
     ShowMem,
     DumpGraph,
     RunProgram(String),
+    RunGql(String),
 }
 
 pub struct ShellSession {
@@ -73,6 +74,7 @@ impl ShellSession {
                 Some(path) => vec![ShellAction::RunProgram(normalize_program(path))],
                 None => vec![ShellAction::PrintError("usage: run <program>".to_string())],
             },
+            "match" => vec![ShellAction::RunGql(line.to_string())],
             _ => vec![ShellAction::PrintError(format!("unknown command: {}", cmd))],
         }
     }

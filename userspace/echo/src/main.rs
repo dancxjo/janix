@@ -11,7 +11,6 @@ use abi::hid::{
     BristleEventHeader, Key, KeyEventPayload, Mods, PointerButtonPayload, PointerMovePayload,
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
-use abi::schema::input::{SUBSCRIBER_FILTER, SUBSCRIBER_PORT, SVC_INPUT_SUBSCRIBER};
 use stem::info;
 use stem::syscall::{port_create, port_recv, PortHandle};
 

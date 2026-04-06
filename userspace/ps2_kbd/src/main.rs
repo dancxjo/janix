@@ -74,7 +74,7 @@ mod thigmonasty;
 
 use abi::hid::{
     BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType,
-    KeyEventPayload, Key,
+    KeyEventPayload,
 };
 use thigmonasty::{KeyboardState, KeyEdge};
 

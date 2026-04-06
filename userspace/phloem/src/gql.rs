@@ -82,17 +82,27 @@ pub enum Command {
     Schema,
 }
 
+#[derive(Debug, Clone)]
+pub struct ParseOutput {
+    pub command: Command,
+    pub explicit_limit: Option<usize>,
+}
+
 pub fn parse(input: &str) -> Result<Command, String> {
+    Ok(parse_with_metadata(input)?.command)
+}
+
+pub fn parse_with_metadata(input: &str) -> Result<ParseOutput, String> {
     let tokens = tokenize(input)?;
     let mut parser = Parser { tokens, pos: 0 };
-    let cmd = parser.parse_command()?;
+    let output = parser.parse_command()?;
     if parser.pos < parser.tokens.len() {
         return Err(format!(
             "Trailing tokens after command: {:?}",
             &parser.tokens[parser.pos..]
         ));
     }
-    Ok(cmd)
+    Ok(output)
 }
 
 #[derive(Debug, PartialEq)]
@@ -284,20 +294,29 @@ impl Parser {
         false
     }
 
-    fn parse_command(&mut self) -> Result<Command, String> {
+    fn parse_command(&mut self) -> Result<ParseOutput, String> {
         if let Some(Token::Keyword(k)) = self.peek() {
             match k.as_str() {
                 "HELP" => {
                     self.consume();
-                    Ok(Command::Help)
+                    Ok(ParseOutput {
+                        command: Command::Help,
+                        explicit_limit: None,
+                    })
                 }
                 "QUIT" | "EXIT" => {
                     self.consume();
-                    Ok(Command::Quit)
+                    Ok(ParseOutput {
+                        command: Command::Quit,
+                        explicit_limit: None,
+                    })
                 }
                 "SCHEMA" => {
                     self.consume();
-                    Ok(Command::Schema)
+                    Ok(ParseOutput {
+                        command: Command::Schema,
+                        explicit_limit: None,
+                    })
                 }
                 "MERGE" => {
                     self.consume();
@@ -312,10 +331,13 @@ impl Parser {
                             skip = *n as usize;
                         }
                     }
-                    Ok(Command::Merge {
-                        pattern,
-                        returns,
-                        skip,
+                    Ok(ParseOutput {
+                        command: Command::Merge {
+                            pattern,
+                            returns,
+                            skip,
+                        },
+                        explicit_limit: None,
                     })
                 }
                 "MATCH" => {
@@ -328,6 +350,7 @@ impl Parser {
                     }
 
                     let mut limit = 50; // Default limit reduced to optimize BFS scans
+                    let mut explicit_limit = None;
                     let mut skip = 0;
                     let mut returns = Vec::new();
                     let mut order_by = None;
@@ -337,6 +360,7 @@ impl Parser {
                         if self.expect_keyword("LIMIT") {
                             if let Some(Token::Number(n)) = self.consume() {
                                 limit = *n as usize;
+                                explicit_limit = Some(limit);
                             }
                             continue;
                         }
@@ -391,6 +415,7 @@ impl Parser {
                         if self.expect_keyword("LIMIT") {
                             if let Some(Token::Number(n)) = self.consume() {
                                 limit = *n as usize;
+                                explicit_limit = Some(limit);
                             }
                             continue;
                         }
@@ -403,13 +428,16 @@ impl Parser {
                         break;
                     }
 
-                    Ok(Command::Match {
-                        pattern,
-                        where_clause,
-                        returns,
-                        order_by,
-                        limit,
-                        skip,
+                    Ok(ParseOutput {
+                        command: Command::Match {
+                            pattern,
+                            where_clause,
+                            returns,
+                            order_by,
+                            limit,
+                            skip,
+                        },
+                        explicit_limit,
                     })
                 }
                 "SET" => {
@@ -427,10 +455,13 @@ impl Parser {
                         return Err("Expected '=' in SET".to_string());
                     }
                     let val = self.parse_value()?;
-                    Ok(Command::Set {
-                        var,
-                        key,
-                        value: val,
+                    Ok(ParseOutput {
+                        command: Command::Set {
+                            var,
+                            key,
+                            value: val,
+                        },
+                        explicit_limit: None,
                     })
                 }
                 _ => Err(format!("Unknown command: {}", k)),
@@ -839,6 +870,15 @@ mod tests {
             assert_eq!(limit, 20);
             assert_eq!(skip, 5);
         }
+    }
+
+    #[test]
+    fn test_parse_explicit_limit_metadata() {
+        let parsed = parse_with_metadata("MATCH (n) RETURN n").unwrap();
+        assert_eq!(parsed.explicit_limit, None);
+
+        let parsed = parse_with_metadata("MATCH (n) RETURN n LIMIT 25").unwrap();
+        assert_eq!(parsed.explicit_limit, Some(25));
     }
 
     #[test]

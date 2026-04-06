@@ -64,8 +64,6 @@ pub fn block_current<R: BootRuntime>() {
 }
 
 pub fn wake_task<R: BootRuntime>(id: u64) {
-    use crate::task::TaskId;
-
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
@@ -85,6 +83,12 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
     if let Some(pos) = sched.state.wait_queue.iter().position(|&wid| wid == tid) {
         sched.state.wait_queue.remove(pos);
     }
+    // Timed futex waits and sleeps park blocked tasks in the sleep queue.
+    // Scrub those entries too so an early wake cannot enqueue the task twice.
+    sched.state.sleep_queue.retain(|_, tids| {
+        tids.retain(|&sleep_tid| sleep_tid != tid);
+        !tids.is_empty()
+    });
 
     // Update state to Runnable and add to runq
     let mut was_blocked = false;

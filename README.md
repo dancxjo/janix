@@ -58,6 +58,21 @@ Firmware → Limine → Bran → Kernel → Root → Sprout → Bloom → Leaves
 
 ---
 
+## 🎮 User Interfaces
+
+Thing-OS provides three distinct ways to interact with the system graph and OS functionality:
+
+### 1. Graphical Environment (Bloom & Blossom)
+The default graphical interface is driven by **Bloom** (a GPU-accelerated compositor and window manager) and **Blossom** (a vector graphics painter). Together, they provide a modern, visually rich local environment for interacting with applications and viewing the system state.
+
+### 2. Web & REST Interface (Anther)
+**Anther** is a REST API and web-based admin console. It provides a web interface accessible from a browser on your host machine, allowing you to visualize and traverse the System Graph dynamically.
+
+### 3. Command Line & GQL (Phloem & Telnet)
+For command-line interactiveness, Thing-OS runs a **telnet server** (accessible on your host via `telnet localhost 2323`). This interactive session drops you into the **Phloem** GQL (Graph Query Language) engine environment, where you can execute queries and commands directly against the System Graph.
+
+---
+
 ## 📦 Crate Map
 
 This workspace contains **60+ crates** organized into logical layers:

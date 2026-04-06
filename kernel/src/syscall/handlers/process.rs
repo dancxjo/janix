@@ -1,7 +1,6 @@
 //! Process lifecycle and task management syscalls
 
 use super::copyin;
-use crate::sched;
 use crate::sched as scheduler;
 use crate::sched::StdioSpec;
 use crate::syscall::validate::validate_user_range;
@@ -116,6 +115,10 @@ pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
 }
 
 pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
+    if tid as u64 == unsafe { crate::sched::current_tid_current() } {
+        return Err(Errno::EINVAL);
+    }
+
     let mut spins = 0;
     loop {
         let status_opt = unsafe { crate::sched::task_status_current(tid as u64) };

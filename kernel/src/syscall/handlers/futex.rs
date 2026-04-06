@@ -15,12 +15,26 @@ use crate::syscall::validate::validate_user_range;
 type TaskId = u64;
 
 /// Key for the wait queue: (process address-space id, userspace address).
-/// For now we use the raw virtual address since all threads in a process
-/// share the same address space.
-type FutexKey = usize;
+type FutexKey = (u32, usize);
 
 /// Global futex wait-queue table.
 static FUTEX_TABLE: Mutex<BTreeMap<FutexKey, Vec<TaskId>>> = Mutex::new(BTreeMap::new());
+
+fn futex_scope_id() -> u32 {
+    if let Some(pinfo) = crate::sched::process_info_current() {
+        pinfo.lock().pid
+    } else {
+        unsafe { crate::sched::current_tid_current() as u32 }
+    }
+}
+
+fn futex_key_for_scope(scope_id: u32, uaddr: usize) -> FutexKey {
+    (scope_id, uaddr)
+}
+
+fn futex_key(uaddr: usize) -> FutexKey {
+    futex_key_for_scope(futex_scope_id(), uaddr)
+}
 
 /// `sys_futex_wait(uaddr, expected, timeout_ns)`
 ///
@@ -43,11 +57,12 @@ pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult
     }
 
     let tid = unsafe { crate::sched::current_tid_current() };
+    let key = futex_key(uaddr);
 
     // Add ourselves to the wait queue.
     {
         let mut table = FUTEX_TABLE.lock();
-        table.entry(uaddr).or_insert_with(Vec::new).push(tid);
+        table.entry(key).or_insert_with(Vec::new).push(tid);
     }
 
     if timeout_ns == 0 {
@@ -71,11 +86,11 @@ pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult
         // After waking, remove ourselves from the wait queue if still there
         // (we may have been woken by the timer, not by futex_wake).
         let mut table = FUTEX_TABLE.lock();
-        if let Some(waiters) = table.get_mut(&uaddr) {
+        if let Some(waiters) = table.get_mut(&key) {
             if let Some(pos) = waiters.iter().position(|&w| w == tid) {
                 waiters.remove(pos);
                 if waiters.is_empty() {
-                    table.remove(&uaddr);
+                    table.remove(&key);
                 }
                 // We timed out (still in queue = nobody woke us).
                 return Err(Errno::ETIMEDOUT);
@@ -93,9 +108,10 @@ pub fn sys_futex_wait(uaddr: usize, expected: u32, timeout_ns: u64) -> SysResult
 /// Returns the number of threads actually woken.
 pub fn sys_futex_wake(uaddr: usize, count: u32) -> SysResult<usize> {
     let mut woken = 0u32;
+    let key = futex_key(uaddr);
 
     let mut table = FUTEX_TABLE.lock();
-    if let Some(waiters) = table.get_mut(&uaddr) {
+    if let Some(waiters) = table.get_mut(&key) {
         while woken < count {
             if let Some(tid) = waiters.pop() {
                 unsafe {
@@ -107,9 +123,19 @@ pub fn sys_futex_wake(uaddr: usize, count: u32) -> SysResult<usize> {
             }
         }
         if waiters.is_empty() {
-            table.remove(&uaddr);
+            table.remove(&key);
         }
     }
 
     Ok(woken as usize)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn futex_key_includes_scope() {
+        assert_eq!(futex_key_for_scope(7, 0x1000), (7, 0x1000));
+    }
 }

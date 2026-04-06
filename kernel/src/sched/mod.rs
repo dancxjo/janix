@@ -1021,6 +1021,11 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
         } // Remove from all run queues
         sched.state.remove_task_from_runq(tid);
 
+        // Remove from wait queue
+        if let Some(pos) = sched.state.wait_queue.iter().position(|&wid| wid == tid) {
+            sched.state.wait_queue.remove(pos);
+        }
+
         // Remove from sleep queue
         sched.state.sleep_queue.retain(|_, tids| {
             tids.retain(|&t| t != tid);
@@ -1773,5 +1778,181 @@ mod tests {
                 .any(|&id| id == 5001),
             "Woken task must be in the run queue"
         );
+    }
+
+    #[test]
+    fn test_wake_task_removes_sleep_queue_entry() {
+        unsafe { crate::init_runtime(&MockRuntime) };
+        init_test_env();
+        crate::task::registry::init::<MockRuntime>();
+        static RUNTIME: MockRuntime = MockRuntime;
+
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(6000);
+
+        let current_task = crate::task::Task {
+            id: 6000,
+            state: TaskState::Running,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        let sleeping_task = crate::task::Task {
+            id: 6001,
+            state: TaskState::Blocked,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(current_task));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(sleeping_task));
+        sched.state.sleep_queue.entry(10).or_default().push(6001);
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = Some((&mut sched as *mut types::Scheduler<MockRuntime>) as usize);
+        drop(sched_lock);
+
+        crate::sched::blocking::wake_task::<MockRuntime>(6001);
+
+        let task = crate::task::registry::get_task::<MockRuntime>(6001).unwrap();
+        assert_eq!(task.state, TaskState::Runnable);
+        assert!(sched.state.sleep_queue.is_empty());
+        assert!(sched.state.per_cpu[0].runq[TaskPriority::Normal as usize]
+            .iter()
+            .any(|&id| id == 6001));
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = None;
+    }
+
+    #[test]
+    fn test_kill_by_tid_removes_wait_queue_entry() {
+        unsafe { crate::init_runtime(&MockRuntime) };
+        init_test_env();
+        crate::task::registry::init::<MockRuntime>();
+        static RUNTIME: MockRuntime = MockRuntime;
+
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(7000);
+
+        let current_task = crate::task::Task {
+            id: 7000,
+            state: TaskState::Running,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        let blocked_task = crate::task::Task {
+            id: 7001,
+            state: TaskState::Blocked,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(current_task));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(blocked_task));
+        sched.state.wait_queue.push_back(7001);
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = Some((&mut sched as *mut types::Scheduler<MockRuntime>) as usize);
+        drop(sched_lock);
+
+        assert!(kill_by_tid::<MockRuntime>(7001));
+        assert!(sched.state.wait_queue.is_empty());
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(7001)
+                .unwrap()
+                .state,
+            TaskState::Dead
+        );
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = None;
     }
 }

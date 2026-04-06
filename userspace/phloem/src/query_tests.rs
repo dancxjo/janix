@@ -650,7 +650,11 @@ mod tests {
         let cmd3 = parse("MATCH (n:Kind {key: 123, state: 42}) RETURN n").unwrap();
         let res3 = ex.execute(cmd3);
         assert!(res3.success, "MATCH failed: {}", res3.message);
-        assert_eq!(res3.rows.len(), 1, "Should find exactly 1 node with the updated property");
+        assert_eq!(
+            res3.rows.len(),
+            1,
+            "Should find exactly 1 node with the updated property"
+        );
     }
 
     // ===== 8) Pagination and Ordering =====
@@ -796,34 +800,50 @@ mod tests {
         assert_eq!(res.rows.len(), 1);
     }
 
-
     #[test]
     fn test_merge_edge_preserves_node_properties() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
 
         // MERGE an edge with newly created nodes that have properties
-        let cmd = parse("MERGE (a:Person {age: 30})-[:KNOWS]->(b:Person {age: 25}) RETURN a, b").unwrap();
+        let cmd =
+            parse("MERGE (a:Person {age: 30})-[:KNOWS]->(b:Person {age: 25}) RETURN a, b").unwrap();
         let res = ex.execute(cmd);
         assert!(res.success, "MERGE failed");
         assert_eq!(res.rows.len(), 1);
 
-        let id_a = if let crate::ResultValue::Node(id) = res.rows[0][0] { id } else { panic!("No id a") };
-        let id_b = if let crate::ResultValue::Node(id) = res.rows[0][1] { id } else { panic!("No id b") };
+        let id_a = if let crate::ResultValue::Node(id) = res.rows[0][0] {
+            id
+        } else {
+            panic!("No id a")
+        };
+        let id_b = if let crate::ResultValue::Node(id) = res.rows[0][1] {
+            id
+        } else {
+            panic!("No id b")
+        };
 
         // Test that they can be found by their properties via MATCH
         let cmd_check_a = parse("MATCH (n:Person {age: 30}) RETURN n").unwrap();
         let res_check_a = ex.execute(cmd_check_a);
         assert!(res_check_a.success);
         assert_eq!(res_check_a.rows.len(), 1);
-        let found_a = if let crate::ResultValue::Node(id) = res_check_a.rows[0][0] { id } else { panic!() };
+        let found_a = if let crate::ResultValue::Node(id) = res_check_a.rows[0][0] {
+            id
+        } else {
+            panic!()
+        };
         assert_eq!(id_a, found_a);
 
         let cmd_check_b = parse("MATCH (n:Person {age: 25}) RETURN n").unwrap();
         let res_check_b = ex.execute(cmd_check_b);
         assert!(res_check_b.success);
         assert_eq!(res_check_b.rows.len(), 1);
-        let found_b = if let crate::ResultValue::Node(id) = res_check_b.rows[0][0] { id } else { panic!() };
+        let found_b = if let crate::ResultValue::Node(id) = res_check_b.rows[0][0] {
+            id
+        } else {
+            panic!()
+        };
         assert_eq!(id_b, found_b);
     }
 
@@ -856,23 +876,35 @@ mod tests {
         let cmd1 = parse("MATCH (n:proc.Process {name: 12345}) WHERE id(n) = 1 RETURN n").unwrap();
         let res1 = ex.execute(cmd1);
         assert!(res1.success);
-        assert_eq!(res1.rows.len(), 1, "Should match when ID, kind, and properties all match");
+        assert_eq!(
+            res1.rows.len(),
+            1,
+            "Should match when ID, kind, and properties all match"
+        );
 
         // 2. Correct kind, WRONG property, correct ID
         let cmd2 = parse("MATCH (n:proc.Process {name: 99999}) WHERE id(n) = 1 RETURN n").unwrap();
         let res2 = ex.execute(cmd2);
         assert!(res2.success);
-        assert_eq!(res2.rows.len(), 0, "Should not match if properties differ, even if internal ID matches");
+        assert_eq!(
+            res2.rows.len(),
+            0,
+            "Should not match if properties differ, even if internal ID matches"
+        );
 
         // 3. WRONG kind, correct property, correct ID
         let cmd3 = parse("MATCH (n:fs.File {name: 12345}) WHERE id(n) = 1 RETURN n").unwrap();
         let res3 = ex.execute(cmd3);
         assert!(res3.success);
-        assert_eq!(res3.rows.len(), 0, "Should not match if kind differs, even if internal ID matches");
+        assert_eq!(
+            res3.rows.len(),
+            0,
+            "Should not match if kind differs, even if internal ID matches"
+        );
     }
     #[test]
 
-      fn test_edge_order_by_desc() {
+    fn test_edge_order_by_desc() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
 
@@ -892,8 +924,8 @@ mod tests {
         }
 
         assert_eq!(ids, vec![3, 3, 1, 1]);
-  }
-  #[test]
+    }
+    #[test]
     fn test_multiple_return_expressions() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
@@ -980,7 +1012,11 @@ mod tests {
         let res = ex.execute(cmd);
 
         assert!(res.success);
-        assert_eq!(res.rows.len(), 1, "Expected exactly 1 match for logical AND of multiple properties");
+        assert_eq!(
+            res.rows.len(),
+            1,
+            "Expected exactly 1 match for logical AND of multiple properties"
+        );
         if let crate::ResultValue::Node(id) = res.rows[0][0] {
             assert_eq!(id, 7);
         } else {
@@ -992,8 +1028,12 @@ mod tests {
         let cmd_empty = parse("MATCH (t:proc.Thread {state: 200, tid: 9999}) RETURN t").unwrap();
         let res_empty = ex.execute(cmd_empty);
         assert!(res_empty.success);
-        assert_eq!(res_empty.rows.len(), 0, "Expected 0 matches because of conflicting property");
-          }
+        assert_eq!(
+            res_empty.rows.len(),
+            0,
+            "Expected 0 matches because of conflicting property"
+        );
+    }
 
     #[test]
 
@@ -1009,8 +1049,15 @@ mod tests {
 
         let cmd_set_fail = parse("SET n.priority = 10").unwrap();
         let res_set_fail = ex.execute(cmd_set_fail);
-        assert!(!res_set_fail.success, "SET should fail because 'n' is not bound by MATCH");
-        assert!(res_set_fail.message.contains("not bound"), "Expected not bound message, got: {}", res_set_fail.message);
+        assert!(
+            !res_set_fail.success,
+            "SET should fail because 'n' is not bound by MATCH"
+        );
+        assert!(
+            res_set_fail.message.contains("not bound"),
+            "Expected not bound message, got: {}",
+            res_set_fail.message
+        );
 
         // 2. MERGE binds variables across statements
         let cmd_merge = parse("MERGE (m:proc.Process {name: 12345}) RETURN m").unwrap();
@@ -1028,13 +1075,21 @@ mod tests {
         // 3. SET on a bound variable should succeed
         let cmd_set_success = parse("SET m.priority = 10").unwrap();
         let res_set_success = ex.execute(cmd_set_success);
-        assert!(res_set_success.success, "SET should succeed because 'm' was bound by MERGE. Message: {}", res_set_success.message);
+        assert!(
+            res_set_success.success,
+            "SET should succeed because 'm' was bound by MERGE. Message: {}",
+            res_set_success.message
+        );
 
         // 4. Verify the property was set correctly
         let cmd_verify = parse("MATCH (x:proc.Process {priority: 10}) RETURN x").unwrap();
         let res_verify = ex.execute(cmd_verify);
         assert!(res_verify.success, "MATCH for verification failed");
-        assert_eq!(res_verify.rows.len(), 1, "Expected to find 1 node with priority 10");
+        assert_eq!(
+            res_verify.rows.len(),
+            1,
+            "Expected to find 1 node with priority 10"
+        );
 
         if let crate::ResultValue::Node(id) = res_verify.rows[0][0] {
             assert_eq!(id, 1, "Expected the modified node to be node 1");
@@ -1045,7 +1100,7 @@ mod tests {
 
     #[test]
 
-      fn test_merge_multiple_properties() {
+    fn test_merge_multiple_properties() {
         let g = setup_mock();
         let mut ex = GraphExecutor::with_graph(&g);
 
@@ -1053,7 +1108,11 @@ mod tests {
         let cmd = parse("MERGE (n:Kind {key1: 10, key2: 20, key3: 30}) RETURN n").unwrap();
         let res = ex.execute(cmd);
 
-        assert!(res.success, "MERGE with multiple properties failed: {}", res.message);
+        assert!(
+            res.success,
+            "MERGE with multiple properties failed: {}",
+            res.message
+        );
         assert_eq!(res.rows.len(), 1);
 
         let id = if let crate::ResultValue::Node(id) = res.rows[0][0] {
@@ -1067,14 +1126,21 @@ mod tests {
         let res_check = ex.execute(cmd_check);
 
         assert!(res_check.success);
-        assert_eq!(res_check.rows.len(), 1, "Should find the node with all properties");
+        assert_eq!(
+            res_check.rows.len(),
+            1,
+            "Should find the node with all properties"
+        );
 
         if let crate::ResultValue::Node(id_check) = res_check.rows[0][0] {
-            assert_eq!(id, id_check, "The found node should be the same as the merged one");
+            assert_eq!(
+                id, id_check,
+                "The found node should be the same as the merged one"
+            );
         } else {
             panic!("Expected Node ID");
         }
-  }
+    }
     #[test]
     fn test_match_multiple_custom_properties() {
         let g = setup_mock();
@@ -1088,7 +1154,11 @@ mod tests {
         let cmd = parse("MATCH (n {prop1: 100, prop2: 200}) RETURN n").unwrap();
         let res = ex.execute(cmd);
         assert!(res.success);
-        assert_eq!(res.rows.len(), 1, "Should find node with both properties matching");
+        assert_eq!(
+            res.rows.len(),
+            1,
+            "Should find node with both properties matching"
+        );
         if let crate::ResultValue::Node(id) = res.rows[0][0] {
             assert_eq!(id, 1);
         } else {
@@ -1099,18 +1169,30 @@ mod tests {
         let cmd2 = parse("MATCH (n {prop1: 100, prop2: 999}) RETURN n").unwrap();
         let res2 = ex.execute(cmd2);
         assert!(res2.success);
-        assert_eq!(res2.rows.len(), 0, "Should return empty result if one property conflicts");
+        assert_eq!(
+            res2.rows.len(),
+            0,
+            "Should return empty result if one property conflicts"
+        );
 
         // 3. Match with the other property conflicting
         let cmd3 = parse("MATCH (n {prop1: 999, prop2: 200}) RETURN n").unwrap();
         let res3 = ex.execute(cmd3);
         assert!(res3.success);
-        assert_eq!(res3.rows.len(), 0, "Should return empty result if the other property conflicts");
+        assert_eq!(
+            res3.rows.len(),
+            0,
+            "Should return empty result if the other property conflicts"
+        );
 
         // 4. Match with missing property
         let cmd4 = parse("MATCH (n {prop1: 100, prop3: 300}) RETURN n").unwrap();
         let res4 = ex.execute(cmd4);
         assert!(res4.success);
-        assert_eq!(res4.rows.len(), 0, "Should return empty result if property is missing");
+        assert_eq!(
+            res4.rows.len(),
+            0,
+            "Should return empty result if property is missing"
+        );
     }
 }

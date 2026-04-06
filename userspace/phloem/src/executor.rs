@@ -643,7 +643,9 @@ impl<G: Graph> GraphExecutor<G> {
                 }
             }
         } else {
-            // BFS Discovery from well-known roots and exhaustive kinds
+            // Fast path: walk outward from well-known roots first so small
+            // unqualified MATCH queries can return a page without an exhaustive
+            // kind scan across the whole graph.
             let mut queue = VecDeque::new();
             let mut seen = BTreeSet::new();
 
@@ -654,7 +656,20 @@ impl<G: Graph> GraphExecutor<G> {
                 seen.insert(root_id);
             }
 
-            // Exhaustive kinds to seed from
+            if self.collect_bfs_matches(
+                &mut queue,
+                &mut seen,
+                &mut matched_ids,
+                props,
+                limit_total,
+                where_clause,
+                var_name,
+            ) {
+                return matched_ids;
+            }
+
+            // If the root-connected walk did not produce enough rows, seed BFS
+            // from a broader set of well-known kinds.
             let fallback_kinds = [
                 "Kind",
                 "fs.File",
@@ -706,45 +721,65 @@ impl<G: Graph> GraphExecutor<G> {
                         }
                     }
                 }
-            }
-            stem::info!("phloem: BFS seeded with {} nodes", queue.len());
-
-            while let Some(current_id) = queue.pop_front() {
-                self.graph.yield_now();
-                if matched_ids.len() >= limit_total {
-                    break;
-                }
-
-                if self.matches_props(current_id, props) {
-                    let matches_where = if let Some(expr) = where_clause {
-                        if let Some(var) = var_name {
-                            self.evaluate_expression(expr, current_id, var)
-                        } else {
-                            true
-                        }
-                    } else {
-                        true
-                    };
-
-                    if matches_where {
-                        if !matched_ids.contains(&current_id) {
-                            matched_ids.push(current_id);
-                        }
-                    }
-                }
-
-                // Discover neighbors
-                if let Ok(edges) = self.get_outbound_edges(current_id) {
-                    for (_rel_id, dst_id) in edges {
-                        if !seen.contains(&dst_id) {
-                            seen.insert(dst_id);
-                            queue.push_back(dst_id);
-                        }
-                    }
+                if self.collect_bfs_matches(
+                    &mut queue,
+                    &mut seen,
+                    &mut matched_ids,
+                    props,
+                    limit_total,
+                    where_clause,
+                    var_name,
+                ) {
+                    return matched_ids;
                 }
             }
         }
         matched_ids
+    }
+
+    fn collect_bfs_matches(
+        &self,
+        queue: &mut VecDeque<u64>,
+        seen: &mut BTreeSet<u64>,
+        matched_ids: &mut Vec<u64>,
+        props: &[(String, Value)],
+        limit_total: usize,
+        where_clause: Option<&crate::gql::Expression>,
+        var_name: Option<&str>,
+    ) -> bool {
+        while let Some(current_id) = queue.pop_front() {
+            self.graph.yield_now();
+
+            if self.matches_props(current_id, props) {
+                let matches_where = if let Some(expr) = where_clause {
+                    if let Some(var) = var_name {
+                        self.evaluate_expression(expr, current_id, var)
+                    } else {
+                        true
+                    }
+                } else {
+                    true
+                };
+
+                if matches_where && !matched_ids.contains(&current_id) {
+                    matched_ids.push(current_id);
+                    if matched_ids.len() >= limit_total {
+                        return true;
+                    }
+                }
+            }
+
+            if let Ok(edges) = self.get_outbound_edges(current_id) {
+                for (_rel_id, dst_id) in edges {
+                    if !seen.contains(&dst_id) {
+                        seen.insert(dst_id);
+                        queue.push_back(dst_id);
+                    }
+                }
+            }
+        }
+
+        false
     }
 
     fn execute_set(&mut self, var: String, key: String, value: Value) -> ExecutionResult {
@@ -1099,6 +1134,101 @@ mod tests {
     use super::*;
     use crate::gql::{Expression, Value};
     use alloc::boxed::Box;
+    use core::cell::{Cell, RefCell};
+
+    struct RootFirstGraph {
+        find_calls: Cell<usize>,
+        nodes: RefCell<BTreeSet<u64>>,
+    }
+
+    impl RootFirstGraph {
+        fn new(nodes: &[u64]) -> Self {
+            let mut set = BTreeSet::new();
+            for &id in nodes {
+                set.insert(id);
+            }
+            Self {
+                find_calls: Cell::new(0),
+                nodes: RefCell::new(set),
+            }
+        }
+    }
+
+    impl Graph for &RootFirstGraph {
+        fn get_kind(
+            &self,
+            id: ThingId,
+        ) -> Result<stem::thing::ThingKind, stem::errors::Errno> {
+            if self.nodes.borrow().contains(&id.to_u64_lossy()) {
+                Ok(stem::thing::ThingKind(1))
+            } else {
+                Err(stem::errors::Errno::ENOENT)
+            }
+        }
+
+        fn find(&self, _kind: &str, _out: &mut [ThingId]) -> Result<usize, stem::errors::Errno> {
+            self.find_calls.set(self.find_calls.get() + 1);
+            Ok(0)
+        }
+
+        fn intern(
+            &self,
+            _s: &str,
+        ) -> Result<stem::abi::symbols::SymbolId, stem::errors::Errno> {
+            Ok(1)
+        }
+
+        fn prop_set(
+            &self,
+            _id: ThingId,
+            _key: &str,
+            _value: u64,
+        ) -> Result<(), stem::errors::Errno> {
+            Ok(())
+        }
+
+        fn create_node(&self, _kind: &str) -> Result<ThingId, stem::errors::Errno> {
+            Err(stem::errors::Errno::ENOSYS)
+        }
+
+        fn link(
+            &self,
+            _src: ThingId,
+            _rel: &str,
+            _dst: ThingId,
+        ) -> Result<(), stem::errors::Errno> {
+            Ok(())
+        }
+
+        fn get_edges(
+            &self,
+            _id: ThingId,
+            _out: &mut [stem::abi::types::Edge],
+        ) -> Result<usize, stem::errors::Errno> {
+            Ok(0)
+        }
+
+        fn describe_symbol(
+            &self,
+            _id: stem::abi::symbols::SymbolId,
+            out: &mut [u8],
+        ) -> Result<usize, stem::errors::Errno> {
+            let bytes = b"Node";
+            let len = core::cmp::min(out.len(), bytes.len());
+            out[..len].copy_from_slice(&bytes[..len]);
+            Ok(len)
+        }
+
+        fn prop_get(
+            &self,
+            _id: ThingId,
+            _key: stem::abi::symbols::SymbolId,
+        ) -> Result<u64, stem::errors::Errno> {
+            Err(stem::errors::Errno::ENOENT)
+        }
+
+        fn yield_now(&self) {}
+    }
 
     #[test]
     fn test_executor_params() {
@@ -1179,5 +1309,15 @@ mod tests {
         assert!(!ex.evaluate_expression(&expr, 999, "n"));
         // evaluate for node 100 with var "m", variable mismatch -> None -> false
         assert!(!ex.evaluate_expression(&expr, 100, "m"));
+    }
+
+    #[test]
+    fn test_match_all_prefers_root_bfs_before_fallback_find() {
+        let graph = RootFirstGraph::new(&[1, 2, 3]);
+        let mut ex = GraphExecutor::with_graph(&graph);
+        let res = ex.execute(crate::gql::parse("MATCH (n) RETURN n LIMIT 2").unwrap());
+        assert!(res.success);
+        assert_eq!(res.rows.len(), 2);
+        assert_eq!(graph.find_calls.get(), 0);
     }
 }

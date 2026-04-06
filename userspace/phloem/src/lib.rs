@@ -70,7 +70,9 @@ impl ExecutionResult {
 }
 
 pub use executor::GraphExecutor;
-pub use gql::{parse, Command, NodePattern, Pattern, ReturnExpression, Value};
+pub use gql::{
+    parse, parse_with_metadata, Command, NodePattern, ParseOutput, Pattern, ReturnExpression, Value,
+};
 
 #[cfg(test)]
 mod tests {

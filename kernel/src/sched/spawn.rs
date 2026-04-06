@@ -1,8 +1,7 @@
 //! Task and thread spawning functions.
 
 use crate::task::{
-    Affinity, ProcessInfo, StartupArg, StdioBinding, StdioPipeMode, Task, TaskId, TaskPriority,
-    TaskState,
+    Affinity, ProcessInfo, StartupArg, StdioBinding, StdioPipeMode, Task, TaskId, TaskState,
 };
 use crate::{BootRuntime, BootTasking, UserEntry};
 use alloc::collections::BTreeMap;
@@ -11,6 +10,8 @@ use alloc::vec::Vec;
 use super::types::{Scheduler, DEFAULT_TIMESLICE};
 use super::SCHEDULER;
 use core::sync::atomic::{AtomicUsize, Ordering};
+
+const KERNEL_STACK_SIZE: usize = 65536;
 
 // Global round-robin index for CPU selection
 pub(crate) static RR_IDX: AtomicUsize = AtomicUsize::new(0);
@@ -43,7 +44,6 @@ impl<R: BootRuntime> Scheduler<R> {
                 } else {
                     0
                 }
-
             }
         }
     }
@@ -58,12 +58,12 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let layout = alloc::alloc::Layout::from_size_align(65536, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             panic!("Failed to allocate stack for task {}", id);
         }
-        let stack_top = (stack_base as u64) + 65536;
+        let stack_top = (stack_base as u64) + KERNEL_STACK_SIZE as u64;
 
         let ctx = rt
             .tasking()
@@ -87,7 +87,7 @@ impl<R: BootRuntime> Scheduler<R> {
             state: TaskState::Runnable,
             priority,
             kstack_base: stack_base,
-            kstack_size: 16384,
+            kstack_size: KERNEL_STACK_SIZE,
             kstack_top: stack_top,
             ctx,
             aspace: rt.tasking().active_address_space(),
@@ -156,12 +156,12 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let layout = alloc::alloc::Layout::from_size_align(65536, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             panic!("Failed to allocate kernel stack for user thread {}", id);
         }
-        let kstack_top = (stack_base as u64) + 65536;
+        let kstack_top = (stack_base as u64) + KERNEL_STACK_SIZE as u64;
 
         let aspace = rt.tasking().active_address_space();
 
@@ -219,7 +219,7 @@ impl<R: BootRuntime> Scheduler<R> {
             state: TaskState::Runnable,
             priority,
             kstack_base: stack_base,
-            kstack_size: 16384,
+            kstack_size: KERNEL_STACK_SIZE,
             kstack_top,
             ctx,
             aspace,
@@ -285,12 +285,12 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
 
         self.next_id += 1;
-        let layout = alloc::alloc::Layout::from_size_align(65536, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 16).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             return None;
         }
-        let stack_top = (stack_base as u64) + 65536;
+        let stack_top = (stack_base as u64) + KERNEL_STACK_SIZE as u64;
 
         let user_entry = alloc::boxed::Box::new(entry);
         let entry_ptr = alloc::boxed::Box::into_raw(user_entry) as usize;
@@ -322,7 +322,7 @@ impl<R: BootRuntime> Scheduler<R> {
             state: TaskState::Runnable,
             priority,
             kstack_base: stack_base,
-            kstack_size: 16384,
+            kstack_size: KERNEL_STACK_SIZE,
             kstack_top: stack_top,
             ctx,
             aspace,

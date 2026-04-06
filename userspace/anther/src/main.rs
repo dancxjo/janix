@@ -765,20 +765,14 @@ fn run_server_mode(port: u16) -> ! {
         port, listen_handle
     );
 
-    // Global slot for passing conn_handle to the worker trampoline.
-    // Protected by sequential spawning: we store before spawn, worker reads
-    // before we can spawn again (single accept loop on the main thread).
-    static CONN_HANDLE_SLOT: core::sync::atomic::AtomicU32 = core::sync::atomic::AtomicU32::new(0);
-
-    extern "C" fn worker_trampoline() -> ! {
-        let conn = CONN_HANDLE_SLOT.load(core::sync::atomic::Ordering::Acquire);
-        handle_connection(conn);
+    extern "C" fn worker_trampoline(conn: usize) -> ! {
+        handle_connection(conn as u32);
         // Exit thread
         stem::syscall::exit(0);
     }
 
     // Main server loop — accept connections and spawn a thread per connection.
-    // Uses stem::thread::spawn because std::thread::spawn hangs on ThingOS
+    // Uses stem::thread::spawn_with_arg to safely hand-off single-word startup arguments
     loop {
         if let Some(accept) = net.tcp_accept(listen_handle) {
             let conn = accept.conn_handle;
@@ -786,8 +780,7 @@ fn run_server_mode(port: u16) -> ! {
                 "anther: Accepted connection, spawning thread for conn_handle={}",
                 conn
             );
-            CONN_HANDLE_SLOT.store(conn, core::sync::atomic::Ordering::Release);
-            match stem::thread::spawn(worker_trampoline) {
+            match stem::thread::spawn_with_arg(worker_trampoline, conn as usize) {
                 Ok(tid) => {
                     info!(
                         "anther: Thread spawned TID={} for conn_handle={}",

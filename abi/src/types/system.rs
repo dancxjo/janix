@@ -71,6 +71,7 @@ pub struct StackInfo {
 pub struct SpawnThreadReq {
     pub entry: usize,
     pub sp: usize,
+    pub arg: usize,
     pub stack: StackInfo,
 }
 

@@ -64,7 +64,7 @@ pub fn sys_spawn_thread(req_ptr: usize, _unused: usize) -> SysResult<usize> {
         crate::sched::spawn_user_thread_current(
             req.entry,
             req.sp,
-            StartupArg::None,
+            StartupArg::Raw(req.arg),
             req.stack,
             current_p,
         )

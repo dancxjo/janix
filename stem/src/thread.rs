@@ -9,11 +9,16 @@ pub fn spawn(entry: extern "C" fn() -> !) -> Result<ThreadId, Errno> {
 }
 
 pub fn spawn_on(stack: Stack, entry: extern "C" fn() -> !) -> Result<ThreadId, Errno> {
-    crate::syscall::spawn_thread(entry, &stack).map(|id| id as ThreadId)
+    crate::syscall::spawn_thread(entry as usize, 0, &stack).map(|id| id as ThreadId)
 }
 
 pub fn spawn_with_stack(stack: Stack, entry: extern "C" fn() -> !) -> Result<ThreadId, Errno> {
     spawn_on(stack, entry)
+}
+
+pub fn spawn_with_arg(entry: extern "C" fn(usize) -> !, arg: usize) -> Result<ThreadId, Errno> {
+    let stack = Stack::alloc_growing_stack(StackSpec::default())?;
+    crate::syscall::spawn_thread(entry as usize, arg, &stack).map(|id| id as ThreadId)
 }
 
 pub fn yield_now() {

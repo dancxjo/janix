@@ -279,12 +279,14 @@ pub fn alloc_stack(pages: usize) -> Result<usize, Errno> {
 }
 
 pub fn spawn_thread(
-    entry: extern "C" fn() -> !,
+    entry: usize,
+    arg: usize,
     stack: &crate::stack::Stack,
 ) -> Result<u64, Errno> {
     let req = abi::types::SpawnThreadReq {
-        entry: entry as usize,
+        entry,
         sp: stack.sp as usize,
+        arg,
         stack: stack.info,
     };
     let ret = unsafe {

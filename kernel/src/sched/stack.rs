@@ -144,7 +144,7 @@ pub unsafe fn handle_stack_fault<R: BootRuntime>(addr: u64) -> StackFaultResult 
             return StackFaultResult::NotStack;
         }
     };
-    let task = match crate::task::registry::get_task_mut::<R>(current_id) {
+    let mut task = match crate::task::registry::get_task_mut::<R>(current_id) {
         Some(t) => t,
         None => {
             rt.irq_restore(_irq);

@@ -17,6 +17,7 @@ pub fn block_current<R: BootRuntime>() {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
+    let mut blocked_id = None;
     let switch_params = {
         let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
@@ -32,16 +33,14 @@ pub fn block_current<R: BootRuntime>() {
         };
 
         // Move current from Running to Blocked
-        if let Some(task) = crate::task::registry::get_task_mut::<R>(current_id) {
+        if let Some(mut task) = crate::task::registry::get_task_mut::<R>(current_id) {
             if task.wake_pending {
                 task.wake_pending = false;
                 rt.irq_restore(_irq);
                 return;
             }
             task.state = TaskState::Blocked;
-
-            // Queue graph state update
-            crate::sched::ring::push_task_state::<R>(current_id, "blocked");
+            blocked_id = Some(current_id);
         }
 
         // Add to wait queue
@@ -51,6 +50,12 @@ pub fn block_current<R: BootRuntime>() {
         sched.prepare_schedule()
     };
 
+    if let Some(id) = blocked_id {
+        // Queue graph state update outside the lock to prevent deadlock
+        // when push_task_state wakes the drain task.
+        crate::sched::ring::push_task_state::<R>(id, "blocked");
+    }
+
     if let Some(switch) = switch_params {
         rt.tasking().activate_address_space(switch.to_aspace);
 
@@ -58,6 +63,7 @@ pub fn block_current<R: BootRuntime>() {
             rt.tasking()
                 .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
+            
     }
 
     rt.irq_restore(_irq);
@@ -67,89 +73,75 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
-    let lock = SCHEDULER.lock();
-    let ptr = match *lock {
-        Some(p) => p,
-        None => {
-            rt.irq_restore(_irq);
-            return;
-        }
-    };
-    let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
-
-    let tid = id;
-
-    // Remove from wait queue if present
-    if let Some(pos) = sched.state.wait_queue.iter().position(|&wid| wid == tid) {
-        sched.state.wait_queue.remove(pos);
-    }
-    // Timed futex waits and sleeps park blocked tasks in the sleep queue.
-    // Scrub those entries too so an early wake cannot enqueue the task twice.
-    sched.state.sleep_queue.retain(|_, tids| {
-        tids.retain(|&sleep_tid| sleep_tid != tid);
-        !tids.is_empty()
-    });
-
-    // Update state to Runnable and add to runq
+    let mut safe_cpu = 0;
+    let mut is_remote = false;
     let mut was_blocked = false;
-    if let Some(task) = crate::task::registry::get_task_mut::<R>(tid) {
+    let mut task_priority = 0;
+
+    // 1. Lock REGISTRY to update task state and extract scheduling requirements
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(id) {
         if task.state == TaskState::Blocked {
             task.state = TaskState::Runnable;
             task.enqueued_at_tick = super::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed);
-            let priority = task.priority;
-            let affinity = task.affinity;
-
-            let target_cpu = match affinity {
+            task_priority = task.priority as usize;
+            
+            let target_cpu = match task.affinity {
                 crate::task::Affinity::Pinned(cpu) => cpu,
-                crate::task::Affinity::Any => {
-                    // Try to wake to the last CPU it ran on to avoid immediate migration
-                    task.last_cpu
-                        .unwrap_or_else(|| super::current_cpu_index::<R>())
-                }
+                crate::task::Affinity::Any => task.last_cpu.unwrap_or_else(|| super::current_cpu_index::<R>())
             };
+            safe_cpu = target_cpu;
+            was_blocked = true;
+        } else {
+            task.wake_pending = true;
+        }
+    }
 
-            let safe_cpu = if target_cpu < sched.state.per_cpu.len() {
-                target_cpu
-            } else {
-                0
-            };
-            sched.state.enqueue_task(safe_cpu, priority as usize, tid);
+    // 2. Lock SCHEDULER to update queues if the task was blocked
+    if was_blocked {
+        let lock = SCHEDULER.lock();
+        if let Some(ptr) = *lock {
+            let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
 
-            // If the woken task has higher priority than the currently running
-            // task on the target CPU, request a reschedule so we preempt
-            // mid-slice rather than waiting for timeslice expiry.
+            if let Some(pos) = sched.state.wait_queue.iter().position(|&wid| wid == id) {
+                sched.state.wait_queue.remove(pos);
+            }
+            sched.state.sleep_queue.retain(|_, tids| {
+                tids.retain(|&sleep_tid| sleep_tid != id);
+                !tids.is_empty()
+            });
+
+            if safe_cpu >= sched.state.per_cpu.len() {
+                safe_cpu = 0;
+            }
+
+            sched.state.enqueue_task(safe_cpu, task_priority, id);
+
             let current_prio = sched.state.per_cpu[safe_cpu]
                 .current
                 .and_then(|cid| crate::task::registry::get_task::<R>(cid))
                 .map(|t| t.priority as usize)
                 .unwrap_or(0);
 
-            if (priority as usize) > current_prio {
+            if task_priority > current_prio {
                 if safe_cpu == super::current_cpu_index::<R>() {
-                    sched.state.need_resched = true;
+                    sched.state.per_cpu[safe_cpu].need_resched = true;
+                } else {
+                    super::GLOBAL_NEED_RESCHED.store(true, core::sync::atomic::Ordering::Release);
                 }
             }
 
-            // If the target CPU is not the current one, send an IPI to wake it up
-            if safe_cpu != super::current_cpu_index::<R>() {
-                rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
-            }
-
-            was_blocked = true;
+            is_remote = safe_cpu != super::current_cpu_index::<R>();
         }
     }
 
+    // 3. Queue graph state update OUTSIDE of all locks
     if was_blocked {
-        // Queue graph state update
-        crate::sched::ring::push_task_state::<R>(tid, "runnable");
-    } else {
-        // If the task wasn't blocked, it means it was already runnable or running.
-        // In this case, we just set wake_pending to true so it doesn't block
-        // if it tries to block immediately after this wake.
-        // This handles cases where a task is woken multiple times or woken while running.
-        if let Some(task) = crate::task::registry::get_task_mut::<R>(tid) {
-            task.wake_pending = true;
-        }
+        crate::sched::ring::push_task_state::<R>(id, "runnable");
+    }
+
+    // 4. Send IPI OUTSIDE of all locks
+    if is_remote {
+        rt.send_ipi(safe_cpu, 0x30); // Use IRQ_RESCHED_VECTOR
     }
 
     rt.irq_restore(_irq);

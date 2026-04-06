@@ -191,14 +191,16 @@ fn handle_msg<R: BootRuntime>(
             kind,
             creator_tid,
             owner_thing_id,
-        } => root_handlers::handle_create_node(
-            graph,
-            journal,
-            interner,
-            kind,
-            creator_tid,
-            owner_thing_id,
-        ),
+        } => {
+            root_handlers::handle_create_node(
+                graph,
+                journal,
+                interner,
+                kind,
+                creator_tid,
+                owner_thing_id,
+            )
+        },
         RootOp::Link { src, rel, dst } => {
             root_handlers::handle_link(graph, interner, src, rel, dst)
         }

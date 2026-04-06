@@ -496,7 +496,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         .get(cpu_idx)
         .and_then(|pc| pc.current)
         .and_then(|ctid| crate::task::registry::get_task::<R>(ctid))
-        .and_then(|t| t.process_info.as_ref())
+        .and_then(|t| t.process_info.clone())
         .map(|pi| pi.lock().pid)
         .unwrap_or(0);
 
@@ -511,7 +511,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
     }));
 
     // Store name and process_info on the task struct
-    if let Some(task) = crate::task::registry::get_task_mut::<R>(id) {
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(id) {
         let bytes = module.name.as_bytes();
         let len = bytes.len().min(32);
         task.name[..len].copy_from_slice(&bytes[..len]);
@@ -540,7 +540,7 @@ pub enum StdioSpec {
 fn inherited_stdio_or_console<R: BootRuntime>() -> [StdioBinding; 3] {
     let tid = crate::runtime::<R>().current_tid();
     crate::task::registry::get_task::<R>(tid)
-        .and_then(|task| task.process_info.as_ref())
+        .and_then(|task| task.process_info.clone())
         .map(|pi| pi.lock().stdio)
         .unwrap_or([StdioBinding::Console; 3])
 }
@@ -659,7 +659,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         .get(cpu_idx)
         .and_then(|pc| pc.current)
         .and_then(|ctid| crate::task::registry::get_task::<R>(ctid))
-        .and_then(|t| t.process_info.as_ref())
+        .and_then(|t| t.process_info.clone())
         .map(|pi| pi.lock().pid)
         .unwrap_or(0);
 
@@ -690,7 +690,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
     }));
 
     // Store name and process_info on the task struct
-    if let Some(task) = crate::task::registry::get_task_mut::<R>(id) {
+    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(id) {
         let bytes = module.name.as_bytes();
         let len = bytes.len().min(32);
         task.name[..len].copy_from_slice(&bytes[..len]);

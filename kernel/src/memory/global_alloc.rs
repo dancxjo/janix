@@ -89,11 +89,16 @@ unsafe impl GlobalAlloc for TracingAllocator {
             );
         }
 
-        unsafe { INNER_ALLOCATOR.alloc(layout) }
+        let irq = crate::irq::irq_disable_erased();
+        let ptr = unsafe { INNER_ALLOCATOR.alloc(layout) };
+        crate::irq::irq_restore_erased(irq);
+        ptr
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        let irq = crate::irq::irq_disable_erased();
         unsafe { INNER_ALLOCATOR.dealloc(ptr, layout) }
+        crate::irq::irq_restore_erased(irq);
     }
 }
 

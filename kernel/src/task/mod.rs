@@ -268,7 +268,7 @@ fn bootstrap_cpu<R: BootRuntime>() {
                     );
 
                     // Mark the idle task as running
-                    if let Some(task) = crate::task::registry::get_task_mut::<R>(idle_id) {
+                    if let Some(mut task) = crate::task::registry::get_task_mut::<R>(idle_id) {
                         task.state = TaskState::Running;
                     }
                 } else {

@@ -50,6 +50,7 @@ pub struct PerCpu {
     pub idle_task: Option<TaskId>,
     pub current: Option<TaskId>,
     pub last_switch: u64,
+    pub need_resched: bool,
 }
 
 impl PerCpu {
@@ -65,6 +66,7 @@ impl PerCpu {
             idle_task: None,
             current: None,
             last_switch: 0,
+            need_resched: false,
         }
     }
 }
@@ -75,7 +77,6 @@ pub struct SchedState {
     pub sleep_queue: BTreeMap<u64, Vec<TaskId>>,
     pub wait_queue: VecDeque<TaskId>,
     pub online_cpu_count: usize,
-    pub need_resched: bool,
 }
 
 impl SchedState {
@@ -86,7 +87,6 @@ impl SchedState {
             sleep_queue: BTreeMap::new(),
             wait_queue: VecDeque::with_capacity(1024),
             online_cpu_count: 1,
-            need_resched: false,
         }
     }
 

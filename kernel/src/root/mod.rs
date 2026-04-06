@@ -276,11 +276,10 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
                 INBOX_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
                 return reply;
             }
-            // For critical ops, evict oldest to make room
-            // (This prevents blocking on full queue while still limiting growth)
-            while q.len() >= MAX_INBOX_SIZE {
-                q.pop_front();
-            }
+            // For critical ops, return EAGAIN to quickly fail the caller rather than spinning/deadlocking
+            reply.status.store(::abi::errors::Errno::EAGAIN as i32, Ordering::Release);
+            reply.done.store(1, Ordering::Release);
+            return reply;
         }
 
         q.push_back(msg);
@@ -306,13 +305,11 @@ pub fn enqueue_no_reply(op: RootOp) {
 
     if let Some(q) = ROOT_INBOX.lock().as_mut() {
         if q.len() >= MAX_INBOX_SIZE {
+            // under pressure, drop new messages if there's no way to communicate EAGAIN
             if is_log_event {
                 INBOX_DROP_COUNT.fetch_add(1, Ordering::Relaxed);
-                return;
             }
-            while q.len() >= MAX_INBOX_SIZE {
-                q.pop_front();
-            }
+            return;
         }
 
         q.push_back(msg);

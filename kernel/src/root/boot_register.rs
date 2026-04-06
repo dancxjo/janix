@@ -20,22 +20,23 @@ pub struct BootInfo<'a> {
 
 macro_rules! wait_reply_spin {
     ($reply:expr) => {{
-        let mut spins = 0;
+        crate::kinfo!("ROOT_DIAG: inside wait_reply_spin! about to loop");
+        let mut yields = 0u64;
         loop {
             let done = $reply.done.load(core::sync::atomic::Ordering::Acquire);
             if done != 0 {
                 break;
             }
-            spins += 1;
-            if spins < 100_000 {
-                core::hint::spin_loop();
-            } else {
-                unsafe {
-                    crate::sched::yield_now_current();
-                }
-                spins = 0;
+            yields += 1;
+            if yields % 100 == 0 {
+                crate::kinfo!("ROOT_DIAG: wait_reply_spin() still waiting! yields={}", yields);
+            }
+            // Yield if waiting for another CPU to process async ops
+            unsafe {
+                crate::sched::yield_now_current();
             }
         }
+        crate::kinfo!("ROOT_DIAG: wait_reply_spin() DONE");
     }};
 }
 
@@ -48,7 +49,7 @@ pub struct BootInventory {
 pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> BootInventory {
     crate::kinfo!("ROOT: boot registration begin (Census Phase 1 v0.2)");
 
-    let create = |kind: &str| -> u64 {
+    let create = |kind: &str| -> u64 { crate::kinfo!("ROOT_DIAG: create({})", kind);
         let reply = enqueue(RootOp::CreateNode {
             kind: SymbolShell::Str(alloc::string::String::from(kind)),
             creator_tid: 0,       // Boot process, no creator
@@ -58,8 +59,8 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
         reply.value.load(core::sync::atomic::Ordering::Relaxed)
     };
 
-    let set = |id: u64, key: &str, val: u64| {
-        crate::root::enqueue(RootOp::LogEvent {
+    let set = |id: u64, key: &str, val: u64| { crate::kinfo!("ROOT_DIAG: set({}, {}) START LogEvent", id, key);
+        let log_event_reply = crate::root::enqueue(RootOp::LogEvent {
             level: 3,
             event: SymbolShell::Str(alloc::string::String::from("boot.trace")),
             message: alloc::string::String::from("set(...)"),
@@ -74,16 +75,18 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
             fields: alloc::vec::Vec::new(),
             about: alloc::vec::Vec::new(),
         });
-        crate::ktrace!("ROOT_TRACE: set({}, {})", id, key);
+        crate::kinfo!("ROOT_DIAG: set({}, {}) END LogEvent", id, key);
         let reply = enqueue(RootOp::PropSet {
             id,
             key: SymbolShell::Str(alloc::string::String::from(key)),
             value: val,
         });
+        crate::kinfo!("ROOT_DIAG: set({}, {}) END PropSet enqueue", id, key);
         wait_reply_spin!(reply);
+        crate::kinfo!("ROOT_DIAG: set({}, {}) RETURN", id, key);
     };
 
-    let link = |src: u64, rel: &str, dst: u64| {
+    let link = |src: u64, rel: &str, dst: u64| { crate::kinfo!("ROOT_DIAG: link({}, {}, {})", src, rel, dst);
         crate::ktrace!("ROOT_TRACE: link({}, {}, {})", src, rel, dst);
         let reply = enqueue(RootOp::Link {
             src,
@@ -93,7 +96,7 @@ pub fn register_all<R: crate::BootRuntime>(runtime: &R, info: &BootInfo) -> Boot
         wait_reply_spin!(reply);
     };
 
-    let intern = |s: &str| -> u64 {
+    let intern = |s: &str| -> u64 { crate::kinfo!("ROOT_DIAG: intern({})", s);
         let reply = enqueue(RootOp::Intern {
             name: alloc::string::String::from(s),
         });

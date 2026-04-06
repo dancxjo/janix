@@ -45,27 +45,24 @@ pub fn yield_now<R: BootRuntime>() -> bool {
     } else {
         999
     };
-    if diag_n < 20 {
-        /*
-        crate::kdebug!(
-            "DIAG yield_now: cpu={} switch={} has_work={}",
+    if diag_n < 50 {
+        crate::kinfo!(
+            "DIAG yield_now: cpu={} has_work={}",
             crate::sched::current_cpu_index::<R>(),
-            yield_occurred,
             has_work
         );
-        */
     }
 
     if let Some(switch) = switch_params {
-        if diag_n < 20 {
-            crate::kdebug!(
+        if diag_n < 50 {
+            crate::kinfo!(
                 "DIAG ctx_switch: cpu={} from={} to={}",
-                cpu_idx,
+                crate::sched::current_cpu_index::<R>(),
                 switch.from_tid,
                 switch.to_tid
             );
         }
-
+        
         rt.tasking().activate_address_space(switch.to_aspace);
 
         unsafe {
@@ -125,7 +122,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
             .or_default()
             .push(current_id);
 
-        if let Some(task) = crate::task::registry::get_task_mut::<R>(current_id) {
+        if let Some(mut task) = crate::task::registry::get_task_mut::<R>(current_id) {
             task.state = crate::task::TaskState::Blocked;
         }
 
@@ -184,9 +181,7 @@ pub fn sleep_until<R: BootRuntime>(deadline_ticks: u64) {
 }
 
 pub fn sleep_ms<R: BootRuntime>(ms: u64) {
-    let rt = crate::runtime::<R>();
-    let freq = rt.mono_freq_hz();
-    let ticks = (ms * freq) / 1000;
-    let deadline = rt.mono_ticks() + ticks;
-    sleep_until::<R>(deadline);
+    // 1 tick is 10ms (100Hz timer)
+    let ticks = core::cmp::max(1, ms / 10);
+    sleep_ticks::<R>(ticks);
 }

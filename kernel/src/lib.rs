@@ -555,7 +555,23 @@ impl FrameAllocatorHook for GlobalAllocHook {
     }
 }
 
+fn _irq_disable_wrapper<R: BootRuntime>() -> IrqState {
+    runtime::<R>().irq_disable()
+}
+fn _irq_restore_wrapper<R: BootRuntime>(state: IrqState) {
+    runtime::<R>().irq_restore(state);
+}
+
 pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
+    crate::irq::IRQ_DISABLE_HOOK.store(
+        _irq_disable_wrapper::<R> as *mut (),
+        core::sync::atomic::Ordering::SeqCst,
+    );
+    crate::irq::IRQ_RESTORE_HOOK.store(
+        _irq_restore_wrapper::<R> as *mut (),
+        core::sync::atomic::Ordering::SeqCst,
+    );
+
     init_runtime(runtime);
     unsafe { crate::logging::init(runtime) };
 

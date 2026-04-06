@@ -53,16 +53,83 @@ pub fn init<R: BootRuntime>() {
     *REGISTRY.lock() = Some(Box::into_raw(registry) as usize);
 }
 
-pub fn get_registry<'a, R: BootRuntime>() -> &'a mut TaskRegistry<R> {
-    let lock = REGISTRY.lock();
-    let ptr = lock.expect("TaskRegistry not initialized");
-    unsafe { &mut *(ptr as *mut TaskRegistry<R>) }
+pub struct RegistryGuard<R: BootRuntime> {
+    guard: Option<spin::MutexGuard<'static, Option<usize>>>,
+    irq_state: crate::IrqState,
+    _marker: core::marker::PhantomData<R>,
 }
 
-pub fn get_task<'a, R: BootRuntime>(id: u64) -> Option<&'a Task<R>> {
-    get_registry::<R>().get(id)
+impl<R: BootRuntime> Drop for RegistryGuard<R> {
+    fn drop(&mut self) {
+        self.guard.take(); // Drop the lock before restoring interrupts
+        unsafe {
+            crate::irq::irq_restore_erased(self.irq_state);
+        }
+    }
 }
 
-pub fn get_task_mut<'a, R: BootRuntime>(id: u64) -> Option<&'a mut Task<R>> {
-    get_registry::<R>().get_mut(id)
+impl<R: BootRuntime> core::ops::Deref for RegistryGuard<R> {
+    type Target = TaskRegistry<R>;
+    fn deref(&self) -> &Self::Target {
+        let ptr = self.guard.as_ref().unwrap().expect("TaskRegistry not initialized");
+        unsafe { &*(ptr as *const TaskRegistry<R>) }
+    }
+}
+
+impl<R: BootRuntime> core::ops::DerefMut for RegistryGuard<R> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        let ptr = self.guard.as_mut().unwrap().expect("TaskRegistry not initialized");
+        unsafe { &mut *(ptr as *mut TaskRegistry<R>) }
+    }
+}
+
+pub fn get_registry<R: BootRuntime>() -> RegistryGuard<R> {
+    let irq_state = unsafe { crate::irq::irq_disable_erased() };
+    RegistryGuard {
+        guard: Some(REGISTRY.lock()),
+        irq_state,
+        _marker: core::marker::PhantomData,
+    }
+}
+
+pub struct TaskRef<R: BootRuntime> {
+    guard: RegistryGuard<R>,
+    idx: usize,
+}
+
+impl<R: BootRuntime> core::ops::Deref for TaskRef<R> {
+    type Target = Task<R>;
+    fn deref(&self) -> &Self::Target {
+        &self.guard.tasks[self.idx]
+    }
+}
+
+pub struct TaskMut<R: BootRuntime> {
+    guard: RegistryGuard<R>,
+    idx: usize,
+}
+
+impl<R: BootRuntime> core::ops::Deref for TaskMut<R> {
+    type Target = Task<R>;
+    fn deref(&self) -> &Self::Target {
+        &self.guard.tasks[self.idx]
+    }
+}
+
+impl<R: BootRuntime> core::ops::DerefMut for TaskMut<R> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.guard.tasks[self.idx]
+    }
+}
+
+pub fn get_task<R: BootRuntime>(id: u64) -> Option<TaskRef<R>> {
+    let guard = get_registry::<R>();
+    let idx = guard.tasks.binary_search_by_key(&id, |t| t.id).ok()?;
+    Some(TaskRef { guard, idx })
+}
+
+pub fn get_task_mut<R: BootRuntime>(id: u64) -> Option<TaskMut<R>> {
+    let guard = get_registry::<R>();
+    let idx = guard.tasks.binary_search_by_key(&id, |t| t.id).ok()?;
+    Some(TaskMut { guard, idx })
 }

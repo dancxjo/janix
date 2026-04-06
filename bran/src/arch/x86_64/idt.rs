@@ -564,7 +564,7 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
     }
 
     // IRQ_TIMER_VECTOR or IRQ_RESCHED_VECTOR is our preemption heartbeat
-    if resolved == IRQ_TIMER_VECTOR || resolved == IRQ_RESCHED_VECTOR {
+    if resolved == IRQ_TIMER_VECTOR {
         kernel::sched::on_tick::<crate::arch::CurrentRuntime>();
         // DISABLED: Bulb theme disabled for faster boot
         // let now_ticks: u64;
@@ -575,6 +575,8 @@ pub extern "C" fn rust_irq_handler(vector: u64) {
         //     now_ticks = ((high as u64) << 32) | (low as u64);
         // }
         // crate::theme::try_tick(now_ticks);
+    } else if resolved == IRQ_RESCHED_VECTOR {
+        kernel::sched::on_resched_ipi::<crate::arch::CurrentRuntime>();
     } else if resolved == IRQ_TLB_SHOOTDOWN_VECTOR {
         // Full TLB flush on local CPU (including Global pages)
         crate::arch::x86_64::paging::tlb_flush_all();

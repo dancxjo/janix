@@ -97,7 +97,7 @@ impl NetVfsState {
     /// Push a newline-terminated link-state event string.
     pub fn push_event(&mut self, event: &str) {
         let mut ev = Vec::from(event.as_bytes());
-        if !ev.ends_with(b"\n") {
+        if ev.last() != Some(&b'\n') {
             ev.push(b'\n');
         }
         self.events_queue.push_back(ev);

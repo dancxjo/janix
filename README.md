@@ -4,9 +4,9 @@
 
 <img width="1920" height="1080" alt="Screenshot" src="https://github.com/user-attachments/assets/e6e879ea-389a-4757-86dd-85c2cdb6190c" />
 
-Thing-OS is an experimental, Rust-based microkernel operating system built around a single organizing principle: **everything is a file**. Hardware drivers, network stacks, window managers, and system services all expose their state and behavior as a mounted filesystem. If a service has structure, it mounts itself. If it has behavior, it exposes it through files.
+Thing-OS is an experimental, Rust-based microkernel unix-y operating system. Hardware drivers, network stacks, window managers, and system services all expose their state and behavior as a mounted filesystem. If a service has structure, it mounts itself. If it has behavior, it exposes it through files.
 
-The current architecture is called **janix** — *Just Another \*NIX*. That name is earned, not chosen. The original vision was more ambitious: centralize the entire system state in a live, queryable **graph database** baked into the kernel. Every process, device, socket, and window would be a typed node; service discovery would be graph traversal; configuration would be property mutation. It was elegant on paper.
+The current architecture is called **janix** — *Just Another \*NIX*. The original vision was more ambitious: centralize the entire system state in a live, queryable **graph database** baked into the kernel. Every process, device, socket, and window would be a typed node; service discovery would be graph traversal; configuration would be property mutation. It was elegant on paper.
 
 It was also a bad architecture. The graph became a bottleneck, a coupling point, and a source of subtle ordering bugs. Services that should have been independent ended up entangled through shared graph state. The "unified model" made everything harder to test, harder to reason about, and harder to compose.
 

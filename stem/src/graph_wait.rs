@@ -2,6 +2,7 @@ use crate::errors::Errno;
 use crate::root_watch::{watch_drain, DrainStats};
 use crate::syscall;
 use crate::thing::sys;
+use crate::thing::symbol::IntoSymbolRef;
 use crate::thing::ThingId;
 use abi::root::RootWatchFilter;
 use abi::symbols::SymbolId;
@@ -80,6 +81,30 @@ impl GraphWatch {
     }
 }
 
+/// A lightweight, first-class handle representing an in-flight graph mutation.
+///
+/// `GraphOpHandle` integrates with [`WaitSet`](abi::wait) so callers can
+/// submit mutations and await completion alongside other event sources (ports,
+/// IRQs, timers) without blocking the calling task for the full duration.
+///
+/// # Usage patterns
+///
+/// ```ignore
+/// // Option A: submit and block until done
+/// let op = GraphOpHandle::prop_set(node, "status", 1)?;
+/// let result = op.await_completion()?;
+///
+/// // Option B: integrate with wait_many / WaitSet
+/// let op = GraphOpHandle::link(src, "child", dst)?;
+/// let specs = [op.wait_spec(42)];
+/// let mut results = [WaitResult::default()];
+/// stem::syscall::wait_many(&specs, &mut results, None)?;
+/// // op is still owned; call await_completion() to consume the result
+///
+/// // Option C: fire-and-forget (let the mutation complete in the background)
+/// let op = GraphOpHandle::create_node("thing:sensor")?;
+/// op.detach();
+/// ```
 #[derive(Debug)]
 pub struct GraphOpHandle {
     id: u64,
@@ -94,13 +119,34 @@ pub enum GraphOpStatus {
 }
 
 impl GraphOpHandle {
-    pub fn prop_set<S: crate::thing::symbol::IntoSymbolRef>(
+    pub fn prop_set<S: IntoSymbolRef>(
         node: ThingId,
         key: S,
         value: u64,
     ) -> Result<Self, Errno> {
         Ok(Self {
             id: sys::prop_set_async(node, key, value)?,
+            owned: true,
+        })
+    }
+
+    /// Submit an asynchronous graph link mutation.
+    ///
+    /// Returns a handle that can be awaited, polled, or detached.
+    pub fn link<S: IntoSymbolRef>(src: ThingId, rel: S, dst: ThingId) -> Result<Self, Errno> {
+        Ok(Self {
+            id: sys::link_async(src, rel, dst)?,
+            owned: true,
+        })
+    }
+
+    /// Submit an asynchronous graph node creation.
+    ///
+    /// Returns a handle that can be awaited, polled, or detached.
+    /// On completion, [`await_completion`](Self::await_completion) returns the new node's ID.
+    pub fn create_node<S: IntoSymbolRef>(kind: S) -> Result<Self, Errno> {
+        Ok(Self {
+            id: sys::create_node_async(kind)?,
             owned: true,
         })
     }
@@ -127,16 +173,45 @@ impl GraphOpHandle {
         }
     }
 
-    pub fn take_result(mut self) -> Result<u64, Errno> {
+    /// Block until the operation completes and return its result value.
+    ///
+    /// For [`create_node`](Self::create_node) handles, the return value is the
+    /// new node's raw ID. Consumes the handle.
+    pub fn await_completion(mut self) -> Result<u64, Errno> {
         self.owned = false;
         sys::async_wait(self.id)
     }
 
-    pub fn cancel(mut self) {
+    /// Block until the operation completes and return its result value.
+    ///
+    /// Alias for [`await_completion`](Self::await_completion).
+    /// Retained for backward compatibility; prefer `await_completion()` in new code.
+    pub fn take_result(self) -> Result<u64, Errno> {
+        self.await_completion()
+    }
+
+    /// Release this handle without cancelling the underlying operation.
+    ///
+    /// The mutation continues to execute in the background. Use this when
+    /// submitting fire-and-forget work that does not require a completion
+    /// notification. Errors from the operation are silently discarded.
+    pub fn detach(mut self) {
         if self.owned {
             sys::async_drop(self.id);
             self.owned = false;
         }
+    }
+
+    /// Release this handle.
+    ///
+    /// **Note**: in the current kernel implementation, dropping the handle via
+    /// `cancel()` does **not** abort an already-queued operation — the root
+    /// service will still execute it. This releases the caller's interest in
+    /// the result. Prefer [`detach`](Self::detach) for explicit fire-and-forget
+    /// semantics; `cancel()` is retained for backward compatibility.
+    #[deprecated(note = "Use detach() for explicit fire-and-forget semantics")]
+    pub fn cancel(self) {
+        self.detach();
     }
 }
 
@@ -146,6 +221,69 @@ impl Drop for GraphOpHandle {
             sys::async_drop(self.id);
             self.owned = false;
         }
+    }
+}
+
+/// A typed handle representing a completed or in-progress graph query.
+///
+/// `QueryHandle<T>` provides the same composable interface as
+/// [`GraphOpHandle`] for query results. Queries in the current kernel
+/// implementation execute synchronously and are immediately available;
+/// the handle API is designed to be forward-compatible with an async
+/// query backend.
+///
+/// # Usage patterns
+///
+/// ```ignore
+/// // Submit a query and take its result immediately
+/// let handle = QueryHandle::submit(|| find_node_by_kind("thing:sensor"));
+/// let node_id = handle.take_result()?;
+///
+/// // Integrate with wait_many (handle is already complete; fires immediately)
+/// let handle = QueryHandle::submit(|| find_node_by_kind("thing:display"));
+/// // Since queries are currently synchronous, wait_spec is a no-op placeholder.
+/// // Future async backends will make this non-trivial.
+/// ```
+pub struct QueryHandle<T> {
+    result: Result<T, Errno>,
+}
+
+impl<T> QueryHandle<T> {
+    /// Execute `f` immediately and wrap the result in a handle.
+    ///
+    /// In the current implementation queries run synchronously. The handle
+    /// API allows callers to compose query results with the same patterns
+    /// used for [`GraphOpHandle`] mutations.
+    pub fn submit<F: FnOnce() -> Result<T, Errno>>(f: F) -> Self {
+        Self { result: f() }
+    }
+
+    /// Returns `true`. Queries currently execute synchronously.
+    pub fn is_complete(&self) -> bool {
+        true
+    }
+
+    /// Consume the handle and return the query result.
+    pub fn take_result(self) -> Result<T, Errno> {
+        self.result
+    }
+
+    /// Discard the handle and its result.
+    ///
+    /// This is a no-op for queries (which execute synchronously) but exists to
+    /// provide API symmetry with [`GraphOpHandle::detach`] so callers can use
+    /// the same fire-and-forget pattern regardless of whether the work item is
+    /// a mutation or a query.
+    pub fn detach(self) {
+        // Result is discarded.
+    }
+}
+
+impl<T: core::fmt::Debug> core::fmt::Debug for QueryHandle<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.debug_struct("QueryHandle")
+            .field("result", &self.result)
+            .finish()
     }
 }
 

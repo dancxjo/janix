@@ -108,6 +108,38 @@ pub fn prop_set_async<S: IntoSymbolRef>(id: ThingId, key: S, value: u64) -> Resu
     errno(ret).map(|v| v as u64)
 }
 
+pub fn link_async<S: IntoSymbolRef>(src: ThingId, rel: S, dst: ThingId) -> Result<u64, Errno> {
+    let wire = rel.to_wire();
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_ASYNC_LINK,
+            src.to_u64_lossy() as usize,
+            &wire as *const _ as usize,
+            dst.to_u64_lossy() as usize,
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as u64)
+}
+
+pub fn create_node_async<S: IntoSymbolRef>(kind: S) -> Result<u64, Errno> {
+    let wire = kind.to_wire();
+    let ret = unsafe {
+        syscall6(
+            SYS_ROOT_ASYNC_CREATE_NODE,
+            &wire as *const _ as usize,
+            0,
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    errno(ret).map(|v| v as u64)
+}
+
 pub fn async_wait(handle: u64) -> Result<u64, Errno> {
     let ret = unsafe { syscall6(SYS_ROOT_ASYNC_WAIT, handle as usize, 0, 0, 0, 0, 0) };
     errno(ret).map(|v| v as u64)

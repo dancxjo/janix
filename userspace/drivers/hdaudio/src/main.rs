@@ -447,18 +447,26 @@ impl HdaController {
         // Stream reset sequence.
         self.write_u8(self.sd_base + SD_CTL0, 0);
         self.write_u8(self.sd_base + SD_CTL0, SD_CTL_SRST);
-        for _ in 0..50_000 {
+        let start = stem::time::monotonic_ns();
+        loop {
             if (self.read_u8(self.sd_base + SD_CTL0) & SD_CTL_SRST) != 0 {
                 break;
             }
-            stem::yield_now();
+            if stem::time::monotonic_ns().saturating_sub(start) > 500_000_000 {
+                break;
+            }
+            stem::sleep_ms(1);
         }
         self.write_u8(self.sd_base + SD_CTL0, 0);
-        for _ in 0..50_000 {
+        let start2 = stem::time::monotonic_ns();
+        loop {
             if (self.read_u8(self.sd_base + SD_CTL0) & SD_CTL_SRST) == 0 {
                 break;
             }
-            stem::yield_now();
+            if stem::time::monotonic_ns().saturating_sub(start2) > 500_000_000 {
+                break;
+            }
+            stem::sleep_ms(1);
         }
 
         self.write_u32(self.sd_base + SD_BDPL, self.bdl_phys as u32);
@@ -524,7 +532,10 @@ impl HdaController {
         self.corb_wp = next_wp;
         self.write_u16(REG_CORBWP, self.corb_wp);
 
-        for i in 0..200_000 {
+        let start = stem::time::monotonic_ns();
+        let timeout_ns = 500_000_000; // 500ms timeout
+        
+        loop {
             let wp = self.read_u16(REG_RIRBWP) & 0x00ff;
             if wp != self.rirb_rp {
                 self.rirb_rp = wp;
@@ -532,14 +543,10 @@ impl HdaController {
                 let resp = unsafe { read_volatile((self.rirb_virt as *const u32).add(idx * 2)) };
                 return Ok(resp);
             }
-            if i < 100 {
-                core::hint::spin_loop();
-            } else if i % 100 == 0 {
-                // Give hardware time to process - 1ms sleep
-                stem::sleep_ms(1);
-            } else {
-                stem::yield_now();
+            if stem::time::monotonic_ns().saturating_sub(start) > timeout_ns {
+                break;
             }
+            stem::sleep_ms(1);
         }
         warn!(
             "HDAUDIO: verb timeout cmd=0x{:08x} (cad={} nid={} verb=0x{:04x} payload=0x{:02x})",
@@ -581,19 +588,32 @@ impl HdaController {
         let mut gctl = self.read_u32(REG_GCTL);
         gctl &= !GCTL_CRST;
         self.write_u32(REG_GCTL, gctl);
-        for _ in 0..100_000 {
+        
+        let mut ok = false;
+        let start = stem::time::monotonic_ns();
+        loop {
             if (self.read_u32(REG_GCTL) & GCTL_CRST) == 0 {
+                ok = true;
                 break;
             }
-            stem::yield_now();
+            if stem::time::monotonic_ns().saturating_sub(start) > 500_000_000 {
+                break;
+            }
+            stem::sleep_ms(1);
         }
+        
         gctl |= GCTL_CRST;
         self.write_u32(REG_GCTL, gctl);
-        for _ in 0..100_000 {
+        
+        let start2 = stem::time::monotonic_ns();
+        loop {
             if (self.read_u32(REG_GCTL) & GCTL_CRST) != 0 {
                 return;
             }
-            stem::yield_now();
+            if stem::time::monotonic_ns().saturating_sub(start2) > 500_000_000 {
+                break;
+            }
+            stem::sleep_ms(1);
         }
         warn!("HDAUDIO: controller reset timeout");
     }

@@ -144,7 +144,7 @@ fn send_msg(handle: PortHandle, msg_type: u16, payload: &[u8]) {
     if let Some(len) = drvproto::encode_message(&mut buf, msg_type, payload) {
         let mut status = stem::syscall::port_send_all(handle, &buf[..len]);
         while let Err(abi::errors::Errno::EAGAIN) = status {
-            stem::yield_now();
+            let _ = stem::syscall::port::port_wait(&[handle], abi::syscall::port_wait::WRITABLE);
             status = stem::syscall::port_send_all(handle, &buf[..len]);
         }
         stem::trace!(

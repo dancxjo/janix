@@ -102,7 +102,7 @@ fn main(_arg: usize) -> ! {
         }
 
         offset += to_write;
-        stem::yield_now(); // Let lower-priority tasks run between chunks
+        stem::time::sleep_ms(1); // Let lower-priority tasks run between chunks
     }
 
     info!("Beeper: Finished.");

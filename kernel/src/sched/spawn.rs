@@ -837,29 +837,28 @@ mod tests {
     }
 
     static INIT_TESTS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
+    static MOCK_RUNTIME: MockRuntime = MockRuntime;
+
+    /// Initialise the global kernel runtime and task registry exactly once.
+    ///
+    /// All tests in this module must call this helper before touching any
+    /// global kernel state to avoid double-init panics from `OnceCell`.
+    fn ensure_global_init() {
+        if !INIT_TESTS.swap(true, core::sync::atomic::Ordering::SeqCst) {
+            crate::task::registry::init::<MockRuntime>();
+            unsafe { crate::init_runtime(&MOCK_RUNTIME) };
+        }
+    }
 
     #[test]
     fn test_spawn_arg_semantics() {
-        if !INIT_TESTS.swap(true, core::sync::atomic::Ordering::SeqCst) {
-            crate::task::registry::init::<MockRuntime>();
-        }
-        // Mock runtime pointer for the SCHEDULER lock expectation if needed?
-        // Scheduler::new() doesn't need the runtime, but Scheduler<R>::spawn needs rt.tasking()
-        // We need to set up the global RUNTIME for current() etc to work if used.
-        // But here we call sched.spawn directly.
+        ensure_global_init();
 
         let mut sched = Scheduler::<MockRuntime>::new();
         sched.next_id = 5000;
         // Manually initialize PerCpu state for the mock
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
         sched.state.per_cpu[0].current = Some(0); // Set a dummy current task ID for parent linking
-
-        // We need a way to mock crate::runtime::<MockRuntime>()
-        // In kernel/src/lib.rs:
-        // pub fn runtime<R: BootRuntime>() -> &'static R { ... RUNTIME.downcast_ref::<R>() ... }
-
-        static RUNTIME: MockRuntime = MockRuntime;
-        unsafe { crate::init_runtime(&RUNTIME) };
 
         let cases = [
             (StartupArg::None, 0),
@@ -875,6 +874,55 @@ mod tests {
             // In our MockTasking.init_kernel_context, we store arg in MockContext.0
             assert_eq!(task.ctx.0, expected);
             assert_eq!(arg.to_raw(), expected);
+        }
+    }
+
+    /// Verify that `spawn_user_thread` correctly routes the startup argument
+    /// into the task context so the entry function receives it in the first
+    /// argument register (e.g. `rdi` on x86_64).
+    ///
+    /// The `MockRuntime::init_user_context` stores `spec.arg` directly in the
+    /// mock context, so asserting `task.ctx.0 == expected` confirms the full
+    /// pipeline:
+    ///   `spawn_with_arg(entry, arg)`
+    ///   → `SYS_SPAWN_THREAD` with `SpawnThreadReq { arg }`
+    ///   → `StartupArg::Raw(arg)` passed to `spawn_user_thread`
+    ///   → `UserTaskSpec { arg }` passed to `init_user_context`
+    ///   → arg placed in first argument register on the target arch
+    #[test]
+    fn test_spawn_user_thread_arg() {
+        ensure_global_init();
+
+        let mut sched = Scheduler::<MockRuntime>::new();
+        sched.next_id = 9000;
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(0);
+
+        let stack_info = abi::types::StackInfo::default();
+
+        let cases: &[(usize, usize)] = &[
+            (0, 0),
+            (0x1234, 0x1234),
+            (0xDEAD_BEEF, 0xDEAD_BEEF),
+            (usize::MAX, usize::MAX),
+        ];
+
+        for &(raw_arg, expected) in cases {
+            let id = sched.spawn_user_thread(
+                0x4000,          // mock entry address
+                0x8000,          // mock user stack pointer
+                StartupArg::Raw(raw_arg),
+                stack_info,
+                TaskPriority::Normal,
+                Affinity::Any,
+            );
+            let task = crate::task::registry::get_task::<MockRuntime>(id).unwrap();
+
+            // MockRuntime::init_user_context stores spec.arg in MockContext.0
+            assert_eq!(
+                task.ctx.0, expected,
+                "user thread arg mismatch for raw_arg={:#x}", raw_arg
+            );
         }
     }
 

@@ -76,7 +76,7 @@ pub use port::{
     port_close, port_create, port_recv, port_send, port_send_all, port_try_recv, port_wait,
     topic_create, topic_publish, topic_subscribe, PortHandle,
 };
-pub use vfs::{vfs_close, vfs_open, vfs_read, vfs_write};
+pub use vfs::{vfs_close, vfs_mkdir, vfs_open, vfs_read, vfs_unlink, vfs_write};
 pub use wait::wait_many;
 
 pub fn yield_now() {

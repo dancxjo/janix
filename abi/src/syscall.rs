@@ -253,6 +253,10 @@ pub const SYS_DUP2: u32 = 0x227;
 /// Args: pipefd_ptr (pointer to [u32; 2] where read_fd and write_fd are written).
 /// Returns 0 on success or errno.
 pub const SYS_PIPE: u32 = 0x228;
+/// Remove a file or empty directory by path. Args: path_ptr, path_len. Returns 0 or errno.
+pub const SYS_VFS_UNLINK: u32 = 0x229;
+/// Create a directory by path. Args: path_ptr, path_len. Returns 0 or errno.
+pub const SYS_VFS_MKDIR: u32 = 0x22A;
 
 pub mod vfs_flags {
     /// Open for reading.

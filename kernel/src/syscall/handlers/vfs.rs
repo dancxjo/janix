@@ -1,18 +1,22 @@
-//! VFS syscall handlers: open, close, read, write, dup, dup2, pipe.
+//! VFS syscall handlers: open, close, read, write, stat, readdir,
+//!                       unlink, mkdir, dup, dup2, pipe.
 //!
 //! These handlers implement the janix VFS syscall interface:
 //!
-//! - [`sys_vfs_open`]  — open a path and return a file descriptor
-//! - [`sys_vfs_close`] — release a file descriptor (all fds, including 0-2)
-//! - [`sys_vfs_read`]  — read from a file descriptor into a user buffer
-//! - [`sys_vfs_write`] — write from a user buffer to a file descriptor
-//! - [`sys_dup`]       — duplicate a file descriptor to the lowest free slot
-//! - [`sys_dup2`]      — duplicate a file descriptor to a specific slot
-//! - [`sys_pipe`]      — create an anonymous pipe, allocating two fds
+//! - [`sys_vfs_open`]   — open (or create) a path, return a file descriptor
+//! - [`sys_vfs_close`]  — release a file descriptor (all fds, including 0-2)
+//! - [`sys_vfs_read`]   — read from a file descriptor into a user buffer
+//! - [`sys_vfs_write`]  — write from a user buffer to a file descriptor
+//! - [`sys_vfs_unlink`] — remove a file or empty directory
+//! - [`sys_vfs_mkdir`]  — create a directory
+//! - [`sys_dup`]        — duplicate a file descriptor to the lowest free slot
+//! - [`sys_dup2`]       — duplicate a file descriptor to a specific slot
+//! - [`sys_pipe`]       — create an anonymous pipe, allocating two fds
 
 use alloc::vec;
 
 use abi::errors::{Errno, SysResult};
+use abi::syscall::vfs_flags;
 
 use crate::syscall::validate::{copyin, copyout, validate_user_range};
 use crate::vfs::{self, OpenFlags};
@@ -31,9 +35,26 @@ pub fn sys_vfs_open(path_ptr: usize, path_len: usize, flags: usize) -> SysResult
     let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
 
     let open_flags = OpenFlags(flags as u32);
+    let want_creat = (flags as u32) & vfs_flags::O_CREAT != 0;
+    let want_trunc = (flags as u32) & vfs_flags::O_TRUNC != 0;
 
-    // Resolve path through the mount table.
-    let node = vfs::mount::lookup(path)?;
+    // Resolve path through the mount table, creating the file if O_CREAT is set.
+    let node = if want_creat {
+        // Try lookup first; fall back to create if the file doesn't exist.
+        match vfs::mount::lookup(path) {
+            Ok(existing) => {
+                if want_trunc {
+                    // Truncate the file to zero length.
+                    let _ = existing.truncate(0);
+                }
+                existing
+            }
+            Err(Errno::ENOENT) => vfs::mount::create(path)?,
+            Err(e) => return Err(e),
+        }
+    } else {
+        vfs::mount::lookup(path)?
+    };
 
     // Insert into the per-process fd table.
     let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
@@ -115,6 +136,36 @@ pub fn sys_vfs_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usi
     Ok(n)
 }
 
+// ── unlink ──────────────────────────────────────────────────────────────────
+
+/// Remove a file or empty directory at `path`.
+pub fn sys_vfs_unlink(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+    validate_user_range(path_ptr, path_len, false)?;
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    vfs::mount::unlink(path)?;
+    Ok(0)
+}
+
+// ── mkdir ───────────────────────────────────────────────────────────────────
+
+/// Create a directory at `path`.
+pub fn sys_vfs_mkdir(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+    validate_user_range(path_ptr, path_len, false)?;
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    vfs::mount::mkdir(path)?;
+    Ok(0)
+}
+
 // ── dup ─────────────────────────────────────────────────────────────────────
 
 /// Duplicate `old_fd` to the lowest available file descriptor.
@@ -175,4 +226,3 @@ pub fn sys_pipe(pipefd_ptr: usize) -> SysResult<usize> {
 
     Ok(0)
 }
-

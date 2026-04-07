@@ -1,10 +1,11 @@
 //! Userspace VFS syscall wrappers.
 //!
 //! These are thin wrappers around the raw VFS syscalls introduced in the
-//! janix de-graphing migration (Act III – Birth of the VFS).
+//! janix de-graphing migration (Act III – Birth of the VFS, Act IV – Kernel
+//! Filesystems).
 
 use abi::errors::{Errno, SysResult};
-use abi::syscall::{SYS_VFS_CLOSE, SYS_VFS_OPEN, SYS_VFS_READ, SYS_VFS_WRITE};
+use abi::syscall::{SYS_VFS_CLOSE, SYS_VFS_MKDIR, SYS_VFS_OPEN, SYS_VFS_READ, SYS_VFS_UNLINK, SYS_VFS_WRITE};
 
 use super::arch::raw_syscall6;
 
@@ -67,4 +68,40 @@ pub fn vfs_write(fd: u32, buf: &[u8]) -> SysResult<usize> {
         )
     };
     abi::errors::errno(ret)
+}
+
+/// Remove a file or empty directory at `path`.
+///
+/// Returns `Ok(())` on success, or an [`Errno`] on failure.
+pub fn vfs_unlink(path: &str) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_VFS_UNLINK,
+            path.as_ptr() as usize,
+            path.len(),
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Create a directory at `path`.
+///
+/// Returns `Ok(())` on success, or an [`Errno`] on failure.
+pub fn vfs_mkdir(path: &str) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_VFS_MKDIR,
+            path.as_ptr() as usize,
+            path.len(),
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
 }

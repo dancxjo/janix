@@ -77,6 +77,54 @@ pub fn lookup(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
     Err(Errno::ENOENT)
 }
 
+/// Create a new regular file at `path` by finding the best-matching mount.
+///
+/// `path` must be absolute.  Returns the new open node on success.
+pub fn create(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
+    if !path.starts_with('/') {
+        return Err(Errno::ENOENT);
+    }
+    let table = MOUNT_TABLE.lock();
+    for entry in table.iter() {
+        if let Some(rel) = strip_prefix(path, &entry.prefix) {
+            return entry.driver.create(rel);
+        }
+    }
+    Err(Errno::ENOENT)
+}
+
+/// Create a directory at `path` by finding the best-matching mount.
+///
+/// `path` must be absolute.
+pub fn mkdir(path: &str) -> SysResult<()> {
+    if !path.starts_with('/') {
+        return Err(Errno::ENOENT);
+    }
+    let table = MOUNT_TABLE.lock();
+    for entry in table.iter() {
+        if let Some(rel) = strip_prefix(path, &entry.prefix) {
+            return entry.driver.mkdir(rel);
+        }
+    }
+    Err(Errno::ENOENT)
+}
+
+/// Remove the file or empty directory at `path`.
+///
+/// `path` must be absolute.
+pub fn unlink(path: &str) -> SysResult<()> {
+    if !path.starts_with('/') {
+        return Err(Errno::ENOENT);
+    }
+    let table = MOUNT_TABLE.lock();
+    for entry in table.iter() {
+        if let Some(rel) = strip_prefix(path, &entry.prefix) {
+            return entry.driver.unlink(rel);
+        }
+    }
+    Err(Errno::ENOENT)
+}
+
 /// Return a human-readable text listing of all active mount points.
 ///
 /// Format:

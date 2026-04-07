@@ -15,6 +15,7 @@
 //! A component is *integrated* when it is reachable via a path, can be
 //! opened, and can be read, written, or polled. Nothing else is required.
 
+pub mod bootfs;
 pub mod devfs;
 pub mod fd_table;
 pub mod mount;
@@ -116,6 +117,15 @@ pub trait VfsNode: Send + Sync {
     /// Default: no-op.
     fn close(&self) {}
 
+    /// Truncate the file to `new_size` bytes.
+    ///
+    /// If `new_size` is less than the current size, the extra data is discarded.
+    /// If `new_size` is greater, the file is extended with zero bytes.
+    /// Default: returns `EROFS` (read-only / non-truncatable).
+    fn truncate(&self, _new_size: u64) -> SysResult<()> {
+        Err(abi::errors::Errno::EROFS)
+    }
+
     /// Read directory entries into `buf` starting at `offset`.
     /// Returns bytes written into `buf`, or 0 when exhausted.
     /// Only meaningful for directory nodes; regular files return `ENOTDIR`.
@@ -134,6 +144,28 @@ pub trait VfsNode: Send + Sync {
 pub trait VfsDriver: Send + Sync {
     /// Look up `path` within this filesystem and return an open node.
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>>;
+
+    /// Create a new regular file at `path` and return it as an open node.
+    ///
+    /// The default implementation returns `EROFS`, indicating a read-only
+    /// filesystem.  Writable filesystems (ramfs/tmpfs) should override this.
+    fn create(&self, _path: &str) -> SysResult<Arc<dyn VfsNode>> {
+        Err(abi::errors::Errno::EROFS)
+    }
+
+    /// Create a directory at `path`.
+    ///
+    /// The default implementation returns `EROFS`.
+    fn mkdir(&self, _path: &str) -> SysResult<()> {
+        Err(abi::errors::Errno::EROFS)
+    }
+
+    /// Remove the file or empty directory at `path`.
+    ///
+    /// The default implementation returns `EROFS`.
+    fn unlink(&self, _path: &str) -> SysResult<()> {
+        Err(abi::errors::Errno::EROFS)
+    }
 }
 
 // ── Namespace ────────────────────────────────────────────────────────────────
@@ -164,17 +196,23 @@ impl NamespaceRef {
 /// processes are spawned.
 ///
 /// Boot mounts:
-/// - `/`         ← root ramfs
+/// - `/`         ← boot filesystem (static read-only initramfs)
+/// - `/`         ← root tmpfs (layered over bootfs via union)
 /// - `/dev`      ← device filesystem
 /// - `/proc`     ← process info (stub)
-/// - `/run`      ← transient runtime state (ramfs)
-/// - `/services` ← populated by userland daemons (ramfs stub for now)
+/// - `/tmp`      ← temporary filesystem (writable, volatile)
+/// - `/run`      ← transient runtime state (tmpfs)
+/// - `/services` ← populated by userland daemons (tmpfs stub for now)
 pub fn init() {
     mount::init();
 
-    // Root filesystem (ramfs)
+    // Boot filesystem — minimal static tree available before anything else.
+    mount::mount("/boot", Arc::new(bootfs::BootFs::new()));
+    crate::kinfo!("vfs: mounted bootfs at /boot");
+
+    // Root filesystem (tmpfs) — writable, volatile.
     mount::mount("/", Arc::new(ramfs::RamFs::new()));
-    crate::kinfo!("vfs: mounted ramfs at /");
+    crate::kinfo!("vfs: mounted tmpfs at /");
 
     // Device filesystem
     mount::mount("/dev", Arc::new(devfs::DevFs::new()));
@@ -184,13 +222,17 @@ pub fn init() {
     mount::mount("/proc", Arc::new(procfs::ProcFs::new()));
     crate::kinfo!("vfs: mounted procfs at /proc");
 
+    // Temporary filesystem — scratch space for userland.
+    mount::mount("/tmp", Arc::new(ramfs::RamFs::new()));
+    crate::kinfo!("vfs: mounted tmpfs at /tmp");
+
     // Transient runtime state
     mount::mount("/run", Arc::new(ramfs::RamFs::new()));
-    crate::kinfo!("vfs: mounted ramfs at /run");
+    crate::kinfo!("vfs: mounted tmpfs at /run");
 
     // Service namespace — populated by userland daemons (ACT V)
     mount::mount("/services", Arc::new(ramfs::RamFs::new()));
-    crate::kinfo!("vfs: mounted ramfs at /services");
+    crate::kinfo!("vfs: mounted tmpfs at /services");
 }
 
 #[cfg(test)]

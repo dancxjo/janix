@@ -234,16 +234,25 @@ pub const SYS_GETRANDOM: u32 = 0x210;
 // ============================================================================
 /// Open a file by path. Args: path_ptr, path_len, flags. Returns fd or errno.
 pub const SYS_VFS_OPEN: u32 = 0x220;
-/// Close a VFS file descriptor. Args: fd. Returns 0 or errno.
+/// Close a file descriptor. Args: fd. Returns 0 or errno.
 pub const SYS_VFS_CLOSE: u32 = 0x221;
-/// Read from a VFS file descriptor. Args: fd, buf_ptr, buf_len. Returns bytes read or errno.
+/// Read from a file descriptor. Args: fd, buf_ptr, buf_len. Returns bytes read or errno.
 pub const SYS_VFS_READ: u32 = 0x222;
-/// Write to a VFS file descriptor. Args: fd, buf_ptr, buf_len. Returns bytes written or errno.
+/// Write to a file descriptor. Args: fd, buf_ptr, buf_len. Returns bytes written or errno.
 pub const SYS_VFS_WRITE: u32 = 0x223;
 /// Get file status. Args: path_ptr, path_len, stat_ptr. Returns 0 or errno.
 pub const SYS_VFS_STAT: u32 = 0x224;
 /// Read directory entries. Args: fd, buf_ptr, buf_len. Returns bytes read or errno.
 pub const SYS_VFS_READDIR: u32 = 0x225;
+/// Duplicate a file descriptor. Args: old_fd. Returns new_fd or errno.
+pub const SYS_DUP: u32 = 0x226;
+/// Duplicate old_fd to new_fd, closing new_fd first if open.
+/// Args: old_fd, new_fd. Returns new_fd or errno.
+pub const SYS_DUP2: u32 = 0x227;
+/// Create an anonymous pipe, allocating two fds.
+/// Args: pipefd_ptr (pointer to [u32; 2] where read_fd and write_fd are written).
+/// Returns 0 on success or errno.
+pub const SYS_PIPE: u32 = 0x228;
 
 pub mod vfs_flags {
     /// Open for reading.

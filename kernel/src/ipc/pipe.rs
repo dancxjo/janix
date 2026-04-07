@@ -265,3 +265,196 @@ fn get_pipe(id: u64) -> Result<Arc<Mutex<PipeInner>>, abi::errors::Errno> {
         .cloned()
         .ok_or(abi::errors::Errno::EBADF)
 }
+
+// ---------------------------------------------------------------------------
+// VfsNode wrappers for pipe file descriptors
+// ---------------------------------------------------------------------------
+
+/// The read end of an anonymous pipe, exposed as a [`crate::vfs::VfsNode`].
+///
+/// Created by [`create_fd_pair`] and inserted into the process fd table as
+/// stdin (fd 0) or as the read end of a pipe passed to `pipe()`.
+pub struct PipeReadNode {
+    inner: Arc<Mutex<PipeInner>>,
+    // Pipe ID kept for the global registry lookup (allows `close` to work).
+    pipe_id: u64,
+}
+
+/// The write end of an anonymous pipe, exposed as a [`crate::vfs::VfsNode`].
+pub struct PipeWriteNode {
+    inner: Arc<Mutex<PipeInner>>,
+    pipe_id: u64,
+}
+
+impl crate::vfs::VfsNode for PipeReadNode {
+    fn read(&self, _offset: u64, buf: &mut [u8]) -> abi::errors::SysResult<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        loop {
+            let tid = unsafe { crate::sched::current_tid_current() };
+            {
+                let mut inner = self.inner.lock();
+                if !inner.buf.is_empty() {
+                    let n = inner.buf.dequeue(buf);
+                    inner.write_waitq.wake_one();
+                    return Ok(n);
+                }
+                if inner.writers == 0 {
+                    return Ok(0); // EOF
+                }
+                if inner.nonblock {
+                    return Err(abi::errors::Errno::EAGAIN);
+                }
+                inner.read_waitq.push_back(tid as u64);
+            }
+            unsafe { crate::task::block_current_erased() };
+        }
+    }
+
+    fn write(&self, _offset: u64, _buf: &[u8]) -> abi::errors::SysResult<usize> {
+        Err(abi::errors::Errno::EBADF)
+    }
+
+    fn stat(&self) -> abi::errors::SysResult<crate::vfs::VfsStat> {
+        Ok(crate::vfs::VfsStat { mode: crate::vfs::VfsStat::S_IFIFO | 0o400, size: 0, ino: 0 })
+    }
+
+    fn close(&self) {
+        let should_remove;
+        {
+            let mut inner = self.inner.lock();
+            if inner.readers > 0 {
+                inner.readers -= 1;
+            }
+            if inner.readers == 0 {
+                inner.write_waitq.wake_all();
+            }
+            should_remove = inner.readers == 0 && inner.writers == 0;
+        }
+        if should_remove {
+            PIPES.lock().remove(&self.pipe_id);
+        }
+    }
+}
+
+impl crate::vfs::VfsNode for PipeWriteNode {
+    fn read(&self, _offset: u64, _buf: &mut [u8]) -> abi::errors::SysResult<usize> {
+        Err(abi::errors::Errno::EBADF)
+    }
+
+    fn write(&self, _offset: u64, buf: &[u8]) -> abi::errors::SysResult<usize> {
+        if buf.is_empty() {
+            return Ok(0);
+        }
+        loop {
+            let tid = unsafe { crate::sched::current_tid_current() };
+            {
+                let mut inner = self.inner.lock();
+                if inner.readers == 0 {
+                    return Err(abi::errors::Errno::EPIPE);
+                }
+                if !inner.buf.is_full() {
+                    let n = inner.buf.enqueue(buf);
+                    inner.read_waitq.wake_one();
+                    return Ok(n);
+                }
+                if inner.nonblock {
+                    return Err(abi::errors::Errno::EAGAIN);
+                }
+                inner.write_waitq.push_back(tid as u64);
+            }
+            unsafe { crate::task::block_current_erased() };
+        }
+    }
+
+    fn stat(&self) -> abi::errors::SysResult<crate::vfs::VfsStat> {
+        Ok(crate::vfs::VfsStat { mode: crate::vfs::VfsStat::S_IFIFO | 0o200, size: 0, ino: 0 })
+    }
+
+    fn close(&self) {
+        let should_remove;
+        {
+            let mut inner = self.inner.lock();
+            if inner.writers > 0 {
+                inner.writers -= 1;
+            }
+            if inner.writers == 0 {
+                inner.read_waitq.wake_all();
+            }
+            should_remove = inner.readers == 0 && inner.writers == 0;
+        }
+        if should_remove {
+            PIPES.lock().remove(&self.pipe_id);
+        }
+    }
+}
+
+/// Wrap an existing pipe (by `pipe_id`) as a read-end `VfsNode`.
+///
+/// The pipe's existing `readers` count (set to 1 by [`create`]) represents
+/// this node's reference.  When the node is closed via `VfsNode::close`,
+/// `readers` is decremented, matching POSIX behaviour.
+///
+/// Returns `None` if `pipe_id` is not found.
+pub fn read_node_for_id(pipe_id: u64) -> Option<alloc::sync::Arc<dyn crate::vfs::VfsNode>> {
+    let inner = get_pipe(pipe_id).ok()?;
+    Some(Arc::new(PipeReadNode { inner, pipe_id }))
+}
+
+/// Wrap an existing pipe (by `pipe_id`) as a write-end `VfsNode`.
+///
+/// See [`read_node_for_id`] for reference-count semantics.
+///
+/// Returns `None` if `pipe_id` is not found.
+pub fn write_node_for_id(pipe_id: u64) -> Option<alloc::sync::Arc<dyn crate::vfs::VfsNode>> {
+    let inner = get_pipe(pipe_id).ok()?;
+    Some(Arc::new(PipeWriteNode { inner, pipe_id }))
+}
+
+/// Create an anonymous pipe and return a `(pipe_id, read_node, write_node)` triple.
+///
+/// The pipe_id can be used by the parent process via the legacy `SYS_PIPE_*`
+/// syscalls.  The read/write nodes can be inserted into a child process fd table
+/// via [`crate::vfs::fd_table::FdTable::insert_at`].
+pub fn create_fd_pair_with_id(
+    capacity: u32,
+    nonblock: bool,
+) -> (
+    u64,
+    alloc::sync::Arc<dyn crate::vfs::VfsNode>,
+    alloc::sync::Arc<dyn crate::vfs::VfsNode>,
+) {
+    let cap = if capacity == 0 { DEFAULT_PIPE_CAPACITY } else { capacity as usize };
+    let inner = Arc::new(Mutex::new(PipeInner {
+        buf: RingBuf::new(cap),
+        readers: 1,
+        writers: 1,
+        nonblock,
+        read_waitq: WaitQueue::new(),
+        write_waitq: WaitQueue::new(),
+    }));
+    let id = NEXT_PIPE_ID.fetch_add(1, Ordering::Relaxed);
+    PIPES.lock().insert(id, inner.clone());
+    let read_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
+        Arc::new(PipeReadNode { inner: inner.clone(), pipe_id: id });
+    let write_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
+        Arc::new(PipeWriteNode { inner, pipe_id: id });
+    (id, read_node, write_node)
+}
+
+/// Create an anonymous pipe and return a `(read_node, write_node)` pair.
+///
+/// Both nodes are `Arc<dyn VfsNode>` and can be inserted directly into a
+/// process fd table via `FdTable::insert_at`.
+pub fn create_fd_pair(
+    capacity: u32,
+    nonblock: bool,
+) -> (
+    alloc::sync::Arc<dyn crate::vfs::VfsNode>,
+    alloc::sync::Arc<dyn crate::vfs::VfsNode>,
+) {
+    let (_id, r, w) = create_fd_pair_with_id(capacity, nonblock);
+    (r, w)
+}
+

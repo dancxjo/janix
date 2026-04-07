@@ -48,6 +48,7 @@ pub enum Errno {
     EPIPE = 32,
     EDOM = 33,
     ERANGE = 34,
+    ENAMETOOLONG = 36,
     ENOSYS = 38,
     EOVERFLOW = 75,
     ENOBUFS = 105,

@@ -18,6 +18,10 @@
 pub mod devfs;
 pub mod fd_table;
 pub mod mount;
+pub mod path;
+pub mod procfs;
+pub mod ramfs;
+pub mod union;
 
 use alloc::sync::Arc;
 use abi::errors::{Errno, SysResult};
@@ -132,20 +136,61 @@ pub trait VfsDriver: Send + Sync {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>>;
 }
 
+// ── Namespace ────────────────────────────────────────────────────────────────
+
+/// A reference to the VFS namespace (mount table view) for a process.
+///
+/// **Design stub for ACT III**: all processes share a single global namespace.
+/// Per-process namespace divergence (sandboxing, containers) will be
+/// introduced in a later act once the process registry is wired in.
+///
+/// Carrying this type in [`crate::task::ProcessInfo`] now makes it possible
+/// to plumb per-process namespaces without changing the call sites later.
+#[derive(Clone, Debug, Default)]
+pub struct NamespaceRef;
+
+impl NamespaceRef {
+    /// Return the shared (global) namespace reference.
+    pub fn global() -> Self {
+        Self
+    }
+}
+
 // ── Global init ──────────────────────────────────────────────────────────────
 
 /// Initialise the VFS subsystem and mount built-in filesystems.
 ///
 /// Called once from `kernel::start` during early boot, *before* any user
 /// processes are spawned.
+///
+/// Boot mounts:
+/// - `/`         ← root ramfs
+/// - `/dev`      ← device filesystem
+/// - `/proc`     ← process info (stub)
+/// - `/run`      ← transient runtime state (ramfs)
+/// - `/services` ← populated by userland daemons (ramfs stub for now)
 pub fn init() {
     mount::init();
-    // Mount devfs at /dev
-    mount::mount(
-        "/dev",
-        Arc::new(devfs::DevFs::new()),
-    );
+
+    // Root filesystem (ramfs)
+    mount::mount("/", Arc::new(ramfs::RamFs::new()));
+    crate::kinfo!("vfs: mounted ramfs at /");
+
+    // Device filesystem
+    mount::mount("/dev", Arc::new(devfs::DevFs::new()));
     crate::kinfo!("vfs: mounted devfs at /dev");
+
+    // Process info filesystem
+    mount::mount("/proc", Arc::new(procfs::ProcFs::new()));
+    crate::kinfo!("vfs: mounted procfs at /proc");
+
+    // Transient runtime state
+    mount::mount("/run", Arc::new(ramfs::RamFs::new()));
+    crate::kinfo!("vfs: mounted ramfs at /run");
+
+    // Service namespace — populated by userland daemons (ACT V)
+    mount::mount("/services", Arc::new(ramfs::RamFs::new()));
+    crate::kinfo!("vfs: mounted ramfs at /services");
 }
 
 #[cfg(test)]

@@ -182,14 +182,29 @@ pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
     let code = scause & 0x7FFFFFFFFFFFFFFF;
 
     if is_interrupt {
-        // Timer interrupt handling - tick the theme animation
-        // Use time CSR if available, or just use code as placeholder
-        let now_ticks: u64;
-        unsafe {
-            // Read cycle counter (if available) for timestamp
-            asm!("rdtime {}", out(reg) now_ticks, options(nomem, nostack));
+        // Distinguish timer (STI, code=5) from software IPI (SSI, code=1).
+        // Routing both through on_tick() would conflate tick-counting with
+        // cross-CPU reschedule requests (see issue #498 for the x86_64 fix).
+        match code {
+            5 => {
+                // S-mode Timer Interrupt (STIP): advance time accounting and
+                // trigger a reschedule if needed.
+                kernel::sched::on_tick::<crate::arch::CurrentRuntime>();
+            }
+            1 => {
+                // S-mode Software Interrupt (SSIP): used as the reschedule IPI.
+                // Must NOT increment TICK_COUNT - only trigger a reschedule.
+                kernel::sched::on_resched_ipi::<crate::arch::CurrentRuntime>();
+            }
+            _ => {
+                // Other interrupts (e.g. external, SEIP=9): no scheduler action.
+                kernel::kprintln!(
+                    "Unhandled riscv64 interrupt: scause={:#x} code={:#x}",
+                    scause,
+                    code
+                );
+            }
         }
-        crate::theme::tick(now_ticks);
     } else {
         match code {
             8 => {

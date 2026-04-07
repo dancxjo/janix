@@ -884,7 +884,123 @@ pub fn sys_root_watch_open(spec_ptr: usize) -> SysResult<usize> {
     root_call(msg)
 }
 
+/// Blocking watch read.  Parks the calling task on the watch's wait-queue until
+/// a matching graph commit arrives, then copies the event payload to userspace.
+///
+/// Returns:
+/// - `Ok(n)`: `n` bytes written to `out_ptr`; sequence number written to `out_seq_ptr`.
+/// - `Err(EOVERFLOW)`: some commits were missed; caller should resync.
+/// - `Err(ENOSPC)`: the provided buffer is too small for the pending event.
+/// - `Err(EBADF)`: the watch handle is invalid or has been closed.
 pub fn sys_root_watch_next(
+    id: usize,
+    out_seq_ptr: usize,
+    out_ptr: usize,
+    out_len: usize,
+) -> SysResult<usize> {
+    validate_user_range(out_seq_ptr, core::mem::size_of::<u64>(), true)?;
+    validate_user_range(out_ptr, out_len, true)?;
+
+    let cap = core::cmp::min(out_len, abi::watch::MAX_WATCH_PAYLOAD_BYTES);
+
+    // Hybrid allocation: use stack for small requests, heap for large ones.
+    // Allocated once and reused across retry iterations to avoid repeated heap
+    // allocations when the watch is not immediately ready.
+    let mut stack_buf = [0u8; 1024];
+    let mut heap_buf = alloc::vec::Vec::new();
+
+    let buf_ptr = if cap <= stack_buf.len() {
+        stack_buf.as_mut_ptr()
+    } else {
+        heap_buf.resize(cap, 0);
+        heap_buf.as_mut_ptr()
+    };
+
+    let tid = unsafe { crate::sched::current_tid_current() };
+
+    loop {
+        // 1. Non-blocking attempt: ask the root service for the next event.
+        let reply = root_svc::enqueue(RootOp::WatchNext {
+            id: id as u64,
+            out_seq_ptr: 0,
+            out_ptr: buf_ptr as u64,
+            out_len: cap as u64,
+        });
+
+        wait_reply_block!(reply);
+        let status = reply.status.load(Ordering::Relaxed);
+
+        if status != -11 {
+            // Not EAGAIN: got data, EOVERFLOW, ENOSPC, or a fatal error.
+            if status >= 0 {
+                let bytes_read = reply.value.load(Ordering::Relaxed) as usize;
+                if status == 0 {
+                    unsafe {
+                        let src = core::slice::from_raw_parts(buf_ptr, bytes_read);
+                        copyout(out_ptr, src)?;
+                    }
+                    let seq = reply.p0.load(Ordering::Relaxed);
+                    unsafe {
+                        copyout(out_seq_ptr, &seq.to_le_bytes())?;
+                    }
+                }
+                return Ok(bytes_read);
+            } else {
+                return match status {
+                    -75 => Err(Errno::EOVERFLOW),
+                    -28 => Err(Errno::ENOSPC),
+                    -22 => Err(Errno::EINVAL),
+                    -9 => Err(Errno::EBADF),
+                    _ => {
+                        let tid = unsafe { crate::sched::current_tid_current() };
+                        crate::kinfo!(
+                            "watch_next: UNEXPECTED status={} wid={} tid={}",
+                            status,
+                            id,
+                            tid
+                        );
+                        Err(Errno::EIO)
+                    }
+                };
+            }
+        }
+
+        // 2. EAGAIN: no matching commit is ready yet.
+        //    Register this task as a waiter so the commit path can wake us.
+        let _ = root_call(RootOp::WatchRegisterWaiter {
+            id: id as u64,
+            tid,
+        });
+
+        // 3. Double-check: a commit may have arrived between step 1 and step 2
+        //    (TOCTOU window).  If the watch is now readable, skip parking.
+        let poll_bits = root_call(RootOp::WatchPoll { id: id as u64 }).unwrap_or(0);
+        if (poll_bits & 1) != 0 {
+            let _ = root_call(RootOp::WatchUnregisterWaiter {
+                id: id as u64,
+                tid,
+            });
+            continue;
+        }
+
+        // 4. Park until the root service wakes us (on new commit or watch close).
+        unsafe {
+            crate::sched::block_current_erased();
+        }
+
+        // 5. Woken up. Unregister from the wait queue and retry.
+        let _ = root_call(RootOp::WatchUnregisterWaiter {
+            id: id as u64,
+            tid,
+        });
+    }
+}
+
+/// Non-blocking watch read.  Returns `Err(EAGAIN)` immediately when no
+/// matching event is pending.  Prefer this in drain loops that follow a
+/// `WaitSet::wait` / `SYS_WAIT_MANY` call that has already confirmed
+/// readiness.
+pub fn sys_root_watch_try_next(
     id: usize,
     out_seq_ptr: usize,
     out_ptr: usize,
@@ -931,7 +1047,6 @@ pub fn sys_root_watch_next(
             unsafe {
                 copyout(out_seq_ptr, &seq.to_le_bytes())?;
             }
-            return Ok(bytes_read);
         }
         return Ok(bytes_read);
     } else {
@@ -945,7 +1060,7 @@ pub fn sys_root_watch_next(
                 // Log unexpected status for debugging
                 let tid = unsafe { crate::sched::current_tid_current() };
                 crate::kinfo!(
-                    "watch_next: UNEXPECTED status={} wid={} tid={}",
+                    "watch_try_next: UNEXPECTED status={} wid={} tid={}",
                     status,
                     id,
                     tid

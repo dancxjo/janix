@@ -23,7 +23,7 @@
 //!     if event.token() == tok_rx && event.is_readable() {
 //!         // port has data — call port_recv
 //!     } else if event.token() == tok_watch {
-//!         // graph event — call root_watch_next
+//!         // graph event — call root_watch_try_next in a drain loop
 //!     }
 //! }
 //! ```

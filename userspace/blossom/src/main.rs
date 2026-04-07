@@ -287,7 +287,7 @@ impl UiPipeline {
 
         for watcher in &mut self.watchers {
             while let Ok(len) =
-                syscall::root_watch_next(watcher.id, &mut watcher.seq, &mut watcher.buf)
+                syscall::root_watch_try_next(watcher.id, &mut watcher.seq, &mut watcher.buf)
             {
                 let mut cursor = 0usize;
                 while cursor < len {

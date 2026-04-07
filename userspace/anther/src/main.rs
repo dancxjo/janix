@@ -1067,43 +1067,68 @@ fn handle_connection(conn_handle: u32) {
 
                 // 3. Stream loop — runs in its own thread so the accept
                 //    loop is never blocked.
+                //
+                //    Use a WaitSet with a 30-second timeout so the task parks
+                //    efficiently until a graph event arrives (no polling / sleep
+                //    loop) while still sending periodic SSE keepalives.
                 let mut watch_buf = alloc::vec![0u8; 4096];
                 let mut seq_out = 0u64;
-                let mut stall_count = 0u32;
+                let mut wait_set = stem::wait_set::WaitSet::new();
+                let _ = wait_set.add_root_watch(watch_handle);
 
                 loop {
-                    match stem::syscall::root_watch_next(watch_handle, &mut seq_out, &mut watch_buf)
-                    {
-                        Ok(_len) => {
-                            // Something changed — re-fetch props and send
-                            stall_count = 0;
-                            if let Some(json) = fetch_props_json(thing_id) {
-                                let event = format!(
-                                    "event: props\ndata: {}\n\n",
-                                    core::str::from_utf8(&json).unwrap_or("{}")
-                                );
-                                send_chunk(net, conn_handle, event.as_bytes());
+                    // Block until the watch fires or 30 s elapses (keepalive window).
+                    let events = wait_set.wait(Some(core::time::Duration::from_secs(30)));
+
+                    // Drain all pending events.
+                    let mut had_event = false;
+                    loop {
+                        match stem::syscall::root_watch_try_next(
+                            watch_handle,
+                            &mut seq_out,
+                            &mut watch_buf,
+                        ) {
+                            Ok(_len) => {
+                                had_event = true;
+                            }
+                            Err(abi::errors::Errno::EOVERFLOW) => {
+                                had_event = true; // Resync — treat as an update
+                            }
+                            Err(abi::errors::Errno::EAGAIN) => break,
+                            Err(_) => {
+                                // Fatal watch error — close and exit stream
+                                let _ = stem::syscall::root_watch_close(watch_handle);
+                                send_chunk(net, conn_handle, &[]); // End chunked encoding
+                                break;
                             }
                         }
-                        Err(abi::errors::Errno::EAGAIN) => {
-                            // No pending events — send keepalive every ~30s
-                            stall_count += 1;
-                            if stall_count % 600 == 0 {
-                                send_chunk(net, conn_handle, b": keepalive\n\n");
-                            }
-                            stem::syscall::sleep_ms(50);
+                    }
+
+                    if had_event {
+                        // Something changed — re-fetch props and push SSE event.
+                        if let Some(json) = fetch_props_json(thing_id) {
+                            let event = format!(
+                                "event: props\ndata: {}\n\n",
+                                core::str::from_utf8(&json).unwrap_or("{}")
+                            );
+                            send_chunk(net, conn_handle, event.as_bytes());
                         }
-                        Err(abi::errors::Errno::EOVERFLOW) => {
-                            continue; // Skip overflow events
-                        }
-                        Err(_) => {
-                            break; // Fatal watch error
+                    } else {
+                        // No graph events drained.  This happens when:
+                        //  a) the 30-second timeout fired (normal keepalive path), or
+                        //  b) WaitSet::wait returned an error (e.g. syscall failure).
+                        // In both cases, sending a keepalive is the correct response —
+                        // either to keep the SSE connection alive, or to surface that
+                        // the watch is broken before the client notices a stall.
+                        let send_keepalive = match &events {
+                            Ok(ev) => ev.iter().any(|e| e.is_timeout()) || ev.is_empty(),
+                            Err(_) => true,
+                        };
+                        if send_keepalive {
+                            send_chunk(net, conn_handle, b": keepalive\n\n");
                         }
                     }
                 }
-
-                // 4. Cleanup
-                let _ = stem::syscall::root_watch_close(watch_handle);
             }
         }
 

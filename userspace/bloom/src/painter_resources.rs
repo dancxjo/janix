@@ -167,7 +167,7 @@ pub extern "C" fn font_loader_entry() -> ! {
     loop {
         let mut any_activity = false;
         for idx in 0..watch_ids.len() {
-            match syscall::root_watch_next(
+            match syscall::root_watch_try_next(
                 watch_ids[idx],
                 &mut watch_seq[idx],
                 &mut watch_bufs[idx],

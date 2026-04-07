@@ -377,7 +377,7 @@ fn main(_arg: usize) -> ! {
     loop {
         let mut any_activity = false;
         for i in 0..watch_ids.len() {
-            match syscall::root_watch_next(watch_ids[i], &mut watch_seqs[i], &mut watch_bufs[i]) {
+            match syscall::root_watch_try_next(watch_ids[i], &mut watch_seqs[i], &mut watch_bufs[i]) {
                 Ok(len) if len > 0 => {
                     any_activity = true;
                     process_events(&watch_bufs[i][..len], limine_source, &mut asset_index);

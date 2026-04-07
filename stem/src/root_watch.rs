@@ -1,6 +1,6 @@
 //! Helper module for Root watch patterns.
 
-use crate::syscall::root_watch_next;
+use crate::syscall::root_watch_try_next;
 use abi::errors::Errno;
 
 /// Root watch handle type (syscall handle id).
@@ -43,7 +43,7 @@ where
     let mut seq_out = 0u64;
 
     loop {
-        match root_watch_next(handle, &mut seq_out, buf) {
+        match root_watch_try_next(handle, &mut seq_out, buf) {
             Ok(len) => {
                 stats.batches += 1;
                 stats.last_seq = Some(seq_out);

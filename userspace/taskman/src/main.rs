@@ -498,7 +498,7 @@ fn main() -> ! {
         let mut dirty = false;
         for &watcher in &watchers {
             loop {
-                match stem::syscall::root_watch_next(watcher, &mut seq, &mut watch_buf) {
+                match stem::syscall::root_watch_try_next(watcher, &mut seq, &mut watch_buf) {
                     Ok(len) if len > 0 => {
                         dirty = true;
                     }

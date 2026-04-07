@@ -12,7 +12,6 @@ use abi::watch;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
-use core::time::Duration;
 use stem::info;
 use stem::petals::graph::UiKey;
 use stem::petals::Petals;
@@ -22,6 +21,8 @@ use stem::thing::sys::{
     prop_get, prop_set,
 };
 use stem::thing::ThingId;
+use stem::time::Duration;
+use stem::wait_set::WaitSet;
 
 /// State color constants (ARGB)
 const COLOR_RUNNING: u32 = 0xFF4CAF50; // Green
@@ -364,25 +365,58 @@ fn render_task_list(window_id: ThingId, tasks: &[TaskInfo]) -> Option<usize> {
 fn main() -> ! {
     info!("TASKMAN: starting task manager");
 
-    // 1. Wait for UI Crown (Bloom compositor)
+    // 1. Wait for UI Crown (Bloom compositor) — use WaitSet so we sleep
+    //    efficiently instead of busy-polling every 500 ms.
     let mut ui_crown = ThingId::default();
-    for attempt in 0..120 {
+    // Open a watch on the UI_CROWN kind so we wake the moment one appears.
+    let crown_watch_id = stem::thing::sys::intern(kinds::UI_CROWN)
+        .ok()
+        .and_then(|kid| {
+            let filter = RootWatchFilter::kind(kid);
+            let spec = WatchSpec {
+                mode: WatchMode::QueryThenStream as u32,
+                start_seq: 0,
+                filter_ptr: &filter as *const _ as u64,
+                filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
+                ..Default::default()
+            };
+            stem::syscall::root_watch_open(&spec).ok()
+        });
+
+    'crown: for attempt in 0..120 {
         let mut crowns = [ThingId::default(); 1];
         match find(kinds::UI_CROWN, &mut crowns) {
             Ok(count) if count > 0 => {
                 ui_crown = crowns[0];
                 info!("TASKMAN: Found UI Crown (attempt {})", attempt + 1);
-                break;
+                break 'crown;
             }
             _ => {}
         }
-        stem::sleep(Duration::from_millis(500));
+        // Park until the graph changes (or 500 ms elapses as a safety net).
+        if let Some(wid) = crown_watch_id {
+            let mut set = WaitSet::new();
+            if set.add_root_watch(wid).is_ok() {
+                let _ = set.wait(Some(Duration::from_millis(500)));
+            } else {
+                stem::time::sleep_ms(500);
+            }
+        } else {
+            stem::time::sleep_ms(500);
+        }
+    }
+    // Close the temporary crown watch now that we have what we need.
+    if let Some(wid) = crown_watch_id {
+        let _ = stem::syscall::root_watch_close(wid);
     }
 
     if ui_crown.to_u64_lossy() == 0 {
         info!("TASKMAN: UI Crown not found after 60s, exiting");
+        // Park forever — no busy loop.
+        let set = WaitSet::new();
+        drop(set); // nothing to wait on; just park via sleep
         loop {
-            stem::sleep(Duration::from_secs(60));
+            stem::time::sleep_ms(60_000);
         }
     }
 
@@ -443,18 +477,40 @@ fn main() -> ! {
         }
     }
 
-    // 6. Reactive main loop
+    // 6. Reactive main loop — block via WaitSet instead of polling.
+    //    We build a WaitSet once from the registered watches and sleep until
+    //    any of them fires.  On overflow we drain and re-render regardless.
     let mut watch_buf = [0u8; 4096];
     let mut seq = 0u64;
 
-    loop {
-        let mut dirty = false;
+    // Build the initial WaitSet from the registered watch handles.
+    let mut wait_set = WaitSet::new();
+    for &wid in &watchers {
+        // Ignore ENOSPC — if we somehow exceeded the limit, fall back to the
+        // per-source drain below which still works correctly.
+        let _ = wait_set.add_root_watch(wid);
+    }
 
+    loop {
+        // Park until any watch fires (or at most 5 s as a safety heartbeat).
+        if !wait_set.is_empty() {
+            let _ = wait_set.wait(Some(Duration::from_secs(5)));
+        }
+
+        // Drain all watchers; mark dirty if any event was found.
+        let mut dirty = false;
         for &watcher in &watchers {
-            // Non-blocking poll of the watch stream
-            if let Ok(len) = stem::syscall::root_watch_next(watcher, &mut seq, &mut watch_buf) {
-                if len > 0 {
-                    dirty = true;
+            loop {
+                match stem::syscall::root_watch_next(watcher, &mut seq, &mut watch_buf) {
+                    Ok(len) if len > 0 => {
+                        dirty = true;
+                    }
+                    Err(stem::errors::Errno::EOVERFLOW) => {
+                        // Missed events — re-render to stay consistent.
+                        dirty = true;
+                        break;
+                    }
+                    _ => break,
                 }
             }
         }
@@ -463,7 +519,5 @@ fn main() -> ! {
             tasks = collect_tasks();
             render_task_list(win, &tasks);
         }
-
-        stem::sleep(Duration::from_millis(50));
     }
 }

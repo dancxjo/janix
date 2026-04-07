@@ -32,11 +32,18 @@ pub fn yield_now<R: BootRuntime>() -> bool {
     let cpu_idx = super::current_cpu_index::<R>();
 
     let (switch_params, has_work) = {
+        let lock_start = rt.mono_ticks();
         let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
         let sp = sched.schedule_point(ScheduleReason::CooperativeYield);
         let work = sched.has_runnable_work(cpu_idx);
+        super::record_sched_lock_hold::<R>(
+            &super::PROF_SCHED_LOCK_YIELD_NOW_CALLS,
+            &super::PROF_SCHED_LOCK_YIELD_NOW_US_TOTAL,
+            &super::PROF_SCHED_LOCK_YIELD_NOW_US_MAX,
+            lock_start,
+        );
         (sp, work)
     };
 
@@ -90,6 +97,7 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
     let _irq = rt.irq_disable();
 
     let switch_params = {
+        let lock_start = rt.mono_ticks();
         let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
@@ -131,7 +139,14 @@ pub fn sleep_ticks<R: BootRuntime>(ticks: u64) {
 
         // Do NOT push current task to runq - it's now sleeping
         // Just call prepare_schedule to pick next task
-        sched.prepare_schedule()
+        let switch = sched.prepare_schedule();
+        super::record_sched_lock_hold::<R>(
+            &super::PROF_SCHED_LOCK_SLEEP_TICKS_CALLS,
+            &super::PROF_SCHED_LOCK_SLEEP_TICKS_US_TOTAL,
+            &super::PROF_SCHED_LOCK_SLEEP_TICKS_US_MAX,
+            lock_start,
+        );
+        switch
     };
 
     if let Some(switch) = switch_params {

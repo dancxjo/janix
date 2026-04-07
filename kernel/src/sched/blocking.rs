@@ -19,6 +19,7 @@ pub fn block_current<R: BootRuntime>() {
 
     let mut blocked_id = None;
     let switch_params = {
+        let lock_start = rt.mono_ticks();
         let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
@@ -47,7 +48,14 @@ pub fn block_current<R: BootRuntime>() {
         sched.state.wait_queue.push_back(current_id);
 
         // Schedule next
-        sched.prepare_schedule()
+        let switch = sched.prepare_schedule();
+        super::record_sched_lock_hold::<R>(
+            &super::PROF_SCHED_LOCK_BLOCK_CURRENT_CALLS,
+            &super::PROF_SCHED_LOCK_BLOCK_CURRENT_US_TOTAL,
+            &super::PROF_SCHED_LOCK_BLOCK_CURRENT_US_MAX,
+            lock_start,
+        );
+        switch
     };
 
     if let Some(id) = blocked_id {
@@ -99,6 +107,7 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
 
     // 2. Lock SCHEDULER to update queues if the task was blocked
     if was_blocked {
+        let lock_start = rt.mono_ticks();
         let lock = SCHEDULER.lock();
         if let Some(ptr) = *lock {
             let sched = unsafe { &mut *(ptr as *mut Scheduler<R>) };
@@ -133,6 +142,12 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
 
             is_remote = safe_cpu != super::current_cpu_index::<R>();
         }
+        super::record_sched_lock_hold::<R>(
+            &super::PROF_SCHED_LOCK_WAKE_TASK_CALLS,
+            &super::PROF_SCHED_LOCK_WAKE_TASK_US_TOTAL,
+            &super::PROF_SCHED_LOCK_WAKE_TASK_US_MAX,
+            lock_start,
+        );
     }
 
     // 3. Queue graph state update OUTSIDE of all locks

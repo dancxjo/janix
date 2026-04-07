@@ -65,6 +65,38 @@ pub static DIAG_IPI_SENT: AtomicU64 = AtomicU64::new(0);
 pub static DIAG_IPI_HANDLER: AtomicU64 = AtomicU64::new(0);
 pub static DIAG_HLT_WAKE: AtomicU64 = AtomicU64::new(0);
 
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SchedLockMetrics {
+    pub hold_calls: u64,
+    pub hold_us_total: u64,
+    pub hold_us_max: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+pub struct SchedLockSiteMetrics {
+    pub block_current: SchedLockMetrics,
+    pub wake_task: SchedLockMetrics,
+    pub yield_now: SchedLockMetrics,
+    pub sleep_ticks: SchedLockMetrics,
+    pub wake_sleepers: SchedLockMetrics,
+}
+
+static PROF_SCHED_LOCK_BLOCK_CURRENT_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_BLOCK_CURRENT_US_TOTAL: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_BLOCK_CURRENT_US_MAX: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_WAKE_TASK_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_WAKE_TASK_US_TOTAL: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_WAKE_TASK_US_MAX: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_YIELD_NOW_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_YIELD_NOW_US_TOTAL: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_YIELD_NOW_US_MAX: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_SLEEP_TICKS_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_SLEEP_TICKS_US_TOTAL: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_SLEEP_TICKS_US_MAX: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_WAKE_SLEEPERS_CALLS: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_WAKE_SLEEPERS_US_TOTAL: AtomicU64 = AtomicU64::new(0);
+static PROF_SCHED_LOCK_WAKE_SLEEPERS_US_MAX: AtomicU64 = AtomicU64::new(0);
+
 /// Lock-skip self-healing: when try_resched_if_needed() fails to acquire
 /// the scheduler lock, set this flag so the next safe-point yields.
 static GLOBAL_NEED_RESCHED: AtomicBool = AtomicBool::new(false);
@@ -87,6 +119,61 @@ fn update_max_u64(slot: &AtomicU64, val: u64) {
             Ok(_) => break,
             Err(actual) => prev = actual,
         }
+    }
+}
+
+#[inline]
+fn snapshot_sched_lock_metric(
+    calls: &AtomicU64,
+    total: &AtomicU64,
+    max: &AtomicU64,
+) -> SchedLockMetrics {
+    SchedLockMetrics {
+        hold_calls: calls.swap(0, Ordering::Relaxed),
+        hold_us_total: total.swap(0, Ordering::Relaxed),
+        hold_us_max: max.swap(0, Ordering::Relaxed),
+    }
+}
+
+pub(crate) fn record_sched_lock_hold<R: BootRuntime>(
+    calls: &AtomicU64,
+    total: &AtomicU64,
+    max: &AtomicU64,
+    start_ticks: u64,
+) {
+    let elapsed_us = ticks_to_us::<R>(crate::runtime::<R>().mono_ticks().wrapping_sub(start_ticks));
+    calls.fetch_add(1, Ordering::Relaxed);
+    total.fetch_add(elapsed_us, Ordering::Relaxed);
+    update_max_u64(max, elapsed_us);
+}
+
+pub fn sched_lock_metrics_snapshot_and_reset() -> SchedLockSiteMetrics {
+    SchedLockSiteMetrics {
+        block_current: snapshot_sched_lock_metric(
+            &PROF_SCHED_LOCK_BLOCK_CURRENT_CALLS,
+            &PROF_SCHED_LOCK_BLOCK_CURRENT_US_TOTAL,
+            &PROF_SCHED_LOCK_BLOCK_CURRENT_US_MAX,
+        ),
+        wake_task: snapshot_sched_lock_metric(
+            &PROF_SCHED_LOCK_WAKE_TASK_CALLS,
+            &PROF_SCHED_LOCK_WAKE_TASK_US_TOTAL,
+            &PROF_SCHED_LOCK_WAKE_TASK_US_MAX,
+        ),
+        yield_now: snapshot_sched_lock_metric(
+            &PROF_SCHED_LOCK_YIELD_NOW_CALLS,
+            &PROF_SCHED_LOCK_YIELD_NOW_US_TOTAL,
+            &PROF_SCHED_LOCK_YIELD_NOW_US_MAX,
+        ),
+        sleep_ticks: snapshot_sched_lock_metric(
+            &PROF_SCHED_LOCK_SLEEP_TICKS_CALLS,
+            &PROF_SCHED_LOCK_SLEEP_TICKS_US_TOTAL,
+            &PROF_SCHED_LOCK_SLEEP_TICKS_US_MAX,
+        ),
+        wake_sleepers: snapshot_sched_lock_metric(
+            &PROF_SCHED_LOCK_WAKE_SLEEPERS_CALLS,
+            &PROF_SCHED_LOCK_WAKE_SLEEPERS_US_TOTAL,
+            &PROF_SCHED_LOCK_WAKE_SLEEPERS_US_MAX,
+        ),
     }
 }
 
@@ -420,6 +507,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
     /// Wake any sleeping tasks whose sleep time has expired
     fn wake_sleepers(&mut self) {
         let now = TICK_COUNT.load(Ordering::Relaxed);
+        let lock_start = crate::runtime::<R>().mono_ticks();
 
         while let Some((&wake_tick, _)) = self.state.sleep_queue.first_key_value() {
             if wake_tick <= now {
@@ -476,6 +564,13 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 break;
             }
         }
+
+        record_sched_lock_hold::<R>(
+            &PROF_SCHED_LOCK_WAKE_SLEEPERS_CALLS,
+            &PROF_SCHED_LOCK_WAKE_SLEEPERS_US_TOTAL,
+            &PROF_SCHED_LOCK_WAKE_SLEEPERS_US_MAX,
+            lock_start,
+        );
     }
 
     pub fn preempt_disable(&mut self) {

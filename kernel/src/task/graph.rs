@@ -187,6 +187,7 @@ fn maybe_log_profile<R: BootRuntime>() {
     let hlt_w = crate::sched::DIAG_HLT_WAKE.swap(0, Ordering::Relaxed);
     let rm = crate::sched::ring::aggregate_metrics();
     let fm = flusher::metrics_snapshot_and_reset();
+    let slm = crate::sched::sched_lock_metrics_snapshot_and_reset();
 
     let wait_blocks = graphify::WAIT_FOR_REPLY_BLOCKS.swap(0, Ordering::Relaxed);
     let wait_wakes = graphify::WAIT_FOR_REPLY_WAKES.swap(0, Ordering::Relaxed);
@@ -197,6 +198,31 @@ fn maybe_log_profile<R: BootRuntime>() {
 
     let wait_avg = if wait_calls > 0 {
         wait_us / wait_calls
+    } else {
+        0
+    };
+    let bc_avg = if slm.block_current.hold_calls > 0 {
+        slm.block_current.hold_us_total / slm.block_current.hold_calls
+    } else {
+        0
+    };
+    let wt_avg = if slm.wake_task.hold_calls > 0 {
+        slm.wake_task.hold_us_total / slm.wake_task.hold_calls
+    } else {
+        0
+    };
+    let yn_avg = if slm.yield_now.hold_calls > 0 {
+        slm.yield_now.hold_us_total / slm.yield_now.hold_calls
+    } else {
+        0
+    };
+    let st_avg = if slm.sleep_ticks.hold_calls > 0 {
+        slm.sleep_ticks.hold_us_total / slm.sleep_ticks.hold_calls
+    } else {
+        0
+    };
+    let ws_avg = if slm.wake_sleepers.hold_calls > 0 {
+        slm.wake_sleepers.hold_us_total / slm.wake_sleepers.hold_calls
     } else {
         0
     };
@@ -226,5 +252,23 @@ fn maybe_log_profile<R: BootRuntime>() {
         rm.total_pending,
         fm.flush_events,
         fm.flush_ticks_max
+    );
+    crate::kinfo!(
+        "PROF: sched_lock 2s: bc={}@{}us/{} wt={}@{}us/{} yn={}@{}us/{} st={}@{}us/{} ws={}@{}us/{}",
+        slm.block_current.hold_calls,
+        bc_avg,
+        slm.block_current.hold_us_max,
+        slm.wake_task.hold_calls,
+        wt_avg,
+        slm.wake_task.hold_us_max,
+        slm.yield_now.hold_calls,
+        yn_avg,
+        slm.yield_now.hold_us_max,
+        slm.sleep_ticks.hold_calls,
+        st_avg,
+        slm.sleep_ticks.hold_us_max,
+        slm.wake_sleepers.hold_calls,
+        ws_avg,
+        slm.wake_sleepers.hold_us_max
     );
 }

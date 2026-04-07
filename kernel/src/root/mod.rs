@@ -1,3 +1,24 @@
+//! # LEGACY: Graph Spine (Root)
+//!
+//! This module is the original "graph spine" of Thing-OS / janix.
+//! It is marked **legacy** as part of the *janix ACT I: Sever the Graph Spine*
+//! initiative.  New code in the scheduler, task lifecycle, and IPC layers
+//! **must not** introduce new dependencies on this module.
+//!
+//! Allowed callers (as of janix ACT I):
+//! - `kernel/src/root/*`               — root service implementation
+//! - `kernel/src/task/graph*.rs`       — background graph-observer tasks
+//! - `kernel/src/task/graphify.rs`     — graph-observer helpers
+//! - `kernel/src/task/flusher.rs`      — event ring → graph queue translation
+//! - `kernel/src/syscall/handlers/root_handlers.rs` — root syscalls
+//! - `kernel/src/syscall/handlers/wait.rs`          — watch-based waiting
+//! - `kernel/src/petals_session/mod.rs`             — session layer
+//! - `kernel/src/irq/msi.rs`                        — MSI/PCI
+//! - `kernel/src/lib.rs`               — top-level boot sequence
+//! - `kernel/src/syscall/handlers/mod.rs`           — syscall dispatch helpers
+//!
+//! See `scripts/check_root_deps.sh` for the automated enforcement check.
+
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
 use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};

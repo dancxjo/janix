@@ -1,7 +1,11 @@
-//! Deferred graph work queue for scheduler graphification.
+//! # LEGACY: Deferred graph work queue for scheduler graphification.
 //!
-//! This queue allows graph operations to be deferred until the scheduler lock
-//! is released, avoiding deadlock between scheduler and Root service.
+//! This module is part of the legacy graph-spine observability layer.
+//! It queues graph operations to be processed by the background graph-worker
+//! task (`task::graph::graph_worker_task`) after the scheduler lock is released.
+//!
+//! **This module must NOT be used from core scheduling or IPC paths.**
+//! It is a side-channel observer only.
 
 use crate::task::TaskId;
 use alloc::collections::VecDeque;
@@ -34,6 +38,10 @@ pub enum GraphWork {
     SetLocation { tid: TaskId, cpu_index: usize },
     /// Set the affinity (PINNED_TO) of a task
     SetAffinity { tid: TaskId, cpu_index: usize },
+    /// Ask Root to clean up all things owned by a task's graph node.
+    /// Replaces the direct `root::enqueue(CleanupTaskThings)` call that
+    /// previously lived in the scheduler exit path.
+    CleanupThings { thing_id: u64 },
 }
 
 /// The global work queue for deferred graph operations.

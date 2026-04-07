@@ -1,36 +1,8 @@
 //! Core scheduler types and data structures.
 
 use crate::BootRuntime;
-use crate::task::{Task, TaskId};
-use alloc::collections::BTreeMap;
-use alloc::collections::VecDeque;
-use alloc::vec::Vec;
+use crate::task::TaskId;
 use core::marker::PhantomData;
-use core::sync::atomic::{AtomicUsize, Ordering};
-
-/// Separate lock for TaskId→ThingId graph mappings.
-///
-/// This is intentionally **not** inside `Scheduler` so that
-/// `flush_graph_queue` can look up / insert graph IDs without
-/// acquiring the main `SCHEDULER` spinlock, which is the primary
-/// source of trylock-miss contention on the timer ISR path.
-pub(crate) static TASK_GRAPH: spin::Mutex<BTreeMap<TaskId, u64>> =
-    spin::Mutex::new(BTreeMap::new());
-
-/// Look up the graph ThingId for a task (lock-free w.r.t. SCHEDULER).
-pub(crate) fn graph_thing_for_tid(tid: TaskId) -> Option<u64> {
-    TASK_GRAPH.lock().get(&tid).copied()
-}
-
-/// Set the graph ThingId for a task.
-pub(crate) fn set_graph_thing_for_tid(tid: TaskId, thing_id: u64) {
-    TASK_GRAPH.lock().insert(tid, thing_id);
-}
-
-/// Remove the graph ThingId for a task (e.g., when task is cleaned up).
-pub(crate) fn remove_graph_thing_for_tid(tid: TaskId) -> Option<u64> {
-    TASK_GRAPH.lock().remove(&tid)
-}
 
 /// Default time slice in ticks (~100ms at 100Hz timer)
 pub const DEFAULT_TIMESLICE: u32 = 10;

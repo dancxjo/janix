@@ -672,6 +672,10 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
         inventory.kernel,
         inventory.root
     );
+
+    // Spawn graph-observer tasks now that Root is available.
+    // These tasks are optional — the scheduler works without them.
+    crate::task::init_graph_workers::<R>();
     let modules = runtime.modules();
     contract!("Kernel: Enumerating {} boot modules...", modules.len());
     for (i, m) in modules.iter().enumerate() {

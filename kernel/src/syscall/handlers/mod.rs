@@ -16,6 +16,7 @@ mod stdio;
 pub mod stream;
 mod time;
 mod trace;
+pub mod vfs;
 mod wait;
 
 // Re-export all syscall handlers

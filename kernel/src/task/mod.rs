@@ -64,6 +64,9 @@ pub struct ProcessInfo {
     pub env: BTreeMap<Vec<u8>, Vec<u8>>,
     pub stdio: [StdioBinding; 3],
     pub console_stdin: VecDeque<u8>,
+    /// VFS file descriptor table. Populated on first use; always present for
+    /// user processes.
+    pub fd_table: crate::vfs::fd_table::FdTable,
 }
 
 pub struct Task<R: BootRuntime> {

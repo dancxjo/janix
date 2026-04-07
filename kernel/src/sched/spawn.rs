@@ -518,6 +518,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         env: alloc::collections::BTreeMap::new(),
         stdio: [StdioBinding::Console; 3],
         console_stdin: alloc::collections::VecDeque::new(),
+        fd_table: crate::vfs::fd_table::FdTable::new(),
     }));
 
     // Store name and process_info on the task struct
@@ -697,6 +698,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         env,
         stdio,
         console_stdin: alloc::collections::VecDeque::new(),
+        fd_table: crate::vfs::fd_table::FdTable::new(),
     }));
 
     // Store name and process_info on the task struct

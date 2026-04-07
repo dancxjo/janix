@@ -103,6 +103,7 @@ fn flush_graph_queue<R: BootRuntime>() -> usize {
                 is_user,
                 name,
                 parent_tid,
+                spawn_arg,
             } => {
                 if let Some(thing_id) = graphify::do_create_thread_node::<R>(
                     tid,
@@ -110,6 +111,7 @@ fn flush_graph_queue<R: BootRuntime>() -> usize {
                     is_user,
                     name.as_deref(),
                     sched_thing,
+                    spawn_arg,
                 ) {
                     types::set_graph_thing_for_tid(tid, thing_id);
                     let parent_thing = parent_tid.and_then(|ptid| types::graph_thing_for_tid(ptid));

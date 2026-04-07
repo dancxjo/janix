@@ -23,6 +23,7 @@ pub fn create_thread_node(
     is_user: bool,
     name: Option<&str>,
     parent_tid: Option<TaskId>,
+    spawn_arg: u64,
 ) {
     graph_queue::push(GraphWork::CreateThread {
         tid,
@@ -30,6 +31,7 @@ pub fn create_thread_node(
         is_user,
         name: name.map(|s| alloc::string::String::from(s)),
         parent_tid,
+        spawn_arg,
     });
 }
 
@@ -174,6 +176,7 @@ static SYM_PROC_STATE: AtomicU64 = AtomicU64::new(0);
 static SYM_PROC_NAME: AtomicU64 = AtomicU64::new(0);
 static SYM_PROC_IS_USER: AtomicU64 = AtomicU64::new(0);
 static SYM_PROC_EXIT_CODE: AtomicU64 = AtomicU64::new(0);
+static SYM_PROC_SPAWN_ARG: AtomicU64 = AtomicU64::new(0);
 static SYM_KIND_THREAD: AtomicU64 = AtomicU64::new(0);
 static SYM_REL_HAS_TASK: AtomicU64 = AtomicU64::new(0);
 static SYM_REL_RUNS_ON: AtomicU64 = AtomicU64::new(0);
@@ -316,6 +319,7 @@ pub fn do_create_thread_node<R: crate::BootRuntime>(
     is_user: bool,
     name: Option<&str>,
     sched_thing: u64,
+    spawn_arg: u64,
 ) -> Option<u64> {
     let mut bb = BatchBuilder::new();
 
@@ -345,6 +349,14 @@ pub fn do_create_thread_node<R: crate::BootRuntime>(
             0,
             schema_sym!(keys::PROC_NAME, SYM_PROC_NAME),
             intern::<R>(n),
+        );
+    }
+
+    if spawn_arg != 0 {
+        bb.set_prop_local(
+            0,
+            schema_sym!(keys::PROC_SPAWN_ARG, SYM_PROC_SPAWN_ARG),
+            spawn_arg,
         );
     }
 

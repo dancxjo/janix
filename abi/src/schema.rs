@@ -559,7 +559,7 @@ pub mod keys {
     // Scheduler/Process Properties
     /// Task ID (u64)
     pub const PROC_TID: &str = "proc.tid";
-    /// Task state as interned symbol (runnable/running/blocked/sleeping/dead)
+    /// Task state as interned symbol (see `task_state` module for values)
     pub const PROC_STATE: &str = "proc.state";
     /// Task priority (0-4: Idle, Low, Normal, High, Realtime)
     pub const PROC_PRIORITY: &str = "proc.priority";
@@ -569,10 +569,31 @@ pub mod keys {
     pub const PROC_EXIT_CODE: &str = "proc.exit_code";
     /// Interned string name of the task/module
     pub const PROC_NAME: &str = "proc.name";
+    /// Initial startup argument passed via `spawn_with_arg` (usize stored as u64).
+    /// Set on the spawned thread node so supervisors can observe it without
+    /// out-of-band channels.
+    pub const PROC_SPAWN_ARG: &str = "proc.spawn_arg";
 
     // Launch/Event Properties
     /// Monotonic timestamp for last launch (nanoseconds since boot)
     pub const LAUNCH_AT: &str = "launch.at";
+}
+
+/// String values used for the `proc.state` property on task nodes.
+///
+/// These are interned symbols stored as `u64` in the graph; compare the
+/// `proc.state` property value against `sys::intern(task_state::RUNNABLE)`, etc.
+pub mod task_state {
+    /// Thread is ready to run (not yet scheduled onto a CPU).
+    pub const RUNNABLE: &str = "runnable";
+    /// Thread is currently executing on a CPU.
+    pub const RUNNING: &str = "running";
+    /// Thread is blocked waiting for a resource (port, lock, etc.).
+    pub const BLOCKED: &str = "blocked";
+    /// Thread is sleeping until a deadline.
+    pub const SLEEPING: &str = "sleeping";
+    /// Thread has exited; `proc.exit_code` holds the final exit code.
+    pub const DEAD: &str = "dead";
 }
 
 pub mod kinds {

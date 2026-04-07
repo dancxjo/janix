@@ -306,6 +306,7 @@ pub fn push_task_created<R: crate::BootRuntime>(
     is_user: bool,
     name: Option<&str>,
     parent_tid: Option<u64>,
+    spawn_arg: u64,
 ) {
     let cpu = crate::sched::current_cpu_index::<R>();
     push_event(
@@ -316,6 +317,7 @@ pub fn push_task_created<R: crate::BootRuntime>(
             is_user,
             parent_tid: parent_tid.unwrap_or(0),
             name: crate::sched::events::pack_name(name),
+            spawn_arg,
             timestamp: crate::runtime::<R>().mono_ticks(),
         },
     );

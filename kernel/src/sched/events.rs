@@ -95,6 +95,8 @@ pub enum SchedEvent {
         parent_tid: u64,
         /// First 24 bytes of the task name (zero-padded)
         name: [u8; 24],
+        /// Raw startup argument passed to the thread (0 if none).
+        spawn_arg: u64,
         timestamp: u64,
     },
     /// A task exited

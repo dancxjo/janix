@@ -133,7 +133,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // Queue graph node creation (processed after scheduler lock released)
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
-        crate::sched::ring::push_task_created::<R>(id, priority as u8, false, None, parent_tid);
+        crate::sched::ring::push_task_created::<R>(id, priority as u8, false, None, parent_tid, 0);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
             crate::sched::ring::push_task_affinity::<R>(id, cpu);
@@ -263,7 +263,14 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // Queue graph node creation (processed after scheduler lock released)
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
-        crate::sched::ring::push_task_created::<R>(id, priority as u8, true, None, parent_tid);
+        crate::sched::ring::push_task_created::<R>(
+            id,
+            priority as u8,
+            true,
+            None,
+            parent_tid,
+            arg.to_raw() as u64,
+        );
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
             crate::sched::ring::push_task_affinity::<R>(id, cpu);
@@ -367,7 +374,7 @@ impl<R: BootRuntime> Scheduler<R> {
 
         // Queue graph node creation (processed after scheduler lock released)
         let parent_tid = self.state.per_cpu[super::current_cpu_index::<R>()].current;
-        crate::sched::ring::push_task_created::<R>(id, priority as u8, true, None, parent_tid);
+        crate::sched::ring::push_task_created::<R>(id, priority as u8, true, None, parent_tid, 0);
         // Link affinity and initial location
         if let Affinity::Pinned(cpu) = affinity {
             crate::sched::ring::push_task_affinity::<R>(id, cpu);

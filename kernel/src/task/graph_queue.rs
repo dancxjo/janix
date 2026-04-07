@@ -19,6 +19,8 @@ pub enum GraphWork {
         is_user: bool,
         name: Option<String>,
         parent_tid: Option<TaskId>,
+        /// Raw startup argument (0 if the thread was spawned without an explicit arg).
+        spawn_arg: u64,
     },
     /// Update the state property of a task
     UpdateState { tid: TaskId, state: &'static str },

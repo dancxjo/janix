@@ -370,6 +370,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         false,
         Some("boot"),
         None,
+        0,
     );
     crate::sched::ring::push_task_state::<R>(0, "running");
     // Link boot task to CPU 0

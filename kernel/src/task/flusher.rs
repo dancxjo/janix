@@ -107,6 +107,7 @@ fn translate_event(event: &SchedEvent) {
             is_user,
             parent_tid,
             name,
+            spawn_arg,
             ..
         } => {
             // Find the end of the name (first zero byte)
@@ -128,6 +129,7 @@ fn translate_event(event: &SchedEvent) {
                 is_user: *is_user,
                 name: name_opt,
                 parent_tid: parent,
+                spawn_arg: *spawn_arg,
             });
         }
         SchedEvent::TaskExited { tid, code, .. } => {

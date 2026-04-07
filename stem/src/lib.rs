@@ -40,6 +40,7 @@ pub mod time;
 pub mod ui;
 pub mod utils;
 pub mod vm;
+pub mod wait_set;
 pub mod xml;
 
 // Re-export time types for convenience

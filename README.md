@@ -1,135 +1,175 @@
 # Thing-OS
 
-> **A graph-native operating system where everything is a Thing.**
+> **If you cannot `cat` it, you cannot trust it.**
 
 <img width="1920" height="1080" alt="Screenshot" src="https://github.com/user-attachments/assets/e6e879ea-389a-4757-86dd-85c2cdb6190c" />
 
-Thing-OS is an experimental, Rust-based operating system built on a radical idea: **the entire system state is a live, queryable graph**. Hardware, processes, files, windows, network sockets—everything is a first-class node in a directed property graph, discoverable and manipulable through a unified API.
+Thing-OS is an experimental, Rust-based microkernel operating system built around a single organizing principle: **everything is a file**. Hardware drivers, network stacks, window managers, and system services all expose their state and behavior as a mounted filesystem. If a service has structure, it mounts itself. If it has behavior, it exposes it through files.
+
+The current architecture is called **janix** — *Just Another \*NIX*. That name is earned, not chosen. The original vision was more ambitious: centralize the entire system state in a live, queryable **graph database** baked into the kernel. Every process, device, socket, and window would be a typed node; service discovery would be graph traversal; configuration would be property mutation. It was elegant on paper.
+
+It was also a bad architecture. The graph became a bottleneck, a coupling point, and a source of subtle ordering bugs. Services that should have been independent ended up entangled through shared graph state. The "unified model" made everything harder to test, harder to reason about, and harder to compose.
+
+So we're salvaging it. The graph is being demoted to a userspace concern — something `graphd` can manage if you want it — and the system is being re-plumbed around a VFS namespace, per-process mounts, and file I/O. Plan 9 figured this out in the 1980s. We're just catching up.
+
+Hence: janix. Just another unix. Turns out that's enough.
 
 ---
 
-## ✨ Features
+## What works today
 
 | Feature | Status |
 |---------|--------|
-| **Symmetric Multi-Processing (SMP)** | ✅ Full 6-core support with per-CPU runqueues |
+| **Symmetric Multi-Processing (SMP)** | ✅ 6-core with per-CPU runqueues |
 | **GPU Acceleration** | ✅ Virgl 3D via VirtIO-GPU |
 | **TCP/IP Networking** | ✅ DHCP, TCP, UDP via smoltcp |
 | **Compositor & Window Manager** | ✅ GPU-accelerated with damage tracking |
-| **System Graph** | ✅ Live in-memory graph database |
-| **Graph Query Language (GQL)** | ✅ OpenGQL subset with REST API |
+| **VFS Core** | ✅ Mount-based path routing in kernel |
 | **Hot Asset Loading** | ✅ Wallpapers, cursors, fonts on-the-fly |
 | **Storage: AHCI & ISO9660** | ✅ SATA disks, CD-ROM, boot modules |
-| **Audio** | 🚧 VirtIO-Sound (in progress) |
-| **WebAssembly Driver Host** | 🚧 Experimental |
+| **Network VFS migration** | 🚧 `virtio_netd` → `/dev/net/`, `netd` → `/net/` |
+| **Per-process namespaces** | 🚧 In progress |
+| **Audio** | 🚧 VirtIO-Sound |
 | **Multi-Architecture** | 🚧 x86_64 stable; aarch64, riscv64, loongarch64 WIP |
 
 ---
 
-## 📐 Architecture
+## Architecture
 
-Thing-OS follows a unique architecture centered around the **System Graph**. Unlike traditional OSes where state is scattered across `/proc`, `/sys`, registries, and opaque kernel structures, Thing-OS consolidates *everything* into a single, coherent graph.
+The kernel is intentionally small. It does five things:
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         System Graph (Root)                        │
-│   ┌───────┐  ┌──────────┐  ┌─────────┐  ┌────────┐  ┌───────────┐  │
-│   │dev.Cpu│──│svc.Sprout│──│task.Task│──│mem.Range│──│fs.File   │  │
-│   │  ×6   │  │          │  │  (100s) │  │         │  │          │  │
-│   └───────┘  └──────────┘  └─────────┘  └────────┘  └───────────┘  │
-└─────────────────────────────────────────────────────────────────────┘
-```
+1. **Schedule** tasks across CPUs
+2. **Manage** virtual memory
+3. **Route** VFS paths to the right mounted provider
+4. **Deliver** interrupts and IPC
+5. **Track** capabilities
 
-### The Boot Lineage
+Everything else — TCP/IP, NIC drivers, window management, fonts, storage — lives in userspace, mounted into the namespace.
+
+### The namespace
 
 ```
-Firmware → Limine → Bran → Kernel → Root → Sprout → Bloom → Leaves
+/
+├── dev/
+│   ├── net/
+│   │   └── virtio0/         ← mounted by virtio_netd
+│   │       ├── rx, tx       ← raw Ethernet frames
+│   │       ├── ctl, mac     ← control and metadata
+│   │       └── events       ← pollable link events
+│   └── fb0/                 ← mounted by display driver
+├── net/                     ← mounted by netd
+│   ├── interfaces/eth0/
+│   ├── routes
+│   └── tcp/<id>/{ctl,data,events}
+├── proc/                    ← mounted by kernel
+│   └── <pid>/{status,fd/,maps}
+├── services/                ← mounted by userspace services
+│   ├── net/                 ← network stack presence
+│   └── display/             ← compositor presence
+└── run/                     ← ephemeral state
+```
+
+### Boot sequence
+
+```
+Firmware → Limine → Bran → Kernel → Sprout → services mount themselves
 ```
 
 | Stage | Component | Role |
 |-------|-----------|------|
-| -1 | **Limine** | Bootloader (provides framebuffer, memory map, modules) |
-| 0 | **Bran** | Boot Runtime Abstraction Node — normalizes hardware |
-| 1 | **Kernel** | Core OS: scheduling, memory, syscalls |
-| 1 | **Root** | In-kernel graph database — the "brain" of the OS |
-| 2 | **Sprout** | Userspace init — service orchestration |
-| 3 | **Bloom** | GPU compositor & window manager |
-| 3+ | **Leaves** | User applications |
+| -1 | **Limine** | Bootloader |
+| 0 | **Bran** | Boot runtime — normalizes hardware across architectures |
+| 1 | **Kernel** | Scheduling, memory, VFS core, IPC, capabilities |
+| 2 | **Sprout** | Init — launches drivers and services in dependency order |
+| 3 | **Drivers** | Mount `/dev/net/virtio0/`, `/dev/fb0/`, etc. |
+| 3 | **Services** | Mount `/net/`, `/services/`, `/proc/` |
+| 4 | **Bloom** | Compositor — binds to `/dev/fb0/`, `/services/display/` |
+| 4+ | **Applications** | See the world through their own namespace |
+
+### Inter-service communication
+
+Services communicate by reading and writing files, not by calling each other's APIs:
+
+- `netd` discovers the NIC by opening `/dev/net/virtio0/ctl`
+- Applications open connections by reading `/net/tcp/new`
+- Drivers signal events by writing to their `events` file
+- Any program can inspect any service state with `cat`
 
 ---
 
-## 🎮 User Interfaces
+## User interfaces
 
-Thing-OS provides three distinct ways to interact with the system graph and OS functionality:
+### Graphical (Bloom & Blossom)
+**Bloom** is a GPU-accelerated compositor and window manager. **Blossom** handles vector graphics. They mount into the namespace and expose their state as files.
 
-### 1. Graphical Environment (Bloom & Blossom)
-The default graphical interface is driven by **Bloom** (a GPU-accelerated compositor and window manager) and **Blossom** (a vector graphics painter). Together, they provide a modern, visually rich local environment for interacting with applications and viewing the system state.
+### REST & web (Anther)
+**Anther** is a lightweight REST console. Useful for introspection and remote administration.
 
-### 2. Web & REST Interface (Anther)
-**Anther** is a REST API and web-based admin console. It provides a web interface accessible from a browser on your host machine, allowing you to visualize and traverse the System Graph dynamically.
-
-### 3. Command Line & GQL (Phloem & Telnet)
-For command-line interactiveness, Thing-OS runs a **telnet server** (accessible on your host via `telnet localhost 2323`). This interactive session drops you into the **Phloem** GQL (Graph Query Language) engine environment, where you can execute queries and commands directly against the System Graph.
+### Shell & telnet
+Thing-OS runs a telnet server on port 2323. Connect from your host:
+```
+telnet localhost 2323
+```
 
 ---
 
-## 📦 Crate Map
+## Crate map
 
-This workspace contains **60+ crates** organized into logical layers:
+60+ crates organized into layers. The kernel is thin; nearly everything is a userspace service.
 
-### Core System
+### Kernel & runtime
 
 | Crate | Description |
 |-------|-------------|
-| `kernel` | Core kernel: scheduler (SMP), memory manager, syscalls, Root graph service |
-| `bran` | Boot runtime: Limine integration, APIC, SMP trampoline, paging |
-| `abi` | Wire-compatible ABI shared by kernel and userspace |
+| `kernel` | Scheduler (SMP), memory, VFS path router, IPC, syscalls |
+| `bran` | Boot runtime — Limine integration, APIC, SMP trampoline, paging |
+| `abi` | Wire ABI shared between kernel and userspace |
 | `abi-macros` | Procedural macros for ABI definitions |
-| `stem` | Userspace runtime library ("libc") — syscalls, allocator, threading |
+| `stem` | Userspace runtime ("libc") — syscalls, allocator, threading, PAL |
 | `stem-macros` | `#[stem::main]` entry point macro |
-| `bulb` | **B**oot **U**p **L**iveness **B**ehavior — early-boot display with Wasm plugin support |
+| `bulb` | Early-boot display with Wasm plugin support |
 
-### Graphics & Display
+### Display & graphics
 
 | Crate | Description |
 |-------|-------------|
-| `bloom` | GPU-accelerated compositor, window manager, damage tracking |
-| `blossom` | Vector graphics painter (Béziers, paths, text) |
-| `photosynthesis` | Native graph visualization (Cytoscape-style) |
-| `display_virtio_gpu` | VirtIO-GPU display driver with Virgl 3D |
-| `display_bootfb` | Simple bootloader framebuffer driver |
+| `bloom` | GPU-accelerated compositor and window manager; mounts `/services/display/` |
+| `blossom` | Vector graphics painter (Béziers, paths, text rendering) |
+| `display_virtio_gpu` | VirtIO-GPU driver; mounts `/dev/fb0/` |
+| `display_bootfb` | Bootloader framebuffer fallback |
 | `display_fake` | Null display for headless testing |
-| `virtio_gpu` | VirtIO-GPU protocol implementation |
-| `fontd` | Font rasterization daemon |
-| `flytrap` | Asset watcher — hot-loads wallpapers, cursors, fonts |
+| `fontd` | Font rasterization service |
+| `flytrap` | Hot-loads wallpapers, cursors, fonts |
 
 ### Input
 
 | Crate | Description |
 |-------|-------------|
-| `bristle` | Input event aggregation (keyboard + mouse → unified events) |
+| `bristle` | Input aggregator — keyboard + mouse → unified event stream |
 | `ps2_kbd` | PS/2 keyboard driver |
 | `ps2_mouse` | PS/2 mouse driver |
 
 ### Networking
 
+Services communicate over files, not ports. The migration to the janix network model is in progress.
+
 | Crate | Description |
 |-------|-------------|
-| `virtio_netd` | VirtIO-Net hardware driver |
-| `netd` | TCP/IP stack (smoltcp): DHCP, sockets, packet routing |
+| `virtio_netd` | VirtIO-Net driver; target: mounts `/dev/net/virtio0/` |
+| `netd` | TCP/IP stack (smoltcp — DHCP, sockets); target: mounts `/net/` |
+| `devd` | Device discovery and driver lifecycle manager *(planned)* |
 | `fetchd` | HTTP client daemon |
 | `nectar` | mDNS/DNS-SD service publisher |
-| `anther` | REST API & admin console for the System Graph |
-| `phloem` | GQL (Graph Query Language) engine |
+| `anther` | Lightweight REST console |
 
 ### Storage
 
 | Crate | Description |
 |-------|-------------|
-| `ahci_disk` | AHCI/SATA disk driver with ISO9660 reader |
+| `ahci_disk` | AHCI/SATA driver |
 | `ata_disk` | Legacy ATA PIO driver |
 | `disk_probe` | Disk/partition discovery |
-| `iso9660` / `iso9660d` | ISO9660 filesystem library & daemon |
+| `iso9660` / `iso9660d` | ISO9660 library and daemon |
 | `iso_reader` / `iso_cat` | Boot-time ISO utilities |
 
 ### Audio
@@ -137,63 +177,52 @@ This workspace contains **60+ crates** organized into logical layers:
 | Crate | Description |
 |-------|-------------|
 | `virtio_sound` | VirtIO-Sound driver (WIP) |
-| `beeper` | System beep/chime generator |
+| `beeper` | System beep generator |
 
-### System Services
+### System services
 
 | Crate | Description |
 |-------|-------------|
-| `sprout` | Init daemon — service supervision, pipeline orchestration |
-| `cambium` | Property propagation daemon (reactive bindings) |
+| `sprout` | Init — launches services in dependency order |
 | `clock` | Real-time clock service |
 | `rtc_cmos` | CMOS RTC driver |
 
-### Shared Libraries
+### Shared libraries
 
 | Crate | Description |
 |-------|-------------|
-| `libs/fb_common` | Framebuffer primitives (pitch, stride, blitting) |
+| `libs/fb_common` | Framebuffer primitives |
 | `libs/llm` | LLM integration interface |
-| `libs/llm_stub` | Stub implementation for testing |
 | `userspace/virtio` | Shared VirtIO primitives (virtqueues, feature negotiation) |
 
-### Development & Testing
+### Tooling & testing
 
 | Crate | Description |
 |-------|-------------|
-| `xtask` | Build automation (ISO generation, elf bundling) |
+| `xtask` | Build automation (ISO generation, ELF bundling) |
 | `tools/bdd` | BDD test harness (Gherkin-style) |
 | `tools/pciids` | PCI ID database generator |
-| `tools/display_proto_tests` | Display protocol conformance tests |
-| Benchmarks | `root_batch_bench`, `bench_blit`, `scheduler_fairness` |
-| Demos | `echo`, `hogger`, `tick_printer`, `irqdump`, `drawlist_demo`, `virgl_demo` |
-
-### Experimental
-
-| Crate | Description |
-|-------|-------------|
-| `driver_wasm_host` | WebAssembly driver runtime |
-| `proto_driver_wasm` | Example WASM driver |
-| `described` / `sysdescribe` | Self-describing system introspection |
+| Benchmarks | `bench_blit`, `scheduler_fairness` |
+| Demos | `echo`, `hogger`, `irqdump`, `drawlist_demo` |
 
 ---
 
-## 🚀 Quick Start
+## Quick start
 
 ### Prerequisites
 
-- **Rust** (nightly toolchain — see `rust-toolchain.toml`)
-- **[just](https://github.com/casey/just)** command runner
+- **Rust** (nightly — see `rust-toolchain.toml`)
+- **[just](https://github.com/casey/just)**
 - **xorriso** for ISO building
-- **qemu-system-x86_64** for virtualization
+- **qemu-system-x86_64**
 
-### Build & Run
+### Build & run
 
 ```bash
 # Build and run in QEMU (6-core SMP, VirtIO-GPU, VirtIO-Net)
 just run
 
-# Build bootable ISO
+# Build a bootable ISO
 just iso
 
 # Run BDD test suite
@@ -203,89 +232,77 @@ just behave
 KARCH=aarch64 just run
 ```
 
-### Available Commands
+### Available commands
 
 | Command | Description |
 |---------|-------------|
-| `just run` | Build & run in QEMU with 6 CPUs, GPU, networking |
-| `just iso` | Generate bootable ISO image |
-| `just behave` | Run full BDD test suite |
-| `just behave --feature <name>` | Run specific feature test |
-| `just clean` | Clean all build artifacts |
-| `just die` | Kill any running QEMU instance |
+| `just run` | Build & run in QEMU |
+| `just iso` | Generate bootable ISO |
+| `just behave` | Full BDD test suite |
+| `just clean` | Clean build artifacts |
+| `just die` | Kill running QEMU |
 
 ---
 
-## 🌳 Project Structure
+## Project structure
 
 ```
 thing-os/
 ├── abi/                    # Wire ABI (kernel ↔ userspace)
-├── abi-macros/             # Procedural macros for ABI
 ├── bran/                   # Boot runtime (per-arch)
 │   └── src/arch/{x86_64,aarch64,riscv64,loongarch64}/
-├── bulb/                   # Boot Up Liveness Behavior (early-boot display + Wasm)
-├── kernel/                 # Core kernel + Root graph service
-│   └── src/{memory,task,syscall,root}/
-├── stem/                   # Userspace "libc"
-├── stem-macros/            # Entry point macros
+├── bulb/                   # Early-boot display
+├── kernel/                 # Kernel: scheduler, memory, VFS, IPC
+│   └── src/{memory,task,syscall,vfs}/
+├── stem/                   # Userspace runtime + PAL
 ├── libs/                   # Shared libraries
-│   ├── fb_common/          # Framebuffer utilities
-│   └── llm*/               # LLM integration
-├── userspace/              # ~50 userspace applications
+├── userspace/              # All drivers and services (~50 crates)
 │   ├── sprout/             # Init daemon
-│   ├── bloom/              # Compositor
-│   ├── blossom/            # Paint service
-│   ├── netd/               # TCP/IP stack
-│   ├── anther/             # Graph API server
-│   └── .../                # Drivers, services, demos
-├── tools/                  # Development tooling
-│   ├── bdd/                # BDD test framework
-│   └── pciids/             # PCI database
+│   ├── bloom/              # Compositor (→ /services/display/)
+│   ├── netd/               # TCP/IP stack (→ /net/)
+│   ├── virtio_netd/        # VirtIO-Net driver (→ /dev/net/virtio0/)
+│   ├── anther/             # REST console
+│   └── .../
+├── tools/                  # Dev tooling (BDD, pciids)
 ├── xtask/                  # Build automation
-├── assets/                 # Wallpapers, cursors, fonts
-├── docs/                   # Documentation
+├── assets/                 # Wallpapers, fonts, cursors
+├── docs/
 │   ├── components/         # Per-component docs
-│   └── concepts/           # Deep-dive topics
+│   ├── concepts/           # Deep dives
+│   └── behavior/           # BDD test results
 └── targets/                # Custom Rust target specs
 ```
 
 ---
 
-## 📚 Documentation
+## Documentation
 
-- **[Components](./docs/components/)** — Detailed docs for each system component
-- **[Concepts](./docs/concepts/)** — Deep dives: scheduling, the graph model, UI architecture
-- **[Behavior Reports](./docs/behavior/)** — BDD test results
+- [Components](./docs/components/) — per-component design docs
+- [Concepts](./docs/concepts/) — deep dives on scheduling, namespaces, VFS
+- [Behavior Reports](./docs/behavior/) — BDD test results
 
 ---
 
-## 🛠️ Architecture Targets
+## Architecture targets
 
 | Architecture | Status |
 |--------------|--------|
-| `x86_64` | ✅ Stable (default) |
+| `x86_64` | ✅ Stable |
 | `aarch64` | 🚧 In progress |
 | `riscv64` | 🚧 In progress |
 | `loongarch64` | 🚧 In progress |
 
-Set `KARCH` to target:
-```bash
-KARCH=aarch64 just run
-```
+---
+
+## Design principles
+
+1. **Everything is a file.** If a service has structure, it mounts itself. If it has behavior, it exposes it through files.
+2. **The kernel enforces authority; userspace provides everything else.** Drivers, TCP/IP, compositors — all live outside the kernel.
+3. **Drivers speak hardware. Services speak protocols. Everything else is files.**
+4. **Per-process namespaces.** Each process sees its own namespace. The same path can resolve differently in different processes.
+5. **If you cannot `cat` it, you cannot trust it.** Service state is text in files, not opaque objects behind an API.
+6. **SMP from day one.** Multi-core support is fundamental, not bolted on.
 
 ---
 
-## 🧬 Design Philosophy
-
-1. **Everything is a Thing** — Hardware, tasks, sockets, windows, files: all are nodes in the System Graph.
-2. **Queryable State** — Inspect and manipulate the OS via GQL queries or REST API.
-3. **Reactive by Default** — Changes propagate automatically via watch subscriptions.
-4. **SMP from Day One** — Multi-core support is fundamental, not bolted on.
-5. **Userspace Drivers** — VirtIO drivers run in userspace for isolation.
-
----
-
-## 📄 License
-
-[Apache 2.0](./LICENSE)
+## License

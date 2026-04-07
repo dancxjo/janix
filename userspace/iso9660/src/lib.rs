@@ -390,6 +390,51 @@ impl IsoFs {
         self.list_dir(dev, self.pvd.root_dir_extent, self.pvd.root_dir_size)
     }
 
+    /// Look up a path and return its directory entry (file or directory).
+    ///
+    /// `path` may be relative (no leading `/`) or absolute.  Returns `None`
+    /// if any component does not exist.
+    ///
+    /// Unlike [`open_path`][Self::open_path] this returns the full
+    /// [`IsoDirEntry`] so callers can distinguish files from directories.
+    pub fn lookup_path(&self, dev: &dyn BlockDevice, path: &str) -> Option<IsoDirEntry> {
+        let path = path.trim_start_matches('/');
+        if path.is_empty() {
+            // Root directory pseudo-entry.
+            return Some(IsoDirEntry {
+                name: String::from(""),
+                extent_lba: self.pvd.root_dir_extent,
+                size: self.pvd.root_dir_size,
+                is_directory: true,
+            });
+        }
+
+        let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+        let mut current_extent = self.pvd.root_dir_extent;
+        let mut current_size = self.pvd.root_dir_size;
+
+        for (i, part) in parts.iter().enumerate() {
+            let is_last = i == parts.len() - 1;
+            let entries = self.list_dir(dev, current_extent, current_size);
+            let entry = entries
+                .iter()
+                .find(|e| Self::ascii_eq_ignore_case(&e.name, part))?
+                .clone();
+
+            if is_last {
+                return Some(entry);
+            } else {
+                if !entry.is_directory {
+                    return None;
+                }
+                current_extent = entry.extent_lba;
+                current_size = entry.size;
+            }
+        }
+
+        None
+    }
+
     /// Resolve a path and return the directory entry.
     ///
     /// Path should be absolute, e.g., "/ASSETS/CURSOR.SVG".

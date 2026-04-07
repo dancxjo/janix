@@ -5,7 +5,7 @@
 //! Filesystems).
 
 use abi::errors::{Errno, SysResult};
-use abi::syscall::{SYS_VFS_CLOSE, SYS_VFS_MKDIR, SYS_VFS_OPEN, SYS_VFS_READ, SYS_VFS_UNLINK, SYS_VFS_WRITE};
+use abi::syscall::{SYS_VFS_CLOSE, SYS_VFS_MKDIR, SYS_VFS_MOUNT, SYS_VFS_OPEN, SYS_VFS_READ, SYS_VFS_UMOUNT, SYS_VFS_UNLINK, SYS_VFS_WRITE};
 
 use super::arch::raw_syscall6;
 
@@ -95,6 +95,46 @@ pub fn vfs_mkdir(path: &str) -> SysResult<()> {
     let ret = unsafe {
         raw_syscall6(
             SYS_VFS_MKDIR,
+            path.as_ptr() as usize,
+            path.len(),
+            0,
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Mount a userland VFS provider at `path`.
+///
+/// `provider_write_handle` is the write end of a port pair that the provider
+/// owns.  The kernel will send [`abi::vfs_rpc`] messages to that port whenever
+/// a VFS operation touches a path under `path`.
+///
+/// Returns `Ok(())` on success, or an [`Errno`] on failure.
+pub fn vfs_mount(provider_write_handle: u32, path: &str) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_VFS_MOUNT,
+            provider_write_handle as usize,
+            path.as_ptr() as usize,
+            path.len(),
+            0,
+            0,
+            0,
+        )
+    };
+    abi::errors::errno(ret).map(|_| ())
+}
+
+/// Unmount the userland VFS provider previously mounted at `path`.
+///
+/// Returns `Ok(())` on success, or an [`Errno`] on failure.
+pub fn vfs_umount(path: &str) -> SysResult<()> {
+    let ret = unsafe {
+        raw_syscall6(
+            SYS_VFS_UMOUNT,
             path.as_ptr() as usize,
             path.len(),
             0,

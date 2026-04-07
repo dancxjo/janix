@@ -44,6 +44,7 @@ pub mod graphable;
 pub mod macros;
 pub mod packed;
 pub mod thing;
+pub mod vfs_rpc;
 pub mod wire;
 pub mod wire_schema;
 

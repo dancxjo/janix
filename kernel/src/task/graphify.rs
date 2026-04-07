@@ -1,7 +1,11 @@
-//! Graph integration for scheduler task tracking.
+//! # LEGACY: Graph integration for scheduler task tracking.
 //!
-//! This module provides helper functions for creating graph nodes for tasks
-//! and updating their properties on state transitions.
+//! This module is part of the legacy graph-spine observability layer.
+//! It provides helper functions for creating graph nodes for tasks and
+//! updating their properties on state transitions.
+//!
+//! **This module must NOT be used from core scheduling or IPC paths.**
+//! It is a side-channel observer only.
 //!
 //! Uses a deferred work queue to avoid deadlock: public functions queue work,
 //! and `do_*` functions perform the actual graph operations.
@@ -10,7 +14,40 @@ use crate::root::{RootOp, enqueue, enqueue_no_reply};
 use crate::task::TaskId;
 use crate::task::graph_queue::{self, GraphWork};
 use abi::schema::{keys, kinds, rels};
+use alloc::collections::BTreeMap;
 use core::sync::atomic::Ordering;
+use spin::Mutex;
+
+// ============================================================================
+// TaskId → Graph ThingId mapping
+//
+// Moved here from `sched::types` so that the core scheduler no longer carries
+// any graph state.  Only the background graph-observer tasks need this map.
+// ============================================================================
+
+/// Separate lock for TaskId→ThingId graph mappings.
+///
+/// This is intentionally **not** inside `Scheduler` so that
+/// `flush_graph_queue` can look up / insert graph IDs without
+/// acquiring the main `SCHEDULER` spinlock, which is the primary
+/// source of trylock-miss contention on the timer ISR path.
+pub(crate) static TASK_GRAPH: Mutex<BTreeMap<TaskId, u64>> =
+    Mutex::new(BTreeMap::new());
+
+/// Look up the graph ThingId for a task (lock-free w.r.t. SCHEDULER).
+pub(crate) fn graph_thing_for_tid(tid: TaskId) -> Option<u64> {
+    TASK_GRAPH.lock().get(&tid).copied()
+}
+
+/// Set the graph ThingId for a task.
+pub(crate) fn set_graph_thing_for_tid(tid: TaskId, thing_id: u64) {
+    TASK_GRAPH.lock().insert(tid, thing_id);
+}
+
+/// Remove the graph ThingId for a task (e.g., when task is cleaned up).
+pub(crate) fn remove_graph_thing_for_tid(tid: TaskId) -> Option<u64> {
+    TASK_GRAPH.lock().remove(&tid)
+}
 
 // ============================================================================
 // Public API - these queue work items (safe to call with scheduler lock held)
@@ -434,6 +471,12 @@ pub fn do_flush_batch<R: crate::BootRuntime>(items: &[(u64, GraphWork)]) {
             GraphWork::CreateThread { .. } => {
                 // Batching CreateThread is complex because it returns IDs.
                 // We handle it separately for now.
+            }
+            GraphWork::CleanupThings { .. } => {
+                // CleanupThings is handled by the *outer* `flush_graph_queue`
+                // match in `task/graph.rs` (which calls `root::enqueue`
+                // directly).  It never reaches `do_flush_batch` as a batch item;
+                // this arm is unreachable but required for exhaustiveness.
             }
         }
     }

@@ -1,7 +1,13 @@
-//! Budgeted flusher: drains per-CPU event rings and translates
-//! SchedEvent → graph operations in bounded batches.
+//! # LEGACY: Budgeted flusher — event ring → graph queue translation.
 //!
-//! The flusher runs from the `graph_worker_task` in thread context
+//! This module is part of the legacy graph-spine observability layer.
+//! It drains per-CPU scheduler event rings and translates `SchedEvent`
+//! values into `GraphWork` items for the background graph-worker task.
+//!
+//! **This module must NOT be used from core scheduling or IPC paths.**
+//! It is a side-channel observer only.
+//!
+//! The flusher runs from the `ring_drain_task` in thread context
 //! (never from ISR). It respects a tick budget to avoid starving
 //! other kernel work.
 

@@ -1,3 +1,15 @@
+//! # LEGACY: Graph worker tasks for scheduler observability.
+//!
+//! This module is part of the legacy graph-spine observability layer.
+//! It contains the background tasks that drain the per-CPU event rings
+//! and flush graph work items to the Root service.
+//!
+//! **These tasks are optional** — the scheduler runs correctly without them.
+//! They are spawned by `task::init_graph_workers()`, which is called after
+//! the Root service is initialized.
+//!
+//! See `janix ACT I: Sever the Graph Spine` for context.
+
 use crate::BootRuntime;
 
 use crate::task::{flusher, graph_queue, graphify};
@@ -70,7 +82,6 @@ pub(crate) fn ticks_to_us<R: BootRuntime>(ticks: u64) -> u64 {
 
 fn flush_graph_queue<R: BootRuntime>() -> usize {
     use crate::root::graph_anchors;
-    use crate::sched::types;
     use crate::task::graph_queue::GraphWork;
 
     let rt = crate::runtime::<R>();
@@ -113,24 +124,41 @@ fn flush_graph_queue<R: BootRuntime>() -> usize {
                     sched_thing,
                     spawn_arg,
                 ) {
-                    types::set_graph_thing_for_tid(tid, thing_id);
-                    let parent_thing = parent_tid.and_then(|ptid| types::graph_thing_for_tid(ptid));
+                    graphify::set_graph_thing_for_tid(tid, thing_id);
+                    let parent_thing = parent_tid.and_then(|ptid| graphify::graph_thing_for_tid(ptid));
                     if let Some(parent_thing) = parent_thing {
                         graphify::do_link_parent::<R>(thing_id, parent_thing, sched_thing);
                     }
                 }
             }
+            GraphWork::CleanupThings { thing_id } => {
+                // Fire-and-forget: ask Root to orphan/cleanup nodes owned by this task.
+                crate::root::enqueue(crate::root::RootOp::CleanupTaskThings {
+                    owner_thing_id: thing_id,
+                });
+            }
             _ => {
                 let tid = match &item {
                     GraphWork::UpdateState { tid, .. } => *tid,
-                    GraphWork::SetExitCode { tid, .. } => *tid,
+                    GraphWork::SetExitCode { tid, .. } => {
+                        // Remove the tid→thing_id mapping from the graph layer
+                        // so future lookups return None.  Push a separate
+                        // CleanupThings item so Root can orphan the owned nodes;
+                        // that item will be processed in a future flush iteration
+                        // (not this one, since we push to the back of the queue).
+                        let thing_id = graphify::remove_graph_thing_for_tid(*tid);
+                        if let Some(tid_val) = thing_id {
+                            graph_queue::push(GraphWork::CleanupThings { thing_id: tid_val });
+                        }
+                        *tid
+                    }
                     GraphWork::SetPriority { tid, .. } => *tid,
                     GraphWork::SetName { tid, .. } => *tid,
                     GraphWork::SetLocation { tid, .. } => *tid,
                     GraphWork::SetAffinity { tid, .. } => *tid,
                     _ => unreachable!(),
                 };
-                if let Some(id) = types::graph_thing_for_tid(tid) {
+                if let Some(id) = graphify::graph_thing_for_tid(tid) {
                     batch_items.push((id, item));
                 }
             }

@@ -915,14 +915,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         let waiters = mark_task_exited::<R>(self, current_id, code);
 
-        // Queue graph state update and exit code
+        // Queue graph state update and exit code (processed asynchronously by
+        // the graph-observer background task — no Root call here).
         crate::sched::ring::push_task_state::<R>(current_id, "dead");
         crate::sched::ring::push_task_exited::<R>(current_id, code);
-
-        // Cleanup owned things
-        if let Some(owner_thing_id) = types::graph_thing_for_tid(current_id) {
-            crate::root::enqueue(crate::root::RootOp::CleanupTaskThings { owner_thing_id });
-        }
 
         // Release any claimed devices
         crate::device_registry::REGISTRY
@@ -1156,8 +1152,8 @@ fn wake_waiters(waiters: &[u64]) {
 fn graph_thing_for_current_impl<R: BootRuntime>() -> Option<u64> {
     let rt = crate::runtime::<R>();
     let tid = rt.current_tid();
-    // Use the separate TASK_GRAPH lock — no SCHEDULER.lock() needed.
-    types::graph_thing_for_tid(tid)
+    // Delegate to the graph layer's TASK_GRAPH map (no SCHEDULER.lock() needed).
+    crate::task::graphify::graph_thing_for_tid(tid)
 }
 
 pub fn exit<R: BootRuntime>(code: i32) {
@@ -1229,16 +1225,10 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
                             !tids.is_empty()
                         });
 
-                        // Queue graph state update
+                        // Queue graph state update (processed asynchronously by
+                        // the graph-observer background task — no Root call here).
                         crate::sched::ring::push_task_state::<R>(tid, "dead");
                         crate::sched::ring::push_task_exited::<R>(tid, -9);
-
-                        // Cleanup owned things
-                        if let Some(owner_thing_id) = types::graph_thing_for_tid(tid) {
-                            crate::root::enqueue(crate::root::RootOp::CleanupTaskThings {
-                                owner_thing_id,
-                            });
-                        }
 
                         // Release any claimed devices
                         crate::device_registry::REGISTRY

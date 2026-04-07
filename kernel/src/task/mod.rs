@@ -120,8 +120,21 @@ pub fn init<R: BootRuntime>() {
     crate::task::registry::init::<R>();
     crate::sched::init::<R>();
 
+    // Pre-allocate the graph work queue so that the graph-observer tasks can
+    // start processing events as soon as they are spawned.  This call is safe
+    // even when the Root service is not yet available.
     crate::task::graph_queue::init();
+}
 
+/// Spawn the optional background graph-observer tasks.
+///
+/// These tasks drain the per-CPU scheduler event rings and push graph updates
+/// to the Root service.  They are **not** required for the scheduler to run —
+/// the system boots and tasks run without them.
+///
+/// Call this after the Root service has been initialized so that the graph
+/// workers can start processing events immediately.
+pub fn init_graph_workers<R: BootRuntime>() {
     crate::kinfo!("  Creating graph worker tasks...");
     let _ring_drain_id = spawn::<R>(
         crate::task::graph::ring_drain_task::<R>,

@@ -148,8 +148,6 @@ impl Supervisor {
                 || name.ends_with("/clock")
                 || name.ends_with("/idle")
                 || name.ends_with("/hello_std")
-                || name.ends_with("/telnetd")
-                || name.ends_with("/boltd")
                 || (cfg!(feature = "diagnostic-apps")
                     && (name.ends_with("/threads_demo") || name.ends_with("/scheduler_verify")))
             {
@@ -233,8 +231,6 @@ impl Supervisor {
         self.ensure_app("/fortune");
         self.ensure_app("/photosynthesis");
         self.ensure_app("/fetchd");
-        self.ensure_app("/telnetd");
-        self.ensure_app("/boltd");
         // self.ensure_app("/clock");
         // self.ensure_app("/drawlist_demo");
 

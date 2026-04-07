@@ -13,10 +13,8 @@ mod guest_proxy;
 mod image;
 mod kill;
 mod limine;
-mod proxy;
 mod run;
 mod scan;
-mod test_phloem;
 
 use clap::{Parser, Subcommand};
 use xshell::Shell;
@@ -148,15 +146,6 @@ enum Commands {
     Kill,
     /// Fetch vendor assets (Limine, OVMF, Fonts, Icons, Cursors)
     Fetch,
-    /// Run HTTPS reverse proxy for guest anther (Host -> Guest)
-    HttpsProxy {
-        /// HTTPS listen port
-        #[arg(long, default_value = "8443")]
-        port: u16,
-        /// Target HTTP port (guest anther via QEMU forwarding)
-        #[arg(long, default_value = "8888")]
-        target: u16,
-    },
     /// Run HTTP proxy for guest internet access (Guest -> Host -> Internet)
     GuestProxy {
         /// Listen port
@@ -167,8 +156,6 @@ enum Commands {
     Audit,
     /// Scan or verify images
     Scan(scan::ScanArgs),
-    /// Run Phloem integration test
-    TestPhloem,
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -261,11 +248,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         } => bdd(&sh, feature, tags, arch)?,
         Commands::Kill => kill::run()?,
         Commands::Fetch => fetch()?,
-        Commands::HttpsProxy { port, target } => proxy::https_proxy(port, target)?,
         Commands::GuestProxy { port } => guest_proxy::run(port)?,
         Commands::Audit => audit::audit()?,
         Commands::Scan(args) => scan::run(args)?,
-        Commands::TestPhloem => test_phloem::run()?,
     }
 
     Ok(())

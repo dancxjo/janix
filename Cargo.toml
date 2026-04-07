@@ -51,11 +51,9 @@ members = [
     "userspace/netd",
     "userspace/fetchd",
     "userspace/fortune",
-    "userspace/anther",
     "userspace/drivers/pci_stubd",
     "userspace/drivers/rtl8168d",
     "userspace/drivers/hdaudio",
-    "userspace/phloem",
     "bulb",
     "libs/fb_common",
     "libs/llm",
@@ -67,8 +65,7 @@ members = [
     "userspace/proto_driver_wasm", "userspace/virtio_sound", "userspace/beeper", "userspace/nectar",
     "userspace/hello_std",
     "userspace/stdio_demo",
-    "userspace/telnetd",
-    "userspace/boltd",
+
 ]
 
 # Exclude wasm32 theme crates (different target)

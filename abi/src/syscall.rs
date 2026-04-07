@@ -228,3 +228,36 @@ pub mod pipe_flags {
 /// Fill a user buffer with random bytes from the kernel entropy pool.
 /// Args: buf_ptr, buf_len. Returns 0 on success.
 pub const SYS_GETRANDOM: u32 = 0x210;
+
+// ============================================================================
+// Block 0x220–0x22F: VFS (filesystem namespace)
+// ============================================================================
+/// Open a file by path. Args: path_ptr, path_len, flags. Returns fd or errno.
+pub const SYS_VFS_OPEN: u32 = 0x220;
+/// Close a VFS file descriptor. Args: fd. Returns 0 or errno.
+pub const SYS_VFS_CLOSE: u32 = 0x221;
+/// Read from a VFS file descriptor. Args: fd, buf_ptr, buf_len. Returns bytes read or errno.
+pub const SYS_VFS_READ: u32 = 0x222;
+/// Write to a VFS file descriptor. Args: fd, buf_ptr, buf_len. Returns bytes written or errno.
+pub const SYS_VFS_WRITE: u32 = 0x223;
+/// Get file status. Args: path_ptr, path_len, stat_ptr. Returns 0 or errno.
+pub const SYS_VFS_STAT: u32 = 0x224;
+/// Read directory entries. Args: fd, buf_ptr, buf_len. Returns bytes read or errno.
+pub const SYS_VFS_READDIR: u32 = 0x225;
+
+pub mod vfs_flags {
+    /// Open for reading.
+    pub const O_RDONLY: u32 = 0x0000;
+    /// Open for writing.
+    pub const O_WRONLY: u32 = 0x0001;
+    /// Open for reading and writing.
+    pub const O_RDWR: u32 = 0x0002;
+    /// Create file if it does not exist.
+    pub const O_CREAT: u32 = 0x0040;
+    /// Truncate file to zero length on open.
+    pub const O_TRUNC: u32 = 0x0200;
+    /// Append to file on every write.
+    pub const O_APPEND: u32 = 0x0400;
+    /// Non-blocking I/O.
+    pub const O_NONBLOCK: u32 = 0x0800;
+}

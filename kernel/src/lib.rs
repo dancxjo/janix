@@ -16,6 +16,7 @@ pub mod sched;
 pub mod simd;
 pub mod syscall;
 pub mod task;
+pub mod vfs;
 
 pub mod time;
 pub mod trace;
@@ -600,6 +601,9 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
 
     contract!("Initializing tasking...");
     crate::task::init::<R>();
+
+    contract!("Initializing VFS...");
+    crate::vfs::init();
 
     // CRITICAL: Calibrate the BSP preemption timer BEFORE starting secondary CPUs.
     // Secondary CPUs read timer_vector/timer_init_cnt in init_secondary_cpu().

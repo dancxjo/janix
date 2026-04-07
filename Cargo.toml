@@ -22,6 +22,7 @@ members = [
     "userspace/bristle",
     "userspace/ps2_mouse",
     "userspace/echo",
+    "userspace/vfs_hello",
     "userspace/bloom",
     "userspace/ata_disk",
     "userspace/disk_probe",

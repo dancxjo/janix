@@ -10,7 +10,7 @@ pub mod logging;
 pub mod memory;
 pub mod net;
 pub mod once_cell;
-pub mod petals_session;
+
 pub mod root;
 pub mod sched;
 pub mod simd;
@@ -834,9 +834,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     }
 
     contract!("Entering scheduler loop.");
-    crate::petals_session::init();
     loop {
-        crate::petals_session::poll();
         crate::task::yield_now::<R>();
         // runtime.wait_for_interrupt(); // TODO: Only call when runqueue is empty
     }

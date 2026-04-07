@@ -148,6 +148,8 @@ pub fn init_kernel_context(
         unsafe { (sp as *mut u64).write(val) };
     };
 
+    kernel::kinfo!("INIT KERNEL CTX: entry={:p} kstack_top={:#x} arg={:#x}", entry, kstack_top, arg);
+
     push(kernel_trampoline as *const () as usize as u64);
     push(0); // rbx
     push(0); // rbp

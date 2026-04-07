@@ -25,3 +25,5 @@ iso_root*/
 *_log*.txt
 qemu_pid
 kernel/errors.txt
+patch*.py
+

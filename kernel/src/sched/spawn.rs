@@ -56,7 +56,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 8).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             panic!("Failed to allocate stack for task {}", id);
@@ -155,7 +155,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
         self.next_id += 1;
 
-        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 8).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             panic!("Failed to allocate kernel stack for user thread {}", id);
@@ -292,7 +292,7 @@ impl<R: BootRuntime> Scheduler<R> {
         let id = self.next_id;
 
         self.next_id += 1;
-        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 16).unwrap();
+        let layout = alloc::alloc::Layout::from_size_align(KERNEL_STACK_SIZE, 8).unwrap();
         let stack_base = unsafe { alloc::alloc::alloc(layout) };
         if stack_base.is_null() {
             return None;
@@ -521,7 +521,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         ppid,
         argv: alloc::vec![module.name.as_bytes().to_vec()],
         env: alloc::collections::BTreeMap::new(),
-        console_stdin: alloc::collections::VecDeque::new(),
+
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),
     }));
@@ -737,7 +737,7 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         ppid,
         argv: final_argv,
         env,
-        console_stdin: alloc::collections::VecDeque::new(),
+
         fd_table,
         namespace: crate::vfs::NamespaceRef::global(),
     }));

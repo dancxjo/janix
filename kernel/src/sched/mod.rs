@@ -306,7 +306,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
 
     crate::kinfo!("  Creating boot task...");
 
-    let layout = alloc::alloc::Layout::from_size_align(16384, 16).unwrap();
+    let layout = alloc::alloc::Layout::from_size_align(16384, 8).unwrap();
     let stack_base = unsafe { alloc::alloc::alloc(layout) };
     if stack_base.is_null() {
         panic!("Failed to allocate stack for boot task");

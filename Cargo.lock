@@ -574,6 +574,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "cat"
+version = "0.1.0"
+dependencies = [
+ "stem",
+]
+
+[[package]]
 name = "cc"
 version = "1.2.51"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1020,7 +1027,6 @@ dependencies = [
 name = "echo"
 version = "0.1.0"
 dependencies = [
- "abi",
  "stem",
 ]
 
@@ -1877,6 +1883,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a257582fdcde896fd96463bf2d40eefea0580021c0712a0e2b028b60b47a837a"
 
 [[package]]
+name = "input_echo"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
+]
+
+[[package]]
 name = "interpolate_name"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2135,6 +2149,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0fae87c125b03c1d2c0150c90365d7d6bcc53fb73a9acaef207d2d065860f062"
 dependencies = [
  "imgref",
+]
+
+[[package]]
+name = "ls"
+version = "0.1.0"
+dependencies = [
+ "stem",
 ]
 
 [[package]]
@@ -3106,6 +3127,14 @@ dependencies = [
  "itoa",
  "ryu",
  "serde",
+]
+
+[[package]]
+name = "sh"
+version = "0.1.0"
+dependencies = [
+ "abi",
+ "stem",
 ]
 
 [[package]]

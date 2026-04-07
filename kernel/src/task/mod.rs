@@ -49,9 +49,6 @@ pub struct ProcessInfo {
     pub ppid: u32,
     pub argv: Vec<Vec<u8>>,
     pub env: BTreeMap<Vec<u8>, Vec<u8>>,
-    /// Pending bytes from the boot console / keyboard, drained by fd 0
-    /// (ConsoleNode::read).
-    pub console_stdin: VecDeque<u8>,
     /// File descriptor table — fds 0/1/2 are pre-populated at spawn time.
     pub fd_table: crate::vfs::fd_table::FdTable,
     /// VFS namespace for this process.

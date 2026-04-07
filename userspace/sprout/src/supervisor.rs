@@ -29,19 +29,22 @@ impl Supervisor {
         info!("SPROUT: [Stage 1] Hardware Discovery and Core Drivers");
         self.discover();
 
-        crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
+        /*
+        // crate::pipelines::setup_pci_stub_pipeline(&mut self.tasks);
         crate::pipelines::setup_rtc_pipeline(&mut self.tasks);
         crate::pipelines::setup_storage_pipeline(&mut self.tasks);
         crate::pipelines::setup_audio_driver(&mut self.tasks);
         let display_handles = crate::pipelines::setup_display_pipeline(&mut self.tasks);
         let input_handles = crate::pipelines::setup_input_broker(&mut self.tasks);
         crate::pipelines::setup_network_stack(&mut self.tasks);
+        */
 
         // Settle hardware phase
         stem::sleep_ms(100);
 
         // --- STAGE 2: Network & Core Services ---
         info!("SPROUT: [Stage 2] Starting Network Apps and Services");
+        /*
         crate::pipelines::setup_network_apps(&mut self.tasks);
         crate::pipelines::setup_clock_service(&mut self.tasks);
         crate::pipelines::setup_taskman_service(&mut self.tasks);
@@ -64,6 +67,10 @@ impl Supervisor {
         // --- STAGE 5: User Apps ---
         info!("SPROUT: [Stage 5] Starting Discovered User Apps");
         self.spawn_discovered_apps();
+        */
+
+        self.ensure_app("/sh");
+        self.spawn_apps();
 
         // Enter monitor loop
         info!("SPROUT: Startup complete. Entering monitor loop.");
@@ -145,7 +152,7 @@ impl Supervisor {
                 // But Registry doesn't know about Apps.
                 // Let's defer to Registry scan logic for drivers.
             } else if name.contains("/apps/")
-                || name.ends_with("/clock")
+                // || name.ends_with("/clock")
                 || name.ends_with("/idle")
                 || name.ends_with("/hello_std")
                 || (cfg!(feature = "diagnostic-apps")
@@ -216,31 +223,7 @@ impl Supervisor {
     fn spawn_apps(&mut self) {
         info!("SPROUT: spawn_apps start. tasks len={}", self.tasks.len());
 
-        // Services & Drivers
-        self.ensure_app("/flytrap");
-        self.ensure_app("/fontd");
-        self.ensure_app("/blossom");
-        // netd is spawned by setup_network_pipeline, not here
-
-        // Storage
-        self.ensure_app("/ahci_disk");
-        self.ensure_app("/iso_reader");
-
-        // User Apps
-        self.ensure_app("/font_explorer");
-        self.ensure_app("/fortune");
-        self.ensure_app("/photosynthesis");
-        self.ensure_app("/fetchd");
-        // self.ensure_app("/clock");
-        // self.ensure_app("/drawlist_demo");
-
-        // #[cfg(feature = "diagnostic-apps")]
-        // { ... }
-
-        // Scheduler fairness verification apps (disabled after testing)
-        // self.ensure_app("/scheduler_fairness");
-        // self.ensure_app("/hogger");
-        // self.ensure_app("/tick_printer");
+        self.ensure_app("/sh");
 
         for task in self.tasks.iter_mut() {
             if let TaskKind::App = task.kind {

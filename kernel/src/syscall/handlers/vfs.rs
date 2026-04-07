@@ -1,12 +1,14 @@
-//! VFS syscall handlers: open, close, read, write.
+//! VFS syscall handlers: open, close, read, write, dup, dup2, pipe.
 //!
-//! These handlers implement the first working cut of the janix VFS
-//! ("Hello from VFS" milestone):
+//! These handlers implement the janix VFS syscall interface:
 //!
 //! - [`sys_vfs_open`]  — open a path and return a file descriptor
-//! - [`sys_vfs_close`] — release a file descriptor
+//! - [`sys_vfs_close`] — release a file descriptor (all fds, including 0-2)
 //! - [`sys_vfs_read`]  — read from a file descriptor into a user buffer
 //! - [`sys_vfs_write`] — write from a user buffer to a file descriptor
+//! - [`sys_dup`]       — duplicate a file descriptor to the lowest free slot
+//! - [`sys_dup2`]      — duplicate a file descriptor to a specific slot
+//! - [`sys_pipe`]      — create an anonymous pipe, allocating two fds
 
 use alloc::vec;
 
@@ -56,27 +58,24 @@ pub fn sys_vfs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usiz
         return Ok(0);
     }
 
-    // Clone the node Arc so we don't hold the process lock during the read.
-    let (node, offset) = {
+    // Clone the node Arc and the shared offset so we don't hold the process lock
+    // during the read.
+    let (node, offset_cell) = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
         if !file.flags.is_readable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset)
+        (file.node.clone(), file.offset.clone())
     };
 
+    let offset = *offset_cell.lock();
     let mut kbuf = vec![0u8; buf_len];
     let n = node.read(offset, &mut kbuf)?;
 
-    // Always advance offset after a successful read (O_APPEND only affects writes).
     if n > 0 {
-        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-        let mut lock = pinfo_arc.lock();
-        if let Ok(file) = lock.fd_table.get_mut(fd as u32) {
-            file.offset = file.offset.saturating_add(n as u64);
-        }
+        *offset_cell.lock() = offset.saturating_add(n as u64);
     }
 
     unsafe { copyout(buf_ptr, &kbuf[..n])? };
@@ -94,28 +93,86 @@ pub fn sys_vfs_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usi
     let mut kbuf = vec![0u8; buf_len];
     unsafe { copyin(&mut kbuf, buf_ptr)? };
 
-    let (node, offset) = {
+    let (node, offset_cell) = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
         if !file.flags.is_writable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset)
+        (file.node.clone(), file.offset.clone())
     };
 
+    let offset = *offset_cell.lock();
     let n = node.write(offset, &kbuf)?;
 
-    // Always advance offset after a successful write.
     // O_APPEND semantics (positioning at EOF before write) are handled by the
     // node implementation; the offset is still updated here to track position.
     if n > 0 {
-        let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
-        let mut lock = pinfo_arc.lock();
-        if let Ok(file) = lock.fd_table.get_mut(fd as u32) {
-            file.offset = file.offset.saturating_add(n as u64);
-        }
+        *offset_cell.lock() = offset.saturating_add(n as u64);
     }
 
     Ok(n)
 }
+
+// ── dup ─────────────────────────────────────────────────────────────────────
+
+/// Duplicate `old_fd` to the lowest available file descriptor.
+///
+/// Returns the new file descriptor, or an error if `old_fd` is not open.
+pub fn sys_dup(old_fd: usize) -> SysResult<usize> {
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let new_fd = pinfo_arc.lock().fd_table.dup(old_fd as u32)?;
+    Ok(new_fd as usize)
+}
+
+// ── dup2 ────────────────────────────────────────────────────────────────────
+
+/// Duplicate `old_fd` to `new_fd`.
+///
+/// If `new_fd` is already open it is closed first.  If `old_fd == new_fd`
+/// this is a no-op.  Returns `new_fd` on success.
+pub fn sys_dup2(old_fd: usize, new_fd: usize) -> SysResult<usize> {
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+    let result = pinfo_arc.lock().fd_table.dup2(old_fd as u32, new_fd as u32)?;
+    Ok(result as usize)
+}
+
+// ── pipe ────────────────────────────────────────────────────────────────────
+
+/// Create an anonymous pipe and allocate two file descriptors.
+///
+/// Writes the read-end fd and write-end fd into the user buffer pointed to by
+/// `pipefd_ptr` (which must point to a `[u32; 2]`).  Returns 0 on success.
+pub fn sys_pipe(pipefd_ptr: usize) -> SysResult<usize> {
+    // Validate: we need to write 8 bytes (two u32s).
+    validate_user_range(pipefd_ptr, 8, true)?;
+
+    let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
+
+    let (read_node, write_node) = crate::ipc::pipe::create_fd_pair(4096, false);
+    let (read_fd, write_fd) = {
+        let mut lock = pinfo_arc.lock();
+        let read_fd = lock
+            .fd_table
+            .open(read_node, crate::vfs::OpenFlags::read_only())?;
+        match lock.fd_table.open(write_node, crate::vfs::OpenFlags::write_only()) {
+            Ok(wfd) => (read_fd, wfd),
+            Err(e) => {
+                let _ = lock.fd_table.close(read_fd);
+                return Err(e);
+            }
+        }
+    };
+
+    // Write [read_fd, write_fd] to userspace as two consecutive u32 values (8 bytes).
+    let read_fd_bytes = read_fd.to_ne_bytes();
+    let write_fd_bytes = write_fd.to_ne_bytes();
+    let mut fds_bytes = [0u8; 8];
+    fds_bytes[..4].copy_from_slice(&read_fd_bytes);
+    fds_bytes[4..].copy_from_slice(&write_fd_bytes);
+    unsafe { copyout(pipefd_ptr, &fds_bytes)? };
+
+    Ok(0)
+}
+

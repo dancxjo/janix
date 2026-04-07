@@ -39,19 +39,6 @@ impl StartupArg {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StdioPipeMode {
-    Read,
-    Write,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StdioBinding {
-    Null,
-    Console,
-    Pipe { pipe_id: u64, mode: StdioPipeMode },
-}
-
 /// Per-process identity and storage.
 ///
 /// Shared by all threads within a process via `Arc<Mutex<ProcessInfo>>`.
@@ -62,10 +49,10 @@ pub struct ProcessInfo {
     pub ppid: u32,
     pub argv: Vec<Vec<u8>>,
     pub env: BTreeMap<Vec<u8>, Vec<u8>>,
-    pub stdio: [StdioBinding; 3],
+    /// Pending bytes from the boot console / keyboard, drained by fd 0
+    /// (ConsoleNode::read).
     pub console_stdin: VecDeque<u8>,
-    /// VFS file descriptor table. Populated on first use; always present for
-    /// user processes.
+    /// File descriptor table — fds 0/1/2 are pre-populated at spawn time.
     pub fd_table: crate::vfs::fd_table::FdTable,
 }
 

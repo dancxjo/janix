@@ -74,6 +74,7 @@ impl VfsStat {
     pub const S_IFREG: u32 = 0o100000;
     pub const S_IFDIR: u32 = 0o040000;
     pub const S_IFCHR: u32 = 0o020000;
+    pub const S_IFIFO: u32 = 0o010000;
 
     pub fn is_dir(self) -> bool {
         self.mode & Self::S_IFMT == Self::S_IFDIR
@@ -83,6 +84,9 @@ impl VfsStat {
     }
     pub fn is_reg(self) -> bool {
         self.mode & Self::S_IFMT == Self::S_IFREG
+    }
+    pub fn is_fifo(self) -> bool {
+        self.mode & Self::S_IFMT == Self::S_IFIFO
     }
 }
 

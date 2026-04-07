@@ -1,8 +1,6 @@
 //! Task and thread spawning functions.
 
-use crate::task::{
-    Affinity, ProcessInfo, StartupArg, StdioBinding, StdioPipeMode, Task, TaskId, TaskState,
-};
+use crate::task::{Affinity, ProcessInfo, StartupArg, Task, TaskId, TaskState};
 use crate::{BootRuntime, BootTasking, UserEntry};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
@@ -511,14 +509,20 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
         .unwrap_or(0);
 
     // Create per-process identity
+    let console_node: alloc::sync::Arc<dyn crate::vfs::VfsNode> =
+        alloc::sync::Arc::new(crate::vfs::devfs::ConsoleNode);
+    let mut fd_table = crate::vfs::fd_table::FdTable::new();
+    // Pre-populate stdio: fd 0 = stdin (console), fd 1 = stdout (console), fd 2 = stderr (console)
+    let _ = fd_table.insert_at(0, console_node.clone(), crate::vfs::OpenFlags::read_only());
+    let _ = fd_table.insert_at(1, console_node.clone(), crate::vfs::OpenFlags::write_only());
+    let _ = fd_table.insert_at(2, console_node, crate::vfs::OpenFlags::write_only());
     let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
         pid: id as u32,
         ppid,
         argv: alloc::vec![module.name.as_bytes().to_vec()],
         env: alloc::collections::BTreeMap::new(),
-        stdio: [StdioBinding::Console; 3],
         console_stdin: alloc::collections::VecDeque::new(),
-        fd_table: crate::vfs::fd_table::FdTable::new(),
+        fd_table,
     }));
 
     // Store name and process_info on the task struct
@@ -540,7 +544,7 @@ pub unsafe fn spawn_process_with_priority<R: BootRuntime>(
 /// Stdio specification for a single stream.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StdioSpec {
-    /// Inherit parent's handle (no-op for v1; child gets kernel console).
+    /// Inherit parent's handle (child gets a dup of the parent's fd).
     Inherit,
     /// Attach to null sink/source.
     Null,
@@ -548,49 +552,104 @@ pub enum StdioSpec {
     Pipe,
 }
 
-fn inherited_stdio_or_console<R: BootRuntime>() -> [StdioBinding; 3] {
-    let tid = crate::runtime::<R>().current_tid();
-    crate::task::registry::get_task::<R>(tid)
-        .and_then(|task| task.process_info.clone())
-        .map(|pi| pi.lock().stdio)
-        .unwrap_or([StdioBinding::Console; 3])
-}
-
-fn bindings_from_specs<R: BootRuntime>(
+/// Populate the fd_table slots 0, 1, 2 in `fd_table` based on the given specs.
+///
+/// Returns the pipe IDs allocated for piped stdin/stdout/stderr (0 when not piped).
+/// The parent uses these pipe IDs with the legacy `SYS_PIPE_*` syscalls; the child
+/// reads/writes through the fd_table nodes which share the same underlying pipe.
+fn setup_stdio_fds<R: BootRuntime>(
+    fd_table: &mut crate::vfs::fd_table::FdTable,
     stdin_spec: StdioSpec,
     stdout_spec: StdioSpec,
     stderr_spec: StdioSpec,
-    stdin_pipe: u64,
-    stdout_pipe: u64,
-    stderr_pipe: u64,
-) -> [StdioBinding; 3] {
-    let inherited = inherited_stdio_or_console::<R>();
-    [
-        match stdin_spec {
-            StdioSpec::Inherit => inherited[0],
-            StdioSpec::Null => StdioBinding::Null,
-            StdioSpec::Pipe => StdioBinding::Pipe {
-                pipe_id: stdin_pipe,
-                mode: StdioPipeMode::Read,
-            },
-        },
-        match stdout_spec {
-            StdioSpec::Inherit => inherited[1],
-            StdioSpec::Null => StdioBinding::Null,
-            StdioSpec::Pipe => StdioBinding::Pipe {
-                pipe_id: stdout_pipe,
-                mode: StdioPipeMode::Write,
-            },
-        },
-        match stderr_spec {
-            StdioSpec::Inherit => inherited[2],
-            StdioSpec::Null => StdioBinding::Null,
-            StdioSpec::Pipe => StdioBinding::Pipe {
-                pipe_id: stderr_pipe,
-                mode: StdioPipeMode::Write,
-            },
-        },
-    ]
+) -> (u64, u64, u64) {
+    use crate::vfs::{OpenFlags, VfsNode};
+    use alloc::sync::Arc;
+
+    let console: Arc<dyn VfsNode> = Arc::new(crate::vfs::devfs::ConsoleNode);
+    let null: Arc<dyn VfsNode> = Arc::new(crate::vfs::devfs::NullNode);
+
+    // Helper: inherit parent's fd by cloning the node Arc.
+    let inherited_node = |fd: u32| -> Option<(Arc<dyn VfsNode>, OpenFlags)> {
+        let tid = crate::runtime::<R>().current_tid();
+        crate::task::registry::get_task::<R>(tid)
+            .and_then(|task| task.process_info.clone())
+            .and_then(|pi| {
+                let lock = pi.lock();
+                lock.fd_table.get(fd).ok().map(|f| (f.node.clone(), f.flags))
+            })
+    };
+
+    let mut stdin_pipe: u64 = 0;
+    let mut stdout_pipe: u64 = 0;
+    let mut stderr_pipe: u64 = 0;
+
+    // fd 0 — stdin
+    match stdin_spec {
+        StdioSpec::Inherit => {
+            if let Some((node, flags)) = inherited_node(0) {
+                let _ = fd_table.insert_at(0, node, flags);
+            } else {
+                let _ = fd_table.insert_at(0, console.clone(), OpenFlags::read_only());
+            }
+        }
+        StdioSpec::Null => {
+            let _ = fd_table.insert_at(0, null.clone(), OpenFlags::read_only());
+        }
+        StdioSpec::Pipe => {
+            // Create the raw pipe (readers=1, writers=1).  The child's fd 0 is
+            // the read end; the parent retains the write end via stdin_pipe.
+            let id = crate::ipc::pipe::create(4096, 0);
+            if let Some(read_node) = crate::ipc::pipe::read_node_for_id(id) {
+                let _ = fd_table.insert_at(0, read_node, OpenFlags::read_only());
+            }
+            stdin_pipe = id;
+        }
+    }
+
+    // fd 1 — stdout
+    match stdout_spec {
+        StdioSpec::Inherit => {
+            if let Some((node, flags)) = inherited_node(1) {
+                let _ = fd_table.insert_at(1, node, flags);
+            } else {
+                let _ = fd_table.insert_at(1, console.clone(), OpenFlags::write_only());
+            }
+        }
+        StdioSpec::Null => {
+            let _ = fd_table.insert_at(1, null.clone(), OpenFlags::write_only());
+        }
+        StdioSpec::Pipe => {
+            let id = crate::ipc::pipe::create(4096, 0);
+            if let Some(write_node) = crate::ipc::pipe::write_node_for_id(id) {
+                let _ = fd_table.insert_at(1, write_node, OpenFlags::write_only());
+            }
+            stdout_pipe = id;
+        }
+    }
+
+    // fd 2 — stderr
+    match stderr_spec {
+        StdioSpec::Inherit => {
+            if let Some((node, flags)) = inherited_node(2) {
+                let _ = fd_table.insert_at(2, node, flags);
+            } else {
+                let _ = fd_table.insert_at(2, console, OpenFlags::write_only());
+            }
+        }
+        StdioSpec::Null => {
+            let _ = fd_table.insert_at(2, null, OpenFlags::write_only());
+        }
+        StdioSpec::Pipe => {
+            let id = crate::ipc::pipe::create(4096, 0);
+            if let Some(write_node) = crate::ipc::pipe::write_node_for_id(id) {
+                let _ = fd_table.insert_at(2, write_node, OpenFlags::write_only());
+            }
+            stderr_pipe = id;
+        }
+    }
+
+    (stdin_pipe, stdout_pipe, stderr_pipe)
 }
 
 /// Result of an enhanced spawn: child tid + pipe IDs for piped stdio.
@@ -630,21 +689,6 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         crate::task::loader::load_module(rt, aspace, module).ok_or(abi::errors::Errno::ENOEXEC)?;
     entry.arg0 = 0; // No raw arg for ex spawn
 
-    // Create pipes for piped stdio
-    let mut stdin_pipe: u64 = 0;
-    let mut stdout_pipe: u64 = 0;
-    let mut stderr_pipe: u64 = 0;
-
-    if stdin_spec == StdioSpec::Pipe {
-        stdin_pipe = crate::ipc::pipe::create(4096, abi::syscall::pipe_flags::NONBLOCK);
-    }
-    if stdout_spec == StdioSpec::Pipe {
-        stdout_pipe = crate::ipc::pipe::create(4096, abi::syscall::pipe_flags::NONBLOCK);
-    }
-    if stderr_spec == StdioSpec::Pipe {
-        stderr_pipe = crate::ipc::pipe::create(4096, abi::syscall::pipe_flags::NONBLOCK);
-    }
-
     let _irq = rt.irq_disable();
 
     let lock = SCHEDULER.lock();
@@ -681,14 +725,10 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         argv
     };
 
-    let stdio = bindings_from_specs::<R>(
-        stdin_spec,
-        stdout_spec,
-        stderr_spec,
-        stdin_pipe,
-        stdout_pipe,
-        stderr_pipe,
-    );
+    // Populate stdio fds in the child's fd_table.
+    let mut fd_table = crate::vfs::fd_table::FdTable::new();
+    let (stdin_pipe, stdout_pipe, stderr_pipe) =
+        setup_stdio_fds::<R>(&mut fd_table, stdin_spec, stdout_spec, stderr_spec);
 
     // Create per-process identity with provided argv & env
     let pinfo = alloc::sync::Arc::new(spin::Mutex::new(ProcessInfo {
@@ -696,9 +736,8 @@ pub unsafe fn spawn_process_ex<R: BootRuntime>(
         ppid,
         argv: final_argv,
         env,
-        stdio,
         console_stdin: alloc::collections::VecDeque::new(),
-        fd_table: crate::vfs::fd_table::FdTable::new(),
+        fd_table,
     }));
 
     // Store name and process_info on the task struct

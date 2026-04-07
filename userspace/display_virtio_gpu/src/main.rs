@@ -335,54 +335,65 @@ fn main(arg: usize) -> ! {
     let mut texture_registry: alloc::collections::BTreeMap<u64, TextureEntry> =
         alloc::collections::BTreeMap::new();
 
+    let mut ws = stem::wait_set::WaitSet::new();
+    let drv_req_read_tok = ws.add_port_readable(drv_req_read as u64).unwrap();
+
     loop {
-        let handles = [drv_req_read];
-        stem::trace!("display_virtio_gpu: waiting on port_wait...");
-        match stem::syscall::port_wait(&handles, 1 /* READABLE */) {
-            Ok(_) => {
+        stem::trace!("display_virtio_gpu: waiting on WaitSet...");
+        match ws.wait(None::<stem::time::Duration>) {
+            Ok(events) => {
                 let mut read_total = 0;
-                match port_recv(drv_req_read, &mut buf) {
-                    Ok(n) => {
-                        if n == 0 {
-                            // No payload queued after wake; just continue the outer loop.
-                        } else {
-                            frames.push(&buf[..n]);
-                            read_total += n;
-                        }
-                    }
-                    Err(e) => {
-                        stem::error!("display_virtio_gpu: port_recv ERR: {:?}", e);
+                let mut has_req_readable = false;
+                for ev in events {
+                    if ev.token() == drv_req_read_tok && ev.is_readable() {
+                        has_req_readable = true;
                     }
                 }
-
-                // `port_recv` is now blocking. After `port_wait` wakes us, drain only
-                // with `port_try_recv` so we don't park here before processing frames.
-                loop {
-                    match stem::syscall::port_try_recv(drv_req_read, &mut buf) {
+                
+                if has_req_readable {
+                    match port_recv(drv_req_read, &mut buf) {
                         Ok(n) => {
                             if n == 0 {
-                                break;
+                                // No payload queued after wake; just continue the outer loop.
+                            } else {
+                                frames.push(&buf[..n]);
+                                read_total += n;
                             }
-                            frames.push(&buf[..n]);
-                            read_total += n;
                         }
-                        Err(abi::errors::Errno::EAGAIN) => break,
                         Err(e) => {
-                            stem::error!("display_virtio_gpu: port_try_recv ERR: {:?}", e);
-                            break;
+                            stem::error!("display_virtio_gpu: port_recv ERR: {:?}", e);
                         }
                     }
-                }
-                if read_total > 0 {
-                    stem::trace!(
-                        "display_virtio_gpu: port_wait read {} bytes, dropped={}",
-                        read_total,
-                        frames.dropped_bytes()
-                    );
+
+                    // `port_recv` is now blocking. After `WaitSet` wakes us, drain only
+                    // with `port_try_recv` so we don't park here before processing frames.
+                    loop {
+                        match stem::syscall::port_try_recv(drv_req_read, &mut buf) {
+                            Ok(n) => {
+                                if n == 0 {
+                                    break;
+                                }
+                                frames.push(&buf[..n]);
+                                read_total += n;
+                            }
+                            Err(abi::errors::Errno::EAGAIN) => break,
+                            Err(e) => {
+                                stem::error!("display_virtio_gpu: port_try_recv ERR: {:?}", e);
+                                break;
+                            }
+                        }
+                    }
+                    if read_total > 0 {
+                        stem::trace!(
+                            "display_virtio_gpu: WaitSet read {} bytes, dropped={}",
+                            read_total,
+                            frames.dropped_bytes()
+                        );
+                    }
                 }
             }
             Err(e) => {
-                stem::trace!("display_virtio_gpu: port_wait returned ERR: {:?}", e);
+                stem::trace!("display_virtio_gpu: WaitSet returned ERR: {:?}", e);
             }
         }
 

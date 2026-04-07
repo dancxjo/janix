@@ -48,34 +48,26 @@ impl FrameLoop {
         }
     }
 
-    /// Sleep until the target frame duration elapses, but wake early if input arrives.
-    ///
-    /// This keeps the compositor responsive while idle without forcing a high fixed FPS.
     pub fn sleep_until_input(&self, input_handle: Option<PortHandle>) {
-        const INPUT_POLL_QUANTUM: Duration = Duration::from_millis(1);
-
-        loop {
-            if let Some(handle) = input_handle {
-                if port_len(handle).map(|len| len > 0).unwrap_or(false) {
-                    return;
-                }
-            }
-
-            let now = stem::time::now();
-            let elapsed = now.saturating_sub(self.frame_start);
-            if elapsed.as_nanos() >= self.target_duration.as_nanos() {
-                stem::yield_now();
-                return;
-            }
-
-            let remaining = self.target_duration.saturating_sub(elapsed);
-            if remaining.as_nanos() <= INPUT_POLL_QUANTUM.as_nanos() {
-                stem::time::sleep(remaining);
-                return;
-            }
-
-            stem::time::sleep(INPUT_POLL_QUANTUM);
+        let now = stem::time::now();
+        let elapsed = now.saturating_sub(self.frame_start);
+        
+        if elapsed.as_nanos() >= self.target_duration.as_nanos() {
+            stem::yield_now();
+            return;
         }
+
+        let remaining = self.target_duration.saturating_sub(elapsed);
+
+        if let Some(handle) = input_handle {
+            let mut ws = stem::wait_set::WaitSet::new();
+            if ws.add_port_readable(handle as u64).is_ok() {
+                let _ = ws.wait(Some(remaining));
+                return;
+            }
+        }
+
+        stem::time::sleep(remaining);
     }
 
     /// Periodic heartbeat for diagnostics.

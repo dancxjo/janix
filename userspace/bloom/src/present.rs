@@ -209,16 +209,19 @@ impl DriverPresenter {
 
     fn send_reliable(&mut self, data: &[u8]) -> Result<usize, abi::errors::Errno> {
         let mut wait_count = 0u32;
+        let mut ws = stem::wait_set::WaitSet::new();
+        let write_tok = ws.add_port_writable(self.req_write as u64).unwrap();
+        let read_tok = ws.add_port_readable(self.resp_read as u64).unwrap();
+
         loop {
             match port_send_all(self.req_write, data) {
                 Err(abi::errors::Errno::EAGAIN) => {
                     // Drain response traffic while the request port is full.
                     // Without this, ACK/ACQUIRED messages can fill the return port,
                     // block the driver, and starve input handling in the compositor.
-                    self.pump_port();
-                    self.process_rx();
+                    self.pump();
                     wait_count = wait_count.wrapping_add(1);
-                    if wait_count == 1024 {
+                    if wait_count == 200 { // reduced threshold since wait takes time
                         stem::warn!(
                             "bloom: request port {} remained full while sending {} bytes",
                             self.req_write,
@@ -226,7 +229,8 @@ impl DriverPresenter {
                         );
                         wait_count = 0;
                     }
-                    stem::yield_now();
+                    // Wait for either space to write, or data to read (to drain it)
+                    let _ = ws.wait(Some(stem::time::Duration::from_millis(10)));
                 }
                 Err(e) => {
                     stem::error!(
@@ -539,8 +543,12 @@ impl DriverPresenter {
             );
         }
 
+        let mut ws = stem::wait_set::WaitSet::new();
+        let tok = ws.add_port_readable(self.resp_read as u64).unwrap();
+
         // Wait for MSG_TEXTURE_CREATED response
         loop {
+            let _ = ws.wait(Some(stem::time::Duration::from_millis(100)));
             self.pump_port();
             while let Some((hdr, payload_data)) = self.frames.next_message() {
                 if hdr.msg_type == drvproto::MSG_TEXTURE_CREATED {
@@ -556,7 +564,6 @@ impl DriverPresenter {
                     self.handle_message(hdr.msg_type, &payload_copy);
                 }
             }
-            stem::yield_now();
         }
     }
 
@@ -685,11 +692,17 @@ impl Presenter for DriverPresenter {
         send_acquire(self);
         last_acquire_send_ns = stem::monotonic_ns();
 
+        let mut ws = stem::wait_set::WaitSet::new();
+        let tok = ws.add_port_readable(self.resp_read as u64).unwrap();
+
         // Synchronous wait for ACQUIRED
         loop {
             if let Some(acquired) = self.pending_acquired.take() {
                 return acquired;
             }
+
+            // Wait with a 50ms timeout so we can still trigger the resend logic below
+            let _ = ws.wait(Some(stem::time::Duration::from_millis(50)));
 
             self.pump_port();
             while let Some((header, payload)) = self.frames.next_message() {
@@ -738,8 +751,6 @@ impl Presenter for DriverPresenter {
                 send_acquire(self);
                 last_acquire_send_ns = now_ns;
             }
-
-            stem::yield_now();
         }
     }
 }

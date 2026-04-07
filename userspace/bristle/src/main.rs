@@ -341,17 +341,51 @@ fn main(packed_handles: usize) -> ! {
     let mut resync_counter: u32 = 0;
     let mut event_count: u64 = 0;
 
-    let wait_handles = [kbd_read, mouse_read];
+    let mut ws = stem::wait_set::WaitSet::new();
+    let mut kbd_tok = None;
+    let mut mouse_tok = None;
+
+    if kbd_read != 0 {
+        match ws.add_port_readable(kbd_read as u64) {
+            Ok(tok) => kbd_tok = Some(tok),
+            Err(e) => info!("bristle: failed to watch kbd_read port {}: {:?}", kbd_read, e),
+        }
+    }
+    if mouse_read != 0 {
+        match ws.add_port_readable(mouse_read as u64) {
+            Ok(tok) => mouse_tok = Some(tok),
+            Err(e) => info!("bristle: failed to watch mouse_read port {}: {:?}", mouse_read, e),
+        }
+    }
+
+    if kbd_tok.is_none() && mouse_tok.is_none() {
+        info!("bristle: no valid input ports to watch, shutting down loop");
+        loop { stem::sleep_ms(1000); }
+    }
+
     loop {
-        let ready_handle = match port_wait(&wait_handles, abi::syscall::port_wait::READABLE) {
-            Ok(h) => h,
+        let events = match ws.wait(None::<stem::time::Duration>) {
+            Ok(evs) => evs,
             Err(_) => {
                 stem::yield_now();
                 continue;
             }
         };
 
-        if let Ok(n) = port_recv(ready_handle, &mut recv_buf) {
+        for ev in events {
+            if !ev.is_readable() {
+                continue;
+            }
+
+            let ready_handle = if Some(ev.token()) == kbd_tok {
+                kbd_read
+            } else if Some(ev.token()) == mouse_tok {
+                mouse_read
+            } else {
+                continue;
+            };
+
+            if let Ok(n) = port_recv(ready_handle, &mut recv_buf) {
             if n > 0 {
                 let mut cursor = 0;
                 while cursor < n {
@@ -535,7 +569,9 @@ fn main(packed_handles: usize) -> ! {
                     }
                 }
             }
-        }
+        } // close if Ok(n)
+
+        } // close for ev in events
 
         if drop_counter > 0 && drop_counter % 100 == 0 {
             info!("bristle: dropped {} events (port full)", drop_counter);

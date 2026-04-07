@@ -128,7 +128,7 @@ mod tests {
         assert_eq!(&buf[..n], b"hello");
 
         let mut table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
-        assert!(table.close(write_handle));
-        assert!(table.close(read_handle));
+        assert!(table.close(write_handle).is_some());
+        assert!(table.close(read_handle).is_some());
     }
 }

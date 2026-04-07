@@ -53,10 +53,24 @@ pub fn init_kernel_context(
 }
 
 pub fn init_user_context(
-    _spec: UserTaskSpec<AArch64AddressSpace>,
-    _kstack_top: u64,
+    spec: UserTaskSpec<AArch64AddressSpace>,
+    kstack_top: u64,
 ) -> AArch64Context {
-    AArch64Context::default()
+    let mut ctx = AArch64Context::default();
+    // When context_switch restores this context, lr (x30) points to
+    // user_trampoline which performs the EL1 → EL0 transition.
+    // Callee-saved registers carry the user task parameters:
+    //   x19 = user entry_pc
+    //   x20 = user stack_top
+    //   x21 = TTBR0 value (address space)
+    //   x22 = startup argument (forwarded to x0 in user mode)
+    ctx.0[11] = user_trampoline as *const () as u64; // lr = user_trampoline
+    ctx.0[12] = kstack_top; // sp = kernel stack top
+    ctx.0[0] = spec.entry; // x19 = user entry PC
+    ctx.0[1] = spec.stack_top; // x20 = user stack pointer
+    ctx.0[2] = spec.aspace.0; // x21 = TTBR0 value
+    ctx.0[3] = spec.arg as u64; // x22 = startup argument
+    ctx
 }
 
 /// Trampoline that sets up arguments and calls the thread entry point.
@@ -66,6 +80,68 @@ unsafe extern "C" fn trampoline() -> ! {
     naked_asm!(
         "mov x0, x20", // arg is in x20
         "br x19",      // entry is in x19, jump (not call since it's noreturn)
+    );
+}
+
+/// User-mode trampoline: transitions from EL1 (kernel) to EL0 (user).
+///
+/// Called via `context_switch` when a newly spawned user thread is first
+/// scheduled. The callee-saved registers carry the task parameters set up
+/// by `init_user_context`:
+///   x19 = user entry PC
+///   x20 = user stack pointer (SP_EL0)
+///   x21 = TTBR0 value (user address space)
+///   x22 = startup argument (forwarded to x0 in user mode)
+///
+/// SPSR_EL1 is set for EL0t (user mode) with all interrupts unmasked.
+#[unsafe(naked)]
+unsafe extern "C" fn user_trampoline() -> ! {
+    naked_asm!(
+        // Save current kernel SP, then switch to SP_EL1 mode so we can
+        // write SP_EL0 without clobbering the kernel stack pointer.
+        "mov x9, sp",
+        "msr spsel, #1",
+        "mov sp, x9",
+        // Set the user-mode register state.
+        "msr sp_el0,   x20",    // user stack pointer
+        "msr elr_el1,  x19",    // user entry PC
+        "msr ttbr0_el1, x21",   // user address space
+        "isb",                   // ensure TTBR0 is visible before eret
+        // SPSR_EL1 = 0 → EL0t mode, DAIF bits 0 (interrupts unmasked)
+        "msr spsr_el1, xzr",
+        // Forward startup argument to x0; clear all other general registers.
+        "mov x0,  x22",
+        "mov x1,  xzr",
+        "mov x2,  xzr",
+        "mov x3,  xzr",
+        "mov x4,  xzr",
+        "mov x5,  xzr",
+        "mov x6,  xzr",
+        "mov x7,  xzr",
+        "mov x8,  xzr",
+        "mov x9,  xzr",
+        "mov x10, xzr",
+        "mov x11, xzr",
+        "mov x12, xzr",
+        "mov x13, xzr",
+        "mov x14, xzr",
+        "mov x15, xzr",
+        "mov x16, xzr",
+        "mov x17, xzr",
+        "mov x18, xzr",
+        "mov x19, xzr",
+        "mov x20, xzr",
+        "mov x21, xzr",
+        "mov x22, xzr",
+        "mov x23, xzr",
+        "mov x24, xzr",
+        "mov x25, xzr",
+        "mov x26, xzr",
+        "mov x27, xzr",
+        "mov x28, xzr",
+        "mov x29, xzr",
+        "mov x30, xzr",
+        "eret",
     );
 }
 

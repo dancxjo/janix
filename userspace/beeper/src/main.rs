@@ -12,7 +12,7 @@ use alloc::vec::Vec;
 use stem::syscall::port::{port_send, port_wait, PortHandle};
 use stem::thing::sys as thingsys;
 use stem::thing::ThingId;
-use stem::{error, info};
+use stem::info;
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
@@ -23,7 +23,8 @@ fn main(_arg: usize) -> ! {
     let mut device_id = None;
     let mut write_port_handle = 0;
 
-    for _ in 0..50 {
+    let mut last_wait_log_ns = 0u64;
+    while write_port_handle == 0 {
         // Prefer native HDA path if present.
         if let Ok(count) = thingsys::find(DEV_SOUND_HDA_PCI_STUB, &mut dev_buf) {
             if count > 0 {
@@ -49,13 +50,13 @@ fn main(_arg: usize) -> ! {
                 }
             }
         }
-        stem::time::sleep_ms(100);
-    }
-    if write_port_handle == 0 {
-        error!("Beeper: Device has no write port handle");
-        loop {
-            stem::yield_now();
+
+        let now = stem::time::monotonic_ns();
+        if last_wait_log_ns == 0 || now.saturating_sub(last_wait_log_ns) >= 1_000_000_000 {
+            info!("Beeper: Waiting for sound device write port handle...");
+            last_wait_log_ns = now;
         }
+        stem::time::sleep_ms(100);
     }
 
     let sample_rate = 44100;

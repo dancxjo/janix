@@ -3,12 +3,10 @@
 
 extern crate alloc;
 
-use stem::pal;
-
 use abi::device::PCI_IRQ_MODE_MSIX;
 use core::ptr::write_volatile;
 use core::sync::atomic::{AtomicUsize, Ordering};
-use stem::abi::module_manifest::{MANIFEST_MAGIC, ManifestHeader, ModuleKind};
+use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::device::device_enable_msi;
 use stem::syscall::{device_alloc_dma, device_dma_phys, device_irq_subscribe, device_irq_wait};
 use stem::thing::sys as thingsys;
@@ -18,6 +16,7 @@ use stem::{error, info, warn};
 use virtio_gpu::{Rect, VirtioGpu};
 
 static IRQ_HANDLE: AtomicUsize = AtomicUsize::new(0);
+const DEMO_RESOURCE_ID: u32 = 1;
 
 #[unsafe(link_section = ".thing_manifest")]
 #[unsafe(no_mangle)]
@@ -110,7 +109,7 @@ fn main(arg: usize) -> ! {
                 let color = if (y + offset) % 40 < 20 {
                     0x00FF0000 // Red in BGRA
                 } else {
-                    0x000000FF // Blue in BGRA  
+                    0x000000FF // Blue in BGRA
                 };
                 unsafe { write_volatile(fb.add(y * w as usize + x), color) };
             }
@@ -118,7 +117,7 @@ fn main(arg: usize) -> ! {
 
         // Flush to display
         let full_rect = Rect { x: 0, y: 0, w, h };
-        let _ = gpu.present_rect(full_rect);
+        let _ = gpu.present_rect(DEMO_RESOURCE_ID, full_rect);
 
         if frame % 60 == 0 {
             info!("VIRTIO_GPU: Frame {}", frame);
@@ -131,7 +130,7 @@ fn main(arg: usize) -> ! {
 
 fn setup_display(gpu: &mut VirtioGpu) -> Result<(), &'static str> {
     // Create GPU resource
-    gpu.create_resource_2d()?;
+    gpu.create_resource_2d(DEMO_RESOURCE_ID)?;
 
     info!("VIRTIO_GPU: Display pipeline ready!");
     Ok(())
@@ -158,10 +157,10 @@ fn create_demo_framebuffer(gpu: &mut VirtioGpu) -> Result<u64, &'static str> {
     }
 
     // Attach framebuffer memory to resource
-    gpu.attach_backing(fb_phys, fb_size)?;
+    gpu.attach_backing(DEMO_RESOURCE_ID, fb_phys, fb_size, width * 4)?;
 
     // Set this resource as scanout 0
-    gpu.set_scanout(width, height)?;
+    gpu.set_scanout(DEMO_RESOURCE_ID, width, height)?;
 
     // Initial transfer + flush
     let full_rect = Rect {
@@ -170,7 +169,7 @@ fn create_demo_framebuffer(gpu: &mut VirtioGpu) -> Result<u64, &'static str> {
         w: width,
         h: height,
     };
-    gpu.present_rect(full_rect)?;
+    gpu.present_rect(DEMO_RESOURCE_ID, full_rect)?;
 
     Ok(framebuffer)
 }

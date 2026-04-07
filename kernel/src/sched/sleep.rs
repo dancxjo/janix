@@ -14,17 +14,7 @@ use super::types::{ScheduleReason, Scheduler};
 /// queues are empty and the caller may safely halt (HLT / WFI).
 pub fn yield_now<R: BootRuntime>() -> bool {
     use core::sync::atomic::{AtomicU64, Ordering};
-    // Per-CPU diagnostic counters so each CPU gets 20 calls of logging
-    static DIAG_CPU: [AtomicU64; 8] = [
-        AtomicU64::new(0),
-        AtomicU64::new(0),
-        AtomicU64::new(0),
-        AtomicU64::new(0),
-        AtomicU64::new(0),
-        AtomicU64::new(0),
-        AtomicU64::new(0),
-        AtomicU64::new(0),
-    ];
+
 
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
@@ -47,28 +37,7 @@ pub fn yield_now<R: BootRuntime>() -> bool {
         (sp, work)
     };
 
-    let diag_n = if cpu_idx < 8 {
-        DIAG_CPU[cpu_idx].fetch_add(1, Ordering::Relaxed)
-    } else {
-        999
-    };
-    if diag_n < 50 {
-        crate::kinfo!(
-            "DIAG yield_now: cpu={} has_work={}",
-            crate::sched::current_cpu_index::<R>(),
-            has_work
-        );
-    }
-
     if let Some(switch) = switch_params {
-        if diag_n < 50 {
-            crate::kinfo!(
-                "DIAG ctx_switch: cpu={} from={} to={}",
-                crate::sched::current_cpu_index::<R>(),
-                switch.from_tid,
-                switch.to_tid
-            );
-        }
 
         rt.tasking().activate_address_space(switch.to_aspace);
 

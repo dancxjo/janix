@@ -678,15 +678,6 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
     crate::task::init_graph_workers::<R>();
     let modules = runtime.modules();
     contract!("Kernel: Enumerating {} boot modules...", modules.len());
-    for (i, m) in modules.iter().enumerate() {
-        contract!(
-            "  [{}] name='{}' cmdline='{}' size={}",
-            i,
-            m.name,
-            m.cmdline,
-            m.bytes.len()
-        );
-    }
 
     // Look for module with "init" in cmdline, otherwise fallback to "sprout" by name
     let init_module = modules

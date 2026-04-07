@@ -230,19 +230,7 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
     set(node, keys::BIND_HASH, hash_id);
 
     link(parent_node, rels::HAS_DEVICE, node);
-    crate::kinfo!(
-        "PCI: {:02x}:{:02x}.{} {:04x}:{:04x} {} class={:02x}:{:02x} prog_if={:02x} rev={:02x}",
-        bus,
-        dev,
-        func,
-        vendor_id,
-        device_id,
-        pci::fmt_pci_id(vendor_id, device_id),
-        class_code,
-        subclass,
-        prog_if,
-        revision_id
-    );
+
 
     // BARs - collect MMIO BARs for device registry
     let mut bar_addrs: [u64; 6] = [0; 6];
@@ -299,17 +287,7 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
         }
     }
 
-    // Log BARs for debugging
-    for i in 0..6 {
-        if bar_addrs[i] != 0 {
-            crate::kinfo!(
-                "PCI:   BAR{}: phys=0x{:x} size=0x{:x}",
-                i,
-                bar_addrs[i],
-                bar_sizes[i]
-            );
-        }
-    }
+
 
     // PCI capabilities: MSI/MSI-X
     let msi_cap = find_capability(bus, dev, func, 0x05);
@@ -324,12 +302,7 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // Virtio GPU detection (vendor 0x1af4, class 0x03 display controller)
     if vendor_id == 0x1af4 && class_code == 0x03 {
-        crate::kinfo!(
-            "PCI: Found virtio display controller at {:02x}:{:02x}.{}",
-            bus,
-            dev,
-            func
-        );
+
         register_virtio_gpu(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
@@ -345,23 +318,13 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // LPC/ISA Bridge detection - class 0x06, subclass 0x01
     if class_code == 0x06 && subclass == 0x01 {
-        crate::kinfo!(
-            "PCI: Found LPC/ISA bridge at {:02x}:{:02x}.{}",
-            bus,
-            dev,
-            func
-        );
+
         publish_lpc_bridge(node, create, set, link, intern);
     }
 
     // AHCI SATA controller detection - class 0x01, subclass 0x06, prog_if 0x01
     if class_code == 0x01 && subclass == 0x06 && prog_if == 0x01 {
-        crate::kinfo!(
-            "PCI: Found AHCI SATA controller at {:02x}:{:02x}.{}",
-            bus,
-            dev,
-            func
-        );
+
         register_ahci_controller(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap,
         );
@@ -370,12 +333,7 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
     // Virtio network device detection (vendor 0x1af4, class 0x02 network controller)
     // Device IDs: 0x1000 (transitional), 0x1041 (modern)
     if vendor_id == 0x1af4 && class_code == 0x02 {
-        crate::kinfo!(
-            "PCI: Found virtio network controller at {:02x}:{:02x}.{}",
-            bus,
-            dev,
-            func
-        );
+
         register_virtio_net(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
@@ -383,12 +341,7 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // Virtio sound device detection (vendor 0x1af4, device 0x1059)
     if vendor_id == 0x1af4 && device_id == 0x1059 {
-        crate::kinfo!(
-            "PCI: Found virtio sound device at {:02x}:{:02x}.{}",
-            bus,
-            dev,
-            func
-        );
+
         register_virtio_sound(
             node, bus, dev, func, &bar_addrs, &bar_sizes, msi_cap, msix_cap, create, set, link,
         );
@@ -460,12 +413,7 @@ fn register_virtio_gpu(
 
         let location = PciLocation { bus, dev, func };
         reg.set_pci_info(idx, location, msi_info, msix_info);
-        crate::kinfo!(
-            "PCI: Registered virtio GPU (graph_id={}, idx={}) BAR0=0x{:x}",
-            graph_id,
-            idx,
-            bar_addrs[0]
-        );
+
     } else {
         crate::kinfo!("PCI: Failed to register virtio GPU - registry full");
     }
@@ -521,19 +469,14 @@ fn parse_virtio_capabilities(
                 VIRTIO_PCI_CAP_COMMON_CFG => {
                     set(gpu_node, keys::VIRTIO_COMMON_BAR, bar as u64);
                     set(gpu_node, keys::VIRTIO_COMMON_OFFSET, offset as u64);
-                    crate::kinfo!("PCI: VirtIO common_cfg BAR{} offset=0x{:x}", bar, offset);
+
                 }
                 VIRTIO_PCI_CAP_NOTIFY_CFG => {
                     let multiplier = unsafe { pci_read_config(bus, dev, func, cap_ptr + 16) };
                     set(gpu_node, keys::VIRTIO_NOTIFY_BAR, bar as u64);
                     set(gpu_node, keys::VIRTIO_NOTIFY_OFFSET, offset as u64);
                     set(gpu_node, keys::VIRTIO_NOTIFY_MULTIPLIER, multiplier as u64);
-                    crate::kinfo!(
-                        "PCI: VirtIO notify_cfg BAR{} offset=0x{:x} mult={}",
-                        bar,
-                        offset,
-                        multiplier
-                    );
+
                 }
                 VIRTIO_PCI_CAP_ISR_CFG => {
                     set(gpu_node, keys::VIRTIO_ISR_BAR, bar as u64);
@@ -595,12 +538,7 @@ fn register_ahci_controller(
 
         let location = PciLocation { bus, dev, func };
         reg.set_pci_info(idx, location, msi_info, msix_info);
-        crate::kinfo!(
-            "PCI: Registered AHCI controller (graph_id={}, idx={}) BAR5=0x{:x}",
-            graph_id,
-            idx,
-            bar_addrs[5]
-        );
+
     } else {
         crate::kinfo!("PCI: Failed to register AHCI controller - registry full");
     }
@@ -681,7 +619,7 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
         ));
     }
 
-    crate::kinfo!("LPC: Created Legacy IO bus with CMOS and PS/2 controller");
+
 }
 
 /// Helper struct to hold parsed VirtIO capabilities

@@ -16,22 +16,14 @@ pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
     crate::runtime_base().putchar(b'\n');
     crate::kinfo!("ROOT: started once");
 
-    crate::contract!("ROOT: Initializing components...");
     let mut graph = Graph::new();
-    crate::contract!("ROOT: Graph initialized");
     let mut journal = Journal::new();
-    crate::contract!("ROOT: Journal initialized");
     let mut interner = Interner::new();
-    crate::contract!("ROOT: Interner initialized");
     let mut log_symbols = root_handlers::logging::LogSymbols::new(&mut interner);
-    crate::contract!("ROOT: LogSymbols initialized");
     let mut batch_scratch = RootBatchScratch::new();
-    crate::contract!("ROOT: BatchScratch initialized");
     let mut query_scratch = crate::root::query::QueryScratch::new();
-    crate::contract!("ROOT: QueryScratch initialized");
 
     let mut iteration = 0u64;
-    crate::contract!("ROOT: Entering main loop");
     loop {
         iteration = iteration.wrapping_add(1);
         let mut processed_this_round = 0;

@@ -102,7 +102,9 @@ pub async fn connect_qmp(
     let mut buf = vec![0u8; 4096];
     let _ = stream.readable().await;
     let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await?;
-    stream.write_all(b"{\"execute\": \"qmp_capabilities\"}\n").await?;
+    stream
+        .write_all(b"{\"execute\": \"qmp_capabilities\"}\n")
+        .await?;
     let _ = stream.readable().await;
     let _ = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await?;
     Ok(stream)

@@ -51,7 +51,6 @@ pub struct ThingOsWorld {
     pub work_dir: PathBuf,
 }
 
-
 impl ThingOsWorld {
     /// Boot the OS in QEMU for the given architecture.
     /// This builds a unique ISO with 1920x1080 resolution for this scenario.
@@ -69,7 +68,6 @@ impl ThingOsWorld {
 
         self.work_dir = std::env::temp_dir().join(format!("thingos-bdd-{}-{}", pid, nanos));
         std::fs::create_dir_all(&self.work_dir)?;
-
 
         // Get resolution from environment (default 1920x1080 for BDD tests)
         let resolution =
@@ -132,7 +130,10 @@ impl ThingOsWorld {
             eprintln!("[bdd] Forwarding HTTP: localhost:{} -> guest:80", http_port);
         }
         if telnet_port > 0 {
-            eprintln!("[bdd] Forwarding Telnet: localhost:{} -> guest:2323", telnet_port);
+            eprintln!(
+                "[bdd] Forwarding Telnet: localhost:{} -> guest:2323",
+                telnet_port
+            );
         }
 
         let qemu_bin = match arch {
@@ -166,7 +167,13 @@ impl ThingOsWorld {
                         let tport = self.telnet_port.unwrap_or(0);
                         cmd.args(["-device", "virtio-net-pci,netdev=n0"]);
                         if tport > 0 {
-                            cmd.args(["-netdev", &format!("user,id=n0,hostfwd=tcp::{}-:80,hostfwd=tcp::{}-:2323", port, tport)]);
+                            cmd.args([
+                                "-netdev",
+                                &format!(
+                                    "user,id=n0,hostfwd=tcp::{}-:80,hostfwd=tcp::{}-:2323",
+                                    port, tport
+                                ),
+                            ]);
                         } else {
                             cmd.args(["-netdev", &format!("user,id=n0,hostfwd=tcp::{}-:80", port)]);
                         }
@@ -247,8 +254,12 @@ impl ThingOsWorld {
             "-no-shutdown",
             // Serial via UNIX socket to avoid block-buffering delays
             "-chardev",
-            &format!("socket,id=char0,path={},server=on,wait=on", self.work_dir.join("serial.sock").display()),
-            "-serial", "chardev:char0",
+            &format!(
+                "socket,id=char0,path={},server=on,wait=on",
+                self.work_dir.join("serial.sock").display()
+            ),
+            "-serial",
+            "chardev:char0",
             // VNC for headless graphics (needed for screenshots)
             "-vnc",
             &format!(":{}", vnc_display),
@@ -278,13 +289,15 @@ impl ThingOsWorld {
                 }
                 tokio::time::sleep(std::time::Duration::from_millis(100)).await;
             }
-            
+
             match UnixStream::connect(&serial_sock_path).await {
                 Ok(mut stream) => {
                     let mut buf = vec![0u8; 4096];
                     let mut last_update = std::time::Instant::now();
                     while let Ok(n) = tokio::io::AsyncReadExt::read(&mut stream, &mut buf).await {
-                        if n == 0 { break; } // EOF
+                        if n == 0 {
+                            break;
+                        } // EOF
 
                         let text = String::from_utf8_lossy(&buf[..n]);
                         let mut log = serial_log.lock().await;
@@ -297,10 +310,15 @@ impl ThingOsWorld {
                             last_update = std::time::Instant::now();
                         }
                     }
-                    eprintln!("│  │  │      ⚠️ QEMU serial socket reader loop exited! Did QEMU close?");
+                    eprintln!(
+                        "│  │  │      ⚠️ QEMU serial socket reader loop exited! Did QEMU close?"
+                    );
                 }
                 Err(e) => {
-                    eprintln!("│  │  │      debug: FAILED to connect to QEMU serial socket: {}", e);
+                    eprintln!(
+                        "│  │  │      debug: FAILED to connect to QEMU serial socket: {}",
+                        e
+                    );
                 }
             }
         });
@@ -318,8 +336,16 @@ impl ThingOsWorld {
 
         self.qemu = Some(child);
 
-        let global_path = if qmp_global_path.exists() { Some(qmp_global_path.clone()) } else { None };
-        let world_path = if qmp_world_path.exists() { Some(qmp_world_path.clone()) } else { None };
+        let global_path = if qmp_global_path.exists() {
+            Some(qmp_global_path.clone())
+        } else {
+            None
+        };
+        let world_path = if qmp_world_path.exists() {
+            Some(qmp_world_path.clone())
+        } else {
+            None
+        };
 
         crate::artifacts::set_qmp_stream(global_path).await;
         self.qmp_control = world_path;
@@ -373,7 +399,10 @@ impl ThingOsWorld {
         Ok(png_path)
     }
 
-    pub async fn execute_qmp_control(&self, cmd: &str) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn execute_qmp_control(
+        &self,
+        cmd: &str,
+    ) -> Result<String, Box<dyn std::error::Error + Send + Sync>> {
         let path = self.qmp_control.as_ref().ok_or("No world QMP connection")?;
         let mut stream = Self::connect_qmp(path).await?;
         crate::artifacts::qmp::execute_on_stream(&mut stream, cmd).await
@@ -412,8 +441,16 @@ impl ThingOsWorld {
             {
                 let log = self.serial_log.lock().await;
                 if last_print.elapsed() > std::time::Duration::from_secs(5) {
-                    eprintln!("│  │  │      debug: waiting for {}. current log len: {}", needle, log.len());
-                    let tail = if log.len() > 200 { &log[log.len() - 200..] } else { &log[..] };
+                    eprintln!(
+                        "│  │  │      debug: waiting for {}. current log len: {}",
+                        needle,
+                        log.len()
+                    );
+                    let tail = if log.len() > 200 {
+                        &log[log.len() - 200..]
+                    } else {
+                        &log[..]
+                    };
                     eprintln!("│  │  │      debug: tail: {:?}", tail);
                     last_print = std::time::Instant::now();
                 }

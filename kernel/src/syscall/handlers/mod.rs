@@ -36,7 +36,7 @@ pub use trace::*;
 use crate::root::{self as root_svc, RootOp, SymbolShell};
 use crate::syscall::validate::{copyin, copyout};
 use abi::errors::{Errno, SysResult};
-use abi::symbols::{SymbolRefWire, SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR};
+use abi::symbols::{SYMBOL_REF_TAG_ID, SYMBOL_REF_TAG_STR, SymbolRefWire};
 use alloc::string::String;
 use core::sync::atomic::Ordering;
 

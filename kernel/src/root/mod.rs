@@ -4,6 +4,7 @@ use core::sync::atomic::{AtomicI32, AtomicU64, Ordering};
 use spin::Mutex;
 
 pub mod abi;
+pub mod async_ops;
 pub mod graph;
 pub mod graph_anchors;
 pub mod handlers;
@@ -13,7 +14,6 @@ pub mod pci_stub;
 pub mod resources;
 pub mod schema;
 pub mod service;
-pub mod async_ops;
 
 pub use service::root_main;
 
@@ -271,7 +271,9 @@ pub fn enqueue(op: RootOp) -> Arc<ReplyCell> {
         // Cap inbox size to prevent OOM from unbounded queue growth
         if q.len() >= MAX_INBOX_SIZE {
             // For critical ops, return EAGAIN to quickly fail the caller rather than spinning/deadlocking
-            reply.status.store(::abi::errors::Errno::EAGAIN as i32, Ordering::Release);
+            reply
+                .status
+                .store(::abi::errors::Errno::EAGAIN as i32, Ordering::Release);
             reply.done.store(1, Ordering::Release);
             return reply;
         }

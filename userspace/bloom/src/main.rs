@@ -1051,8 +1051,8 @@ fn main(arg: usize) -> ! {
             && !poll_stats.had_key_event
             && cursor.buttons() == prev_cursor_buttons
             && cursor_moved_since_last_frame;
-        let cursor_frame_priority = pointer_motion_only
-            && (paint_pending_rebuilds || !invalidation_causes.is_empty());
+        let cursor_frame_priority =
+            pointer_motion_only && (paint_pending_rebuilds || !invalidation_causes.is_empty());
         let should_process_updates = !cursor_frame_priority
             && (!first_frame_rendered || paint_pending_rebuilds || !invalidation_causes.is_empty());
 
@@ -1061,7 +1061,8 @@ fn main(arg: usize) -> ! {
         let paint_res = if should_process_updates {
             let rescan_windows =
                 !first_frame_rendered || requires_window_rescan(&invalidation_causes);
-            let refresh_paint = !first_frame_rendered || requires_paint_refresh(&invalidation_causes);
+            let refresh_paint =
+                !first_frame_rendered || requires_paint_refresh(&invalidation_causes);
             let res = paint_pipeline.process_updates(
                 target.width as i32,
                 target.height as i32,

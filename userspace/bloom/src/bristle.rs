@@ -112,9 +112,9 @@ pub fn poll_bristle(
             let version = unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.version)) };
             let event_type =
                 unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.event_type)) };
-            let payload_len = unsafe {
-                core::ptr::read_unaligned(core::ptr::addr_of!(header.payload_len))
-            } as usize;
+            let payload_len =
+                unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.payload_len)) }
+                    as usize;
             let timestamp_ns =
                 unsafe { core::ptr::read_unaligned(core::ptr::addr_of!(header.timestamp_ns)) };
 
@@ -131,16 +131,18 @@ pub fn poll_bristle(
             match event_type {
                 1 => {
                     if payload_len >= KeyEventPayload::SIZE {
-                        let payload: KeyEventPayload =
-                            unsafe { core::ptr::read_unaligned(payload_ptr as *const KeyEventPayload) };
+                        let payload: KeyEventPayload = unsafe {
+                            core::ptr::read_unaligned(payload_ptr as *const KeyEventPayload)
+                        };
                         keys.insert(payload.key());
                         stats.had_key_event = true;
                     }
                 }
                 2 => {
                     if payload_len >= KeyEventPayload::SIZE {
-                        let payload: KeyEventPayload =
-                            unsafe { core::ptr::read_unaligned(payload_ptr as *const KeyEventPayload) };
+                        let payload: KeyEventPayload = unsafe {
+                            core::ptr::read_unaligned(payload_ptr as *const KeyEventPayload)
+                        };
                         keys.remove(&payload.key());
                         stats.had_key_event = true;
                     }

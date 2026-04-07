@@ -32,7 +32,8 @@ pub use hooks::{
     get_user_mapping_at_current, graph_thing_for_current, handle_user_stack_fault_current,
     kill_by_tid_current, process_info_current, process_info_for_tid_current,
     remove_user_mappings_current, set_priority_current, sleep_ticks_current, spawn_process_current,
-    spawn_process_ex_current, spawn_user_thread_current, task_status_current, yield_now_current,
+    spawn_process_ex_current, spawn_user_thread_current, task_status_current, task_wait_current,
+    yield_now_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -45,7 +46,6 @@ pub use wait_queue::WaitQueue;
 
 use crate::task::{StartupArg, Task, TaskId, TaskPriority, TaskState};
 use crate::{BootRuntime, BootTasking};
-use alloc::vec::Vec;
 use core::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use spin::Mutex;
 
@@ -160,6 +160,7 @@ pub fn init<R: BootRuntime>() {
             hooks::SPAWN_PROCESS_HOOK = Some(spawn::spawn_process::<R>);
             hooks::CURRENT_TID_HOOK = Some(current_tid::<R>);
             hooks::TASK_STATUS_HOOK = Some(task_status::<R>);
+            hooks::TASK_WAIT_HOOK = Some(wait_task::<R>);
             hooks::SET_PRIORITY_HOOK = Some(set_priority::<R>);
             hooks::CURRENT_PRIORITY_HOOK = Some(current_priority::<R>);
             hooks::ALLOC_USER_STACK_HOOK = Some(stack::alloc_user_stack::<R>);
@@ -229,6 +230,7 @@ fn init_boot_task<R: BootRuntime>(sched: &mut types::Scheduler<R>) {
         aspace: rt.tasking().active_address_space(),
         simd: crate::simd::SimdState::new(rt),
         exit_code: None,
+        exit_waiters: crate::sched::WaitQueue::new(),
         is_user: false,
         wake_pending: false,
         stack_info: None,
@@ -365,7 +367,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
                         }
                     } // REGISTRY lock dropped here!
                 }
-                
+
                 if should_yield {
                     // Force reschedule (safe now because REGISTRY lock is dropped)
                     return self.prepare_yield();
@@ -535,7 +537,9 @@ impl<R: BootRuntime> types::Scheduler<R> {
             self.preempt_disable_depth -= 1;
         }
 
-        if self.preempt_disable_depth == 0 && self.state.per_cpu[current_cpu_index::<R>()].need_resched {
+        if self.preempt_disable_depth == 0
+            && self.state.per_cpu[current_cpu_index::<R>()].need_resched
+        {
             self.state.per_cpu[current_cpu_index::<R>()].need_resched = false;
             return self.schedule_point(ScheduleReason::SafePoint);
         }
@@ -632,7 +636,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 self.metrics.pops += 1;
 
                 let task_ref = crate::task::registry::get_task::<R>(id);
-                if task_ref.as_deref().map_or(true, |t| t.state == TaskState::Dead) {
+                if task_ref
+                    .as_deref()
+                    .map_or(true, |t| t.state == TaskState::Dead)
+                {
                     continue;
                 }
                 let task = task_ref.unwrap();
@@ -660,7 +667,10 @@ impl<R: BootRuntime> types::Scheduler<R> {
                 while let Some(id) = self.state.dequeue_task_front(cpu_idx, 0) {
                     self.metrics.pops += 1;
                     let task_ref = crate::task::registry::get_task::<R>(id);
-                    if task_ref.as_deref().map_or(true, |t| t.state == TaskState::Dead) {
+                    if task_ref
+                        .as_deref()
+                        .map_or(true, |t| t.state == TaskState::Dead)
+                    {
                         continue;
                     }
                     let task = task_ref.unwrap();
@@ -786,8 +796,13 @@ impl<R: BootRuntime> types::Scheduler<R> {
     pub fn terminate_current(
         &mut self,
         code: i32,
-    ) -> SwitchParams<<R::Tasking as BootTasking>::Context, <R::Tasking as BootTasking>::AddressSpace>
-    {
+    ) -> (
+        SwitchParams<
+            <R::Tasking as BootTasking>::Context,
+            <R::Tasking as BootTasking>::AddressSpace,
+        >,
+        alloc::vec::Vec<u64>,
+    ) {
         let cpu_idx = current_cpu_index::<R>();
         let current_id = self
             .state
@@ -796,18 +811,15 @@ impl<R: BootRuntime> types::Scheduler<R> {
             .and_then(|pc| pc.current)
             .expect("terminate_current called with no current task");
 
-        if let Some(idx) = self.state.get_task_index(current_id) {
-            crate::task::registry::get_registry::<R>().tasks[idx].state = TaskState::Dead;
-            crate::task::registry::get_registry::<R>().tasks[idx].exit_code = Some(code);
+        let waiters = mark_task_exited::<R>(self, current_id, code);
 
-            // Queue graph state update and exit code
-            crate::sched::ring::push_task_state::<R>(current_id, "dead");
-            crate::sched::ring::push_task_exited::<R>(current_id, code);
+        // Queue graph state update and exit code
+        crate::sched::ring::push_task_state::<R>(current_id, "dead");
+        crate::sched::ring::push_task_exited::<R>(current_id, code);
 
-            // Cleanup owned things
-            if let Some(owner_thing_id) = types::graph_thing_for_tid(current_id) {
-                crate::root::enqueue(crate::root::RootOp::CleanupTaskThings { owner_thing_id });
-            }
+        // Cleanup owned things
+        if let Some(owner_thing_id) = types::graph_thing_for_tid(current_id) {
+            crate::root::enqueue(crate::root::RootOp::CleanupTaskThings { owner_thing_id });
         }
 
         // Release any claimed devices
@@ -817,7 +829,7 @@ impl<R: BootRuntime> types::Scheduler<R> {
 
         loop {
             if let Some(switch) = self.prepare_schedule() {
-                return switch;
+                return (switch, waiters);
             }
         }
     }
@@ -964,6 +976,50 @@ pub fn process_info_for_tid<R: BootRuntime>(
     result
 }
 
+fn register_task_exit_waiter<R: BootRuntime>(
+    target_tid: TaskId,
+    waiter_tid: TaskId,
+) -> Result<Option<i32>, abi::errors::Errno> {
+    let target =
+        crate::task::registry::get_task::<R>(target_tid).ok_or(abi::errors::Errno::ECHILD)?;
+
+    if target.state == TaskState::Dead {
+        return Ok(Some(target.exit_code.unwrap_or(0)));
+    }
+
+    target.exit_waiters.push_back(waiter_tid);
+    Ok(None)
+}
+
+fn mark_task_exited<R: BootRuntime>(
+    sched: &mut types::Scheduler<R>,
+    tid: TaskId,
+    code: i32,
+) -> alloc::vec::Vec<u64> {
+    let waiters = if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
+        task.state = TaskState::Dead;
+        task.exit_code = Some(code);
+        task.exit_waiters.drain()
+    } else {
+        alloc::vec::Vec::new()
+    };
+
+    if let Some(task) = sched.state.get_task_mut(tid) {
+        task.state = TaskState::Dead;
+        task.runq_location = None;
+    }
+
+    waiters
+}
+
+fn wake_waiters(waiters: &[u64]) {
+    for &tid in waiters {
+        unsafe {
+            crate::sched::wake_task_erased(tid);
+        }
+    }
+}
+
 /// Get the graph ThingId for the current task, if any.
 fn graph_thing_for_current_impl<R: BootRuntime>() -> Option<u64> {
     let rt = crate::runtime::<R>();
@@ -976,12 +1032,14 @@ pub fn exit<R: BootRuntime>(code: i32) {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
-    let switch = {
-        let mut lock = SCHEDULER.lock();
+    let (switch, waiters) = {
+        let lock = SCHEDULER.lock();
         let ptr = lock.expect("Scheduler not initialized");
         let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
         sched.terminate_current(code)
     };
+
+    wake_waiters(&waiters);
 
     unsafe {
         rt.tasking().activate_address_space(switch.to_aspace);
@@ -1004,67 +1062,92 @@ pub fn kill_by_tid<R: BootRuntime>(tid: u64) -> bool {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
-    let lock = SCHEDULER.lock();
-    if let Some(ptr) = *lock {
-        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+    let (killed, waiters) = {
+        let lock = SCHEDULER.lock();
+        if let Some(ptr) = *lock {
+            let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
 
-        // Don't allow killing the current task via this path
-        let cpu_idx = current_cpu_index::<R>();
-        if let Some(current_id) = sched.state.per_cpu.get(cpu_idx).and_then(|pc| pc.current) {
-            if current_id == tid {
-                rt.irq_restore(_irq);
-                return false;
-            }
-        }
-        let task_killed = if let Some(mut task) = crate::task::registry::get_task_mut::<R>(tid) {
-            if task.state == TaskState::Dead {
-                false
+            // Don't allow killing the current task via this path
+            let cpu_idx = current_cpu_index::<R>();
+            if let Some(current_id) = sched.state.per_cpu.get(cpu_idx).and_then(|pc| pc.current) {
+                if current_id == tid {
+                    (false, alloc::vec::Vec::new())
+                } else {
+                    let task_killed = crate::task::registry::get_task::<R>(tid)
+                        .map(|task| task.state != TaskState::Dead)
+                        .unwrap_or(false);
+
+                    if !task_killed {
+                        (false, alloc::vec::Vec::new())
+                    } else {
+                        let waiters = mark_task_exited::<R>(sched, tid, -9);
+
+                        // Remove from all run queues
+                        sched.state.remove_task_from_runq(tid);
+
+                        // Remove from wait queue
+                        if let Some(pos) = sched.state.wait_queue.iter().position(|&wid| wid == tid)
+                        {
+                            sched.state.wait_queue.remove(pos);
+                        }
+
+                        // Remove from sleep queue
+                        sched.state.sleep_queue.retain(|_, tids| {
+                            tids.retain(|&t| t != tid);
+                            !tids.is_empty()
+                        });
+
+                        // Queue graph state update
+                        crate::sched::ring::push_task_state::<R>(tid, "dead");
+                        crate::sched::ring::push_task_exited::<R>(tid, -9);
+
+                        // Cleanup owned things
+                        if let Some(owner_thing_id) = types::graph_thing_for_tid(tid) {
+                            crate::root::enqueue(crate::root::RootOp::CleanupTaskThings {
+                                owner_thing_id,
+                            });
+                        }
+
+                        // Release any claimed devices
+                        crate::device_registry::REGISTRY
+                            .lock()
+                            .release_all_for_task(tid);
+
+                        crate::kinfo!("SCHED: Killed task {} (SIGKILL)", tid);
+                        (true, waiters)
+                    }
+                }
             } else {
-                task.state = TaskState::Dead;
-                task.exit_code = Some(-9);
-                true
+                (false, alloc::vec::Vec::new())
             }
         } else {
-            false
-        };
-
-        if !task_killed {
-            rt.irq_restore(_irq);
-            return false;
-        } // Remove from all run queues
-        sched.state.remove_task_from_runq(tid);
-
-        // Remove from wait queue
-        if let Some(pos) = sched.state.wait_queue.iter().position(|&wid| wid == tid) {
-            sched.state.wait_queue.remove(pos);
+            (false, alloc::vec::Vec::new())
         }
+    };
 
-        // Remove from sleep queue
-        sched.state.sleep_queue.retain(|_, tids| {
-            tids.retain(|&t| t != tid);
-            !tids.is_empty()
-        });
-
-        // Queue graph state update
-        crate::sched::ring::push_task_state::<R>(tid, "dead");
-        crate::sched::ring::push_task_exited::<R>(tid, -9);
-
-        // Cleanup owned things
-        if let Some(owner_thing_id) = types::graph_thing_for_tid(tid) {
-            crate::root::enqueue(crate::root::RootOp::CleanupTaskThings { owner_thing_id });
-        }
-
-        // Release any claimed devices
-        crate::device_registry::REGISTRY
-            .lock()
-            .release_all_for_task(tid);
-
-        crate::kinfo!("SCHED: Killed task {} (SIGKILL)", tid);
-        rt.irq_restore(_irq);
-        return true;
-    }
+    wake_waiters(&waiters);
     rt.irq_restore(_irq);
-    false
+    killed
+}
+
+/// Wait semantics are non-consuming today: any task that can name a TID may
+/// observe its terminal status, and dead task records stay resident for later polls/waits.
+pub fn wait_task<R: BootRuntime>(tid: TaskId) -> Result<i32, abi::errors::Errno> {
+    let current_tid = current_tid::<R>();
+
+    if tid == current_tid {
+        return Err(abi::errors::Errno::EINVAL);
+    }
+
+    loop {
+        if let Some(code) = register_task_exit_waiter::<R>(tid, current_tid)? {
+            return Ok(code);
+        }
+
+        unsafe {
+            block_current_erased();
+        }
+    }
 }
 
 pub fn cpu_online<R: BootRuntime>(cpu_index: usize) {
@@ -1347,6 +1430,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 500, // Recent
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1375,6 +1459,7 @@ mod tests {
             base_priority: TaskPriority::Low,
             enqueued_at_tick: 0, // Very old
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1441,6 +1526,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 0, // Very old
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1469,6 +1555,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 500, // Newer
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1529,6 +1616,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 0,
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1557,6 +1645,7 @@ mod tests {
             base_priority: TaskPriority::Realtime,
             enqueued_at_tick: 0,
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1588,7 +1677,10 @@ mod tests {
         sched.state.sleep_queue.entry(50).or_default().push(3002);
 
         // Before: need_resched should be false
-        assert!(!sched.state.per_cpu[0].need_resched, "need_resched should start false");
+        assert!(
+            !sched.state.per_cpu[0].need_resched,
+            "need_resched should start false"
+        );
 
         // Wake sleepers — should detect RT > Normal and set need_resched
         sched.wake_sleepers();
@@ -1639,6 +1731,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 0,
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1716,6 +1809,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 0,
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1811,6 +1905,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 0,
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1838,6 +1933,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 0,
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1899,6 +1995,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 0,
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1926,6 +2023,7 @@ mod tests {
             base_priority: TaskPriority::Normal,
             enqueued_at_tick: 0,
             exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
             is_user: false,
             wake_pending: false,
             affinity: Affinity::Any,
@@ -1964,6 +2062,256 @@ mod tests {
                 .state,
             TaskState::Dead
         );
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = None;
+    }
+
+    #[test]
+    fn test_wait_task_returns_immediately_for_dead_target() {
+        unsafe { crate::init_runtime(&MockRuntime) };
+        init_test_env();
+        static RUNTIME: MockRuntime = MockRuntime;
+
+        let dead_task = crate::task::Task {
+            id: 8001,
+            state: TaskState::Dead,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: Some(23),
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(dead_task));
+
+        assert_eq!(wait_task::<MockRuntime>(8001).unwrap(), 23);
+    }
+
+    #[test]
+    fn test_wait_task_returns_echild_for_missing_target() {
+        unsafe { crate::init_runtime(&MockRuntime) };
+        init_test_env();
+
+        assert_eq!(
+            wait_task::<MockRuntime>(8999).unwrap_err(),
+            abi::errors::Errno::ECHILD
+        );
+    }
+
+    #[test]
+    fn test_register_task_exit_waiter_tracks_live_target() {
+        unsafe { crate::init_runtime(&MockRuntime) };
+        init_test_env();
+        static RUNTIME: MockRuntime = MockRuntime;
+
+        let live_task = crate::task::Task {
+            id: 8101,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(live_task));
+
+        assert_eq!(
+            register_task_exit_waiter::<MockRuntime>(8101, 8102).unwrap(),
+            None
+        );
+
+        let waiters = crate::task::registry::get_task::<MockRuntime>(8101)
+            .unwrap()
+            .exit_waiters
+            .drain();
+        assert_eq!(waiters, alloc::vec![8102]);
+    }
+
+    #[test]
+    fn test_kill_by_tid_wakes_registered_exit_waiter() {
+        unsafe { crate::init_runtime(&MockRuntime) };
+        init_test_env();
+        static RUNTIME: MockRuntime = MockRuntime;
+
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(8200);
+
+        let current_task = crate::task::Task {
+            id: 8200,
+            state: TaskState::Running,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        let waiter_task = crate::task::Task {
+            id: 8201,
+            state: TaskState::Blocked,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        let target_task = crate::task::Task {
+            id: 8202,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
+        };
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(current_task));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(waiter_task));
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(target_task));
+
+        let target_fields = crate::sched::state::TaskSchedFields {
+            tid: 8202,
+            state: TaskState::Runnable,
+            priority: TaskPriority::Normal,
+            base_priority: TaskPriority::Normal,
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            affinity: Affinity::Any,
+            enqueued_at_tick: 0,
+            last_cpu: Some(0),
+            runq_location: None,
+        };
+        sched.state.insert_task(target_fields);
+
+        assert_eq!(
+            register_task_exit_waiter::<MockRuntime>(8202, 8201).unwrap(),
+            None
+        );
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = Some((&mut sched as *mut types::Scheduler<MockRuntime>) as usize);
+        drop(sched_lock);
+
+        assert!(kill_by_tid::<MockRuntime>(8202));
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(8202)
+                .unwrap()
+                .state,
+            TaskState::Dead
+        );
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(8202)
+                .unwrap()
+                .exit_code,
+            Some(-9)
+        );
+        assert_eq!(
+            crate::task::registry::get_task::<MockRuntime>(8201)
+                .unwrap()
+                .state,
+            TaskState::Runnable
+        );
+        assert!(sched.state.per_cpu[0].runq[TaskPriority::Normal as usize]
+            .iter()
+            .any(|&id| id == 8201));
 
         let mut sched_lock = SCHEDULER.lock();
         *sched_lock = None;

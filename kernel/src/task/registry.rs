@@ -71,14 +71,22 @@ impl<R: BootRuntime> Drop for RegistryGuard<R> {
 impl<R: BootRuntime> core::ops::Deref for RegistryGuard<R> {
     type Target = TaskRegistry<R>;
     fn deref(&self) -> &Self::Target {
-        let ptr = self.guard.as_ref().unwrap().expect("TaskRegistry not initialized");
+        let ptr = self
+            .guard
+            .as_ref()
+            .unwrap()
+            .expect("TaskRegistry not initialized");
         unsafe { &*(ptr as *const TaskRegistry<R>) }
     }
 }
 
 impl<R: BootRuntime> core::ops::DerefMut for RegistryGuard<R> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        let ptr = self.guard.as_mut().unwrap().expect("TaskRegistry not initialized");
+        let ptr = self
+            .guard
+            .as_mut()
+            .unwrap()
+            .expect("TaskRegistry not initialized");
         unsafe { &mut *(ptr as *mut TaskRegistry<R>) }
     }
 }

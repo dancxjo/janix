@@ -1,7 +1,7 @@
 //! Image creation tasks - ISO and HDD.
 
-use crate::common::{image_name, Result};
-use xshell::{cmd, Shell};
+use crate::common::{Result, image_name};
+use xshell::{Shell, cmd};
 
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;

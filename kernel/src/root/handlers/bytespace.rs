@@ -1,12 +1,12 @@
 //! Bytespace resource handlers.
 
+use crate::BootRuntime;
+use crate::root::RootMsg;
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
 use crate::root::resources::bytespace::Provenance;
-use crate::root::resources::{bytespace, ResourceHandle};
+use crate::root::resources::{ResourceHandle, bytespace};
 use crate::root::symbols::Interner;
-use crate::root::RootMsg;
-use crate::BootRuntime;
 #[allow(unused_imports)]
 use abi::symbols::SymbolId;
 use core::sync::atomic::Ordering;

@@ -1,7 +1,7 @@
 //! QEMU run tasks.
 
-use crate::common::{image_name, Result};
-use xshell::{cmd, Shell};
+use crate::common::{Result, image_name};
+use xshell::{Shell, cmd};
 
 use std::net::TcpListener;
 use std::path::Path;

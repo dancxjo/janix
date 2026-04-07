@@ -6,12 +6,24 @@ use crate::packstream::{decode, encode, Value};
 
 #[derive(Debug)]
 pub enum BoltMessage {
-    Init { client_id: alloc::string::String, auth: alloc::collections::BTreeMap<alloc::string::String, Value> },
-    Run { query: alloc::string::String, params: alloc::collections::BTreeMap<alloc::string::String, Value> },
+    Init {
+        client_id: alloc::string::String,
+        auth: alloc::collections::BTreeMap<alloc::string::String, Value>,
+    },
+    Run {
+        query: alloc::string::String,
+        params: alloc::collections::BTreeMap<alloc::string::String, Value>,
+    },
     PullAll,
-    Pull { meta: alloc::collections::BTreeMap<alloc::string::String, Value> },
-    Discard { meta: alloc::collections::BTreeMap<alloc::string::String, Value> },
-    Hello { meta: alloc::collections::BTreeMap<alloc::string::String, Value> },
+    Pull {
+        meta: alloc::collections::BTreeMap<alloc::string::String, Value>,
+    },
+    Discard {
+        meta: alloc::collections::BTreeMap<alloc::string::String, Value>,
+    },
+    Hello {
+        meta: alloc::collections::BTreeMap<alloc::string::String, Value>,
+    },
     Success(alloc::collections::BTreeMap<alloc::string::String, Value>),
     Record(Vec<Value>),
     Failure(alloc::collections::BTreeMap<alloc::string::String, Value>),
@@ -31,7 +43,7 @@ pub fn decode_message(bytes: &[u8]) -> Option<BoltMessage> {
                     };
                     let client_id = fields.remove(0).as_str().unwrap_or("").to_string();
                     Some(BoltMessage::Hello {
-                        meta: auth // map init to hello
+                        meta: auth, // map init to hello
                     })
                 }
                 // RUN v1/v4
@@ -52,7 +64,9 @@ pub fn decode_message(bytes: &[u8]) -> Option<BoltMessage> {
                     Some(BoltMessage::Pull { meta })
                 }
                 // DISCARD_ALL v1/v2
-                0x2F if fields.is_empty() => Some(BoltMessage::Discard { meta: Default::default() }),
+                0x2F if fields.is_empty() => Some(BoltMessage::Discard {
+                    meta: Default::default(),
+                }),
                 // DISCARD v4
                 0x2F if fields.len() == 1 => {
                     let meta = fields.remove(0).as_map().cloned().unwrap_or_default();

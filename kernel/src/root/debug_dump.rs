@@ -1,4 +1,4 @@
-use super::{enqueue, RootOp};
+use super::{RootOp, enqueue};
 use core::sync::atomic::Ordering;
 
 pub fn dump_all_to_console() {

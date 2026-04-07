@@ -71,6 +71,8 @@ pub struct Task<R: BootRuntime> {
     pub state: TaskState,
     pub priority: TaskPriority,
     pub exit_code: Option<i32>,
+    /// Exit notification is level-triggered: exit status stays readable after wake.
+    pub exit_waiters: crate::sched::WaitQueue,
     pub is_user: bool,
     pub wake_pending: bool,
     pub affinity: Affinity,

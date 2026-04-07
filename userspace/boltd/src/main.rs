@@ -91,7 +91,7 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
                     info!("boltd: invalid magic {:?}", magic);
                     return;
                 }
-                
+
                 // version 4
                 write_raw(net, conn_handle, &[0x00, 0x00, 0x00, 0x04]);
                 recv_buffer.drain(0..20);
@@ -102,7 +102,7 @@ fn handle_connection(net: &NetClient, conn_handle: u32) {
         if state == 1 {
             while let Some((payload, consumed)) = try_parse_chunks(&recv_buffer) {
                 recv_buffer.drain(0..consumed);
-                
+
                 if let Some(msg) = decode_message(&payload) {
                     handle_bolt_message(net, conn_handle, &mut executor, msg, &mut stashed_result);
                 } else {
@@ -121,8 +121,8 @@ fn try_parse_chunks(buffer: &[u8]) -> Option<(Vec<u8>, usize)> {
         if buffer.len() < pos + 2 {
             return None; // Need more data for length
         }
-        
-        let chunk_len = u16::from_be_bytes([buffer[pos], buffer[pos+1]]) as usize;
+
+        let chunk_len = u16::from_be_bytes([buffer[pos], buffer[pos + 1]]) as usize;
         pos += 2;
 
         if chunk_len == 0 {
@@ -134,12 +134,18 @@ fn try_parse_chunks(buffer: &[u8]) -> Option<(Vec<u8>, usize)> {
             return None; // Need more data for chunk payload
         }
 
-        payload.extend_from_slice(&buffer[pos..pos+chunk_len]);
+        payload.extend_from_slice(&buffer[pos..pos + chunk_len]);
         pos += chunk_len;
     }
 }
 
-fn handle_bolt_message(net: &NetClient, conn_handle: u32, executor: &mut phloem::GraphExecutor, msg: BoltMessage, stashed_result: &mut Option<phloem::ExecutionResult>) {
+fn handle_bolt_message(
+    net: &NetClient,
+    conn_handle: u32,
+    executor: &mut phloem::GraphExecutor,
+    msg: BoltMessage,
+    stashed_result: &mut Option<phloem::ExecutionResult>,
+) {
     info!("boltd: msg {:?}", msg);
     match msg {
         BoltMessage::Hello { .. } | BoltMessage::Init { .. } => {
@@ -155,22 +161,32 @@ fn handle_bolt_message(net: &NetClient, conn_handle: u32, executor: &mut phloem:
                 Ok(parsed) => executor.execute(parsed.command),
                 Err(e) => {
                     let mut err_map = BTreeMap::new();
-                    err_map.insert("code".into(), Value::String("Neo.ClientError.Statement.SyntaxError".into()));
-                    err_map.insert("message".into(), Value::String(alloc::format!("syntax error: {}", e)));
-                    write_raw(net, conn_handle, &create_chunked(&BoltMessage::Failure(err_map)));
+                    err_map.insert(
+                        "code".into(),
+                        Value::String("Neo.ClientError.Statement.SyntaxError".into()),
+                    );
+                    err_map.insert(
+                        "message".into(),
+                        Value::String(alloc::format!("syntax error: {}", e)),
+                    );
+                    write_raw(
+                        net,
+                        conn_handle,
+                        &create_chunked(&BoltMessage::Failure(err_map)),
+                    );
                     return;
                 }
             };
-            
+
             let mut map = BTreeMap::new();
             let mut fields = Vec::new();
             for col in &result.columns {
                 fields.push(Value::String(col.clone()));
             }
             map.insert("fields".into(), Value::List(fields));
-            
+
             *stashed_result = Some(result);
-            
+
             let bytes = create_chunked(&BoltMessage::Success(map));
             write_raw(net, conn_handle, &bytes);
         }
@@ -217,9 +233,19 @@ fn handle_bolt_message(net: &NetClient, conn_handle: u32, executor: &mut phloem:
         }
         _ => {
             let mut err_map = BTreeMap::new();
-            err_map.insert("code".into(), Value::String("Neo.ClientError.Request.Invalid".into()));
-            err_map.insert("message".into(), Value::String("Unsupported message".into()));
-            write_raw(net, conn_handle, &create_chunked(&BoltMessage::Failure(err_map)));
+            err_map.insert(
+                "code".into(),
+                Value::String("Neo.ClientError.Request.Invalid".into()),
+            );
+            err_map.insert(
+                "message".into(),
+                Value::String("Unsupported message".into()),
+            );
+            write_raw(
+                net,
+                conn_handle,
+                &create_chunked(&BoltMessage::Failure(err_map)),
+            );
         }
     }
 }

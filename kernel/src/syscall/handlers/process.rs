@@ -115,34 +115,7 @@ pub fn sys_task_poll(pid: usize) -> SysResult<usize> {
 }
 
 pub fn sys_task_wait(tid: usize) -> SysResult<usize> {
-    if tid as u64 == unsafe { crate::sched::current_tid_current() } {
-        return Err(Errno::EINVAL);
-    }
-
-    let mut spins = 0;
-    loop {
-        let status_opt = unsafe { crate::sched::task_status_current(tid as u64) };
-
-        match status_opt {
-            Some((state, exit_code)) => {
-                if state == crate::task::TaskState::Dead {
-                    return Ok(exit_code.unwrap_or(0) as usize);
-                }
-                spins += 1;
-                if spins < 100_000 {
-                    core::hint::spin_loop();
-                } else {
-                    unsafe {
-                        crate::sched::sleep_ticks_current(1);
-                    }
-                    spins = 0;
-                }
-            }
-            None => {
-                return Err(Errno::ECHILD);
-            }
-        }
-    }
+    unsafe { crate::sched::task_wait_current(tid as u64) }.map(|code| code as usize)
 }
 
 pub fn sys_set_priority(tid: usize, priority: usize) -> SysResult<usize> {

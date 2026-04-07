@@ -375,8 +375,15 @@ fn main(_arg: usize) -> ! {
         let current_link_state = device.link_up();
         if current_link_state != _last_link_state {
             _last_link_state = current_link_state;
-            let _ = thingsys::prop_set_async(net_id, "net.link_up", if current_link_state { 1 } else { 0 });
-            info!("NETD: Link state changed {} -> async updated graph", if current_link_state { "UP" } else { "DOWN" });
+            let _ = thingsys::prop_set_async(
+                net_id,
+                "net.link_up",
+                if current_link_state { 1 } else { 0 },
+            );
+            info!(
+                "NETD: Link state changed {} -> async updated graph",
+                if current_link_state { "UP" } else { "DOWN" }
+            );
         }
 
         // Garbage collect closed sockets (local operation, fast, no IPC)

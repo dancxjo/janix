@@ -2,8 +2,8 @@
 //!
 //! All timing derives from `stem::time::now()` which returns an `Instant`.
 
-use stem::syscall::PortHandle;
 use stem::syscall::port::port_len;
+use stem::syscall::PortHandle;
 use stem::time::{Duration, Instant};
 
 pub struct FrameLoop {

@@ -1,8 +1,8 @@
+use crate::root::ReplyCell;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::sync::atomic::{AtomicU64, Ordering};
 use spin::Mutex;
-use crate::root::ReplyCell;
 
 /// Maximum number of active asynchronous graph operations handled concurrently.
 const MAX_ASYNC_OPS: usize = 2048;

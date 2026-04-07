@@ -1,12 +1,12 @@
 //! Debug and describe handlers.
 
+use crate::root::SymbolShell;
 use crate::root::graph::Graph;
 use crate::root::symbols::Interner;
-use crate::root::SymbolShell;
 use core::fmt::Write;
 
-use super::graph::resolve_shell;
 use super::HandlerResult;
+use super::graph::resolve_shell;
 
 /// Helper for formatting into user-provided buffers.
 pub struct FmtBuffer {

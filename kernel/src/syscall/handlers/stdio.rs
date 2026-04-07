@@ -87,7 +87,7 @@ pub fn sys_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usize> 
                 rt.putchar(b);
             }
             Ok(buf_len)
-        },
+        }
         StdioBinding::Pipe { pipe_id, mode } => match mode {
             StdioPipeMode::Write => crate::ipc::pipe::write(pipe_id, &data),
             StdioPipeMode::Read => Err(Errno::EBADF),

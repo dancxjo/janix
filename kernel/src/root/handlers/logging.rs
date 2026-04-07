@@ -6,8 +6,8 @@ use crate::root::{LogProvenance, SymbolShell};
 use abi::symbols::SymbolId;
 use alloc::collections::VecDeque;
 
-use super::graph::resolve_shell;
 use super::HandlerResult;
+use super::graph::resolve_shell;
 
 /// Maximum number of log entries to keep in the graph
 const MAX_LOG_ENTRIES: usize = 256;

@@ -4,9 +4,9 @@ use super::graph::Graph;
 use super::journal::Journal;
 use super::symbols::Interner;
 use super::{RootMsg, RootOp};
+use crate::BootRuntime;
 use crate::root::handlers as root_handlers;
 use crate::root::handlers::batch::RootBatchScratch;
-use crate::BootRuntime;
 use core::sync::atomic::Ordering;
 
 pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
@@ -191,16 +191,14 @@ fn handle_msg<R: BootRuntime>(
             kind,
             creator_tid,
             owner_thing_id,
-        } => {
-            root_handlers::handle_create_node(
-                graph,
-                journal,
-                interner,
-                kind,
-                creator_tid,
-                owner_thing_id,
-            )
-        },
+        } => root_handlers::handle_create_node(
+            graph,
+            journal,
+            interner,
+            kind,
+            creator_tid,
+            owner_thing_id,
+        ),
         RootOp::Link { src, rel, dst } => {
             root_handlers::handle_link(graph, interner, src, rel, dst)
         }

@@ -27,6 +27,7 @@ pub(crate) static mut SPAWN_PROCESS_HOOK: Option<
 pub(crate) static mut CURRENT_TID_HOOK: Option<fn() -> u64> = None;
 pub(crate) static mut TASK_STATUS_HOOK: Option<fn(TaskId) -> Option<(TaskState, Option<i32>)>> =
     None;
+pub(crate) static mut TASK_WAIT_HOOK: Option<fn(TaskId) -> Result<i32, Errno>> = None;
 pub(crate) static mut SET_PRIORITY_HOOK: Option<fn(TaskId, crate::task::TaskPriority)> = None;
 pub(crate) static mut CURRENT_PRIORITY_HOOK: Option<fn() -> crate::task::TaskPriority> = None;
 pub(crate) static mut ALLOC_USER_STACK_HOOK: Option<fn(usize) -> Option<usize>> = None;
@@ -75,6 +76,14 @@ pub unsafe fn task_status_current(id: TaskId) -> Option<(TaskState, Option<i32>)
         hook(id)
     } else {
         None
+    }
+}
+
+pub unsafe fn task_wait_current(id: TaskId) -> Result<i32, Errno> {
+    if let Some(hook) = unsafe { TASK_WAIT_HOOK } {
+        hook(id)
+    } else {
+        Err(Errno::ENOSYS)
     }
 }
 

@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use crate::root::pci_stub::{classify_stub, publish_stub_device, PciClassInfo};
+use crate::root::pci_stub::{PciClassInfo, classify_stub, publish_stub_device};
 use abi::schema::{confidence, keys, kinds, rels, source};
 use alloc::format;
 use stem::pci;
@@ -214,11 +214,7 @@ fn publish_function<FCreate, FSet, FLink, FIntern>(
 
     // Simple hex loop
     fn nibble(n: u8) -> u8 {
-        if n < 10 {
-            n + b'0'
-        } else {
-            n - 10 + b'a'
-        }
+        if n < 10 { n + b'0' } else { n - 10 + b'a' }
     }
     let mut hex_buf = [0u8; 16];
     for i in 0..8 {
@@ -652,7 +648,7 @@ fn publish_lpc_bridge<FCreate, FSet, FLink, FIntern>(
 
     // Register CMOS in device registry
     {
-        use crate::device_registry::{DeviceEntry, CMOS_IOPORT_RANGES, REGISTRY};
+        use crate::device_registry::{CMOS_IOPORT_RANGES, DeviceEntry, REGISTRY};
         let mut reg = REGISTRY.lock();
         reg.register(DeviceEntry::new_legacy(
             kinds::DEV_RTC_CMOS,

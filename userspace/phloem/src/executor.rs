@@ -1155,10 +1155,7 @@ mod tests {
     }
 
     impl Graph for &RootFirstGraph {
-        fn get_kind(
-            &self,
-            id: ThingId,
-        ) -> Result<stem::thing::ThingKind, stem::errors::Errno> {
+        fn get_kind(&self, id: ThingId) -> Result<stem::thing::ThingKind, stem::errors::Errno> {
             if self.nodes.borrow().contains(&id.to_u64_lossy()) {
                 Ok(stem::thing::ThingKind(1))
             } else {
@@ -1171,10 +1168,7 @@ mod tests {
             Ok(0)
         }
 
-        fn intern(
-            &self,
-            _s: &str,
-        ) -> Result<stem::abi::symbols::SymbolId, stem::errors::Errno> {
+        fn intern(&self, _s: &str) -> Result<stem::abi::symbols::SymbolId, stem::errors::Errno> {
             Ok(1)
         }
 

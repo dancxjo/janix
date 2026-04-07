@@ -358,7 +358,9 @@ mod tests {
         let layout = Layout::from_size_align(20, 1).unwrap();
 
         // Allocate should go to the tail (arena2)
-        let (id, generation, offset, ptr) = heap.alloc_evictable(layout).expect("Should alloc evictable");
+        let (id, generation, offset, ptr) = heap
+            .alloc_evictable(layout)
+            .expect("Should alloc evictable");
         assert_eq!(generation, 2);
         assert_eq!(ptr.as_ptr() as u64, base2);
         assert_eq!(offset, 0);

@@ -286,8 +286,7 @@ fn send_mouse_events(
                 if *drop_counter <= 4 || *drop_counter % 100 == 0 {
                     info!(
                         "ps2_mouse: dropped {} mouse events because raw input port {} is full",
-                        *drop_counter,
-                        handle
+                        *drop_counter, handle
                     );
                 }
             }

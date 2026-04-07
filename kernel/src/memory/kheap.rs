@@ -1,6 +1,6 @@
 use super::arena::{AllocatorStats, Arena, ArenaFlags, ArenaHeap};
 use super::handle::EvictHandle;
-use crate::{runtime, BootRuntime, BootTasking, MapKind, MapPerms};
+use crate::{BootRuntime, BootTasking, MapKind, MapPerms, runtime};
 use core::alloc::Layout;
 use core::ptr::NonNull;
 

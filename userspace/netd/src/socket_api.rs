@@ -514,7 +514,10 @@ impl SocketApi {
         backlog: u16,
         buf_idx: usize,
     ) -> Vec<u8> {
-        info!("SOCKET_API: TCP_LISTEN on port {} with backlog {}", port, backlog);
+        info!(
+            "SOCKET_API: TCP_LISTEN on port {} with backlog {}",
+            port, backlog
+        );
 
         let rx_buffer = SocketBuffer::new(unsafe { &mut CONN_RX[buf_idx][..] });
         let tx_buffer = SocketBuffer::new(unsafe { &mut CONN_TX[buf_idx][..] });
@@ -547,7 +550,9 @@ impl SocketApi {
 
         let fill_backlog = core::cmp::min(core::cmp::max(backlog, 1), 16) - 1;
         for _ in 0..fill_backlog {
-            let Some(b_idx) = self.alloc_buffer() else { break; };
+            let Some(b_idx) = self.alloc_buffer() else {
+                break;
+            };
             let rx_buf = SocketBuffer::new(unsafe { &mut CONN_RX[b_idx][..] });
             let tx_buf = SocketBuffer::new(unsafe { &mut CONN_TX[b_idx][..] });
             let mut sock = TcpSocket::new(rx_buf, tx_buf);
@@ -681,7 +686,9 @@ impl SocketApi {
                     connected_slot = Some((s.handle, s.buf_idx.unwrap_or(0), true, 0));
                 } else {
                     for (i, &(pool_handle, pool_bidx)) in s.listen_pool.iter().enumerate() {
-                        if socket_set.get_mut::<TcpSocket>(pool_handle).state() == TcpState::Established {
+                        if socket_set.get_mut::<TcpSocket>(pool_handle).state()
+                            == TcpState::Established
+                        {
                             connected_slot = Some((pool_handle, pool_bidx, false, i));
                             break;
                         }
@@ -1155,9 +1162,7 @@ impl SocketApi {
                 };
                 let ip = Ipv4Address::from_bytes(&body[0..4]);
                 let port = u16::from_le_bytes([body[4], body[5]]);
-                self.handle_connect(
-                    iface, device, socket_set, owner_tid, ip, port, buf_idx
-                )
+                self.handle_connect(iface, device, socket_set, owner_tid, ip, port, buf_idx)
             }
             MSG_TCP_LISTEN => {
                 if body.len() < 4 {
@@ -1182,13 +1187,26 @@ impl SocketApi {
                         _ => return encode_error(),
                     };
                     let state = socket_set.get_mut::<TcpSocket>(s.handle).state();
-                    let has_conn = state == TcpState::Established || s.listen_pool.iter().any(|&(h, _)| socket_set.get_mut::<TcpSocket>(h).state() == TcpState::Established);
-                    if has_conn { self.alloc_buffer() } else { None } // Only alloc if connection is ready so it won't leak
+                    let has_conn = state == TcpState::Established
+                        || s.listen_pool.iter().any(|&(h, _)| {
+                            socket_set.get_mut::<TcpSocket>(h).state() == TcpState::Established
+                        });
+                    if has_conn {
+                        self.alloc_buffer()
+                    } else {
+                        None
+                    } // Only alloc if connection is ready so it won't leak
                 };
 
                 if let Some(buf_idx) = alloc_res {
                     self.handle_accept(socket_set, listen_handle, owner_tid, buf_idx)
-                } else if self.pending_accepts.get(&listen_handle).map(|v| v.len()).unwrap_or(0) > 0 {
+                } else if self
+                    .pending_accepts
+                    .get(&listen_handle)
+                    .map(|v| v.len())
+                    .unwrap_or(0)
+                    > 0
+                {
                     // Note: Actually handle_accept pops pending without needing new buf_idx.
                     // To keep it simple, we just pass 0, it's not used if pending is popped.
                     self.handle_accept(socket_set, listen_handle, owner_tid, 0)
@@ -1232,7 +1250,8 @@ impl SocketApi {
                     let (rx_meta, rx_payload) = split_packet_buffer(&mut CONN_RX[buf_idx]);
                     let (tx_meta, tx_payload) = split_packet_buffer(&mut CONN_TX[buf_idx]);
                     self.handle_udp_bind(
-                        socket_set, owner_tid, port, rx_meta, rx_payload, tx_meta, tx_payload, buf_idx
+                        socket_set, owner_tid, port, rx_meta, rx_payload, tx_meta, tx_payload,
+                        buf_idx,
                     )
                 }
             }

@@ -4,7 +4,7 @@
 //! Publishing performs best-effort fanout using atomic `send_all` to each
 //! subscriber port, with stale-handle pruning.
 
-use super::{get_port, Handle, HandleMode, GLOBAL_HANDLE_TABLE};
+use super::{GLOBAL_HANDLE_TABLE, Handle, HandleMode, get_port};
 use abi::errors::Errno;
 use alloc::vec::Vec;
 use spin::Mutex;

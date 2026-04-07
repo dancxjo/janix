@@ -62,7 +62,7 @@ pub fn yield_now<R: BootRuntime>() -> bool {
                 switch.to_tid
             );
         }
-        
+
         rt.tasking().activate_address_space(switch.to_aspace);
 
         unsafe {

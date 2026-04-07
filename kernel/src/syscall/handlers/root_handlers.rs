@@ -989,7 +989,7 @@ pub fn sys_root_props_get_many(
     keys_len: usize,
     out_ptr: usize,
 ) -> SysResult<usize> {
-    use abi::types::{BulkPropsResponse, BULK_PROPS_MAX_KEYS};
+    use abi::types::{BULK_PROPS_MAX_KEYS, BulkPropsResponse};
 
     // Validate key count
     if keys_len == 0 || keys_len > BULK_PROPS_MAX_KEYS {

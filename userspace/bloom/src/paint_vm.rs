@@ -171,7 +171,8 @@ impl PaintPipeline {
                     };
 
                     let local_rect = Rect::new(0, 0, rect.width(), rect.height());
-                    let list = build_drawlist(entry.paint_bs, local_rect, &mut self.icon_symbol_cache);
+                    let list =
+                        build_drawlist(entry.paint_bs, local_rect, &mut self.icon_symbol_cache);
                     raster::execute(&mut surface, &list, false);
 
                     let image = Arc::new(Image {

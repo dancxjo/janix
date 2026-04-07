@@ -76,10 +76,9 @@ mod normalizer;
 mod thigmonasty;
 
 use abi::hid::{
-    BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION, BristleEventHeader, EventType,
-    KeyEventPayload,
+    BristleEventHeader, EventType, KeyEventPayload, BRISTLE_EVENT_MAGIC, BRISTLE_EVENT_VERSION,
 };
-use thigmonasty::{KeyboardState, KeyEdge};
+use thigmonasty::{KeyEdge, KeyboardState};
 
 /// Drain all pending keyboard data from the controller
 fn drain_keyboard_data(handle: PortHandle, state: &mut KeyboardState, drop_counter: &mut u32) {
@@ -108,7 +107,7 @@ fn drain_keyboard_data(handle: PortHandle, state: &mut KeyboardState, drop_count
 fn send_key_event(handle: PortHandle, edge: KeyEdge, drop_counter: &mut u32) {
     let timestamp_ns = stem::monotonic_ns();
     let mut buf = [0u8; 24]; // Max size is header + 4 byte payload
-    
+
     let (event_type, key, mods, repeat) = match edge {
         KeyEdge::Down { key, mods, repeat } => (EventType::KeyDown, key, mods, repeat),
         KeyEdge::Up { key, mods } => (EventType::KeyUp, key, mods, false),
@@ -121,7 +120,7 @@ fn send_key_event(handle: PortHandle, edge: KeyEdge, drop_counter: &mut u32) {
         timestamp_ns,
         payload_len: KeyEventPayload::SIZE as u32,
     };
-    
+
     let payload = KeyEventPayload {
         key: key as u16,
         mods: mods.0,
@@ -130,14 +129,13 @@ fn send_key_event(handle: PortHandle, edge: KeyEdge, drop_counter: &mut u32) {
 
     buf[0..20].copy_from_slice(&header.to_bytes());
     buf[20..24].copy_from_slice(&payload.to_bytes());
-    
+
     if port_send_all(handle, &buf[..24]).is_err() {
         *drop_counter = drop_counter.wrapping_add(1);
         if *drop_counter <= 4 || *drop_counter % 100 == 0 {
             warn!(
                 "ps2_kbd: dropped {} key events because raw input port {} is full",
-                *drop_counter,
-                handle
+                *drop_counter, handle
             );
         }
     }

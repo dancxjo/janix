@@ -1542,7 +1542,10 @@ async fn when_move_mouse(world: &mut ThingOsWorld) {
     if world.qmp_control.is_some() {
         let cmd = r#"{"execute": "input-send-event", "arguments": {"events": [{"type": "rel", "data": {"axis": "x", "value": 50}}, {"type": "rel", "data": {"axis": "y", "value": 50}}]}}"#;
         match world.execute_qmp_control(cmd).await {
-            Ok(res) => eprintln!("│  │  │      🖱️ Sent mouse movement, QMP res: {}", res.trim()),
+            Ok(res) => eprintln!(
+                "│  │  │      🖱️ Sent mouse movement, QMP res: {}",
+                res.trim()
+            ),
             Err(e) => eprintln!("│  │  │      ❌ QMP error: {}", e),
         }
         tokio::time::sleep(std::time::Duration::from_millis(200)).await;
@@ -1950,7 +1953,7 @@ async fn anther_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> 
     }
 
     let url = format!("http://127.0.0.1:{}/health", port);
-    
+
     let start = std::time::Instant::now();
     let timeout = std::time::Duration::from_secs(30);
 
@@ -1963,13 +1966,16 @@ async fn anther_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> 
             .arg("1")
             .arg(&url)
             .output();
-            
+
         if let Ok(out) = output {
             if out.status.success() {
                 eprintln!("│  │  │      ✅ Anther is healthy");
                 return Ok(());
             } else {
-                eprintln!("│  │  │      ⚠️ Anther health check unexpected reqwest/curl status: {}", out.status);
+                eprintln!(
+                    "│  │  │      ⚠️ Anther health check unexpected reqwest/curl status: {}",
+                    out.status
+                );
             }
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
@@ -2140,35 +2146,46 @@ async fn telnet_server_ready(world: &mut ThingOsWorld) -> Result<(), StepError> 
     let timeout = std::time::Duration::from_secs(30);
 
     while start.elapsed() < timeout {
-        if let Ok(mut stream) = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await {
+        if let Ok(mut stream) = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)).await
+        {
             eprintln!("│  │  │      ✅ Telnet is responsive");
             return Ok(());
         }
         tokio::time::sleep(std::time::Duration::from_secs(1)).await;
     }
 
-    Err(StepError("Timed out waiting for Telnet connection".to_string()))
+    Err(StepError(
+        "Timed out waiting for Telnet connection".to_string(),
+    ))
 }
 
 #[when(regex = r#"^I connect to the telnet server and send "(.+)"$"#)]
-async fn connect_and_send_telnet(world: &mut ThingOsWorld, command: String) -> Result<(), StepError> {
+async fn connect_and_send_telnet(
+    world: &mut ThingOsWorld,
+    command: String,
+) -> Result<(), StepError> {
     let port = world
         .telnet_port
         .ok_or(StepError("Telnet port not configured".to_string()))?;
-        
+
     let mut stream = tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port))
         .await
         .map_err(|e| StepError(format!("Telnet connect failed: {}", e)))?;
-        
+
     // Wait for the banner to show up by attempting to read
     let mut buf = [0u8; 4096];
-    tokio::time::timeout(std::time::Duration::from_secs(2), tokio::io::AsyncReadExt::read(&mut stream, &mut buf)).await.ok();
-        
+    tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        tokio::io::AsyncReadExt::read(&mut stream, &mut buf),
+    )
+    .await
+    .ok();
+
     let cmd = format!("{}\r\n", command);
     tokio::io::AsyncWriteExt::write_all(&mut stream, cmd.as_bytes())
         .await
         .map_err(|e| StepError(format!("Telnet send failed: {}", e)))?;
-        
+
     // Read response up to 15 seconds or EOF
     let mut resp = Vec::new();
     let _ = tokio::time::timeout(std::time::Duration::from_secs(15), async {
@@ -2180,9 +2197,12 @@ async fn connect_and_send_telnet(world: &mut ThingOsWorld, command: String) -> R
                 Err(_) => break,
             }
         }
-    }).await;
-    
-    let s = String::from_utf8_lossy(&resp).into_owned(); eprintln!("TELNET RESP: {}", s); world.telnet_response = Some(s);
+    })
+    .await;
+
+    let s = String::from_utf8_lossy(&resp).into_owned();
+    eprintln!("TELNET RESP: {}", s);
+    world.telnet_response = Some(s);
     Ok(())
 }
 

@@ -63,7 +63,6 @@ pub fn block_current<R: BootRuntime>() {
             rt.tasking()
                 .switch(&mut *switch.from_ctx, &*switch.to_ctx, switch.to_tid);
         }
-            
     }
 
     rt.irq_restore(_irq);
@@ -84,10 +83,12 @@ pub fn wake_task<R: BootRuntime>(id: u64) {
             task.state = TaskState::Runnable;
             task.enqueued_at_tick = super::TICK_COUNT.load(core::sync::atomic::Ordering::Relaxed);
             task_priority = task.priority as usize;
-            
+
             let target_cpu = match task.affinity {
                 crate::task::Affinity::Pinned(cpu) => cpu,
-                crate::task::Affinity::Any => task.last_cpu.unwrap_or_else(|| super::current_cpu_index::<R>())
+                crate::task::Affinity::Any => task
+                    .last_cpu
+                    .unwrap_or_else(|| super::current_cpu_index::<R>()),
             };
             safe_cpu = target_cpu;
             was_blocked = true;

@@ -6,14 +6,14 @@
 use crate::root::graph::Graph;
 use crate::root::journal::{Journal, JournalOp};
 use crate::root::symbols::Interner;
-use crate::root::{graph_anchors, SymbolShell};
+use crate::root::{SymbolShell, graph_anchors};
 use abi::schema::{kinds, rels};
 use abi::symbols::SymbolId;
 #[allow(unused_imports)]
 use core::sync::atomic::Ordering;
 
-use super::batch::{apply_ops_and_commit, ValidatedOp};
 use super::HandlerResult;
+use super::batch::{ValidatedOp, apply_ops_and_commit};
 
 /// Helper to resolve Shell to SymbolId
 pub fn resolve_shell(shell: SymbolShell, interner: &mut Interner) -> SymbolId {
@@ -396,9 +396,9 @@ pub fn handle_props_get_many(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::root::SymbolShell;
     use crate::root::graph::Graph;
     use crate::root::symbols::Interner;
-    use crate::root::SymbolShell;
     use abi::ids::HandleId;
     use abi::types::ThingId;
 

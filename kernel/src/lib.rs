@@ -778,7 +778,7 @@ pub fn start<R: BootRuntime>(runtime: &'static R) -> ! {
             contract!("Spawning init process...");
             let mut entry = user_entry;
             entry.arg0 = StartupArg::BootRegistry.to_raw(); // arg0 = registry ptr
-                                                            // Spawn at Normal priority - all tasks share the same priority for fair scheduling
+            // Spawn at Normal priority - all tasks share the same priority for fair scheduling
             crate::sched::spawn_user_task_full::<R>(
                 entry,
                 aspace,
@@ -892,7 +892,7 @@ extern "C" fn kernel_secondary_entry<R: BootRuntime>(cpu_index: usize) -> ! {
 
     // Per-CPU init
     base.mono_ticks(); // ok for logging
-                       // IMPORTANT: per-CPU SIMD init
+    // IMPORTANT: per-CPU SIMD init
     base.simd_init_cpu();
 
     // Then:

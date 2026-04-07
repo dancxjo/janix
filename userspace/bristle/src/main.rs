@@ -60,10 +60,18 @@ fn publish_initial_graph_state(node_id: stem::thing::ThingId, state: &InputGraph
     use abi::schema::{keyboard as kb, pointer};
 
     if let Err(e) = thingsys::prop_set(node_id, pointer::POINTER_X, state.pointer_x as u64) {
-        info!("bristle: failed to set pointer.x on {}: {:?}", node_id.to_u64_lossy(), e);
+        info!(
+            "bristle: failed to set pointer.x on {}: {:?}",
+            node_id.to_u64_lossy(),
+            e
+        );
     }
     if let Err(e) = thingsys::prop_set(node_id, pointer::POINTER_Y, state.pointer_y as u64) {
-        info!("bristle: failed to set pointer.y on {}: {:?}", node_id.to_u64_lossy(), e);
+        info!(
+            "bristle: failed to set pointer.y on {}: {:?}",
+            node_id.to_u64_lossy(),
+            e
+        );
     }
     if let Err(e) = thingsys::prop_set(node_id, pointer::POINTER_BUTTONS, state.pointer_buttons) {
         info!(
@@ -93,7 +101,8 @@ fn update_keyboard_graph_state(
     if let Err(e) = thingsys::prop_set(node_id, kb::KEYBOARD_LAST_KEY, payload.key as u64) {
         info!("bristle: failed to set keyboard.last_key: {:?}", e);
     }
-    if let Err(e) = thingsys::prop_set(node_id, kb::KEYBOARD_KEY_EDGE, if is_down { 1 } else { 0 }) {
+    if let Err(e) = thingsys::prop_set(node_id, kb::KEYBOARD_KEY_EDGE, if is_down { 1 } else { 0 })
+    {
         info!("bristle: failed to set keyboard.key_edge: {:?}", e);
     }
     if let Err(e) = thingsys::prop_set(node_id, kb::KEYBOARD_MODS, payload.mods as u64) {
@@ -123,10 +132,7 @@ fn update_pointer_move_graph_state(
     let readback_y = thingsys::prop_get(node_id, pointer::POINTER_Y).unwrap_or(u64::MAX) as i32;
     info!(
         "bristle: graph pointer now ({}, {}) readback=({}, {})",
-        state.pointer_x,
-        state.pointer_y,
-        readback_x,
-        readback_y
+        state.pointer_x, state.pointer_y, readback_x, readback_y
     );
 }
 
@@ -150,8 +156,7 @@ fn update_pointer_button_graph_state(
     let readback = thingsys::prop_get(node_id, pointer::POINTER_BUTTONS).unwrap_or(u64::MAX);
     info!(
         "bristle: graph pointer.buttons now {:x} readback={:x}",
-        state.pointer_buttons,
-        readback
+        state.pointer_buttons, readback
     );
 }
 
@@ -360,14 +365,16 @@ fn main(packed_handles: usize) -> ! {
                         // Check if we have enough bytes for the header + payload
                         let mut header_bytes = [0u8; BristleEventHeader::SIZE];
                         header_bytes.copy_from_slice(&event_accum[..BristleEventHeader::SIZE]);
-                        
+
                         if let Ok(header) = BristleEventHeader::from_bytes(&header_bytes) {
                             let total_len = BristleEventHeader::SIZE + header.payload_len as usize;
                             if accum_len >= total_len {
                                 let event_bytes = &event_accum[..total_len];
 
                                 // Parse hotkeys and contract logs
-                                if header.event_type == EventType::KeyDown as u16 && header.payload_len >= 4 {
+                                if header.event_type == EventType::KeyDown as u16
+                                    && header.payload_len >= 4
+                                {
                                     let mut p = [0u8; 4];
                                     p.copy_from_slice(&event_bytes[20..24]);
                                     let payload = KeyEventPayload::from_bytes(&p);
@@ -379,7 +386,12 @@ fn main(packed_handles: usize) -> ! {
                                         payload.is_repeat()
                                     );
                                     if let Some(node) = node_id {
-                                        update_keyboard_graph_state(node, &mut graph_state, payload, true);
+                                        update_keyboard_graph_state(
+                                            node,
+                                            &mut graph_state,
+                                            payload,
+                                            true,
+                                        );
                                     }
 
                                     match payload.key() {
@@ -392,18 +404,25 @@ fn main(packed_handles: usize) -> ! {
                                             let _ = thingsys::dump_graph(0);
                                         }
                                         Key::Delete => {
-                                            if payload.mods().has_ctrl() && payload.mods().has_alt() {
-                                                info!("bristle: Ctrl+Alt+Del - rebooting system...");
+                                            if payload.mods().has_ctrl() && payload.mods().has_alt()
+                                            {
+                                                info!(
+                                                    "bristle: Ctrl+Alt+Del - rebooting system..."
+                                                );
                                                 stem::syscall::reboot();
                                             }
                                         }
                                         Key::F12 => {
-                                            info!("bristle: F12 pressed - resetting userspace and respawning sprout...");
+                                            info!(
+                                                "bristle: F12 pressed - resetting userspace and respawning sprout..."
+                                            );
                                             reset_userspace_and_respawn_sprout();
                                         }
                                         _ => {}
                                     }
-                                } else if header.event_type == EventType::KeyUp as u16 && header.payload_len >= 4 {
+                                } else if header.event_type == EventType::KeyUp as u16
+                                    && header.payload_len >= 4
+                                {
                                     let mut p = [0u8; 4];
                                     p.copy_from_slice(&event_bytes[20..24]);
                                     let payload = KeyEventPayload::from_bytes(&p);
@@ -414,14 +433,25 @@ fn main(packed_handles: usize) -> ! {
                                         payload.mods
                                     );
                                     if let Some(node) = node_id {
-                                        update_keyboard_graph_state(node, &mut graph_state, payload, false);
+                                        update_keyboard_graph_state(
+                                            node,
+                                            &mut graph_state,
+                                            payload,
+                                            false,
+                                        );
                                     }
-                                } else if header.event_type == EventType::PointerMove as u16 && header.payload_len >= 4 {
+                                } else if header.event_type == EventType::PointerMove as u16
+                                    && header.payload_len >= 4
+                                {
                                     let mut p = [0u8; 4];
                                     p.copy_from_slice(&event_bytes[20..24]);
                                     let payload = PointerMovePayload::from_bytes(&p);
                                     if let Some(node) = node_id {
-                                        update_pointer_move_graph_state(node, &mut graph_state, payload);
+                                        update_pointer_move_graph_state(
+                                            node,
+                                            &mut graph_state,
+                                            payload,
+                                        );
                                     }
                                     let dx = payload.dx;
                                     let dy = payload.dy;
@@ -435,7 +465,7 @@ fn main(packed_handles: usize) -> ! {
                                 {
                                     let mut p = [0u8; PointerButtonPayload::SIZE];
                                     p.copy_from_slice(
-                                        &event_bytes[20..20 + PointerButtonPayload::SIZE]
+                                        &event_bytes[20..20 + PointerButtonPayload::SIZE],
                                     );
                                     let payload = PointerButtonPayload::from_bytes(&p);
                                     if let Some(node) = node_id {
@@ -451,7 +481,7 @@ fn main(packed_handles: usize) -> ! {
                                 {
                                     let mut p = [0u8; PointerButtonPayload::SIZE];
                                     p.copy_from_slice(
-                                        &event_bytes[20..20 + PointerButtonPayload::SIZE]
+                                        &event_bytes[20..20 + PointerButtonPayload::SIZE],
                                     );
                                     let payload = PointerButtonPayload::from_bytes(&p);
                                     if let Some(node) = node_id {
@@ -494,8 +524,7 @@ fn main(packed_handles: usize) -> ! {
                             if resync_counter <= 4 || resync_counter % 100 == 0 {
                                 info!(
                                     "bristle: resyncing raw stream after invalid header (count={}, accum_len={})",
-                                    resync_counter,
-                                    accum_len
+                                    resync_counter, accum_len
                                 );
                             }
                             accum_len -= 1;

@@ -5,8 +5,8 @@
 //! (CREATE_NODE, LINK, PROP_SET) route through `apply_ops_and_commit()`.
 
 use crate::root::graph::{CommitSummary, Graph, ThingId};
-use crate::root::handlers::watch_payload::{encode_watch_payload, track_watch_encode_reject};
 use crate::root::handlers::HandlerResult;
+use crate::root::handlers::watch_payload::{encode_watch_payload, track_watch_encode_reject};
 use crate::root::symbols::Interner;
 use abi::root::{
     BATCH_MAGIC, BATCH_VERSION, MAX_BATCH_BYTES, MAX_BATCH_OPS, MAX_LOCAL_REFS, OP_CREATE_NODE,

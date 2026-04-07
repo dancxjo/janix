@@ -3,6 +3,7 @@
 //! Provides FIFO waking to avoid thundering herd issues and ensure fairness.
 
 use alloc::collections::VecDeque;
+use alloc::vec::Vec;
 use spin::Mutex;
 
 pub struct WaitQueue {
@@ -58,5 +59,11 @@ impl WaitQueue {
         if let Some(pos) = waiters.iter().position(|&id| id == tid) {
             waiters.remove(pos);
         }
+    }
+
+    /// Drain the queue without waking. Caller decides when waking is safe.
+    pub fn drain(&self) -> Vec<u64> {
+        let mut waiters = self.waiters.lock();
+        waiters.drain(..).collect()
     }
 }

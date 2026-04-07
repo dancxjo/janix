@@ -95,18 +95,10 @@ fn strip_prefix<'a>(path: &'a str, prefix: &str) -> Option<&'a str> {
     if path == prefix {
         return Some("");
     }
-    let with_slash = if prefix.ends_with('/') {
-        String::from(prefix)
-    } else {
-        let mut s = String::from(prefix);
-        s.push('/');
-        s
-    };
-    if let Some(rest) = path.strip_prefix(with_slash.as_str()) {
-        Some(rest)
-    } else {
-        None
-    }
+    // Avoid allocation: check if path starts with prefix followed by '/'.
+    let prefix_with_slash = prefix.trim_end_matches('/');
+    let rest = path.strip_prefix(prefix_with_slash)?;
+    rest.strip_prefix('/')
 }
 
 #[cfg(test)]

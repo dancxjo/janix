@@ -57,28 +57,25 @@ pub fn sys_vfs_read(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usiz
     }
 
     // Clone the node Arc so we don't hold the process lock during the read.
-    let (node, offset, flags) = {
+    let (node, offset) = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
         if !file.flags.is_readable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset, file.flags)
+        (file.node.clone(), file.offset)
     };
 
     let mut kbuf = vec![0u8; buf_len];
     let n = node.read(offset, &mut kbuf)?;
 
-    // Advance offset (non-blocking/device nodes ignore this, but it is
-    // correct for regular files).
+    // Always advance offset after a successful read (O_APPEND only affects writes).
     if n > 0 {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let mut lock = pinfo_arc.lock();
         if let Ok(file) = lock.fd_table.get_mut(fd as u32) {
-            if !flags.is_append() {
-                file.offset = file.offset.saturating_add(n as u64);
-            }
+            file.offset = file.offset.saturating_add(n as u64);
         }
     }
 
@@ -97,25 +94,26 @@ pub fn sys_vfs_write(fd: usize, buf_ptr: usize, buf_len: usize) -> SysResult<usi
     let mut kbuf = vec![0u8; buf_len];
     unsafe { copyin(&mut kbuf, buf_ptr)? };
 
-    let (node, offset, flags) = {
+    let (node, offset) = {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let lock = pinfo_arc.lock();
         let file = lock.fd_table.get(fd as u32)?;
         if !file.flags.is_writable() {
             return Err(Errno::EBADF);
         }
-        (file.node.clone(), file.offset, file.flags)
+        (file.node.clone(), file.offset)
     };
 
     let n = node.write(offset, &kbuf)?;
 
+    // Always advance offset after a successful write.
+    // O_APPEND semantics (positioning at EOF before write) are handled by the
+    // node implementation; the offset is still updated here to track position.
     if n > 0 {
         let pinfo_arc = crate::sched::process_info_current().ok_or(Errno::ENOENT)?;
         let mut lock = pinfo_arc.lock();
         if let Ok(file) = lock.fd_table.get_mut(fd as u32) {
-            if !flags.is_append() {
-                file.offset = file.offset.saturating_add(n as u64);
-            }
+            file.offset = file.offset.saturating_add(n as u64);
         }
     }
 

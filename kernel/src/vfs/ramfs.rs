@@ -253,7 +253,21 @@ impl VfsDriver for RamFs {
     ///
     /// Intermediate directories are created as needed (like `mkdir -p`).
     fn mkdir(&self, path: &str) -> SysResult<()> {
-        self.mkdir(path)
+        // Inline the inherent mkdir logic to avoid ambiguous self.mkdir() dispatch.
+        let mut current = self.root.clone();
+        for component in path.split('/').filter(|c| !c.is_empty()) {
+            let next = match current.lookup_child(component) {
+                Ok(child) => child,
+                Err(Errno::ENOENT) => {
+                    let new_dir = RamfsEntry::new_dir();
+                    current.insert_child(component, new_dir.clone())?;
+                    new_dir
+                }
+                Err(e) => return Err(e),
+            };
+            current = next;
+        }
+        Ok(())
     }
 
     /// Remove the file or empty directory at `path`.

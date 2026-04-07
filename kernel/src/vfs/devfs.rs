@@ -20,9 +20,9 @@
 //! devfs::register("ttyS0", Arc::new(my_uart_node));
 //! ```
 //!
-//! Registered nodes shadow built-in names when there is a conflict (last
-//! registration wins).  The global registry is a spin-locked `BTreeMap`
-//! protected by a spin-lock.
+//! Registered nodes are consulted **before** the built-in match, so they can
+//! shadow built-in names when needed (last registration wins).  The global
+//! registry is protected by a spin-lock.
 
 use alloc::collections::BTreeMap;
 use alloc::string::{String, ToString};
@@ -88,7 +88,8 @@ impl VfsDriver for DevFs {
             return Ok(Arc::new(DevDirNode));
         }
 
-        // Check the dynamic registry first (allows overriding built-ins).
+        // Check the dynamic registry first; registered nodes take precedence
+        // over built-in names, allowing callers to override defaults.
         {
             let reg = DEVICE_REGISTRY.lock();
             if let Some(node) = reg.get(path) {

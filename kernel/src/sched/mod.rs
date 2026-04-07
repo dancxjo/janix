@@ -273,6 +273,7 @@ pub fn init<R: BootRuntime>() {
             hooks::UNREGISTER_TASK_EXIT_WAITER_HOOK = Some(unregister_task_exit_waiter::<R>);
             hooks::REGISTER_TIMEOUT_WAKE_HOOK = Some(register_timeout_wake::<R>);
             hooks::UNREGISTER_TIMEOUT_WAKE_HOOK = Some(unregister_timeout_wake::<R>);
+            hooks::LIST_PROCESSES_HOOK = Some(list_processes::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
@@ -1072,6 +1073,35 @@ pub fn process_info_for_tid<R: BootRuntime>(
     let result = crate::task::registry::get_task::<R>(tid).and_then(|t| t.process_info.clone());
     rt.irq_restore(_irq);
     result
+}
+
+/// Return a snapshot of all live processes (those with a ProcessInfo).
+///
+/// Called from the `LIST_PROCESSES_HOOK` slot so that procfs can render
+/// `/proc/<pid>/…` files without knowing the concrete `R` type.
+pub fn list_processes<R: BootRuntime>() -> alloc::vec::Vec<hooks::ProcessSnapshot> {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let mut out = alloc::vec::Vec::new();
+    {
+        let reg = crate::task::registry::get_registry::<R>();
+        for task in reg.tasks.iter() {
+            if let Some(pi_arc) = &task.process_info {
+                let pi = pi_arc.lock();
+                let name_bytes = &task.name[..task.name_len as usize];
+                let name = alloc::string::String::from_utf8_lossy(name_bytes).into_owned();
+                out.push(hooks::ProcessSnapshot {
+                    pid: pi.pid,
+                    ppid: pi.ppid,
+                    name,
+                    state: task.state,
+                    argv: pi.argv.clone(),
+                });
+            }
+        }
+    }
+    rt.irq_restore(_irq);
+    out
 }
 
 fn register_task_exit_waiter<R: BootRuntime>(

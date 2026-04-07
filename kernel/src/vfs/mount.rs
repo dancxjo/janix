@@ -77,6 +77,23 @@ pub fn lookup(path: &str) -> SysResult<alloc::sync::Arc<dyn super::VfsNode>> {
     Err(Errno::ENOENT)
 }
 
+/// Return a human-readable text listing of all active mount points.
+///
+/// Format:
+/// ```text
+/// <mount_point> <type> rw 0 0
+/// ```
+/// Used by `/proc/mounts`.
+pub fn mounts_text() -> alloc::string::String {
+    let table = MOUNT_TABLE.lock();
+    let mut out = alloc::string::String::new();
+    for entry in table.iter() {
+        out.push_str(&entry.prefix);
+        out.push_str(" vfs rw 0 0\n");
+    }
+    out
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 fn normalise(p: &str) -> String {

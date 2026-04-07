@@ -54,6 +54,11 @@ pub struct ProcessInfo {
     pub console_stdin: VecDeque<u8>,
     /// File descriptor table — fds 0/1/2 are pre-populated at spawn time.
     pub fd_table: crate::vfs::fd_table::FdTable,
+    /// VFS namespace for this process.
+    ///
+    /// **ACT III stub**: all processes share the global namespace.  Per-process
+    /// divergence (sandboxing / containers) will be wired up in a later act.
+    pub namespace: crate::vfs::NamespaceRef,
 }
 
 pub struct Task<R: BootRuntime> {

@@ -147,24 +147,53 @@ impl AsyncPort {
 
     /// Read asynchronously from the port. 
     /// If empty, it registers into the active `Reactor` to await `WaitKind::Port`.
-    pub async fn recv(&self, buf: &mut [u8]) -> Result<usize, Errno> {
-        core::future::poll_fn(|cx| {
-            // Attempt standard read
-            match syscall::port_recv(self.handle as syscall::PortHandle, buf) {
-                Ok(n) => Poll::Ready(Ok(n)),
-                Err(Errno::EAGAIN) => {
-                    // Queue for async wait
-                    if let Some(reactor) = Reactor::current() {
-                        let _ = reactor.add_port_readable(self.handle, cx.waker().clone());
-                        Poll::Pending
+    pub fn recv<'a>(&'a self, buf: &'a mut [u8]) -> RecvFuture<'a> {
+        RecvFuture {
+            port: self,
+            buf,
+            registered_token: None,
+        }
+    }
+}
+
+pub struct RecvFuture<'a> {
+    port: &'a AsyncPort,
+    buf: &'a mut [u8],
+    registered_token: Option<WaitToken>,
+}
+
+impl<'a> Future for RecvFuture<'a> {
+    type Output = Result<usize, Errno>;
+
+    fn poll(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
+        match syscall::port_recv(self.port.handle as syscall::PortHandle, self.buf) {
+            Ok(n) => Poll::Ready(Ok(n)),
+            Err(Errno::EAGAIN) => {
+                if let Some(reactor) = Reactor::current() {
+                    if self.registered_token.is_none() {
+                        if let Ok(token) = reactor.add_port_readable(self.port.handle, cx.waker().clone()) {
+                            self.registered_token = Some(token);
+                        }
                     } else {
-                        // If no runtime is active, we just return EAGAIN instead of implicit sleep
-                        Poll::Ready(Err(Errno::EAGAIN))
+                        // We could update the waker, but usually it's the same in simple select! loops
                     }
+                    Poll::Pending
+                } else {
+                    Poll::Ready(Err(Errno::EAGAIN))
                 }
-                Err(e) => Poll::Ready(Err(e)),
             }
-        }).await
+            Err(e) => Poll::Ready(Err(e)),
+        }
+    }
+}
+
+impl<'a> Drop for RecvFuture<'a> {
+    fn drop(&mut self) {
+        if let Some(token) = self.registered_token.take() {
+            if let Some(reactor) = Reactor::current() {
+                reactor.remove(token);
+            }
+        }
     }
 }
 

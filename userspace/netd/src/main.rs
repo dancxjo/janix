@@ -42,16 +42,13 @@ const KIND_NET_DRIVER: &str = "svc.net.Driver";
 fn main(_arg: usize) -> ! {
     info!("NETD: Starting network stack service...");
 
-    // Wait for virtio_netd to be ready
+    // Wait for virtio_netd to be ready via the Graph
     info!("NETD: Looking for virtio_netd driver service...");
-    let (tx_port, rx_port, mac, initial_link_up, iface_mtu) = loop {
-        match find_driver_service() {
-            Some(result) => break result,
-            None => {
-                stem::time::sleep_ms(100);
-            }
-        }
-    };
+    let kind = stem::thing::sys::intern(KIND_NET_DRIVER).unwrap_or(0) as u64;
+    let _ = stem::thing::discovery::wait_for_kind(kind);
+
+    let (tx_port, rx_port, mac, initial_link_up, iface_mtu) = find_driver_service()
+        .expect("NETD: Driver disappeared immediately after graph discovery");
 
     info!(
         "NETD: Connected to driver - MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",

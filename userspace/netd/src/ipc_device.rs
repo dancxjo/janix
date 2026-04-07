@@ -62,6 +62,10 @@ impl IpcNicDevice {
         1500
     }
 
+    pub fn rx_port(&self) -> PortHandle {
+        self.rx_port
+    }
+
     /// Poll for RX frames from driver (non-blocking)
     pub fn poll_rx(&mut self) {
         // Try to receive frames from driver

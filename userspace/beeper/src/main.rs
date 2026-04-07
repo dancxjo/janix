@@ -20,43 +20,26 @@ fn main(_arg: usize) -> ! {
     let seconds = 10.0;
 
     let mut dev_buf = [ThingId::default(); 1];
-    let mut device_id = None;
     let mut write_port_handle = 0;
 
-    let mut last_wait_log_ns = 0u64;
-    while write_port_handle == 0 {
-        // Prefer native HDA path if present.
-        if let Ok(count) = thingsys::find(DEV_SOUND_HDA_PCI_STUB, &mut dev_buf) {
-            if count > 0 {
-                let id = dev_buf[0];
-                if let Ok(h) = thingsys::prop_get(id, WRITE_PORT_HANDLE) {
-                    if h != 0 {
-                        device_id = Some(id);
-                        write_port_handle = h as PortHandle;
-                        break;
-                    }
-                }
-            }
-        }
-        if let Ok(count) = thingsys::find(DEV_SOUND, &mut dev_buf) {
-            if count > 0 {
-                let id = dev_buf[0];
-                if let Ok(h) = thingsys::prop_get(id, WRITE_PORT_HANDLE) {
-                    if h != 0 {
-                        device_id = Some(id);
-                        write_port_handle = h as PortHandle;
-                        break;
-                    }
-                }
-            }
-        }
+    info!("Beeper: Waiting for sound device write port handle...");
 
-        let now = stem::time::monotonic_ns();
-        if last_wait_log_ns == 0 || now.saturating_sub(last_wait_log_ns) >= 1_000_000_000 {
-            info!("Beeper: Waiting for sound device write port handle...");
-            last_wait_log_ns = now;
+    let sound_kinds = [
+        stem::thing::sys::intern(DEV_SOUND_HDA_PCI_STUB).unwrap_or(0) as u64,
+        stem::thing::sys::intern(DEV_SOUND).unwrap_or(0) as u64,
+    ];
+
+    while write_port_handle == 0 {
+        let device_id = stem::thing::discovery::wait_for_any_kind(&sound_kinds).unwrap_or_default();
+        if device_id.to_u64_lossy() != 0 {
+            if let Ok(h) = thingsys::prop_get(device_id, WRITE_PORT_HANDLE) {
+                if h != 0 {
+                    write_port_handle = h as PortHandle;
+                    break;
+                }
+            }
         }
-        stem::time::sleep_ms(100);
+        stem::time::sleep_ms(100); // Backoff if property hasn't been set yet
     }
 
     let sample_rate = 44100;
@@ -102,7 +85,7 @@ fn main(_arg: usize) -> ! {
         }
 
         offset += to_write;
-        stem::time::sleep_ms(1); // Let lower-priority tasks run between chunks
+        // Rely on port_wait(WRITABLE) for native backpressure instead of sleeping manually!
     }
 
     info!("Beeper: Finished.");

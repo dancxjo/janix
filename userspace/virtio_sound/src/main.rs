@@ -200,12 +200,12 @@ fn main(_arg: usize) -> ! {
 
                             if added {
                                 driver.notify_queue(VIRTIO_SND_VQ_TX);
-                                stem::time::sleep_ms(1); // Let lower-priority tasks run
+                                stem::syscall::yield_now(); // Yield immediately without locking timer
                                 break;
                             } else {
                                 // Queue full. Poll for completions and yield.
                                 process_tx_queue(&mut driver);
-                                stem::time::sleep_ms(1);
+                                stem::syscall::yield_now();
                             }
                         }
                     }

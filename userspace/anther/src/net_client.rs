@@ -33,6 +33,8 @@ pub struct NetClient {
     our_write_port: PortHandle,
     /// Our read port (we read responses from here)
     our_read_port: PortHandle,
+    /// Asynchronous wrapper spanning the read port.
+    async_read_port: stem::task::AsyncPort,
 }
 
 /// Result of an accept operation
@@ -77,6 +79,7 @@ impl NetClient {
             netd_write_port,
             our_write_port: our_write,
             our_read_port: our_read,
+            async_read_port: stem::task::AsyncPort::new(our_read as u64),
         })
     }
 
@@ -142,7 +145,7 @@ impl NetClient {
     }
 
     /// Start listening on a TCP port
-    pub fn tcp_listen(&self, port: u16) -> Option<u32> {
+    pub async fn tcp_listen(&self, port: u16) -> Option<u32> {
         self.drain_stale_responses();
         let mut payload = Vec::with_capacity(4);
         payload.extend_from_slice(&port.to_le_bytes());
@@ -155,7 +158,7 @@ impl NetClient {
         }
 
         let mut resp_buf = [0u8; 64];
-        match port_recv(self.our_read_port, &mut resp_buf) {
+        match self.async_read_port.recv(&mut resp_buf).await {
             Ok(len) if len >= 6 => {
                 let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
                 if resp_type == RESP_HANDLE {
@@ -174,7 +177,7 @@ impl NetClient {
     }
 
     /// Accept a connection on a listening socket (non-blocking)
-    pub fn tcp_accept(&self, listen_handle: u32) -> Option<AcceptResult> {
+    pub async fn tcp_accept(&self, listen_handle: u32) -> Option<AcceptResult> {
         self.drain_stale_responses();
         let msg = self.build_msg(MSG_TCP_ACCEPT, &listen_handle.to_le_bytes());
 
@@ -183,7 +186,7 @@ impl NetClient {
         }
 
         let mut resp_buf = [0u8; 64];
-        match port_recv(self.our_read_port, &mut resp_buf) {
+        match self.async_read_port.recv(&mut resp_buf).await {
             Ok(len) if len >= 2 => {
                 let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
                 if resp_type == RESP_ACCEPT && len >= 12 {
@@ -205,7 +208,7 @@ impl NetClient {
     }
 
     /// Receive data from a socket (non-blocking)
-    pub fn tcp_recv(&self, handle: u32, max_len: u16) -> Option<Vec<u8>> {
+    pub async fn tcp_recv(&self, handle: u32, max_len: u16) -> Option<Vec<u8>> {
         self.drain_stale_responses();
         let mut payload = Vec::with_capacity(6);
         payload.extend_from_slice(&handle.to_le_bytes());
@@ -218,7 +221,7 @@ impl NetClient {
         }
 
         let mut resp_buf = [0u8; 4096 + 128];
-        match port_recv(self.our_read_port, &mut resp_buf) {
+        match self.async_read_port.recv(&mut resp_buf).await {
             Ok(len) if len >= 2 => {
                 let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
                 if resp_type == RESP_DATA && len > 2 {
@@ -243,7 +246,7 @@ impl NetClient {
     }
 
     /// Send data on a socket
-    pub fn tcp_send(&self, handle: u32, data: &[u8]) -> usize {
+    pub async fn tcp_send(&self, handle: u32, data: &[u8]) -> usize {
         let mut total_sent = 0;
 
         self.drain_stale_responses();
@@ -259,7 +262,7 @@ impl NetClient {
             }
 
             let mut resp_buf = [0u8; 64];
-            let sent_this_chunk = match port_recv(self.our_read_port, &mut resp_buf) {
+            let sent_this_chunk = match self.async_read_port.recv(&mut resp_buf).await {
                 Ok(len) if len >= 4 => {
                     let resp_type = u16::from_le_bytes([resp_buf[0], resp_buf[1]]);
                     if resp_type == RESP_OK {

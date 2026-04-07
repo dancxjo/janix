@@ -40,3 +40,42 @@ pub fn wait_for_kind(kind: u64) -> Result<ThingId, Errno> {
         }
     }
 }
+
+/// Blocks the current task until ANY of the specified `kinds` are found in the System Graph.
+/// Returns the `ThingId` of the first matching node found.
+pub fn wait_for_any_kind(kinds: &[u64]) -> Result<ThingId, Errno> {
+    let mut buf = [ThingId::default(); 1];
+
+    // Initial check without setting up watches
+    for &k in kinds {
+        if let Ok(count) = sys::find(k, &mut buf) {
+            if count > 0 {
+                return Ok(buf[0]);
+            }
+        }
+    }
+
+    // Set up a global graph watch.
+    let watch = GraphWatch::open_all()?;
+    let mut ws = WaitSet::new();
+    let _token = ws.add_root_watch(watch.id())?;
+
+    loop {
+        let _ = ws.wait(None::<crate::time::Duration>);
+
+        let mut ev_buf = [0u8; 512];
+        let mut seq = 0;
+        while let Ok(_) = watch.next(&mut seq, &mut ev_buf) {}
+
+        // Re-check after waking up
+        for &k in kinds {
+            if let Ok(count) = sys::find(k, &mut buf) {
+                if count > 0 {
+                    let _ = watch.close();
+                    return Ok(buf[0]);
+                }
+            }
+        }
+    }
+}
+

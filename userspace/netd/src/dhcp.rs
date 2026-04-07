@@ -80,6 +80,11 @@ pub fn run_dhcp(iface: &mut Interface, device: &mut IpcNicDevice) -> Result<Dhcp
             }
         }
 
-        stem::time::sleep_ms(10);
+        let delay = iface.poll_delay(now, &socket_set);
+        let wait_ms = delay.map(|d| d.total_millis()).unwrap_or(100).min(100);
+
+        let mut wait_set = stem::wait_set::WaitSet::new();
+        let _ = wait_set.add_port_readable(device.rx_port() as u64);
+        let _ = wait_set.wait(Some(core::time::Duration::from_millis(wait_ms as u64)));
     }
 }

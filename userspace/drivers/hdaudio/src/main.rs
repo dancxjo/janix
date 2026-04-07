@@ -254,7 +254,20 @@ fn main(_arg: usize) -> ! {
                 }
             }
             Ok(_) => stem::yield_now(),
-            Err(_) => stem::time::sleep_ms(2),
+            Err(_) => {
+                let timeout_ms = if hda.buffered_bytes() == 0 {
+                    None // Indefinite sleep when nothing is playing! 0 CPU usage!
+                } else {
+                    Some(stem::time::Duration::from_millis(10)) // Max 10ms delay between DMA updates when playing
+                };
+                
+                let mut ws = stem::wait_set::WaitSet::new();
+                if let Ok(_) = ws.add_port_readable(read_handle as u64) {
+                    let _ = ws.wait(timeout_ms);
+                } else {
+                    stem::time::sleep_ms(10);
+                }
+            }
         }
     }
 }

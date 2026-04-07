@@ -732,75 +732,76 @@ fn run_stdio_mode() -> ! {
     stem::syscall::exit(0);
 }
 
-/// Run in server mode - listen for TCP connections and serve HTTP
 fn run_server_mode(port: u16) -> ! {
-    info!("anther: Starting server mode on port {}...", port);
+    stem::info!("anther: Starting server mode on port {}...", port);
 
-    // Wait for network stack to be ready
-    let net = loop {
-        match NetClient::connect() {
-            Some(n) => break n,
-            None => {
-                info!("anther: Waiting for network stack...");
-                stem::time::sleep_ms(500);
-            }
-        }
-    };
+    // Wait for network stack to be ready out of the scheduler!
+    stem::info!("anther: Waiting for network stack (graph blocking)...");
+    let kind = stem::thing::sys::intern("svc.net.Stack").unwrap_or(0) as u64;
+    let _ = stem::thing::discovery::wait_for_kind(kind);
+
+    let net = NetClient::connect().expect("anther: Fatal error, wait_for_kind completed but netstack failed");
 
     info!("anther: Connected to network stack");
 
-    // Start listening
-    let listen_handle = loop {
-        match net.tcp_listen(port) {
-            Some(h) => break h,
-            None => {
-                warn!("anther: Failed to listen on port {}, retrying...", port);
-                stem::time::sleep_ms(1000);
-            }
-        }
-    };
-
-    info!(
-        "anther: Listening on port {} (handle={})",
-        port, listen_handle
-    );
-
-    // Main server loop — accept connections and spawn a thread per connection.
-    // Uses stem::thread::spawn_task to safely hand-off connection state via closures
-    loop {
-        if let Some(accept) = net.tcp_accept(listen_handle) {
-            let conn = accept.conn_handle;
-            info!(
-                "anther: Accepted connection, spawning thread for conn_handle={}",
-                conn
-            );
-            match stem::thread::spawn_task(move || {
-                handle_connection(conn);
-            }) {
-                Ok(handle) => {
-                    info!(
-                        "anther: Thread spawned TID={} for conn_handle={}",
-                        handle.tid(), conn
-                    );
-                }
-                Err(e) => {
-                    warn!(
-                        "anther: Thread spawn FAILED for conn_handle={}: {:?}",
-                        conn, e
-                    );
+    stem::task::block_on(async move {
+        // Start listening
+        let listen_handle = loop {
+            match net.tcp_listen(port).await {
+                Some(h) => break h,
+                None => {
+                    warn!("anther: Failed to listen on port {}, retrying...", port);
+                    stem::time::sleep_ms(1000);
                 }
             }
-            continue;
-        }
+        };
 
-        // 10ms polling interval keeps response port from filling up.
-        stem::time::sleep_ms(10);
-    }
+        info!(
+            "anther: Listening on port {} (handle={})",
+            port, listen_handle
+        );
+
+        // Main server loop
+        loop {
+            if let Some(accept) = net.tcp_accept(listen_handle).await {
+                let conn = accept.conn_handle;
+                info!(
+                    "anther: Accepted connection, spawning thread for conn_handle={}",
+                    conn
+                );
+                match stem::thread::spawn_task(move || {
+                    stem::task::block_on(async move {
+                        handle_connection(conn).await;
+                    });
+                }) {
+                    Ok(handle) => {
+                        info!(
+                            "anther: Thread spawned TID={} for conn_handle={}",
+                            handle.tid(), conn
+                        );
+                    }
+                    Err(e) => {
+                        warn!(
+                            "anther: Thread spawn FAILED for conn_handle={}: {:?}",
+                            conn, e
+                        );
+                    }
+                }
+                continue;
+            }
+
+            // Polling interval keeps response port from filling up
+            // netd does not hold accepts inside the Socket API, so we must poll IPC bounds
+            stem::time::sleep_ms(10);
+        }
+    });
+
+    unreachable!();
 }
 
 /// Handle a single HTTP connection (runs in its own thread).
 /// Creates a per-thread NetClient so IPC responses never interleave.
-fn handle_connection(conn_handle: u32) {
+async fn handle_connection(conn_handle: u32) {
     let tid = stem::syscall::get_tid().unwrap_or(0);
     info!(
         "anther: Worker thread TID={} starting for conn_handle={}",
@@ -831,7 +832,7 @@ fn handle_connection(conn_handle: u32) {
         let mut got_any_data = false;
 
         while attempts < 200 {
-            if let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
+            if let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN).await {
                 if !got_any_data {
                     info!(
                         "anther: Worker TID={} got first {} bytes on conn_handle={}",
@@ -915,7 +916,7 @@ fn handle_connection(conn_handle: u32) {
                 body.extend_from_slice(&request_data[header_len..]);
                 let mut body_attempts = 0;
                 while body.len() < content_length && body_attempts < 100 {
-                    if let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN) {
+                    if let Some(data) = net.tcp_recv(conn_handle, NetClient::MAX_RECV_LEN).await {
                         let remaining = content_length - body.len();
                         let copy_len = remaining.min(data.len());
                         body.extend_from_slice(&data[..copy_len]);
@@ -948,15 +949,15 @@ fn handle_connection(conn_handle: u32) {
         }
 
         // Send headers
-        send_all(net, conn_handle, &headers);
+        send_all(net, conn_handle, &headers).await;
 
         // Send body
         match resp_body {
             ResponseBody::Static(s) => {
-                send_all(net, conn_handle, s);
+                send_all(net, conn_handle, s).await;
             }
             ResponseBody::Owned(v) => {
-                send_all(net, conn_handle, &v);
+                send_all(net, conn_handle, &v).await;
             }
             ResponseBody::Stream(mut stream) => {
                 use alloc::format;
@@ -984,24 +985,24 @@ fn handle_connection(conn_handle: u32) {
 
                             // Send as chunked encoding
                             let event_str = format!("data: {}\n\n", json);
-                            send_chunk(net, conn_handle, event_str.as_bytes());
+                            send_chunk(net, conn_handle, event_str.as_bytes()).await;
 
                             if delta.finish.is_some() {
                                 // Close stream
-                                send_chunk(net, conn_handle, &[]); // 0-length chunk to end
+                                send_chunk(net, conn_handle, &[]).await; // 0-length chunk to end
                                 break;
                             }
                         }
                         Poll::Ready(Ok(None)) => {
-                            send_chunk(net, conn_handle, &[]); // 0-length chunk to end
+                            send_chunk(net, conn_handle, &[]).await; // 0-length chunk to end
                             break;
                         }
                         Poll::Ready(Err(_)) => {
                             // Send error event
                             let err_json = "{\"error\":\"Stream error\"}";
                             let event_str = format!("data: {}\n\n", err_json);
-                            send_chunk(net, conn_handle, event_str.as_bytes());
-                            send_chunk(net, conn_handle, &[]);
+                            send_chunk(net, conn_handle, event_str.as_bytes()).await;
+                            send_chunk(net, conn_handle, &[]).await;
                             break;
                         }
                         Poll::Pending => {
@@ -1035,7 +1036,7 @@ fn handle_connection(conn_handle: u32) {
                         "event: props\ndata: {}\n\n",
                         core::str::from_utf8(&initial_json).unwrap_or("{}")
                     );
-                    send_chunk(net, conn_handle, event.as_bytes());
+                    send_chunk(net, conn_handle, event.as_bytes()).await;
                 }
 
                 // 2. Open kernel watch filtered to this subject
@@ -1055,8 +1056,8 @@ fn handle_connection(conn_handle: u32) {
                     Err(_) => {
                         let err_event =
                             "event: error\ndata: {\"error\":\"Failed to open watch\"}\n\n";
-                        send_chunk(net, conn_handle, err_event.as_bytes());
-                        send_chunk(net, conn_handle, &[]); // End chunked stream
+                        send_chunk(net, conn_handle, err_event.as_bytes()).await;
+                        send_chunk(net, conn_handle, &[]).await; // End chunked stream
                         break;
                     }
                 };
@@ -1094,7 +1095,7 @@ fn handle_connection(conn_handle: u32) {
                             Err(_) => {
                                 // Fatal watch error — close and exit stream
                                 let _ = stem::syscall::root_watch_close(watch_handle);
-                                send_chunk(net, conn_handle, &[]); // End chunked encoding
+                                send_chunk(net, conn_handle, &[]).await; // End chunked encoding
                                 break;
                             }
                         }
@@ -1107,7 +1108,7 @@ fn handle_connection(conn_handle: u32) {
                                 "event: props\ndata: {}\n\n",
                                 core::str::from_utf8(&json).unwrap_or("{}")
                             );
-                            send_chunk(net, conn_handle, event.as_bytes());
+                            send_chunk(net, conn_handle, event.as_bytes()).await;
                         }
                     } else {
                         // No graph events drained.  This happens when:
@@ -1121,7 +1122,7 @@ fn handle_connection(conn_handle: u32) {
                             Err(_) => true,
                         };
                         if send_keepalive {
-                            send_chunk(net, conn_handle, b": keepalive\n\n");
+                            send_chunk(net, conn_handle, b": keepalive\n\n").await;
                         }
                     }
                 }
@@ -1152,7 +1153,7 @@ fn handle_connection(conn_handle: u32) {
     stem::time::sleep_ms(10);
 }
 
-fn send_all(net: &NetClient, conn_handle: u32, data: &[u8]) {
+async fn send_all(net: &NetClient, conn_handle: u32, data: &[u8]) {
     const CHUNK_SIZE: usize = 8192;
     let mut sent = 0;
     let mut stall_count = 0;
@@ -1162,7 +1163,7 @@ fn send_all(net: &NetClient, conn_handle: u32, data: &[u8]) {
         let chunk_len = remaining.min(CHUNK_SIZE);
         let chunk = &data[sent..sent + chunk_len];
 
-        let n = net.tcp_send(conn_handle, chunk);
+        let n = net.tcp_send(conn_handle, chunk).await;
 
         if n == 0 {
             stall_count += 1;
@@ -1179,20 +1180,20 @@ fn send_all(net: &NetClient, conn_handle: u32, data: &[u8]) {
     }
 }
 
-fn send_chunk(net: &NetClient, conn_handle: u32, data: &[u8]) {
+async fn send_chunk(net: &NetClient, conn_handle: u32, data: &[u8]) {
     use alloc::format;
     // Chunk header: hex length \r\n — use send_all to prevent partial
     // writes from corrupting the chunked transfer encoding framing.
     let header = format!("{:x}\r\n", data.len());
-    send_all(net, conn_handle, header.as_bytes());
+    send_all(net, conn_handle, header.as_bytes()).await;
 
     // Chunk data
     if !data.is_empty() {
-        send_all(net, conn_handle, data);
+        send_all(net, conn_handle, data).await;
     }
 
     // Chunk footer: \r\n
-    send_all(net, conn_handle, b"\r\n");
+    send_all(net, conn_handle, b"\r\n").await;
 }
 
 /// Re-export the canonical escape function from the error module.

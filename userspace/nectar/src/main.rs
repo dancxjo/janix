@@ -274,11 +274,14 @@ fn main(_arg: usize) -> ! {
     let mut last_ip: Option<[u8; 4]> = None;
     window_id = maybe_create_window(window_id, &hostname, last_ip);
 
+    let stack_kind = stem::thing::sys::intern("svc.net.Stack").unwrap_or(0) as u64;
+    let _ = stem::thing::discovery::wait_for_kind(stack_kind);
+
     let (api, mac, net_stack) = loop {
         if let Some(res) = find_netd_and_mac() {
             break res;
         }
-        stem::time::sleep_ms(1000);
+        stem::time::sleep_ms(10);
     };
 
     let (resp_w, resp_r) = port_create(64).expect("port_create");

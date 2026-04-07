@@ -20,3 +20,4 @@ pub mod graph_debug;
 pub use graph_debug::{edge, DebugEdge};
 pub mod query;
 pub mod symbol;
+pub mod discovery;

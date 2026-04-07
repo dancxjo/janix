@@ -42,6 +42,7 @@ pub mod utils;
 pub mod vm;
 pub mod wait_set;
 pub mod xml;
+pub mod task;
 
 // Re-export time types for convenience
 pub use time::{Duration, Instant};

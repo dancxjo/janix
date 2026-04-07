@@ -114,15 +114,10 @@ fn main(_arg: usize) -> ! {
 
     // Wait for UI Root (Compositor) - like Bloom / Photosynthesis pattern
     info!("FETCHD: Waiting for UI Root (Compositor)...");
-    let mut ui_crown = ThingId::default();
-    while ui_crown.to_u64_lossy() == 0 {
-        let mut ui_crowns = [ThingId::default(); 1];
-        if let Ok(1) = find(kinds::UI_CROWN, &mut ui_crowns) {
-            ui_crown = ui_crowns[0];
-        } else {
-            stem::sleep(Duration::from_millis(100));
-        }
-    }
+    let ui_crown = {
+        let kind = stem::thing::sys::intern(kinds::UI_CROWN).unwrap_or(0) as u64;
+        stem::thing::discovery::wait_for_kind(kind).unwrap_or_default()
+    };
     info!("FETCHD: Found UI Root: {}", ui_crown.to_u64_lossy());
 
     if ui_crown.to_u64_lossy() != 0 {

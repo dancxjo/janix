@@ -16,23 +16,9 @@ use stem::syscall::{port_create, port_recv, PortHandle};
 
 fn find_bristle_node() -> Option<stem::thing::ThingId> {
     use abi::schema::hid::SVC_INPUT;
-    use stem::thing::sys::find;
-    use stem::thing::ThingId;
-
-    let mut input_nodes = [ThingId::default(); 16];
-    match find(SVC_INPUT, &mut input_nodes) {
-        Ok(count) if count > 0 => {
-            let count = count.min(input_nodes.len());
-            let mut best = input_nodes[0];
-            for node in input_nodes.iter().take(count).skip(1) {
-                if node.to_u64_lossy() > best.to_u64_lossy() {
-                    best = *node;
-                }
-            }
-            Some(best)
-        }
-        _ => None,
-    }
+    
+    let kind = stem::thing::sys::intern(SVC_INPUT).unwrap_or(0) as u64;
+    stem::thing::discovery::wait_for_kind(kind).ok()
 }
 
 fn subscribe_bristle_topic() -> Option<PortHandle> {

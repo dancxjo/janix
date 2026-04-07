@@ -42,7 +42,7 @@ use crate::time::Duration;
 /// Tokens are assigned at registration time and echoed back in every
 /// [`WaitEvent`] so callers can dispatch by source without scanning by object
 /// handle.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct WaitToken(u64);
 
 // ─── WaitEvent ────────────────────────────────────────────────────────────────

@@ -388,6 +388,7 @@ fn cleanup_all(regs: &[Registration], tid: u64, timeout_tick: Option<u64>) -> Sy
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::sync::atomic::Ordering;
 
     fn alloc_port_pair(capacity: usize) -> (u32, u32) {
         let port_id = crate::ipc::create_port(capacity);
@@ -454,6 +455,54 @@ mod tests {
     }
 
     #[test]
+    fn poll_port_reports_writable_capacity_and_write_hangup() {
+        let (write_handle, _read_handle) = alloc_port_pair(4);
+        let port = {
+            let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+            let entry = table
+                .get(
+                    crate::ipc::Handle(write_handle),
+                    crate::ipc::HandleMode::Write,
+                )
+                .copied()
+                .expect("entry");
+            crate::ipc::get_port(entry.port_id).expect("port")
+        };
+
+        let writable = poll_spec(&WaitSpec {
+            kind: WaitKind::Port as u32,
+            flags: wait::interest::WRITABLE,
+            object: write_handle as u64,
+            token: 21,
+        })
+        .expect("poll")
+        .expect("ready");
+        assert_eq!(writable.flags, wait::ready::WRITABLE);
+        assert_eq!(writable.value, 16);
+
+        assert!(port.send_all(&[0u8; 16]));
+        let not_writable = poll_spec(&WaitSpec {
+            kind: WaitKind::Port as u32,
+            flags: wait::interest::WRITABLE,
+            object: write_handle as u64,
+            token: 22,
+        })
+        .expect("poll");
+        assert!(not_writable.is_none());
+
+        assert!(!port.close_reader());
+        let hangup = poll_spec(&WaitSpec {
+            kind: WaitKind::Port as u32,
+            flags: wait::interest::WRITABLE,
+            object: write_handle as u64,
+            token: 23,
+        })
+        .expect("poll")
+        .expect("ready");
+        assert_eq!(hangup.flags, wait::ready::HANGUP);
+    }
+
+    #[test]
     fn collect_ready_returns_multiple_ports() {
         let (write_a, read_a) = alloc_port_pair(64);
         let (write_b, read_b) = alloc_port_pair(64);
@@ -497,6 +546,51 @@ mod tests {
         assert_eq!(ready, 2);
         assert_eq!(results[0].token, 1);
         assert_eq!(results[1].token, 2);
+    }
+
+    #[test]
+    fn collect_ready_respects_output_capacity() {
+        let (write_a, read_a) = alloc_port_pair(64);
+        let (write_b, read_b) = alloc_port_pair(64);
+
+        let port_a = {
+            let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+            let entry = table
+                .get(crate::ipc::Handle(write_a), crate::ipc::HandleMode::Write)
+                .copied()
+                .expect("entry a");
+            crate::ipc::get_port(entry.port_id).expect("port a")
+        };
+        let port_b = {
+            let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+            let entry = table
+                .get(crate::ipc::Handle(write_b), crate::ipc::HandleMode::Write)
+                .copied()
+                .expect("entry b");
+            crate::ipc::get_port(entry.port_id).expect("port b")
+        };
+
+        assert!(port_a.send_all(b"a"));
+        assert!(port_b.send_all(b"b"));
+
+        let specs = [
+            WaitSpec {
+                kind: WaitKind::Port as u32,
+                flags: wait::interest::READABLE,
+                object: read_a as u64,
+                token: 101,
+            },
+            WaitSpec {
+                kind: WaitKind::Port as u32,
+                flags: wait::interest::READABLE,
+                object: read_b as u64,
+                token: 102,
+            },
+        ];
+        let mut results = [WaitResult::default(); 1];
+        let ready = collect_ready(&specs, &mut results).expect("collect");
+        assert_eq!(ready, 1);
+        assert_eq!(results[0].token, 101);
     }
 
     #[test]
@@ -587,5 +681,28 @@ mod tests {
         assert_eq!(results[1].token, 2);
         assert_eq!(results[1].flags, wait::ready::DONE);
         crate::root::async_ops::free_handle(handle);
+    }
+
+    #[test]
+    fn timeout_expired_handles_none_and_deadline_boundaries() {
+        crate::sched::TICK_COUNT.store(50, Ordering::Relaxed);
+        assert!(!timeout_expired(None));
+        assert!(!timeout_expired(Some(51)));
+        assert!(timeout_expired(Some(50)));
+        assert!(timeout_expired(Some(49)));
+    }
+
+    #[test]
+    fn poll_irq_rejects_invalid_vectors() {
+        let invalid_spec = WaitSpec {
+            kind: WaitKind::Irq as u32,
+            flags: 0,
+            object: (u8::MAX as u64) + 1,
+            token: 1,
+        };
+        let invalid = poll_irq(&invalid_spec).expect("invalid vector");
+        assert_eq!(invalid.flags, wait::ready::ERROR);
+        assert_eq!(invalid.value, Errno::EINVAL as i64);
+        assert_eq!(invalid.token, invalid_spec.token);
     }
 }

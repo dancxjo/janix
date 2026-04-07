@@ -38,7 +38,7 @@ fn main(_arg: usize) -> ! {
         Err(e) => {
             error!("SND: Failed to find device: {:?}", e);
             loop {
-                stem::yield_now();
+                stem::time::sleep_ms(1);
             }
         }
     };
@@ -46,7 +46,7 @@ fn main(_arg: usize) -> ! {
     if count == 0 {
         error!("SND: No VirtIO sound device found");
         loop {
-            stem::yield_now();
+            stem::time::sleep_ms(1);
         }
     }
 
@@ -59,7 +59,7 @@ fn main(_arg: usize) -> ! {
         Err(e) => {
             error!("SND: Failed to claim device: {:?}", e);
             loop {
-                stem::yield_now();
+                stem::time::sleep_ms(1);
             }
         }
     };
@@ -68,7 +68,7 @@ fn main(_arg: usize) -> ! {
     if let Err(e) = driver.init(VIRTIO_SND_F_CTLS) {
         error!("SND: Failed to init device: {}", e);
         loop {
-            stem::yield_now();
+            stem::time::sleep_ms(1);
         }
     }
 
@@ -77,7 +77,7 @@ fn main(_arg: usize) -> ! {
         if let Err(e) = driver.setup_queue(q, QUEUE_SIZE) {
             error!("SND: Failed to setup queue {}: {}", q, e);
             loop {
-                stem::yield_now();
+                stem::time::sleep_ms(1);
             }
         }
     }
@@ -95,7 +95,7 @@ fn main(_arg: usize) -> ! {
         None => {
             error!("SND: No output stream found");
             loop {
-                stem::yield_now();
+                stem::time::sleep_ms(1);
             }
         }
     };
@@ -200,12 +200,12 @@ fn main(_arg: usize) -> ! {
 
                             if added {
                                 driver.notify_queue(VIRTIO_SND_VQ_TX);
-                                stem::yield_now(); // Let lower-priority tasks run
+                                stem::time::sleep_ms(1); // Let lower-priority tasks run
                                 break;
                             } else {
                                 // Queue full. Poll for completions and yield.
                                 process_tx_queue(&mut driver);
-                                stem::yield_now();
+                                stem::time::sleep_ms(1);
                             }
                         }
                     }
@@ -215,7 +215,12 @@ fn main(_arg: usize) -> ! {
                 }
             }
             _ => {
-                stem::yield_now();
+                let mut ws = stem::wait_set::WaitSet::new();
+                if let Ok(_) = ws.add_port_readable(read_handle as u64) {
+                    let _ = ws.wait(Some(stem::time::Duration::from_millis(50)));
+                } else {
+                    stem::time::sleep_ms(10);
+                }
             }
         }
     }
@@ -310,7 +315,7 @@ fn send_pcm_command(driver: &mut VirtioDevice, cmd: u32, stream_id: u32) {
         if done {
             break;
         }
-        stem::yield_now();
+        stem::time::sleep_ms(1);
     }
 }
 
@@ -357,7 +362,7 @@ fn configure_stream(driver: &mut VirtioDevice, stream_id: u32) {
         if done {
             break;
         }
-        stem::yield_now();
+        stem::time::sleep_ms(1);
     }
 
     // 2. Prepare

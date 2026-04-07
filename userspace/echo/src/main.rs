@@ -545,8 +545,12 @@ fn main(arg: usize) -> ! {
             Ok(n) if n >= 20 => {
                 parse_and_print_event(&buf[..n]);
             }
+            Err(e) => {
+                stem::warn!("echo: port_recv error: {:?}", e);
+                stem::time::sleep_ms(10);
+            }
             _ => {
-                stem::yield_now();
+                stem::time::sleep_ms(10);
             }
         }
     }

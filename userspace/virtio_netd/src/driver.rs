@@ -330,7 +330,7 @@ impl VirtioNetDriver {
             if i < 10 {
                 core::hint::spin_loop();
             } else {
-                stem::yield_now(); // Yield to scheduler instead of burning CPU
+                stem::time::sleep_ms(1); // Yield to scheduler instead of burning CPU
             }
         }
 

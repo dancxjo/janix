@@ -15,7 +15,7 @@ use abi::ids::HandleId;
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use spin::Mutex;
-use stem::syscall::{monotonic_ns, port_recv, port_send, PortHandle};
+use stem::syscall::{monotonic_ns, port_send, port_try_recv, PortHandle};
 use stem::thing::sys::{bytespace_map, bytespace_unmap, find, prop_get};
 use stem::thing::ThingId;
 
@@ -280,7 +280,7 @@ impl FontClient {
 
         // Drain up to 10 messages per poll to avoid starving the loop
         for _ in 0..10 {
-            let resp_len = match port_recv(self.resp_port, &mut resp_buf) {
+            let resp_len = match port_try_recv(self.resp_port, &mut resp_buf) {
                 Ok(len) if len > 0 => len,
                 _ => break,
             };

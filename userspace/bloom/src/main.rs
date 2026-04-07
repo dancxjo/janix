@@ -651,6 +651,7 @@ fn main(arg: usize) -> ! {
         false,
         0u32,
     );
+    let mut screen_format = target.format;
 
     let mut presenter = if target.driver_req != 0 {
         let mut d = DriverPresenter::new(target.driver_req, target.driver_resp);
@@ -665,7 +666,7 @@ fn main(arg: usize) -> ! {
         // Immediate acquire to satisfy driver's need for a bound context before first present
         let mut d_presenter = PresenterImpl::Driver(d);
         stem::info!("[bloom] Requesting initial driver buffer...");
-        let (acq_id, acq_w, acq_h, acq_s, _f, acq_age) = d_presenter.acquire_buffer();
+        let (acq_id, acq_w, acq_h, acq_s, acq_f, acq_age) = d_presenter.acquire_buffer();
         stem::info!("[bloom] ACQUIRED RETURNED!");
 
         // Map the initial buffer
@@ -677,6 +678,7 @@ fn main(arg: usize) -> ! {
             final_height = acq_h;
             final_stride = acq_s;
             final_bs_id = acq_id;
+            screen_format = acq_f;
             final_age = acq_age;
             stem::info!(
                 "[bloom] ACQUIRED initial driver buffer: {:p} (bs_id={:?})",
@@ -741,7 +743,8 @@ fn main(arg: usize) -> ! {
     }
 
     let mut loop_ctrl = FrameLoop::new(60);
-    let (screen_w, screen_h) = (target.width as i32, target.height as i32);
+    let mut screen_w = final_width as i32;
+    let mut screen_h = final_height as i32;
 
     // Cursor state
     // Prefer Bristle's broker topic over the legacy boot-wired event port. The
@@ -804,8 +807,8 @@ fn main(arg: usize) -> ! {
         let mut gc = gpu_compositor::GpuCompositor::new();
         gc.set_scanout_resource(
             /* will be set later from driver */ 0,
-            target.width,
-            target.height,
+            final_width,
+            final_height,
         );
         gc.mark_initialized();
         Some(gc)
@@ -1064,8 +1067,8 @@ fn main(arg: usize) -> ! {
             let refresh_paint =
                 !first_frame_rendered || requires_paint_refresh(&invalidation_causes);
             let res = paint_pipeline.process_updates(
-                target.width as i32,
-                target.height as i32,
+                screen_w,
+                screen_h,
                 rescan_windows,
                 refresh_paint,
                 || {
@@ -1433,7 +1436,6 @@ fn main(arg: usize) -> ! {
 
         // Run UI Pipeline
         let mut list = drawlist::DrawList::new();
-
         // Damage Tracking (cursor fallback handling)
         let bounds = crate::geometry::Rect::full(screen_w, screen_h);
         let mut damage = damage::Damage::empty(bounds);
@@ -1652,7 +1654,7 @@ fn main(arg: usize) -> ! {
 
         // Render
         let token = presenter.acquire_frame(
-            crate::frame::FrameSpec::new(target.width, target.height, target.format),
+            crate::frame::FrameSpec::new(final_width, final_height, screen_format),
             ASSETS.current_generation(),
         );
         let mut builder = FrameBuilder::new(token);
@@ -1888,7 +1890,8 @@ fn main(arg: usize) -> ! {
             // Acquire NEXT buffer for the next frame
             if let PresenterImpl::Driver(_) = presenter {
                 let acquire_start_ns = stem::monotonic_ns();
-                let (next_bs_id, next_w, next_h, next_s, _f, next_age) = presenter.acquire_buffer();
+                let (next_bs_id, next_w, next_h, next_s, next_f, next_age) =
+                    presenter.acquire_buffer();
                 let acquire_ns = stem::monotonic_ns().saturating_sub(acquire_start_ns);
                 if acquire_ns > 50_000_000 {
                     stem::warn!(
@@ -1916,6 +1919,9 @@ fn main(arg: usize) -> ! {
                 final_width = next_w;
                 final_height = next_h;
                 final_stride = next_s;
+                screen_w = next_w as i32;
+                screen_h = next_h as i32;
+                screen_format = next_f;
                 current_age = next_age;
             }
 

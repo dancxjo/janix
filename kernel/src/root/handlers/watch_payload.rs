@@ -168,15 +168,15 @@ fn event_matches_filter(
     }
 
     if (filter.flags & WATCH_F_KIND) != 0 {
-        if header.predicate != watch::WATCH_PRED_KIND {
-            return false;
-        }
-        if header.value_encoding != ValueEncoding::Bytes as u8 || value.len() != 4 {
-            return false;
-        }
-        let kind_id = u32::from_le_bytes(value.try_into().unwrap());
-        if kind_id != filter.kind_id {
-            return false;
+        // If it's a create-node event, verify the kind matches.
+        // For other events (edges, props), we MUST let them through because the
+        // watch_poll matching already guaranteed they belong to a commit that
+        // matched the kind filter.
+        if header.predicate == watch::WATCH_PRED_KIND && header.value_encoding == ValueEncoding::Bytes as u8 && value.len() == 4 {
+            let kind_id = u32::from_le_bytes(value.try_into().unwrap());
+            if kind_id != filter.kind_id {
+                return false; // Found a create event for a different kind, drop it.
+            }
         }
     }
 

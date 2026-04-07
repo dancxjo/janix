@@ -624,8 +624,9 @@ fn main(_arg: usize) -> ! {
     if handles.is_empty() {
         info!("ATA_DISK: No active devices to service");
         loop {
-            stem::sleep(Duration::from_secs(60));
+            stem::syscall::sleep_ms(60_000);
         }
+    }
     
     // Main service loop
     loop {

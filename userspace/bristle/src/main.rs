@@ -366,8 +366,9 @@ fn main(packed_handles: usize) -> ! {
     loop {
         let events = match ws.wait(None::<stem::time::Duration>) {
             Ok(evs) => evs,
-            Err(_) => {
-                stem::yield_now();
+            Err(e) => {
+                stem::warn!("bristle: ws.wait error: {:?}", e);
+                stem::time::sleep_ms(10);
                 continue;
             }
         };

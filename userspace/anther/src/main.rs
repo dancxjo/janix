@@ -765,14 +765,8 @@ fn run_server_mode(port: u16) -> ! {
         port, listen_handle
     );
 
-    extern "C" fn worker_trampoline(conn: usize) -> ! {
-        handle_connection(conn as u32);
-        // Exit thread
-        stem::syscall::exit(0);
-    }
-
     // Main server loop — accept connections and spawn a thread per connection.
-    // Uses stem::thread::spawn_with_arg to safely hand-off single-word startup arguments
+    // Uses stem::thread::spawn_task to safely hand-off connection state via closures
     loop {
         if let Some(accept) = net.tcp_accept(listen_handle) {
             let conn = accept.conn_handle;
@@ -780,11 +774,13 @@ fn run_server_mode(port: u16) -> ! {
                 "anther: Accepted connection, spawning thread for conn_handle={}",
                 conn
             );
-            match stem::thread::spawn_with_arg(worker_trampoline, conn as usize) {
-                Ok(tid) => {
+            match stem::thread::spawn_task(move || {
+                handle_connection(conn);
+            }) {
+                Ok(handle) => {
                     info!(
                         "anther: Thread spawned TID={} for conn_handle={}",
-                        tid, conn
+                        handle.tid(), conn
                     );
                 }
                 Err(e) => {
@@ -861,7 +857,7 @@ fn handle_connection(conn_handle: u32) {
                 attempts = 0; // Reset on data
             } else {
                 attempts += 1;
-                stem::syscall::yield_now();
+                stem::time::sleep_ms(1);
             }
         }
 
@@ -930,7 +926,7 @@ fn handle_connection(conn_handle: u32) {
                         body_attempts = 0;
                     } else {
                         body_attempts += 1;
-                        stem::syscall::yield_now();
+                        stem::time::sleep_ms(1);
                     }
                 }
             }
@@ -1009,7 +1005,7 @@ fn handle_connection(conn_handle: u32) {
                             break;
                         }
                         Poll::Pending => {
-                            stem::thread::yield_now();
+                            stem::time::sleep_ms(1); // Wait for space to become available
                         }
                     }
                 }

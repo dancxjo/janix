@@ -1,6 +1,7 @@
 use crate::errors::Errno;
 use crate::stack::{Stack, StackSpec};
 use abi::wait::{WaitKind, WaitSpec};
+use alloc::boxed::Box;
 
 pub type ThreadId = u64;
 
@@ -82,4 +83,59 @@ impl TaskExitWatch {
             token,
         }
     }
+}
+
+struct BoxWrapper<F> {
+    f: F,
+}
+
+extern "C" fn generic_thread_trampoline<F>(arg: usize) -> !
+where
+    F: FnOnce() + Send + 'static,
+{
+    // Reconstruct the Box and take ownership of the closure
+    let b = unsafe { Box::from_raw(arg as *mut BoxWrapper<F>) };
+    
+    // Execute the closure
+    (b.f)();
+    
+    // Exit securely with status 0 upon successful completion
+    crate::syscall::exit(0);
+}
+
+/// A handle to a spawned background thread.
+#[derive(Debug)]
+pub struct JoinHandle {
+    tid: ThreadId,
+}
+
+impl JoinHandle {
+    /// Wait for the thread to exit and return its exit code.
+    pub fn join(self) -> Result<i32, Errno> {
+        wait(self.tid)
+    }
+
+    /// Returns the thread ID.
+    pub fn tid(&self) -> ThreadId {
+        self.tid
+    }
+}
+
+/// Spawns a new thread, executing the given closure.
+///
+/// This provides an ergonomic, `std::thread`-like API for starting background tasks.
+/// The closure will execute on a dynamically allocated stack and exit with code 0 natively.
+pub fn spawn_task<F>(f: F) -> Result<JoinHandle, Errno>
+where
+    F: FnOnce() + Send + 'static,
+{
+    let b = Box::new(BoxWrapper { f });
+    let ptr = Box::into_raw(b) as usize;
+    
+    let stack = Stack::alloc_growing_stack(StackSpec::default())?;
+    
+    let tid = crate::syscall::spawn_thread(generic_thread_trampoline::<F> as usize, ptr, &stack)
+        .map(|id| id as ThreadId)?;
+    
+    Ok(JoinHandle { tid })
 }

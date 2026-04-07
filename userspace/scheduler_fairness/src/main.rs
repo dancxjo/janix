@@ -70,9 +70,9 @@ fn main() -> ! {
     let stack_b = Stack::alloc_growing_stack(spec).expect("worker_b stack");
 
     // Spawn worker threads
-    let _tid_busy = spawn_thread(busy_bee, &stack_busy).expect("spawn busy");
-    let _tid_a = spawn_thread(worker_a, &stack_a).expect("spawn worker_a");
-    let _tid_b = spawn_thread(worker_b, &stack_b).expect("spawn worker_b");
+    let _tid_busy = spawn_thread(busy_bee as usize, 0, &stack_busy).expect("spawn busy");
+    let _tid_a = spawn_thread(worker_a as usize, 0, &stack_a).expect("spawn worker_a");
+    let _tid_b = spawn_thread(worker_b as usize, 0, &stack_b).expect("spawn worker_b");
 
     info!("Threads spawned. Starting 10-second fairness check...");
 

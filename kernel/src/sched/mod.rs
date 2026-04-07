@@ -1469,6 +1469,7 @@ mod tests {
     #[derive(Clone, Copy, Default)]
     struct MockAddressSpace(u64);
 
+    static MOCK_RUNTIME: MockRuntime = MockRuntime;
     struct MockRuntime;
     impl BootRuntimeBase for MockRuntime {
         fn putchar(&self, _c: u8) {}
@@ -1562,21 +1563,52 @@ mod tests {
     }
 
     static INIT_TESTS: core::sync::atomic::AtomicBool = core::sync::atomic::AtomicBool::new(false);
-    fn init_test_env() {
+    fn init_mock_runtime() {
         if !INIT_TESTS.swap(true, core::sync::atomic::Ordering::SeqCst) {
-            crate::task::registry::init::<MockRuntime>();
-        } else {
-            // Need to clear registry between tests if they run sequentially,
-            // but for concurrent tests, clearing might race.
-            // Better to just ensure task IDs are unique in tests.
+            crate::init_runtime(&MOCK_RUNTIME);
+        }
+    }
+
+    fn init_test_env() {
+        init_mock_runtime();
+        crate::task::registry::init::<MockRuntime>();
+        *SCHEDULER.lock() = None;
+        TICK_COUNT.store(0, core::sync::atomic::Ordering::Relaxed);
+    }
+
+    fn make_task(id: TaskId, state: TaskState, priority: TaskPriority) -> crate::task::Task<MockRuntime> {
+        crate::task::Task {
+            id,
+            state,
+            priority,
+            base_priority: priority,
+            enqueued_at_tick: 0,
+            exit_code: None,
+            exit_waiters: crate::sched::WaitQueue::new(),
+            is_user: false,
+            wake_pending: false,
+            affinity: Affinity::Any,
+            kstack_base: core::ptr::null_mut(),
+            kstack_size: 0,
+            kstack_top: 0,
+            ctx: Default::default(),
+            aspace: MockAddressSpace(0),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
+            stack_info: None,
+            mappings: alloc::sync::Arc::new(spin::Mutex::new(
+                crate::memory::mappings::MappingList::new(),
+            )),
+            timeslice_remaining: types::DEFAULT_TIMESLICE,
+            last_cpu: Some(0),
+            name: [0; 32],
+            name_len: 0,
+            process_info: None,
         }
     }
 
     #[test]
     fn test_priority_aging_boost() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
-        static RUNTIME: MockRuntime = MockRuntime;
         // Test that tasks waiting too long get priority boost when scheduling
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -1599,7 +1631,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -1628,7 +1660,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -1671,9 +1703,7 @@ mod tests {
 
     #[test]
     fn test_reset_priority_aging_on_schedule() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
-        static RUNTIME: MockRuntime = MockRuntime;
         // Test that enqueued_at_tick resets when task is preempted/yields
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -1695,7 +1725,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -1724,7 +1754,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -1759,12 +1789,10 @@ mod tests {
 
     #[test]
     fn test_wake_preempts_lower_priority() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
         crate::task::registry::init::<MockRuntime>();
         use core::sync::atomic::Ordering;
 
-        static RUNTIME: MockRuntime = MockRuntime;
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
 
@@ -1785,7 +1813,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -1814,7 +1842,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -1876,10 +1904,8 @@ mod tests {
 
     #[test]
     fn test_sorted_insertion() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
         crate::task::registry::init::<MockRuntime>();
-        static RUNTIME: MockRuntime = MockRuntime;
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
 
@@ -1900,7 +1926,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -1955,10 +1981,8 @@ mod tests {
 
     #[test]
     fn test_block_and_wake_state_transitions() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
         crate::task::registry::init::<MockRuntime>();
-        static RUNTIME: MockRuntime = MockRuntime;
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
 
@@ -1978,7 +2002,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2049,10 +2073,8 @@ mod tests {
 
     #[test]
     fn test_wake_task_removes_sleep_queue_entry() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
         crate::task::registry::init::<MockRuntime>();
-        static RUNTIME: MockRuntime = MockRuntime;
 
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -2074,7 +2096,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2102,7 +2124,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2141,10 +2163,8 @@ mod tests {
 
     #[test]
     fn test_kill_by_tid_removes_wait_queue_entry() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
         crate::task::registry::init::<MockRuntime>();
-        static RUNTIME: MockRuntime = MockRuntime;
 
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -2166,7 +2186,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2194,7 +2214,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2231,9 +2251,7 @@ mod tests {
 
     #[test]
     fn test_wait_task_returns_immediately_for_dead_target() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
-        static RUNTIME: MockRuntime = MockRuntime;
 
         let dead_task = crate::task::Task {
             id: 8001,
@@ -2251,7 +2269,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2271,7 +2289,6 @@ mod tests {
 
     #[test]
     fn test_wait_task_returns_echild_for_missing_target() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
 
         assert_eq!(
@@ -2282,9 +2299,7 @@ mod tests {
 
     #[test]
     fn test_register_task_exit_waiter_tracks_live_target() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
-        static RUNTIME: MockRuntime = MockRuntime;
 
         let live_task = crate::task::Task {
             id: 8101,
@@ -2302,7 +2317,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2331,9 +2346,7 @@ mod tests {
 
     #[test]
     fn test_kill_by_tid_wakes_registered_exit_waiter() {
-        unsafe { crate::init_runtime(&MockRuntime) };
         init_test_env();
-        static RUNTIME: MockRuntime = MockRuntime;
 
         let mut sched = types::Scheduler::<MockRuntime>::new();
         sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
@@ -2355,7 +2368,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2383,7 +2396,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2411,7 +2424,7 @@ mod tests {
             kstack_top: 0,
             ctx: Default::default(),
             aspace: MockAddressSpace(0),
-            simd: crate::simd::SimdState::new(&RUNTIME),
+            simd: crate::simd::SimdState::new(&MOCK_RUNTIME),
             stack_info: None,
             mappings: alloc::sync::Arc::new(spin::Mutex::new(
                 crate::memory::mappings::MappingList::new(),
@@ -2476,6 +2489,93 @@ mod tests {
                 .iter()
                 .any(|&id| id == 8201)
         );
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = None;
+    }
+
+    #[test]
+    fn test_poll_task_exit_reports_pending_dead_and_missing_targets() {
+        init_test_env();
+
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(make_task(8301, TaskState::Runnable, TaskPriority::Normal)));
+
+        let mut dead = make_task(8302, TaskState::Dead, TaskPriority::Normal);
+        dead.exit_code = Some(17);
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(dead));
+
+        assert_eq!(poll_task_exit::<MockRuntime>(8301).unwrap(), None);
+        assert_eq!(poll_task_exit::<MockRuntime>(8302).unwrap(), Some(17));
+        assert_eq!(
+            poll_task_exit::<MockRuntime>(8399).unwrap_err(),
+            abi::errors::Errno::ECHILD
+        );
+    }
+
+    #[test]
+    fn test_unregister_task_exit_waiter_removes_only_requested_waiter() {
+        init_test_env();
+
+        let target = make_task(8401, TaskState::Runnable, TaskPriority::Normal);
+        crate::task::registry::get_registry::<MockRuntime>()
+            .insert(alloc::boxed::Box::new(target));
+
+        register_task_exit_waiter::<MockRuntime>(8401, 8402).unwrap();
+        register_task_exit_waiter::<MockRuntime>(8401, 8403).unwrap();
+        unregister_task_exit_waiter::<MockRuntime>(8401, 8402).unwrap();
+
+        let waiters = crate::task::registry::get_task::<MockRuntime>(8401)
+            .unwrap()
+            .exit_waiters
+            .drain();
+        assert_eq!(waiters, alloc::vec![8403]);
+    }
+
+    #[test]
+    fn test_register_timeout_wake_deduplicates_task_ids() {
+        init_test_env();
+
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(8500);
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = Some((&mut sched as *mut types::Scheduler<MockRuntime>) as usize);
+        drop(sched_lock);
+
+        register_timeout_wake::<MockRuntime>(8501, 42);
+        register_timeout_wake::<MockRuntime>(8501, 42);
+        register_timeout_wake::<MockRuntime>(8502, 42);
+
+        assert_eq!(sched.state.sleep_queue.get(&42).cloned().unwrap(), alloc::vec![8501, 8502]);
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = None;
+    }
+
+    #[test]
+    fn test_unregister_timeout_wake_removes_task_from_all_buckets() {
+        init_test_env();
+
+        let mut sched = types::Scheduler::<MockRuntime>::new();
+        sched.state.per_cpu.push(crate::sched::state::PerCpu::new());
+        sched.state.per_cpu[0].current = Some(8600);
+        sched.state.sleep_queue.insert(11, alloc::vec![8601, 8602]);
+        sched.state.sleep_queue.insert(12, alloc::vec![8602, 8603]);
+
+        let mut sched_lock = SCHEDULER.lock();
+        *sched_lock = Some((&mut sched as *mut types::Scheduler<MockRuntime>) as usize);
+        drop(sched_lock);
+
+        unregister_timeout_wake::<MockRuntime>(8602);
+
+        assert_eq!(sched.state.sleep_queue.get(&11).cloned().unwrap(), alloc::vec![8601]);
+        assert_eq!(sched.state.sleep_queue.get(&12).cloned().unwrap(), alloc::vec![8603]);
+
+        unregister_timeout_wake::<MockRuntime>(8603);
+        assert!(!sched.state.sleep_queue.contains_key(&12));
 
         let mut sched_lock = SCHEDULER.lock();
         *sched_lock = None;

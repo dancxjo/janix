@@ -200,7 +200,7 @@ fn main(arg: usize) -> ! {
         None => {
             info!("display_virtio_gpu: GPU device not found");
             loop {
-                stem::yield_now();
+                stem::time::sleep_ms(1);
             }
         }
     };
@@ -210,7 +210,7 @@ fn main(arg: usize) -> ! {
         Err(e) => {
             info!("display_virtio_gpu: Failed to initialize GPU: {:?}", e);
             loop {
-                stem::yield_now();
+                stem::time::sleep_ms(1);
             }
         }
     };
@@ -218,7 +218,7 @@ fn main(arg: usize) -> ! {
     if let Err(e) = gpu.init_virtio() {
         info!("display_virtio_gpu: Virtio init failed: {}", e);
         loop {
-            stem::yield_now();
+            stem::time::sleep_ms(1);
         }
     }
 
@@ -250,7 +250,7 @@ fn main(arg: usize) -> ! {
             Err(e) => {
                 info!("display_virtio_gpu: bytespace_create failed: {:?}", e);
                 loop {
-                    stem::yield_now();
+                    stem::time::sleep_ms(1);
                 }
             }
         };
@@ -260,7 +260,7 @@ fn main(arg: usize) -> ! {
             Err(e) => {
                 info!("display_virtio_gpu: bytespace_phys failed: {:?}", e);
                 loop {
-                    stem::yield_now();
+                    stem::time::sleep_ms(1);
                 }
             }
         };
@@ -273,13 +273,13 @@ fn main(arg: usize) -> ! {
         if let Err(e) = gpu.create_resource_2d(res_id) {
             info!("display_virtio_gpu: create_resource_2d failed: {}", e);
             loop {
-                stem::yield_now();
+                stem::time::sleep_ms(1);
             }
         }
         if let Err(e) = gpu.attach_backing(res_id, phys, disp_size, disp_stride) {
             info!("display_virtio_gpu: attach_backing failed: {}", e);
             loop {
-                stem::yield_now();
+                stem::time::sleep_ms(1);
             }
         }
 
@@ -295,7 +295,7 @@ fn main(arg: usize) -> ! {
     if let Err(e) = gpu.set_scanout(frame_pool_buffers[0].res_id, disp_width, disp_height) {
         info!("display_virtio_gpu: set_scanout failed: {}", e);
         loop {
-            stem::yield_now();
+            stem::time::sleep_ms(1);
         }
     }
 
@@ -425,7 +425,7 @@ fn main(arg: usize) -> ! {
                     }
                 }
                 drvproto::MSG_ACQUIRE => {
-                    stem::trace!("display_virtio_gpu: received MSG_ACQUIRE");
+                    stem::info!("display_virtio_gpu: received MSG_ACQUIRE");
                     let mut buffer_age = 0;
                     let idx = next_buffer_idx;
 

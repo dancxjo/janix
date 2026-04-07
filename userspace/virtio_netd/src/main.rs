@@ -199,7 +199,7 @@ fn main(_arg: usize) -> ! {
             _ => {}
         }
 
-        // Yield to prevent busy-waiting
-        stem::yield_now();
+        // Sleep to prevent busy-waiting
+        stem::time::sleep_ms(1);
     }
 }

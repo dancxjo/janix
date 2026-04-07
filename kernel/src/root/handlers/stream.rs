@@ -7,9 +7,9 @@
 //! These stubs return -ENOSYS to signal callers to migrate.
 
 use super::HandlerResult;
+use crate::root::RootMsg;
 use crate::root::graph::Graph;
 use crate::root::symbols::Interner;
-use crate::root::RootMsg;
 
 /// REMOVED: Use root_watch_open instead.
 pub fn handle_watch_subscribe(

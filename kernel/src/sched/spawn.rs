@@ -7,8 +7,8 @@ use crate::{BootRuntime, BootTasking, UserEntry};
 use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 
-use super::types::{Scheduler, DEFAULT_TIMESLICE};
 use super::SCHEDULER;
+use super::types::{DEFAULT_TIMESLICE, Scheduler};
 use core::sync::atomic::{AtomicUsize, Ordering};
 
 const KERNEL_STACK_SIZE: usize = 65536;

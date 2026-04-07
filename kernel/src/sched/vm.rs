@@ -1,5 +1,5 @@
-use super::types::Scheduler;
 use super::SCHEDULER;
+use super::types::Scheduler;
 use crate::memory::mappings::MappingList;
 use crate::{BootRuntime, BootTasking};
 use abi::errors::Errno;

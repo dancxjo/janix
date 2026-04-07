@@ -38,11 +38,7 @@ pub fn set_cpu_thing(index: usize, id: u64) {
 pub fn cpu_thing(index: usize) -> Option<u64> {
     if index < 32 {
         let v = ANCHORS.cpus[index].load(Ordering::Acquire);
-        if v != 0 {
-            Some(v)
-        } else {
-            None
-        }
+        if v != 0 { Some(v) } else { None }
     } else {
         None
     }
@@ -56,11 +52,7 @@ pub fn set_host(id: u64) {
 /// Get the host ThingId
 pub fn host() -> Option<u64> {
     let v = ANCHORS.host.load(Ordering::Acquire);
-    if v != 0 {
-        Some(v)
-    } else {
-        None
-    }
+    if v != 0 { Some(v) } else { None }
 }
 
 /// Set the scheduler service ThingId (called during boot registration)
@@ -71,11 +63,7 @@ pub fn set_scheduler_service(id: u64) {
 /// Get the scheduler service ThingId
 pub fn scheduler_service() -> Option<u64> {
     let v = ANCHORS.scheduler_service.load(Ordering::Acquire);
-    if v != 0 {
-        Some(v)
-    } else {
-        None
-    }
+    if v != 0 { Some(v) } else { None }
 }
 
 /// Set the kernel proc ThingId (called during boot registration)
@@ -86,11 +74,7 @@ pub fn set_kernel_proc(id: u64) {
 /// Get the kernel proc ThingId
 pub fn kernel_proc() -> Option<u64> {
     let v = ANCHORS.kernel_proc.load(Ordering::Acquire);
-    if v != 0 {
-        Some(v)
-    } else {
-        None
-    }
+    if v != 0 { Some(v) } else { None }
 }
 
 /// Set the root service ThingId (called during boot registration)
@@ -101,9 +85,5 @@ pub fn set_root_service(id: u64) {
 /// Get the root service ThingId
 pub fn root_service() -> Option<u64> {
     let v = ANCHORS.root_service.load(Ordering::Acquire);
-    if v != 0 {
-        Some(v)
-    } else {
-        None
-    }
+    if v != 0 { Some(v) } else { None }
 }

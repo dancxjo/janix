@@ -1,7 +1,7 @@
 //! Core scheduler types and data structures.
 
-use crate::task::{Task, TaskId};
 use crate::BootRuntime;
+use crate::task::{Task, TaskId};
 use alloc::collections::BTreeMap;
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;

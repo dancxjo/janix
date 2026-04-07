@@ -9,6 +9,7 @@ enum Registration {
     PortRead(crate::ipc::PortId),
     PortWrite(crate::ipc::PortId),
     Watch(u64),
+    GraphOp(u64),
     TaskExit(u64),
 }
 
@@ -152,6 +153,7 @@ fn poll_spec(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
     match WaitKind::from_u32(spec.kind).ok_or(Errno::EINVAL)? {
         WaitKind::Port => poll_port(spec),
         WaitKind::RootWatch => poll_watch(spec),
+        WaitKind::GraphOp => poll_graph_op(spec),
         WaitKind::TaskExit => poll_task_exit(spec),
         WaitKind::Irq => Ok(poll_irq(spec)),
         WaitKind::Timeout => Err(Errno::EINVAL),
@@ -248,6 +250,30 @@ fn poll_watch(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
     }
 }
 
+fn poll_graph_op(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
+    match crate::root::async_ops::poll_handle(spec.object) {
+        Ok(crate::root::async_ops::AsyncOpPoll::Pending) => Ok(None),
+        Ok(crate::root::async_ops::AsyncOpPoll::Complete { status, value, .. }) => {
+            let mut flags = wait::ready::DONE;
+            let result_value = if status == 0 {
+                value as i64
+            } else {
+                flags |= wait::ready::ERROR;
+                -(status as i64)
+            };
+            Ok(Some(WaitResult {
+                kind: spec.kind,
+                flags,
+                object: spec.object,
+                token: spec.token,
+                value: result_value,
+                reserved: 0,
+            }))
+        }
+        Err(err) => Ok(Some(error_result(spec, err))),
+    }
+}
+
 fn poll_task_exit(spec: &WaitSpec) -> SysResult<Option<WaitResult>> {
     match unsafe { crate::sched::poll_task_exit_current(spec.object) } {
         Ok(Some(code)) => Ok(Some(WaitResult {
@@ -312,6 +338,10 @@ fn register_all(specs: &[WaitSpec], tid: u64) -> SysResult<alloc::vec::Vec<Regis
                 })?;
                 regs.push(Registration::Watch(spec.object));
             }
+            WaitKind::GraphOp => {
+                crate::root::async_ops::register_waiter(spec.object, tid)?;
+                regs.push(Registration::GraphOp(spec.object));
+            }
             WaitKind::TaskExit => {
                 match unsafe { crate::sched::register_task_exit_waiter_current(spec.object, tid) } {
                     Ok(Some(_)) | Ok(None) => regs.push(Registration::TaskExit(spec.object)),
@@ -340,6 +370,9 @@ fn cleanup_all(regs: &[Registration], tid: u64, timeout_tick: Option<u64>) -> Sy
             }
             Registration::Watch(id) => {
                 let _ = root_call(crate::root::RootOp::WatchUnregisterWaiter { id, tid });
+            }
+            Registration::GraphOp(id) => {
+                let _ = crate::root::async_ops::unregister_waiter(id, tid);
             }
             Registration::TaskExit(target) => {
                 let _ = unsafe { crate::sched::unregister_task_exit_waiter_current(target, tid) };
@@ -464,5 +497,95 @@ mod tests {
         assert_eq!(ready, 2);
         assert_eq!(results[0].token, 1);
         assert_eq!(results[1].token, 2);
+    }
+
+    #[test]
+    fn poll_graph_op_reports_completion_and_error() {
+        crate::root::async_ops::init();
+
+        let cell = alloc::sync::Arc::new(crate::root::ReplyCell::new());
+        let handle = crate::root::async_ops::alloc_handle(cell.clone()).expect("handle");
+        let spec = WaitSpec {
+            kind: WaitKind::GraphOp as u32,
+            flags: 0,
+            object: handle,
+            token: 41,
+        };
+
+        assert!(poll_spec(&spec).expect("poll pending").is_none());
+
+        cell.value.store(77, core::sync::atomic::Ordering::Relaxed);
+        cell.done.store(1, core::sync::atomic::Ordering::Release);
+        let ready = poll_spec(&spec).expect("poll done").expect("ready");
+        assert_eq!(ready.flags, wait::ready::DONE);
+        assert_eq!(ready.value, 77);
+        assert_eq!(ready.token, 41);
+        crate::root::async_ops::free_handle(handle);
+
+        let err_cell = alloc::sync::Arc::new(crate::root::ReplyCell::new());
+        let err_handle = crate::root::async_ops::alloc_handle(err_cell.clone()).expect("handle");
+        let err_spec = WaitSpec {
+            kind: WaitKind::GraphOp as u32,
+            flags: 0,
+            object: err_handle,
+            token: 42,
+        };
+
+        err_cell
+            .status
+            .store(-(Errno::EIO as i32), core::sync::atomic::Ordering::Relaxed);
+        err_cell
+            .done
+            .store(1, core::sync::atomic::Ordering::Release);
+        let ready_err = poll_spec(&err_spec).expect("poll error").expect("ready");
+        assert_eq!(ready_err.flags, wait::ready::DONE | wait::ready::ERROR);
+        assert_eq!(ready_err.value, Errno::EIO as i64);
+        crate::root::async_ops::free_handle(err_handle);
+    }
+
+    #[test]
+    fn collect_ready_returns_mixed_port_and_graph_op() {
+        crate::root::async_ops::init();
+
+        let (write_handle, read_handle) = alloc_port_pair(64);
+        let port = {
+            let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+            let entry = table
+                .get(
+                    crate::ipc::Handle(write_handle),
+                    crate::ipc::HandleMode::Write,
+                )
+                .copied()
+                .expect("entry");
+            crate::ipc::get_port(entry.port_id).expect("port")
+        };
+        assert!(port.send_all(b"graph"));
+
+        let cell = alloc::sync::Arc::new(crate::root::ReplyCell::new());
+        cell.value.store(5, core::sync::atomic::Ordering::Relaxed);
+        cell.done.store(1, core::sync::atomic::Ordering::Release);
+        let handle = crate::root::async_ops::alloc_handle(cell).expect("handle");
+
+        let specs = [
+            WaitSpec {
+                kind: WaitKind::Port as u32,
+                flags: wait::interest::READABLE,
+                object: read_handle as u64,
+                token: 1,
+            },
+            WaitSpec {
+                kind: WaitKind::GraphOp as u32,
+                flags: 0,
+                object: handle,
+                token: 2,
+            },
+        ];
+        let mut results = [WaitResult::default(); 2];
+        let ready = collect_ready(&specs, &mut results).expect("collect");
+        assert_eq!(ready, 2);
+        assert_eq!(results[0].token, 1);
+        assert_eq!(results[1].token, 2);
+        assert_eq!(results[1].flags, wait::ready::DONE);
+        crate::root::async_ops::free_handle(handle);
     }
 }

@@ -11,6 +11,7 @@ pub enum WaitKind {
     TaskExit = 3,
     Irq = 4,
     Timeout = 5,
+    GraphOp = 6,
 }
 
 impl WaitKind {
@@ -21,6 +22,7 @@ impl WaitKind {
             3 => Some(Self::TaskExit),
             4 => Some(Self::Irq),
             5 => Some(Self::Timeout),
+            6 => Some(Self::GraphOp),
             _ => None,
         }
     }
@@ -40,6 +42,7 @@ pub mod ready {
     pub const OVERFLOW: u32 = 1 << 5;
     pub const ERROR: u32 = 1 << 6;
     pub const IRQ: u32 = 1 << 7;
+    pub const DONE: u32 = 1 << 8;
 }
 
 #[repr(C)]

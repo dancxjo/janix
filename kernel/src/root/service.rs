@@ -174,6 +174,7 @@ fn handle_msg<R: BootRuntime>(
                 reply.p0.store(first_id, Ordering::Relaxed);
             }
             reply.done.store(1, Ordering::SeqCst);
+            super::async_ops::notify_completion(&reply);
             let waiter = reply.waiting_task.load(Ordering::SeqCst);
             if waiter != 0 {
                 unsafe {
@@ -351,6 +352,7 @@ fn handle_msg<R: BootRuntime>(
         reply.status.store(status, Ordering::Relaxed);
         reply.value.store(value, Ordering::Relaxed);
         reply.done.store(1, Ordering::SeqCst);
+        super::async_ops::notify_completion(&reply);
 
         let waiter = reply.waiting_task.load(Ordering::SeqCst);
         if waiter != 0 {

@@ -11,17 +11,15 @@ use abi::font_protocol::{
     FaceMetrics, FontError, FontRequestTag, GetFaceMetrics, GlyphPlacement,
 };
 use abi::ids::HandleId as AbiHandleId;
-use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, rels};
-use abi::types::{WatchMode, WatchSpec as RootWatchSpec};
 use abi::wait::{interest, ready, WaitKind, WaitResult, WaitSpec};
 use abi::watch::{self, WatchOp};
 use alloc::string::String;
 use alloc::vec::Vec;
 use fontdue::{Font, FontSettings};
 use log::{error, warn};
+use stem::graph_wait::{GraphOpHandle, GraphWatch};
 use stem::info;
-use stem::root_watch::watch_drain;
 use stem::syscall;
 use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_map, bytespace_unmap, bytespace_write, create_node,
@@ -91,24 +89,29 @@ fn main() -> ! {
     // Open IPC ports for font service
     // Clients send to fontd_req (write), fontd reads from fontd_req (read)
     // Fontd sends to fontd_resp (write), clients read from fontd_resp (read)
-    let (fontd_req, fontd_resp) = match (syscall::port_create(8192), syscall::port_create(8192)) {
-        (Ok(req), Ok(resp)) => {
-            // Create service node and advertise port handles
-            if let Ok(svc_node) = create_node("svc.FontD") {
-                let _ = prop_set(svc_node, "fontd.req", req.0 as u64); // Client writes here
-                let _ = prop_set(svc_node, "fontd.resp", resp.1 as u64); // Client reads here
-                info!(
-                    "FONTD: Service node created, req={}, resp={}",
-                    req.0, resp.1
-                );
+    let (fontd_req, fontd_resp, mut publish_req_op, mut publish_resp_op) =
+        match (syscall::port_create(8192), syscall::port_create(8192)) {
+            (Ok(req), Ok(resp)) => {
+                // Create service node and advertise port handles
+                if let Ok(svc_node) = create_node("svc.FontD") {
+                    let publish_req =
+                        GraphOpHandle::prop_set(svc_node, "fontd.req", req.0 as u64).ok();
+                    let publish_resp =
+                        GraphOpHandle::prop_set(svc_node, "fontd.resp", resp.1 as u64).ok();
+                    info!(
+                        "FONTD: Service node created, req={}, resp={}",
+                        req.0, resp.1
+                    );
+                    (req.1, resp.0, publish_req, publish_resp)
+                } else {
+                    (req.1, resp.0, None, None)
+                }
             }
-            (req.1, resp.0) // fontd uses (read, write) sides
-        }
-        _ => {
-            warn!("FONTD: Failed to create IPC ports, running in watch-only mode");
-            (0, 0)
-        }
-    };
+            _ => {
+                warn!("FONTD: Failed to create IPC ports, running in watch-only mode");
+                (0, 0, None, None)
+            }
+        };
 
     // Open watches for font import/glyph requests (legacy compatibility)
     let glyph_watch = open_watch(kinds::FONT_GLYPH_REQUEST);
@@ -117,7 +120,7 @@ fn main() -> ! {
     let asset_watch = open_watch(kinds::ASSET);
     info!(
         "FONTD: Opened ASSET watch (handle={}) for kind '{}'",
-        asset_watch,
+        asset_watch.id(),
         kinds::ASSET
     );
 
@@ -129,42 +132,36 @@ fn main() -> ! {
     let mut watch_buf = [0u8; 4096];
     let mut ipc_buf = [0u8; 8192];
     let mut resp_buf = [0u8; 16384];
-    let mut ready_buf = [WaitResult::default(); 4];
-
-    let mut wait_specs = [
-        WaitSpec {
-            kind: WaitKind::RootWatch as u32,
-            flags: interest::READABLE,
-            object: glyph_watch as u64,
-            token: 1,
-        },
-        WaitSpec {
-            kind: WaitKind::RootWatch as u32,
-            flags: interest::READABLE,
-            object: import_watch as u64,
-            token: 2,
-        },
-        WaitSpec {
-            kind: WaitKind::RootWatch as u32,
-            flags: interest::READABLE,
-            object: asset_watch as u64,
-            token: 3,
-        },
-        WaitSpec::default(),
-    ];
-    let wait_count = if fontd_req != 0 {
-        wait_specs[3] = WaitSpec {
-            kind: WaitKind::Port as u32,
-            flags: interest::READABLE,
-            object: fontd_req as u64,
-            token: 4,
-        };
-        4
-    } else {
-        3
-    };
+    let mut ready_buf = [WaitResult::default(); 6];
+    let mut wait_specs = [WaitSpec::default(); 6];
 
     loop {
+        let mut wait_count = 0usize;
+        wait_specs[wait_count] = glyph_watch.wait_spec(1);
+        wait_count += 1;
+        wait_specs[wait_count] = import_watch.wait_spec(2);
+        wait_count += 1;
+        wait_specs[wait_count] = asset_watch.wait_spec(3);
+        wait_count += 1;
+
+        if fontd_req != 0 {
+            wait_specs[wait_count] = WaitSpec {
+                kind: WaitKind::Port as u32,
+                flags: interest::READABLE,
+                object: fontd_req as u64,
+                token: 4,
+            };
+            wait_count += 1;
+        }
+        if let Some(op) = publish_req_op.as_ref() {
+            wait_specs[wait_count] = op.wait_spec(5);
+            wait_count += 1;
+        }
+        if let Some(op) = publish_resp_op.as_ref() {
+            wait_specs[wait_count] = op.wait_spec(6);
+            wait_count += 1;
+        }
+
         let ready_count = match syscall::wait_many(&wait_specs[..wait_count], &mut ready_buf, None)
         {
             Ok(n) => n,
@@ -178,19 +175,19 @@ fn main() -> ! {
         for ready_result in &ready_buf[..ready_count] {
             match ready_result.token {
                 1 if (ready_result.flags & (ready::READABLE | ready::OVERFLOW)) != 0 => {
-                    let _ = watch_drain(glyph_watch, &mut watch_buf, |seq, batch| {
+                    let _ = glyph_watch.drain(&mut watch_buf, |seq, batch| {
                         _glyph_seq = seq;
                         process_glyph_events(batch, &mut state);
                     });
                 }
                 2 if (ready_result.flags & (ready::READABLE | ready::OVERFLOW)) != 0 => {
-                    let _ = watch_drain(import_watch, &mut watch_buf, |seq, batch| {
+                    let _ = import_watch.drain(&mut watch_buf, |seq, batch| {
                         _import_seq = seq;
                         process_import_events(batch, &mut state);
                     });
                 }
                 3 if (ready_result.flags & (ready::READABLE | ready::OVERFLOW)) != 0 => {
-                    let _ = watch_drain(asset_watch, &mut watch_buf, |seq, batch| {
+                    let _ = asset_watch.drain(&mut watch_buf, |seq, batch| {
                         _asset_seq = seq;
                         process_asset_events(batch, &mut state);
                     });
@@ -211,22 +208,30 @@ fn main() -> ! {
                         }
                     }
                 },
+                5 if (ready_result.flags & ready::DONE) != 0 => {
+                    if let Some(op) = publish_req_op.take() {
+                        match op.take_result() {
+                            Ok(_) => info!("FONTD: Published request port in graph"),
+                            Err(err) => warn!("FONTD: Failed to publish request port: {:?}", err),
+                        }
+                    }
+                }
+                6 if (ready_result.flags & ready::DONE) != 0 => {
+                    if let Some(op) = publish_resp_op.take() {
+                        match op.take_result() {
+                            Ok(_) => info!("FONTD: Published response port in graph"),
+                            Err(err) => warn!("FONTD: Failed to publish response port: {:?}", err),
+                        }
+                    }
+                }
                 _ => {}
             }
         }
     }
 }
 
-fn open_watch(kind: &str) -> usize {
-    let pred = intern(kind).unwrap_or(0);
-    let filter = RootWatchFilter::kind(pred as u32);
-    let spec = RootWatchSpec {
-        mode: WatchMode::QueryThenStream as u32,
-        filter_ptr: &filter as *const _ as u64,
-        filter_len: core::mem::size_of::<RootWatchFilter>() as u64,
-        ..Default::default()
-    };
-    syscall::root_watch_open(&spec).expect("FONTD: Failed to open watch")
+fn open_watch(kind: &str) -> GraphWatch {
+    GraphWatch::open_kind(kind).expect("FONTD: Failed to open watch")
 }
 
 // ============================================================================

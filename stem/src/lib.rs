@@ -16,6 +16,7 @@ pub mod console;
 pub mod css;
 pub mod device;
 pub mod errors;
+pub mod graph_wait;
 #[cfg(feature = "global-alloc")]
 pub mod heap;
 pub mod html;

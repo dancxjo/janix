@@ -38,11 +38,11 @@ pub use hooks::{
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
-    spawn, spawn_process, spawn_user_task_full, spawn_user_thread, spawn_with_priority,
-    user_thread_trampoline, SpawnExResult, StdioSpec,
+    SpawnExResult, StdioSpec, spawn, spawn_process, spawn_user_task_full, spawn_user_thread,
+    spawn_with_priority, user_thread_trampoline,
 };
 pub use stack::{alloc_user_stack, handle_stack_fault, map_user_page, map_user_page_perms};
-pub use types::{ScheduleReason, Scheduler, StackFaultResult, SwitchParams, DEFAULT_TIMESLICE};
+pub use types::{DEFAULT_TIMESLICE, ScheduleReason, Scheduler, StackFaultResult, SwitchParams};
 pub use wait_queue::WaitQueue;
 
 use crate::task::{StartupArg, Task, TaskId, TaskPriority, TaskState};
@@ -946,8 +946,8 @@ pub fn current_tid<R: BootRuntime>() -> u64 {
 }
 
 /// Get the current task's ProcessInfo Arc, if any.
-pub fn process_info<R: BootRuntime>(
-) -> Option<alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>> {
+pub fn process_info<R: BootRuntime>()
+-> Option<alloc::sync::Arc<spin::Mutex<crate::task::ProcessInfo>>> {
     let rt = crate::runtime::<R>();
     let _irq = rt.irq_disable();
 
@@ -2033,9 +2033,11 @@ mod tests {
         let task = crate::task::registry::get_task::<MockRuntime>(6001).unwrap();
         assert_eq!(task.state, TaskState::Runnable);
         assert!(sched.state.sleep_queue.is_empty());
-        assert!(sched.state.per_cpu[0].runq[TaskPriority::Normal as usize]
-            .iter()
-            .any(|&id| id == 6001));
+        assert!(
+            sched.state.per_cpu[0].runq[TaskPriority::Normal as usize]
+                .iter()
+                .any(|&id| id == 6001)
+        );
 
         let mut sched_lock = SCHEDULER.lock();
         *sched_lock = None;
@@ -2373,9 +2375,11 @@ mod tests {
                 .state,
             TaskState::Runnable
         );
-        assert!(sched.state.per_cpu[0].runq[TaskPriority::Normal as usize]
-            .iter()
-            .any(|&id| id == 8201));
+        assert!(
+            sched.state.per_cpu[0].runq[TaskPriority::Normal as usize]
+                .iter()
+                .any(|&id| id == 8201)
+        );
 
         let mut sched_lock = SCHEDULER.lock();
         *sched_lock = None;

@@ -1,12 +1,12 @@
 //! VirtIO-NET userspace driver
 //!
-//! This service owns the VirtIO-NET device hardware and shuttles Ethernet frames
-//! to/from the network stack (netd) via IPC ports.
+//! This service owns the VirtIO-NET device hardware and exposes it as a VFS
+//! provider mounted at `/dev/net/virtio0/`.
 //!
 //! Architecture:
 //! - virtio_netd: Hardware driver (RX/TX queues, DMA buffers, interrupts)
-//! - netd: Network stack (smoltcp, DHCP, DNS, socket API)
-//! - fetchd: Demo app (HTTP client, document parsing)
+//!   Exposes files: ctl, status, mac, mtu, rx, tx, features, events
+//! - netd / other consumers: talk to the driver purely through file paths
 
 #![feature(restricted_std)]
 #![no_main]
@@ -14,25 +14,21 @@
 extern crate alloc;
 
 mod driver;
-mod protocol;
+mod vfs_provider;
 
-use abi::schema::keys;
+use abi::vfs_rpc::VFS_RPC_MAX_REQ;
+use alloc::vec;
 use driver::VirtioNetDriver;
-use protocol::{
-    NetDriverMsg, MSG_FRAME_RX, MSG_FRAME_TX, MSG_LINK_DOWN, MSG_LINK_UP, MSG_MAC_REQ, MSG_MAC_RESP,
-};
-use stem::syscall::port::{port_create, port_send, port_try_recv};
-use stem::thing::sys as thingsys;
+use stem::syscall::port::{port_create, port_try_recv};
+use stem::syscall::vfs_mount;
 use stem::{error, info, warn};
-
-/// Graph kind for the network driver service
-const KIND_NET_DRIVER: &str = "svc.net.Driver";
+use vfs_provider::{handle_vfs_rpc, NetVfsState};
 
 #[stem::main]
 fn main(_arg: usize) -> ! {
     info!("VIRTIO_NETD: Starting VirtIO-NET driver service...");
 
-    // Initialize VirtIO-NET driver
+    // Initialize VirtIO-NET driver.
     let mut driver = match VirtioNetDriver::find_and_claim() {
         Ok(d) => {
             info!("VIRTIO_NETD: Driver initialized successfully");
@@ -46,14 +42,13 @@ fn main(_arg: usize) -> ! {
         }
     };
 
-    // Get MAC address and link status
     let mac = driver.mac();
     info!(
         "VIRTIO_NETD: MAC {:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}",
         mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]
     );
 
-    // Wait for link up before proceeding
+    // Wait for link up before proceeding.
     info!("VIRTIO_NETD: Waiting for link...");
     loop {
         if driver.link_up() {
@@ -63,143 +58,69 @@ fn main(_arg: usize) -> ! {
         stem::time::sleep_ms(100);
     }
 
-    // Create port for frame communication
-    // write_handle is published to graph for netd to send TX frames
-    // read_handle is used by us to receive TX requests from netd
-    let (write_handle, read_handle) = match port_create(65536) {
+    let features = driver.device_features();
+
+    // Create the VFS provider port pair.
+    //   req_write → kernel sends VFS RPCs here
+    //   req_read  → this daemon reads RPCs here
+    let (req_write, req_read) = match port_create(VFS_RPC_MAX_REQ * 8) {
         Ok(handles) => {
-            info!(
-                "VIRTIO_NETD: Created port (write={}, read={})",
-                handles.0, handles.1
-            );
+            info!("VIRTIO_NETD: Created VFS provider port");
             handles
         }
         Err(e) => {
-            error!("VIRTIO_NETD: Failed to create port: {:?}", e);
+            error!("VIRTIO_NETD: Failed to create provider port: {:?}", e);
             loop {
                 stem::time::sleep_ms(1000);
             }
         }
     };
 
-    // Create a second port for RX frames (driver -> netd)
-    // We publish this read handle so netd can receive RX frames
-    let (rx_write_handle, rx_read_handle) = match port_create(65536) {
-        Ok(handles) => {
-            info!(
-                "VIRTIO_NETD: Created RX port (write={}, read={})",
-                handles.0, handles.1
-            );
-            handles
+    // Mount at /dev/net/virtio0 via SYS_VFS_MOUNT.
+    // Pass the write end so the kernel can send us RPCs.
+    match vfs_mount(req_write, "/dev/net/virtio0") {
+        Ok(()) => {
+            info!("VIRTIO_NETD: Mounted at /dev/net/virtio0");
         }
         Err(e) => {
-            error!("VIRTIO_NETD: Failed to create RX port: {:?}", e);
+            error!("VIRTIO_NETD: Failed to mount VFS provider: {:?}", e);
             loop {
                 stem::time::sleep_ms(1000);
             }
         }
-    };
+    }
 
-    // Create service node in graph and publish port handles
-    let svc_id = match thingsys::create_node(KIND_NET_DRIVER) {
-        Ok(id) => {
-            info!("VIRTIO_NETD: Created service node {:?}", id);
-            id
-        }
-        Err(e) => {
-            error!("VIRTIO_NETD: Failed to create service node: {:?}", e);
-            loop {
-                stem::time::sleep_ms(1000);
-            }
-        }
-    };
+    // Initialize shared VFS state.
+    let mut state = NetVfsState::new(mac, true, features);
 
-    // Publish MAC address as property (packed into u64)
-    let mac_packed = (mac[0] as u64)
-        | ((mac[1] as u64) << 8)
-        | ((mac[2] as u64) << 16)
-        | ((mac[3] as u64) << 24)
-        | ((mac[4] as u64) << 32)
-        | ((mac[5] as u64) << 40);
-    thingsys::prop_set(svc_id, "net.mac", mac_packed).ok();
-    thingsys::prop_set(svc_id, "net.link_up", if driver.link_up() { 1 } else { 0 }).ok();
-    thingsys::prop_set(svc_id, "net.mtu", 1500).ok();
-
-    // Publish port handles
-    // TX port: netd writes to this to send frames to hardware
-    thingsys::prop_set(svc_id, keys::WRITE_PORT_HANDLE, write_handle as u64).ok();
-    // RX port: netd reads from this to receive frames from hardware
-    thingsys::prop_set(svc_id, "net.rx_port", rx_read_handle as u64).ok();
-
-    info!(
-        "VIRTIO_NETD: Published service - TX port={}, RX port={}",
-        write_handle, rx_read_handle
-    );
-
-    // Main loop: shuttle frames between hardware and netd
-    let mut rx_buf = [0u8; 2048];
+    // Main loop: interleave hardware polling with VFS RPC handling.
+    let mut req_buf = vec![0u8; VFS_RPC_MAX_REQ];
     loop {
+        // 1. Poll for link-state changes and queue events.
         if let Some(link_up) = driver.poll_link_change() {
-            thingsys::prop_set(svc_id, "net.link_up", if link_up { 1 } else { 0 }).ok();
-            let msg_type = if link_up { MSG_LINK_UP } else { MSG_LINK_DOWN };
-            let notif = NetDriverMsg::new(msg_type, &[]);
-            let _ = port_send(rx_write_handle, &notif.encode());
-            info!(
-                "VIRTIO_NETD: Link state changed: {}",
-                if link_up { "UP" } else { "DOWN" }
-            );
+            state.link_up = link_up;
+            let event = if link_up { "link-up" } else { "link-down" };
+            state.push_event(event);
+            info!("VIRTIO_NETD: Link state changed: {}", event);
         }
 
-        // Poll hardware for received frames
+        // 2. Poll hardware for received frames and buffer them.
         if let Some(frame) = driver.poll_rx() {
-            // Send frame to netd via RX port
-            let msg = NetDriverMsg::new(MSG_FRAME_RX, frame);
-            let encoded = msg.encode();
-            info!(
-                "VIRTIO_NETD: Forwarding {} byte frame ({} encoded) to netd rx_port={}",
-                frame.len(),
-                encoded.len(),
-                rx_write_handle
-            );
-            match port_send(rx_write_handle, &encoded) {
-                Ok(n) => {
-                    info!(
-                        "VIRTIO_NETD: Frame forwarded successfully ({} bytes sent)",
-                        n
-                    );
-                }
-                Err(e) => {
-                    warn!("VIRTIO_NETD: Failed to send RX frame to netd: {:?}", e);
-                }
-            }
+            let frame_vec = frame.to_vec();
+            state.push_rx_frame(frame_vec);
         }
 
-        // Check for TX requests from netd (non-blocking)
-        match port_try_recv(read_handle, &mut rx_buf) {
-            Ok(len) if len > 0 => {
-                if let Some(msg) = NetDriverMsg::decode(&rx_buf[..len]) {
-                    match msg.msg_type {
-                        MSG_FRAME_TX => {
-                            // Transmit frame to hardware
-                            if let Err(e) = driver.tx(&msg.payload) {
-                                warn!("VIRTIO_NETD: TX failed: {}", e);
-                            }
-                        }
-                        MSG_MAC_REQ => {
-                            // Respond with MAC address via RX port
-                            let mac_msg = NetDriverMsg::new(MSG_MAC_RESP, &mac);
-                            let _ = port_send(rx_write_handle, &mac_msg.encode());
-                        }
-                        _ => {
-                            warn!("VIRTIO_NETD: Unknown message type: 0x{:04x}", msg.msg_type);
-                        }
-                    }
-                }
+        // 3. Service any pending VFS RPC (non-blocking).
+        match port_try_recv(req_read, &mut req_buf) {
+            Ok(n) if n > 0 => {
+                handle_vfs_rpc(&mut state, &mut driver, &req_buf[..n]);
+            }
+            Err(e) if e != abi::errors::Errno::EAGAIN => {
+                warn!("VIRTIO_NETD: port_try_recv error: {:?}", e);
             }
             _ => {}
         }
 
-        // Sleep to prevent busy-waiting
         stem::time::sleep_ms(1);
     }
 }

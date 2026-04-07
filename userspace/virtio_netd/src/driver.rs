@@ -226,6 +226,11 @@ impl VirtioNetDriver {
         self.link_up
     }
 
+    /// Return the negotiated virtio feature flags.
+    pub fn device_features(&self) -> u32 {
+        self.device.device_features()
+    }
+
     /// Poll device config and report link-state changes.
     pub fn poll_link_change(&mut self) -> Option<bool> {
         let next = if self.device.has_feature(16) {

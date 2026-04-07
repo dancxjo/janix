@@ -151,6 +151,8 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_DUP => handlers::vfs::sys_dup(args[0]),
         SYS_DUP2 => handlers::vfs::sys_dup2(args[0], args[1]),
         SYS_PIPE => handlers::vfs::sys_pipe(args[0]),
+        SYS_VFS_UNLINK => handlers::vfs::sys_vfs_unlink(args[0], args[1]),
+        SYS_VFS_MKDIR => handlers::vfs::sys_vfs_mkdir(args[0], args[1]),
 
         _ => {
             crate::kprintln!("SYSCALL: Unknown syscall #{}", syscall_id);

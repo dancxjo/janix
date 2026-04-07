@@ -132,6 +132,17 @@ impl VfsNode for RamfsNode {
         }
     }
 
+    fn truncate(&self, new_size: u64) -> SysResult<()> {
+        match &*self.0 {
+            RamfsEntry::File(data, _) => {
+                let mut data = data.lock();
+                data.resize(new_size as usize, 0);
+                Ok(())
+            }
+            RamfsEntry::Dir(_, _) => Err(Errno::EISDIR),
+        }
+    }
+
     fn readdir(&self, _offset: u64, buf: &mut [u8]) -> SysResult<usize> {
         match &*self.0 {
             RamfsEntry::Dir(children, _) => {
@@ -224,6 +235,42 @@ impl VfsDriver for RamFs {
     fn lookup(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
         let entry = self.resolve_entry(path)?;
         Ok(Arc::new(RamfsNode(entry)))
+    }
+
+    /// Create a new empty regular file at `path`.
+    ///
+    /// Intermediate directories must already exist.  Returns the new node
+    /// as an open file descriptor suitable for immediate writing.
+    fn create(&self, path: &str) -> SysResult<Arc<dyn VfsNode>> {
+        let (dir_path, file_name) = split_last(path).ok_or(Errno::EINVAL)?;
+        let dir = self.resolve_entry(dir_path)?;
+        let file_entry = RamfsEntry::new_file(alloc::vec::Vec::new());
+        dir.insert_child(file_name, file_entry.clone())?;
+        Ok(Arc::new(RamfsNode(file_entry)))
+    }
+
+    /// Create a directory at `path`.
+    ///
+    /// Intermediate directories are created as needed (like `mkdir -p`).
+    fn mkdir(&self, path: &str) -> SysResult<()> {
+        self.mkdir(path)
+    }
+
+    /// Remove the file or empty directory at `path`.
+    fn unlink(&self, path: &str) -> SysResult<()> {
+        let (dir_path, file_name) = split_last(path).ok_or(Errno::EINVAL)?;
+        let dir = self.resolve_entry(dir_path)?;
+        match &*dir {
+            RamfsEntry::Dir(children, _) => {
+                let mut lock = children.lock();
+                if lock.remove(file_name).is_some() {
+                    Ok(())
+                } else {
+                    Err(Errno::ENOENT)
+                }
+            }
+            _ => Err(Errno::ENOTDIR),
+        }
     }
 }
 
@@ -338,5 +385,125 @@ mod tests {
         node.write(4, b"more").unwrap();
         let stat = node.stat().unwrap();
         assert_eq!(stat.size, 8);
+    }
+
+    // ── VfsDriver trait methods ──────────────────────────────────────────────
+
+    #[test]
+    fn test_driver_create_makes_empty_file() {
+        let fs = RamFs::new();
+        let node = fs.create("newfile.txt").unwrap();
+        let stat = node.stat().unwrap();
+        assert!(stat.is_reg());
+        assert_eq!(stat.size, 0);
+    }
+
+    #[test]
+    fn test_driver_create_file_is_writable() {
+        let fs = RamFs::new();
+        let node = fs.create("write_me.txt").unwrap();
+        let n = node.write(0, b"hello").unwrap();
+        assert_eq!(n, 5);
+        // The file must also be retrievable via lookup.
+        let node2 = fs.lookup("write_me.txt").unwrap();
+        let mut buf = [0u8; 5];
+        let n = node2.read(0, &mut buf).unwrap();
+        assert_eq!(n, 5);
+        assert_eq!(&buf, b"hello");
+    }
+
+    #[test]
+    fn test_driver_create_invalid_empty_path() {
+        let fs = RamFs::new();
+        // An empty path has no file name component → EINVAL.
+        assert!(matches!(fs.create(""), Err(Errno::EINVAL)));
+    }
+
+    #[test]
+    fn test_driver_mkdir_creates_directory() {
+        let fs = RamFs::new();
+        fs.mkdir("newdir").unwrap();
+        let node = fs.lookup("newdir").unwrap();
+        assert!(node.stat().unwrap().is_dir());
+    }
+
+    #[test]
+    fn test_driver_mkdir_nested() {
+        let fs = RamFs::new();
+        fs.mkdir("a/b/c").unwrap();
+        let node = fs.lookup("a/b/c").unwrap();
+        assert!(node.stat().unwrap().is_dir());
+    }
+
+    #[test]
+    fn test_driver_unlink_removes_file() {
+        let fs = RamFs::new();
+        fs.create_file("to_delete.txt", b"bye".to_vec()).unwrap();
+        // File exists.
+        assert!(fs.lookup("to_delete.txt").is_ok());
+        // Unlink it.
+        fs.unlink("to_delete.txt").unwrap();
+        // File is gone.
+        assert!(matches!(fs.lookup("to_delete.txt"), Err(Errno::ENOENT)));
+    }
+
+    #[test]
+    fn test_driver_unlink_nonexistent_returns_enoent() {
+        let fs = RamFs::new();
+        assert!(matches!(fs.unlink("ghost.txt"), Err(Errno::ENOENT)));
+    }
+
+    #[test]
+    fn test_driver_unlink_empty_path_returns_einval() {
+        let fs = RamFs::new();
+        assert!(matches!(fs.unlink(""), Err(Errno::EINVAL)));
+    }
+
+    // ── truncate ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_truncate_shrinks_file() {
+        let fs = RamFs::new();
+        fs.create_file("shrink.bin", b"hello".to_vec()).unwrap();
+        let node = fs.lookup("shrink.bin").unwrap();
+        node.truncate(2).unwrap();
+        assert_eq!(node.stat().unwrap().size, 2);
+        let mut buf = [0u8; 5];
+        let n = node.read(0, &mut buf).unwrap();
+        assert_eq!(n, 2);
+        assert_eq!(&buf[..2], b"he");
+    }
+
+    #[test]
+    fn test_truncate_extends_file_with_zeros() {
+        let fs = RamFs::new();
+        fs.create_file("grow.bin", b"hi".to_vec()).unwrap();
+        let node = fs.lookup("grow.bin").unwrap();
+        node.truncate(5).unwrap();
+        assert_eq!(node.stat().unwrap().size, 5);
+        let mut buf = [0xFFu8; 5];
+        let n = node.read(0, &mut buf).unwrap();
+        assert_eq!(n, 5);
+        assert_eq!(&buf, b"hi\0\0\0");
+    }
+
+    #[test]
+    fn test_truncate_to_zero() {
+        let fs = RamFs::new();
+        fs.create_file("zero.bin", b"data".to_vec()).unwrap();
+        let node = fs.lookup("zero.bin").unwrap();
+        node.truncate(0).unwrap();
+        assert_eq!(node.stat().unwrap().size, 0);
+        let mut buf = [0u8; 4];
+        let n = node.read(0, &mut buf).unwrap();
+        assert_eq!(n, 0);
+    }
+
+    #[test]
+    fn test_truncate_on_dir_returns_eisdir() {
+        let fs = RamFs::new();
+        fs.mkdir("adir").unwrap();
+        let node = fs.lookup("adir").unwrap();
+        assert!(matches!(node.truncate(0), Err(Errno::EISDIR)));
     }
 }

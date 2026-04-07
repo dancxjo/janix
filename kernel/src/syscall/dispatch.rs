@@ -37,6 +37,9 @@ pub fn dispatch(n: usize, args: [usize; 6]) -> isize {
         SYS_ALLOC_STACK => handlers::sys_alloc_stack(args[0]),
         SYS_FUTEX_WAIT => handlers::sys_futex_wait(args[0], args[1] as u32, args[2] as u64),
         SYS_FUTEX_WAKE => handlers::sys_futex_wake(args[0], args[1] as u32),
+        SYS_WAIT_MANY => {
+            handlers::sys_wait_many(args[0], args[1], args[2], args[3], args[4] as u64)
+        }
         SYS_VM_MAP => handlers::sys_vm_map(args[0], args[1]),
         SYS_VM_UNMAP => handlers::sys_vm_unmap(args[0], args[1]),
         SYS_VM_PROTECT => handlers::sys_vm_protect(args[0]),

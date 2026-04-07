@@ -172,6 +172,17 @@ pub enum RootOp {
         out_ptr: u64,
         out_len: u64,
     },
+    WatchPoll {
+        id: u64,
+    },
+    WatchRegisterWaiter {
+        id: u64,
+        tid: u64,
+    },
+    WatchUnregisterWaiter {
+        id: u64,
+        tid: u64,
+    },
     WatchClose {
         id: u64,
     },

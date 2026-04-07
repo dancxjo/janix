@@ -8,9 +8,9 @@ use crate::sched as scheduler;
 
 pub use crate::sched::Scheduler;
 
-use crate::simd::SimdState;
 use crate::BootRuntime;
 use crate::BootTasking;
+use crate::simd::SimdState;
 use abi::types::StackInfo;
 use alloc::collections::{BTreeMap, VecDeque};
 use alloc::sync::Arc;

@@ -30,6 +30,7 @@ pub mod types;
 pub mod ui_event;
 pub mod ui_paint;
 pub mod vm;
+pub mod wait;
 pub mod watch;
 
 pub mod font;

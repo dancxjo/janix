@@ -13,14 +13,15 @@ use abi::font_protocol::{
 use abi::ids::HandleId as AbiHandleId;
 use abi::root::RootWatchFilter;
 use abi::schema::{keys, kinds, rels};
-use abi::types::{HandleId, WatchMode, WatchSpec};
+use abi::types::{WatchMode, WatchSpec as RootWatchSpec};
+use abi::wait::{interest, ready, WaitKind, WaitResult, WaitSpec};
 use abi::watch::{self, WatchOp};
-use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 use fontdue::{Font, FontSettings};
-use log::{debug, error, warn};
+use log::{error, warn};
 use stem::info;
+use stem::root_watch::watch_drain;
 use stem::syscall;
 use stem::thing::sys::{
     bytespace_create, bytespace_info, bytespace_map, bytespace_unmap, bytespace_write, create_node,
@@ -32,9 +33,6 @@ use ttf_parser::{name_id, Face};
 use alloc::collections::BTreeMap;
 use atlas::{AtlasCache, AtlasKey};
 use hashbrown::HashMap;
-
-/// Font service port name
-const FONTD_PORT_NAME: &str = "fontd";
 
 struct FontD {
     fonts: HashMap<ThingId, Font>,
@@ -125,52 +123,104 @@ fn main() -> ! {
 
     info!("FONTD: Service ready");
 
-    let mut seq_out = 0u64;
+    let mut _glyph_seq = 0u64;
+    let mut _import_seq = 0u64;
+    let mut _asset_seq = 0u64;
     let mut watch_buf = [0u8; 4096];
     let mut ipc_buf = [0u8; 8192];
     let mut resp_buf = [0u8; 16384];
+    let mut ready_buf = [WaitResult::default(); 4];
+
+    let mut wait_specs = [
+        WaitSpec {
+            kind: WaitKind::RootWatch as u32,
+            flags: interest::READABLE,
+            object: glyph_watch as u64,
+            token: 1,
+        },
+        WaitSpec {
+            kind: WaitKind::RootWatch as u32,
+            flags: interest::READABLE,
+            object: import_watch as u64,
+            token: 2,
+        },
+        WaitSpec {
+            kind: WaitKind::RootWatch as u32,
+            flags: interest::READABLE,
+            object: asset_watch as u64,
+            token: 3,
+        },
+        WaitSpec::default(),
+    ];
+    let wait_count = if fontd_req != 0 {
+        wait_specs[3] = WaitSpec {
+            kind: WaitKind::Port as u32,
+            flags: interest::READABLE,
+            object: fontd_req as u64,
+            token: 4,
+        };
+        4
+    } else {
+        3
+    };
 
     loop {
-        // Process watch events (legacy path)
-        if let Ok(len) = syscall::root_watch_next(glyph_watch, &mut seq_out, &mut watch_buf) {
-            if len > 0 {
-                process_glyph_events(&watch_buf[..len], &mut state);
+        let ready_count = match syscall::wait_many(&wait_specs[..wait_count], &mut ready_buf, None)
+        {
+            Ok(n) => n,
+            Err(err) => {
+                warn!("FONTD: wait_many failed: {:?}", err);
+                syscall::sleep_ms(10);
+                continue;
             }
-        }
-        if let Ok(len) = syscall::root_watch_next(import_watch, &mut seq_out, &mut watch_buf) {
-            if len > 0 {
-                process_import_events(&watch_buf[..len], &mut state);
-            }
-        }
-        // Process new font assets (auto-import path)
-        if let Ok(len) = syscall::root_watch_next(asset_watch, &mut seq_out, &mut watch_buf) {
-            if len > 0 {
-                process_asset_events(&watch_buf[..len], &mut state);
-            }
-        }
+        };
 
-        // Process IPC requests (new atlas-based path)
-        if fontd_req != 0 {
-            match syscall::port_recv(fontd_req, &mut ipc_buf) {
-                Ok(len) if len > 0 => {
-                    if let Some(resp_len) =
-                        handle_ipc_request(&ipc_buf[..len], &mut resp_buf, &mut state)
-                    {
-                        let _ = syscall::port_send(fontd_resp, &resp_buf[..resp_len]);
-                    }
+        for ready_result in &ready_buf[..ready_count] {
+            match ready_result.token {
+                1 if (ready_result.flags & (ready::READABLE | ready::OVERFLOW)) != 0 => {
+                    let _ = watch_drain(glyph_watch, &mut watch_buf, |seq, batch| {
+                        _glyph_seq = seq;
+                        process_glyph_events(batch, &mut state);
+                    });
                 }
+                2 if (ready_result.flags & (ready::READABLE | ready::OVERFLOW)) != 0 => {
+                    let _ = watch_drain(import_watch, &mut watch_buf, |seq, batch| {
+                        _import_seq = seq;
+                        process_import_events(batch, &mut state);
+                    });
+                }
+                3 if (ready_result.flags & (ready::READABLE | ready::OVERFLOW)) != 0 => {
+                    let _ = watch_drain(asset_watch, &mut watch_buf, |seq, batch| {
+                        _asset_seq = seq;
+                        process_asset_events(batch, &mut state);
+                    });
+                }
+                4 if (ready_result.flags & ready::READABLE) != 0 => loop {
+                    match syscall::port_try_recv(fontd_req, &mut ipc_buf) {
+                        Ok(len) if len > 0 => {
+                            if let Some(resp_len) =
+                                handle_ipc_request(&ipc_buf[..len], &mut resp_buf, &mut state)
+                            {
+                                let _ = syscall::port_send(fontd_resp, &resp_buf[..resp_len]);
+                            }
+                        }
+                        Ok(_) | Err(abi::errors::Errno::EAGAIN) => break,
+                        Err(err) => {
+                            warn!("FONTD: fontd_req recv failed: {:?}", err);
+                            break;
+                        }
+                    }
+                },
                 _ => {}
             }
         }
-
-        syscall::sleep_ms(10);
     }
 }
 
 fn open_watch(kind: &str) -> usize {
     let pred = intern(kind).unwrap_or(0);
     let filter = RootWatchFilter::kind(pred as u32);
-    let spec = WatchSpec {
+    let spec = RootWatchSpec {
         mode: WatchMode::QueryThenStream as u32,
         filter_ptr: &filter as *const _ as u64,
         filter_len: core::mem::size_of::<RootWatchFilter>() as u64,

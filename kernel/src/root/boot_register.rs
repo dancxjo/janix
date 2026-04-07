@@ -1,6 +1,6 @@
-use super::SymbolShell;
 use super::graph::ThingId;
-use super::{RootOp, enqueue};
+use super::SymbolShell;
+use super::{enqueue, RootOp};
 use crate::device_registry::{DeviceEntry, REGISTRY};
 use crate::{BootModuleDesc, FramebufferInfo, PhysRange};
 use abi::schema::{confidence, keys, kinds, rels, source};

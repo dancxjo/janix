@@ -357,6 +357,8 @@ pub struct GlobalWatch {
     pub overflowed: bool,
     /// Watch filter (flags=0 means match all)
     pub filter: WatchFilter,
+    /// Tasks blocked in wait_many on this watch.
+    pub waiters: crate::sched::WaitQueue,
 }
 
 // ============================================================================

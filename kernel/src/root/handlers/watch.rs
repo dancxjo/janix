@@ -5,12 +5,15 @@
 //! Watches may filter commits by subject/predicate/kind using O(1) summary matching.
 
 use super::HandlerResult;
-use crate::root::graph::{GlobalWatch, Graph, WATCH_SCAN_LIMIT, WatchFilter, commit_matches};
-use crate::root::handlers::watch_payload::{CoalesceEntry, filter_watch_payload};
+use crate::root::graph::{commit_matches, GlobalWatch, Graph, WatchFilter, WATCH_SCAN_LIMIT};
+use crate::root::handlers::watch_payload::{filter_watch_payload, CoalesceEntry};
 use crate::root::query::PreparedStep;
-use crate::root::resources::{ResourceHandle, stream};
+use crate::root::resources::{stream, ResourceHandle};
 use crate::root::symbols::Interner;
 use core::sync::atomic::Ordering;
+
+const WATCH_POLL_READY: u64 = 1 << 0;
+const WATCH_POLL_OVERFLOW: u64 = 1 << 1;
 
 /// Opens a new watch with optional filtering.
 ///
@@ -69,12 +72,63 @@ pub fn handle_watch_open(
         cursor_seq,
         overflowed: false,
         filter,
+        waiters: crate::sched::WaitQueue::new(),
     };
 
     graph.global_watches.insert(stream_id, watch);
 
     // Return the stream handle as the watch ID
     (0, stream_id)
+}
+
+fn watch_poll_bits(graph: &mut Graph, id: u64) -> Result<u64, i32> {
+    let (mut cursor, filter, overflowed) = {
+        let watch = graph.global_watches.get(&id).ok_or(-9)?;
+        (watch.cursor_seq, watch.filter, watch.overflowed)
+    };
+
+    if overflowed {
+        return Ok(WATCH_POLL_READY | WATCH_POLL_OVERFLOW);
+    }
+
+    let oldest = match graph.commit_history.oldest_seq() {
+        Some(v) => v,
+        None => return Ok(0),
+    };
+    let newest = graph.commit_history.newest_seq().unwrap_or(oldest);
+
+    if cursor < oldest {
+        return Ok(WATCH_POLL_READY | WATCH_POLL_OVERFLOW);
+    }
+    if cursor > newest {
+        return Ok(0);
+    }
+
+    let mut scanned = 0usize;
+    while scanned < WATCH_SCAN_LIMIT {
+        if cursor > newest {
+            return Ok(0);
+        }
+        let record = match graph.commit_history.get_record(cursor) {
+            Some(record) => record,
+            None => {
+                cursor += 1;
+                scanned += 1;
+                continue;
+            }
+        };
+        if commit_matches(&filter, &record.summary) {
+            return Ok(WATCH_POLL_READY);
+        }
+        cursor += 1;
+        scanned += 1;
+    }
+
+    if cursor <= newest {
+        Ok(WATCH_POLL_READY)
+    } else {
+        Ok(0)
+    }
 }
 
 /// Retrieves the next committed watch payload that matches the watch's filter.
@@ -229,8 +283,34 @@ pub fn handle_watch_next(graph: &mut Graph, msg: &crate::root::RootMsg, id: u64)
     (-11, 0) // -EAGAIN (caller will retry)
 }
 
+pub fn handle_watch_poll(graph: &mut Graph, id: u64) -> HandlerResult {
+    match watch_poll_bits(graph, id) {
+        Ok(bits) => (0, bits),
+        Err(status) => (status, 0),
+    }
+}
+
+pub fn handle_watch_register_waiter(graph: &mut Graph, id: u64, tid: u64) -> HandlerResult {
+    let watch = match graph.global_watches.get(&id) {
+        Some(watch) => watch,
+        None => return (-9, 0),
+    };
+    watch.waiters.push_back(tid);
+    (0, 0)
+}
+
+pub fn handle_watch_unregister_waiter(graph: &mut Graph, id: u64, tid: u64) -> HandlerResult {
+    let watch = match graph.global_watches.get(&id) {
+        Some(watch) => watch,
+        None => return (-9, 0),
+    };
+    watch.waiters.remove(tid);
+    (0, 0)
+}
+
 pub fn handle_watch_close(graph: &mut Graph, id: u64) -> HandlerResult {
-    if graph.global_watches.remove(&id).is_some() {
+    if let Some(watch) = graph.global_watches.remove(&id) {
+        watch.waiters.wake_all();
         (0, 0)
     } else {
         (-1, 0)
@@ -342,6 +422,7 @@ mod tests {
             cursor_seq: 1, // Ready to read seq 1
             overflowed: false,
             filter: WatchFilter::default(),
+            waiters: crate::sched::WaitQueue::new(),
         };
         graph.global_watches.insert(watch_id, watch);
 
@@ -395,6 +476,7 @@ mod tests {
             cursor_seq: 2, // Expecting seq 2, but only 1 exists
             overflowed: false,
             filter: WatchFilter::default(),
+            waiters: crate::sched::WaitQueue::new(),
         };
         graph.global_watches.insert(watch_id, watch);
 
@@ -462,6 +544,7 @@ mod tests {
             cursor_seq: 1,
             overflowed: false,
             filter,
+            waiters: crate::sched::WaitQueue::new(),
         };
         graph.global_watches.insert(watch_id, watch);
 
@@ -518,6 +601,7 @@ mod tests {
             cursor_seq: 1,
             overflowed: false,
             filter,
+            waiters: crate::sched::WaitQueue::new(),
         };
         graph.global_watches.insert(watch_id, watch);
 

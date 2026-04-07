@@ -5,8 +5,8 @@
 //! (CREATE_NODE, LINK, PROP_SET) route through `apply_ops_and_commit()`.
 
 use crate::root::graph::{CommitSummary, Graph, ThingId};
-use crate::root::handlers::HandlerResult;
 use crate::root::handlers::watch_payload::{encode_watch_payload, track_watch_encode_reject};
+use crate::root::handlers::HandlerResult;
 use crate::root::symbols::Interner;
 use abi::root::{
     BATCH_MAGIC, BATCH_VERSION, MAX_BATCH_BYTES, MAX_BATCH_OPS, MAX_LOCAL_REFS, OP_CREATE_NODE,
@@ -180,6 +180,26 @@ pub fn apply_ops_and_commit(graph: &mut Graph, ops: &[ValidatedOp]) -> ApplyResu
     graph
         .commit_history
         .push(new_seq, watch_payload_bytes, summary);
+
+    if let Some(oldest) = graph.commit_history.oldest_seq() {
+        let newest = graph.commit_history.newest_seq().unwrap_or(oldest);
+        for watch in graph.global_watches.values() {
+            let should_wake = watch.overflowed
+                || watch.cursor_seq < oldest
+                || (watch.cursor_seq <= newest
+                    && crate::root::graph::commit_matches(
+                        &watch.filter,
+                        &graph
+                            .commit_history
+                            .get_record(new_seq)
+                            .expect("new commit must exist")
+                            .summary,
+                    ));
+            if should_wake {
+                watch.waiters.wake_all();
+            }
+        }
+    }
 
     // Diagnostic logging: throttle commit logs when watches are active
     if cfg!(debug_assertions) && !graph.global_watches.is_empty() {

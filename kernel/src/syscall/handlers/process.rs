@@ -138,11 +138,7 @@ pub fn sys_set_priority(tid: usize, priority: usize) -> SysResult<usize> {
 
 pub fn sys_task_kill(tid: usize) -> SysResult<usize> {
     let killed = unsafe { crate::sched::kill_by_tid_current(tid as u64) };
-    if killed {
-        Ok(0)
-    } else {
-        Err(Errno::ESRCH)
-    }
+    if killed { Ok(0) } else { Err(Errno::ESRCH) }
 }
 
 pub fn sys_task_dump() -> SysResult<usize> {
@@ -319,7 +315,7 @@ pub fn sys_env_list(buf_ptr: usize, buf_len: usize) -> SysResult<usize> {
 /// SYS_SPAWN_PROCESS_EX handler.
 /// Args: req_ptr = pointer to SpawnProcessExReq, resp_ptr = pointer to SpawnProcessExResp.
 pub fn sys_spawn_process_ex(req_ptr: usize, resp_ptr: usize) -> SysResult<usize> {
-    use abi::types::{stdio_mode, SpawnProcessExReq, SpawnProcessExResp};
+    use abi::types::{SpawnProcessExReq, SpawnProcessExResp, stdio_mode};
 
     // Copy in the request struct
     validate_user_range(req_ptr, core::mem::size_of::<SpawnProcessExReq>(), false)?;

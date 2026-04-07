@@ -4,9 +4,9 @@ use super::graph::Graph;
 use super::journal::Journal;
 use super::symbols::Interner;
 use super::{RootMsg, RootOp};
-use crate::BootRuntime;
 use crate::root::handlers as root_handlers;
 use crate::root::handlers::batch::RootBatchScratch;
+use crate::BootRuntime;
 use core::sync::atomic::Ordering;
 
 pub extern "C" fn root_main<R: BootRuntime>(_arg: usize) -> ! {
@@ -125,6 +125,9 @@ fn msg_type_name(op: &RootOp) -> &'static str {
         RootOp::StreamPoll { .. } => "StreamPoll",
         RootOp::WatchOpen { .. } => "WatchOpen",
         RootOp::WatchNext { .. } => "WatchNext",
+        RootOp::WatchPoll { .. } => "WatchPoll",
+        RootOp::WatchRegisterWaiter { .. } => "WatchRegisterWaiter",
+        RootOp::WatchUnregisterWaiter { .. } => "WatchUnregisterWaiter",
         RootOp::WatchClose { .. } => "WatchClose",
         RootOp::DescribeThing { .. } => "DescribeThing",
         RootOp::DescribeSymbol { .. } => "DescribeSymbol",
@@ -284,6 +287,13 @@ fn handle_msg<R: BootRuntime>(
             filter,
         } => root_handlers::handle_watch_open(graph, interner, mode, start_seq, query, filter),
         RootOp::WatchNext { id, .. } => root_handlers::handle_watch_next(graph, &msg, id),
+        RootOp::WatchPoll { id } => root_handlers::handle_watch_poll(graph, id),
+        RootOp::WatchRegisterWaiter { id, tid } => {
+            root_handlers::handle_watch_register_waiter(graph, id, tid)
+        }
+        RootOp::WatchUnregisterWaiter { id, tid } => {
+            root_handlers::handle_watch_unregister_waiter(graph, id, tid)
+        }
         RootOp::WatchClose { id } => root_handlers::handle_watch_close(graph, id),
 
         // ApplyBatch handled above — this arm is unreachable but needed for exhaustiveness

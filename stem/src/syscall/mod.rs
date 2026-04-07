@@ -3,6 +3,7 @@ pub mod graph;
 pub mod pipe;
 pub mod port;
 pub mod stream;
+pub mod wait;
 
 use abi::device::{DEVICE_IRQ_SUBSCRIBE_DEVICE, DEVICE_IRQ_SUBSCRIBE_VECTOR};
 use abi::errors::Errno;
@@ -74,6 +75,7 @@ pub use port::{
     port_close, port_create, port_recv, port_send, port_send_all, port_try_recv, port_wait,
     topic_create, topic_publish, topic_subscribe, PortHandle,
 };
+pub use wait::wait_many;
 
 pub fn yield_now() {
     unsafe {

@@ -129,6 +129,16 @@ impl IrqRegistry {
         }
         0
     }
+
+    pub fn poll_pending(&self, vector: u8, task_id: u64) -> Option<u32> {
+        let slot = &self.slots[vector as usize];
+        for i in 0..MAX_SUBSCRIBERS_PER_VECTOR {
+            if slot.subscribers[i].load(Ordering::Acquire) == task_id {
+                return Some(slot.pending_counts[i].load(Ordering::Acquire));
+            }
+        }
+        None
+    }
 }
 
 /// Mutex for protecting registry mutations (subscription/unsubscription)
@@ -229,6 +239,11 @@ pub fn wait(vector: u8) -> u32 {
             crate::sched::block_current_erased();
         }
     }
+}
+
+pub fn poll(vector: u8) -> Option<u32> {
+    let task_id = unsafe { crate::sched::current_tid_current() };
+    IRQ_REGISTRY.poll_pending(vector, task_id)
 }
 
 #[cfg(test)]

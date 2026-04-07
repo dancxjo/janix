@@ -30,10 +30,11 @@ pub use hooks::{
     add_user_mapping_current, alloc_user_stack_current, check_user_mapping_current,
     current_priority_current, current_tid_current, dump_stats_current, exit_current,
     get_user_mapping_at_current, graph_thing_for_current, handle_user_stack_fault_current,
-    kill_by_tid_current, process_info_current, process_info_for_tid_current,
+    kill_by_tid_current, poll_task_exit_current, process_info_current,
+    process_info_for_tid_current, register_task_exit_waiter_current, register_timeout_wake_current,
     remove_user_mappings_current, set_priority_current, sleep_ticks_current, spawn_process_current,
     spawn_process_ex_current, spawn_user_thread_current, task_status_current, task_wait_current,
-    yield_now_current,
+    unregister_task_exit_waiter_current, unregister_timeout_wake_current, yield_now_current,
 };
 pub use sleep::{sleep_ms, sleep_ticks, sleep_until, yield_now};
 pub use spawn::{
@@ -180,6 +181,11 @@ pub fn init<R: BootRuntime>() {
             hooks::PROCESS_INFO_FOR_TID_HOOK = Some(process_info_for_tid::<R>);
             hooks::SPAWN_PROCESS_EX_HOOK = Some(spawn::spawn_process_ex::<R>);
             hooks::GRAPH_THING_FOR_CURRENT_HOOK = Some(graph_thing_for_current_impl::<R>);
+            hooks::POLL_TASK_EXIT_HOOK = Some(poll_task_exit::<R>);
+            hooks::REGISTER_TASK_EXIT_WAITER_HOOK = Some(register_task_exit_waiter_public::<R>);
+            hooks::UNREGISTER_TASK_EXIT_WAITER_HOOK = Some(unregister_task_exit_waiter::<R>);
+            hooks::REGISTER_TIMEOUT_WAKE_HOOK = Some(register_timeout_wake::<R>);
+            hooks::UNREGISTER_TIMEOUT_WAKE_HOOK = Some(unregister_timeout_wake::<R>);
             crate::memory::set_translate_user_page_hook(vm::translate_user_page::<R>);
         }
         blocking::init_blocking_hooks::<R>();
@@ -991,6 +997,36 @@ fn register_task_exit_waiter<R: BootRuntime>(
     Ok(None)
 }
 
+pub fn poll_task_exit<R: BootRuntime>(
+    target_tid: TaskId,
+) -> Result<Option<i32>, abi::errors::Errno> {
+    let target =
+        crate::task::registry::get_task::<R>(target_tid).ok_or(abi::errors::Errno::ECHILD)?;
+
+    if target.state == TaskState::Dead {
+        Ok(Some(target.exit_code.unwrap_or(0)))
+    } else {
+        Ok(None)
+    }
+}
+
+pub fn register_task_exit_waiter_public<R: BootRuntime>(
+    target_tid: TaskId,
+    waiter_tid: TaskId,
+) -> Result<Option<i32>, abi::errors::Errno> {
+    register_task_exit_waiter::<R>(target_tid, waiter_tid)
+}
+
+pub fn unregister_task_exit_waiter<R: BootRuntime>(
+    target_tid: TaskId,
+    waiter_tid: TaskId,
+) -> Result<(), abi::errors::Errno> {
+    let target =
+        crate::task::registry::get_task::<R>(target_tid).ok_or(abi::errors::Errno::ECHILD)?;
+    target.exit_waiters.remove(waiter_tid);
+    Ok(())
+}
+
 fn mark_task_exited<R: BootRuntime>(
     sched: &mut types::Scheduler<R>,
     tid: TaskId,
@@ -1148,6 +1184,34 @@ pub fn wait_task<R: BootRuntime>(tid: TaskId) -> Result<i32, abi::errors::Errno>
             block_current_erased();
         }
     }
+}
+
+pub fn register_timeout_wake<R: BootRuntime>(tid: TaskId, wake_tick: u64) {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let lock = SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+        let sleepers = sched.state.sleep_queue.entry(wake_tick).or_default();
+        if !sleepers.contains(&tid) {
+            sleepers.push(tid);
+        }
+    }
+    rt.irq_restore(_irq);
+}
+
+pub fn unregister_timeout_wake<R: BootRuntime>(tid: TaskId) {
+    let rt = crate::runtime::<R>();
+    let _irq = rt.irq_disable();
+    let lock = SCHEDULER.lock();
+    if let Some(ptr) = *lock {
+        let sched = unsafe { &mut *(ptr as *mut types::Scheduler<R>) };
+        sched.state.sleep_queue.retain(|_, tids| {
+            tids.retain(|&sleep_tid| sleep_tid != tid);
+            !tids.is_empty()
+        });
+    }
+    rt.irq_restore(_irq);
 }
 
 pub fn cpu_online<R: BootRuntime>(cpu_index: usize) {

@@ -47,6 +47,15 @@ pub(crate) static mut PROCESS_INFO_FOR_TID_HOOK: Option<
     fn(u64) -> Option<Arc<Mutex<ProcessInfo>>>,
 > = None;
 pub(crate) static mut GRAPH_THING_FOR_CURRENT_HOOK: Option<fn() -> Option<u64>> = None;
+pub(crate) static mut POLL_TASK_EXIT_HOOK: Option<fn(TaskId) -> Result<Option<i32>, Errno>> = None;
+pub(crate) static mut REGISTER_TASK_EXIT_WAITER_HOOK: Option<
+    fn(TaskId, TaskId) -> Result<Option<i32>, Errno>,
+> = None;
+pub(crate) static mut UNREGISTER_TASK_EXIT_WAITER_HOOK: Option<
+    fn(TaskId, TaskId) -> Result<(), Errno>,
+> = None;
+pub(crate) static mut REGISTER_TIMEOUT_WAKE_HOOK: Option<fn(TaskId, u64)> = None;
+pub(crate) static mut UNREGISTER_TIMEOUT_WAKE_HOOK: Option<fn(TaskId)> = None;
 
 pub unsafe fn yield_now_current() {
     if let Some(hook) = unsafe { YIELD_HOOK } {
@@ -84,6 +93,48 @@ pub unsafe fn task_wait_current(id: TaskId) -> Result<i32, Errno> {
         hook(id)
     } else {
         Err(Errno::ENOSYS)
+    }
+}
+
+pub unsafe fn poll_task_exit_current(id: TaskId) -> Result<Option<i32>, Errno> {
+    if let Some(hook) = unsafe { POLL_TASK_EXIT_HOOK } {
+        hook(id)
+    } else {
+        Err(Errno::ENOSYS)
+    }
+}
+
+pub unsafe fn register_task_exit_waiter_current(
+    target_tid: TaskId,
+    waiter_tid: TaskId,
+) -> Result<Option<i32>, Errno> {
+    if let Some(hook) = unsafe { REGISTER_TASK_EXIT_WAITER_HOOK } {
+        hook(target_tid, waiter_tid)
+    } else {
+        Err(Errno::ENOSYS)
+    }
+}
+
+pub unsafe fn unregister_task_exit_waiter_current(
+    target_tid: TaskId,
+    waiter_tid: TaskId,
+) -> Result<(), Errno> {
+    if let Some(hook) = unsafe { UNREGISTER_TASK_EXIT_WAITER_HOOK } {
+        hook(target_tid, waiter_tid)
+    } else {
+        Err(Errno::ENOSYS)
+    }
+}
+
+pub fn register_timeout_wake_current(tid: TaskId, wake_tick: u64) {
+    if let Some(hook) = unsafe { REGISTER_TIMEOUT_WAKE_HOOK } {
+        hook(tid, wake_tick);
+    }
+}
+
+pub fn unregister_timeout_wake_current(tid: TaskId) {
+    if let Some(hook) = unsafe { UNREGISTER_TIMEOUT_WAKE_HOOK } {
+        hook(tid);
     }
 }
 

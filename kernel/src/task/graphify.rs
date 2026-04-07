@@ -6,9 +6,9 @@
 //! Uses a deferred work queue to avoid deadlock: public functions queue work,
 //! and `do_*` functions perform the actual graph operations.
 
-use crate::root::{enqueue, enqueue_no_reply, RootOp};
-use crate::task::graph_queue::{self, GraphWork};
+use crate::root::{RootOp, enqueue, enqueue_no_reply};
 use crate::task::TaskId;
+use crate::task::graph_queue::{self, GraphWork};
 use abi::schema::{keys, kinds, rels};
 use core::sync::atomic::Ordering;
 

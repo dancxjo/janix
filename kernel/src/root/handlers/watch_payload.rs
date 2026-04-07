@@ -231,7 +231,7 @@ pub(crate) fn filter_watch_payload(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use abi::watch::{self, ValueEncoding, WatchEvent, WatchOp, decode_event, encode_event};
+    use abi::watch::{self, decode_event, encode_event, ValueEncoding, WatchEvent, WatchOp};
     use abi::wire::{PredicateId, ThingId};
 
     fn run_filter(payload: &[u8], filter: &WatchFilter) -> Result<Vec<u8>, DecodeError> {

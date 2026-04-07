@@ -36,6 +36,7 @@ pub const SYS_SET_PRIORITY: u32 = 0x14;
 pub const SYS_TASK_DUMP: u32 = 0x15;
 pub const SYS_FUTEX_WAIT: u32 = 0x16;
 pub const SYS_FUTEX_WAKE: u32 = 0x17;
+pub const SYS_WAIT_MANY: u32 = 0x18;
 
 // ============================================================================
 // Block 0x20–0x2F: Time

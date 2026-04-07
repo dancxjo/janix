@@ -137,12 +137,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
             features: vec![],
         },
         ProgramConfig {
-            name: "anther",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
             name: "fortune",
             is_init: false,
             boot_module: true,
@@ -204,18 +198,6 @@ pub fn default_programs() -> Vec<ProgramConfig> {
         },
         ProgramConfig {
             name: "stdio_demo",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "telnetd",
-            is_init: false,
-            boot_module: true,
-            features: vec![],
-        },
-        ProgramConfig {
-            name: "boltd",
             is_init: false,
             boot_module: true,
             features: vec![],

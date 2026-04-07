@@ -18,6 +18,5 @@ Feature: System Tour
   Scenario: Verifying system services via logs
     Given the machine is running
     Then the serial output should contain "SPROUT: Supervisor starting"
-    And the serial output should contain "anther: Listening on port 80"
     And the serial output should contain "[bloom] First frame rendered"
     And the serial output should contain "FETCHD: Got IP address"

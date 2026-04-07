@@ -646,24 +646,6 @@ fn spawn_netd(tasks: &mut Vec<ManagedTask>) {
 pub fn setup_network_apps(tasks: &mut Vec<ManagedTask>) {
     info!("SPROUT: Setting up network apps...");
 
-    match stem::syscall::spawn_process("/anther", 0) {
-        Ok(pid) => {
-            info!("SPROUT: Spawned anther (PID={})", pid);
-            let _ = stem::thread::set_priority(pid, 2);
-            tasks.push(ManagedTask {
-                name: "/anther".to_string(),
-                kind: TaskKind::Service("svc.http".to_string()),
-                module_path: "/anther".to_string(),
-                pid: Some(pid),
-                restarts: 0,
-                spawn_arg: 0,
-            });
-        }
-        Err(e) => {
-            warn!("SPROUT: Failed to spawn anther: {:?}", e);
-        }
-    }
-
     match stem::syscall::spawn_process("/nectar", 0) {
         Ok(pid) => {
             info!("SPROUT: Spawned nectar (PID={})", pid);

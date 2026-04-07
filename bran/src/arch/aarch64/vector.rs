@@ -45,7 +45,7 @@ vector_table:
     .balign 128
     b handle_sync_el0     // Sync (Syscalls/Traps)
     .balign 128
-    b unhandled_lower_irq // IRQ
+    b handle_irq_el0      // IRQ from EL0
     .balign 128
     b unhandled_exception // FIQ
     .balign 128
@@ -172,6 +172,68 @@ handle_sync_el0:
     ldp x2, x3, [sp, #16]
     ldp x0, x1, [sp, #0]
     
+    add sp, sp, #272
+    eret
+
+handle_irq_el0:
+    // IRQ from EL0 (user mode).  Save the same frame as handle_sync_el0 so
+    // that the full interrupted user context is preserved across any potential
+    // context switch triggered by on_tick / on_resched_ipi.
+    sub sp, sp, #272
+
+    stp x0, x1, [sp, #0]
+    stp x2, x3, [sp, #16]
+    stp x4, x5, [sp, #32]
+    stp x6, x7, [sp, #48]
+    stp x8, x9, [sp, #64]
+    stp x10, x11, [sp, #80]
+    stp x12, x13, [sp, #96]
+    stp x14, x15, [sp, #112]
+    stp x16, x17, [sp, #128]
+    stp x18, x19, [sp, #144]
+    stp x20, x21, [sp, #160]
+    stp x22, x23, [sp, #176]
+    stp x24, x25, [sp, #192]
+    stp x26, x27, [sp, #208]
+    stp x28, x29, [sp, #224]
+    str x30, [sp, #240]
+
+    mrs x9, sp_el0
+    str x9, [sp, #248]
+
+    mrs x10, elr_el1
+    str x10, [sp, #256]
+
+    mrs x11, spsr_el1
+    str x11, [sp, #264]
+
+    bl handle_irq_el0_rust
+
+    // Restore system registers
+    ldr x11, [sp, #264]
+    msr spsr_el1, x11
+    ldr x10, [sp, #256]
+    msr elr_el1, x10
+    ldr x9, [sp, #248]
+    msr sp_el0, x9
+
+    ldr x30, [sp, #240]
+    ldp x28, x29, [sp, #224]
+    ldp x26, x27, [sp, #208]
+    ldp x24, x25, [sp, #192]
+    ldp x22, x23, [sp, #176]
+    ldp x20, x21, [sp, #160]
+    ldp x18, x19, [sp, #144]
+    ldp x16, x17, [sp, #128]
+    ldp x14, x15, [sp, #112]
+    ldp x12, x13, [sp, #96]
+    ldp x10, x11, [sp, #80]
+    ldp x8, x9, [sp, #64]
+    ldp x6, x7, [sp, #48]
+    ldp x4, x5, [sp, #32]
+    ldp x2, x3, [sp, #16]
+    ldp x0, x1, [sp, #0]
+
     add sp, sp, #272
     eret
 "#

@@ -236,23 +236,31 @@ pub unsafe extern "C" fn rust_trap_handler(tf: &mut UserTrapFrame) {
         // Advance ERA by 4 (instruction size)
         tf.era += 4;
     } else {
-        // Check if this is a timer interrupt (ecode = 0 means interrupt, check ISR)
+        // Interrupts: ecode == 0, interrupt source in ESTAT IS field (bits 12:0).
+        // IS[10] = TI (Timer Interrupt), IS[11] = IPI.
+        // Routing both through the same path would conflate tick-counting with
+        // cross-CPU reschedule requests (see issue #498 for the x86_64 fix).
         let isr = estat & 0x1FFF;
-        if isr != 0 {
-            // Timer/hardware interrupt - tick the theme animation
-            // Read stable counter (if available) or use 0 as fallback
-            let now_ticks: u64;
-            unsafe {
-                asm!("rdtime.d {}, $r0", out(reg) now_ticks, options(nomem, nostack));
-            }
-            crate::theme::tick(now_ticks);
+        if isr & (1 << 10) != 0 {
+            // Timer interrupt (TI): advance time accounting and reschedule if needed.
+            kernel::sched::on_tick::<crate::arch::CurrentRuntime>();
+        } else if isr & (1 << 11) != 0 {
+            // IPI interrupt: cross-CPU reschedule request.
+            // Must NOT increment TICK_COUNT - only trigger a reschedule.
+            kernel::sched::on_resched_ipi::<crate::arch::CurrentRuntime>();
+        } else if isr != 0 {
+            // Other hardware interrupt - no scheduler action needed.
+            kernel::kprintln!(
+                "Unhandled LoongArch interrupt: ESTAT={:#x} ISR={:#x}",
+                estat,
+                isr
+            );
         } else {
             kernel::kprintln!(
-                "Unexpected LoongArch trap: ESTAT={:x} ECODE={:x} SUBCODE={:x} ISR={:x} ERA={:x} BADV={:x}",
+                "Unexpected LoongArch trap: ESTAT={:#x} ECODE={:#x} SUBCODE={:#x} ERA={:#x} BADV={:#x}",
                 estat,
                 ecode,
                 subcode,
-                isr,
                 tf.era,
                 tf.badv
             );

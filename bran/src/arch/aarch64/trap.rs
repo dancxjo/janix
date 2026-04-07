@@ -20,15 +20,19 @@ pub unsafe extern "C" fn handle_sync_el0_rust(tf: &mut UserTrapFrame, esr: u64) 
     }
 }
 
-/// IRQ handler from lower EL (user mode) - calls theme tick
+/// IRQ handler from lower EL (user mode).
+///
+/// Without a GIC driver there is no way to read the interrupt ID to
+/// distinguish a hardware timer PPI (e.g. INTID 27/30 on the QEMU virt
+/// board) from a software-generated reschedule IPI (SGI).  All IRQs are
+/// therefore treated as timer ticks: TICK_COUNT is incremented and a
+/// preemption point is checked.  Once a GIC driver is wired in, this
+/// function should be split to mirror the x86_64 pattern:
+///   timer PPI  → kernel::sched::on_tick()
+///   resched SGI → kernel::sched::on_resched_ipi()
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn handle_irq_el0_rust() {
-    // Read CNTPCT_EL0 for timestamp
-    let now_ticks: u64;
-    unsafe {
-        asm!("mrs {}, cntpct_el0", out(reg) now_ticks, options(nomem, nostack));
-    }
-    crate::theme::tick(now_ticks);
+    kernel::sched::on_tick::<crate::arch::CurrentRuntime>();
 }
 
 #[unsafe(no_mangle)]

@@ -257,6 +257,12 @@ pub const SYS_PIPE: u32 = 0x228;
 pub const SYS_VFS_UNLINK: u32 = 0x229;
 /// Create a directory by path. Args: path_ptr, path_len. Returns 0 or errno.
 pub const SYS_VFS_MKDIR: u32 = 0x22A;
+/// Mount a userland VFS provider at a path prefix.
+/// Args: provider_port_write_handle, path_ptr, path_len. Returns 0 or errno.
+pub const SYS_VFS_MOUNT: u32 = 0x22B;
+/// Unmount the userland VFS provider at a path prefix.
+/// Args: path_ptr, path_len. Returns 0 or errno.
+pub const SYS_VFS_UMOUNT: u32 = 0x22C;
 
 pub mod vfs_flags {
     /// Open for reading.

@@ -1,20 +1,29 @@
-//! ISO9660 Mount Service (iso9660d)
+//! ISO9660 VFS Provider (iso9660d)
 //!
-//! Discovers block devices in the graph, probes them for ISO9660 filesystems,
-//! and exposes mounted ISOs via the Tree Provider RPC protocol.
+//! Discovers block devices in the system graph, probes them for ISO9660
+//! filesystems, and mounts the first one found as a userland VFS provider at
+//! `/boot/iso` using the janix Act V VFS provider mechanism.
 //!
-//! ## Architecture
+//! ## How it works
 //!
-//! 1. **Discovery**: Scans graph for DEV_STORAGE_BLOCK_DEVICE nodes
-//! 2. **Probing**: Reads each block device's WRITE_PORT_HANDLE and probes for ISO9660
-//! 3. **Mounting**: Creates CONTENT_SOURCE nodes for discovered filesystems
-//! 4. **Service**: Exposes tree provider ports for file navigation and reading
+//! 1. **Discovery** — scans the graph for DEV_STORAGE_BLOCK_DEVICE nodes.
+//! 2. **Probing** — reads each block device and looks for a valid ISO9660 PVD.
+//! 3. **Mounting** — calls `SYS_VFS_MOUNT(provider_port, "/boot/iso")` so the
+//!    kernel routes VFS operations here.
+//! 4. **Service loop** — waits for VFS RPC messages on its request port,
+//!    dispatches them to the [`IsoFs`] library, and sends responses back
+//!    through the response port handle embedded in each request header.
 //!
-//! ## Node ID Encoding
+//! ## VFS RPC protocol
 //!
-//! Tree provider node IDs encode directory/file extent information:
-//! - `node_id = (extent_lba << 32) | extent_size`
-//! - This allows O(1) lookup without maintaining a separate ID-to-extent map
+//! See [`abi::vfs_rpc`] for the full wire format.  This service implements:
+//! - `Lookup` — resolve a path to a provider handle (encoded as `(lba << 32) | size`)
+//! - `Read`   — read file bytes from a handle
+//! - `Readdir`— list directory entries for a handle
+//! - `Stat`   — return mode/size/ino for a handle
+//! - `Close`  — no-op (handles are stateless in this implementation)
+//! - `Write`  — returns `EROFS` (ISO9660 is read-only)
+//! - `Poll`   — returns `POLLIN` always
 
 #![feature(restricted_std)]
 #![no_main]
@@ -25,17 +34,13 @@ use abi::block_device_protocol::{
     BlockDeviceError, BlockDeviceRequest, BlockDeviceResponse, ReadRequest, ReadResponse,
 };
 use abi::schema::{keys, kinds};
-use abi::tree_provider::{
-    ErrorResponse, GetMetadataRequest, ListRequest, NodeKind, ReadRequest as TreeReadRequest,
-    RootResponse, TreeProviderError, TreeProviderRequest, TreeProviderResponse,
-    MAX_CHILDREN_PER_LIST, MAX_NAME_LEN, MAX_READ_SIZE,
-};
+use abi::vfs_rpc::{VfsRpcOp, VfsRpcReqHeader, VFS_RPC_MAX_REQ};
 use alloc::vec::Vec;
 use iso9660::{IsoFs, ISO_SECTOR_SIZE};
 use stem::abi::module_manifest::{ManifestHeader, ModuleKind, MANIFEST_MAGIC};
 use stem::block::{BlockDevice, BlockError};
-use stem::syscall::{port_create, port_recv, port_send, port_wait, PortHandle};
-use stem::thing::sys::{create_node, find, intern, prop_get, prop_set};
+use stem::syscall::{port_create, port_recv, port_send, port_wait, vfs_mount, PortHandle};
+use stem::thing::sys::{find, prop_get};
 use stem::thing::ThingId;
 use stem::{info, warn};
 
@@ -45,51 +50,33 @@ use stem::{info, warn};
 pub static MANIFEST: ManifestHeader = ManifestHeader {
     magic: MANIFEST_MAGIC,
     kind: ModuleKind::Service,
-    device_kind: *b"svc.iso9660.Mount\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
+    device_kind: *b"svc.vfs.iso9660\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0",
     version: 1,
     _reserved: 0,
 };
 
-/// BlockDevice adapter for port-based RPC
+// ── Block device adapter ─────────────────────────────────────────────────────
+
+/// [`BlockDevice`] implementation that talks to a virtio/ATA driver via ports.
 struct PortBlockDevice {
     port: PortHandle,
-    sector_size: u32,
-    sector_count: u64,
     resp_w: PortHandle,
     resp_r: PortHandle,
 }
 
 impl PortBlockDevice {
     fn new(port: PortHandle) -> Option<Self> {
-        // Create a response port pair for this device
-        // Use a large buffer to accommodate multi-sector reads
-        let (resp_w, resp_r) = port_create(128 * 1024).ok()?;
-
-        // For ISO9660, we expect 2048-byte sectors
-        // We don't need to identify the device since ISO9660 has fixed sector size
-        Some(Self {
-            port,
-            sector_size: ISO_SECTOR_SIZE as u32,
-            sector_count: 0, // Unknown, not needed for ISO9660
-            resp_w,
-            resp_r,
-        })
+        let (resp_w, resp_r) = port_create(256 * 1024).ok()?;
+        Some(Self { port, resp_w, resp_r })
     }
 }
 
 impl BlockDevice for PortBlockDevice {
     fn read_sectors(&self, lba: u64, count: u64, buf: &mut [u8]) -> Result<(), BlockError> {
-        // Build read request: [4: resp_w][1: request_type][payload...]
         let mut req = [0u8; 4 + 1 + core::mem::size_of::<ReadRequest>()];
         req[0..4].copy_from_slice(&(self.resp_w as u32).to_le_bytes());
         req[4] = BlockDeviceRequest::Read as u8;
-
-        let read_req = ReadRequest {
-            lba,
-            sector_count: count as u32,
-        };
-
-        // Safety: ReadRequest is repr(C) and POD
+        let read_req = ReadRequest { lba, sector_count: count as u32 };
         let req_bytes = unsafe {
             core::slice::from_raw_parts(
                 &read_req as *const ReadRequest as *const u8,
@@ -97,29 +84,20 @@ impl BlockDevice for PortBlockDevice {
             )
         };
         req[5..].copy_from_slice(req_bytes);
+        port_send(self.port, &req).map_err(|_| BlockError::IoError)?;
 
-        // Send request
-        if port_send(self.port, &req).is_err() {
-            return Err(BlockError::IoError);
-        }
-
-        // Receive response from our private response port
-        let expected_size =
-            core::mem::size_of::<ReadResponse>() + (count as usize * self.sector_size as usize) + 1;
-        let mut resp_buf = alloc::vec![0u8; expected_size];
-
+        let expected = core::mem::size_of::<ReadResponse>()
+            + (count as usize * ISO_SECTOR_SIZE as usize)
+            + 1;
+        let mut resp_buf = alloc::vec![0u8; expected];
         let n = port_recv(self.resp_r, &mut resp_buf).map_err(|_| BlockError::IoError)?;
         if n < core::mem::size_of::<ReadResponse>() + 1 {
             return Err(BlockError::IoError);
         }
-
-        // Parse response header
         let resp_type = resp_buf[0];
         if resp_type != BlockDeviceResponse::Ok as u8 {
-            // Error response
             if resp_type == BlockDeviceResponse::Error as u8 && n >= 5 {
-                let error_code = resp_buf[1];
-                return Err(match error_code {
+                return Err(match resp_buf[1] {
                     x if x == BlockDeviceError::InvalidParam as u8 => BlockError::InvalidParam,
                     x if x == BlockDeviceError::IoError as u8 => BlockError::IoError,
                     x if x == BlockDeviceError::NotReady as u8 => BlockError::NotReady,
@@ -129,408 +107,366 @@ impl BlockDevice for PortBlockDevice {
             }
             return Err(BlockError::IoError);
         }
-
-        // Read header (skip response type byte)
         let header_bytes = &resp_buf[1..1 + core::mem::size_of::<ReadResponse>()];
-        let data_len = u32::from_le_bytes([
-            header_bytes[0],
-            header_bytes[1],
-            header_bytes[2],
-            header_bytes[3],
-        ]);
-
+        let data_len =
+            u32::from_le_bytes([header_bytes[0], header_bytes[1], header_bytes[2], header_bytes[3]])
+                as usize;
         let data_start = 1 + core::mem::size_of::<ReadResponse>();
-        let data_end = data_start + data_len as usize;
-
-        if data_end > n || data_len as usize > buf.len() {
+        let data_end = data_start + data_len;
+        if data_end > n || data_len > buf.len() {
             return Err(BlockError::InvalidParam);
         }
-
-        buf[..data_len as usize].copy_from_slice(&resp_buf[data_start..data_end]);
+        buf[..data_len].copy_from_slice(&resp_buf[data_start..data_end]);
         Ok(())
     }
 
     fn sector_size(&self) -> u64 {
-        self.sector_size as u64
+        ISO_SECTOR_SIZE
     }
 
     fn sector_count(&self) -> Option<u64> {
-        if self.sector_count > 0 {
-            Some(self.sector_count)
-        } else {
-            None
-        }
+        None
     }
 }
 
-/// A mounted ISO9660 filesystem
-struct Mount {
-    fs: IsoFs,
-    device: PortBlockDevice,
-    tree_port_read: PortHandle,
-    tree_port_write: PortHandle,
-    mount_node: ThingId,
+// ── Handle encoding ───────────────────────────────────────────────────────────
+
+/// Encode `(lba, size)` into a 64-bit provider handle.
+///
+/// The high 32 bits hold the LBA, the low 32 bits hold the extent size in
+/// bytes.  This encoding is identical to the one used by the old Tree Provider
+/// implementation and lets us reconstruct extent info from the handle without
+/// any additional state.
+fn encode_handle(lba: u32, size: u32) -> u64 {
+    ((lba as u64) << 32) | (size as u64)
 }
 
-/// Decode node_id into (extent_lba, extent_size)
-fn decode_node_id(node_id: u64) -> (u32, u32) {
-    let extent_lba = (node_id >> 32) as u32;
-    let extent_size = (node_id & 0xFFFFFFFF) as u32;
-    (extent_lba, extent_size)
+fn decode_handle(h: u64) -> (u32, u32) {
+    ((h >> 32) as u32, (h & 0xFFFF_FFFF) as u32)
 }
 
-/// Encode (extent_lba, extent_size) into node_id
-fn encode_node_id(extent_lba: u32, extent_size: u32) -> u64 {
-    ((extent_lba as u64) << 32) | (extent_size as u64)
+// ── VFS RPC dispatch ─────────────────────────────────────────────────────────
+
+/// File type bits (same as kernel VfsStat::S_IFxxx).
+const S_IFDIR: u32 = 0o040000;
+const S_IFREG: u32 = 0o100000;
+
+/// Errno values we return in VFS RPC responses.
+const E_OK: u8 = 0;
+const E_NOENT: u8 = 2;
+const E_IO: u8 = 5;
+const E_ROFS: u8 = 30;
+const E_INVAL: u8 = 22;
+const E_NOTSUP: u8 = 38; // ENOSYS — used as "not supported"
+
+/// Send a VFS RPC response to `resp_port`.
+fn send_resp(resp_port: PortHandle, data: &[u8]) {
+    let _ = port_send(resp_port, data);
 }
 
-/// Send error response
-fn send_error(port: PortHandle, error_code: TreeProviderError) {
-    let mut resp = [0u8; 1 + core::mem::size_of::<ErrorResponse>()];
-    resp[0] = TreeProviderResponse::Error as u8;
-    resp[1] = error_code as u8;
-    let _ = port_send(port, &resp);
+/// Send an error response.
+fn send_err(resp_port: PortHandle, errno: u8) {
+    send_resp(resp_port, &[errno]);
 }
 
-/// Handle tree provider requests for a mount
-fn handle_tree_request(mount: &Mount, req_buf: &[u8]) {
-    if req_buf.is_empty() {
-        send_error(mount.tree_port_write, TreeProviderError::InvalidParam);
+/// Handle one VFS RPC request for a mounted ISO9660 filesystem.
+fn handle_vfs_rpc(fs: &IsoFs, dev: &PortBlockDevice, buf: &[u8]) {
+    if buf.len() < core::mem::size_of::<VfsRpcReqHeader>() {
         return;
     }
 
-    let req_type = req_buf[0];
+    // Parse header.
+    let hdr_size = core::mem::size_of::<VfsRpcReqHeader>();
+    let resp_port = u32::from_le_bytes([buf[0], buf[1], buf[2], buf[3]]) as PortHandle;
+    let op_byte = buf[4];
+    let payload = &buf[hdr_size..];
 
-    match req_type {
-        x if x == TreeProviderRequest::Root as u8 => {
-            // Return root directory node ID
-            let root_node_id =
-                encode_node_id(mount.fs.pvd.root_dir_extent, mount.fs.pvd.root_dir_size);
-
-            let mut resp = [0u8; 1 + core::mem::size_of::<RootResponse>()];
-            resp[0] = TreeProviderResponse::Ok as u8;
-
-            let root_resp = RootResponse {
-                node_id: root_node_id,
-            };
-
-            let resp_bytes = unsafe {
-                core::slice::from_raw_parts(
-                    &root_resp as *const RootResponse as *const u8,
-                    core::mem::size_of::<RootResponse>(),
-                )
-            };
-            resp[1..].copy_from_slice(resp_bytes);
-
-            let _ = port_send(mount.tree_port_write, &resp);
+    let op = match VfsRpcOp::from_u8(op_byte) {
+        Some(o) => o,
+        None => {
+            send_err(resp_port, E_NOTSUP);
+            return;
         }
+    };
 
-        x if x == TreeProviderRequest::List as u8 => {
-            if req_buf.len() < 1 + core::mem::size_of::<ListRequest>() {
-                send_error(mount.tree_port_write, TreeProviderError::InvalidParam);
-                return;
-            }
-
-            let req_bytes = &req_buf[1..];
-            let node_id = u64::from_le_bytes([
-                req_bytes[0],
-                req_bytes[1],
-                req_bytes[2],
-                req_bytes[3],
-                req_bytes[4],
-                req_bytes[5],
-                req_bytes[6],
-                req_bytes[7],
-            ]);
-
-            let (extent_lba, extent_size) = decode_node_id(node_id);
-
-            // List directory entries
-            let entries = mount.fs.list_dir(&mount.device, extent_lba, extent_size);
-
-            // Build response
-            let mut resp_data = Vec::new();
-
-            // Response type
-            resp_data.push(TreeProviderResponse::Ok as u8);
-
-            // Header
-            let count = core::cmp::min(entries.len(), MAX_CHILDREN_PER_LIST) as u32;
-            resp_data.extend_from_slice(&count.to_le_bytes());
-
-            // Entries
-            for entry in entries.iter().take(MAX_CHILDREN_PER_LIST) {
-                let child_node_id = encode_node_id(entry.extent_lba, entry.size);
-                let kind = if entry.is_directory {
-                    NodeKind::Directory
-                } else {
-                    NodeKind::File
-                } as u8;
-
-                let name_bytes = entry.name.as_bytes();
-                let name_len = core::cmp::min(name_bytes.len(), MAX_NAME_LEN) as u8;
-
-                // Encode ChildEntry
-                resp_data.extend_from_slice(&child_node_id.to_le_bytes());
-                resp_data.push(kind);
-                resp_data.push(name_len);
-                resp_data.extend_from_slice(&entry.size.to_le_bytes());
-                resp_data.extend_from_slice(&(0u32.to_le_bytes())); // _reserved[0..4]
-                resp_data.extend_from_slice(&[0u8, 0u8]); // _reserved[4..6]
-
-                // Name data
-                resp_data.extend_from_slice(&name_bytes[..name_len as usize]);
-            }
-
-            let _ = port_send(mount.tree_port_write, &resp_data);
-        }
-
-        x if x == TreeProviderRequest::Read as u8 => {
-            if req_buf.len() < 1 + core::mem::size_of::<TreeReadRequest>() {
-                send_error(mount.tree_port_write, TreeProviderError::InvalidParam);
-                return;
-            }
-
-            let req_bytes = &req_buf[1..];
-            let node_id = u64::from_le_bytes([
-                req_bytes[0],
-                req_bytes[1],
-                req_bytes[2],
-                req_bytes[3],
-                req_bytes[4],
-                req_bytes[5],
-                req_bytes[6],
-                req_bytes[7],
-            ]);
-            let offset = u64::from_le_bytes([
-                req_bytes[8],
-                req_bytes[9],
-                req_bytes[10],
-                req_bytes[11],
-                req_bytes[12],
-                req_bytes[13],
-                req_bytes[14],
-                req_bytes[15],
-            ]);
-            let length =
-                u32::from_le_bytes([req_bytes[16], req_bytes[17], req_bytes[18], req_bytes[19]])
-                    as usize;
-
-            let (extent_lba, extent_size) = decode_node_id(node_id);
-
-            // Validate length
-            if length > MAX_READ_SIZE {
-                send_error(mount.tree_port_write, TreeProviderError::InvalidParam);
-                return;
-            }
-
-            // Validate offset
-            if offset >= extent_size as u64 {
-                send_error(mount.tree_port_write, TreeProviderError::OutOfRange);
-                return;
-            }
-
-            // Read file data using IsoFile
-            let iso_file = iso9660::IsoFile {
-                extent_lba,
-                size: extent_size,
-            };
-
-            match iso_file.read_range(&mount.device, offset, length) {
-                Ok(data) => {
-                    let mut resp_data = Vec::with_capacity(1 + 4 + data.len());
-                    resp_data.push(TreeProviderResponse::Ok as u8);
-                    resp_data.extend_from_slice(&(data.len() as u32).to_le_bytes());
-                    resp_data.extend_from_slice(&data);
-
-                    let _ = port_send(mount.tree_port_write, &resp_data);
-                }
-                Err(_) => {
-                    send_error(mount.tree_port_write, TreeProviderError::IoError);
-                }
-            }
-        }
-
-        x if x == TreeProviderRequest::GetMetadata as u8 => {
-            if req_buf.len() < 1 + core::mem::size_of::<GetMetadataRequest>() {
-                send_error(mount.tree_port_write, TreeProviderError::InvalidParam);
-                return;
-            }
-
-            let req_bytes = &req_buf[1..];
-            let node_id = u64::from_le_bytes([
-                req_bytes[0],
-                req_bytes[1],
-                req_bytes[2],
-                req_bytes[3],
-                req_bytes[4],
-                req_bytes[5],
-                req_bytes[6],
-                req_bytes[7],
-            ]);
-
-            let (extent_lba, extent_size) = decode_node_id(node_id);
-
-            // For root directory, return metadata directly
-            if extent_lba == mount.fs.pvd.root_dir_extent
-                && extent_size == mount.fs.pvd.root_dir_size
-            {
-                let mut resp_data = Vec::new();
-                resp_data.push(TreeProviderResponse::Ok as u8);
-                resp_data.push(NodeKind::Directory as u8);
-                resp_data.push(0); // name_len = 0 for root
-                resp_data.extend_from_slice(&[0u8; 6]); // _reserved
-                resp_data.extend_from_slice(&extent_size.to_le_bytes());
-                resp_data.extend_from_slice(&(0u64.to_le_bytes())); // mtime = 0
-
-                let _ = port_send(mount.tree_port_write, &resp_data);
-                return;
-            }
-
-            // For other nodes, we need to find them by traversing the parent
-            // This is a simplified implementation - a full implementation would cache metadata
-            send_error(mount.tree_port_write, TreeProviderError::NotSupported);
-        }
-
-        _ => {
-            send_error(mount.tree_port_write, TreeProviderError::NotSupported);
+    match op {
+        VfsRpcOp::Lookup => handle_lookup(fs, dev, resp_port, payload),
+        VfsRpcOp::Read => handle_read(fs, dev, resp_port, payload),
+        VfsRpcOp::Write => send_err(resp_port, E_ROFS),
+        VfsRpcOp::Readdir => handle_readdir(fs, dev, resp_port, payload),
+        VfsRpcOp::Stat => handle_stat(fs, dev, resp_port, payload),
+        VfsRpcOp::Close => send_resp(resp_port, &[E_OK]),
+        VfsRpcOp::Poll => {
+            // Always report readable.
+            let mut r = [0u8; 5];
+            r[0] = E_OK;
+            r[1..5].copy_from_slice(&1u32.to_le_bytes()); // POLLIN
+            send_resp(resp_port, &r);
         }
     }
 }
 
+/// LOOKUP: resolve a path within the ISO and return a handle.
+fn handle_lookup(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload: &[u8]) {
+    if payload.len() < 4 {
+        send_err(resp_port, E_INVAL);
+        return;
+    }
+    let path_len = u32::from_le_bytes([payload[0], payload[1], payload[2], payload[3]]) as usize;
+    if payload.len() < 4 + path_len {
+        send_err(resp_port, E_INVAL);
+        return;
+    }
+    let path_bytes = &payload[4..4 + path_len];
+    let path = match core::str::from_utf8(path_bytes) {
+        Ok(p) => p,
+        Err(_) => {
+            send_err(resp_port, E_INVAL);
+            return;
+        }
+    };
+
+    // Empty path means the mount-point root directory.
+    let (lba, size, is_dir) = if path.is_empty() || path == "/" {
+        (fs.pvd.root_dir_extent, fs.pvd.root_dir_size, true)
+    } else {
+        match fs.lookup_path(dev, path) {
+            Some(entry) => (entry.extent_lba, entry.size, entry.is_directory),
+            None => {
+                send_err(resp_port, E_NOENT);
+                return;
+            }
+        }
+    };
+
+    let handle = encode_handle(lba, size);
+    let mut resp = [0u8; 9];
+    resp[0] = E_OK;
+    resp[1..9].copy_from_slice(&handle.to_le_bytes());
+    // Embed the directory flag in handle bit 63 (high bit of ino is unused).
+    // Actually we store it separately in the stat — here we just return handle.
+    let _ = is_dir; // used in stat/readdir
+    send_resp(resp_port, &resp);
+}
+
+/// READ: read file data.
+fn handle_read(_fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload: &[u8]) {
+    if payload.len() < 20 {
+        send_err(resp_port, E_INVAL);
+        return;
+    }
+    let handle = u64::from_le_bytes([
+        payload[0], payload[1], payload[2], payload[3],
+        payload[4], payload[5], payload[6], payload[7],
+    ]);
+    let offset = u64::from_le_bytes([
+        payload[8], payload[9], payload[10], payload[11],
+        payload[12], payload[13], payload[14], payload[15],
+    ]);
+    let len = u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
+
+    let (lba, size) = decode_handle(handle);
+
+    if offset >= size as u64 {
+        // Past EOF — return 0 bytes.
+        let mut resp = [0u8; 5];
+        resp[0] = E_OK;
+        // bytes_read = 0
+        send_resp(resp_port, &resp);
+        return;
+    }
+
+    let iso_file = iso9660::IsoFile { extent_lba: lba, size };
+    let clamped_len = len.min((size as u64 - offset) as usize);
+
+    match iso_file.read_range(dev, offset, clamped_len) {
+        Ok(data) => {
+            let mut resp = Vec::with_capacity(5 + data.len());
+            resp.push(E_OK);
+            resp.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            resp.extend_from_slice(&data);
+            send_resp(resp_port, &resp);
+        }
+        Err(_) => send_err(resp_port, E_IO),
+    }
+}
+
+/// READDIR: list directory entries.
+///
+/// The response data is a sequence of packed `DirentWire` structs followed by
+/// the name bytes.  The `offset` parameter is used as an entry index (not a
+/// byte offset) for simplicity.
+fn handle_readdir(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload: &[u8]) {
+    if payload.len() < 20 {
+        send_err(resp_port, E_INVAL);
+        return;
+    }
+    let handle = u64::from_le_bytes([
+        payload[0], payload[1], payload[2], payload[3],
+        payload[4], payload[5], payload[6], payload[7],
+    ]);
+    let offset = u64::from_le_bytes([
+        payload[8], payload[9], payload[10], payload[11],
+        payload[12], payload[13], payload[14], payload[15],
+    ]);
+    let max_bytes =
+        u32::from_le_bytes([payload[16], payload[17], payload[18], payload[19]]) as usize;
+
+    let (lba, size) = decode_handle(handle);
+    let entries = fs.list_dir(dev, lba, size);
+
+    let start_idx = offset as usize;
+    let mut out: Vec<u8> = Vec::new();
+
+    for entry in entries.iter().skip(start_idx) {
+        let name_bytes = entry.name.as_bytes();
+        let name_len = name_bytes.len().min(255) as u8;
+        let file_type: u8 = if entry.is_directory { 4 } else { 8 }; // DT_DIR=4, DT_REG=8
+        let ino = encode_handle(entry.extent_lba, entry.size);
+
+        // DirentWire: [ino: u64][file_type: u8][name_len: u8][name...]
+        let entry_size = 10 + name_len as usize;
+        if out.len() + entry_size > max_bytes {
+            break;
+        }
+        out.extend_from_slice(&ino.to_le_bytes());
+        out.push(file_type);
+        out.push(name_len);
+        out.extend_from_slice(&name_bytes[..name_len as usize]);
+    }
+
+    let mut resp = Vec::with_capacity(5 + out.len());
+    resp.push(E_OK);
+    resp.extend_from_slice(&(out.len() as u32).to_le_bytes());
+    resp.extend_from_slice(&out);
+    send_resp(resp_port, &resp);
+}
+
+/// STAT: return metadata for a handle.
+fn handle_stat(fs: &IsoFs, dev: &PortBlockDevice, resp_port: PortHandle, payload: &[u8]) {
+    if payload.len() < 8 {
+        send_err(resp_port, E_INVAL);
+        return;
+    }
+    let handle = u64::from_le_bytes([
+        payload[0], payload[1], payload[2], payload[3],
+        payload[4], payload[5], payload[6], payload[7],
+    ]);
+    let (lba, size) = decode_handle(handle);
+
+    // Determine if this is a directory by checking if the root dir matches or
+    // trying to parse the first few bytes of the extent.
+    let is_dir = if lba == fs.pvd.root_dir_extent {
+        true
+    } else {
+        // Peek at the extent to see if it looks like a directory (has valid
+        // directory records).  For simplicity we check by listing — if we can
+        // get entries it's a directory.
+        let entries = fs.list_dir(dev, lba, size);
+        !entries.is_empty()
+    };
+
+    let mode = if is_dir { S_IFDIR | 0o555 } else { S_IFREG | 0o444 };
+    let ino = handle; // reuse handle as inode number
+
+    let mut resp = [0u8; 21]; // 1 + 4 + 8 + 8
+    resp[0] = E_OK;
+    resp[1..5].copy_from_slice(&mode.to_le_bytes());
+    resp[5..13].copy_from_slice(&(size as u64).to_le_bytes());
+    resp[13..21].copy_from_slice(&ino.to_le_bytes());
+    send_resp(resp_port, &resp);
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
 #[stem::main]
 fn main(_arg: usize) -> ! {
-    info!("ISO9660D: Starting ISO9660 mount service...");
+    info!("iso9660d: starting ISO9660 VFS provider");
 
-    let mut mounts = Vec::new();
-
-    // 1. Find all block devices in the graph
+    // 1. Find block devices.
     let mut devices = [ThingId::default(); 32];
     let count = match find(kinds::DEV_STORAGE_BLOCK_DEVICE, &mut devices) {
         Ok(n) => n,
         Err(_) => {
-            warn!("ISO9660D: Failed to find block devices");
+            warn!("iso9660d: failed to find block devices");
             0
         }
     };
+    info!("iso9660d: found {} block device(s)", count);
 
-    info!("ISO9660D: Found {} block devices", count);
+    // 2. Probe each device for ISO9660.
+    let mut mounted: Option<(IsoFs, PortBlockDevice, PortHandle, PortHandle)> = None;
 
-    // 2. Probe each device for ISO9660
     for &dev_id in &devices[..count] {
-        // Get the WRITE_PORT_HANDLE property
         let port_handle = match prop_get(dev_id, keys::WRITE_PORT_HANDLE) {
-            Ok(handle) => handle as PortHandle,
-            Err(_) => {
-                warn!("ISO9660D: Device {:?} has no WRITE_PORT_HANDLE", dev_id);
-                continue;
-            }
+            Ok(h) => h as PortHandle,
+            Err(_) => continue,
         };
 
-        // Create block device adapter
         let block_dev = match PortBlockDevice::new(port_handle) {
-            Some(dev) => dev,
+            Some(d) => d,
             None => continue,
         };
 
-        // Probe for ISO9660
-        match IsoFs::probe(&block_dev) {
-            Some(fs) => {
-                info!("ISO9660D: Found ISO9660 filesystem on device {:?}", dev_id);
+        if let Some(fs) = IsoFs::probe(&block_dev) {
+            info!("iso9660d: found ISO9660 on device {:?}", dev_id);
 
-                // Create mount node
-                let mount_node = match create_node(kinds::CONTENT_SOURCE) {
-                    Ok(node) => node,
-                    Err(_) => {
-                        warn!("ISO9660D: Failed to create mount node");
-                        continue;
-                    }
-                };
+            // 3. Create the provider port pair.
+            //    write end  → kernel sends VFS RPCs here
+            //    read end   → this daemon reads RPCs here
+            let (req_write, req_read) = match port_create(VFS_RPC_MAX_REQ * 8) {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!("iso9660d: failed to create provider port: {:?}", e);
+                    continue;
+                }
+            };
 
-                // Set mount properties
-                let kind_sym = intern("iso9660").unwrap_or(0);
-                let state_sym = intern("ready").unwrap_or(0);
-                let _ = prop_set(mount_node, keys::CONTENT_SOURCE_KIND, kind_sym as u64);
-                let _ = prop_set(mount_node, keys::CONTENT_SOURCE_STATE, state_sym as u64);
-                let _ = prop_set(mount_node, "device", dev_id.to_u64_lossy());
-
-                // Create tree provider port
-                let (tree_write, tree_read) = match port_create(8192) {
-                    Ok((w, r)) => (w, r),
-                    Err(_) => {
-                        warn!("ISO9660D: Failed to create tree provider port");
-                        continue;
-                    }
-                };
-
-                // Publish port handle
-                let _ = prop_set(mount_node, keys::WRITE_PORT_HANDLE, tree_read as u64);
-
-                info!(
-                    "ISO9660D: Mounted ISO9660 at node {:?}, tree port {}",
-                    mount_node, tree_read
-                );
-
-                mounts.push(Mount {
-                    fs,
-                    device: block_dev,
-                    tree_port_read: tree_read,
-                    tree_port_write: tree_write,
-                    mount_node,
-                });
-            }
-            None => {
-                // Not an ISO9660 filesystem
-            }
-        }
-    }
-
-    if mounts.is_empty() {
-        info!("ISO9660D: No ISO9660 filesystems found");
-        // Keep running anyway - devices might appear later
-    }
-
-    // 3. Service loop - wait on all tree provider ports
-    info!(
-        "ISO9660D: Entering service loop with {} mounts",
-        mounts.len()
-    );
-
-    let mut req_buf = [0u8; 8192];
-
-    loop {
-        if mounts.is_empty() {
-            // No mounts, just sleep
-            stem::sleep(core::time::Duration::from_secs(1));
-            continue;
-        }
-
-        // Collect all read handles
-        let port_handles: Vec<PortHandle> = mounts.iter().map(|m| m.tree_port_read).collect();
-
-        // Wait for any port to become readable
-        match port_wait(&port_handles, abi::syscall::port_wait::READABLE) {
-            Ok(ready_port) => {
-                // Find which mount this port belongs to
-                if let Some(mount) = mounts.iter().find(|m| m.tree_port_read == ready_port) {
-                    // Read request
-                    match port_recv(ready_port, &mut req_buf) {
-                        Ok(n) if n > 0 => {
-                            handle_tree_request(mount, &req_buf[..n]);
-                        }
-                        Ok(_) => {
-                            // Empty message, ignore
-                        }
-                        Err(_) => {
-                            warn!("ISO9660D: Failed to receive request on port {}", ready_port);
-                        }
-                    }
+            // 4. Mount via SYS_VFS_MOUNT.
+            //    We pass the *write* end to the kernel so it can send us RPCs.
+            match vfs_mount(req_write, "/boot/iso") {
+                Ok(()) => {
+                    info!("iso9660d: mounted at /boot/iso (provider port w={} r={})",
+                        req_write, req_read);
+                    mounted = Some((fs, block_dev, req_write, req_read));
+                    break;
+                }
+                Err(e) => {
+                    warn!("iso9660d: vfs_mount failed: {:?}", e);
                 }
             }
-            Err(_) => {
-                // port_wait failed, sleep briefly and retry
-                stem::sleep(core::time::Duration::from_millis(100));
+        }
+    }
+
+    let (fs, dev, _req_write, req_read) = match mounted {
+        Some(m) => m,
+        None => {
+            info!("iso9660d: no ISO9660 filesystem found — sleeping");
+            loop {
+                stem::sleep(core::time::Duration::from_secs(60));
             }
+        }
+    };
+
+    // 5. Service loop.
+    info!("iso9660d: entering VFS RPC service loop");
+    let mut req_buf = alloc::vec![0u8; VFS_RPC_MAX_REQ];
+
+    loop {
+        match port_wait(&[req_read], abi::syscall::port_wait::READABLE) {
+            Ok(_) => {}
+            Err(_) => {
+                stem::sleep(core::time::Duration::from_millis(10));
+                continue;
+            }
+        }
+
+        match port_recv(req_read, &mut req_buf) {
+            Ok(n) if n > 0 => {
+                handle_vfs_rpc(&fs, &dev, &req_buf[..n]);
+            }
+            _ => {}
         }
     }
 }
+

@@ -21,6 +21,7 @@ pub mod fd_table;
 pub mod mount;
 pub mod path;
 pub mod procfs;
+pub mod provider;
 pub mod ramfs;
 pub mod union;
 

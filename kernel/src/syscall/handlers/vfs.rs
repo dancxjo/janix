@@ -226,3 +226,84 @@ pub fn sys_pipe(pipefd_ptr: usize) -> SysResult<usize> {
 
     Ok(0)
 }
+
+// ── mount ───────────────────────────────────────────────────────────────────
+
+/// Mount a userland VFS provider at the given path prefix.
+///
+/// `provider_write_handle` is the *write* end of a port pair owned by the
+/// calling process.  The kernel will send VFS RPC messages (see
+/// [`abi::vfs_rpc`]) to that port whenever a path under `path` is accessed.
+///
+/// The kernel creates a private response port and registers its write-handle
+/// in the global handle table so the provider can call `SYS_PORT_SEND` to
+/// deliver replies.
+pub fn sys_vfs_mount(
+    provider_write_handle: usize,
+    path_ptr: usize,
+    path_len: usize,
+) -> SysResult<usize> {
+    validate_user_range(path_ptr, path_len, false)?;
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+
+    // Copy path from userspace.
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+
+    // Resolve the provider's write handle to a port Arc.
+    let prov_handle = crate::ipc::Handle(provider_write_handle as u32);
+    let prov_entry = {
+        let table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        table
+            .get(prov_handle, crate::ipc::HandleMode::Write)
+            .copied()
+            .ok_or(Errno::EBADF)?
+    };
+    let req_port = crate::ipc::get_port(prov_entry.port_id).ok_or(Errno::EBADF)?;
+
+    // Create the kernel response port.
+    // Large capacity to hold multiple concurrent responses (though we serialise
+    // requests, responses may vary in size).
+    let resp_port_id = crate::ipc::create_port(abi::vfs_rpc::VFS_RPC_MAX_RESP * 4);
+    let resp_port = crate::ipc::get_port(resp_port_id).ok_or(Errno::ENOMEM)?;
+
+    // Register the write end of the response port in the global handle table
+    // so the provider process can call SYS_PORT_SEND on it.
+    let resp_write_handle = {
+        let mut table = crate::ipc::GLOBAL_HANDLE_TABLE.lock();
+        table
+            .alloc(resp_port_id, crate::ipc::HandleMode::Write)
+            .ok_or(Errno::ENOMEM)?
+    };
+
+    // Build and mount the provider filesystem.
+    let provider_fs = alloc::sync::Arc::new(vfs::provider::ProviderFs::new(
+        req_port,
+        resp_port,
+        resp_write_handle.0,
+    ));
+    vfs::mount::mount(path, provider_fs);
+
+    crate::kinfo!("vfs: mounted userland provider at {}", path);
+    Ok(0)
+}
+
+// ── umount ──────────────────────────────────────────────────────────────────
+
+/// Unmount the VFS provider at the given path prefix.
+pub fn sys_vfs_umount(path_ptr: usize, path_len: usize) -> SysResult<usize> {
+    validate_user_range(path_ptr, path_len, false)?;
+    if path_len == 0 || path_len > 4096 {
+        return Err(Errno::EINVAL);
+    }
+    let mut path_buf = vec![0u8; path_len];
+    unsafe { copyin(&mut path_buf, path_ptr)? };
+    let path = core::str::from_utf8(&path_buf).map_err(|_| Errno::EINVAL)?;
+    vfs::mount::umount(path)?;
+    crate::kinfo!("vfs: unmounted userland provider at {}", path);
+    Ok(0)
+}
+

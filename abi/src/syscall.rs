@@ -167,8 +167,14 @@ pub const SYS_ROOT_WATCH_SUBSCRIBE: u32 = 0x168;
 pub const SYS_ROOT_STREAM_POLL: u32 = 0x169;
 
 pub const SYS_ROOT_WATCH_OPEN: u32 = 0x16A;
+/// Blocking watch read: parks the calling task until a matching event arrives.
+/// Returns EOVERFLOW when commits have been skipped; EBADF for invalid handle.
 pub const SYS_ROOT_WATCH_NEXT: u32 = 0x16B;
 pub const SYS_ROOT_WATCH_CLOSE: u32 = 0x16C;
+/// Non-blocking watch read: returns EAGAIN immediately when no event is pending.
+/// Use this in drain loops where the caller has already confirmed readiness via
+/// `SYS_WAIT_MANY` / [`WaitSet`][abi::wait].
+pub const SYS_ROOT_WATCH_TRY_NEXT: u32 = 0x16D;
 
 // ============================================================================
 // Block 0x170–0x17F: Filesystem (path resolution)

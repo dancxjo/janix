@@ -997,7 +997,7 @@ fn main(arg: usize) -> ! {
         if let Some(gw) = glyph_watch {
             let mut g_seq = 0u64;
             let mut g_buf = [0u8; 1024];
-            if let Ok(len) = stem::syscall::root_watch_next(gw, &mut g_seq, &mut g_buf) {
+            if let Ok(len) = stem::syscall::root_watch_try_next(gw, &mut g_seq, &mut g_buf) {
                 if len > 0 {
                     crate::font_graph::mark_dirty();
                 }
@@ -1010,7 +1010,7 @@ fn main(arg: usize) -> ! {
             let mut w_buf = [0u8; 256];
             let mut drained = 0u32;
             // Drain all pending events this frame
-            while let Ok(len) = stem::syscall::root_watch_next(uw, &mut w_seq, &mut w_buf) {
+            while let Ok(len) = stem::syscall::root_watch_try_next(uw, &mut w_seq, &mut w_buf) {
                 if len > 0 {
                     drained += 1;
                 } else {
@@ -1033,7 +1033,7 @@ fn main(arg: usize) -> ! {
             let mut p_seq = 0u64;
             let mut p_buf = [0u8; 256];
             let mut drained = 0u32;
-            while let Ok(len) = stem::syscall::root_watch_next(pw, &mut p_seq, &mut p_buf) {
+            while let Ok(len) = stem::syscall::root_watch_try_next(pw, &mut p_seq, &mut p_buf) {
                 if len > 0 {
                     drained += 1;
                 } else {

@@ -173,7 +173,7 @@ fn main() -> ! {
             let mut seq = 0u64;
             let mut buf = [0u8; 1024];
             let mut drained = 0u32;
-            while let Ok(len) = stem::syscall::root_watch_next(watch_id, &mut seq, &mut buf) {
+            while let Ok(len) = stem::syscall::root_watch_try_next(watch_id, &mut seq, &mut buf) {
                 if len > 0 {
                     drained += 1;
                 } else {

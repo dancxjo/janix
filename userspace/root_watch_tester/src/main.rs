@@ -126,13 +126,13 @@ fn open_watch_filtered(filter: RootWatchFilter) -> Result<usize, i64> {
     open_watch_with_start_seq(0, filter)
 }
 
-/// Read next watch event
+/// Read next watch event (non-blocking — returns EAGAIN when no event is pending).
 fn watch_next(handle: usize, buf: &mut [u8]) -> Result<(usize, u64), i64> {
     let mut seq_out = 0u64;
 
     let res = unsafe {
         stem::syscall::syscall6(
-            SYS_ROOT_WATCH_NEXT,
+            SYS_ROOT_WATCH_TRY_NEXT,
             handle,
             &mut seq_out as *mut _ as usize,
             buf.as_mut_ptr() as usize,

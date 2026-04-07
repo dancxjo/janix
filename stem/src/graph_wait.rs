@@ -65,7 +65,24 @@ impl GraphWatch {
         }
     }
 
+    /// Non-blocking read of the next watch event.
+    ///
+    /// Returns `Err(Errno::EAGAIN)` when no event is pending.  Use this inside
+    /// drain loops (after [`WaitSet::wait`](crate::wait_set::WaitSet) wakes the
+    /// task) so the loop exits cleanly once all queued events are consumed.
+    ///
+    /// Use [`blocking_next`](Self::blocking_next) when you want to park the task
+    /// until the next event arrives without managing a `WaitSet` manually.
     pub fn next(&self, seq_out: &mut u64, out: &mut [u8]) -> Result<usize, Errno> {
+        syscall::root_watch_try_next(self.id, seq_out, out)
+    }
+
+    /// Blocking read of the next watch event.
+    ///
+    /// Parks the calling task until a matching graph commit arrives.  Never
+    /// returns `Err(Errno::EAGAIN)` — use [`next`](Self::next) in drain loops
+    /// where `EAGAIN` is the expected termination signal.
+    pub fn blocking_next(&self, seq_out: &mut u64, out: &mut [u8]) -> Result<usize, Errno> {
         syscall::root_watch_next(self.id, seq_out, out)
     }
 

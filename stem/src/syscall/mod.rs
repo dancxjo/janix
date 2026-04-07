@@ -512,10 +512,47 @@ pub fn root_watch_open(spec: &abi::types::WatchSpec) -> Result<usize, Errno> {
     Ok(ret)
 }
 
+/// Blocking watch read.
+///
+/// Parks the calling task until a matching graph commit is available, then
+/// returns the number of bytes written to `out`.  Unlike `root_watch_try_next`
+/// this never returns `Err(Errno::EAGAIN)` — it blocks instead.
+///
+/// Use `root_watch_try_next` in drain loops where the caller has already
+/// established readiness via [`WaitSet::wait`](crate::wait_set::WaitSet) or
+/// `SYS_WAIT_MANY`.
 pub fn root_watch_next(id: usize, seq_out: &mut u64, out: &mut [u8]) -> Result<usize, Errno> {
     let ret = unsafe {
         match raw_syscall6(
             SYS_ROOT_WATCH_NEXT,
+            id,
+            seq_out as *mut _ as usize,
+            out.as_mut_ptr() as usize,
+            out.len(),
+            0,
+            0,
+        ) {
+            r if r < 0 => return Err(core::mem::transmute(-(r as i32))),
+            r => r as usize,
+        }
+    };
+    Ok(ret)
+}
+
+/// Non-blocking watch read.
+///
+/// Returns `Err(Errno::EAGAIN)` immediately when no matching event is pending.
+/// Prefer this inside drain loops that follow a
+/// [`WaitSet::wait`](crate::wait_set::WaitSet) / `SYS_WAIT_MANY` call, so
+/// the loop terminates quickly once all queued events have been consumed.
+pub fn root_watch_try_next(
+    id: usize,
+    seq_out: &mut u64,
+    out: &mut [u8],
+) -> Result<usize, Errno> {
+    let ret = unsafe {
+        match raw_syscall6(
+            SYS_ROOT_WATCH_TRY_NEXT,
             id,
             seq_out as *mut _ as usize,
             out.as_mut_ptr() as usize,

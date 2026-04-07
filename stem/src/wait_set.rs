@@ -13,20 +13,17 @@
 //!
 //! ```no_run
 //! use stem::wait_set::{WaitSet, WaitEvent};
-//! use stem::time::Duration;
+//! use core::time::Duration;
 //!
 //! let mut set = WaitSet::new();
-//! let tok_rx      = set.add_port_readable(rx_port as u64);
-//! let tok_watch   = set.add_root_watch(watch_id);
-//! let tok_timeout = set.add_timeout(Duration::from_millis(100));
+//! let tok_rx    = set.add_port_readable(rx_port as u64).unwrap();
+//! let tok_watch = set.add_root_watch(watch_id).unwrap();
 //!
 //! for event in set.wait(Some(Duration::from_secs(5))).unwrap() {
 //!     if event.token() == tok_rx && event.is_readable() {
 //!         // port has data — call port_recv
 //!     } else if event.token() == tok_watch {
 //!         // graph event — call root_watch_next
-//!     } else if event.token() == tok_timeout {
-//!         // periodic tick fired
 //!     }
 //! }
 //! ```
@@ -207,6 +204,12 @@ impl WaitSet {
 
     fn alloc_token(&mut self) -> WaitToken {
         let tok = WaitToken(self.next_token);
+        // Skip 0 so that token 0 is never issued (easier to spot bugs where a
+        // token field was left default-initialised). Wrapping is safe here
+        // because push_spec() bounds the set to WAIT_MANY_MAX_ITEMS entries,
+        // so a single WaitSet can hold at most 32 live tokens at any point in
+        // time; token reuse after u64 wrap-around is therefore not a concern
+        // in practice.
         self.next_token = self.next_token.wrapping_add(1).max(1);
         tok
     }
@@ -312,15 +315,23 @@ impl WaitSet {
     /// - `timeout = Some(d)` — return after at most `d`, even if nothing fired
     ///   (the returned [`WaitEvents`] may be empty in that case).
     ///
+    /// The `timeout` parameter accepts any type that converts to
+    /// [`Duration`][crate::time::Duration], including `core::time::Duration`.
+    ///
     /// Returns an error if the set is empty or if the syscall fails.
-    pub fn wait(&self, timeout: Option<Duration>) -> Result<WaitEvents, Errno> {
+    pub fn wait<D>(&self, timeout: Option<D>) -> Result<WaitEvents, Errno>
+    where
+        D: Into<Duration>,
+    {
         if self.specs.is_empty() {
             return Err(Errno::EINVAL);
         }
 
-        let cap = self.specs.len().min(WAIT_MANY_MAX_ITEMS);
+        let timeout_dur = timeout.map(Into::into);
         let mut results = [WaitResult::default(); WAIT_MANY_MAX_ITEMS];
-        let n = syscall::wait::wait_many(&self.specs[..cap], &mut results[..cap], timeout)?;
+        // push_spec() guarantees specs.len() <= WAIT_MANY_MAX_ITEMS.
+        let n =
+            syscall::wait::wait_many(&self.specs, &mut results[..self.specs.len()], timeout_dur)?;
 
         let events = results[..n]
             .iter()
@@ -378,7 +389,7 @@ mod tests {
     #[test]
     fn wait_on_empty_set_returns_einval() {
         let set = WaitSet::new();
-        let res = set.wait(None);
+        let res = set.wait(None::<Duration>);
         assert_eq!(res.unwrap_err(), Errno::EINVAL);
     }
 

@@ -12,6 +12,7 @@ use abi::watch;
 use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
+use core::time::Duration;
 use stem::info;
 use stem::petals::graph::UiKey;
 use stem::petals::Petals;
@@ -21,7 +22,6 @@ use stem::thing::sys::{
     prop_get, prop_set,
 };
 use stem::thing::ThingId;
-use stem::time::Duration;
 use stem::wait_set::WaitSet;
 
 /// State color constants (ARGB)
@@ -412,9 +412,6 @@ fn main() -> ! {
 
     if ui_crown.to_u64_lossy() == 0 {
         info!("TASKMAN: UI Crown not found after 60s, exiting");
-        // Park forever — no busy loop.
-        let set = WaitSet::new();
-        drop(set); // nothing to wait on; just park via sleep
         loop {
             stem::time::sleep_ms(60_000);
         }

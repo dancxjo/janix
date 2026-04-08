@@ -13,10 +13,6 @@ use smoltcp::time::Instant;
 use smoltcp::wire::{IpAddress, IpEndpoint, IpListenEndpoint, Ipv4Address};
 
 use crate::dns;
-<<<<<<< HEAD
-=======
-use crate::vfs_device::VfsNicDevice;
->>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
 use stem::thing::ThingId;
 use stem::{debug, info, trace, warn};
 
@@ -722,11 +718,7 @@ impl SocketApi {
     pub fn handle_dns_query<D: smoltcp::phy::Device>(
         &mut self,
         iface: &mut Interface,
-<<<<<<< HEAD
         device: &mut D,
-=======
-        device: &mut VfsNicDevice,
->>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
         dns_server: Ipv4Address,
         hostname: &str,
     ) -> Vec<u8> {
@@ -1220,11 +1212,7 @@ impl SocketApi {
     pub fn process_message<'a, D: smoltcp::phy::Device>(
         &mut self,
         iface: &mut Interface,
-<<<<<<< HEAD
         device: &mut D,
-=======
-        device: &mut VfsNicDevice,
->>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
         socket_set: &mut SocketSet<'a>,
         msg: &[u8],
         caller_tid: Option<u64>,

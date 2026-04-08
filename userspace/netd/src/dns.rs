@@ -7,13 +7,9 @@ use smoltcp::socket::udp::{self, PacketMetadata, Socket as UdpSocket};
 use smoltcp::time::{Duration, Instant};
 use smoltcp::wire::{IpAddress, IpEndpoint, Ipv4Address};
 
-<<<<<<< HEAD
 fn now() -> Instant {
     Instant::from_millis(stem::time::now().as_millis() as i64)
 }
-=======
-use crate::vfs_device::VfsNicDevice;
->>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
 
 #[derive(Debug)]
 pub enum DnsError {
@@ -24,11 +20,7 @@ pub enum DnsError {
 
 pub fn lookup_a<D: Device>(
     iface: &mut Interface,
-<<<<<<< HEAD
     device: &mut D,
-=======
-    device: &mut VfsNicDevice,
->>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
     dns_server: Ipv4Address,
     name: &str,
 ) -> Result<Ipv4Address, DnsError> {
@@ -60,24 +52,15 @@ pub fn lookup_a<D: Device>(
 
     stem::info!("DNS: Querying {} for {}", dns_server, name);
 
-<<<<<<< HEAD
     let start = now();
-=======
-    let start = VfsNicDevice::now();
->>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
     let timeout = start + Duration::from_secs(5);
 
     let mut sent = false;
     let mut poll_count = 0u32;
 
     loop {
-<<<<<<< HEAD
         let t = now();
         if t > timeout {
-=======
-        let now = VfsNicDevice::now();
-        if now > timeout {
->>>>>>> 6225493e (feat(netd): replace IPC driver discovery with VFS file I/O on /dev/net/virtio0)
             stem::info!("DNS: Timeout after {} polls", poll_count);
             return Err(DnsError::Timeout);
         }
